@@ -1,5 +1,7 @@
-# The install smoke: the plugin installed from this checkout with the real harness CLI under a
-# temporary configuration directory, every hook entry fed a sample event through the
+# The install smoke: the plugin tree rendered from this commit, committed and tagged in a scratch
+# repository as the release pushes it to the plugin repository, and installed from there through a
+# `url` source with the real harness CLI under a temporary configuration directory; the installed
+# tree held to the render, every hook entry fed a sample event through the
 # INSTALLED wrapper, the reusable workflow called in the same-repository form — the two
 # `owner/repo/…@ref` forms are `smoke-release.yml`'s, for the reason `same-repository-form`
 # below states — and the clone-to-exfiltration scenario. Weekly as well as on every
@@ -50,20 +52,66 @@ jobs:
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.13"
+      # For the render: `plugin_tree.py` runs on the project's interpreter, as every script does.
+      # The steps that run the installed plugin keep the bare `python3` above.
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          enable-cache: true
+          python-version: "3.13"
       - name: The harness CLI, at the version ci.yml validates with
         # One version in two files; RELEASING.md names both. Not Dependabot's: a global npm
         # install is not a manifest. The laptop measurement below was taken against 2.1.263;
         # this pin is the one ci.yml already validates with, and the first run of this job
         # is the measurement for it.
         run: npm install -g @anthropic-ai/claude-code@2.1.261
-      - name: Install the plugin from this checkout into a temporary configuration directory
-        id: install
-        # Measured 2026-09-19 on a laptop against 2.1.263: both commands exit 0 with no
-        # authentication and no network, and the installed wrapper carries its executable
-        # bit, which the wrapper needs to run at all.
+      - name: The plugin repository, rendered from this commit and tagged as the release tags it
+        id: plugin-repo
+        # The directory and every user read the plugin repository's tagged commit, and its root is
+        # the tree `scripts/plugin_tree.py render` writes from this one, not this checkout. So the
+        # tree is rendered from the commit, committed once and tagged `v<version>`, the version
+        # read from the rendered `plugin.json`, as `publish_plugin.py` pushes it. The identity is
+        # given on the command line, as `scripts/smoke_hooks.py` commits, because the runner has
+        # none.
         run: |
+          uv sync --locked
+          uv run python scripts/plugin_tree.py render --root . --rev HEAD \
+            --out "$RUNNER_TEMP/plugin-repo" --manifest-file "$RUNNER_TEMP/plugin-tree.txt"
+          manifest="$RUNNER_TEMP/plugin-repo/.claude-plugin/plugin.json"
+          version="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["version"])' "$manifest")"
+          test -n "$version"
+          git -C "$RUNNER_TEMP/plugin-repo" init -q -b main
+          # `--force`: `publish_plugin.py` builds the plugin repository's commit with plumbing and
+          # reads no ignore rules, and the tree carries a `.gitignore` of its own (the overlay
+          # template's), so a member it matches is in that commit and must be in this one.
+          git -C "$RUNNER_TEMP/plugin-repo" add -A --force
+          git -C "$RUNNER_TEMP/plugin-repo" -c user.email=a@b.c -c user.name=a commit -qm "stayfixed $version"
+          git -C "$RUNNER_TEMP/plugin-repo" tag "v$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Install the plugin from that repository into a temporary configuration directory
+        id: install
+        # Production's source type over another transport, with no network: the marketplace is
+        # this repository's catalog with its one entry's `url` pointed at the repository above by
+        # `file://` and its `ref` at that tag, so the harness clones a tagged commit as a user's
+        # does. Measured 2026-09-19 on a laptop against 2.1.263 for the path source this replaced:
+        # both commands exit 0 with no authentication and no network, and the installed wrapper
+        # carries its executable bit, which the wrapper needs to run at all. The `url` source
+        # over `file://` was measured by this job itself, on both legs, at 956d2d0.
+        env:
+          VERSION: ${{ steps.plugin-repo.outputs.version }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/market/.claude-plugin"
+          python3 - .claude-plugin/marketplace.json "$RUNNER_TEMP/market/.claude-plugin/marketplace.json" "file://$RUNNER_TEMP/plugin-repo" "v$VERSION" <<'PY'
+          import json, sys
+          catalog = json.load(open(sys.argv[1], encoding="utf-8"))
+          [entry] = catalog["plugins"]
+          assert catalog["name"] == "stayfixed-marketplace", catalog["name"]
+          assert entry["name"] == "stayfixed" and entry["source"]["source"] == "url", entry
+          entry["source"] = {"source": "url", "url": sys.argv[3], "ref": sys.argv[4]}
+          with open(sys.argv[2], "w", encoding="utf-8") as out:
+              json.dump(catalog, out, indent=2)
+          PY
           export CLAUDE_CONFIG_DIR="$RUNNER_TEMP/claude"
-          claude plugin marketplace add "$PWD"
+          claude plugin marketplace add "$RUNNER_TEMP/market"
           claude plugin install stayfixed@stayfixed-marketplace
           cache="$CLAUDE_CONFIG_DIR/plugins/cache/stayfixed-marketplace/stayfixed"
           root="$(find "$cache" -mindepth 1 -maxdepth 1 -type d | head -n 1)"
@@ -76,6 +124,17 @@ jobs:
           diff -r hooks "$INSTALLED/hooks"
           diff scripts/stayfixed "$INSTALLED/scripts/stayfixed"
           test -x "$INSTALLED/hooks/run-hook.sh"
+      - name: The installed tree is the rendered one, file for file
+        # The harness copies what the source names into its cache, and only a comparison says it
+        # copied all of it and added nothing: the hooks, `doctor` and the scenario below read part
+        # of the tree, and the skills, the agents, `README.md` and `LICENSE` have no reader in this
+        # job. `.git` is the rendered repository's own, not a file of the plugin's. `.in_use` is
+        # the harness's: claude 2.1.261 writes it into the installed root on both runner OSes,
+        # measured on this job's first run over the rendered tree, 2026-10-10, where it was the
+        # only difference. Each exclusion is a name, never a pattern.
+        env:
+          INSTALLED: ${{ steps.install.outputs.root }}
+        run: diff -r -x .git -x .in_use "$RUNNER_TEMP/plugin-repo" "$INSTALLED"
       - name: Every hook entry, fed its sample event through the installed wrapper
         env:
           INSTALLED: ${{ steps.install.outputs.root }}
@@ -94,7 +153,10 @@ jobs:
         env:
           CLAUDE_PLUGIN_ROOT: ${{ steps.install.outputs.root }}
           CLAUDE_PLUGIN_DATA: ${{ runner.temp }}/smoke/data
-          PYTHONPATH: src
+          # The installed package: `doctor` judges the tree it was imported from, so importing
+          # this checkout's `src` reported on the repository, and a runtime path the render
+          # omitted would have passed.
+          PYTHONPATH: ${{ steps.install.outputs.root }}/src
         run: |
           python3 -m stayfixed doctor --json --root "$RUNNER_TEMP/smoke/project" \
             --home "$RUNNER_TEMP/smoke/home" --machine "$RUNNER_TEMP/machine.toml" \

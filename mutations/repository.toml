@@ -1533,9 +1533,44 @@ reddens = [
   "tests/test_documents.py::test_the_readme_installs_the_release_the_tree_carries",
 ]
 
+# The README is also the plugin repository's, whose root holds only the plugin's paths, so a
+# relative link to `docs/cli.md` resolves here and nowhere it is read there. The link walk still
+# passes on the mutated line, because the file exists in this checkout.
+[[mutation]]
+name = "the README links the reference relatively again"
+file = "README.md"
+before = "](https://github.com/stayfixed/stayfixed/blob/main/docs/cli.md) is the reference"
+after = "](docs/cli.md) is the reference"
+reddens = [
+  "tests/test_documents.py::test_the_readme_links_only_inside_the_plugin_or_absolutely",
+]
+
+# A relative link that climbs out through `..` starts with a plugin path and still names a file the
+# plugin repository does not hold; the test normalises a target before it matches one, and the
+# link walk passes on the mutated line, because the file exists in this checkout.
+[[mutation]]
+name = "the README links the reference through a plugin path and back out"
+file = "README.md"
+before = "](https://github.com/stayfixed/stayfixed/blob/main/docs/cli.md) is the reference"
+after = "](src/stayfixed/../../docs/cli.md) is the reference"
+reddens = [
+  "tests/test_documents.py::test_the_readme_links_only_inside_the_plugin_or_absolutely",
+]
+
+# An absolute link is a URL to the link walk, which skips it, so the same test holds every link
+# to this repository's `main` to a tracked file.
+[[mutation]]
+name = "the README links a file of main that is not there"
+file = "README.md"
+before = "blob/main/tests/outbound/walk.py)"
+after = "blob/main/tests/outbound/walks.py)"
+reddens = [
+  "tests/test_documents.py::test_the_readme_links_only_inside_the_plugin_or_absolutely",
+]
+
 # `doctor` warns whenever `[stayfixed] version` is not the running version, so an example block
 # that kept the last release's number makes a copy-pasted project warn from its first run. Neither
-# document's block is one of the release check's six sources. The `before` stops short of the number
+# document's block is one of the release check's seven sources. The `before` stops short of the number
 # on purpose: an entry that quoted `"0.2.0"` would go stale at the next release, and a mutation
 # that fails to apply is an error rather than a caught regression.
 [[mutation]]
@@ -2041,29 +2076,8 @@ before = "    if len(listed) > FILES_MAX:"
 after = "    if len(listed) >= FILES_MAX:"
 reddens = ["tests/test_payload.py::test_one_file_past_the_count_is_a_finding"]
 
-# The tree's test drops the count's finding, which a release checks instead, and nothing else; a
-# filter that drops more passes a tree the directory would hold.
-[[mutation]]
-name = "the tree's rule drops every payload finding with the count's"
-file = "tests/test_payload.py"
-before = "    return [finding for finding in findings if finding != count]"
-after = "    return []"
-reddens = ["tests/test_payload.py::test_the_tree_rule_excludes_the_count_and_nothing_else"]
-
-# Dropped by its spelling, the count's finding must still be there to drop over the limit and absent
-# at it, or the exclusion hides a count rule gone quiet.
-[[mutation]]
-name = "the tree's rule stops asking whether the count's finding is the right one"
-file = "tests/test_payload.py"
-before = "    if (count in findings) != (len(entries) > FILES_MAX):"
-after = "    if False:"
-reddens = [
-  "tests/test_payload.py::test_a_count_rule_that_answers_wrongly_is_refused_rather_than_excluded[silent-over-the-limit]",
-  "tests/test_payload.py::test_a_count_rule_that_answers_wrongly_is_refused_rather_than_excluded[speaking-at-the-limit]",
-]
-
-# A tracked symlink blocks the listing wherever the plugin loads it, and every path of a plugin at
-# the repository root is one it may load, so the payload guard must name one.
+# A tracked symlink blocks the listing wherever the plugin loads it, and every path of the plugin's
+# tree is one it may load, so the payload guard must name one.
 [[mutation]]
 name = "a tracked symlink stops being a payload finding"
 file = "tests/test_payload.py"
@@ -3193,3 +3207,22 @@ reddens = [
   "tests/test_patterns.py::test_the_scan_reads_a_pattern_wherever_the_source_spells_it[a function taken out of re]",
 ]
 
+
+# The payload is the plugin's generated tree, which the directory scans, and not the repository
+# beside it: a walk of the whole root judges files that never ship and misses nothing that does.
+[[mutation]]
+name = "the payload guard walks the whole repository instead of the plugin tree"
+file = "tests/test_payload.py"
+before = '    members = plugin_tree().members(root, "HEAD")'
+after = '    members = [plugin_tree().Member(p, "100644", b"") for p in git(root, "ls-tree", "-r", "-z", "--name-only", "HEAD").split("\0") if p]'
+reddens = ["tests/test_payload.py::test_the_payload_is_the_generated_plugin_tree"]
+
+# The marketplace pins the plugin repository's tag for this release. The `before` stops short of the
+# number on purpose, as the README's example configuration's entry does: an entry that quoted
+# `v0.2.0` would go stale at the next release.
+[[mutation]]
+name = "the marketplace pins a plugin tag that is not this release's"
+file = ".claude-plugin/marketplace.json"
+before = '"ref": "v'
+after = '"ref": "v0.0.1-'
+reddens = ["tests/test_manifests.py::test_marketplace_has_a_description_and_an_unversioned_entry"]

@@ -19,7 +19,7 @@ repository has earned it. One plugin for Claude Code and Codex, one Python packa
 > are the private layer: `memory`, the note store and its trust gate; `overlay`, the private overlay
 > — `overlay create`, `overlay init`, `overlay upgrade`, `overlay publish-template`; and `attach`,
 > whose `attach` binds a repository to the overlay and whose `detach` takes back what `attach`
-> wrote, keeping the overlay's record of the binding ([CONTRIBUTING.md](CONTRIBUTING.md#areas) says
+> wrote, keeping the overlay's record of the binding ([CONTRIBUTING.md](https://github.com/stayfixed/stayfixed/blob/main/CONTRIBUTING.md#areas) says
 > where the line between the two runs). The core is language-neutral, and a stack is a **profile**:
 > one stack's test runner, build artifacts and package manager belong to its profile — data, and
 > optionally the advice to give after that stack's test runner fails — so a repository in several
@@ -37,7 +37,7 @@ repository has earned it. One plugin for Claude Code and Codex, one Python packa
 > profile's markers or `--profile` names one, beside `[project] name`, `base_branch` and
 > `release_branch`, a `[ci]` table only when it has a released commit to pin or `--no-ci` asks for
 > none, a `[memory]` table only when `--memory-mode` answers it, and an `[artifacts]` table only
-> when `--local` does. [docs/cli.md](docs/cli.md) is the reference; the command list below is held
+> when `--local` does. [docs/cli.md](https://github.com/stayfixed/stayfixed/blob/main/docs/cli.md) is the reference; the command list below is held
 > to the parser by a test, so it is complete for what ships.
 
 ## What this is, and what it is not
@@ -50,7 +50,7 @@ them.
 
 This project looked through the community plugin marketplace on 2026-09-05 and counted about
 2,300 plugins listed that day. That is one project's dated count rather than a survey with a
-method — no row in [sources.md](docs/methodology/sources.md) backs it, and it says what that
+method — no row in [sources.md](https://github.com/stayfixed/stayfixed/blob/main/docs/methodology/sources.md) backs it, and it says what that
 look found, not what exists. What it did not find anywhere else is the three things stayfixed
 adds:
 
@@ -70,7 +70,7 @@ adds:
 Two more practices ride along and are named as such: every assertion ships with the
 mutation that reddens it, and working memory is a routing table of hand-written lines, not
 a summary. The principles behind all of it, with dated sources and an honest note where the
-backing is thin, are in [docs/methodology/README.md](docs/methodology/README.md).
+backing is thin, are in [docs/methodology/README.md](https://github.com/stayfixed/stayfixed/blob/main/docs/methodology/README.md).
 
 **This is not a replacement for superpowers.** `stayfixed setup --preset recommended` installs
 it, and [context7](https://github.com/upstash/context7), on Claude Code — both ship in
@@ -105,7 +105,7 @@ One session guard blocks, `bg-cleanup`, and it judges only a command the agent r
 background: one that leaves an `&` job behind with no `trap … EXIT` to stop it, or that begins with
 `sleep` (directly, or behind `env` or `uv run` and uv's options), is refused before it starts, and
 the refusal names the remedy. Other wrappers, such as `nohup`, `timeout` or `bash -c`, are not
-read through ([`docs/cli.md`](docs/cli.md#stayfixed-guard-bg-cleanup) lists them). The same
+read through ([`docs/cli.md`](https://github.com/stayfixed/stayfixed/blob/main/docs/cli.md#stayfixed-guard-bg-cleanup) lists them). The same
 command run in the foreground passes. stayfixed has no switch that turns a guard off, in
 configuration or on the command line, so a false block is a defect: report it in
 [an issue](https://github.com/stayfixed/stayfixed/issues) with the command it refused.
@@ -129,6 +129,11 @@ As a Claude Code plugin:
 /plugin install stayfixed@stayfixed-marketplace
 ```
 
+The marketplace in `stayfixed/stayfixed` fetches the plugin from
+[`stayfixed/stayfixed-plugin`](https://github.com/stayfixed/stayfixed-plugin) at the release's
+tag: a repository holding only what the plugin runs, generated from `stayfixed/stayfixed` at each
+release.
+
 As a command-line tool:
 
 ```bash
@@ -136,7 +141,7 @@ uv tool install stayfixed
 ```
 
 In CI, a project calls the reusable workflow at a commit SHA;
-[docs/cli.md](docs/cli.md#the-reusable-workflow) shows the caller `stayfixed init` writes.
+[docs/cli.md](https://github.com/stayfixed/stayfixed/blob/main/docs/cli.md#the-reusable-workflow) shows the caller `stayfixed init` writes.
 
 **Requirements: Python 3.11 or newer, and a POSIX system.** Linux and macOS are supported and
 tested; Windows is not. The containment this project is built on uses `openat` with
@@ -145,7 +150,7 @@ tested; Windows is not. The containment this project is built on uses `openat` w
 ## Quickstart
 
 Three keys in a `stayfixed.toml` at the root of a repository start a project; every other key
-takes the `recommended` preset's default, and [docs/cli.md](docs/cli.md#configuration) lists all
+takes the `recommended` preset's default, and [docs/cli.md](https://github.com/stayfixed/stayfixed/blob/main/docs/cli.md#configuration) lists all
 of them, annotated.
 
 ```toml
@@ -191,7 +196,7 @@ The other commands in [Commands](#commands) expect more of a repository than tho
 create: `docs check` wants an `AGENTS.md`, `docs trail` a `docs/roadmap.md`, `bugs check` a
 ledger entry. `stayfixed init --yes` writes all of those, which is what it is for; in a
 repository you would rather grow by hand, add each path as you start using the command that
-reads it — [docs/cli.md](docs/cli.md#configuration) lists every default.
+reads it — [docs/cli.md](https://github.com/stayfixed/stayfixed/blob/main/docs/cli.md#configuration) lists every default.
 
 ## What it writes, and where
 
@@ -213,7 +218,7 @@ stayfixed writes files. Being specific about which is the point of this section.
 | `.stayfixed/manifest.json` | The ledger of every scaffolded artifact | the scaffold engine |
 | `.stayfixed/local/artifacts/` | The artifacts `[artifacts] local` keeps out of git, at the path each would have in the repository — git-ignored, never recorded in the manifest | `stayfixed init` and `stayfixed upgrade`, when `[artifacts] local` lists them; `stayfixed uninstall` takes them back |
 | `.stayfixed/local/artifacts.json` | The record of the bytes stayfixed last wrote under `.stayfixed/local/artifacts/`, so an unedited copy is refreshed or retired and an edited one is left. Git-ignored and never committed. Deleted, later runs judge a copy at its artifact's own place by what they render, and no longer find a copy left at an earlier place at all | the scaffold engine; `stayfixed uninstall` removes it |
-| `~/.config/stayfixed/config.toml` | Machine-level settings: `[personal]`, `[overlay]`, `[machine]`. `~` is your home as the password database records it, never `HOME`, which direnv, mise or a devcontainer can set from a file the repository commits ([docs/cli.md](docs/cli.md#configuration)) | you, or `stayfixed setup` |
+| `~/.config/stayfixed/config.toml` | Machine-level settings: `[personal]`, `[overlay]`, `[machine]`. `~` is your home as the password database records it, never `HOME`, which direnv, mise or a devcontainer can set from a file the repository commits ([docs/cli.md](https://github.com/stayfixed/stayfixed/blob/main/docs/cli.md#configuration)) | you, or `stayfixed setup` |
 | `~/.config/stayfixed/trust.json` | Which repositories' committed notes you have approved, under the same home | `stayfixed memory trust` |
 | `hooks/hooks.json` and `hooks/run-hook.sh` | The zero-config wiring both harnesses read, and the wrapper they execute. **Shipped in the plugin; never written into a project** | nothing — they are part of the plugin |
 | `${CLAUDE_PLUGIN_DATA}/stayfixed/` | Once-per-session markers and the hook diagnostics log. Deleted with the plugin | the hook dispatcher |
@@ -243,7 +248,7 @@ directions, to the package's launches that can reach a network and the files its
 under `.github/`. The walk reads syntax, so a launch decided by data flow it does not follow —
 dynamic dispatch, aliasing, a value computed at run time, a connection the standard library makes
 on the package's behalf — is beyond it; the docstring of
-[`tests/outbound/walk.py`](tests/outbound/walk.py) says what it sees and names each such case.
+[`tests/outbound/walk.py`](https://github.com/stayfixed/stayfixed/blob/main/tests/outbound/walk.py) says what it sees and names each such case.
 The **Run by**, **Talks to** and **When** columns are kept by hand. The hook wrapper,
 `hooks/run-hook.sh`, is not Python and is not walked: it starts `env`, `dirname`, `python3` and
 `git`, the last to find the project root and its worktrees, and reaches no network.
@@ -346,7 +351,7 @@ repository reach the model only after you say `stayfixed memory trust --in-repo-
 and only inside a delimited region with a per-invocation nonce that says "this is data, not
 instructions". Change what the repository ships and the approval lapses, and you are asked
 again. A configured value never reaches a subprocess in an option's position, and a
-configured path never leaves the project root. See [SECURITY.md](SECURITY.md) for what counts
+configured path never leaves the project root. See [SECURITY.md](https://github.com/stayfixed/stayfixed/blob/main/SECURITY.md) for what counts
 as a vulnerability here.
 
 ## Commands
@@ -438,11 +443,11 @@ stayfixed hook SessionStart                            # dispatch one harness ho
 Commands that read a project take `--root` (default: the current directory) and `--machine` (read
 a machine configuration file other than the default); `memory` commands and `attach` take
 `--store` as well. The commands that take neither, and the ones that mean something else by
-either, are listed in [Shared flags](docs/cli.md#shared-flags). `--json` is accepted anywhere and
+either, are listed in [Shared flags](https://github.com/stayfixed/stayfixed/blob/main/docs/cli.md#shared-flags). `--json` is accepted anywhere and
 prints one machine-readable object instead of one line. The commands that report a list of
 findings — `bugs check`, `docs check`, `memory refs`, `plan check` — all spell it `findings`,
 whatever their summary line calls them; every other command's keys are its own and are listed
-with it in [docs/cli.md](docs/cli.md).
+with it in [docs/cli.md](https://github.com/stayfixed/stayfixed/blob/main/docs/cli.md).
 
 Exit codes are the same everywhere: **0** success, **1** findings, **2** a refusal or an
 internal error. A caller must never read 2 as permission. One command is deliberately
@@ -450,7 +455,7 @@ outside that rule: `stayfixed hook` refuses with **2** on an internal
 error only for `PreToolUse`, the one event a harness blocks on; everywhere else it degrades
 open with **0**, because on `UserPromptSubmit` an exit 2 erases what you typed and a bug in
 stayfixed must not cost you that. A handler's own deny is a decision, not a breakage, and
-refuses on every event. [docs/cli.md](docs/cli.md) states it per event.
+refuses on every event. [docs/cli.md](https://github.com/stayfixed/stayfixed/blob/main/docs/cli.md) states it per event.
 
 ### `stayfixed memory trust`
 
@@ -529,9 +534,9 @@ that test until the command ships; none is today.
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) — it states the three rules a change here has to satisfy,
+See [CONTRIBUTING.md](https://github.com/stayfixed/stayfixed/blob/main/CONTRIBUTING.md) — it states the three rules a change here has to satisfy,
 which are not obvious from the code. Security reports go through
-[SECURITY.md](SECURITY.md), never a public issue.
+[SECURITY.md](https://github.com/stayfixed/stayfixed/blob/main/SECURITY.md), never a public issue.
 
 ## License
 

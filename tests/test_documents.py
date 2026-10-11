@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import inspect
 import io
+import posixpath
 import re
 import shlex
 from contextlib import redirect_stderr
@@ -30,6 +31,7 @@ import pytest
 from stayfixed import __version__
 from stayfixed.cli import build_parser, discover_registrars, split_json_flag
 from tests.cli import subparsers
+from tests.scriptload import plugin_tree
 from tests.test_neutral import tracked_files
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -609,7 +611,7 @@ def test_the_example_configurations_carry_the_running_version(document: Path) ->
     """`doctor` warns whenever `[stayfixed] version` is not `__version__`, so an example that
     kept the last release's number is a copy-paste that makes a brand-new project warn.
 
-    `scripts/release.py check` reads six sources and none of them is an example in a document, so
+    `scripts/release.py check` reads seven sources and none of them is an example in a document, so
     `RELEASING.md` step 3 once named these two blocks as held by nothing but the person cutting
     the release. This holds them, the way the Install section is held above.
 
@@ -634,6 +636,55 @@ def test_the_readme_points_at_the_methodology_and_the_reference() -> None:
     text = prose(README)
     assert "docs/methodology/README.md" in text
     assert "docs/cli.md" in text
+
+
+# The paths `scripts/plugin_tree.py` renders into the plugin repository, read from its
+# `PLUGIN_PATHS`. The subject here is the README's links, not that list: what the list holds is
+# spelled out and pinned by `tests/scripts/test_plugin_tree.py`, so a fourth copy here would only
+# be one more place to forget when the plugin gains a path.
+PLUGIN_PATHS: tuple[str, ...] = plugin_tree().PLUGIN_PATHS
+# A link to a file of this repository as `main` holds it, which moves only at a release.
+_THIS_REPOSITORY_MAIN = re.compile(r"^https://github\.com/stayfixed/stayfixed/blob/main/([^#]+)")
+
+
+def test_the_readme_links_only_inside_the_plugin_or_absolutely() -> None:
+    """The README is published three times — here, on PyPI as the long description, and at the
+    root of the plugin repository, which holds only the plugin's paths. A relative link to
+    `docs/cli.md` resolves here and in nothing else, so a link to a file outside the plugin is
+    absolute, to this repository's `main`. One inside it stays relative: it resolves here and in
+    the plugin repository, though not on PyPI.
+
+    `test_every_relative_link_resolves` holds that a relative link names a file here; this holds
+    that the file is one the plugin repository has too, and that every absolute link to `main`
+    names a tracked file, which the link walk skips as a URL.
+
+    Mutations (declared): the reference link made relative again, `](docs/cli.md)` -> `outside`
+    reddens; the same link spelled through a plugin path, `](src/stayfixed/../../docs/cli.md)`,
+    which only the normalisation tells from one inside it -> `outside` reddens; the outbound
+    walk's link naming a file that is not there -> `missing` reddens.
+    """
+    relative = links_in(README)
+    # Floors: a README whose links all vanished, or a regex that stopped matching, would make
+    # both walks vacuously true. `skills/README.md` and `LICENSE` stay relative today.
+    assert len(relative) >= 2, relative
+    # Normalised first: `src/stayfixed/../../docs/cli.md` starts with a plugin path and names a
+    # file outside every one of them.
+    normal = [posixpath.normpath(target) for target in relative]
+    outside = [
+        target
+        for target in normal
+        if not any(target == path or target.startswith(path + "/") for path in PLUGIN_PATHS)
+    ]
+    assert outside == [], outside
+    absolute = [
+        match.group(1)
+        for target in _LINK.findall(prose(README))
+        if (match := _THIS_REPOSITORY_MAIN.match(target))
+    ]
+    assert absolute, "README.md links nothing of this repository's main"
+    tracked = set(tracked_files())
+    missing = [path for path in absolute if ROOT / path not in tracked]
+    assert missing == [], missing
 
 
 CLI_REFERENCE = ROOT / "docs" / "cli.md"

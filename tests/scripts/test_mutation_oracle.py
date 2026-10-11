@@ -1214,7 +1214,10 @@ GROUP_FILE_MAX_BYTES = FILE_MAX_BYTES * 3 // 4
 # A named cap three quarters of the payload guard's, kept as early warning: the directory holds the
 # version for a reviewer at a file of `FILE_MAX_BYTES`, and a group file carries an area's whole
 # history, so the last quarter, 64 KiB, is about a hundred entries of headroom. When a group crosses
-# it, split that group by its largest area: a deliberate edit to `GROUP_OF`.
+# it, split that group by its largest area: a deliberate edit to `GROUP_OF`. The cap was sized
+# while the repository root was the plugin; the plugin's tree (`scripts/plugin_tree.py`) no longer
+# holds `mutations/`. The cap is kept as it was sized; whether it still earns its place is an open
+# question.
 
 
 def test_the_oracle_reads_every_group_file() -> None:

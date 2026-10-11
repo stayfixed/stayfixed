@@ -1,32 +1,32 @@
-"""The plugin folder held to the file rules the Claude plugin directory checks at submission.
+"""The plugin's tree held to the file rules the Claude plugin directory checks at submission.
 
-The payload is every path in `HEAD`'s tree, because the plugin folder is the repository root: the
-marketplace's one plugin has `source` `./`, and `test_the_plugin_folder_is_the_repository_root`
-reddens the day it moves, so that this walk changes with the move instead of going on passing over
-the wrong tree. The tree and not the working tree, because the directory reads a commit: a local
-edit, a line-ending conversion or a file deleted on disk is not what it scans.
+The payload is the tree `scripts/plugin_tree.py` generates from `HEAD`: the files under the
+plugin's paths and nothing else, because the plugin is published from a repository of its own whose
+root is that tree (the marketplace entry is a `url` source naming it), and that tree is what the
+directory scans. `test_the_payload_is_the_generated_plugin_tree` reddens if the walk reads anything
+else. The commit and not the working tree, because the directory reads a commit: a local edit, a
+line-ending conversion or a file deleted on disk is not what it scans.
 
-Every rule holds the tree on every pull request but one, the file count. This repository is more
-than the plugin, and a pull request may carry it past `FILES_MAX`; what must not pass the count is
-a release, so `scripts/release.py check --tag` refuses one whose plugin folder holds more, and
-RELEASING.md says how a release gets under it: the plugin is published from a repository of its
-own whose root is the plugin. `payload_findings` still reports the count, and the tree's test
-drops that one finding by its exact spelling and no other.
+Every rule holds the tree on every pull request, the file count included: the tree is the plugin
+alone, so a pull request that carries it past `FILES_MAX` carries the plugin past it, and
+`scripts/release.py check --tag` holds the same count again on the commit a release is cut from.
+
+`docs/cli.md` and every other file outside the plugin's paths are not judged: the directory's
+limits judge the files that ship, and these do not.
 """
 
 from __future__ import annotations
 
 import json
-import os
 import re
-import sys
 from collections.abc import Callable, Iterable
 from pathlib import Path, PurePosixPath
 
 import pytest
 
-from tests.gitfixture import git, git_bytes, needs_git
-from tests.scriptload import release
+from tests.gitfixture import git, needs_git
+from tests.scriptload import plugin_tree, release
+from tests.scripts.test_plugin_tree import PLUGIN_FILES, plugin_repository
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -34,8 +34,8 @@ ROOT = Path(__file__).resolve().parents[1]
 # (https://claude.com/docs/plugins/pre-submission-checklist, fetched 2026-10-02; the page carries
 # no date), each with the result the page gives it: Held (the listing waits for a reviewer),
 # Blocks, Validation stops, or, for a link, a submodule and a Git LFS pointer, "Blocks where the
-# plugin loads the entry. Warning elsewhere." The plugin folder the rules apply to is the
-# repository root, because the marketplace's `source` is `./`, so every rule below reads every path.
+# plugin loads the entry. Warning elsewhere." The tree the rules apply to is the plugin's, which
+# `scripts/plugin_tree.py` generates, so every rule below reads every path of it.
 #
 # Held: a file that is not an image or a font at `FILE_MAX_BYTES` or more, and more than
 # `FILES_MAX` files. The count is the release script's `PLUGIN_FILES_MAX`, read rather than
@@ -163,24 +163,8 @@ def payload_findings(entries: Iterable[Entry], *, read: Callable[[str], bytes]) 
 
 
 def count_finding(files: int) -> str:
-    """The one finding the file count makes, spelled once: `payload_findings` makes it and
-    `findings_but_the_count` drops it, so the two cannot come apart over a reworded message."""
+    """The one finding the file count makes."""
     return f"{files} files, over the {FILES_MAX} the directory lists unheld"
-
-
-def findings_but_the_count(entries: list[Entry], *, read: Callable[[str], bytes]) -> list[str]:
-    """`payload_findings` without the file count's finding, which a release checks and a pull
-    request does not (the module docstring says why).
-
-    Refused rather than answered when the count's finding is missing over `FILES_MAX` or present
-    at or under it: dropping a finding by its spelling must not also hide a count rule that went
-    quiet, or one that speaks early.
-    """
-    findings = payload_findings(entries, read=read)
-    count = count_finding(len(entries))
-    if (count in findings) != (len(entries) > FILES_MAX):
-        raise AssertionError(f"the file count's finding is wrong for {len(entries)}: {findings}")
-    return [finding for finding in findings if finding != count]
 
 
 def _attributes(line: str) -> list[str]:
@@ -223,37 +207,15 @@ def _nameable(component: str) -> bool:
 
 
 def tracked_payload(root: Path = ROOT) -> tuple[list[Entry], dict[str, bytes]]:
-    """Every path in `root`'s `HEAD` tree and each regular file's bytes: what the directory reads.
+    """Every file of the plugin tree at `root`'s `HEAD` and its bytes: what the directory reads.
 
-    `git ls-tree -r -l -z HEAD` gives one row per path with its mode and its blob's size — a
-    submodule as a gitlink row whose size is `-`, a symlink as the link and never its target — and
-    `git cat-file --batch` the blobs, asked by object id so that no name has to survive a line.
+    Read through `scripts/plugin_tree.py`'s `members`, the one reader of the plugin's paths, which
+    refuses a symlink or a submodule among them outright: `payload_findings`' own rules for both
+    keep their unit tests below for the tree's other readers.
     """
-    entries: list[Entry] = []
-    objects: dict[str, str] = {}
-    for record in git(root, "ls-tree", "-r", "-l", "-z", "HEAD").split("\0"):
-        if not record:
-            continue
-        # `<mode> <type> <object> <size, padded>\t<path>`: the path is everything after the tab.
-        meta, path = record.split("\t", 1)
-        mode, _kind, obj, size = meta.split()
-        entries.append((path, 0 if size == "-" else int(size), mode))
-        if mode in REGULAR_MODES:
-            objects[path] = obj
-    return entries, dict(zip(objects, _blobs(root, list(objects.values())), strict=True))
-
-
-def _blobs(root: Path, objects: list[str]) -> list[bytes]:
-    """The bytes of each object in `objects`, in order, from one `git cat-file --batch`."""
-    asked = "".join(f"{obj}\n" for obj in objects).encode("ascii")
-    out, at, blobs = git_bytes(root, "cat-file", "--batch", stdin=asked), 0, []
-    for _ in objects:
-        # `<object> <type> <size>\n<content>\n`, once per object asked.
-        header_end = out.index(b"\n", at)
-        size = int(out[at:header_end].split()[2])
-        blobs.append(out[header_end + 1 : header_end + 1 + size])
-        at = header_end + 1 + size + 1
-    return blobs
+    members = plugin_tree().members(root, "HEAD")
+    entries = [(member.path, len(member.content), member.mode) for member in members]
+    return entries, {member.path: member.content for member in members}
 
 
 def _text(_: str) -> bytes:
@@ -391,39 +353,6 @@ def test_one_file_past_the_count_is_a_finding() -> None:
     entries = [(f"f{i}", 1, "100644") for i in range(FILES_MAX + 1)]
     assert any("files" in f for f in payload_findings(entries, read=_text))
     assert payload_findings(entries[:FILES_MAX], read=_text) == []
-
-
-def test_the_tree_rule_excludes_the_count_and_nothing_else() -> None:
-    # A pull request may carry the tree past `FILES_MAX` (the release script's `check --tag`
-    # refuses there instead), so the tree's rule drops the count's finding by its exact spelling
-    # and keeps every other. The second assertion is what makes the first mean it: the count's
-    # finding was there to drop. Mutation (declared): the filter drops every finding -> the
-    # symlink's finding goes and this reddens.
-    entries = [(f"f{i}", 1, "100644") for i in range(FILES_MAX)] + [("link", 4, SYMLINK_MODE)]
-    assert findings_but_the_count(entries, read=_text) == ["link: a tracked symlink"]
-    assert payload_findings(entries, read=_text) == [
-        count_finding(FILES_MAX + 1),
-        "link: a tracked symlink",
-    ]
-
-
-@pytest.mark.parametrize(
-    ("files", "answer"),
-    [
-        pytest.param(FILES_MAX + 1, [], id="silent-over-the-limit"),
-        pytest.param(FILES_MAX, [count_finding(FILES_MAX)], id="speaking-at-the-limit"),
-    ],
-)
-def test_a_count_rule_that_answers_wrongly_is_refused_rather_than_excluded(
-    monkeypatch: pytest.MonkeyPatch, files: int, answer: list[str]
-) -> None:
-    # The exclusion must not hide a count rule gone wrong: over the limit its finding has to be
-    # there to be dropped, and at the limit it must not be. Mutation (declared): that check
-    # dropped -> nothing raises and both cases redden.
-    monkeypatch.setattr(sys.modules[__name__], "payload_findings", lambda _, *, read: answer)
-    entries = [(f"f{i}", 1, "100644") for i in range(files)]
-    with pytest.raises(AssertionError, match="the file count's finding"):
-        findings_but_the_count(entries, read=_text)
 
 
 def test_a_symlink_is_a_finding() -> None:
@@ -626,52 +555,62 @@ def test_a_gitattributes_line_carrying_no_refused_attribute_is_not_a_finding(lin
     assert payload_findings([(".gitattributes", len(text), "100644")], read=lambda _: text) == []
 
 
-def test_the_plugin_folder_is_the_repository_root() -> None:
-    # If the plugin moves into a subfolder, the payload is that folder and this module's walk
-    # is wrong; it must change with the move rather than go on passing over the wrong tree.
-    # Today's layout, and the one a release changes: before a release whose tree is over
-    # `FILES_MAX`, the plugin is published from a repository of its own whose root is the plugin
-    # (RELEASING.md, "Cutting a release"), and this module goes with it. A subfolder here is not
-    # the way out, because the directory holds a subfolder plugin whose hook runs a script that
-    # calls other files, and `hooks/run-hook.sh` runs the Python launcher.
-    # Mutation: the marketplace's `source` becomes `./plugin` -> this reddens.
+# The plugin's nine paths, spelled out rather than read from `scripts/plugin_tree.py`.
+NINE = (
+    ".claude-plugin/plugin.json",
+    ".codex-plugin/plugin.json",
+    "hooks",
+    "scripts/stayfixed",
+    "src/stayfixed",
+    "skills",
+    "agents",
+    "README.md",
+    "LICENSE",
+)
+
+
+@needs_git
+@pytest.mark.skipif(not (ROOT / ".git").exists(), reason="no git checkout to ask")
+def test_the_payload_is_the_generated_plugin_tree() -> None:
+    # The marketplace fetches the plugin from its own repository, whose root is the generated
+    # tree, so the walk reads that tree and nothing beside it. Mutation (declared): the walk reads
+    # `git ls-tree -r HEAD` of the whole repository -> `docs/` and `tests/` are walked and this
+    # reddens.
     market = json.loads((ROOT / ".claude-plugin/marketplace.json").read_text("utf-8"))
-    assert [p["source"] for p in market["plugins"]] == ["./"]
+    (entry,) = market["plugins"]
+    assert entry["source"]["source"] == "url"
+    assert entry["source"]["url"] == release().PLUGIN_URL
+    entries, _ = tracked_payload()
+    assert PLUGIN_MANIFEST in {path for path, _, _ in entries}, len(entries)
+    outside = [
+        path
+        for path, _, _ in entries
+        if not any(path == nine or path.startswith(nine + "/") for nine in NINE)
+    ]
+    assert outside == []
 
 
 @needs_git
 def test_the_walk_reads_the_committed_tree_and_not_the_disk(tmp_path: Path) -> None:
-    # The directory scans a commit, so a size measured on disk, a file deleted from the working
-    # tree, a file only staged, or a symlink followed to its target is a different payload from the
-    # one it reads. The gitlink is planted in the index by hand: the listing must name it with no
-    # blob to ask for. Mutation: the size read from `(root / path).lstat()` instead of the listing
-    # -> the edited file's row reddens. The staged file holds the listing to `HEAD` rather than the
-    # index; the one-line swap to `ls-files -s` reddens this too, but by breaking the row parse,
-    # since an index row has three fields before its tab, so it proves the parse and not the choice.
-    root = tmp_path / "plugin"
-    root.mkdir()
-    git(root, "init", "-q", "-b", "main")
-    (root / "a.md").write_text("one\n", encoding="utf-8")
-    (root / "gone.md").write_text("two\n", encoding="utf-8")
-    os.symlink("a.md", root / "link")
-    git(root, "add", "-A")
-    commit = git(root, "commit-tree", git(root, "write-tree").strip(), "-m", "x").strip()
-    git(root, "update-index", "--add", "--cacheinfo", f"{GITLINK_MODE},{commit},vendor")
-    git(root, "commit", "-q", "-m", "payload")
-    (root / "a.md").write_text("one, and an edit nobody committed\n", encoding="utf-8")
-    (root / "gone.md").unlink()
-    (root / "staged.md").write_text("three\n", encoding="utf-8")
-    git(root, "add", "staged.md")
+    # The directory scans a commit, so a size measured on disk is a different payload from the
+    # one it reads. What this adds over `tests/scripts/test_plugin_tree.py`'s
+    # `test_members_read_the_commit_and_not_the_disk`, which holds the bytes, the deleted file
+    # and the staged one, is the size this walk observes alone. Mutation: the size read from
+    # `(root / path).lstat()` instead of the commit's bytes -> the edited file's row reddens. A
+    # symlink and a submodule are `members`' refusals (`tests/scripts/test_plugin_tree.py`), so
+    # they are not planted here.
+    root = plugin_repository(tmp_path)
+    (root / "README.md").write_text("an edit nobody committed\n", encoding="utf-8")
+    (root / "LICENSE").unlink()
+    (root / "skills" / "staged.md").write_text("staged\n", encoding="utf-8")
+    git(root, "add", "skills/staged.md")
 
     entries, blobs = tracked_payload(root)
 
-    assert sorted(entries) == [
-        ("a.md", 4, "100644"),
-        ("gone.md", 4, "100644"),
-        ("link", 4, SYMLINK_MODE),
-        ("vendor", 0, GITLINK_MODE),
-    ]
-    assert blobs == {"a.md": b"one\n", "gone.md": b"two\n"}
+    assert sorted(entries) == sorted(
+        (path, len(content), mode) for path, (content, mode) in PLUGIN_FILES.items()
+    )
+    assert blobs == {path: content for path, (content, _) in PLUGIN_FILES.items()}
 
 
 # Both marks: `needs_git` for a machine with no `git`, and the second for an unpacked sdist, which
@@ -680,12 +619,11 @@ def test_the_walk_reads_the_committed_tree_and_not_the_disk(tmp_path: Path) -> N
 @needs_git
 @pytest.mark.skipif(not (ROOT / ".git").exists(), reason="no git checkout to ask")
 def test_the_tree_is_inside_the_directory_limits() -> None:
-    # Every rule but the file count, which `scripts/release.py check --tag` holds at a release
-    # instead. No mutation of the code: the subject is the tree. Watched red, before the count
-    # left it, on a scratch clone carrying one committed file past `FILES_MAX`; and red today on a
-    # committed symlink, or on the count's `>` becoming `>=` while the tree holds exactly
-    # `FILES_MAX` files, which `findings_but_the_count` refuses.
+    # Every rule, the file count included. No mutation of the code: the subject is the tree. The
+    # count's half cannot fail today, with the plugin tree some two hundred files under
+    # `FILES_MAX`; `test_one_file_past_the_count_is_a_finding` carries that rule. Watched red on a
+    # committed file of `FILE_MAX_BYTES` under `skills/`.
     entries, blobs = tracked_payload()
     # A walk-based assertion states its walk is non-empty, and this one that it walked this plugin.
     assert PLUGIN_MANIFEST in {path for path, _, _ in entries}, len(entries)
-    assert findings_but_the_count(entries, read=blobs.__getitem__) == []
+    assert payload_findings(entries, read=blobs.__getitem__) == []

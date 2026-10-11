@@ -18,6 +18,7 @@ and a script telling its reader to run a command that no longer exists stayed gr
 from __future__ import annotations
 
 import json
+import os
 import re
 from collections.abc import Callable
 from pathlib import Path
@@ -54,10 +55,18 @@ directory = "change"
 """
 INIT = '__version__ = "{v}"\n'
 LOCK = '[[package]]\nname = "stayfixed"\nversion = "{v}"\nsource = {{ editable = "." }}\n'
-MARKETPLACE = {"name": "stayfixed-marketplace", "plugins": [{"name": "stayfixed", "source": "./"}]}
+# The repository the marketplace fetches the plugin from, written out rather than read from the
+# script, as every expectation here is.
+PLUGIN_URL = "https://github.com/stayfixed/stayfixed-plugin.git"
 # The plugin directory's count, written out rather than read from the script: the number is the
 # page's ("Keep the plugin to 512 files or fewer"), and `tests/test_payload.py` reads the script's.
 FILES_LIMIT = 512
+
+
+def marketplace_at(version: str) -> dict[str, object]:
+    """The marketplace a release commit carries: one `url` entry pinned to `v<version>`."""
+    source = {"source": "url", "url": PLUGIN_URL, "ref": f"v{version}"}
+    return {"name": "stayfixed-marketplace", "plugins": [{"name": "stayfixed", "source": source}]}
 
 
 def repo(
@@ -70,7 +79,7 @@ def repo(
     changelog: str,
     lock: str | None = None,
     fragments: int = 0,
-    marketplace: dict[str, object] | None = None,
+    marketplace: str | None = None,
 ) -> Path:
     (tmp_path / "src" / "stayfixed").mkdir(parents=True)
     (tmp_path / ".claude-plugin").mkdir()
@@ -83,7 +92,7 @@ def repo(
         json.dumps({"name": "stayfixed", "version": claude})
     )
     (tmp_path / ".claude-plugin" / "marketplace.json").write_text(
-        json.dumps(marketplace or MARKETPLACE)
+        json.dumps(marketplace_at(pyproject if marketplace is None else marketplace))
     )
     (tmp_path / ".codex-plugin" / "plugin.json").write_text(
         json.dumps({"name": "stayfixed", "version": codex})
@@ -134,23 +143,6 @@ def test_without_fragments_the_changelog_must_match(tmp_path: Path) -> None:
     assert any("CHANGELOG.md" in problem for problem in release.check(root))
 
 
-def test_a_versioned_marketplace_entry_is_refused(tmp_path: Path) -> None:
-    versioned: dict[str, object] = {
-        "name": "m",
-        "plugins": [{"name": "stayfixed", "source": "./", "version": "0.1.0"}],
-    }
-    root = repo(
-        tmp_path,
-        pyproject="0.1.0",
-        init="0.1.0",
-        claude="0.1.0",
-        codex="0.1.0",
-        changelog="0.1.0",
-        marketplace=versioned,
-    )
-    assert any("marketplace" in problem for problem in release.check(root))
-
-
 def test_collect_reads_every_source_value(tmp_path: Path) -> None:
     root = repo(
         tmp_path,
@@ -160,6 +152,7 @@ def test_collect_reads_every_source_value(tmp_path: Path) -> None:
         codex="1.0.3",
         changelog="1.0.4",
         lock="1.0.5",
+        marketplace="1.0.6",
     )
     assert release.collect(root) == {
         "pyproject.toml": "1.0.0",
@@ -168,6 +161,7 @@ def test_collect_reads_every_source_value(tmp_path: Path) -> None:
         ".claude-plugin/plugin.json": "1.0.2",
         ".codex-plugin/plugin.json": "1.0.3",
         "CHANGELOG.md": "1.0.4",
+        ".claude-plugin/marketplace.json": "1.0.6",
     }
 
 
@@ -255,6 +249,7 @@ def _repo(
     codex: str = "0.1.0",
     changelog: str = "0.1.0",
     lock: str | None = None,
+    marketplace: str | None = None,
 ) -> Path:
     """`repo` with every version agreeing unless a test disagrees with one on purpose."""
     return repo(
@@ -265,7 +260,129 @@ def _repo(
         codex=codex,
         changelog=changelog,
         lock=lock,
+        marketplace=marketplace,
     )
+
+
+# --- The marketplace entry: the plugin repository, pinned to the release's tag ------------------
+
+
+def test_the_marketplace_ref_is_a_version_source(tmp_path: Path) -> None:
+    # The release commit names the tag it releases in the plugin repository, so the entry's `ref`
+    # is held to the version like any other source. Mutation (declared): the marketplace left out
+    # of the sources -> a ref one release ahead passes and this reddens.
+    root = _repo(tmp_path, marketplace="0.1.1")
+    assert release.check(root) == [
+        ".claude-plugin/marketplace.json says '0.1.1'; pyproject.toml says '0.1.0'"
+    ]
+
+
+def _with_entry(tmp_path: Path, *entries: dict[str, object]) -> Path:
+    root = _repo(tmp_path)
+    document = {"name": "stayfixed-marketplace", "plugins": list(entries)}
+    (root / ".claude-plugin" / "marketplace.json").write_text(json.dumps(document))
+    return root
+
+
+# The entry's own refusal, written out, for every source that is not the plugin repository's.
+NOT_FETCHED = (
+    ".claude-plugin/marketplace.json entry 'stayfixed' does not fetch the plugin from "
+    f"{PLUGIN_URL}; the plugin is published from stayfixed/stayfixed-plugin, as a url source "
+    "pinned to the release's tag"
+)
+
+
+def test_a_path_source_is_refused_as_the_plugin_folder_it_used_to_be(tmp_path: Path) -> None:
+    # `./` was the repository root, which is more than the plugin. Said once, by the entry's rule,
+    # and not again as a version the marketplace lacks. Mutation (declared): the drift loop stops
+    # passing over a marketplace that pins no tag -> a second problem and this reddens.
+    root = _with_entry(tmp_path, {"name": "stayfixed", "source": "./"})
+    assert release.check(root) == [NOT_FETCHED]
+
+
+def _url(**extra: object) -> dict[str, object]:
+    return {"source": "url", "url": PLUGIN_URL, "ref": "v0.1.0", **extra}
+
+
+@pytest.mark.parametrize(
+    ("entry", "problem"),
+    [
+        pytest.param(
+            {
+                "name": "stayfixed",
+                "source": _url(url="https://github.com/stayfixed/stayfixed.git"),
+            },
+            NOT_FETCHED,
+            id="another-url",
+        ),
+        pytest.param(
+            {
+                "name": "stayfixed",
+                "source": {"source": "github", "repo": "stayfixed/stayfixed-plugin"},
+            },
+            NOT_FETCHED,
+            id="a-github-source",
+        ),
+        pytest.param(
+            {"name": "stayfixed", "source": {"source": "url", "url": PLUGIN_URL}},
+            ".claude-plugin/marketplace.json entry 'stayfixed' pins ref None, which is no "
+            "release tag vX.Y.Z",
+            id="no-ref",
+        ),
+        pytest.param(
+            {"name": "stayfixed", "source": _url(ref="main")},
+            ".claude-plugin/marketplace.json entry 'stayfixed' pins ref 'main', which is no "
+            "release tag vX.Y.Z",
+            id="a-branch-ref",
+        ),
+        pytest.param(
+            {"name": "stayfixed", "source": _url(ref="v0.1.0-rc1")},
+            ".claude-plugin/marketplace.json entry 'stayfixed' pins ref 'v0.1.0-rc1', which is "
+            "no release tag vX.Y.Z",
+            id="a-suffixed-ref",
+        ),
+        pytest.param(
+            {"name": "stayfixed", "source": _url(ref="v0.1.\u0660")},
+            ".claude-plugin/marketplace.json entry 'stayfixed' pins ref 'v0.1.\u0660', which is "
+            "no release tag vX.Y.Z",
+            id="a-non-ascii-digit",
+        ),
+        pytest.param(
+            {"name": "stayfixed", "source": _url(sha="0" * 40)},
+            ".claude-plugin/marketplace.json entry 'stayfixed' pins a sha, which the release "
+            "commit cannot know; pin the tag by ref alone",
+            id="a-sha",
+        ),
+        pytest.param(
+            {"name": "stayfixed", "source": _url(), "version": "0.1.0"},
+            ".claude-plugin/marketplace.json entry 'stayfixed' carries a version; plugin.json "
+            "is the only source",
+            id="a-version-on-the-entry",
+        ),
+    ],
+)
+def test_an_entry_naming_another_repository_or_no_ref_is_refused(
+    tmp_path: Path, entry: dict[str, object], problem: str
+) -> None:
+    # Each case is one problem and that one. Mutations (declared): any `url` accepted ->
+    # `another-url` reddens; the ref's shape unasked -> `no-ref` and `a-branch-ref` redden; the
+    # shape matched at the start only -> `a-suffixed-ref` reddens; `\d` for the shape's digits ->
+    # `a-non-ascii-digit` passes the shape and is reported as version drift instead, and reddens; a
+    # `sha` let through -> `a-sha` reddens; a `version` on the entry let through ->
+    # `a-version-on-the-entry` reddens.
+    assert release.check(_with_entry(tmp_path, entry)) == [problem]
+
+
+@pytest.mark.parametrize("named", [0, 2], ids=["none", "two"])
+def test_a_marketplace_without_the_plugin_entry_is_named(tmp_path: Path, named: int) -> None:
+    # Mutation (declared): the first of several entries taken for the one -> `two` reddens.
+    # Mutation (declared): a marketplace with no one entry passes -> both cases redden.
+    entries: list[dict[str, object]] = [{"name": "stayfixed", "source": _url()}] * named
+    root = _with_entry(tmp_path, {"name": "another", "source": _url()}, *entries)
+    assert release.check(root) == [
+        f".claude-plugin/marketplace.json has {named} entries named 'stayfixed'; it must have "
+        f"exactly one, fetching the plugin from {PLUGIN_URL}"
+    ]
 
 
 @pytest.mark.parametrize(
@@ -500,41 +617,78 @@ def _at(tmp_path: Path, version: str) -> Path:
     )
 
 
-def _committed(root: Path, *, files: int = 0, under: str = "padding") -> Path:
-    """`root` as a git checkout whose `HEAD` tracks every file it holds, padded with one-line
-    files in `under` until it tracks `files`, when `files` is more than it already holds.
+# The plugin's nine paths, spelled out rather than read from `scripts/plugin_tree.py`, and a file
+# under each that `repo` does not already write: the two manifests and `src/stayfixed/__init__.py`
+# are version sources it writes. Not `hooks/run-hook.sh`, whose presence beside the other two
+# recorded files would ask the fixture for a release record.
+NINE = (
+    ".claude-plugin/plugin.json",
+    ".codex-plugin/plugin.json",
+    "hooks",
+    "scripts/stayfixed",
+    "src/stayfixed",
+    "skills",
+    "agents",
+    "README.md",
+    "LICENSE",
+)
+BESIDE_THE_SOURCES = {
+    "hooks/hooks.json": "{}\n",
+    "scripts/stayfixed": "#!/bin/sh\n",
+    "agents/navigator.md": "# navigator\n",
+    "README.md": "# stayfixed\n",
+    "LICENSE": "MIT\n",
+}
+# How many of the plugin tree's files `_with_plugin_paths` writes outside `skills/`: the three
+# sources under the plugin's paths and the five files above.
+OUTSIDE_SKILLS = 3 + len(BESIDE_THE_SOURCES)
 
-    `check --tag` counts the plugin folder in `HEAD`'s tree, so a tree it judges whole is a
-    committed one; outside a checkout there is nothing to count, and that is a problem too.
+
+def _with_plugin_paths(root: Path, *, skills: int = 1) -> Path:
+    """`root` as a git checkout whose `HEAD` holds a file under each of the plugin's nine paths,
+    `skills` of them under `skills/`, and everything else `root` holds.
+
+    `check --tag` counts the plugin tree at `HEAD`, which `scripts/plugin_tree.py` refuses to
+    read without each of its paths, so a tag test that expects nothing wrong builds on this.
     """
-    git(root, "init", "-q", "-b", "main")
-    git(root, "add", "-A")
-    held = git(root, "ls-files", "-z").count("\0")
-    (root / under).mkdir(parents=True, exist_ok=True)
-    for index in range(files - held):
-        (root / under / f"{index}.md").write_text("x\n", encoding="utf-8")
+    for relative, text in BESIDE_THE_SOURCES.items():
+        (root / relative).parent.mkdir(parents=True, exist_ok=True)
+        (root / relative).write_text(text, encoding="utf-8")
+    for index in range(skills):
+        (root / "skills" / f"s{index}").mkdir(parents=True)
+        (root / "skills" / f"s{index}" / "SKILL.md").write_text("x\n", encoding="utf-8")
+    assert all((root / path).exists() for path in NINE)
+    if not (root / ".git").exists():
+        git(root, "init", "-q", "-b", "main")
     git(root, "add", "-A")
     git(root, "commit", "-q", "-m", "tree")
     return root
 
 
-def _over(source: str, count: int) -> str:
+def _beside_the_plugin(root: Path, files: int) -> Path:
+    """`root` with `files` one-line files under `docs/`, which is no part of the plugin."""
+    (root / "docs").mkdir()
+    for index in range(files):
+        (root / "docs" / f"{index}.md").write_text("x\n", encoding="utf-8")
+    return root
+
+
+def _over(count: int) -> str:
     """The count's refusal, written out."""
     return (
-        f"the plugin folder {source} holds {count} files, over the {FILES_LIMIT} the plugin "
-        "directory lists unheld; publish the plugin from its own repository first "
-        "(RELEASING.md, section 2)"
+        f"the plugin tree (scripts/plugin_tree.py) holds {count} files, over the {FILES_LIMIT} "
+        "the plugin directory lists unheld"
     )
 
 
 @needs_git
 def test_a_tag_that_names_another_version_is_drift(tmp_path: Path) -> None:
     # The release workflow used to compare the tag to the package in shell; the gate that
-    # exists to say "one version everywhere" now takes the tag as a seventh source. Both
+    # exists to say "one version everywhere" now holds the tag against its seven sources. Both
     # tag shapes are accepted — `vX.Y.Z` (the workflow's trigger) and the platform's
     # `stayfixed--vX.Y.Z` — because either may be the one the run was created from.
     # Mutation (declared): accept any tag -> the first assertion reddens.
-    root = _committed(_at(tmp_path, "1.2.3"))
+    root = _with_plugin_paths(_at(tmp_path, "1.2.3"))
     assert release.check(root, tag="v1.2.4") == [
         "tag v1.2.4 is neither v1.2.3 nor stayfixed--v1.2.3; pyproject.toml says '1.2.3'"
     ]
@@ -561,7 +715,7 @@ def test_the_drift_message_says_what_was_checked_rather_than_inventing_a_version
     # earlier one, so the split happened to be right and the tests passed for that reason.
     #
     # Mutation (declared): the derived `named` comes back -> all three assertions redden.
-    root = _committed(_at(tmp_path, "1.2.3"))
+    root = _with_plugin_paths(_at(tmp_path, "1.2.3"))
     # A bare version, which is the tag `git tag 1.2.3` makes and the one that read as agreeing
     # with itself.
     assert release.check(root, tag="1.2.3") == [
@@ -584,7 +738,7 @@ def test_a_tag_with_pending_fragments_is_refused(tmp_path: Path) -> None:
     # written before the release assembles it. AT a tag there is nothing left to assemble:
     # a fragment still pending means the changelog the users read is not the one the tag
     # claims. Mutation (declared): skip the fragment check under `tag` -> reddens.
-    root = _committed(_at(tmp_path, "1.2.3"))
+    root = _with_plugin_paths(_at(tmp_path, "1.2.3"))
     (root / "changelog.d" / "late.feature.md").write_text("late\n", encoding="utf-8")
     assert release.check(root) == []
     problems = release.check(root, tag="v1.2.3")
@@ -595,74 +749,64 @@ def test_a_tag_with_pending_fragments_is_refused(tmp_path: Path) -> None:
 
 
 @needs_git
-def test_a_tag_refuses_a_plugin_folder_over_the_directory_count(tmp_path: Path) -> None:
-    # The plugin directory holds a plugin past 512 files for a reviewer, and the plugin folder is
-    # the repository root, so a pull request may carry the tree past it and a release may not.
-    # Plain `check` runs on every pull request and never counts. Mutation (declared): the count
-    # never refuses -> the first assertion reddens. Mutation (declared): the count asked without
-    # `--tag` too -> the second reddens.
-    root = _committed(_at(tmp_path, "1.2.3"), files=FILES_LIMIT + 1)
-    assert release.check(root, tag="v1.2.3") == [_over("'./'", FILES_LIMIT + 1)]
+def test_a_tag_refuses_a_plugin_tree_over_the_directory_count(tmp_path: Path) -> None:
+    # The plugin directory holds a plugin past 512 files for a reviewer. The tree is the plugin's
+    # paths and nothing else: the 600 files under `docs/` are not in it. Plain `check` does not
+    # count; `tests/test_payload.py` holds the same count on every pull request. Mutation
+    # (declared): the count never refuses -> the first assertion reddens.
+    root = _beside_the_plugin(_at(tmp_path, "1.2.3"), 600)
+    _with_plugin_paths(root, skills=FILES_LIMIT + 1 - OUTSIDE_SKILLS)
+    assert release.check(root, tag="v1.2.3") == [_over(FILES_LIMIT + 1)]
     assert release.check(root) == []
 
 
 @needs_git
-def test_a_tag_passes_a_plugin_folder_at_the_count_whatever_the_disk_holds(tmp_path: Path) -> None:
-    # 512 files is inside the limit, and the count is `HEAD`'s, as the directory reads a commit:
-    # a file only staged and one only on disk are not in it. Mutation (declared): `>` becomes
-    # `>=` -> this reddens. Mutation (declared): the listing read from the index -> the staged
-    # file counts and this reddens.
-    root = _committed(_at(tmp_path, "1.2.3"), files=FILES_LIMIT)
-    (root / "staged.md").write_text("x\n", encoding="utf-8")
-    git(root, "add", "staged.md")
-    (root / "loose.md").write_text("x\n", encoding="utf-8")
+def test_a_tag_passes_a_plugin_tree_at_the_count(tmp_path: Path) -> None:
+    # 512 files is inside the limit, beside 600 that are no part of the plugin, and the count is
+    # `HEAD`'s, as the directory reads a commit: a file only staged under `skills/` and one only on
+    # disk are not in it. Mutations (declared): `>` becomes `>=` -> this reddens; the whole
+    # repository counted -> the 600 count and this reddens; the listing read from the index -> the
+    # staged file counts and this reddens.
+    root = _beside_the_plugin(_at(tmp_path, "1.2.3"), 600)
+    _with_plugin_paths(root, skills=FILES_LIMIT - OUTSIDE_SKILLS)
+    (root / "skills" / "staged").mkdir()
+    (root / "skills" / "staged" / "SKILL.md").write_text("x\n", encoding="utf-8")
+    git(root, "add", "skills/staged/SKILL.md")
+    (root / "skills" / "loose.md").write_text("x\n", encoding="utf-8")
     assert release.check(root, tag="v1.2.3") == []
 
 
 @needs_git
-def test_the_count_reads_the_folder_the_marketplace_source_names(tmp_path: Path) -> None:
-    # A `./plugin` source is that subtree and nothing beside it: 512 files in it pass however many
-    # the rest of the repository holds, and the 513th in it is refused. Mutation (declared): the
-    # count reads the repository root whatever the source says -> the first assertion reddens.
-    nested = {"name": "m", "plugins": [{"name": "stayfixed", "source": "./plugin"}]}
-    root = _at(tmp_path, "1.2.3")
-    (root / ".claude-plugin" / "marketplace.json").write_text(json.dumps(nested), encoding="utf-8")
-    _committed(root, files=FILES_LIMIT + 100)
-    (root / "plugin").mkdir()
-    for index in range(FILES_LIMIT):
-        (root / "plugin" / f"{index}.md").write_text("x\n", encoding="utf-8")
+def test_a_tag_whose_plugin_tree_cannot_be_read_is_a_count_finding(tmp_path: Path) -> None:
+    # `scripts/plugin_tree.py` refuses a symlink among the plugin's files, and that refusal is one
+    # count problem quoting it: returned, never raised, so `--json` keeps its object. Mutation
+    # (declared): a tree that could not be counted read as nought files -> no problem and this
+    # reddens. Mutation (declared): the count asked without `--tag` too -> the last assertion
+    # reddens.
+    root = _with_plugin_paths(_at(tmp_path, "1.2.3"))
+    os.symlink("../README.md", root / "skills" / "link")
     git(root, "add", "-A")
-    git(root, "commit", "-q", "-m", "the plugin")
-    assert release.check(root, tag="v1.2.3") == []
-    (root / "plugin" / "one-more.md").write_text("x\n", encoding="utf-8")
-    git(root, "add", "-A")
-    git(root, "commit", "-q", "-m", "one more")
-    assert release.check(root, tag="v1.2.3") == [_over("'./plugin'", FILES_LIMIT + 1)]
-
-
-def test_a_plugin_the_marketplace_fetches_from_elsewhere_is_not_counted(tmp_path: Path) -> None:
-    # A `source` object names a plugin in another repository, which this tree holds none of: the
-    # owner's way past the count is that repository. Not a git checkout, so a count asked here
-    # would be a problem. Mutation (declared): every source taken for a path -> reddens.
-    elsewhere = {
-        "name": "m",
-        "plugins": [{"name": "stayfixed", "source": {"source": "github", "repo": "o/stayfixed"}}],
-    }
-    root = _at(tmp_path, "1.2.3")
-    marketplace = root / ".claude-plugin" / "marketplace.json"
-    marketplace.write_text(json.dumps(elsewhere), encoding="utf-8")
-    assert release.check(root, tag="v1.2.3") == []
+    git(root, "commit", "-q", "-m", "a symlink")
+    kinds, _ = release.checked_by_kind(root, tag="v1.2.3")
+    (problem,) = kinds["plugin tree count"]
+    assert problem.startswith("the plugin tree could not be counted: "), problem
+    assert "skills/link" in problem and "120000" in problem, problem
+    assert [p for kind, found in kinds.items() if kind != "plugin tree count" for p in found] == []
+    assert release.check(root) == []
 
 
 def test_a_tag_outside_a_git_checkout_is_refused_for_want_of_a_count(tmp_path: Path) -> None:
     # A release gate that cannot count does not pass: release.yml runs it in the checkout the tag
-    # names, and anywhere else there is no committed tree to read. Mutation (declared): git's
-    # failure read as an empty listing -> the count is nought and this reddens.
+    # names, and anywhere else there is no committed tree to read. Mutation (declared): a tree
+    # that could not be counted read as nought files -> this reddens. Mutation (declared): the
+    # count asked without `--tag` too -> the last assertion reddens.
     root = _at(tmp_path, "1.2.3")
     problems = release.check(root, tag="v1.2.3")
-    assert len(problems) == 1 and problems[0].startswith(
-        "the plugin folder './' could not be counted in HEAD's tree"
-    ), problems
+    assert len(problems) == 1, problems
+    assert problems[0].startswith("the plugin tree could not be counted: "), problems
+    assert "HEAD names no commit" in problems[0], problems
+    assert problems[0].endswith("; run the check in the git checkout the tag names"), problems
+    assert release.check(root) == []
 
 
 def test_every_command_opens_its_own_help_with_what_it_does() -> None:
