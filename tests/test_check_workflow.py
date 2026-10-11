@@ -27,23 +27,26 @@ import pytest
 
 import stayfixed
 from stayfixed.config.loader import CONFIG_FILE
-from tests import scriptload
+from tests import plugintree, scriptload
 from tests.assess.baserepo import clone, commit
-from tests.floor import floor_env
+from tests.floor import developer_free_environ, floor_env
 from tests.gitfixture import git, needs_git
 from tests.ownerhome import checkout_with_owner_home
 from tests.test_fixtures import (
     CHECK_WORKFLOW,
     CI_WORKFLOW,
     RELEASE_WORKFLOW,
+    SMOKE_WORKFLOW,
     needs_bash,
     needs_ci_workflow,
     needs_release_workflow,
+    needs_smoke_workflow,
     needs_workflow,
     step_script,
 )
 from tests.workflow_yaml import Node, load
 
+GATES = "gates"
 JUDGE = "The configuration and the built-in gates"
 CUSTOM = "The project's own gates"
 PROOF = "stayfixed runs at all"
@@ -86,6 +89,11 @@ GATE_ENV: dict[str, Node] = {
     "ONLY": "${{ inputs.only }}",
 }
 SCRIPT = "<script>"
+# What each gate invocation goes on to, on the line it continues onto with `\`.
+BACKSLASH = "\\"
+GATE_ARGUMENTS = (
+    '--workflow-sha "$WORKFLOW_SHA" --annotate --summary "$GITHUB_STEP_SUMMARY" "${only[@]}"'
+)
 # The job, every step whole but its script, in order; an action is named without its ref, so a
 # pin moving is not a change here. Everything that reaches a step's process other than the
 # platform's own variables is in this list: its `env:`, its working directory, its action's
@@ -134,8 +142,9 @@ STEPS: list[dict[str, Node]] = [
     {"name": JUDGE, "env": GATE_ENV, "run": SCRIPT},
     {"name": CUSTOM, "env": GATE_ENV, "run": SCRIPT},
 ]
-# And each script's text, line for line, comments and blank lines aside: `STEPS` holds what a
-# step is given, and this holds what it does with it. A line that is not an invocation can still
+# And each script's text, command for command as `_lines` reads it — a line continued with `\` is
+# one command, and comments, blank lines and indentation are aside: `STEPS` holds what a step is
+# given, and this holds what it does with it. A line that is not an invocation can still
 # change the verdict's process — `export PYTHONUSERBASE=…` or `. project/.ci-env` in a gate step,
 # or a copy into `stayfixed/src/` from an earlier one, where the verdict's `PYTHONPATH` imports a
 # `sitecustomize.py` at start-up — and every such line is a line this list does not carry.
@@ -143,11 +152,11 @@ CHECKOUT_STEP = "The checkout is the commit this workflow file is at"
 SCRIPTS: dict[str, list[str]] = {
     BOUND_STEP: [
         'case "$TIMEOUT_MINUTES" in',
-        "  [5-9]|[1-5][0-9]|60) ;;",
-        "  *)",
-        '    echo "::error::timeout-minutes: must be a whole number of minutes from 5 to 60"',
-        "    exit 1",
-        "    ;;",
+        "[5-9]|[1-5][0-9]|60) ;;",
+        "*)",
+        'echo "::error::timeout-minutes: must be a whole number of minutes from 5 to 60"',
+        "exit 1",
+        ";;",
         "esac",
     ],
     CHECKOUT_STEP: [
@@ -162,24 +171,24 @@ SCRIPTS: dict[str, list[str]] = {
     PROOF: ["python3 -m stayfixed --version"],
     BASE_STEP: [
         'case "$INPUT_PATH" in',
-        '  ""|.|./) p="" ;;',
-        '  *) p="${INPUT_PATH#./}"; p="${p%/}" ;;',
+        '""|.|./) p="" ;;',
+        '*) p="${INPUT_PATH#./}"; p="${p%/}" ;;',
         "esac",
         'case "$p" in',
-        "  *[!A-Za-z0-9._/-]*)",
-        "    echo \"::error::path: must be a plain relative path — letters, digits, '.', '_', '-'"
+        "*[!A-Za-z0-9._/-]*)",
+        "echo \"::error::path: must be a plain relative path — letters, digits, '.', '_', '-'"
         " and '/'\"",
-        "    exit 1",
-        "    ;;",
-        "  ..|../*|*/..|*/../*)",
-        '    echo "::error::path: must not leave the checkout"',
-        "    exit 1",
-        "    ;;",
+        "exit 1",
+        ";;",
+        "..|../*|*/..|*/../*)",
+        'echo "::error::path: must not leave the checkout"',
+        "exit 1",
+        ";;",
         "esac",
         'if [ -n "$PR_BASE" ] && [ -n "$INPUT_BASE" ] && [ "$INPUT_BASE" != "$PR_BASE" ]; then',
-        "  echo \"::error::base: names another branch, but this pull request's base is"
+        "echo \"::error::base: names another branch, but this pull request's base is"
         " '$PR_BASE'; the gates' configuration is read from the base the platform reports\"",
-        "  exit 1",
+        "exit 1",
         "fi",
         'base="$INPUT_BASE"',
         '[ -n "$base" ] || base="$PR_BASE"',
@@ -187,11 +196,11 @@ SCRIPTS: dict[str, list[str]] = {
         '[ -n "$base" ] || { echo "::error::no base ref: pass \'base:\'"; exit 1; }',
         'git check-ref-format --branch "$base" >/dev/null',
         'base_sha="$(git rev-parse --verify --quiet "refs/remotes/origin/$base^{commit}")" ||',
-        '  { echo "::error::origin/$base is not in this checkout — check out with fetch-depth: 0,'
+        '{ echo "::error::origin/$base is not in this checkout — check out with fetch-depth: 0,'
         ' or name a base that exists"; exit 1; }',
         "{",
-        '  echo "base_sha=$base_sha"',
-        '  echo "root=project/${p:-.}"',
+        'echo "base_sha=$base_sha"',
+        'echo "root=project/${p:-.}"',
         '} >> "$GITHUB_OUTPUT"',
     ],
     JUDGE: [
@@ -199,39 +208,52 @@ SCRIPTS: dict[str, list[str]] = {
         "only=()",
         'for name in $ONLY; do only+=("--only=$name"); done',
         "set +f",
-        STAYFIXED_INVOCATIONS[1],
-        '  --workflow-sha "$WORKFLOW_SHA" --annotate --summary "$GITHUB_STEP_SUMMARY" "${only[@]}"',
+        f"{STAYFIXED_INVOCATIONS[1].removesuffix(BACKSLASH).rstrip()} {GATE_ARGUMENTS}",
     ],
     CUSTOM: [
         "set -f",
         "only=()",
         'for name in $ONLY; do only+=("--only=$name"); done',
         "set +f",
-        STAYFIXED_INVOCATIONS[2],
-        '  --workflow-sha "$WORKFLOW_SHA" --annotate --summary "$GITHUB_STEP_SUMMARY" "${only[@]}"',
+        f"{STAYFIXED_INVOCATIONS[2].removesuffix(BACKSLASH).rstrip()} {GATE_ARGUMENTS}",
     ],
 }
 
 
-def _workflow() -> dict[str, Node]:
-    """`check.yml`, read at call time (the sdist carries no `.github/`) by the strict reader."""
-    document = load(CHECK_WORKFLOW.read_text(encoding="utf-8"))
-    assert isinstance(document, dict), document
+def _document(workflow: Path) -> dict[str, Node]:
+    """A workflow, read at call time (the sdist carries no `.github/`) by the strict reader."""
+    document = load(workflow.read_text(encoding="utf-8"))
+    assert isinstance(document, dict), workflow
     return document
 
 
-def _job() -> dict[str, Node]:
-    jobs = _workflow()["jobs"]
-    assert isinstance(jobs, dict) and list(jobs) == ["gates"], jobs
-    job = jobs["gates"]
-    assert isinstance(job, dict), job
-    return job
+def _workflow() -> dict[str, Node]:
+    """`check.yml`."""
+    return _document(CHECK_WORKFLOW)
+
+
+def _jobs(workflow: Path) -> dict[str, dict[str, Node]]:
+    """A workflow's jobs, every one a mapping."""
+    jobs = _document(workflow).get("jobs")
+    assert isinstance(jobs, dict) and all(isinstance(job, dict) for job in jobs.values()), workflow
+    return {name: job for name, job in jobs.items() if isinstance(job, dict)}
+
+
+def _job(workflow: Path, name: str) -> dict[str, Node]:
+    """The named job of a workflow."""
+    return _jobs(workflow)[name]
+
+
+def _steps_of(workflow: Path, job: str) -> list[dict[str, Node]]:
+    """The named job's steps, every one a mapping."""
+    steps = _job(workflow, job).get("steps")
+    assert isinstance(steps, list) and all(isinstance(step, dict) for step in steps), steps
+    return [step for step in steps if isinstance(step, dict)]
 
 
 def _steps() -> list[dict[str, Node]]:
-    steps = _job()["steps"]
-    assert isinstance(steps, list) and all(isinstance(step, dict) for step in steps), steps
-    return [step for step in steps if isinstance(step, dict)]
+    """`check.yml`'s one job's steps."""
+    return _steps_of(CHECK_WORKFLOW, GATES)
 
 
 def _name(step: dict[str, Node]) -> str:
@@ -261,18 +283,28 @@ def _scripts() -> list[str]:
     return [step["run"] for step in _steps() if isinstance(step.get("run"), str)]  # type: ignore[misc]
 
 
-def _commands(script: str) -> list[str]:
-    """The script's lines, less its blank lines and comment lines — except one that follows a
-    line continued with `\\`, because there bash ends the command the line above says goes on,
-    and the lines after it run as a command of their own."""
-    kept: list[str] = []
-    previous = ""
-    for line in script.splitlines():
-        bare = line.strip()
-        if (bare and not bare.startswith("#")) or previous.endswith("\\"):
-            kept.append(line)
-        previous = line
-    return kept
+def _lines(script: str) -> list[str]:
+    """The script's commands as bash reads them, one to a line: a line continued with `\\` joined
+    to the next, and indentation, blank lines and comment lines dropped. The one reader of a
+    script's lines, so a case holding a script and a case finding a command in it read the same
+    commands. A comment ends at its line whatever it ends with, so a comment line ending in `\\`
+    continues nothing and the command after it is still read; a comment line after a continued one
+    is the end of that command, as bash reads it, and is kept with it."""
+    lines: list[str] = []
+    pending = ""
+    for raw in script.splitlines():
+        bare = raw.strip()
+        line = f"{pending} {bare}" if pending else bare
+        pending = ""
+        if not line or line.startswith("#"):
+            continue
+        if raw.endswith("\\"):
+            pending = line[:-1].rstrip()
+        else:
+            lines.append(line)
+    if pending:
+        lines.append(pending)
+    return lines
 
 
 def _clone(tmp_path: Path, base: str = BASE) -> tuple[Path, str]:
@@ -364,13 +396,21 @@ def _marker_gate(marker: Path) -> str:
 
 
 @needs_workflow
+def test_the_reusable_workflow_is_one_job() -> None:
+    # Every case below is about `gates`, and a second job beside it would run with the caller's
+    # token and checkout under none of them. Mutation (declared): `check.yml` gains a job.
+    jobs = _workflow()["jobs"]
+    assert isinstance(jobs, dict) and list(jobs) == [GATES], jobs
+
+
+@needs_workflow
 def test_one_job_whose_judging_steps_may_not_fail_and_run_in_order() -> None:
     # The verdict is the job's status, so a step that may fail — `continue-on-error`, or an
     # `if:` that runs it after a failure or skips it — is a verdict that can be turned green.
     # `stayfixed gate` already exits 0 for an advisory gate's findings, so no step here needs
     # either. Mutations (declared): the judging step gains `continue-on-error: true`; the custom
     # step gains `if: always()`, which would run the repository's commands after a refusal.
-    job = _job()
+    job = _job(CHECK_WORKFLOW, GATES)
     # And the job itself carries neither: an `if:` on `gates` skips it, and a skipped job is a
     # required check the platform reports as passing. So the job's keys are held whole, which
     # also keeps a job-level `env:` from reaching every step. Mutation (declared): the job gains
@@ -422,7 +462,7 @@ def test_the_job_s_time_limit_is_an_input_the_expression_holds_inside_its_bounds
     assert isinstance(declared, dict), declared
     assert declared["type"] == "number", declared
     assert declared["default"] == str(TIMEOUT_DEFAULT), declared
-    bound = _job()["timeout-minutes"]
+    bound = _job(CHECK_WORKFLOW, GATES)["timeout-minutes"]
     assert isinstance(bound, str), bound
     match = _BOUND.fullmatch(bound)
     assert match is not None, bound
@@ -443,10 +483,7 @@ def _bound_step(value: str) -> tuple[int, str]:
     return done.returncode, done.stdout + done.stderr
 
 
-SMOKE_WORKFLOW = CHECK_WORKFLOW.parent / "smoke.yml"
-
-
-@pytest.mark.skipif(not SMOKE_WORKFLOW.is_file(), reason="smoke.yml is not in the sdist")
+@needs_smoke_workflow
 def test_a_real_run_passes_the_time_limit_a_value_of_its_own() -> None:
     # The cases here hold the expression's text and run the bound step's script; neither proves
     # that the platform takes a value a caller passed, through the expression, as the job's bound.
@@ -472,7 +509,7 @@ def _demanded_summary(step_name: str, output: str) -> str:
     return str(found[0])
 
 
-@pytest.mark.skipif(not SMOKE_WORKFLOW.is_file(), reason="smoke.yml is not in the sdist")
+@needs_smoke_workflow
 def test_the_smoke_job_demands_the_summary_the_hook_script_prints_over_every_entry() -> None:
     # Each smoke script holds its own floor in constants and prints a summary that is green after
     # one row as after all of them; the job's `grep -qx` is the CI side of that floor, and a copy
@@ -487,7 +524,7 @@ def test_the_smoke_job_demands_the_summary_the_hook_script_prints_over_every_ent
     assert _demanded_summary(step, "hooks.out") == expected
 
 
-@pytest.mark.skipif(not SMOKE_WORKFLOW.is_file(), reason="smoke.yml is not in the sdist")
+@needs_smoke_workflow
 def test_the_smoke_job_demands_the_summary_the_exfiltration_scenario_prints_over_every_row() -> (
     None
 ):
@@ -719,7 +756,8 @@ def test_the_verdict_s_process_gets_only_the_environment_its_step_names() -> Non
     """
     workflow = _workflow()
     assert list(workflow) == ["name", "on", "permissions", "jobs"], list(workflow)
-    assert _job()["defaults"] == {"run": {"shell": "bash"}}, _job()["defaults"]
+    defaults = _job(CHECK_WORKFLOW, GATES)["defaults"]
+    assert defaults == {"run": {"shell": "bash"}}, defaults
     assert [_shape(step) for step in _steps()] == STEPS, [_shape(step) for step in _steps()]
     # Mutation (declared): the base step appends to `$GITHUB_ENV`.
     assert [s for s in _scripts() if "GITHUB_ENV" in s or "GITHUB_PATH" in s] == []
@@ -754,7 +792,7 @@ def test_every_script_the_job_runs_is_held_line_for_line() -> None:
     Mutations (declared): the judging step exports `PYTHONUSERBASE`; the custom step sources a
     file from the caller's checkout; the base step copies a file into stayfixed's checkout.
     """
-    found = {_name(step): _commands(str(step["run"])) for step in _steps() if "run" in step}
+    found = {_name(step): _lines(str(step["run"])) for step in _steps() if "run" in step}
     assert found == SCRIPTS, found
 
 
@@ -867,44 +905,11 @@ def test_the_custom_step_runs_only_the_custom_gates_only_names(tmp_path: Path) -
 # from, not whether it runs.
 
 RENDER = "uv run python scripts/plugin_tree.py render"
-needs_smoke_workflow = pytest.mark.skipif(
-    not SMOKE_WORKFLOW.is_file(), reason="smoke.yml is not in the sdist"
-)
-
-
-def _steps_of(workflow: Path, job: str) -> list[dict[str, Node]]:
-    """The named job's steps, as the strict reader reads the workflow."""
-    document = load(workflow.read_text(encoding="utf-8"))
-    assert isinstance(document, dict), workflow
-    jobs = document.get("jobs")
-    assert isinstance(jobs, dict), workflow
-    found = jobs[job]
-    assert isinstance(found, dict), (workflow, job)
-    steps = found.get("steps")
-    assert isinstance(steps, list), (workflow, job)
-    return [step for step in steps if isinstance(step, dict)]
 
 
 def _run(step: dict[str, Node]) -> str:
     script = step.get("run")
     return script if isinstance(script, str) else ""
-
-
-def _lines(script: str) -> list[str]:
-    """The script's commands as bash reads them: a line continued with `\\` joined to the next,
-    and blank lines and comment lines dropped."""
-    lines: list[str] = []
-    pending = ""
-    for raw in script.splitlines():
-        line = f"{pending} {raw.strip()}" if pending else raw.strip()
-        pending = ""
-        if line.endswith("\\"):
-            pending = line[:-1].rstrip()
-        elif line and not line.startswith("#"):
-            lines.append(line)
-    if pending:
-        lines.append(pending)
-    return lines
 
 
 def _options(line: str) -> dict[str, str]:
@@ -925,16 +930,22 @@ def _with(step: dict[str, Node], key: str) -> str:
     return str(given[key]).replace("${{ runner.temp }}", "$RUNNER_TEMP")
 
 
-def _render_step(workflow: Path, job: str) -> tuple[int, dict[str, str]]:
-    """The one step of `job` that renders the plugin tree: its index and its options."""
+def _tree_command(workflow: Path, job: str, command: str) -> tuple[int, str]:
+    """The one command of `job` that runs `scripts/plugin_tree.py <command>`: its step's index and
+    the command line."""
     found = [
         (index, line)
         for index, step in enumerate(_steps_of(workflow, job))
         for line in _lines(_run(step))
-        if RENDER in line
+        if f"scripts/plugin_tree.py {command} " in line
     ]
-    assert len(found) == 1, (workflow.name, job, found)
-    index, line = found[0]
+    assert len(found) == 1, (workflow.name, job, command, found)
+    return found[0]
+
+
+def _render_step(workflow: Path, job: str) -> tuple[int, dict[str, str]]:
+    """The one step of `job` that renders the plugin tree: its index and its options."""
+    index, line = _tree_command(workflow, job, "render")
     assert line.startswith(RENDER), line
     return index, _options(line)
 
@@ -1075,19 +1086,23 @@ def test_the_validator_reads_the_rendered_manifests() -> None:
 
 @needs_release_workflow
 def test_the_release_attests_the_plugin_tree_it_rendered_from_the_commit() -> None:
-    # `publish_plugin.py` pushes a tree only when its manifest is one this job attested, so the
-    # job renders the commit it runs on and attests the manifest the render wrote, at the same
-    # pinned action as `dist/*`. Mutation (oracle): `mutations/`'s "the release stops attesting
-    # the plugin tree" drops that attestation step.
+    # The `attest` job computes the plugin commit of the commit this run builds, writes the
+    # manifest of its tree beside it, and attests that manifest at the same pinned action as
+    # `dist/*`; `github-release` attaches it, so anyone can compare the plugin repository's tag
+    # with the file this run attested. Mutation (oracle): `mutations/`'s "the release stops
+    # attesting the plugin tree" drops that attestation step.
     #
     # `--rev "$GITHUB_SHA"` is a text pin with no behavioural mutation: on a tag push `HEAD` is
-    # that commit, so a render of `HEAD` writes the same tree and no run can tell them apart. It
-    # is pinned because `GITHUB_SHA` is the attestation's source digest, and the render, that
-    # digest and the commit `publish_plugin.py` checks are then one value by construction.
-    index, render = _render_step(RELEASE_WORKFLOW, "build")
-    assert render["--rev"] == "$GITHUB_SHA", render
-    written = render["--manifest-file"]
-    steps = _steps_of(RELEASE_WORKFLOW, "build")
+    # that commit, so a commit of `HEAD` is the same commit and no run can tell them apart. It is
+    # pinned because `GITHUB_SHA` is the attestation's source digest, and the commit read, that
+    # digest and the commit the publisher checks are then one value by construction.
+    index, line = _tree_command(RELEASE_WORKFLOW, "attest", "commit")
+    # The runner's own interpreter, and no `uv`: the job runs no suite and installs nothing.
+    assert line.startswith("python3 scripts/plugin_tree.py commit "), line
+    options = _options(line)
+    assert options["--rev"] == "$GITHUB_SHA", options
+    written = options["--manifest-file"]
+    steps = _steps_of(RELEASE_WORKFLOW, "attest")
     attests = [step for step in steps if _uses(step) == "actions/attest-build-provenance"]
     subjects = {_with(step, "subject-path"): steps.index(step) for step in attests}
     # The manifest is attested after it is written; `dist/*` keeps its own step, at the same pin
@@ -1095,6 +1110,15 @@ def test_the_release_attests_the_plugin_tree_it_rendered_from_the_commit() -> No
     assert subjects.get(written, -1) > index, (written, subjects)
     assert "dist/*" in subjects, subjects
     assert len({step.get("uses") for step in attests}) == 1, attests
+    # And `dist/*` is the one `build` uploaded, fetched before it is attested. Mutation
+    # (declared): the `dist` download dropped, and the attestation names no file; reddens here.
+    fetched = [
+        index
+        for index, step in enumerate(steps)
+        if _uses(step) == "actions/download-artifact" and _with(step, "name") == "dist"
+    ]
+    assert len(fetched) == 1 and fetched[0] < subjects["dist/*"], (fetched, subjects)
+    assert _with(steps[fetched[0]], "path") == "dist/", steps[fetched[0]]
     # Handed to `github-release` as the artifact `plugin-tree`, which attaches it beside
     # `dist/*`. Mutation (oracle): `mutations/`'s "the Release stops carrying the plugin's
     # manifest" drops it from `gh release create`.
@@ -1103,8 +1127,8 @@ def test_the_release_attests_the_plugin_tree_it_rendered_from_the_commit() -> No
         for step in steps
         if _uses(step) == "actions/upload-artifact" and _with(step, "name") == "plugin-tree"
     ]
-    # Mutation (declared): the upload's path names the tree, `${{ runner.temp }}/plugin`, and
-    # not its manifest, and reddens here.
+    # Mutation (declared): the upload's path names the plugin repository, `${{ runner.temp
+    # }}/plugin.git`, and not the manifest, and reddens here.
     assert [_with(step, "path") for step in uploads] == [written], uploads
     # The action only warns when its path matches nothing, and the release then stops at
     # `github-release`, behind the approval. Mutation (oracle): `mutations/`'s "a missing plugin
@@ -1127,3 +1151,436 @@ def test_the_release_attests_the_plugin_tree_it_rendered_from_the_commit() -> No
     ]
     assert len(creates) == 1, creates
     assert f"{downloads[0]}/{Path(written).name}" in creates[0], creates[0]
+
+
+# --- The release's plugin commit: computed, attested and gated on ------------------------------
+#
+# The marketplace entry pins the plugin repository's commit by `sha`, and that commit is a function
+# of the release commit alone, so the release workflow can compute it with no credential and no
+# network: `attest` computes it, refuses a release commit whose pin is not it (`--require-pin`),
+# attests its manifest and hands the id on; the two jobs behind the `pypi` approval each refuse
+# to start until the plugin repository's tag names that id, which only the owner's run of
+# `scripts/publish_plugin.py` can make true.
+
+GATED = ("publish", "github-release")
+PLUGIN_GATE = "The plugin repository holds this release's commit"
+# The plugin repository, as every reader of it must name it.
+PLUGIN_REPOSITORY = "stayfixed/stayfixed-plugin"
+TAG = "v1.2.3"
+
+
+@needs_release_workflow
+@pytest.mark.parametrize("job", ["build", "attest"])
+def test_build_fetches_the_first_parent(job: str) -> None:
+    # `release.py check --tag` and the plugin commit both read the `sha` the release commit's
+    # first parent pins, as the commit's parent; `actions/checkout` fetches one commit unless told
+    # otherwise, and the reader then refuses, naming `fetch-depth: 2`, rather than read the parent
+    # as none. Mutation (oracle): `mutations/`'s "the release build fetches the tag's commit
+    # alone" drops `fetch-depth: 2` from `build`.
+    checkouts = [
+        step for step in _steps_of(RELEASE_WORKFLOW, job) if _uses(step) == "actions/checkout"
+    ]
+    assert len(checkouts) == 1, checkouts
+    assert _with(checkouts[0], "fetch-depth") == "2", checkouts[0]
+
+
+@needs_release_workflow
+def test_only_the_attest_job_can_attest() -> None:
+    # An attestation is signed with the job's OIDC token, so a job holding `id-token: write` and
+    # running the suite runs every test, and every dependency the lock installs, with the means to
+    # sign. The suite stays in `build`, which holds `contents: read` and nothing else, and the
+    # job that signs runs this repository's own script on the runner's interpreter and installs
+    # nothing. `publish` holds `id-token: write` too, for Trusted Publishing, and attests nothing.
+    # Mutation (oracle): `mutations/`'s "the release build can sign again" puts `id-token: write`
+    # back on `build`.
+    jobs = _jobs(RELEASE_WORKFLOW)
+    attesting = sorted(
+        name
+        for name in jobs
+        for step in _steps_of(RELEASE_WORKFLOW, name)
+        if _uses(step) == "actions/attest-build-provenance"
+    )
+    assert attesting == ["attest", "attest"], attesting
+    granted = {name: job.get("permissions") for name, job in jobs.items()}
+    assert granted["build"] == {"contents": "read"}, granted["build"]
+    assert granted["attest"] == {
+        "id-token": "write",
+        "attestations": "write",
+        "contents": "read",
+    }, granted["attest"]
+    signing = sorted(
+        name for name, given in granted.items() if isinstance(given, dict) and "id-token" in given
+    )
+    assert signing == ["attest", "publish"], granted
+    recording = sorted(
+        name
+        for name, given in granted.items()
+        if isinstance(given, dict) and "attestations" in given
+    )
+    assert recording == ["attest"], granted
+    steps = _steps_of(RELEASE_WORKFLOW, "attest")
+    # No `uv` and no suite: neither an action that installs one nor a command that runs one.
+    # Mutation (declared): `uv run pytest -q` added to `attest`; reddens here.
+    assert [step for step in steps if _uses(step) == "astral-sh/setup-uv"] == [], steps
+    running = [
+        line
+        for step in steps
+        for line in _lines(_run(step))
+        if re.search(r"(?<![\w.-])(uv|pytest)(?![\w.-])", line)
+    ]
+    assert running == [], running
+    # And the checkout leaves no token in `.git/config` for the step that runs the script.
+    # Mutation (declared): `persist-credentials: false` dropped; reddens here.
+    [checkout] = [step for step in steps if _uses(step) == "actions/checkout"]
+    assert _with(checkout, "persist-credentials") == "false", checkout
+
+
+def _outputs(path: Path) -> dict[str, str]:
+    """What a step wrote to `$GITHUB_OUTPUT`, as `key=value` lines."""
+    if not path.is_file():
+        return {}
+    return dict(line.split("=", 1) for line in path.read_text(encoding="utf-8").splitlines())
+
+
+def _interpreters(tmp_path: Path) -> Path:
+    """A directory putting this interpreter on `PATH` as `python3` and `python`: a script that runs
+    it by its own path, since a link elsewhere is an interpreter outside its environment."""
+    stub = tmp_path / "bin"
+    stub.mkdir(exist_ok=True)
+    for name in ("python3", "python"):
+        (stub / name).write_text(f'#!/bin/sh\nexec {shlex.quote(sys.executable)} "$@"\n')
+        (stub / name).chmod(0o755)
+    return stub
+
+
+def _run_step(
+    script: str, cwd: Path, stub: Path, env: dict[str, str]
+) -> subprocess.CompletedProcess[str]:
+    """A step's script under `bash -e`, the runner's default shell, with `stub` first on `PATH`."""
+    environ = developer_free_environ()
+    return subprocess.run(
+        ["bash", "-e", "-c", script],
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        check=False,
+        env={**environ, "PATH": f"{stub}:{environ.get('PATH', '/usr/bin:/bin')}", **env},
+    )
+
+
+def _attest(tmp_path: Path, source: Path) -> tuple[subprocess.CompletedProcess[str], str | None]:
+    """The `attest` job's commit step, run on `source`'s `HEAD`: what it did, and the `commit`
+    it handed on."""
+    index, _ = _tree_command(RELEASE_WORKFLOW, "attest", "commit")
+    step = _steps_of(RELEASE_WORKFLOW, "attest")[index]
+    env = step.get("env")
+    assert env == {"PYTHONPATH": "src"}, env
+    temp = tmp_path / "runner"
+    temp.mkdir(parents=True)
+    output = temp / "output"
+    done = _run_step(
+        _run(step),
+        source,
+        _interpreters(tmp_path),
+        {
+            "PYTHONPATH": "src",
+            "RUNNER_TEMP": str(temp),
+            "GITHUB_OUTPUT": str(output),
+            "GITHUB_SHA": git(source, "rev-parse", "HEAD").strip(),
+        },
+    )
+    return done, _outputs(output).get("commit")
+
+
+@needs_git
+@needs_bash
+@needs_release_workflow
+def test_the_attest_job_hands_on_the_commit_its_source_pins(tmp_path: Path) -> None:
+    # The gated jobs compare the plugin repository's tag with what `attest` hands on, so `attest`
+    # hands on the commit the release commit's tree makes, and only when the release commit pins
+    # that commit: a release commit pinning another fails here, before any approval is asked for.
+    # The id is computed by git from the source's tree, never by the script. Mutation (oracle):
+    # `mutations/`'s "the attest job hands on a commit the release commit does not pin" drops
+    # `--require-pin`.
+    source = plugintree.tool_source(tmp_path)
+    expected = plugintree.hashed(
+        source, plugintree.literal(plugintree.plugin_tree_id(source), None)
+    )
+    assert plugintree.pinned_at(source) == expected
+    done, handed = _attest(tmp_path / "pinned", source)
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert handed == expected
+    # A release commit on top of it whose marketplace pins a commit no tree makes.
+    plugintree.write(source, {plugintree.MARKETPLACE: plugintree.pinned_marketplace("f" * 40)})
+    plugintree.commit(source, "a release commit pinning another commit")
+    done, handed = _attest(tmp_path / "unpinned", source)
+    assert done.returncode != 0, done.stdout + done.stderr
+    assert handed is None
+
+
+@needs_release_workflow
+def test_the_gated_jobs_refuse_until_the_plugin_tag_names_the_pin() -> None:
+    # Every job behind the `pypi` approval starts by asking the plugin repository whether its tag
+    # names the commit `attest` computed: the step is first, before any checkout or download, so a
+    # job whose plugin is not published yet does nothing irreversible, and it is in each gated job
+    # rather than a job of its own, which would ask for a second approval. Its two values arrive
+    # through `env:`, and the step holds no credential. Mutation (declared): the step moved after
+    # `github-release`'s checkout; reddens here.
+    jobs = _jobs(RELEASE_WORKFLOW)
+    gated = sorted(name for name, job in jobs.items() if "environment" in job)
+    assert gated == sorted(GATED), gated
+    # `attest` hands on the id its commit step wrote, by that step's own id.
+    index, _ = _tree_command(RELEASE_WORKFLOW, "attest", "commit")
+    ident = _steps_of(RELEASE_WORKFLOW, "attest")[index].get("id")
+    assert isinstance(ident, str), ident
+    assert jobs["attest"].get("outputs") == {"commit": "${{ steps." + ident + ".outputs.commit }}"}
+    first = [_steps_of(RELEASE_WORKFLOW, name)[0] for name in GATED]
+    for name, step in zip(GATED, first, strict=True):
+        assert jobs[name].get("needs") == ["build", "environment-gate", "attest"], jobs[name]
+        assert list(step) == ["name", "env", "run"], (name, step)
+        assert step["name"] == PLUGIN_GATE, (name, step)
+        assert step["env"] == {
+            "TAG": "${{ github.ref_name }}",
+            "PINNED": "${{ needs.attest.outputs.commit }}",
+        }, (name, step)
+    # One step, twice: a copy that drifted would gate one job on another question. Mutation
+    # (declared): `github-release`'s copy compares the tag line only; reddens here.
+    assert first[0] == first[1], first
+
+
+def _gate(
+    tmp_path: Path, job: str, listing: list[tuple[str, str]] | None, pinned: str
+) -> tuple[int, str, list[str]]:
+    """The gated step's script, out of `job`, against a `git` whose `ls-remote` prints `listing`
+    (or fails, for `None`): its exit status, what it printed, and the arguments `git` was given."""
+    script = _run(_steps_of(RELEASE_WORKFLOW, job)[0])
+    assert script and "${{" not in script, script
+    stub = tmp_path / "bin"
+    stub.mkdir()
+    answer, asked = tmp_path / "listing", tmp_path / "asked"
+    if listing is None:
+        printed = 'echo "fatal: unable to access the repository" >&2\nexit 128\n'
+    else:
+        answer.write_text("".join(f"{sha}\t{ref}\n" for sha, ref in listing), encoding="utf-8")
+        printed = f'cat "{answer}"\n'
+    (stub / "git").write_text(f'#!/bin/sh\nprintf "%s\\n" "$@" > "{asked}"\n{printed}')
+    (stub / "git").chmod(0o755)
+    done = subprocess.run(
+        ["bash", "-e", "-c", script],
+        capture_output=True,
+        text=True,
+        check=False,
+        env={"PATH": f"{stub}:/usr/bin:/bin", "TAG": TAG, "PINNED": pinned},
+    )
+    given = asked.read_text(encoding="utf-8").splitlines() if asked.is_file() else []
+    return done.returncode, done.stdout + done.stderr, given
+
+
+COMMIT, TAG_OBJECT, OTHER = "c" * 40, "d" * 40, "e" * 40
+TAG_REF, PEELED_REF = f"refs/tags/{TAG}", f"refs/tags/{TAG}^{{}}"
+# `ls-remote` matches a pattern against the tail of each ref name, so the two patterns also list
+# `refs/tags/x/refs/tags/v1.2.3`, and its `^{}` line when it is annotated (measured, git 2.54).
+DECOY_REF, DECOY_PEELED_REF = f"refs/tags/x/{TAG_REF}", f"refs/tags/x/{PEELED_REF}"
+
+
+@needs_bash
+@needs_release_workflow
+@pytest.mark.parametrize("job", GATED)
+@pytest.mark.parametrize(
+    ("listing", "pinned", "code"),
+    [
+        # An annotated tag: the `^{}` line is the commit, the tag line the tag object.
+        ([(TAG_OBJECT, TAG_REF), (COMMIT, PEELED_REF)], COMMIT, 0),
+        ([(TAG_OBJECT, TAG_REF), (COMMIT, PEELED_REF)], TAG_OBJECT, 1),
+        # A lightweight tag: the tag line is the commit, and there is no `^{}` line.
+        ([(COMMIT, TAG_REF)], COMMIT, 0),
+        ([(OTHER, TAG_REF)], COMMIT, 1),
+        # Another tag whose name ends in this one's, naming the pinned commit, beside the real one.
+        ([(OTHER, TAG_REF), (COMMIT, DECOY_REF)], COMMIT, 1),
+        ([(OTHER, TAG_REF), (TAG_OBJECT, DECOY_REF), (COMMIT, DECOY_PEELED_REF)], COMMIT, 1),
+        # No such tag yet: the plugin is not published.
+        ([], COMMIT, 1),
+        # `attest` handed on nothing, and nothing is listed: two empty strings are not a match.
+        ([], "", 1),
+        # The plugin repository could not be listed.
+        (None, COMMIT, 1),
+    ],
+    ids=[
+        "annotated",
+        "annotated-tag-object",
+        "lightweight",
+        "lightweight-other",
+        "decoy",
+        "decoy-annotated",
+        "absent",
+        "nothing-pinned",
+        "unreachable",
+    ],
+)
+def test_the_gated_step_compares_the_peeled_id(
+    tmp_path: Path, job: str, listing: list[tuple[str, str]] | None, pinned: str, code: int
+) -> None:
+    # The tag the publisher pushes is annotated or not, and either way what it names is the
+    # commit: the `^{}` line's id when there is one, the tag line's otherwise, each selected by its
+    # whole ref name. Mutations (oracle): `mutations/`'s "the plugin gate compares the tag object
+    # of an annotated tag" and "the plugin gate selects the tag by the tail of its name".
+    got, printed, given = _gate(tmp_path, job, listing, pinned)
+    assert got == code, (got, printed)
+    # One listing, of the plugin repository, by both of the tag's exact names.
+    assert given == [
+        "ls-remote",
+        f"https://github.com/{PLUGIN_REPOSITORY}.git",
+        TAG_REF,
+        PEELED_REF,
+    ], given
+    if code:
+        assert "::error::" in printed and "RELEASING.md section 2, step 7" in printed, printed
+
+
+def _github_repository(url: str) -> str:
+    """`owner/name` out of a GitHub clone URL, over HTTPS or SSH."""
+    found = re.fullmatch(r"(?:https://github\.com/|git@github\.com:)([^/]+/[^/]+)\.git", url)
+    assert found is not None, url
+    return found.group(1)
+
+
+@needs_release_workflow
+def test_one_plugin_repository_everywhere() -> None:
+    # The scripts may not import one another, so each spells the plugin repository itself: the
+    # release check holds the marketplace entry's `url` to `release.py`'s `PLUGIN_URL`, the
+    # publisher pushes to `PLUGIN_REMOTE` and asks GitHub's API about `PLUGIN_REPOSITORY`
+    # (`repos/<it>/git/ref/…`), and the release workflow lists the tag the gated jobs wait for.
+    # Each is read from its own file, and every one of them names the same repository. Mutation
+    # (oracle): `mutations/`'s "the plugin gate asks another repository" points `publish`'s step at
+    # another name.
+    release = scriptload.release()
+    publisher = scriptload.publish_plugin()
+    named = {
+        "release.py PLUGIN_URL": _github_repository(release.PLUGIN_URL),
+        "release.py PLUGIN_REPOSITORY": release.PLUGIN_REPOSITORY,
+        "publish_plugin.py PLUGIN_REMOTE": _github_repository(publisher.PLUGIN_REMOTE),
+        "publish_plugin.py PLUGIN_URL": _github_repository(publisher.PLUGIN_URL),
+        "publish_plugin.py PLUGIN_REPOSITORY": publisher.PLUGIN_REPOSITORY,
+    }
+    for job in GATED:
+        script = _run(_steps_of(RELEASE_WORKFLOW, job)[0])
+        listed = re.findall(r"\bgit ls-remote (\S+)", script)
+        assert len(listed) == 1, (job, listed)
+        named[f"release.yml {job}"] = _github_repository(listed[0])
+    assert set(named.values()) == {PLUGIN_REPOSITORY}, named
+
+
+SMOKE_JOB = "installed-plugin"
+
+
+def _resolved(env: Node, outputs: dict[str, dict[str, str]]) -> dict[str, str]:
+    """A step's `env:`, each `${{ steps.<id>.outputs.<key> }}` read from what that step wrote."""
+    assert isinstance(env, dict), env
+    resolved = {}
+    for key, value in env.items():
+        assert isinstance(value, str), (key, value)
+        found = re.fullmatch(r"\$\{\{ steps\.([\w-]+)\.outputs\.([\w-]+) \}\}", value)
+        assert found is not None, (key, value)
+        resolved[key] = outputs[found.group(1)][found.group(2)]
+    return resolved
+
+
+@needs_git
+@needs_bash
+@needs_smoke_workflow
+def test_the_smoke_installs_by_ref_and_sha(tmp_path: Path) -> None:
+    # A user's harness clones the plugin repository at the marketplace entry's `ref` and checks out
+    # its `sha`, so the smoke installs the same way: from a scratch repository holding the commit
+    # `plugin_tree.py commit` builds from this one, by `ref` and `sha` both. `--no-parent`, because
+    # the scratch repository holds no earlier plugin commit, and a commit naming a parent it lacks
+    # would break the clone once the first parent pins a `sha`. Both steps run here as shipped,
+    # the second with the `env:` the first's outputs give it, against a `uv` that runs its command
+    # and a `claude` that installs nothing; the id is computed by git, never by the script.
+    # Mutations (oracle): `mutations/`'s "the smoke installs by ref alone" and "the smoke's plugin
+    # commit names the first parent's pin as its parent".
+    source = tmp_path / "source"
+    source.mkdir()
+    git(source, "init", "-q", "-b", "main")
+    pinned = {plugintree.MARKETPLACE: plugintree.pinned_marketplace("a" * 40)}
+    plugintree.write(source, {**plugintree.PLUGIN_FILES, **pinned})
+    plugintree.commit(source, "a commit whose marketplace pins a plugin commit")
+    plugintree.write(source, {plugintree.MARKETPLACE: plugintree.pinned_marketplace("b" * 40)})
+    plugintree.commit(source, "the commit the smoke runs on")
+    # The script, beside the tree it reads and outside it: the commit read is `HEAD`'s.
+    tool = source / "scripts" / "plugin_tree.py"
+    tool.write_bytes((scriptload.SCRIPTS / "plugin_tree.py").read_bytes())
+    stub = _interpreters(tmp_path)
+    (stub / "uv").write_text(
+        '#!/bin/sh\ncase "$1" in\n  sync) exit 0 ;;\n  run) shift; exec "$@" ;;\nesac\nexit 9\n'
+    )
+    (stub / "claude").write_text(
+        "#!/bin/sh\n"
+        'if [ "$1 $2" = "plugin install" ]; then\n'
+        '  mkdir -p "$CLAUDE_CONFIG_DIR/plugins/cache/stayfixed-marketplace/stayfixed/1.2.3"\n'
+        "fi\n"
+    )
+    for name in ("uv", "claude"):
+        (stub / name).chmod(0o755)
+    temp = tmp_path / "runner"
+    temp.mkdir()
+    steps = _steps_of(SMOKE_WORKFLOW, SMOKE_JOB)
+    index, line = _tree_command(SMOKE_WORKFLOW, SMOKE_JOB, "commit")
+    assert "--no-parent" in shlex.split(line), line
+    built = steps[index]
+    ident = built.get("id")
+    assert isinstance(ident, str), built
+    outputs: dict[str, dict[str, str]] = {}
+    for step in (built, *(step for step in steps if "claude plugin install" in _run(step))):
+        written = temp / f"output-{len(outputs)}"
+        given = _resolved(step.get("env", {}), outputs)
+        done = _run_step(
+            _run(step),
+            source,
+            stub,
+            {**given, "RUNNER_TEMP": str(temp), "GITHUB_OUTPUT": str(written)},
+        )
+        assert done.returncode == 0, (_name(step), done.stdout + done.stderr)
+        outputs[str(step.get("id"))] = _outputs(written)
+    expected = plugintree.hashed(
+        source, plugintree.literal(plugintree.plugin_tree_id(source), None)
+    )
+    repository = temp / "plugin-repo.git"
+    catalog = json.loads((temp / "market" / ".claude-plugin" / "marketplace.json").read_text())
+    assert catalog["plugins"][0]["source"] == {
+        "source": "url",
+        "url": f"file://{repository}",
+        "ref": "v1.2.3",
+        "sha": expected,
+    }, catalog
+    # And the scratch repository holds that commit under both refs a clone at the tag reads.
+    for ref in ("refs/heads/main", "refs/tags/v1.2.3"):
+        assert git(repository, "rev-parse", ref).strip() == expected, ref
+
+
+PINNED_CATALOG = "A catalog whose entry pins a commit by sha validates"
+
+
+@needs_bash
+@needs_ci_workflow
+def test_the_validator_reads_a_catalog_whose_entry_pins_a_sha(tmp_path: Path) -> None:
+    # Once a release commit pins the plugin commit, this repository's catalog carries a `sha`
+    # beside its `ref`, and on `dev` it may carry none; the validator is asked about that shape
+    # on every change, by `--strict`, on a scratch copy of the catalog whose entry carries one.
+    # The step runs here as shipped against a `claude` that records what it was asked. Mutation
+    # (oracle): `mutations/`'s "the validator reads a catalog that pins no sha".
+    stub = _interpreters(tmp_path)
+    asked = tmp_path / "asked"
+    (stub / "claude").write_text(f'#!/bin/sh\nprintf "%s\\n" "$@" > "{asked}"\n')
+    (stub / "claude").chmod(0o755)
+    temp = tmp_path / "runner"
+    temp.mkdir()
+    root = CHECK_WORKFLOW.parents[2]
+    done = _run_step(
+        step_script(CI_WORKFLOW, PINNED_CATALOG), root, stub, {"RUNNER_TEMP": str(temp)}
+    )
+    assert done.returncode == 0, done.stdout + done.stderr
+    words = asked.read_text(encoding="utf-8").splitlines()
+    assert words[:2] == ["plugin", "validate"] and words[3:] == ["--strict"], words
+    expected = json.loads((root / ".claude-plugin" / "marketplace.json").read_text())
+    expected["plugins"][0]["source"]["sha"] = "0" * 40
+    assert json.loads(Path(words[2]).read_text()) == expected, words[2]

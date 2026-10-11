@@ -1,7 +1,7 @@
-# The install smoke: the plugin tree rendered from this commit, committed and tagged in a scratch
-# repository as the release pushes it to the plugin repository, and installed from there through a
-# `url` source with the real harness CLI under a temporary configuration directory; the installed
-# tree held to the render, every hook entry fed a sample event through the
+# The install smoke: the plugin repository's commit built from this commit as the release builds it,
+# tagged in a scratch repository, and installed from there through a `url` source pinned by `ref`
+# and `sha` with the real harness CLI under a temporary configuration directory; the installed
+# tree held to a render of this commit, every hook entry fed a sample event through the
 # INSTALLED wrapper, the reusable workflow called in the same-repository form — the two
 # `owner/repo/…@ref` forms are `smoke-release.yml`'s, for the reason `same-repository-form`
 # below states — and the clone-to-exfiltration scenario. Weekly as well as on every
@@ -64,49 +64,51 @@ jobs:
         # this pin is the one ci.yml already validates with, and the first run of this job
         # is the measurement for it.
         run: npm install -g @anthropic-ai/claude-code@2.1.261
-      - name: The plugin repository, rendered from this commit and tagged as the release tags it
+      - name: The plugin repository, its commit built from this one as the release builds it
         id: plugin-repo
-        # The directory and every user read the plugin repository's tagged commit, and its root is
-        # the tree `scripts/plugin_tree.py render` writes from this one, not this checkout. So the
-        # tree is rendered from the commit, committed once and tagged `v<version>`, the version
-        # read from the rendered `plugin.json`, as `publish_plugin.py` pushes it. The identity is
-        # given on the command line, as `scripts/smoke_hooks.py` commits, because the runner has
-        # none.
+        # The directory and every user read the plugin repository's commit, the one the
+        # marketplace entry pins by `sha`, and `scripts/plugin_tree.py commit` builds it from this
+        # commit as the release computes it, into a scratch repository whose `main` and
+        # `v<version>` name it, the version read from the commit's own `plugin.json`.
+        # `--no-parent`: the scratch repository holds no earlier plugin commit, and a commit naming
+        # a parent it lacks would break the clone once the first parent pins a `sha`. The render
+        # beside it is what the installed tree is held to, file for file, below.
         run: |
           uv sync --locked
           uv run python scripts/plugin_tree.py render --root . --rev HEAD \
             --out "$RUNNER_TEMP/plugin-repo" --manifest-file "$RUNNER_TEMP/plugin-tree.txt"
-          manifest="$RUNNER_TEMP/plugin-repo/.claude-plugin/plugin.json"
-          version="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["version"])' "$manifest")"
+          uv run python scripts/plugin_tree.py commit --root . --rev HEAD \
+            --git-dir "$RUNNER_TEMP/plugin-repo.git" --no-parent --json > "$RUNNER_TEMP/plugin-commit.json"
+          version="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["version"])' "$RUNNER_TEMP/plugin-commit.json")"
+          commit="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["commit"])' "$RUNNER_TEMP/plugin-commit.json")"
           test -n "$version"
-          git -C "$RUNNER_TEMP/plugin-repo" init -q -b main
-          # `--force`: `publish_plugin.py` builds the plugin repository's commit with plumbing and
-          # reads no ignore rules, and the tree carries a `.gitignore` of its own (the overlay
-          # template's), so a member it matches is in that commit and must be in this one.
-          git -C "$RUNNER_TEMP/plugin-repo" add -A --force
-          git -C "$RUNNER_TEMP/plugin-repo" -c user.email=a@b.c -c user.name=a commit -qm "stayfixed $version"
-          git -C "$RUNNER_TEMP/plugin-repo" tag "v$version"
+          [[ "$commit" =~ ^[0-9a-f]{40}$ ]]
+          git --git-dir="$RUNNER_TEMP/plugin-repo.git" update-ref refs/heads/main "$commit"
+          git --git-dir="$RUNNER_TEMP/plugin-repo.git" update-ref "refs/tags/v$version" "$commit"
           echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
       - name: Install the plugin from that repository into a temporary configuration directory
         id: install
         # Production's source type over another transport, with no network: the marketplace is
         # this repository's catalog with its one entry's `url` pointed at the repository above by
-        # `file://` and its `ref` at that tag, so the harness clones a tagged commit as a user's
-        # does. Measured 2026-09-19 on a laptop against 2.1.263 for the path source this replaced:
-        # both commands exit 0 with no authentication and no network, and the installed wrapper
-        # carries its executable bit, which the wrapper needs to run at all. The `url` source
-        # over `file://` was measured by this job itself, on both legs, at 956d2d0.
+        # `file://`, its `ref` at that tag and its `sha` at that commit, so the harness clones the
+        # pinned commit as a user's does. Measured 2026-09-19 on a laptop against 2.1.263 for the
+        # path source this replaced: both commands exit 0 with no authentication and no network,
+        # and the installed wrapper carries its executable bit, which the wrapper needs to run at
+        # all. The `url` source over `file://` was measured by this job itself, on both legs, at
+        # 956d2d0.
         env:
           VERSION: ${{ steps.plugin-repo.outputs.version }}
+          COMMIT: ${{ steps.plugin-repo.outputs.commit }}
         run: |
           mkdir -p "$RUNNER_TEMP/market/.claude-plugin"
-          python3 - .claude-plugin/marketplace.json "$RUNNER_TEMP/market/.claude-plugin/marketplace.json" "file://$RUNNER_TEMP/plugin-repo" "v$VERSION" <<'PY'
+          python3 - .claude-plugin/marketplace.json "$RUNNER_TEMP/market/.claude-plugin/marketplace.json" "file://$RUNNER_TEMP/plugin-repo.git" "v$VERSION" "$COMMIT" <<'PY'
           import json, sys
           catalog = json.load(open(sys.argv[1], encoding="utf-8"))
           [entry] = catalog["plugins"]
           assert catalog["name"] == "stayfixed-marketplace", catalog["name"]
           assert entry["name"] == "stayfixed" and entry["source"]["source"] == "url", entry
-          entry["source"] = {"source": "url", "url": sys.argv[3], "ref": sys.argv[4]}
+          entry["source"] = {"source": "url", "url": sys.argv[3], "ref": sys.argv[4], "sha": sys.argv[5]}
           with open(sys.argv[2], "w", encoding="utf-8") as out:
               json.dump(catalog, out, indent=2)
           PY
@@ -128,10 +130,10 @@ jobs:
         # The harness copies what the source names into its cache, and only a comparison says it
         # copied all of it and added nothing: the hooks, `doctor` and the scenario below read part
         # of the tree, and the skills, the agents, `README.md` and `LICENSE` have no reader in this
-        # job. `.git` is the rendered repository's own, not a file of the plugin's. `.in_use` is
-        # the harness's: claude 2.1.261 writes it into the installed root on both runner OSes,
-        # measured on this job's first run over the rendered tree, 2026-10-10, where it was the
-        # only difference. Each exclusion is a name, never a pattern.
+        # job. `.git` is a clone's own, not a file of the plugin's. `.in_use` is the harness's:
+        # claude 2.1.261 writes it into the installed root on both runner OSes, measured on this
+        # job's first run over the rendered tree, 2026-10-10, where it was the only difference.
+        # Each exclusion is a name, never a pattern.
         env:
           INSTALLED: ${{ steps.install.outputs.root }}
         run: diff -r -x .git -x .in_use "$RUNNER_TEMP/plugin-repo" "$INSTALLED"

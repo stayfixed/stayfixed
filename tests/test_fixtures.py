@@ -234,6 +234,10 @@ CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 needs_ci_workflow = pytest.mark.skipif(
     not CI_WORKFLOW.is_file(), reason="ci.yml is not in the sdist"
 )
+SMOKE_WORKFLOW = ROOT / ".github" / "workflows" / "smoke.yml"
+needs_smoke_workflow = pytest.mark.skipif(
+    not SMOKE_WORKFLOW.is_file(), reason="smoke.yml is not in the sdist"
+)
 CONTRIBUTING = ROOT / "CONTRIBUTING.md"
 PR_TEMPLATE = ROOT / ".github" / "pull_request_template.md"
 _SHORT_VERSION = re.compile(

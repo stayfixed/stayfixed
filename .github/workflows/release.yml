@@ -31,15 +31,18 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # Named here because the attestation moved into this job: `attest-build-provenance` signs
-    # through the OIDC token and writes an attestation, so the two write scopes have to travel
-    # with it. They were `publish`'s while the step was, and the top-level default is read.
     permissions:
-      id-token: write
-      attestations: write
       contents: read
+    # Read-only, and nothing here can sign: the suite and every dependency the lock installs run
+    # in this job, so the OIDC token an attestation is signed with is `attest`'s, below, which
+    # runs neither.
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        # The release commit and its first parent: `release.py check --tag` reads the plugin
+        # commit the first parent pins, which is the release's plugin commit's parent, and in a
+        # clone of one commit it refuses, naming this setting, rather than read it as none.
+        with:
+          fetch-depth: 2
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           enable-cache: true
@@ -51,36 +54,73 @@ jobs:
         # the claim has to agree with, and `scripts/release.py check --tag` holds all of them. A
         # tag that names a version no source carries is the one release mistake PyPI will not let
         # you undo. It also refuses a plugin tree over the plugin directory's file count, which
-        # `tests/test_payload.py` holds on every pull request as well.
+        # `tests/test_payload.py` holds on every pull request as well, and a marketplace entry
+        # whose `sha` is not the plugin commit the release commit's tree makes.
         run: uv run python scripts/release.py check --tag "$GITHUB_REF_NAME"
       - name: Tests
         run: uv run pytest -q
       - name: Build
         run: uv build
-      - name: The plugin tree, rendered from the commit this run builds
-        # The plugin is published from a repository of its own, whose root is this tree, and the
-        # owner pushes it there with `scripts/publish_plugin.py`, which refuses a tree whose
-        # manifest this job did not attest. `GITHUB_SHA` and not `HEAD`: it is the attestation's
-        # source digest, so the commit rendered, the digest attested and the commit
-        # `publish_plugin.py` checks are one value.
-        run: |
-          uv run python scripts/plugin_tree.py render --root . --rev "$GITHUB_SHA" \
-            --out "$RUNNER_TEMP/plugin" --manifest-file "$RUNNER_TEMP/plugin-tree.txt"
-      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
-        # Attested here rather than in `publish`, because this is the job that produced
-        # `dist/*`: the artefacts a GitHub Release carries say where they came from whether or
-        # not PyPI is in the picture, and a declined PyPI no longer costs the provenance.
-        with:
-          subject-path: "dist/*"
-      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
-        # The plugin tree's manifest, attested on its own: one line per file, its mode, its
-        # sha256 and its path, which is the only thing `publish_plugin.py` compares.
-        with:
-          subject-path: ${{ runner.temp }}/plugin-tree.txt
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: dist
           path: dist/
+
+  # The one job that signs. The attestations are signed with this job's OIDC token and written
+  # with its `attestations: write`, so it runs no suite, installs nothing and keeps no token in
+  # the checkout: it runs this repository's own `scripts/plugin_tree.py` on the runner's
+  # interpreter, importing the checkout's own `src`, and the two actions that attest and upload.
+  #
+  # The plugin is published from a repository of its own, whose commit is a function of this
+  # one: `plugin_tree.py commit` computes it, and `--require-pin` refuses a release commit whose
+  # marketplace entry pins another `sha`. The id is handed on as `commit`, which the jobs behind
+  # the approval wait for; the owner pushes it with `scripts/publish_plugin.py`, which checks
+  # the manifest attested here. `GITHUB_SHA` and not `HEAD`: it is the attestation's source
+  # digest, so the commit read, the digest attested and the commit the publisher checks are one
+  # value.
+  attest:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      id-token: write
+      attestations: write
+      contents: read
+    outputs:
+      commit: ${{ steps.plugin-commit.outputs.commit }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: dist
+          path: dist/
+      - name: The plugin commit of the commit this run builds
+        id: plugin-commit
+        env:
+          PYTHONPATH: src
+        run: |
+          python3 scripts/plugin_tree.py commit --root . --rev "$GITHUB_SHA" \
+            --git-dir "$RUNNER_TEMP/plugin.git" --manifest-file "$RUNNER_TEMP/plugin-tree.txt" \
+            --require-pin --json > "$RUNNER_TEMP/plugin-commit.json"
+          commit="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["commit"])' "$RUNNER_TEMP/plugin-commit.json")"
+          if ! [[ "$commit" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::plugin_tree.py commit named no plugin commit: '$commit'"
+            exit 1
+          fi
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        # The artefacts a GitHub Release carries say where they came from whether or not PyPI is
+        # in the picture, so a declined PyPI does not cost the provenance.
+        with:
+          subject-path: "dist/*"
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        # The plugin tree's manifest, attested on its own: one line per file, its mode, its
+        # sha256 and its path, the tree of the commit handed on above.
+        with:
+          subject-path: ${{ runner.temp }}/plugin-tree.txt
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: plugin-tree
@@ -143,8 +183,17 @@ jobs:
           fi
           echo "$ENVIRONMENT has $rules protection rule(s); the gate is real"
 
+  # Each job behind the approval starts by asking the plugin repository whether its tag names the
+  # commit `attest` computed, before it checks anything out or downloads anything, so an
+  # approval given before the owner published the plugin does nothing irreversible: the job
+  # fails, the owner publishes, and the job is re-run. The tag is listed by both its names and
+  # each line is selected by its whole ref name, because `ls-remote` matches a pattern against
+  # the tail of a name and so also lists `refs/tags/x/refs/tags/vX.Y.Z`; the `^{}` line, when
+  # the tag is annotated, is the commit it names. A step in each gated job and not a job of its
+  # own, which would ask for a second approval; `tests/test_check_workflow.py` holds the two
+  # copies equal. No credential: the plugin repository is public.
   publish:
-    needs: [build, environment-gate]
+    needs: [build, environment-gate, attest]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     # The last human gate. A tag pushed by mistake waits for an approval here instead of
@@ -155,6 +204,29 @@ jobs:
       id-token: write       # Trusted Publishing: no stored API token anywhere
       contents: read
     steps:
+      - name: The plugin repository holds this release's commit
+        env:
+          TAG: ${{ github.ref_name }}
+          PINNED: ${{ needs.attest.outputs.commit }}
+        run: |
+          listing="$(git ls-remote https://github.com/stayfixed/stayfixed-plugin.git "refs/tags/$TAG" "refs/tags/$TAG^{}")" || {
+            echo "::error::stayfixed/stayfixed-plugin could not be listed; re-run this job, or see RELEASING.md section 2, step 7"
+            exit 1
+          }
+          tagged=""
+          peeled=""
+          while IFS=$'\t' read -r id ref; do
+            case "$ref" in
+              "refs/tags/$TAG") tagged="$id" ;;
+              "refs/tags/$TAG^{}") peeled="$id" ;;
+            esac
+          done <<< "$listing"
+          found="${peeled:-$tagged}"
+          if ! [[ "$PINNED" =~ ^[0-9a-f]{40}$ ]] || [ "$found" != "$PINNED" ]; then
+            echo "::error::stayfixed/stayfixed-plugin's $TAG names ${found:-no commit}, not the plugin commit '$PINNED' this release pins: publish it as RELEASING.md section 2, step 7 says, then re-run this job"
+            exit 1
+          fi
+          echo "stayfixed/stayfixed-plugin's $TAG is the plugin commit this release pins, $PINNED"
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: dist
@@ -165,13 +237,36 @@ jobs:
   # and behind the same `pypi` environment, because the environment is the one human gate this
   # file has and a mistaken tag must not become a public Release either.
   github-release:
-    needs: [build, environment-gate]
+    needs: [build, environment-gate, attest]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: pypi   # the same human gate as publish: a mistaken tag waits here too
     permissions:
       contents: write   # the one job that writes: a Release attached to vX.Y.Z, never to v1
     steps:
+      - name: The plugin repository holds this release's commit
+        env:
+          TAG: ${{ github.ref_name }}
+          PINNED: ${{ needs.attest.outputs.commit }}
+        run: |
+          listing="$(git ls-remote https://github.com/stayfixed/stayfixed-plugin.git "refs/tags/$TAG" "refs/tags/$TAG^{}")" || {
+            echo "::error::stayfixed/stayfixed-plugin could not be listed; re-run this job, or see RELEASING.md section 2, step 7"
+            exit 1
+          }
+          tagged=""
+          peeled=""
+          while IFS=$'\t' read -r id ref; do
+            case "$ref" in
+              "refs/tags/$TAG") tagged="$id" ;;
+              "refs/tags/$TAG^{}") peeled="$id" ;;
+            esac
+          done <<< "$listing"
+          found="${peeled:-$tagged}"
+          if ! [[ "$PINNED" =~ ^[0-9a-f]{40}$ ]] || [ "$found" != "$PINNED" ]; then
+            echo "::error::stayfixed/stayfixed-plugin's $TAG names ${found:-no commit}, not the plugin commit '$PINNED' this release pins: publish it as RELEASING.md section 2, step 7 says, then re-run this job"
+            exit 1
+          fi
+          echo "stayfixed/stayfixed-plugin's $TAG is the plugin commit this release pins, $PINNED"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
