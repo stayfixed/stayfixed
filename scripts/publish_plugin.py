@@ -37,9 +37,10 @@ and its manifest compared with that one byte for byte before anything leaves the
 repository's state is GitHub's: on the default remote, `main` and the tag are read through `gh api`
 as well as `ls-remote`, and a disagreement is a redirect (a `url.*.insteadOf`, a `GIT_CONFIG_*`
 variable) refused rather than classified, and after a push the tag is read back through the API,
-which must name the commit pushed: a tag it does not list beside a `main` still at the commit's
-parent is a push that went elsewhere, through a `url.*.pushInsteadOf` or a `remote.<url>.pushurl`,
-which moves a push and not a listing. Another `--remote` (a test, a rehearsal) is read from
+which must name the commit pushed: a tag it does not list is listed once more by `ls-remote`, and
+one that listing does not name at the commit either is a push that went elsewhere, through a
+`url.*.pushInsteadOf` or a `remote.<url>.pushurl`, which moves a push and not a listing, where one
+it names is GitHub not listing it yet. Another `--remote` (a test, a rehearsal) is read from
 `ls-remote` alone, and the summary, and a rejection resting on it, says so. CI holds no
 credential to the plugin repository: the owner's own git pushes, with the owner's own key.
 
@@ -49,15 +50,13 @@ tag naming another commit is a fact of the release no re-run changes. Without th
 be the commit's parent — both absent for the first release — because `main` moves only by
 fast-forward: a release cut on the wrong base, or a patch release of an older line, is refused.
 
-**Two exit codes after `0`.** `1` rejects the release's approval: the tag's pin is not the commit
-its tree makes; its `plugin.json` names another version; the commit reads back as another tree;
-GitHub's plugin repository holds another commit under the tag, or a `main` that is not the commit's
-parent. `2` says fix something and run again: anything else — a gh too old or not logged in, a
-failed attestation verify whatever GitHub lists, a pushed tag GitHub does not list or lists
-elsewhere, the tag's own code refusing, since CI ran the same code on the same commit.
+**Two exit codes after `0`:** `1` rejects the release's approval, for a fact of the release no
+re-run changes (`Rejected`), and `2` says fix something and run again, for anything else. Which
+outcome is which is said once, to the owner who acts on it: `RELEASING.md`, section 2, step 7.
 
 The command goes through the CLI frame's `run`, as `scripts/release.py`'s do: `--json` anywhere on
-the line, and `Rejected` is the frame's `Failure`, exit `1`.
+the line, and `Rejected` is the frame's `Failure`, exit `1`. Run without this repository's
+`stayfixed`, it refuses with exit `2` before the frame exists, since a traceback would exit `1`.
 """
 
 from __future__ import annotations
@@ -73,14 +72,24 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Literal
 
-from stayfixed import fsops
-from stayfixed.cli import JSON_EPILOG, run
-from stayfixed.errors import Failure, Refusal
-from stayfixed.gitenv import QUERY_TIMEOUT_SECONDS, answer_bytes, git_run
-from stayfixed.printed import clipped, quoted
-from stayfixed.release.api import tag_for
-from stayfixed.result import Result
-from stayfixed.runner import Completed, Runner, subprocess_runner
+# Before the CLI frame exists, so said here: an interpreter without this repository's `stayfixed`
+# would otherwise end in a traceback and exit `1`, which asks the owner to reject the release.
+try:
+    from stayfixed import fsops
+    from stayfixed.cli import JSON_EPILOG, run
+    from stayfixed.errors import Failure, Refusal
+    from stayfixed.gitenv import QUERY_TIMEOUT_SECONDS, answer_bytes, git_run
+    from stayfixed.printed import clipped, quoted
+    from stayfixed.release.api import tag_for
+    from stayfixed.result import Result
+    from stayfixed.runner import Completed, Runner, subprocess_runner
+except ImportError as exc:
+    sys.stderr.write(
+        f"scripts/publish_plugin.py: refused: {exc}; run it with `uv run python "
+        "scripts/publish_plugin.py`, which puts this repository's stayfixed on the path; nothing "
+        "was run\n"
+    )
+    sys.exit(2)
 
 # The plugin's own repository: as the owner's git reaches it to push, as the marketplace fetches
 # it, and as GitHub's API names it.
@@ -92,7 +101,7 @@ PLUGIN_REPOSITORY = "stayfixed/stayfixed-plugin"
 # (measured for `v0.2.0`), which `gh attestation verify --cert-identity` matches exactly.
 SOURCE_REPOSITORY = "stayfixed/stayfixed"
 CERT_IDENTITY = (
-    "https://github.com/stayfixed/stayfixed/.github/workflows/release.yml@refs/tags/{tag}"
+    f"https://github.com/{SOURCE_REPOSITORY}/.github/workflows/release.yml@refs/tags/{{tag}}"
 )
 # The host every `gh` call names, so a second host the owner is logged in to answers none.
 GITHUB = "github.com"
@@ -301,17 +310,22 @@ def _source_anchor(runner: Runner, root: Path, tag: str, sha: str) -> None:
     """Refuse a local tag that is not GitHub's: its code is about to run."""
     found = _github_ref(runner, root, SOURCE_REPOSITORY, f"refs/tags/{tag}")
     if found != sha:
-        # A tag GitHub lacks was not pushed; one it holds at another commit is fetched over the
-        # local one, which a plain `git fetch --tags` refuses as clobbering an existing tag.
+        # A tag GitHub lacks was not pushed. One it holds at another commit may not be the owner's:
+        # whoever can create a tag there can make the owner's push fail, and a fetch over the
+        # local tag would run that tag's code here next. So it is investigated first, and fetched
+        # over the local one only when the local one is the stale one, by `--force`, since a plain
+        # `git fetch --tags` refuses to clobber an existing tag.
         advice = (
-            "Push the tags (RELEASING.md section 2, step 6)"
+            "Push the tags (RELEASING.md section 2, step 6) and run again"
             if found is None
-            else "Fetch GitHub's tags over yours (git fetch --tags --force)"
+            else f"If you did not push GitHub's {tag}, investigate it before you fetch or run "
+            "anything; if yours is the stale one, fetch GitHub's over it "
+            "(git fetch --tags --force) and run again"
         )
         held = f"names {found}" if found is not None else "holds no such tag"
         raise Refusal(
             f"your local {tag} names {sha}, and GitHub's {SOURCE_REPOSITORY} {held}: your local "
-            f"{tag} is not GitHub's. {advice} and run again; nothing was run"
+            f"{tag} is not GitHub's. {advice}; nothing was run"
         )
 
 
@@ -495,7 +509,7 @@ def _first_difference(want: bytes, found: bytes) -> str:
         other = seen[number] if number < len(seen) else "<no line>"
         if line != other:
             return f"line {number + 1} is {clipped(other)} where the attested has {clipped(line)}"
-    return "the two manifests are the same"  # never reached: the callers compare first
+    raise AssertionError("_first_difference was handed two equal manifests; its caller compares")
 
 
 def _read_back(
@@ -600,11 +614,9 @@ def _network(runner: Runner, git_dir: Path, *args: str) -> Completed:
     return runner.launch(argv, git_dir)
 
 
-def _listed(runner: Runner, git_dir: Path, remote: str, tag: str) -> dict[str, str]:
-    """`main`, the tag and the tag's peel on the remote, by their exact names: `ls-remote`
-    matches a pattern against a ref's tail, so a `refs/heads/x/refs/heads/main` would answer it
-    too."""
-    wanted = (MAIN, f"refs/tags/{tag}", f"refs/tags/{tag}^{{}}")
+def _listed(runner: Runner, git_dir: Path, remote: str, *wanted: str) -> dict[str, str]:
+    """The `wanted` refs on the remote, by their exact names: `ls-remote` matches a pattern
+    against a ref's tail, so a `refs/heads/x/refs/heads/main` would answer `main` too."""
     listed = _network(runner, git_dir, "ls-remote", "--end-of-options", remote, *wanted)
     if listed.code != 0:
         raise Refusal(f"git ls-remote {remote} exited {listed.code}: {_said(listed)}")
@@ -621,14 +633,24 @@ def _listed(runner: Runner, git_dir: Path, remote: str, tag: str) -> dict[str, s
     return found
 
 
+def _tag_refs(tag: str) -> tuple[str, str]:
+    """The tag's two names in a listing: the tag, and its peel, which an annotated tag lists."""
+    return f"refs/tags/{tag}", f"refs/tags/{tag}^{{}}"
+
+
+def _tagged(listed: dict[str, str], tag: str) -> str | None:
+    """The commit a listing says the tag names: an annotated tag lists its object, then its peel;
+    the lightweight tag this pushes, one line."""
+    ref, peel = _tag_refs(tag)
+    peeled = listed.get(peel)
+    return peeled if peeled is not None else listed.get(ref)
+
+
 def _remote_state(runner: Runner, root: Path, git_dir: Path, remote: str, tag: str) -> RemoteState:
     """The remote's `main` and the commit its tag names: from `ls-remote`, and on the default
     remote from GitHub's API as well, which must agree."""
-    listed = _listed(runner, git_dir, remote, tag)
-    # An annotated tag lists its object, then its peel; the lightweight tag this pushes, one line.
-    peeled = listed.get(f"refs/tags/{tag}^{{}}")
-    tagged = peeled if peeled is not None else listed.get(f"refs/tags/{tag}")
-    main = listed.get(MAIN)
+    listed = _listed(runner, git_dir, remote, MAIN, *_tag_refs(tag))
+    tagged, main = _tagged(listed, tag), listed.get(MAIN)
     if remote not in (PLUGIN_REMOTE, PLUGIN_URL):
         return RemoteState(main, tagged, confirmed=False)
     github_main = _github_ref(runner, root, PLUGIN_REPOSITORY, MAIN)
@@ -687,27 +709,27 @@ def _follows(runner: Runner, git_dir: Path, remote: str, built: Built, state: Re
         )
 
 
-def _landed(runner: Runner, root: Path, remote: str, tag: str, built: Built) -> None:
+def _landed(runner: Runner, root: Path, git_dir: Path, remote: str, tag: str, built: Built) -> None:
     """Refuse a push GitHub's API does not show: its plugin repository's tag, read back, must name
-    the commit pushed. A tag GitHub does not list beside a `main` it still holds at the commit's
-    parent is a push that went elsewhere: `url.*.pushInsteadOf` and `remote.<url>.pushurl` move a
-    push and not a listing, so `ls-remote` and the API agreed before it."""
+    the commit pushed. A tag the API does not list is told apart by one `ls-remote` of the tag:
+    one the listing names at the commit is GitHub not listing it yet, and one it does not is a
+    push that went elsewhere, since `url.*.pushInsteadOf` and `remote.<url>.pushurl` move a push
+    and not a listing, and `ls-remote` and the API agreed before the push."""
     commit = built.commit
     found = _github_ref(runner, root, PLUGIN_REPOSITORY, f"refs/tags/{tag}")
     pushed = f"git pushed {commit} to {remote} as main and {tag}"
     if found is None:
-        main = _github_ref(runner, root, PLUGIN_REPOSITORY, MAIN)
-        if main == built.parent:
-            holds = f"main at {main}" if main is not None else "no main"
+        if _tagged(_listed(runner, git_dir, remote, *_tag_refs(tag)), tag) != commit:
             raise Refusal(
-                f"{pushed}, and GitHub's {PLUGIN_REPOSITORY} does not list {tag} and still has "
-                f"{holds}: the push went elsewhere, through a url.*.pushInsteadOf or a "
+                f"{pushed}, and neither GitHub's {PLUGIN_REPOSITORY} nor git ls-remote {remote} "
+                f"lists {tag} at it: the push went elsewhere, through a url.*.pushInsteadOf or a "
                 "remote.<url>.pushurl in your git configuration, or a GIT_CONFIG_* variable, "
                 "which moves a push and not a listing. Remove it and run again"
             )
         raise Refusal(
-            f"{pushed}, and GitHub's {PLUGIN_REPOSITORY} does not list {tag} yet; run again, "
-            "which says already published once GitHub lists it"
+            f"{pushed}, and git ls-remote {remote} lists {tag} at it, but GitHub's "
+            f"{PLUGIN_REPOSITORY} does not list {tag} yet; run again, which says already "
+            "published once GitHub lists it"
         )
     if found != commit:
         raise Refusal(
@@ -771,7 +793,7 @@ def publish(
                     f"neither main nor {tag} moved: {_said(pushed)}"
                 )
             if state.confirmed:
-                _landed(runner, root, remote, tag, built)
+                _landed(runner, root, git_dir, remote, tag, built)
             outcome = "pushed"
     return Published(tag, built.files, built.tree, built.commit, outcome, state.confirmed)
 

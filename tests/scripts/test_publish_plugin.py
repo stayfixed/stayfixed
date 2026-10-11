@@ -55,6 +55,7 @@ from tests.runners import Recorder
 from tests.scriptload import plugin_tree as _tree_script
 from tests.scriptload import publish_plugin as _script
 from tests.scriptload import release as _release_script
+from tests.scriptload import without_stayfixed
 
 publish_plugin = _script()
 plugin_tree = _tree_script()
@@ -371,7 +372,9 @@ def test_the_tree_a_dry_run_names_is_the_one_a_later_run_pushes(
     assert git(remote, "rev-parse", "refs/heads/main").strip() == dry.commit
 
 
-def test_the_tree_is_rendered_from_the_tag_and_not_the_disk(source: Path, tmp_path: Path) -> None:
+def test_an_edit_on_disk_or_only_staged_is_not_in_the_commit_pushed(
+    source: Path, tmp_path: Path
+) -> None:
     # No mutation of its own: the commit is the tag's `plugin_tree.py`'s, which reads a commit and
     # nothing else (its own tests hold that); what this holds is that `publish` hands it the tag's
     # commit, as the next case does against a branch.
@@ -612,7 +615,9 @@ ANOTHER_ID = Completed(
         pytest.param(
             ANOTHER_ID,
             f"names {OTHER}",
-            "Fetch GitHub's tags over yours (git fetch --tags --force) and run again",
+            f"If you did not push GitHub's {TAG}, investigate it before you fetch or run anything; "
+            "if yours is the stale one, fetch GitHub's over it (git fetch --tags --force) and run "
+            "again; nothing was run",
             id="another-id",
         ),
         pytest.param(
@@ -626,12 +631,16 @@ ANOTHER_ID = Completed(
 def test_a_local_tag_github_does_not_hold_is_refused(
     source: Path, tmp_path: Path, answer: Completed, named: str, advice: str
 ) -> None:
-    # A tag GitHub holds at another commit is fetched over the local one, which git 2.54 refuses
-    # without `--force` ("would clobber existing tag"); one GitHub lacks was not pushed. Mutations
-    # (declared): `mutations/`'s "the publisher runs a tag GitHub does not hold" -> the tag's code
-    # is extracted and run, and the publish goes on; "the publisher advises a fetch git refuses
-    # for a tag that differs" -> `another-id` is told `git fetch --tags`; "the publisher advises a
-    # fetch for a tag GitHub does not hold" -> `no-such-tag` is told to fetch what is not there.
+    # A tag GitHub holds at another commit may not be the owner's, and a fetch over the local one
+    # would run its code next, so it is investigated first, and fetched over the local one only
+    # when that is the stale one, with `--force`, without which git 2.54 refuses ("would clobber
+    # existing tag"); one GitHub lacks was not pushed. Mutations (declared): `mutations/`'s "the
+    # publisher runs a tag GitHub does not hold" -> the tag's code is extracted and run, and the
+    # publish goes on; "the publisher advises fetching over the local tag without investigating
+    # GitHub's" -> `another-id` is told to fetch at once; "the publisher advises a fetch git
+    # refuses for a tag that differs" -> `another-id` is told `git fetch --tags`; "the publisher
+    # advises a fetch for a tag GitHub does not hold" -> `no-such-tag` is told to fetch what is
+    # not there.
     asked = f"gh api --hostname github.com repos/{SOURCE_REPOSITORY}/git/ref/tags/{TAG}"
     runner, scratch = runner_for(source, answers={asked: answer}), tmp_path / "scratch"
     with pytest.raises(Refusal, match="is not GitHub's") as refused:
@@ -1315,7 +1324,6 @@ def test_the_api_decides_on_the_default_remote(
 
 
 TAG_API = f"gh api --hostname github.com repos/{PLUGIN_REPOSITORY}/git/ref/tags/{TAG}"
-MAIN_API = f"gh api --hostname github.com repos/{PLUGIN_REPOSITORY}/git/ref/heads/main"
 
 
 def redirected_runner(source: Path, bare: Path, after_push: Completed | None) -> Composite:
@@ -1335,7 +1343,11 @@ def redirected_runner(source: Path, bare: Path, after_push: Completed | None) ->
     ("after_push", "said"),
     [
         pytest.param(None, None, id="the-commit"),
-        pytest.param(NOT_FOUND, f"does not list {TAG} yet", id="404"),
+        pytest.param(
+            NOT_FOUND,
+            f"lists {TAG} at it, but GitHub's {PLUGIN_REPOSITORY} does not list",
+            id="404",
+        ),
         pytest.param(
             ANOTHER_ID,
             f"names {OTHER} under {TAG}: someone else published {TAG} at the same moment, or the "
@@ -1360,8 +1372,10 @@ def test_the_pushed_tag_is_read_back_on_the_default_remote(
     # reports "pushed"; `mutations/`'s "the publisher says a pushed tag went elsewhere without
     # naming a publish at the same moment" -> the likelier cause goes unsaid; `mutations/`'s "the
     # publisher says a pushed tag went elsewhere without naming the redirect" -> the refusal names
-    # no cause to remove. After the 404, GitHub's `main` is read too: it is the pushed commit, so
-    # the push landed and GitHub has not listed the tag yet.
+    # no cause to remove. After the 404, the tag is listed once by `ls-remote`, by both its exact
+    # names: the listing names the pushed commit, so the push landed and GitHub has not listed the
+    # tag yet. Mutation (declared): `mutations/`'s "the publisher lists the pushed tag by a
+    # pattern" -> the listing is asked for the tag's tail, which another ref's name can end in.
     bare = bare_remote(tmp_path)
     _global_config(f'[url "{bare}"]\n\tinsteadOf = {publish_plugin.PLUGIN_REMOTE}\n')
     monkeypatch.setenv("GIT_SSH_COMMAND", "false")
@@ -1383,9 +1397,12 @@ def test_the_pushed_tag_is_read_back_on_the_default_remote(
     # The push landed where the owner's git sent it, either way.
     assert refs(bare) == {"refs/heads/main": pin, f"refs/tags/{TAG}": pin}
     push = next(i for i, argv in enumerate(runner.calls) if argv[:1] == ["git"] and "push" in argv)
-    read_back = [TAG_API, MAIN_API] if after_push is NOT_FOUND else [TAG_API]
     after = [argv for argv in runner.calls[push + 1 :] if argv[:1] == ["gh"]]
-    assert after == [asked.split(" ") for asked in read_back]
+    assert after == [TAG_API.split(" ")]
+    listings = [argv for argv in runner.calls[push + 1 :] if "ls-remote" in argv]
+    wanted = [f"refs/tags/{TAG}", f"refs/tags/{TAG}^{{}}"]
+    tails = [argv[argv.index("ls-remote") + 1 :] for argv in listings]
+    assert tails == ([["--end-of-options", default, *wanted]] if after_push is NOT_FOUND else [])
 
 
 # A rewrite of the push alone: `url.*.pushInsteadOf`, or `remote.<url>.pushurl` for the URL the
@@ -1403,31 +1420,30 @@ PUSH_REWRITES = {
 def test_a_push_sent_elsewhere_is_refused_naming_the_rewrite(
     source: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, rewrite: str, later: bool
 ) -> None:
-    # Before the push, `ls-remote` and GitHub's API agree; after it, GitHub lists no tag and its
-    # `main` is still the commit's parent, none for the first release and the release before's
-    # commit after it: the push went elsewhere, and a run again would send it there again.
-    # Mutations (declared): `mutations/`'s "the publisher reads a push that went elsewhere as one
-    # GitHub has not listed yet" -> the refusal says to run again; "the publisher says every
-    # pushed tag GitHub does not list went elsewhere" ->
-    # `test_the_pushed_tag_is_read_back_on_the_default_remote[404]` reddens; "the publisher says
-    # a push went elsewhere past a main GitHub holds as past none" -> `a-later-release` says "no
-    # main".
+    # Before the push, `ls-remote` and GitHub's API agree; after it, GitHub lists no tag and
+    # neither does `ls-remote` of the repository it reads, for the first release and for one after
+    # it: the push went elsewhere, and a run again would send it there again. Mutations
+    # (declared): `mutations/`'s "the publisher reads a push that went elsewhere as one GitHub has
+    # not listed yet" -> the refusal says to run again; "the publisher says every pushed tag
+    # GitHub does not list went elsewhere" ->
+    # `test_the_pushed_tag_is_read_back_on_the_default_remote[404]` reddens.
     github, elsewhere = bare_remote(tmp_path), tmp_path / "elsewhere.git"
     git(tmp_path, "init", "-q", "--bare", str(elsewhere))
     default = publish_plugin.PLUGIN_REMOTE
     _global_config(f'[url "{github}"]\n\tinsteadOf = {default}\n')
     monkeypatch.setenv("GIT_SSH_COMMAND", "false")
-    tag, held = TAG, "no main"
+    tag = TAG
     if later:
-        first, _ = publish(source, default, tmp_path / "first", runner=runner_for(source, github))
-        tag, held = "v1.2.4", f"main at {first.commit}"
+        publish(source, default, tmp_path / "first", runner=runner_for(source, github))
+        tag = "v1.2.4"
         released(source, "1.2.4")
     _global_config(rewrite.format(elsewhere=elsewhere, remote=default))
     before = refs(github)
     with pytest.raises(Refusal) as refused:
         publish(source, default, tmp_path / "scratch", tag=tag, runner=runner_for(source, github))
     message = str(refused.value)
-    assert f"does not list {tag} and still has {held}: the push went elsewhere" in message, message
+    neither = f"neither GitHub's {PLUGIN_REPOSITORY} nor git ls-remote {default} lists {tag} at it"
+    assert f"{neither}: the push went elsewhere" in message, message
     assert "url.*.pushInsteadOf or a remote.<url>.pushurl" in message, message
     assert "Remove it and run again" in message, message
     pin = pinned_at(source, tag)
@@ -1981,3 +1997,27 @@ def test_every_rejection_exits_1_and_every_refusal_exits_2(
     report = json.loads(capsys.readouterr().out)
     assert report["error"] == {1: "failed", 2: "refused"}[code], report
     assert said in report["summary"], report
+
+
+def test_run_without_its_package_it_refuses_with_exit_2_and_says_to_use_uv(tmp_path: Path) -> None:
+    # An owner who runs the publisher with a bare `python3` has no `stayfixed` to import, and the
+    # traceback that ends such a run exits `1`, which `RELEASING.md` reads as "reject the
+    # release's approval". The script says so itself, before the CLI frame exists, and exits `2`.
+    # Mutation (declared): `mutations/`'s "the publisher exits 1 when its package cannot be
+    # imported".
+    done = without_stayfixed("publish_plugin.py", tmp_path, "--tag", TAG)
+    assert done.returncode == 2, done.stdout + done.stderr
+    assert done.stdout == "", done.stdout
+    assert "refused: No module named 'stayfixed'" in done.stderr, done.stderr
+    assert "uv run python scripts/publish_plugin.py" in done.stderr, done.stderr
+    assert "Traceback" not in done.stderr, done.stderr
+
+
+def test_two_equal_manifests_have_no_first_difference() -> None:
+    # Called only once the two manifests differ, so two equal ones are a caller's bug, raised
+    # rather than worded as a difference in a rejection. Mutation (declared): `mutations/`'s "the
+    # publisher words two equal manifests as a difference".
+    manifest = b"stayfixed-plugin-tree 1\n100644 " + b"a" * 64 + b" README.md\n"
+    with pytest.raises(AssertionError):
+        publish_plugin._first_difference(manifest, manifest)
+    assert publish_plugin._first_difference(manifest, manifest + b"x\n").startswith("line 3 is ")

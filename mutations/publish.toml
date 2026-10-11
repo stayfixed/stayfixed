@@ -387,8 +387,8 @@ reddens = [
 [[mutation]]
 name = "the publisher accepts the release workflow run for any ref"
 file = "scripts/publish_plugin.py"
-before = '    "https://github.com/stayfixed/stayfixed/.github/workflows/release.yml@refs/tags/{tag}"'
-after = '    "https://github.com/stayfixed/stayfixed/.github/workflows/release.yml"'
+before = '    f"https://github.com/{SOURCE_REPOSITORY}/.github/workflows/release.yml@refs/tags/{{tag}}"'
+after = '    f"https://github.com/{SOURCE_REPOSITORY}/.github/workflows/release.yml"'
 reddens = [
   "tests/scripts/test_publish_plugin.py::test_the_attestation_is_asked_with_an_exact_identity",
 ]
@@ -628,8 +628,8 @@ reddens = [
 [[mutation]]
 name = "the publisher compares the tag object where the remote lists its peel"
 file = "scripts/publish_plugin.py"
-before = '    tagged = peeled if peeled is not None else listed.get(f"refs/tags/{tag}")'
-after = '    tagged = listed.get(f"refs/tags/{tag}")'
+before = '    return peeled if peeled is not None else listed.get(ref)'
+after = '    return listed.get(ref)'
 reddens = [
   "tests/scripts/test_publish_plugin.py::test_an_annotated_tag_peeling_to_the_pin_is_already_published",
 ]
@@ -1026,9 +1026,9 @@ reddens = ["tests/scripts/test_publish_plugin.py::test_the_commit_pushed_is_the_
 name = "the publisher takes a pushed tag GitHub does not list for one elsewhere"
 file = "scripts/publish_plugin.py"
 before = """    if found is None:
-        main = _github_ref("""
+        if _tagged("""
 after = """    if False:
-        main = _github_ref("""
+        if _tagged("""
 reddens = ["tests/scripts/test_publish_plugin.py::test_the_pushed_tag_is_read_back_on_the_default_remote[404]"]
 
 [[mutation]]
@@ -1058,12 +1058,13 @@ after = '''            "url.*.insteadOf in your git "'''
 reddens = ["tests/scripts/test_publish_plugin.py::test_the_pushed_tag_is_read_back_on_the_default_remote[another-id]"]
 
 # A rewrite of the push alone (`url.*.pushInsteadOf`, `remote.<url>.pushurl`) leaves `ls-remote` and
-# the API agreeing before the push; after it, a tag GitHub does not list beside a `main` still at
-# the parent is a push that went elsewhere, and running again would send it there again.
+# the API agreeing before the push; after it, a tag GitHub does not list is listed once by
+# `ls-remote`, by its exact names: named there at the commit, GitHub has not listed it yet; not
+# named there either, the push went elsewhere, and running again would send it there again.
 [[mutation]]
 name = "the publisher reads a push that went elsewhere as one GitHub has not listed yet"
 file = "scripts/publish_plugin.py"
-before = "        if main == built.parent:"
+before = "        if _tagged(_listed(runner, git_dir, remote, *_tag_refs(tag)), tag) != commit:"
 after = "        if False:"
 reddens = [
   "tests/scripts/test_publish_plugin.py::test_a_push_sent_elsewhere_is_refused_naming_the_rewrite[push-instead-of-the-first-release]",
@@ -1074,23 +1075,17 @@ reddens = [
 ]
 
 [[mutation]]
-name = "the publisher says a push went elsewhere past a main GitHub holds as past none"
-file = "scripts/publish_plugin.py"
-before = '''            holds = f"main at {main}" if main is not None else "no main"
-            raise Refusal(
-                f"{pushed}, and GitHub's'''
-after = '''            holds = "no main"
-            raise Refusal(
-                f"{pushed}, and GitHub's'''
-reddens = [
-  "tests/scripts/test_publish_plugin.py::test_a_push_sent_elsewhere_is_refused_naming_the_rewrite[push-instead-of-a-later-release]",
-]
-
-[[mutation]]
 name = "the publisher says every pushed tag GitHub does not list went elsewhere"
 file = "scripts/publish_plugin.py"
-before = "        if main == built.parent:"
+before = "        if _tagged(_listed(runner, git_dir, remote, *_tag_refs(tag)), tag) != commit:"
 after = "        if True:"
+reddens = ["tests/scripts/test_publish_plugin.py::test_the_pushed_tag_is_read_back_on_the_default_remote[404]"]
+
+[[mutation]]
+name = "the publisher lists the pushed tag by a pattern"
+file = "scripts/publish_plugin.py"
+before = '''    return f"refs/tags/{tag}", f"refs/tags/{tag}^{{}}"'''
+after = '''    return tag, f"{tag}^{{}}"'''
 reddens = ["tests/scripts/test_publish_plugin.py::test_the_pushed_tag_is_read_back_on_the_default_remote[404]"]
 
 [[mutation]]
@@ -1133,21 +1128,31 @@ reddens = [
   "tests/scripts/test_publish_plugin.py::test_a_rejection_on_the_default_remote_is_not_said_to_be_unconfirmed",
 ]
 
-# The advice for a local tag that is not GitHub's: one GitHub holds at another commit is fetched
-# over the local one, which a plain `git fetch --tags` refuses as clobbering an existing tag; one
-# GitHub lacks was not pushed, and no fetch brings it.
+# The advice for a local tag that is not GitHub's: one GitHub holds at another commit may not be the
+# owner's, and fetching it over the local one runs its code next, so it is investigated first and
+# fetched over the local one only when that is the stale one, by `--force`, since a plain
+# `git fetch --tags` refuses to clobber an existing tag; one GitHub lacks was not pushed, and no
+# fetch brings it.
+[[mutation]]
+name = "the publisher advises fetching over the local tag without investigating GitHub's"
+file = "scripts/publish_plugin.py"
+before = '''            else f"If you did not push GitHub's {tag}, investigate it before you fetch or run "
+            "anything; if yours is the stale one, fetch GitHub's over it "'''
+after = '''            else "Fetch GitHub's tags over yours "'''
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_local_tag_github_does_not_hold_is_refused[another-id]"]
+
 [[mutation]]
 name = "the publisher advises a fetch git refuses for a tag that differs"
 file = "scripts/publish_plugin.py"
-before = '''            else "Fetch GitHub's tags over yours (git fetch --tags --force)"'''
-after = '''            else "Fetch the tags (git fetch --tags)"'''
+before = '''            "(git fetch --tags --force) and run again"'''
+after = '''            "(git fetch --tags) and run again"'''
 reddens = ["tests/scripts/test_publish_plugin.py::test_a_local_tag_github_does_not_hold_is_refused[another-id]"]
 
 [[mutation]]
 name = "the publisher advises a fetch for a tag GitHub does not hold"
 file = "scripts/publish_plugin.py"
-before = '''            "Push the tags (RELEASING.md section 2, step 6)"'''
-after = '''            "Fetch GitHub's tags over yours (git fetch --tags --force)"'''
+before = '''            "Push the tags (RELEASING.md section 2, step 6) and run again"'''
+after = '''            "Fetch GitHub's tags over yours (git fetch --tags --force) and run again"'''
 reddens = ["tests/scripts/test_publish_plugin.py::test_a_local_tag_github_does_not_hold_is_refused[no-such-tag]"]
 
 [[mutation]]
@@ -1163,3 +1168,24 @@ file = "scripts/publish_plugin.py"
 before = "    if not done.confirmed:"
 after = "    if False:"
 reddens = ["tests/scripts/test_publish_plugin.py::test_the_cli_says_what_a_dry_run_would_push"]
+
+# Run by an interpreter without this repository's `stayfixed`, the publisher fails on its first
+# import, before the CLI frame exists, and a traceback's exit `1` asks the owner to reject the
+# release; it refuses with `2` itself.
+[[mutation]]
+name = "the publisher exits 1 when its package cannot be imported"
+file = "scripts/publish_plugin.py"
+before = "    sys.exit(2)"
+after = "    sys.exit(1)"
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_run_without_its_package_it_refuses_with_exit_2_and_says_to_use_uv",
+]
+
+# The read-back calls `_first_difference` only once the two manifests differ; two equal ones are a
+# caller's bug, raised rather than worded as a difference inside a rejection.
+[[mutation]]
+name = "the publisher words two equal manifests as a difference"
+file = "scripts/publish_plugin.py"
+before = '''    raise AssertionError("_first_difference was handed two equal manifests; its caller compares")'''
+after = '''    return "the two manifests are the same"'''
+reddens = ["tests/scripts/test_publish_plugin.py::test_two_equal_manifests_have_no_first_difference"]
