@@ -317,23 +317,26 @@ is added to `PLUGIN_PATHS` in `scripts/plugin_tree.py`, or the plugin repository
      this tree at this tag and commit; the plugin repository already holds another tree under
      the tag; or the commit built for it read back as another tree. Each says the tree is not
      the one this run attested, and the tags are spent while nothing else is (section 5).
-     Another tree under the tag is said in one of two ways: `… already has vX.Y.Z, holding
-     another tree:` with the first line where the two differ, or a refusal that opens
-     `scripts/plugin_tree.py manifest refused:` — `manifest`, the read of a commit, not
-     `render` — and names the commit the plugin repository's tag holds: a path there that `is
-     outside every plugin path`, a plugin path that `is missing at` it, or a path that `has
-     mode …, not a regular file's`; or names the object that tag points at, which `names no
-     commit in` the script's scratch copy of the plugin repository, `plugin.git`.
-     `git ls-remote git@github.com:stayfixed/stayfixed-plugin.git refs/tags/vX.Y.Z` prints the
-     object the tag names, to set beside the refusal's.
+     Another tree under the tag is said either as `… already has vX.Y.Z, holding another
+     tree:` with the first line where the two differ, or as any refusal that opens
+     `scripts/plugin_tree.py manifest refused:`. The script reads a commit with `manifest` only
+     to judge what the plugin repository would hold — the commit its tag already names, or the
+     commit this run built for it — so every such refusal rejects, whatever follows it. A path
+     outside every plugin path, a plugin path missing, a mode other than a regular file's, a
+     name holding a control character or not in UTF-8, and a tag naming no commit are examples
+     of what follows, not the list. The render of this repository's tag says `render refused:`
+     instead, and is local, below. The commit such a refusal names after `at` is the one the
+     tag peels to: `git ls-remote git@github.com:stayfixed/stayfixed-plugin.git
+     refs/tags/vX.Y.Z 'refs/tags/vX.Y.Z^{}'` prints the tag's line, and for an annotated tag a
+     `^{}` line naming that commit; the tag the script pushes is lightweight, with no `^{}`
+     line, and its own line names the commit.
    - **Any other refusal is local: fix it and run again.** A tag that is not `vX.Y.Z`, no such
      tag in this checkout, a tag whose `plugin.json` names another version, a render of this
      repository's tag that `scripts/plugin_tree.py` refused (`scripts/plugin_tree.py render
-     refused:`), a git that failed under either read (`git ls-tree of … exited …` or
-     `git cat-file --batch exited …`), a manifest in a format this script does not read, a
-     `git ls-remote` answer that is not an object name, or a step of the scratch repository's
-     own git (`git hash-object exited 128`, say). Running it again is safe for the reason above:
-     nothing is pushed before the one atomic push.
+     refused:`), a manifest in a format this script does not read, a `git ls-remote` answer that
+     is not an object name, or a step of the scratch repository's own git (`git hash-object
+     exited 128`, say). Running it again is safe for the reason above: nothing is pushed before
+     the one atomic push.
 
    Then approve `pypi`. **Once section 3's `pypi` environment exists with a required reviewer**,
    `publish` and `github-release` both wait for it. An approval is given per environment, not
