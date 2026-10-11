@@ -11,8 +11,8 @@ Every rule holds the tree on every pull request, the file count included: the tr
 alone, so a pull request that carries it past `FILES_MAX` carries the plugin past it, and
 `scripts/release.py check --tag` holds the same count again on the commit a release is cut from.
 
-By the owner's decision of 2026-10-10, `docs/cli.md` and every other file outside the plugin's
-paths are no longer judged: the directory's limits judge the files that ship, and these do not.
+`docs/cli.md` and every other file outside the plugin's paths are not judged: the directory's
+limits judge the files that ship, and these do not.
 """
 
 from __future__ import annotations
@@ -592,11 +592,13 @@ def test_the_payload_is_the_generated_plugin_tree() -> None:
 
 @needs_git
 def test_the_walk_reads_the_committed_tree_and_not_the_disk(tmp_path: Path) -> None:
-    # The directory scans a commit, so a size measured on disk, a file deleted from the working
-    # tree or a file only staged is a different payload from the one it reads. Mutation: the size
-    # read from `(root / path).lstat()` instead of the commit's bytes -> the edited file's row
-    # reddens. A symlink and a submodule are `members`' refusals now
-    # (`tests/scripts/test_plugin_tree.py`), so they are not planted here.
+    # The directory scans a commit, so a size measured on disk is a different payload from the
+    # one it reads. What this adds over `tests/scripts/test_plugin_tree.py`'s
+    # `test_members_read_the_commit_and_not_the_disk`, which holds the bytes, the deleted file
+    # and the staged one, is the size this walk observes alone. Mutation: the size read from
+    # `(root / path).lstat()` instead of the commit's bytes -> the edited file's row reddens. A
+    # symlink and a submodule are `members`' refusals (`tests/scripts/test_plugin_tree.py`), so
+    # they are not planted here.
     root = plugin_repository(tmp_path)
     (root / "README.md").write_text("an edit nobody committed\n", encoding="utf-8")
     (root / "LICENSE").unlink()

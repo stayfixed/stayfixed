@@ -380,8 +380,8 @@ one file per area would need no table, and would have spent about twenty of thos
 do. That trade is why `GROUP_OF` is a hand-kept table, the exception to "no shared registry" under
 "Areas". The plugin is now published from a repository of its own, whose root is the tree
 `scripts/plugin_tree.py` generates from the paths its `PLUGIN_PATHS` names, and `mutations/` is not
-among them; the table stays as it is until a follow-up decides whether its coarse grouping still
-earns it.
+among them. The table is kept as it was sized; whether its coarse grouping still earns a table is
+an open question.
 `tests/scripts/test_mutation_oracle.py` reddens on an entry in the wrong file and on a file that
 reaches its cap, three quarters of the directory's; a group that does is split by its largest area,
 which is an edit to `GROUP_OF`.

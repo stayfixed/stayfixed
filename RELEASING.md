@@ -84,11 +84,18 @@ is added to `PLUGIN_PATHS` in `scripts/plugin_tree.py`, or the plugin repository
    uv run ruff check . && uv run ruff format --check . && uv run mypy
    uv run python scripts/mutation_oracle.py
    uv run python scripts/release.py check
-   claude plugin validate --strict .claude-plugin/plugin.json
+   plugin="$(mktemp -d)"
+   uv run python scripts/plugin_tree.py render --root . --rev HEAD \
+     --out "$plugin/tree" --manifest-file "$plugin/plugin-tree.txt"
+   claude plugin validate --strict "$plugin/tree/.claude-plugin/plugin.json"
+   claude plugin validate "$plugin/tree/.codex-plugin/plugin.json"
    claude plugin validate --strict .claude-plugin/marketplace.json
-   claude plugin validate .codex-plugin/plugin.json
    claude plugin tag --dry-run .
    ```
+
+   The two plugin manifests are validated where the render writes them, as `ci.yml` validates
+   them: the plugin repository's root is that tree, rendered from the commit, not this checkout.
+   The marketplace stays here and is validated where it is.
 
    **And read back the four settings a tag relies on**, because none of them lives in the
    tree and a repository transfer carries each one over as it was rather than as section 3

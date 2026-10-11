@@ -1002,7 +1002,7 @@ def test_the_smoke_holds_the_install_to_the_render() -> None:
     # scenario read some of the tree, and the skills, the agents, `README.md` and `LICENSE` have
     # no reader in this job. The step compares the render, by the `--out` it was written to,
     # against the installed root, by the install's own output. Mutation (oracle): `mutations/`'s
-    # "the smoke stops holding the install to the render" deletes the step.
+    # "the smoke stops holding the install to the render" replaces the step's `run:` with `"true"`.
     _, render = _render_step(SMOKE_WORKFLOW, "installed-plugin")
     # Each exclusion by name: `.git` is the render's repository, `.in_use` the harness's marker
     # (measured; the step's comment carries it). A pattern here would hide a plugin file.

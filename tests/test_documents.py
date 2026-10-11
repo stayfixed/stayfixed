@@ -31,6 +31,7 @@ import pytest
 from stayfixed import __version__
 from stayfixed.cli import build_parser, discover_registrars, split_json_flag
 from tests.cli import subparsers
+from tests.scriptload import plugin_tree
 from tests.test_neutral import tracked_files
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -637,19 +638,11 @@ def test_the_readme_points_at_the_methodology_and_the_reference() -> None:
     assert "docs/cli.md" in text
 
 
-# The paths `scripts/plugin_tree.py` renders into the plugin repository, spelled here rather than
-# read from `PLUGIN_PATHS`: an expectation read from the subject would follow it anywhere.
-PLUGIN_TREE_PATHS = (
-    ".claude-plugin/plugin.json",
-    ".codex-plugin/plugin.json",
-    "hooks",
-    "scripts/stayfixed",
-    "src/stayfixed",
-    "skills",
-    "agents",
-    "README.md",
-    "LICENSE",
-)
+# The paths `scripts/plugin_tree.py` renders into the plugin repository, read from its
+# `PLUGIN_PATHS`. The subject here is the README's links, not that list: what the list holds is
+# spelled out and pinned by `tests/scripts/test_plugin_tree.py`, so a fourth copy here would only
+# be one more place to forget when the plugin gains a path.
+PLUGIN_PATHS: tuple[str, ...] = plugin_tree().PLUGIN_PATHS
 # A link to a file of this repository as `main` holds it, which moves only at a release.
 _THIS_REPOSITORY_MAIN = re.compile(r"^https://github\.com/stayfixed/stayfixed/blob/main/([^#]+)")
 
@@ -658,7 +651,8 @@ def test_the_readme_links_only_inside_the_plugin_or_absolutely() -> None:
     """The README is published three times — here, on PyPI as the long description, and at the
     root of the plugin repository, which holds only the plugin's paths. A relative link to
     `docs/cli.md` resolves here and in nothing else, so a link to a file outside the plugin is
-    absolute, to this repository's `main`, and one inside it stays relative.
+    absolute, to this repository's `main`. One inside it stays relative: it resolves here and in
+    the plugin repository, though not on PyPI.
 
     `test_every_relative_link_resolves` holds that a relative link names a file here; this holds
     that the file is one the plugin repository has too, and that every absolute link to `main`
@@ -679,7 +673,7 @@ def test_the_readme_links_only_inside_the_plugin_or_absolutely() -> None:
     outside = [
         target
         for target in normal
-        if not any(target == path or target.startswith(path + "/") for path in PLUGIN_TREE_PATHS)
+        if not any(target == path or target.startswith(path + "/") for path in PLUGIN_PATHS)
     ]
     assert outside == [], outside
     absolute = [
