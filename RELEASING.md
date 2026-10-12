@@ -68,7 +68,7 @@ step 7's sentence true.
 
 **If this is the first release published from the plugin repository, do section 3's "The plugin
 repository" first.** That is `0.3.0`, not only the first release ever: until
-`stayfixed/stayfixed-plugin` exists with its three rulesets, step 1's read-back of them answers
+`stayfixed/stayfixed-plugin` exists with its four rulesets, step 1's read-back of them answers
 `404` and step 7's push has nowhere to go.
 
 **The plugin is published from a repository of its own.** The marketplace entry here fetches it
@@ -135,10 +135,12 @@ is added to `PLUGIN_PATHS` in `scripts/plugin_tree.py`, or the plugin repository
    gh api repos/stayfixed/stayfixed-plugin/rulesets --jq '.[].id' |
      xargs -I{} gh api repos/stayfixed/stayfixed-plugin/rulesets/{} \
      --jq '[.name, .target, .enforcement, (.conditions.ref_name.include | sort),
-            ([.rules[].type] | sort), (.bypass_actors | length)]'
-   # ["release tags","tag","active",["refs/tags/v*.*.*"],["deletion","update"],0]
-   # ["no tag-shaped branches","branch","active",["refs/heads/v*"],["creation"],0]
-   # ["main","branch","active",["refs/heads/main"],["deletion","non_fast_forward"],0]
+            ([.rules[].type] | sort),
+            [(.bypass_actors // [])[] | "\(.actor_type) \(.actor_id) \(.bypass_mode)"]]'
+   # ["release tags","tag","active",["refs/tags/v*.*.*"],["deletion","update"],[]]
+   # ["release tag creation","tag","active",["refs/tags/v*.*.*"],["creation"],["RepositoryRole 5 always"]]
+   # ["no tag-shaped branches","branch","active",["refs/heads/v*"],["creation"],[]]
+   # ["main","branch","active",["refs/heads/main"],["deletion","non_fast_forward"],[]]
    git ls-remote https://github.com/stayfixed/stayfixed-plugin.git refs/heads/main
    gh api repos/stayfixed/stayfixed-plugin/git/ref/heads/main --jq .object.sha
    grep '"sha"' .claude-plugin/marketplace.json
@@ -159,9 +161,11 @@ is added to `PLUGIN_PATHS` in `scripts/plugin_tree.py`, or the plugin repository
    that anyone bypasses lets that one move it; a `release tag creation` with no `creation` rule, or
    with another bypass than the admin role, lets somebody else create the tag whose code step 7
    runs on your machine; a plugin repository whose tags can move, or where a branch can take a
-   tag's name, lets the marketplace's `ref` name a tree nobody attested, one whose `main` can be
-   deleted or rewound loses the parent the next plugin commit names, and a fourth ruleset there is
-   a line this listing does not expect; a plugin repository whose `main` is not the commit this
+   tag's name, lets the marketplace's `ref` name a tree nobody attested, one where somebody other
+   than the admin role can create a release tag lets them take the tag step 7 pushes first, which
+   the publisher can only reject (`another commit under the tag`, exit `1`), one whose `main` can
+   be deleted or rewound loses the parent the next plugin commit names, and a fifth ruleset there
+   is a line this listing does not expect; a plugin repository whose `main` is not the commit this
    `main`'s marketplace pins is one the next release cannot follow (section 5); reporting that is
    off sends every reporter `SECURITY.md` directs to the advisory form back to a public issue; and
    a PyPI project somebody else owns is one step 5's README would tell every reader to install.
@@ -402,7 +406,8 @@ is added to `PLUGIN_PATHS` in `scripts/plugin_tree.py`, or the plugin repository
 
      - **`404` or `409`: no attestation of this manifest yet**, so `attest` has not written it.
        Once `build` and `attest` are green, run again; if it says the same then, reject the
-       `pypi` approval.
+       `pypi` approval: `attest` has attested a manifest, and it is not the one the tag's code
+       made here from the same commit, so what this run would push is not what was attested.
      - **`200` listing an attestation:** GitHub holds one that does not verify on this machine
        against `stayfixed/stayfixed`'s `release.yml` at this tag and commit, which a wrong
        attestation and a `gh` or network that cannot verify here both look like. Run again; if it
@@ -419,7 +424,9 @@ is added to `PLUGIN_PATHS` in `scripts/plugin_tree.py`, or the plugin repository
      version; the commit built for the tag reads back as another tree; GitHub's plugin repository
      holds another commit under the tag; or its `main` is not the plugin commit's parent, a
      release commit cut on the wrong base (section 5). The tags are spent while nothing else is
-     (section 5).
+     (section 5). The first two are found before the attestation is asked about, and are not
+     waiting on it: the tag's own code finds them on the commit GitHub's tag names, and no
+     attestation changes what that commit's tree makes or what its `plugin.json` says.
 
    A run against another `--remote` than the default (a scratch repository, a rehearsal) is
    classified from `git ls-remote` alone, reads nothing back after its push, and its summary, like
@@ -539,6 +546,12 @@ matches neither pattern — free to move:
   is one whose code a fetch over yours would have it run. The bypass is the body's `bypass_actors`,
   where `RepositoryRole` `5` is the admin role.
 
+That `5` is taken from community reports, not from GitHub's REST reference, and step 1's
+read-back only echoes the id it was given. So once, after creating each ruleset that carries it,
+here and in the plugin repository below, open it under **Settings → Rules → Rulesets** and
+confirm that its bypass list reads **Repository admin**; any other role there is the one that can
+create a release tag.
+
 Two rulesets, not one, because a ruleset's bypass applies to every rule it carries: a bypass on
 `release tags` would let an admin move or delete a published tag. The same body creates each
 ruleset or, when one of that name already exists, replaces it in place; a second `POST` beside an
@@ -574,13 +587,17 @@ Then read the two back with section 2's step 1, one line each.
 `stayfixed/stayfixed-plugin`, public and empty — no README, licence or `.gitignore`, because its
 first commit is the one `publish_plugin.py` builds — and protect its tags and its `main`. A
 ruleset applies every rule it carries to every ref it matches and has one target, tags or
-branches, so three rulesets: `release tags`, with `deletion` and `update` rules over
-`refs/tags/v*.*.*`, so a published tag never moves; `no tag-shaped branches`, with a `creation`
-rule over `refs/heads/v*`, so no branch can take a tag's name and shadow it; and `main`, with
-`deletion` and `non_fast_forward` rules over `refs/heads/main`, so the commit each release's
-plugin commit names as its parent stays where the next one finds it. None of them refuses the
-first push, which creates `main` and a tag. The same create-or-replace as above, with the
-repository name changed:
+branches, and its bypass applies to every rule it carries, so four rulesets: `release tags`, with
+`deletion` and `update` rules over `refs/tags/v*.*.*` and no bypass, so a published tag never
+moves; `release tag creation`, with a `creation` rule over the same pattern that the admin role
+bypasses, as this repository's does, so nobody else can create the tag step 7 pushes before you
+do — the publisher compares ids, and a tag somebody else created there first is one it can only
+reject (`another commit under the tag`, exit `1`), spending the version; `no tag-shaped
+branches`, with a `creation` rule over `refs/heads/v*`, so no branch can take a tag's name and
+shadow it; and `main`, with `deletion` and `non_fast_forward` rules over `refs/heads/main`, so the
+commit each release's plugin commit names as its parent stays where the next one finds it. None
+of them refuses your first push, which creates `main` and a tag the admin role may create. The
+same create-or-replace as above, with the repository name changed:
 
 ```bash
 gh repo create stayfixed/stayfixed-plugin --public \
@@ -589,6 +606,12 @@ cat > "${TMPDIR:-/tmp}/plugin-release-tags.json" <<'JSON'
 {"name": "release tags", "target": "tag", "enforcement": "active",
  "conditions": {"ref_name": {"include": ["refs/tags/v*.*.*"], "exclude": []}},
  "rules": [{"type": "deletion"}, {"type": "update"}]}
+JSON
+cat > "${TMPDIR:-/tmp}/plugin-release-tag-creation.json" <<'JSON'
+{"name": "release tag creation", "target": "tag", "enforcement": "active",
+ "conditions": {"ref_name": {"include": ["refs/tags/v*.*.*"], "exclude": []}},
+ "rules": [{"type": "creation"}],
+ "bypass_actors": [{"actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "always"}]}
 JSON
 cat > "${TMPDIR:-/tmp}/plugin-tag-shaped-branches.json" <<'JSON'
 {"name": "no tag-shaped branches", "target": "branch", "enforcement": "active",
@@ -609,12 +632,14 @@ ruleset() {  # $1 the ruleset's name, $2 its body: replace the one of that name,
   fi
 }
 ruleset "release tags" "${TMPDIR:-/tmp}/plugin-release-tags.json"
+ruleset "release tag creation" "${TMPDIR:-/tmp}/plugin-release-tag-creation.json"
 ruleset "no tag-shaped branches" "${TMPDIR:-/tmp}/plugin-tag-shaped-branches.json"
 ruleset "main" "${TMPDIR:-/tmp}/plugin-main.json"
 ```
 
-Then read the three back with section 2's step 1, whose listing names each of them on a line of
-its own; any other answer is a repository to fix before anything is pushed to it.
+Then read the four back with section 2's step 1, whose listing names each of them on a line of
+its own, and confirm `release tag creation`'s bypass on its settings page as above; any other
+answer is a repository to fix before anything is pushed to it.
 
 **Private vulnerability reporting.** `SECURITY.md`, `CODE_OF_CONDUCT.md` and both issue-template
 files send reporters to the advisory form, which exists only while the repository setting is on:
@@ -718,7 +743,10 @@ projects only.
   ```
 
   The path-limited commit takes the marketplace alone, with the `ref` step 3 set, and leaves the
-  release's other edits staged; step 5 then runs again from its first command.
+  release's other edits staged; step 5 then runs again from its first command. That commit alone
+  is red under plain `check`, its `ref` naming the new version while every other source names the
+  old one, and nothing checks it alone: it is never tagged, and `git push origin main` in step 7
+  runs CI on the release commit above it.
 - **The plugin push was refused or failed.** `scripts/publish_plugin.py` pushes `main` and the
   tag together, atomically, and only after the attestation and the read-back held, so a refusal
   or a failed push leaves the plugin repository as it was, and this repository's `main` and the
@@ -758,17 +786,19 @@ uv run python scripts/release.py pin [--remote URL]               # the plugin c
 disagrees. Its `--json` object carries `summary`, `versions` (every source and what it says) and
 `problems` (empty on a clean run), and it carries all three whether or not there is drift — the
 drift is in `problems`, not in the shape. A source it cannot parse at all is still a failure and
-prints `error` instead. `--tag` accepts both tag shapes, `vX.Y.Z` and `stayfixed--vX.Y.Z`,
-because either may be the ref a run was created from. Under `--tag` it also runs
-`scripts/plugin_tree.py commit` on `HEAD`, and refuses a plugin tree past the 512 files the plugin
-directory lists unheld (section 2), a marketplace entry that pins no `sha` or another commit than
-the plugin commit that tree makes (the `plugin pin` finding, which names the commit and, for an
-entry pinning none, says to run `pin`), and a tree that script could not read, quoting what it
-said — a clone without `HEAD`'s first parent among them, which it names `fetch-depth: 2` for.
-Plain `check`, which CI runs on every pull request, never counts and never computes the commit,
-because `tests/test_payload.py` holds the same count there and the pin is the release commit's
-alone. It writes nothing; it reads the sources, the fragments pending in `changelog.d/`,
-`hooks/hashes.json` beside the three files it records, and under `--tag` the committed tree.
+prints `error` instead. `--tag` accepts both tag shapes, `vX.Y.Z` and `stayfixed--vX.Y.Z`, because
+either may be the ref a run was created from. Under `--tag`, once it finds the marketplace entry
+well-formed, it also runs `scripts/plugin_tree.py commit` on `HEAD` (an entry it finds malformed is
+reported once, as the entry's finding, and the rest is asked once it is fixed), and refuses a plugin
+tree past the 512 files the plugin directory lists unheld (section 2), a marketplace entry that pins
+no `sha` or another commit than the plugin commit that tree makes (the `plugin pin` finding, which
+names the commit and, for an entry pinning none, says to run `pin`), and a tree that script could
+not read, quoting what it said — a clone without `HEAD`'s first parent among them, which it names
+`fetch-depth: 2` for. Plain `check`, which CI runs on every pull request, never counts and never
+computes the commit, because `tests/test_payload.py` holds the same count there and the pin is the
+release commit's alone. It writes nothing; it reads the sources, the fragments pending in
+`changelog.d/`, `hooks/hashes.json` beside the three files it records, and under `--tag` the
+committed tree.
 
 **`notes`** is a wrapper around towncrier, which does the rendering while `[tool.towncrier]` in
 `pyproject.toml` owns the format. A `--version` that is not the project's is refused (`2`) before

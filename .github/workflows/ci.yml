@@ -94,9 +94,10 @@ jobs:
       - name: Types
         run: uv run mypy
       - name: Tests
-        # Coverage, because 2,455 statements of security-sensitive code with nobody able to say
-        # which containment branches are exercised is how an untested `..` argument stayed
-        # invisible: the walk's loop was covered, just never with an escaping path.
+        # Coverage, because security-sensitive code with nobody able to say which containment
+        # branches are exercised is how an untested `..` argument stayed invisible: the walk's
+        # loop was covered, just never with an escaping path. No statement count is written here:
+        # every change falsifies one, and the report prints it.
         env:
           STAYFIXED_OLD_PYTHON: ${{ steps.old-python.outputs.python-path }}
         run: uv run pytest -n auto --cov --cov-report=term-missing --cov-fail-under=92
