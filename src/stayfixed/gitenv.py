@@ -71,6 +71,7 @@ import os
 import subprocess
 import sys
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 
 from stayfixed import fsops
@@ -149,10 +150,11 @@ FLOOR_VARIABLE = "STAYFIXED_GIT_FLOOR_SECONDS"
 # not catch, so an uncapped value would end every caller as an internal error.
 FLOOR_CEILING_SECONDS: float = 600
 
-# What `git_run`'s `(-1, "")` means, in one clause a caller's message can build on. The runner
+# What `git_run`'s `(-1, "")` means, in one clause a caller's message can build on. `git_run`
 # does not say which of the three it was, because none of them is an answer about the
 # repository: a caller that words `-1` as one cause — "git is not installed", "the fetch timed
-# out" — is wrong about the other two. What git printed is never one of them: its output is
+# out" — is wrong about the other two. `git_answer`, whose refusal has to name the cause, reads
+# it from `_ask`, where it is known. What git printed is never one of them: its output is
 # decoded losslessly, so an answer is always read.
 NO_ANSWER = "git could not be run, ran past its time limit, or could not be given its input"
 
@@ -340,13 +342,36 @@ def git_run(
     UTF-8, asked on Linux under a locale that is not. A name read off the disk never does,
     because it was decoded with that same codec.
     """
+    asked = _ask(root, *args, timeout=timeout, stdin=stdin)
+    return (-1, "") if isinstance(asked, _NoAnswer) else asked
+
+
+class _NoAnswer(Enum):
+    """Which of `NO_ANSWER`'s three causes `_ask` met, kept where it is known. `git_run` flattens
+    all three into `-1` for the callers that read them as one; `git_answer` must not, because its
+    refusal says what to do, and a timeout and a `git` that cannot start need different words."""
+
+    UNLAUNCHABLE = "unlaunchable"
+    TIMED_OUT = "timed out"
+    UNENCODABLE_INPUT = "unencodable input"
+
+
+def _ask(
+    root: Path, *args: str, timeout: float = GIT_TIMEOUT_SECONDS, stdin: str | None = None
+) -> tuple[int, str] | _NoAnswer:
+    """`git_run`'s question, answered as `(returncode, stdout)` or as why there was no answer.
+
+    The one place a `git` process is started to ask something; everything `git_run`'s docstring
+    says of the call is true of this one. A `returncode` below zero is a `git` a signal ended,
+    which `subprocess` reports as the signal's negative.
+    """
     program = git_program()
     if program is None:
-        return -1, ""
+        return _NoAnswer.UNLAUNCHABLE
     codec = pipe_encoding()
     try:
         given = None if stdin is None else stdin.encode(codec, "surrogateescape")
-        completed = subprocess.run(  # noqa: S603 - see the docstring
+        completed = subprocess.run(  # noqa: S603 - see `git_run`'s docstring
             [program.executable, "-C", str(root), *args],
             input=given,
             capture_output=True,
@@ -354,8 +379,12 @@ def git_run(
             timeout=max(timeout, bound_floor()),
             env=scrubbed_env(program.path),
         )
-    except (OSError, subprocess.SubprocessError, UnicodeEncodeError):
-        return -1, ""
+    except subprocess.TimeoutExpired:
+        return _NoAnswer.TIMED_OUT
+    except UnicodeEncodeError:
+        return _NoAnswer.UNENCODABLE_INPUT
+    except (OSError, subprocess.SubprocessError):
+        return _NoAnswer.UNLAUNCHABLE
     answer = completed.stdout.decode(codec, "surrogateescape")
     return completed.returncode, answer
 
@@ -420,28 +449,43 @@ class GitUnavailable(Failure):
     `stayfixed attach` when the real fault is their `git` — the state a macOS machine is in when
     `/usr/bin/git` is the Xcode shim with an unaccepted licence, since `GIT_ENV_KEEP` scrubs
     `DEVELOPER_DIR`.
+
+    `cause` is the `GitAnswer.cause` the refusal was built from, so a caller walking several
+    checkouts can tell a directory that went away (`Unasked.GONE`) from a fault it has to report.
     """
 
+    def __init__(self, message: str, cause: Unasked | None = None) -> None:
+        super().__init__(message)
+        self.cause = cause
 
-def git_is_usable(root: Path) -> bool:
-    """Whether the `git` `git_run` runs here works at all, asked the same way.
 
-    The discriminator for a non-zero exit, and the reason this is a second call rather than a
-    guess at exit codes. `git` answers "no" with a non-zero exit in ordinary, correct
-    situations — 128 for "not a git repository", 2 for "no such remote" — and a broken install
-    also exits non-zero, so the number alone cannot tell the two apart: the Xcode shim with an
-    unaccepted licence exits non-zero for every invocation, including `--version`. Asking a
-    question that needs no repository separates "git said no" from "git cannot speak".
-
-    Asked from `root`, as the question that failed was, so a `root` git cannot enter is "cannot
-    speak" here too, as it was when the first question could not be launched there at all.
-
-    One probe for every reader that has to tell the two apart — `git_answer` below, which
-    `origin_remote` and the memory store read — so they cannot disagree about which `git` is
-    broken. Not cached. It runs only after a query has already failed, and caching it would make the
-    answer depend on which test ran first.
+class Unasked(Enum):
+    """Why `git_answer` has no answer. Each value is the sentence a refusal ends with, and ends in
+    what to do about it, so a refusal names the cause it found rather than "check that `git` runs
+    here" for every one: on a machine at a load average of 140, one `rev-parse` among 65 worktrees
+    outlived its five seconds, and the owner was sent to check a `git` that worked.
     """
-    return git_run(root, "--version")[0] == 0
+
+    TIMED_OUT = (
+        "`git` gave this question no answer within its time limit, which a heavily loaded "
+        "machine causes; run the command again"
+    )
+    ENDED = (
+        "`git` was ended by a signal before it answered, which a machine out of memory causes; "
+        "run the command again"
+    )
+    GONE = (
+        "the directory it was asked in no longer exists, which a worktree removed while the "
+        "command ran causes"
+    )
+    NOT_STARTED = "`git` could not be started here; check that `git` runs here"
+    BROKEN = "`git` fails here even for `git --version`; check that `git` runs here"
+
+
+def _unanswered(asked: _NoAnswer) -> Unasked:
+    """The cause a question `_ask` got no answer to is refused for. An input `git` could not be
+    given is a `git` never started, and `git_answer` gives none, so it reads as one."""
+    return Unasked.TIMED_OUT if asked is _NoAnswer.TIMED_OUT else Unasked.NOT_STARTED
 
 
 @dataclass(frozen=True)
@@ -449,40 +493,59 @@ class GitAnswer:
     """git's one-line answer to one question, in three values: an answer, no answer, or could
     not ask.
 
-    `value` is the answer when there is one. `ran` is False only when `git` could not be run, or
-    exited non-zero and `git_is_usable` says it cannot speak at all — an empty stdout from a
-    successful run, and a refusal from a `git` that works, are "no answer", which is a fact about
-    the repository rather than about the machine.
+    `value` is the answer when there is one. `cause` is set only when `git` could not be asked,
+    and says why (`Unasked`). An empty stdout from a successful run, and a refusal from a `git`
+    that works, are "no answer", which is a fact about the repository rather than about the
+    machine, and carry no cause.
     """
 
     value: str | None
-    ran: bool = True
+    cause: Unasked | None = None
 
     def require(self, refusal: str) -> str | None:
-        """The answer, raising `GitUnavailable(refusal)` rather than answering `None` when `git`
-        could not be asked. The words are the caller's, because only the caller knows what went
-        unanswered and what that stops."""
-        if not self.ran:
-            raise GitUnavailable(refusal)
+        """The answer, raising `GitUnavailable` rather than answering `None` when `git` could not
+        be asked. `refusal` is the caller's, because only the caller knows what went unanswered
+        and what that stops; what follows it is the cause, which says what to do."""
+        if self.cause is not None:
+            raise GitUnavailable(f"{refusal}: {self.cause.value}", self.cause)
         return self.value
 
 
 def git_answer(root: Path, *args: str) -> GitAnswer:
-    """git's one-line answer to `args` asked in `root`, through `git_run`.
+    """git's one-line answer to `args` asked in `root`, through `_ask`, `git_run`'s own call.
 
-    `git_run` scrubs the environment and decodes losslessly, so an `origin` URL holding a byte
-    that is not UTF-8 is still an answer `init --questions` and `init --yes` can read: the
-    answer is what git printed, a path as the filesystem spells it, less its line ending
-    alone — never `strip()`, for `answer_lines`'s reason.
+    Scrubbed and decoded losslessly as `git_run` is, so an `origin` URL holding a byte that is not
+    UTF-8 is still an answer `init --questions` and `init --yes` can read: the answer is what git
+    printed, a path as the filesystem spells it, less its line ending alone — never `strip()`, for
+    `answer_lines`'s reason.
+
+    **When there is no answer, why**, read where it is known rather than guessed afterwards. No
+    process at all is `_ask`'s own cause: ran out of time, or could not be started. A negative exit
+    is a `git` a signal ended — no answer, as `ForkUnknown.of` reads it, and never "git said no",
+    which made `main_checkout` answer `root` for a `git` the OOM killer ended. A positive exit is
+    "git declined" or "git is broken", and two questions tell them apart, asked only after it.
+    First whether `root` is still a directory: `git -C <gone>` exits 128 for `--version` too, so a
+    worktree removed mid-walk read as a broken `git`. Then `git --version` from the same `root`,
+    which needs no repository: the Xcode shim with an unaccepted licence exits non-zero for every
+    invocation, and a `git` that answers it declined the question. That probe is the only second
+    process, and it runs only after `git` has exited on its own.
     """
-    code, out = git_run(root, *args)
-    if code == -1:
-        return GitAnswer(None, ran=False)
-    if code != 0:
-        # `git` ran and declined, *or* `git` is broken. `git_is_usable` is what tells them
-        # apart; without it every reader would take the second for the first.
-        return GitAnswer(None, ran=git_is_usable(root))
-    return GitAnswer(out.removesuffix("\n") or None)
+    asked = _ask(root, *args)
+    if isinstance(asked, _NoAnswer):
+        return GitAnswer(None, _unanswered(asked))
+    code, out = asked
+    if code == 0:
+        return GitAnswer(out.removesuffix("\n") or None)
+    if code < 0:
+        return GitAnswer(None, Unasked.ENDED)
+    if not fsops.is_dir(root):
+        return GitAnswer(None, Unasked.GONE)
+    probe = _ask(root, "--version")
+    if isinstance(probe, _NoAnswer):
+        return GitAnswer(None, _unanswered(probe))
+    if probe[0] != 0:
+        return GitAnswer(None, Unasked.BROKEN)
+    return GitAnswer(None)
 
 
 def origin_remote(root: Path) -> str | None:
@@ -502,16 +565,16 @@ def origin_remote(root: Path) -> str | None:
     Raises `GitUnavailable` rather than answering `None` when `git` could not be asked at all.
     "No origin remote" is a fact about the repository and reads as *not this one*, while "could
     not ask" is a fault on this machine, and collapsing them tells the user to run `stayfixed
-    attach` about their own `git`. A non-zero exit is either, so `git_answer` has `git_is_usable`
-    ask a second question that needs no repository from the same `root`: git answers "no such
-    remote" with an exit of its own, and a broken install exits non-zero for everything.
+    attach` about their own `git`. A non-zero exit is either, so `git_answer` asks a second
+    question that needs no repository from the same `root`: git answers "no such remote" with an
+    exit of its own, and a broken install exits non-zero for everything.
 
     The value is repository-authored (principle 5): a clone chooses its own remote URL, so a caller
     that shows it wraps it first.
     """
     return git_answer(root, "remote", "get-url", "origin").require(
         "`git` could not read this repository's origin remote — the fault is on this "
-        "machine rather than in the repository; check that `git` runs here"
+        "machine rather than in the repository"
     )
 
 

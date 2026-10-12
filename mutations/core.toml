@@ -439,8 +439,8 @@ reddens = [
 [[mutation]]
 name = "the git runner lets a stdin it cannot encode escape as a traceback"
 file = "src/stayfixed/gitenv.py"
-before = "    except (OSError, subprocess.SubprocessError, UnicodeEncodeError):"
-after = "    except (OSError, subprocess.SubprocessError):"
+before = "    except UnicodeEncodeError:\n        return _NoAnswer.UNENCODABLE_INPUT\n"
+after = ""
 reddens = ["tests/test_git_run.py::test_a_stdin_this_process_cannot_encode_is_minus_one"]
 
 # The floor under every `git_run` bound is the test suite's, so a loaded machine cannot decide a
@@ -2757,8 +2757,8 @@ reddens = [
 [[mutation]]
 name = "a broken git reads as a repository that answered"
 file = "src/stayfixed/gitenv.py"
-before = "        return GitAnswer(None, ran=git_is_usable(root))"
-after = "        return GitAnswer(None)"
+before = "    if probe[0] != 0:"
+after = "    if False:"
 reddens = [
   "tests/test_git_answers.py::test_a_git_that_fails_everything_is_not_a_repository_without_an_origin",
   "tests/memory/test_store.py::test_a_git_that_exits_non_zero_for_everything_cannot_name_the_main_checkout",
@@ -3541,3 +3541,68 @@ after = """    if parts is None:
         return True"""
 reddens = ["tests/overlay/test_requires.py::test_the_floor_is_met_by_a_later_triple_or_its_own_and_never_a_pre_release_of_it[1.0.0x-True]"]
 
+# Why git gave no answer is the refusal's remedy, so each cause is its own sentence. A question
+# that ran out of time in a `git` that answers `--version` is load, cured by running again; one
+# asked in a directory that is gone is a removed worktree, which a walk skips. Read as a broken
+# `git`, each sent the owner to check a `git` that worked.
+[[mutation]]
+name = "a question that ran out of time reads as a broken git"
+file = "src/stayfixed/gitenv.py"
+before = "    return Unasked.TIMED_OUT if asked is _NoAnswer.TIMED_OUT else Unasked.NOT_STARTED"
+after = "    return Unasked.BROKEN if asked is _NoAnswer.TIMED_OUT else Unasked.NOT_STARTED"
+reddens = [
+  "tests/attach/test_write.py::test_a_worktree_whose_question_runs_out_of_time_is_named_and_not_called_a_broken_git",
+]
+
+[[mutation]]
+name = "a question asked in a removed worktree reads as a broken git"
+file = "src/stayfixed/gitenv.py"
+before = "    if not fsops.is_dir(root):"
+after = "    if False:"
+reddens = [
+  "tests/memory/test_store.py::test_a_worktree_removed_before_it_is_asked_about_is_gone_not_a_broken_git",
+  "tests/attach/test_write.py::test_a_worktree_removed_while_attach_walks_is_skipped_and_the_rest_is_linked",
+]
+
+# The other causes, each with the remedy that fits it. A `git` a signal ended is no answer, as
+# `ForkUnknown.of` already reads one; read as "git said no", it made `main_checkout` answer the
+# worktree itself. A `git` that cannot start, or fails `--version`, is told to check that `git`
+# runs, never to run the command again, which would repeat for ever. And the `--version` probe
+# that tells "declined" from "broken" can itself run out of time on a loaded machine, which is
+# load, not a broken `git`.
+[[mutation]]
+name = "a git a signal ended reads as a repository that answered nothing"
+file = "src/stayfixed/gitenv.py"
+before = "    if code < 0:\n        return GitAnswer(None, Unasked.ENDED)"
+after = "    if False:\n        return GitAnswer(None, Unasked.ENDED)"
+reddens = [
+  "tests/memory/test_store.py::test_a_git_a_signal_ended_cannot_make_a_worktree_look_like_the_main_checkout",
+]
+
+[[mutation]]
+name = "a git that cannot be started is told to run the command again"
+file = "src/stayfixed/gitenv.py"
+before = "    return Unasked.TIMED_OUT if asked is _NoAnswer.TIMED_OUT else Unasked.NOT_STARTED"
+after = "    return Unasked.TIMED_OUT if asked is _NoAnswer.TIMED_OUT else Unasked.TIMED_OUT"
+reddens = [
+  "tests/memory/test_store.py::test_a_git_that_cannot_run_is_not_reported_as_an_unbound_overlay",
+]
+
+[[mutation]]
+name = "a broken git is told to run the command again"
+file = "src/stayfixed/gitenv.py"
+before = "        return GitAnswer(None, Unasked.BROKEN)"
+after = "        return GitAnswer(None, Unasked.TIMED_OUT)"
+reddens = [
+  "tests/test_git_answers.py::test_a_git_that_fails_everything_is_not_a_repository_without_an_origin",
+  "tests/memory/test_store.py::test_a_git_that_exits_non_zero_for_everything_cannot_name_the_main_checkout",
+]
+
+[[mutation]]
+name = "a probe that ran out of time reads as a broken git"
+file = "src/stayfixed/gitenv.py"
+before = "        return GitAnswer(None, _unanswered(probe))"
+after = "        return GitAnswer(None, Unasked.BROKEN)"
+reddens = [
+  "tests/memory/test_store.py::test_a_probe_that_runs_out_of_time_is_not_a_broken_git",
+]
