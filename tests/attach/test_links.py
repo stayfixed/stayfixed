@@ -13,7 +13,7 @@ import pytest
 
 from stayfixed import fsops
 from stayfixed.attach.check import check
-from stayfixed.attach.write import Attached, attach
+from stayfixed.attach.write import Attached, _worktrees, attach
 from stayfixed.config.layout import ATTACH_LEDGER as LEDGER
 from stayfixed.config.loader import load
 from stayfixed.config.schema import Config
@@ -528,8 +528,10 @@ def test_a_worktree_whose_directory_is_gone_is_skipped_rather_than_blamed_on_git
     # links were written, on a machine whose `git` was fine. `detach` in the same state
     # completed, so the two halves disagreed about it.
     #
-    # Mutation (`mutations/`'s "attach links into a worktree git reports as prunable"): the
-    # `prunable` skip removed → this raises.
+    # Two guards hold this, and neither alone reddens it: the `prunable` skip in `_worktrees`
+    # and the gone-directory skip in `_link_everywhere`. Each is pinned by a test of its own, the
+    # next one here and `test_write`'s race: `mutations/`'s "attach links into a worktree git
+    # reports as prunable" and "a worktree removed mid-walk fails the whole attach".
     root, store, machine = _bound(tmp_path)
     side = tmp_path / "side"
     _git(root, "worktree", "add", "-q", str(side), "-b", "side")
@@ -537,6 +539,24 @@ def test_a_worktree_whose_directory_is_gone_is_skipped_rather_than_blamed_on_git
     attached = _attach(root, store, machine, tmp_path / "home")
     assert (root / "docs" / "memory" / "developer").is_symlink()
     assert not any(str(side) in str(path) for path in attached.links.created)
+
+
+def test_a_worktree_git_reports_as_prunable_is_not_a_checkout_attach_or_detach_walks(
+    tmp_path: Path,
+) -> None:
+    # `git worktree list` keeps a worktree deleted without `git worktree prune`, marked
+    # `prunable`, and git's own word on it is that it is gone. `attach` would also skip it for its
+    # gone directory when it asks there, so the test above passes without this guard; `_worktrees`
+    # is what `detach` walks too, and it lists no checkout git calls prunable. Mutation (declared):
+    # `mutations/`'s "attach links into a worktree git reports as prunable".
+    root, _store, _machine = _bound(tmp_path)
+    side = tmp_path / "side"
+    _git(root, "worktree", "add", "-q", str(side), "-b", "side")
+    listed = {path.resolve() for path in _worktrees(root)}
+    # Non-vacuous: listed while it exists.
+    assert side.resolve() in listed
+    shutil.rmtree(side)
+    assert all(path.name != "side" for path in _worktrees(root))
 
 
 def test_a_home_whose_claude_is_a_symlink_refuses_above_every_write(tmp_path: Path) -> None:

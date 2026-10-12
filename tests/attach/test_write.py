@@ -36,6 +36,7 @@ from stayfixed.attach.write import (
 )
 from stayfixed.config.loader import CONFIG_FILE, load
 from stayfixed.errors import Failure, Refusal
+from stayfixed.gitenv import Unasked
 from stayfixed.memory.api import PROJECT_RECORD, link_sources
 from stayfixed.overlay.api import COMMON_CLAUDE, COMMON_CODEX
 from stayfixed.scaffold import EntriesError, Style, drop, extract, owned_ids
@@ -1707,8 +1708,8 @@ def test_a_worktree_whose_question_runs_out_of_time_is_named_and_not_called_a_br
         _attach_confirmed(root, store, machine, tmp_path / "home")
     message = str(failed.value)
     assert str(side) in message
-    assert "time limit" in message
-    assert "again" in message
+    assert Unasked.TIMED_OUT.value in message
+    assert Unasked.NOT_STARTED.value not in message
     assert "check that `git` runs here" not in message
 
 
@@ -1726,7 +1727,10 @@ def test_a_worktree_removed_while_attach_walks_is_skipped_and_the_rest_is_linked
     real = subprocess.run
 
     def removed_first(args: list[str], kwargs: Any) -> subprocess.CompletedProcess[bytes]:
-        shutil.rmtree(side)
+        # Once: a second `rmtree` would raise inside the stub, and the run would pass through
+        # `_ask`'s `OSError` arm instead of the path this is about.
+        if side.exists():
+            shutil.rmtree(side)
         return real(args, **kwargs)
 
     _ask_in(side, removed_first, monkeypatch)

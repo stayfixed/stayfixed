@@ -15,6 +15,7 @@ runs where the disk cannot hold such a name (APFS refuses one).
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 from pathlib import Path
 
@@ -22,7 +23,7 @@ import pytest
 
 from stayfixed.attach.write import _worktrees, attach
 from stayfixed.errors import Refusal
-from stayfixed.gitenv import GitUnavailable, _git_toplevel, origin_remote
+from stayfixed.gitenv import GitUnavailable, Unasked, _git_toplevel, origin_remote
 from stayfixed.guards.commit import commits_in
 from stayfixed.guards.githooks import hooks_dir
 from stayfixed.guards.hygiene import dirty_count
@@ -101,8 +102,10 @@ def test_a_git_that_fails_everything_is_not_a_repository_without_an_origin(
     # Both answers off one checkout with no `origin`: git that runs says "no such remote" with a
     # non-zero exit, which is `None`, and a git that exits non-zero for everything — the Xcode
     # shim with an unaccepted licence — must not read the same way, or the user is sent to
-    # `stayfixed attach` about their own `git`. Mutation (declared): `mutations/`'s "a broken git
-    # reads as a repository that answered".
+    # `stayfixed attach` about their own `git`. And its remedy is to check that `git` runs, never
+    # to run the command again, which would repeat for ever. Mutations (declared): `mutations/`'s
+    # "a broken git reads as a repository that answered" and "a broken git is told to run the
+    # command again".
     root = tmp_path / "project"
     root.mkdir()
     git(root, "init", "-q")
@@ -112,7 +115,7 @@ def test_a_git_that_fails_everything_is_not_a_repository_without_an_origin(
         return subprocess.CompletedProcess(args, 69, b"", b"You have not agreed to the licence\n")
 
     monkeypatch.setattr("stayfixed.gitenv.subprocess.run", broken)
-    with pytest.raises(GitUnavailable):
+    with pytest.raises(GitUnavailable, match=re.escape(Unasked.BROKEN.value)):
         origin_remote(root)
 
 
