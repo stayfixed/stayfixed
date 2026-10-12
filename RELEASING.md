@@ -137,15 +137,15 @@ is added to `PLUGIN_PATHS` in `scripts/plugin_tree.py`, or the plugin repository
      --jq '[.name, .target, .enforcement, (.conditions.ref_name.include | sort),
             ([.rules[].type] | sort),
             [(.bypass_actors // [])[] | "\(.actor_type) \(.actor_id) \(.bypass_mode)"]]'
-   # ["release tags","tag","active",["refs/tags/v*.*.*"],["deletion","update"],[]]
-   # ["release tag creation","tag","active",["refs/tags/v*.*.*"],["creation"],["RepositoryRole 5 always"]]
-   # ["no tag-shaped branches","branch","active",["refs/heads/v*"],["creation"],[]]
    # ["main","branch","active",["refs/heads/main"],["deletion","non_fast_forward"],[]]
+   # ["no tag-shaped branches","branch","active",["refs/heads/v*"],["creation"],[]]
+   # ["release tag creation","tag","active",["refs/tags/v*.*.*"],["creation"],["RepositoryRole 5 always"]]
+   # ["release tags","tag","active",["refs/tags/v*.*.*"],["deletion","update"],[]]
    git ls-remote https://github.com/stayfixed/stayfixed-plugin.git refs/heads/main
    gh api repos/stayfixed/stayfixed-plugin/git/ref/heads/main --jq .object.sha
    grep '"sha"' .claude-plugin/marketplace.json
    # one commit on all three lines, the plugin repository's main; before 0.3.0 the first and the
-   # last print nothing, and gh api answers "gh: Git Repository is empty. (HTTP 409)", or 404
+   # last print nothing, and gh api answers "gh: Git Repository is empty. (HTTP 409)"
    gh api repos/stayfixed/stayfixed/private-vulnerability-reporting --jq .enabled
    # true
    curl -sS -o /dev/null -w '%{http_code}\n' https://pypi.org/pypi/stayfixed/json
@@ -155,20 +155,21 @@ is added to `PLUGIN_PATHS` in `scripts/plugin_tree.py`, or the plugin repository
 
    Any other answer stops the release here. A `404` from `stayfixed/stayfixed-plugin` means section
    3's "The plugin repository" has not been done: do it, then read back again. Once it is done, `gh
-   api …/git/ref/heads/main` answers `(HTTP 409)` for the empty repository before `0.3.0`, or
-   `404`, and the publisher reads either as no `main`; any other failure there stops the release
-   too. A ruleset that lists other patterns leaves the tag step 6 pushes movable; a `release tags`
-   that anyone bypasses lets that one move it; a `release tag creation` with no `creation` rule, or
-   with another bypass than the admin role, lets somebody else create the tag whose code step 7
-   runs on your machine; a plugin repository whose tags can move, or where a branch can take a
-   tag's name, lets the marketplace's `ref` name a tree nobody attested, one where somebody other
-   than the admin role can create a release tag lets them take the tag step 7 pushes first, which
-   the publisher can only reject (`another commit under the tag`, exit `1`), one whose `main` can
-   be deleted or rewound loses the parent the next plugin commit names, and a fifth ruleset there
-   is a line this listing does not expect; a plugin repository whose `main` is not the commit this
-   `main`'s marketplace pins is one the next release cannot follow (section 5); reporting that is
-   off sends every reporter `SECURITY.md` directs to the advisory form back to a public issue; and
-   a PyPI project somebody else owns is one step 5's README would tell every reader to install.
+   api …/git/ref/heads/main` answers `(HTTP 409)` for the empty repository before `0.3.0` (measured
+   2026-10-12, the day it was created; the publisher reads a `404` as no `main` too), and the
+   publisher reads it as no `main`; any other failure there stops the release too. A ruleset that
+   lists other patterns leaves the tag step 6 pushes movable; a `release tags` that anyone bypasses
+   lets that one move it; a `release tag creation` with no `creation` rule, or with another bypass
+   than the admin role, lets somebody else create the tag whose code step 7 runs on your machine; a
+   plugin repository whose tags can move, or where a branch can take a tag's name, lets the
+   marketplace's `ref` name a tree nobody attested, one where somebody other than the admin role can
+   create a release tag lets them take the tag step 7 pushes first, which the publisher can only
+   reject (`another commit under the tag`, exit `1`), one whose `main` can be deleted or rewound
+   loses the parent the next plugin commit names, and a fifth ruleset there is a line this listing
+   does not expect; a plugin repository whose `main` is not the commit this `main`'s marketplace
+   pins is one the next release cannot follow (section 5); reporting that is off sends every
+   reporter `SECURITY.md` directs to the advisory form back to a public issue; and a PyPI project
+   somebody else owns is one step 5's README would tell every reader to install.
 
    **After a stopped release whose plugin was pushed**, the plugin repository's `main` is that
    release's plugin commit, which only the spent release commit pins, so the `grep` above names

@@ -1098,9 +1098,10 @@ Follow-ups, as they were settled after the pull request merged (2026-10-12), eac
 that fixed it in the follow-up pull request, "moot", the reason it was not taken, or "owner
 action" for what only the owner can do on GitHub or in the private design:
 
-- **Measurements.** GitHub's answer for the empty plugin repository's `main` (`409` or `404`):
-  owner action, read as `RELEASING.md` step 1 says once `stayfixed/stayfixed-plugin` exists.
-  Amending the private design's two sections on the plugin's distribution (Task 8 Step 4): owner
+- **Measurements.** GitHub's answer for the empty plugin repository's `main`: `409` ("Git
+  Repository is empty."), `gh api` exiting `1`, and `git ls-remote` listing nothing with exit
+  `0`, measured on 2026-10-12 right after `stayfixed/stayfixed-plugin` was created with its four
+  rulesets, which read back as `RELEASING.md` step 1 expects. Amending the private design's two sections on the plugin's distribution (Task 8 Step 4): owner
   action.
 - **`scripts/publish_plugin.py`.** `_verify` and `_attested` as one `_advice`: not taken; the
   seam broke three times before Ruling 8 settled it, its entries anchor on the current lines,
@@ -1143,7 +1144,8 @@ action" for what only the owner can do on GitHub or in the private design:
   statement count, dropped (`da6c3d5`). The unwrapped line in `CONTRIBUTING.md`: wrapped
   (`da6c3d5`).
 - **From the external review.** The plugin repository's tags without a creation rule: a fourth
-  ruleset documented in `RELEASING.md` section 3 (`da6c3d5`); creating it is owner action.
+  ruleset documented in `RELEASING.md` section 3 (`da6c3d5`), and created with the repository on
+  2026-10-12.
   `RepositoryRole` 5 from community reports: section 3 now says to confirm the bypass on the
   settings page (`da6c3d5`); confirming it for this repository's `release tag creation` is owner
   action. `pin`'s refusal naming the pushed-plugin case: named (`b1da2e2`).
