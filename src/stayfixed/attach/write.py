@@ -89,7 +89,7 @@ from stayfixed.config.paths import PathEscape, PathUnasked, contained
 from stayfixed.config.schema import Config
 from stayfixed.errors import Failure, Refusal
 from stayfixed.fsops import UnsafePath
-from stayfixed.gitenv import answer_lines, git_run
+from stayfixed.gitenv import GitUnavailable, Unasked, answer_lines, git_run
 from stayfixed.guards.api import hooks_dir
 from stayfixed.jsonobject import NESTED, json_object
 from stayfixed.memory.api import (
@@ -991,6 +991,13 @@ def _link_everywhere(
             )
         except PartialLink as partial:
             raise PartialLink([*created, *partial.created], partial) from partial
+        except GitUnavailable as unasked:
+            # Removed after `git worktree list` named it, and before `link` asked in it: no
+            # checkout to link any more, as a `prunable` one is not (`_worktrees`). Asked first
+            # thing in `link`, so nothing was written there. Any other cause is reported.
+            if unasked.cause is not Unasked.GONE:
+                raise
+            continue
         created += more.created
         revoked += more.revoked
     return Links(created, revoked, withheld=links.withheld)

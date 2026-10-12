@@ -1,14 +1,16 @@
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from stayfixed.config.loader import CONFIG_FILE, load
 from stayfixed.config.schema import Config
-from stayfixed.gitenv import GitUnavailable
+from stayfixed.gitenv import GitUnavailable, Unasked
 from stayfixed.memory.store import (
     Store,
     inside_project,
@@ -576,7 +578,10 @@ def test_a_git_that_cannot_run_is_not_reported_as_an_unbound_overlay(
     with pytest.raises(GitUnavailable) as excinfo:
         resolve(root, config, machine=machine)
     assert "stayfixed attach" not in str(excinfo.value)
-    assert "git" in str(excinfo.value)
+    # The remedy is the machine's `git`, never "run the command again". Mutation (declared):
+    # `mutations/`'s "a git that cannot be started is told to run the command again".
+    assert Unasked.NOT_STARTED.value in str(excinfo.value)
+    assert Unasked.TIMED_OUT.value not in str(excinfo.value)
 
 
 def test_a_git_that_cannot_run_does_not_make_a_worktree_look_like_the_main_checkout(
@@ -638,7 +643,9 @@ def test_a_git_that_exits_non_zero_for_everything_cannot_name_the_main_checkout(
     # The same broken `git`, asked the store's own question rather than the origin remote:
     # `main_checkout` reads git through the three-valued `git_answer`, and a broken `git` read as
     # one that answered nothing made it answer `root`, the silent no-op `worktree.link` turns that
-    # into. Mutation (declared): `mutations/`'s "a broken git reads as a repository that answered".
+    # into. Its remedy is to check that `git` runs; "run the command again" would repeat for ever.
+    # Mutations (declared): `mutations/`'s "a broken git reads as a repository that answered" and
+    # "a broken git is told to run the command again".
     root = tmp_path / "project"
     a_repo(root)
 
@@ -646,5 +653,77 @@ def test_a_git_that_exits_non_zero_for_everything_cannot_name_the_main_checkout(
         return subprocess.CompletedProcess(args, 69, b"", b"You have not agreed to the licence\n")
 
     monkeypatch.setattr("stayfixed.gitenv.subprocess.run", broken)
-    with pytest.raises(GitUnavailable):
+    with pytest.raises(GitUnavailable, match=re.escape(Unasked.BROKEN.value)):
         main_checkout(root)
+
+
+def _a_worktree(tmp_path: Path) -> Path:
+    root = tmp_path / "project"
+    a_repo(root)
+    side = tmp_path / "side"
+    git(root, "worktree", "add", "-q", str(side), "-b", "side")
+    return side
+
+
+def test_a_git_a_signal_ended_cannot_make_a_worktree_look_like_the_main_checkout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `subprocess` reports a `git` a signal ended — the OOM killer on a loaded machine — as the
+    # signal's negative. Read as "git said no", it made `main_checkout` answer the worktree
+    # itself, the silent no-op the test above forbids. Mutation (declared): `mutations/`'s "a git
+    # a signal ended reads as a repository that answered nothing".
+    side = _a_worktree(tmp_path)
+    real = subprocess.run
+
+    def killed(args: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        if "--git-common-dir" in args:
+            return subprocess.CompletedProcess(args, -9, b"", b"")
+        return real(args, **kwargs)
+
+    monkeypatch.setattr("stayfixed.gitenv.subprocess.run", killed)
+    with pytest.raises(GitUnavailable) as excinfo:
+        main_checkout(side)
+    assert excinfo.value.cause is Unasked.ENDED
+
+
+def test_a_probe_that_runs_out_of_time_is_not_a_broken_git(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A question `git` declined is followed by `git --version` to tell a broken `git` from one
+    # that said no. On a loaded machine that probe can run out of time too, and read as broken it
+    # sent the owner back to check a `git` that worked. Mutation (declared): `mutations/`'s "a
+    # probe that ran out of time reads as a broken git".
+    side = _a_worktree(tmp_path)
+    real = subprocess.run
+
+    def declined_then_slow(args: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        if "--git-common-dir" in args:
+            return subprocess.CompletedProcess(args, 128, b"", b"")
+        if "--version" in args:
+            raise subprocess.TimeoutExpired(args, kwargs.get("timeout") or 0)
+        return real(args, **kwargs)
+
+    monkeypatch.setattr("stayfixed.gitenv.subprocess.run", declined_then_slow)
+    with pytest.raises(GitUnavailable) as excinfo:
+        main_checkout(side)
+    assert excinfo.value.cause is Unasked.TIMED_OUT
+    assert "check that `git` runs here" not in str(excinfo.value)
+
+
+def test_a_worktree_removed_before_it_is_asked_about_is_gone_not_a_broken_git(
+    tmp_path: Path,
+) -> None:
+    # `git -C <gone> --version` exits 128 before it reads `--version`, so the discriminator that
+    # tells a broken `git` from one that declined read a removed worktree as a broken `git`, and
+    # the refusal sent the owner to check a `git` that worked. The cause is the directory, and
+    # it is named, so a caller walking every worktree can skip the one that went away.
+    root = tmp_path / "project"
+    a_repo(root)
+    side = tmp_path / "side"
+    git(root, "worktree", "add", "-q", str(side), "-b", "side")
+    shutil.rmtree(side)
+    with pytest.raises(GitUnavailable) as excinfo:
+        main_checkout(side)
+    assert excinfo.value.cause is Unasked.GONE
+    assert str(side) in str(excinfo.value)
+    assert "check that `git` runs here" not in str(excinfo.value)

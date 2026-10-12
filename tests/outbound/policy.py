@@ -60,14 +60,15 @@ NETWORK_MODULES = frozenset(
 NATIVE_MODULES = frozenset({"_ctypes", "_posixsubprocess", "_winapi", "ctypes"})
 
 # The package launchers the walk starts from, by `(file, function)`; every other is derived from
-# them and from the standard library's. Neither of these two can be derived. `git_run` puts
+# them and from the standard library's. Neither of these two can be derived. `gitenv._ask`, the
+# one place a `git` is started and the call `git_run` and `git_answer` forward to, puts
 # `-C <root>` between `git` and its caller's arguments, and the walk does not read `str(root)`;
 # declared, it is taken for what it is, `git` run in the directory `root` names. The real
 # `Runner`'s `.launch` is a method, which no import binds: the walk knows each call to it,
 # `<receiver>.launch(argv, cwd)`, by the attribute alone, and its own launch is the argv each of
 # those hands it.
 ROOT_LAUNCHERS: dict[tuple[str, str], Launcher] = {
-    ("src/stayfixed/gitenv.py", "git_run"): Launcher(("git",), at=1, spread=True),
+    ("src/stayfixed/gitenv.py", "_ask"): Launcher(("git",), at=1, spread=True),
     ("src/stayfixed/runner.py", f"_SubprocessRunner.{RUNNER_METHOD}"): RUNNER,
 }
 

@@ -87,16 +87,12 @@ class LsRemote(Recorder):
 
 
 def git_that_cannot_run(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A `git` that cannot be launched at all, the state `gitenv.GitUnavailable` is about, patched
-    at the one seam the product runs it through: `gitenv.git_run`, which `git_answer`,
-    `origin_remote` and `git_is_usable` all call inside `gitenv`.
+    """A `git` that cannot be launched at all, the state `gitenv.GitUnavailable` is about: no
+    program for `gitenv._ask` to start, which `git_run`, `git_answer` and `origin_remote` all reach
+    it through — the one seam where a `git` is started, so every reader sees the same machine.
 
     Patched rather than arranged, because the alternative is removing `git` from `PATH` for the
     whole process. A repository with no `origin` remote is a different state — `git` ran and
     answered nothing — and it is the ordinary "not bound" one rather than a machine fault.
     """
-
-    def refuse(*args: object, **kwargs: object) -> tuple[int, str]:
-        return -1, ""  # `git_run`'s own answer for a `git` that could not be launched
-
-    monkeypatch.setattr("stayfixed.gitenv.git_run", refuse)
+    monkeypatch.setattr("stayfixed.gitenv.git_program", lambda: None)

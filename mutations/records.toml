@@ -3179,3 +3179,15 @@ after = "        pass"
 reddens = [
   "tests/attach/test_commands.py::test_detach_withdraws_the_harness_link_under_both_homes_where_home_is_not_the_databases[off-a-terminal-under-home]",
 ]
+
+# `attach` asks which checkout owns each worktree, 65 of them in the repository that found this,
+# so a refusal that names none leaves the owner to find the one by hand.
+[[mutation]]
+name = "the refusal about which checkout owns a worktree names none"
+file = "src/stayfixed/memory/store.py"
+before = """        f"`git` could not answer which checkout {quoted(str(root))} belongs to, so stayfixed """"
+after = """        "`git` could not answer which checkout this belongs to, so stayfixed """"
+reddens = [
+  "tests/attach/test_write.py::test_a_worktree_whose_question_runs_out_of_time_is_named_and_not_called_a_broken_git",
+  "tests/memory/test_store.py::test_a_worktree_removed_before_it_is_asked_about_is_gone_not_a_broken_git",
+]
