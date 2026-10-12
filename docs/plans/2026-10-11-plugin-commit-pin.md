@@ -1103,21 +1103,20 @@ action" for what only the owner can do on GitHub or in the private design:
   `0`, measured on 2026-10-12 right after `stayfixed/stayfixed-plugin` was created with its four
   rulesets, which read back as `RELEASING.md` step 1 expects. Amending the private design's two
   sections on the plugin's distribution (Task 8 Step 4): done in that repository the same day.
-- **`scripts/publish_plugin.py`.** `_verify` and `_attested` as one `_advice`: not taken; the
-  seam broke three times before Ruling 8 settled it, its entries anchor on the current lines,
-  and a merge changes no outcome. Only two exact spellings of the default remote: not taken;
-  `RELEASING.md` step 7 says so, any other spelling is reported "not confirmed", and widening it
-  means modelling git's URL forms. `--require-pin`'s exit 1 before the attestation: Ruling 8,
-  kept, and documented in step 7 (`da6c3d5`). `CLICOLOR_FORCE`/`GH_FORCE_TTY` unnamed: named
-  (`09d36a5`), then prevented for every caller by the runner (`70c6a5c`), below. A failed post-fetch `rev-parse` reported as "main moved": fixed (`09d36a5`). The
-  login refusal advising only a login: fixed (`09d36a5`). A `gh` dev build read as a
-  pre-release: not taken; refusing it is right, and "install a released gh" is the advice for it
-  too. Source reads without `plugin_tree.GIT_OPTIONS`: not taken; scripts do not import one
-  another, and those reads run in the owner's checkout, not a bare repository, so
-  `safe.bareRepository` does not apply. The exit table's two copied closures: not taken; two
-  short arrangements, each row held to its own summary. `"no src/stayfixed"` without a mutation
-  of its own: given one (`09d36a5`). Its docstring's gh floor, held by no test: held
-  (`09d36a5`).
+- **`scripts/publish_plugin.py`.** `_verify` and `_attested` as one `_advice`: not taken; the seam
+  broke three times before Ruling 8 settled it, its entries anchor on the current lines, and a merge
+  changes no outcome. Only two exact spellings of the default remote: not taken; `RELEASING.md` step
+  7 says so, any other spelling is reported "not confirmed", and widening it means modelling git's
+  URL forms. `--require-pin`'s exit 1 before the attestation: Ruling 8, kept, and documented in step
+  7 (`da6c3d5`). `CLICOLOR_FORCE`/`GH_FORCE_TTY` unnamed: named (`09d36a5`), then prevented for
+  every caller by the runner (`70c6a5c`), below. A failed post-fetch `rev-parse` reported as "main
+  moved": fixed (`09d36a5`). The login refusal advising only a login: fixed (`09d36a5`). A `gh` dev
+  build read as a pre-release: not taken; refusing it is right, and "install a released gh" is the
+  advice for it too. Source reads without `plugin_tree.GIT_OPTIONS`: not taken; scripts do not
+  import one another, and those reads run in the owner's checkout, not a bare repository, so
+  `safe.bareRepository` does not apply. The exit table's two copied closures: not taken; two short
+  arrangements, each row held to its own summary. `"no src/stayfixed"` without a mutation of its
+  own: given one (`09d36a5`). Its docstring's gh floor, held by no test: held (`09d36a5`).
 - **`scripts/plugin_tree.py`.** `peel`'s "the one place": reworded (`1169d84`); `pinned_sha`
   re-peeling resolved ids: not taken, one `rev-parse` of a full id that answers the same id.
   "exited -1" in `peel`, `_listing` and `_blobs`: `NO_ANSWER`'s words (`1169d84`), then
@@ -1129,11 +1128,11 @@ action" for what only the owner can do on GitHub or in the private design:
   tested (`b1da2e2`). `_is_sha` re-spelled: reused (`b1da2e2`). `ensure_ascii=False`: held
   (`b1da2e2`).
 - **Workflows and their tests.** `attest`'s denylist: an allowlist of its steps (`04f8134`).
-  `github-release`'s persisted token: `persist-credentials: false` (`04f8134`), and every
-  checkout of the release held to it (`4c67a92`). Job readers not consolidated: not taken; both read through the one
-  strict reader, `tests.workflow_yaml.load`, and what is left is three lines each. The literal
-  `\n`: fixed (`04f8134`). The commit-id shape test's scripts half: flags compared, and an entry
-  for each half (`04f8134`). `_code`'s backslash branch: held by a case (`04f8134`).
+  `github-release`'s persisted token: `persist-credentials: false` (`04f8134`), and every checkout
+  of the release held to it (`4c67a92`). Job readers not consolidated: not taken; both read through
+  the one strict reader, `tests.workflow_yaml.load`, and what is left is three lines each. The
+  literal `\n`: fixed (`04f8134`). The commit-id shape test's scripts half: flags compared, and an
+  entry for each half (`04f8134`). `_code`'s backslash branch: held by a case (`04f8134`).
 - **Tests.** `tests/test_payload.py`'s unread mode: dropped (`1099a4f`). `listed()` and the
   bare-remote builders: not taken; `listed()` calls the script, which `tests/plugintree.py` never
   does by design, and the two remote builders share only a `git init --bare`. The plugin URL
