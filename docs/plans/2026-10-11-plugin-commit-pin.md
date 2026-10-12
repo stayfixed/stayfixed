@@ -1094,49 +1094,65 @@ cherry-picked onto this branch. Rulings that change this plan's text:
   as `GROUP_OF`'s rule asks: `scripts/publish_plugin.py`'s entries are `mutations/publish.toml`'s,
   and the Global Constraint routing `scripts/*.py` to `tooling.toml` excepts the publisher.
 
-Follow-ups, to file when the pull request closes (Minors the task and final reviews deferred;
-none changes a release decision):
+Follow-ups, as they were settled after the pull request merged (2026-10-12), each by the commit
+that fixed it in the follow-up pull request, "moot", the reason it was not taken, or "owner
+action" for what only the owner can do on GitHub or in the private design:
 
-- **Measurements.** GitHub's answer for an empty `stayfixed/stayfixed-plugin` (`409` or `404`;
-  the repository did not exist on 2026-10-11) — `RELEASING.md` step 1 now reads it before the
-  tags. After the merge, amend the private design's §5.9 and §15.7 (Task 8 Step 4).
-- **`scripts/publish_plugin.py`.** `_verify` and
-  `_attested` could become one `_advice` and one raise. Only two exact spellings count as the
-  default remote. `--require-pin`'s exit 1 is read before the attestation is consulted (plan
-  Ruling 8). `CLICOLOR_FORCE`/`GH_FORCE_TTY` make every `gh api` answer unreadable (a permanent
-  `2`, unnamed). A failed post-fetch `rev-parse` is reported as "main moved". The login refusal
-  always advises logging in. A `gh` dev build reads as a pre-release. Source reads pass
-  `--no-replace-objects` alone, not `plugin_tree.GIT_OPTIONS`. The exit-table setup copies two
-  closures. `"no src/stayfixed"` has no mutation of its own.
-- **`scripts/plugin_tree.py`.** `peel`'s docstring says "the one place" while `_first_parent`
-  resolves with `cat-file -e`, and `pinned_sha` re-peels resolved ids. `peel`, `_listing` and
-  `_blobs` say "exited -1" rather than `NO_ANSWER`'s words. `commit --manifest-file` is checked by
-  its first line only. "from a url source" where an object is meant. A malformed `sha` at the tag
-  is refused by the tag's own tool (exit `2`) and reported twice by `check --tag`, once under the
-  tree count with the wrong remedy.
-- **`scripts/release.py`.** `_pinned` mixes count and shape in one message (zero or two entries
-  untested); `_is_sha` re-spelled; `ensure_ascii=False` unheld by a test.
-- **Workflows and their tests.** `attest`'s "installs nothing" check is a denylist (an allowlist
-  of its steps would hold the property). `github-release` keeps a persisted token under
-  `contents: write`. Job readers not fully consolidated (`_release_jobs`); one entry's `after`
-  holds a literal `\n`; the scripts half of `test_one_commit_id_shape_everywhere` has no named
-  mutation and compares patterns without flags; `_code`'s backslash branch is held by no case.
-- **Tests.** `tests/test_payload.py`'s `Entry` still carries a mode nothing reads; `listed()` and
-  the bare-remote builders are duplicated across test modules.
-- **Documents.** `RELEASING.md`: the restore commit of section 5 is red
-  under plain `check`; a persistent `404` is explained only as "attest has not written it".
-  Ragged wraps in `mutations/`, a stale count in a `ci.yml` comment, one unwrapped line in
-  `CONTRIBUTING.md`.
-- **From the external review (2026-10-12).** The plugin repository's tags have no creation rule
-  (a tag created there by someone else makes the publisher answer "another commit under the
-  tag", exit 1); the release-tag-creation ruleset's bypass names `RepositoryRole` 5 as the admin
-  role, from community reports rather than GitHub's reference; the read-back only echoes the id
-  set, so confirm in the repository's settings that the bypass reads "Repository admin"; `pin`'s refusal does not name the pushed-plugin case that the restore commit answers;
-  `src/stayfixed/release/api.py`'s docstring names only `release.py` as `PACKAGE`'s importer;
-  `cat_file_batch` could move into `stayfixed.gitenv` once the runtime may change;
-  `test_doctor_launches_the_number_of_subprocesses_it_says_it_does` failed once on the clean tree
-  inside a full oracle run (load-sensitive; it passes alone and its entry is caught); once the
-  follow-ups above are filed, replace this list with their links.
+- **Measurements.** GitHub's answer for the empty plugin repository's `main` (`409` or `404`):
+  owner action, read as `RELEASING.md` step 1 says once `stayfixed/stayfixed-plugin` exists.
+  Amending the private design's two sections on the plugin's distribution (Task 8 Step 4): owner
+  action.
+- **`scripts/publish_plugin.py`.** `_verify` and `_attested` as one `_advice`: not taken; the
+  seam broke three times before Ruling 8 settled it, its entries anchor on the current lines,
+  and a merge changes no outcome. Only two exact spellings of the default remote: not taken;
+  `RELEASING.md` step 7 says so, any other spelling is reported "not confirmed", and widening it
+  means modelling git's URL forms. `--require-pin`'s exit 1 before the attestation: Ruling 8,
+  kept, and documented in step 7 (`da6c3d5`). `CLICOLOR_FORCE`/`GH_FORCE_TTY` unnamed: named
+  (`09d36a5`). A failed post-fetch `rev-parse` reported as "main moved": fixed (`09d36a5`). The
+  login refusal advising only a login: fixed (`09d36a5`). A `gh` dev build read as a
+  pre-release: not taken; refusing it is right, and "install a released gh" is the advice for it
+  too. Source reads without `plugin_tree.GIT_OPTIONS`: not taken; scripts do not import one
+  another, and those reads run in the owner's checkout, not a bare repository, so
+  `safe.bareRepository` does not apply. The exit table's two copied closures: not taken; two
+  short arrangements, each row held to its own summary. `"no src/stayfixed"` without a mutation
+  of its own: given one (`09d36a5`). Its docstring's gh floor, held by no test: held
+  (`09d36a5`).
+- **`scripts/plugin_tree.py`.** `peel`'s "the one place": reworded (`1169d84`); `pinned_sha`
+  re-peeling resolved ids: not taken, one `rev-parse` of a full id that answers the same id.
+  "exited -1" in `peel`, `_listing` and `_blobs`: `NO_ANSWER`'s words (`1169d84`).
+  `commit --manifest-file` checked by its first line: held whole (`1169d84`). "from a url
+  source": reworded (`1169d84`). A malformed `sha` at the tag reported twice by `check --tag`:
+  reported once (`b1da2e2`); the tag's own tool refusing it with exit `2` is Ruling 8, kept.
+- **`scripts/release.py`.** `_pinned`'s count and shape: said apart, zero and two entries
+  tested (`b1da2e2`). `_is_sha` re-spelled: reused (`b1da2e2`). `ensure_ascii=False`: held
+  (`b1da2e2`).
+- **Workflows and their tests.** `attest`'s denylist: an allowlist of its steps (`04f8134`).
+  `github-release`'s persisted token: `persist-credentials: false`, held for every job that can
+  write or sign (`04f8134`). Job readers not consolidated: not taken; both read through the one
+  strict reader, `tests.workflow_yaml.load`, and what is left is three lines each. The literal
+  `\n`: fixed (`04f8134`). The commit-id shape test's scripts half: flags compared, and an entry
+  for each half (`04f8134`). `_code`'s backslash branch: held by a case (`04f8134`).
+- **Tests.** `tests/test_payload.py`'s unread mode: dropped (`1099a4f`). `listed()` and the
+  bare-remote builders: not taken; `listed()` calls the script, which `tests/plugintree.py` never
+  does by design, and the two remote builders share only a `git init --bare`. The plugin URL
+  spelled out in `tests/test_manifests.py`: the shared constant (`1099a4f`).
+- **Documents.** The restore commit red under plain `check`: said, with why nothing checks it
+  (`da6c3d5`). A persistent `404` explained only as "attest has not written it": explained
+  (`da6c3d5`). Ragged wraps in `mutations/`: not taken; comments only, and a rewrap moves quoted
+  names the citation test reads. The stale count in a `ci.yml` comment: the coverage step's
+  statement count, dropped (`da6c3d5`). The unwrapped line in `CONTRIBUTING.md`: wrapped
+  (`da6c3d5`).
+- **From the external review.** The plugin repository's tags without a creation rule: a fourth
+  ruleset documented in `RELEASING.md` section 3 (`da6c3d5`); creating it is owner action.
+  `RepositoryRole` 5 from community reports: section 3 now says to confirm the bypass on the
+  settings page (`da6c3d5`); confirming it for this repository's `release tag creation` is owner
+  action. `pin`'s refusal naming the pushed-plugin case: named (`b1da2e2`).
+  `src/stayfixed/release/api.py`'s importers: named (`da6c3d5`). `cat_file_batch` into
+  `stayfixed.gitenv`: not taken here; it changes the runtime, which no item of this list needs,
+  and is the owner's to decide. The load-sensitive
+  `test_doctor_launches_the_number_of_subprocesses_it_says_it_does`: not taken; it failed once
+  with nothing kept, and has not been reproduced. Deleting the merged branch
+  `wp/plugin-commit-pin` on the remote: owner action.
 
 ### External review (2026-10-12)
 
