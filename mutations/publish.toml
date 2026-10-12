@@ -801,9 +801,9 @@ reddens = [
 name = "the publisher takes an API answer that is no JSON object as no ref"
 file = "scripts/publish_plugin.py"
 before = '''    if not isinstance(answer, dict):
-        raise Refusal(f"gh api {path} answered no JSON object: {_said(done)}")
-    return answer'''
-after = '''    return answer if isinstance(answer, dict) else None'''
+        # A `GH_FORCE_TTY`'''
+after = '''    if False:
+        # A `GH_FORCE_TTY`'''
 reddens = [
   "tests/scripts/test_publish_plugin.py::test_an_api_answer_that_is_neither_a_ref_nor_its_absence_is_refused[not-json]",
 ]
