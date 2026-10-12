@@ -11,6 +11,7 @@ import pytest
 
 from stayfixed import __version__
 from stayfixed.release.api import HASHED_FILES, RECORD
+from tests.plugintree import PLUGIN_URL
 from tests.scriptload import release
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -51,7 +52,7 @@ def test_marketplace_has_a_description_and_an_unversioned_entry() -> None:
     assert sha is None or re.fullmatch(r"[0-9a-f]{40}", sha), sha
     assert source == {
         "source": "url",
-        "url": "https://github.com/stayfixed/stayfixed-plugin.git",
+        "url": PLUGIN_URL,
         "ref": "v" + json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text())["version"],
     }
     assert "version" not in entry

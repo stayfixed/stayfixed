@@ -3606,3 +3606,23 @@ after = "        return GitAnswer(None, Unasked.BROKEN)"
 reddens = [
   "tests/memory/test_store.py::test_a_probe_that_runs_out_of_time_is_not_a_broken_git",
 ]
+
+# A captured `gh` told to write for a terminal colours its JSON, and every caller that parses it
+# reads no answer; the runner drops both variables that do it.
+[[mutation]]
+name = "the runner hands gh GH_FORCE_TTY"
+file = "src/stayfixed/runner.py"
+before = "    \"GH_FORCE_TTY\",\n"
+after = ""
+reddens = [
+  "tests/test_runner.py::test_the_variables_that_make_gh_write_for_a_terminal_are_dropped",
+]
+
+[[mutation]]
+name = "the runner hands gh CLICOLOR_FORCE"
+file = "src/stayfixed/runner.py"
+before = "    \"CLICOLOR_FORCE\",\n"
+after = ""
+reddens = [
+  "tests/test_runner.py::test_the_variables_that_make_gh_write_for_a_terminal_are_dropped",
+]

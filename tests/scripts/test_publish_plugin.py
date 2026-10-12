@@ -20,6 +20,7 @@ something and run again — is held in one place, the table at the end, through 
 
 from __future__ import annotations
 
+import ast
 import hashlib
 import json
 import os
@@ -32,6 +33,7 @@ from typing import Any
 
 import pytest
 
+from stayfixed import gitenv
 from stayfixed.errors import Refusal
 from stayfixed.runner import Completed, subprocess_runner
 from tests.gitfixture import git, git_bytes, needs_git, run_git
@@ -1085,7 +1087,9 @@ def test_a_gh_that_is_not_logged_in_is_refused_before_verify(source: Path, tmp_p
     # Mutations (declared): `mutations/`'s "the publisher goes on with a gh that is not logged in"
     # -> GitHub's API is asked, the tag's code runs and the attestation is asked for;
     # `mutations/`'s "the publisher refuses a gh that is not logged in without gh's words" -> the
-    # refusal no longer says why.
+    # refusal no longer says why. `gh auth status` fails for a network or a token it cannot use as
+    # well, so the advice is not "log in" alone. Mutation (declared): `mutations/`'s "the publisher
+    # advises only a login whatever gh auth status said" -> reddens below.
     said = "You are not logged into any GitHub hosts. To log in, run: gh auth login"
     runner = runner_for(source, answers={"gh auth status": Completed(1, "", f"{said}\n")})
     scratch = tmp_path / "scratch"
@@ -1093,6 +1097,7 @@ def test_a_gh_that_is_not_logged_in_is_refused_before_verify(source: Path, tmp_p
         publish(source, bare_remote(tmp_path), scratch, runner=runner)
     assert "gh auth status --hostname github.com --active exited 1" in str(refused.value)
     assert said in str(refused.value)
+    assert "if gh says you are not, or fix what it names" in str(refused.value)
     assert runner.gh.calls == [GH_VERSION, GH_AUTH]
     assert gh_asked(runner, "gh", "api") == gh_asked(runner, "gh", "attestation") == []
     assert tool_runs(runner) == []
@@ -1249,6 +1254,91 @@ def test_a_main_that_moves_between_list_and_fetch_is_refused(source: Path, tmp_p
         publish(source, remote, tmp_path / "second", yes=False, tag="v1.2.4", runner=runner)
     assert "run again" in str(refused.value)
     assert refs(remote) == {"refs/heads/main": moved[0], f"refs/tags/{TAG}": first.commit}
+
+
+def test_a_fetched_main_that_cannot_be_read_back_is_not_called_moved(
+    source: Path, tmp_path: Path
+) -> None:
+    # The fetch went through and the ref it wrote cannot be read: that is no `main` that moved,
+    # and saying so would send the owner looking for a push that never happened. Mutation
+    # (declared): `mutations/`'s "the publisher reads a failed rev-parse of the fetched main as a
+    # main that moved" -> reddens at the message.
+    remote = bare_remote(tmp_path)
+    publish(source, remote, tmp_path / "first")
+    released(source, "1.2.4")
+    scratch = tmp_path / "second"
+
+    def lose(argv: list[str]) -> None:
+        if argv[:1] == ["git"] and "fetch" in argv:
+            git_dir = scratch / "plugin.git"
+            git(git_dir, f"--git-dir={git_dir}", "update-ref", "-d", "refs/stayfixed/main")
+
+    runner = runner_for(source, after=lose)
+    with pytest.raises(Refusal, match="git rev-parse of refs/stayfixed/main") as refused:
+        publish(source, remote, scratch, yes=False, tag="v1.2.4", runner=runner)
+    assert "moved" not in str(refused.value), str(refused.value)
+    assert "run again" in str(refused.value)
+
+
+@pytest.mark.parametrize(
+    ("words", "later"),
+    [
+        pytest.param(("rev-parse", f"refs/tags/{TAG}^{{commit}}"), False, id="the-tag"),
+        pytest.param(("ls-tree",), False, id="the-tag-s-code"),
+        pytest.param(("cat-file", "--batch"), False, id="the-tag-s-blobs"),
+        pytest.param(("rev-parse", "refs/stayfixed/main"), True, id="the-fetched-main"),
+    ],
+)
+def test_a_local_git_that_gave_no_answer_is_refused_in_no_answer_s_words(
+    source: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    words: tuple[str, ...],
+    later: bool,
+) -> None:
+    # `git_run` answers `-1` for a git that could not run, ran out of time or could not be given
+    # its input, and a refusal that formats the code says "exited -1", which tells the owner
+    # nothing. Each local git the publisher runs, the post-fetch read of `main` among them.
+    # Mutation (declared): `mutations/`'s "the publisher says a local git that gave no answer
+    # exited" -> every case says `-1`.
+    remote = bare_remote(tmp_path)
+    tag = TAG
+    if later:
+        publish(source, remote, tmp_path / "first")
+        released(source, "1.2.4")
+        tag = "v1.2.4"
+    real = publish_plugin.git_run
+
+    def silent(where: Path, *args: str, **options: Any) -> tuple[int, str]:
+        if all(word in args for word in words):
+            return -1, ""
+        code, answer = real(where, *args, **options)
+        return code, answer
+
+    monkeypatch.setattr(publish_plugin, "git_run", silent)
+    with pytest.raises(Refusal) as refused:
+        publish(source, remote, tmp_path / "second", yes=False, tag=tag)
+    said = str(refused.value)
+    assert f"gave no answer: {gitenv.NO_ANSWER}" in said, said
+    assert "exited -1" not in said, said
+
+
+def test_only_the_wrapper_runs_a_local_git() -> None:
+    # The guard above holds only while every local git goes through `_git`: four did not, and
+    # one of them was written in the same pull request that fixed the class next door. Mutation
+    # (declared): `mutations/`'s "the publisher runs a local git outside its wrapper" ->
+    # `_tag_commit` calls `git_run` itself, and this reddens.
+    tree = ast.parse((REPOSITORY / "scripts" / "publish_plugin.py").read_text(encoding="utf-8"))
+    callers = sorted(
+        function.name
+        for function in ast.walk(tree)
+        if isinstance(function, ast.FunctionDef)
+        for node in ast.walk(function)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "git_run"
+    )
+    assert callers == ["_git"], callers
 
 
 def test_a_rejected_push_moves_no_ref(source: Path, tmp_path: Path) -> None:

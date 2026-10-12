@@ -107,8 +107,10 @@ REFUSED_ATTRIBUTES = EXPORT_ATTRIBUTES + REWRITING_ATTRIBUTES
 # What proves the walk read this repository: the manifest that makes the folder a plugin at all.
 PLUGIN_MANIFEST = ".claude-plugin/plugin.json"
 
-# `(path, size in bytes, git mode)`, the path relative to the root with `/` between components.
-Entry = tuple[str, int, str]
+# `(path, size in bytes)`, the path relative to the root with `/` between components. No mode: the
+# directory's rules read none, and `scripts/plugin_tree.py` refuses every member that is not a
+# regular file before an entry is made of it.
+Entry = tuple[str, int]
 
 
 def payload_findings(entries: Iterable[Entry], *, read: Callable[[str], bytes]) -> list[str]:
@@ -123,8 +125,8 @@ def payload_findings(entries: Iterable[Entry], *, read: Callable[[str], bytes]) 
     findings = []
     if len(listed) > FILES_MAX:
         findings.append(f"{len(listed)} files, over the {FILES_MAX} the directory lists unheld")
-    findings.extend(_name_findings([path for path, _, _ in listed]))
-    for path, size, _mode in listed:
+    findings.extend(_name_findings([path for path, _ in listed]))
+    for path, size in listed:
         components = path.split("/")
         if SYSTEM_FILES.intersection(_folded(component) for component in components):
             findings.append(f"{path}: a macOS or Windows system file")
@@ -200,7 +202,7 @@ def tracked_payload(root: Path = ROOT) -> tuple[list[Entry], dict[str, bytes]]:
     refuses a symlink or a submodule among them outright.
     """
     members = plugin_tree().read(root, "HEAD").members
-    entries = [(member.path, len(member.content), member.mode) for member in members]
+    entries = [(member.path, len(member.content)) for member in members]
     return entries, {member.path: member.content for member in members}
 
 
@@ -211,8 +213,8 @@ def _text(_: str) -> bytes:
 
 def test_a_file_at_the_limit_is_a_finding() -> None:
     # Mutation (declared): the size comparison `>=` becomes `>` (a file of exactly 256 KiB passes).
-    assert payload_findings([("big.toml", FILE_MAX_BYTES, "100644")], read=_text) != []
-    assert payload_findings([("ok.toml", FILE_MAX_BYTES - 1, "100644")], read=_text) == []
+    assert payload_findings([("big.toml", FILE_MAX_BYTES)], read=_text) != []
+    assert payload_findings([("ok.toml", FILE_MAX_BYTES - 1)], read=_text) == []
 
 
 # One opening each format's signature accepts, padded past it so that each is binary as git reads
@@ -242,9 +244,7 @@ def test_an_image_or_a_font_that_is_one_is_exempt(suffix: str) -> None:
     # `IMAGE_SUFFIXES` -> its case reddens. Mutation: one signature narrowed (`GIF89a` only, or the
     # WebP pattern without `re.DOTALL`) -> the case it no longer reads reddens.
     content = SIGNED[suffix] + b"\0" * 16
-    found = payload_findings(
-        [(f"art{suffix}", FILE_MAX_BYTES * 4, "100644")], read=lambda _: content
-    )
+    found = payload_findings([(f"art{suffix}", FILE_MAX_BYTES * 4)], read=lambda _: content)
     assert found == []
 
 
@@ -265,9 +265,7 @@ def test_a_font_is_read_as_sfnt_whatever_its_suffix_says_of_its_outlines(
     # Mutation (declared): `.otf` given `OTTO` alone -> its other three cases redden. Mutation:
     # `.ttf` given the TrueType openings alone -> its `cff` and `type1` cases redden.
     content = opening + b"\0" * 16
-    found = payload_findings(
-        [(f"font{suffix}", FILE_MAX_BYTES * 2, "100644")], read=lambda _: content
-    )
+    found = payload_findings([(f"font{suffix}", FILE_MAX_BYTES * 2)], read=lambda _: content)
     assert found == []
 
 
@@ -282,7 +280,7 @@ def test_an_exempt_file_is_judged_by_its_suffix_in_any_case_and_an_svg_by_being_
     path: str, content: bytes
 ) -> None:
     # Mutation: `.lower()` dropped from the suffix -> `LOGO.PNG` is a finding and its case reddens.
-    found = payload_findings([(path, FILE_MAX_BYTES * 4, "100644")], read=lambda _: content)
+    found = payload_findings([(path, FILE_MAX_BYTES * 4)], read=lambda _: content)
     assert found == []
 
 
@@ -306,7 +304,7 @@ def test_a_file_that_is_not_the_image_or_font_its_suffix_names_is_a_finding(
     # case reddens.
     size = 2 * 1024 * 1024
     suffix = PurePosixPath(path).suffix
-    assert payload_findings([(path, size, "100644")], read=lambda _: content) == [
+    assert payload_findings([(path, size)], read=lambda _: content) == [
         f"{path}: {size} bytes, at or over {FILE_MAX_BYTES}",
         f"{path}: named {suffix} and not one",
     ]
@@ -328,7 +326,7 @@ def test_a_binary_kind_the_page_names_is_a_finding_whatever_its_bytes(
     # for the binary rule to find. Mutation (declared): `HELD_SUFFIXES` emptied -> the text-only
     # PDF passes and the upper-case one with it, and those cases redden.
     suffix = PurePosixPath(path).suffix.lower()
-    assert payload_findings([(path, len(content), "100644")], read=lambda _: content) == [
+    assert payload_findings([(path, len(content))], read=lambda _: content) == [
         f"{path}: a {suffix} file, which the directory holds by its kind"
     ]
 
@@ -336,7 +334,7 @@ def test_a_binary_kind_the_page_names_is_a_finding_whatever_its_bytes(
 def test_one_file_past_the_count_is_a_finding() -> None:
     # Mutation (declared): `>` becomes `>=` -> exactly `FILES_MAX` files is a finding, and the
     # second assertion reddens; `> FILES_MAX + 1` instead lets the first pass on nothing.
-    entries = [(f"f{i}", 1, "100644") for i in range(FILES_MAX + 1)]
+    entries = [(f"f{i}", 1) for i in range(FILES_MAX + 1)]
     assert any("files" in f for f in payload_findings(entries, read=_text))
     assert payload_findings(entries[:FILES_MAX], read=_text) == []
 
@@ -358,25 +356,21 @@ def test_a_system_file_is_a_finding_at_any_depth(path: str) -> None:
     # Mutation (declared): `components` becomes `components[:1]` -> only a top-level system file is
     # a finding, and the nested cases redden. Mutation: `Thumbs.db` or `desktop.ini` dropped from
     # `SYSTEM_FILES` -> its two cases redden.
-    assert payload_findings([(path, 10, "100644")], read=_text) == [
-        f"{path}: a macOS or Windows system file"
-    ]
+    assert payload_findings([(path, 10)], read=_text) == [f"{path}: a macOS or Windows system file"]
 
 
 @pytest.mark.parametrize("path", ["thumbs.db", "docs/Desktop.ini", ".ds_store", "__macosx/a.txt"])
 def test_a_system_file_is_a_finding_in_any_capitalization(path: str) -> None:
     # Windows and macOS fold case by default, so `thumbs.db` is the very file Explorer writes.
     # Mutation (declared): the components compared unfolded -> every case reddens.
-    assert payload_findings([(path, 10, "100644")], read=_text) == [
-        f"{path}: a macOS or Windows system file"
-    ]
+    assert payload_findings([(path, 10)], read=_text) == [f"{path}: a macOS or Windows system file"]
 
 
 def test_a_name_that_only_contains_a_system_files_name_is_not_a_finding() -> None:
     # The match is on whole components: a substring match would refuse a file merely named after
     # one. Mutation: `SYSTEM_FILES.intersection(components)` becomes
     # `any(name in path for name in SYSTEM_FILES)` -> this reddens.
-    assert payload_findings([("docs/about.DS_Store.md", 10, "100644")], read=_text) == []
+    assert payload_findings([("docs/about.DS_Store.md", 10)], read=_text) == []
 
 
 @pytest.mark.parametrize(
@@ -405,7 +399,7 @@ def test_a_name_windows_or_macos_cannot_hold_is_a_finding(path: str) -> None:
     # superscript ports dropped -> `COM¹` and `lpt³.log` redden; the trailing dot or space test
     # dropped -> `notes.` and `a /b.md` redden. Mutation: the colon dropped from
     # `INVALID_CHARACTERS` -> `docs/a:b.md` reddens.
-    found = payload_findings([(path, 10, "100644")], read=_text)
+    found = payload_findings([(path, 10)], read=_text)
     assert len(found) == 1 and "is not a name Windows or macOS holds" in found[0], found
 
 
@@ -415,7 +409,7 @@ def test_a_name_windows_or_macos_cannot_hold_is_a_finding(path: str) -> None:
 def test_a_name_that_only_resembles_a_device_name_is_not_a_finding(path: str) -> None:
     # A device name is the whole name before its first dot. Mutation: the comparison becomes a
     # `startswith` over `DEVICE_NAMES` -> the first four redden.
-    assert payload_findings([(path, 10, "100644")], read=_text) == []
+    assert payload_findings([(path, 10)], read=_text) == []
 
 
 @pytest.mark.parametrize(
@@ -431,7 +425,7 @@ def test_names_that_differ_only_by_capitalization_are_a_finding(
     # On the default macOS and Windows file systems the two are one file, or one directory: the
     # second case is two files whose directories collide. Mutation (declared): `_folded` answers
     # its name unchanged -> no two spellings meet and both cases redden.
-    found = payload_findings([(path, 10, "100644") for path in paths], read=_text)
+    found = payload_findings([(path, 10) for path in paths], read=_text)
     assert found == [f"{spelt}: names that differ only by capitalization"]
 
 
@@ -445,7 +439,7 @@ def test_names_that_differ_only_by_capitalization_are_a_finding(
 )
 def test_a_binary_that_is_not_an_image_or_a_font_is_a_finding(path: str, content: bytes) -> None:
     # Mutation (declared): the NUL test dropped -> every case reddens.
-    assert payload_findings([(path, len(content), "100644")], read=lambda _: content) == [
+    assert payload_findings([(path, len(content))], read=lambda _: content) == [
         f"{path}: a binary file that is not an image or a font"
     ]
 
@@ -456,8 +450,8 @@ def test_binary_is_judged_where_git_judges_it() -> None:
     # reddens. Mutation: `and not exempt` dropped from the binary test -> the PNG reddens it.
     png = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR"
     late = b"x" * BINARY_PROBE_BYTES + b"\0"
-    assert payload_findings([("logo.png", len(png), "100644")], read=lambda _: png) == []
-    assert payload_findings([("notes.txt", len(late), "100644")], read=lambda _: late) == []
+    assert payload_findings([("logo.png", len(png))], read=lambda _: png) == []
+    assert payload_findings([("notes.txt", len(late))], read=lambda _: late) == []
 
 
 def test_a_git_lfs_pointer_is_a_finding() -> None:
@@ -469,7 +463,7 @@ def test_a_git_lfs_pointer_is_a_finding() -> None:
         b"oid sha256:4d7a214614ab2935c943f9e0ff69d22eadbb8f32b1258daaa5e2ca24d17e2393\n"
         b"size 12345\n"
     )
-    found = payload_findings([("assets/demo.mp4", len(pointer), "100644")], read=lambda _: pointer)
+    found = payload_findings([("assets/demo.mp4", len(pointer))], read=lambda _: pointer)
     assert found == ["assets/demo.mp4: a Git LFS pointer"]
 
 
@@ -481,7 +475,7 @@ def test_a_gitattributes_line_carrying_an_export_attribute_is_a_finding(attribut
     # is read, and both cases redden. Mutation: either attribute dropped from
     # `EXPORT_ATTRIBUTES` -> its case reddens.
     text = f"*.md diff=markdown\ndocs/** {attribute}\n".encode()
-    found = payload_findings([("sub/.gitattributes", len(text), "100644")], read=lambda _: text)
+    found = payload_findings([("sub/.gitattributes", len(text))], read=lambda _: text)
     assert found == [f"sub/.gitattributes:2: {attribute}"]
 
 
@@ -507,7 +501,7 @@ def test_a_gitattributes_line_rewriting_content_is_a_finding(
     # `working-tree-encoding`, `eol` or `crlf` dropped -> its case reddens. The `-filter` case holds
     # the `lstrip("-!")` in `_attributes`: without it an unset reads as another name.
     text = f"{line}\n".encode()
-    found = payload_findings([(".gitattributes", len(text), "100644")], read=lambda _: text)
+    found = payload_findings([(".gitattributes", len(text))], read=lambda _: text)
     assert found == [f".gitattributes:1: {attribute}" for attribute in attributes]
 
 
@@ -518,7 +512,7 @@ def test_a_gitattributes_line_carrying_no_refused_attribute_is_not_a_finding(lin
     # Mutation: `_attributes` reads every word, the pattern included -> the second case reddens.
     # Mutation: a finding for every `.gitattributes` whatever its lines -> every case reddens.
     text = f"{line}\n".encode()
-    assert payload_findings([(".gitattributes", len(text), "100644")], read=lambda _: text) == []
+    assert payload_findings([(".gitattributes", len(text))], read=lambda _: text) == []
 
 
 @needs_git
@@ -533,10 +527,10 @@ def test_the_payload_is_the_generated_plugin_tree() -> None:
     assert entry["source"]["source"] == "url"
     assert entry["source"]["url"] == release().PLUGIN_URL
     entries, _ = tracked_payload()
-    assert PLUGIN_MANIFEST in {path for path, _, _ in entries}, len(entries)
+    assert PLUGIN_MANIFEST in {path for path, _ in entries}, len(entries)
     outside = [
         path
-        for path, _, _ in entries
+        for path, _ in entries
         if not any(path == nine or path.startswith(nine + "/") for nine in NINE)
     ]
     assert outside == []
@@ -560,7 +554,7 @@ def test_the_walk_reads_the_committed_tree_and_not_the_disk(tmp_path: Path) -> N
     entries, blobs = tracked_payload(root)
 
     assert sorted(entries) == sorted(
-        (path, len(content), mode) for path, (content, mode) in PLUGIN_FILES.items()
+        (path, len(content)) for path, (content, _) in PLUGIN_FILES.items()
     )
     assert blobs == {path: content for path, (content, _) in PLUGIN_FILES.items()}
 
@@ -577,5 +571,5 @@ def test_the_tree_is_inside_the_directory_limits() -> None:
     # committed file of `FILE_MAX_BYTES` under `skills/`.
     entries, blobs = tracked_payload()
     # A walk-based assertion states its walk is non-empty, and this one that it walked this plugin.
-    assert PLUGIN_MANIFEST in {path for path, _, _ in entries}, len(entries)
+    assert PLUGIN_MANIFEST in {path for path, _ in entries}, len(entries)
     assert payload_findings(entries, read=blobs.__getitem__) == []

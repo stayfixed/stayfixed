@@ -9,6 +9,7 @@ from the subject is the subject compared with itself.
 
 from __future__ import annotations
 
+import ast
 import errno
 import hashlib
 import json
@@ -29,6 +30,7 @@ from tests.plugintree import (
     NINE,
     PLUGIN_FILES,
     PLUGIN_URL,
+    REPOSITORY,
     commit,
     hashed,
     literal,
@@ -795,8 +797,8 @@ NO_COMMIT_ID = ", which is no commit id of 40 lowercase hex digits"
         ),
         pytest.param(
             document([{"name": "stayfixed", "source": "./"}]),
-            " gives the entry 'stayfixed' a source that is no object; the pin is read from a url "
-            "source",
+            " gives the entry 'stayfixed' a source that is no object; the pin is read from the "
+            "source object's sha",
             True,
             id="a-string-source",
         ),
@@ -964,16 +966,25 @@ def test_an_explicit_safe_bare_repository_does_not_refuse_the_git_dir(tmp_path: 
     assert plugin_tree.plugin_commit(root, "HEAD", git_dir)[0] == first
 
 
+@pytest.mark.parametrize(
+    "words",
+    [("hash-object",), ("rev-parse",), ("ls-tree", "-r"), ("cat-file", "--batch")],
+    ids=["hash-object", "rev-parse", "ls-tree", "cat-file-batch"],
+)
 def test_a_commit_that_gave_no_answer_is_refused_in_no_answer_s_words(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, words: tuple[str, ...]
 ) -> None:
-    # Mutation (declared): `mutations/`'s "the plugin commit says a git that gave no answer
-    # exited" -> the refusal says `-1` and not why.
+    # A git that timed out or could not be run answers `-1`, which a refusal printed as "exited
+    # -1" says nothing about. Each git the commit runs first: the plugin commit's `hash-object`,
+    # and the reader's rev-parse, tree listing and batch read. Mutations (declared): `mutations/`'s
+    # "the plugin commit says a git that gave no answer exited" -> every case says `-1` and not
+    # why; "the plugin tree's reads say a git that gave no answer exited" -> every case but
+    # `hash-object`.
     root = plugin_source(tmp_path)
     real = plugin_tree.git_run
 
     def silent(where: Path, *args: str, **options: Any) -> tuple[int, str]:
-        if "hash-object" in args:
+        if all(word in args for word in words):
             return -1, ""
         code, answer = real(where, *args, **options)
         return code, answer
@@ -1240,9 +1251,12 @@ def test_require_pin_exits_1_when_the_pin_is_another_commit(
     assert plugin_tree.main([*pinned_again, "--require-pin"]) == 1
     said = capsys.readouterr().err
     assert pinned in said and expected in said, said
-    # Refused after the objects and the manifest file were written.
+    # Refused after the objects and the manifest file were written, and the file is the tree's
+    # manifest whole, not only its first line. Mutation (declared): `mutations/`'s "the plugin
+    # commit command writes a manifest short of its tree" -> the file lacks its last member.
     assert git(git_dir, "cat-file", "-t", expected).strip() == "commit"
-    assert listing.read_bytes().startswith(b"stayfixed-plugin-tree 1\n")
+    whole = plugin_tree.manifest(plugin_tree.read(root, "HEAD").members).encode("utf-8")
+    assert listing.read_bytes() == whole
 
 
 def test_run_without_its_package_it_refuses_with_exit_2_and_says_to_use_uv(tmp_path: Path) -> None:
@@ -1257,3 +1271,22 @@ def test_run_without_its_package_it_refuses_with_exit_2_and_says_to_use_uv(tmp_p
     assert "refused: No module named 'stayfixed'" in done.stderr, done.stderr
     assert "uv run python scripts/plugin_tree.py" in done.stderr, done.stderr
     assert "Traceback" not in done.stderr, done.stderr
+
+
+def test_only_the_two_wrappers_run_git() -> None:
+    # `git_run` answers `-1` for a git that gave no answer, and a caller that formats its code
+    # prints "exited -1". `_git` and `_store` refuse it in `NO_ANSWER`'s words, so the guard holds
+    # only while every git goes through one of them; three readers once called `_git` and checked
+    # nothing. Mutation (declared): `mutations/`'s "the plugin tree runs a git outside its
+    # wrappers" -> `peel` calls `git_run` itself, and this reddens.
+    tree = ast.parse((REPOSITORY / "scripts" / "plugin_tree.py").read_text(encoding="utf-8"))
+    callers = sorted(
+        function.name
+        for function in ast.walk(tree)
+        if isinstance(function, ast.FunctionDef)
+        for node in ast.walk(function)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "git_run"
+    )
+    assert callers == ["_git", "_store"], callers

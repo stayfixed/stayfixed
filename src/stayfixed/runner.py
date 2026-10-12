@@ -49,6 +49,12 @@ NETWORK_TIMEOUT_SECONDS = 300
 # are kept deliberately: they are how a GitHub Enterprise owner reaches their own host, and
 # dropping them would break that installation outright to close a gap the inherited token does
 # not have. A caller that needs them gone should say which call and why.
+#
+# `GH_FORCE_TTY` and `CLICOLOR_FORCE` are dropped for the reason `_ENV_FORCE` below exists: every
+# call here captures its output, so terminal behaviour is never wanted, and either one makes `gh`
+# colour its JSON (measured with gh 2.101.0: `gh api` and `gh repo view --json` start with an
+# escape sequence), which every caller that parses it then reads as no answer. `NO_COLOR` and
+# `CLICOLOR=0` do not undo either, so the variables go rather than a third one being added.
 _ENV_DROP = (
     "GIT_DIR",
     "GIT_WORK_TREE",
@@ -57,6 +63,8 @@ _ENV_DROP = (
     "GIT_OBJECT_DIRECTORY",
     "GIT_ALTERNATE_OBJECT_DIRECTORIES",
     "GIT_CEILING_DIRECTORIES",
+    "GH_FORCE_TTY",
+    "CLICOLOR_FORCE",
 )
 # Forced rather than inherited, and the reason the cap above means anything. `git` and `gh` ask
 # for a credential on stdin, and every call here runs with output captured -- so a prompt is

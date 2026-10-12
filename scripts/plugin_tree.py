@@ -140,15 +140,28 @@ def _control(path: str) -> bool:
     )
 
 
+def _answered(code: int, what: str) -> None:
+    """Refuse a git that gave no answer in `NO_ANSWER`'s words, rather than as an exit code."""
+    if code == -1:
+        raise Refusal(f"{what} gave no answer: {NO_ANSWER}")
+
+
 def _git(
     root: Path, *args: str, stdin: str | None = None, timeout: float = QUERY_TIMEOUT_SECONDS
 ) -> tuple[int, str]:
-    return git_run(root, *GIT_OPTIONS, *args, stdin=stdin, timeout=timeout)
+    """`git <args>` in the repository read, after `GIT_OPTIONS`: its exit code and answer, or a
+    refusal in `NO_ANSWER`'s words when it gave none. Every read of `root` goes through here, and
+    every write of the git dir through `_store`, so no caller can print `git_run`'s `-1` as an
+    exit code: `tests/scripts/test_plugin_tree.py` holds that no other function calls `git_run`."""
+    code, answer = git_run(root, *GIT_OPTIONS, *args, stdin=stdin, timeout=timeout)
+    _answered(code, f"git {args[0]} in {root}")
+    return code, answer
 
 
 def peel(root: Path, rev: str, kind: str) -> str:
     """The `kind` (`commit` or `tree`) `rev` peels to in `root`, as git's full object name, or a
-    refusal naming `rev`: the one place this script resolves a rev."""
+    refusal naming `rev`: where this script resolves a rev it is handed. `_first_parent` asks git
+    only whether an id a commit object names is a commit this clone holds."""
     code, answer = _git(root, "rev-parse", "--verify", "--end-of-options", f"{rev}^{{{kind}}}")
     name = answer.removesuffix("\n")
     if code != 0:
@@ -320,12 +333,6 @@ def commit_text(tree: str, parent: str | None, version: str) -> str:
     )
 
 
-def _answered(code: int, what: str) -> None:
-    """Refuse a git that gave no answer in `NO_ANSWER`'s words, rather than as an exit code."""
-    if code == -1:
-        raise Refusal(f"{what} gave no answer: {NO_ANSWER}")
-
-
 def _json_file(root: Path, sha: str, path: str, content: bytes) -> dict[str, object]:
     said = f"{path} at {sha} in {root}"
     try:
@@ -348,7 +355,6 @@ def pinned_sha(root: Path, rev: str) -> str | None:
     sha = peel(root, rev, "commit")
     said = f"{MARKETPLACE} at {sha} in {root}"
     code, answer = _git(root, "ls-tree", "-z", "--full-tree", sha, "--", MARKETPLACE)
-    _answered(code, f"git ls-tree of {sha} in {root}")
     if code != 0:
         raise Refusal(f"git ls-tree of {sha} exited {code} in {root}")
     record = answer.split("\0", 1)[0]
@@ -372,7 +378,7 @@ def pinned_sha(root: Path, rev: str) -> str | None:
     if not isinstance(source, dict):
         raise Refusal(
             f"{said} gives the entry {PACKAGE!r} a source that is no object; the pin is read from "
-            "a url source"
+            "the source object's sha"
         )
     if "sha" not in source:
         return None
@@ -387,7 +393,6 @@ def _first_parent(root: Path, sha: str) -> str | None:
     """The first parent the commit `sha`'s object names, or `None` when it names none; refused
     when the repository does not hold it, as a shallow clone does not."""
     code, answer = _git(root, "cat-file", "commit", sha)
-    _answered(code, f"git cat-file of {sha} in {root}")
     if code != 0:
         raise Refusal(f"git cat-file of {sha} exited {code} in {root}")
     header = answer.split("\n\n", 1)[0].split("\n")
@@ -396,7 +401,6 @@ def _first_parent(root: Path, sha: str) -> str | None:
         return None
     first = parents[0]
     code, _ = _git(root, "cat-file", "-e", f"{first}^{{commit}}")
-    _answered(code, f"git cat-file of {first} in {root}")
     if code != 0:
         raise Refusal(
             f"the commit before {sha} is not in this clone; fetch it (fetch-depth: 2): the plugin "

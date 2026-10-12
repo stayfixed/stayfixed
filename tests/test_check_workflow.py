@@ -812,6 +812,9 @@ def test_the_job_s_token_can_read_the_repository_and_nothing_more() -> None:
         ("echo a#b \\\n  c\n", ["echo a#b c"]),
         # A comment line after a continued one ends that command, as bash reads it.
         ("a \\\n  # note\nb\n", ["a # note", "b"]),
+        # A backslash escapes a double quote inside double quotes, so the quote goes on and the
+        # `#` after it is still quoted.
+        ('echo "a \\" #b" \\\n  c\n', ['echo "a \\" #b" c']),
     ],
     ids=[
         "continued",
@@ -822,13 +825,15 @@ def test_the_job_s_token_can_read_the_repository_and_nothing_more() -> None:
         "double-quoted",
         "inside-a-word",
         "comment-after-continued",
+        "escaped-quote",
     ],
 )
 def test_the_line_reader_reads_commands_as_bash_does(script: str, commands: list[str]) -> None:
     # Every case that holds a workflow script or finds a command in one reads it through
     # `_lines`, so a reader that joined a command onto a comment would hide the command from
-    # all of them. Mutation (oracle): `mutations/`'s "the workflow line reader continues a line
-    # whose comment ends in a backslash".
+    # all of them. Mutations (oracle): `mutations/`'s "the workflow line reader continues a line
+    # whose comment ends in a backslash" and "the workflow line reader ends a quote at an escaped
+    # quote".
     assert _lines(script) == commands
 
 
@@ -1286,10 +1291,21 @@ def test_only_the_attest_job_can_attest() -> None:
     )
     assert recording == ["attest"], granted
     steps = _steps_of(RELEASE_WORKFLOW, "attest")
-    # No `uv` and no suite: neither an action that installs one nor a command that runs one.
-    # Mutations (oracle): `mutations/`'s "the attest job installs uv" and "the attest job runs
+    # Installs nothing: its steps are these and no others, each action by name and the one script
+    # by its step's name, so an installer of any kind added reddens, not only the one a list of
+    # installers would name. Mutations (oracle): `mutations/`'s "the attest job installs uv" and
+    # "the attest job sets up another interpreter".
+    shapes = [_uses(step) or step.get("name") for step in steps]
+    assert shapes == [
+        "actions/checkout",
+        "actions/download-artifact",
+        "The plugin commit of the commit this run builds",
+        "actions/attest-build-provenance",
+        "actions/attest-build-provenance",
+        "actions/upload-artifact",
+    ], shapes
+    # And that one script runs no suite. Mutation (oracle): `mutations/`'s "the attest job runs
     # the suite".
-    assert [step for step in steps if _uses(step) == "astral-sh/setup-uv"] == [], steps
     running = [
         line
         for step in steps
@@ -1297,10 +1313,33 @@ def test_only_the_attest_job_can_attest() -> None:
         if re.search(r"(?<![\w.-])(uv|pytest)(?![\w.-])", line)
     ]
     assert running == [], running
-    # And the checkout leaves no token in `.git/config` for the step that runs the script.
-    # Mutation (oracle): `mutations/`'s "the attest job keeps a token in its checkout".
-    [checkout] = [step for step in steps if _uses(step) == "actions/checkout"]
-    assert _with(checkout, "persist-credentials") == "false", checkout
+
+
+@needs_release_workflow
+def test_no_checkout_in_the_release_keeps_its_token() -> None:
+    # `actions/checkout` writes the job's token into `.git/config` unless told not to, where every
+    # later step of the job can read it, and no step of the release needs it there: `build` runs
+    # the suite and pushes nothing, `attest` runs a script, and `github-release` authenticates `gh`
+    # with `GH_TOKEN`. Held for every checkout rather than for the jobs judged able to write, so a
+    # `permissions: write-all`, or a job inheriting a widened top-level block, is held too.
+    # Mutations (oracle): `mutations/`'s "the release build keeps a token in its checkout", "the
+    # attest job keeps a token in its checkout" and "the Release job keeps a token in its
+    # checkout".
+    checkouts = {
+        name: [
+            step for step in _steps_of(RELEASE_WORKFLOW, name) if _uses(step) == "actions/checkout"
+        ]
+        for name in _jobs(RELEASE_WORKFLOW)
+    }
+    # The walk's count, so the loop reads every checkout there is.
+    assert {name: len(found) for name, found in checkouts.items() if found} == {
+        "build": 1,
+        "attest": 1,
+        "github-release": 1,
+    }, checkouts
+    for name, found in checkouts.items():
+        for checkout in found:
+            assert _with(checkout, "persist-credentials") == "false", (name, checkout)
 
 
 def _outputs(path: Path) -> dict[str, str]:
@@ -1539,7 +1578,10 @@ SHA1_PATTERN = "[0-9a-f]{40}"
 
 
 def _pattern(value: object) -> str:
-    """A pattern constant's text, whether the script compiled it or not."""
+    """A pattern constant's text, whether the script compiled it or not; compiled, with no flag
+    beyond the `UNICODE` every text pattern carries."""
+    if isinstance(value, re.Pattern):
+        assert value.flags == re.UNICODE, (value, value.flags)
     pattern = value.pattern if isinstance(value, re.Pattern) else value
     assert isinstance(pattern, str), value
     return pattern
@@ -1557,7 +1599,11 @@ def test_one_commit_id_shape_everywhere() -> None:
     # commit` printed (`attest`'s and the smoke's) are reached by no test, because the script
     # prints no other shape; the gated steps' copy is run by
     # `test_the_gated_step_compares_the_peeled_id`'s `nothing-pinned` case. Mutation (oracle):
-    # `mutations/`'s "the smoke checks the plugin commit's shape by another pattern".
+    # `mutations/`'s "the smoke checks the plugin commit's shape by another pattern". The
+    # scripts' copies by their text and, compiled, by their flags, since `IGNORECASE` takes an
+    # upper-case id the text refuses. Mutations (oracle): `mutations/`'s "the publisher spells
+    # the commit id's shape another way than its siblings" and "the plugin tree compiles the
+    # commit id's shape to ignore case".
     scripts = {
         "plugin_tree.py SHA1": _pattern(scriptload.plugin_tree().SHA1),
         "release.py SHA1": _pattern(scriptload.release().SHA1),
