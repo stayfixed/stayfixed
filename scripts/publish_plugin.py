@@ -150,10 +150,6 @@ PEELS = 8
 # empty repository (409): "absent", where every other failure is a refusal.
 ABSENT = frozenset({"404", "409"})
 HTTP_STATUS = re.compile(r"\(HTTP ([0-9]{3})\)")
-# What begins an ANSI colour sequence: `gh` writes one into its JSON when told its output is a
-# terminal (`GH_FORCE_TTY`) or to keep its colours in a pipe (`CLICOLOR_FORCE`), per `gh help
-# environment`.
-COLOURED = "\x1b["
 # How many of a program's stderr lines a refusal quotes.
 QUOTED_LINES = 6
 # On every git that runs in the scratch repository: none of the owner's hooks runs there, a
@@ -278,16 +274,7 @@ def _api(runner: Runner, root: Path, path: str) -> dict[str, object] | None:
     except ValueError:
         answer = None
     if not isinstance(answer, dict):
-        # A `GH_FORCE_TTY` or a `CLICOLOR_FORCE` in the owner's environment makes `gh` colour its
-        # JSON as for a terminal, and every answer after it reads as none: named, so the run that
-        # fails on every call says why rather than looking like a proxy's page.
-        coloured = (
-            " (gh coloured it: unset GH_FORCE_TTY and CLICOLOR_FORCE in your environment and run "
-            "again)"
-            if COLOURED in done.stdout
-            else ""
-        )
-        raise Refusal(f"gh api {path} answered no JSON object{coloured}: {_said(done)}")
+        raise Refusal(f"gh api {path} answered no JSON object: {_said(done)}")
     return answer
 
 

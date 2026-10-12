@@ -801,9 +801,9 @@ reddens = [
 name = "the publisher takes an API answer that is no JSON object as no ref"
 file = "scripts/publish_plugin.py"
 before = '''    if not isinstance(answer, dict):
-        # A `GH_FORCE_TTY`'''
-after = '''    if False:
-        # A `GH_FORCE_TTY`'''
+        raise Refusal(f"gh api {path} answered no JSON object: {_said(done)}")
+    return answer'''
+after = '''    return answer if isinstance(answer, dict) else None'''
 reddens = [
   "tests/scripts/test_publish_plugin.py::test_an_api_answer_that_is_neither_a_ref_nor_its_absence_is_refused[not-json]",
 ]
@@ -1224,27 +1224,9 @@ before = 'OBJECT_NAME = r"[0-9a-f]{40}|[0-9a-f]{64}"'
 after = 'OBJECT_NAME = r"[0-9a-f]{40}"'
 reddens = ["tests/test_check_workflow.py::test_one_commit_id_shape_everywhere"]
 
-# The causes a refusal names, so the owner fixes the right thing: a `gh` whose environment colours
-# its JSON, a `gh auth status` that failed for another reason than a login, a fetched `main` that
-# cannot be read back, and a tag that holds the script without the package it imports.
-[[mutation]]
-name = "the publisher refuses a coloured API answer without naming what coloured it"
-file = "scripts/publish_plugin.py"
-before = "            if COLOURED in done.stdout"
-after = "            if False"
-reddens = [
-  "tests/scripts/test_publish_plugin.py::test_a_coloured_api_answer_is_refused_naming_what_coloured_it[coloured]",
-]
-
-[[mutation]]
-name = "the publisher names colour for an answer that is not coloured"
-file = "scripts/publish_plugin.py"
-before = "            if COLOURED in done.stdout"
-after = "            if True"
-reddens = [
-  "tests/scripts/test_publish_plugin.py::test_a_coloured_api_answer_is_refused_naming_what_coloured_it[not-json]",
-]
-
+# The causes a refusal names, so the owner fixes the right thing: a `gh auth status` that failed
+# for another reason than a login, a fetched `main` that cannot be read back, and a tag that holds
+# the script without the package it imports.
 [[mutation]]
 name = "the publisher advises only a login whatever gh auth status said"
 file = "scripts/publish_plugin.py"

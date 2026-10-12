@@ -10,6 +10,8 @@ import os
 import pty
 from pathlib import Path
 
+import pytest
+
 from stayfixed.runner import (
     _ENV_DROP,
     _ENV_FORCE,
@@ -70,6 +72,20 @@ def test_the_variables_that_redirect_git_are_dropped(tmp_path: Path) -> None:
     assert "index=unset" in done.stdout
     assert set(_ENV_DROP) >= {"GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"}
     assert _ENV_FORCE["GIT_TERMINAL_PROMPT"] == "0"
+
+
+def test_the_variables_that_make_gh_write_for_a_terminal_are_dropped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Either variable makes a captured `gh` colour its JSON, and every caller that parses it, the
+    # publisher's `gh api` and `overlay create`'s `gh repo view --json isTemplate` among them,
+    # then read no answer. Mutations (declared): `mutations/`'s "the runner hands gh
+    # GH_FORCE_TTY" and "the runner hands gh CLICOLOR_FORCE" -> each reaches the child.
+    monkeypatch.setenv("GH_FORCE_TTY", "1")
+    monkeypatch.setenv("CLICOLOR_FORCE", "1")
+    probe = ["sh", "-c", 'echo "tty=${GH_FORCE_TTY-unset} colour=${CLICOLOR_FORCE-unset}"']
+    done = _SubprocessRunner().launch(probe, tmp_path)
+    assert done.stdout.split() == ["tty=unset", "colour=unset"], done.stdout
 
 
 def test_a_command_that_hangs_is_not_reported_as_one_that_is_missing(tmp_path: Path) -> None:

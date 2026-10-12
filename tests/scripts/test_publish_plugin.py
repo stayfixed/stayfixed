@@ -689,36 +689,6 @@ def test_an_api_answer_that_is_neither_a_ref_nor_its_absence_is_refused(
     assert tool_runs(runner) == []
 
 
-# `gh api`'s JSON as gh writes it for a terminal: under `GH_FORCE_TTY` or `CLICOLOR_FORCE` (`gh help
-# environment`), a pipe gets it too, an escape sequence before each token.
-COLOURED_JSON = Completed(0, '\x1b[1;38m{\x1b[m\n  \x1b[1;34m"ref"\x1b[m: "refs/tags/v1.2.3"\n', "")
-
-
-@pytest.mark.parametrize(
-    ("answer", "named"),
-    [
-        pytest.param(COLOURED_JSON, True, id="coloured"),
-        pytest.param(NOT_JSON, False, id="not-json"),
-    ],
-)
-def test_a_coloured_api_answer_is_refused_naming_what_coloured_it(
-    source: Path, tmp_path: Path, answer: Completed, named: bool
-) -> None:
-    # An owner whose environment carries `GH_FORCE_TTY` or `CLICOLOR_FORCE` gets every `gh api`
-    # answer coloured, so every run is refused, and "answered no JSON object" alone reads like a
-    # proxy's page. The refusal names the two variables, and only for an answer that is
-    # coloured. Mutations (declared): `mutations/`'s "the publisher refuses a coloured API answer
-    # without naming what coloured it" -> the coloured case is not named; "the publisher names
-    # colour for an answer that is not coloured" -> the proxy's page is.
-    asked = f"gh api --hostname github.com repos/{SOURCE_REPOSITORY}/git/ref/tags/{TAG}"
-    runner = runner_for(source, answers={asked: answer})
-    with pytest.raises(Refusal, match="answered no JSON object") as refused:
-        publish(source, bare_remote(tmp_path), tmp_path / "scratch", runner=runner)
-    said = "unset GH_FORCE_TTY and CLICOLOR_FORCE in your environment and run again"
-    assert (said in str(refused.value)) is named, str(refused.value)
-    assert tool_runs(runner) == []
-
-
 def test_a_tag_without_the_plugin_tree_script_is_refused(tmp_path: Path) -> None:
     # Mutation (declared): `mutations/`'s "the publisher runs a tag that predates it" -> the tag's
     # `src/stayfixed` is extracted without a script to run, and the run fails in Python's words.
