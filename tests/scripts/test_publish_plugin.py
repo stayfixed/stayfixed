@@ -687,6 +687,36 @@ def test_an_api_answer_that_is_neither_a_ref_nor_its_absence_is_refused(
     assert tool_runs(runner) == []
 
 
+# `gh api`'s JSON as gh writes it for a terminal: under `GH_FORCE_TTY` or `CLICOLOR_FORCE` (`gh help
+# environment`), a pipe gets it too, an escape sequence before each token.
+COLOURED_JSON = Completed(0, '\x1b[1;38m{\x1b[m\n  \x1b[1;34m"ref"\x1b[m: "refs/tags/v1.2.3"\n', "")
+
+
+@pytest.mark.parametrize(
+    ("answer", "named"),
+    [
+        pytest.param(COLOURED_JSON, True, id="coloured"),
+        pytest.param(NOT_JSON, False, id="not-json"),
+    ],
+)
+def test_a_coloured_api_answer_is_refused_naming_what_coloured_it(
+    source: Path, tmp_path: Path, answer: Completed, named: bool
+) -> None:
+    # An owner whose environment carries `GH_FORCE_TTY` or `CLICOLOR_FORCE` gets every `gh api`
+    # answer coloured, so every run is refused, and "answered no JSON object" alone reads like a
+    # proxy's page. The refusal names the two variables, and only for an answer that is
+    # coloured. Mutations (declared): `mutations/`'s "the publisher refuses a coloured API answer
+    # without naming what coloured it" -> the coloured case is not named; "the publisher names
+    # colour for an answer that is not coloured" -> the proxy's page is.
+    asked = f"gh api --hostname github.com repos/{SOURCE_REPOSITORY}/git/ref/tags/{TAG}"
+    runner = runner_for(source, answers={asked: answer})
+    with pytest.raises(Refusal, match="answered no JSON object") as refused:
+        publish(source, bare_remote(tmp_path), tmp_path / "scratch", runner=runner)
+    said = "unset GH_FORCE_TTY and CLICOLOR_FORCE in your environment and run again"
+    assert (said in str(refused.value)) is named, str(refused.value)
+    assert tool_runs(runner) == []
+
+
 def test_a_tag_without_the_plugin_tree_script_is_refused(tmp_path: Path) -> None:
     # Mutation (declared): `mutations/`'s "the publisher runs a tag that predates it" -> the tag's
     # `src/stayfixed` is extracted without a script to run, and the run fails in Python's words.
@@ -1085,7 +1115,9 @@ def test_a_gh_that_is_not_logged_in_is_refused_before_verify(source: Path, tmp_p
     # Mutations (declared): `mutations/`'s "the publisher goes on with a gh that is not logged in"
     # -> GitHub's API is asked, the tag's code runs and the attestation is asked for;
     # `mutations/`'s "the publisher refuses a gh that is not logged in without gh's words" -> the
-    # refusal no longer says why.
+    # refusal no longer says why. `gh auth status` fails for a network or a token it cannot use as
+    # well, so the advice is not "log in" alone. Mutation (declared): `mutations/`'s "the publisher
+    # advises only a login whatever gh auth status said" -> reddens below.
     said = "You are not logged into any GitHub hosts. To log in, run: gh auth login"
     runner = runner_for(source, answers={"gh auth status": Completed(1, "", f"{said}\n")})
     scratch = tmp_path / "scratch"
@@ -1093,6 +1125,7 @@ def test_a_gh_that_is_not_logged_in_is_refused_before_verify(source: Path, tmp_p
         publish(source, bare_remote(tmp_path), scratch, runner=runner)
     assert "gh auth status --hostname github.com --active exited 1" in str(refused.value)
     assert said in str(refused.value)
+    assert "if gh says you are not, or fix what it names" in str(refused.value)
     assert runner.gh.calls == [GH_VERSION, GH_AUTH]
     assert gh_asked(runner, "gh", "api") == gh_asked(runner, "gh", "attestation") == []
     assert tool_runs(runner) == []
@@ -1249,6 +1282,30 @@ def test_a_main_that_moves_between_list_and_fetch_is_refused(source: Path, tmp_p
         publish(source, remote, tmp_path / "second", yes=False, tag="v1.2.4", runner=runner)
     assert "run again" in str(refused.value)
     assert refs(remote) == {"refs/heads/main": moved[0], f"refs/tags/{TAG}": first.commit}
+
+
+def test_a_fetched_main_that_cannot_be_read_back_is_not_called_moved(
+    source: Path, tmp_path: Path
+) -> None:
+    # The fetch went through and the ref it wrote cannot be read: that is no `main` that moved,
+    # and saying so would send the owner looking for a push that never happened. Mutation
+    # (declared): `mutations/`'s "the publisher reads a failed rev-parse of the fetched main as a
+    # main that moved" -> reddens at the message.
+    remote = bare_remote(tmp_path)
+    publish(source, remote, tmp_path / "first")
+    released(source, "1.2.4")
+    scratch = tmp_path / "second"
+
+    def lose(argv: list[str]) -> None:
+        if argv[:1] == ["git"] and "fetch" in argv:
+            git_dir = scratch / "plugin.git"
+            git(git_dir, f"--git-dir={git_dir}", "update-ref", "-d", "refs/stayfixed/main")
+
+    runner = runner_for(source, after=lose)
+    with pytest.raises(Refusal, match="git rev-parse of refs/stayfixed/main") as refused:
+        publish(source, remote, scratch, yes=False, tag="v1.2.4", runner=runner)
+    assert "moved" not in str(refused.value), str(refused.value)
+    assert "run again" in str(refused.value)
 
 
 def test_a_rejected_push_moves_no_ref(source: Path, tmp_path: Path) -> None:

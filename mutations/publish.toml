@@ -664,7 +664,7 @@ reddens = ["tests/scripts/test_publish_plugin.py::test_another_remote_is_not_con
 [[mutation]]
 name = "the publisher builds on a main the fetch did not bring"
 file = "scripts/publish_plugin.py"
-before = '    if code != 0 or answer.removesuffix("\n") != main:'
+before = '    if answer.removesuffix("\n") != main:'
 after = "    if False:"
 reddens = [
   "tests/scripts/test_publish_plugin.py::test_a_main_that_moves_between_list_and_fetch_is_refused",
@@ -1223,3 +1223,65 @@ file = "scripts/publish_plugin.py"
 before = 'OBJECT_NAME = r"[0-9a-f]{40}|[0-9a-f]{64}"'
 after = 'OBJECT_NAME = r"[0-9a-f]{40}"'
 reddens = ["tests/test_check_workflow.py::test_one_commit_id_shape_everywhere"]
+
+# The causes a refusal names, so the owner fixes the right thing: a `gh` whose environment colours
+# its JSON, a `gh auth status` that failed for another reason than a login, a fetched `main` that
+# cannot be read back, and a tag that holds the script without the package it imports.
+[[mutation]]
+name = "the publisher refuses a coloured API answer without naming what coloured it"
+file = "scripts/publish_plugin.py"
+before = "            if COLOURED in done.stdout"
+after = "            if False"
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_a_coloured_api_answer_is_refused_naming_what_coloured_it[coloured]",
+]
+
+[[mutation]]
+name = "the publisher names colour for an answer that is not coloured"
+file = "scripts/publish_plugin.py"
+before = "            if COLOURED in done.stdout"
+after = "            if True"
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_a_coloured_api_answer_is_refused_naming_what_coloured_it[not-json]",
+]
+
+[[mutation]]
+name = "the publisher advises only a login whatever gh auth status said"
+file = "scripts/publish_plugin.py"
+before = """            f"GitHub's: log in (gh auth login --hostname {GITHUB}) if gh says you are not, or fix "
+            "what it names, a network or a token it cannot use, and run again; nothing was run""""
+after = """            f"GitHub's: log in (gh auth login --hostname {GITHUB}) and run again; nothing was run""""
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_a_gh_that_is_not_logged_in_is_refused_before_verify",
+]
+
+[[mutation]]
+name = "the publisher reads a failed rev-parse of the fetched main as a main that moved"
+file = "scripts/publish_plugin.py"
+before = """    if code != 0:
+        raise Refusal(
+            f"git rev-parse of {FETCHED} in {git_dir}"""
+after = """    if False:
+        raise Refusal(
+            f"git rev-parse of {FETCHED} in {git_dir}"""
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_a_fetched_main_that_cannot_be_read_back_is_not_called_moved",
+]
+
+[[mutation]]
+name = "the publisher's predates refusal stops naming the tag's package"
+file = "scripts/publish_plugin.py"
+before = '            f"{tag} ({sha}) holds no {TOOL} or no {TOOL_PACKAGE}: {tag} predates the plugin "'
+after = '            f"{tag} ({sha}) holds no {TOOL}: {tag} predates the plugin "'
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_a_tag_without_the_package_its_tool_imports_is_refused",
+]
+
+[[mutation]]
+name = "the publisher's docstring names an older gh floor than it refuses below"
+file = "scripts/publish_plugin.py"
+before = "`gh --version` must be a release at least 2.101.0, the gh every flag below"
+after = "`gh --version` must be a release at least 2.100.0, the gh every flag below"
+reddens = [
+  "tests/test_documents.py::test_the_publisher_s_docstring_names_the_gh_floor_it_refuses_below",
+]

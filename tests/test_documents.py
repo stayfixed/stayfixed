@@ -550,6 +550,25 @@ def test_every_gh_floor_releasing_names_is_the_one_the_publisher_refuses_below()
     assert set(named) == {floor}, (named, floor)
 
 
+# The floor as the publisher's own docstring states it: "a release at least 2.101.0".
+_GH_FLOOR_IN_DOCSTRING = re.compile(r"a release at least\s+(\d+(?:\.\d+)+)")
+
+
+def test_the_publisher_s_docstring_names_the_gh_floor_it_refuses_below() -> None:
+    """The publisher's module docstring, which `RELEASING.md` calls its reference, states the
+    floor in prose beside `GH_FLOOR`; a floor raised in the constant alone leaves that reference
+    naming a `gh` the publisher refuses.
+
+    Mutation (oracle): `mutations/`'s "the publisher's docstring names an older gh floor than it
+    refuses below" -> reddens naming it. Held to exactly one mention, so a pattern that found
+    none holds nothing: the docstring rewritten without the phrase reddens too.
+    """
+    module = publish_plugin()
+    floor = ".".join(str(part) for part in module.GH_FLOOR)
+    named = _GH_FLOOR_IN_DOCSTRING.findall(module.__doc__ or "")
+    assert named == [floor], (named, floor)
+
+
 # `README.md`'s `## What each agent enforces` section: everything to the next `## ` heading.
 _REACH_SECTION = re.compile(
     r"^## What each agent enforces\n(.*?)(?=^## )", re.MULTILINE | re.DOTALL

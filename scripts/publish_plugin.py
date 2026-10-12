@@ -144,6 +144,10 @@ PEELS = 8
 # empty repository (409): "absent", where every other failure is a refusal.
 ABSENT = frozenset({"404", "409"})
 HTTP_STATUS = re.compile(r"\(HTTP ([0-9]{3})\)")
+# What begins an ANSI colour sequence: `gh` writes one into its JSON when told its output is a
+# terminal (`GH_FORCE_TTY`) or to keep its colours in a pipe (`CLICOLOR_FORCE`), per `gh help
+# environment`.
+COLOURED = "\x1b["
 # How many of a program's stderr lines a refusal quotes.
 QUOTED_LINES = 6
 # On every git that runs in the scratch repository: none of the owner's hooks runs there, a
@@ -242,7 +246,16 @@ def _api(runner: Runner, root: Path, path: str) -> dict[str, object] | None:
     except ValueError:
         answer = None
     if not isinstance(answer, dict):
-        raise Refusal(f"gh api {path} answered no JSON object: {_said(done)}")
+        # A `GH_FORCE_TTY` or a `CLICOLOR_FORCE` in the owner's environment makes `gh` colour its
+        # JSON as for a terminal, and every answer after it reads as none: named, so the run that
+        # fails on every call says why rather than looking like a proxy's page.
+        coloured = (
+            " (gh coloured it: unset GH_FORCE_TTY and CLICOLOR_FORCE in your environment and run "
+            "again)"
+            if COLOURED in done.stdout
+            else ""
+        )
+        raise Refusal(f"gh api {path} answered no JSON object{coloured}: {_said(done)}")
     return answer
 
 
@@ -302,7 +315,8 @@ def _logged_in(runner: Runner, root: Path) -> None:
     if done.code != 0:
         raise Refusal(
             f"{' '.join(argv)} exited {done.code}: {_said(done)}. Every answer this trusts is "
-            f"GitHub's: log in (gh auth login --hostname {GITHUB}) and run again; nothing was run"
+            f"GitHub's: log in (gh auth login --hostname {GITHUB}) if gh says you are not, or fix "
+            "what it names, a network or a token it cannot use, and run again; nothing was run"
         )
 
 
@@ -702,7 +716,12 @@ def _follows(runner: Runner, git_dir: Path, remote: str, built: Built, state: Re
         "--end-of-options",
         FETCHED,
     )
-    if code != 0 or answer.removesuffix("\n") != main:
+    if code != 0:
+        raise Refusal(
+            f"git rev-parse of {FETCHED} in {git_dir} exited {code} after the fetch of {remote}'s "
+            "main; nothing was pushed; run again"
+        )
+    if answer.removesuffix("\n") != main:
         raise Refusal(
             f"{remote}'s main was {main} when it was listed, and the fetch that followed brought "
             "another: main moved while this ran. Nothing was pushed; run again"
