@@ -1101,15 +1101,15 @@ action" for what only the owner can do on GitHub or in the private design:
 - **Measurements.** GitHub's answer for the empty plugin repository's `main`: `409` ("Git
   Repository is empty."), `gh api` exiting `1`, and `git ls-remote` listing nothing with exit
   `0`, measured on 2026-10-12 right after `stayfixed/stayfixed-plugin` was created with its four
-  rulesets, which read back as `RELEASING.md` step 1 expects. Amending the private design's two sections on the plugin's distribution (Task 8 Step 4): owner
-  action.
+  rulesets, which read back as `RELEASING.md` step 1 expects. Amending the private design's two
+  sections on the plugin's distribution (Task 8 Step 4): done in that repository the same day.
 - **`scripts/publish_plugin.py`.** `_verify` and `_attested` as one `_advice`: not taken; the
   seam broke three times before Ruling 8 settled it, its entries anchor on the current lines,
   and a merge changes no outcome. Only two exact spellings of the default remote: not taken;
   `RELEASING.md` step 7 says so, any other spelling is reported "not confirmed", and widening it
   means modelling git's URL forms. `--require-pin`'s exit 1 before the attestation: Ruling 8,
   kept, and documented in step 7 (`da6c3d5`). `CLICOLOR_FORCE`/`GH_FORCE_TTY` unnamed: named
-  (`09d36a5`). A failed post-fetch `rev-parse` reported as "main moved": fixed (`09d36a5`). The
+  (`09d36a5`), then prevented for every caller by the runner (`70c6a5c`), below. A failed post-fetch `rev-parse` reported as "main moved": fixed (`09d36a5`). The
   login refusal advising only a login: fixed (`09d36a5`). A `gh` dev build read as a
   pre-release: not taken; refusing it is right, and "install a released gh" is the advice for it
   too. Source reads without `plugin_tree.GIT_OPTIONS`: not taken; scripts do not import one
@@ -1120,7 +1120,8 @@ action" for what only the owner can do on GitHub or in the private design:
   (`09d36a5`).
 - **`scripts/plugin_tree.py`.** `peel`'s "the one place": reworded (`1169d84`); `pinned_sha`
   re-peeling resolved ids: not taken, one `rev-parse` of a full id that answers the same id.
-  "exited -1" in `peel`, `_listing` and `_blobs`: `NO_ANSWER`'s words (`1169d84`).
+  "exited -1" in `peel`, `_listing` and `_blobs`: `NO_ANSWER`'s words (`1169d84`), then
+  structural in both scripts (`104a32e`), below.
   `commit --manifest-file` checked by its first line: held whole (`1169d84`). "from a url
   source": reworded (`1169d84`). A malformed `sha` at the tag reported twice by `check --tag`:
   reported once (`b1da2e2`); the tag's own tool refusing it with exit `2` is Ruling 8, kept.
@@ -1128,8 +1129,8 @@ action" for what only the owner can do on GitHub or in the private design:
   tested (`b1da2e2`). `_is_sha` re-spelled: reused (`b1da2e2`). `ensure_ascii=False`: held
   (`b1da2e2`).
 - **Workflows and their tests.** `attest`'s denylist: an allowlist of its steps (`04f8134`).
-  `github-release`'s persisted token: `persist-credentials: false`, held for every job that can
-  write or sign (`04f8134`). Job readers not consolidated: not taken; both read through the one
+  `github-release`'s persisted token: `persist-credentials: false` (`04f8134`), and every
+  checkout of the release held to it (`4c67a92`). Job readers not consolidated: not taken; both read through the one
   strict reader, `tests.workflow_yaml.load`, and what is left is three lines each. The literal
   `\n`: fixed (`04f8134`). The commit-id shape test's scripts half: flags compared, and an entry
   for each half (`04f8134`). `_code`'s backslash branch: held by a case (`04f8134`).
@@ -1157,7 +1158,28 @@ action" for what only the owner can do on GitHub or in the private design:
   and is the owner's to decide. The load-sensitive
   `test_doctor_launches_the_number_of_subprocesses_it_says_it_does`: not taken; it failed once
   with nothing kept, and has not been reproduced. Deleting the merged branch
-  `wp/plugin-commit-pin` on the remote: owner action.
+  `wp/plugin-commit-pin` on the remote: the owner's, and not wanted.
+
+The follow-up pull request's own review (2026-10-12) found two Important findings, both a class
+fixed at one site while it lived in a shared seam, and four Minor ones:
+
+- **"exited -1" left in the publisher, and brought back by the new post-fetch read.** The second
+  finding at that seam, so the check was made structural rather than added at four more sites:
+  each script runs every local git through one wrapper that refuses no answer in `NO_ANSWER`'s
+  words, and a test holds that no other function calls `git_run` (`104a32e`). `gitenv.git_answer`
+  was not used: it takes no `stdin` and no `timeout`, which `cat-file --batch` needs.
+- **The coloured `gh` answer diagnosed in one caller.** `overlay create`'s `gh repo view --json`
+  failed the same way, unnamed. `GH_FORCE_TTY` and `CLICOLOR_FORCE` join the runner's
+  `_ENV_DROP`, which prevents it for every caller, and the publisher's diagnosis went
+  (`70c6a5c`); the one runtime change of this work, with a changelog fragment.
+- **`check --tag` holding the pin back on any entry problem:** kept, the comment now says so and
+  what it costs, rather than a second list of what `plugin_tree.py` refuses (`4c67a92`).
+- **The persisted-token test classifying jobs:** every checkout of the release is held, `build`'s
+  included, which now persists none (`4c67a92`).
+- **Step 1's read-back depending on creation order:** both listings sorted by name (`4c67a92`).
+- **A fourth reader of the marketplace entry (`_pinned`):** not taken; sharing
+  `marketplace_problems` would make `pin` refuse a bad `ref` or a stray `version`, a change of
+  what `pin` refuses that nothing asked for. Left for the next change to the entry's shape.
 
 ### External review (2026-10-12)
 
