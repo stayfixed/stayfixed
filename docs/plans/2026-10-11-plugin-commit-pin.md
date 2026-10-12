@@ -1147,8 +1147,10 @@ action" for what only the owner can do on GitHub or in the private design:
   ruleset documented in `RELEASING.md` section 3 (`da6c3d5`), and created with the repository on
   2026-10-12.
   `RepositoryRole` 5 from community reports: section 3 now says to confirm the bypass on the
-  settings page (`da6c3d5`); confirming it for this repository's `release tag creation` is owner
-  action. `pin`'s refusal naming the pushed-plugin case: named (`b1da2e2`).
+  settings page (`da6c3d5`). Looking for it on 2026-10-12 found this repository's
+  `release tag creation` had never been created, only `release tags`; it was created that day
+  from section 3's body and reads back as step 1 expects. Confirming its bypass reads "Repository
+  admin" on the settings page is owner action. `pin`'s refusal naming the pushed-plugin case: named (`b1da2e2`).
   `src/stayfixed/release/api.py`'s importers: named (`da6c3d5`). `cat_file_batch` into
   `stayfixed.gitenv`: not taken here; it changes the runtime, which no item of this list needs,
   and is the owner's to decide. The load-sensitive

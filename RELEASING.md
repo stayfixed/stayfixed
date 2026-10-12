@@ -130,8 +130,8 @@ is added to `PLUGIN_PATHS` in `scripts/plugin_tree.py`, or the plugin repository
      --jq '[.name, .target, .enforcement, (.conditions.ref_name.include | sort),
             ([.rules[].type] | sort),
             [(.bypass_actors // [])[] | "\(.actor_type) \(.actor_id) \(.bypass_mode)"]]'
-   # ["release tags","tag","active",["refs/tags/stayfixed--v*","refs/tags/v*.*.*"],["deletion","update"],[]]
    # ["release tag creation","tag","active",["refs/tags/stayfixed--v*","refs/tags/v*.*.*"],["creation"],["RepositoryRole 5 always"]]
+   # ["release tags","tag","active",["refs/tags/stayfixed--v*","refs/tags/v*.*.*"],["deletion","update"],[]]
    gh api repos/stayfixed/stayfixed-plugin/rulesets --jq '.[].id' |
      xargs -I{} gh api repos/stayfixed/stayfixed-plugin/rulesets/{} \
      --jq '[.name, .target, .enforcement, (.conditions.ref_name.include | sort),
