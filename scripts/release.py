@@ -350,7 +350,7 @@ def marketplace_problems(root: Path) -> list[str]:
     if not isinstance(ref, str) or _RELEASE_REF.fullmatch(ref) is None:
         problems.append(f"{said} pins ref {_shown(ref)}, which is no release tag vX.Y.Z")
     sha = source.get("sha")
-    if "sha" in source and (not isinstance(sha, str) or SHA1.fullmatch(sha) is None):
+    if "sha" in source and not _is_sha(sha):
         problems.append(f"{said} pins sha {_shown(sha)}, which is no commit id")
     return problems
 
@@ -442,7 +442,8 @@ def checked_by_kind(
             continue
         if value != canonical:
             problems.append(f"{name} says {value!r}; {PYPROJECT} says {canonical!r}")
-    problems += marketplace_problems(root)
+    entry_problems = marketplace_problems(root)
+    problems += entry_problems
     # The record of the shipped files is held current here and not only at a tag, so a
     # wrapper edited without `hashes` fails the gate the same commit.
     #
@@ -458,8 +459,11 @@ def checked_by_kind(
     # At a tag, on the commit the tag names: `tests/test_payload.py` holds the same count on every
     # pull request, and this holds it again where the release is cut; the pin is the release
     # commit's, and `dev` pins none before the first release that carries one, and the last
-    # release's after it, which is no pin of the commit `dev` is at.
-    if tag is not None:
+    # release's after it, which is no pin of the commit `dev` is at. Only from an entry found
+    # well-formed above: `scripts/plugin_tree.py` refuses a malformed `sha`, entry or source too,
+    # and its refusal reported again under the tree count would name the same problem twice, with
+    # a remedy for a missing checkout. The count and the pin are asked once the entry is fixed.
+    if tag is not None and not entry_problems:
         kinds.update(plugin_commit_problems(root))
     return kinds, found
 
@@ -583,14 +587,18 @@ def _pinned(root: Path, made: str) -> str:
     try:
         text = (root / MARKETPLACE).read_text(encoding="utf-8")
         document = _object(MARKETPLACE, text)
-        entry, _ = _the_plugin_entry(_entries_of(document))
+        entry, named = _the_plugin_entry(_entries_of(document))
     except (OSError, UnicodeDecodeError, MalformedSource) as exc:
         raise Refusal(f"{MARKETPLACE} cannot be pinned: {exc}") from None
-    source = entry.get("source") if entry is not None else None
+    if entry is None:
+        raise Refusal(
+            f"{MARKETPLACE} cannot be pinned: it has {named} entries named {PACKAGE!r}; the sha is "
+            "written into exactly one"
+        )
+    source = entry.get("source")
     if not isinstance(source, dict):
         raise Refusal(
-            f"{MARKETPLACE} cannot be pinned: it has no one entry {PACKAGE!r} whose source is an "
-            "object"
+            f"{MARKETPLACE} cannot be pinned: its entry {PACKAGE!r} has a source that is no object"
         )
     source["sha"] = made
     return json.dumps(document, indent=2, ensure_ascii=False) + "\n"
@@ -618,8 +626,10 @@ def pin(root: Path, *, remote: str, runner: Runner) -> str:
         raise Refusal(
             f"the plugin commit {made} has {follows}, and {remote} has {holds}; the plugin "
             "repository's main moves only by fast-forward. The likely cause: this release commit "
-            f"was cut on the wrong base, or a merge into main dropped the sha {MARKETPLACE} "
-            "pinned at the release before (RELEASING.md, section 5)"
+            f"was cut on the wrong base; a merge into main dropped the sha {MARKETPLACE} pinned "
+            "at the release before; or a release that stopped after its plugin was pushed left "
+            "main at a commit nothing here pins, which the restore commit puts back (RELEASING.md, "
+            "section 5)"
         )
     fsops.write_within(root, MARKETPLACE, body)
     return made

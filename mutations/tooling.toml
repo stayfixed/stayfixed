@@ -2165,12 +2165,11 @@ reddens = [
 [[mutation]]
 name = "pin reads the source of an entry that is not there"
 file = "scripts/release.py"
-before = '''        raise Refusal(f"{MARKETPLACE} cannot be pinned: {exc}") from None
-    source = entry.get("source") if entry is not None else None'''
-after = '''        raise Refusal(f"{MARKETPLACE} cannot be pinned: {exc}") from None
-    source = entry.get("source")'''
+before = "    if entry is None:\n        raise Refusal("
+after = "    if False:\n        raise Refusal("
 reddens = [
   "tests/scripts/test_release.py::test_pin_refuses_a_marketplace_edited_out_of_shape_since_head[no-entry]",
+  "tests/scripts/test_release.py::test_pin_refuses_a_marketplace_edited_out_of_shape_since_head[two-entries]",
 ]
 
 [[mutation]]
@@ -2255,14 +2254,14 @@ reddens = [
 [[mutation]]
 name = "release check refuses every sha beside the ref"
 file = "scripts/release.py"
-before = '    if "sha" in source and (not isinstance(sha, str) or SHA1.fullmatch(sha) is None):'
+before = '    if "sha" in source and not _is_sha(sha):'
 after = '    if "sha" in source:'
 reddens = ["tests/scripts/test_release.py::test_a_sha_beside_the_ref_is_accepted"]
 
 [[mutation]]
 name = "release check accepts any sha"
 file = "scripts/release.py"
-before = '    if "sha" in source and (not isinstance(sha, str) or SHA1.fullmatch(sha) is None):'
+before = '    if "sha" in source and not _is_sha(sha):'
 after = "    if False:"
 reddens = [
   "tests/scripts/test_release.py::test_a_sha_that_is_not_a_commit_id_is_refused[upper-case]",
@@ -3380,4 +3379,35 @@ after = """        # Last, after every object: a manifest on disk says its commi
         _write_manifest(Path(args.manifest_file), manifest(tree.members[:-1]))"""
 reddens = [
   "tests/scripts/test_plugin_tree.py::test_require_pin_exits_1_when_the_pin_is_another_commit",
+]
+
+# `scripts/release.py`: the release check reports a malformed entry once, and `pin` names every
+# case its refusal answers and writes the marketplace's other text as it found it.
+[[mutation]]
+name = "release check computes the pin from an entry it found malformed"
+file = "scripts/release.py"
+before = "    if tag is not None and not entry_problems:"
+after = "    if tag is not None:"
+reddens = [
+  "tests/scripts/test_release.py::test_a_tag_whose_entry_is_malformed_reports_it_once",
+]
+
+[[mutation]]
+name = "pin's refusal stops naming the stopped release the restore commit answers"
+file = "scripts/release.py"
+before = """            "at the release before; or a release that stopped after its plugin was pushed left "
+            "main at a commit nothing here pins, which the restore commit puts back (RELEASING.md, "
+            "section 5)""""
+after = """            "at the release before (RELEASING.md, section 5)""""
+reddens = [
+  "tests/scripts/test_release.py::test_pin_refuses_when_the_plugin_main_is_not_the_parent",
+]
+
+[[mutation]]
+name = "pin escapes text outside ASCII"
+file = "scripts/release.py"
+before = '    return json.dumps(document, indent=2, ensure_ascii=False) + "\n"'
+after = '    return json.dumps(document, indent=2) + "\n"'
+reddens = [
+  "tests/scripts/test_release.py::test_pin_writes_text_outside_ascii_as_it_is",
 ]

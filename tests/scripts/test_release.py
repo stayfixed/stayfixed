@@ -879,6 +879,21 @@ def test_a_tag_outside_a_git_checkout_is_refused_for_want_of_a_count(tmp_path: P
     assert release.check(root) == []
 
 
+@needs_git
+def test_a_tag_whose_entry_is_malformed_reports_it_once(tmp_path: Path) -> None:
+    # `scripts/plugin_tree.py` refuses a `sha` that is no commit id as well, and its refusal was
+    # reported a second time under the tree count, with "run the check in the git checkout the tag
+    # names" as the remedy. The entry's own finding is the one problem. Mutation (declared):
+    # `mutations/`'s "release check computes the pin from an entry it found malformed" -> the
+    # count problem comes back and this reddens.
+    root = _with_plugin_paths(_at(tmp_path, "1.2.3"), pin=False)
+    _pinning(root, "C" * 40)
+    assert release.check(root, tag="v1.2.3") == [
+        f".claude-plugin/marketplace.json entry 'stayfixed' pins sha {'C' * 40}, which is no "
+        "commit id"
+    ]
+
+
 # --- `check --tag`: the marketplace pins the plugin commit its tree makes ------------------------
 
 
@@ -1025,6 +1040,23 @@ def test_pin_writes_the_commit_into_the_entry(
     assert release.check(root, tag="v1.2.3") == []
 
 
+@needs_git
+def test_pin_writes_text_outside_ascii_as_it_is(tmp_path: Path) -> None:
+    # `pin` rewrites the whole marketplace, and a character outside ASCII written back as a `\u`
+    # escape changes a line the pin is not about, which a reviewer of the release commit then
+    # has to read past. Mutation (declared): `mutations/`'s "pin escapes text outside ASCII" ->
+    # the description is written as escapes and this reddens.
+    remote = _remote(tmp_path)
+    root = _released(tmp_path, None)
+    document = json.loads(_marketplace(root).read_text(encoding="utf-8"))
+    document["description"] = "na\u00efve \u2014 a description"
+    _marketplace(root).write_text(json.dumps(document, ensure_ascii=False), encoding="utf-8")
+    release.pin(root, remote=str(remote), runner=subprocess_runner())
+    assert '"description": "na\u00efve \u2014 a description"' in _marketplace(root).read_text(
+        encoding="utf-8"
+    )
+
+
 def test_pin_reads_the_plugin_repository_by_default() -> None:
     # Read only: `pin` lists the remote's `main` and pushes nothing. Mutation (declared):
     # `mutations/`'s "pin's default remote is another repository" -> this reddens.
@@ -1051,7 +1083,8 @@ def test_pin_refuses_when_the_plugin_main_is_not_the_parent(
     # comparison" -> every case writes and reddens; "pin writes before it compares" -> the file
     # changes and every case reddens; "pin says a first release's commit has a parent" ->
     # `no-parent` says `parent None`; "pin says a plugin repository with no main has one" ->
-    # `no-main` says `main at None`.
+    # `no-main` says `main at None`; "pin's refusal stops naming the stopped release the restore
+    # commit answers" -> every case reddens.
     remote = _remote(tmp_path, main)
     root = _released(tmp_path, previous)
     before = _marketplace(root).read_bytes()
@@ -1063,8 +1096,10 @@ def test_pin_refuses_when_the_plugin_main_is_not_the_parent(
     assert str(refused.value) == (
         f"the plugin commit {made} has {follows}, and {remote} has {holds}; the plugin "
         "repository's main moves only by fast-forward. The likely cause: this release commit was "
-        "cut on the wrong base, or a merge into main dropped the sha "
-        ".claude-plugin/marketplace.json pinned at the release before (RELEASING.md, section 5)"
+        "cut on the wrong base; a merge into main dropped the sha .claude-plugin/marketplace.json "
+        "pinned at the release before; or a release that stopped after its plugin was pushed left "
+        "main at a commit nothing here pins, which the restore commit puts back (RELEASING.md, "
+        "section 5)"
     )
     assert _marketplace(root).read_bytes() == before
 
@@ -1124,13 +1159,20 @@ def test_pin_refuses_a_tree_it_cannot_make_the_commit_of(tmp_path: Path) -> None
         ),
         pytest.param(
             '{"plugins": [{"name": "stayfixed", "source": "./"}]}',
-            "cannot be pinned: it has no one entry 'stayfixed' whose source is an object",
+            "cannot be pinned: its entry 'stayfixed' has a source that is no object",
             id="a-string-source",
         ),
         pytest.param(
             '{"plugins": []}',
-            "cannot be pinned: it has no one entry 'stayfixed' whose source is an object",
+            "cannot be pinned: it has 0 entries named 'stayfixed'; the sha is written into "
+            "exactly one",
             id="no-entry",
+        ),
+        pytest.param(
+            json.dumps({"plugins": [{"name": "stayfixed", "source": {}}] * 2}),
+            "cannot be pinned: it has 2 entries named 'stayfixed'; the sha is written into "
+            "exactly one",
+            id="two-entries",
         ),
     ],
 )
@@ -1142,7 +1184,8 @@ def test_pin_refuses_a_marketplace_edited_out_of_shape_since_head(
     # (declared): `mutations/`'s "pin lets a marketplace it cannot read out as a finding" ->
     # `plugins-a-string` exits as a `Failure`; "pin writes a sha into a source that is no object"
     # -> `a-string-source` is an internal error; "pin reads the source of an entry that is not
-    # there" -> `no-entry` is an internal error.
+    # there" -> `no-entry` and `two-entries` are internal errors. The count and the shape are
+    # said apart: one sentence for both named neither.
     remote = _remote(tmp_path)
     root = _released(tmp_path, None)
     _marketplace(root).write_text(edited, encoding="utf-8")
