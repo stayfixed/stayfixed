@@ -1285,3 +1285,12 @@ after = "`gh --version` must be a release at least 2.100.0, the gh every flag be
 reddens = [
   "tests/test_documents.py::test_the_publisher_s_docstring_names_the_gh_floor_it_refuses_below",
 ]
+
+[[mutation]]
+name = "the publisher spells the commit id's shape another way than its siblings"
+file = "scripts/publish_plugin.py"
+before = 'SHA1 = r"[0-9a-f]{40}"'
+after = 'SHA1 = r"[0-9a-fA-F]{40}"'
+reddens = [
+  "tests/test_check_workflow.py::test_one_commit_id_shape_everywhere",
+]

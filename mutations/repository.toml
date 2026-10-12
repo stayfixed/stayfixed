@@ -1916,6 +1916,15 @@ reddens = [
   "tests/test_check_workflow.py::test_the_line_reader_reads_commands_as_bash_does[trailing-comment]",
 ]
 
+[[mutation]]
+name = "the workflow line reader ends a quote at an escaped quote"
+file = "tests/test_check_workflow.py"
+before = """        elif char == "\\\\" and quote != "'":"""
+after = """        elif False:"""
+reddens = [
+  "tests/test_check_workflow.py::test_the_line_reader_reads_commands_as_bash_does[escaped-quote]",
+]
+
 # A step spelled as a flow mapping puts its script inside braces on one line; the reader refuses
 # the brace rather than read the step as the string it spells. The cases are spelled as JSON,
 # `{"run":"…"}`, which nothing but the brace refuses: `{run: "…"}` is refused a second time as a
