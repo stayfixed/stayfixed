@@ -459,10 +459,12 @@ def checked_by_kind(
     # At a tag, on the commit the tag names: `tests/test_payload.py` holds the same count on every
     # pull request, and this holds it again where the release is cut; the pin is the release
     # commit's, and `dev` pins none before the first release that carries one, and the last
-    # release's after it, which is no pin of the commit `dev` is at. Only from an entry found
-    # well-formed above: `scripts/plugin_tree.py` refuses a malformed `sha`, entry or source too,
-    # and its refusal reported again under the tree count would name the same problem twice, with
-    # a remedy for a missing checkout. The count and the pin are asked once the entry is fixed.
+    # release's after it, which is no pin of the commit `dev` is at. Only from an entry with no
+    # problem above, of any kind: `scripts/plugin_tree.py` refuses a malformed `sha`, entry or
+    # source too, and its refusal reported again under the tree count would name the same problem
+    # twice, with a remedy for a missing checkout. A bad `ref` or a stray `version`, which it does
+    # not refuse, holds the count and the pin back as well: one condition rather than a second
+    # list of what the script refuses, at the cost of a second red run at the tag.
     if tag is not None and not entry_problems:
         kinds.update(plugin_commit_problems(root))
     return kinds, found

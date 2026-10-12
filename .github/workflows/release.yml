@@ -40,9 +40,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         # The release commit and its first parent: `release.py check --tag` reads the plugin
         # commit the first parent pins, which is the release's plugin commit's parent, and in a
-        # clone of one commit it refuses, naming this setting, rather than read it as none.
+        # clone of one commit it refuses, naming this setting, rather than read it as none. No
+        # token left in `.git/config` either: the suite and every locked dependency run here, and
+        # nothing in this job pushes.
         with:
           fetch-depth: 2
+          persist-credentials: false
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           enable-cache: true

@@ -1313,37 +1313,29 @@ def test_only_the_attest_job_can_attest() -> None:
         if re.search(r"(?<![\w.-])(uv|pytest)(?![\w.-])", line)
     ]
     assert running == [], running
-    # And the checkout leaves no token in `.git/config` for the step that runs the script.
-    # Mutation (oracle): `mutations/`'s "the attest job keeps a token in its checkout".
-    [checkout] = [step for step in steps if _uses(step) == "actions/checkout"]
-    assert _with(checkout, "persist-credentials") == "false", checkout
 
 
 @needs_release_workflow
-def test_no_job_that_can_write_keeps_its_token_in_a_checkout() -> None:
+def test_no_checkout_in_the_release_keeps_its_token() -> None:
     # `actions/checkout` writes the job's token into `.git/config` unless told not to, where every
-    # later step of the job can read it. A job whose token can write or sign has no step that
-    # needs it there: `attest` runs a script, and `github-release` authenticates `gh` with
-    # `GH_TOKEN`. Mutations (oracle): `mutations/`'s "the attest job keeps a token in its
-    # checkout" and "the Release job keeps a token in its checkout".
-    jobs = _jobs(RELEASE_WORKFLOW)
-    writing = sorted(
-        name
-        for name, job in jobs.items()
-        if isinstance(job.get("permissions"), dict) and "write" in job["permissions"].values()  # type: ignore[union-attr]
-    )
-    assert writing == ["attest", "github-release", "publish"], writing
+    # later step of the job can read it, and no step of the release needs it there: `build` runs
+    # the suite and pushes nothing, `attest` runs a script, and `github-release` authenticates `gh`
+    # with `GH_TOKEN`. Held for every checkout rather than for the jobs judged able to write, so a
+    # `permissions: write-all`, or a job inheriting a widened top-level block, is held too.
+    # Mutations (oracle): `mutations/`'s "the release build keeps a token in its checkout", "the
+    # attest job keeps a token in its checkout" and "the Release job keeps a token in its
+    # checkout".
     checkouts = {
         name: [
             step for step in _steps_of(RELEASE_WORKFLOW, name) if _uses(step) == "actions/checkout"
         ]
-        for name in writing
+        for name in _jobs(RELEASE_WORKFLOW)
     }
-    # The walk's count, so the loop reads a checkout: `publish` checks nothing out.
-    assert {name: len(found) for name, found in checkouts.items()} == {
+    # The walk's count, so the loop reads every checkout there is.
+    assert {name: len(found) for name, found in checkouts.items() if found} == {
+        "build": 1,
         "attest": 1,
         "github-release": 1,
-        "publish": 0,
     }, checkouts
     for name, found in checkouts.items():
         for checkout in found:

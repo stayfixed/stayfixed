@@ -383,8 +383,8 @@ reddens = [
 [[mutation]]
 name = "the release build fetches the tag's commit alone"
 file = ".github/workflows/release.yml"
-before = "        with:\n          fetch-depth: 2\n      - uses: astral-sh/setup-uv"
-after = "      - uses: astral-sh/setup-uv"
+before = "          fetch-depth: 2\n          persist-credentials: false\n      - uses: astral-sh/setup-uv"
+after = "          persist-credentials: false\n      - uses: astral-sh/setup-uv"
 reddens = [
   "tests/test_check_workflow.py::test_build_fetches_the_first_parent[build]",
 ]
@@ -556,8 +556,8 @@ reddens = [
 [[mutation]]
 name = "the attest job fetches the tag's commit alone"
 file = ".github/workflows/release.yml"
-before = "          fetch-depth: 2\n          persist-credentials: false\n"
-after = "          persist-credentials: false\n"
+before = "          fetch-depth: 2\n          persist-credentials: false\n      - uses: actions/download-artifact"
+after = "          persist-credentials: false\n      - uses: actions/download-artifact"
 reddens = [
   "tests/test_check_workflow.py::test_build_fetches_the_first_parent[attest]",
 ]
@@ -568,8 +568,7 @@ file = ".github/workflows/release.yml"
 before = "          fetch-depth: 2\n          persist-credentials: false\n      - uses: actions/download-artifact"
 after = "          fetch-depth: 2\n      - uses: actions/download-artifact"
 reddens = [
-  "tests/test_check_workflow.py::test_only_the_attest_job_can_attest",
-  "tests/test_check_workflow.py::test_no_job_that_can_write_keeps_its_token_in_a_checkout",
+  "tests/test_check_workflow.py::test_no_checkout_in_the_release_keeps_its_token",
 ]
 
 [[mutation]]
@@ -3423,7 +3422,7 @@ after = """      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e
           name: dist
           path: dist/"""
 reddens = [
-  "tests/test_check_workflow.py::test_no_job_that_can_write_keeps_its_token_in_a_checkout",
+  "tests/test_check_workflow.py::test_no_checkout_in_the_release_keeps_its_token",
 ]
 
 [[mutation]]
@@ -3442,4 +3441,13 @@ before = '    code, answer = _git(root, "rev-parse", "--verify", "--end-of-optio
 after = '    code, answer = git_run(root, *GIT_OPTIONS, "rev-parse", "--verify", "--end-of-options", f"{rev}^{{{kind}}}")'
 reddens = [
   "tests/scripts/test_plugin_tree.py::test_only_the_two_wrappers_run_git",
+]
+
+[[mutation]]
+name = "the release build keeps a token in its checkout"
+file = ".github/workflows/release.yml"
+before = "          fetch-depth: 2\n          persist-credentials: false\n      - uses: astral-sh/setup-uv"
+after = "          fetch-depth: 2\n      - uses: astral-sh/setup-uv"
+reddens = [
+  "tests/test_check_workflow.py::test_no_checkout_in_the_release_keeps_its_token",
 ]

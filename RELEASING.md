@@ -124,15 +124,15 @@ is added to `PLUGIN_PATHS` in `scripts/plugin_tree.py`, or the plugin repository
    as it was rather than as section 3 says it should be:
 
    ```bash
-   gh api repos/stayfixed/stayfixed/rulesets \
-     --jq '.[] | select(.name == "release tags" or .name == "release tag creation") | .id' |
+   gh api repos/stayfixed/stayfixed/rulesets --jq '[.[] | select(.name == "release tags" or
+       .name == "release tag creation")] | sort_by(.name) | .[].id' |
      xargs -I{} gh api repos/stayfixed/stayfixed/rulesets/{} \
      --jq '[.name, .target, .enforcement, (.conditions.ref_name.include | sort),
             ([.rules[].type] | sort),
             [(.bypass_actors // [])[] | "\(.actor_type) \(.actor_id) \(.bypass_mode)"]]'
    # ["release tag creation","tag","active",["refs/tags/stayfixed--v*","refs/tags/v*.*.*"],["creation"],["RepositoryRole 5 always"]]
    # ["release tags","tag","active",["refs/tags/stayfixed--v*","refs/tags/v*.*.*"],["deletion","update"],[]]
-   gh api repos/stayfixed/stayfixed-plugin/rulesets --jq '.[].id' |
+   gh api repos/stayfixed/stayfixed-plugin/rulesets --jq 'sort_by(.name) | .[].id' |
      xargs -I{} gh api repos/stayfixed/stayfixed-plugin/rulesets/{} \
      --jq '[.name, .target, .enforcement, (.conditions.ref_name.include | sort),
             ([.rules[].type] | sort),
@@ -156,8 +156,8 @@ is added to `PLUGIN_PATHS` in `scripts/plugin_tree.py`, or the plugin repository
    Any other answer stops the release here. A `404` from `stayfixed/stayfixed-plugin` means section
    3's "The plugin repository" has not been done: do it, then read back again. Once it is done, `gh
    api …/git/ref/heads/main` answers `(HTTP 409)` for the empty repository before `0.3.0` (measured
-   2026-10-12, the day it was created; the publisher reads a `404` as no `main` too), and the
-   publisher reads it as no `main`; any other failure there stops the release too. A ruleset that
+   2026-10-12, the day it was created), and the publisher reads it, or a `404`, as no `main`; any
+   other failure there stops the release too. A ruleset that
    lists other patterns leaves the tag step 6 pushes movable; a `release tags` that anyone bypasses
    lets that one move it; a `release tag creation` with no `creation` rule, or with another bypass
    than the admin role, lets somebody else create the tag whose code step 7 runs on your machine; a
