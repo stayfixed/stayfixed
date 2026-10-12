@@ -1956,8 +1956,8 @@ reddens = [
 [[mutation]]
 name = "release check counts the plugin tree without a tag"
 file = "scripts/release.py"
-before = "    if tag is not None:\n        kinds.update(plugin_commit_problems(root))"
-after = "    if True:\n        kinds.update(plugin_commit_problems(root))"
+before = "    if tag is not None and not entry_problems:\n        kinds.update(plugin_commit_problems(root))"
+after = "    if not entry_problems:\n        kinds.update(plugin_commit_problems(root))"
 reddens = [
   "tests/scripts/test_release.py::test_a_tag_refuses_a_plugin_tree_over_the_directory_count",
   "tests/scripts/test_release.py::test_a_tag_outside_a_git_checkout_is_refused_for_want_of_a_count",
