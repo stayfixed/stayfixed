@@ -3341,3 +3341,43 @@ reddens = [
   "tests/scripts/test_release.py::test_a_marketplace_without_the_plugin_entry_is_named[none]",
   "tests/scripts/test_release.py::test_a_marketplace_without_the_plugin_entry_is_named[two]",
 ]
+
+# A git that gave no answer, in each reader that runs one before the plugin commit is made: said
+# in `NO_ANSWER`'s words rather than as "exited -1".
+[[mutation]]
+name = "the plugin tree's rev-parse says a git that gave no answer exited"
+file = "scripts/plugin_tree.py"
+before = '    _answered(code, f"git rev-parse of {quoted(rev)} in {root}")'
+after = "    pass"
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_a_commit_that_gave_no_answer_is_refused_in_no_answer_s_words[rev-parse]",
+]
+
+[[mutation]]
+name = "the plugin tree's listing says a git that gave no answer exited"
+file = "scripts/plugin_tree.py"
+before = '    _answered(code, f"git ls-tree -r of {sha} in {root}")'
+after = "    pass"
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_a_commit_that_gave_no_answer_is_refused_in_no_answer_s_words[ls-tree]",
+]
+
+[[mutation]]
+name = "the plugin tree's batch read says a git that gave no answer exited"
+file = "scripts/plugin_tree.py"
+before = '    _answered(code, f"git cat-file --batch in {root}")'
+after = "    pass"
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_a_commit_that_gave_no_answer_is_refused_in_no_answer_s_words[cat-file-batch]",
+]
+
+[[mutation]]
+name = "the plugin commit command writes a manifest short of its tree"
+file = "scripts/plugin_tree.py"
+before = """        # Last, after every object: a manifest on disk says its commit was written whole.
+        _write_manifest(Path(args.manifest_file), manifest(tree.members))"""
+after = """        # Last, after every object: a manifest on disk says its commit was written whole.
+        _write_manifest(Path(args.manifest_file), manifest(tree.members[:-1]))"""
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_require_pin_exits_1_when_the_pin_is_another_commit",
+]

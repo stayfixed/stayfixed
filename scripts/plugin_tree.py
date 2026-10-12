@@ -146,10 +146,18 @@ def _git(
     return git_run(root, *GIT_OPTIONS, *args, stdin=stdin, timeout=timeout)
 
 
+def _answered(code: int, what: str) -> None:
+    """Refuse a git that gave no answer in `NO_ANSWER`'s words, rather than as an exit code."""
+    if code == -1:
+        raise Refusal(f"{what} gave no answer: {NO_ANSWER}")
+
+
 def peel(root: Path, rev: str, kind: str) -> str:
     """The `kind` (`commit` or `tree`) `rev` peels to in `root`, as git's full object name, or a
-    refusal naming `rev`: the one place this script resolves a rev."""
+    refusal naming `rev`: where this script resolves a rev it is handed. `_first_parent` asks git
+    only whether an id a commit object names is a commit this clone holds."""
     code, answer = _git(root, "rev-parse", "--verify", "--end-of-options", f"{rev}^{{{kind}}}")
+    _answered(code, f"git rev-parse of {quoted(rev)} in {root}")
     name = answer.removesuffix("\n")
     if code != 0:
         raise Refusal(f"{quoted(rev)} names no {kind} in {root} (git rev-parse exited {code})")
@@ -163,6 +171,7 @@ def _listing(root: Path, sha: str, *, exact: bool) -> list[tuple[str, str, str]]
     `exact`, the whole tree."""
     pathspec = () if exact else ("--", *PLUGIN_PATHS)
     code, answer = _git(root, "ls-tree", "-r", "-z", "--full-tree", sha, *pathspec)
+    _answered(code, f"git ls-tree -r of {sha} in {root}")
     if code != 0:
         raise Refusal(f"git ls-tree of {sha} exited {code} in {root}")
     rows = []
@@ -181,6 +190,7 @@ def _blobs(root: Path, objects: list[str]) -> dict[str, bytes]:
     if not objects:
         return {}
     code, answer = _git(root, "cat-file", "--batch", stdin="".join(obj + "\n" for obj in objects))
+    _answered(code, f"git cat-file --batch in {root}")
     if code != 0:
         raise Refusal(f"git cat-file --batch exited {code} in {root}")
     out, at, blobs = answer_bytes(answer), 0, {}
@@ -320,12 +330,6 @@ def commit_text(tree: str, parent: str | None, version: str) -> str:
     )
 
 
-def _answered(code: int, what: str) -> None:
-    """Refuse a git that gave no answer in `NO_ANSWER`'s words, rather than as an exit code."""
-    if code == -1:
-        raise Refusal(f"{what} gave no answer: {NO_ANSWER}")
-
-
 def _json_file(root: Path, sha: str, path: str, content: bytes) -> dict[str, object]:
     said = f"{path} at {sha} in {root}"
     try:
@@ -372,7 +376,7 @@ def pinned_sha(root: Path, rev: str) -> str | None:
     if not isinstance(source, dict):
         raise Refusal(
             f"{said} gives the entry {PACKAGE!r} a source that is no object; the pin is read from "
-            "a url source"
+            "the source object's sha"
         )
     if "sha" not in source:
         return None

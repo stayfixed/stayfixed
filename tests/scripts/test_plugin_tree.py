@@ -795,8 +795,8 @@ NO_COMMIT_ID = ", which is no commit id of 40 lowercase hex digits"
         ),
         pytest.param(
             document([{"name": "stayfixed", "source": "./"}]),
-            " gives the entry 'stayfixed' a source that is no object; the pin is read from a url "
-            "source",
+            " gives the entry 'stayfixed' a source that is no object; the pin is read from the "
+            "source object's sha",
             True,
             id="a-string-source",
         ),
@@ -964,16 +964,26 @@ def test_an_explicit_safe_bare_repository_does_not_refuse_the_git_dir(tmp_path: 
     assert plugin_tree.plugin_commit(root, "HEAD", git_dir)[0] == first
 
 
+@pytest.mark.parametrize(
+    "words",
+    [("hash-object",), ("rev-parse",), ("ls-tree", "-r"), ("cat-file", "--batch")],
+    ids=["hash-object", "rev-parse", "ls-tree", "cat-file-batch"],
+)
 def test_a_commit_that_gave_no_answer_is_refused_in_no_answer_s_words(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, words: tuple[str, ...]
 ) -> None:
-    # Mutation (declared): `mutations/`'s "the plugin commit says a git that gave no answer
-    # exited" -> the refusal says `-1` and not why.
+    # A git that timed out or could not be run answers `-1`, which a refusal printed as "exited
+    # -1" says nothing about. Each git the commit runs first: the plugin commit's `hash-object`,
+    # and the reader's rev-parse, tree listing and batch read. Mutations (declared): `mutations/`'s
+    # "the plugin commit says a git that gave no answer exited" -> every case says `-1` and not
+    # why; "the plugin tree's rev-parse says a git that gave no answer exited" -> `rev-parse`;
+    # "the plugin tree's listing says a git that gave no answer exited" -> `ls-tree`; "the plugin
+    # tree's batch read says a git that gave no answer exited" -> `cat-file-batch`.
     root = plugin_source(tmp_path)
     real = plugin_tree.git_run
 
     def silent(where: Path, *args: str, **options: Any) -> tuple[int, str]:
-        if "hash-object" in args:
+        if all(word in args for word in words):
             return -1, ""
         code, answer = real(where, *args, **options)
         return code, answer
@@ -1240,9 +1250,12 @@ def test_require_pin_exits_1_when_the_pin_is_another_commit(
     assert plugin_tree.main([*pinned_again, "--require-pin"]) == 1
     said = capsys.readouterr().err
     assert pinned in said and expected in said, said
-    # Refused after the objects and the manifest file were written.
+    # Refused after the objects and the manifest file were written, and the file is the tree's
+    # manifest whole, not only its first line. Mutation (declared): `mutations/`'s "the plugin
+    # commit command writes a manifest short of its tree" -> the file lacks its last member.
     assert git(git_dir, "cat-file", "-t", expected).strip() == "commit"
-    assert listing.read_bytes().startswith(b"stayfixed-plugin-tree 1\n")
+    whole = plugin_tree.manifest(plugin_tree.read(root, "HEAD").members).encode("utf-8")
+    assert listing.read_bytes() == whole
 
 
 def test_run_without_its_package_it_refuses_with_exit_2_and_says_to_use_uv(tmp_path: Path) -> None:
