@@ -78,7 +78,13 @@ try:
     from stayfixed import fsops
     from stayfixed.cli import JSON_EPILOG, run
     from stayfixed.errors import Failure, Refusal
-    from stayfixed.gitenv import QUERY_TIMEOUT_SECONDS, answer_bytes, git_run
+    from stayfixed.gitenv import (
+        GIT_TIMEOUT_SECONDS,
+        NO_ANSWER,
+        QUERY_TIMEOUT_SECONDS,
+        answer_bytes,
+        git_run,
+    )
     from stayfixed.printed import clipped, quoted
     from stayfixed.release.api import tag_for
     from stayfixed.result import Result
@@ -205,6 +211,32 @@ def _shown(value: object) -> str:
     return clipped(value) if isinstance(value, str) else f"a {type(value).__name__}"
 
 
+def _git(
+    root: Path, *args: str, stdin: str | None = None, timeout: float = GIT_TIMEOUT_SECONDS
+) -> tuple[int, str]:
+    """`git <args>` asked locally in `root`: its exit code and answer, or a refusal in
+    `NO_ANSWER`'s words when git gave none, which `git_run` answers as `-1` and a caller printing
+    the code would say as "exited -1". Every local git here goes through this, and every one that
+    reaches the remote through `_network`: `tests/scripts/test_publish_plugin.py` holds that no
+    other function calls `git_run`."""
+    code, answer = git_run(root, *args, stdin=stdin, timeout=timeout)
+    if code == -1:
+        raise Refusal(f"git {_subcommand(args)} in {root} gave no answer: {NO_ANSWER}")
+    return code, answer
+
+
+def _subcommand(args: tuple[str, ...]) -> str:
+    """The git command among `args`: the first word that is neither an option nor a `-c`'s
+    value."""
+    words = iter(args)
+    for word in words:
+        if word == "-c":
+            next(words, None)
+        elif not word.startswith("-"):
+            return word
+    return "with no command"
+
+
 # --- The tag ----------------------------------------------------------------------------------
 
 
@@ -215,7 +247,7 @@ def _tag_commit(root: Path, tag: str) -> str:
     # `--no-replace-objects`, as every read of the tag here: when the tag is annotated, its peel
     # reads the tag object, and a replacement of that object would make the answer another
     # commit; a lightweight tag names its commit directly, which a replacement does not move.
-    code, answer = git_run(
+    code, answer = _git(
         root,
         "--no-replace-objects",
         "rev-parse",
@@ -349,7 +381,7 @@ def _source_anchor(runner: Runner, root: Path, tag: str, sha: str) -> None:
 def _blobs(root: Path, objects: list[str]) -> dict[str, bytes]:
     """Each object's bytes, from one `git cat-file --batch`."""
     given = "".join(obj + "\n" for obj in objects)
-    code, answer = git_run(
+    code, answer = _git(
         root,
         "--no-replace-objects",
         "cat-file",
@@ -377,7 +409,7 @@ def _blobs(root: Path, objects: list[str]) -> dict[str, bytes]:
 def _tool(root: Path, tag: str, sha: str, scratch: Path) -> Path:
     """The tag's `scripts/plugin_tree.py` and `src/stayfixed`, read out of its objects and
     written under `scratch / "tool"`: the directory to run them from."""
-    code, answer = git_run(
+    code, answer = _git(
         root,
         "--no-replace-objects",
         "ls-tree",
@@ -707,7 +739,7 @@ def _follows(runner: Runner, git_dir: Path, remote: str, built: Built, state: Re
     )
     if fetched.code != 0:
         raise Refusal(f"git fetch {remote} {MAIN} exited {fetched.code}: {_said(fetched)}")
-    code, answer = git_run(
+    code, answer = _git(
         git_dir,
         f"--git-dir={git_dir}",
         *NO_HOOKS,

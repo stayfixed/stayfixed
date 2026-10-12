@@ -9,6 +9,7 @@ from the subject is the subject compared with itself.
 
 from __future__ import annotations
 
+import ast
 import errno
 import hashlib
 import json
@@ -29,6 +30,7 @@ from tests.plugintree import (
     NINE,
     PLUGIN_FILES,
     PLUGIN_URL,
+    REPOSITORY,
     commit,
     hashed,
     literal,
@@ -976,9 +978,8 @@ def test_a_commit_that_gave_no_answer_is_refused_in_no_answer_s_words(
     # -1" says nothing about. Each git the commit runs first: the plugin commit's `hash-object`,
     # and the reader's rev-parse, tree listing and batch read. Mutations (declared): `mutations/`'s
     # "the plugin commit says a git that gave no answer exited" -> every case says `-1` and not
-    # why; "the plugin tree's rev-parse says a git that gave no answer exited" -> `rev-parse`;
-    # "the plugin tree's listing says a git that gave no answer exited" -> `ls-tree`; "the plugin
-    # tree's batch read says a git that gave no answer exited" -> `cat-file-batch`.
+    # why; "the plugin tree's reads say a git that gave no answer exited" -> every case but
+    # `hash-object`.
     root = plugin_source(tmp_path)
     real = plugin_tree.git_run
 
@@ -1270,3 +1271,22 @@ def test_run_without_its_package_it_refuses_with_exit_2_and_says_to_use_uv(tmp_p
     assert "refused: No module named 'stayfixed'" in done.stderr, done.stderr
     assert "uv run python scripts/plugin_tree.py" in done.stderr, done.stderr
     assert "Traceback" not in done.stderr, done.stderr
+
+
+def test_only_the_two_wrappers_run_git() -> None:
+    # `git_run` answers `-1` for a git that gave no answer, and a caller that formats its code
+    # prints "exited -1". `_git` and `_store` refuse it in `NO_ANSWER`'s words, so the guard holds
+    # only while every git goes through one of them; three readers once called `_git` and checked
+    # nothing. Mutation (declared): `mutations/`'s "the plugin tree runs a git outside its
+    # wrappers" -> `peel` calls `git_run` itself, and this reddens.
+    tree = ast.parse((REPOSITORY / "scripts" / "plugin_tree.py").read_text(encoding="utf-8"))
+    callers = sorted(
+        function.name
+        for function in ast.walk(tree)
+        if isinstance(function, ast.FunctionDef)
+        for node in ast.walk(function)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "git_run"
+    )
+    assert callers == ["_git", "_store"], callers

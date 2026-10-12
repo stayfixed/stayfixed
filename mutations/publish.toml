@@ -1294,3 +1294,31 @@ after = 'SHA1 = r"[0-9a-fA-F]{40}"'
 reddens = [
   "tests/test_check_workflow.py::test_one_commit_id_shape_everywhere",
 ]
+
+# Every local git through one wrapper, which refuses a git that gave no answer in `NO_ANSWER`'s
+# words rather than as "exited -1".
+[[mutation]]
+name = "the publisher says a local git that gave no answer exited"
+file = "scripts/publish_plugin.py"
+before = """    if code == -1:
+        raise Refusal(f"git {_subcommand(args)}"""
+after = """    if False:
+        raise Refusal(f"git {_subcommand(args)}"""
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_a_local_git_that_gave_no_answer_is_refused_in_no_answer_s_words",
+]
+
+[[mutation]]
+name = "the publisher runs a local git outside its wrapper"
+file = "scripts/publish_plugin.py"
+before = """    code, answer = _git(
+        root,
+        "--no-replace-objects",
+        "rev-parse","""
+after = """    code, answer = git_run(
+        root,
+        "--no-replace-objects",
+        "rev-parse","""
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_only_the_wrapper_runs_a_local_git",
+]

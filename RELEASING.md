@@ -547,11 +547,11 @@ matches neither pattern — free to move:
   is one whose code a fetch over yours would have it run. The bypass is the body's `bypass_actors`,
   where `RepositoryRole` `5` is the admin role.
 
-That `5` is taken from community reports, not from GitHub's REST reference, and step 1's
-read-back only echoes the id it was given. So once, after creating each ruleset that carries it,
-here and in the plugin repository below, open it under **Settings → Rules → Rulesets** and
-confirm that its bypass list reads **Repository admin**; any other role there is the one that can
-create a release tag.
+GitHub's REST reference does not name the built-in roles' ids, and step 1's read-back only echoes
+the id it was given; the settings page showed `5` as **Repository admin** on both repositories on
+2026-10-12. So after creating such a ruleset anew, here or in the plugin repository below, open it
+under **Settings → Rules → Rulesets** and confirm that its bypass list reads **Repository admin**;
+any other role there is the one that can create a release tag.
 
 Two rulesets, not one, because a ruleset's bypass applies to every rule it carries: a bypass on
 `release tags` would let an admin move or delete a published tag. The same body creates each

@@ -20,6 +20,7 @@ something and run again — is held in one place, the table at the end, through 
 
 from __future__ import annotations
 
+import ast
 import hashlib
 import json
 import os
@@ -32,6 +33,7 @@ from typing import Any
 
 import pytest
 
+from stayfixed import gitenv
 from stayfixed.errors import Refusal
 from stayfixed.runner import Completed, subprocess_runner
 from tests.gitfixture import git, git_bytes, needs_git, run_git
@@ -1306,6 +1308,67 @@ def test_a_fetched_main_that_cannot_be_read_back_is_not_called_moved(
         publish(source, remote, scratch, yes=False, tag="v1.2.4", runner=runner)
     assert "moved" not in str(refused.value), str(refused.value)
     assert "run again" in str(refused.value)
+
+
+@pytest.mark.parametrize(
+    ("words", "later"),
+    [
+        pytest.param(("rev-parse", f"refs/tags/{TAG}^{{commit}}"), False, id="the-tag"),
+        pytest.param(("ls-tree",), False, id="the-tag-s-code"),
+        pytest.param(("cat-file", "--batch"), False, id="the-tag-s-blobs"),
+        pytest.param(("rev-parse", "refs/stayfixed/main"), True, id="the-fetched-main"),
+    ],
+)
+def test_a_local_git_that_gave_no_answer_is_refused_in_no_answer_s_words(
+    source: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    words: tuple[str, ...],
+    later: bool,
+) -> None:
+    # `git_run` answers `-1` for a git that could not run, ran out of time or could not be given
+    # its input, and a refusal that formats the code says "exited -1", which tells the owner
+    # nothing. Each local git the publisher runs, the post-fetch read of `main` among them.
+    # Mutation (declared): `mutations/`'s "the publisher says a local git that gave no answer
+    # exited" -> every case says `-1`.
+    remote = bare_remote(tmp_path)
+    tag = TAG
+    if later:
+        publish(source, remote, tmp_path / "first")
+        released(source, "1.2.4")
+        tag = "v1.2.4"
+    real = publish_plugin.git_run
+
+    def silent(where: Path, *args: str, **options: Any) -> tuple[int, str]:
+        if all(word in args for word in words):
+            return -1, ""
+        code, answer = real(where, *args, **options)
+        return code, answer
+
+    monkeypatch.setattr(publish_plugin, "git_run", silent)
+    with pytest.raises(Refusal) as refused:
+        publish(source, remote, tmp_path / "second", yes=False, tag=tag)
+    said = str(refused.value)
+    assert f"gave no answer: {gitenv.NO_ANSWER}" in said, said
+    assert "exited -1" not in said, said
+
+
+def test_only_the_wrapper_runs_a_local_git() -> None:
+    # The guard above holds only while every local git goes through `_git`: four did not, and
+    # one of them was written in the same pull request that fixed the class next door. Mutation
+    # (declared): `mutations/`'s "the publisher runs a local git outside its wrapper" ->
+    # `_tag_commit` calls `git_run` itself, and this reddens.
+    tree = ast.parse((REPOSITORY / "scripts" / "publish_plugin.py").read_text(encoding="utf-8"))
+    callers = sorted(
+        function.name
+        for function in ast.walk(tree)
+        if isinstance(function, ast.FunctionDef)
+        for node in ast.walk(function)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "git_run"
+    )
+    assert callers == ["_git"], callers
 
 
 def test_a_rejected_push_moves_no_ref(source: Path, tmp_path: Path) -> None:

@@ -3264,8 +3264,8 @@ reddens = ["tests/scripts/test_plugin_tree.py::test_a_git_dir_that_cannot_be_mad
 [[mutation]]
 name = "the plugin commit reads a marketplace git could not list as none"
 file = "scripts/plugin_tree.py"
-before = "    _answered(code, f\"git ls-tree of {sha} in {root}\")\n    if code != 0:"
-after = "    _answered(code, f\"git ls-tree of {sha} in {root}\")\n    if False:"
+before = "MARKETPLACE)\n    if code != 0:"
+after = "MARKETPLACE)\n    if False:"
 reddens = [
   "tests/scripts/test_plugin_tree.py::test_a_git_that_fails_in_the_commit_is_refused_in_its_own_words[ls-tree-of-the-marketplace]",
 ]
@@ -3273,8 +3273,8 @@ reddens = [
 [[mutation]]
 name = "the plugin commit reads a source commit git could not print as parentless"
 file = "scripts/plugin_tree.py"
-before = "    _answered(code, f\"git cat-file of {sha} in {root}\")\n    if code != 0:"
-after = "    _answered(code, f\"git cat-file of {sha} in {root}\")\n    if False:"
+before = "    code, answer = _git(root, \"cat-file\", \"commit\", sha)\n    if code != 0:"
+after = "    code, answer = _git(root, \"cat-file\", \"commit\", sha)\n    if False:"
 reddens = [
   "tests/scripts/test_plugin_tree.py::test_a_git_that_fails_in_the_commit_is_refused_in_its_own_words[cat-file-of-the-commit]",
 ]
@@ -3343,32 +3343,16 @@ reddens = [
   "tests/scripts/test_release.py::test_a_marketplace_without_the_plugin_entry_is_named[two]",
 ]
 
-# A git that gave no answer, in each reader that runs one before the plugin commit is made: said
-# in `NO_ANSWER`'s words rather than as "exited -1".
+# A git that gave no answer, in every read of the source repository: said in `NO_ANSWER`'s words,
+# by the one wrapper every read goes through, rather than as "exited -1".
 [[mutation]]
-name = "the plugin tree's rev-parse says a git that gave no answer exited"
+name = "the plugin tree's reads say a git that gave no answer exited"
 file = "scripts/plugin_tree.py"
-before = '    _answered(code, f"git rev-parse of {quoted(rev)} in {root}")'
+before = '    _answered(code, f"git {args[0]} in {root}")'
 after = "    pass"
 reddens = [
   "tests/scripts/test_plugin_tree.py::test_a_commit_that_gave_no_answer_is_refused_in_no_answer_s_words[rev-parse]",
-]
-
-[[mutation]]
-name = "the plugin tree's listing says a git that gave no answer exited"
-file = "scripts/plugin_tree.py"
-before = '    _answered(code, f"git ls-tree -r of {sha} in {root}")'
-after = "    pass"
-reddens = [
   "tests/scripts/test_plugin_tree.py::test_a_commit_that_gave_no_answer_is_refused_in_no_answer_s_words[ls-tree]",
-]
-
-[[mutation]]
-name = "the plugin tree's batch read says a git that gave no answer exited"
-file = "scripts/plugin_tree.py"
-before = '    _answered(code, f"git cat-file --batch in {root}")'
-after = "    pass"
-reddens = [
   "tests/scripts/test_plugin_tree.py::test_a_commit_that_gave_no_answer_is_refused_in_no_answer_s_words[cat-file-batch]",
 ]
 
@@ -3449,4 +3433,13 @@ before = 'SHA1 = re.compile(r"[0-9a-f]{40}")'
 after = 'SHA1 = re.compile(r"[0-9a-f]{40}", re.IGNORECASE)'
 reddens = [
   "tests/test_check_workflow.py::test_one_commit_id_shape_everywhere",
+]
+
+[[mutation]]
+name = "the plugin tree runs a git outside its wrappers"
+file = "scripts/plugin_tree.py"
+before = '    code, answer = _git(root, "rev-parse", "--verify", "--end-of-options", f"{rev}^{{{kind}}}")'
+after = '    code, answer = git_run(root, *GIT_OPTIONS, "rev-parse", "--verify", "--end-of-options", f"{rev}^{{{kind}}}")'
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_only_the_two_wrappers_run_git",
 ]
