@@ -1513,3 +1513,41 @@ def _a_config(tmp_path: Path) -> Config:
     config = load(holder, machine=tmp_path / "absent.toml")
     assert config.paths.memory == DEFAULT_MEMORY
     return config
+
+
+def _a_loop_at(monkeypatch: pytest.MonkeyPatch, link: Path) -> None:
+    """`link` made a symlink loop, and `.resolve()` of it made to raise as Python 3.11 and 3.12
+    do (3.13 answers the path it names), so every interpreter meets what 3.11 meets."""
+    link.symlink_to(link.name)
+    real = Path.resolve
+
+    def resolving(self: Path, strict: bool = False) -> Path:
+        if self == link:
+            raise RuntimeError(f"Symlink loop from {str(self)!r}")
+        return real(self, strict)
+
+    monkeypatch.setattr(Path, "resolve", resolving)
+
+
+def test_a_withdrawal_leaves_a_group_link_that_is_a_symlink_loop(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A link at a group name is compared with where `attach` points that group, by resolving it,
+    # and a loop there (a clone can commit one under `paths.memory`) raised `RuntimeError` on 3.11
+    # and 3.12: `detach` ended in an internal error after the settings and rule copies were
+    # withdrawn. A link that cannot be followed is not one this module can claim, so it stays.
+    # Mutation (oracle): `mutations/`'s "the main checkout's withdrawal lets a symlink loop at a
+    # group name out" -> RuntimeError.
+    root, overlay, machine, config = an_overlay_to_attach(tmp_path)
+    own = overlay / "projects" / "widget" / "memory"
+    attach_main(root, own, config, machine=machine, home=a_home(tmp_path))
+    base = root / DEFAULT_MEMORY
+    (base / "project-stable").unlink()
+    _a_loop_at(monkeypatch, base / "project-stable")
+    links = detach_main(
+        root, config, machine=machine, home=a_home(tmp_path), targets=_own(root, config)
+    )
+    assert (base / "project-stable").is_symlink()
+    assert base / "project-stable" not in links.revoked
+    # Non-vacuous: the withdrawal ran on past the loop.
+    assert base / "developer" in links.revoked

@@ -1260,7 +1260,7 @@ reddens = ["tests/attach/test_binding.py::test_a_different_remote_is_a_mismatch_
 [[mutation]]
 name = "the main checkout's withdrawal stops checking what it removes points at"
 file = "src/stayfixed/memory/worktree.py"
-before = '''        if pointed.resolve() != source.resolve():
+before = '''        if reached != source.resolve():
             continue'''
 after = '''        if False:
             continue'''
@@ -3276,4 +3276,35 @@ after = "    for checkout in (owner,):\n"
 reddens = [
   "tests/attach/test_detach.py::test_detach_withdraws_a_worktree_harness_link_the_session_start_relink_made",
   "tests/attach/test_doctor.py::test_a_worktree_harness_link_the_session_start_relink_made_is_ok",
+]
+
+# A clone can commit a symlink loop under `paths.memory`, and `.resolve()` of one raises
+# `RuntimeError` on Python 3.11 and 3.12: `detach` ended in an internal error after its first
+# withdrawal, and `memory index` before it wrote anything.
+[[mutation]]
+name = "the main checkout's withdrawal lets a symlink loop at a group name out"
+file = "src/stayfixed/memory/worktree.py"
+before = """        try:
+            reached = pointed.resolve()
+        except (OSError, RuntimeError):
+"""
+after = """        reached = pointed.resolve()
+        if False:
+"""
+reddens = [
+  "tests/memory/test_worktree.py::test_a_withdrawal_leaves_a_group_link_that_is_a_symlink_loop",
+]
+
+[[mutation]]
+name = "the index link rule lets a symlink loop out"
+file = "src/stayfixed/memory/index.py"
+before = """    try:
+        resolved = target.resolve()
+    except (OSError, RuntimeError):
+"""
+after = """    resolved = target.resolve()
+    if False:
+"""
+reddens = [
+  "tests/memory/test_index.py::test_an_index_link_that_is_a_symlink_loop_is_refused_and_sources_nothing",
 ]

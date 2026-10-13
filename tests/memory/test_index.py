@@ -736,6 +736,24 @@ def test_the_write_destination_still_refuses_a_link_outside_this_projects_share(
         write_index(store, config, "text")
 
 
+def test_an_index_link_that_is_a_symlink_loop_is_refused_and_sources_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `MEMORY.md` a symlink loop, which a clone can commit under `paths.memory`: resolving it to
+    # ask whether it reaches this project's share raised `RuntimeError` on Python 3.11 and 3.12,
+    # and `memory index` ended in an internal error. A link that cannot be followed reaches no
+    # permitted place, so it is refused like any other: nothing to read, and no write through it.
+    # Mutation (oracle): `mutations/`'s "the index link rule lets a symlink loop out" ->
+    # RuntimeError.
+    from tests.memory.test_worktree import _a_loop_at
+
+    store, config, _machine_file = an_overlay_store(tmp_path)
+    _a_loop_at(monkeypatch, store.path / INDEX_NAME)
+    assert index_source(store, config) is None
+    with pytest.raises(Refusal):
+        write_index(store, config, "text")
+
+
 # --- note→index is repository data too, and machine state may not receive it -----------------
 
 

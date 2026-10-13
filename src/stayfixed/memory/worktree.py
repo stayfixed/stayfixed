@@ -909,7 +909,15 @@ def detach_main(
         pointed = target.readlink()
         if not pointed.is_absolute():
             pointed = target.parent / pointed
-        if pointed.resolve() != source.resolve():
+        try:
+            reached = pointed.resolve()
+        except (OSError, RuntimeError):
+            # A symlink loop at one of these names, which Python 3.11 and 3.12 meet with
+            # `RuntimeError` (3.13 answers the path it names): a link that cannot be followed is
+            # not one this function can claim, so it stays, as any other link to elsewhere does.
+            # Raised, it ended `detach` in an internal error after the settings were withdrawn.
+            continue
+        if reached != source.resolve():
             continue
         # Through the `O_NOFOLLOW` walk, so a component that became a symlink after
         # `contained()` passed cannot redirect the removal out of the checkout.

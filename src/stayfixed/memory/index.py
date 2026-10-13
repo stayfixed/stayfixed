@@ -140,7 +140,13 @@ def _resolved_if_permitted(store: Store, config: Config, target: Path) -> Path |
     if overlay is None:
         return None
     allowed = permitted_roots(overlay, config.project.name)
-    resolved = target.resolve()
+    try:
+        resolved = target.resolve()
+    except (OSError, RuntimeError):
+        # A link the repository can commit, and a symlink loop meets `RuntimeError` up to Python
+        # 3.12 (3.13 answers the path it names): a link that cannot be followed to a place is no
+        # link to a permitted one, so it is refused like any other, never an internal error.
+        return None
     if not any(resolved.is_relative_to(root.resolve()) for root in allowed):
         return None
     return resolved
