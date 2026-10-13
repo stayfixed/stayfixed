@@ -948,3 +948,23 @@ def test_a_bounded_read_under_an_open_directory_takes_one_name_and_follows_no_li
             fsops.read_bounded_within(directory, "sub/file.md", 4)
         with pytest.raises(NotRegularFile):
             fsops.read_bounded_within(directory, "sub", 4)
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root writes into every directory")
+def test_a_directory_that_can_be_written_but_not_searched_cannot_take_a_new_file(
+    tmp_path: Path,
+) -> None:
+    # Creating a name needs both bits on the directory it is made in: without search, neither
+    # `rename` nor `mkdir` reaches it, whatever the write bit says. Asked where the walk stops,
+    # which is the nearest directory there while the parent is not. Mutation (`mutations/`'s
+    # "creatable asks only for the write bit"): the search bit dropped from the question -> the
+    # write-only directory reads as one a file can be made in, and this reddens.
+    directory = tmp_path / "write-only"
+    directory.mkdir()
+    assert fsops.creatable(directory / "new" / "file")
+    assert fsops.creation_directory(directory / "new" / "file") == directory
+    directory.chmod(0o200)
+    try:
+        assert not fsops.creatable(directory / "file")
+    finally:
+        directory.chmod(0o700)

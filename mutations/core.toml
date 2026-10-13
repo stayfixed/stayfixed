@@ -3279,6 +3279,19 @@ reddens = [
   "tests/attach/test_write.py::test_a_local_settings_file_that_is_not_utf8_is_named_as_the_project_names_it",
 ]
 
+# Making a name in a directory takes its search bit as well as its write bit: `setup`'s `--home`
+# check and `attach`'s exclude-file check refuse on `creatable`'s answer above their first write,
+# and with the write bit alone asked, a write-only directory reads as one a file can be made in and
+# both let it through to the write.
+[[mutation]]
+name = "creatable asks only for the write bit"
+file = "src/stayfixed/fsops.py"
+before = "    return os.access(creation_directory(path), os.W_OK | os.X_OK)"
+after = "    return os.access(creation_directory(path), os.W_OK)"
+reddens = [
+  "tests/test_fsops.py::test_a_directory_that_can_be_written_but_not_searched_cannot_take_a_new_file",
+]
+
 # A commit's copy of a document at the project's own path (`committed.py`), read one way for the
 # base's `stayfixed.toml` that governs `stayfixed gate` and for each fork point's that places the
 # ledger. A copy that reads as missing is the bootstrap, where the change decides for itself, so
