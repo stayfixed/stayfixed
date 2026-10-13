@@ -39,6 +39,8 @@ def test_the_memory_surface_carries_what_every_consumer_reaches_for() -> None:
         "harness_anchor",
         "harness_link_needed",
         "harness_memory_path",
+        # what a harness link may point at and be stayfixed's, which the attached row reads
+        "harness_targets",
         "MakeUnder",  # the home `link` makes the harness link under, which attach hands it
         "Withhold",  # the other half of what `link`'s `harness` takes: no harness link
         "Links",  # what `link` returns

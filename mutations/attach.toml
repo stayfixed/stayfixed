@@ -1505,8 +1505,12 @@ reddens = [
 [[mutation]]
 name = "doctor stops telling a real directory from a link at the harness memory path"
 file = "src/stayfixed/attach/doctor.py"
-before = "    if fsops.is_dir(harness) and not fsops.is_symlink(harness):"
-after = "    if fsops.is_dir(harness) and not fsops.exists(harness):"
+before = """            fsops.is_dir(harness)
+            and not fsops.is_symlink(harness)
+            and not _fallback_in_place(context)"""
+after = """            fsops.is_dir(harness)
+            and not fsops.exists(harness)
+            and not _fallback_in_place(context)"""
 reddens = [
   "tests/attach/test_doctor.py::test_a_memory_path_that_is_a_real_directory_is_red_rather_than_ok",
 ]
@@ -1518,11 +1522,59 @@ reddens = [
 [[mutation]]
 name = "doctor stops asking what the harness memory path points at"
 file = "src/stayfixed/attach/doctor.py"
-before = '        if harness.resolve() == store.path.resolve():'
+before = '        if harness.resolve() in _targets(context):'
 after = '        if True:'
 reddens = [
   "tests/attach/test_doctor.py::test_a_harness_link_pointing_at_an_unrelated_directory_is_never_green",
-  "tests/attach/test_doctor.py::test_a_dangling_harness_link_is_never_green",
+]
+
+# `attach` points every checkout's harness link at the owning checkout's tree, and the row compared
+# a linked worktree's with the worktree's own, so a worktree attached the ordinary way read red.
+[[mutation]]
+name = "doctor compares a worktree's harness link with that worktree's own tree"
+file = "src/stayfixed/attach/doctor.py"
+before = "    return harness_targets(context.root, owner, context.config)"
+after = "    return harness_targets(context.root, context.root, context.config)"
+reddens = ["tests/attach/test_doctor.py::test_a_normally_attached_linked_worktree_is_ok"]
+
+# A dangling link resolves to the path it names, and once the owning checkout's tree is gone that
+# path is one the row recognises: compared before it is asked whether it reaches anything, a
+# worktree whose link reads nothing was green.
+[[mutation]]
+name = "doctor compares a dangling harness link before asking whether it reaches anything"
+file = "src/stayfixed/attach/doctor.py"
+before = """        if not fsops.exists(harness):
+            return RED, "a dangling link, so the harness reads nothing through it", relink
+        if harness.resolve() in _targets(context):
+            return OK, "a link to the store", """""
+after = """        if harness.resolve() in _targets(context):
+            return OK, "a link to the store", ""
+        if not fsops.exists(harness):
+            return RED, "a dangling link, so the harness reads nothing through it", relink"""
+reddens = [
+  "tests/attach/test_doctor.py::test_a_linked_worktree_whose_main_checkout_tree_is_gone_reads_its_link_as_dangling",
+]
+
+# Where a real directory sits at the harness memory path, `attach` takes the settings-file fallback,
+# and the harness reads the store through it; the row looked at the directory alone and was red,
+# telling the owner to remove it.
+[[mutation]]
+name = "doctor reads the real directory at the harness memory path without the settings fallback"
+file = "src/stayfixed/attach/doctor.py"
+before = "            and not _fallback_in_place(context)\n"
+after = "            and True\n"
+reddens = [
+  "tests/attach/test_doctor.py::test_a_real_directory_beside_the_settings_fallback_attach_recorded_reads_as_in_place[the-store]",
+]
+
+# That directory can hold notes the harness wrote on its own; `attach` says to move it aside.
+[[mutation]]
+name = "doctor tells the owner to remove a real directory at the harness memory path"
+file = "src/stayfixed/attach/doctor.py"
+before = '                f"move {harness} aside, then run `{ATTACH_STORE}` again",'
+after = '                f"remove {harness} and run `{ATTACH_STORE}`",'
+reddens = [
+  "tests/attach/test_doctor.py::test_a_real_directory_at_the_harness_path_is_never_told_to_be_removed",
 ]
 
 # A repository could force a red row and exit 1 by committing an unreadable ledger: `ledger()`
@@ -1718,12 +1770,39 @@ reddens = [
 [[mutation]]
 name = "doctor calls a harness link it could not check green"
 file = "src/stayfixed/attach/doctor.py"
-before = """                WARN,
-                "a link, and the note store does not resolve, so what it points at could not \""""
-after = """                OK,
-                "a link, and the note store does not resolve, so what it points at could not \""""
+before = """    return (
+        WARN,
+        f"{shape}, and the note store does not resolve, so {unchecked} could not be checked","""
+after = """    return (
+        OK,
+        f"{shape}, and the note store does not resolve, so {unchecked} could not be checked","""
 reddens = [
-  "tests/attach/test_doctor.py::test_a_harness_link_beside_a_store_that_does_not_resolve_warns_and_says_nothing_was_checked",
+  "tests/attach/test_doctor.py::test_a_harness_link_beside_a_store_that_does_not_resolve_warns_and_names_the_cause[tree-symlinked]",
+  "tests/attach/test_doctor.py::test_a_harness_link_beside_a_store_that_does_not_resolve_warns_and_names_the_cause[groups-gone]",
+  "tests/attach/test_doctor.py::test_a_harness_link_beside_a_store_that_does_not_resolve_warns_and_names_the_cause[tree-empty]",
+]
+
+# With no store there is no trust record to ask, and the row fell through to "not in place, which
+# is what this store's trust record asks for", green, beside a ledger whose tree was gone.
+[[mutation]]
+name = "doctor reads a store that does not resolve as one whose trust record asks for no link"
+file = "src/stayfixed/attach/doctor.py"
+before = "    if store is None:\n        return _unresolved_shape(context, harness, relink)"
+after = "    if store is None:\n        return OK, \"not in place, which is what this store's trust record asks for\", \"\""
+reddens = [
+  "tests/attach/test_doctor.py::test_a_ledger_whose_link_tree_is_gone_warns_and_names_attach",
+  "tests/attach/test_doctor.py::test_no_harness_link_beside_a_tree_that_does_not_resolve_is_never_green[groups-gone]",
+]
+
+# A tree that is gone is one `attach` rebuilds; the row sent the reader to `memory index --check`,
+# which only says the store is missing.
+[[mutation]]
+name = "doctor sends a reader whose link tree is gone to memory index --check"
+file = "src/stayfixed/attach/doctor.py"
+before = "    if gone:\n"
+after = "    if False:\n"
+reddens = [
+  "tests/attach/test_doctor.py::test_a_harness_link_beside_a_store_that_does_not_resolve_warns_and_names_the_cause[tree-gone]",
 ]
 
 # `read_binding` refuses for two different reasons and `origin_remote` raises for a third, and all
