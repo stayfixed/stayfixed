@@ -618,6 +618,22 @@ def test_a_linked_worktree_whose_main_checkout_tree_is_reached_through_a_symlink
     assert str(tmp_path) not in row.detail
 
 
+def test_a_worktree_harness_link_the_session_start_relink_made_is_ok(tmp_path: Path) -> None:
+    # The second target R5 names: the `SessionStart` re-link points a worktree's harness link at
+    # the worktree's own `paths.memory`. Compared with the main checkout's alone, it read red, "a
+    # link to a directory that is not this project's note store". Mutation (oracle):
+    # `mutations/`'s "harness_targets names the owning checkout's tree alone" -> red.
+    from tests.attach.test_detach import _relinked_to_its_own_tree
+
+    _, side, machine, home = _relinked_to_its_own_tree(tmp_path)
+    row = _worktree_row(tmp_path, side, machine, home)
+    assert (row.status, row.detail, row.remedy) == (
+        OK,
+        "attached; the harness memory path is a link to the store; the binding is bound",
+        "",
+    )
+
+
 # One machine state, one status, from every checkout: the `attached` row's state table
 # (`attach.doctor._harness_verdict`) walked from the main checkout and from a linked worktree, both
 # attached the ordinary way, so a state is made once and read from both. Each state is a change to

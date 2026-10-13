@@ -260,6 +260,43 @@ def test_detach_in_the_main_checkout_leaves_an_attached_worktree_whole(tmp_path:
     assert _dangling_under(home) == []
 
 
+def _relinked_to_its_own_tree(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
+    """`_both_attached`, with the worktree's harness memory link then made the way the
+    `SessionStart` re-link makes it: `memory.worktree.link` handed the worktree's own store, which
+    points the link at the worktree's own `paths.memory` rather than at the main checkout's. The
+    gate that link asks is the worktree's own store's, so that store is approved first. Returns
+    `(root, side, machine, home)`."""
+    from stayfixed.memory.api import MakeUnder, link
+
+    root, side, _, machine, home = _both_attached(tmp_path)
+    config = _config(side, machine)
+    own = resolve(side, config, machine=machine)
+    assert own is not None
+    record(own, config)
+    link(side, own, config, harness=MakeUnder(home))
+    harness = harness_memory_path(side, home)
+    # Non-vacuous: the link is the worktree's own tree now, the second target R5 names.
+    assert harness.is_symlink() and harness.exists()
+    assert harness.resolve() == (side / DEFAULT_MEMORY).resolve()
+    assert harness.resolve() != (root / DEFAULT_MEMORY).resolve()
+    return root, side, machine, home
+
+
+def test_detach_withdraws_a_worktree_harness_link_the_session_start_relink_made(
+    tmp_path: Path,
+) -> None:
+    # A worktree's harness link is `attach`'s when it points at the main checkout's tree or at the
+    # worktree's own, which is where the `SessionStart` re-link points it. Compared with the main
+    # checkout's alone, the re-linked one was left standing and, once the worktree's tree went,
+    # dangling. Mutation (oracle): `mutations/`'s "harness_targets names the owning checkout's
+    # tree alone" -> the link stays and dangles.
+    root, side, machine, home = _relinked_to_its_own_tree(tmp_path)
+    _detach(side, machine, home)
+    assert not os.path.lexists(harness_memory_path(side, home))
+    assert _dangling_under(home) == []
+    assert harness_memory_path(root, home).exists()
+
+
 def _entries(*roots: Path) -> dict[str, str]:
     """Every entry under each root, `.git` aside: a file by its bytes' digest, a link by its
     target, a directory by its name, so a removed directory or a retargeted link shows too."""
