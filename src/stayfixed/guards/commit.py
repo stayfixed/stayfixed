@@ -186,7 +186,8 @@ _DOMAIN_RUN = re.compile(r"@([\w.-]*+)")
 # reads a run: the shape every supported Python reads alike (CONTRIBUTING.md, "Tests").
 _PRODUCTS = re.compile(
     r"(?:claude code|claude (?:opus|sonnet|haiku)(?: [\w.][\w.]*+)*+|github copilot|copilot"
-    r"|cursor agent|openai codex|codex|devin|windsurf|aider|gemini cli|gemini code assist)",
+    r"|cursor agent|cursor|openai codex|codex|chatgpt|devin|windsurf|aider|gemini cli"
+    r"|gemini code assist)",
     re.IGNORECASE,
 )
 # What ends a footer, and it is the same shape of test `_trailer_offence` applies to a trailer's

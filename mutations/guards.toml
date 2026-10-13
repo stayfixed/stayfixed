@@ -330,15 +330,36 @@ reddens = [
 ]
 
 # The name rule: a product phrase as the WHOLE name. Measured, not predicted: `search` instead of
-# `fullmatch` reddens exactly one negative, the `Helped-by:` line naming a person after a
-# single-word product. A second was predicted; that one survives either way, because `_PRODUCTS`
-# carries no bare vendor word, only whole product phrases.
+# `fullmatch` reddened one negative, the `Helped-by:` line naming a person after a single-word
+# product, while `_PRODUCTS` held only whole product phrases. Since `cursor` joined it as a word
+# of its own, it reddens the `cursor-position` negative and the probe naming `Cursor Smith` too.
 [[mutation]]
 name = "a person whose name contains a product word is a bot again"
 file = "src/stayfixed/guards/commit.py"
 before = '    return _PRODUCTS.fullmatch(name.strip()) is not None'
 after = '    return _PRODUCTS.search(name.strip()) is not None'
 reddens = ["tests/guards/test_commit.py::test_negative_samples_are_untouched"]
+
+# `Assisted-by: ChatGPT` and `Generated-by: Cursor` are `-by:` trailers naming a product, which the
+# contract refuses, and both went through while the table held `cursor agent` and no `chatgpt`.
+# Each word is its own entry, so each probe reddens on its own.
+[[mutation]]
+name = "commit check lets a ChatGPT trailer through"
+file = "src/stayfixed/guards/commit.py"
+before = "|codex|chatgpt|devin|"
+after = "|codex|devin|"
+reddens = [
+  "tests/guards/test_commit.py::test_the_attribution_probes_are_judged_by_the_documented_contract[chatgpt]",
+]
+
+[[mutation]]
+name = "commit check lets a Cursor trailer through"
+file = "src/stayfixed/guards/commit.py"
+before = "|cursor agent|cursor|openai codex|"
+after = "|cursor agent|openai codex|"
+reddens = [
+  "tests/guards/test_commit.py::test_the_attribution_probes_are_judged_by_the_documented_contract[cursor]",
+]
 
 # The paragraph rule: only the final paragraph is judged, so a strip can never amputate a body
 # sentence.

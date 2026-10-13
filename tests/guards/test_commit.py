@@ -199,6 +199,52 @@ KNOWN_COST = [
 ]
 
 
+# The attribution probes, each judged as a whole message by what `docs/cli.md` says `commit check`
+# refuses: a `-by:` trailer naming a product, or addressed from a vendor's domain, and a
+# generated-with footer, in the message's last paragraph. `True` is refused.
+PROBES = {
+    "claude-noreply": ("Co-Authored-By: Claude <noreply@anthropic.com>", True),
+    "claude-code-footer": (
+        "\U0001f916 Generated with [Claude Code](https://claude.com/claude-code)",
+        True,
+    ),
+    "github-copilot": ("Co-Authored-By: GitHub Copilot <copilot@github.com>", True),
+    "codex": ("Co-Authored-By: Codex <codex@openai.com>", True),
+    "claude-bot": ("Co-Authored-By: claude[bot] <noreply@anthropic.com>", True),
+    "chatgpt": ("Assisted-by: ChatGPT", True),
+    "cursor": ("Generated-by: Cursor", True),
+    "human-co-author": ("Co-Authored-By: A Person <person@example.com>", False),
+    "signed-off": ("Signed-off-by: Human <human@example.com>", False),
+    "bare-claude": ("Co-Authored-By: Claude", False),
+    "gemini-bot": (
+        "Co-Authored-By: gemini-code-assist[bot] "
+        "<176961590+gemini-code-assist[bot]@users.noreply.github.com>",
+        False,
+    ),
+    "reviewed-with": ("Reviewed-with: Bot <noreply@anthropic.com>", False),
+    "ai-assisted": ("AI-assisted: yes", False),
+    "trailer-then-body": (
+        "Co-Authored-By: Claude <noreply@anthropic.com>\n\nA body paragraph that comes last.",
+        False,
+    ),
+    "person-named-cursor": ("Co-Authored-By: Cursor Smith <cursor.smith@example.com>", False),
+}
+
+
+@pytest.mark.parametrize(("line", "refused"), PROBES.values(), ids=PROBES)
+def test_the_attribution_probes_are_judged_by_the_documented_contract(
+    line: str, refused: bool
+) -> None:
+    # `Assisted-by: ChatGPT` and `Generated-by: Cursor` are each a `-by:` trailer naming a
+    # product, which the contract refuses, and both went through: `_PRODUCTS` held `cursor agent`
+    # and no `chatgpt`. A display name is judged whole (`fullmatch`), so a person whose name holds
+    # a product word, `Cursor Smith`, stays allowed, while a one-word `Cursor` is refused as
+    # `Devin` already was. Mutations: `mutations/`'s "commit check lets a ChatGPT trailer through"
+    # and "commit check lets a Cursor trailer through".
+    message = f"fix: thing\n\n{line}\n"
+    assert bool(offending_lines(message)) is refused, (line, offending_lines(message))
+
+
 @pytest.mark.parametrize("line", POSITIVES)
 def test_positive_samples_are_flagged(line: str) -> None:
     assert offending_lines(line), f"expected a violation for: {line!r}"

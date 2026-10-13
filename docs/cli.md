@@ -465,7 +465,9 @@ whose address is at a vendor's domain or whose name is a product, a `Generated w
 footer, or a line that is only `AI-generated`. The block is the message's last paragraph plus
 every paragraph above it that is attribution to the last line — the canonical harness block is
 two paragraphs — and it ends at the first paragraph holding any body line. Body prose is never
-judged, and a person whose name happens to be a vendor word is not a violation.
+judged. A trailer's display name is judged whole: one that is a product's name and nothing else
+(`Cursor`, `Devin`, `ChatGPT`) is a violation whatever its address, and a person's name that holds
+a product word (`Cursor Smith`, `Claude Lemaire`) is not.
 `[commit_messages] attribution_check = false` stops the rules being applied: no message is ever
 a violation, but the range must still be readable, because the report says how many messages it
 read. Exits `1` naming up to eight offences as `sha line N [label]` and counting the rest —
