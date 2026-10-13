@@ -243,14 +243,18 @@ def test_an_initialised_repository_is_refused_and_offered_upgrade(tmp_path: Path
 def test_local_after_init_names_the_artifacts_key_and_upgrade(tmp_path: Path) -> None:
     # `init --local ID` after `init` was refused with "re-running `init` is `stayfixed upgrade`",
     # and `upgrade` has no `--local`: the refusal pointed at a command that cannot do what was
-    # asked, and nothing said the way that works. Mutation (`mutations/`'s "init stops saying how
+    # asked, and nothing said the way that works. "stayfixed upgrade" alone was in that refusal
+    # already, so the sentence is asserted whole. Mutation (`mutations/`'s "init stops saying how
     # to add a local artifact after init"): the sentence dropped -> this reddens.
     root = _repo(tmp_path)
     code, out, err = cli(root, tmp_path, "init", "--yes", "--no-ci")
     assert code == 0, (out, err)
     code, out, err = cli(root, tmp_path, "init", "--yes", "--local", "adr-template")
     assert code == 2 and err.startswith("stayfixed: refused:"), (out, err)
-    assert "[artifacts] local" in err and "stayfixed upgrade" in err
+    assert (
+        "; to add a local artifact later, list its id under `[artifacts] local` in stayfixed.toml, "
+        "then run `stayfixed upgrade`\n"
+    ) in err
 
 
 @needs_git
