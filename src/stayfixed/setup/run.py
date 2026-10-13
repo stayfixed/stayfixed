@@ -49,9 +49,9 @@ plugin is actually installed under everywhere the preset's own `setup` runs.
 **The overlay root is validated before anything is written, and the create branch is gated on
 `--yes`.** `--yes` on `--overlay <path>` would be theatre in a harness where the command line
 is written by a model, so it is not added there. What bounds the exposure instead is
-`_requested_overlay`, and it runs **above the first write** — above the machine file, the
-settings merge and the plugin installs, and for `create:` above `gh repo create` itself. Two
-controls:
+`_requested_overlay` and `_outside_the_project`, asked in `_before_the_first_write` — above the
+machine file, the settings merge and the plugin installs, and for `create:` above
+`gh repo create` itself. Two controls:
 
 * **it must be an overlay**, which is `overlay.api.require_overlay` and not a pair of `is_file`
   calls. The old probe was the two manifests *existing*, which the stayfixed checkout satisfies
@@ -408,6 +408,13 @@ def _check_settings_path(home: Path) -> None:
         contained(home, USER_SETTINGS)
     except PathEscape as exc:
         link = _settings_symlink(home)
+        if link is None and isinstance(exc, PathUnasked):
+            # No link to name, and a path nobody may search on the way: said as `--settings`
+            # says it, naming the file whole. `contained` names it relative to `home`, which this
+            # refusal would otherwise leave out.
+            raise Refusal(
+                f"{home / USER_SETTINGS} cannot be checked for a symlink ({exc.fault})"
+            ) from exc
         if link is None:
             raise
         real = link.resolve()
@@ -456,7 +463,10 @@ def _check_home_usable(
       write left under it.
     - `created`, the `<home>/<name>` a `create:` overlay is cloned into, while it is not there yet.
       Asked here because the clone is what would find out otherwise, after `gh repo create` has
-      made a repository on somebody's account.
+      made a repository on somebody's account. While it is there, whether it can be searched:
+      `overlay.create` looks inside it for an overlay before anything else, and a destination
+      nobody may search raised `PermissionError` there as `internal error`, after the machine
+      file and the plugin installs.
 
     The refusal names the directory `creatable` stopped at. `os.access` answers for the real uid
     and says yes to root whatever the mode, so the `mkdir` in `setup` keeps a refusal of its own
@@ -470,6 +480,8 @@ def _check_home_usable(
             landing.append(home)
         if created is not None and not fsops.exists(created):
             landing.append(created)
+        elif created is not None and fsops.is_dir(created) and not os.access(created, os.X_OK):
+            raise Refusal(f"--home {home} cannot be used: {created} cannot be searched")
         for path in landing:
             directory = fsops.creation_directory(path)
             # A regular file where a directory has to be (`home` itself, or one above it) is the
@@ -541,6 +553,12 @@ def _check_settings_parent(settings: Path) -> None:
             f"{settings} is a directory; --settings names the settings file to write, not the "
             f"directory to write it in"
         )
+    # The directory a new file is renamed into, which `--home`'s directories are asked about in
+    # `_check_home_usable`. Unasked, a 555 directory took the machine file first and then refused
+    # in the words above about a symlink that was not there. `os.access` says yes to root, for
+    # whom the write's own refusal stays the floor.
+    if not fsops.creatable(settings):
+        raise Refusal(f"{settings} cannot be written: {parent} is not writable")
 
 
 # `git` reads any directory holding `HEAD`, `objects/` and `refs/` as a bare repository of its
@@ -846,12 +864,11 @@ def _recordable(root: Path) -> None:
         )
 
 
-def _requested_overlay(
-    overlay: str | None, *, home: Path, project_root: Path, yes: bool
-) -> _Overlay | None:
-    """Every refusal `--overlay` can raise that does not need a tree to exist first.
+def _requested_overlay(overlay: str | None, *, home: Path, yes: bool) -> _Overlay | None:
+    """What `--overlay` names, and every refusal its arguments and its tree's identity can raise.
 
-    Called above the first write. The first draft called the equivalent of this from the bottom
+    The first step of `_before_the_first_write`; where the overlay lies is asked there too, last
+    (`_outside_the_project`). The first draft called the equivalent of this from the bottom
     of `setup`, so `--overlay /typo` had already written the machine file, merged the settings
     file and installed two plugins before it refused, and `--overlay create:` had already
     created a private repository on GitHub.
@@ -890,13 +907,11 @@ def _requested_overlay(
         # Refuses a name that is not one path segment, and answers where the tree would land —
         # both without creating anything, which is the whole point of asking here.
         destination, account = target_root(home, owner, name)
-        _outside_the_project(destination, project_root=project_root)
         _recordable(destination)
         return _Overlay(root=destination, create=(account, name))
     candidate = Path(overlay).expanduser().resolve()
     _recordable(candidate)
     require_overlay(candidate, because=_RECORDING)
-    _outside_the_project(candidate, project_root=project_root)
     return _Overlay(root=candidate, create=None)
 
 
@@ -957,6 +972,69 @@ def _apply_overlay(planned: _Overlay, *, project_root: Path, runner: Runner) -> 
     return created.root, f"created the overlay at {created.root}, generated from {created.template}"
 
 
+def _before_the_first_write(
+    preset: str,
+    *,
+    home: Path,
+    project_root: Path,
+    overlay: str | None,
+    yes: bool,
+    settings: Path | None,
+) -> tuple[dict[str, Any], _Overlay | None]:
+    """Every question `setup` asks before its first write, in one order, under one floor.
+
+    Nothing is written, and no program is run, until every step has answered; each refuses with
+    its own words, and the first refusal ends the run. The steps, in order:
+
+    1. **What `--overlay` names** (`_requested_overlay`): `create:` without `--yes`, a spec
+       without both halves, a name that is not one path segment, a root the machine file cannot
+       hold; and for `--overlay <path>`, a tree that is not an overlay.
+    2. **The preset** (`load_preset`): a mistyped `--preset`. It used to come one line after the
+       home tree had been created for it.
+    3. **The settings file's place** (`_check_settings_path`, or `_check_settings_parent` for
+       `--settings`): a symlink on the way, a directory that is not there or not a real one, a
+       directory at the file's own name, a `--settings` directory that cannot take the write.
+       Asked of whichever root the write will use: `--settings` names the file, so the
+       `<home>/.claude` walk is not the walk that will run, and asking it anyway would refuse the
+       one layout the flag exists for.
+    4. **Where a write under `--home` lands** (`_check_home_usable`): the settings file's
+       directory, the `mkdir` of a home not there yet, and a `create:` destination.
+    5. **Where the overlay lies** (`_outside_the_project`): `git`, asked from the project's side
+       and from the overlay's.
+
+    The order is load-bearing where two steps can refuse one layout. The settings file's place
+    comes before `--home`: a `~/.claude` linked into a directory nobody may search is a link to
+    name, and step 4 can only say that it cannot ask past it. Where the overlay lies comes after
+    both: a `create:` destination under a home nobody may search is that home's fault, which
+    steps 3 and 4 name, where `git`'s walk up from the destination can only meet the same
+    unsearchable directory. Last also because it is the step that runs programs.
+
+    **The floor.** `fsops`' predicates raise rather than guess when a path cannot be asked
+    about, and a step that does not word that itself let the `OSError` reach `cli.run` as
+    `stayfixed: internal error`: the walk up from a `create:` destination under a home nobody
+    may search, an `--overlay`, a `--root` or a `--settings` directory below one. Whatever a step
+    raises that way is a refusal here, naming the path that was being asked about — the
+    `OSError`'s own file name, the path the predicate was handed — and the fault in
+    `fsops.said`'s words. A step whose own words name the cause better keeps them.
+    """
+    try:
+        planned = _requested_overlay(overlay, home=home, yes=yes)
+        data = load_preset(preset, key="--preset")
+        if settings is None:
+            _check_settings_path(home)
+        else:
+            _check_settings_parent(settings)
+        _check_home_usable(home, settings=settings, created=_created_root(planned))
+        if planned is not None:
+            _outside_the_project(planned.root, project_root=project_root)
+    except OSError as exc:
+        asked = exc.filename if exc.filename is not None else "a path this run was given"
+        raise Refusal(
+            f"{asked} cannot be checked ({fsops.said(exc)}), so nothing was written"
+        ) from exc
+    return data, planned
+
+
 def setup(
     preset: str,
     *,
@@ -975,24 +1053,17 @@ def setup(
     that any checkout of it could reach. `yes` confirms creating an overlay on GitHub and
     nothing else: there is no other prompt here for it to answer (see the module docstring).
 
-    **Everything structural is asked before the first write**, and the order below is
-    load-bearing rather than tidy: `--overlay` is parsed, probed and contained, and the settings
-    path is checked — **both spellings of it**, the `<home>/.claude` walk and the directory
-    `--settings` names — while nothing is on disk and no repository exists on anyone's GitHub
-    account. What is left after that is the work, and the one refusal that follows a write is
-    the post-condition on a tree this run created.
+    **Everything structural is asked before the first write**, in `_before_the_first_write`:
+    `--overlay` is parsed and probed, the preset is loaded, the settings path is checked — **both
+    spellings of it**, the `<home>/.claude` walk and the directory `--settings` names — the
+    places a write under `--home` lands are asked, and the overlay is contained, while nothing is
+    on disk and no repository exists on anyone's GitHub account. What is left after that is the
+    work, and the one refusal that follows a write is the post-condition on a tree this run
+    created.
     """
-    planned_overlay = _requested_overlay(overlay, home=home, project_root=project_root, yes=yes)
-    # `--settings` names the file, so the `<home>/.claude` walk `_check_settings_path` is about
-    # is not the walk that will run: asking it anyway would refuse the one layout the flag exists
-    # for. So the question is asked of whichever root the write will actually use. Both arms and
-    # not one: with only the first, `--settings` reached its refusal from `_write_user_settings`,
-    # after `home.mkdir` and after the machine file had been written, and a typo in the directory
-    # component left both of those behind on the way to exit 2.
-    if settings is None:
-        _check_settings_path(home)
-    else:
-        _check_settings_parent(settings)
+    data, planned_overlay = _before_the_first_write(
+        preset, home=home, project_root=project_root, overlay=overlay, yes=yes, settings=settings
+    )
 
     # `home` is the root every write in this function lands under **except the one `--settings`
     # redirects** — the settings file through `fsops.write_within` below, whose root is the named
@@ -1002,10 +1073,6 @@ def setup(
     # reason `setup.machine`'s module docstring gives for `fsops.write_atomically` on the
     # machine file: there is nothing for a contained walk to be relative to until this
     # directory exists.
-    # `load_preset` first: a mistyped `--preset` is a refusal, and it used to come one line
-    # after the home tree had been created for it.
-    data = load_preset(preset, key="--preset")
-    _check_home_usable(home, settings=settings, created=_created_root(planned_overlay))
     try:
         home.mkdir(parents=True, exist_ok=True)
     except OSError as exc:

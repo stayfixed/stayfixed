@@ -397,7 +397,7 @@ _ASK_WITH_NO_OVERLAY = (
     "from pathlib import Path\n"
     "from stayfixed.setup.run import _requested_overlay\n"
     "here = Path(sys.argv[1])\n"
-    "assert _requested_overlay(None, home=here, project_root=here, yes=True) is None\n"
+    "assert _requested_overlay(None, home=here, yes=True) is None\n"
     "print(' '.join(m for m in sorted(sys.modules) if m.startswith('stayfixed.overlay')))\n"
 )
 
@@ -936,7 +936,7 @@ def test_a_created_overlay_is_refused_before_the_repository_exists(tmp_path: Pat
     # `test_an_overlay_created_from_a_directory_in_no_repository_passes_containment`.
     #
     # Mutation (`mutations/`'s "setup computes where a created overlay lands only after creating
-    # it"): the `_outside_the_project(destination, ...)` call in `_requested_overlay` is dropped,
+    # it"): `_before_the_first_write` asks where the overlay lies only for `--overlay <path>`,
     # leaving `_apply_overlay`'s floor → `gh repo create` runs, and this reddens on the argv
     # assertion.
     home = tmp_path / "home"
@@ -2167,6 +2167,227 @@ def test_a_created_overlay_in_a_read_only_home_is_refused_before_gh_runs(tmp_pat
     assert str(refused.value) == f"--home {home} cannot be used: {home} is not writable"
     assert runner.calls == []
     assert not machine.exists()
+
+
+@ROOT_SEARCHES_EVERYTHING
+@pytest.mark.parametrize(
+    "root_in_a_repository",
+    [False, pytest.param(True, marks=needs_git)],
+    ids=["no-repository", "repository"],
+)
+def test_a_created_overlay_under_a_home_nobody_may_search_is_refused_before_anything(
+    tmp_path: Path, root_in_a_repository: bool
+) -> None:
+    # `--overlay create:` with `--home` below a directory nobody may search: the walk up from the
+    # destination (`_candidate_repository` -> `_nearest_directory`) asked `is_dir` of it first and
+    # `PermissionError` reached the frame as `stayfixed: internal error`. The questions about
+    # `--home` come before where the overlay lies, and they name the file they could not ask
+    # about. Mutations (`mutations/`'s "setup asks where the overlay lies before it asks about
+    # --home", and "setup names a settings file it cannot ask about only relative to --home"):
+    # either reddens this on the wording.
+    locked = tmp_path / "locked"
+    locked.mkdir()
+    home = locked / "home"
+    project = tmp_path / "project"
+    project.mkdir()
+    if root_in_a_repository:
+        _git(project, "init", "-q", "-b", "main")
+    machine = tmp_path / "config.toml"
+    runner = Recorder(answers={_OCTOS_PROBE: _A_TEMPLATE}, on_call=_populate_overlay)
+    with unsearchable(locked), pytest.raises(Refusal) as refused:
+        setup(
+            "recommended",
+            home=home,
+            machine=machine,
+            runner=runner,
+            yes=True,
+            overlay="create:octo/stayfixed-private",
+            project_root=project,
+        )
+    assert str(refused.value) == (
+        f"{home / USER_SETTINGS} cannot be checked for a symlink (Permission denied)"
+    )
+    assert runner.calls == []
+    assert not machine.exists()
+
+
+def _below_a_locked_directory(tmp_path: Path, what: str) -> tuple[dict[str, Any], Path]:
+    """`setup`'s keyword arguments with `what` — `--overlay`, `--root` or `--settings` — below
+    `tmp_path/locked`, and the path below it that cannot be asked about once it is locked."""
+    locked = tmp_path / "locked"
+    locked.mkdir()
+    overlay = tmp_path / "overlay"
+    _seed_overlay(overlay)
+    arguments: dict[str, Any] = {
+        "home": tmp_path / "home",
+        "overlay": str(overlay),
+        "project_root": tmp_path / "project",
+    }
+    if what == "overlay":
+        asked = locked / "overlay"
+        _seed_overlay(asked)
+        arguments["overlay"] = str(asked)
+    elif what == "root":
+        asked = locked / "project"
+        asked.mkdir()
+        arguments["project_root"] = asked
+    else:
+        asked = locked / "dotfiles"
+        asked.mkdir()
+        arguments["settings"] = asked / "settings.json"
+    return arguments, asked
+
+
+@ROOT_SEARCHES_EVERYTHING
+@pytest.mark.parametrize("what", ["overlay", "root", "settings"])
+def test_a_path_setup_cannot_ask_about_before_its_first_write_is_a_refusal_naming_it(
+    tmp_path: Path, what: str
+) -> None:
+    # Each of these ended in `stayfixed: internal error: PermissionError`, with the path in a
+    # traceback's words: `--overlay` from the overlay probe's `is_dir`, `--root` from the walk to
+    # the nearest directory git is asked from, and `--settings` from the question whether its
+    # directory is a real one. None of those steps words that fault itself, so the phase's floor
+    # does, naming the path the predicate was handed. Mutation (`mutations/`'s "setup lets a path
+    # it cannot ask about before its first write reach the frame"): the floor's `except` dropped
+    # -> `PermissionError` leaves `setup`, and every case reddens.
+    arguments, asked = _below_a_locked_directory(tmp_path, what)
+    machine = tmp_path / "config.toml"
+    runner = Recorder()
+    with unsearchable(tmp_path / "locked"), pytest.raises(Refusal) as refused:
+        setup("recommended", machine=machine, runner=runner, yes=True, **arguments)
+    assert str(refused.value) == (
+        f"{asked} cannot be checked (Permission denied), so nothing was written"
+    )
+    assert runner.calls == []
+    assert not machine.exists()
+
+
+@_ROOT_WRITES_EVERYWHERE
+def test_a_settings_directory_that_cannot_be_written_is_refused_before_the_machine_file(
+    tmp_path: Path,
+) -> None:
+    # `--settings` into a 555 directory wrote the machine file, and only the settings write
+    # refused — saying the directory "has to exist and be a real directory, because stayfixed
+    # writes .claude/settings.json through a walk that never follows a symlink", of a real
+    # directory with no link in sight. It is asked now whether it can take the write, as
+    # `--home`'s directories are. Mutation (`mutations/`'s "setup --settings writes the machine
+    # file before asking whether its directory can be written"): the question dropped -> the
+    # machine file is on disk and the refusal speaks of a symlink, and this reddens on both.
+    dotfiles = tmp_path / "dotfiles"
+    dotfiles.mkdir()
+    settings = dotfiles / "settings.json"
+    machine = tmp_path / "config.toml"
+    runner = Recorder()
+    dotfiles.chmod(0o555)
+    try:
+        with pytest.raises(Refusal) as refused:
+            setup(
+                "recommended",
+                home=tmp_path / "home",
+                machine=machine,
+                runner=runner,
+                yes=False,
+                overlay=None,
+                project_root=tmp_path / "project",
+                settings=settings,
+            )
+    finally:
+        dotfiles.chmod(0o755)
+    assert str(refused.value) == f"{settings} cannot be written: {dotfiles} is not writable"
+    assert "symlink" not in str(refused.value)
+    assert runner.calls == []
+    assert not machine.exists()
+
+
+@ROOT_SEARCHES_EVERYTHING
+def test_a_created_overlay_whose_destination_cannot_be_searched_is_refused_before_anything(
+    tmp_path: Path,
+) -> None:
+    # Over a `<home>/<name>` that is there, `create:` clones nothing and the home takes no new
+    # directory, so nothing about `--home` refused it; `overlay.create` then looked inside it for
+    # an overlay, and a destination nobody may search raised `PermissionError` there, as
+    # `internal error`, after the machine file and both plugin installs. Mutation (`mutations/`'s
+    # "setup stops asking whether a created overlay's destination can be searched"): the question
+    # dropped -> the machine file is written and `PermissionError` leaves `setup`.
+    home = tmp_path / "home"
+    destination = home / "stayfixed-private"
+    destination.mkdir(parents=True)
+    machine = tmp_path / "config.toml"
+    runner = Recorder(answers={_OCTOS_PROBE: _A_TEMPLATE}, on_call=_populate_overlay)
+    with unsearchable(destination), pytest.raises(Refusal) as refused:
+        setup(
+            "recommended",
+            home=home,
+            machine=machine,
+            runner=runner,
+            yes=True,
+            overlay="create:octo/stayfixed-private",
+            project_root=tmp_path / "project",
+        )
+    assert str(refused.value) == f"--home {home} cannot be used: {destination} cannot be searched"
+    assert runner.calls == []
+    assert not machine.exists()
+
+
+# `_before_the_first_write`'s steps, in its documented order, for a `create:` run without
+# `--settings`.
+_THE_PHASE = (
+    "_requested_overlay",
+    "load_preset",
+    "_check_settings_path",
+    "_check_home_usable",
+    "_outside_the_project",
+)
+
+
+def test_every_question_before_the_first_write_is_asked_in_the_documented_order(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The order is what makes "refused before anything was written" true of every step: a step
+    # that ran after a write or a program would have that write behind its refusal. Each step,
+    # each write and each program run is logged as it happens. Mutation (`mutations/`'s "setup
+    # asks where the overlay lies before it asks about --home") -> the order differs, and this
+    # reddens.
+    from stayfixed.setup import run
+
+    events: list[str] = []
+
+    def logged(name: str) -> None:
+        original = getattr(run, name)
+
+        def step(*args: Any, **kwargs: Any) -> Any:
+            events.append(name)
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr(run, name, step)
+
+    for name in (*_THE_PHASE, "write_machine", "_write_user_settings"):
+        logged(name)
+    real_mkdir = Path.mkdir
+
+    def mkdir(self: Path, *args: Any, **kwargs: Any) -> None:
+        events.append("mkdir")
+        real_mkdir(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "mkdir", mkdir)
+
+    def ran(argv: list[str], cwd: Path) -> None:
+        events.append("run")
+        _populate_overlay(argv, cwd)
+
+    setup(
+        "recommended",
+        home=tmp_path / "home",
+        machine=tmp_path / "config.toml",
+        runner=Recorder(answers={_OCTOS_PROBE: _A_TEMPLATE}, on_call=ran),
+        yes=True,
+        overlay="create:octo/stayfixed-private",
+        project_root=tmp_path / "project",
+    )
+    phase = len(_THE_PHASE)
+    assert tuple(events[:phase]) == _THE_PHASE, events
+    assert events[phase] == "mkdir", events
+    assert {"write_machine", "_write_user_settings", "run"} <= set(events[phase:]), events
 
 
 def test_a_claude_directory_that_becomes_a_symlink_after_the_check_is_still_refused(

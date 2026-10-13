@@ -438,8 +438,8 @@ reddens = ["tests/setup/test_setup.py::test_every_plugin_install_is_one_recorded
 [[mutation]]
 name = "setup asks whether --overlay is an overlay after it has already written"
 file = "src/stayfixed/setup/run.py"
-before = "    planned_overlay = _requested_overlay(overlay, home=home, project_root=project_root, yes=yes)"
-after = "    planned_overlay = None if overlay is None else _Overlay(Path(overlay).expanduser().resolve(), None)"
+before = "        planned = _requested_overlay(overlay, home=home, yes=yes)"
+after = "        planned = None if overlay is None else _Overlay(Path(overlay).expanduser().resolve(), None)"
 reddens = [
   "tests/setup/test_setup.py::test_a_refused_overlay_path_is_refused_before_the_first_write",
 ]
@@ -453,9 +453,10 @@ reddens = [
 [[mutation]]
 name = "setup computes where a created overlay lands only after creating it"
 file = "src/stayfixed/setup/run.py"
-before = """        destination, account = target_root(home, owner, name)
-        _outside_the_project(destination, project_root=project_root)"""
-after = "        destination, account = target_root(home, owner, name)"
+before = """        if planned is not None:
+            _outside_the_project(planned.root, project_root=project_root)"""
+after = """        if planned is not None and planned.create is None:
+            _outside_the_project(planned.root, project_root=project_root)"""
 reddens = ["tests/setup/test_setup.py::test_a_created_overlay_is_refused_before_the_repository_exists"]
 
 # An unusable `--home` reached the frame or the second write: under a read-only parent `mkdir`
@@ -466,9 +467,8 @@ reddens = ["tests/setup/test_setup.py::test_a_created_overlay_is_refused_before_
 [[mutation]]
 name = "setup stops asking whether --home can be used before its first write"
 file = "src/stayfixed/setup/run.py"
-before = """    data = load_preset(preset, key="--preset")
-    _check_home_usable(home, settings=settings, created=_created_root(planned_overlay))"""
-after = """    data = load_preset(preset, key="--preset")"""
+before = "        _check_home_usable(home, settings=settings, created=_created_root(planned))"
+after = "        pass"
 reddens = [
   "tests/setup/test_setup.py::test_a_home_under_a_read_only_parent_is_refused_before_any_write",
   "tests/setup/test_setup.py::test_a_read_only_home_is_refused_before_the_machine_file_is_written",
@@ -554,6 +554,83 @@ after = """    if True:
     if False:"""
 reddens = ["tests/setup/test_setup.py::test_a_home_mkdir_that_fails_is_a_refusal"]
 
+# `setup`'s questions before its first write are one phase with one floor. `fsops`' predicates raise
+# when a path cannot be asked about, and the steps that do not word that themselves let it reach
+# the frame as `internal error`: an `--overlay`, a `--root` or a `--settings` directory below a
+# directory nobody may search, and the walk up from a `create:` destination under such a home.
+[[mutation]]
+name = "setup lets a path it cannot ask about before its first write reach the frame"
+file = "src/stayfixed/setup/run.py"
+before = """    except OSError as exc:
+        asked = exc.filename"""
+after = """    except ValueError as exc:
+        asked = exc.filename"""
+reddens = [
+  "tests/setup/test_setup.py::test_a_path_setup_cannot_ask_about_before_its_first_write_is_a_refusal_naming_it[overlay]",
+  "tests/setup/test_setup.py::test_a_path_setup_cannot_ask_about_before_its_first_write_is_a_refusal_naming_it[root]",
+  "tests/setup/test_setup.py::test_a_path_setup_cannot_ask_about_before_its_first_write_is_a_refusal_naming_it[settings]",
+]
+
+# The order is load-bearing where two steps can refuse one layout: a `create:` destination under a
+# home nobody may search is the home's fault, which the settings and `--home` questions name, and
+# asked first, where the overlay lies could only say that the destination cannot be asked about.
+[[mutation]]
+name = "setup asks where the overlay lies before it asks about --home"
+file = "src/stayfixed/setup/run.py"
+before = """        if settings is None:
+            _check_settings_path(home)
+        else:
+            _check_settings_parent(settings)
+        _check_home_usable(home, settings=settings, created=_created_root(planned))
+        if planned is not None:
+            _outside_the_project(planned.root, project_root=project_root)"""
+after = """        if planned is not None:
+            _outside_the_project(planned.root, project_root=project_root)
+        if settings is None:
+            _check_settings_path(home)
+        else:
+            _check_settings_parent(settings)
+        _check_home_usable(home, settings=settings, created=_created_root(planned))"""
+reddens = [
+  "tests/setup/test_setup.py::test_a_created_overlay_under_a_home_nobody_may_search_is_refused_before_anything[no-repository]",
+  "tests/setup/test_setup.py::test_a_created_overlay_under_a_home_nobody_may_search_is_refused_before_anything[repository]",
+  "tests/setup/test_setup.py::test_every_question_before_the_first_write_is_asked_in_the_documented_order",
+]
+
+# `contained` names the file it could not ask about relative to the root it was handed, and
+# `--home` is not in that sentence; `--settings` names its file whole, and so does this now.
+[[mutation]]
+name = "setup names a settings file it cannot ask about only relative to --home"
+file = "src/stayfixed/setup/run.py"
+before = "        if link is None and isinstance(exc, PathUnasked):"
+after = "        if False:"
+reddens = [
+  "tests/setup/test_setup.py::test_a_created_overlay_under_a_home_nobody_may_search_is_refused_before_anything[no-repository]",
+  "tests/setup/test_setup.py::test_a_created_overlay_under_a_home_nobody_may_search_is_refused_before_anything[repository]",
+]
+
+# `--settings` names the directory the write renames a new file into, and a 555 one took the
+# machine file before the write refused, in words about a symlink that was not there.
+[[mutation]]
+name = "setup --settings writes the machine file before asking whether its directory can be written"
+file = "src/stayfixed/setup/run.py"
+before = "    if not fsops.creatable(settings):"
+after = "    if False:"
+reddens = [
+  "tests/setup/test_setup.py::test_a_settings_directory_that_cannot_be_written_is_refused_before_the_machine_file",
+]
+
+# Over a `<home>/<name>` that is there, `overlay.create` looks inside it before anything else, and a
+# destination nobody may search raised there, after the machine file and the plugin installs.
+[[mutation]]
+name = "setup stops asking whether a created overlay's destination can be searched"
+file = "src/stayfixed/setup/run.py"
+before = "        elif created is not None and fsops.is_dir(created) and not os.access(created, os.X_OK):"
+after = "        elif False:"
+reddens = [
+  "tests/setup/test_setup.py::test_a_created_overlay_whose_destination_cannot_be_searched_is_refused_before_anything",
+]
+
 # Containment is judged against a repository. With `--root` in none the path arm refused the
 # owner's own `setup --overlay create:<owner>/<name> --yes` run in `~`, which is no repository and
 # ships nothing. The mutation stands an empty repository in for the missing one, which is the
@@ -595,9 +672,9 @@ reddens = ["tests/setup/test_setup.py::test_an_overlay_that_is_a_checkout_of_its
 [[mutation]]
 name = "setup meets a symlinked ~/.claude only at write time"
 file = "src/stayfixed/setup/run.py"
-before = """    if settings is None:
-        _check_settings_path(home)"""
-after = "    if False:\n        _check_settings_path(home)"
+before = """        if settings is None:
+            _check_settings_path(home)"""
+after = "        if False:\n            _check_settings_path(home)"
 reddens = [
   "tests/setup/test_setup.py::test_a_symlinked_claude_directory_is_a_refusal_that_names_the_link",
 ]
@@ -974,10 +1051,10 @@ reddens = [
 [[mutation]]
 name = "setup asks about the --settings directory only at write time"
 file = "src/stayfixed/setup/run.py"
-before = """    else:
-        _check_settings_parent(settings)"""
-after = """    else:
-        pass"""
+before = """        else:
+            _check_settings_parent(settings)"""
+after = """        else:
+            pass"""
 reddens = [
   "tests/setup/test_setup.py::test_a_settings_path_whose_directory_is_not_there_is_refused_before_anything_is_written",
 ]
@@ -1136,8 +1213,8 @@ reddens = [
 [[mutation]]
 name = "setup's preset refusal names the configuration key again"
 file = "src/stayfixed/setup/run.py"
-before = '    data = load_preset(preset, key="--preset")'
-after = "    data = load_preset(preset)"
+before = '        data = load_preset(preset, key="--preset")'
+after = "        data = load_preset(preset)"
 reddens = [
   "tests/setup/test_setup.py::test_a_mistyped_preset_names_the_flag_and_never_quotes_it",
 ]
