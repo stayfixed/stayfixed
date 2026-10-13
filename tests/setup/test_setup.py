@@ -970,6 +970,12 @@ def test_an_overlay_created_from_a_directory_in_no_repository_passes_containment
     # Mutation (`mutations/`'s "setup compares an overlay's place with --root outside any
     # repository"): an empty repository stands in for the missing one, so the path arm compares
     # as it did before -> refused, and this reddens.
+    #
+    # Run again, the clone it made is a checkout of its own, as `gh repo create --clone` leaves
+    # it: that checkout is not a repository holding the overlay, so the second run creates
+    # nothing and records the same root. Mutation (`mutations/`'s "setup asks whether an overlay
+    # lies in another repository from the overlay itself") -> the clone answers for itself, the
+    # second run is refused, and this reddens.
     home = tmp_path / "home"
     home.mkdir()
     machine = tmp_path / "config.toml"
@@ -984,6 +990,20 @@ def test_an_overlay_created_from_a_directory_in_no_repository_passes_containment
         project_root=home,
     )
     assert any(argv[:3] == ["gh", "repo", "create"] for argv in runner.calls)
+    clone = home / "stayfixed-private"
+    _git(clone, "init", "-q", "-b", "main")
+    again = Recorder(answers={_OCTOS_PROBE: _A_TEMPLATE}, on_call=_populate_overlay)
+    setup(
+        "recommended",
+        home=home,
+        machine=machine,
+        runner=again,
+        yes=True,
+        overlay="create:octo/stayfixed-private",
+        project_root=home,
+    )
+    assert not any(argv[:3] == ["gh", "repo", "create"] for argv in again.calls)
+    assert overlay_root(machine) == clone
 
 
 @needs_git

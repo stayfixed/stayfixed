@@ -662,7 +662,10 @@ name = "setup asks whether an overlay lies in another repository from the overla
 file = "src/stayfixed/setup/run.py"
 before = "    outer = _candidate_repository(resolved_candidate.parent)"
 after = "    outer = _candidate_repository(resolved_candidate)"
-reddens = ["tests/setup/test_setup.py::test_an_overlay_that_is_a_checkout_of_its_own_is_recorded"]
+reddens = [
+  "tests/setup/test_setup.py::test_an_overlay_that_is_a_checkout_of_its_own_is_recorded",
+  "tests/setup/test_setup.py::test_an_overlay_created_from_a_directory_in_no_repository_passes_containment",
+]
 
 # `CONTRIBUTING`'s containment rule has two stages, and `setup` had only the second: the
 # `O_NOFOLLOW` walk refused a symlinked `~/.claude` with `UnsafePath`, which `cli.run` renders as
