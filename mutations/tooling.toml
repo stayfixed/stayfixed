@@ -3462,3 +3462,24 @@ after = "          fetch-depth: 2\n      - uses: astral-sh/setup-uv"
 reddens = [
   "tests/test_check_workflow.py::test_no_checkout_in_the_release_keeps_its_token",
 ]
+
+# No script imports another, but the one exemption the rule names: `release.py` taking a sibling
+# is the offence the walk exists for, and the exempt import's removal is what leaves an exemption
+# excusing nothing, so the walk must say it no longer sees it.
+[[mutation]]
+name = "the release script imports the plugin tree script"
+file = "scripts/release.py"
+before = "import json\nimport re\n"
+after = "import json\nimport plugin_tree  # noqa: F401\nimport re\n"
+reddens = [
+  "tests/scripts/test_script_imports.py::test_no_script_imports_another_but_the_named_exemption",
+]
+
+[[mutation]]
+name = "the exfiltration smoke stops importing the hooks smoke"
+file = "scripts/smoke_exfiltration.py"
+before = "from smoke_hooks import developer_free_env, fixture_repository, with_owner_home\n"
+after = ""
+reddens = [
+  "tests/scripts/test_script_imports.py::test_every_exemption_is_still_used",
+]

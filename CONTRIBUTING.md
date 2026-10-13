@@ -164,7 +164,14 @@ a second statement beside a pinned one, a pinned statement that takes one more n
 whose import has gone alike. `scripts/` is repository tooling and stays under the `api.py` rule
 alone. The rules this section names live under `tests/boundaries/`, a file for each (discovery, the
 `api.py` surface, delivery and the import layers), and share one reading of the syntax tree,
-`astscan.py`, which has cases of its own.
+`astscan.py`, which has cases of its own. `scripts/` has one rule of its own beside them: no script
+imports another. `scripts/publish_plugin.py` runs `scripts/plugin_tree.py` and `src/stayfixed` read
+out of the tag's objects, so nothing it runs may reach for a sibling script that extraction does not
+carry, and a constant two scripts share is copied into each and held equal by a test rather than
+imported. `tests/scripts/test_script_imports.py` holds the rule over every script and the launcher,
+with one exemption it names: `smoke_exfiltration.py` imports `smoke_hooks`, both CI smoke drivers
+run from the checkout. It reads import statements and judges each by its name, so a script run
+through `runpy` or loaded through `importlib` is not seen, and `sys.path` is not followed.
 
 That rule reads import statements, so a module named to `importlib.import_module` is invisible to
 it, and two rules of their own in `tests/boundaries/test_delivery.py` hold that door. The first
