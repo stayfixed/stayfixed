@@ -538,8 +538,8 @@ code_roots` to the directories that hold code``, which `--json` carries as its `
 The `PostToolUseFailure` `Bash` hook delivers the same note once per context after a red test run:
 Claude Code delivers a command that exited non-zero on that event, with `error` beginning `Exit
 code N`, and an `error` that begins otherwise gets no note. The same handler is registered on
-`PostToolUse`, where Codex delivers a failed command; the two share one once-per-context key, so
-a red run is noted once whichever event carried it. The note is
+`PostToolUse` too, where Codex delivers a failed command but no exit code, so the note does not
+speak there; the two share one once-per-context key, so a red run is never noted twice. The note is
 chosen by the command that failed rather than by configuration: each simple command of the
 red run is offered to every shipped profile's hint, and the dirty-tree line and the line of
 each profile whose runner it recognises (Python's: `pytest`, or `python -m pytest`) are

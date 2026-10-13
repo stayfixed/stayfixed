@@ -96,9 +96,10 @@ def register() -> list[Handler]:
         Handler(name="bg-cleanup", event="PreToolUse", policy=Policy.CLOSED, run=_bg_cleanup),
         # The red-run note on both events a failed command can arrive on. Claude Code delivers a
         # Bash command that exited non-zero to `PostToolUseFailure`, with `error` beginning
-        # `Exit code N`, and never to `PostToolUse`; Codex delivers a failed command on
-        # `PostToolUse`. One `once_key`, which the dispatcher files per session, so a red run is
-        # noted once whichever event carried it.
+        # `Exit code N`, and never to `PostToolUse`. Codex delivers a failed command on
+        # `PostToolUse`, but with no exit code, so the note does not speak there (`red_exit`
+        # answers `None`). One `once_key`, which the dispatcher files per session, so a red run is
+        # never noted twice.
         # Kept ABOVE the rows it annotates, not below them: a later change appending a handler to
         # the tail of this list would otherwise detach the comment from its subject.
         Handler(

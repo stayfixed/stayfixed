@@ -268,8 +268,8 @@ def hygiene(event: str = "PostToolUse") -> Handler:
     return next(h for h in register() if h.name == "test-hygiene" and h.event == event)
 
 
-# The two events a red run can arrive on: Claude Code's `PostToolUseFailure`, and `PostToolUse`,
-# where Codex delivers a failed command.
+# The two events the red-run note is registered on: Claude Code's `PostToolUseFailure`, and
+# `PostToolUse`, where Codex delivers a failed command but no exit code to read.
 RED_RUN_EVENTS = ("PostToolUse", "PostToolUseFailure")
 
 
