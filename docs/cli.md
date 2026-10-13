@@ -2519,7 +2519,8 @@ It exits `2` on a refusal, in the order the run meets them:
 - A path the withdrawal writes or removes reached through a directory that became a symlink after
   the attach: `.claude` when the settings file is to be rewritten, `.codex` or `.codex/rules` for
   a recorded rule copy, `paths.memory` or a directory above it in any checkout whose tree it
-  withdraws, `.stayfixed` or `.stayfixed/local` for the ledger. The refusal says which. A rule copy
+  withdraws or whose harness link it compares with that tree (the main checkout's, whenever it
+  withdraws a harness link), `.stayfixed` or `.stayfixed/local` for the ledger. The refusal says which. A rule copy
   that is itself a link is not one of these: it is unlinked, and what it points at stays.
 - A `memory.groups` entry added since the attach that does not name a subdirectory of
   `paths.memory`, in any checkout whose tree it withdraws. The refusal counts it and does not print

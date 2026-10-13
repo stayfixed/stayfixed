@@ -775,7 +775,7 @@ def detach_main(
     machine: Path | None = None,
     home: Path | None = None,
     elsewhere: Path | None = None,
-    owner: Path,
+    targets: tuple[Path, ...],
     keep_tree: bool = False,
 ) -> Links:
     """Withdraw the link tree a checkout holds, and the harness link with it.
@@ -801,12 +801,15 @@ def detach_main(
     the bytes behind it.
 
     The harness link goes first, because it is the one hop that leaves this area's gate, and it
-    is compared against the directories `harness_targets` names — the owning checkout's tree,
-    `owner`, where `attach` points it, and `root`'s own — rather than against what it happens to
-    point at. `elsewhere` is a second home a harness may read it under, where the caller found
-    one: the link there goes too, only where it points at one of those (`_withdraw_lapsed`), and
-    a home the walk refuses is passed over, since a refusal after the first withdrawal strands a
-    half-detached checkout. Its `<slug>` directory is removed only when the link in it was.
+    is compared against `targets`, the directories `harness_targets` names — the owning
+    checkout's tree, where `attach` points it, and `root`'s own — rather than against what it
+    happens to point at. The caller asks `harness_targets` and passes its answer, because asking
+    it walks the owning checkout's `paths.memory`, which is not `root`'s, and a walk that refuses
+    must refuse before the first withdrawal, not here (`attach.write.detach`). `elsewhere` is a
+    second home a harness may read it under, where the caller found one: the link there goes
+    too, only where it points at one of those (`_withdraw_lapsed`), and a home the walk refuses
+    is passed over, since a refusal after the first withdrawal strands a half-detached checkout.
+    Its `<slug>` directory is removed only when the link in it was.
 
     `keep_tree` withdraws the harness link and leaves the link tree: the caller's answer for the
     owning checkout while another checkout's ledger still stands, since that checkout's harness
@@ -838,7 +841,6 @@ def detach_main(
       symlink whose own target is this store", not a weaker second one.
     """
     base = contained(root, config.paths.memory, allow_final_symlink=True)
-    targets = harness_targets(root, owner, config)
     revoked: list[Path] = []
     home_root, harness_relative = harness_anchor(root, home)
     harness = home_root / harness_relative

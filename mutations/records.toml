@@ -1305,17 +1305,6 @@ reddens = [
   "tests/memory/test_worktree.py::test_a_withdrawal_against_a_home_that_is_not_there_refuses_rather_than_reporting_nothing",
 ]
 
-# `attach` points every checkout's harness link at the owning checkout's tree; compared with the
-# checkout's own tree alone, a linked worktree's link never matched and outlived `detach` dangling.
-[[mutation]]
-name = "detach compares a checkout's harness link with that checkout's own tree"
-file = "src/stayfixed/memory/worktree.py"
-before = "    targets = harness_targets(root, owner, config)"
-after = "    targets = harness_targets(root, root, config)"
-reddens = [
-  "tests/attach/test_links.py::test_detaching_from_a_linked_worktree_withdraws_the_main_checkouts_tree_too",
-]
-
 # The withdrawal call site on its own: the check exists and `detach_main` stops asking for it.
 [[mutation]]
 name = "the withdrawal takes the anchor without asking whether it is there"

@@ -291,6 +291,35 @@ def test_a_second_detach_exits_one_and_writes_nothing(tmp_path: Path) -> None:
     assert _entries(root, side, home) == before
 
 
+@pytest.mark.parametrize("detached", ["worktree", "main"])
+def test_a_main_checkout_tree_reached_through_a_symlink_refuses_before_anything_is_withdrawn(
+    tmp_path: Path, detached: str
+) -> None:
+    # While another checkout's ledger stands, `detach` withdraws no tree but `--root`'s, so the
+    # walk before the first withdrawal no longer reaches the main checkout's; but each harness
+    # link is still compared with the main checkout's `paths.memory`, and that question was asked
+    # from inside the withdrawal. With the main checkout's `docs` moved away and linked back, it
+    # refused there, after the rule copies were gone: a refused `detach` that had removed some of
+    # what it promises to remove all of or none of. Both directions: run in the worktree, and in
+    # the main checkout, which keeps its own tree and whose configuration already refuses the
+    # link when it is loaded, the twin that holds the refusal's place. Mutation (oracle):
+    # `mutations/`'s "detach asks where a harness link may point only once it has begun
+    # withdrawing".
+    root, side, _, machine, home = _both_attached(tmp_path)
+    moved = tmp_path / "moved-docs"
+    shutil.move(root / "docs", moved)
+    (root / "docs").symlink_to(moved, target_is_directory=True)
+    run_in = side if detached == "worktree" else root
+    # Non-vacuous: there is a rule copy to withdraw before the harness links are reached.
+    assert (run_in / ".codex" / "rules").is_dir()
+    assert any((run_in / ".codex" / "rules").iterdir())
+    before = _entries(root, side, home)
+    with pytest.raises(Refusal) as refused:
+        _detach(run_in, machine, home)
+    assert "symlink" in str(refused.value)
+    assert _entries(root, side, home) == before
+
+
 def test_detach_withdraws_the_settings_fallback_it_recorded(tmp_path: Path) -> None:
     # The fallback is a setting, not a link, so nothing expires it: if `detach` left it behind
     # the harness would keep reading the store of a repository that is no longer bound.

@@ -113,6 +113,7 @@ from stayfixed.memory.api import (
     harness_approval_lapsed,
     harness_link_needed,
     harness_memory_path,
+    harness_targets,
     link,
     linked_names,
     main_checkout,
@@ -1888,6 +1889,10 @@ def _withdraw_memory_directories(
                 removed.append(config.paths.memory)
         else:
             _rmdir_if_empty(tree, config.paths.memory)
+    # Defensive, and no test can tell it is here: `root` is missing from `trees` only where it
+    # owns the store and its tree was kept, so `paths.memory` still stands inside every one of
+    # these parents and `rmdir` could take none of them. Asked anyway, so the ledger's names are
+    # never acted on beside a tree this run kept.
     if own not in trees:
         return tuple(removed)
     for name in _memory_parents(config):
@@ -2135,6 +2140,12 @@ def detach(root: Path, *, machine: Path | None, home: Path | None) -> Detached:
     harnessed, trees = _reach(root, checkouts, kept=kept)
     settings = _planned_settings(root, recorded)
     _refuse_unwithdrawable(root, recorded, trees, config, settings)
+    # Where each checkout's harness link may point and be ours, asked here because it walks the
+    # owning checkout's `paths.memory` as well as the checkout's own, and while another ledger
+    # stands `_refuse_unwithdrawable` walks no tree but `--root`'s. Asked from inside the
+    # withdrawal, a main checkout whose `paths.memory` came to be reached through a symlink
+    # refused after the rule copies were gone.
+    targets = {tree: harness_targets(tree, checkouts[0], config) for tree in harnessed}
     allow_removed = _withdraw_settings(root, settings)
     rules_removed: list[str] = []
     for rule in recorded.rules:
@@ -2155,7 +2166,7 @@ def detach(root: Path, *, machine: Path | None, home: Path | None) -> Detached:
             machine=machine,
             home=home,
             elsewhere=elsewhere,
-            owner=checkouts[0],
+            targets=targets[tree],
             keep_tree=tree not in trees,
         ).revoked
     region = _withdraw_ignore_region(root, ignore_remainder)
