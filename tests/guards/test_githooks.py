@@ -409,6 +409,51 @@ def test_a_predecessor_that_names_its_own_local_is_refused_and_left_in_place(
     assert target.read_bytes() == before and not local.exists()
 
 
+def test_a_predecessor_that_is_not_utf_8_and_names_its_own_local_is_refused(
+    tmp_path: Path,
+) -> None:
+    # A hook is not text by contract: one holding a byte that is not UTF-8 is foreign to `_ours`,
+    # and its bytes are still read for the name, so the chain in it is refused like any other.
+    # Mutation: `mutations/`'s "a predecessor that is not UTF-8 is installed over unread".
+    root = repo(tmp_path)
+    target = hooks_dir(root) / HOOK_NAME
+    local = target.with_name(HOOK_NAME + ".local")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(b"#!/bin/sh\n# \xff\xfe\n" + SELF_CHAINS["common-dir"].encode() + b"\n")
+    target.chmod(0o755)
+    before = target.read_bytes()
+    exit_code, _, out = cli(root, tmp_path, "setup", "--git-hooks")
+    assert exit_code == 2, out
+    assert out.startswith(f"stayfixed: refused: {target} names prepare-commit-msg.local"), out
+    assert target.read_bytes() == before and not local.exists()
+
+
+@gitfixture.needs_git
+def test_a_predecessor_that_names_its_own_local_is_refused_from_a_linked_worktree(
+    tmp_path: Path,
+) -> None:
+    # From a linked worktree the hooks directory is the common one, shared with the main
+    # checkout: the predecessor read and the `.local` it would be kept as are both there, and
+    # the refusal names them there. Mutation: `mutations/`'s "a predecessor that names its own
+    # .local is installed over".
+    root = repo(tmp_path)
+    worktree = tmp_path / "wt"
+    git(tmp_path, root, "worktree", "add", "-q", str(worktree), "-b", "wp")
+    target = hooks_dir(root) / HOOK_NAME
+    assert hooks_dir(worktree) == hooks_dir(root)
+    local = target.with_name(HOOK_NAME + ".local")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(f"#!/bin/sh\n{SELF_CHAINS['common-dir']}\n", encoding="utf-8")
+    target.chmod(0o755)
+    before = target.read_bytes()
+    exit_code, _, out = cli(worktree, tmp_path, "setup", "--git-hooks")
+    assert exit_code == 2, out
+    assert out.startswith(
+        f"stayfixed: refused: {target} names prepare-commit-msg.local: kept as {local}"
+    ), out
+    assert target.read_bytes() == before and not local.exists()
+
+
 def test_a_reinstall_over_a_local_that_names_itself_is_refused(tmp_path: Path) -> None:
     # The re-install arm never read `.local`: our hook beside one that execs itself already loops
     # on every commit, and a re-install that says "reinstalled" vouches for it. It is refused
