@@ -101,9 +101,9 @@ What it does, in order:
    are read back into its `index:` frontmatter, so nothing a session wrote is lost by
    regenerating.
 3. **Invents what is missing.** A note with none of these gets a provisional `index:` from its
-   `description`. The line names every note this run wrote a provisional line into, from
-   `metadata.index` or the description, so you can curate them; `--json`'s `provisional` lists
-   them all.
+   `description`. The line names the notes this run wrote a provisional line into, from
+   `metadata.index` or the description, up to eight and then how many more, so you can curate
+   them; `--json`'s `provisional` lists them all.
 4. **Renders.** One section per configured group, a note's `group:` value as a sub-heading
    inside it, ordered by `startup` rank first, then by `group_order`, then by name — so a
    note ranked for the session leads its section whatever its position within a sub-heading.
@@ -2418,7 +2418,11 @@ every checkout's harness memory link points at the main checkout's tree, so that
 the last attached checkout detaches. A later `attach` in any checkout rebuilds it first, so keeping
 it loses nothing. A harness memory link counts as `attach`'s when it points at the main checkout's
 `paths.memory`, where `attach` points it, or at the checkout's own, and at nothing else; the target
-is never read from the ledger.
+is never read from the ledger. Two consequences follow while another checkout is attached. The tree
+kept in a detached main checkout still resolves as its note store, so that checkout's own
+`SessionStart` bundles keep delivering its notes. And a detached linked worktree is linked again by
+its next `SessionStart`, which builds a worktree's tree from the main checkout's store whenever that
+store resolves, ledger or none.
 
 **Writes**: it takes the recorded allow rules and the fallback key back out of
 `.claude/settings.local.json`, drops the hook entries marked `# stayfixed:…` there (a group that
@@ -2427,10 +2431,9 @@ none of those is in it, removes the `.codex/rules/` files it wrote, withdraws th
 this checkout and every worktree together with each one's harness memory link (under both homes
 where `HOME` is not the database's, only a link to this store) — while another checkout is
 attached, only this checkout's link, and its tree unless it is the main checkout, as above —
-removes the
-`stayfixed:ignore` region and the `stayfixed:attach` block in the repository's exclude file, and
-deletes the ledger, `.stayfixed/local/attach.json`. A file left holding nothing is removed rather
-than left empty — for the exclude file, only when `attach` created it, which the block records, so
+removes the `stayfixed:ignore` region and the `stayfixed:attach` block in the repository's exclude
+file, and deletes the ledger, `.stayfixed/local/attach.json`. A file left holding nothing is
+removed rather than left empty — for the exclude file, only when `attach` created it, which the block records, so
 an exclude file you had, empty or not, stays, and the `info/` directory it sat in goes with it only
 when `attach` created that too and it is empty; the line ending `attach` added to your exclude
 file's last line before its block is taken back too, when nothing follows the block. The exclude
@@ -2446,14 +2449,20 @@ it, and the block stays.
 
 Then it removes, each only when empty: the `paths.memory` directory in this checkout when it
 withdrew this checkout's tree and the ledger records `attach` as having created it, and in every
-other checkout it withdrew a tree from
-(no ledger of this run's records what was there, and that tree was built by `attach` or by the
-worktree-link handler); the directories above it in this checkout that the ledger records
-`attach` as having created (`docs/`, for the preset's place); and the `~/.claude/projects/<slug>/`
-directory each harness memory link sat in. Last,
-each directory the ledger records `attach` as having created — of `.stayfixed/local/`,
-`.stayfixed/`, `.codex/rules/`, `.codex/` and `.claude/`, in that order — is removed when it is
-empty, and left standing otherwise.
+other checkout it withdrew a tree from (no ledger of this run's records what was there, and that
+tree was built by `attach` or by the worktree-link handler); the directories above it in this
+checkout that the ledger records `attach` as having created (`docs/`, for the preset's place); and
+the `~/.claude/projects/<slug>/` directory each harness memory link sat in. Last, each directory
+the ledger records `attach` as having created — of `.stayfixed/local/`, `.stayfixed/`,
+`.codex/rules/`, `.codex/` and `.claude/`, in that order — is removed when it is empty, and left
+standing otherwise.
+
+**Detaching the checkouts one at a time can leave empty directories**, which git does not show and
+a later `attach` reuses: the directory above `paths.memory` (`docs/`, for the preset's place) in
+the checkout that detached first, since the ledger that recorded `attach` creating it went with
+that detach; and, where the main checkout detached first, a linked worktree's `paths.memory`,
+which the worktree's own ledger records as already there, because the main checkout's `attach` or
+the worktree-link handler made it.
 
 **The `stayfixed:ignore` region in `.gitignore` goes only if the manifest does not record it.**
 On a repository `stayfixed init` set up, that block is the footprint's — recorded in

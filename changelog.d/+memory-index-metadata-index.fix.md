@@ -5,3 +5,6 @@ or the description another writer had appended to `MEMORY.md`, recorded as `nati
 written into the note as `index:` with `index_provenance: provisional`, as a line made from the
 description is, so a later edit to `metadata.index` does not reach the index until that `index:`
 line is changed or removed. The run's summary now names the notes it wrote a provisional line into.
+A note the old behaviour already rewrote, with its description as a top-level `index:` line marked
+`index_provenance: native`, is left as it is: delete that `index:` line and the next run takes
+`metadata.index`.
