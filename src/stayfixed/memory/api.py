@@ -19,8 +19,9 @@ the overlay layout `attach` writes and `overlay` renders (`PROJECTS`, `PROJECT_R
 and answers its own way when it cannot (`read_binding_record`), the link tree
 (`link`, `MakeUnder`, the home `attach` hands it for the harness link, `attach_main`,
 `detach_main`, `harness_anchor`, `harness_link_needed`, `harness_approval_lapsed`, which `attach`
-asks to tell a lapsed approval from none, `harness_memory_path`, `harness_targets`, which the
-`attach` area's `doctor.py` reads a checkout's harness link by as `detach_main` does, `Links`,
+asks to tell a lapsed approval from none, `harness_memory_path`, `harness_targets`, which
+`attach`'s `detach` asks before its first withdrawal and the `attach` area's `doctor.py` reads a
+checkout's harness link by, `Links`,
 `PartialLink`, `linked_names`, which `attach` reads to hide
 every name the tree holds from git, and `link_sources`, every path the tree points at in the
 overlay, which `attach` asks the length of before its first write), whether the machine records

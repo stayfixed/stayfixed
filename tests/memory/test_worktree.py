@@ -4,12 +4,12 @@ import dataclasses
 import os
 import shutil
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import pytest
 
 from stayfixed.config.loader import CONFIG_FILE, load
-from stayfixed.config.paths import PathEscape
+from stayfixed.config.paths import PathEscape, contained
 from stayfixed.config.schema import Config
 from stayfixed.errors import Refusal
 from stayfixed.memory import worktree
@@ -1419,3 +1419,97 @@ def test_a_database_home_that_is_itself_a_symlink_still_gets_the_harness_link(
     created = link(tree, store, config).created
     assert harness_memory_path(tree, real) in created
     assert harness_memory_path(tree, real).resolve() == store.path.resolve()
+
+
+class _ResolveRaises:
+    """What `contained` hands back where `.resolve()` then fails: a symlink loop up to Python 3.12
+    (`RuntimeError`), or a fault the system names (`OSError`). Python 3.13 reads a loop as the path
+    it names, so on the interpreter the oracle runs only this stand-in reaches that arm."""
+
+    def __init__(self, fault: BaseException) -> None:
+        self.fault = fault
+
+    def resolve(self) -> Path:
+        raise self.fault
+
+
+# `harness_targets`' reason for each fault, after the checkout it names. The configuration is the
+# preset's, so `paths.memory` is `DEFAULT_MEMORY`, two components deep.
+_UNASKABLE_TARGETS = {
+    "symlink-above": "{memory!r} passes through a symlink at {parent!r}",
+    "loop": "{memory!r} is a symlink loop",
+    "os-error": "{memory!r} cannot be resolved (Permission denied)",
+}
+
+
+@pytest.mark.parametrize("fault", sorted(_UNASKABLE_TARGETS))
+@pytest.mark.parametrize("whose", ["main", "worktree"])
+def test_every_fault_of_asking_where_a_harness_link_may_point_is_one_refusal_naming_the_checkout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fault: str, whose: str
+) -> None:
+    # `detach` asks this before its first withdrawal and `doctor`'s `attached` row reads it, and
+    # each translated whichever fault it met in its own words, or none: a symlink loop at
+    # `paths.memory` (`RuntimeError` from `.resolve()` up to 3.12) was "this check could not run"
+    # in one and an internal error in the other. Every fault is one `PathEscape` now, naming which
+    # checkout's `paths.memory` and why, never the checkout's path. Mutations (oracle):
+    # `mutations/`'s "harness_targets lets a symlink loop out as RuntimeError" -> `loop`;
+    # "harness_targets lets an OSError out of resolving a target" -> `os-error`.
+    owner = tmp_path / "main"
+    side = tmp_path / "side"
+    parent = str(PurePosixPath(DEFAULT_MEMORY).parent)
+    for checkout in (owner, side):
+        (checkout / DEFAULT_MEMORY).mkdir(parents=True)
+    config = _a_config(tmp_path)
+    faulty = owner if whose == "main" else side
+    if fault == "symlink-above":
+        moved = tmp_path / f"moved-{whose}"
+        shutil.move(faulty / parent, moved)
+        (faulty / parent).symlink_to(moved, target_is_directory=True)
+    else:
+        raised: BaseException = (
+            RuntimeError("Symlink loop from '/somewhere'")
+            if fault == "loop"
+            else PermissionError(13, "Permission denied", "/somewhere")
+        )
+
+        def resolving_raises(root: Path, relative: str, **kwargs: object) -> object:
+            found = contained(root, relative, **kwargs)  # type: ignore[arg-type]
+            return _ResolveRaises(raised) if root == faulty else found
+
+        monkeypatch.setattr(worktree, "contained", resolving_raises)
+    with pytest.raises(PathEscape) as refused:
+        worktree.harness_targets(side, owner, config)
+    assert type(refused.value) is PathEscape
+    named = "the main checkout's" if whose == "main" else "the linked worktree's"
+    assert str(refused.value) == (
+        f"where a harness memory link may point cannot be asked of {named} paths.memory: "
+        f"{_UNASKABLE_TARGETS[fault].format(memory=DEFAULT_MEMORY, parent=parent)}"
+    )
+    assert str(tmp_path) not in str(refused.value)
+
+
+@pytest.mark.skipif(
+    sys.version_info >= (3, 13), reason="from 3.13 resolve() reads a symlink loop as its own path"
+)
+def test_a_paths_memory_that_is_a_symlink_loop_is_the_same_refusal(tmp_path: Path) -> None:
+    # The stand-in above, measured: on 3.11 and 3.12 a loop raises `RuntimeError` out of
+    # `.resolve()`, which no caller caught.
+    owner = tmp_path / "main"
+    (owner / DEFAULT_MEMORY).parent.mkdir(parents=True)
+    (owner / DEFAULT_MEMORY).symlink_to(PurePosixPath(DEFAULT_MEMORY).name)
+    with pytest.raises(PathEscape) as refused:
+        worktree.harness_targets(owner, owner, _a_config(tmp_path))
+    assert str(refused.value).endswith(f"{DEFAULT_MEMORY!r} is a symlink loop")
+
+
+def _a_config(tmp_path: Path) -> Config:
+    """A configuration whose `paths.memory` is the preset's, loaded from a directory of its own:
+    `harness_targets` reads nothing else of it."""
+    holder = tmp_path / "config"
+    holder.mkdir()
+    (holder / CONFIG_FILE).write_text(
+        CONFIG.format(mode="in-repo", groups='["developer"]'), encoding="utf-8"
+    )
+    config = load(holder, machine=tmp_path / "absent.toml")
+    assert config.paths.memory == DEFAULT_MEMORY
+    return config

@@ -759,13 +759,45 @@ def harness_targets(root: Path, owner: Path, config: Config) -> tuple[Path, ...]
     Both paths come from `paths.memory` under a checkout git named, never from a ledger: a
     ledger is a path a clone can commit, and a committed value must not steer a removal. Which
     of the two the writers should converge on is not decided here.
+
+    **Every way the question fails is one refusal, a `PathEscape`, naming the checkout.** The
+    owning checkout's `paths.memory` is one `root`'s own configuration never walked, so it is the
+    one a directory that became a link reaches first; and `.resolve()` on a `paths.memory` that is
+    a symlink loop raises `RuntimeError` up to Python 3.12 (3.13 reads the loop as the path it
+    names). Each caller used to translate whichever of `PathEscape`, `PathUnasked`, `OSError` and
+    `RuntimeError` it had met in its own words, or none: `doctor` called a loop "this check could
+    not run", red, and `detach` an internal error. A final symlink at `paths.memory` is still
+    followed, as `contained(..., allow_final_symlink=True)` allows everywhere a tree is read: the
+    link tree is a directory of links, and a `paths.memory` that is itself a link to one is a
+    layout the resolver reads too, so refusing it here alone would make `detach` refuse a checkout
+    it attached.
     """
     found: list[Path] = []
     for checkout in (owner, root):
-        target = contained(checkout, config.paths.memory, allow_final_symlink=True).resolve()
+        target = _harness_target(checkout, config, owner=checkout == owner)
         if target not in found:
             found.append(target)
     return tuple(found)
+
+
+def _harness_target(checkout: Path, config: Config, *, owner: bool) -> Path:
+    """`checkout`'s `paths.memory`, resolved, or the one `PathEscape` `harness_targets` promises.
+
+    The checkout is named by its place — the main checkout, or a linked worktree — and never by
+    its path, which says where this machine keeps it. `paths.memory` itself is printed: the loader
+    holds it to `PATH_VALUE`, the grammar a value must match before a report may print it."""
+    whose = "the main checkout's" if owner else "the linked worktree's"
+    asked = f"where a harness memory link may point cannot be asked of {whose} paths.memory"
+    value = config.paths.memory
+    try:
+        return contained(checkout, value, allow_final_symlink=True).resolve()
+    except PathEscape as exc:
+        why = str(exc)
+    except RuntimeError:
+        why = f"{value!r} is a symlink loop"
+    except OSError as exc:
+        why = f"{value!r} cannot be resolved ({fsops.said(exc)})"
+    raise PathEscape(f"{asked}: {why}")
 
 
 def detach_main(

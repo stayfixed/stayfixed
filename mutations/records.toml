@@ -3225,3 +3225,41 @@ after = "    wrote = _with(wrote, None)\n"
 reddens = [
   "tests/memory/test_index.py::test_the_summary_names_the_provisional_lines",
 ]
+
+# Asking where a harness memory link may point resolves a `paths.memory` a checkout chose, and up to
+# Python 3.12 a symlink loop there raises `RuntimeError` out of `.resolve()`: `detach` ended in an
+# internal error and `doctor` in "this check could not run". Every fault is one `PathEscape`.
+[[mutation]]
+name = "harness_targets lets a symlink loop out as RuntimeError"
+file = "src/stayfixed/memory/worktree.py"
+before = """    except RuntimeError:
+        why = f"{value!r} is a symlink loop"
+"""
+after = ""
+reddens = [
+  "tests/memory/test_worktree.py::test_every_fault_of_asking_where_a_harness_link_may_point_is_one_refusal_naming_the_checkout[main-loop]",
+  "tests/memory/test_worktree.py::test_every_fault_of_asking_where_a_harness_link_may_point_is_one_refusal_naming_the_checkout[worktree-loop]",
+]
+
+[[mutation]]
+name = "harness_targets lets an OSError out of resolving a target"
+file = "src/stayfixed/memory/worktree.py"
+before = """    except OSError as exc:
+        why = f"{value!r} cannot be resolved ({fsops.said(exc)})"
+"""
+after = ""
+reddens = [
+  "tests/memory/test_worktree.py::test_every_fault_of_asking_where_a_harness_link_may_point_is_one_refusal_naming_the_checkout[main-os-error]",
+  "tests/memory/test_worktree.py::test_every_fault_of_asking_where_a_harness_link_may_point_is_one_refusal_naming_the_checkout[worktree-os-error]",
+]
+
+# The refusal names whose `paths.memory` it could not ask: from a linked worktree, the raw
+# `PathEscape` about the main checkout's read as the worktree's own.
+[[mutation]]
+name = "harness_targets names no checkout in its refusal"
+file = "src/stayfixed/memory/worktree.py"
+before = '    raise PathEscape(f"{asked}: {why}")'
+after = "    raise PathEscape(why)"
+reddens = [
+  "tests/attach/test_detach.py::test_a_main_checkout_tree_reached_through_a_symlink_refuses_before_anything_is_withdrawn[worktree]",
+]

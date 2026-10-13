@@ -11,6 +11,7 @@ import hashlib
 import json
 import os
 import shutil
+import sys
 from collections.abc import Callable
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -304,9 +305,10 @@ def test_a_main_checkout_tree_reached_through_a_symlink_refuses_before_anything_
     # refused there, after the rule copies were gone: a refused `detach` that had removed some of
     # what it promises to remove all of or none of. Both directions: run in the worktree, and in
     # the main checkout, which keeps its own tree and whose configuration already refuses the
-    # link when it is loaded, the twin that holds the refusal's place. Mutation (oracle):
-    # `mutations/`'s "detach asks where a harness link may point only once it has begun
-    # withdrawing".
+    # link when it is loaded, the twin that holds the refusal's place. From the worktree the
+    # refusal names whose `paths.memory` it could not ask, which the raw `PathEscape` did not: it
+    # read as the worktree's own. Mutation (oracle): `mutations/`'s "detach asks where a harness
+    # link may point only once it has begun withdrawing".
     root, side, _, machine, home = _both_attached(tmp_path)
     moved = tmp_path / "moved-docs"
     shutil.move(root / "docs", moved)
@@ -319,6 +321,30 @@ def test_a_main_checkout_tree_reached_through_a_symlink_refuses_before_anything_
     with pytest.raises(Refusal) as refused:
         _detach(run_in, machine, home)
     assert "symlink" in str(refused.value)
+    if detached == "worktree":
+        assert "the main checkout's paths.memory" in str(refused.value)
+    assert str(tmp_path) not in str(refused.value)
+    assert _entries(root, side, home) == before
+
+
+@pytest.mark.skipif(
+    sys.version_info >= (3, 13), reason="from 3.13 resolve() reads a symlink loop as its own path"
+)
+def test_a_main_checkout_tree_that_is_a_symlink_loop_refuses_before_anything_is_withdrawn(
+    tmp_path: Path,
+) -> None:
+    # Up to Python 3.12 `.resolve()` raises `RuntimeError` on a loop, and asking where the
+    # worktree's harness link may point resolves the main checkout's `paths.memory`: `detach` from
+    # the worktree ended in an internal error. It is the refusal above now, before the first
+    # withdrawal.
+    root, side, _, machine, home = _both_attached(tmp_path)
+    shutil.rmtree(root / DEFAULT_MEMORY)
+    (root / DEFAULT_MEMORY).symlink_to(PurePosixPath(DEFAULT_MEMORY).name)
+    before = _entries(root, side, home)
+    with pytest.raises(Refusal) as refused:
+        _detach(side, machine, home)
+    assert "the main checkout's paths.memory" in str(refused.value)
+    assert "symlink loop" in str(refused.value)
     assert _entries(root, side, home) == before
 
 
