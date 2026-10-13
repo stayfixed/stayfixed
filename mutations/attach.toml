@@ -2573,9 +2573,20 @@ reddens = ["tests/attach/test_links.py::test_attaching_from_a_linked_worktree_ta
 [[mutation]]
 name = "attach says the harness link waits by a worktree's own store"
 file = "src/stayfixed/attach/write.py"
-before = "    waits = _harness_waits(owner, config, machine=machine)"
-after = "    waits = _harness_waits(root, config, machine=machine)"
+before = "    elif (waits := _harness_waits(owner, config, machine=machine)) is not None:"
+after = "    elif (waits := _harness_waits(root, config, machine=machine)) is not None:"
 reddens = ["tests/attach/test_links.py::test_attaching_from_a_linked_worktree_says_the_link_waits_only_when_it_does"]
+
+# Why the gate kept the harness link back reads the store's trust record and digests its notes; it
+# was asked on every attach and thrown away wherever a fallback line was said instead.
+[[mutation]]
+name = "attach asks why the harness link waits on every run"
+file = "src/stayfixed/attach/write.py"
+before = "    if links.revoked:\n        notes.append(HARNESS_WITHDREW.format(count=len(links.revoked)))\n"
+after = "    _harness_waits(owner, config, machine=machine)\n    if links.revoked:\n        notes.append(HARNESS_WITHDREW.format(count=len(links.revoked)))\n"
+reddens = [
+  "tests/attach/test_links.py::test_an_attach_that_records_the_fallback_never_asks_why_the_link_waits",
+]
 
 # Both close the gate, and only a lapsed approval withdraws the links an earlier run made: one line
 # appended to one note withdrew every checkout's harness link under a sentence that read as a store

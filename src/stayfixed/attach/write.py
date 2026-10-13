@@ -1600,7 +1600,6 @@ def _carry_out(
         written = True
     if links.revoked:
         notes.append(HARNESS_WITHDREW.format(count=len(links.revoked)))
-    waits = _harness_waits(owner, config, machine=machine)
     if keys and links.withheld:
         # Left as an earlier run recorded it, and said so: "was recorded" would read as this run's
         # act, beside a note that this run makes no link at all.
@@ -1615,7 +1614,9 @@ def _carry_out(
         )
     elif unavailable:
         notes.append(FALLBACK_UNAVAILABLE)
-    elif waits is not None:
+    # Asked only here, where its answer is said: it reads the store's trust record and digests
+    # its notes, and a run that says something else above has no use for that.
+    elif (waits := _harness_waits(owner, config, machine=machine)) is not None:
         notes.append(waits)
     if planned.unread is not None:
         notes.append(planned.unread.note)
