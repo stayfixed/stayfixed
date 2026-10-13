@@ -2271,10 +2271,14 @@ store's trust record lapses — that key is withdrawn in the same run. If it was
 `.claude/settings.local.json` held, the file goes with it, because `{}` is not what that file
 looked like before `attach` created it.
 
-**When the harness memory link waits for approval, `attach` says so.** The link exposes the
-link tree, which sits inside the repository, so it is made only once the store is approved; until
-then the run's line ends with a note to run `stayfixed memory trust --in-repo-memory`, then
-`stayfixed attach` again.
+**When the harness memory link waits for approval, `attach` says so, and says why.** The link
+exposes the link tree, which sits inside the repository, so it is made only once the store is
+approved; until then the run's line ends with a note to run `stayfixed memory trust
+--in-repo-memory`, then `stayfixed attach` again. The note says whether the store has no approval
+yet or had one and then changed — a note, or `memory.index_extra`, that changed since the approval
+was recorded lapses it, and a pull that appends one line to one note is enough. A lapsed approval
+also withdraws the harness memory link from every checkout that held one, and whenever the run
+withdrew any, its line says how many (`links_revoked` in `--json`).
 
 **At a terminal the harness memory link goes under `HOME`**, and an empty one, which names no home,
 is refused (`2`). Elsewhere it goes under the home the password database records, and only while

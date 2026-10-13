@@ -12,15 +12,16 @@ what an area might be said to need, which is a list that grows names nothing imp
 that needs something absent from this list grows it deliberately, in a commit that says which
 area and why — it does not import a private module of this area.
 
-Thirty-five names are imported from outside this area today, by the `attach` and `overlay` areas
+Thirty-six names are imported from outside this area today, by the `attach` and `overlay` areas
 and by this repository's tests: the resolver (`resolve`, `permitted_roots` and `main_checkout`),
 the overlay layout `attach` writes and `overlay` renders (`PROJECTS`, `PROJECT_RECORD`,
 `STORE_DIR`, `COMMON_GROUP`), the one reader of the binding record, which `attach` reads it with
 and answers its own way when it cannot (`read_binding_record`), the link tree
 (`link`, `MakeUnder`, the home `attach` hands it for the harness link, `attach_main`,
-`detach_main`, `harness_anchor`, `harness_link_needed`, `harness_memory_path`, `harness_targets`,
-which the `attach` area's `doctor.py` reads a checkout's harness link by as `detach_main` does,
-`Links`, `PartialLink`, `linked_names`, which `attach` reads to hide
+`detach_main`, `harness_anchor`, `harness_link_needed`, `harness_approval_lapsed`, which `attach`
+asks to tell a lapsed approval from none, `harness_memory_path`, `harness_targets`, which the
+`attach` area's `doctor.py` reads a checkout's harness link by as `detach_main` does, `Links`,
+`PartialLink`, `linked_names`, which `attach` reads to hide
 every name the tree holds from git, and `link_sources`, every path the tree points at in the
 overlay, which `attach` asks the length of before its first write), whether the machine records
 any approval for a store that
@@ -142,6 +143,7 @@ from stayfixed.memory.worktree import (
     attach_main,
     detach_main,
     harness_anchor,
+    harness_approval_lapsed,
     harness_link_needed,
     harness_memory_path,
     harness_targets,
@@ -181,6 +183,7 @@ __all__ = [
     "changed",
     "detach_main",
     "harness_anchor",
+    "harness_approval_lapsed",
     "harness_link_needed",
     "harness_memory_path",
     "harness_targets",

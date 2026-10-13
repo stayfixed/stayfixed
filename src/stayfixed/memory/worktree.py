@@ -410,6 +410,16 @@ def harness_link_needed(store: Store, config: Config) -> bool:
     return trust.may_inject(store, config, repository_data=in_repository(store, store.path))
 
 
+def harness_approval_lapsed(store: Store, config: Config) -> bool:
+    """Whether the gate withholds the harness link because an approval lapsed: the machine records
+    one for this store and the store, or its `memory.index_extra`, has changed since
+    (`trust.changed`). `False` where none is recorded, which is a store never approved.
+
+    Asked by `attach` to say which of the two it is, since both close the gate and only the
+    second withdraws links a run before made: one line appended to one note is enough."""
+    return trust.changed(trust.state(store, config))
+
+
 def _apply_harness_link(
     where: Path, store: Store, config: Config, home: Path | None
 ) -> tuple[list[Path], list[Path]]:

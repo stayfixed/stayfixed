@@ -1124,6 +1124,81 @@ def test_a_harness_link_that_waits_for_approval_is_said_with_the_way_out(tmp_pat
     assert harness_memory_path(root, tmp_path / "home").is_symlink()
 
 
+def _linked_in_two_checkouts(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
+    """The main checkout and a linked worktree, attached with the store approved, so each holds a
+    harness memory link `attach` made. Returns `(root, side, store, machine)`."""
+    from stayfixed.memory.api import harness_memory_path
+    from tests.attach.test_links import _attach, _bound, _trusted
+
+    root, store, machine = _bound(tmp_path)
+    side = tmp_path / "side"
+    run_git(root, "worktree", "add", "-q", str(side), "-b", "side")
+    home = tmp_path / "home"
+    _attach(root, store, machine, home)
+    _trusted(root, machine)
+    _attach(root, store, machine, home)
+    # Non-vacuous: both links are there to be withdrawn.
+    for checkout in (root, side):
+        assert harness_memory_path(checkout, home).is_symlink(), checkout
+    return root, side, store, machine
+
+
+def _attach_json(
+    root: Path, store: Path, machine: Path, capsys: pytest.CaptureFixture[str]
+) -> tuple[str, dict[str, object]]:
+    """One `attach --yes --json` run: the line it prints without `--json`, and the document."""
+    capsys.readouterr()
+    assert invoke(["attach", *_flags(root, store, machine), "--yes", "--json"]) == 0
+    data = json.loads(capsys.readouterr().out)
+    return str(data["summary"]), data
+
+
+def test_a_changed_store_says_the_approval_lapsed_and_counts_the_withdrawn_links(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # One line appended to one note lapses the approval, and the run withdrew every checkout's
+    # harness link and said only that the link "has no approval yet", which reads as a store
+    # nobody approved, and nothing of what it removed. Mutation (oracle): `mutations/`'s "attach
+    # says a lapsed approval was never given" -> "no approval yet" again.
+    root, _, store, machine = _linked_in_two_checkouts(tmp_path)
+    # `developer` is the overlay's shared group, and its note is one the digest covers.
+    with (store.parents[2] / COMMON_MEMORY / "shared.md").open("a", encoding="utf-8") as note:
+        note.write("A line a pull added.\n")
+    summary, data = _attach_json(root, store, machine, capsys)
+    assert "withdrew 2 harness memory link(s)" in summary
+    assert "the store or its memory.index_extra changed since" in summary
+    assert "no approval yet" not in summary
+    # The count is still in `--json`, under the key a reader of it already reads.
+    assert data["links_revoked"] == 2
+
+
+def test_a_store_never_approved_still_says_no_approval_yet(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The vacuity guard for the case above: with no record at all the sentence is still the one
+    # that asks for a first approval, and nothing was withdrawn, so no count is said.
+    from tests.attach.test_links import _bound
+
+    root, store, machine = _bound(tmp_path)
+    summary, data = _attach_json(root, store, machine, capsys)
+    assert "no approval yet" in summary
+    assert "changed since" not in summary
+    assert "withdrew" not in summary
+    assert data["links_revoked"] == 0
+
+
+def test_a_second_attach_on_an_unchanged_store_withdraws_nothing(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The other guard: an approved store attached again keeps every link, so the run withdraws
+    # nothing and says neither sentence.
+    root, _, store, machine = _linked_in_two_checkouts(tmp_path)
+    summary, data = _attach_json(root, store, machine, capsys)
+    assert data["links_revoked"] == 0
+    assert "withdrew" not in summary
+    assert "approval" not in summary
+
+
 def test_attach_at_a_terminal_with_no_home_at_all_refuses_in_words(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1207,6 +1282,12 @@ _WAITS = (
     "the harness memory link was not created, because the link tree it would expose sits inside "
     "this repository and has no approval yet; run `stayfixed memory trust --in-repo-memory`, then "
     "`stayfixed attach` again"
+)
+# Said instead where the approval is recorded and the store changed since.
+_LAPSED = (
+    "the harness memory link was not created, because the store or its memory.index_extra changed "
+    "since its approval was recorded, so that approval no longer holds; read what changed, run "
+    "`stayfixed memory trust --in-repo-memory`, then `stayfixed attach` again"
 )
 
 
@@ -1407,10 +1488,13 @@ def test_attach_off_a_terminal_withdraws_what_a_lapsed_store_was_given_though_it
     monkeypatch.setenv("HOME", str(elsewhere))
     capsys.readouterr()
     settings = "settings merged" if channel == "key" else "settings unchanged"
+    # The link's withdrawal is counted, and the approval is said to have lapsed rather than never
+    # to have been given; the key's withdrawal is the settings merge.
+    withdrew = "" if channel == "key" else "withdrew 1 harness memory link(s); "
     assert (invoke(argv), *capsys.readouterr()) == (
         0,
         f"attached: 0 link(s), 0 Codex rule file(s); {settings}; binding already recorded; "
-        f"{_WAITS}; {_UNREAD['elsewhere']}\n",
+        f"{withdrew}{_LAPSED}; {_UNREAD['elsewhere']}\n",
         "",
     )
     assert not os.path.lexists(root / SETTINGS)

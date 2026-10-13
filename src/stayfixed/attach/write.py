@@ -110,6 +110,7 @@ from stayfixed.memory.api import (
     attach_main,
     detach_main,
     harness_anchor,
+    harness_approval_lapsed,
     harness_link_needed,
     harness_memory_path,
     link,
@@ -1111,12 +1112,29 @@ HARNESS_WAITS = (
 )
 
 
-def _harness_waits(owner: Path, config: Config, *, machine: Path | None) -> bool:
-    """Whether the gate kept the harness link from being made: `harness_link_needed`, asked
-    exactly as `_apply_harness_link` asks it, of the store the run just linked, which is the
-    owning checkout's (`_fallback_store`)."""
+# Said instead of `HARNESS_WAITS` where the machine records an approval and the store changed
+# since, which closes the gate as surely as no approval and also withdraws the links an earlier run
+# made: one line appended to one note is enough. Nothing in it is repository-authored, so it prints.
+HARNESS_LAPSED = (
+    "the harness memory link was not created, because the store or its memory.index_extra changed "
+    "since its approval was recorded, so that approval no longer holds; read what changed, run "
+    "`stayfixed memory trust --in-repo-memory`, then `stayfixed attach` again"
+)
+# Said whenever the run withdrew harness memory links, which only the gate does, so the line
+# never leaves a withdrawal unsaid; the count is the one `--json` gives as `links_revoked`.
+HARNESS_WITHDREW = "withdrew {count} harness memory link(s)"
+
+
+def _harness_waits(owner: Path, config: Config, *, machine: Path | None) -> str | None:
+    """Why the gate kept the harness link from being made, or `None` where it did not:
+    `harness_link_needed`, asked exactly as `_apply_harness_link` asks it, of the store the run
+    just linked, which is the owning checkout's (`_fallback_store`). `HARNESS_LAPSED` where an
+    approval is recorded and the store changed since it (`harness_approval_lapsed`), and
+    `HARNESS_WAITS` where none is."""
     store = _fallback_store(owner, config, machine=machine)
-    return store is not None and not harness_link_needed(store, config)
+    if store is None or harness_link_needed(store, config):
+        return None
+    return HARNESS_LAPSED if harness_approval_lapsed(store, config) else HARNESS_WAITS
 
 
 @dataclass(frozen=True)
@@ -1579,6 +1597,9 @@ def _carry_out(
     if keys != carried:
         _write_ledger(root, planned, keys)
         written = True
+    if links.revoked:
+        notes.append(HARNESS_WITHDREW.format(count=len(links.revoked)))
+    waits = _harness_waits(owner, config, machine=machine)
     if keys and links.withheld:
         # Left as an earlier run recorded it, and said so: "was recorded" would read as this run's
         # act, beside a note that this run makes no link at all.
@@ -1593,8 +1614,8 @@ def _carry_out(
         )
     elif unavailable:
         notes.append(FALLBACK_UNAVAILABLE)
-    elif _harness_waits(owner, config, machine=machine):
-        notes.append(HARNESS_WAITS)
+    elif waits is not None:
+        notes.append(waits)
     if planned.unread is not None:
         notes.append(planned.unread.note)
     return Attached(written, rules, recorded, tuple(notes), links)

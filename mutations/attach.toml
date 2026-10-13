@@ -2502,9 +2502,31 @@ reddens = ["tests/attach/test_links.py::test_attaching_from_a_linked_worktree_ta
 [[mutation]]
 name = "attach says the harness link waits by a worktree's own store"
 file = "src/stayfixed/attach/write.py"
-before = "    elif _harness_waits(owner, config, machine=machine):"
-after = "    elif _harness_waits(root, config, machine=machine):"
+before = "    waits = _harness_waits(owner, config, machine=machine)"
+after = "    waits = _harness_waits(root, config, machine=machine)"
 reddens = ["tests/attach/test_links.py::test_attaching_from_a_linked_worktree_says_the_link_waits_only_when_it_does"]
+
+# Both close the gate, and only a lapsed approval withdraws the links an earlier run made: one line
+# appended to one note withdrew every checkout's harness link under a sentence that read as a store
+# nobody had approved.
+[[mutation]]
+name = "attach says a lapsed approval was never given"
+file = "src/stayfixed/attach/write.py"
+before = "    return HARNESS_LAPSED if harness_approval_lapsed(store, config) else HARNESS_WAITS"
+after = "    return HARNESS_WAITS"
+reddens = [
+  "tests/attach/test_commands.py::test_a_changed_store_says_the_approval_lapsed_and_counts_the_withdrawn_links",
+]
+
+# The harness links a run withdrew were counted in `--json` and said nowhere in its line.
+[[mutation]]
+name = "attach withdraws harness links without saying so"
+file = "src/stayfixed/attach/write.py"
+before = "    if links.revoked:\n        notes.append(HARNESS_WITHDREW.format(count=len(links.revoked)))"
+after = "    if False:\n        notes.append(HARNESS_WITHDREW.format(count=len(links.revoked)))"
+reddens = [
+  "tests/attach/test_commands.py::test_a_changed_store_says_the_approval_lapsed_and_counts_the_withdrawn_links",
+]
 
 [[mutation]]
 name = "the unavailable fallback is asked of a worktree's own store"
