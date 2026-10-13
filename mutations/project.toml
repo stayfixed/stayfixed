@@ -359,6 +359,24 @@ reddens = [
   "tests/project/test_init.py::test_an_initialised_repository_is_refused_and_offered_upgrade",
 ]
 
+# `init --local ID` after `init` pointed at `stayfixed upgrade`, which has no `--local`: the one
+# command the refusal named could not do what was asked. It now names the key `upgrade` reads
+# instead — and only for `--local`, since any other answer after `init` is an edit to
+# stayfixed.toml that `[artifacts] local` has nothing to do with.
+[[mutation]]
+name = "init stops saying how to add a local artifact after init"
+file = "src/stayfixed/project/init.py"
+before = """        raise Refusal(f"{ALREADY}; {LOCAL_AFTER_INIT}" if local else ALREADY)"""
+after = "        raise Refusal(ALREADY)"
+reddens = ["tests/project/test_init.py::test_local_after_init_names_the_artifacts_key_and_upgrade"]
+
+[[mutation]]
+name = "init says how to add a local artifact after any answer flag"
+file = "src/stayfixed/project/init.py"
+before = "    precheck(root, answering=given != NO_ANSWERS, local=given.local is not None)"
+after = "    precheck(root, answering=given != NO_ANSWERS, local=given != NO_ANSWERS)"
+reddens = ["tests/project/test_init.py::test_another_answer_flag_after_init_keeps_the_plain_refusal"]
+
 # One invariant, enforced from both ends: the workflow's `uses:` ref is what `[ci] ref` says on
 # disk after the run, and `doctor`'s `ci-ref` row reports red when the two disagree. On the
 # adoption path `stayfixed.toml` is a create-once artifact already on disk, so a pin recorded
@@ -1442,8 +1460,8 @@ reddens = [
 [[mutation]]
 name = "an answer overrides a stayfixed.toml the user wrote"
 file = "src/stayfixed/project/init.py"
-before = "    precheck(root, answering=given != NO_ANSWERS)"
-after = "    precheck(root, answering=False)"
+before = "    precheck(root, answering=given != NO_ANSWERS, local="
+after = "    precheck(root, answering=False, local="
 reddens = [
   "tests/project/test_command.py::test_an_answer_over_a_document_the_user_wrote_is_refused",
   "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[answers-over-a-committed-document-init]",

@@ -1459,7 +1459,9 @@ section or key, a `[project] name` outside its grammar, a value of the wrong typ
 configuration file that does not load), or a `stayfixed.toml` you wrote that, with its version, the
 loader would refuse on the next command's load. `2` on a refusal above the plans: no `--yes`, an
 answer flag over an existing `stayfixed.toml`, an answer outside its grammar or its choices (from the
-parser), a repository already initialised, a detected name outside the grammar that no `--name`
+parser), a repository already initialised (with `--local`, the refusal also says to list the id
+under `[artifacts] local` and run `stayfixed upgrade`), a detected name outside the grammar that no
+`--name`
 answers, a `[stayfixed]` table the key editor cannot add a version to, a `stayfixed.toml` that is a
 symlink, which is never followed, a `[paths]` value outside the plain-path grammar, naming git's
 control directory or stayfixed's own `.stayfixed/`, or reaching through a component that is a symlink
@@ -1633,9 +1635,11 @@ other when this stayfixed renders it differently. One that no longer does is `sk
 (`kept out of git, and changed since stayfixed wrote it`), because nothing brings it back once it is
 overwritten, and `--force` with its path takes it; with that record gone, a file that is not exactly
 what this build writes is skipped the same way, saying nothing records what stayfixed wrote there.
-When an id leaves `[artifacts] local`, or its `[paths]` value moves while it stays there, the
-artifact is written at its new place and the copy the record names at the old one is removed while
-it holds exactly the bytes recorded for it (`relocated`); otherwise it is `skip_modified`, stays
+When an id joins or leaves `[artifacts] local`, or its `[paths]` value moves while it stays there,
+the artifact is written at its new place and the copy the record names at the old one is removed
+while it holds exactly the bytes recorded for it (`relocated`) — which is how a file is kept out of
+git after `init`: `init --local` is refused once the repository is initialised, and that refusal
+says to list the id under `[artifacts] local` and run `stayfixed upgrade`; otherwise it is `skip_modified`, stays
 recorded until it is gone, and `--force` with its path takes it. The record is read as untrusted,
 since a clone can commit it anyway: anything but its own exact shape is read as no record at all, it
 is never printed, it names nothing outside `.stayfixed/local/artifacts/`, and it vouches only for a
