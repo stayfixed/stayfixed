@@ -273,12 +273,14 @@ run-hook.sh <policy> <stayfixed args…>
 `<policy>` is `open` or `closed`, and it is the only argument the wrapper itself reads; the rest
 is handed to `stayfixed` untouched.
 
-`hooks/hooks.json` files its entries under four events: `SessionStart`, `PreToolUse`, `PostToolUse` and
-`PostToolUseFailure`, each tool event matched on `Bash`. The last is where Claude Code delivers a
-`Bash` call that exited non-zero, and it carries the red-run note ([`stayfixed test
+`hooks/hooks.json` files its entries under four events: `SessionStart`, `PreToolUse`,
+`PostToolUse` and `PostToolUseFailure`, each tool event matched on `Bash`. The last is where Claude
+Code delivers a `Bash` call that exited non-zero, and it carries the red-run note ([`stayfixed test
 hygiene`](#stayfixed-test-hygiene)); Codex reads the same file and ignores that key (measured on
 Codex CLI 0.162.0). `stayfixed hook` dispatches six events, those four and `UserPromptSubmit` and
-`UserPromptExpansion`, which no shipped entry uses. The wrapper exists because a Python process cannot fail
+`UserPromptExpansion`, which no shipped entry uses.
+
+The wrapper exists because a Python process cannot fail
 closed about its own absence: a missing script exits `2` by CPython accident, a missing
 interpreter `127`, an `ImportError` `1`, a lost executable bit `126` — and Claude Code reads
 every exit that is not `2` as a non-blocking error, which is permission. So the wrapper owns
@@ -467,7 +469,7 @@ every paragraph above it that is attribution to the last line — the canonical 
 two paragraphs — and it ends at the first paragraph holding any body line. Body prose is never
 judged. A trailer's display name is judged whole: one that is a product's name and nothing else
 (`Cursor`, `Devin`, `ChatGPT`) is a violation whatever its address, and a person's name that holds
-a product word (`Cursor Smith`, `Claude Lemaire`) is not.
+a product word (`Cursor Smith`, `Claude Lemaire`) is not, by its name.
 `[commit_messages] attribution_check = false` stops the rules being applied: no message is ever
 a violation, but the range must still be readable, because the report says how many messages it
 read. Exits `1` naming up to eight offences as `sha line N [label]` and counting the rest —
@@ -535,9 +537,8 @@ code_roots` to the directories that hold code``, which `--json` carries as its `
 The `PostToolUseFailure` `Bash` hook delivers the same note once per context after a red test run:
 Claude Code delivers a command that exited non-zero on that event, with `error` beginning `Exit
 code N`, and an `error` that begins otherwise gets no note. The same handler is registered on
-`PostToolUse`, where Codex delivers a failed command and where a `tool_response.exit_code` that
-is not `0` reads as red; the two share one once-per-context key, so a red run is noted once
-whichever event carried it. The note is
+`PostToolUse`, where Codex delivers a failed command; the two share one once-per-context key, so
+a red run is noted once whichever event carried it. The note is
 chosen by the command that failed rather than by configuration: each simple command of the
 red run is offered to every shipped profile's hint, and the dirty-tree line and the line of
 each profile whose runner it recognises (Python's: `pytest`, or `python -m pytest`) are
