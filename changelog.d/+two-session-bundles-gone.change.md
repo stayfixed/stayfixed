@@ -1,5 +1,5 @@
 Two session-start bundles are gone: `preset-rules`, which no shipped preset has filled since
-0.2.0, and `index`, which only Codex asked for, where stayfixed does not rely on its plugin
+0.2.0, and `index`, which only Codex asked for, where stayfixed does not rely on the plugin's
 hooks. `memory session-context --bundle` accepts `standing-rules` and `volatile-notes`, and a
 session starts with four fewer hook commands. Two things a script may depend on change with them:
 
