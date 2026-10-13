@@ -18,8 +18,9 @@ description: Configure the machine for stayfixed — the preset, the personal pa
    cross-project notes and per-project bindings. `setup` is what records it, through
    `--overlay`, and there are two ways in:
    - **They already have one**: `stayfixed setup --preset recommended --overlay /path/to/it`.
-     The path is validated against the overlay's own layout and refused if it sits inside the
-     project `setup` was run from.
+     The path is validated against the overlay's own layout and refused if it sits inside,
+     around, or another checkout of the repository `setup` runs in, or inside a checkout of any
+     other repository.
    - **They do not**: `stayfixed setup --preset recommended --overlay create:<owner>/stayfixed-private --yes`
      creates it on their GitHub account and records it in one step. Creating a repository on
      their account needs their word first, so **ask before running it** — `--yes` is that
