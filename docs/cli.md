@@ -2316,7 +2316,8 @@ answer, in the order the run meets them:
   read or is not UTF-8.
 - An existing `.stayfixed/local/attach.json` cannot be read, is not UTF-8, is not valid JSON or is
   not a JSON object.
-- A Codex rule file in the overlay cannot be read or is not UTF-8.
+- A Codex rule file in the overlay cannot be read or is not UTF-8, or the overlay's `common/codex/`
+  or `projects/<name>/codex/` directory holding it cannot be listed.
 - `git worktree list` fails.
 
 For `stayfixed.toml`, the overlay's record of this project, its `permissions.json` and

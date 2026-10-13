@@ -2995,3 +2995,23 @@ after = "            if True:"
 reddens = [
   "tests/attach/test_write.py::test_a_worktree_removed_while_attach_walks_is_skipped_and_the_rest_is_linked",
 ]
+
+# An overlay `codex/` directory this user cannot list, or whose entries cannot be asked about, is
+# the overlay holding something this user cannot read, as an unreadable rule file inside it is: a
+# failure naming the directory, never an internal error. The exit code alone would not tell the
+# two apart; the test's `failed:` line does.
+[[mutation]]
+name = "an overlay codex directory that cannot be listed is an internal error"
+file = "src/stayfixed/attach/permissions.py"
+before = '''        except OSError as exc:
+            raise Failure(
+                f"{quoted(str(source))} cannot be listed'''
+after = '''        except ValueError as exc:
+            raise Failure(
+                f"{quoted(str(source))} cannot be listed'''
+reddens = [
+  "tests/attach/test_write.py::test_an_unlistable_codex_directory_fails_and_writes_nothing[common-unlistable]",
+  "tests/attach/test_write.py::test_an_unlistable_codex_directory_fails_and_writes_nothing[common-unsearchable]",
+  "tests/attach/test_write.py::test_an_unlistable_codex_directory_fails_and_writes_nothing[project-unlistable]",
+  "tests/attach/test_write.py::test_an_unlistable_codex_directory_fails_and_writes_nothing[project-unsearchable]",
+]
