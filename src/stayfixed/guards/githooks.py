@@ -107,6 +107,15 @@ CHAINS_TO_ITSELF = (
     "{path} names {name}: kept as {local}, which stayfixed's hook runs last, it would run itself "
     "until the commit is killed; remove its chain line, or move it aside; nothing was installed"
 )
+# What a re-install says of the `.local` beside stayfixed's hook when it names itself. There the
+# loop is not a risk but what is on disk: the installed hook `exec`s that file last, so every
+# commit already runs until it is killed. `{local}` is that file, `{path}` the installed hook,
+# which the refusal leaves as it was.
+ALREADY_RUNS_ITSELF = (
+    "{local} names {name}: stayfixed's hook at {path} runs it last, so it runs itself and every "
+    "commit runs until it is killed; remove its chain line, or move it aside; the installed hook "
+    "was left as it was"
+)
 _CHAINED_NAME = HOOK_NAME + LOCAL_SUFFIX
 
 
@@ -206,15 +215,15 @@ def _ours(path: Path, outcome: str) -> Hook:
         return Hook(False, content)
 
 
-def _refuse_a_self_chain(path: Path, content: bytes | None, local: Path) -> None:
-    """Refuse the hook at `path` when its bytes name `prepare-commit-msg.local`, where it is or
+def _refuse_a_self_chain(content: bytes | None, words: str) -> None:
+    """Refuse, in `words`, a hook whose bytes name `prepare-commit-msg.local`, where it is or
     would be kept and from where stayfixed's hook `exec`s it: it would then `exec` itself.
 
     `None` is a hook past the read cap, which is not judged: `install` keeps and chains it, as it
     always has (`docs/cli.md`). Bytes, not text, so a hook that is not UTF-8 is judged as well.
     """
     if content is not None and _CHAINED_NAME.encode() in content:
-        raise Refusal(CHAINS_TO_ITSELF.format(path=path, name=_CHAINED_NAME, local=local))
+        raise Refusal(words)
 
 
 def _chained(local: Path) -> bytes | None:
@@ -250,9 +259,11 @@ def install(root: Path) -> Installed:
     # would `exec` itself. The check is made here, at install, and not by the shipped hook before
     # its `exec`, where a false positive would abort every commit.
     if found is not None and not replaced:
-        _refuse_a_self_chain(target, found.content, local)
+        kept = CHAINS_TO_ITSELF.format(path=target, name=_CHAINED_NAME, local=local)
+        _refuse_a_self_chain(found.content, kept)
     if replaced and fsops.exists(local):
-        _refuse_a_self_chain(local, _chained(local), local)
+        running = ALREADY_RUNS_ITSELF.format(local=local, name=_CHAINED_NAME, path=target)
+        _refuse_a_self_chain(_chained(local), running)
     preserved: Path | None = None
     if found is not None and not replaced:
         target.rename(local)  # beside the hook, in git's own directory, as `docs/cli.md` says

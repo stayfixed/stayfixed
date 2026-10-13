@@ -2705,7 +2705,8 @@ it is the file the installed hook `exec`s last, so a chain line naming it — `e
 `"$(dirname "$0")"` — would `exec` itself, and `git commit` would run until it was killed. The
 refusal names the hook and where it would be kept, and nothing is written: remove its chain line,
 or move the hook aside. A re-install reads the `.local` beside stayfixed's hook for the same name
-and refuses the same way, leaving both files as they are. The check is for the name, not for how a
+and refuses too, saying what is already on disk: stayfixed's hook runs that `.local` last, so every
+commit runs until it is killed. It names the same remedy and leaves both files as they are. The check is for the name, not for how a
 chain is spelled: `exec "$0.local" "$@"` names `prepare-commit-msg.local.local` once the hook is
 kept, runs nothing twice, and is installed; a `--git-common-dir` chain under a `core.hooksPath`
 that is not that directory is refused though it would not loop, and the same remedy covers it. It

@@ -1578,7 +1578,7 @@ reddens = ["tests/guards/test_githooks.py::test_a_hook_past_the_read_cap_is_a_fo
 [[mutation]]
 name = "a predecessor that names its own .local is installed over"
 file = "src/stayfixed/guards/githooks.py"
-before = "        _refuse_a_self_chain(target, found.content, local)"
+before = "        _refuse_a_self_chain(found.content, kept)"
 after = "        pass"
 reddens = [
   "tests/guards/test_githooks.py::test_a_predecessor_that_names_its_own_local_is_refused_and_left_in_place[common-dir]",
@@ -1589,8 +1589,18 @@ reddens = [
 [[mutation]]
 name = "a re-install over a .local that names itself goes through"
 file = "src/stayfixed/guards/githooks.py"
-before = "        _refuse_a_self_chain(local, _chained(local), local)"
+before = "        _refuse_a_self_chain(_chained(local), running)"
 after = "        pass"
+reddens = ["tests/guards/test_githooks.py::test_a_reinstall_over_a_local_that_names_itself_is_refused"]
+
+# On a re-install the loop is what is on disk, not a risk: stayfixed's hook already runs the
+# `.local` beside it last, and leaves it in place. The fresh install's words say it would run
+# itself and that nothing was installed, both false there.
+[[mutation]]
+name = "a re-install over a .local that names itself is told nothing was installed"
+file = "src/stayfixed/guards/githooks.py"
+before = "        running = ALREADY_RUNS_ITSELF.format(local=local, name=_CHAINED_NAME, path=target)"
+after = "        running = CHAINS_TO_ITSELF.format(path=local, name=_CHAINED_NAME, local=local)"
 reddens = ["tests/guards/test_githooks.py::test_a_reinstall_over_a_local_that_names_itself_is_refused"]
 
 # A vendor's domain is tried after each label of an address, a label at a time, so `re` keeps no

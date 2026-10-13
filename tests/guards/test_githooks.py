@@ -412,8 +412,11 @@ def test_a_predecessor_that_names_its_own_local_is_refused_and_left_in_place(
 def test_a_reinstall_over_a_local_that_names_itself_is_refused(tmp_path: Path) -> None:
     # The re-install arm never read `.local`: our hook beside one that execs itself already loops
     # on every commit, and a re-install that says "reinstalled" vouches for it. It is refused
-    # instead, both files left as they are. Mutation: `mutations/`'s "a re-install over a .local
-    # that names itself goes through".
+    # instead, both files left as they are, in words of its own: what is on disk already loops,
+    # and the installed hook was left as it was, where the fresh install's "would run itself ...
+    # nothing was installed" was false of both. Mutations: `mutations/`'s "a re-install over a
+    # .local that names itself goes through", and "a re-install over a .local that names itself
+    # is told nothing was installed".
     root = repo(tmp_path)
     target = hooks_dir(root) / HOOK_NAME
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -425,7 +428,11 @@ def test_a_reinstall_over_a_local_that_names_itself_is_refused(tmp_path: Path) -
     ours, theirs = target.read_bytes(), local.read_bytes()
     exit_code, _, out = cli(root, tmp_path, "setup", "--git-hooks")
     assert exit_code == 2
-    assert out.startswith(f"stayfixed: refused: {local} names prepare-commit-msg.local"), out
+    assert out.startswith(
+        f"stayfixed: refused: {local} names prepare-commit-msg.local: stayfixed's hook at "
+        f"{target} runs it last, so it runs itself and every commit runs until it is killed"
+    ), out
+    assert "the installed hook was left as it was" in out and "nothing was installed" not in out
     assert (target.read_bytes(), local.read_bytes()) == (ours, theirs)
 
 
