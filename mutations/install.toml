@@ -458,6 +458,51 @@ before = """        destination, account = target_root(home, owner, name)
 after = "        destination, account = target_root(home, owner, name)"
 reddens = ["tests/setup/test_setup.py::test_a_created_overlay_is_refused_before_the_repository_exists"]
 
+# An unusable `--home` reached the frame or the second write: under a read-only parent `mkdir`
+# raised `PermissionError` as `internal error`, and a read-only home had the machine file written
+# before the settings write refused in words about a symlink. `_check_home_usable` asks above the
+# first write; the `mkdir` keeps a refusal of its own under it, for root, whom `os.access` always
+# answers yes, and for a directory that changes between the question and the call.
+[[mutation]]
+name = "setup stops asking whether --home can be used before its first write"
+file = "src/stayfixed/setup/run.py"
+before = """    data = load_preset(preset, key="--preset")
+    _check_home_usable(home, settings=settings)"""
+after = """    data = load_preset(preset, key="--preset")"""
+reddens = [
+  "tests/setup/test_setup.py::test_a_home_under_a_read_only_parent_is_refused_before_any_write",
+  "tests/setup/test_setup.py::test_a_read_only_home_is_refused_before_the_machine_file_is_written",
+]
+
+[[mutation]]
+name = "setup stops asking whether an existing .claude can be written"
+file = "src/stayfixed/setup/run.py"
+before = """        if settings is None and fsops.is_dir(claude) and not fsops.creatable(claude / "x"):"""
+after = "        if False:"
+reddens = [
+  "tests/setup/test_setup.py::test_a_read_only_claude_directory_is_refused_before_the_machine_file_is_written",
+]
+
+[[mutation]]
+name = "setup lets a --home it cannot ask about reach the frame"
+file = "src/stayfixed/setup/run.py"
+before = """    except OSError as exc:
+        # A directory above `home` that cannot be searched"""
+after = """    except ValueError as exc:
+        # A directory above `home` that cannot be searched"""
+reddens = ["tests/setup/test_setup.py::test_a_home_below_a_directory_nobody_may_search_is_refused"]
+
+[[mutation]]
+name = "setup lets a failed --home mkdir reach the frame"
+file = "src/stayfixed/setup/run.py"
+before = """    try:
+        home.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:"""
+after = """    if True:
+        home.mkdir(parents=True, exist_ok=True)
+    if False:"""
+reddens = ["tests/setup/test_setup.py::test_a_home_mkdir_that_fails_is_a_refusal"]
+
 # `CONTRIBUTING`'s containment rule has two stages, and `setup` had only the second: the
 # `O_NOFOLLOW` walk refused a symlinked `~/.claude` with `UnsafePath`, which `cli.run` renders as
 # `internal error`, after the machine file was already written. `config.paths.contained` is the

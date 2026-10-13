@@ -257,6 +257,21 @@ def is_symlink(path: Path) -> bool:
     return mode is not None and stat.S_ISLNK(mode)
 
 
+def creatable(path: Path) -> bool:
+    """Whether this user can create or replace `path`: `write_atomically` renames a new file in
+    beside it, and `mkdir` makes it, so the directory it lives in (or, while that is not there
+    yet, the nearest one above it that is, where it would be created) must be writable and
+    searchable.
+
+    `os.access` answers for the real uid, so under root it says yes whatever the mode: a caller
+    that refuses on this answer keeps a floor under the write itself for the case it cannot see.
+    """
+    directory = path.parent
+    while not exists(directory) and directory != directory.parent:
+        directory = directory.parent
+    return os.access(directory, os.W_OK | os.X_OK)
+
+
 class NotRegularFile(OSError):
     """A path a reader was handed names something other than a regular file. An `OSError`, so
     every reader's existing "could not be read" arm is its answer without a branch of its own."""

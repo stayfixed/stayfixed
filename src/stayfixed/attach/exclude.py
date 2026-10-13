@@ -49,7 +49,6 @@ hides everything, where `attach` changes nothing and so never needs the file at 
 from __future__ import annotations
 
 import contextlib
-import os
 import tempfile
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -280,7 +279,7 @@ def planned_block(root: Path, relatives: Sequence[str]) -> ExcludeWrite | None:
     updated = upsert(current, EXCLUDE_REGION, body, Style.HASH)
     if updated == current:
         return None
-    if not _writable(path):
+    if not fsops.creatable(path):
         raise Refusal(UNWRITABLE.format(path=quoted(str(path))))
     return ExcludeWrite(path, updated)
 
@@ -297,16 +296,6 @@ def _named(
         return region(text, EXCLUDE_REGION, Style.HASH)
     except RegionError as exc:
         raise RegionError(f"{quoted(str(path))}: {exc}") from exc
-
-
-def _writable(path: Path) -> bool:
-    """Whether this user can replace `path`: `write_atomically` renames a new file in beside it,
-    so the directory it lives in (or, while that is not there yet, the nearest one above it that
-    is, where it would be created) must be writable and searchable."""
-    directory = path.parent
-    while not fsops.exists(directory) and directory != directory.parent:
-        directory = directory.parent
-    return os.access(directory, os.W_OK | os.X_OK)
 
 
 def withdrawn_block(root: Path) -> ExcludeWrite | None:

@@ -433,6 +433,37 @@ def _check_settings_path(home: Path) -> None:
         ) from exc
 
 
+def _check_home_usable(home: Path, *, settings: Path | None = None) -> None:
+    """Refuse a `--home` this command cannot write into — above the first write.
+
+    `home.mkdir(parents=True)` under a read-only parent raised `PermissionError` into the frame,
+    `stayfixed: internal error`, exit 2; and a home that was there with mode 555 had the machine
+    file written into the machine configuration before `_write_user_settings` refused, in words
+    about a symlink that was not there. The question is `fsops.creatable`'s: can this user create
+    a directory or a file in it — asked of `home` itself, or of the nearest directory above it
+    while it is not there yet, and of `<home>/.claude` when that is there already, which is where
+    the settings file is written unless `--settings` names it elsewhere.
+
+    `os.access` answers for the real uid and says yes to root whatever the mode, so the `mkdir`
+    in `setup` keeps a refusal of its own under this one.
+    """
+    claude = (home / USER_SETTINGS).parent
+    try:
+        # `creatable` asks about the directory a name would be made in, so any name in
+        # `directory` asks it about `directory` itself.
+        directory = _nearest_directory(home)
+        if not fsops.creatable(directory / "x"):
+            raise Refusal(f"--home {home} cannot be used: {directory} is not writable")
+        if settings is None and fsops.is_dir(claude) and not fsops.creatable(claude / "x"):
+            raise Refusal(f"--home {home} cannot be used: {claude} is not writable")
+    except OSError as exc:
+        # A directory above `home` that cannot be searched leaves the question open, and the
+        # `fsops` predicates raise for that rather than guess.
+        raise Refusal(
+            f"--home {home} cannot be used: it cannot be checked ({fsops.said(exc)})"
+        ) from exc
+
+
 def _check_settings_parent(settings: Path) -> None:
     """Refuse a `--settings` whose directory cannot be written through — above the first write.
 
@@ -924,7 +955,13 @@ def setup(
     # `load_preset` first: a mistyped `--preset` is a refusal, and it used to come one line
     # after the home tree had been created for it.
     data = load_preset(preset, key="--preset")
-    home.mkdir(parents=True, exist_ok=True)
+    _check_home_usable(home, settings=settings)
+    try:
+        home.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        # The floor under `_check_home_usable`: root, for whom `os.access` says yes whatever the
+        # mode, and a directory that changed between that question and this call.
+        raise Refusal(f"--home {home} could not be created ({fsops.said(exc)})") from exc
     personal = _new_personal_values(data, machine)
     machine_table = {"version": __version__, "installed": datetime.date.today().isoformat()}
     write_machine(machine, personal=personal, overlay_root=None, machine=machine_table)

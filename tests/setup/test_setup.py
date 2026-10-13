@@ -1717,6 +1717,161 @@ def test_a_settings_file_in_a_directory_nobody_may_search_is_refused_for_that(
     assert str(refused.value) == f"{settings} cannot be checked for a symlink (Permission denied)"
 
 
+# For a test that needs a directory its owner may not write into: root writes into every one,
+# and `os.access` answers yes for root whatever the mode says.
+_ROOT_WRITES_EVERYWHERE = pytest.mark.skipif(
+    os.geteuid() == 0, reason="root writes into every directory"
+)
+
+
+def _setup_through_the_cli(
+    monkeypatch: pytest.MonkeyPatch, home: Path, machine: Path
+) -> tuple[int, Recorder]:
+    """`stayfixed setup --preset recommended --yes --home H --machine M`, through `cli.run`, with
+    the runner a recorder: the frame is what turns an `OSError` into `internal error`, so a test
+    about what the owner reads has to go through it."""
+    from stayfixed.cli import build_parser, discover_registrars, run
+
+    runner = Recorder()
+    monkeypatch.setattr("stayfixed.setup.commands.subprocess_runner", lambda: runner)
+    argv = ["setup", "--preset", "recommended", "--yes", "--home", str(home)]
+    code = run([*argv, "--machine", str(machine)], parser=build_parser(discover_registrars()))
+    return code, runner
+
+
+@_ROOT_WRITES_EVERYWHERE
+def test_a_home_under_a_read_only_parent_is_refused_before_any_write(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # `home.mkdir(parents=True)` raised `PermissionError` into the frame: `stayfixed: internal
+    # error: PermissionError: [Errno 13] Permission denied: '…/home'`, exit 2, with no word of
+    # which directory to fix. Mutation (`mutations/`'s "setup stops asking whether --home can be
+    # used before its first write"): the `_check_home_usable(home)` call dropped -> the `mkdir`
+    # floor refuses instead, in words that do not say "is not writable", and this reddens.
+    parent = tmp_path / "locked"
+    parent.mkdir()
+    home = parent / "home"
+    machine = tmp_path / "config.toml"
+    parent.chmod(0o555)
+    try:
+        code, runner = _setup_through_the_cli(monkeypatch, home, machine)
+    finally:
+        parent.chmod(0o755)
+    out = capsys.readouterr().err
+    assert code == 2 and out.startswith("stayfixed: refused:"), out
+    assert f"--home {home} cannot be used: {parent} is not writable" in out
+    assert not machine.exists()
+    assert runner.calls == []
+
+
+@_ROOT_WRITES_EVERYWHERE
+def test_a_read_only_home_is_refused_before_the_machine_file_is_written(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # With `--home` there and mode 555, the machine file was written, and only then did the
+    # settings write refuse — saying the directory "has to exist and be a real directory, because
+    # stayfixed writes .claude/settings.json through a walk that never follows a symlink", about a
+    # home with no symlink anywhere in it. Mutation (`mutations/`'s "setup stops asking whether
+    # --home can be used before its first write"): the call dropped -> the machine file is on
+    # disk and the refusal speaks of a symlink, and this reddens on both.
+    home = tmp_path / "home"
+    home.mkdir()
+    machine = tmp_path / "config.toml"
+    home.chmod(0o555)
+    try:
+        code, runner = _setup_through_the_cli(monkeypatch, home, machine)
+    finally:
+        home.chmod(0o755)
+    out = capsys.readouterr().err
+    assert code == 2 and out.startswith("stayfixed: refused:"), out
+    assert f"--home {home} cannot be used: {home} is not writable" in out
+    assert "symlink" not in out
+    assert not machine.exists()
+    assert runner.calls == []
+
+
+@_ROOT_WRITES_EVERYWHERE
+def test_a_read_only_claude_directory_is_refused_before_the_machine_file_is_written(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The same question one directory down: `<home>/.claude` is where the settings file is
+    # written, and when it is there already it is the directory that has to take a new file.
+    # Mutation (`mutations/`'s "setup stops asking whether an existing .claude can be written"):
+    # that arm dropped -> the machine file is written first and this reddens.
+    home = tmp_path / "home"
+    claude = home / ".claude"
+    claude.mkdir(parents=True)
+    machine = tmp_path / "config.toml"
+    claude.chmod(0o555)
+    try:
+        code, _ = _setup_through_the_cli(monkeypatch, home, machine)
+    finally:
+        claude.chmod(0o755)
+    out = capsys.readouterr().err
+    assert code == 2, out
+    assert f"--home {home} cannot be used: {claude} is not writable" in out
+    assert not machine.exists()
+
+
+@ROOT_SEARCHES_EVERYTHING
+def test_a_home_below_a_directory_nobody_may_search_is_refused(tmp_path: Path) -> None:
+    # With `--settings`, `_check_settings_path`'s walk below `home` is not asked, and the first
+    # question about `home` itself raised `PermissionError` into the frame as `internal error`.
+    # Mutation (`mutations/`'s "setup lets a --home it cannot ask about reach the frame"): the
+    # `except OSError` in `_check_home_usable` dropped -> `PermissionError` leaves `setup`.
+    locked = tmp_path / "locked"
+    locked.mkdir()
+    home = locked / "home"
+    settings = tmp_path / "dotfiles" / "settings.json"
+    settings.parent.mkdir()
+    machine = tmp_path / "config.toml"
+    with unsearchable(locked), pytest.raises(Refusal) as refused:
+        setup(
+            "recommended",
+            home=home,
+            machine=machine,
+            runner=Recorder(),
+            yes=True,
+            overlay=None,
+            project_root=tmp_path / "project",
+            settings=settings,
+        )
+    assert (
+        str(refused.value)
+        == f"--home {home} cannot be used: it cannot be checked (Permission denied)"
+    )
+    assert not machine.exists()
+
+
+def test_a_home_mkdir_that_fails_is_a_refusal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The floor under the check above, and not dead: `os.access` answers for the real uid and
+    # says yes to root whatever the mode, and a directory can change between the question and
+    # the `mkdir`. Patching `mkdir` is how that interval is reached without a race. Mutation
+    # (`mutations/`'s "setup lets a failed --home mkdir reach the frame"): the `except OSError`
+    # around `home.mkdir` dropped -> `PermissionError` leaves `setup` and this reddens.
+    home = tmp_path / "home"
+    machine = tmp_path / "config.toml"
+
+    def refused_mkdir(self: Path, *args: object, **kwargs: object) -> None:
+        raise PermissionError(errno.EACCES, "Permission denied", str(self))
+
+    monkeypatch.setattr(Path, "mkdir", refused_mkdir)
+    with pytest.raises(Refusal) as refused:
+        setup(
+            "recommended",
+            home=home,
+            machine=machine,
+            runner=Recorder(),
+            yes=True,
+            overlay=None,
+            project_root=tmp_path / "project",
+        )
+    assert str(refused.value) == f"--home {home} could not be created (Permission denied)"
+    assert not machine.exists()
+
+
 def test_a_claude_directory_that_becomes_a_symlink_after_the_check_is_still_refused(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

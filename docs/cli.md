@@ -2613,8 +2613,12 @@ the report names each file `init` changed (an overlay named by 0.1.x gains its a
 changed none of the overlay's tracked files (`pre-commit install` may still have written its git
 hook). Exits `0` on success, `2` on a refused `--overlay` (missing, not an overlay, reachable from
 the project root, at a path that is not UTF-8 text and so cannot be recorded in the machine file, or
-`create:` without `--yes`), and `2` when a symlink stands between `<home>` and the settings file:
-that file is written through a walk that never follows one. Every one of those refusals happens
+`create:` without `--yes`), `2` when a symlink stands between `<home>` and the settings file:
+that file is written through a walk that never follows one, and `2` when `--home` cannot be used:
+the refusal names the directory you cannot write into — `<home>`, the nearest directory above it
+while it is not there yet, or a `<home>/.claude` already there when `--settings` is not given — or
+says that `<home>` could not be created, or could not be checked because a directory above it
+cannot be searched. Every one of those refusals happens
 before the first write, **with one exception**: for `--overlay create:<owner>/<name>`, "not an
 overlay" is a check on the tree that arrived, so it runs after the repository has been created on
 GitHub and cloned — along with the machine file, the settings merge and the plugin installs. That
