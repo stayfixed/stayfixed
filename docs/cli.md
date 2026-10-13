@@ -1475,12 +1475,11 @@ loader would refuse on the next command's load. `2` on a refusal above the plans
 answer flag over an existing `stayfixed.toml`, an answer outside its grammar or its choices (from the
 parser), a repository already initialised (with `--local`, the refusal also says to list the id
 under `[artifacts] local` and run `stayfixed upgrade`), a detected name outside the grammar that no
-`--name`
-answers, a `[stayfixed]` table the key editor cannot add a version to, a `stayfixed.toml` that is a
-symlink, which is never followed, a `[paths]` value outside the plain-path grammar, naming git's
-control directory or stayfixed's own `.stayfixed/`, or reaching through a component that is a symlink
-— all three refused by the loader before a plan exists — two artifacts, of one pass or of either,
-that resolve to one file (`roadmap` and `roadmap_history` set to one path, or `roadmap =
+`--name` answers, a `[stayfixed]` table the key editor cannot add a version to, a `stayfixed.toml`
+that is a symlink, which is never followed, a `[paths]` value outside the plain-path grammar, naming
+git's control directory or stayfixed's own `.stayfixed/`, or reaching through a component that is a
+symlink — all three refused by the loader before a plan exists — two artifacts, of one pass or of
+either, that resolve to one file (`roadmap` and `roadmap_history` set to one path, or `roadmap =
 "CLAUDE.md"`), which is named with the two artifacts and their `[paths]` keys to separate, since
 only the `AGENTS.md` skeleton and its region share a file by design, an `[artifacts] local` list
 naming a profile artifact, which every pointer at it reads at its committed path, one naming
@@ -1649,12 +1648,15 @@ other when this stayfixed renders it differently. One that no longer does is `sk
 (`kept out of git, and changed since stayfixed wrote it`), because nothing brings it back once it is
 overwritten, and `--force` with its path takes it; with that record gone, a file that is not exactly
 what this build writes is skipped the same way, saying nothing records what stayfixed wrote there.
-When an id joins or leaves `[artifacts] local`, or its `[paths]` value moves while it stays there,
-the artifact is written at its new place and the copy the record names at the old one is removed
-while it holds exactly the bytes recorded for it (`relocated`) — which is how a file is kept out of
-git after `init`: `init --local` is refused once the repository is initialised, and that refusal
-says to list the id under `[artifacts] local` and run `stayfixed upgrade`; otherwise it is `skip_modified`, stays
-recorded until it is gone, and `--force` with its path takes it. The record is read as untrusted,
+When an id leaves `[artifacts] local`, or its `[paths]` value moves while it stays there, the
+artifact is written at its new place and the copy the record names at the old one is removed while
+it holds exactly the bytes recorded for it (`relocated`); otherwise it is `skip_modified`, stays
+recorded until it is gone, and `--force` with its path takes it. When an id joins the list, the
+copy at its old place is the committed one the manifest records, and it is removed the same way
+while it holds exactly the bytes the manifest records (`relocated`); one you edited is left as
+`relocated and hand-edited`, yours to keep or delete by hand. That is how a file is kept out of git
+after `init`: `init --local` is refused once the repository is initialised, and the refusal says to
+list the id under `[artifacts] local` and run `stayfixed upgrade`. The record is read as untrusted,
 since a clone can commit it anyway: anything but its own exact shape is read as no record at all, it
 is never printed, it names nothing outside `.stayfixed/local/artifacts/`, and it vouches only for a
 file there whose bytes are exactly the ones it states.
@@ -2636,24 +2638,26 @@ Run again over the overlay it made, it generates nothing, but `overlay init` sti
 the report names each file `init` changed (an overlay named by 0.1.x gains its account) or says it
 changed none of the overlay's tracked files (`pre-commit install` may still have written its git
 hook). Exits `0` on success, `2` on a refused `--overlay` (missing, not an overlay, reachable from
-the project root, at a path that is not UTF-8 text and so cannot be recorded in the machine file, or
-`create:` without `--yes`), `2` when a symlink stands between `<home>` and the settings file: that
-file is written through a walk that never follows one, and `2` when `--home` cannot take what this
-run writes under it. That refusal names the directory you cannot write into, asked only where a
-write lands: the one the settings file is made in (`<home>/.claude` when it is there, `<home>` when
-only that is, the nearest directory above it while neither is); with `--settings`, which sends that
-file elsewhere, the one `<home>` is made in, and only while it is not there yet; and for `create:`,
-the one the clone is made in while it is not there yet. A `<home>` you cannot write into is not
-refused for that alone: with a writable `.claude` already in it, and no overlay to create, nothing
-is made in it. Otherwise it says that `<home>` could not be created, or could not be checked because
-a directory above it cannot be searched. Every one of those refusals happens
+the project root, inside a checkout of another repository, at a path that is not UTF-8 text and so
+cannot be recorded in the machine file, or `create:` without `--yes`), `2` when a symlink stands
+between `<home>` and the settings file: that file is written through a walk that never follows one,
+and `2` when `--home` cannot take what this run writes under it. That refusal names the directory
+you cannot write into, asked only where a write lands: the one the settings file is made in
+(`<home>/.claude` when it is there, `<home>` when only that is, the nearest directory above it while
+neither is); with `--settings`, which sends that file elsewhere, the one `<home>` is made in, and
+only while it is not there yet; and for `create:`, the one the clone is made in while it is not
+there yet. A `<home>` you cannot write into is not refused for that alone: with a writable `.claude`
+already in it, and no overlay to create, nothing is made in it. Otherwise it says that `<home>`
+could not be created, or could not be checked because a directory above it cannot be searched. Every
+one of those refusals happens
 before the first write, **with one exception**: for `--overlay create:<owner>/<name>`, "not an
 overlay" is a check on the tree that arrived, so it runs after the repository has been created on
 GitHub and cloned — along with the machine file, the settings merge and the plugin installs. That
 refusal says so, and names the repository and where it was cloned to, because nothing else would.
 Everything else `create:` can be refused for — the missing `--yes`, a malformed spec, a name that is
-not one path segment, a destination the project root could reach, a `<home>` you cannot write
-into or the machine file could not record — still happens before `gh` is run at all.
+not one path segment, a destination the project root could reach or a checkout of another
+repository holds, a `<home>` you cannot write into, or one the machine file could not record — still
+happens before `gh` is run at all.
 
 The symlink refusal names the link, where it leads, and a `stayfixed setup --home …` that writes
 the file the link leads to — and where no `--home` can express the layout, it says that instead
