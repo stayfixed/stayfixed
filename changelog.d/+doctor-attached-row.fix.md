@@ -8,4 +8,6 @@ the fallback as in place instead of red; where it did not, the remedy says to mo
 aside, as `attach` does, instead of removing it, since it can hold notes the harness wrote. Beside
 an attach ledger whose note store does not resolve, the row now warns instead of reading green when
 no harness link is there, and names the cause: a link tree that is gone is one `stayfixed attach`
-puts back, and anything else is for `stayfixed memory index --check` to explain.
+puts back, and anything else is for `stayfixed memory index --check` to explain. Where this
+checkout's or the main checkout's `paths.memory` is reached through a symlink, the row warns that
+what the harness memory link points at could not be checked, and names the symlink as the cause.

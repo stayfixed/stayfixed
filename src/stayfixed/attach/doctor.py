@@ -337,7 +337,7 @@ def _uncorroborated(reason: str) -> Row:
     )
 
 
-def _targets(context: Context) -> tuple[Path, ...]:
+def _targets(context: Context) -> tuple[Path, ...] | None:
     """What a harness link of this checkout's may point at and be stayfixed's: the owning
     checkout's `paths.memory` and this checkout's own (`worktree.harness_targets`), read the way
     `detach` reads them. `attach` points every checkout's link at the owning checkout's tree, so
@@ -345,15 +345,22 @@ def _targets(context: Context) -> tuple[Path, ...]:
 
     A `git` that cannot say which checkout owns this one leaves this checkout's own, the one
     answer that needs no `git`; the binding row above has already asked `git` by then, so this is
-    the race and not the layout."""
-    from stayfixed.errors import Failure
+    the race and not the layout. `None` where either `paths.memory` is reached through a symlink
+    or cannot be asked whether it is: `harness_targets` refuses that (`PathEscape`, a `Refusal`),
+    and in a linked worktree the owning checkout's is one this checkout's own configuration never
+    walked, so a directory on the way to it that became a link reaches this row. Let out, the
+    refusal was the report's "this check could not run", red, with "report this" for a remedy."""
+    from stayfixed.errors import Failure, Refusal
     from stayfixed.memory.api import harness_targets, main_checkout
 
     try:
         owner = main_checkout(context.root)
     except Failure:
         owner = context.root
-    return harness_targets(context.root, owner, context.config)
+    try:
+        return harness_targets(context.root, owner, context.config)
+    except Refusal:
+        return None
 
 
 def _fallback_in_place(context: Context) -> bool:
@@ -374,7 +381,8 @@ def _fallback_in_place(context: Context) -> bool:
         value = settings_document(local_document(context.root)).get(FALLBACK_KEY)
         if not isinstance(value, str) or not Path(value).is_absolute():
             return False
-        return Path(value).resolve() in _targets(context)
+        targets = _targets(context)
+        return targets is not None and Path(value).resolve() in targets
     except (Failure, Refusal, OSError, ValueError):
         return False
 
@@ -416,7 +424,17 @@ def _harness_shape(context: Context, answers: Answers, harness: Path) -> tuple[S
     if fsops.is_symlink(harness):
         if not fsops.exists(harness):
             return RED, "a dangling link, so the harness reads nothing through it", relink
-        if harness.resolve() in _targets(context):
+        targets = _targets(context)
+        if targets is None:
+            return (
+                WARN,
+                "a link, and paths.memory in this checkout or in the main checkout is reached "
+                "through a symlink or cannot be asked whether it is, so what the link points at "
+                "could not be checked",
+                "replace that symlink with the directory it points at, or make the directory "
+                "readable, then run `stayfixed doctor` again",
+            )
+        if harness.resolve() in targets:
             return OK, "a link to the store", ""
         return (
             RED,

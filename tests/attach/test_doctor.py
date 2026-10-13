@@ -572,6 +572,28 @@ def test_a_linked_worktree_whose_main_checkout_tree_is_gone_reads_its_link_as_da
     assert "dangling" in row.detail
 
 
+def test_a_linked_worktree_whose_main_checkout_tree_is_reached_through_a_symlink_warns(
+    tmp_path: Path,
+) -> None:
+    # Where the harness link may point is asked of the main checkout's `paths.memory` too, and
+    # with that checkout's `docs` moved away and linked back the question refuses. The row caught
+    # `Failure` alone around it, so the refusal escaped the row: red, "this check could not run:
+    # PathEscape", remedy "report this", the leaked-exception shape a fixed path must never take.
+    # It is a warning that names the symlink now. Mutation (oracle): `mutations/`'s "doctor lets a
+    # refusal out of asking where a harness link may point".
+    root, side, machine, home = _worktree_attached(tmp_path)
+    moved = tmp_path / "moved-docs"
+    shutil.move(root / "docs", moved)
+    (root / "docs").symlink_to(moved, target_is_directory=True)
+    # Non-vacuous: the worktree's link still reaches the main checkout's tree, through the link.
+    assert _harness_link_of(side, home).exists()
+    row = _worktree_row(tmp_path, side, machine, home)
+    assert row.status == WARN
+    assert "symlink" in row.detail
+    assert "report this" not in row.remedy and "could not run" not in row.detail
+    assert str(tmp_path) not in row.detail
+
+
 def test_an_absent_harness_path_is_green_only_while_the_trust_record_asks_for_that(
     tmp_path: Path,
 ) -> None:

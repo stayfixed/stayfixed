@@ -1570,7 +1570,7 @@ reddens = [
 [[mutation]]
 name = "doctor stops asking what the harness memory path points at"
 file = "src/stayfixed/attach/doctor.py"
-before = '        if harness.resolve() in _targets(context):'
+before = '        if harness.resolve() in targets:'
 after = '        if True:'
 reddens = [
   "tests/attach/test_doctor.py::test_a_harness_link_pointing_at_an_unrelated_directory_is_never_green",
@@ -1581,9 +1581,21 @@ reddens = [
 [[mutation]]
 name = "doctor compares a worktree's harness link with that worktree's own tree"
 file = "src/stayfixed/attach/doctor.py"
-before = "    return harness_targets(context.root, owner, context.config)"
-after = "    return harness_targets(context.root, context.root, context.config)"
+before = "        return harness_targets(context.root, owner, context.config)"
+after = "        return harness_targets(context.root, context.root, context.config)"
 reddens = ["tests/attach/test_doctor.py::test_a_normally_attached_linked_worktree_is_ok"]
+
+# Where a harness link may point is asked of the owning checkout's `paths.memory` too, and a
+# directory on the way to it that became a symlink makes that question a refusal. Caught as a `git`
+# `Failure` alone, it left the row as "this check could not run", red, remedy "report this".
+[[mutation]]
+name = "doctor lets a refusal out of asking where a harness link may point"
+file = "src/stayfixed/attach/doctor.py"
+before = "        return harness_targets(context.root, owner, context.config)\n    except Refusal:"
+after = "        return harness_targets(context.root, owner, context.config)\n    except Failure:"
+reddens = [
+  "tests/attach/test_doctor.py::test_a_linked_worktree_whose_main_checkout_tree_is_reached_through_a_symlink_warns",
+]
 
 # A dangling link resolves to the path it names, and once the owning checkout's tree is gone that
 # path is one the row recognises: compared before it is asked whether it reaches anything, a
@@ -1593,9 +1605,9 @@ name = "doctor compares a dangling harness link before asking whether it reaches
 file = "src/stayfixed/attach/doctor.py"
 before = """        if not fsops.exists(harness):
             return RED, "a dangling link, so the harness reads nothing through it", relink
-        if harness.resolve() in _targets(context):
-            return OK, "a link to the store", """""
-after = """        if harness.resolve() in _targets(context):
+        targets = _targets(context)"""
+after = """        targets = _targets(context)
+        if targets is not None and harness.resolve() in targets:
             return OK, "a link to the store", ""
         if not fsops.exists(harness):
             return RED, "a dangling link, so the harness reads nothing through it", relink"""
