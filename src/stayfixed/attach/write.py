@@ -1842,11 +1842,12 @@ def _rmdir_if_empty(base: Path, name: str) -> bool:
 
 
 def _withdraw_memory_directories(
-    root: Path, checkouts: list[Path], config: Config, recorded: AttachLedger
+    root: Path, trees: list[Path], config: Config, recorded: AttachLedger
 ) -> tuple[str, ...]:
     """The empty `paths.memory` directory, then the directories above it that the ledger records
     the attach as having created, in `root` alone; and the empty `paths.memory` in every other
-    checkout.
+    checkout this run withdrew a tree from. `trees` is `_reach`'s second answer, so a checkout
+    whose tree was kept keeps its directories too, `root` among them.
 
     In `root`, `paths.memory` goes only when the ledger says the attach created it — an empty
     one the owner made before is theirs — and the directories above it only when the ledger says
@@ -1860,12 +1861,14 @@ def _withdraw_memory_directories(
     """
     removed: list[str] = []
     own = root.resolve()
-    for tree in checkouts:
+    for tree in trees:
         if tree.resolve() == own:
             if recorded.memory_created and _rmdir_if_empty(tree, config.paths.memory):
                 removed.append(config.paths.memory)
         else:
             _rmdir_if_empty(tree, config.paths.memory)
+    if own not in trees:
+        return tuple(removed)
     for name in _memory_parents(config):
         if name in recorded.memory_parents and _rmdir_if_empty(root, name):
             removed.append(name)
@@ -1911,13 +1914,14 @@ def _walked(root: Path, relative: str, *, what: str, where: str) -> None:
 def _refuse_unwithdrawable(
     root: Path,
     recorded: AttachLedger,
-    checkouts: list[Path],
+    trees: list[Path],
     config: Config,
     settings: SettingsWithdrawal,
 ) -> None:
     """Walk to every path the withdrawal writes or removes, before the first withdrawal: the
-    settings file when it is rewritten, each recorded rule copy, each name of every checkout's
-    link tree that is a link, and the ledger.
+    settings file when it is rewritten, each recorded rule copy, each name that is a link in the
+    link tree of every checkout in `trees` — `_reach`'s answer, the checkouts whose tree this run
+    withdraws, and no other — and the ledger.
 
     The writes and removals are `fsops` walks that refuse a symlinked component, and asked first
     by them, the question would come after the settings file was already withdrawn. `contained`
@@ -1935,7 +1939,7 @@ def _refuse_unwithdrawable(
             what="a `.codex/rules/` copy this checkout's attach recorded",
             where="`.codex` or `.codex/rules`",
         )
-    for tree in checkouts:
+    for tree in trees:
         base = contained(tree, config.paths.memory, allow_final_symlink=True)
         for name in linked_names(config):
             try:
@@ -1981,6 +1985,24 @@ def _another_attached(root: Path, checkouts: list[Path]) -> bool:
             continue
         return True
     return False
+
+
+def _reach(root: Path, checkouts: list[Path], *, kept: bool) -> tuple[list[Path], list[Path]]:
+    """The checkouts whose harness memory link this detach withdraws, and those whose link tree
+    it withdraws.
+
+    With no other checkout attached, every checkout's of both, as `attach` made them. While
+    another checkout still holds a ledger (`kept`, `_another_attached`), only `--root`'s harness
+    link, and `--root`'s tree unless `--root` owns the store: every checkout's harness link points
+    at the owning checkout's tree (`_link_everywhere`), so taking that tree, or another
+    checkout's, left a checkout whose ledger still stands half attached and its harness link
+    dangling. A later `attach` anywhere builds the owner's tree first, so keeping it loses
+    nothing. `checkouts` is `_checkouts`' answer, owner first and resolved.
+    """
+    if not kept:
+        return checkouts, checkouts
+    own = root.resolve()
+    return [own], [] if own == checkouts[0] else [own]
 
 
 # Said where the other home's anchor refuses, so `detach` withdrew nothing under it.
@@ -2046,8 +2068,10 @@ def detach(root: Path, *, machine: Path | None, home: Path | None) -> Detached:
     carry the ledger of the checkout an attach was run from and `detach --root <that worktree>`
     answers "no ledger". Without one there is nothing to reverse — guessing which allow rules
     were stayfixed's from their content is the heuristic the ledger exists to replace. So the
-    reach this function has *once it starts* is every checkout (`_worktrees` below), and the
-    place it may be started from is the one that holds the record.
+    place it may be started from is the one that holds the record, and the reach it has *once it
+    starts* is `_reach`'s: every checkout (`_worktrees` below) when no other holds a ledger, and
+    `--root` alone while one does, keeping the owning checkout's tree that other checkout's
+    harness link points at.
     """
     recorded = ledger(root)
     config = load(root, machine=machine)
@@ -2087,8 +2111,9 @@ def detach(root: Path, *, machine: Path | None, home: Path | None) -> Detached:
     # would show that checkout's settings file and rule copies in its `git status`.
     kept = _another_attached(root, checkouts)
     hidden = None if kept else exclude.withdrawn_block(root)
+    harnessed, trees = _reach(root, checkouts, kept=kept)
     settings = _planned_settings(root, recorded)
-    _refuse_unwithdrawable(root, recorded, checkouts, config, settings)
+    _refuse_unwithdrawable(root, recorded, trees, config, settings)
     allow_removed = _withdraw_settings(root, settings)
     rules_removed: list[str] = []
     for rule in recorded.rules:
@@ -2099,16 +2124,23 @@ def detach(root: Path, *, machine: Path | None, home: Path | None) -> Detached:
     # to `--root` and the loop then skipped the owning checkout unconditionally, so a detach run
     # from a linked worktree withdrew that worktree's tree twice and left the main checkout's
     # link tree — and its harness link — in place. `_checkouts` is the one spelling of "every
-    # checkout, owner first, each exactly once" that both halves now read.
+    # checkout, owner first, each exactly once" that both halves now read, and `_reach` says
+    # which of them this run withdraws from.
     revoked: list[Path] = []
-    for tree in checkouts:
+    for tree in harnessed:
         revoked += detach_main(
-            tree, config, machine=machine, home=home, elsewhere=elsewhere
+            tree,
+            config,
+            machine=machine,
+            home=home,
+            elsewhere=elsewhere,
+            owner=checkouts[0],
+            keep_tree=tree not in trees,
         ).revoked
     region = _withdraw_ignore_region(root, ignore_remainder)
     if hidden is not None:
         exclude.write(hidden)
-    memory = _withdraw_memory_directories(root, checkouts, config, recorded)
+    memory = _withdraw_memory_directories(root, trees, config, recorded)
     fsops.remove_within(root, ATTACH_LEDGER)
     # Last, because the ledger lives in one of them.
     directories = _withdraw_directories(root, recorded)

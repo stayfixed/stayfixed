@@ -2396,15 +2396,26 @@ deleted your whole `permissions` block, deny rules included.
 **Run it from the checkout you attached from.** `.stayfixed/local/` is untracked and per-checkout,
 so a sibling worktree does not carry the ledger of the checkout the attach was run from and
 `detach --root <that worktree>` answers "no ledger". Once it starts it reaches every checkout of
-the repository, including the one that owns the store; only the *starting* point has to hold the
-record.
+the repository, including the one that owns the store, when no other checkout holds a ledger; only
+the *starting* point has to hold the record.
+
+**A checkout another ledger still serves is left attached.** While another checkout of the
+repository still holds a ledger, `detach` withdraws only this checkout's harness memory link,
+settings, rule copies and ledger, and this checkout's link tree unless this is the main checkout:
+every checkout's harness memory link points at the main checkout's tree, so that tree stays until
+the last attached checkout detaches. A later `attach` in any checkout rebuilds it first, so keeping
+it loses nothing. A harness memory link counts as `attach`'s when it points at the main checkout's
+`paths.memory`, where `attach` points it, or at the checkout's own, and at nothing else; the target
+is never read from the ledger.
 
 **Writes**: it takes the recorded allow rules and the fallback key back out of
 `.claude/settings.local.json`, drops the hook entries marked `# stayfixed:…` there (a group that
 mixes one of those with your own entry is split, never replaced), and leaves the file unwritten when
 none of those is in it, removes the `.codex/rules/` files it wrote, withdraws the link tree from
-this checkout and every worktree together with the harness memory link (under both homes where
-`HOME` is not the database's, only a link to this store), removes the
+this checkout and every worktree together with each one's harness memory link (under both homes
+where `HOME` is not the database's, only a link to this store) — while another checkout is
+attached, only this checkout's link, and its tree unless it is the main checkout, as above —
+removes the
 `stayfixed:ignore` region and the `stayfixed:attach` block in the repository's exclude file, and
 deletes the ledger, `.stayfixed/local/attach.json`. A file left holding nothing is removed rather
 than left empty — for the exclude file, only when `attach` created it, which the block records, so
@@ -2421,8 +2432,9 @@ attach wrote counts: one git does not track (a clone that committed the file has
 worktree) and that reads as a ledger. A `git` that cannot say whether the file is tracked counts
 it, and the block stays.
 
-Then it removes, each only when empty: the `paths.memory` directory in this checkout when the
-ledger records `attach` as having created it, and in every other checkout it withdrew a tree from
+Then it removes, each only when empty: the `paths.memory` directory in this checkout when it
+withdrew this checkout's tree and the ledger records `attach` as having created it, and in every
+other checkout it withdrew a tree from
 (no ledger of this run's records what was there, and that tree was built by `attach` or by the
 worktree-link handler); the directories above it in this checkout that the ledger records
 `attach` as having created (`docs/`, for the preset's place); and the `~/.claude/projects/<slug>/`
@@ -2494,11 +2506,12 @@ It exits `2` on a refusal, in the order the run meets them:
   file).
 - A path the withdrawal writes or removes reached through a directory that became a symlink after
   the attach: `.claude` when the settings file is to be rewritten, `.codex` or `.codex/rules` for
-  a recorded rule copy, `paths.memory` or a directory above it in any checkout, `.stayfixed` or
-  `.stayfixed/local` for the ledger. The refusal says which. A rule copy that is itself a link is
-  not one of these: it is unlinked, and what it points at stays.
+  a recorded rule copy, `paths.memory` or a directory above it in any checkout whose tree it
+  withdraws, `.stayfixed` or `.stayfixed/local` for the ledger. The refusal says which. A rule copy
+  that is itself a link is not one of these: it is unlinked, and what it points at stays.
 - A `memory.groups` entry added since the attach that does not name a subdirectory of
-  `paths.memory`, in any checkout of the repository. The refusal counts it and does not print it.
+  `paths.memory`, in any checkout whose tree it withdraws. The refusal counts it and does not print
+  it.
 - A `.claude/settings.local.json` whose `permissions` is not an object, or whose
   `permissions.allow` is not a list of strings.
 

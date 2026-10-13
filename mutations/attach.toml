@@ -301,10 +301,22 @@ reddens = [
 [[mutation]]
 name = "detach applies the owning-checkout withdrawal to --root"
 file = "src/stayfixed/attach/write.py"
-before = "    for tree in checkouts:\n        revoked += detach_main(\n            tree, config, machine=machine, home=home, elsewhere=elsewhere\n        ).revoked"
-after = "    for tree in [root]:\n        revoked += detach_main(\n            tree, config, machine=machine, home=home, elsewhere=elsewhere\n        ).revoked"
+before = "    for tree in harnessed:\n        revoked += detach_main("
+after = "    for tree in [root]:\n        revoked += detach_main("
 reddens = [
   "tests/attach/test_links.py::test_detaching_from_a_linked_worktree_withdraws_the_main_checkouts_tree_too",
+]
+
+# While another checkout still holds a ledger, `detach` takes only `--root`'s harness link and,
+# unless `--root` owns the store, its tree: every checkout's harness link points at the owner's
+# tree, and taking every checkout's left the other one half attached with its link dangling.
+[[mutation]]
+name = "detach withdraws every checkout's tree while another ledger still serves one"
+file = "src/stayfixed/attach/write.py"
+before = "    if not kept:\n        return checkouts, checkouts"
+after = "    if True:\n        return checkouts, checkouts"
+reddens = [
+  "tests/attach/test_detach.py::test_detach_in_a_worktree_leaves_the_attached_main_checkout_whole",
 ]
 
 # `permissions.check` reduces `already_present` to a count because that list "comes out of the
@@ -360,8 +372,8 @@ file = "src/stayfixed/attach/write.py"
 # The block this moves runs from the anchor loop through the manifest's answer to the region read.
 # What it proves: `git` is asked before the first withdrawal, and a `git` that cannot run must not
 # strand a half-detached repository.
-before = "    checkouts = _checkouts(root)\n    for tree in checkouts:\n        harness_anchor(tree, home)\n    # The other home a harness may read a link under, asked here too, and best-effort: a home its\n    # anchor refuses is passed over with a note rather than refused, since `detach` is the one\n    # command that takes back what `attach` made under either.\n    other = _other_harness_home() if home is None else None\n    elsewhere: Path | None = None\n    notes: tuple[str, ...] = ()\n    if other is not None:\n        elsewhere, where = other\n        try:\n            for tree in checkouts:\n                harness_anchor(tree, elsewhere)\n        except Refusal:\n            elsewhere, notes = None, (_LEFT_UNDER.format(where=where),)\n    ignore_remainder = None if _footprint_owns_region(root) else _ignore_region_remainder(root)\n    # The `info/exclude` block is found above the first withdrawal for the same reason: `git`\n    # names the file and a region opened twice refuses, and both are knowable now. It is shared\n    # by every checkout while the ledger, the settings file and the `.codex/rules/` copies are\n    # each checkout's own, so it stays while another checkout still holds a ledger: taking it\n    # would show that checkout's settings file and rule copies in its `git status`.\n    kept = _another_attached(root, checkouts)\n    hidden = None if kept else exclude.withdrawn_block(root)\n    settings = _planned_settings(root, recorded)\n    _refuse_unwithdrawable(root, recorded, checkouts, config, settings)\n    allow_removed = _withdraw_settings(root, settings)"
-after = "    ignore_remainder = None if _footprint_owns_region(root) else _ignore_region_remainder(root)\n    settings = _planned_settings(root, recorded)\n    allow_removed = _withdraw_settings(root, settings)\n    checkouts = _checkouts(root)\n    for tree in checkouts:\n        harness_anchor(tree, home)\n    # The other home a harness may read a link under, asked here too, and best-effort: a home its\n    # anchor refuses is passed over with a note rather than refused, since `detach` is the one\n    # command that takes back what `attach` made under either.\n    other = _other_harness_home() if home is None else None\n    elsewhere: Path | None = None\n    notes: tuple[str, ...] = ()\n    if other is not None:\n        elsewhere, where = other\n        try:\n            for tree in checkouts:\n                harness_anchor(tree, elsewhere)\n        except Refusal:\n            elsewhere, notes = None, (_LEFT_UNDER.format(where=where),)\n    kept = _another_attached(root, checkouts)\n    hidden = None if kept else exclude.withdrawn_block(root)\n    _refuse_unwithdrawable(root, recorded, checkouts, config, settings)"
+before = "    checkouts = _checkouts(root)\n    for tree in checkouts:\n        harness_anchor(tree, home)\n    # The other home a harness may read a link under, asked here too, and best-effort: a home its\n    # anchor refuses is passed over with a note rather than refused, since `detach` is the one\n    # command that takes back what `attach` made under either.\n    other = _other_harness_home() if home is None else None\n    elsewhere: Path | None = None\n    notes: tuple[str, ...] = ()\n    if other is not None:\n        elsewhere, where = other\n        try:\n            for tree in checkouts:\n                harness_anchor(tree, elsewhere)\n        except Refusal:\n            elsewhere, notes = None, (_LEFT_UNDER.format(where=where),)\n    ignore_remainder = None if _footprint_owns_region(root) else _ignore_region_remainder(root)\n    # The `info/exclude` block is found above the first withdrawal for the same reason: `git`\n    # names the file and a region opened twice refuses, and both are knowable now. It is shared\n    # by every checkout while the ledger, the settings file and the `.codex/rules/` copies are\n    # each checkout's own, so it stays while another checkout still holds a ledger: taking it\n    # would show that checkout's settings file and rule copies in its `git status`.\n    kept = _another_attached(root, checkouts)\n    hidden = None if kept else exclude.withdrawn_block(root)\n    harnessed, trees = _reach(root, checkouts, kept=kept)\n    settings = _planned_settings(root, recorded)\n    _refuse_unwithdrawable(root, recorded, trees, config, settings)\n    allow_removed = _withdraw_settings(root, settings)"
+after = "    ignore_remainder = None if _footprint_owns_region(root) else _ignore_region_remainder(root)\n    settings = _planned_settings(root, recorded)\n    allow_removed = _withdraw_settings(root, settings)\n    checkouts = _checkouts(root)\n    for tree in checkouts:\n        harness_anchor(tree, home)\n    # The other home a harness may read a link under, asked here too, and best-effort: a home its\n    # anchor refuses is passed over with a note rather than refused, since `detach` is the one\n    # command that takes back what `attach` made under either.\n    other = _other_harness_home() if home is None else None\n    elsewhere: Path | None = None\n    notes: tuple[str, ...] = ()\n    if other is not None:\n        elsewhere, where = other\n        try:\n            for tree in checkouts:\n                harness_anchor(tree, elsewhere)\n        except Refusal:\n            elsewhere, notes = None, (_LEFT_UNDER.format(where=where),)\n    kept = _another_attached(root, checkouts)\n    hidden = None if kept else exclude.withdrawn_block(root)\n    harnessed, trees = _reach(root, checkouts, kept=kept)\n    _refuse_unwithdrawable(root, recorded, trees, config, settings)"
 reddens = [
   "tests/attach/test_detach.py::test_a_git_that_cannot_run_is_answered_before_anything_is_withdrawn",
 ]
@@ -1196,7 +1208,7 @@ reddens = [
 [[mutation]]
 name = "detach finds an escaping group by withdrawing the tree"
 file = "src/stayfixed/attach/write.py"
-before = """    for tree in checkouts:
+before = """    for tree in trees:
         base = contained(tree, config.paths.memory, allow_final_symlink=True)"""
 after = """    for tree in []:
         base = contained(tree, config.paths.memory, allow_final_symlink=True)"""
@@ -1236,11 +1248,13 @@ reddens = [
 name = "detach finds the exclude block after it has withdrawn the settings"
 file = "src/stayfixed/attach/write.py"
 before = """    hidden = None if kept else exclude.withdrawn_block(root)
+    harnessed, trees = _reach(root, checkouts, kept=kept)
     settings = _planned_settings(root, recorded)
-    _refuse_unwithdrawable(root, recorded, checkouts, config, settings)
+    _refuse_unwithdrawable(root, recorded, trees, config, settings)
     allow_removed = _withdraw_settings(root, settings)"""
-after = """    settings = _planned_settings(root, recorded)
-    _refuse_unwithdrawable(root, recorded, checkouts, config, settings)
+after = """    harnessed, trees = _reach(root, checkouts, kept=kept)
+    settings = _planned_settings(root, recorded)
+    _refuse_unwithdrawable(root, recorded, trees, config, settings)
     allow_removed = _withdraw_settings(root, settings)
     hidden = None if kept else exclude.withdrawn_block(root)"""
 reddens = [

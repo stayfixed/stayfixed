@@ -7,7 +7,9 @@ the owner wrote by hand — which is worse than removing none.
 
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 import shutil
 from collections.abc import Callable
 from pathlib import Path, PurePosixPath
@@ -27,7 +29,7 @@ from stayfixed.project.uninstall import uninstall
 from stayfixed.scaffold import MANIFEST_PATH, Kind, Location, Manifest, Record, digest
 from stayfixed.scaffold.regions import RegionError, Style, extract, markers, upsert
 from tests.attach.test_binding import DEFAULT_MEMORY
-from tests.attach.test_links import _attach, _bound, _config
+from tests.attach.test_links import _attach, _bound, _config, _trusted
 from tests.attach.test_write import SETTINGS
 from tests.gitfixture import git
 from tests.parserlimits import LONG_NUMBER, NESTED, PAST_ENCODING, overflowing_indent
@@ -181,6 +183,112 @@ def test_detach_withdraws_the_link_tree_from_every_worktree(tmp_path: Path) -> N
     assert (side / "docs" / "memory" / "developer").is_symlink()
     _detach(root, machine, home)
     assert not (side / "docs" / "memory" / "developer").is_symlink()
+
+
+# --- a checkout another ledger still serves stays attached -----------------------------------
+
+
+def _both_attached(tmp_path: Path) -> tuple[Path, Path, Path, Path, Path]:
+    """The main checkout attached, its store approved, and a linked worktree attached after it,
+    each with its harness memory link made by `attach` itself: the main checkout's to its own
+    `paths.memory`, the worktree's to the main checkout's, which is where `attach` points every
+    checkout's link. Asserted here, so no case below asserts about links that were never made.
+    Returns `(root, side, store, machine, home)`."""
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2])
+    side = tmp_path / "side"
+    git(root, "worktree", "add", "-q", str(side), "-b", "side")
+    home = tmp_path / "home"
+    _attach(root, store, machine, home)
+    _trusted(root, machine)
+    _attach(root, store, machine, home)
+    _attach(side, store, machine, home)
+    assert (root / LEDGER).is_file() and (side / LEDGER).is_file()
+    for checkout in (root, side):
+        harness = harness_memory_path(checkout, home)
+        assert harness.is_symlink() and harness.exists(), checkout
+        assert harness.resolve() == (root / DEFAULT_MEMORY).resolve()
+        assert (checkout / DEFAULT_MEMORY / "developer").is_symlink()
+    return root, side, store, machine, home
+
+
+def _dangling_under(home: Path) -> list[Path]:
+    """Every link under the home's `.claude/projects/` that resolves to nothing."""
+    found: list[Path] = []
+    for dirpath, dirnames, filenames in os.walk(home / ".claude" / "projects"):
+        for name in (*dirnames, *filenames):
+            path = Path(dirpath) / name
+            if path.is_symlink() and not path.exists():
+                found.append(path)
+    return found
+
+
+def test_detach_in_a_worktree_leaves_the_attached_main_checkout_whole(tmp_path: Path) -> None:
+    # The main checkout attached, a worktree attached after it, and `detach` run in the worktree:
+    # the main checkout still holds its ledger, and `detach` took its link tree and its harness
+    # link anyway, leaving it half attached; and the worktree's own harness link, which points at
+    # the main checkout's tree, was compared with the worktree's tree, never matched, and stayed
+    # behind dangling. Mutation (oracle): `mutations/`'s "detach withdraws every checkout's tree
+    # while another ledger still serves one" -> the main checkout's tree goes.
+    root, side, _, machine, home = _both_attached(tmp_path)
+    _detach(side, machine, home)
+    assert (root / DEFAULT_MEMORY / "developer").is_symlink()
+    assert harness_memory_path(root, home).exists()
+    assert (root / LEDGER).is_file()
+    assert not os.path.lexists(harness_memory_path(side, home))
+    assert not (side / LEDGER).exists()
+    assert not (side / DEFAULT_MEMORY / "developer").is_symlink()
+    assert _dangling_under(home) == []
+
+
+def test_detach_in_the_main_checkout_leaves_an_attached_worktree_whole(tmp_path: Path) -> None:
+    # The other direction. The main checkout's tree is what the worktree's harness link points
+    # at, so while the worktree's ledger stands it stays; only the main checkout's own harness
+    # link, ledger, settings and rule copies go. A later `attach` anywhere rebuilds that tree
+    # first, so keeping it loses nothing.
+    root, side, _, machine, home = _both_attached(tmp_path)
+    _detach(root, machine, home)
+    assert (root / DEFAULT_MEMORY / "developer").is_symlink()
+    assert not os.path.lexists(harness_memory_path(root, home))
+    assert not (root / LEDGER).exists()
+    assert (side / DEFAULT_MEMORY / "developer").is_symlink()
+    assert harness_memory_path(side, home).exists()
+    assert (side / LEDGER).is_file()
+    assert _dangling_under(home) == []
+
+
+def _entries(*roots: Path) -> dict[str, str]:
+    """Every entry under each root, `.git` aside: a file by its bytes' digest, a link by its
+    target, a directory by its name, so a removed directory or a retargeted link shows too."""
+    found: dict[str, str] = {}
+    for root in roots:
+        for dirpath, dirnames, filenames in os.walk(root):
+            dirnames[:] = [name for name in dirnames if name != ".git"]
+            for name in (*dirnames, *filenames):
+                path = Path(dirpath) / name
+                if path.is_symlink():
+                    found[str(path)] = f"-> {os.readlink(path)}"
+                elif path.is_dir():
+                    found[str(path)] = "dir"
+                else:
+                    found[str(path)] = hashlib.sha256(path.read_bytes()).hexdigest()
+    return found
+
+
+def test_a_second_detach_exits_one_and_writes_nothing(tmp_path: Path) -> None:
+    # Run twice in the main checkout while the worktree is attached: the first takes this
+    # checkout's ledger, so the second has nothing to reverse and fails (exit 1) naming the
+    # missing ledger, with both checkouts and every harness link exactly as the first left them.
+    root, side, _, machine, home = _both_attached(tmp_path)
+    _detach(root, machine, home)
+    before = _entries(root, side, home)
+    # Non-vacuous: the walk sees the trees and the worktree's harness link.
+    assert any(path.endswith("developer") for path in before)
+    assert str(harness_memory_path(side, home)) in before
+    with pytest.raises(Failure) as failed:
+        _detach(root, machine, home)
+    assert LEDGER in str(failed.value)
+    assert _entries(root, side, home) == before
 
 
 def test_detach_withdraws_the_settings_fallback_it_recorded(tmp_path: Path) -> None:

@@ -6,6 +6,7 @@ is `worktree.link`'s, unchanged. This module asserts that `attach` reaches both.
 
 from __future__ import annotations
 
+import os
 import shutil
 from pathlib import Path
 
@@ -459,12 +460,25 @@ def test_detaching_from_a_linked_worktree_withdraws_the_main_checkouts_tree_too(
     # `.stayfixed/local/` in the checkout the attach was run from, and that directory is
     # untracked — a sibling worktree does not have one.
     _attach(side, store, machine, home)
-    # Non-vacuous: there is nothing to withdraw unless both trees were built.
+    # Approved and attached again, so each checkout holds a harness link as `attach` makes it:
+    # both point at the owning checkout's `paths.memory`. The worktree's was compared with the
+    # worktree's own tree, never matched, and outlived the detach dangling. Mutation (oracle):
+    # `mutations/`'s "detach compares a checkout's harness link with that checkout's own tree"
+    # -> the worktree's link stays.
+    _trusted(root, machine)
+    _attach(side, store, machine, home)
+    # Non-vacuous: there is nothing to withdraw unless both trees and both links were built.
     assert (root / "docs" / "memory" / "developer").is_symlink()
     assert (side / "docs" / "memory" / "developer").is_symlink()
+    for checkout in (root, side):
+        assert harness_memory_path(checkout, home).exists(), checkout
     detach(side, machine=machine, home=home)
     assert not (root / "docs" / "memory" / "developer").is_symlink()
     assert not (side / "docs" / "memory" / "developer").is_symlink()
+    for checkout in (root, side):
+        assert not os.path.lexists(harness_memory_path(checkout, home)), checkout
+    projects = home / ".claude" / "projects"
+    assert [path for path in projects.rglob("*") if path.is_symlink()] == []
 
 
 def test_withdrawing_the_fallback_takes_the_settings_file_with_it_when_nothing_is_left(

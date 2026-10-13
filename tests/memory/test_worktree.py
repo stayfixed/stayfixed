@@ -934,7 +934,7 @@ def test_a_withdrawal_leaves_a_symlink_at_a_group_name_that_points_somewhere_els
     (base / "project-stable").unlink()
     (base / "project-stable").symlink_to(mine)
 
-    links = detach_main(root, config, machine=machine, home=a_home(tmp_path))
+    links = detach_main(root, config, machine=machine, home=a_home(tmp_path), owner=root)
     assert (base / "project-stable").is_symlink()
     assert (base / "project-stable" / "keep.md").is_file()
     assert base / "project-stable" not in links.revoked
@@ -957,7 +957,7 @@ def test_a_withdrawal_leaves_a_real_directory_standing_at_a_group_name(tmp_path:
     (base / "project-stable").mkdir()
     (base / "project-stable" / "note.md").write_text("mine\n", encoding="utf-8")
 
-    detach_main(root, config, machine=machine, home=a_home(tmp_path))
+    detach_main(root, config, machine=machine, home=a_home(tmp_path), owner=root)
     assert (base / "project-stable" / "note.md").is_file()
     assert not (base / "developer").is_symlink()
 
@@ -974,7 +974,7 @@ def test_a_withdrawal_still_removes_a_link_of_ours_whose_target_has_gone(tmp_pat
     shutil.rmtree(own / "project-stable")
     assert (base / "project-stable").is_symlink() and not (base / "project-stable").exists()
 
-    links = detach_main(root, config, machine=machine, home=a_home(tmp_path))
+    links = detach_main(root, config, machine=machine, home=a_home(tmp_path), owner=root)
     assert not (base / "project-stable").is_symlink()
     assert base / "project-stable" in links.revoked
 
@@ -1098,7 +1098,7 @@ def test_a_withdrawal_against_a_home_that_is_not_there_refuses_rather_than_repor
     attach_main(root, own, config, machine=machine, home=home)
     absent = tmp_path / "no-such-home"
     with pytest.raises(Refusal) as refused:
-        detach_main(root, config, machine=machine, home=absent)
+        detach_main(root, config, machine=machine, home=absent, owner=root)
     assert str(absent) in str(refused.value)
     assert "never creates the home directory itself" in str(refused.value)
 
@@ -1164,7 +1164,7 @@ def test_a_symlinked_claude_directory_is_a_refusal_in_both_directions(tmp_path: 
     # Nothing was written through the link, and nothing was written in front of it either.
     assert list(elsewhere.iterdir()) == []
     with pytest.raises(Refusal) as withdrawing:
-        detach_main(root, config, machine=None, home=home)
+        detach_main(root, config, machine=None, home=home, owner=root)
     assert "passes through a symlink" in str(withdrawing.value)
 
 
