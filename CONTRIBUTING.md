@@ -121,8 +121,8 @@ it finishes is outside the rule: nothing but that command ever wrote into it.
 An area is a subpackage of `src/stayfixed/` that the CLI frame, the hook registry and `doctor`'s
 report discover by name — there is no shared registry to edit. One table does name areas, `GROUP_OF` in
 `scripts/mutation_oracle.py`, and it is a deliberate exception kept for a reason outside the code
-("Tests" gives it): it groups their mutation entries into files, and a new area needs no row there
-until its entries outgrow the group they fall into.
+("Tests" gives it): it groups their mutation entries into files, and a new area needs no row there:
+its entries go in the group its path falls into.
 
 Today the discovered ones are `assess`, `attach`, `docs`, `doctor`, `guards`, `hooks`, `ledger`,
 `memory`, `overlay`, `project` and `setup`, and they fall on two sides of one line. Three of them
@@ -374,20 +374,17 @@ reddens = ["tests/test_fsops.py::test_a_parent_component_never_leaves_the_root"]
 The set is one file per group of the tree, and an entry goes in the group file its `file` routes to:
 `GROUP_OF` in `scripts/mutation_oracle.py` maps path prefixes to groups, the longest matching prefix
 winning and the empty prefix's group taking anything no other prefix matches. The groups are coarse
-because they were sized while this repository's root was the plugin, when every tracked file
-counted against the 512 files past which the plugin directory holds the version for a reviewer:
-one file per area would need no table, and would have spent about twenty of those 512 where eleven
-did; `publish` was split from `tooling` by its largest area later, the way the cap below asks.
-That trade is why `GROUP_OF` is a hand-kept table, the exception to "no shared registry" under
-"Areas". The plugin is now published from a repository of its own, whose root is the tree
+because they were sized for the 512 files past which the plugin directory holds the version for a
+reviewer, while this repository's root was the plugin and every tracked file counted against them:
+one file per area would need no table, and would have spent about twenty of those 512 where twelve
+do. The plugin is now published from a repository of its own, whose root is the tree
 `scripts/plugin_tree.py` generates from the paths its `PLUGIN_PATHS` names, and `mutations/` is not
-among them.
-`tests/scripts/test_mutation_oracle.py` reddens on an entry in the wrong file and on a file that
-reaches its cap, three quarters of the directory's; a group that does is split by its largest area,
-which is an edit to `GROUP_OF`. The table and the cap are kept as they were sized, and whether
-either still earns its place, now that neither the 512 files nor the per-file limit reaches
-`mutations/`, is an open question, recorded here and nowhere else: the comments beside the two
-point to this paragraph.
+among them, so that limit no longer reaches these files, and there is no size cap on a group file.
+`GROUP_OF` stays all the same: regrouping about 1.46 MB of declarations into one file per area
+would rewrite every entry's history and collide with every open branch's entries, for no reader's
+gain. It remains the one exception to "no shared registry" under "Areas", and it is stated as such
+there and beside the table. `tests/scripts/test_mutation_oracle.py` reddens on an entry in the
+wrong file.
 A comment that cites an entry names the set and the entry's quoted name — `mutations/`'s "the
 containment walk stops refusing '..'" — and never its group file, so a regroup leaves the comment
 true. That makes a name a reference, and two things hold it to one: the oracle refuses a name two

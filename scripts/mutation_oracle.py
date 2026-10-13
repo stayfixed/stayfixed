@@ -66,15 +66,15 @@ DECLARATIONS = ROOT / "mutations"
 # directory rather than naming its files, and the tests hold every entry to the file its `file`
 # routes to.
 #
-# **A hand-kept table, and a deliberate exception to CONTRIBUTING's "areas are discovered by
-# name — there is no shared registry to edit".** One file per area would need no table, and it
-# would be about twenty files, not twelve. The plugin directory holds the version for a
-# reviewer past 512 files as well as at a file of 256 KiB, and the groups were sized while the
-# repository root was the plugin folder, when every tracked file counted against the 512, so they
-# are as coarse as the size limit let them be. The plugin's tree (`scripts/plugin_tree.py`) no
-# longer holds `mutations/`, so neither limit reaches these files now. The table is kept as it was
-# sized; whether it still earns its place is the open question CONTRIBUTING.md, "Tests", records.
-# A group that outgrows its file is split by its largest area, which is an edit to this table.
+# **A hand-kept table, and the one deliberate exception to CONTRIBUTING's "areas are discovered
+# by name — there is no shared registry to edit".** One file per area would need no table, and it
+# would be about twenty files, not twelve. The groups were sized for the plugin directory's limit
+# of 512 files, while the repository root was the plugin folder and every tracked file counted
+# against it. The plugin's tree (`scripts/plugin_tree.py`) no longer holds `mutations/`, so that
+# limit no longer reaches these files, and no size cap holds a group file. The table stays because
+# regrouping about 1.46 MB of declarations into one file per area would rewrite every entry's
+# history and collide with every open branch's entries, for no reader's gain. CONTRIBUTING.md,
+# "Tests", states the same ruling.
 GROUP_OF: tuple[tuple[str, str], ...] = (
     ("src/stayfixed/assess/", "assess"),
     ("src/stayfixed/attach/", "attach"),
