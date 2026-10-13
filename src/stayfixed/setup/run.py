@@ -68,9 +68,9 @@ machine file, the settings merge and the plugin installs, and for `create:` abov
   or equal to any checkout of the project root's repository that `git` can name: what a
   repository ships reaches its own checkouts and nowhere else, so refusing every checkout of it
   removes the tree a clone can stage. Nor may it lie inside a checkout of any other repository,
-  its own nested checkout included. Those comparisons with the project root need a repository:
-  with `--root` in none, nothing can ship a tree there, and only the candidate's own side is
-  asked.
+  its own nested checkout included. Those comparisons with the project root need a repository
+  git finds: with no `.git` at or above `--root`, they are not made, and only the candidate's own
+  side is asked (`_outside_the_project` names what that leaves uncompared).
   `_outside_the_project` says how `git` is asked and from which side, and why. It is not a claim
   that the same bytes cannot be somewhere else on the machine — a separate clone of the same
   remote passes — only that the owner put them there. When `git` gives no answer for the project
@@ -781,11 +781,16 @@ def _outside_the_project(candidate: Path, *, project_root: Path) -> None:
     work tree is a place that repository can ship files into, a nested checkout's included.
 
     **Containment is judged against a repository.** The path arm and the listing run only when
-    `--root` is in one: a directory in no repository ships nothing, and comparing paths there
-    refused the owner's own `setup --overlay create:<owner>/<name> --yes` run in `~`, where
-    `--root` defaults to the home directory the overlay is created in. The candidate's own side
-    is asked either way. The anchor is `--root`, which the command line chooses: run from a
-    directory in no repository, nothing is compared with the project an agent works in.
+    git finds a repository for `--root` (a `.git` at or above it): a directory in no repository
+    git can name ships nothing git can name, and comparing paths there refused the owner's own
+    `setup --overlay create:<owner>/<name> --yes` run in `~`, where `--root` defaults to the home
+    directory the overlay is created in. The candidate's own side is asked either way. The anchor
+    is `--root`, which the command line chooses: run from a directory git finds no repository
+    for, nothing is compared with the project an agent works in. Nor is what git cannot find
+    there: a work tree of another version control system, and one whose git directory is
+    elsewhere and named only by `--git-dir` and `--work-tree` or `GIT_DIR` — a bare-repository
+    dotfiles home is one — are not compared, since `gitenv` scrubs `GIT_DIR` from every `git` it
+    runs and no `.git` leads to them.
 
     **What it does not cover, stated rather than implied.** When `git` gives no answer for the
     project root, the arms that compare with it are silent — `_repository` says which answers
