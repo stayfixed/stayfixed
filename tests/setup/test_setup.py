@@ -25,7 +25,7 @@ from stayfixed.setup.api import USER_SETTINGS, setup
 from stayfixed.setup.machine import read_machine, write_machine
 from tests import parserlimits
 from tests.gitfixture import git as _git
-from tests.gitfixture import stand_in_git
+from tests.gitfixture import needs_git, stand_in_git
 from tests.parserlimits import overflowing
 from tests.pathfaults import ROOT_SEARCHES_EVERYTHING, unsearchable
 from tests.runners import Recorder
@@ -469,21 +469,25 @@ def test_an_overlay_missing_the_layout_is_refused(tmp_path: Path) -> None:
         )
 
 
+@needs_git
 def test_an_overlay_inside_the_project_root_is_refused(tmp_path: Path) -> None:
     # The other half, and the control that actually binds: a path outside the repository that
     # already carries a real overlay layout is not something a hostile clone can create, but a path
     # *inside* the repository is exactly the shape of tree a clone can ship — so recording one there
-    # is refused regardless of how convincing its layout is.
+    # is refused regardless of how convincing its layout is. A repository, because containment is
+    # judged against the repository `--root` is in: a directory in none ships nothing.
     #
     # Mutation (`mutations/`'s "setup stops refusing an overlay root inside the project"):
-    # `_outside_the_project`'s path condition becomes `if False:` → a nested overlay is recorded
-    # and this reddens.
+    # `_overlaps` stops looking above the candidate -> the path arm and the checkout listing both
+    # pass it, and the refusal that is left, the candidate-side walk's, does not name `--root`, so
+    # this reddens on the match.
     project = tmp_path / "project"
     project.mkdir()
+    _git(project, "init", "-q", "-b", "main")
     nested = project / "vendored-overlay"
     nested.mkdir()
     _seed_overlay(nested)
-    with pytest.raises(Refusal, match="is inside"):
+    with pytest.raises(Refusal, match="holds it, or is it"):
         setup(
             "recommended",
             home=tmp_path / "home",
@@ -917,6 +921,7 @@ def test_the_same_fixture_without_the_typo_writes_both_files(tmp_path: Path) -> 
     assert runner.calls != []
 
 
+@needs_git
 def test_a_created_overlay_is_refused_before_the_repository_exists(tmp_path: Path) -> None:
     # The most serious of the structural checks that used to run too late: the documented command
     # run from `$HOME` — `--root` defaulting to `.` — created the private repository on GitHub,
@@ -926,12 +931,17 @@ def test_a_created_overlay_is_refused_before_the_repository_exists(tmp_path: Pat
     # `home/<name>` needs no created tree: it is `overlay.api.target_root`'s answer, known from the
     # arguments alone.
     #
+    # The refusal is for a home that is a repository — a dotfiles work tree, which could ship the
+    # tree `create:` would clone into it. A home in no repository is not refused at all:
+    # `test_an_overlay_created_from_a_directory_in_no_repository_passes_containment`.
+    #
     # Mutation (`mutations/`'s "setup computes where a created overlay lands only after creating
     # it"): the `_outside_the_project(destination, ...)` call in `_requested_overlay` is dropped,
     # leaving `_apply_overlay`'s floor → `gh repo create` runs, and this reddens on the argv
     # assertion.
     home = tmp_path / "home"
     home.mkdir()
+    _git(home, "init", "-q", "-b", "main")
     machine = tmp_path / "config.toml"
     runner = Recorder(on_call=_populate_overlay)
     with pytest.raises(Refusal, match="is inside"):
@@ -947,6 +957,113 @@ def test_a_created_overlay_is_refused_before_the_repository_exists(tmp_path: Pat
     assert not any(argv[:3] == ["gh", "repo", "create"] for argv in runner.calls)
     assert not (home / "stayfixed-private").exists()
     assert _wrote_anything(home, machine) == []
+
+
+@needs_git
+def test_an_overlay_created_from_a_directory_in_no_repository_passes_containment(
+    tmp_path: Path,
+) -> None:
+    # The owner's own documented command, `stayfixed setup --overlay create:<owner>/<name> --yes`
+    # run in `~`: `--root` defaults to `.`, the home directory, and `home/<name>` lies inside it, so
+    # the path comparison refused it — although `~` is in no repository and nothing can ship the
+    # tree there. Containment is judged against a repository; with none there is nothing to compare.
+    # Mutation (`mutations/`'s "setup compares an overlay's place with --root outside any
+    # repository"): an empty repository stands in for the missing one, so the path arm compares
+    # as it did before -> refused, and this reddens.
+    home = tmp_path / "home"
+    home.mkdir()
+    machine = tmp_path / "config.toml"
+    runner = Recorder(answers={_OCTOS_PROBE: _A_TEMPLATE}, on_call=_populate_overlay)
+    setup(
+        "recommended",
+        home=home,
+        machine=machine,
+        runner=runner,
+        yes=True,
+        overlay="create:octo/stayfixed-private",
+        project_root=home,
+    )
+    assert any(argv[:3] == ["gh", "repo", "create"] for argv in runner.calls)
+
+
+@needs_git
+def test_an_overlay_inside_another_repository_is_refused_from_a_directory_in_no_repository(
+    tmp_path: Path,
+) -> None:
+    # The other half of judging only against a repository: with `--root` in none, the overlay's own
+    # side is still asked. A directory inside some other repository's work tree is a tree that
+    # repository can ship, whichever repository `--root` is in. Mutation (`mutations/`'s "setup
+    # stops refusing an overlay inside another repository's checkout"): the arm's condition
+    # becomes `False` -> this overlay is recorded and this reddens.
+    repository = tmp_path / "code" / "R"
+    repository.mkdir(parents=True)
+    _git(repository, "init", "-q", "-b", "main")
+    candidate = repository / "ov"
+    candidate.mkdir()
+    _seed_overlay(candidate)
+    with pytest.raises(Refusal, match="inside a checkout of another repository"):
+        setup(
+            "recommended",
+            home=tmp_path / "home",
+            machine=tmp_path / "config.toml",
+            runner=Recorder(),
+            yes=True,
+            overlay=str(candidate),
+            project_root=tmp_path,
+        )
+
+
+@needs_git
+def test_an_overlay_that_is_a_checkout_of_its_own_inside_another_repository_is_refused(
+    tmp_path: Path,
+) -> None:
+    # Its own `.git` does not take it out of the outer work tree: measured on git 2.54, a merge in
+    # the outer repository of a commit that tracks `ov/extra` writes that file into the nested
+    # checkout's directory. So the question is asked from above the candidate, where the
+    # candidate's own repository cannot be the answer. Mutation (`mutations/`'s "setup stops
+    # refusing an overlay inside another repository's checkout"): the arm's condition becomes
+    # `False` -> this overlay is recorded and this reddens.
+    repository = tmp_path / "code" / "R"
+    repository.mkdir(parents=True)
+    _git(repository, "init", "-q", "-b", "main")
+    candidate = repository / "ov"
+    candidate.mkdir()
+    _git(candidate, "init", "-q", "-b", "main")
+    _seed_overlay(candidate)
+    with pytest.raises(Refusal, match="inside a checkout of another repository"):
+        setup(
+            "recommended",
+            home=tmp_path / "home",
+            machine=tmp_path / "config.toml",
+            runner=Recorder(),
+            yes=True,
+            overlay=str(candidate),
+            project_root=tmp_path,
+        )
+
+
+@needs_git
+def test_an_overlay_that_is_a_checkout_of_its_own_is_recorded(tmp_path: Path) -> None:
+    # The owner's own layout: the overlay is a clone of a private repository, in a directory no
+    # other repository holds. That it is a checkout is not what refuses an overlay; where it lies
+    # is. Mutation (`mutations/`'s "setup asks whether an overlay lies in another repository from
+    # the overlay itself"): the walk starts at the candidate -> it answers for itself and is
+    # refused, and this reddens.
+    candidate = tmp_path / "overlay"
+    candidate.mkdir()
+    _git(candidate, "init", "-q", "-b", "main")
+    _seed_overlay(candidate)
+    machine = tmp_path / "config.toml"
+    setup(
+        "recommended",
+        home=tmp_path / "home",
+        machine=machine,
+        runner=Recorder(),
+        yes=True,
+        overlay=str(candidate),
+        project_root=tmp_path / "project",
+    )
+    assert overlay_root(machine) == candidate
 
 
 @pytest.mark.parametrize("document", ["[]", '"stayfixed-overlay"', "null"])
@@ -999,21 +1116,24 @@ def test_a_directory_whose_manifests_name_another_plugin_is_not_an_overlay(tmp_p
         )
 
 
+@needs_git
 def test_an_overlay_that_holds_the_project_root_is_refused(tmp_path: Path) -> None:
     # The containment refused `candidate == project` or `project in candidate.parents` and nothing
     # else, so a *parent* passed — and `git worktree add .worktrees/x`, which is how feature work is
     # ordinarily started, puts `--root` exactly there. A
     # clone shipping its two manifests at its own root was then accepted as the machine's trust
-    # anchor.
+    # anchor. `--root` is a repository of its own here, so the path arm is the only one that can
+    # see the clone above it: a real worktree of the clone is refused by the checkout listing too.
     #
-    # Mutation (`mutations/`'s "setup stops refusing an overlay root that holds the project"): the
-    # `or resolved_candidate in resolved_project.parents` arm becomes `or False` → the clone's
-    # own root is recorded and this reddens.
+    # Mutation (`mutations/`'s "setup stops refusing an overlay root that holds the project"):
+    # `_overlaps` stops asking whether `a` holds `b` -> the clone's own root is recorded and this
+    # reddens.
     clone = tmp_path / "clone"
     clone.mkdir()
     _seed_overlay(clone)
     worktree = clone / ".worktrees" / "feature"
     worktree.mkdir(parents=True)
+    _git(worktree, "init", "-q", "-b", "main")
     with pytest.raises(Refusal, match="holds it, or is it"):
         setup(
             "recommended",

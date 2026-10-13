@@ -2590,13 +2590,19 @@ write** — before the machine file, the settings merge and the plugin installs,
 before `gh repo create` runs on anybody's account. It must exist; its two `.claude-plugin/`
 manifests must name it `stayfixed-overlay[-<owner>]` and `stayfixed-overlay-marketplace[-<owner>]`,
 which is what `overlay create` renders and `overlay init` renames, rather than merely being
-present; and it must lie outside the repository `--root` names — not inside it, not above it, and
+present; and it must lie outside the repository `--root` is in — not inside it, not above it, and
 not in another checkout of it, since a worktree is not a different repository and a clone ships
-its tree into all of them. The path comparisons stand alone only where `--root` is in no
-repository, or where `git` cannot be run and no `.git` is at or above the directory it was asked
-from. Everywhere else inside a checkout, a `git` that gives no answer, refuses the repository it
-found (another user's under `safe.directory`, or one whose `.git` it cannot read) or cannot list
-its checkouts is a refusal.
+its tree into all of them — and outside every checkout of any other repository, a checkout of its
+own nested in one included, because a repository can put files into any directory of its work
+tree. The comparison with `--root` is against the repository `--root` is in, and a `--root` in no
+repository, or where `git` cannot be run and no `.git` is at or above it, is not compared at all:
+nothing can ship a tree there. So `setup --overlay create:<owner>/<name> --yes` run in a home
+directory that is no repository passes, and the same command run in a home that is one (a
+dotfiles work tree) is refused before `gh` runs. Containment is anchored on `--root`, which the
+command line chooses: run from a directory in no repository, nothing is compared with the project
+an agent works in. Everywhere inside a checkout, a `git` that gives no answer, refuses the
+repository it found (another user's under `safe.directory`, or one whose `.git` it cannot read) or
+cannot list its checkouts is a refusal.
 
 **Writes** `<home>` itself when it is not there yet; `--machine`'s file, with the directories above
 it, once for the preset and again for the overlay root `--overlay` records;

@@ -67,11 +67,14 @@ controls:
   It now also refuses a candidate that *holds* the project root, and a candidate inside, holding
   or equal to any checkout of the project root's repository that `git` can name: what a
   repository ships reaches its own checkouts and nowhere else, so refusing every checkout of it
-  removes the tree a clone can stage.
+  removes the tree a clone can stage. Nor may it lie inside a checkout of any other repository,
+  its own nested checkout included. Those comparisons with the project root need a repository:
+  with `--root` in none, nothing can ship a tree there, and only the candidate's own side is
+  asked.
   `_outside_the_project` says how `git` is asked and from which side, and why. It is not a claim
   that the same bytes cannot be somewhere else on the machine — a separate clone of the same
   remote passes — only that the owner put them there. When `git` gives no answer for the project
-  root only the path arms stand, and that is stated rather than assumed; once `git` has said
+  root nothing is compared with it, and that is stated rather than assumed; once `git` has said
   there is a repository, a listing it cannot give is a refusal and not a pass.
 
 For `create:`, the destination is `home/<name>` and is knowable from the arguments
@@ -600,9 +603,10 @@ def _ask(start: Path, *args: str, keyed: bool = False) -> list[str] | None:
 
     **Nor is a git that refused the repository it found.** Exit 128 inside a checkout is git
     saying there is a repository it will not describe — another user's, under `safe.directory`,
-    or one whose `.git` it cannot read — and read as `None` it let the path arm stand alone, as
-    `-1` did. It refuses too, except for a `keyed` question, asked with `_EXPLICIT_BARE`, whose
-    128 can be git declining a bare-shaped directory: its caller asks again without the key.
+    or one whose `.git` it cannot read — and read as `None` it skipped every comparison with
+    `--root`, as `-1` did. It refuses too, except for a `keyed` question, asked with
+    `_EXPLICIT_BARE`, whose 128 can be git declining a bare-shaped directory: its caller asks
+    again without the key.
     """
     code, out = git_run(start, *args)
     if code == -1 and in_work_tree(start):
@@ -626,8 +630,9 @@ def _repository(project_root: Path) -> _Repository | None:
     a clone cannot commit into.
 
     **`None` means git gave no answer where no `.git` is at or above `--root`**: it is in no
-    repository, or git could not be run or timed out there. Only the path arm stands, and
-    neither is something a repository can commit. Every other way of not answering refuses:
+    repository, or git could not be run or timed out there. Nothing is compared with `--root`
+    then (`_outside_the_project` says why), and neither is something a repository can commit.
+    Every other way of not answering refuses:
     git that could not be run, timed out, or refused the repository it found (`safe.directory`,
     an unreadable `.git`) inside a checkout (`_ask`), an answer that says `--root`
     is not inside a work tree (a root inside a bare-shaped directory has no checkout of its own
@@ -727,7 +732,7 @@ def _overlaps(a: Path, b: Path) -> bool:
 def _outside_the_project(candidate: Path, *, project_root: Path) -> None:
     """Refuse an overlay root that sits where the repository an agent works in could reach it.
 
-    A path arm and two `git` arms. The path arm is equality or nesting either way round — a
+    A path arm and three `git` arms. The path arm is equality or nesting either way round — a
     candidate *under* the project, and a candidate that *holds* it, which is the shape
     `git worktree add .worktrees/x` produces and which the first draft accepted. The `git` arms
     are the sibling case the paths cannot see: `stayfixed.worktrees/feature` is not under
@@ -735,11 +740,20 @@ def _outside_the_project(candidate: Path, *, project_root: Path) -> None:
     whenever `--root` was one of its worktrees — and working in a worktree makes `--root` one.
     The first applies the path arm to every checkout `_repository` lists; the second,
     `_candidate_repository`, catches the checkouts that list names by their git directory. See
-    each for why it is asked from the side it is.
+    each for why it is asked from the side it is. The third asks the same walk from above the
+    candidate, and refuses any checkout that holds it, of whichever repository: a directory in a
+    work tree is a place that repository can ship files into, a nested checkout's included.
+
+    **Containment is judged against a repository.** The path arm and the listing run only when
+    `--root` is in one: a directory in no repository ships nothing, and comparing paths there
+    refused the owner's own `setup --overlay create:<owner>/<name> --yes` run in `~`, where
+    `--root` defaults to the home directory the overlay is created in. The candidate's own side
+    is asked either way. The anchor is `--root`, which the command line chooses: run from a
+    directory in no repository, nothing is compared with the project an agent works in.
 
     **What it does not cover, stated rather than implied.** When `git` gives no answer for the
-    project root, the `git` arms are silent and only the path arm stands — `_repository` says
-    which answers those are. A common directory whose path is not UTF-8 is an answer like any
+    project root, the arms that compare with it are silent — `_repository` says which answers
+    those are. A common directory whose path is not UTF-8 is an answer like any
     other: `git_run` decodes it losslessly, so two checkouts of one repository still compare
     equal. And what the whole check bounds is a repository *shipping* a tree: committed contents
     reach that repository's own checkouts and nowhere else, so refusing all of them removes the
@@ -749,16 +763,7 @@ def _outside_the_project(candidate: Path, *, project_root: Path) -> None:
     """
     resolved_candidate = candidate.resolve()
     resolved_project = project_root.resolve()
-    if _overlaps(resolved_candidate, resolved_project):
-        raise Refusal(
-            f"{candidate} is inside {project_root}, holds it, or is it — and {project_root} is "
-            f"the project this command was run from. The overlay root is the machine's trust "
-            f"anchor and must live outside any repository an agent works in: a repository could "
-            f"otherwise ship its own tree and have this command record it"
-        )
     repository = _repository(resolved_project)
-    if repository is None:
-        return
     same_repository = (
         f"{candidate} is inside a checkout of the same repository as {project_root}, the "
         f"project this command was run from, holds one, or is one. The overlay root is the "
@@ -766,12 +771,34 @@ def _outside_the_project(candidate: Path, *, project_root: Path) -> None:
         f"works in — a worktree is not a different repository, and a clone ships its own tree "
         f"into all of them"
     )
-    for checkout in repository.checkouts:
-        if _overlaps(resolved_candidate, checkout.resolve()):
-            raise Refusal(same_repository)
+    if repository is not None:
+        if _overlaps(resolved_candidate, resolved_project):
+            raise Refusal(
+                f"{candidate} is inside {project_root}, holds it, or is it — and {project_root} "
+                f"is the project this command was run from, in the repository whose git "
+                f"directory is {repository.common}. The overlay root is the machine's trust "
+                f"anchor and must live outside any repository an agent works in: a repository "
+                f"could otherwise ship its own tree and have this command record it"
+            )
+        for checkout in repository.checkouts:
+            if _overlaps(resolved_candidate, checkout.resolve()):
+                raise Refusal(same_repository)
     found = _candidate_repository(resolved_candidate)
-    if found is not None and _same(found.resolve(), repository.common.resolve()):
+    if found is None:
+        return
+    if repository is not None and _same(found.resolve(), repository.common.resolve()):
         raise Refusal(same_repository)
+    # Asked from above the candidate, so an overlay that is the top of a checkout of its own is
+    # not its own answer: what git finds there is a work tree that holds the candidate, and that
+    # repository can put files in it — a merge writes a tracked path into a nested checkout's
+    # directory as into any other.
+    outer = _candidate_repository(resolved_candidate.parent)
+    if outer is not None:
+        raise Refusal(
+            f"{candidate} is inside a checkout of another repository, whose git directory is "
+            f"{outer}. The overlay root is the machine's trust anchor and must not lie where a "
+            f"repository can ship files: put it in a directory no repository's checkout holds"
+        )
 
 
 @dataclass(frozen=True)

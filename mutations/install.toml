@@ -345,7 +345,7 @@ reddens = [
 [[mutation]]
 name = "setup stops asking git from the candidate's side"
 file = "src/stayfixed/setup/run.py"
-before = "    if found is not None and _same(found.resolve(), repository.common.resolve()):"
+before = "    if repository is not None and _same(found.resolve(), repository.common.resolve()):"
 after = "    if False:"
 reddens = [
   "tests/setup/test_setup.py::test_a_checkout_the_listing_names_by_its_git_directory_is_still_refused",
@@ -502,6 +502,39 @@ after = """    if True:
         home.mkdir(parents=True, exist_ok=True)
     if False:"""
 reddens = ["tests/setup/test_setup.py::test_a_home_mkdir_that_fails_is_a_refusal"]
+
+# Containment is judged against a repository. With `--root` in none the path arm refused the
+# owner's own `setup --overlay create:<owner>/<name> --yes` run in `~`, which is no repository and
+# ships nothing. The mutation stands an empty repository in for the missing one, which is the
+# order the arms ran in before: the path arm first, whatever `_repository` answers.
+[[mutation]]
+name = "setup compares an overlay's place with --root outside any repository"
+file = "src/stayfixed/setup/run.py"
+before = "    repository = _repository(resolved_project)"
+after = "    repository = _repository(resolved_project) or _Repository(resolved_project, ())"
+reddens = [
+  "tests/setup/test_setup.py::test_an_overlay_created_from_a_directory_in_no_repository_passes_containment",
+]
+
+# And the candidate's own side, asked whichever repository `--root` is in: a directory inside a
+# checkout of another repository is a place that repository can ship files into, and so is a
+# checkout of its own nested in one — a merge in the outer repository writes into it.
+[[mutation]]
+name = "setup stops refusing an overlay inside another repository's checkout"
+file = "src/stayfixed/setup/run.py"
+before = "    if outer is not None:"
+after = "    if False:"
+reddens = [
+  "tests/setup/test_setup.py::test_an_overlay_inside_another_repository_is_refused_from_a_directory_in_no_repository",
+  "tests/setup/test_setup.py::test_an_overlay_that_is_a_checkout_of_its_own_inside_another_repository_is_refused",
+]
+
+[[mutation]]
+name = "setup asks whether an overlay lies in another repository from the overlay itself"
+file = "src/stayfixed/setup/run.py"
+before = "    outer = _candidate_repository(resolved_candidate.parent)"
+after = "    outer = _candidate_repository(resolved_candidate)"
+reddens = ["tests/setup/test_setup.py::test_an_overlay_that_is_a_checkout_of_its_own_is_recorded"]
 
 # `CONTRIBUTING`'s containment rule has two stages, and `setup` had only the second: the
 # `O_NOFOLLOW` walk refused a symlinked `~/.claude` with `UnsafePath`, which `cli.run` renders as
