@@ -280,13 +280,13 @@ hygiene`](#stayfixed-test-hygiene)); Codex reads the same file and ignores that 
 Codex CLI 0.162.0-alpha.17.2). `stayfixed hook` dispatches six events, those four and
 `UserPromptSubmit` and `UserPromptExpansion`, which no shipped entry uses.
 
-The wrapper exists because a Python process cannot fail
-closed about its own absence: a missing script exits `2` by CPython accident, a missing
-interpreter `127`, an `ImportError` `1`, a lost executable bit `126` — and Claude Code reads
-every exit that is not `2` as a non-blocking error, which is permission. So the wrapper owns
-three things Python cannot: it probes for a `python3` of 3.11 or newer by running code rather
-than by matching a path, it resolves the project root (`CLAUDE_PROJECT_DIR`, else `git`) and
-changes into it so every command's `--root` default is correct, and it maps exit codes.
+The wrapper exists because a Python process cannot fail closed about its own absence: a missing
+script exits `2` by CPython accident, a missing interpreter `127`, an `ImportError` `1`, a lost
+executable bit `126` — and Claude Code reads every exit that is not `2` as a non-blocking error,
+which is permission. So the wrapper owns three things Python cannot: it probes for a `python3` of
+3.11 or newer by running code rather than by matching a path, it resolves the project root
+(`CLAUDE_PROJECT_DIR`, else `git`) and changes into it so every command's `--root` default is
+correct, and it maps exit codes.
 
 `0` and `2` are the dispatcher's own and pass through untouched — a `2` it produced is a
 handler's deny, not a wrapper failure. Every other exit code, and every fault the wrapper finds
