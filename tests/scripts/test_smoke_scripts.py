@@ -125,6 +125,45 @@ def test_a_launcher_fault_is_not_mistaken_for_a_refusal(
     assert "injected nothing carrying '<<<stayfixed:repository-data'" in out, out
 
 
+# A launcher that is the real one for everything but the red-run entry, which it answers as an
+# entry whose handler said nothing does: exit 0 and the event's envelope with no context in it.
+SILENT_ON_FAILURE = f"""
+import json, runpy, sys
+
+if sys.argv[1:3] == ["hook", "PostToolUseFailure"]:
+    sys.stdin.read()
+    print(json.dumps({{"hookSpecificOutput": {{"hookEventName": "PostToolUseFailure"}}}}))
+    sys.exit(0)
+runpy.run_path({str(ROOT / "scripts" / "stayfixed")!r}, run_name="__main__")
+"""
+
+
+@needs_git
+def test_a_red_run_entry_that_says_nothing_is_reported(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The red-run note is all the `PostToolUseFailure` entry is for, and an envelope naming the
+    # event, exit 0, is what that entry prints whether or not its handler spoke: the row asks for
+    # the note by its words. Every other row is the real launcher's, so the one failure is this
+    # row's. Mutation (declared, `mutations/`'s "the hook smoke stops reading the context an
+    # entry printed"): the `context_says` check never fails -> this reddens.
+    smoke = _load("smoke_hooks")
+    code = smoke.main(
+        [
+            "--plugin-root",
+            str(_plugin(tmp_path, launcher=SILENT_ON_FAILURE)),
+            "--fixture",
+            str(ROOT / "tests" / "fixtures" / "smoke-project"),
+            "--scratch",
+            str(tmp_path / "s"),
+        ]
+    )
+    out = capsys.readouterr().out
+    assert code == 1, out
+    assert "the context does not say 'Before calling this red a flake" in out, out
+    assert "10 entries, 11 row(s), 1 failure(s)" in out, out
+
+
 @needs_git
 def test_a_wrapper_that_answers_wrongly_is_reported(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
