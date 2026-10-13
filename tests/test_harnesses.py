@@ -235,8 +235,9 @@ def test_every_harness_states_every_surface() -> None:
         assert set(harness.reach) == set(Surface), harness.name
         for surface, reach in harness.reach.items():
             assert reach.evidence, (harness.name, surface)
-            # "Does not reach this agent" is a claim a reader acts on, so only a measurement
-            # may make it; an unmeasured surface keeps the tier it was built for.
+            # "Not claimed on this agent" is a statement a reader acts on, so it rests on evidence
+            # (a measured absence, or a measurement that stopped short of stayfixed's own
+            # surfaces); a surface nothing was measured of keeps the tier it was built for.
             if reach.tier is None:
                 assert reach.evidence != "unmeasured", (harness.name, surface)
     # Claude Code's own files, then the one it keeps out of git, which `attach` merges into:
