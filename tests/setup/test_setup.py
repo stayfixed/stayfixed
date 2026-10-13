@@ -1917,7 +1917,8 @@ def test_a_read_only_claude_directory_is_refused_before_the_machine_file_is_writ
     # The same question one directory down: `<home>/.claude` is where the settings file is
     # written, and when it is there already it is the directory that has to take a new file.
     # Mutation (`mutations/`'s "setup stops asking whether an existing .claude can be written"):
-    # that arm dropped -> the machine file is written first and this reddens.
+    # the question asked of `home`, which is writable, instead of where the settings file lands
+    # -> the machine file is written first and this reddens.
     home = tmp_path / "home"
     claude = home / ".claude"
     claude.mkdir(parents=True)
@@ -1989,6 +1990,182 @@ def test_a_home_mkdir_that_fails_is_a_refusal(
             project_root=tmp_path / "project",
         )
     assert str(refused.value) == f"--home {home} could not be created (Permission denied)"
+    assert not machine.exists()
+
+
+@_ROOT_WRITES_EVERYWHERE
+def test_a_read_only_home_whose_claude_directory_is_writable_is_set_up(tmp_path: Path) -> None:
+    # Nothing is written into a home that holds a writable `.claude` already: the settings file
+    # lands in `.claude`, and the `mkdir` of a home that is there is a no-op. Asking whether
+    # `home` itself could be written refused this layout, which worked before the question was
+    # asked, saying "<home> is not writable" about a directory no write touches. Mutation
+    # (`mutations/`'s "setup stops asking whether an existing .claude can be written"): the
+    # question asked of `home` instead of where the settings file lands -> refused, and this
+    # reddens.
+    home = tmp_path / "home"
+    claude = home / ".claude"
+    claude.mkdir(parents=True)
+    machine = tmp_path / "config.toml"
+    home.chmod(0o555)
+    try:
+        setup(
+            "recommended",
+            home=home,
+            machine=machine,
+            runner=Recorder(),
+            yes=False,
+            overlay=None,
+            project_root=tmp_path / "project",
+        )
+    finally:
+        home.chmod(0o755)
+    assert machine.is_file()
+    assert (home / USER_SETTINGS).is_file()
+
+
+@_ROOT_WRITES_EVERYWHERE
+def test_a_read_only_home_with_settings_named_elsewhere_is_set_up(tmp_path: Path) -> None:
+    # With `--settings` the settings file is not under `home` at all, and a home that is there
+    # takes no write. Mutation (`mutations/`'s "setup asks whether a --home that is there can be
+    # written although --settings sends the write elsewhere") -> refused, and this reddens.
+    home = tmp_path / "home"
+    home.mkdir()
+    settings = tmp_path / "dot" / "settings.json"
+    settings.parent.mkdir()
+    machine = tmp_path / "config.toml"
+    home.chmod(0o555)
+    try:
+        setup(
+            "recommended",
+            home=home,
+            machine=machine,
+            runner=Recorder(),
+            yes=False,
+            overlay=None,
+            project_root=tmp_path / "project",
+            settings=settings,
+        )
+    finally:
+        home.chmod(0o755)
+    assert machine.is_file()
+    assert settings.is_file()
+
+
+@_ROOT_WRITES_EVERYWHERE
+def test_a_home_under_a_read_only_parent_is_refused_with_settings_named_elsewhere(
+    tmp_path: Path,
+) -> None:
+    # The one write `--settings` leaves under a home that is not there yet is the `mkdir`, and
+    # the directory it would be made in is what has to take it. Mutation (`mutations/`'s "setup
+    # stops asking whether a missing --home can be created when --settings is given"): the
+    # question dropped -> the `mkdir` floor refuses in words that name no directory to fix, and
+    # this reddens.
+    parent = tmp_path / "locked"
+    parent.mkdir()
+    home = parent / "home"
+    settings = tmp_path / "dot" / "settings.json"
+    settings.parent.mkdir()
+    machine = tmp_path / "config.toml"
+    parent.chmod(0o555)
+    try:
+        with pytest.raises(Refusal) as refused:
+            setup(
+                "recommended",
+                home=home,
+                machine=machine,
+                runner=Recorder(),
+                yes=False,
+                overlay=None,
+                project_root=tmp_path / "project",
+                settings=settings,
+            )
+    finally:
+        parent.chmod(0o755)
+    assert str(refused.value) == f"--home {home} cannot be used: {parent} is not writable"
+    assert not machine.exists()
+
+
+@_ROOT_WRITES_EVERYWHERE
+def test_a_created_overlay_already_in_a_read_only_home_is_set_up(tmp_path: Path) -> None:
+    # Run again over the overlay it made, `create:` clones nothing, so `<home>/<name>` being there
+    # is the end of what the home has to take. Mutation (`mutations/`'s "setup asks whether --home
+    # can take a created overlay that is already there"): asked whether or not it is there ->
+    # refused, and this reddens.
+    home = tmp_path / "home"
+    (home / ".claude").mkdir(parents=True)
+    _seed_overlay(home / "stayfixed-private")
+    machine = tmp_path / "config.toml"
+    runner = Recorder(answers={_OCTOS_PROBE: _A_TEMPLATE}, on_call=_populate_overlay)
+    home.chmod(0o555)
+    try:
+        setup(
+            "recommended",
+            home=home,
+            machine=machine,
+            runner=runner,
+            yes=True,
+            overlay="create:octo/stayfixed-private",
+            project_root=tmp_path / "project",
+        )
+    finally:
+        home.chmod(0o755)
+    assert not any(argv[:3] == ["gh", "repo", "create"] for argv in runner.calls)
+    assert machine.is_file()
+
+
+@pytest.mark.parametrize("below", [False, True], ids=["home", "above-home"])
+def test_a_home_that_is_a_regular_file_is_refused_as_one(tmp_path: Path, below: bool) -> None:
+    # A regular file where `--home`, or a directory above it, has to be: the `mkdir` names it
+    # ("File exists", "Not a directory"). The question about where the settings file lands walks
+    # up to that file, and asking it whether a name can be made in it answered "is not writable",
+    # a cause the path does not have. Mutation (`mutations/`'s "setup calls a regular file in
+    # --home's place not writable"): the directory test dropped -> this reddens.
+    blocker = tmp_path / "file"
+    blocker.write_text("not a directory\n")
+    home = blocker / "home" if below else blocker
+    machine = tmp_path / "config.toml"
+    with pytest.raises(Refusal) as refused:
+        setup(
+            "recommended",
+            home=home,
+            machine=machine,
+            runner=Recorder(),
+            yes=False,
+            overlay=None,
+            project_root=tmp_path / "project",
+        )
+    reason = "Not a directory" if below else "File exists"
+    assert str(refused.value) == f"--home {home} could not be created ({reason})"
+    assert not machine.exists()
+
+
+@_ROOT_WRITES_EVERYWHERE
+def test_a_created_overlay_in_a_read_only_home_is_refused_before_gh_runs(tmp_path: Path) -> None:
+    # `--overlay create:<owner>/<name>` clones into `<home>/<name>`, so a home with a writable
+    # `.claude` still has to take that one directory — and finding out from the clone is finding
+    # out after `gh repo create` made a repository on somebody's account. Mutation
+    # (`mutations/`'s "setup stops asking whether --home can take a created overlay"): the question
+    # dropped -> `gh repo create` runs, and this reddens.
+    home = tmp_path / "home"
+    (home / ".claude").mkdir(parents=True)
+    machine = tmp_path / "config.toml"
+    runner = Recorder(answers={_OCTOS_PROBE: _A_TEMPLATE}, on_call=_populate_overlay)
+    home.chmod(0o555)
+    try:
+        with pytest.raises(Refusal) as refused:
+            setup(
+                "recommended",
+                home=home,
+                machine=machine,
+                runner=runner,
+                yes=True,
+                overlay="create:octo/stayfixed-private",
+                project_root=tmp_path / "project",
+            )
+    finally:
+        home.chmod(0o755)
+    assert str(refused.value) == f"--home {home} cannot be used: {home} is not writable"
+    assert runner.calls == []
     assert not machine.exists()
 
 

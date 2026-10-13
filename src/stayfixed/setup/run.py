@@ -436,29 +436,47 @@ def _check_settings_path(home: Path) -> None:
         ) from exc
 
 
-def _check_home_usable(home: Path, *, settings: Path | None = None) -> None:
+def _check_home_usable(
+    home: Path, *, settings: Path | None = None, created: Path | None = None
+) -> None:
     """Refuse a `--home` this command cannot write into — above the first write.
 
     `home.mkdir(parents=True)` under a read-only parent raised `PermissionError` into the frame,
     `stayfixed: internal error`, exit 2; and a home that was there with mode 555 had the machine
     file written into the machine configuration before `_write_user_settings` refused, in words
-    about a symlink that was not there. The question is `fsops.creatable`'s: can this user create
-    a directory or a file in it — asked of `home` itself, or of the nearest directory above it
-    while it is not there yet, and of `<home>/.claude` when that is there already, which is where
-    the settings file is written unless `--settings` names it elsewhere.
+    about a symlink that was not there. The question is `fsops.creatable`'s, and it is asked of
+    each place a write under `home` lands — never of `home` for its own sake: a home with a
+    writable `.claude` already in it takes no write at all, and the first draft of this check
+    refused it, along with every home `--settings` sent the only write away from.
 
-    `os.access` answers for the real uid and says yes to root whatever the mode, so the `mkdir`
-    in `setup` keeps a refusal of its own under this one.
+    - Without `--settings`, the settings file, `<home>/.claude/settings.json`: `creatable` walks
+      to `<home>/.claude` when that is there, to `home` when only that is, and to the nearest
+      directory above it while neither is — which is also where the `mkdir` starts.
+    - With `--settings`, `home` itself, and only while it is not there yet: the `mkdir` is the one
+      write left under it.
+    - `created`, the `<home>/<name>` a `create:` overlay is cloned into, while it is not there yet.
+      Asked here because the clone is what would find out otherwise, after `gh repo create` has
+      made a repository on somebody's account.
+
+    The refusal names the directory `creatable` stopped at. `os.access` answers for the real uid
+    and says yes to root whatever the mode, so the `mkdir` in `setup` keeps a refusal of its own
+    under this one.
     """
-    claude = (home / USER_SETTINGS).parent
     try:
-        # `creatable` asks about the directory a name would be made in, so any name in
-        # `directory` asks it about `directory` itself.
-        directory = _nearest_directory(home)
-        if not fsops.creatable(directory / "x"):
-            raise Refusal(f"--home {home} cannot be used: {directory} is not writable")
-        if settings is None and fsops.is_dir(claude) and not fsops.creatable(claude / "x"):
-            raise Refusal(f"--home {home} cannot be used: {claude} is not writable")
+        landing: list[Path] = []
+        if settings is None:
+            landing.append(home / USER_SETTINGS)
+        elif not fsops.exists(home):
+            landing.append(home)
+        if created is not None and not fsops.exists(created):
+            landing.append(created)
+        for path in landing:
+            directory = fsops.creation_directory(path)
+            # A regular file where a directory has to be (`home` itself, or one above it) is the
+            # `mkdir`'s to name, as "File exists" or "Not a directory": "is not writable" said of
+            # it would be a cause it does not have.
+            if fsops.is_dir(directory) and not fsops.creatable(path):
+                raise Refusal(f"--home {home} cannot be used: {directory} is not writable")
     except OSError as exc:
         # A directory above `home` that cannot be searched leaves the question open, and the
         # `fsops` predicates raise for that rather than guess.
@@ -882,6 +900,11 @@ def _requested_overlay(
     return _Overlay(root=candidate, create=None)
 
 
+def _created_root(planned: _Overlay | None) -> Path | None:
+    """Where this run clones a `create:` overlay, or `None` when it creates none."""
+    return planned.root if planned is not None and planned.create is not None else None
+
+
 def _apply_overlay(planned: _Overlay, *, project_root: Path, runner: Runner) -> tuple[Path, str]:
     """Create the overlay if this run has to, record what there is, and say what happened.
 
@@ -982,7 +1005,7 @@ def setup(
     # `load_preset` first: a mistyped `--preset` is a refusal, and it used to come one line
     # after the home tree had been created for it.
     data = load_preset(preset, key="--preset")
-    _check_home_usable(home, settings=settings)
+    _check_home_usable(home, settings=settings, created=_created_root(planned_overlay))
     try:
         home.mkdir(parents=True, exist_ok=True)
     except OSError as exc:

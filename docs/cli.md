@@ -2637,19 +2637,23 @@ the report names each file `init` changed (an overlay named by 0.1.x gains its a
 changed none of the overlay's tracked files (`pre-commit install` may still have written its git
 hook). Exits `0` on success, `2` on a refused `--overlay` (missing, not an overlay, reachable from
 the project root, at a path that is not UTF-8 text and so cannot be recorded in the machine file, or
-`create:` without `--yes`), `2` when a symlink stands between `<home>` and the settings file:
-that file is written through a walk that never follows one, and `2` when `--home` cannot be used:
-the refusal names the directory you cannot write into — `<home>`, the nearest directory above it
-while it is not there yet, or a `<home>/.claude` already there when `--settings` is not given — or
-says that `<home>` could not be created, or could not be checked because a directory above it
-cannot be searched. Every one of those refusals happens
+`create:` without `--yes`), `2` when a symlink stands between `<home>` and the settings file: that
+file is written through a walk that never follows one, and `2` when `--home` cannot take what this
+run writes under it. That refusal names the directory you cannot write into, asked only where a
+write lands: the one the settings file is made in (`<home>/.claude` when it is there, `<home>` when
+only that is, the nearest directory above it while neither is); with `--settings`, which sends that
+file elsewhere, the one `<home>` is made in, and only while it is not there yet; and for `create:`,
+the one the clone is made in while it is not there yet. A `<home>` you cannot write into is not
+refused for that alone: with a writable `.claude` already in it, and no overlay to create, nothing
+is made in it. Otherwise it says that `<home>` could not be created, or could not be checked because
+a directory above it cannot be searched. Every one of those refusals happens
 before the first write, **with one exception**: for `--overlay create:<owner>/<name>`, "not an
 overlay" is a check on the tree that arrived, so it runs after the repository has been created on
 GitHub and cloned — along with the machine file, the settings merge and the plugin installs. That
 refusal says so, and names the repository and where it was cloned to, because nothing else would.
 Everything else `create:` can be refused for — the missing `--yes`, a malformed spec, a name that is
-not one path segment, a destination the project root could reach or the machine file could not
-record — still happens before `gh` is run at all.
+not one path segment, a destination the project root could reach, a `<home>` you cannot write
+into or the machine file could not record — still happens before `gh` is run at all.
 
 The symlink refusal names the link, where it leads, and a `stayfixed setup --home …` that writes
 the file the link leads to — and where no `--home` can express the layout, it says that instead

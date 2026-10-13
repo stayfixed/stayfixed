@@ -467,20 +467,71 @@ reddens = ["tests/setup/test_setup.py::test_a_created_overlay_is_refused_before_
 name = "setup stops asking whether --home can be used before its first write"
 file = "src/stayfixed/setup/run.py"
 before = """    data = load_preset(preset, key="--preset")
-    _check_home_usable(home, settings=settings)"""
+    _check_home_usable(home, settings=settings, created=_created_root(planned_overlay))"""
 after = """    data = load_preset(preset, key="--preset")"""
 reddens = [
   "tests/setup/test_setup.py::test_a_home_under_a_read_only_parent_is_refused_before_any_write",
   "tests/setup/test_setup.py::test_a_read_only_home_is_refused_before_the_machine_file_is_written",
 ]
 
+# The question is asked where a write lands, never of `home` for its own sake: asking it of `home`
+# refused a read-only home holding a writable `.claude`, which takes no write, and let a read-only
+# `.claude` in a writable home through to the second write.
 [[mutation]]
 name = "setup stops asking whether an existing .claude can be written"
 file = "src/stayfixed/setup/run.py"
-before = """        if settings is None and fsops.is_dir(claude) and not fsops.creatable(claude / "x"):"""
-after = "        if False:"
+before = "            landing.append(home / USER_SETTINGS)"
+after = '            landing.append(home / "x")'
 reddens = [
   "tests/setup/test_setup.py::test_a_read_only_claude_directory_is_refused_before_the_machine_file_is_written",
+  "tests/setup/test_setup.py::test_a_read_only_home_whose_claude_directory_is_writable_is_set_up",
+]
+
+[[mutation]]
+name = "setup asks whether a --home that is there can be written although --settings sends the write elsewhere"
+file = "src/stayfixed/setup/run.py"
+before = """        elif not fsops.exists(home):
+            landing.append(home)"""
+after = """        else:
+            landing.append(home / "x")"""
+reddens = ["tests/setup/test_setup.py::test_a_read_only_home_with_settings_named_elsewhere_is_set_up"]
+
+[[mutation]]
+name = "setup stops asking whether a missing --home can be created when --settings is given"
+file = "src/stayfixed/setup/run.py"
+before = "        elif not fsops.exists(home):"
+after = "        elif False:"
+reddens = [
+  "tests/setup/test_setup.py::test_a_home_under_a_read_only_parent_is_refused_with_settings_named_elsewhere",
+]
+
+# `create:` clones into `<home>/<name>`; finding out from the clone is finding out after
+# `gh repo create` made a repository on somebody's account. Run again over the overlay it made, it
+# clones nothing, and the home takes nothing.
+[[mutation]]
+name = "setup stops asking whether --home can take a created overlay"
+file = "src/stayfixed/setup/run.py"
+before = "        if created is not None and not fsops.exists(created):"
+after = "        if False:"
+reddens = ["tests/setup/test_setup.py::test_a_created_overlay_in_a_read_only_home_is_refused_before_gh_runs"]
+
+[[mutation]]
+name = "setup asks whether --home can take a created overlay that is already there"
+file = "src/stayfixed/setup/run.py"
+before = "        if created is not None and not fsops.exists(created):"
+after = "        if created is not None:"
+reddens = ["tests/setup/test_setup.py::test_a_created_overlay_already_in_a_read_only_home_is_set_up"]
+
+# A regular file where `--home` or a directory above it has to be is the `mkdir`'s to name; the walk
+# stops at it, and asking whether a name can be made in a file said "is not writable".
+[[mutation]]
+name = "setup calls a regular file in --home's place not writable"
+file = "src/stayfixed/setup/run.py"
+before = "            if fsops.is_dir(directory) and not fsops.creatable(path):"
+after = "            if not fsops.creatable(path):"
+reddens = [
+  "tests/setup/test_setup.py::test_a_home_that_is_a_regular_file_is_refused_as_one[home]",
+  "tests/setup/test_setup.py::test_a_home_that_is_a_regular_file_is_refused_as_one[above-home]",
 ]
 
 [[mutation]]
