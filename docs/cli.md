@@ -1655,10 +1655,12 @@ artifact is written at its new place and the copy the record names at the old on
 it holds exactly the bytes recorded for it (`relocated`); otherwise it is `skip_modified`, stays
 recorded until it is gone, and `--force` with its path takes it. When an id joins the list, the
 copy at its old place is the committed one the manifest records, and it is removed the same way
-while it holds exactly the bytes the manifest records (`relocated`); one you edited is left as
-`relocated and hand-edited`, yours to keep or delete by hand. That is how a file is kept out of git
-after `init`: `init --local` is refused once the repository is initialised, and the refusal says to
-list the id under `[artifacts] local` and run `stayfixed upgrade`. The record is read as untrusted,
+while it holds exactly the bytes the manifest records (`relocated`); one you edited is left where it
+is, yours to keep or delete by hand, and said once, as `relocated and hand-edited`: the manifest
+stops recording it, so the next `upgrade` says nothing of it while the tracked copy stays. That is
+how a file is kept out of git after `init`: `init --local` is refused once the repository is
+initialised, and the refusal says to list the id under `[artifacts] local` and run
+`stayfixed upgrade`. The record is read as untrusted,
 since a clone can commit it anyway: anything but its own exact shape is read as no record at all, it
 is never printed, it names nothing outside `.stayfixed/local/artifacts/`, and it vouches only for a
 file there whose bytes are exactly the ones it states.
