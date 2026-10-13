@@ -14,8 +14,8 @@ more: `detect` says why. A harness whose payload genuinely differs is a question
 that harness's evidence when it arrives.
 
 A value also states its reach: for each enforcement surface stayfixed has (`Surface`), the tier
-at which that surface holds under this harness (`Tier`), or that it does not reach the harness at
-all, with where the claim was measured. The README's table of what each agent enforces is held
+at which that surface holds under this harness (`Tier`), or that it is not claimed there, with
+where the claim was measured. The README's table of what each agent enforces is held
 equal to these values by a test, and `doctor`'s `codex-trust` row reads them, so a measurement
 that moves a tier is one edit here.
 
@@ -262,7 +262,7 @@ _DELIVERY_SPIKE = "the delivery spike of 2026-10-02 in `docs/plans/`"
 _CODEX_HOOKS_UNVERIFIED = Reach(
     None,
     "a plugin hook ran once trusted in `/hooks`, and a blocking `PreToolUse` hook's reason reached "
-    "the model (the hook-trust pre-flight of 2026-10-12); stayfixed's guards and notices are not "
+    "the model (the hook-trust pre-flight of 2026-10-13); stayfixed's guards and notices are not "
     "verified end to end there",
     measured_on="Codex CLI 0.162.0-alpha.17.2",
 )
