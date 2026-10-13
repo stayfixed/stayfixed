@@ -405,6 +405,8 @@ def _harness_shape(context: Context, answers: Answers, harness: Path) -> tuple[S
     """
     from stayfixed import fsops
     from stayfixed.attach import ATTACH_STORE
+    from stayfixed.attach.permissions import LOCAL_SETTINGS
+    from stayfixed.attach.write import FALLBACK_KEY
     from stayfixed.doctor.api import OK, RED, WARN
     from stayfixed.memory.api import harness_link_needed
 
@@ -417,8 +419,11 @@ def _harness_shape(context: Context, answers: Answers, harness: Path) -> tuple[S
     if fsops.is_dir(harness) and not fsops.is_symlink(harness):
         return (
             OK,
-            "a real directory, and autoMemoryDirectory in .claude/settings.local.json points the "
-            "harness at the store instead",
+            # The file named through the harness registry (`CLAUDE.local_settings`), as
+            # `attach`'s own fallback line names it: a harness fact spelled here is one more
+            # place a new harness would have to be found.
+            f"a real directory, and {FALLBACK_KEY} in {LOCAL_SETTINGS} points the harness at the "
+            "store instead",
             "",
         )
     if fsops.is_symlink(harness):

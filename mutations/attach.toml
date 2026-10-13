@@ -1865,6 +1865,17 @@ reddens = [
   "tests/attach/test_doctor.py::test_no_harness_link_beside_a_tree_that_does_not_resolve_is_never_green[groups-gone]",
 ]
 
+# Every harness fact a module spells outside the registry is pardoned, counted, by the item of the
+# registry's docstring that lists it: the local settings file put back as a literal is one more.
+[[mutation]]
+name = "doctor spells the local settings file again"
+file = "src/stayfixed/attach/doctor.py"
+before = 'f"a real directory, and {FALLBACK_KEY} in {LOCAL_SETTINGS} points the harness at the "'
+after = 'f"a real directory, and {FALLBACK_KEY} in .claude/settings.local.json points the harness at the "'
+reddens = [
+  "tests/test_harnesses.py::test_every_harness_fact_outside_the_registry_is_listed_where_the_registry_says",
+]
+
 # Beside a note store that does not resolve, anything at the harness memory path that was not a
 # link was "a real directory beside the autoMemoryDirectory fallback", a file included.
 [[mutation]]
