@@ -271,7 +271,14 @@ run-hook.sh <policy> <stayfixed args…>
 ```
 
 `<policy>` is `open` or `closed`, and it is the only argument the wrapper itself reads; the rest
-is handed to `stayfixed` untouched. The wrapper exists because a Python process cannot fail
+is handed to `stayfixed` untouched.
+
+`hooks/hooks.json` files its entries under four events: `SessionStart`, `PreToolUse`, `PostToolUse` and
+`PostToolUseFailure`, each tool event matched on `Bash`. The last is where Claude Code delivers a
+`Bash` call that exited non-zero, and it carries the red-run note ([`stayfixed test
+hygiene`](#stayfixed-test-hygiene)); Codex reads the same file and ignores that key (measured on
+Codex CLI 0.162.0). `stayfixed hook` dispatches six events, those four and `UserPromptSubmit` and
+`UserPromptExpansion`, which no shipped entry uses. The wrapper exists because a Python process cannot fail
 closed about its own absence: a missing script exits `2` by CPython accident, a missing
 interpreter `127`, an `ImportError` `1`, a lost executable bit `126` — and Claude Code reads
 every exit that is not `2` as a non-blocking error, which is permission. So the wrapper owns
@@ -523,7 +530,12 @@ stopped its walk at a bound and could not tell, so this tree cannot be judged; n
 code_roots` to the directories that hold code``, which `--json` carries as its `summary` beside
 `"error": "refused"`. The bounds are fixed; what they walk is not.
 
-The `PostToolUse` `Bash` hook delivers the same note once per context after a red test run,
+The `PostToolUseFailure` `Bash` hook delivers the same note once per context after a red test run:
+Claude Code delivers a command that exited non-zero on that event, with `error` beginning `Exit
+code N`, and an `error` that begins otherwise gets no note. The same handler is registered on
+`PostToolUse`, where Codex delivers a failed command and where a `tool_response.exit_code` that
+is not `0` reads as red; the two share one once-per-context key, so a red run is noted once
+whichever event carried it. The note is
 chosen by the command that failed rather than by configuration: each simple command of the
 red run is offered to every shipped profile's hint, and the dirty-tree line and the line of
 each profile whose runner it recognises (Python's: `pytest`, or `python -m pytest`) are

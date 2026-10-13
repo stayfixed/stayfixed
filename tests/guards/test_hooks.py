@@ -241,8 +241,9 @@ def dirty_project(tmp_path: Path) -> Path:
     return root
 
 
-def hygiene() -> Handler:
-    return next(h for h in register() if h.name == "test-hygiene")
+def hygiene(event: str = "PostToolUse") -> Handler:
+    """The `test-hygiene` handler registered on `event`: it is registered on two."""
+    return next(h for h in register() if h.name == "test-hygiene" and h.event == event)
 
 
 def test_the_hygiene_notice_is_an_open_post_tool_use_handler_with_a_once_key() -> None:
@@ -350,3 +351,77 @@ def test_an_unrelated_call_does_not_consume_the_one_delivery(tmp_path: Path) -> 
     assert "uncommitted" in json.loads(outcome.stdout)["hookSpecificOutput"].get(
         "additionalContext", ""
     )
+
+
+# One red run, as Claude Code reports a Bash command that exited non-zero: on `PostToolUseFailure`,
+# with no `tool_response`, and the exit code at the head of `error`. The command is one the shipped
+# Python profile recognises, so the note has a runner line beside the dirty-tree line.
+RED_RUN = "uv run pytest -q"
+
+
+def failure_payload(root: Path, error: str) -> str:
+    return json.dumps(
+        {
+            "hook_event_name": "PostToolUseFailure",
+            "session_id": "s",
+            "cwd": str(root),
+            "tool_name": "Bash",
+            "tool_input": {"command": RED_RUN},
+            "error": error,
+        }
+    )
+
+
+@needs_git
+@pytest.mark.parametrize(
+    "error",
+    ["Exit code 1", "Exit code 1\nFAILED tests/test_m.py::test_x - assert 1 == 2"],
+    ids=["bare", "with-output"],
+)
+def test_a_red_run_on_post_tool_use_failure_is_annotated(tmp_path: Path, error: str) -> None:
+    # The hint was registered on `PostToolUse` alone, and Claude Code delivers a Bash command that
+    # exits non-zero to `PostToolUseFailure` and never to `PostToolUse`: the note never reached a
+    # red run there. `bare` is the shape measured on Claude Code 2.1.296 for `false`, the exit
+    # code and nothing after it. Through the real dispatcher, so what is asserted is what the
+    # harness reads. Mutation: `mutations/`'s "the red-run hint is not registered on the event a
+    # failed command arrives on".
+    root = dirty_project(tmp_path)
+    completed = hook("PostToolUseFailure", failure_payload(root, error), root)
+    assert completed.returncode == 0, completed.stderr
+    out = json.loads(completed.stdout)
+    assert out["hookSpecificOutput"]["hookEventName"] == "PostToolUseFailure"
+    assert "uncommitted" in out["hookSpecificOutput"]["additionalContext"]
+
+
+@needs_git
+def test_a_red_run_killed_at_its_timeout_on_post_tool_use_failure_is_annotated(
+    tmp_path: Path,
+) -> None:
+    # Measured on Claude Code 2.1.296 with background tasks disabled: a foreground command killed
+    # at its timeout arrives with `error` "Exit code 143\nCommand timed out after 4s". It begins
+    # with an exit code and is a real non-zero exit, so it is annotated like any red run.
+    root = dirty_project(tmp_path)
+    error = "Exit code 143\nCommand timed out after 4s"
+    completed = hook("PostToolUseFailure", failure_payload(root, error), root)
+    assert completed.returncode == 0, completed.stderr
+    out = json.loads(completed.stdout)
+    assert out["hookSpecificOutput"]["hookEventName"] == "PostToolUseFailure"
+    assert "uncommitted" in out["hookSpecificOutput"]["additionalContext"]
+
+
+@needs_git
+def test_a_failure_whose_error_does_not_begin_with_an_exit_code_is_not_annotated(
+    tmp_path: Path,
+) -> None:
+    # The same fixture and command as the two cases above, with an `error` whose first line is not
+    # the exit code: the hint says nothing rather than guess at what failed. The shape is an
+    # assumption, not one observed on Claude Code 2.1.296, which put the exit code first in every
+    # failure measured. Beside its positive twins this is what shows the handler, not the absence
+    # of one, is what stays silent. Silent as the dispatcher says it: the event's envelope with
+    # no context in it, which it writes for every event it dispatches.
+    root = dirty_project(tmp_path)
+    error = "Command timed out after 2m 0s\nExit code 143"
+    completed = hook("PostToolUseFailure", failure_payload(root, error), root)
+    assert completed.returncode == 0, completed.stderr
+    out = json.loads(completed.stdout)
+    assert out == {"hookSpecificOutput": {"hookEventName": "PostToolUseFailure"}}

@@ -47,7 +47,7 @@ SESSION_SOURCES = {"startup", "resume", "clear", "compact", "fork"}
 def test_there_are_entries_at_all() -> None:
     # The non-vacuity guard every walk-driven assertion below depends on: an empty `hooks`
     # object satisfies all six of them.
-    assert len(_entries()) == 9
+    assert len(_entries()) == 10
 
 
 def test_every_command_parses_against_the_real_parser() -> None:
@@ -106,7 +106,7 @@ def test_there_is_one_session_start_entry_per_declared_bundle_slot() -> None:
 
 def test_every_dispatched_event_has_at_least_one_handler() -> None:
     # An entry for an event nothing handles spawns a process to emit an empty envelope, and
-    # looks installed in doctor's listing. The dispatcher carries five events; two of them
+    # looks installed in doctor's listing. The dispatcher carries six events; two of them
     # have no handler in this build, and a handler added for one arrives with its entry.
     events = {handler.event for handler in discover()}
     for _, _matcher, entry in _entries():
@@ -176,7 +176,9 @@ def test_every_tool_matched_entry_matches_the_name_both_handlers_filter_on() -> 
     #
     # Mutation: `"matcher": "Bash"` -> `"bash"` in hooks/hooks.json -> reddens.
     matched = {
-        matcher for event, matcher, _ in _entries() if event in {"PreToolUse", "PostToolUse"}
+        matcher
+        for event, matcher, _ in _entries()
+        if event in {"PreToolUse", "PostToolUse", "PostToolUseFailure"}
     }
     assert matched == {BASH}
 
@@ -209,3 +211,24 @@ def test_every_entry_is_filed_under_the_event_its_command_dispatches() -> None:
         words = entry["command"].split()
         if words[2] == "hook":
             assert words[3] == event, entry["command"]
+
+
+def test_the_shipped_hooks_register_post_tool_use_failure_for_bash() -> None:
+    # Claude Code delivers a Bash command that exits non-zero to `PostToolUseFailure`, so the
+    # red-run hint has an entry there, matched on the shell tool, open, and dispatching that
+    # event. Codex reads this file too and ignores the key (measured on Codex CLI 0.162.0); it
+    # delivers a failed command on `PostToolUse`, whose entry stays. Mutation: `mutations/`'s
+    # "the hooks file loses the entry for a failed command".
+    groups = HOOKS["hooks"].get("PostToolUseFailure")
+    assert groups == [
+        {
+            "matcher": BASH,
+            "hooks": [
+                {
+                    "type": "command",
+                    "timeout": 10,
+                    "command": f"{WRAPPER} open hook PostToolUseFailure",
+                }
+            ],
+        }
+    ]

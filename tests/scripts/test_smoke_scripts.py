@@ -88,7 +88,7 @@ def test_every_hook_entry_answers_its_sample_event_through_the_checkout(
     )
     out = capsys.readouterr().out
     assert code == 0, out
-    assert "9 entries, 10 row(s), 0 failure(s)" in out, out
+    assert "10 entries, 11 row(s), 0 failure(s)" in out, out
 
 
 @needs_git
@@ -233,7 +233,7 @@ def test_hooks_json_gaining_an_entry_is_reported_rather_than_quietly_run(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # The other side of the count, and the one neither event set can see: a duplicated entry
-    # changes no event and no bundle, runs an eleventh row and prints a summary that reads
+    # changes no event and no bundle, runs a twelfth row and prints a summary that reads
     # green. The floor is the only thing that answers.
     #
     # Mutation (declared, `mutations/`'s "the hook smoke stops counting its own entries and rows"):
@@ -258,7 +258,7 @@ def test_hooks_json_gaining_an_entry_is_reported_rather_than_quietly_run(
     )
     out = capsys.readouterr().out
     assert code == 1, out
-    assert "10 entries and 11 rows, expected 9 and 10" in out, out
+    assert "11 entries and 12 rows, expected 10 and 11" in out, out
 
 
 @needs_git

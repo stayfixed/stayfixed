@@ -49,15 +49,19 @@ def test_a_handler_on_a_known_event_registers_normally(monkeypatch: pytest.Monke
     assert discover() == [handler]
 
 
-def test_the_vocabulary_is_the_five_events_the_design_table_carries() -> None:
-    # An area that needs a sixth adds it to EVENTS deliberately; widening it by accident is
-    # what turns a mistyped handler back into a guard that never fires.
+def test_the_vocabulary_is_the_six_events_the_design_table_carries() -> None:
+    # An area that needs a seventh adds it to EVENTS deliberately; widening it by accident is
+    # what turns a mistyped handler back into a guard that never fires. The sixth,
+    # `PostToolUseFailure`, is where Claude Code delivers a command that exited non-zero.
+    # Mutation: `mutations/`'s "the dispatcher stops carrying the event a failed command arrives
+    # on".
     assert EVENTS == (
         "SessionStart",
         "UserPromptSubmit",
         "UserPromptExpansion",
         "PreToolUse",
         "PostToolUse",
+        "PostToolUseFailure",
     )
 
 

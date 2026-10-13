@@ -94,18 +94,23 @@ def _test_hygiene(event: HookEvent, config: Config | None) -> HookResult:
 def register() -> list[Handler]:
     return [
         Handler(name="bg-cleanup", event="PreToolUse", policy=Policy.CLOSED, run=_bg_cleanup),
-        # Per the Claude Code hooks reference, a non-zero exit arrives on `PostToolUseFailure`,
-        # which `stayfixed.hooks.api.EVENTS` does not carry yet — and `registry.discover` refuses a
-        # handler whose event is not in that tuple, so registering it here today would take
-        # the whole plugin down. `EVENTS` is `stayfixed.hooks`' file. When it gains the
-        # event, register the same handler there too:
-        # Handler(name="test-hygiene", event="PostToolUseFailure", policy=Policy.OPEN,
-        #         run=_test_hygiene, once_key=ONCE_TEST_HYGIENE),
-        # Kept ABOVE the row it annotates, not below it: a later change appending a handler to
+        # The red-run note on both events a failed command can arrive on. Claude Code delivers a
+        # Bash command that exited non-zero to `PostToolUseFailure`, with `error` beginning
+        # `Exit code N`, and never to `PostToolUse`; Codex delivers a failed command on
+        # `PostToolUse`. One `once_key`, which the dispatcher files per session, so a red run is
+        # noted once whichever event carried it.
+        # Kept ABOVE the rows it annotates, not below them: a later change appending a handler to
         # the tail of this list would otherwise detach the comment from its subject.
         Handler(
             name="test-hygiene",
             event="PostToolUse",
+            policy=Policy.OPEN,
+            run=_test_hygiene,
+            once_key=ONCE_TEST_HYGIENE,
+        ),
+        Handler(
+            name="test-hygiene",
+            event="PostToolUseFailure",
             policy=Policy.OPEN,
             run=_test_hygiene,
             once_key=ONCE_TEST_HYGIENE,

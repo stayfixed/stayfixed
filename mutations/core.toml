@@ -813,6 +813,22 @@ reddens = [
 # Codex exports `PLUGIN_DATA` where Claude Code exports `CLAUDE_PLUGIN_DATA`. With the fallback gone
 # the sink is a `NullSink` on Codex, so every `once_key` handler silently degrades back to "every
 # invocation" -- the defect the sink exists to remove, on one harness only.
+# The dispatcher refuses a handler on an event `EVENTS` does not carry, so an event dropped from it
+# takes discovery down for every caller: every dispatch reddens, the vocabulary's own test among
+# them, and the red-run note on the event Claude Code delivers a failed command on with it.
+[[mutation]]
+name = "the dispatcher stops carrying the event a failed command arrives on"
+file = "src/stayfixed/hooks/api.py"
+before = """    "PostToolUse",
+    "PostToolUseFailure",
+)"""
+after = """    "PostToolUse",
+)"""
+reddens = [
+  "tests/hooks/test_registry.py::test_the_vocabulary_is_the_six_events_the_design_table_carries",
+  "tests/guards/test_hooks.py::test_a_red_run_on_post_tool_use_failure_is_annotated[bare]",
+]
+
 [[mutation]]
 name = "the sink stops recognising Codex's name for the data directory"
 file = "src/stayfixed/hooks/api.py"
