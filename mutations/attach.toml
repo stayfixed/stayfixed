@@ -319,6 +319,17 @@ reddens = [
   "tests/attach/test_detach.py::test_detach_in_a_worktree_leaves_the_attached_main_checkout_whole",
 ]
 
+# While another ledger stands, the owning checkout keeps its tree even when `detach` is run
+# there, because every other checkout's harness link points at it.
+[[mutation]]
+name = "detach takes the owning checkout's tree while another ledger still serves it"
+file = "src/stayfixed/attach/write.py"
+before = "    return [own], [] if own == checkouts[0] else [own]"
+after = "    return [own], [own]"
+reddens = [
+  "tests/attach/test_detach.py::test_detach_in_the_main_checkout_leaves_an_attached_worktree_whole",
+]
+
 # `attach` points every checkout's harness link at the owning checkout's tree; compared with the
 # checkout's own tree alone, a linked worktree's link never matched and outlived `detach` dangling.
 [[mutation]]

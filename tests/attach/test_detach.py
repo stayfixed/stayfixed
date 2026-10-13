@@ -245,7 +245,9 @@ def test_detach_in_the_main_checkout_leaves_an_attached_worktree_whole(tmp_path:
     # The other direction. The main checkout's tree is what the worktree's harness link points
     # at, so while the worktree's ledger stands it stays; only the main checkout's own harness
     # link, ledger, settings and rule copies go. A later `attach` anywhere rebuilds that tree
-    # first, so keeping it loses nothing.
+    # first, so keeping it loses nothing. Mutation (oracle): `mutations/`'s "detach takes the
+    # owning checkout's tree while another ledger still serves it" -> the main checkout's tree
+    # goes.
     root, side, _, machine, home = _both_attached(tmp_path)
     _detach(root, machine, home)
     assert (root / DEFAULT_MEMORY / "developer").is_symlink()
