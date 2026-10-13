@@ -318,6 +318,77 @@ reddens = [
   "tests/guards/test_hooks.py::test_a_red_run_killed_at_its_timeout_on_post_tool_use_failure_is_annotated",
 ]
 
+# The red-run hint is registered on both events a failed command can arrive on, under one
+# `once_key`, which the dispatcher banks per session: a red run noted on either event is not noted
+# again on the other. Without the key on one registration, that one notes every red run.
+[[mutation]]
+name = "the red-run hint on a failure forgets that the note was delivered"
+file = "src/stayfixed/guards/hooks.py"
+before = """            event="PostToolUseFailure",
+            policy=Policy.OPEN,
+            run=_test_hygiene,
+            once_key=ONCE_TEST_HYGIENE,
+"""
+after = """            event="PostToolUseFailure",
+            policy=Policy.OPEN,
+            run=_test_hygiene,
+            once_key=None,
+"""
+reddens = [
+  "tests/guards/test_hooks.py::test_a_red_run_noted_on_either_event_is_not_noted_again_on_the_other[post-first]",
+  "tests/guards/test_hooks.py::test_a_red_run_noted_on_either_event_is_not_noted_again_on_the_other[failure-first]",
+  "tests/guards/test_hooks.py::test_the_hygiene_notice_is_an_open_handler_with_one_once_key_on_each_event[PostToolUseFailure]",
+]
+
+[[mutation]]
+name = "the red-run hint after a successful call forgets that the note was delivered"
+file = "src/stayfixed/guards/hooks.py"
+before = """            event="PostToolUse",
+            policy=Policy.OPEN,
+            run=_test_hygiene,
+            once_key=ONCE_TEST_HYGIENE,
+"""
+after = """            event="PostToolUse",
+            policy=Policy.OPEN,
+            run=_test_hygiene,
+            once_key=None,
+"""
+reddens = [
+  "tests/guards/test_hooks.py::test_a_red_run_noted_on_either_event_is_not_noted_again_on_the_other[post-first]",
+  "tests/guards/test_hooks.py::test_a_red_run_noted_on_either_event_is_not_noted_again_on_the_other[failure-first]",
+  "tests/guards/test_hooks.py::test_the_hygiene_notice_is_an_open_handler_with_one_once_key_on_each_event[PostToolUse]",
+]
+
+# A notice that could refuse a tool call would be worse than no notice: under `Policy.CLOSED` a
+# failure inside the hint is a deny, on either event it is registered on.
+[[mutation]]
+name = "the red-run hint on a failure fails closed"
+file = "src/stayfixed/guards/hooks.py"
+before = """            event="PostToolUseFailure",
+            policy=Policy.OPEN,
+"""
+after = """            event="PostToolUseFailure",
+            policy=Policy.CLOSED,
+"""
+reddens = [
+  "tests/guards/test_hooks.py::test_a_hygiene_failure_is_recorded_and_never_costs_the_call[PostToolUseFailure]",
+  "tests/guards/test_hooks.py::test_the_hygiene_notice_is_an_open_handler_with_one_once_key_on_each_event[PostToolUseFailure]",
+]
+
+[[mutation]]
+name = "the red-run hint after a successful call fails closed"
+file = "src/stayfixed/guards/hooks.py"
+before = """            event="PostToolUse",
+            policy=Policy.OPEN,
+"""
+after = """            event="PostToolUse",
+            policy=Policy.CLOSED,
+"""
+reddens = [
+  "tests/guards/test_hooks.py::test_a_hygiene_failure_is_recorded_and_never_costs_the_call[PostToolUse]",
+  "tests/guards/test_hooks.py::test_the_hygiene_notice_is_an_open_handler_with_one_once_key_on_each_event[PostToolUse]",
+]
+
 # A value that reaches a subprocess is untrusted. Without the check a range shaped like an option is
 # handed to `git log`, where `--output=FILE` writes wherever the caller pointed it.
 [[mutation]]

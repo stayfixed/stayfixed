@@ -213,11 +213,13 @@ def test_a_leaking_background_call_is_denied_through_the_real_dispatcher(tmp_pat
 needs_git = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
 
-def post_event(root: Path, command: str, raw_extra: dict[str, object]) -> HookEvent:
+def post_event(
+    root: Path, command: str, raw_extra: dict[str, object], *, name: str = "PostToolUse"
+) -> HookEvent:
     tool_input: dict[str, object] = {"command": command}
     raw: dict[str, object] = {"tool_name": "Bash", "tool_input": tool_input, **raw_extra}
     return HookEvent(
-        name="PostToolUse",
+        name=name,
         session_id="s1",
         agent_id=None,
         tool_name="Bash",
@@ -246,14 +248,21 @@ def hygiene(event: str = "PostToolUse") -> Handler:
     return next(h for h in register() if h.name == "test-hygiene" and h.event == event)
 
 
-def test_the_hygiene_notice_is_an_open_post_tool_use_handler_with_a_once_key() -> None:
+# The two events a red run can arrive on: Claude Code's `PostToolUseFailure`, and `PostToolUse`,
+# where Codex delivers a failed command.
+RED_RUN_EVENTS = ("PostToolUse", "PostToolUseFailure")
+
+
+@pytest.mark.parametrize("event", RED_RUN_EVENTS)
+def test_the_hygiene_notice_is_an_open_handler_with_one_once_key_on_each_event(event: str) -> None:
     # The policy is the whole of `test-hygiene`'s safety story: a notice that could refuse a
     # tool call would be worse than no notice. Reddened by flipping `Policy.OPEN` to
-    # `Policy.CLOSED` in `register()`; measured. `once_key` is asserted against the literal
-    # "test-hygiene" rather than against `ONCE_TEST_HYGIENE`, so the expected value is a fixed
-    # one and not one read from the subject.
-    handler = hygiene()
-    assert handler.event == "PostToolUse"
+    # `Policy.CLOSED` in `register()`, on either registration; measured. `once_key` is asserted
+    # against the literal "test-hygiene" rather than against `ONCE_TEST_HYGIENE`, so the expected
+    # value is a fixed one and not one read from the subject; it is the same literal on both
+    # events because one key is what keeps a red run from being noted twice.
+    handler = hygiene(event)
+    assert handler.event == event
     assert handler.policy is Policy.OPEN
     assert handler.once_key == "test-hygiene"
 
@@ -295,16 +304,25 @@ def test_a_green_run_or_a_non_pytest_command_is_silence(tmp_path: Path) -> None:
     )
 
 
+# One red run in each event's own shape: an exit code in `tool_response`, which `red_exit` reads
+# on `PostToolUse`, and Claude Code's `error` on `PostToolUseFailure`.
+RED_ON: dict[str, dict[str, object]] = {
+    "PostToolUse": {"tool_response": {"exit_code": 1}},
+    "PostToolUseFailure": {"error": "Exit code 1"},
+}
+
+
 @needs_git
+@pytest.mark.parametrize("event", RED_RUN_EVENTS)
 def test_a_hygiene_failure_is_recorded_and_never_costs_the_call(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, event: str
 ) -> None:
     # OPEN: the dispatcher swallows and records. The handler does not need its own try/except,
     # and must not have one — a silent swallow is how a broken notice goes unnoticed. The
     # guards inside `context_for` are narrower: each costs one stack's line and nothing else,
     # and `tests/profiles/test_hints.py` pins them. Reddened by flipping the handler's policy
-    # to `Policy.CLOSED` (exit 2, not 0); the stderr assertion is reddened by giving
-    # `_test_hygiene` its own try/except around `context_for`.
+    # to `Policy.CLOSED` (exit 2, not 0) on the event's own registration; the stderr assertion
+    # is reddened by giving `_test_hygiene` its own try/except around `context_for`.
     from stayfixed.guards import hygiene as module
 
     def broken(command: str, root: Path, config: object) -> str | None:
@@ -315,7 +333,7 @@ def test_a_hygiene_failure_is_recorded_and_never_costs_the_call(
     config = load(root, machine=tmp_path / "absent.toml")
     recorder = Recorder()
     outcome = dispatch(
-        post_event(root, "pytest", {"tool_response": {"exit_code": 1}}),
+        post_event(root, "pytest", RED_ON[event], name=event),
         register(),
         config,
         harness=CLAUDE,
@@ -351,6 +369,38 @@ def test_an_unrelated_call_does_not_consume_the_one_delivery(tmp_path: Path) -> 
     assert "uncommitted" in json.loads(outcome.stdout)["hookSpecificOutput"].get(
         "additionalContext", ""
     )
+
+
+@needs_git
+@pytest.mark.parametrize(
+    "order", [RED_RUN_EVENTS, RED_RUN_EVENTS[::-1]], ids=["post-first", "failure-first"]
+)
+def test_a_red_run_noted_on_either_event_is_not_noted_again_on_the_other(
+    tmp_path: Path, order: tuple[str, str]
+) -> None:
+    # Two red runs in one session, one on each event a red run can arrive on, through the
+    # dispatcher and one recording sink, which is where the dispatcher banks a `once_key`: the
+    # note is delivered for the first and not for the second, in either order, because both
+    # registrations carry the one key. Mutation: `mutations/`'s "the red-run hint on a failure
+    # forgets that the note was delivered".
+    root = dirty_project(tmp_path)
+    config = load(root, machine=tmp_path / "absent.toml")
+    recorder = Recorder()
+    notes = []
+    for event in order:
+        outcome = dispatch(
+            post_event(root, "pytest -q", RED_ON[event], name=event),
+            register(),
+            config,
+            harness=CLAUDE,
+            sink=recorder,
+        )
+        assert outcome.exit_code == 0, outcome.stderr
+        output = json.loads(outcome.stdout)["hookSpecificOutput"]
+        assert output["hookEventName"] == event
+        notes.append(output.get("additionalContext"))
+    assert notes[0] is not None and "uncommitted" in notes[0]
+    assert notes[1] is None
 
 
 # One red run, as Claude Code reports a Bash command that exited non-zero: on `PostToolUseFailure`,
