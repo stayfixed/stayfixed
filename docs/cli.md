@@ -2711,8 +2711,12 @@ kept, runs nothing twice, and is installed; a `--git-common-dir` chain under a `
 that is not that directory is refused though it would not loop, and the same remedy covers it. It
 is a liveness check, not a security control: a chain that builds the name at run time
 (`"${0%.local}.local"`, `$(basename …)`, a variable) is not seen, and neither is a `.local` edited
-to name itself after the install, which loops as any hook that `exec`s itself does. A hook past the
-64 MiB read cap is not read, so it is not judged either: it is kept and chained, as below.
+to name itself after the install, which loops as any hook that `exec`s itself does. Nor is the name
+in another case: the bytes are compared as they are, so `Prepare-Commit-Msg.local`, which a
+case-insensitive volume (macOS's default) opens as the same file, is not refused there, because on a
+case-sensitive volume it names another file and refusing it would refuse a chain that cannot loop.
+A hook past the 64 MiB read cap is not read, so it is not judged either: it is kept and chained, as
+below.
 
 **Refuses (`2`) together with `--preset`.** The two write to different scopes — one repository,
 one machine-wide — and a single invocation has only one exit code to report, so it does one of
