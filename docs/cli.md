@@ -2663,6 +2663,21 @@ A foreign hook of the same name is kept as `prepare-commit-msg.local` and the in
 back under its original name, byte for byte. The report names exactly what moved — a `.local`
 file nobody was told about is indistinguishable from a lost one.
 
+**Refuses (`2`) a foreign hook whose bytes name `prepare-commit-msg.local`.** Kept under that name,
+it is the file the installed hook `exec`s last, so a chain line naming it — `exec "$(git rev-parse
+--git-common-dir)/hooks/prepare-commit-msg.local" "$@"`, or the same name off `"${0%/*}"` or
+`"$(dirname "$0")"` — would `exec` itself, and `git commit` would run until it was killed. The
+refusal names the hook and where it would be kept, and nothing is written: remove its chain line,
+or move the hook aside. A re-install reads the `.local` beside stayfixed's hook for the same name
+and refuses the same way, leaving both files as they are. The check is for the name, not for how a
+chain is spelled: `exec "$0.local" "$@"` names `prepare-commit-msg.local.local` once the hook is
+kept, runs nothing twice, and is installed; a `--git-common-dir` chain under a `core.hooksPath`
+that is not that directory is refused though it would not loop, and the same remedy covers it. It
+is a liveness check, not a security control: a chain that builds the name at run time
+(`"${0%.local}.local"`, `$(basename …)`, a variable) is not seen, and neither is a `.local` edited
+to name itself after the install, which loops as any hook that `exec`s itself does. A hook past the
+64 MiB read cap is not read, so it is not judged either: it is kept and chained, as below.
+
 **Refuses (`2`) together with `--preset`.** The two write to different scopes — one repository,
 one machine-wide — and a single invocation has only one exit code to report, so it does one of
 the two.
@@ -2678,7 +2693,7 @@ was: it is not stayfixed's hook; nothing was removed`; `--json` carries it as `f
 is neither stayfixed's nor foreign: either form refuses (`2`) naming it and the reason, and leaves
 it. A regular file past the 64 MiB read cap is foreign, since stayfixed's own hook is a couple of
 kilobytes: it is kept and chained, and `--uninstall` leaves it. Exits `0`; `2` when `--preset` is
-also given or the hook cannot be read.
+also given, the hook cannot be read, or a hook names `prepare-commit-msg.local`.
 
 ---
 

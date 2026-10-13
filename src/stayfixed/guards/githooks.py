@@ -38,6 +38,10 @@ LOCAL_SUFFIX = ".local"
 _EXECUTABLE = 0o755
 
 _CHAIN_LINE = '    exec "$previous" "$@"'
+# The chain below is spelled `"$0.local"` and names `prepare-commit-msg.local` nowhere, so it is
+# safe from the check `install` makes of a predecessor's bytes for that name: `_ours` recognises
+# stayfixed's own hook by its marker first, and such a hook is rewritten in place, never kept as
+# `.local`, so `$0.local` never resolves to this file itself.
 # Every line of the hook stays under ruff's line length: the formatter never reflows a string
 # literal, and a lint-suppression comment inside one would ship as hook text, so the long
 # messages are shell variables. `{}` are absent from the shell on purpose; the only braces are
@@ -90,6 +94,20 @@ if [ -x "$previous" ]; then
 {_CHAIN_LINE}
 fi
 """
+
+
+# What `install` says of a hook that would run itself. A hook it keeps as `.local` is `exec`ed
+# last by stayfixed's own, so one whose bytes name `prepare-commit-msg.local` then `exec`s itself,
+# and `git commit` runs until it is killed. `{path}` is the file read, `{local}` where it is or
+# would be kept, both in git's own hooks directory, named absolutely as every line here is. The
+# check is on the name and not on how the chain is spelled, so a `--git-common-dir` chain read
+# under a `core.hooksPath` that git does not resolve to that directory is refused too; the remedy
+# covers it. A chain that builds the name at run time is not seen (`docs/cli.md` says which).
+CHAINS_TO_ITSELF = (
+    "{path} names {name}: kept as {local}, which stayfixed's hook runs last, it would run itself "
+    "until the commit is killed; remove its chain line, or move it aside; nothing was installed"
+)
+_CHAINED_NAME = HOOK_NAME + LOCAL_SUFFIX
 
 
 class Installed(NamedTuple):
@@ -155,8 +173,17 @@ def hooks_dir(root: Path) -> Path:
 UNREADABLE = "{path} could not be read ({reason}); {outcome}"
 
 
-def _ours(path: Path, outcome: str) -> bool:
-    """Whether the hook at `path` is stayfixed's, by its marker; bytes that are not UTF-8 are not.
+class Hook(NamedTuple):
+    """What `_ours` read at a hook path: whether the hook is stayfixed's, and its bytes, read once,
+    or `None` for a regular file past the read cap, which is foreign and is not read."""
+
+    ours: bool
+    content: bytes | None
+
+
+def _ours(path: Path, outcome: str) -> Hook:
+    """Whether the hook at `path` is stayfixed's, by its marker, and the bytes that said so; bytes
+    that are not UTF-8 are not stayfixed's.
 
     Read as a regular file only, to the read cap (`fsops.read_regular_bytes`): a FIFO there is
     never waited on, as `read_text` waited on it. A hook that cannot be read is neither ours nor
@@ -168,15 +195,36 @@ def _ours(path: Path, outcome: str) -> bool:
     try:
         content = fsops.read_regular_bytes(path)
     except fsops.TooLarge:
-        return False
+        return Hook(False, None)
     except OSError as exc:
         raise Refusal(
             UNREADABLE.format(path=path, reason=fsops.said(exc), outcome=outcome)
         ) from exc
     try:
-        return HOOK_MARKER in content.decode("utf-8")
+        return Hook(HOOK_MARKER in content.decode("utf-8"), content)
     except UnicodeDecodeError:
-        return False
+        return Hook(False, content)
+
+
+def _refuse_a_self_chain(path: Path, content: bytes | None, local: Path) -> None:
+    """Refuse the hook at `path` when its bytes name `prepare-commit-msg.local`, where it is or
+    would be kept and from where stayfixed's hook `exec`s it: it would then `exec` itself.
+
+    `None` is a hook past the read cap, which is not judged: `install` keeps and chains it, as it
+    always has (`docs/cli.md`). Bytes, not text, so a hook that is not UTF-8 is judged as well.
+    """
+    if content is not None and _CHAINED_NAME.encode() in content:
+        raise Refusal(CHAINS_TO_ITSELF.format(path=path, name=_CHAINED_NAME, local=local))
+
+
+def _chained(local: Path) -> bytes | None:
+    """The bytes of the `.local` beside stayfixed's installed hook, or `None` where they cannot be
+    judged: past the read cap, or not a readable regular file. A hook git cannot read cannot run,
+    so it cannot run itself either, and a re-install over it goes on as it always has."""
+    try:
+        return fsops.read_regular_bytes(local)
+    except OSError:  # `fsops.TooLarge` included
+        return None
 
 
 def install(root: Path) -> Installed:
@@ -187,7 +235,8 @@ def install(root: Path) -> Installed:
         raise Refusal(f"{target} is a symlink; refusing to write through it")
     if fsops.is_dir(target):
         raise Refusal(f"{target} is a directory; refusing to install a hook over it")
-    replaced = fsops.exists(target) and _ours(target, "nothing was installed")
+    found = _ours(target, "nothing was installed") if fsops.exists(target) else None
+    replaced = found is not None and found.ours
     # A `.local` found where our hook is *not* installed was put there by somebody else, and
     # the shipped hook `exec`s whatever sits at that name, so installing over it would run a
     # stranger's file under stayfixed's name. Note the bound, which is the whole of the
@@ -196,8 +245,16 @@ def install(root: Path) -> Installed:
     # afterwards is vouched for by nothing here — see `uninstall`.
     if fsops.exists(local) and not replaced:
         raise Refusal(f"{local} already exists and was not preserved by stayfixed; move it aside")
+    # A hook that names `prepare-commit-msg.local` is refused before it is kept there, and the
+    # `.local` beside a hook being reinstalled is read for the same name: either way the chain
+    # would `exec` itself. The check is made here, at install, and not by the shipped hook before
+    # its `exec`, where a false positive would abort every commit.
+    if found is not None and not replaced:
+        _refuse_a_self_chain(target, found.content, local)
+    if replaced and fsops.exists(local):
+        _refuse_a_self_chain(local, _chained(local), local)
     preserved: Path | None = None
-    if fsops.exists(target) and not replaced:
+    if found is not None and not replaced:
         target.rename(local)  # beside the hook, in git's own directory, as `docs/cli.md` says
         # Its mode is kept as found: `chmod -x` is how a developer switches a hook off, and
         # the chain tests `-x` for exactly that reason.
@@ -215,7 +272,7 @@ def uninstall(root: Path) -> Removed:
         return Removed(target, None, Found.ABSENT)
     # stayfixed writes only a regular file here, so a link, a directory or a FIFO is foreign as
     # surely as a regular file past the read cap is, and is left in place unopened.
-    if not stat.S_ISREG(os.lstat(target).st_mode) or not _ours(target, "nothing was removed"):
+    if not stat.S_ISREG(os.lstat(target).st_mode) or not _ours(target, "nothing was removed").ours:
         return Removed(target, None, Found.FOREIGN)
     target.unlink()
     # Whatever sits at `.local` is restored, and this does *not* check that install put it
