@@ -102,6 +102,26 @@ def test_a_leaking_background_call_is_denied(tmp_path: Path) -> None:
     assert result.reason == bgcleanup.LEAK_REASON
 
 
+def test_every_leaking_call_of_a_session_is_denied_not_only_the_first(tmp_path: Path) -> None:
+    # The guard carries no `once_key`: the dispatcher banks one after any delivery, a deny
+    # included, so with a key the second leaking call of a session would be let through. Two
+    # calls through the dispatcher and one recording sink, which is where that key is banked.
+    # Mutation: `mutations/`'s "the background guard refuses once a session".
+    root = a_project(tmp_path)
+    config = load(root, machine=tmp_path / "absent.toml")
+    recorder = Recorder()
+    for _ in range(2):
+        outcome = dispatch(
+            bash_event(root, "python -m http.server 8000 &"),
+            register(),
+            config,
+            harness=CLAUDE,
+            sink=recorder,
+        )
+        assert outcome.exit_code == 2
+        assert bgcleanup.LEAK_REASON in outcome.stderr
+
+
 def test_a_non_bash_tool_is_ignored(tmp_path: Path) -> None:
     # Carries `run_in_background: true` deliberately: without it the flag check would be what
     # stops this event, and the assertion would say nothing about `tool_name`.

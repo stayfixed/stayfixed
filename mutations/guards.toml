@@ -287,6 +287,17 @@ reddens = [
   "tests/guards/test_hooks.py::test_a_guard_that_cannot_judge_refuses_rather_than_permits",
 ]
 
+# The dispatcher banks a handler's `once_key` after any delivery, a deny included: with a key the
+# guard would refuse the first leaking call of a session and let every later one through.
+[[mutation]]
+name = "the background guard refuses once a session"
+file = "src/stayfixed/guards/hooks.py"
+before = '        Handler(name="bg-cleanup", event="PreToolUse", policy=Policy.CLOSED, run=_bg_cleanup),'
+after = '        Handler(name="bg-cleanup", event="PreToolUse", policy=Policy.CLOSED, run=_bg_cleanup, once_key="bg-cleanup"),'
+reddens = [
+  "tests/guards/test_hooks.py::test_every_leaking_call_of_a_session_is_denied_not_only_the_first",
+]
+
 [[mutation]]
 name = "a verdict's refusal never becomes a deny"
 file = "src/stayfixed/guards/hooks.py"
