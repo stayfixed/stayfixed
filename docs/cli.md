@@ -92,12 +92,19 @@ wrote (see below). Under `--check`, nothing.
 
 What it does, in order:
 
-1. **Harvests.** A second writer — you, another session — may have appended
-   `- [trigger → answer](group/note.md)` lines to `MEMORY.md`. Those are read back into each
-   note's `index:` frontmatter first, so nothing a session wrote is lost by regenerating.
-2. **Invents what is missing.** A note with no `index:` gets a provisional one from its
-   `description`. Provisional lines are reported so you can curate them.
-3. **Renders.** One section per configured group, a note's `group:` value as a sub-heading
+1. **Takes the note's own short line.** A note with no top-level `index:` that carries one under
+   `metadata:` (`metadata.index`, more than whitespace) gets it as its `index:`, marked
+   `index_provenance: provisional`. A later edit to `metadata.index` does not reach the index until
+   that `index:` line is changed or removed, as for a line made from the description.
+2. **Harvests.** A second writer — you, another session — may have appended
+   `- [trigger → answer](group/note.md)` lines to `MEMORY.md`. For a note with neither key, those
+   are read back into its `index:` frontmatter, so nothing a session wrote is lost by
+   regenerating.
+3. **Invents what is missing.** A note with none of these gets a provisional `index:` from its
+   `description`. The line names every note this run wrote a provisional line into, from
+   `metadata.index` or the description, so you can curate them; `--json`'s `provisional` lists
+   them all.
+4. **Renders.** One section per configured group, a note's `group:` value as a sub-heading
    inside it, ordered by `startup` rank first, then by `group_order`, then by name — so a
    note ranked for the session leads its section whatever its position within a sub-heading.
 

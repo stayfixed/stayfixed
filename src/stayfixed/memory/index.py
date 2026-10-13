@@ -271,8 +271,27 @@ def _relative(note: Note) -> str:
     return f"{note.group_name}/{note.path.name}"
 
 
+def _metadata_index(note: Note) -> str | None:
+    """The short index line the note carries under `metadata:`, when it holds more than
+    whitespace, else `None`. One line by construction: the parser reads every value from one
+    frontmatter line and strips it.
+
+    The owner's own line, so it outranks a line harvested from `MEMORY.md`, which is what the
+    native writer appended — the description, in the case that asked for this. It is still a line
+    this run writes into the note, so it is provisional, as the description is: the note format
+    passes unknown `metadata.*` keys through, and this reads one as a source for that line and
+    nothing more. Once written, a later edit to `metadata.index` is shadowed by the `index:` it
+    became, as an edit to the description is."""
+    line = note.metadata.get("index", "").strip()
+    return line or None
+
+
 def reconcile(store: Store, config: Config, *, write: bool) -> Reconciliation:
     """Give every note an `index:` line, harvesting the second writer's before inventing one.
+
+    The line, in order: a top-level `index:` (curated, left alone); `metadata.index`
+    (provisional, `_metadata_index`); a line harvested from `MEMORY.md` (native); the
+    description (provisional).
 
     `config` rather than a bare group list: the groups came from it at every call site anyway,
     and the index's target rule needs `project.name` and the recorded overlay, which a
@@ -296,11 +315,15 @@ def reconcile(store: Store, config: Config, *, write: bool) -> Reconciliation:
                 refused_publish.append(note.name)
             notes.append(note)
             continue
-        line = appended.get(_relative(note))
+        own = _metadata_index(note)
+        line = None if own else appended.get(_relative(note))
         if line and not _harvestable(store, source, note):
             refused.append(note.name)
             line = None
-        if line:
+        if own:
+            note = with_index(note, own, Provenance.PROVISIONAL)
+            provisional.append(note.name)
+        elif line:
             note = with_index(note, line, Provenance.NATIVE)
             harvested.append(note.name)
         else:

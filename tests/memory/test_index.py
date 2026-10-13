@@ -23,6 +23,8 @@ from stayfixed.memory.index import (
 )
 from stayfixed.memory.notes import Provenance, read_note
 from stayfixed.memory.store import Store
+from tests.cli import cli
+from tests.snapshot import assert_snapshot_unchanged, snapshot
 
 CONFIG = """
 [stayfixed]
@@ -256,6 +258,112 @@ def test_reconcile_is_idempotent(tmp_path: Path) -> None:
     second = reconcile(store, config, write=True)
     assert (store.groups["developer"] / "bare.md").read_text(encoding="utf-8") == first
     assert second.provisional == []
+
+
+# A note may carry its short index line under `metadata:`, which `memory index` passed over: the
+# note got its description, or the description the native writer had appended to `MEMORY.md`,
+# as its `index:` line. The order is a top-level `index:` (curated, untouched), then
+# `metadata.index` (provisional), then a line harvested from `MEMORY.md` (native), then the
+# description (provisional). Mutation (oracle): `mutations/`'s "memory index passes over a note's
+# metadata index line".
+
+
+def a_metadata_note(*, index: str = "") -> str:
+    head = ["name: m", 'description: "long description"']
+    if index:
+        head.append(f'index: "{index}"')
+    return "---\n" + "\n".join([*head, "metadata:", "  index: short line"]) + "\n---\n\nBody.\n"
+
+
+def test_metadata_index_is_the_provisional_line_before_the_description(tmp_path: Path) -> None:
+    store, config = a_store(tmp_path)
+    path = store.groups["developer"] / "m.md"
+    path.write_text(a_metadata_note(), encoding="utf-8")
+    result = reconcile(store, config, write=True)
+    memory_md = render_index(result, config, store)
+    assert "- [short line](developer/m.md)" in memory_md
+    assert "long description" not in memory_md
+    text = path.read_text(encoding="utf-8")
+    assert "\nindex: short line\n" in text and "\nindex_provenance: provisional\n" in text
+    assert result.provisional == ["m"] and result.harvested == []
+
+
+def test_metadata_index_wins_over_a_line_harvested_from_memory_md(tmp_path: Path) -> None:
+    # What the native writer appended is the description; the owner's own short line outranks it.
+    store, config = a_store(tmp_path)
+    path = store.groups["developer"] / "m.md"
+    path.write_text(a_metadata_note(), encoding="utf-8")
+    (store.path / INDEX_NAME).write_text("- [long description](developer/m.md)\n", "utf-8")
+    result = reconcile(store, config, write=True)
+    memory_md = render_index(result, config, store)
+    assert "- [short line](developer/m.md)" in memory_md
+    assert "long description" not in memory_md
+    written = read_note(path)
+    assert written.index == "short line"
+    assert written.index_provenance is Provenance.PROVISIONAL
+    assert result.provisional == ["m"] and result.harvested == []
+
+
+@pytest.mark.parametrize("empty", ["", '"   "'], ids=["no-value", "only-spaces"])
+def test_a_metadata_index_of_nothing_falls_through_to_the_description(
+    tmp_path: Path, empty: str
+) -> None:
+    store, config = a_store(tmp_path)
+    path = store.groups["developer"] / "m.md"
+    text = a_metadata_note().replace("  index: short line", f"  index: {empty}".rstrip())
+    path.write_text(text, encoding="utf-8")
+    result = reconcile(store, config, write=True)
+    assert read_note(path).index == "long description"
+    assert result.provisional == ["m"]
+
+
+def test_a_top_level_index_wins_over_metadata_index_and_the_note_is_untouched(
+    tmp_path: Path,
+) -> None:
+    store, config = a_store(tmp_path)
+    path = store.groups["developer"] / "m.md"
+    path.write_text(a_metadata_note(index="top line"), encoding="utf-8")
+    before = path.read_bytes()
+    result = reconcile(store, config, write=True)
+    memory_md = render_index(result, config, store)
+    assert path.read_bytes() == before
+    assert "- [top line](developer/m.md)" in memory_md and "short line" not in memory_md
+    assert result.provisional == []
+
+
+def _index_cli(store: Store, tmp_path: Path, *argv: str) -> tuple[int, str, str]:
+    return cli(store.root, tmp_path, "memory", "index", *argv, machine=tmp_path / "machine.toml")
+
+
+def test_the_summary_names_the_provisional_lines(tmp_path: Path) -> None:
+    # What `memory index` wrote into notes is said on its line, not only in `--json`: a line it
+    # invented, from `metadata.index` or the description, is the owner's to curate.
+    store, _ = a_store(tmp_path)
+    (store.groups["developer"] / "m.md").write_text(a_metadata_note(), encoding="utf-8")
+    (store.groups["developer"] / "bare.md").write_text(note("bare"), encoding="utf-8")
+    code, out, _ = _index_cli(store, tmp_path)
+    assert code == 0
+    assert "wrote a provisional index line into 2 note(s): bare, m" in out
+
+
+def test_index_check_writes_nothing(tmp_path: Path) -> None:
+    store, _ = a_store(tmp_path)
+    (store.groups["developer"] / "m.md").write_text(a_metadata_note(), encoding="utf-8")
+    before = snapshot(store.path)
+    code, _, _ = _index_cli(store, tmp_path, "--check")
+    assert code == 1
+    assert_snapshot_unchanged(store.path, before)
+
+
+def test_a_second_index_run_writes_nothing(tmp_path: Path) -> None:
+    store, _ = a_store(tmp_path)
+    (store.groups["developer"] / "m.md").write_text(a_metadata_note(), encoding="utf-8")
+    assert _index_cli(store, tmp_path)[0] == 0
+    before = snapshot(store.path)
+    code, out, _ = _index_cli(store, tmp_path)
+    assert code == 0 and "provisional index line" not in out
+    assert_snapshot_unchanged(store.path, before)
+    assert _index_cli(store, tmp_path, "--check")[0] == 0
 
 
 def test_a_file_that_will_not_parse_is_quarantined_not_fatal(tmp_path: Path) -> None:
