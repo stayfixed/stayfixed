@@ -315,20 +315,41 @@ def _entries(*roots: Path) -> dict[str, str]:
     return found
 
 
-def test_a_second_detach_exits_one_and_writes_nothing(tmp_path: Path) -> None:
-    # Run twice in the main checkout while the worktree is attached: the first takes this
-    # checkout's ledger, so the second has nothing to reverse and fails (exit 1) naming the
-    # missing ledger, with both checkouts and every harness link exactly as the first left them.
-    root, side, _, machine, home = _both_attached(tmp_path)
-    _detach(root, machine, home)
-    before = _entries(root, side, home)
-    # Non-vacuous: the walk sees the trees and the worktree's harness link.
-    assert any(path.endswith("developer") for path in before)
-    assert str(harness_memory_path(side, home)) in before
+@pytest.mark.parametrize("run_in", ["main", "worktree", "lone"])
+def test_a_second_detach_exits_one_and_writes_nothing(tmp_path: Path, run_in: str) -> None:
+    # Run twice in one checkout: the first takes that checkout's ledger, so the second has nothing
+    # to reverse and fails (exit 1) naming the missing ledger, with every checkout and every
+    # harness link exactly as the first left them. From the main checkout and from the worktree
+    # while the other is attached, and from a lone checkout, where the first takes everything.
+    if run_in == "lone":
+        root, store, machine = _bound(tmp_path)
+        _grant(store.parents[2])
+        home = tmp_path / "home"
+        _attach(root, store, machine, home)
+        _trusted(root, machine)
+        _attach(root, store, machine, home)
+        assert harness_memory_path(root, home).exists()
+        checkouts: tuple[Path, ...] = (root,)
+        target = root
+    else:
+        root, side, _, machine, home = _both_attached(tmp_path)
+        checkouts = (root, side)
+        target = root if run_in == "main" else side
+    _detach(target, machine, home)
+    before = _entries(*checkouts, home)
+    # Non-vacuous: the walk sees what the first left — the other checkout's tree and harness
+    # link, and its own tree's directory where it was the main checkout's.
+    if run_in != "lone":
+        other = side if run_in == "main" else root
+        assert str(harness_memory_path(other, home)) in before
+        assert any(path.endswith("developer") for path in before)
+    else:
+        assert str(root / "stayfixed.toml") in before
+        assert not os.path.lexists(harness_memory_path(root, home))
     with pytest.raises(Failure) as failed:
-        _detach(root, machine, home)
+        _detach(target, machine, home)
     assert LEDGER in str(failed.value)
-    assert _entries(root, side, home) == before
+    assert _entries(*checkouts, home) == before
 
 
 @pytest.mark.parametrize("detached", ["worktree", "main"])
