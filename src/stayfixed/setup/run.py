@@ -928,7 +928,7 @@ def _created_root(planned: _Overlay | None) -> Path | None:
 def _apply_overlay(planned: _Overlay, *, project_root: Path, runner: Runner) -> tuple[Path, str]:
     """Create the overlay if this run has to, record what there is, and say what happened.
 
-    Everything here that can refuse is a **floor** under `_requested_overlay` rather than a
+    Everything here that can refuse is a **floor** under `_before_the_first_write` rather than a
     second copy of it, in the sense the `attach` area settled the same shape: the checks above
     the first write are what a person acts on, and these are what catches a tree that changed in
     between — or, for the create branch, one that did not exist to be checked at all. What this
