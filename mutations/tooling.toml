@@ -869,7 +869,7 @@ reddens = [
   "tests/scripts/test_smoke_scripts.py::test_a_launcher_fault_is_not_mistaken_for_a_refusal",
 ]
 
-# Six of the nine entries are `memory session-context` — the ones that carry repository bytes
+# Six of the ten entries are `memory session-context` — the ones that carry repository bytes
 # toward the model — and they ran against a fixture with no memory store at all. Measured on that
 # fixture, when there were ten of them: ten rows, 0 bytes of stdout, every one green; they would
 # have been identically green if `session-context` were `/bin/false`.
