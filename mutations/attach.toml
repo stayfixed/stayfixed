@@ -1865,6 +1865,17 @@ reddens = [
   "tests/attach/test_doctor.py::test_no_harness_link_beside_a_tree_that_does_not_resolve_is_never_green[groups-gone]",
 ]
 
+# Beside a note store that does not resolve, anything at the harness memory path that was not a
+# link was "a real directory beside the autoMemoryDirectory fallback", a file included.
+[[mutation]]
+name = "doctor calls anything at the harness memory path that is no link a real directory"
+file = "src/stayfixed/attach/doctor.py"
+before = "    elif fsops.is_dir(harness):\n        shape = \"a real directory beside"
+after = "    elif fsops.exists(harness):\n        shape = \"a real directory beside"
+reddens = [
+  "tests/attach/test_doctor.py::test_a_file_at_the_harness_path_beside_a_store_that_does_not_resolve_is_no_directory",
+]
+
 # A tree that is gone is one `attach` rebuilds; the row sent the reader to `memory index --check`,
 # which only says the store is missing.
 [[mutation]]

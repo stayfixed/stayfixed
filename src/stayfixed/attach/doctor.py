@@ -470,8 +470,10 @@ def _unresolved_shape(context: Context, harness: Path, relink: str) -> tuple[Sta
 
     if fsops.is_symlink(harness):
         shape = "a link"
-    elif fsops.exists(harness):
+    elif fsops.is_dir(harness):
         shape = "a real directory beside the autoMemoryDirectory fallback"
+    elif fsops.exists(harness):
+        shape = "something other than a link"
     else:
         shape = "not in place"
     tree = context.root / context.config.paths.memory

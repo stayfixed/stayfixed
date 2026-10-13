@@ -420,6 +420,27 @@ def test_a_ledger_whose_link_tree_is_gone_warns_and_names_attach(tmp_path: Path)
     assert "trust record asks for" not in row.detail
 
 
+def test_a_file_at_the_harness_path_beside_a_store_that_does_not_resolve_is_no_directory(
+    tmp_path: Path,
+) -> None:
+    # Beside a note store that does not resolve, anything at the harness memory path that was not
+    # a link was described as "a real directory beside the autoMemoryDirectory fallback", a file
+    # included, which is neither. Mutation (oracle): `mutations/`'s "doctor calls anything at the
+    # harness memory path that is no link a real directory".
+    root = _attached(tmp_path)
+    harness = _harness(tmp_path, root)
+    harness.write_text("not a directory\n", encoding="utf-8")
+    shutil.rmtree(root / "docs" / "memory")
+    row = _by_name(
+        _checks(tmp_path, root, home=tmp_path / "home", machine=_machine(tmp_path)), "attached"
+    )
+    # Non-vacuous: the file is still there, and this is the unresolved store's arm.
+    assert harness.is_file()
+    assert row.status == WARN and "paths.memory is not there" in row.detail
+    assert "real directory" not in row.detail
+    assert "something other than a link" in row.detail
+
+
 @pytest.mark.parametrize("cause", sorted(set(UNRESOLVED_TREES) - {"tree-gone"}))
 def test_no_harness_link_beside_a_tree_that_does_not_resolve_is_never_green(
     tmp_path: Path, cause: str
