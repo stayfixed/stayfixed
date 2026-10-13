@@ -20,7 +20,7 @@ before it has asked anything.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, Final, NamedTuple
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -28,7 +28,7 @@ if TYPE_CHECKING:
     from stayfixed.attach.binding import Binding
     from stayfixed.attach.write import AttachLedger
     from stayfixed.doctor.api import Claims, Context, Contribution, Row, Status, Wording
-    from stayfixed.memory.api import Answers
+    from stayfixed.memory.api import Answers, Store
     from stayfixed.scaffold import Placed
 
 
@@ -116,7 +116,7 @@ def _attached(context: Context, answers: Answers, ledger: _Ledger) -> Row:
     failure of its own and the reason this check exists rather than a general "not attached":
     the harness's native reader finds a directory, reads nothing out of it, and reports no fault
     — it looks attached and behaves like nothing. Unless `attach` took its settings-file fallback
-    beside it (`_fallback_in_place`), which points the harness at the store instead.
+    beside it, which points the harness at the store instead (`_harness_verdict`, rows 2, 4, 10).
 
     A path that is simply absent is not that. `worktree.harness_link_needed` gates the link on
     the same trust record every other channel is gated on, so an unapproved store correctly has
@@ -132,7 +132,6 @@ def _attached(context: Context, answers: Answers, ledger: _Ledger) -> Row:
     the model's memory comes from, and the two states it would hide are the same failure the real
     directory is flagged for: one reads nothing, the other reads somebody else's notes.
     """
-    from stayfixed import fsops
     from stayfixed.attach import ATTACH_STORE
     from stayfixed.attach.write import HOME_DIFFERS, UnreadHome, unread_home
     from stayfixed.config.layout import ATTACH_LEDGER
@@ -162,6 +161,7 @@ def _attached(context: Context, answers: Answers, ledger: _Ledger) -> Row:
     # link that reads green. The row says so in `attach`'s words instead of judging either.
     unread = unread_home() if context.home is None else None
     harness: Path | UnreadHome
+    verdict: _Verdict | None = None
     if unread is not None:
         harness = unread
     else:
@@ -188,20 +188,12 @@ def _attached(context: Context, answers: Answers, ledger: _Ledger) -> Row:
                 "pass --home <path> to check the harness memory path under that directory",
             )
         # A real directory there is red unless `attach` took the settings-file fallback beside it,
-        # which is where the harness then reads its memory (`_fallback_in_place`). The remedy is
-        # `attach`'s own (`write.FALLBACK_UNAVAILABLE`): the directory can hold notes the harness
-        # wrote, so it is moved aside and never removed.
-        if (
-            fsops.is_dir(harness)
-            and not fsops.is_symlink(harness)
-            and not _fallback_in_place(context)
-        ):
-            return Row(
-                RED,
-                "the harness memory path is a real directory rather than a link to the store, so "
-                "this checkout looks attached and behaves like nothing",
-                f"move {harness} aside, then run `{ATTACH_STORE}` again",
-            )
+        # which is where the harness then reads its memory — red whatever the ledger says, so it is
+        # read before the ledger is. The verdict is the one the row ends with, read once.
+        if _shape_of(harness) == _REAL_DIRECTORY:
+            verdict = _harness_verdict(context, answers, harness)
+            if verdict.whole:
+                return Row(verdict.status, verdict.shape, verdict.remedy)
     if ledger.state(context.root) == NO_LEDGER:
         return Row(
             WARN,
@@ -248,9 +240,14 @@ def _attached(context: Context, answers: Answers, ledger: _Ledger) -> Row:
         if harness == HOME_DIFFERS:
             remedy += f"; {_CHECKED_AT_A_TERMINAL}"
         return Row(WARN, f"attached; {harness.cause}; the binding is {state}", remedy)
-    status, shape, remedy = _harness_shape(context, answers, harness)
+    if verdict is None:
+        verdict = _harness_verdict(context, answers, harness)
+    if verdict.whole:
+        return Row(verdict.status, verdict.shape, verdict.remedy)
     return Row(
-        status, f"attached; the harness memory path is {shape}; the binding is {state}", remedy
+        verdict.status,
+        f"attached; the harness memory path is {verdict.shape}; the binding is {state}",
+        verdict.remedy,
     )
 
 
@@ -337,40 +334,48 @@ def _uncorroborated(reason: str) -> Row:
     )
 
 
-def _targets(context: Context) -> tuple[Path, ...] | None:
-    """What a harness link of this checkout's may point at and be stayfixed's: the owning
-    checkout's `paths.memory` and this checkout's own (`worktree.harness_targets`), read the way
-    `detach` reads them. `attach` points every checkout's link at the owning checkout's tree, so
-    compared with this checkout's own alone, a linked worktree attached the ordinary way read red.
-
-    A `git` that cannot say which checkout owns this one leaves this checkout's own, the one
-    answer that needs no `git`; the binding row above has already asked `git` by then, so this is
-    the race and not the layout. `None` where either `paths.memory` is reached through a symlink
-    or cannot be asked whether it is: `harness_targets` refuses that (`PathEscape`, a `Refusal`),
-    and in a linked worktree the owning checkout's is one this checkout's own configuration never
-    walked, so a directory on the way to it that became a link reaches this row. Let out, the
-    refusal was the report's "this check could not run", red, with "report this" for a remedy."""
-    from stayfixed.errors import Failure, Refusal
-    from stayfixed.memory.api import harness_targets, main_checkout
-
-    try:
-        owner = main_checkout(context.root)
-    except Failure:
-        owner = context.root
-    try:
-        return harness_targets(context.root, owner, context.config)
-    except Refusal:
-        return None
+# The shapes the harness memory path can have, as `_harness_verdict` reads them. Not statuses and
+# not sentences: the table below gives each its status and its words.
+_ABSENT: Final = "absent"
+_DANGLING: Final = "dangling"
+_LINK: Final = "link"
+_REAL_DIRECTORY: Final = "real-directory"
+_OTHER: Final = "other"
 
 
-def _fallback_in_place(context: Context) -> bool:
-    """Whether `.claude/settings.local.json` holds the settings-file fallback `attach` takes where a
-    real directory sits at the harness memory path: `autoMemoryDirectory`, naming one of the
-    directories a harness link may point at (`_targets`), so the harness reads the store there.
+class _Verdict(NamedTuple):
+    """`_harness_verdict`'s answer: the status, what the harness memory path is, and the remedy.
 
-    The file is one a clone can commit, and nothing in it is printed: the value is only compared.
-    A file that cannot be read as a settings document holds no fallback, so the real directory
-    keeps its red."""
+    `whole` is the real directory's red, whose sentence is the row's whole detail rather than the
+    shape the attached row frames ("attached; the harness memory path is …; the binding is …"):
+    it is answered before the ledger is read, so it never says "attached"."""
+
+    status: Status
+    shape: str
+    remedy: str
+    whole: bool = False
+
+
+def _shape_of(harness: Path) -> str:
+    """What stands at the harness memory path, by `fsops`' answers, which every interpreter gives
+    alike. A link that reaches nothing — gone, or a loop — is dangling."""
+    from stayfixed import fsops
+
+    if fsops.is_symlink(harness):
+        return _LINK if fsops.exists(harness) else _DANGLING
+    if fsops.is_dir(harness):
+        return _REAL_DIRECTORY
+    return _OTHER if fsops.exists(harness) else _ABSENT
+
+
+def _recorded_fallback(context: Context) -> Path | None:
+    """The directory `autoMemoryDirectory` in `.claude/settings.local.json` names, as written, or
+    `None` where the file holds no such absolute path or cannot be read as a settings document.
+
+    The file is one a clone can commit, so the value is never resolved and never printed: it is
+    compared exactly with what a harness link may point at (`harness_targets`), which is what
+    `attach` writes there (`str(store.path.resolve())`). Resolved, a committed value naming a link
+    the clone also committed would be read as the store."""
     from pathlib import Path
 
     from stayfixed.attach.permissions import local_document, settings_document
@@ -379,87 +384,198 @@ def _fallback_in_place(context: Context) -> bool:
 
     try:
         value = settings_document(local_document(context.root)).get(FALLBACK_KEY)
-        if not isinstance(value, str) or not Path(value).is_absolute():
-            return False
-        targets = _targets(context)
-        return targets is not None and Path(value).resolve() in targets
     except (Failure, Refusal, OSError, ValueError):
-        return False
+        return None
+    if not isinstance(value, str) or not Path(value).is_absolute():
+        return None
+    return Path(value)
 
 
-def _harness_shape(context: Context, answers: Answers, harness: Path) -> tuple[Status, str, str]:
-    """The status, the sentence and the remedy for the harness memory path, as one answer.
+def _owner(context: Context) -> Path:
+    """The checkout that owns this one's store: the one `attach` points every checkout's harness
+    link at and asks the gate of. A `git` that cannot say leaves this checkout, the one answer that
+    needs no `git`; the binding row above has already asked `git` by then, so this is the race and
+    not the layout."""
+    from stayfixed.errors import Failure
+    from stayfixed.memory.api import main_checkout
 
-    One function because the status and the sentence must not be able to disagree, which they
-    could if the shape were computed apart from the status and then discarded for it.
+    try:
+        return main_checkout(context.root)
+    except Failure:
+        return context.root
 
-    The comparison is against `_targets`, the directories `attach` and the `SessionStart` re-link
-    point a link at, resolved on both sides so that two spellings of one directory are one
-    answer, and only for a link that reaches something: a dangling link resolves to the path it
-    names, which is one of those directories once the owning checkout's tree is gone. A store
-    that does not resolve means the comparison cannot be made at all, which is a warning naming
-    why (`_unresolved_shape`) rather than a green sentence asserting what was not checked.
 
-    A real directory reaches here only beside the settings-file fallback, which `_attached` has
-    already found in place; anywhere else it was red above.
+def _owner_store(context: Context, answers: Answers, owner: Path) -> Store | None:
+    """The owning checkout's note store, or `None` where it does not resolve: `answers`' own in the
+    main checkout, resolved the same way (`errors.resolved_or_none`) from a linked worktree.
+
+    The owner's and not this checkout's, because it is the store `attach` links every checkout's
+    harness link to and asks the gate of (`attach.write._fallback_store`). Asked of a worktree's
+    own store, one machine state read two ways: with the main checkout's store approved and no
+    link anywhere, the main checkout warned that the link is missing and the worktree read green,
+    since nothing ever approves a worktree's own store."""
+    from stayfixed.errors import resolved_or_none
+    from stayfixed.memory.api import resolve
+
+    if owner.resolve() == context.root.resolve():
+        return answers.store(context)
+    return resolved_or_none(lambda: resolve(owner, context.config, machine=context.machine))
+
+
+def _harness_verdict(context: Context, answers: Answers, harness: Path) -> _Verdict:
+    """The one reading of the harness memory path: each machine state one status, sentence and
+    remedy, answered alike from the main checkout and from a linked worktree.
+
+    The state is read in this order, and the first row that matches answers:
+
+    1. A link that reaches nothing: red; `attach`.
+    2. A real directory, and no `autoMemoryDirectory` recorded: red, the row's whole detail; move
+       it aside, then `attach`.
+    3. Where a harness link may point cannot be asked (`harness_targets` refuses): warn, naming
+       whose `paths.memory` and why; replace the symlink, or make the directory readable.
+    4. A real directory, and `autoMemoryDirectory` naming no such directory: as 2.
+    5. A link to a directory a harness link may not point at: red; `attach`.
+    6. The owning checkout's store does not resolve, and its link tree is gone: warn; `attach`.
+    7. The owning checkout's store does not resolve, and its link tree is there: warn;
+       `memory index --check`.
+    8. A link to the store: ok.
+    9. This machine's trust record cannot be read: warn; `memory trust --in-repo-memory`, which
+       says why.
+    10. A real directory beside the fallback, the gate open: ok.
+    11. A real directory beside the fallback, the gate closed, lapsed or never approved: warn,
+        naming which; `attach`, which withdraws the fallback in exactly this state.
+    12. Nothing in place, the gate open: warn; `attach`.
+    13. Nothing in place, the gate closed, the approval lapsed: warn; `HARNESS_LAPSED`'s remedy
+        (read what changed, approve, `attach`).
+    14. Nothing in place, the gate closed, never approved: ok.
+
+    **The dangling link comes first**, before the store is asked anything: with the owning
+    checkout's tree gone every checkout's link dangles, and the store-resolution row read first
+    made the main checkout warn while a linked worktree said red. `doctor` exits non-zero only on
+    red, and a link that reaches nothing is red from every checkout.
+
+    **The gate is the owning checkout's store's** (`_owner_store`), the one `attach` asks, and it
+    is asked only where the answer turns on it: a real directory beside the fallback, and nothing
+    in place. A link to the store reads green without it (row 8), as it did: the link is in the
+    home, never in the repository, and only a run that asked the gate made it; the fallback is a
+    key in a file a clone can commit, so it is held to the gate here.
+
+    **`harness_targets` is asked once, and its one refusal is one answer** (row 3), whatever the
+    shape: it says whose `paths.memory` and why, in stayfixed's words, and the value it quotes is
+    held to `PATH_VALUE`, the grammar a report may print. A real directory with no fallback
+    recorded (row 2) is red without asking it, since nothing it could answer would change that.
+
+    A file or anything else that is no link and no directory reads as nothing in place (rows
+    6, 7, 12-14), as it did.
     """
-    from stayfixed import fsops
     from stayfixed.attach import ATTACH_STORE
     from stayfixed.attach.permissions import LOCAL_SETTINGS
-    from stayfixed.attach.write import FALLBACK_KEY
+    from stayfixed.attach.write import APPROVAL_LAPSED, FALLBACK_KEY, REAPPROVE
     from stayfixed.doctor.api import OK, RED, WARN
-    from stayfixed.memory.api import harness_link_needed
+    from stayfixed.errors import Refusal
+    from stayfixed.memory.api import harness_approval_lapsed, harness_link_needed, harness_targets
 
-    # The remedy every arm but the green ones carries: one command puts the link back where
-    # `attach` puts it, whatever the wrong shape was.
+    # The remedy every arm but the green ones and the named ones carries: one command puts the link
+    # back where `attach` puts it, whatever the wrong shape was.
     relink = f"run `{ATTACH_STORE}`"
-    store = answers.store(context)
-    if store is None:
-        return _unresolved_shape(context, harness, relink)
-    if fsops.is_dir(harness) and not fsops.is_symlink(harness):
-        return (
-            OK,
-            # The file named through the harness registry (`CLAUDE.local_settings`), as
-            # `attach`'s own fallback line names it: a harness fact spelled here is one more
-            # place a new harness would have to be found.
-            f"a real directory, and {FALLBACK_KEY} in {LOCAL_SETTINGS} points the harness at the "
-            "store instead",
-            "",
+    shape = _shape_of(harness)
+    if shape == _DANGLING:  # 1
+        return _Verdict(RED, "a dangling link, so the harness reads nothing through it", relink)
+    recorded = _recorded_fallback(context) if shape == _REAL_DIRECTORY else None
+    if shape == _REAL_DIRECTORY and recorded is None:  # 2
+        return _real_directory(harness)
+    words = {
+        _LINK: "a link",
+        _REAL_DIRECTORY: f"a real directory beside the {FALLBACK_KEY} fallback",
+        _OTHER: "something other than a link",
+        _ABSENT: "not in place",
+    }[shape]
+    owner = _owner(context)
+    try:
+        targets = harness_targets(context.root, owner, context.config)
+    except Refusal as refused:  # 3
+        unchecked = {
+            _LINK: "what the link points at",
+            _REAL_DIRECTORY: f"whether {FALLBACK_KEY} names the store",
+        }.get(shape, "whether the harness should see it")
+        return _Verdict(
+            WARN,
+            f"{words}, and {refused}, so {unchecked} could not be checked",
+            "replace that symlink with the directory it points at, or make the directory "
+            "readable, then run `stayfixed doctor` again",
         )
-    if fsops.is_symlink(harness):
-        if not fsops.exists(harness):
-            return RED, "a dangling link, so the harness reads nothing through it", relink
-        targets = _targets(context)
-        if targets is None:
-            return (
-                WARN,
-                "a link, and paths.memory in this checkout or in the main checkout is reached "
-                "through a symlink or cannot be asked whether it is, so what the link points at "
-                "could not be checked",
-                "replace that symlink with the directory it points at, or make the directory "
-                "readable, then run `stayfixed doctor` again",
-            )
-        if harness.resolve() in targets:
-            return OK, "a link to the store", ""
-        return (
+    if shape == _REAL_DIRECTORY and recorded not in targets:  # 4
+        return _real_directory(harness)
+    if shape == _LINK and harness.resolve() not in targets:  # 5
+        return _Verdict(
             RED,
             "a link to a directory that is not this project's note store, so the harness "
             "reads notes this repository is not bound to",
             relink,
         )
-    if harness_link_needed(store, context.config):
-        return (
+    store = _owner_store(context, answers, owner)
+    if store is None:  # 6, 7
+        return _unresolved(context, owner, words, relink)
+    if shape == _LINK:  # 8
+        return _Verdict(OK, "a link to the store", "")
+    try:
+        allowed = harness_link_needed(store, context.config)
+        lapsed = not allowed and harness_approval_lapsed(store, context.config)
+    except Refusal:  # 9
+        return _Verdict(
+            WARN,
+            f"{words}, and this machine's trust record cannot be read, so whether the harness "
+            "should see this store could not be checked",
+            "run `stayfixed memory trust --in-repo-memory`, which says why the trust record "
+            "cannot be read, then `stayfixed doctor` again",
+        )
+    if shape == _REAL_DIRECTORY:
+        # The file named through the harness registry (`CLAUDE.local_settings`), as `attach`'s own
+        # fallback line names it: a harness fact spelled here is one more place a new harness
+        # would have to be found.
+        fallback = f"a real directory, and {FALLBACK_KEY} in {LOCAL_SETTINGS} points the harness"
+        if allowed:  # 10
+            return _Verdict(OK, f"{fallback} at the store instead", "")
+        why = APPROVAL_LAPSED if lapsed else "no approval is recorded for the store"
+        return _Verdict(  # 11
+            WARN,
+            f"{fallback} at the store, although {why} — the harness reads notes nobody approved",
+            relink,
+        )
+    if allowed:  # 12
+        return _Verdict(
             WARN,
             "not in place, although this store's trust record allows it, so the harness sees "
             "no memory here",
             relink,
         )
-    return OK, "not in place, which is what this store's trust record asks for", ""
+    if lapsed:  # 13
+        return _Verdict(
+            WARN,
+            f"not in place, because {APPROVAL_LAPSED} — the harness sees no memory here",
+            REAPPROVE,
+        )
+    return _Verdict(OK, "not in place, which is what this store's trust record asks for", "")  # 14
 
 
-def _unresolved_shape(context: Context, harness: Path, relink: str) -> tuple[Status, str, str]:
-    """`_harness_shape`'s answer beside a ledger whose note store does not resolve, by what the
-    tree itself is.
+def _real_directory(harness: Path) -> _Verdict:
+    """Rows 2 and 4: a real directory at the harness memory path with no fallback beside it that
+    points the harness at the store. The remedy is `attach`'s own (`write.FALLBACK_UNAVAILABLE`):
+    the directory can hold notes the harness wrote, so it is moved aside and never removed."""
+    from stayfixed.attach import ATTACH_STORE
+    from stayfixed.doctor.api import RED
+
+    return _Verdict(
+        RED,
+        "the harness memory path is a real directory rather than a link to the store, so this "
+        "checkout looks attached and behaves like nothing",
+        f"move {harness} aside, then run `{ATTACH_STORE}` again",
+        whole=True,
+    )
+
+
+def _unresolved(context: Context, owner: Path, words: str, relink: str) -> _Verdict:
+    """Rows 6 and 7: the owning checkout's note store does not resolve, by what its tree is.
 
     A `paths.memory` that is not there is the tree `attach` builds, gone: `attach` puts it back,
     so the row names it. Anything else that keeps the store from resolving — `paths.memory` a
@@ -473,30 +589,22 @@ def _unresolved_shape(context: Context, harness: Path, relink: str) -> tuple[Sta
     from stayfixed import fsops
     from stayfixed.doctor.api import WARN
 
-    if fsops.is_symlink(harness):
-        shape = "a link"
-    elif fsops.is_dir(harness):
-        shape = "a real directory beside the autoMemoryDirectory fallback"
-    elif fsops.exists(harness):
-        shape = "something other than a link"
-    else:
-        shape = "not in place"
-    tree = context.root / context.config.paths.memory
+    tree = owner / context.config.paths.memory
     try:
         gone = not fsops.is_symlink(tree) and not fsops.exists(tree)
     except OSError:
         gone = False
     if gone:
-        return (
+        return _Verdict(
             WARN,
-            f"{shape}, and the link tree at paths.memory is not there, so the note store does not "
+            f"{words}, and the link tree at paths.memory is not there, so the note store does not "
             f"resolve and the harness reads nothing through it",
             relink,
         )
-    unchecked = "what it points at" if shape == "a link" else "whether the harness should see it"
-    return (
+    unchecked = "what it points at" if words == "a link" else "whether the harness should see it"
+    return _Verdict(
         WARN,
-        f"{shape}, and the note store does not resolve, so {unchecked} could not be checked",
+        f"{words}, and the note store does not resolve, so {unchecked} could not be checked",
         "run `stayfixed memory index --check`, then `stayfixed doctor` again",
     )
 

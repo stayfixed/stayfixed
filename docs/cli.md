@@ -2712,19 +2712,20 @@ position.
 `hooks/run-hook.sh` with `--version`; `git ls-remote --exit-code` against the public
 repository's tags, to judge `[ci] ref`, only when one is set; and the `git` queries the other
 rows need — where the overlay keeps its hooks, what its `origin` is, where the note store
-resolves to, which the binding's row and the note store's rows each ask for themselves, and, for
+resolves to, which the binding's row and the note store's rows each ask for themselves, which
+checkout owns this one, which the binding's row asks to judge the harness memory path, and, for
 `hook-entries`, which files below the root a nested `.claude/skills` holds (`git ls-files`), asked
-a second time through each submodule's index where a `.gitmodules` sits at or above the root. Six
-of those are measured on a green attached installation with no submodules — the wrapper probe and
-five `git` questions — and seven where a `.gitmodules` is present; not one of them leaves this
-machine. The `ci-ref` row's `git ls-remote` is one more on a repository that records a `[ci] ref`
-at all, and it is the only one that does leave: it goes through the `Runner` seam, which is what
-lets the case that pins the six answer it in process instead of launching it. That one is bounded
-at **30 seconds**, not at the seam's own five minutes (the bound for `gh repo create --clone`), so a
-peer that does not answer cannot turn a one-line diagnostic into a five-minute block. Each `git ls-files` question has `gitenv`'s thirty
-seconds of its own for a query over a whole tree, so the two together may take up to a minute; the
-other `git` questions are `gitenv`'s five seconds, and the wrapper probe is this area's own
-thirty.
+a second time through each submodule's index where a `.gitmodules` sits at or above the root.
+Seven of those are measured on a green attached installation with no submodules — the wrapper
+probe and six `git` questions — and eight where a `.gitmodules` is present; not one of them leaves
+this machine. The `ci-ref` row's `git ls-remote` is one more on a repository that records a
+`[ci] ref` at all, and it is the only one that does leave: it goes through the `Runner` seam,
+which is what lets the case that pins the seven answer it in process instead of launching it.
+That one is bounded at **30 seconds**, not at the seam's own five minutes (the bound for
+`gh repo create --clone`), so a peer that does not answer cannot turn a one-line diagnostic into a
+five-minute block. Each `git ls-files` question has `gitenv`'s thirty seconds of its own for a
+query over a whole tree, so the two together may take up to a minute; the other `git` questions
+are `gitenv`'s five seconds, and the wrapper probe is this area's own thirty.
 
 **The rendered workflow is read as a regular file, and to a bound.** That path is the
 repository's: a clone chooses what sits at `.github/workflows/stayfixed.yml`. Anything there that
@@ -2753,7 +2754,7 @@ check with `name`, `status`, `detail` and `remedy`, so every remedy is there.
 | `ci-ref` | whether `[ci] ref` is the commit of a released stayfixed tag (or the `v1` alias: a warning, as mutable, once a `1.x` release creates it, and red until then), and whether the rendered workflow pins the same ref — under `[ci] mode = "reusable"`, a workflow that is not there at all is a warning and never a green row, and so are a path that is there and is not a regular file and a file past the 256 KiB bound on the read | `git ls-remote --exit-code` over the public repository's tags, bounded at 30 seconds; *.github/workflows/stayfixed.yml*, read as a regular file and to a bound |
 | `diagnostics` | how many reasons the hook sink recorded — a count, never a line of the file | `${CLAUDE_PLUGIN_DATA}/stayfixed/diagnostics.jsonl` |
 | `ignored-env` | `STAYFIXED_CONFIG` or `XDG_CONFIG_HOME` set and not honoured, and a `HOME` that is not the home the password database records for this user, with the directory stayfixed's machine files are under instead, or that it records none; from a terminal, the remedy says to move files of your own there first | the environment, the password database |
-| `attached` | the overlay binding, and the harness memory path's shape, judged off a terminal only where `HOME` is the database's home: a link counts as `attach`'s when it reaches the main checkout's `paths.memory`, where `attach` points it from every checkout, or this checkout's own; a real directory there is in place only beside the `autoMemoryDirectory` fallback naming one of those, and otherwise is to be moved aside; beside a ledger whose note store does not resolve, the row warns, naming `attach` when the link tree at `paths.memory` is gone and `memory index --check` otherwise; where this checkout's or the main checkout's `paths.memory` is reached through a symlink, the link is not compared and the row warns | `.stayfixed/local/attach.json`, `~/.claude/projects/<slug>/memory`, `.claude/settings.local.json`, the link tree |
+| `attached` | the overlay binding, and the harness memory path's shape, judged off a terminal only where `HOME` is the database's home, and one machine state read alike from every checkout: a link that reaches nothing is red; a link counts as `attach`'s when it reaches the main checkout's `paths.memory`, where `attach` points it from every checkout, or this checkout's own; a real directory there is in place only beside the `autoMemoryDirectory` fallback naming one of those exactly, and only while the store's approval holds (otherwise the row warns, and `attach` withdraws the key), and with no such fallback it is red and to be moved aside; where the main checkout's note store does not resolve, the row warns, naming `attach` when the link tree at `paths.memory` is gone and `memory index --check` otherwise; with nothing in place it warns while the approval holds, warns with the way to re-approve when the approval lapsed, and is green for a store never approved, the approval asked being the main checkout's store's, as `attach` asks it; where the main checkout's `paths.memory` cannot be asked where it leads (a symlink, a symlink loop, a fault the system names), or this machine's trust record cannot be read, the row warns and says which | `.stayfixed/local/attach.json`, `~/.claude/projects/<slug>/memory`, `.claude/settings.local.json`, the link tree |
 | `bundles` | a bundle that does not fit its slots, and one whose part reaches the cap | the note store |
 | `store-debris` | files in the note store that are not notes (at most 500,000 entries) | the note store |
 | `harness-link` | whether a hook can make the harness memory link, which it cannot while `HOME` is not the database's home, said as the session is told it, with what makes the link instead | the environment, the password database |

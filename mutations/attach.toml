@@ -1564,12 +1564,8 @@ reddens = [
 [[mutation]]
 name = "doctor stops telling a real directory from a link at the harness memory path"
 file = "src/stayfixed/attach/doctor.py"
-before = """            fsops.is_dir(harness)
-            and not fsops.is_symlink(harness)
-            and not _fallback_in_place(context)"""
-after = """            fsops.is_dir(harness)
-            and not fsops.exists(harness)
-            and not _fallback_in_place(context)"""
+before = "    if fsops.is_dir(harness):\n        return _REAL_DIRECTORY\n"
+after = "    if fsops.is_dir(harness):\n        return _ABSENT\n"
 reddens = [
   "tests/attach/test_doctor.py::test_a_memory_path_that_is_a_real_directory_is_red_rather_than_ok",
 ]
@@ -1581,8 +1577,8 @@ reddens = [
 [[mutation]]
 name = "doctor stops asking what the harness memory path points at"
 file = "src/stayfixed/attach/doctor.py"
-before = '        if harness.resolve() in targets:'
-after = '        if True:'
+before = "    if shape == _LINK and harness.resolve() not in targets:  # 5"
+after = "    if False:  # 5"
 reddens = [
   "tests/attach/test_doctor.py::test_a_harness_link_pointing_at_an_unrelated_directory_is_never_green",
 ]
@@ -1592,9 +1588,11 @@ reddens = [
 [[mutation]]
 name = "doctor compares a worktree's harness link with that worktree's own tree"
 file = "src/stayfixed/attach/doctor.py"
-before = "        return harness_targets(context.root, owner, context.config)"
-after = "        return harness_targets(context.root, context.root, context.config)"
-reddens = ["tests/attach/test_doctor.py::test_a_normally_attached_linked_worktree_is_ok"]
+before = "        targets = harness_targets(context.root, owner, context.config)"
+after = "        targets = harness_targets(context.root, context.root, context.config)"
+reddens = [
+  "tests/attach/test_doctor.py::test_a_normally_attached_linked_worktree_is_ok",
+]
 
 # Where a harness link may point is asked of the owning checkout's `paths.memory` too, and a
 # directory on the way to it that became a symlink makes that question a refusal. Caught as a `git`
@@ -1602,10 +1600,11 @@ reddens = ["tests/attach/test_doctor.py::test_a_normally_attached_linked_worktre
 [[mutation]]
 name = "doctor lets a refusal out of asking where a harness link may point"
 file = "src/stayfixed/attach/doctor.py"
-before = "        return harness_targets(context.root, owner, context.config)\n    except Refusal:"
-after = "        return harness_targets(context.root, owner, context.config)\n    except Failure:"
+before = "    except Refusal as refused:  # 3"
+after = "    except OSError as refused:  # 3"
 reddens = [
   "tests/attach/test_doctor.py::test_a_linked_worktree_whose_main_checkout_tree_is_reached_through_a_symlink_warns",
+  "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[targets-unaskable]",
 ]
 
 # A dangling link resolves to the path it names, and once the owning checkout's tree is gone that
@@ -1614,14 +1613,8 @@ reddens = [
 [[mutation]]
 name = "doctor compares a dangling harness link before asking whether it reaches anything"
 file = "src/stayfixed/attach/doctor.py"
-before = """        if not fsops.exists(harness):
-            return RED, "a dangling link, so the harness reads nothing through it", relink
-        targets = _targets(context)"""
-after = """        targets = _targets(context)
-        if targets is not None and harness.resolve() in targets:
-            return OK, "a link to the store", ""
-        if not fsops.exists(harness):
-            return RED, "a dangling link, so the harness reads nothing through it", relink"""
+before = "        return _LINK if fsops.exists(harness) else _DANGLING"
+after = "        return _LINK"
 reddens = [
   "tests/attach/test_doctor.py::test_a_linked_worktree_whose_main_checkout_tree_is_gone_reads_its_link_as_dangling",
 ]
@@ -1632,8 +1625,8 @@ reddens = [
 [[mutation]]
 name = "doctor reads the real directory at the harness memory path without the settings fallback"
 file = "src/stayfixed/attach/doctor.py"
-before = "            and not _fallback_in_place(context)\n"
-after = "            and True\n"
+before = "    recorded = _recorded_fallback(context) if shape == _REAL_DIRECTORY else None"
+after = "    recorded = None"
 reddens = [
   "tests/attach/test_doctor.py::test_a_real_directory_beside_the_settings_fallback_attach_recorded_reads_as_in_place[the-store]",
 ]
@@ -1642,8 +1635,8 @@ reddens = [
 [[mutation]]
 name = "doctor tells the owner to remove a real directory at the harness memory path"
 file = "src/stayfixed/attach/doctor.py"
-before = '                f"move {harness} aside, then run `{ATTACH_STORE}` again",'
-after = '                f"remove {harness} and run `{ATTACH_STORE}`",'
+before = "        f\"move {harness} aside, then run `{ATTACH_STORE}` again\","
+after = "        f\"remove {harness} and run `{ATTACH_STORE}`\","
 reddens = [
   "tests/attach/test_doctor.py::test_a_real_directory_at_the_harness_path_is_never_told_to_be_removed",
 ]
@@ -1841,16 +1834,13 @@ reddens = [
 [[mutation]]
 name = "doctor calls a harness link it could not check green"
 file = "src/stayfixed/attach/doctor.py"
-before = """    return (
-        WARN,
-        f"{shape}, and the note store does not resolve, so {unchecked} could not be checked","""
-after = """    return (
-        OK,
-        f"{shape}, and the note store does not resolve, so {unchecked} could not be checked","""
+before = "    return _Verdict(\n        WARN,\n        f\"{words}, and the note store does not resolve, so {unchecked} could not be checked\","
+after = "    return _Verdict(\n        \"ok\",\n        f\"{words}, and the note store does not resolve, so {unchecked} could not be checked\","
 reddens = [
-  "tests/attach/test_doctor.py::test_a_harness_link_beside_a_store_that_does_not_resolve_warns_and_names_the_cause[tree-symlinked]",
-  "tests/attach/test_doctor.py::test_a_harness_link_beside_a_store_that_does_not_resolve_warns_and_names_the_cause[groups-gone]",
-  "tests/attach/test_doctor.py::test_a_harness_link_beside_a_store_that_does_not_resolve_warns_and_names_the_cause[tree-empty]",
+  "tests/attach/test_doctor.py::test_a_harness_link_beside_a_store_that_does_not_resolve_is_never_green_and_names_the_cause[tree-symlinked]",
+  "tests/attach/test_doctor.py::test_a_harness_link_beside_a_store_that_does_not_resolve_is_never_green_and_names_the_cause[groups-gone]",
+  "tests/attach/test_doctor.py::test_a_harness_link_beside_a_store_that_does_not_resolve_is_never_green_and_names_the_cause[tree-empty]",
+  "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[tree-there-not-resolving]",
 ]
 
 # With no store there is no trust record to ask, and the row fell through to "not in place, which
@@ -1858,8 +1848,8 @@ reddens = [
 [[mutation]]
 name = "doctor reads a store that does not resolve as one whose trust record asks for no link"
 file = "src/stayfixed/attach/doctor.py"
-before = "    if store is None:\n        return _unresolved_shape(context, harness, relink)"
-after = "    if store is None:\n        return OK, \"not in place, which is what this store's trust record asks for\", \"\""
+before = "    if store is None:  # 6, 7\n        return _unresolved(context, owner, words, relink)"
+after = "    if store is None:  # 6, 7\n        return _Verdict(OK, \"not in place, which is what this store's trust record asks for\", \"\")"
 reddens = [
   "tests/attach/test_doctor.py::test_a_ledger_whose_link_tree_is_gone_warns_and_names_attach",
   "tests/attach/test_doctor.py::test_no_harness_link_beside_a_tree_that_does_not_resolve_is_never_green[groups-gone]",
@@ -1870,8 +1860,8 @@ reddens = [
 [[mutation]]
 name = "doctor spells the local settings file again"
 file = "src/stayfixed/attach/doctor.py"
-before = 'f"a real directory, and {FALLBACK_KEY} in {LOCAL_SETTINGS} points the harness at the "'
-after = 'f"a real directory, and {FALLBACK_KEY} in .claude/settings.local.json points the harness at the "'
+before = "        fallback = f\"a real directory, and {FALLBACK_KEY} in {LOCAL_SETTINGS} points the harness\""
+after = "        fallback = f\"a real directory, and {FALLBACK_KEY} in .claude/settings.local.json points the harness\""
 reddens = [
   "tests/test_harnesses.py::test_every_harness_fact_outside_the_registry_is_listed_where_the_registry_says",
 ]
@@ -1881,8 +1871,8 @@ reddens = [
 [[mutation]]
 name = "doctor calls anything at the harness memory path that is no link a real directory"
 file = "src/stayfixed/attach/doctor.py"
-before = "    elif fsops.is_dir(harness):\n        shape = \"a real directory beside"
-after = "    elif fsops.exists(harness):\n        shape = \"a real directory beside"
+before = "    if fsops.is_dir(harness):\n        return _REAL_DIRECTORY\n"
+after = "    if fsops.exists(harness):\n        return _REAL_DIRECTORY\n"
 reddens = [
   "tests/attach/test_doctor.py::test_a_file_at_the_harness_path_beside_a_store_that_does_not_resolve_is_no_directory",
 ]
@@ -1895,7 +1885,8 @@ file = "src/stayfixed/attach/doctor.py"
 before = "    if gone:\n"
 after = "    if False:\n"
 reddens = [
-  "tests/attach/test_doctor.py::test_a_harness_link_beside_a_store_that_does_not_resolve_warns_and_names_the_cause[tree-gone]",
+  "tests/attach/test_doctor.py::test_a_ledger_whose_link_tree_is_gone_warns_and_names_attach",
+  "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[tree-gone-no-links]",
 ]
 
 # `read_binding` refuses for two different reasons and `origin_remote` raises for a third, and all
@@ -3118,4 +3109,86 @@ reddens = [
   "tests/attach/test_write.py::test_an_unlistable_codex_directory_fails_and_writes_nothing[common-unsearchable]",
   "tests/attach/test_write.py::test_an_unlistable_codex_directory_fails_and_writes_nothing[project-unlistable]",
   "tests/attach/test_write.py::test_an_unlistable_codex_directory_fails_and_writes_nothing[project-unsearchable]",
+]
+
+# With the owning checkout's tree gone every checkout's harness link dangles, and the row asked
+# whether the store resolves first: the main checkout warned while a linked worktree said red, and
+# `doctor` exits non-zero only on red. A link that reaches nothing is red from every checkout.
+[[mutation]]
+name = "doctor asks whether the store resolves before whether the harness link dangles"
+file = "src/stayfixed/attach/doctor.py"
+before = "    shape = _shape_of(harness)\n    if shape == _DANGLING:  # 1\n"
+after = "    shape = _shape_of(harness)\n    if shape == _DANGLING and _owner_store(context, answers, _owner(context)) is None:\n        return _unresolved(context, _owner(context), \"a link\", relink)\n    if shape == _DANGLING:  # 1\n"
+reddens = [
+  "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[tree-gone-links-dangle]",
+]
+
+# `autoMemoryDirectory` in `.claude/settings.local.json` points the harness at the store, and the
+# file is one a clone can commit: read as in place without asking the gate, a store whose approval
+# lapsed, or one nobody approved, was read by the harness while the row said ok. `attach` withdraws
+# the key in exactly that state.
+[[mutation]]
+name = "doctor reads the settings fallback as in place without asking the gate"
+file = "src/stayfixed/attach/doctor.py"
+before = "        if allowed:  # 10\n"
+after = "        if True:  # 10\n"
+reddens = [
+  "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[fallback-lapsed]",
+  "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[fallback-never-approved]",
+]
+
+# The fallback's value is the repository's, so it is compared as written with what a harness link
+# may point at: resolved, a committed value naming a committed link to the store read as the store.
+[[mutation]]
+name = "doctor resolves the directory the settings fallback names"
+file = "src/stayfixed/attach/doctor.py"
+before = "    return Path(value)\n"
+after = "    return Path(value).resolve()\n"
+reddens = [
+  "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[fallback-through-an-alias]",
+]
+
+# A fallback naming a directory no harness link may point at is no fallback: the real directory
+# keeps its red.
+[[mutation]]
+name = "doctor reads a fallback naming another directory as the store"
+file = "src/stayfixed/attach/doctor.py"
+before = "    if shape == _REAL_DIRECTORY and recorded not in targets:  # 4\n"
+after = "    if False:  # 4\n"
+reddens = [
+  "tests/attach/test_doctor.py::test_a_real_directory_beside_the_settings_fallback_attach_recorded_reads_as_in_place[elsewhere]",
+]
+
+# An approval that lapsed closes the gate, and `attach` withdraws every link: the row read that as
+# "what this store's trust record asks for", green, and no row said the approval lapsed.
+[[mutation]]
+name = "doctor reads a lapsed approval as one the trust record asks for"
+file = "src/stayfixed/attach/doctor.py"
+before = "    if lapsed:  # 13\n"
+after = "    if False:  # 13\n"
+reddens = [
+  "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[lapsed-links-withdrawn]",
+]
+
+# The gate is asked of the store `attach` asks it of, the owning checkout's: asked of a linked
+# worktree's own, which nothing approves, a worktree read green where the main checkout warned.
+[[mutation]]
+name = "doctor asks the gate of a worktree's own store"
+file = "src/stayfixed/attach/doctor.py"
+before = "    if owner.resolve() == context.root.resolve():\n        return answers.store(context)\n"
+after = "    if True:\n        return answers.store(context)\n"
+reddens = [
+  "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[no-links-approved]",
+  "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[tree-gone-no-links]",
+]
+
+# A trust record that cannot be read is a refusal of the gate's, and let out of the row it was
+# "this check could not run", red, "report this".
+[[mutation]]
+name = "doctor lets an unreadable trust record out of the attached row"
+file = "src/stayfixed/attach/doctor.py"
+before = "    except Refusal:  # 9\n"
+after = "    except OSError:  # 9\n"
+reddens = [
+  "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[trust-record-unreadable]",
 ]

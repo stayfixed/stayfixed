@@ -38,10 +38,12 @@ def test_the_memory_surface_carries_what_every_consumer_reaches_for() -> None:
         "detach_main",
         "harness_anchor",
         "harness_link_needed",
-        # whether the gate withholds the link because an approval lapsed, which attach says
+        # whether the gate withholds the link because an approval lapsed, which attach and its
+        # attached row say
         "harness_approval_lapsed",
         "harness_memory_path",
-        # what a harness link may point at and be stayfixed's, which the attached row reads
+        # what a harness link may point at and be stayfixed's, which detach asks before its first
+        # withdrawal and the attached row reads
         "harness_targets",
         "MakeUnder",  # the home `link` makes the harness link under, which attach hands it
         "Withhold",  # the other half of what `link`'s `harness` takes: no harness link

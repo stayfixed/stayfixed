@@ -1113,14 +1113,21 @@ HARNESS_WAITS = (
 )
 
 
+# Why an approval no longer holds, and what to do about it: said by `attach` (`HARNESS_LAPSED`)
+# and by `doctor`'s `attached` row, which reads the same state after the run, so the two say it
+# alike. Nothing in either is repository-authored, so both print.
+APPROVAL_LAPSED = (
+    "the store or its memory.index_extra changed since its approval was recorded, so that "
+    "approval no longer holds"
+)
+REAPPROVE = (
+    "read what changed, run `stayfixed memory trust --in-repo-memory`, then `stayfixed attach` "
+    "again"
+)
 # Said instead of `HARNESS_WAITS` where the machine records an approval and the store changed
 # since, which closes the gate as surely as no approval and also withdraws the links an earlier run
-# made: one line appended to one note is enough. Nothing in it is repository-authored, so it prints.
-HARNESS_LAPSED = (
-    "the harness memory link was not created, because the store or its memory.index_extra changed "
-    "since its approval was recorded, so that approval no longer holds; read what changed, run "
-    "`stayfixed memory trust --in-repo-memory`, then `stayfixed attach` again"
-)
+# made: one line appended to one note is enough.
+HARNESS_LAPSED = f"the harness memory link was not created, because {APPROVAL_LAPSED}; {REAPPROVE}"
 # Said whenever the run withdrew harness memory links, which only the gate does, so the line
 # never leaves a withdrawal unsaid; the count is the one `--json` gives as `links_revoked`.
 HARNESS_WITHDREW = "withdrew {count} harness memory link(s)"
