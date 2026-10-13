@@ -52,6 +52,7 @@ def run_docs_trail(args: argparse.Namespace) -> Result:
         rebuild,
         trail_gate,
         trail_path,
+        trail_target,
         undeclared_new_documents,
     )
 
@@ -72,7 +73,7 @@ def run_docs_trail(args: argparse.Namespace) -> Result:
     roadmap = contained(root, config.paths.roadmap)
     if not fsops.is_file(roadmap):
         return missing
-    trail = read_trail(trail_path(root, config))
+    trail = read_trail(trail_path(root, config), trail_target(config))
     current = read_document(roadmap, config.paths.roadmap)
     updated = rebuild(current, root, config, trail)
     written = current != updated

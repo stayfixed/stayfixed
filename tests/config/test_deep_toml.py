@@ -78,7 +78,11 @@ READERS = [
         UnparsedDocument,
         id="owned-rewrite",
     ),
-    pytest.param(lambda t, d: read_trail(_file(t, "docs/trail.toml", d)), Failure, id="trail"),
+    pytest.param(
+        lambda t, d: read_trail(_file(t, "docs/trail.toml", d), "docs/trail.toml"),
+        Failure,
+        id="trail",
+    ),
     pytest.param(
         lambda t, d: binding._recorded(_record(t, d).parents[2], "widget"), Failure, id="binding"
     ),

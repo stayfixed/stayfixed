@@ -27,7 +27,7 @@ from stayfixed.errors import Failure
 from stayfixed.findings import LISTED_LIMIT, Finding, listed
 from stayfixed.fsops import utf_8_name
 from stayfixed.gitenv import NO_ANSWER, git_run, in_work_tree
-from stayfixed.printed import clipped
+from stayfixed.printed import clipped, quoted
 
 if TYPE_CHECKING:
     from stayfixed.config.schema import Config
@@ -129,22 +129,28 @@ def _interpolable(value: str) -> bool:
     return not ({"\n", "\r"} & set(value)) and MARKER not in value and END_MARKER not in value
 
 
-def read_trail(path: Path) -> Trail:
+def read_trail(path: Path, where: str) -> Trail:
     """`[[theme]]` tables in order (`label`, `pattern`) and a `[states]` table; absent is empty.
     Every value is repository-authored: a pattern outside `docs.themes`' language is a `Failure`,
     and none is ever handed to `re`, whose backtracking a repository's pattern can make
-    exponential."""
+    exponential.
+
+    `where` is how every message names the file — `trail_target`'s project-relative spelling, as
+    this area names every file it reads. `path` is what is opened, and it is absolute: printed, it
+    named the file by this machine's own layout (`failed: '/home/…/docs/trail.toml': is not valid
+    UTF-8`), which is nothing a reader of a CI log can find in the repository."""
     if not fsops.is_file(path):
         return Trail((), {})
+    shown = quoted(where)
     try:
-        raw: dict[str, Any] = tomllib.loads(read_document(path, path))
+        raw: dict[str, Any] = tomllib.loads(read_document(path, where))
     except UNPARSEABLE as exc:
         # Through `config.loader.toml_position`: `tomllib`'s message embeds the source for
         # several of its faults — a duplicate table is reported with the table's name in it —
         # and a TOML key is arbitrary quoted text. `trail.toml` is one of the twelve files
         # `stayfixed init` ships, so every repository `init` touches has one that this function
         # parses, which is what makes the leak reachable here.
-        raise Failure(f"{path} is not valid TOML {toml_position(exc)}") from None
+        raise Failure(f"{shown} is not valid TOML {toml_position(exc)}") from None
     themes: list[tuple[str, ThemePattern]] = []
     # `[[theme]]` is an array of tables, so `theme` is a list — but the whole file is
     # repository-authored, and `theme = 1` would otherwise be iterated straight into a
@@ -152,21 +158,21 @@ def read_trail(path: Path) -> Trail:
     # read as their file being wrong, never as this tool being broken.
     declared = raw.get("theme", [])
     if not isinstance(declared, list):
-        raise Failure(f"{path}: `theme` must be a list of [[theme]] tables")
+        raise Failure(f"{shown}: `theme` must be a list of [[theme]] tables")
     # Every document name is tried against every theme until one matches, so the themes' count
     # multiplies what `PATTERN_MAX_CHARS` bounds for one of them.
     if len(declared) > THEMES_MAX:
-        raise Failure(f"{path}: {TOO_MANY_THEMES}")
+        raise Failure(f"{shown}: {TOO_MANY_THEMES}")
     for entry in declared:
         if (
             not isinstance(entry, dict)
             or not isinstance(entry.get("label"), str)
             or not isinstance(entry.get("pattern"), str)
         ):
-            raise Failure(f"{path}: every [[theme]] needs a string `label` and a string `pattern`")
+            raise Failure(f"{shown}: every [[theme]] needs a string `label` and a string `pattern`")
         if not _interpolable(entry["label"]):
             raise Failure(
-                _UNINTERPOLABLE.format(path=path, what="[[theme]] `label`", marker=MARKER)
+                _UNINTERPOLABLE.format(path=shown, what="[[theme]] `label`", marker=MARKER)
             )
         try:
             themes.append((entry["label"], compile_theme(entry["pattern"])))
@@ -175,14 +181,14 @@ def read_trail(path: Path) -> Trail:
             # rule is what fixes it. `compile_theme` raises only its own fixed sentences.
             # The label through `quoted`, as every repository-chosen name in a refusal, and
             # clipped, since nothing bounds its length.
-            raise Failure(f"{path}: theme {clipped(entry['label'])}: {refused}") from None
+            raise Failure(f"{shown}: theme {clipped(entry['label'])}: {refused}") from None
     states = raw.get("states", {})
     if not isinstance(states, dict) or not all(
         isinstance(k, str) and isinstance(v, str) for k, v in states.items()
     ):
-        raise Failure(f"{path}: [states] must map document rows to state strings")
+        raise Failure(f"{shown}: [states] must map document rows to state strings")
     if not all(_interpolable(state) for state in states.values()):
-        raise Failure(_UNINTERPOLABLE.format(path=path, what="[states] value", marker=MARKER))
+        raise Failure(_UNINTERPOLABLE.format(path=shown, what="[states] value", marker=MARKER))
     return Trail(tuple(themes), dict(states))
 
 
@@ -388,6 +394,7 @@ def trail_gate(root: Path, config: Config, base: str = "") -> list[Finding]:
     if not fsops.is_file(roadmap):
         return [Finding(ROADMAP_MISSING, config.paths.roadmap, None, "")]
     current = read_document(roadmap, config.paths.roadmap)
-    if current == rebuild(current, root, config, read_trail(trail_path(root, config))):
+    trail = read_trail(trail_path(root, config), trail_target(config))
+    if current == rebuild(current, root, config, trail):
         return []
     return [Finding(TRAIL_STALE, config.paths.roadmap, None, "")]
