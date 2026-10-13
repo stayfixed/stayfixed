@@ -10,7 +10,9 @@ imported.
 The walk reads import statements in the syntax tree of every `scripts/*.py` and of the launcher
 `scripts/stayfixed`, at module level or inside a function. A script is importable by its stem
 only through a `.py` file, so the stems of those files are the names an offence can take; the
-launcher is read as an importer and never as a module. The walk's limits: a script run through
+launcher is read as an importer and never as a module. The directory's own name is one too, so a
+package-qualified sibling (`import scripts.plugin_tree`, `from scripts import plugin_tree`) is an
+offence under the name `scripts`. The walk's limits: a script run through
 `runpy` or loaded through `importlib` is not seen, nor one reached by a name built at run time; and
 `sys.path` is not followed, so an import statement is judged by its name alone, and a module of a
 sibling's name that `sys.path` would find elsewhere is an offence all the same. What the walk
@@ -37,8 +39,9 @@ def _script_files() -> list[Path]:
 
 
 def _script_modules() -> frozenset[str]:
-    """The names a script is importable under: the stems of the `*.py` files."""
-    return frozenset(path.stem for path in SCRIPTS.glob("*.py"))
+    """The names a sibling script is reached under: the stems of the `*.py` files, and the
+    directory's own name, through which an import reaches them package-qualified."""
+    return frozenset({*(path.stem for path in SCRIPTS.glob("*.py")), SCRIPTS.name})
 
 
 def _top_level_names(node: ast.Import | ast.ImportFrom) -> list[str]:
@@ -56,7 +59,8 @@ def _top_level_names(node: ast.Import | ast.ImportFrom) -> list[str]:
 
 
 def _script_imports() -> set[tuple[str, str]]:
-    """Every (file name, script module) pair an import statement in a script names."""
+    """Every (file name, script module) pair an import statement in a script names; `scripts`
+    stands for any sibling reached through the directory's name."""
     modules = _script_modules()
     found: set[tuple[str, str]] = set()
     for path in _script_files():
@@ -76,8 +80,10 @@ def test_the_walk_reads_every_script() -> None:
 
 
 def test_no_script_imports_another_but_the_named_exemption() -> None:
-    # Mutation (oracle): `mutations/`'s "the release script imports the plugin tree script" ->
-    # `release.py` imports a sibling and this reddens.
+    # Mutations (oracle): `mutations/`'s "the release script imports the plugin tree script" ->
+    # `release.py` imports a sibling and this reddens; "the release script imports the plugin tree
+    # script through the directory's name" -> `from scripts import plugin_tree`, which a walk
+    # reading only the stems missed, reddens it too.
     offences = sorted(_script_imports() - EXEMPT)
     assert offences == []
 
