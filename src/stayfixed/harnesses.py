@@ -252,11 +252,18 @@ _IN_CI = Reach(
 # path, which carries words this repository keeps out of its code.
 _P0_SPIKES = "`docs/plans/2026-09-05-agent-harness-p0-spikes.md`"
 _DELIVERY_SPIKE = "the delivery spike of 2026-10-02 in `docs/plans/`"
-# What was measured of Codex's plugin hooks, which both hook surfaces rest on.
-_NO_CODEX_HOOK = Reach(
+# What is claimed of Codex's plugin hooks, which both hook surfaces rest on: no tier yet. Codex
+# runs a plugin's hooks once they are trusted in `/hooks` (an untrusted one is skipped without a
+# message, and `--dangerously-bypass-hook-trust` runs it anyway), and a blocking `PreToolUse`
+# hook's reason reached the model; but stayfixed's own guards and notices have not been verified
+# end to end there, so the surfaces stay unclaimed until that is done. Codex's `PostToolUse`
+# carries no exit code, so the red-run note is not claimed there either.
+_CODEX_HOOKS_UNVERIFIED = Reach(
     None,
-    f"no plugin hook ran, with or without its hook-trust bypass flag ({_DELIVERY_SPIKE})",
-    measured_on="Codex 0.160.0",
+    "a plugin hook ran once trusted in `/hooks`, and a blocking `PreToolUse` hook's reason reached "
+    "the model (the hook-trust pre-flight of 2026-10-12); stayfixed's guards and notices are not "
+    "verified end to end there",
+    measured_on="Codex CLI 0.162.0-alpha.17.2",
 )
 
 CLAUDE = MemoryHarness(
@@ -314,15 +321,16 @@ CODEX = Harness(
     # Codex names the project root in no variable of its own (`read_event` still asks every
     # registered value's, so an inherited `CLAUDE_PROJECT_DIR` names it as it does the wrapper's).
     project_dir_env=None,
-    # Claude Code's shape, and unmeasured under Codex: Codex 0.160.0 ran none of the plugin's
-    # hooks, with or without its hook-trust bypass flag (`_DELIVERY_SPIKE`). A harness whose
-    # output differs is a different value, never a branch inside a shared one, and a `render` of
-    # its own needs more than a measured shape: `detect` says what.
+    # Claude Code's shape, and unverified under Codex: Codex CLI 0.162.0-alpha.17.2 ran the
+    # plugin's hooks once they were trusted (`_CODEX_HOOKS_UNVERIFIED`), but no output this
+    # `render` shaped has been checked there end to end. A harness whose output differs is a
+    # different value, never a branch inside a shared one, and a `render` of its own needs more
+    # than a measured shape: `detect` says what.
     render=hook_specific_output,
     reach=MappingProxyType(
         {
-            Surface.GUARDS: _NO_CODEX_HOOK,
-            Surface.NOTICES: _NO_CODEX_HOOK,
+            Surface.GUARDS: _CODEX_HOOKS_UNVERIFIED,
+            Surface.NOTICES: _CODEX_HOOKS_UNVERIFIED,
             Surface.GATES: _IN_CI,
             Surface.METHOD: Reach(
                 Tier.INSTRUCTIONS,

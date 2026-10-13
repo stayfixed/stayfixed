@@ -575,8 +575,9 @@ _REACH_SECTION = re.compile(
 )
 # A cell's words where a surface does not reach an agent at all.
 NOT_REACHED = "does not run"
-# A measurement the section's prose cites, as "(<agent> <version>)".
-_MEASURED_AT = re.compile(r"\(([A-Z][A-Za-z ]* \d+(?:\.\d+)+)\)")
+# A measurement the section's prose cites, as "(<agent> <version>)", the version with a
+# pre-release suffix where the measured build carried one (`0.162.0-alpha.17.2`).
+_MEASURED_AT = re.compile(r"\(([A-Z][A-Za-z ]* \d+(?:\.\d+)+(?:-[0-9A-Za-z.]+)?)\)")
 
 
 def _reach_table() -> str:

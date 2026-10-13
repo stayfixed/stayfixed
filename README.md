@@ -112,10 +112,14 @@ configuration or on the command line, so a false block is a defect: report it in
 
 On Claude Code a guard's refusal stopped the command before it ran when this was measured
 (Claude Code 2.1.261). Where a surface does not reach an agent in the session, the repository
-gates still hold in CI, which every agent's changes pass through. Codex ran none of the plugin's
-hooks when this was measured (Codex 0.160.0), so on Codex the session guards do not run until an
-adapter proves otherwise; `stayfixed doctor` says so in its `codex-trust` row whenever
-`[stayfixed] agents` lists `codex`.
+gates still hold in CI, which every agent's changes pass through. On Codex the table keeps the
+session guards and notices at "does not run" because stayfixed has not verified them end to end
+there. What was measured (Codex CLI 0.162.0-alpha.17.2) is Codex's side: it runs a plugin's hooks
+once they are trusted in `/hooks`, skips untrusted ones without a message and runs them anyway
+under `--dangerously-bypass-hook-trust`, and a blocking `PreToolUse` hook's reason reaches the
+model. Codex's `PostToolUse` carries no exit code, so the red-run note is not claimed there either.
+`stayfixed doctor` says what holds on Codex in its `codex-trust` row whenever `[stayfixed] agents`
+lists `codex`.
 
 ## Install
 

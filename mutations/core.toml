@@ -1101,9 +1101,9 @@ reddens = [
 [[mutation]]
 name = "Codex is given a render of its own"
 file = "src/stayfixed/harnesses.py"
-before = """    # its own needs more than a measured shape: `detect` says what.
+before = """    # than a measured shape: `detect` says what.
     render=hook_specific_output,"""
-after = """    # its own needs more than a measured shape: `detect` says what.
+after = """    # than a measured shape: `detect` says what.
     render=lambda event_name, context: hook_specific_output(event_name, context),"""
 reddens = [
   "tests/test_harnesses.py::test_every_harness_renders_through_the_canonical_render",
@@ -1729,8 +1729,8 @@ reddens = [
 [[mutation]]
 name = "Codex's session guards are stated as blocking"
 file = "src/stayfixed/harnesses.py"
-before = "            Surface.GUARDS: _NO_CODEX_HOOK,"
-after = "            Surface.GUARDS: Reach(Tier.BLOCKS, _NO_CODEX_HOOK.evidence, _NO_CODEX_HOOK.measured_on),"
+before = "            Surface.GUARDS: _CODEX_HOOKS_UNVERIFIED,"
+after = "            Surface.GUARDS: Reach(Tier.BLOCKS, _CODEX_HOOKS_UNVERIFIED.evidence, _CODEX_HOOKS_UNVERIFIED.measured_on),"
 reddens = [
   "tests/test_documents.py::test_the_readme_states_each_agents_reach_as_the_registry_does",
 ]
@@ -1739,7 +1739,7 @@ reddens = [
 [[mutation]]
 name = "Codex's reach leaves out the session notices"
 file = "src/stayfixed/harnesses.py"
-before = "            Surface.NOTICES: _NO_CODEX_HOOK,\n"
+before = "            Surface.NOTICES: _CODEX_HOOKS_UNVERIFIED,\n"
 after = ""
 reddens = [
   "tests/test_harnesses.py::test_every_harness_states_every_surface",

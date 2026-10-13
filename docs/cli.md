@@ -277,7 +277,7 @@ is handed to `stayfixed` untouched.
 `PostToolUse` and `PostToolUseFailure`, each tool event matched on `Bash`. The last is where Claude
 Code delivers a `Bash` call that exited non-zero, and it carries the red-run note ([`stayfixed test
 hygiene`](#stayfixed-test-hygiene)); Codex reads the same file and ignores that key (measured on
-Codex CLI 0.162.0). `stayfixed hook` dispatches six events, those four and `UserPromptSubmit` and
+Codex CLI 0.162.0-alpha.17.2). `stayfixed hook` dispatches six events, those four and `UserPromptSubmit` and
 `UserPromptExpansion`, which no shipped entry uses.
 
 The wrapper exists because a Python process cannot fail
@@ -293,9 +293,10 @@ handler's deny, not a wrapper failure. Every other exit code, and every fault th
 before `stayfixed` runs at all, is judged by `<policy>`: `closed` refuses with exit `2`, `open`
 continues with exit `0`. Either way the reason is written to stderr with a token, so the reason
 is part of the contract. That Codex downgrades an exit `2` with empty stderr to a plain failure
-is unmeasured: Codex 0.160.0 ran none of the plugin's hooks, so no exit of this wrapper has been
-observed there, and the README's [What each agent enforces](../README.md#what-each-agent-enforces)
-says what does hold on Codex.
+is unmeasured: Codex CLI 0.162.0-alpha.17.2 ran the plugin's hooks once they were trusted in
+`/hooks`, and a blocking `PreToolUse` hook's reason reached the model, but an exit `2` with empty
+stderr has not been observed there, and the README's [What each agent
+enforces](../README.md#what-each-agent-enforces) says what stayfixed claims on Codex.
 
 **Exit `2` is shared with the platform, and the wrapper does not pretend otherwise.** Because a
 `2` the dispatcher produced is a deny that must pass through, a `2` CPython produced underneath

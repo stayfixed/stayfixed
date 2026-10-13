@@ -216,9 +216,9 @@ def test_every_entry_is_filed_under_the_event_its_command_dispatches() -> None:
 def test_the_shipped_hooks_register_post_tool_use_failure_for_bash() -> None:
     # Claude Code delivers a Bash command that exits non-zero to `PostToolUseFailure`, so the
     # red-run hint has an entry there, matched on the shell tool, open, and dispatching that
-    # event. Codex reads this file too and ignores the key (measured on Codex CLI 0.162.0); it
-    # delivers a failed command on `PostToolUse`, whose entry stays. Mutation: `mutations/`'s
-    # "the hooks file loses the entry for a failed command".
+    # event. Codex reads this file too and ignores the key (measured on Codex CLI
+    # 0.162.0-alpha.17.2); it delivers a failed command on `PostToolUse`, whose entry stays.
+    # Mutation: `mutations/`'s "the hooks file loses the entry for a failed command".
     groups = HOOKS["hooks"].get("PostToolUseFailure")
     assert groups == [
         {
