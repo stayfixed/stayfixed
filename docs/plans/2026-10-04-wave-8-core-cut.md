@@ -1423,7 +1423,7 @@ register is a value) and what this plan proved (byte-identity, a test-only secon
 - [x] **Step 2: Final review** over the merged `dev` (section 1's seats), on what no single pull
   request's review could see: the boundary as a whole, the README against the code, the lifecycle
   matrix end to end. Each finding is reproduced before it is acted on.
-- [ ] **Step 3: Publish the plugin from its own repository** (the owner's decision of
+- [x] **Step 3: Publish the plugin from its own repository** (the owner's decision of
   2026-10-05). Before the release, the plugin is published from a repository of its own whose
   root is the plugin, and the marketplace entry names it: `scripts/release.py check --tag` refuses
   a plugin folder of more than 512 files in `HEAD`'s tree, the repository root held 512 on
@@ -1722,6 +1722,8 @@ Pull requests #85, #86 and #88 built the means to publish the plugin from a repo
 and to pin the commit the marketplace entry names (#87 fixed a git timeout read as a broken
 repository on the way). Nothing is published until `0.3.0`: Task 17 Step 3 stays open until that
 release publishes the plugin, and is ticked by the pull request that returns the release to `dev`.
+It was: `0.3.0` published the plugin commit `d34a4f0` to `stayfixed/stayfixed-plugin` on
+2026-10-14, as that repository's `main` and `v0.3.0`.
 The residuals this wave and wave 7 left reproducing on `dev` at `5f6db9f` were closed by #89
 (`attach`, `detach`, `doctor`'s `attached` row, `memory index`) and #90 (`setup`, `init`,
 `docs trail`, the commit and hook guards, the Codex prose), both merged before the release.

@@ -1002,17 +1002,17 @@ main and <tag>; run again with --yes to push", plus "(not confirmed through GitH
 
 Recorded in this file's Findings, quoting only persisted logs under the scratchpad.
 
-- [ ] **Step 1: A release rehearsed end to end on scratch repositories.** A clone of the branch at
+- [x] **Step 1: A release rehearsed end to end on scratch repositories.** A clone of the branch at
   its head; a version bump to `0.3.0`, committed; `release.py pin --remote <empty bare>`; the
   amend; `release.py check --tag v0.3.0`; a second release `0.3.1` on top, `pin` refusing while
   the bare remote's `main` is empty and passing once `0.3.0`'s plugin commit is pushed there by
   hand (scratch only). Both commits built into one bare repository with `plugin_tree.py commit`;
   `claude plugin validate --strict` on a marketplace pinning the `sha`; install by `ref` and `sha`
   with 2.1.296 and the pinned 2.1.261 (`npx`), `installed_plugins.json` naming the pinned commit.
-- [ ] **Step 2: The publisher on that clone,** with the owner's yes for its `gh` calls:
+- [x] **Step 2: The publisher on that clone,** with the owner's yes for its `gh` calls:
   `publish_plugin.py --tag v0.3.0 --remote <bare>` without `--yes` stops at step 2 (GitHub holds no
   such tag: exit `2`), and the bare remote holds no ref afterwards.
-- [ ] **Step 3: An empty repository's answer.** If `stayfixed/stayfixed-plugin` exists and is
+- [x] **Step 3: An empty repository's answer.** If `stayfixed/stayfixed-plugin` exists and is
   still empty when this runs, `gh api repos/stayfixed/stayfixed-plugin/git/ref/heads/main` answers
   `409` or `404`, as Task 4 step 8 reads it; otherwise a follow-up for the first release.
 - [ ] **Step 4: After the merge,** amend the private design's §5.9 (a URL source pinned to the tag
@@ -1195,3 +1195,30 @@ and `OBJECT_NAME` joined the cross-script equality test; one `ls-remote` of the 
 tells GitHub's lag from a push sent elsewhere; a separate ruleset lets only the admin role create
 a release tag (a bypass on the existing ruleset would have let the admin move or delete one); the
 source-anchor advice investigates a tag the owner did not push before fetching it.
+
+### Task 8 (2026-10-14, before the `0.3.0` release)
+
+Run by the controller with the owner's yes, on a clone of `dev` at `17f2684`; logs persisted in the
+session's scratchpad.
+
+- **Step 1, a release rehearsed end to end.** The bump to `0.3.0` committed, `release.py notes`
+  run, then `release.py pin --remote <empty bare>`: "pins d34a4f0…, the plugin commit of HEAD";
+  amended in, `check --tag v0.3.0`: "one version everywhere: 0.3.0". A second release `0.3.1` on
+  top: `pin` refused (exit `2`) while the bare remote had no `main` ("the plugin commit 0708479…
+  has parent d34a4f0…, and … has no main; the plugin repository's main moves only by
+  fast-forward"), and passed once `0.3.0`'s plugin commit was set there by hand, pinning `0708479`,
+  whose parent is `d34a4f0`; `check --tag v0.3.1` passed. Both commits were built into one bare
+  repository with `plugin_tree.py commit` (218 files each). `claude plugin validate --strict` passed
+  a marketplace whose entry carries `ref` and `sha`, on 2.1.296 and on the pinned 2.1.261 (`npx`);
+  installing from it in a scratch configuration directory succeeded on both, and
+  `installed_plugins.json` named version `0.3.1` with `gitCommitSha` `0708479…`, the pinned commit.
+- **Step 2, the publisher on that clone.** `publish_plugin.py --tag v0.3.0 --remote <empty bare>`
+  without `--yes` exited `2`: "your local v0.3.0 names 0ff38a4…, and GitHub's stayfixed/stayfixed
+  holds no such tag … nothing was run"; the bare remote held no ref afterwards.
+- **Step 3, an empty repository's answer.**
+  `gh api repos/stayfixed/stayfixed-plugin/git/ref/heads/main` answered `409` ("Git Repository is empty"), as Task 4 step 8 reads it.
+- **The release itself (2026-10-14).** `0.3.0` was cut on `main` at `45f8266` (the merge of
+  `dev`); `pin` wrote `d34a4f0`, the plugin commit the rehearsal computed, since only plans and the
+  changelog differ between the two sources; `publish_plugin.py --tag v0.3.0` planned "would push
+  218 files … commit d34a4f0 … main and v0.3.0" and `--yes` pushed them; GitHub's API read
+  `main` and `v0.3.0` back at `d34a4f0`.
