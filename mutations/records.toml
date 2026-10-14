@@ -2359,8 +2359,8 @@ reddens = [
 [[mutation]]
 name = "refs lets a path it cannot resolve raise"
 file = "src/stayfixed/memory/refs.py"
-before = "    except (OSError, RuntimeError):\n        return False"
-after = "    except OSError:\n        return False"
+before = "        return resolved(root / target).is_relative_to(resolved(store.path))"
+after = "        return (root / target).resolve().is_relative_to(store.path.resolve())"
 reddens = [
   "tests/memory/test_refs.py::test_a_reference_through_a_symlink_loop_is_a_finding_and_never_an_internal_error",
 ]
@@ -3220,4 +3220,18 @@ after = """        "`git` could not answer which checkout this belongs to, so st
 reddens = [
   "tests/attach/test_write.py::test_a_worktree_whose_question_runs_out_of_time_is_named_and_not_called_a_broken_git",
   "tests/memory/test_store.py::test_a_worktree_removed_before_it_is_asked_about_is_gone_not_a_broken_git",
+]
+
+# In the block led by `mutations/`'s "fsops.resolved answers a loop with a path where the
+# interpreter does": a hand-written `except (OSError, RuntimeError)` is the answer
+# `fsops.resolved` replaced, and a walk of `src/` refuses one outside `fsops`.
+[[mutation]]
+name = "refs catches the RuntimeError of a loop by hand again"
+file = "src/stayfixed/memory/refs.py"
+before = """    except OSError:
+        return False"""
+after = """    except (OSError, RuntimeError):
+        return False"""
+reddens = [
+  "tests/test_fsops.py::test_no_module_but_fsops_catches_the_runtime_error_a_symlink_loop_raised",
 ]

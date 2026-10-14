@@ -265,8 +265,8 @@ reddens = ["tests/setup/test_setup.py::test_an_overlay_that_holds_the_project_ro
 [[mutation]]
 name = "setup stops asking git whether the overlay is a checkout of the project"
 file = "src/stayfixed/setup/run.py"
-before = "        if _overlaps(resolved_candidate, checkout.resolve()):"
-after = "        if False:"
+before = "            if _overlaps(resolved_candidate, fsops.resolved(checkout)):"
+after = "            if False:"
 reddens = [
   "tests/setup/test_setup.py::test_the_listing_refuses_a_sibling_checkout_when_git_answers_nothing_from_the_candidate",
 ]
@@ -354,7 +354,7 @@ reddens = [
 [[mutation]]
 name = "setup stops asking git from the candidate's side"
 file = "src/stayfixed/setup/run.py"
-before = "    if repository is not None and _same(found.resolve(), repository.common.resolve()):"
+before = "    if repository is not None and _same(fsops.resolved(found), fsops.resolved(repository.common)):"
 after = "    if False:"
 reddens = [
   "tests/setup/test_setup.py::test_a_checkout_the_listing_names_by_its_git_directory_is_still_refused",
@@ -1836,7 +1836,9 @@ reddens = [
 [[mutation]]
 name = "setup calls the overlay's own repository another one"
 file = "src/stayfixed/setup/run.py"
-before = "    own = os.path.lexists(resolved_candidate / \".git\") and _same(outer.resolve(), found.resolve())"
+before = """    own = os.path.lexists(resolved_candidate / ".git") and _same(
+        fsops.resolved(outer), fsops.resolved(found)
+    )"""
 after = "    own = False"
 reddens = [
   "tests/setup/test_setup.py::test_an_overlay_that_is_a_worktree_nested_in_its_own_checkout_is_refused_as_its_own",
@@ -1845,8 +1847,47 @@ reddens = [
 [[mutation]]
 name = "setup calls a plain directory in another repository's checkout its own"
 file = "src/stayfixed/setup/run.py"
-before = "    own = os.path.lexists(resolved_candidate / \".git\") and _same(outer.resolve(), found.resolve())"
-after = "    own = _same(outer.resolve(), found.resolve())"
+before = "    own = os.path.lexists(resolved_candidate / \".git\") and _same("
+after = "    own = _same("
 reddens = [
   "tests/setup/test_setup.py::test_an_overlay_inside_another_repository_is_refused_from_a_directory_in_no_repository",
+]
+
+# In the block led by `mutations/`'s "fsops.resolved answers a loop with a path where the
+# interpreter does": every resolve in `setup` goes through `fsops.resolved`, so a loop at a path
+# the command line names is the floor's refusal on every interpreter.
+[[mutation]]
+name = "setup's command resolves --root past fsops"
+file = "src/stayfixed/setup/commands.py"
+before = "        return fsops.resolved(Path(given))"
+after = "        return Path(given).resolve()"
+reddens = [
+  "tests/setup/test_setup.py::test_a_symlink_loop_at_any_path_setup_is_given_is_a_refusal_naming_it[root]",
+]
+
+[[mutation]]
+name = "setup resolves the project root past fsops"
+file = "src/stayfixed/setup/run.py"
+before = "    resolved_project = fsops.resolved(project_root)"
+after = "    resolved_project = project_root.resolve()"
+reddens = [
+  "tests/setup/test_setup.py::test_a_project_root_through_a_symlink_loop_handed_to_setup_is_refused",
+]
+
+[[mutation]]
+name = "setup resolves --overlay past fsops"
+file = "src/stayfixed/setup/run.py"
+before = "    candidate = fsops.resolved(Path(overlay).expanduser())"
+after = "    candidate = Path(overlay).expanduser().resolve()"
+reddens = [
+  "tests/setup/test_setup.py::test_a_symlink_loop_at_any_path_setup_is_given_is_a_refusal_naming_it[overlay]",
+]
+
+[[mutation]]
+name = "setup resolves a --settings link past fsops"
+file = "src/stayfixed/setup/run.py"
+before = "        real = fsops.resolved(settings)"
+after = "        real = settings.resolve()"
+reddens = [
+  "tests/setup/test_setup.py::test_a_symlink_loop_at_any_path_setup_is_given_is_a_refusal_naming_it[settings]",
 ]

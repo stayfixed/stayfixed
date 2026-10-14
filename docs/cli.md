@@ -2666,8 +2666,9 @@ already in it, and no overlay to create, nothing this check asks about is made i
 file's directory is not asked about here: a write there that fails ends the run `1`. Otherwise it
 says that `<home>` could not be created, or could not be checked because a directory above it
 cannot be searched. Any other path this command cannot ask about before its first write — an
-`--overlay`, a `--root` or a `--settings` directory below a directory nobody may search — is
-refused (`2`) naming that path and why.
+`--overlay`, a `--root` or a `--settings` directory below a directory nobody may search, and a
+symbolic-link loop at `~/.claude`, `--home`, `--root`, `--settings` or `--overlay`, on every
+Python — is refused (`2`) naming that path and why.
 
 These questions are asked in one fixed order, and the first refusal ends the run: what `--overlay`
 names, and whether an existing path is an overlay; the preset; the settings file's place; where a

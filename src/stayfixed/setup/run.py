@@ -389,7 +389,7 @@ def _home_that_leads_there(home: Path, link: Path) -> Path | None:
     it, which is what puts the directory and the file shapes into one expression.
     """
     wanted = Path(USER_SETTINGS).parts
-    leads_to = link.resolve() / (home / USER_SETTINGS).relative_to(link)
+    leads_to = fsops.resolved(link) / (home / USER_SETTINGS).relative_to(link)
     if leads_to.parts[-len(wanted) :] != wanted:
         return None
     return leads_to.parents[len(wanted) - 1]
@@ -419,7 +419,7 @@ def _check_settings_path(home: Path) -> None:
             ) from exc
         if link is None:
             raise
-        real = link.resolve()
+        real = fsops.resolved(link)
         instead = _home_that_leads_there(home, link)
         kind = "file" if link == home / USER_SETTINGS else "directory"
         if instead is not None:
@@ -544,10 +544,11 @@ def _check_settings_parent(settings: Path) -> None:
     except PathUnasked as exc:
         raise Refusal(f"{settings} cannot be checked for a symlink ({exc.fault})") from exc
     except PathEscape as exc:
+        real = fsops.resolved(settings)
         raise Refusal(
-            f"{settings} is a symlink to {settings.resolve()}; {_SYMLINKED_SETTINGS}. A dotfiles "
-            f"manager is the usual reason — run `stayfixed setup --settings {settings.resolve()}`, "
-            f"which writes the file this link leads to, or replace the link with a real file"
+            f"{settings} is a symlink to {real}; {_SYMLINKED_SETTINGS}. A dotfiles manager is the "
+            f"usual reason — run `stayfixed setup --settings {real}`, which writes the file this "
+            f"link leads to, or replace the link with a real file"
         ) from exc
     # After the symlink refusal, so no link can be behind this answer.
     if fsops.is_dir(settings):
@@ -833,8 +834,8 @@ def _outside_the_project(candidate: Path, *, project_root: Path, created: bool) 
     the machine can hold the same bytes — a separate `git clone` of the same remote has its own
     common directory and passes — only that the owner, and not the clone, put it there.
     """
-    resolved_candidate = candidate.resolve()
-    resolved_project = project_root.resolve()
+    resolved_candidate = fsops.resolved(candidate)
+    resolved_project = fsops.resolved(project_root)
     repository = _repository(resolved_project)
     same_repository = (
         f"{candidate} is inside a checkout of the same repository as {project_root}, the "
@@ -862,12 +863,12 @@ def _outside_the_project(candidate: Path, *, project_root: Path, created: bool) 
         )
     if repository is not None:
         for checkout in repository.checkouts:
-            if _overlaps(resolved_candidate, checkout.resolve()):
+            if _overlaps(resolved_candidate, fsops.resolved(checkout)):
                 raise Refusal(same_repository)
     found = _candidate_repository(resolved_candidate)
     if found is None:
         return
-    if repository is not None and _same(found.resolve(), repository.common.resolve()):
+    if repository is not None and _same(fsops.resolved(found), fsops.resolved(repository.common)):
         raise Refusal(same_repository)
     # Asked from above the candidate, so an overlay that is the top of a checkout of its own is
     # not its own answer: what git finds there is a work tree that holds the candidate, and that
@@ -881,7 +882,9 @@ def _outside_the_project(candidate: Path, *, project_root: Path, created: bool) 
     # is: "another repository" sent the owner looking for one that is not there. Its own only
     # when the candidate is a checkout's top, its `.git` there: a plain directory's nearest
     # checkout is the outer one, and that is another repository.
-    own = os.path.lexists(resolved_candidate / ".git") and _same(outer.resolve(), found.resolve())
+    own = os.path.lexists(resolved_candidate / ".git") and _same(
+        fsops.resolved(outer), fsops.resolved(found)
+    )
     whose = "another checkout of its own repository" if own else "a checkout of another repository"
     raise Refusal(
         f"{candidate} is inside {whose}, whose git directory is {quoted(str(outer))}. The "
@@ -962,7 +965,7 @@ def _requested_overlay(overlay: str | None, *, home: Path, yes: bool) -> _Overla
         destination, account = target_root(home, owner, name)
         _recordable(destination)
         return _Overlay(root=destination, create=(account, name))
-    candidate = Path(overlay).expanduser().resolve()
+    candidate = fsops.resolved(Path(overlay).expanduser())
     _recordable(candidate)
     require_overlay(candidate, because=_RECORDING)
     return _Overlay(root=candidate, create=None)

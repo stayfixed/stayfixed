@@ -31,7 +31,14 @@ from stayfixed.fsops import (
     write_atomically_at,
     write_within,
 )
-from tests.pathfaults import LSTAT_FAULT, lstat_fault, shaped, unlock, unmet_here
+from tests.pathfaults import (
+    LSTAT_FAULT,
+    lstat_fault,
+    resolving_as_3_11_does,
+    shaped,
+    unlock,
+    unmet_here,
+)
 
 
 def _umasked(mode: int = NEW_FILE_MODE) -> int:
@@ -726,6 +733,77 @@ def test_no_module_asks_pathlib_what_is_at_a_path_a_repository_can_shape() -> No
                     key = (relative, name or "<module>", node.func.attr)
                     found[key] = found.get(key, 0) + 1
     assert found == {key: count for key, (count, _) in OTHER_PREDICATES.items()}
+
+
+@pytest.mark.parametrize("where", ["loop", "loop/below"])
+def test_a_symlink_loop_resolves_to_the_systems_eloop_naming_the_path_on_every_interpreter(
+    tmp_path: Path, where: str
+) -> None:
+    # `Path.resolve()` raised `RuntimeError` for a loop on Python 3.11 and 3.12, past every
+    # `except OSError`, and answered a path with the loop left in it from 3.13: `setup` given a
+    # looping `--home`, `--root` or `--overlay` was an internal error on one and went on on the
+    # other. `fsops.resolved` answers `OSError(ELOOP)` naming the path on all of them, and a path
+    # that is not there yet still resolves. Mutation (`mutations/`'s "fsops.resolved answers a
+    # loop with a path where the interpreter does") -> both cases, on 3.13 and later.
+    (tmp_path / "loop").symlink_to(tmp_path / "loop")
+    path = tmp_path / where
+    with pytest.raises(OSError) as raised:
+        fsops.resolved(path)
+    assert raised.value.errno == errno.ELOOP
+    assert raised.value.filename == str(path)
+    absent = tmp_path / "absent" / "below"
+    assert fsops.resolved(absent) == absent.resolve()
+
+
+def test_the_runtime_error_older_pythons_raise_for_a_loop_is_the_systems_eloop(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The other half, on every interpreter: what 3.11 and 3.12 raise is stood in for. Mutation
+    # (`mutations/`'s "fsops.resolved lets the RuntimeError of a loop through") -> it escapes.
+    (tmp_path / "loop").symlink_to(tmp_path / "loop")
+    resolving_as_3_11_does(monkeypatch)
+    with pytest.raises(OSError) as raised:
+        fsops.resolved(tmp_path / "loop" / "below")
+    assert raised.value.errno == errno.ELOOP
+
+
+# The `except` clauses under `src/` that name `RuntimeError`, outside `fsops`, by file and
+# function, with how many and why each may stay. None of them is about resolving a path.
+OTHER_RUNTIME_ERRORS: dict[tuple[str, str], tuple[int, str]] = {
+    ("config/machine.py", "owner_home"): (
+        1,
+        "`Path.home()` raises it for a home it cannot determine; no path is resolved",
+    ),
+}
+
+
+def test_no_module_but_fsops_catches_the_runtime_error_a_symlink_loop_raised() -> None:
+    # Python 3.11 and 3.12 raise `RuntimeError` resolving a path through a symlink loop, and the
+    # answer was one hand-written `except (OSError, RuntimeError)` per site, while a site without
+    # one ended in `internal error`. `fsops.resolved` is the one answer, so the walk refuses every
+    # other `except` that names `RuntimeError` but the ones `OTHER_RUNTIME_ERRORS` gives a reason
+    # for. Mutation (`mutations/`'s "refs catches the RuntimeError of a loop by hand again").
+    source = Path(fsops.__file__).parent
+    found: dict[tuple[str, str], int] = {}
+    for path in sorted(source.rglob("*.py")):
+        relative = path.relative_to(source).as_posix()
+        if relative == "fsops.py":
+            continue
+        scopes: list[tuple[ast.AST, str]] = [(ast.parse(path.read_text(encoding="utf-8")), "")]
+        while scopes:
+            scope, name = scopes.pop()
+            for node in ast.iter_child_nodes(scope):
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                    scopes.append((node, f"{name}.{node.name}" if name else node.name))
+                    continue
+                scopes.append((node, name))
+                if not isinstance(node, ast.ExceptHandler) or node.type is None:
+                    continue
+                named = node.type.elts if isinstance(node.type, ast.Tuple) else [node.type]
+                if any(isinstance(n, ast.Name) and n.id == "RuntimeError" for n in named):
+                    key = (relative, name or "<module>")
+                    found[key] = found.get(key, 0) + 1
+    assert found == {key: count for key, (count, _) in OTHER_RUNTIME_ERRORS.items()}
 
 
 def test_a_regular_file_is_read_through_a_link_and_anything_else_is_refused(

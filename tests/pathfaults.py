@@ -140,3 +140,18 @@ def lstat_fault(path: Path) -> int | type[ValueError] | None:
     except ValueError:
         return ValueError
     return None
+
+
+def resolving_as_3_11_does(monkeypatch: pytest.MonkeyPatch, name: str = "loop") -> None:
+    """Have `Path.resolve` raise what Python 3.11 and 3.12 raise for a symlink loop, for every path
+    through a component called `name`, for the length of one test: those interpreters raise
+    `RuntimeError` where 3.13 answers a path, so a test of the `RuntimeError` holds on every
+    interpreter. The loop itself is real, so `stat` meets it."""
+    resolve = Path.resolve
+
+    def resolve_as_older_pythons_do(self: Path, strict: bool = False) -> Path:
+        if name in self.parts:
+            raise RuntimeError(f"Symlink loop from {str(self)!r}")
+        return resolve(self, strict)
+
+    monkeypatch.setattr(Path, "resolve", resolve_as_older_pythons_do)

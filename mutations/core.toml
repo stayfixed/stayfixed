@@ -3655,3 +3655,43 @@ after = ""
 reddens = [
   "tests/test_runner.py::test_the_variables_that_make_gh_write_for_a_terminal_are_dropped",
 ]
+
+# Python 3.11 and 3.12 raise `RuntimeError` resolving a path through a symlink loop, past every
+# `except OSError`, and 3.13 answers a path with the loop left in it: one input, a traceback on one
+# interpreter and a quiet answer on the other. `fsops.resolved` answers both as the system's
+# `ELOOP`, naming the path, and every resolve of a path a clone or a command line can shape goes
+# through it.
+[[mutation]]
+name = "fsops.resolved answers a loop with a path where the interpreter does"
+file = "src/stayfixed/fsops.py"
+before = """    _meets_a_loop(path)
+    return answer"""
+after = """    return answer"""
+reddens = [
+  "tests/test_fsops.py::test_a_symlink_loop_resolves_to_the_systems_eloop_naming_the_path_on_every_interpreter[loop]",
+  "tests/test_fsops.py::test_a_symlink_loop_resolves_to_the_systems_eloop_naming_the_path_on_every_interpreter[loop/below]",
+  "tests/setup/test_setup.py::test_a_symlink_loop_at_any_path_setup_is_given_is_a_refusal_naming_it[home]",
+]
+
+[[mutation]]
+name = "fsops.resolved lets the RuntimeError of a loop through"
+file = "src/stayfixed/fsops.py"
+before = """    except RuntimeError:
+        _meets_a_loop(path)
+        raise"""
+after = """    except ValueError:
+        _meets_a_loop(path)
+        raise"""
+reddens = [
+  "tests/test_fsops.py::test_the_runtime_error_older_pythons_raise_for_a_loop_is_the_systems_eloop",
+]
+
+[[mutation]]
+name = "contained resolves its root past fsops"
+file = "src/stayfixed/config/paths.py"
+before = "        resolved_root = resolved(root)"
+after = "        resolved_root = root.resolve()"
+reddens = [
+  "tests/config/test_paths.py::test_a_root_through_a_symlink_loop_is_an_oserror_naming_it[as-3-11]",
+  "tests/setup/test_setup.py::test_a_symlink_loop_at_any_path_setup_is_given_is_a_refusal_naming_it[home]",
+]

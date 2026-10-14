@@ -25,7 +25,7 @@ from stayfixed.config.overlay import overlay_root
 from stayfixed.config.schema import OVERLAY_MODE, Config
 from stayfixed.errors import Failure
 from stayfixed.findings import Finding
-from stayfixed.fsops import read_regular_text, said
+from stayfixed.fsops import read_regular_text, resolved, said
 from stayfixed.gitenv import git_run
 from stayfixed.guards.api import contained_roots
 from stayfixed.memory.graph import check_memory_graph, wiki_links
@@ -82,11 +82,11 @@ def _settled(root: Path, path: Path) -> bool:
 
 
 def _inside_store(root: Path, store: Store, target: str) -> bool:
-    # `RuntimeError` too: Python 3.11 and 3.12 raise it resolving a path through a symlink loop,
-    # where 3.13 answers one, and both the note's path and the loop are bytes a clone can commit.
+    # Through `fsops.resolved`, which answers a symlink loop as an `OSError` on every interpreter:
+    # both the note's path and the loop are bytes a clone can commit.
     try:
-        return (root / target).resolve().is_relative_to(store.path.resolve())
-    except (OSError, RuntimeError):
+        return resolved(root / target).is_relative_to(resolved(store.path))
+    except OSError:
         return False
 
 

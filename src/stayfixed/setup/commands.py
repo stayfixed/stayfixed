@@ -24,6 +24,7 @@ import argparse
 from pathlib import Path
 from typing import Any
 
+from stayfixed import fsops
 from stayfixed.areas import SubParsers
 from stayfixed.command import HOME_HELP, SETUP_MACHINE_HELP, SETUP_ROOT_HELP
 from stayfixed.errors import Failure, Refusal
@@ -47,10 +48,22 @@ _BOTH_MODES = (
 )
 
 
+def _root(given: str) -> Path:
+    """`--root`, resolved through `fsops.resolved`: a symlink loop there is a refusal naming it,
+    in the words `setup`'s questions before its first write use, on every interpreter, where 3.11
+    and 3.12 ended in `internal error`."""
+    try:
+        return fsops.resolved(Path(given))
+    except OSError as exc:
+        raise Refusal(
+            f"--root {given} cannot be checked ({fsops.said(exc)}), so nothing was written"
+        ) from exc
+
+
 def run_git_hooks(args: argparse.Namespace) -> Result:
     from stayfixed.guards.api import Found, install, uninstall
 
-    root = Path(args.root).resolve()
+    root = _root(args.root)
     if args.uninstall:
         removed = uninstall(root)
         if removed.found is Found.FOREIGN:
@@ -136,7 +149,7 @@ def run_setup(args: argparse.Namespace) -> Result:
         runner=subprocess_runner(),
         yes=args.yes,
         overlay=args.overlay,
-        project_root=Path(args.root).resolve(),
+        project_root=_root(args.root),
         settings=Path(args.settings).expanduser() if args.settings else None,
     )
     data = {

@@ -1873,8 +1873,8 @@ reddens = [
 [[mutation]]
 name = "read_binding lets a store it cannot resolve raise"
 file = "src/stayfixed/attach/binding.py"
-before = "    except (OSError, RuntimeError):\n        # A store through a symlink loop"
-after = "    except OSError:\n        # A store through a symlink loop"
+before = "        resolved: Path | None = fsops.resolved(store)"
+after = "        resolved: Path | None = store.resolve()"
 reddens = [
   "tests/attach/test_binding.py::test_a_store_through_a_symlink_loop_is_refused_like_any_other_store_that_is_not_it",
 ]

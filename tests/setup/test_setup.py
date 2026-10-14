@@ -2569,6 +2569,71 @@ def test_every_question_before_the_first_write_is_asked_in_the_documented_order(
     assert {"write_machine", "_write_user_settings", "run"} <= set(events[phase:]), events
 
 
+@pytest.mark.parametrize("place", ["claude", "home", "root", "settings", "overlay"])
+def test_a_symlink_loop_at_any_path_setup_is_given_is_a_refusal_naming_it(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    place: str,
+) -> None:
+    # Python 3.11 and 3.12 raise `RuntimeError` resolving a path through a symlink loop, which the
+    # floor under `setup`'s questions before its first write, an `except OSError`, did not catch:
+    # a loop at `~/.claude`, `--home`, `--root`, `--settings` or `--overlay` was
+    # `stayfixed: internal error: RuntimeError` there, while 3.13 refused some in other words and
+    # recorded the overlay past a looping `--root`. Every resolve in `setup` goes through
+    # `fsops.resolved`, so each is the floor's refusal, naming the path, on every interpreter, with
+    # nothing written and nothing run. Mutations (`mutations/`'s "setup's command resolves --root
+    # past fsops" -> `root`; "setup resolves --overlay past fsops" -> `overlay`; "setup resolves a
+    # --settings link past fsops" -> `settings`; "contained resolves its root past fsops" and
+    # "fsops.resolved answers a loop with a path where the interpreter does" -> `home`).
+    from stayfixed.cli import build_parser, discover_registrars, run
+
+    home, machine = tmp_path / "home", tmp_path / "config.toml"
+    root, overlay = tmp_path / "project", tmp_path / "overlay"
+    home.mkdir()
+    root.mkdir()
+    _seed_overlay(overlay)
+    looped = {
+        "claude": home / ".claude",
+        "home": home,
+        "root": root,
+        "settings": tmp_path / "dotfiles" / "settings.json",
+        "overlay": overlay,
+    }[place]
+    if looped.is_dir():
+        shutil.rmtree(looped)
+    looped.parent.mkdir(parents=True, exist_ok=True)
+    looped.symlink_to(looped)
+    argv = ["setup", "--preset", "recommended", "--yes", "--home", str(home)]
+    argv += ["--machine", str(machine), "--root", str(root), "--overlay", str(overlay)]
+    if place == "settings":
+        argv += ["--settings", str(looped)]
+    runner = Recorder()
+    monkeypatch.setattr("stayfixed.setup.commands.subprocess_runner", lambda: runner)
+    code = run(argv, parser=build_parser(discover_registrars()))
+    said = capsys.readouterr().err
+    assert code == 2, said
+    assert said.startswith("stayfixed: refused: "), said
+    # `--root` is resolved by the command before `setup` is called, and named as the flag.
+    named = f"--root {looped}" if place == "root" else str(looped)
+    assert f"{named} cannot be checked (" in said, said
+    assert not machine.exists() and runner.calls == []
+
+
+def test_a_project_root_through_a_symlink_loop_handed_to_setup_is_refused(tmp_path: Path) -> None:
+    # The command resolves `--root` before it calls `setup`, and `setup` resolves the root it is
+    # handed again where it compares the overlay with it, under the floor: a caller of the
+    # library that hands it a loop gets the floor's refusal, on every interpreter. Mutation
+    # (`mutations/`'s "setup resolves the project root past fsops") -> 3.13 records the overlay,
+    # and 3.11 raises `RuntimeError`.
+    root, overlay = tmp_path / "project", tmp_path / "overlay"
+    root.symlink_to(root)
+    _seed_overlay(overlay)
+    with pytest.raises(Refusal, match="cannot be checked"):
+        _record(tmp_path, overlay, root)
+    assert not (tmp_path / "config.toml").exists()
+
+
 def test_a_claude_directory_that_becomes_a_symlink_after_the_check_is_still_refused(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
