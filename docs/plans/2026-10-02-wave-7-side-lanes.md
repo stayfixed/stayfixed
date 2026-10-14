@@ -1364,6 +1364,16 @@ what shipped:
 
 Written by Tasks 6, 9 and 10.
 
+**Moved, 2026-10-14.** Benchmark part 1 moves to a wave-9 lane that calibrates on `v0.2.0` (the
+owner's decision of 2026-10-12). Its plan text has gone stale against the tree, and the
+references are that lane's to rewrite: the `release check` command (now
+`scripts/release.py check`), the mutation group the tasks name, and the premise that the plugin's
+root is this repository's (it is published from a repository of its own). Directory-prep part 2
+is wave 10's to implement; what it starts from is the Codex hook measurement of 2026-10-13 and the
+Codex prose #90 rewrote on it (Codex runs a plugin's hooks once trusted in `/hooks`; stayfixed
+claims no tier there until its guards are verified end to end). The portal's Validate run, which
+needs the plugin published, follows the `0.3.0` release.
+
 ## Findings — delivery-spike
 
 Written by Tasks 11–16.

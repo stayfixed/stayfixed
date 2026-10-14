@@ -1715,3 +1715,13 @@ sentences and remedies in `attach`'s vocabulary: `.stayfixed/local/attach.json`,
 `stayfixed attach --store …` and `stayfixed setup --overlay`. The owner deferred that to a
 separate change before Task 8, which gives `Claims` a printable vocabulary of its own so the core
 composes neutral sentences.
+
+### After #84 (2026-10-14)
+
+Pull requests #85, #86 and #88 built the means to publish the plugin from a repository of its own
+and to pin the commit the marketplace entry names (#87 fixed a git timeout read as a broken
+repository on the way). Nothing is published until `0.3.0`: Task 17 Step 3 stays open until that
+release publishes the plugin, and is ticked by the pull request that returns the release to `dev`.
+The residuals this wave and wave 7 left reproducing on `dev` at `5f6db9f` were closed by #89
+(`attach`, `detach`, `doctor`'s `attached` row, `memory index`) and #90 (`setup`, `init`,
+`docs trail`, the commit and hook guards, the Codex prose), both merged before the release.
