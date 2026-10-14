@@ -1909,3 +1909,29 @@ after = "    if False:"
 reddens = [
   "tests/setup/test_setup.py::test_a_directory_the_settings_write_opens_to_read_and_cannot_is_refused_before_any_write[settings]",
 ]
+
+# A regular file at `<home>/.claude`, and a directory at `<home>/.claude/settings.json`, are the two
+# shapes `--settings` refuses at its own directory and its own file. Under `--home` neither was
+# asked before the first write: the machine file was written, and reading the settings file then
+# failed with exit 1.
+[[mutation]]
+name = "setup asks nothing of a .claude that is not a directory"
+file = "src/stayfixed/setup/run.py"
+before = "    if fsops.exists(path.parent) and not fsops.is_dir(path.parent):"
+after = "    if False:"
+reddens = [
+  "tests/setup/test_setup.py::test_a_settings_path_of_the_wrong_kind_under_home_is_refused_before_any_write[a-file-at-claude]",
+]
+
+[[mutation]]
+name = "setup asks nothing of a directory at the settings file"
+file = "src/stayfixed/setup/run.py"
+before = """    if fsops.is_dir(path):
+        raise Refusal(
+            f"{path} is a directory; setup writes"""
+after = """    if False:
+        raise Refusal(
+            f"{path} is a directory; setup writes"""
+reddens = [
+  "tests/setup/test_setup.py::test_a_settings_path_of_the_wrong_kind_under_home_is_refused_before_any_write[a-directory-at-settings]",
+]

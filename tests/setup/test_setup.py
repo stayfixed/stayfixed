@@ -197,27 +197,33 @@ def test_a_user_settings_file_past_the_parsers_reach_is_a_failure_naming_it(
     assert (home / USER_SETTINGS).read_text(encoding="utf-8") == document
 
 
+@pytest.mark.skipif(os.geteuid() == 0, reason="root reads every file")
 def test_a_user_settings_file_that_cannot_be_read_is_a_failure_saying_why_in_words(
     tmp_path: Path,
 ) -> None:
-    # The failure quoted the error whole, `[Errno 21] Is a directory: '<the path again>'`, where
-    # every other reader of a file says its reason in words, in parentheses (`fsops.said`).
-    # Mutation (oracle): `mutations/`'s "a read refusal says an unreadable file in its error's own
-    # text".
+    # The failure quoted the error whole, `[Errno 13] Permission denied: '<the path again>'`,
+    # where every other reader of a file says its reason in words, in parentheses (`fsops.said`).
+    # A file at mode 000: a directory at that path is refused before the first write now. Mutation
+    # (oracle): `mutations/`'s "a read refusal says an unreadable file in its error's own text".
     home = tmp_path / "home"
-    (home / USER_SETTINGS).mkdir(parents=True)
-    with pytest.raises(Failure) as caught:
-        setup(
-            "recommended",
-            home=home,
-            machine=tmp_path / "config.toml",
-            runner=Recorder(),
-            yes=True,
-            overlay=None,
-            project_root=tmp_path / "project",
-        )
+    (home / ".claude").mkdir(parents=True)
+    (home / USER_SETTINGS).write_text("{}\n", encoding="utf-8")
+    (home / USER_SETTINGS).chmod(0)
+    try:
+        with pytest.raises(Failure) as caught:
+            setup(
+                "recommended",
+                home=home,
+                machine=tmp_path / "config.toml",
+                runner=Recorder(),
+                yes=True,
+                overlay=None,
+                project_root=tmp_path / "project",
+            )
+    finally:
+        (home / USER_SETTINGS).chmod(0o644)
     assert (
-        str(caught.value) == f"{home / USER_SETTINGS} cannot be read ({os.strerror(errno.EISDIR)})"
+        str(caught.value) == f"{home / USER_SETTINGS} cannot be read ({os.strerror(errno.EACCES)})"
     )
 
 
@@ -2106,6 +2112,45 @@ def test_a_directory_the_settings_write_opens_to_read_and_cannot_is_refused_befo
         )
     said = str(refused.value)
     assert f"{directory} is not readable, and the settings write opens it to read" in said, said
+    assert not machine.exists() and runner.calls == []
+
+
+@pytest.mark.parametrize("shape", ["a-file-at-claude", "a-directory-at-settings"])
+def test_a_settings_path_of_the_wrong_kind_under_home_is_refused_before_any_write(
+    tmp_path: Path, shape: str
+) -> None:
+    # A regular file at `<home>/.claude`, and a directory at `<home>/.claude/settings.json`, are
+    # the two shapes `--settings` refuses in its own directory and at its own file. Under `--home`
+    # neither was asked: the machine file was written, and reading the settings file failed with
+    # exit 1. Mutations (`mutations/`'s "setup asks nothing of a .claude that is not a directory"
+    # -> `a-file-at-claude`; "setup asks nothing of a directory at the settings file" ->
+    # `a-directory-at-settings`).
+    home, machine = tmp_path / "home", tmp_path / "config.toml"
+    home.mkdir()
+    if shape == "a-file-at-claude":
+        (home / ".claude").write_text("not a directory\n", encoding="utf-8")
+        said = (
+            f"{home / USER_SETTINGS} cannot be written: its directory has to be a real directory, "
+            f"and {home / '.claude'} is not one"
+        )
+    else:
+        (home / USER_SETTINGS).mkdir(parents=True)
+        said = (
+            f"{home / USER_SETTINGS} is a directory; setup writes the settings file at that path, "
+            f"so it has to be a file, or not be there yet"
+        )
+    runner = Recorder()
+    with pytest.raises(Refusal) as refused:
+        setup(
+            "recommended",
+            home=home,
+            machine=machine,
+            runner=runner,
+            yes=False,
+            overlay=None,
+            project_root=tmp_path / "project",
+        )
+    assert str(refused.value) == said
     assert not machine.exists() and runner.calls == []
 
 

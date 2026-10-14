@@ -7,4 +7,7 @@ directory you cannot write into is now refused the same way, before anything is 
 directory the settings write opens to read and you cannot read, such as a `.claude` at mode 300. So
 is every other path `setup` cannot ask about before its first write, naming it: an `--overlay`, a
 `--root` or a `--settings` directory below a directory nobody may search, and an existing `--overlay
-create:` destination that cannot be searched, each used to end in an internal error.
+create:` destination that cannot be searched, each used to end in an internal error. A regular file
+at `<home>/.claude`, or a directory at `<home>/.claude/settings.json`, is refused too, before
+anything is written, where the machine configuration file was written and reading the settings file
+then failed (exit `1`).

@@ -2655,6 +2655,8 @@ hook). Exits `0` on success, `2` on a refused `--overlay` (missing, not an overl
 the project root, inside a checkout of another repository, at a path that is not UTF-8 text and so
 cannot be recorded in the machine file, or `create:` without `--yes`), `2` when a symlink stands
 between `<home>` and the settings file: that file is written through a walk that never follows one,
+`2` when something other than a directory stands at `<home>/.claude`, or a directory at
+`<home>/.claude/settings.json`, the two shapes `--settings` refuses at its own directory and file,
 `2` when the directory `--settings` names cannot take the write (the new file is renamed into it),
 and `2` when `--home` cannot take what this run writes under it. That refusal names the directory
 you cannot write into, asked only where a write lands: the one the settings file is made in

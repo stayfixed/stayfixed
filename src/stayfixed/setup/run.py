@@ -443,6 +443,21 @@ def _check_settings_path(home: Path) -> None:
             f"{link} is a symlink to {real}; {_SYMLINKED_SETTINGS}. A dotfiles manager or a "
             f"synced home is the usual reason — {remedy}"
         ) from exc
+    # After the symlink refusal, so no link is behind either answer, and in `--settings`' words
+    # for the same two shapes: something other than a directory where the file's directory has
+    # to be, and a directory where the file has to be. Unasked, each passed this phase, the
+    # machine file was written, and reading the settings file then failed with exit 1.
+    path = home / USER_SETTINGS
+    if fsops.exists(path.parent) and not fsops.is_dir(path.parent):
+        raise Refusal(
+            f"{path} cannot be written: its directory has to be a real directory, and "
+            f"{path.parent} is not one"
+        )
+    if fsops.is_dir(path):
+        raise Refusal(
+            f"{path} is a directory; setup writes the settings file at that path, so it has to be "
+            f"a file, or not be there yet"
+        )
 
 
 def _check_home_usable(
