@@ -1648,24 +1648,24 @@ release the project should move to.
 under `.stayfixed/local/artifacts/`, and the committed manifest never records it; instead
 `.stayfixed/local/artifacts.json`, which the ignore block keeps out of git like the artifacts,
 records the bytes stayfixed last wrote there. A file still holding those bytes is refreshed like any
-other when this stayfixed renders it differently. One that no longer does is `skip_modified`
-(`kept out of git, and changed since stayfixed wrote it`), because nothing brings it back once it is
+other when this stayfixed renders it differently. One that no longer does is `skip_modified` (`kept
+out of git, and changed since stayfixed wrote it`), because nothing brings it back once it is
 overwritten, and `--force` with its path takes it; with that record gone, a file that is not exactly
 what this build writes is skipped the same way, saying nothing records what stayfixed wrote there.
 When an id leaves `[artifacts] local`, or its `[paths]` value moves while it stays there, the
 artifact is written at its new place and the copy the record names at the old one is removed while
 it holds exactly the bytes recorded for it (`relocated`); otherwise it is `skip_modified`, stays
-recorded until it is gone, and `--force` with its path takes it. When an id joins the list, the
-copy at its old place is the committed one the manifest records, and it is removed the same way
-while it holds exactly the bytes the manifest records (`relocated`); one you edited is left where it
-is, yours to keep or delete by hand, and said once, as `relocated and hand-edited`: the manifest
-stops recording it, so the next `upgrade` says nothing of it while the tracked copy stays. That is
-how a file is kept out of git after `init`: `init --local` is refused once the repository is
-initialised, and the refusal says to list the id under `[artifacts] local` and run
-`stayfixed upgrade`. The record is read as untrusted,
-since a clone can commit it anyway: anything but its own exact shape is read as no record at all, it
-is never printed, it names nothing outside `.stayfixed/local/artifacts/`, and it vouches only for a
-file there whose bytes are exactly the ones it states.
+recorded until it is gone, and `--force` with its path takes it. When an id joins the list, the copy
+at its old place is the committed one the manifest records, and it is removed the same way while it
+holds exactly the bytes the manifest records (`relocated`); one you edited is left where it is,
+yours to keep or delete by hand, and said once, as `relocated and hand-edited`: the manifest stops
+recording it, so the next `upgrade` says nothing of it while the tracked copy stays. That is how a
+file is kept out of git after `init`: `init --local` is refused once the repository is initialised,
+and the refusal says to list the id under `[artifacts] local` and run `stayfixed upgrade`. The
+record is read as untrusted, since a clone can commit it anyway: anything but its own exact shape is
+read as no record at all, it is never printed, it names nothing outside
+`.stayfixed/local/artifacts/`, and it vouches only for a file there whose bytes are exactly the ones
+it states.
 
 **Retirement.** An artifact this configuration no longer produces — the profile's rules after
 `[stayfixed] profile` changes, its Claude Code pointer after `agents` drops `claude` — is removed
@@ -2602,42 +2602,41 @@ marketplace for it. A harness with no declared marketplace for a plugin is not a
 nothing here is vendored on a guessed marketplace name — and a missing binary or a
 failed call is a reported note, never a failure.
 
-**The overlay is touched only when `--overlay` names an answer**, and `--yes` does not imply
-one. `--overlay <path>` records an existing overlay's root; `--overlay create:<owner>/<name>`
-asks GitHub for a private repository from the template and initialises it, the same as
-`stayfixed overlay create --template` followed by `overlay init` — and makes the same choice of
-template that flag makes: yours when you have published one,
-`github.com/stayfixed/stayfixed-overlay-template` otherwise. Creating one needs `--yes` —
-explicit confirmation for the one irreversible, outward-facing act this command performs — and
-refuses (`2`) without it. Recording an *existing* path needs no `--yes`
-(a model-written command line reaches `--overlay X --yes` exactly as easily as `--overlay X`,
-so the flag would be theatre there); instead the path itself is validated **before the first
-write** — before the machine file, the settings merge and the plugin installs, and for `create:`
-before `gh repo create` runs on anybody's account. It must exist; its two `.claude-plugin/`
-manifests must name it `stayfixed-overlay[-<owner>]` and `stayfixed-overlay-marketplace[-<owner>]`,
-which is what `overlay create` renders and `overlay init` renames, rather than merely being
-present; and it must lie outside the repository `--root` is in — not inside it, not above it, and
-not in another checkout of it, since a worktree is not a different repository and a clone ships
-its tree into all of them — and outside every checkout of any other repository, a checkout of its
-own nested in one included, because a repository can put files into any directory of its work
-tree. For the same reason a linked worktree of the overlay's own repository nested in another
-checkout of it is refused, and the refusal says it is the overlay's own repository. Where git finds no repository for `--root` (no `.git` at or above it), there are no other
-checkouts to compare, and only one overlay is exempt from the comparison with `--root` itself: a
-`create:` destination, which this run makes, and the clone it made when the same command runs
-again. An existing `--overlay <path>` inside, around or equal to a `--root` in no repository is
-refused, because a tree there can still have come from someone else — a project downloaded as an
-archive, or a checkout of another version control system, can ship one. So
-`setup --overlay create:<owner>/<name> --yes` run in a home directory that is no repository
-passes, `setup --overlay ~/stayfixed-private` run there is refused (run it from another
-directory), and the `create:` command run in a home that is a git work tree with its `.git` there
-(a dotfiles clone) is refused before `gh` runs. What git cannot find has no other checkouts
-compared: a work tree of another version control system, and a git work tree whose git directory
-is elsewhere and named only by `--git-dir` and `--work-tree` or `GIT_DIR`, as in a
-bare-repository dotfiles home. Containment is anchored on `--root`, which the command line
-chooses. Everywhere a `.git` is at or above the directory `git` is asked from, a `git` that gives
-no answer (it cannot be run, runs past its time limit, exits non-zero, is ended by a signal or
-prints nothing), that refuses the repository it found (another user's under `safe.directory`, or
-one whose `.git` it cannot read) or that cannot list its checkouts is a refusal.
+**The overlay is touched only when `--overlay` names an answer**, and `--yes` does not imply one.
+`--overlay <path>` records an existing overlay's root; `--overlay create:<owner>/<name>` asks GitHub
+for a private repository from the template and initialises it, the same as `stayfixed overlay create
+--template` followed by `overlay init` — and makes the same choice of template that flag makes:
+yours when you have published one, `github.com/stayfixed/stayfixed-overlay-template` otherwise.
+Creating one needs `--yes` — explicit confirmation for the one irreversible, outward-facing act this
+command performs — and refuses (`2`) without it. Recording an *existing* path needs no `--yes` (a
+model-written command line reaches `--overlay X --yes` exactly as easily as `--overlay X`, so the
+flag would be theatre there); instead the path itself is validated **before the first write** —
+before the machine file, the settings merge and the plugin installs, and for `create:` before `gh
+repo create` runs on anybody's account. It must exist; its two `.claude-plugin/` manifests must name
+it `stayfixed-overlay[-<owner>]` and `stayfixed-overlay-marketplace[-<owner>]`, which is what
+`overlay create` renders and `overlay init` renames, rather than merely being present; and it must
+lie outside the repository `--root` is in — not inside it, not above it, and not in another checkout
+of it, since a worktree is not a different repository and a clone ships its tree into all of them —
+and outside every checkout of any other repository, a checkout of its own nested in one included,
+because a repository can put files into any directory of its work tree. For the same reason a linked
+worktree of the overlay's own repository nested in another checkout of it is refused, and the
+refusal says it is the overlay's own repository. Where git finds no repository for `--root` (no
+`.git` at or above it), there are no other checkouts to compare, and only one overlay is exempt from
+the comparison with `--root` itself: a `create:` destination, which this run makes, and the clone it
+made when the same command runs again. An existing `--overlay <path>` inside, around or equal to a
+`--root` in no repository is refused, because a tree there can still have come from someone else — a
+project downloaded as an archive, or a checkout of another version control system, can ship one. So
+`setup --overlay create:<owner>/<name> --yes` run in a home directory that is no repository passes,
+`setup --overlay ~/stayfixed-private` run there is refused (run it from another directory), and the
+`create:` command run in a home that is a git work tree with its `.git` there (a dotfiles clone) is
+refused before `gh` runs. What git cannot find has no other checkouts compared: a work tree of
+another version control system, and a git work tree whose git directory is elsewhere and named only
+by `--git-dir` and `--work-tree` or `GIT_DIR`, as in a bare-repository dotfiles home. Containment is
+anchored on `--root`, which the command line chooses. Everywhere a `.git` is at or above the
+directory `git` is asked from, a `git` that gives no answer (it cannot be run, runs past its time
+limit, exits non-zero, is ended by a signal or prints nothing), that refuses the repository it found
+(another user's under `safe.directory`, or one whose `.git` it cannot read) or that cannot list its
+checkouts is a refusal.
 
 **Writes** `<home>` itself when it is not there yet; `--machine`'s file, with the directories above
 it, once for the preset and again for the overlay root `--overlay` records;
@@ -2652,29 +2651,36 @@ its removal of the files a template published at an earlier release ships and th
 Run again over the overlay it made, it generates nothing, but `overlay init` still runs there, and
 the report names each file `init` changed (an overlay named by 0.1.x gains its account) or says it
 changed none of the overlay's tracked files (`pre-commit install` may still have written its git
-hook). Exits `0` on success, `2` on a refused `--overlay` (missing, not an overlay, reachable from
-the project root, inside a checkout of another repository, at a path that is not UTF-8 text and so
-cannot be recorded in the machine file, or `create:` without `--yes`), `2` when a symlink stands
-between `<home>` and the settings file: that file is written through a walk that never follows one,
-`2` when something other than a directory stands at `<home>/.claude`, or a directory at
-`<home>/.claude/settings.json`, the two shapes `--settings` refuses at its own directory and file,
-`2` when the directory `--settings` names cannot take the write (the new file is renamed into it),
-and `2` when `--home` cannot take what this run writes under it. That refusal names the directory
-you cannot write into, asked only where a write lands: the one the settings file is made in
-(`<home>/.claude` when it is there, `<home>` when only that is, the nearest directory above it while
-neither is); with `--settings`, which sends that file elsewhere, the one `<home>` is made in, and
-only while it is not there yet; and for `create:`, the one the clone is made in while it is not
-there yet, or, while it is there, whether it can be searched, since `create:` looks inside it
-first. Each directory the settings write opens on its way to the file — `<home>` and
-`<home>/.claude`, or the `--settings` directory — has to be readable too, since the write opens it
-to read. A `<home>` you cannot write into is not refused for that alone: with a writable `.claude`
-already in it, and no overlay to create, nothing this check asks about is made in it. The machine
-file's directory is not asked about here: a write there that fails ends the run `1`. Otherwise it
-says that `<home>` could not be created. Any other path this command cannot ask about before its
-first write — `<home>`, an `--overlay`, a `--root` or a `--settings` directory below a directory
-nobody may search, and a
-symbolic-link loop at `~/.claude`, `--home`, `--root`, `--settings` or `--overlay`, on every
-Python — is refused (`2`) naming that path and why.
+hook).
+
+**Exits** `0` on success, and `2` on each of these refusals:
+
+- a refused `--overlay`: missing, not an overlay, reachable from the project root, inside a
+  checkout of another repository, where `git` gives no answer inside a checkout, at a path that is
+  not UTF-8 text and so cannot be recorded in the machine file, or `create:` without `--yes`;
+- a symlink between `<home>` and the settings file, which is written through a walk that never
+  follows one;
+- something other than a directory at `<home>/.claude`, or a directory at
+  `<home>/.claude/settings.json`: the two shapes `--settings` refuses at its own directory and file;
+- a directory `--settings` names that cannot take the write: the new file is renamed into it;
+- a `--home` that cannot take what this run writes under it, naming the directory you cannot write
+  into, asked only where a write lands: the one the settings file is made in (`<home>/.claude` when
+  it is there, `<home>` when only that is, the nearest directory above it while neither is); with
+  `--settings`, which sends that file elsewhere, the one `<home>` is made in, and only while it is
+  not there yet; and for `create:`, the one the clone is made in while it is not there yet, or,
+  while it is there, whether it can be searched, since `create:` looks inside it first. A `<home>`
+  you cannot write into is not refused for that alone: with a writable `.claude` already in it, and
+  no overlay to create, nothing this check asks about is made in it;
+- a directory the settings write opens on its way to the file that cannot be read: `<home>` and
+  `<home>/.claude`, or the `--settings` directory;
+- a `<home>` that could not be created;
+- any other path this command cannot ask about before its first write, named with why: `<home>`,
+  an `--overlay`, a `--root` or a `--settings` directory below a directory nobody may search, and a
+  symbolic-link loop at `~/.claude`, `--home`, `--root`, `--settings` or `--overlay`, on every
+  Python.
+
+The machine file's directory is not asked about before the first write: a write there that fails
+ends the run `1`.
 
 These questions are asked in one fixed order, and the first refusal ends the run: what `--overlay`
 names, and whether an existing path is an overlay; the preset; the settings file's place; where a
@@ -2718,21 +2724,21 @@ file nobody was told about is indistinguishable from a lost one.
 it is the file the installed hook `exec`s last, so a chain line naming it — `exec "$(git rev-parse
 --git-common-dir)/hooks/prepare-commit-msg.local" "$@"`, or the same name off `"${0%/*}"` or
 `"$(dirname "$0")"` — would `exec` itself, and `git commit` would run until it was killed. The
-refusal names the hook and where it would be kept, and nothing is written: remove its chain line,
-or move the hook aside. A re-install reads the `.local` beside stayfixed's hook for the same name
-and refuses too, saying what is already on disk: stayfixed's hook runs that `.local` last, so every
-commit runs until it is killed. It names the same remedy and leaves both files as they are. The check is for the name, not for how a
-chain is spelled: `exec "$0.local" "$@"` names `prepare-commit-msg.local.local` once the hook is
-kept, runs nothing twice, and is installed; a `--git-common-dir` chain under a `core.hooksPath`
-that is not that directory is refused though it would not loop, and the same remedy covers it. It
-is a liveness check, not a security control: a chain that builds the name at run time
-(`"${0%.local}.local"`, `$(basename …)`, a variable) is not seen, and neither is a `.local` edited
-to name itself after the install, which loops as any hook that `exec`s itself does. Nor is the name
-in another case: the bytes are compared as they are, so `Prepare-Commit-Msg.local`, which a
-case-insensitive volume (macOS's default) opens as the same file, is not refused there, because on a
-case-sensitive volume it names another file and refusing it would refuse a chain that cannot loop.
-A hook past the 64 MiB read cap is not read, so it is not judged either: it is kept and chained, as
-below.
+refusal names the hook and where it would be kept, and nothing is written: remove its chain line, or
+move the hook aside. A re-install reads the `.local` beside stayfixed's hook for the same name and
+refuses too, saying what is already on disk: stayfixed's hook runs that `.local` last, so every
+commit runs until it is killed. It names the same remedy and leaves both files as they are. The
+check is for the name, not for how a chain is spelled: `exec "$0.local" "$@"` names
+`prepare-commit-msg.local.local` once the hook is kept, runs nothing twice, and is installed; a
+`--git-common-dir` chain under a `core.hooksPath` that is not that directory is refused though it
+would not loop, and the same remedy covers it. It is a liveness check, not a security control: a
+chain that builds the name at run time (`"${0%.local}.local"`, `$(basename …)`, a variable) is not
+seen, and neither is a `.local` edited to name itself after the install, which loops as any hook
+that `exec`s itself does. Nor is the name in another case: the bytes are compared as they are, so
+`Prepare-Commit-Msg.local`, which a case-insensitive volume (macOS's default) opens as the same
+file, is not refused there, because on a case-sensitive volume it names another file and refusing it
+would refuse a chain that cannot loop. A hook past the 64 MiB read cap is not read, so it is not
+judged either: it is kept and chained, as below.
 
 **Refuses (`2`) together with `--preset`.** The two write to different scopes — one repository,
 one machine-wide — and a single invocation has only one exit code to report, so it does one of
