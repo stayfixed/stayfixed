@@ -208,7 +208,7 @@ reddens = [
 [[mutation]]
 name = "the smoke job demands a hook summary the script no longer prints"
 file = ".github/workflows/smoke.yml"
-before = '          grep -qx "9 entries, 10 row(s), 0 failure(s)" "$RUNNER_TEMP/hooks.out"'
+before = '          grep -qx "10 entries, 11 row(s), 0 failure(s)" "$RUNNER_TEMP/hooks.out"'
 after = '          grep -qx "13 entries, 14 row(s), 0 failure(s)" "$RUNNER_TEMP/hooks.out"'
 reddens = [
   "tests/test_check_workflow.py::test_the_smoke_job_demands_the_summary_the_hook_script_prints_over_every_entry",
@@ -869,7 +869,7 @@ reddens = [
   "tests/scripts/test_smoke_scripts.py::test_a_launcher_fault_is_not_mistaken_for_a_refusal",
 ]
 
-# Six of the nine entries are `memory session-context` — the ones that carry repository bytes
+# Six of the ten entries are `memory session-context` — the ones that carry repository bytes
 # toward the model — and they ran against a fixture with no memory store at all. Measured on that
 # fixture, when there were ten of them: ten rows, 0 bytes of stdout, every one green; they would
 # have been identically green if `session-context` were `/bin/false`.
@@ -880,6 +880,17 @@ before = "    wanted = INJECTED.get(tail_of(command))"
 after = "    wanted = None"
 reddens = [
   "tests/scripts/test_smoke_scripts.py::test_a_launcher_fault_is_not_mistaken_for_a_refusal",
+]
+
+# The red-run entry prints the event's envelope, exit 0, whether or not its handler spoke, so a row
+# that reads only the exit code and the envelope is green over an entry that never says the note.
+[[mutation]]
+name = "the hook smoke stops reading the context an entry printed"
+file = "scripts/smoke_hooks.py"
+before = "        if phrase not in context:"
+after = "        if False:"
+reddens = [
+  "tests/scripts/test_smoke_scripts.py::test_a_red_run_entry_that_says_nothing_is_reported",
 ]
 
 # The registry's converse, which is the direction that fails silently: `SAMPLES` is keyed by
@@ -1083,7 +1094,7 @@ reddens = [
 [[mutation]]
 name = "the oracle's job keeps a budget that no longer fits its own set"
 file = ".github/workflows/ci.yml"
-before = "    timeout-minutes: 20"
+before = "    timeout-minutes: 30"
 after = "    timeout-minutes: 1"
 reddens = [
   "tests/test_fixtures.py::test_the_mutation_oracle_has_a_job_of_its_own_with_a_budget_that_fits",
@@ -3450,4 +3461,47 @@ before = "          fetch-depth: 2\n          persist-credentials: false\n      
 after = "          fetch-depth: 2\n      - uses: astral-sh/setup-uv"
 reddens = [
   "tests/test_check_workflow.py::test_no_checkout_in_the_release_keeps_its_token",
+]
+
+# No script imports another, but the one exemption the rule names: `release.py` taking a sibling
+# is the offence the walk exists for, and the exempt import's removal is what leaves an exemption
+# excusing nothing, so the walk must say it no longer sees it.
+[[mutation]]
+name = "the release script imports the plugin tree script"
+file = "scripts/release.py"
+before = "import json\nimport re\n"
+after = "import json\nimport plugin_tree  # noqa: F401\nimport re\n"
+reddens = [
+  "tests/scripts/test_script_imports.py::test_no_script_imports_another_but_the_named_exemption",
+]
+
+[[mutation]]
+name = "the exfiltration smoke stops importing the hooks smoke"
+file = "scripts/smoke_exfiltration.py"
+before = "from smoke_hooks import developer_free_env, fixture_repository, with_owner_home\n"
+after = ""
+reddens = [
+  "tests/scripts/test_script_imports.py::test_every_exemption_is_still_used",
+]
+
+# The same offence spelled through the directory's name: a walk that read only the scripts' stems
+# saw `from scripts import plugin_tree` as an import of nothing it knew.
+[[mutation]]
+name = "the release script imports the plugin tree script through the directory's name"
+file = "scripts/release.py"
+before = "import json\nimport re\n"
+after = "import json\nfrom scripts import plugin_tree  # noqa: F401\nimport re\n"
+reddens = [
+  "tests/scripts/test_script_imports.py::test_no_script_imports_another_but_the_named_exemption",
+]
+
+# The hook smoke asks a `PostToolUseFailure` entry for the red-run note by the words the note opens
+# with, copied from the guard rather than imported, and a test holds the two equal.
+[[mutation]]
+name = "the hook smoke asks for a red-run note the guard does not open with"
+file = "scripts/smoke_hooks.py"
+before = 'RED_RUN_NOTE = "Before calling this red a flake, pre-existing, or caused by the branch:"'
+after = 'RED_RUN_NOTE = "Before calling this red a flake:"'
+reddens = [
+  "tests/scripts/test_smoke_scripts.py::test_the_hook_smoke_asks_for_the_red_run_note_in_the_words_the_note_opens_with",
 ]

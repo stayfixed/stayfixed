@@ -19,7 +19,14 @@ from stayfixed.config.schema import Config, Paths
 from stayfixed.fsops import UnsafePath, checked_components, write_within
 from stayfixed.grammar import PATH_VALUE
 from tests.crafted import CRAFTED, assert_never_raw
-from tests.pathfaults import LSTAT_FAULT, lstat_fault, shaped, unlock, unmet_here
+from tests.pathfaults import (
+    LSTAT_FAULT,
+    lstat_fault,
+    shaped,
+    symlink_loop_at,
+    unlock,
+    unmet_here,
+)
 
 PATH_NAMES = tuple(f.name for f in fields(Paths))
 
@@ -159,6 +166,26 @@ def test_a_link_inside_a_tree_past_the_longest_path_is_missed_by_contained_and_r
     with pytest.raises(UnsafePath):
         write_within(tmp_path, relative, "text\n")
     assert list(outside.iterdir()) == []
+
+
+@pytest.mark.parametrize("interpreter", ["this-one", "as-3-11"])
+def test_a_root_through_a_symlink_loop_is_an_oserror_naming_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, interpreter: str
+) -> None:
+    # `contained` resolves the root last, and on Python 3.11 and 3.12 a loop there raised
+    # `RuntimeError` past every caller's `except OSError`: `setup --home <a loop>` was an
+    # internal error. Through `fsops.resolved` it is the system's `ELOOP`, naming the root, on
+    # every interpreter. Mutation (`mutations/`'s "contained resolves its root past fsops") ->
+    # `as-3-11` raises `RuntimeError`.
+    root = tmp_path / "loop"
+    if interpreter == "as-3-11":
+        symlink_loop_at(monkeypatch, root)
+    else:
+        root.symlink_to(root)
+    with pytest.raises(OSError) as raised:
+        contained(root, "a")
+    assert raised.value.errno == errno.ELOOP
+    assert raised.value.filename == str(root)
 
 
 def test_a_symlink_pointing_inside_the_root_is_still_refused(tmp_path: Path) -> None:

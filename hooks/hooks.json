@@ -72,6 +72,18 @@
           }
         ]
       }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "timeout": 10,
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.sh\" open hook PostToolUseFailure"
+          }
+        ]
+      }
     ]
   }
 }

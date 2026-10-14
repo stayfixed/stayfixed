@@ -50,8 +50,9 @@ if TYPE_CHECKING:
 # removing BOTH unanchors it. Do not read one of them as dead weight: unanchored, a number is
 # read out of arbitrary captured stderr, and a line of test output that merely quotes an exit
 # code is then taken for the run's own. The documented shape puts `Exit code N` at the very
-# START of `error`, which is what the pair is protecting.
-_EXIT_CODE_ERROR = re.compile(r"\AExit code (\d+)")
+# START of `error`, which is what the pair is protecting. The digits are bounded, and a longer run
+# of them is no exit code: `int()` raises past 4,300 digits, and an exit code has at most three.
+_EXIT_CODE_ERROR = re.compile(r"\AExit code (\d{1,9})(?!\d)")
 # A named cap (CONTRIBUTING.md#named-caps) of its own, and no shipped file changes with it. Not
 # `gitenv.GIT_TIMEOUT_SECONDS`: that constant covers "local, argument-free, read-only" queries, and
 # `git status --porcelain` walks the worktree. A timeout here is `None`, "could not answer", which

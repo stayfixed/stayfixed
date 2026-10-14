@@ -287,6 +287,17 @@ reddens = [
   "tests/guards/test_hooks.py::test_a_guard_that_cannot_judge_refuses_rather_than_permits",
 ]
 
+# The dispatcher banks a handler's `once_key` after any delivery, a deny included: with a key the
+# guard would refuse the first leaking call of a session and let every later one through.
+[[mutation]]
+name = "the background guard refuses once a session"
+file = "src/stayfixed/guards/hooks.py"
+before = '        Handler(name="bg-cleanup", event="PreToolUse", policy=Policy.CLOSED, run=_bg_cleanup),'
+after = '        Handler(name="bg-cleanup", event="PreToolUse", policy=Policy.CLOSED, run=_bg_cleanup, once_key="bg-cleanup"),'
+reddens = [
+  "tests/guards/test_hooks.py::test_every_leaking_call_of_a_session_is_denied_not_only_the_first",
+]
+
 [[mutation]]
 name = "a verdict's refusal never becomes a deny"
 file = "src/stayfixed/guards/hooks.py"
@@ -295,6 +306,98 @@ after = '    if False:'
 reddens = [
   "tests/guards/test_hooks.py::test_a_leaking_background_call_is_denied",
   "tests/guards/test_hooks.py::test_a_leaking_background_call_is_denied_through_the_real_dispatcher",
+]
+
+# Claude Code delivers a Bash command that exited non-zero to `PostToolUseFailure` and never to
+# `PostToolUse`, so with the red-run hint registered on `PostToolUse` alone the note never reached
+# a red run there. Each case asks the real dispatcher, so what reddens is the note the harness reads.
+[[mutation]]
+name = "the red-run hint is not registered on the event a failed command arrives on"
+file = "src/stayfixed/guards/hooks.py"
+before = """        Handler(
+            name="test-hygiene",
+            event="PostToolUseFailure",
+            policy=Policy.OPEN,
+            run=_test_hygiene,
+            once_key=ONCE_TEST_HYGIENE,
+        ),
+"""
+after = ""
+reddens = [
+  "tests/guards/test_hooks.py::test_a_red_run_on_post_tool_use_failure_is_annotated[bare]",
+  "tests/guards/test_hooks.py::test_a_red_run_on_post_tool_use_failure_is_annotated[with-output]",
+  "tests/guards/test_hooks.py::test_a_red_run_on_post_tool_use_failure_is_annotated[killed-at-its-timeout]",
+]
+
+# The red-run hint is registered on both events a failed command can arrive on, under one
+# `once_key`, which the dispatcher banks per session: a red run noted on either event is not noted
+# again on the other. Without the key on one registration, that one notes every red run.
+[[mutation]]
+name = "the red-run hint on a failure forgets that the note was delivered"
+file = "src/stayfixed/guards/hooks.py"
+before = """            event="PostToolUseFailure",
+            policy=Policy.OPEN,
+            run=_test_hygiene,
+            once_key=ONCE_TEST_HYGIENE,
+"""
+after = """            event="PostToolUseFailure",
+            policy=Policy.OPEN,
+            run=_test_hygiene,
+            once_key=None,
+"""
+reddens = [
+  "tests/guards/test_hooks.py::test_the_red_run_note_is_delivered_once_per_context_whichever_event_carries_it[post-first]",
+  "tests/guards/test_hooks.py::test_the_red_run_note_is_delivered_once_per_context_whichever_event_carries_it[failure-first]",
+  "tests/guards/test_hooks.py::test_the_hygiene_notice_is_an_open_handler_with_one_once_key_on_each_event[PostToolUseFailure]",
+]
+
+[[mutation]]
+name = "the red-run hint after a successful call forgets that the note was delivered"
+file = "src/stayfixed/guards/hooks.py"
+before = """            event="PostToolUse",
+            policy=Policy.OPEN,
+            run=_test_hygiene,
+            once_key=ONCE_TEST_HYGIENE,
+"""
+after = """            event="PostToolUse",
+            policy=Policy.OPEN,
+            run=_test_hygiene,
+            once_key=None,
+"""
+reddens = [
+  "tests/guards/test_hooks.py::test_the_red_run_note_is_delivered_once_per_context_whichever_event_carries_it[post-first]",
+  "tests/guards/test_hooks.py::test_the_red_run_note_is_delivered_once_per_context_whichever_event_carries_it[failure-first]",
+  "tests/guards/test_hooks.py::test_the_hygiene_notice_is_an_open_handler_with_one_once_key_on_each_event[PostToolUse]",
+]
+
+# A notice that could refuse a tool call would be worse than no notice: under `Policy.CLOSED` a
+# failure inside the hint is a deny, on either event it is registered on.
+[[mutation]]
+name = "the red-run hint on a failure fails closed"
+file = "src/stayfixed/guards/hooks.py"
+before = """            event="PostToolUseFailure",
+            policy=Policy.OPEN,
+"""
+after = """            event="PostToolUseFailure",
+            policy=Policy.CLOSED,
+"""
+reddens = [
+  "tests/guards/test_hooks.py::test_a_hygiene_failure_is_recorded_and_never_costs_the_call[PostToolUseFailure]",
+  "tests/guards/test_hooks.py::test_the_hygiene_notice_is_an_open_handler_with_one_once_key_on_each_event[PostToolUseFailure]",
+]
+
+[[mutation]]
+name = "the red-run hint after a successful call fails closed"
+file = "src/stayfixed/guards/hooks.py"
+before = """            event="PostToolUse",
+            policy=Policy.OPEN,
+"""
+after = """            event="PostToolUse",
+            policy=Policy.CLOSED,
+"""
+reddens = [
+  "tests/guards/test_hooks.py::test_a_hygiene_failure_is_recorded_and_never_costs_the_call[PostToolUse]",
+  "tests/guards/test_hooks.py::test_the_hygiene_notice_is_an_open_handler_with_one_once_key_on_each_event[PostToolUse]",
 ]
 
 # A value that reaches a subprocess is untrusted. Without the check a range shaped like an option is
@@ -309,15 +412,36 @@ reddens = [
 ]
 
 # The name rule: a product phrase as the WHOLE name. Measured, not predicted: `search` instead of
-# `fullmatch` reddens exactly one negative, the `Helped-by:` line naming a person after a
-# single-word product. A second was predicted; that one survives either way, because `_PRODUCTS`
-# carries no bare vendor word, only whole product phrases.
+# `fullmatch` reddened one negative, the `Helped-by:` line naming a person after a single-word
+# product, while `_PRODUCTS` held only whole product phrases. Since `cursor` joined it as a word
+# of its own, it reddens the `cursor-position` negative and the probe naming `Cursor Smith` too.
 [[mutation]]
 name = "a person whose name contains a product word is a bot again"
 file = "src/stayfixed/guards/commit.py"
 before = '    return _PRODUCTS.fullmatch(name.strip()) is not None'
 after = '    return _PRODUCTS.search(name.strip()) is not None'
 reddens = ["tests/guards/test_commit.py::test_negative_samples_are_untouched"]
+
+# `Assisted-by: ChatGPT` and `Generated-by: Cursor` are `-by:` trailers naming a product, which the
+# contract refuses, and both went through while the table held `cursor agent` and no `chatgpt`.
+# Each word is its own entry, so each probe reddens on its own.
+[[mutation]]
+name = "commit check lets a ChatGPT trailer through"
+file = "src/stayfixed/guards/commit.py"
+before = "|codex|chatgpt|devin|"
+after = "|codex|devin|"
+reddens = [
+  "tests/guards/test_commit.py::test_positive_samples_are_flagged[Assisted-by: ChatGPT]",
+]
+
+[[mutation]]
+name = "commit check lets a Cursor trailer through"
+file = "src/stayfixed/guards/commit.py"
+before = "|cursor agent|cursor|openai codex|"
+after = "|cursor agent|openai codex|"
+reddens = [
+  "tests/guards/test_commit.py::test_positive_samples_are_flagged[Generated-by: Cursor]",
+]
 
 # The paragraph rule: only the final paragraph is judged, so a strip can never amputate a body
 # sentence.
@@ -407,8 +531,8 @@ reddens = [
 [[mutation]]
 name = "a hook is ours only when its bytes are today's text"
 file = "src/stayfixed/guards/githooks.py"
-before = '        return HOOK_MARKER in content.decode("utf-8")'
-after = '        return content.decode("utf-8") == HOOK_TEXT'
+before = '        return Hook(HOOK_MARKER in content.decode("utf-8"), content)'
+after = '        return Hook(content.decode("utf-8") == HOOK_TEXT, content)'
 reddens = [
   "tests/guards/test_githooks.py::test_a_hook_an_earlier_release_wrote_is_still_ours",
 ]
@@ -1419,7 +1543,7 @@ reddens = [
 name = "a hook that cannot be read is read as a foreign one"
 file = "src/stayfixed/guards/githooks.py"
 before = "    except OSError as exc:\n        raise Refusal(\n            UNREADABLE.format("
-after = "    except OSError as exc:\n        return False\n        raise Refusal(\n            UNREADABLE.format("
+after = "    except OSError as exc:\n        return Hook(False, None)\n        raise Refusal(\n            UNREADABLE.format("
 reddens = [
   "tests/guards/test_githooks.py::test_a_hook_that_cannot_be_read_is_neither_ours_nor_foreign[install]",
   "tests/guards/test_githooks.py::test_a_hook_that_cannot_be_read_is_neither_ours_nor_foreign[uninstall]",
@@ -1430,8 +1554,8 @@ reddens = [
 [[mutation]]
 name = "uninstall reads a hook that is not a regular file"
 file = "src/stayfixed/guards/githooks.py"
-before = '    if not stat.S_ISREG(os.lstat(target).st_mode) or not _ours(target, "nothing was removed"):'
-after = '    if fsops.is_symlink(target) or not _ours(target, "nothing was removed"):'
+before = '    if not stat.S_ISREG(os.lstat(target).st_mode) or not _ours(target, "nothing was removed").ours:'
+after = '    if fsops.is_symlink(target) or not _ours(target, "nothing was removed").ours:'
 reddens = [
   "tests/guards/test_githooks.py::test_uninstall_leaves_a_fifo_or_a_directory_at_the_hook_path_as_a_foreign_hook[fifo]",
   "tests/guards/test_githooks.py::test_uninstall_leaves_a_fifo_or_a_directory_at_the_hook_path_as_a_foreign_hook[directory]",
@@ -1443,9 +1567,58 @@ reddens = [
 [[mutation]]
 name = "a hook past the read cap is refused as one that cannot be read"
 file = "src/stayfixed/guards/githooks.py"
-before = "    except fsops.TooLarge:\n        return False\n    except OSError as exc:"
+before = "    except fsops.TooLarge:\n        return Hook(False, None)\n    except OSError as exc:"
 after = "    except OSError as exc:"
 reddens = ["tests/guards/test_githooks.py::test_a_hook_past_the_read_cap_is_a_foreign_one"]
+
+# A foreign hook kept as `prepare-commit-msg.local` is `exec`ed last by stayfixed's own, so one whose
+# bytes name that file `exec`s itself once kept there, and `git commit` ran until it was killed:
+# `install` renamed it without reading it. It is refused before the rename, whichever way the chain
+# reaches the name, and the `.local` beside a hook being reinstalled is read for the same name.
+[[mutation]]
+name = "a predecessor that names its own .local is installed over"
+file = "src/stayfixed/guards/githooks.py"
+before = "        _refuse_a_self_chain(found.content, CHAINS_TO_ITSELF, path=shown_target, local=shown_local)"
+after = "        pass"
+reddens = [
+  "tests/guards/test_githooks.py::test_a_predecessor_that_names_its_own_local_is_refused_and_left_in_place[common-dir]",
+  "tests/guards/test_githooks.py::test_a_predecessor_that_names_its_own_local_is_refused_and_left_in_place[dirname-expansion]",
+  "tests/guards/test_githooks.py::test_a_predecessor_that_names_its_own_local_is_refused_and_left_in_place[dirname-command]",
+  "tests/guards/test_githooks.py::test_a_predecessor_that_names_its_own_local_is_refused_from_a_linked_worktree",
+]
+
+# A predecessor holding a byte that is not UTF-8 is foreign, and its bytes are still read for the
+# chain: `_ours` hands them back undecoded, and a `None` there is the past-cap answer, which is not
+# judged and is installed over.
+[[mutation]]
+name = "a predecessor that is not UTF-8 is installed over unread"
+file = "src/stayfixed/guards/githooks.py"
+before = """    except UnicodeDecodeError:
+        return Hook(False, content)"""
+after = """    except UnicodeDecodeError:
+        return Hook(False, None)"""
+reddens = [
+  "tests/guards/test_githooks.py::test_a_predecessor_that_is_not_utf_8_and_names_its_own_local_is_refused",
+]
+
+[[mutation]]
+name = "a re-install over a .local that names itself goes through"
+file = "src/stayfixed/guards/githooks.py"
+before = """        _refuse_a_self_chain(
+            _chained(local), ALREADY_RUNS_ITSELF, path=shown_target, local=shown_local
+        )"""
+after = "        pass"
+reddens = ["tests/guards/test_githooks.py::test_a_reinstall_over_a_local_that_names_itself_is_refused"]
+
+# On a re-install the loop is what is on disk, not a risk: stayfixed's hook already runs the
+# `.local` beside it last, and leaves it in place. The fresh install's words say it would run
+# itself and that nothing was installed, both false there.
+[[mutation]]
+name = "a re-install over a .local that names itself is told nothing was installed"
+file = "src/stayfixed/guards/githooks.py"
+before = "            _chained(local), ALREADY_RUNS_ITSELF, path=shown_target, local=shown_local"
+after = "            _chained(local), CHAINS_TO_ITSELF, path=shown_target, local=shown_local"
+reddens = ["tests/guards/test_githooks.py::test_a_reinstall_over_a_local_that_names_itself_is_refused"]
 
 # A vendor's domain is tried after each label of an address, a label at a time, so `re` keeps no
 # record per label: as a pattern that could give labels back, an address of a million labels took
@@ -1494,4 +1667,52 @@ before = '_FOOTER_WORD = re.compile(r"[ \t]+(?:\S*[\d/]\S*|(?-i:[A-Z0-9])[\w.]*)
 after = '_FOOTER_WORD = re.compile(r"(?:[ \t]+(?:\S*[\d/]\S*|(?-i:[A-Z0-9])[\w.]*))++", re.IGNORECASE)'
 reddens = [
   "tests/test_patterns.py::test_no_pattern_repeats_a_group_in_a_shape_python_3_11_4_misreads",
+]
+
+# git names the hooks directory, from a `core.hooksPath` the repository sets or, in a submodule's
+# work tree, under the name its `.gitmodules` chose, and every refusal `setup --git-hooks` made
+# about a path in it printed that answer raw: an escape sequence in it reached the terminal. Each
+# is printed through `printed.quoted`.
+[[mutation]]
+name = "setup --git-hooks prints git's hooks path raw in its refusals"
+file = "src/stayfixed/guards/githooks.py"
+before = "    shown_target, shown_local = quoted(str(target)), quoted(str(local))"
+after = "    shown_target, shown_local = str(target), str(local)"
+reddens = [
+  "tests/guards/test_githooks.py::test_a_hooks_directory_git_names_reaches_every_install_refusal_quoted[symlink]",
+  "tests/guards/test_githooks.py::test_a_hooks_directory_git_names_reaches_every_install_refusal_quoted[directory]",
+  "tests/guards/test_githooks.py::test_a_hooks_directory_git_names_reaches_every_install_refusal_quoted[stray-local]",
+  "tests/guards/test_githooks.py::test_a_hooks_directory_git_names_reaches_every_install_refusal_quoted[self-chain]",
+  "tests/guards/test_githooks.py::test_a_hooks_directory_git_names_reaches_every_install_refusal_quoted[reinstall-self-chain]",
+]
+
+[[mutation]]
+name = "setup --git-hooks prints git's hooks path raw for a hook it cannot read"
+file = "src/stayfixed/guards/githooks.py"
+before = "            UNREADABLE.format(path=quoted(str(path)), reason=fsops.said(exc), outcome=outcome)"
+after = "            UNREADABLE.format(path=path, reason=fsops.said(exc), outcome=outcome)"
+reddens = [
+  "tests/guards/test_githooks.py::test_a_hooks_directory_git_names_reaches_every_install_refusal_quoted[unreadable]",
+]
+
+# The self-chain check compares the bytes as they are: `Prepare-Commit-Msg.local` names another
+# file on a case-sensitive volume, and folding case would refuse a chain there that cannot loop.
+[[mutation]]
+name = "the self-chain check folds case"
+file = "src/stayfixed/guards/githooks.py"
+before = "    if content is not None and _CHAINED_NAME.encode() in content:"
+after = "    if content is not None and _CHAINED_NAME.lower().encode() in content.lower():"
+reddens = [
+  "tests/guards/test_githooks.py::test_a_predecessor_naming_its_local_in_another_case_is_installed",
+]
+
+# An exit code has at most three digits, and `int()` raises past 4,300: a `PostToolUseFailure`
+# whose `error` opened with a longer run of them cost the red-run note an exception.
+[[mutation]]
+name = "the red-run hint reads an exit code of any length"
+file = "src/stayfixed/guards/hygiene.py"
+before = '_EXIT_CODE_ERROR = re.compile(r"\AExit code (\d{1,9})(?!\d)")'
+after = '_EXIT_CODE_ERROR = re.compile(r"\AExit code (\d+)")'
+reddens = [
+  'tests/guards/test_hygiene.py::test_red_exit_reads_both_payload_shapes[raw8-None]',
 ]

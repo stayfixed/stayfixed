@@ -573,10 +573,11 @@ def test_the_publisher_s_docstring_names_the_gh_floor_it_refuses_below() -> None
 _REACH_SECTION = re.compile(
     r"^## What each agent enforces\n(.*?)(?=^## )", re.MULTILINE | re.DOTALL
 )
-# A cell's words where a surface does not reach an agent at all.
-NOT_REACHED = "does not run"
-# A measurement the section's prose cites, as "(<agent> <version>)".
-_MEASURED_AT = re.compile(r"\(([A-Z][A-Za-z ]* \d+(?:\.\d+)+)\)")
+# A cell's words where no tier is claimed for a surface under an agent.
+NOT_REACHED = "not verified"
+# A measurement the section's prose cites, as "(<agent> <version>)", the version with a
+# pre-release suffix where the measured build carried one (`0.162.0-alpha.17.2`).
+_MEASURED_AT = re.compile(r"\(([A-Z][A-Za-z ]* \d+(?:\.\d+)+(?:-[0-9A-Za-z.]+)?)\)")
 
 
 def _reach_table() -> str:

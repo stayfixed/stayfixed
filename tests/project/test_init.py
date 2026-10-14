@@ -21,6 +21,7 @@ from stayfixed.project.uninstall import uninstall
 from stayfixed.project.upgrade import upgrade
 from stayfixed.release.api import Pin
 from stayfixed.scaffold import MANIFEST_PATH, Manifest, Style, Verb, extract
+from tests.cli import cli
 from tests.gitfixture import git, needs_git
 from tests.parserlimits import LONG_HEX
 from tests.project.repos import repository
@@ -236,6 +237,58 @@ def test_an_initialised_repository_is_refused_and_offered_upgrade(tmp_path: Path
     with pytest.raises(Refusal, match="re-running `init` is `stayfixed upgrade`") as refused:
         _init(root, tmp_path)
     assert "ships later" not in str(refused.value)
+
+
+@needs_git
+def test_local_after_init_names_the_artifacts_key_and_upgrade(tmp_path: Path) -> None:
+    # `init --local ID` after `init` was refused with "re-running `init` is `stayfixed upgrade`",
+    # and `upgrade` has no `--local`: the refusal pointed at a command that cannot do what was
+    # asked, and nothing said the way that works. "stayfixed upgrade" alone was in that refusal
+    # already, so the sentence is asserted whole. Mutation (`mutations/`'s "init stops saying how
+    # to add a local artifact after init"): the sentence dropped -> this reddens.
+    root = _repo(tmp_path)
+    code, out, err = cli(root, tmp_path, "init", "--yes", "--no-ci")
+    assert code == 0, (out, err)
+    code, out, err = cli(root, tmp_path, "init", "--yes", "--local", "adr-template")
+    assert code == 2 and err.startswith("stayfixed: refused:"), (out, err)
+    assert (
+        "; to add a local artifact later, list its id under `[artifacts] local` in stayfixed.toml, "
+        "then run `stayfixed upgrade`\n"
+    ) in err
+
+
+@needs_git
+def test_another_answer_flag_after_init_keeps_the_plain_refusal(tmp_path: Path) -> None:
+    # The directions are for `--local` alone: an answer such as `--name` after `init` is an edit
+    # to stayfixed.toml, and naming `[artifacts] local` there would send the reader to a key
+    # that has nothing to do with what they asked. Mutation (`mutations/`'s "init says how to add
+    # a local artifact after any answer flag") -> this reddens.
+    root = _repo(tmp_path)
+    code, out, err = cli(root, tmp_path, "init", "--yes", "--no-ci")
+    assert code == 0, (out, err)
+    code, out, err = cli(root, tmp_path, "init", "--yes", "--name", "x")
+    assert code == 2 and "re-running `init` is `stayfixed upgrade`" in err, (out, err)
+    assert "[artifacts] local" not in err
+
+
+@needs_git
+def test_adding_a_local_id_and_upgrading_relocates_the_artifact(tmp_path: Path) -> None:
+    # The route the refusal above names, pinned so the directions stay true: an id added under
+    # `[artifacts] local` after `init`, then `stayfixed upgrade`, moves the artifact under
+    # `.stayfixed/local/artifacts/`.
+    root = _repo(tmp_path)
+    code, out, err = cli(root, tmp_path, "init", "--yes", "--no-ci")
+    assert code == 0, (out, err)
+    config = root / CONFIG_FILE
+    config.write_text(
+        config.read_text(encoding="utf-8") + '\n[artifacts]\nlocal = ["adr-template"]\n',
+        encoding="utf-8",
+    )
+    code, out, err = cli(root, tmp_path, "upgrade")
+    assert code == 0, (out, err)
+    assert (root / ".stayfixed/local/artifacts/docs/adr/0000-template.md").is_file()
+    assert not (root / "docs/adr/0000-template.md").exists()
+    assert "relocated" in out, out
 
 
 @needs_git

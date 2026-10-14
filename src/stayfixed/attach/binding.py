@@ -415,11 +415,11 @@ def read_binding(
         raise Refusal(NO_OVERLAY)
     expected = permitted_roots(overlay, config.project.name)[1]
     try:
-        resolved: Path | None = store.resolve()
-    except (OSError, RuntimeError):
-        # A store through a symlink loop, which Python 3.11 and 3.12 meet with `RuntimeError`
-        # where 3.13 answers a path. `doctor` hands this the store a ledger names, and a clone
-        # can commit both, so it is refused here as any store that is not this one is.
+        resolved: Path | None = fsops.resolved(store)
+    except OSError:
+        # A store through a symlink loop, which `fsops.resolved` answers as an `OSError` on every
+        # interpreter. `doctor` hands this the store a ledger names, and a clone can commit
+        # both, so it is refused here as any store that is not this one is.
         resolved = None
     if resolved != expected.resolve():
         # The shape and never `expected`, which embeds `project.name` (see `_recorded`).

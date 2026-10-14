@@ -24,9 +24,11 @@ import argparse
 from pathlib import Path
 from typing import Any
 
+from stayfixed import fsops
 from stayfixed.areas import SubParsers
 from stayfixed.command import HOME_HELP, SETUP_MACHINE_HELP, SETUP_ROOT_HELP
 from stayfixed.errors import Failure, Refusal
+from stayfixed.printed import quoted
 from stayfixed.result import Result
 from stayfixed.runner import subprocess_runner
 
@@ -47,22 +49,36 @@ _BOTH_MODES = (
 )
 
 
+def _root(given: str) -> Path:
+    """`--root`, resolved through `fsops.resolved`: a symlink loop there is a refusal naming it,
+    in the words `setup`'s questions before its first write use, on every interpreter, where 3.11
+    and 3.12 ended in `internal error`."""
+    try:
+        return fsops.resolved(Path(given))
+    except OSError as exc:
+        raise Refusal(
+            f"--root {quoted(given)} cannot be checked ({fsops.said(exc)}), so nothing was written"
+        ) from exc
+
+
 def run_git_hooks(args: argparse.Namespace) -> Result:
     from stayfixed.guards.api import Found, install, uninstall
 
-    root = Path(args.root).resolve()
+    root = _root(args.root)
+    # Each path is git's answer, from a `core.hooksPath` the repository sets or under the name a
+    # submodule's `.gitmodules` chose, so each is printed through `printed.quoted`, as the
+    # refusals print it; `--json` carries it as it is.
     if args.uninstall:
         removed = uninstall(root)
+        hook = quoted(str(removed.path))
         if removed.found is Found.FOREIGN:
-            summary = (
-                f"left {removed.path} as it was: it is not stayfixed's hook; nothing was removed"
-            )
+            summary = f"left {hook} as it was: it is not stayfixed's hook; nothing was removed"
         elif removed.found is Found.ABSENT:
-            summary = f"there is no stayfixed hook at {removed.path}; nothing was removed"
+            summary = f"there is no stayfixed hook at {hook}; nothing was removed"
         elif removed.restored is not None:
-            summary = f"removed {removed.path}; restored the foreign hook chained to it"
+            summary = f"removed {hook}; restored the foreign hook chained to it"
         else:
-            summary = f"removed {removed.path}; there was no foreign hook to restore"
+            summary = f"removed {hook}; there was no foreign hook to restore"
         data: dict[str, Any] = {
             "path": str(removed.path),
             "restored": str(removed.restored) if removed.restored is not None else None,
@@ -71,15 +87,16 @@ def run_git_hooks(args: argparse.Namespace) -> Result:
         return Result(summary, data)
 
     installed = install(root)
+    hook = quoted(str(installed.path))
     if installed.preserved is not None:
         summary = (
-            f"installed the commit-message hook at {installed.path}; the hook that was there "
-            f"is kept at {installed.preserved} and chained to"
+            f"installed the commit-message hook at {hook}; the hook that was there "
+            f"is kept at {quoted(str(installed.preserved))} and chained to"
         )
     elif installed.replaced:
-        summary = f"reinstalled the commit-message hook at {installed.path}"
+        summary = f"reinstalled the commit-message hook at {hook}"
     else:
-        summary = f"installed the commit-message hook at {installed.path}"
+        summary = f"installed the commit-message hook at {hook}"
     install_data = {
         "path": str(installed.path),
         "preserved": str(installed.preserved) if installed.preserved is not None else None,
@@ -136,7 +153,7 @@ def run_setup(args: argparse.Namespace) -> Result:
         runner=subprocess_runner(),
         yes=args.yes,
         overlay=args.overlay,
-        project_root=Path(args.root).resolve(),
+        project_root=_root(args.root),
         settings=Path(args.settings).expanduser() if args.settings else None,
     )
     data = {
@@ -161,7 +178,9 @@ def run_setup(args: argparse.Namespace) -> Result:
             f"{len(report.plugins_installed)} plugin(s) installed",
             "deny rules merged" if report.deny_written else "deny rules unchanged",
             "stayfixed is on PATH" if report.cli_on_path else "stayfixed is not on PATH",
-            f"overlay recorded at {report.overlay}" if report.overlay else "no overlay recorded",
+            f"overlay recorded at {quoted(str(report.overlay))}"
+            if report.overlay
+            else "no overlay recorded",
             *report.notes,
         )
     )

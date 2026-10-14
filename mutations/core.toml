@@ -822,6 +822,22 @@ reddens = [
   "tests/hooks/test_sink.py::test_codex_names_the_data_directory_differently_and_still_gets_a_durable_sink",
 ]
 
+# The dispatcher refuses a handler on an event `EVENTS` does not carry, so an event dropped from it
+# takes discovery down for every caller: every dispatch reddens, the vocabulary's own test among
+# them, and the red-run note on the event Claude Code delivers a failed command on with it.
+[[mutation]]
+name = "the dispatcher stops carrying the event a failed command arrives on"
+file = "src/stayfixed/hooks/api.py"
+before = """    "PostToolUse",
+    "PostToolUseFailure",
+)"""
+after = """    "PostToolUse",
+)"""
+reddens = [
+  "tests/hooks/test_registry.py::test_the_vocabulary_is_the_six_events_the_design_table_carries",
+  "tests/guards/test_hooks.py::test_a_red_run_on_post_tool_use_failure_is_annotated[bare]",
+]
+
 # The sink writes under the data root and `doctor` counts what it wrote there, and the hook reads
 # its project root beside them: all three find a directory by one rule, which asks every variable
 # it is given and not only the first. Each of the two tests below reddens on its own, one per
@@ -1085,9 +1101,9 @@ reddens = [
 [[mutation]]
 name = "Codex is given a render of its own"
 file = "src/stayfixed/harnesses.py"
-before = """    # its own needs more than a measured shape: `detect` says what.
+before = """    # than a measured shape: `detect` says what.
     render=hook_specific_output,"""
-after = """    # its own needs more than a measured shape: `detect` says what.
+after = """    # than a measured shape: `detect` says what.
     render=lambda event_name, context: hook_specific_output(event_name, context),"""
 reddens = [
   "tests/test_harnesses.py::test_every_harness_renders_through_the_canonical_render",
@@ -1713,8 +1729,8 @@ reddens = [
 [[mutation]]
 name = "Codex's session guards are stated as blocking"
 file = "src/stayfixed/harnesses.py"
-before = "            Surface.GUARDS: _NO_CODEX_HOOK,"
-after = "            Surface.GUARDS: Reach(Tier.BLOCKS, _NO_CODEX_HOOK.evidence, _NO_CODEX_HOOK.measured_on),"
+before = "            Surface.GUARDS: _CODEX_HOOKS_UNVERIFIED,"
+after = "            Surface.GUARDS: Reach(Tier.BLOCKS, _CODEX_HOOKS_UNVERIFIED.evidence, _CODEX_HOOKS_UNVERIFIED.measured_on),"
 reddens = [
   "tests/test_documents.py::test_the_readme_states_each_agents_reach_as_the_registry_does",
 ]
@@ -1723,7 +1739,7 @@ reddens = [
 [[mutation]]
 name = "Codex's reach leaves out the session notices"
 file = "src/stayfixed/harnesses.py"
-before = "            Surface.NOTICES: _NO_CODEX_HOOK,\n"
+before = "            Surface.NOTICES: _CODEX_HOOKS_UNVERIFIED,\n"
 after = ""
 reddens = [
   "tests/test_harnesses.py::test_every_harness_states_every_surface",
@@ -3263,6 +3279,19 @@ reddens = [
   "tests/attach/test_write.py::test_a_local_settings_file_that_is_not_utf8_is_named_as_the_project_names_it",
 ]
 
+# Making a name in a directory takes its search bit as well as its write bit: `setup`'s `--home`
+# check and `attach`'s exclude-file check refuse on `creatable`'s answer above their first write,
+# and with the write bit alone asked, a write-only directory reads as one a file can be made in and
+# both let it through to the write.
+[[mutation]]
+name = "creatable asks only for the write bit"
+file = "src/stayfixed/fsops.py"
+before = "    return os.access(creation_directory(path), os.W_OK | os.X_OK)"
+after = "    return os.access(creation_directory(path), os.W_OK)"
+reddens = [
+  "tests/test_fsops.py::test_a_directory_that_can_be_written_but_not_searched_cannot_take_a_new_file",
+]
+
 # A commit's copy of a document at the project's own path (`committed.py`), read one way for the
 # base's `stayfixed.toml` that governs `stayfixed gate` and for each fork point's that places the
 # ledger. A copy that reads as missing is the bootstrap, where the change decides for itself, so
@@ -3625,4 +3654,48 @@ before = "    \"CLICOLOR_FORCE\",\n"
 after = ""
 reddens = [
   "tests/test_runner.py::test_the_variables_that_make_gh_write_for_a_terminal_are_dropped",
+]
+
+# Python 3.11 and 3.12 raise `RuntimeError` resolving a path through a symlink loop, past every
+# `except OSError`, and 3.13 answers a path with the loop left in it: one input, a traceback on one
+# interpreter and a quiet answer on the other. `fsops.resolved` answers both as the system's
+# `ELOOP`, naming the path, and every resolve of a path a clone or a command line can shape goes
+# through it.
+[[mutation]]
+name = "fsops.resolved answers a loop with a path where the interpreter does"
+file = "src/stayfixed/fsops.py"
+before = """    _meets_a_loop(path)
+    return answer"""
+after = """    return answer"""
+reddens = [
+  "tests/test_fsops.py::test_a_symlink_loop_resolves_to_the_systems_eloop_naming_the_path_on_every_interpreter[loop]",
+  "tests/test_fsops.py::test_a_symlink_loop_resolves_to_the_systems_eloop_naming_the_path_on_every_interpreter[loop/below]",
+  "tests/config/test_paths.py::test_a_root_through_a_symlink_loop_is_an_oserror_naming_it[this-one]",
+  "tests/setup/test_setup.py::test_a_symlink_loop_at_any_path_setup_is_given_is_a_refusal_naming_it[claude]",
+  "tests/setup/test_setup.py::test_a_symlink_loop_at_any_path_setup_is_given_is_a_refusal_naming_it[home]",
+  "tests/setup/test_setup.py::test_a_symlink_loop_at_any_path_setup_is_given_is_a_refusal_naming_it[root]",
+  "tests/setup/test_setup.py::test_a_symlink_loop_at_any_path_setup_is_given_is_a_refusal_naming_it[settings]",
+  "tests/setup/test_setup.py::test_a_symlink_loop_at_any_path_setup_is_given_is_a_refusal_naming_it[overlay]",
+  "tests/setup/test_setup.py::test_a_project_root_through_a_symlink_loop_handed_to_setup_is_refused",
+]
+
+[[mutation]]
+name = "fsops.resolved lets the RuntimeError of a loop through"
+file = "src/stayfixed/fsops.py"
+before = """    except RuntimeError as exc:
+        _meets_a_loop(path)"""
+after = """    except ValueError as exc:
+        _meets_a_loop(path)"""
+reddens = [
+  "tests/test_fsops.py::test_the_runtime_error_older_pythons_raise_for_a_loop_is_the_systems_eloop",
+]
+
+[[mutation]]
+name = "contained resolves its root past fsops"
+file = "src/stayfixed/config/paths.py"
+before = "        resolved_root = resolved(root)"
+after = "        resolved_root = root.resolve()"
+reddens = [
+  "tests/config/test_paths.py::test_a_root_through_a_symlink_loop_is_an_oserror_naming_it[as-3-11]",
+  "tests/setup/test_setup.py::test_a_symlink_loop_at_any_path_setup_is_given_is_a_refusal_naming_it[home]",
 ]

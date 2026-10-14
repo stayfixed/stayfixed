@@ -54,6 +54,7 @@ is a symlink pointing at this store, never a real directory and never somebody e
 from __future__ import annotations
 
 import contextlib
+import errno
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
@@ -805,12 +806,13 @@ def _harness_target(checkout: Path, config: Config, *, owner: bool) -> Path:
     asked = f"where a harness memory link may point cannot be asked of {whose} paths.memory"
     value = config.paths.memory
     try:
-        return contained(checkout, value, allow_final_symlink=True).resolve()
+        return fsops.resolved(contained(checkout, value, allow_final_symlink=True))
     except PathEscape as exc:
         raise PathEscape(f"{asked}: {exc}") from exc
-    except RuntimeError as exc:
-        raise PathEscape(f"{asked}: {value!r} is a symlink loop") from exc
     except OSError as exc:
+        # A loop is `fsops.resolved`'s `ELOOP` on every interpreter, and said as what it is.
+        if exc.errno == errno.ELOOP:
+            raise PathEscape(f"{asked}: {value!r} is a symlink loop") from exc
         raise PathEscape(f"{asked}: {value!r} cannot be resolved ({fsops.said(exc)})") from exc
 
 
@@ -921,12 +923,12 @@ def detach_main(
         if not pointed.is_absolute():
             pointed = target.parent / pointed
         try:
-            reached = pointed.resolve()
-        except (OSError, RuntimeError):
-            # A symlink loop at one of these names, which Python 3.11 and 3.12 meet with
-            # `RuntimeError` (3.13 answers the path it names): a link that cannot be followed is
-            # not one this function can claim, so it stays, as any other link to elsewhere does.
-            # Raised, it ended `detach` in an internal error after the settings were withdrawn.
+            reached = fsops.resolved(pointed)
+        except OSError:
+            # A symlink loop at one of these names, which `fsops.resolved` answers as `ELOOP` on
+            # every interpreter: a link that cannot be followed is not one this function can
+            # claim, so it stays, as any other link to elsewhere does. Raised, it ended `detach` in
+            # an internal error after the settings were withdrawn.
             continue
         if reached != source.resolve():
             continue

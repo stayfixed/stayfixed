@@ -38,6 +38,7 @@ from stayfixed.fsops import (
     checked_components,
     names_component,
     names_control_directory,
+    resolved,
     said,
 )
 from stayfixed.grammar import PATH_VALUE
@@ -131,11 +132,13 @@ def contained(
     # empty path, an absolute path, any `..` component, and a symlink at any level between the
     # root and the target — so the comparison below is the net under them rather than the
     # guard itself. It is here for the path form nobody has anticipated; a caller validating
-    # many paths against one root passes `resolved_root` so this resolve happens once.
+    # many paths against one root passes `resolved_root` so this resolve happens once. Through
+    # `fsops.resolved`, so a loop at or above the root is an `OSError` naming the path on every
+    # interpreter, where 3.11 and 3.12 raised `RuntimeError` past every caller's `except OSError`.
     if resolved_root is None:
-        resolved_root = root.resolve()
-    resolved = target.parent.resolve() / target.name if allow_final_symlink else target.resolve()
-    if resolved != resolved_root and resolved_root not in resolved.parents:
+        resolved_root = resolved(root)
+    reached = resolved(target.parent) / target.name if allow_final_symlink else resolved(target)
+    if reached != resolved_root and resolved_root not in reached.parents:
         raise PathEscape(f"{relative!r} resolves outside the project root")
     return target
 

@@ -53,7 +53,7 @@ from tests.floor import is_developers
 from tests.gitfixture import git as _git
 from tests.ownerhome import as_owner_home
 from tests.parserlimits import LONG_NUMBER, NESTED
-from tests.pathfaults import LOOPS_RAISE_ONLY_BEFORE_3_13, resolving_raises
+from tests.pathfaults import resolving_raises
 from tests.runners import Recorder, git_that_cannot_run
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
@@ -1180,13 +1180,13 @@ def test_one_machine_state_reads_one_status_from_every_checkout(
     assert str(tmp_path) not in row.detail
 
 
-@LOOPS_RAISE_ONLY_BEFORE_3_13
 def test_a_fallback_beside_a_main_checkout_tree_that_is_a_symlink_loop_is_a_named_warning(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # The `targets-unaskable` state above, measured: on 3.11 and 3.12 `.resolve()` of a symlink
-    # loop raises `RuntimeError`, and asking whether the fallback names the store let it out of
-    # the row: "this check could not run", red, "report this".
+    # loop raised `RuntimeError`, and asking whether the fallback names the store let it out of
+    # the row: "this check could not run", red, "report this". Through `fsops.resolved` it is the
+    # same warning on every interpreter.
     root, side, machine, home = _worktree_attached(tmp_path)
     _fallback_everywhere(_Machine(tmp_path, root, side, machine, home, monkeypatch))
     shutil.rmtree(root / "docs" / "memory")

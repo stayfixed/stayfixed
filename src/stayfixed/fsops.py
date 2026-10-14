@@ -257,6 +257,61 @@ def is_symlink(path: Path) -> bool:
     return mode is not None and stat.S_ISLNK(mode)
 
 
+def creation_directory(path: Path) -> Path:
+    """The directory `path` would be made in: the one it lives in, or, while that is not there
+    yet, the nearest one above it that is, where `mkdir(parents=True)` would start. What
+    `creatable` asks about, and so what a refusal on its answer names."""
+    directory = path.parent
+    while not exists(directory) and directory != directory.parent:
+        directory = directory.parent
+    return directory
+
+
+def creatable(path: Path) -> bool:
+    """Whether this user can create or replace `path`: `write_atomically` renames a new file in
+    beside it, and `mkdir` makes it, so `creation_directory(path)` must be writable and
+    searchable.
+
+    `os.access` answers for the real uid, so under root it says yes whatever the mode: a caller
+    that refuses on this answer keeps a floor under the write itself for the case it cannot see.
+    """
+    return os.access(creation_directory(path), os.W_OK | os.X_OK)
+
+
+def _meets_a_loop(path: Path) -> None:
+    """Raise the system's own `ELOOP` for `path`, naming it as given, when following it meets a
+    symbolic-link loop; return otherwise, whatever else `stat` says."""
+    try:
+        os.stat(path)
+    except OSError as exc:
+        if exc.errno == errno.ELOOP:
+            raise
+
+
+def resolved(path: Path) -> Path:
+    """`path.resolve()`, with a symbolic-link loop answered alike on every interpreter: the
+    `OSError` (`ELOOP`) `stat` raises for `path`, naming it as given, which every caller already
+    answers as a path it cannot ask about.
+
+    Python 3.11 and 3.12 raise `RuntimeError` for a loop met while resolving, which no
+    `except OSError` catches, so a loop a clone commits, or one at a path the command line names,
+    ended in `internal error` there; 3.13 and later answer a path with the loop left in it, so the
+    same input was a quiet answer on one interpreter and a traceback on the other. Both are asked
+    of `stat`, which meets the loop again and raises; a path that is not there yet, which this is
+    asked for as `resolve` is, raises something else and is answered as before. A `RuntimeError`
+    `stat` cannot confirm — a link changed between the two questions — is still a loop `resolve`
+    met, and is the same `ELOOP`, in words of its own. No caller asks for `strict`, whose loop
+    every interpreter already raises as an `OSError`.
+    """
+    try:
+        answer = path.resolve()
+    except RuntimeError as exc:
+        _meets_a_loop(path)
+        raise OSError(errno.ELOOP, "a symbolic link loop", str(path)) from exc
+    _meets_a_loop(path)
+    return answer
+
+
 class NotRegularFile(OSError):
     """A path a reader was handed names something other than a regular file. An `OSError`, so
     every reader's existing "could not be read" arm is its answer without a branch of its own."""

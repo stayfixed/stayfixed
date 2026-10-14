@@ -40,6 +40,7 @@ from typing import Any
 from stayfixed import fsops
 from stayfixed.errors import Refusal
 from stayfixed.overlay.naming import NAMED, SEGMENT, NotAnObject, claims, manifest
+from stayfixed.printed import quoted
 
 
 def segment(label: str, value: str) -> str:
@@ -56,17 +57,20 @@ def segment(label: str, value: str) -> str:
 def overlay_fault(root: Path) -> str | None:
     """Why `root` is not an overlay root, or `None` when it is one.
 
-    Every string this returns is this function's own or a path the caller typed. A manifest's
-    own bytes never reach it. The manifests asked are `naming.NAMED`'s probed rows.
+    Every string this returns is this function's own or a path the caller typed, printed through
+    `printed.quoted`: typed, it can still be resolved through a link a repository commits, which
+    spells it in the repository's bytes. A manifest's own bytes never reach it. The manifests
+    asked are `naming.NAMED`'s probed rows.
     """
+    shown = quoted(str(root))
     if not fsops.is_dir(root):
-        return f"{root} is not a directory"
+        return f"{shown} is not a directory"
     for row in NAMED:
         if not row.probed:
             continue
         path = root / row.path
         if not fsops.is_file(path):
-            return f"{root} does not carry the overlay layout ({row.path} is missing)"
+            return f"{shown} does not carry the overlay layout ({row.path} is missing)"
         # Through `naming.manifest`, the one reader of an overlay's manifests, whose parser-limit
         # arms are the point: a manifest nested past the parser or holding an integer longer than
         # it converts is valid JSON that `json.loads` meets with no `JSONDecodeError`, and it ended
@@ -79,10 +83,10 @@ def overlay_fault(root: Path) -> str | None:
         except NotAnObject:
             document = None
         except (OSError, ValueError):
-            return f"{root} carries a {row.path} that cannot be read as JSON"
+            return f"{shown} carries a {row.path} that cannot be read as JSON"
         if document is None or not claims(document.get("name"), row.name):
             return (
-                f"{root} carries a {row.path} that does not name a stayfixed overlay; its `name` "
+                f"{shown} carries a {row.path} that does not name a stayfixed overlay; its `name` "
                 f"has to be {row.name}, or {row.name}-<owner> after `stayfixed overlay init`"
             )
     return None

@@ -35,7 +35,6 @@ from tests.declarations import (
 from tests.gitfixture import git as _git
 from tests.gitfixture import needs_git
 from tests.scriptload import load
-from tests.test_payload import FILE_MAX_BYTES
 
 REPOSITORY = Path(__file__).resolve().parents[2]
 
@@ -1206,18 +1205,10 @@ def test_every_citation_is_spelled_the_way_the_citation_reader_reads() -> None:
 # --- the declarations directory, one file per group ------------------------------------------
 #
 # `mutations/` holds the set as one file per group of the tree, because a single file outgrew the
-# plugin directory's per-file limit. Three properties keep the split honest: the oracle reads
-# every file, every entry sits in the file its `file` routes to, and no file grows back to the
-# limit the split exists to stay under.
-
-GROUP_FILE_MAX_BYTES = FILE_MAX_BYTES * 3 // 4
-# A named cap three quarters of the payload guard's, kept as early warning: the directory holds the
-# version for a reviewer at a file of `FILE_MAX_BYTES`, and a group file carries an area's whole
-# history, so the last quarter, 64 KiB, is about a hundred entries of headroom. When a group crosses
-# it, split that group by its largest area: a deliberate edit to `GROUP_OF`. The cap was sized
-# while the repository root was the plugin; the plugin's tree (`scripts/plugin_tree.py`) no longer
-# holds `mutations/`. The cap is kept as it was sized; whether it still earns its place is the open
-# question CONTRIBUTING.md, "Tests", records.
+# plugin directory's per-file limit. Two properties keep the split honest: the oracle reads every
+# file, and every entry sits in the file its `file` routes to. No size cap holds a group file: the
+# plugin's tree (`scripts/plugin_tree.py`) no longer holds `mutations/`, so neither of the limits
+# the groups were sized for reaches them (CONTRIBUTING.md, "Tests").
 
 
 def test_the_oracle_reads_every_group_file() -> None:
@@ -1240,17 +1231,6 @@ def test_every_entry_lives_in_its_group_file() -> None:
     for path in files:
         for entry in tomllib.loads(path.read_text("utf-8"))["mutation"]:
             assert module.group_for(entry["file"]) == path.stem, (path.name, entry["name"])
-
-
-def test_no_group_file_reaches_the_cap() -> None:
-    # Mutation: none of the code's; the cap is a bound on data. Watched red by lowering
-    # `GROUP_FILE_MAX_BYTES` below the largest group file, which is what a group outgrowing it
-    # looks like from here.
-    module = oracle()
-    files = module.group_files()
-    assert files  # a walk-based assertion states its walk is non-empty
-    for path in files:
-        assert path.stat().st_size < GROUP_FILE_MAX_BYTES, path.name
 
 
 def test_a_row_routes_its_files_wherever_it_stands_in_the_table() -> None:

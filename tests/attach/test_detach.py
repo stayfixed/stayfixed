@@ -34,7 +34,6 @@ from tests.attach.test_write import SETTINGS
 from tests.gitfixture import git
 from tests.parserlimits import LONG_NUMBER, NESTED, PAST_ENCODING, overflowing_indent
 from tests.pathfaults import (
-    LOOPS_RAISE_ONLY_BEFORE_3_13,
     ROOT_SEARCHES_EVERYTHING,
     symlink_loop_at,
     unsearchable,
@@ -377,14 +376,13 @@ def test_a_main_checkout_tree_reached_through_a_symlink_refuses_before_anything_
     assert tree_entries(root, side, home) == before
 
 
-@LOOPS_RAISE_ONLY_BEFORE_3_13
 def test_a_main_checkout_tree_that_is_a_symlink_loop_refuses_before_anything_is_withdrawn(
     tmp_path: Path,
 ) -> None:
-    # Up to Python 3.12 `.resolve()` raises `RuntimeError` on a loop, and asking where the
+    # Up to Python 3.12 `.resolve()` raised `RuntimeError` on a loop, and asking where the
     # worktree's harness link may point resolves the main checkout's `paths.memory`: `detach` from
     # the worktree ended in an internal error. It is the refusal above now, before the first
-    # withdrawal.
+    # withdrawal, on every interpreter (`fsops.resolved`).
     root, side, _, machine, home = _both_attached(tmp_path)
     shutil.rmtree(root / DEFAULT_MEMORY)
     (root / DEFAULT_MEMORY).symlink_to(PurePosixPath(DEFAULT_MEMORY).name)
@@ -396,9 +394,7 @@ def test_a_main_checkout_tree_that_is_a_symlink_loop_refuses_before_anything_is_
     assert tree_entries(root, side, home) == before
 
 
-@pytest.mark.parametrize(
-    "loop", [pytest.param("real", marks=LOOPS_RAISE_ONLY_BEFORE_3_13), "stood-in"]
-)
+@pytest.mark.parametrize("loop", ["real", "stood-in"])
 @pytest.mark.parametrize("checkout", ["lone-main", "worktree"])
 def test_a_checkouts_own_paths_memory_that_is_a_symlink_loop_refuses_before_anything_is_withdrawn(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, checkout: str, loop: str

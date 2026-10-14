@@ -15,6 +15,7 @@ import pytest
 
 from stayfixed.cli import build_parser, discover_registrars, run
 from stayfixed.overlay.api import MARKETPLACE_MANIFEST, PLUGIN_MANIFEST
+from stayfixed.printed import quoted
 from stayfixed.setup.api import SetupReport
 from tests.ownerhome import as_owner_home
 from tests.parserlimits import LONG_NUMBER, NESTED
@@ -278,7 +279,8 @@ def test_an_overlay_manifest_past_the_parser_is_refused_as_unreadable_through_th
     code = invoke([*argv, "--machine", str(machine), "--root", str(tmp_path / "project")])
     err = capsys.readouterr().err
     assert "internal error" not in err
-    assert f"stayfixed: refused: {overlay} carries a {manifest} that cannot be read as JSON" in err
+    shown = quoted(str(overlay))
+    assert f"stayfixed: refused: {shown} carries a {manifest} that cannot be read as JSON" in err
     assert code == 2
     assert not machine.exists()
     assert stub.calls == []

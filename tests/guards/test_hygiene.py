@@ -151,6 +151,10 @@ def test_each_simple_command_is_unwrapped_to_its_own_program() -> None:
         # for `.search` is a NO-OP while the pattern keeps `\A` — measured — so the mutation
         # this row reddens is `re.search(r"Exit code (\d+)", error)`, anchor dropped.
         ({"error": "FAILED tests/x.py\nExit code 2"}, None),
+        # A run of digits no exit code has: read whole, `int()` raised past 4,300 of them, and
+        # the note was lost to the error. It says nothing, as for any `error` it cannot read.
+        # Mutation: `mutations/`'s "the red-run hint reads an exit code of any length".
+        ({"error": "Exit code " + "9" * 5000}, None),
         ({}, None),
     ],
 )

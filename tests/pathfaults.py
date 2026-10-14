@@ -13,7 +13,6 @@ from __future__ import annotations
 import contextlib
 import errno
 import os
-import sys
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -143,13 +142,6 @@ def lstat_fault(path: Path) -> int | type[ValueError] | None:
     return None
 
 
-# `Path.resolve()` of a symlink loop raises `RuntimeError` up to Python 3.12, and from 3.13 answers
-# the path the loop names, so a real loop proves a `RuntimeError` arm only on the older two.
-LOOPS_RAISE_ONLY_BEFORE_3_13 = pytest.mark.skipif(
-    sys.version_info >= (3, 13), reason="from 3.13 resolve() reads a symlink loop as its own path"
-)
-
-
 def resolving_raises(monkeypatch: pytest.MonkeyPatch, path: Path, raised: BaseException) -> None:
     """`Path.resolve()` of `path`, and of nothing else, made to raise `raised`: the stand-in that
     lets every interpreter meet what Python 3.11 and 3.12 meet at a symlink loop (`RuntimeError`),
@@ -169,3 +161,38 @@ def symlink_loop_at(monkeypatch: pytest.MonkeyPatch, link: Path) -> None:
     do (3.13 answers the path it names), so every interpreter meets what 3.11 meets."""
     link.symlink_to(link.name)
     resolving_raises(monkeypatch, link, RuntimeError(f"Symlink loop from {str(link)!r}"))
+
+
+@contextlib.contextmanager
+def read_only(directory: Path) -> Iterator[None]:
+    """`directory` at mode 555 for the block, so nothing new can be made in it, and 755 again after
+    it, so the scratch tree can be removed. Root writes into every directory: a test that needs
+    the refusal skips there."""
+    directory.chmod(0o555)
+    try:
+        yield
+    finally:
+        directory.chmod(0o755)
+
+
+@contextlib.contextmanager
+def write_only(directory: Path) -> Iterator[None]:
+    """`directory` at mode 300 for the block — a new name can be made in it, and it cannot be
+    opened to read — and 755 again after it. Root reads every directory: a test that needs the
+    refusal skips there."""
+    directory.chmod(0o300)
+    try:
+        yield
+    finally:
+        directory.chmod(0o755)
+
+
+@contextlib.contextmanager
+def at_mode(path: Path, mode: int, *, after: int) -> Iterator[None]:
+    """`path` at `mode` for the block and at `after` once it ends, for a mode the helpers above do
+    not name: a file nobody may read, a directory that can be read and not searched."""
+    path.chmod(mode)
+    try:
+        yield
+    finally:
+        path.chmod(after)

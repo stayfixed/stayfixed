@@ -1042,6 +1042,35 @@ reddens = [
   "tests/hooks/test_hooks_json.py::test_every_entry_is_filed_under_the_event_its_command_dispatches",
 ]
 
+# The entry that hands Claude Code's report of a failed Bash command to the red-run hint. Without it
+# the handler is registered and never asked, and the note never reaches a red run on Claude Code.
+[[mutation]]
+name = "the hooks file loses the entry for a failed command"
+file = "hooks/hooks.json"
+before = '''
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "timeout": 10,
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.sh\" open hook PostToolUseFailure"
+          }
+        ]
+      }
+    ]
+'''
+after = '''
+    ]
+'''
+reddens = [
+  "tests/hooks/test_hooks_json.py::test_the_shipped_hooks_register_post_tool_use_failure_for_bash",
+  "tests/hooks/test_hooks_json.py::test_every_registered_handler_has_an_entry",
+  "tests/scripts/test_smoke_scripts.py::test_every_hook_entry_answers_its_sample_event_through_the_checkout",
+]
+
 # Each bundle gets the numbered slots `SLOTS` declares, one entry per part. Filing one part twice
 # and another not at all keeps the entry count and loses a slot's text, which the declared set
 # of parts catches; two parts swapping places keep that set too, so the order is asserted beside

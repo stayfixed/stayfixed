@@ -68,15 +68,18 @@ __all__ = [
 ]
 
 
-# The five events the dispatcher carries. An area that needs a sixth adds it here deliberately;
+# The six events the dispatcher carries. An area that needs a seventh adds it here deliberately;
 # `registry.discover` refuses anything else, so a handler registered for "PreToolUSe" is a
 # loud failure at discovery rather than a guard that never fires and tests that never notice.
+# `PostToolUseFailure` is where Claude Code delivers a tool call that failed, a Bash command that
+# exited non-zero among them, and never on `PostToolUse`.
 EVENTS = (
     "SessionStart",
     "UserPromptSubmit",
     "UserPromptExpansion",
     "PreToolUse",
     "PostToolUse",
+    "PostToolUseFailure",
 )
 
 

@@ -84,6 +84,18 @@ POSITIVES = [
     # lines — so "did it flag anything" was true all along; what was false is the pair of
     # answers the strip test pins.
     CANONICAL_BLOCK,
+    # The attributions `docs/cli.md` says `commit check` refuses, each as an agent writes it.
+    "Co-Authored-By: Claude <noreply@anthropic.com>",
+    "Co-Authored-By: GitHub Copilot <copilot@github.com>",
+    "Co-Authored-By: claude[bot] <noreply@anthropic.com>",
+    # A `-by:` trailer naming a product, which the contract refuses: both went through, since
+    # `_PRODUCTS` held `cursor agent` and no `chatgpt`. A display name is judged whole
+    # (`fullmatch`), so a one-word `Cursor` is refused as `Devin` already was, and a person whose
+    # name holds the word, `Cursor Smith` among the negatives, is not. Mutations: `mutations/`'s
+    # "commit check lets a ChatGPT trailer through" and "commit check lets a Cursor trailer
+    # through".
+    "Assisted-by: ChatGPT",
+    "Generated-by: Cursor",
 ]
 
 # Vendor words in the places a repository legitimately puts them: subjects, provider names,
@@ -141,6 +153,16 @@ NEGATIVES = [
     # that merely mentions a vendor address anywhere in its prose becomes a trailer.
     "Reviewed-by: write to bob@anthropic.com about it",
     "Helped-by: the person behind support@openai.com, by mail",
+    # What the contract leaves alone: a product's name with no address and no `-by:` reading of
+    # one, a bot GitHub addresses, a trailer that is not `-by:`, a declaration that is not an
+    # attribution, a trailer above a closing body paragraph, and a person named for a product.
+    "Co-Authored-By: Claude",
+    "Co-Authored-By: gemini-code-assist[bot] "
+    "<176961590+gemini-code-assist[bot]@users.noreply.github.com>",
+    "Reviewed-with: Bot <noreply@anthropic.com>",
+    "AI-assisted: yes",
+    "fix: thing\n\nCo-Authored-By: Claude <noreply@anthropic.com>\n\nA body that ends it.",
+    "Co-Authored-By: Cursor Smith <cursor.smith@example.com>",
 ]
 
 # The other side of the footer's bounded tail, and the reason it is not merely "one word after

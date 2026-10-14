@@ -608,9 +608,9 @@ def test_an_unmeasured_platform_question_reports_skip_and_names_why(tmp_path: Pa
     assert "unmeasured" in check.detail
 
 
-def test_the_codex_row_names_what_does_not_run_on_codex(tmp_path: Path) -> None:
-    # A Codex user who opens the report is owed the one fact about Codex that was measured: the
-    # session guards and notices do not run there, and the repository gates still hold in CI.
+def test_the_codex_row_names_what_is_not_verified_on_codex(tmp_path: Path) -> None:
+    # A Codex user who opens the report is owed what stayfixed claims there: the session guards
+    # and notices are not verified on Codex, and the repository gates still hold in CI.
     # The row reads it off the harness registry, and its text is pinned here as a literal rather
     # than derived from that registry the way the row derives it, so a row that names the wrong
     # surfaces cannot agree with its own expectation. A project that does not list Codex gets the
@@ -634,7 +634,7 @@ def test_the_codex_row_names_what_does_not_run_on_codex(tmp_path: Path) -> None:
     assert elsewhere.status == "skip"
     assert "unmeasured" in elsewhere.detail
     assert on_codex.detail == elsewhere.detail + (
-        "; on Codex the session guards and session notices do not run; "
+        "; on Codex the session guards and session notices are not verified; "
         "the repository gates hold in CI"
     )
 

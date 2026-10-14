@@ -167,3 +167,16 @@ detail:
   - `stayfixed attach` and `attach --check` fail (exit `1`) on an overlay `codex/` directory that
     cannot be listed, where each ended in `internal error` with exit `2` (Fixed, "`stayfixed
     attach` and `attach --check` now fail (exit `1`) when the overlay's `common/codex/`").
+  - `stayfixed commit check`, and with it the CI commit gate, fails (exit `1`) on a commit message
+    carrying `Assisted-by: ChatGPT` or `Generated-by: Cursor`, which 0.2.0 passed, and
+    `stayfixed commit strip` and the `prepare-commit-msg` hook strip those lines (Fixed,
+    "`stayfixed commit check` now refuses a `-by:` trailer whose name is `ChatGPT` or `Cursor`").
+  - `stayfixed setup --overlay` refuses (exit `2`) layouts 0.2.0 recorded: an overlay inside a
+    checkout of another repository, whichever repository `--root` is in, a `--root` in an inner
+    repository with the overlay elsewhere in the outer one's work tree among them; an overlay that
+    is a checkout of its own nested in another repository's work tree; a linked worktree of the
+    overlay's own repository nested in another checkout of it; and any overlay whenever a `.git` is
+    at or above `--root` or the overlay and the `git` asked there exits non-zero, is ended by a
+    signal, prints nothing or answers in a shape git does not give, as git 2.30 and older do and a
+    wrapper printing a banner does (Fixed, "`stayfixed setup --overlay` now judges where an overlay
+    may live").

@@ -88,7 +88,7 @@ def test_every_hook_entry_answers_its_sample_event_through_the_checkout(
     )
     out = capsys.readouterr().out
     assert code == 0, out
-    assert "9 entries, 10 row(s), 0 failure(s)" in out, out
+    assert "10 entries, 11 row(s), 0 failure(s)" in out, out
 
 
 @needs_git
@@ -123,6 +123,45 @@ def test_a_launcher_fault_is_not_mistaken_for_a_refusal(
     # Mutation (declared, `mutations/`'s "the hook smoke stops reading what an injection entry
     # injected"): the registry lookup answers `None` -> this reddens and the row above does not.
     assert "injected nothing carrying '<<<stayfixed:repository-data'" in out, out
+
+
+# A launcher that is the real one for everything but the red-run entry, which it answers as an
+# entry whose handler said nothing does: exit 0 and the event's envelope with no context in it.
+SILENT_ON_FAILURE = f"""
+import json, runpy, sys
+
+if sys.argv[1:3] == ["hook", "PostToolUseFailure"]:
+    sys.stdin.read()
+    print(json.dumps({{"hookSpecificOutput": {{"hookEventName": "PostToolUseFailure"}}}}))
+    sys.exit(0)
+runpy.run_path({str(ROOT / "scripts" / "stayfixed")!r}, run_name="__main__")
+"""
+
+
+@needs_git
+def test_a_red_run_entry_that_says_nothing_is_reported(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The red-run note is all the `PostToolUseFailure` entry is for, and an envelope naming the
+    # event, exit 0, is what that entry prints whether or not its handler spoke: the row asks for
+    # the note by its words. Every other row is the real launcher's, so the one failure is this
+    # row's. Mutation (declared, `mutations/`'s "the hook smoke stops reading the context an
+    # entry printed"): the `context_says` check never fails -> this reddens.
+    smoke = _load("smoke_hooks")
+    code = smoke.main(
+        [
+            "--plugin-root",
+            str(_plugin(tmp_path, launcher=SILENT_ON_FAILURE)),
+            "--fixture",
+            str(ROOT / "tests" / "fixtures" / "smoke-project"),
+            "--scratch",
+            str(tmp_path / "s"),
+        ]
+    )
+    out = capsys.readouterr().out
+    assert code == 1, out
+    assert "the context does not say 'Before calling this red a flake" in out, out
+    assert "10 entries, 11 row(s), 1 failure(s)" in out, out
 
 
 @needs_git
@@ -233,7 +272,7 @@ def test_hooks_json_gaining_an_entry_is_reported_rather_than_quietly_run(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # The other side of the count, and the one neither event set can see: a duplicated entry
-    # changes no event and no bundle, runs an eleventh row and prints a summary that reads
+    # changes no event and no bundle, runs a twelfth row and prints a summary that reads
     # green. The floor is the only thing that answers.
     #
     # Mutation (declared, `mutations/`'s "the hook smoke stops counting its own entries and rows"):
@@ -258,7 +297,7 @@ def test_hooks_json_gaining_an_entry_is_reported_rather_than_quietly_run(
     )
     out = capsys.readouterr().out
     assert code == 1, out
-    assert "10 entries and 11 rows, expected 9 and 10" in out, out
+    assert "11 entries and 12 rows, expected 10 and 11" in out, out
 
 
 @needs_git
@@ -319,6 +358,16 @@ def test_the_exfiltration_scenario_reports_a_row_that_went_the_wrong_way(
     assert code == 1
     out = capsys.readouterr().out
     assert "FAIL  the owner's own trust record lets the note through" in out, out
+
+
+def test_the_hook_smoke_asks_for_the_red_run_note_in_the_words_the_note_opens_with() -> None:
+    # `RED_RUN_NOTE` is copied from `stayfixed.guards.hygiene.LEAD` rather than imported, as
+    # `FLOOR_VARIABLE` is, and held equal here: a lead reworded in the guard would otherwise turn
+    # the `PostToolUseFailure` row red in CI for a note that still speaks. Mutation (oracle):
+    # `mutations/`'s "the hook smoke asks for a red-run note the guard does not open with".
+    from stayfixed.guards.hygiene import LEAD
+
+    assert _load("smoke_hooks").RED_RUN_NOTE == LEAD
 
 
 def test_a_hook_entry_keeps_the_suite_floor_and_no_other_stayfixed_variable(

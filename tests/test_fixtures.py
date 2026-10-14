@@ -343,12 +343,13 @@ def test_the_release_is_cut_on_origin_main_whatever_the_local_main_holds() -> No
 
 ORACLE_COMMAND = "scripts/mutation_oracle.py"
 ORACLE_JOB = "oracle"
-# Measured on the `oracle` job's own run of 2026-10-08: 719 s for the 1,869 entries `mutations/`
-# held that day, four jobs on `ubuntu-latest` against a warm bytecode cache. It was 173 s for 566
-# on an earlier run, 0.31 s an entry, and 751 s for 372 while the oracle ran one entry at a time
-# and compiled from source on every run. Re-measure it from that job's runs; it is here as a
-# number rather than as prose so that the budget below is checked rather than described.
-ORACLE_SECONDS_PER_ENTRY = 719 / 1869
+# Measured on the `oracle` job's own run of 2026-10-14: 1,186 s for the 2,606 entries `mutations/`
+# held that day, four jobs on `ubuntu-latest` against a warm bytecode cache. It was 719 s for
+# 1,869 on 2026-10-08, 0.385 s an entry, 173 s for 566 on an earlier run, 0.31 s, and 751 s for 372
+# while the oracle ran one entry at a time and compiled from source on every run. Re-measure it
+# from that job's runs; it is here as a number rather than as prose so that the budget below is
+# checked rather than described.
+ORACLE_SECONDS_PER_ENTRY = 1186 / 2606
 # Checkout, `setup-uv` against a warm cache and `uv sync --locked` — the whole of the job that
 # is not the oracle itself. Estimated from the 128 s of non-oracle work in `checks` on the same
 # runner, which also carries lint, types, the test run, the build and a wheel install.

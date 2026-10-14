@@ -502,15 +502,18 @@ def _codex_trust(context: Context) -> Row:
         "Codex records hook trust, and a measurement would need the file it writes it to and "
         "the hash it keys on"
     )
-    # What was measured is what a Codex user needs when they look, and it is the registry's to
-    # say: Codex ran none of the plugin's hooks, so the surfaces that ride on them do not run
-    # there. Still a skip, since nothing measured of Codex makes this row red. Codex's reach has
-    # surfaces in both lists, and the row's text is pinned by its test, so a measurement that
-    # empties one is an edit here.
+    # What stayfixed claims of Codex is what a Codex user needs when they look, and it is the
+    # registry's to say: the surfaces with no tier there have not been verified end to end on
+    # Codex, which runs a plugin's hooks once they are trusted, and the gates hold in CI. Still a
+    # skip, since nothing measured of Codex makes this row red. Codex's reach has surfaces in both
+    # lists, and the row's text is pinned by its test, so a measurement that empties one is an
+    # edit here.
     if CODEX.name in context.config.stayfixed.agents:
         absent = [str(surface) for surface, reach in CODEX.reach.items() if reach.tier is None]
         in_ci = [str(surface) for surface, reach in CODEX.reach.items() if reach.tier is Tier.CI]
-        detail += f"; on Codex the {_joined(absent)} do not run; the {_joined(in_ci)} hold in CI"
+        detail += (
+            f"; on Codex the {_joined(absent)} are not verified; the {_joined(in_ci)} hold in CI"
+        )
     return Row(SKIP, detail, "")
 
 

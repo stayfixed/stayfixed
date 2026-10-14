@@ -30,7 +30,6 @@ from stayfixed.presets import load_preset
 from tests.gitfixture import git
 from tests.ownerhome import as_owner_home
 from tests.pathfaults import (
-    LOOPS_RAISE_ONLY_BEFORE_3_13,
     ROOT_SEARCHES_EVERYTHING,
     resolving_raises,
     symlink_loop_at,
@@ -1477,7 +1476,7 @@ def test_every_fault_of_asking_where_a_harness_link_may_point_is_one_refusal_nam
     # `paths.memory` (`RuntimeError` from `.resolve()` up to 3.12) was "this check could not run"
     # in one and an internal error in the other. Every fault is one `PathEscape` now, naming which
     # checkout's `paths.memory` and why, never the checkout's path. Mutations (oracle):
-    # `mutations/`'s "harness_targets lets a symlink loop out as RuntimeError" -> `loop`;
+    # `mutations/`'s "harness_targets words a symlink loop as a path it cannot resolve" -> `loop`;
     # "harness_targets lets an OSError out of resolving a target" -> `os-error`.
     owner = tmp_path / "main"
     side = tmp_path / "side"
@@ -1513,10 +1512,10 @@ def test_every_fault_of_asking_where_a_harness_link_may_point_is_one_refusal_nam
     assert str(tmp_path) not in str(refused.value)
 
 
-@LOOPS_RAISE_ONLY_BEFORE_3_13
 def test_a_paths_memory_that_is_a_symlink_loop_is_the_same_refusal(tmp_path: Path) -> None:
-    # The stand-in above, measured: on 3.11 and 3.12 a loop raises `RuntimeError` out of
-    # `.resolve()`, which no caller caught.
+    # The stand-in above, measured: on 3.11 and 3.12 a loop raised `RuntimeError` out of
+    # `.resolve()`, which no caller caught, and 3.13 read it as the path it names. Through
+    # `fsops.resolved` it is the same refusal on every interpreter.
     owner = tmp_path / "main"
     (owner / DEFAULT_MEMORY).parent.mkdir(parents=True)
     (owner / DEFAULT_MEMORY).symlink_to(PurePosixPath(DEFAULT_MEMORY).name)

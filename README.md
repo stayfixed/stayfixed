@@ -96,8 +96,8 @@ Codex.
 
 | Surface | `claude` | `codex` |
 |---|---|---|
-| session guards | blocks in the session | does not run |
-| session notices | context only | does not run |
+| session guards | blocks in the session | not verified |
+| session notices | context only | not verified |
 | repository gates | CI only | CI only |
 | methodology | instructions only | instructions only |
 
@@ -111,11 +111,14 @@ configuration or on the command line, so a false block is a defect: report it in
 [an issue](https://github.com/stayfixed/stayfixed/issues) with the command it refused.
 
 On Claude Code a guard's refusal stopped the command before it ran when this was measured
-(Claude Code 2.1.261). Where a surface does not reach an agent in the session, the repository
-gates still hold in CI, which every agent's changes pass through. Codex ran none of the plugin's
-hooks when this was measured (Codex 0.160.0), so on Codex the session guards do not run until an
-adapter proves otherwise; `stayfixed doctor` says so in its `codex-trust` row whenever
-`[stayfixed] agents` lists `codex`.
+(Claude Code 2.1.261). Where a surface does not reach an agent in the session, the repository gates
+still hold in CI, which every agent's changes pass through. What was measured of Codex
+(Codex CLI 0.162.0-alpha.17.2) is its side: it runs a plugin's hooks once they are trusted in
+`/hooks`, skips untrusted ones without a message and runs them anyway under
+`--dangerously-bypass-hook-trust`, and a blocking `PreToolUse` hook's reason reaches the model.
+Codex delivers a failed command on `PostToolUse` with no exit code, so the note after a failing
+test run does not speak on Codex. `stayfixed doctor` says what holds on Codex in its `codex-trust`
+row whenever `[stayfixed] agents` lists `codex`.
 
 ## Install
 
