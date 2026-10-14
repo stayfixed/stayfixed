@@ -346,8 +346,8 @@ after = """            event="PostToolUseFailure",
             once_key=None,
 """
 reddens = [
-  "tests/guards/test_hooks.py::test_a_red_run_noted_on_either_event_is_not_noted_again_on_the_other[post-first]",
-  "tests/guards/test_hooks.py::test_a_red_run_noted_on_either_event_is_not_noted_again_on_the_other[failure-first]",
+  "tests/guards/test_hooks.py::test_the_red_run_note_is_delivered_once_per_context_whichever_event_carries_it[post-first]",
+  "tests/guards/test_hooks.py::test_the_red_run_note_is_delivered_once_per_context_whichever_event_carries_it[failure-first]",
   "tests/guards/test_hooks.py::test_the_hygiene_notice_is_an_open_handler_with_one_once_key_on_each_event[PostToolUseFailure]",
 ]
 
@@ -365,8 +365,8 @@ after = """            event="PostToolUse",
             once_key=None,
 """
 reddens = [
-  "tests/guards/test_hooks.py::test_a_red_run_noted_on_either_event_is_not_noted_again_on_the_other[post-first]",
-  "tests/guards/test_hooks.py::test_a_red_run_noted_on_either_event_is_not_noted_again_on_the_other[failure-first]",
+  "tests/guards/test_hooks.py::test_the_red_run_note_is_delivered_once_per_context_whichever_event_carries_it[post-first]",
+  "tests/guards/test_hooks.py::test_the_red_run_note_is_delivered_once_per_context_whichever_event_carries_it[failure-first]",
   "tests/guards/test_hooks.py::test_the_hygiene_notice_is_an_open_handler_with_one_once_key_on_each_event[PostToolUse]",
 ]
 

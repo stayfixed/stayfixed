@@ -395,14 +395,15 @@ def test_an_unrelated_call_does_not_consume_the_one_delivery(tmp_path: Path) -> 
 @pytest.mark.parametrize(
     "order", [RED_RUN_EVENTS, RED_RUN_EVENTS[::-1]], ids=["post-first", "failure-first"]
 )
-def test_a_red_run_noted_on_either_event_is_not_noted_again_on_the_other(
+def test_the_red_run_note_is_delivered_once_per_context_whichever_event_carries_it(
     tmp_path: Path, order: tuple[str, str]
 ) -> None:
-    # Two red runs in one session, one on each event a red run can arrive on, through the
-    # dispatcher and one recording sink, which is where the dispatcher banks a `once_key`: the
-    # note is delivered for the first and not for the second, in either order, because both
-    # registrations carry the one key. Mutation: `mutations/`'s "the red-run hint on a failure
-    # forgets that the note was delivered".
+    # Two different red runs in one session, one on each event the note is registered on,
+    # through the dispatcher and one recording sink, which is where the dispatcher banks a
+    # `once_key`: the note is delivered for the first and not for the second, in either order,
+    # because both registrations carry the one key. No measured harness delivers one red run on
+    # both events; what the key holds is at most one note per context. Mutation:
+    # `mutations/`'s "the red-run hint on a failure forgets that the note was delivered".
     root = dirty_project(tmp_path)
     config = load(root, machine=tmp_path / "absent.toml")
     recorder = Recorder()

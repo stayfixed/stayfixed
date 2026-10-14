@@ -94,12 +94,13 @@ def _test_hygiene(event: HookEvent, config: Config | None) -> HookResult:
 def register() -> list[Handler]:
     return [
         Handler(name="bg-cleanup", event="PreToolUse", policy=Policy.CLOSED, run=_bg_cleanup),
-        # The red-run note on both events a failed command can arrive on. Claude Code delivers a
+        # The red-run note, on both events a failed command can arrive on. Claude Code delivers a
         # Bash command that exited non-zero to `PostToolUseFailure`, with `error` beginning
-        # `Exit code N`, and never to `PostToolUse`. Codex delivers a failed command on
-        # `PostToolUse`, but with no exit code, so the note does not speak there (`red_exit`
-        # answers `None`). One `once_key`, which the dispatcher files per session, so a red run is
-        # never noted twice.
+        # `Exit code N`, and never to `PostToolUse`. No harness measured reaches the `PostToolUse`
+        # registration with a red run: Codex delivers a failed command there, but with no exit
+        # code, so the note does not speak (`red_exit` answers `None`). It is a placeholder for
+        # parity with Codex. One `once_key`, which the dispatcher files per session: at most one
+        # note per context, whichever event carries it.
         # Kept ABOVE the rows it annotates, not below them: a later change appending a handler to
         # the tail of this list would otherwise detach the comment from its subject.
         Handler(
