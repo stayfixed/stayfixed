@@ -1331,6 +1331,42 @@ def test_a_path_a_repository_spells_reaches_every_containment_refusal_quoted(
     assert "\\x1b]0;owned\\x07" in said, said
 
 
+@pytest.mark.parametrize("printed", ["not-an-overlay", "the-note", "the-summary"])
+def test_an_overlay_path_a_repository_spells_is_printed_quoted(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    printed: str,
+) -> None:
+    # `--overlay`'s path, resolved through a link a repository commits, is spelled in the
+    # repository's bytes, and the refusal that it is not an overlay, the note that it was
+    # recorded and `setup`'s own report line printed it raw. Mutations (`mutations/`'s "the
+    # overlay probe prints the path it judged raw" -> `not-an-overlay`; "setup notes a recorded
+    # overlay's path raw" -> `the-note`; "setup reports the recorded overlay's path raw" ->
+    # `the-summary`).
+    from stayfixed.cli import build_parser, discover_registrars, run
+
+    overlay = tmp_path / _DRIVES_A_TERMINAL
+    overlay.mkdir()
+    if printed != "not-an-overlay":
+        _seed_overlay(overlay)
+    runner = Recorder()
+    monkeypatch.setattr("stayfixed.setup.commands.subprocess_runner", lambda: runner)
+    argv = ["setup", "--preset", "recommended", "--home", str(tmp_path / "home")]
+    argv += ["--machine", str(tmp_path / "config.toml"), "--root", str(tmp_path / "project")]
+    argv += ["--overlay", str(overlay)]
+    if printed == "the-note":
+        argv.append("--json")
+    code = run(argv, parser=build_parser(discover_registrars()))
+    captured = capsys.readouterr()
+    said = captured.err if printed == "not-an-overlay" else captured.out
+    if printed == "the-note":
+        said = "\n".join(json.loads(captured.out)["notes"])
+    assert code == (2 if printed == "not-an-overlay" else 0), captured
+    assert "\x1b" not in said and "\x07" not in said, said
+    assert "\\x1b]0;owned\\x07" in said, said
+
+
 @needs_git
 def test_an_overlay_that_is_a_worktree_nested_in_its_own_checkout_is_refused_as_its_own(
     tmp_path: Path,
@@ -1394,7 +1430,8 @@ def test_a_manifest_that_parses_and_is_not_an_object_names_no_overlay(
     (tmp_path / PLUGIN_MANIFEST).write_text(document, encoding="utf-8")
     fault = overlay_fault(tmp_path)
     assert fault == (
-        f"{tmp_path} carries a {PLUGIN_MANIFEST} that does not name a stayfixed overlay; its "
+        f"{quoted(str(tmp_path))} carries a {PLUGIN_MANIFEST} that does not name a stayfixed "
+        f"overlay; its "
         f"`name` has to be stayfixed-overlay, or stayfixed-overlay-<owner> after `stayfixed "
         f"overlay init`"
     )

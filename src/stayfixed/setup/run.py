@@ -1103,7 +1103,7 @@ def _apply_overlay(planned: _Overlay, *, project_root: Path, runner: Runner) -> 
     if planned.create is None:
         require_overlay(planned.root, because=_RECORDING)
         _outside_the_project(planned.root, project_root=project_root, exempt=False)
-        return planned.root, f"recorded the existing overlay at {planned.root}"
+        return planned.root, f"recorded the existing overlay at {quoted(str(planned.root))}"
     owner, name = planned.create
     destination = planned.destination if planned.destination is not None else planned.root
     created = create(owner, name, source="template", root=destination.parent, runner=runner)
@@ -1114,7 +1114,9 @@ def _apply_overlay(planned: _Overlay, *, project_root: Path, runner: Runner) -> 
     # does not say the repository exists; this one has to, and so it goes first.
     fault = overlay_fault(root)
     if fault is not None:
-        raise Refusal(f"{fault}. {owner}/{name} was created and cloned to {root}, but {_CREATED}")
+        raise Refusal(
+            f"{fault}. {owner}/{name} was created and cloned to {quoted(str(root))}, but {_CREATED}"
+        )
     # Asked before `init_instance`, which writes in the tree and runs `pre-commit` there. A
     # destination the phase found absent is exempt only if `create` made it: one it left alone
     # arrived after the phase, from somewhere else.
@@ -1131,7 +1133,7 @@ def _apply_overlay(planned: _Overlay, *, project_root: Path, runner: Runner) -> 
         # `init` changed rather than that the overlay was left alone.
         changed = initialised.changed
         return root, (
-            f"found the overlay already at {root}, so nothing was generated; "
+            f"found the overlay already at {quoted(str(root))}, so nothing was generated; "
             + (
                 f"`overlay init` changed {', '.join(changed)}"
                 if changed
@@ -1140,7 +1142,7 @@ def _apply_overlay(planned: _Overlay, *, project_root: Path, runner: Runner) -> 
                 else "`overlay init` changed none of the overlay's tracked files"
             )
         )
-    return root, f"created the overlay at {root}, generated from {created.template}"
+    return root, f"created the overlay at {quoted(str(root))}, generated from {created.template}"
 
 
 def _before_the_first_write(

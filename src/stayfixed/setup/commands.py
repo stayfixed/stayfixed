@@ -178,7 +178,9 @@ def run_setup(args: argparse.Namespace) -> Result:
             f"{len(report.plugins_installed)} plugin(s) installed",
             "deny rules merged" if report.deny_written else "deny rules unchanged",
             "stayfixed is on PATH" if report.cli_on_path else "stayfixed is not on PATH",
-            f"overlay recorded at {report.overlay}" if report.overlay else "no overlay recorded",
+            f"overlay recorded at {quoted(str(report.overlay))}"
+            if report.overlay
+            else "no overlay recorded",
             *report.notes,
         )
     )

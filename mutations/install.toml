@@ -2122,3 +2122,33 @@ after = "    if not fsops.exists(planned.destination):"
 reddens = [
   "tests/setup/test_setup.py::test_a_created_overlays_destination_that_is_a_dangling_link_is_there_and_compared",
 ]
+
+# `--overlay`'s path, resolved through a link a repository commits, is spelled in the repository's
+# bytes, and the probe's refusal, the note that the overlay was recorded and `setup`'s report line
+# printed it raw.
+[[mutation]]
+name = "the overlay probe prints the path it judged raw"
+file = "src/stayfixed/overlay/identity.py"
+before = "    shown = quoted(str(root))"
+after = "    shown = str(root)"
+reddens = [
+  "tests/setup/test_setup.py::test_an_overlay_path_a_repository_spells_is_printed_quoted[not-an-overlay]",
+]
+
+[[mutation]]
+name = "setup notes a recorded overlay's path raw"
+file = "src/stayfixed/setup/run.py"
+before = '        return planned.root, f"recorded the existing overlay at {quoted(str(planned.root))}"'
+after = '        return planned.root, f"recorded the existing overlay at {planned.root}"'
+reddens = [
+  "tests/setup/test_setup.py::test_an_overlay_path_a_repository_spells_is_printed_quoted[the-note]",
+]
+
+[[mutation]]
+name = "setup reports the recorded overlay's path raw"
+file = "src/stayfixed/setup/commands.py"
+before = '            f"overlay recorded at {quoted(str(report.overlay))}"'
+after = '            f"overlay recorded at {report.overlay}"'
+reddens = [
+  "tests/setup/test_setup.py::test_an_overlay_path_a_repository_spells_is_printed_quoted[the-summary]",
+]
