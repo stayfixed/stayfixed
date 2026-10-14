@@ -13,11 +13,11 @@ which value it is running under and shapes its stdout with that value's `render`
 more: `detect` says why. A harness whose payload genuinely differs is a question to answer with
 that harness's evidence when it arrives.
 
-A value also states its reach: for each enforcement surface stayfixed has (`Surface`), the tier
-at which that surface holds under this harness (`Tier`), or that it is not claimed there, with
-where the claim was measured. The README's table of what each agent enforces is held
-equal to these values by a test, and `doctor`'s `codex-trust` row reads them, so a measurement
-that moves a tier is one edit here.
+A value also states its reach: for each enforcement surface stayfixed has (`Surface`), the tier at
+which that surface holds under this harness (`Tier`), or `None` where no tier is claimed there, and
+the evidence each rests on: what was observed, on which version, and where its record is. The
+README's table of what each agent enforces is held equal to these values by a test, and `doctor`'s
+`codex-trust` row reads them, so a measurement that moves a tier is one edit here.
 
 A new harness is a value with a positive `detects`, its project-root and plugin-root variables,
 its `render`, its settings files, the places it reads hooks out of a Markdown frontmatter, its
@@ -130,7 +130,9 @@ class Reach:
     # `None`: no tier is claimed for the surface under this harness, which the README's table and
     # `doctor`'s `codex-trust` row print as "not verified".
     tier: Tier | None
-    # The observation the tier rests on and the public record that holds it, or "unmeasured".
+    # The observation the tier rests on and where its record is: a public record, named, or, for a
+    # measurement whose record is not in this repository, the date it was made and that it is not
+    # here; or "unmeasured".
     evidence: str
     # The agent and its version the observation was made on, as the README cites it, or `None`
     # where no agent takes part.
@@ -262,8 +264,9 @@ _DELIVERY_SPIKE = "the delivery spike of 2026-10-02 in `docs/plans/`"
 _CODEX_HOOKS_UNVERIFIED = Reach(
     None,
     "a plugin hook ran once trusted in `/hooks`, and a blocking `PreToolUse` hook's reason reached "
-    "the model (the hook-trust pre-flight of 2026-10-13); stayfixed's guards and notices are not "
-    "verified end to end there",
+    "the model (measured on Codex CLI 0.162.0-alpha.17.2 on 2026-10-13; the record of that "
+    "measurement is not in this repository); stayfixed's guards and notices are not verified end "
+    "to end there",
     measured_on="Codex CLI 0.162.0-alpha.17.2",
 )
 
@@ -337,7 +340,7 @@ CODEX = Harness(
                 Tier.INSTRUCTIONS,
                 "the plugin's skills arrived, and instructions through AGENTS.md "
                 f"({_DELIVERY_SPIKE})",
-                measured_on="Codex 0.160.0",
+                measured_on="Codex CLI 0.160.0",
             ),
         }
     ),
