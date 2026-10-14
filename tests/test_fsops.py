@@ -34,7 +34,7 @@ from stayfixed.fsops import (
 from tests.pathfaults import (
     LSTAT_FAULT,
     lstat_fault,
-    resolving_as_3_11_does,
+    resolving_raises,
     shaped,
     unlock,
     unmet_here,
@@ -761,9 +761,10 @@ def test_the_runtime_error_older_pythons_raise_for_a_loop_is_the_systems_eloop(
     # The other half, on every interpreter: what 3.11 and 3.12 raise is stood in for. Mutation
     # (`mutations/`'s "fsops.resolved lets the RuntimeError of a loop through") -> it escapes.
     (tmp_path / "loop").symlink_to(tmp_path / "loop")
-    resolving_as_3_11_does(monkeypatch)
+    below = tmp_path / "loop" / "below"
+    resolving_raises(monkeypatch, below, RuntimeError(f"Symlink loop from {str(below)!r}"))
     with pytest.raises(OSError) as raised:
-        fsops.resolved(tmp_path / "loop" / "below")
+        fsops.resolved(below)
     assert raised.value.errno == errno.ELOOP
 
 

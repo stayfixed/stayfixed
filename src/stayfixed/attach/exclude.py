@@ -302,7 +302,8 @@ def withdrawn_block(root: Path) -> ExcludeWrite | None:
     """The exclude file with this attach's block taken out, or `None` when there is none.
 
     Asked above `detach`'s first withdrawal, for the reason `_ignore_region_remainder` is: a
-    block opened twice is a `RegionError` knowable at the start. A symlinked file is left alone
+    block opened twice is a `RegionError` knowable at the start, and a directory this user cannot
+    write the file into is `UNWRITABLE`, as it is for `attach`. A symlinked file is left alone
     rather than refused, because `attach` never writes through one, so a block behind a link is
     not one this command put there.
 
@@ -319,6 +320,12 @@ def withdrawn_block(root: Path) -> ExcludeWrite | None:
     body = _named(path, extract, current)
     if body is None:
         return None
+    # Asked here, above `detach`'s first withdrawal, as `planned_block` asks it above `attach`'s
+    # first write: the block's withdrawal replaces or removes the file in its directory, and found
+    # out by doing it, after the settings, the rule copies and the link tree, the run stopped half
+    # detached with the ledger still on disk.
+    if not fsops.creatable(path):
+        raise Refusal(UNWRITABLE.format(path=quoted(str(path))))
     records = _lines(body)
     remaining = drop(current, EXCLUDE_REGION, Style.HASH)
     # Nothing follows the block exactly when what is left is what came before it.

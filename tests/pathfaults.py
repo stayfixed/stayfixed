@@ -13,6 +13,7 @@ from __future__ import annotations
 import contextlib
 import errno
 import os
+import sys
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -142,19 +143,32 @@ def lstat_fault(path: Path) -> int | type[ValueError] | None:
     return None
 
 
-def resolving_as_3_11_does(monkeypatch: pytest.MonkeyPatch, name: str = "loop") -> None:
-    """Have `Path.resolve` raise what Python 3.11 and 3.12 raise for a symlink loop, for every path
-    through a component called `name`, for the length of one test: those interpreters raise
-    `RuntimeError` where 3.13 answers a path, so a test of the `RuntimeError` holds on every
-    interpreter. The loop itself is real, so `stat` meets it."""
-    resolve = Path.resolve
+# `Path.resolve()` of a symlink loop raises `RuntimeError` up to Python 3.12, and from 3.13 answers
+# the path the loop names, so a real loop proves a `RuntimeError` arm only on the older two.
+LOOPS_RAISE_ONLY_BEFORE_3_13 = pytest.mark.skipif(
+    sys.version_info >= (3, 13), reason="from 3.13 resolve() reads a symlink loop as its own path"
+)
 
-    def resolve_as_older_pythons_do(self: Path, strict: bool = False) -> Path:
-        if name in self.parts:
-            raise RuntimeError(f"Symlink loop from {str(self)!r}")
-        return resolve(self, strict)
 
-    monkeypatch.setattr(Path, "resolve", resolve_as_older_pythons_do)
+def resolving_raises(monkeypatch: pytest.MonkeyPatch, path: Path, raised: BaseException) -> None:
+    """`Path.resolve()` of `path`, and of nothing else, made to raise `raised`: the stand-in that
+    lets every interpreter meet what Python 3.11 and 3.12 meet at a symlink loop (`RuntimeError`),
+    or a fault the system names there."""
+    real = Path.resolve
+
+    def resolving(self: Path, strict: bool = False) -> Path:
+        if self == path:
+            raise raised
+        return real(self, strict)
+
+    monkeypatch.setattr(Path, "resolve", resolving)
+
+
+def symlink_loop_at(monkeypatch: pytest.MonkeyPatch, link: Path) -> None:
+    """`link` made a symlink loop, and `.resolve()` of it made to raise as Python 3.11 and 3.12
+    do (3.13 answers the path it names), so every interpreter meets what 3.11 meets."""
+    link.symlink_to(link.name)
+    resolving_raises(monkeypatch, link, RuntimeError(f"Symlink loop from {str(link)!r}"))
 
 
 @contextlib.contextmanager

@@ -22,8 +22,8 @@ from tests.crafted import CRAFTED, assert_never_raw
 from tests.pathfaults import (
     LSTAT_FAULT,
     lstat_fault,
-    resolving_as_3_11_does,
     shaped,
+    symlink_loop_at,
     unlock,
     unmet_here,
 )
@@ -178,9 +178,10 @@ def test_a_root_through_a_symlink_loop_is_an_oserror_naming_it(
     # every interpreter. Mutation (`mutations/`'s "contained resolves its root past fsops") ->
     # `as-3-11` raises `RuntimeError`.
     root = tmp_path / "loop"
-    root.symlink_to(root)
     if interpreter == "as-3-11":
-        resolving_as_3_11_does(monkeypatch)
+        symlink_loop_at(monkeypatch, root)
+    else:
+        root.symlink_to(root)
     with pytest.raises(OSError) as raised:
         contained(root, "a")
     assert raised.value.errno == errno.ELOOP

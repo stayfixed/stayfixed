@@ -4,7 +4,7 @@ import dataclasses
 import os
 import shutil
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import pytest
 
@@ -29,10 +29,23 @@ from stayfixed.memory.worktree import (
 from stayfixed.presets import load_preset
 from tests.gitfixture import git
 from tests.ownerhome import as_owner_home
-from tests.pathfaults import ROOT_SEARCHES_EVERYTHING, unsearchable
+from tests.pathfaults import (
+    LOOPS_RAISE_ONLY_BEFORE_3_13,
+    ROOT_SEARCHES_EVERYTHING,
+    resolving_raises,
+    symlink_loop_at,
+    unsearchable,
+)
 from tests.snapshot import assert_snapshot_unchanged, snapshot
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
+
+
+def _own(root: Path, config: Config) -> tuple[Path, ...]:
+    """What `detach_main` compares a lone checkout's harness link with: its own `paths.memory`,
+    the one `harness_targets` names when the checkout owns itself."""
+    return worktree.harness_targets(root, root, config)
+
 
 # The preset's own default `paths.memory` — read off the preset, never spelled. `a_checkout` takes
 # the default, so the ignore entry `_commit_checkout` writes has to be the same string the preset
@@ -688,6 +701,37 @@ def test_a_committed_index_reaches_no_harness_link_before_trust(tmp_path: Path) 
     assert not harness_memory_path(tree, home).exists()
 
 
+def test_the_harness_gate_tells_an_approval_that_lapsed_from_one_never_given(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `attach` and `doctor`'s `attached` row both say which closed gate it is, and they asked it
+    # as two questions, each digesting every note of the store. One question now, asked once:
+    # open, lapsed (a record the store no longer matches), or never approved. Mutation (oracle):
+    # `mutations/`'s "the harness gate reads a lapsed approval as one never given" -> `lapsed`
+    # reads `unapproved`.
+    from stayfixed.memory import trust
+
+    _, store, config = a_checkout(tmp_path)
+    digests: list[Store] = []
+    digest = trust.store_digest
+
+    def counted(store: Store, config: Config) -> str:
+        digests.append(store)
+        return digest(store, config)
+
+    monkeypatch.setattr(trust, "store_digest", counted)
+    assert worktree.harness_gate(store, config) == worktree.GATE_UNAPPROVED
+    record(store, config)
+    digests.clear()
+    assert worktree.harness_gate(store, config) == worktree.GATE_OPEN
+    (store.groups["developer"] / "added.md").write_text(
+        "---\nname: added\ndescription: d\n---\n\nA note a pull added.\n", encoding="utf-8"
+    )
+    assert worktree.harness_gate(store, config) == worktree.GATE_LAPSED
+    # The store is digested once per question, closed gate included.
+    assert len(digests) == 2
+
+
 def test_the_harness_link_is_withdrawn_once_the_trust_record_lapses(tmp_path: Path) -> None:
     # The mirror of the two tests above, and the direction nothing checked. The gate ran at
     # creation only, over state that persists — so a `git pull` that adds one note to an
@@ -934,7 +978,9 @@ def test_a_withdrawal_leaves_a_symlink_at_a_group_name_that_points_somewhere_els
     (base / "project-stable").unlink()
     (base / "project-stable").symlink_to(mine)
 
-    links = detach_main(root, config, machine=machine, home=a_home(tmp_path))
+    links = detach_main(
+        root, config, machine=machine, home=a_home(tmp_path), targets=_own(root, config)
+    )
     assert (base / "project-stable").is_symlink()
     assert (base / "project-stable" / "keep.md").is_file()
     assert base / "project-stable" not in links.revoked
@@ -957,7 +1003,7 @@ def test_a_withdrawal_leaves_a_real_directory_standing_at_a_group_name(tmp_path:
     (base / "project-stable").mkdir()
     (base / "project-stable" / "note.md").write_text("mine\n", encoding="utf-8")
 
-    detach_main(root, config, machine=machine, home=a_home(tmp_path))
+    detach_main(root, config, machine=machine, home=a_home(tmp_path), targets=_own(root, config))
     assert (base / "project-stable" / "note.md").is_file()
     assert not (base / "developer").is_symlink()
 
@@ -974,7 +1020,9 @@ def test_a_withdrawal_still_removes_a_link_of_ours_whose_target_has_gone(tmp_pat
     shutil.rmtree(own / "project-stable")
     assert (base / "project-stable").is_symlink() and not (base / "project-stable").exists()
 
-    links = detach_main(root, config, machine=machine, home=a_home(tmp_path))
+    links = detach_main(
+        root, config, machine=machine, home=a_home(tmp_path), targets=_own(root, config)
+    )
     assert not (base / "project-stable").is_symlink()
     assert base / "project-stable" in links.revoked
 
@@ -1098,7 +1146,7 @@ def test_a_withdrawal_against_a_home_that_is_not_there_refuses_rather_than_repor
     attach_main(root, own, config, machine=machine, home=home)
     absent = tmp_path / "no-such-home"
     with pytest.raises(Refusal) as refused:
-        detach_main(root, config, machine=machine, home=absent)
+        detach_main(root, config, machine=machine, home=absent, targets=_own(root, config))
     assert str(absent) in str(refused.value)
     assert "never creates the home directory itself" in str(refused.value)
 
@@ -1164,7 +1212,7 @@ def test_a_symlinked_claude_directory_is_a_refusal_in_both_directions(tmp_path: 
     # Nothing was written through the link, and nothing was written in front of it either.
     assert list(elsewhere.iterdir()) == []
     with pytest.raises(Refusal) as withdrawing:
-        detach_main(root, config, machine=None, home=home)
+        detach_main(root, config, machine=None, home=home, targets=_own(root, config))
     assert "passes through a symlink" in str(withdrawing.value)
 
 
@@ -1408,3 +1456,129 @@ def test_a_database_home_that_is_itself_a_symlink_still_gets_the_harness_link(
     created = link(tree, store, config).created
     assert harness_memory_path(tree, real) in created
     assert harness_memory_path(tree, real).resolve() == store.path.resolve()
+
+
+# `harness_targets`' reason for each fault, after the checkout it names. The configuration is the
+# preset's, so `paths.memory` is `DEFAULT_MEMORY`, two components deep.
+_UNASKABLE_TARGETS = {
+    "symlink-above": "{memory!r} passes through a symlink at {parent!r}",
+    "loop": "{memory!r} is a symlink loop",
+    "os-error": "{memory!r} cannot be resolved (Permission denied)",
+}
+
+
+@pytest.mark.parametrize("fault", sorted(_UNASKABLE_TARGETS))
+@pytest.mark.parametrize("whose", ["main", "worktree"])
+def test_every_fault_of_asking_where_a_harness_link_may_point_is_one_refusal_naming_the_checkout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fault: str, whose: str
+) -> None:
+    # `detach` asks this before its first withdrawal and `doctor`'s `attached` row reads it, and
+    # each translated whichever fault it met in its own words, or none: a symlink loop at
+    # `paths.memory` (`RuntimeError` from `.resolve()` up to 3.12) was "this check could not run"
+    # in one and an internal error in the other. Every fault is one `PathEscape` now, naming which
+    # checkout's `paths.memory` and why, never the checkout's path. Mutations (oracle):
+    # `mutations/`'s "harness_targets lets a symlink loop out as RuntimeError" -> `loop`;
+    # "harness_targets lets an OSError out of resolving a target" -> `os-error`.
+    owner = tmp_path / "main"
+    side = tmp_path / "side"
+    parent = str(PurePosixPath(DEFAULT_MEMORY).parent)
+    for checkout in (owner, side):
+        (checkout / DEFAULT_MEMORY).mkdir(parents=True)
+    config = _a_config(tmp_path)
+    faulty = owner if whose == "main" else side
+    if fault == "symlink-above":
+        moved = tmp_path / f"moved-{whose}"
+        shutil.move(faulty / parent, moved)
+        (faulty / parent).symlink_to(moved, target_is_directory=True)
+    else:
+        # Python 3.13 reads a loop as the path it names, so on the interpreter the oracle runs only
+        # this stand-in reaches the `RuntimeError` arm.
+        resolving_raises(
+            monkeypatch,
+            faulty / DEFAULT_MEMORY,
+            RuntimeError("Symlink loop from '/somewhere'")
+            if fault == "loop"
+            else PermissionError(13, "Permission denied", "/somewhere"),
+        )
+    with pytest.raises(PathEscape) as refused:
+        worktree.harness_targets(side, owner, config)
+    assert type(refused.value) is PathEscape
+    # Chained to the fault it translates, so a traceback still shows what was met.
+    assert refused.value.__cause__ is not None
+    named = "the main checkout's" if whose == "main" else "the linked worktree's"
+    assert str(refused.value) == (
+        f"where a harness memory link may point cannot be asked of {named} paths.memory: "
+        f"{_UNASKABLE_TARGETS[fault].format(memory=DEFAULT_MEMORY, parent=parent)}"
+    )
+    assert str(tmp_path) not in str(refused.value)
+
+
+@LOOPS_RAISE_ONLY_BEFORE_3_13
+def test_a_paths_memory_that_is_a_symlink_loop_is_the_same_refusal(tmp_path: Path) -> None:
+    # The stand-in above, measured: on 3.11 and 3.12 a loop raises `RuntimeError` out of
+    # `.resolve()`, which no caller caught.
+    owner = tmp_path / "main"
+    (owner / DEFAULT_MEMORY).parent.mkdir(parents=True)
+    (owner / DEFAULT_MEMORY).symlink_to(PurePosixPath(DEFAULT_MEMORY).name)
+    with pytest.raises(PathEscape) as refused:
+        worktree.harness_targets(owner, owner, _a_config(tmp_path))
+    assert str(refused.value).endswith(f"{DEFAULT_MEMORY!r} is a symlink loop")
+
+
+def test_a_link_under_a_second_home_to_either_target_is_withdrawn(tmp_path: Path) -> None:
+    # `detach_main` withdraws the link under a second home a harness may read, only where it points
+    # at a directory `harness_targets` names, and a worktree's names two: the main checkout's tree,
+    # where `attach` points it, and the worktree's own, where the `SessionStart` re-link points it.
+    # A link to the second under that home was the one case no test made. Mutation (oracle):
+    # `mutations/`'s "the withdrawal under a second home compares with the first target alone"
+    # -> the link to the worktree's own tree stays.
+    root, _store, config = a_checkout(tmp_path)
+    side = a_worktree(root, tmp_path / "side")
+    home, other = a_home(tmp_path), tmp_path / "other"
+    other.mkdir()
+    targets = worktree.harness_targets(side, root, config)
+    # Non-vacuous: two targets, and the link names the second.
+    assert len(targets) == 2 and targets[1] == (side / DEFAULT_MEMORY).resolve()
+    under_other = harness_memory_path(side, other)
+    under_other.parent.mkdir(parents=True)
+    under_other.symlink_to(targets[1], target_is_directory=True)
+    links = detach_main(side, config, home=home, elsewhere=other, targets=targets, keep_tree=True)
+    assert not os.path.lexists(under_other)
+    assert links.revoked == [under_other]
+
+
+def _a_config(tmp_path: Path) -> Config:
+    """A configuration whose `paths.memory` is the preset's, loaded from a directory of its own:
+    `harness_targets` reads nothing else of it."""
+    holder = tmp_path / "config"
+    holder.mkdir()
+    (holder / CONFIG_FILE).write_text(
+        CONFIG.format(mode="in-repo", groups='["developer"]'), encoding="utf-8"
+    )
+    config = load(holder, machine=tmp_path / "absent.toml")
+    assert config.paths.memory == DEFAULT_MEMORY
+    return config
+
+
+def test_a_withdrawal_leaves_a_group_link_that_is_a_symlink_loop(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A link at a group name is compared with where `attach` points that group, by resolving it,
+    # and a loop there (a clone can commit one under `paths.memory`) raised `RuntimeError` on 3.11
+    # and 3.12: `detach` ended in an internal error after the settings and rule copies were
+    # withdrawn. A link that cannot be followed is not one this module can claim, so it stays.
+    # Mutation (oracle): `mutations/`'s "the main checkout's withdrawal lets a symlink loop at a
+    # group name out" -> RuntimeError.
+    root, overlay, machine, config = an_overlay_to_attach(tmp_path)
+    own = overlay / "projects" / "widget" / "memory"
+    attach_main(root, own, config, machine=machine, home=a_home(tmp_path))
+    base = root / DEFAULT_MEMORY
+    (base / "project-stable").unlink()
+    symlink_loop_at(monkeypatch, base / "project-stable")
+    links = detach_main(
+        root, config, machine=machine, home=a_home(tmp_path), targets=_own(root, config)
+    )
+    assert (base / "project-stable").is_symlink()
+    assert base / "project-stable" not in links.revoked
+    # Non-vacuous: the withdrawal ran on past the loop.
+    assert base / "developer" in links.revoked

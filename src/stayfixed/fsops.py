@@ -299,14 +299,15 @@ def resolved(path: Path) -> Path:
     same input was a quiet answer on one interpreter and a traceback on the other. Both are asked
     of `stat`, which meets the loop again and raises; a path that is not there yet, which this is
     asked for as `resolve` is, raises something else and is answered as before. A `RuntimeError`
-    `stat` cannot confirm — a link changed between the two questions — is raised as it came.
-    No caller asks for `strict`, whose loop every interpreter already raises as an `OSError`.
+    `stat` cannot confirm — a link changed between the two questions — is still a loop `resolve`
+    met, and is the same `ELOOP`, in words of its own. No caller asks for `strict`, whose loop
+    every interpreter already raises as an `OSError`.
     """
     try:
         answer = path.resolve()
-    except RuntimeError:
+    except RuntimeError as exc:
         _meets_a_loop(path)
-        raise
+        raise OSError(errno.ELOOP, "a symbolic link loop", str(path)) from exc
     _meets_a_loop(path)
     return answer
 

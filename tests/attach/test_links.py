@@ -6,6 +6,7 @@ is `worktree.link`'s, unchanged. This module asserts that `attach` reaches both.
 
 from __future__ import annotations
 
+import os
 import shutil
 from pathlib import Path
 
@@ -443,6 +444,33 @@ def test_attaching_from_a_linked_worktree_says_the_link_waits_only_when_it_does(
     assert HARNESS_WAITS not in attached.notes
 
 
+def test_an_attach_that_records_the_fallback_never_asks_why_the_link_waits(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Why the gate kept the harness link back is said only where no fallback line is, and asking
+    # it reads the store's trust record and digests its notes. It was asked on every attach, the
+    # runs that record the settings-file fallback included, and its answer thrown away there.
+    # Mutation (oracle): `mutations/`'s "attach asks why the harness link waits on every run".
+    from stayfixed.attach import write
+
+    root, store, machine = _bound(tmp_path)
+    home = tmp_path / "home"
+    _attach(root, store, machine, home)
+    _trusted(root, machine)
+    harness_memory_path(root, home).mkdir(parents=True)
+    asked: list[Path] = []
+
+    def waits(owner: Path, config: Config, *, machine: Path | None) -> str | None:
+        asked.append(owner)
+        return None
+
+    monkeypatch.setattr(write, "_harness_waits", waits)
+    attached = _attach(root, store, machine, home)
+    # Non-vacuous: this run is the one that records the fallback.
+    assert any(write.FALLBACK_KEY in note for note in attached.notes)
+    assert asked == []
+
+
 def test_detaching_from_a_linked_worktree_withdraws_the_main_checkouts_tree_too(
     tmp_path: Path,
 ) -> None:
@@ -459,12 +487,25 @@ def test_detaching_from_a_linked_worktree_withdraws_the_main_checkouts_tree_too(
     # `.stayfixed/local/` in the checkout the attach was run from, and that directory is
     # untracked — a sibling worktree does not have one.
     _attach(side, store, machine, home)
-    # Non-vacuous: there is nothing to withdraw unless both trees were built.
+    # Approved and attached again, so each checkout holds a harness link as `attach` makes it:
+    # both point at the owning checkout's `paths.memory`. The worktree's was compared with the
+    # worktree's own tree, never matched, and outlived the detach dangling. Mutation (oracle):
+    # `mutations/`'s "detach compares a checkout's harness link with that checkout's own tree"
+    # -> the worktree's link stays.
+    _trusted(root, machine)
+    _attach(side, store, machine, home)
+    # Non-vacuous: there is nothing to withdraw unless both trees and both links were built.
     assert (root / "docs" / "memory" / "developer").is_symlink()
     assert (side / "docs" / "memory" / "developer").is_symlink()
+    for checkout in (root, side):
+        assert harness_memory_path(checkout, home).exists(), checkout
     detach(side, machine=machine, home=home)
     assert not (root / "docs" / "memory" / "developer").is_symlink()
     assert not (side / "docs" / "memory" / "developer").is_symlink()
+    for checkout in (root, side):
+        assert not os.path.lexists(harness_memory_path(checkout, home)), checkout
+    projects = home / ".claude" / "projects"
+    assert [path for path in projects.rglob("*") if path.is_symlink()] == []
 
 
 def test_withdrawing_the_fallback_takes_the_settings_file_with_it_when_nothing_is_left(

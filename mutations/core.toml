@@ -3682,12 +3682,10 @@ reddens = [
 [[mutation]]
 name = "fsops.resolved lets the RuntimeError of a loop through"
 file = "src/stayfixed/fsops.py"
-before = """    except RuntimeError:
-        _meets_a_loop(path)
-        raise"""
-after = """    except ValueError:
-        _meets_a_loop(path)
-        raise"""
+before = """    except RuntimeError as exc:
+        _meets_a_loop(path)"""
+after = """    except ValueError as exc:
+        _meets_a_loop(path)"""
 reddens = [
   "tests/test_fsops.py::test_the_runtime_error_older_pythons_raise_for_a_loop_is_the_systems_eloop",
 ]
