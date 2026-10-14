@@ -154,3 +154,14 @@ detail:
     `safe.directory` and excludes among it, under the database's home, where 0.2.0 read it under
     `HOME` (Fixed, "When the hook wrapper launches it, as it does for every hook, stayfixed now
     runs `git` only from fixed absolute paths").
+  - `stayfixed commit check`, and with it the CI commit gate, fails (exit `1`) on a commit message
+    carrying `Assisted-by: ChatGPT` or `Generated-by: Cursor`, which 0.2.0 passed, and
+    `stayfixed commit strip` and the `prepare-commit-msg` hook strip those lines (Fixed,
+    "`stayfixed commit check` now refuses a `-by:` trailer whose name is `ChatGPT` or `Cursor`").
+  - `stayfixed setup --overlay` refuses (exit `2`) layouts 0.2.0 recorded: an overlay inside a
+    checkout of another repository, whichever repository `--root` is in, a `--root` in an inner
+    repository with the overlay elsewhere in the outer one's work tree among them; an overlay that
+    is a checkout of its own nested in another repository's work tree; a linked worktree of the
+    overlay's own repository nested in another checkout of it; and any overlay, inside a checkout,
+    when `git` exits non-zero, is ended by a signal or prints nothing (Fixed, "`stayfixed setup
+    --overlay` now judges where an overlay may live").
