@@ -3494,3 +3494,14 @@ after = "import json\nfrom scripts import plugin_tree  # noqa: F401\nimport re\n
 reddens = [
   "tests/scripts/test_script_imports.py::test_no_script_imports_another_but_the_named_exemption",
 ]
+
+# The hook smoke asks a `PostToolUseFailure` entry for the red-run note by the words the note opens
+# with, copied from the guard rather than imported, and a test holds the two equal.
+[[mutation]]
+name = "the hook smoke asks for a red-run note the guard does not open with"
+file = "scripts/smoke_hooks.py"
+before = 'RED_RUN_NOTE = "Before calling this red a flake, pre-existing, or caused by the branch:"'
+after = 'RED_RUN_NOTE = "Before calling this red a flake:"'
+reddens = [
+  "tests/scripts/test_smoke_scripts.py::test_the_hook_smoke_asks_for_the_red_run_note_in_the_words_the_note_opens_with",
+]
