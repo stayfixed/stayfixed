@@ -1696,11 +1696,50 @@ def test_detachs_line_says_when_it_kept_the_block_another_checkout_needs(
     assert invoke(["attach", *_flags(side, store, machine), "--yes"]) == 0
     capsys.readouterr()
     assert invoke(["detach", "--root", str(root), "--machine", str(machine)]) == 0
-    assert "the exclude block was kept" in capsys.readouterr().out
+    assert "the exclude block and this checkout's link tree were kept" in capsys.readouterr().out
     assert invoke(["detach", "--root", str(side), "--machine", str(machine), "--json"]) == 0
     data = json.loads(capsys.readouterr().out)
     assert data["exclude_block_kept"] is False
     assert data["exclude_block_removed"] is True
+
+
+@pytest.mark.parametrize("first", ["main", "worktree"])
+def test_detachs_line_names_the_link_tree_it_kept_for_another_checkout(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], first: str
+) -> None:
+    # Detaching the main checkout while a linked worktree is attached keeps the main checkout's
+    # link tree too, since the worktree's harness memory link points at it, and the line named only
+    # the kept exclude block, so the owner found a tree a detach had seemingly forgotten. Both are
+    # named now, and `--json` says it as `link_tree_kept`; a worktree detached first keeps no tree
+    # of its own and says nothing of one. Mutation (oracle): `mutations/`'s "detach's line says
+    # nothing of the link tree it kept" -> the main case's line names the block alone.
+    root, store = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
+    _overlay_grants(store, allow=(RULE,))
+    machine = _machine(tmp_path, overlay=store.parents[2])
+    side = tmp_path / "side"
+    run_git(root, "add", "-A")
+    run_git(root, "commit", "-qm", "the project, committed so the worktree has it too")
+    run_git(root, "worktree", "add", "-q", str(side), "-b", "side")
+    assert invoke(["attach", *_flags(root, store, machine), "--yes"]) == 0
+    assert invoke(["attach", *_flags(side, store, machine), "--yes"]) == 0
+    capsys.readouterr()
+    detached = root if first == "main" else side
+    assert invoke(["detach", "--root", str(detached), "--machine", str(machine), "--json"]) == 0
+    data = json.loads(capsys.readouterr().out)
+    assert (data["exclude_block_kept"], data["link_tree_kept"]) == (True, first == "main")
+    # Attached again, so the same detach can be read as a line too.
+    assert invoke(["attach", *_flags(detached, store, machine), "--yes"]) == 0
+    capsys.readouterr()
+    assert invoke(["detach", "--root", str(detached), "--machine", str(machine)]) == 0
+    kept = (
+        "the exclude block and this checkout's link tree were kept, because another checkout of "
+        "this repository is still attached"
+        if first == "main"
+        else "the exclude block was kept, because another checkout of this repository is still "
+        "attached"
+    )
+    line = capsys.readouterr().out
+    assert line.rstrip("\n").endswith(f"the binding record was left in place; {kept}"), line
 
 
 def test_a_name_longer_than_a_file_name_under_an_overlay_with_no_projects_is_refused_by_both(

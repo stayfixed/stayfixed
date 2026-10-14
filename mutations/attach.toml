@@ -1109,6 +1109,17 @@ reddens = [
   "tests/attach/test_write.py::test_the_block_keeps_what_an_earlier_attach_hid_when_the_grant_changes",
 ]
 
+# Detaching the main checkout while a worktree is attached keeps its link tree, which the
+# worktree's harness link points at; the line named the kept exclude block and not the tree.
+[[mutation]]
+name = "detach's line says nothing of the link tree it kept"
+file = "src/stayfixed/attach/commands.py"
+before = "        if removed.link_tree_kept\n"
+after = "        if False\n"
+reddens = [
+  "tests/attach/test_commands.py::test_detachs_line_names_the_link_tree_it_kept_for_another_checkout[main]",
+]
+
 # The exclude block is shared by every checkout, while each ledger, settings file and set of rule
 # copies is one checkout's. Detaching the main checkout took the block while a worktree was still
 # attached, and that worktree's settings file and rule copy showed in its `git status`.

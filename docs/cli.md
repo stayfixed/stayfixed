@@ -2416,13 +2416,14 @@ repository still holds a ledger, `detach` withdraws only this checkout's harness
 settings, rule copies and ledger, and this checkout's link tree unless this is the main checkout:
 every checkout's harness memory link points at the main checkout's tree, so that tree stays until
 the last attached checkout detaches. A later `attach` in any checkout rebuilds it first, so keeping
-it loses nothing. A harness memory link counts as `attach`'s when it points at the main checkout's
-`paths.memory`, where `attach` points it, or at the checkout's own, and at nothing else; the target
-is never read from the ledger. Two consequences follow while another checkout is attached. The tree
-kept in a detached main checkout still resolves as its note store, so that checkout's own
-`SessionStart` bundles keep delivering its notes. And a detached linked worktree is linked again by
-its next `SessionStart`, which builds a worktree's tree from the main checkout's store whenever that
-store resolves, ledger or none.
+it loses nothing. The line says the tree was kept, and `--json` reports `link_tree_kept: true`. A
+harness memory link counts as `attach`'s when it points at the main checkout's `paths.memory`, where
+`attach` points it, or at the checkout's own, and at nothing else; the target is never read from the
+ledger. Two consequences follow while another checkout is attached. The tree kept in a detached main
+checkout still resolves as its note store, so that checkout's own `SessionStart` bundles keep
+delivering its notes. And a detached linked worktree is linked again by its next `SessionStart`,
+which builds a worktree's tree from the main checkout's store whenever that store resolves, ledger
+or none.
 
 **Writes**: it takes the recorded allow rules and the fallback key back out of
 `.claude/settings.local.json`, drops the hook entries marked `# stayfixed:…` there (a group that

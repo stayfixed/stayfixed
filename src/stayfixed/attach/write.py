@@ -1651,6 +1651,9 @@ class Detached:
     exclude_block_kept: bool = False
     # Fixed sentences about what was left, for the command's line.
     notes: tuple[str, ...] = ()
+    # This checkout's link tree was left in place because it owns the store and another checkout
+    # of this repository still holds a ledger: that checkout's harness memory link points at it.
+    link_tree_kept: bool = False
 
 
 def _emptied(raw: dict[str, Any]) -> dict[str, Any]:
@@ -2197,4 +2200,5 @@ def detach(root: Path, *, machine: Path | None, home: Path | None) -> Detached:
         hidden is not None,
         kept,
         notes,
+        root.resolve() not in trees,
     )
