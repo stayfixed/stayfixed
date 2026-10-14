@@ -1981,8 +1981,13 @@ reddens = [
 [[mutation]]
 name = "setup exempts a destination create left alone"
 file = "src/stayfixed/setup/run.py"
-before = """    exempt = planned.exempt == RECORDED or (
-        planned.exempt == ABSENT and created.template is not None
+before = """    exempt = judged and (
+        planned.exempt == RECORDED
+        or (
+            planned.exempt == ABSENT
+            and created.template is not None
+            and not os.path.islink(created.root)
+        )
     )"""
 after = """    exempt = planned.exempt is not None"""
 reddens = [
@@ -2120,7 +2125,7 @@ file = "src/stayfixed/setup/run.py"
 before = "    if not os.path.lexists(planned.destination):"
 after = "    if not fsops.exists(planned.destination):"
 reddens = [
-  "tests/setup/test_setup.py::test_a_created_overlays_destination_that_is_a_dangling_link_is_there_and_compared",
+  "tests/setup/test_setup.py::test_a_created_overlays_destination_that_is_a_dangling_link_is_refused_before_anything[inside-the-root]",
 ]
 
 # `--overlay`'s path, resolved through a link a repository commits, is spelled in the repository's
@@ -2163,4 +2168,38 @@ before = "        home = fsops.resolved(home)"
 after = "        pass"
 reddens = [
   "tests/setup/test_setup.py::test_a_home_that_is_a_link_to_a_directory_is_followed_once_and_written_where_it_leads",
+]
+
+# A link at a `create:` destination whose target is not there passed the phase, and
+# `gh repo create` made a repository on the owner's account before the clone failed on the link.
+[[mutation]]
+name = "setup plans a created overlay through a link that leads nowhere"
+file = "src/stayfixed/setup/run.py"
+before = "    if not fsops.exists(planned.destination):"
+after = "    if False:"
+reddens = [
+  "tests/setup/test_setup.py::test_a_created_overlays_destination_that_is_a_dangling_link_is_refused_before_anything[inside-the-root]",
+  "tests/setup/test_setup.py::test_a_created_overlays_destination_that_is_a_dangling_link_is_refused_before_anything[outside-the-root]",
+]
+
+# An exemption is the phase's verdict on one directory: a link at the destination re-pointed
+# between the phase and `create`, or one put where the phase found nothing, is compared. Outside
+# the threat model the gate defends (whoever writes `<home>/<name>` mid-run can write the machine
+# file too); defence in depth.
+[[mutation]]
+name = "setup honours an exemption for a directory the phase did not judge"
+file = "src/stayfixed/setup/run.py"
+before = "    judged = _same(root, planned.root)"
+after = "    judged = True"
+reddens = [
+  "tests/setup/test_setup.py::test_a_created_overlays_destination_swapped_after_the_phase_is_compared[recorded-link-repointed]",
+]
+
+[[mutation]]
+name = "setup honours an absent destination's exemption for a link create cloned through"
+file = "src/stayfixed/setup/run.py"
+before = "            and not os.path.islink(created.root)"
+after = "            and True"
+reddens = [
+  "tests/setup/test_setup.py::test_a_created_overlays_destination_swapped_after_the_phase_is_compared[absent-then-a-link]",
 ]

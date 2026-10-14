@@ -1012,6 +1012,14 @@ def _exemption(planned: _Overlay, *, machine: Path) -> str | None:
     # directory this run makes.
     if not os.path.lexists(planned.destination):
         return ABSENT
+    # There and leading nowhere: a link whose target is not there. `gh repo create` would make a
+    # repository on the owner's account and then clone through the link, or fail on it.
+    if not fsops.exists(planned.destination):
+        raise Refusal(
+            f"{quoted(str(planned.destination))} is a link to {quoted(str(planned.root))}, which "
+            f"is not there, so `create:` would clone through it to wherever it leads; remove the "
+            f"link, or point it at the overlay and record that with --overlay <path>"
+        )
     recorded = overlay_root(machine)
     if recorded is not None and _same(recorded, planned.root):
         return RECORDED
@@ -1117,11 +1125,18 @@ def _apply_overlay(planned: _Overlay, *, project_root: Path, runner: Runner) -> 
         raise Refusal(
             f"{fault}. {owner}/{name} was created and cloned to {quoted(str(root))}, but {_CREATED}"
         )
-    # Asked before `init_instance`, which writes in the tree and runs `pre-commit` there. A
-    # destination the phase found absent is exempt only if `create` made it: one it left alone
-    # arrived after the phase, from somewhere else.
-    exempt = planned.exempt == RECORDED or (
-        planned.exempt == ABSENT and created.template is not None
+    # Asked before `init_instance`, which writes in the tree and runs `pre-commit` there. An
+    # exemption is the phase's verdict on one directory, so it holds only for that directory; and
+    # a destination the phase found absent is exempt only if `create` made a directory there: one
+    # it left alone, or a link it cloned through, arrived after the phase, from somewhere else.
+    judged = _same(root, planned.root)
+    exempt = judged and (
+        planned.exempt == RECORDED
+        or (
+            planned.exempt == ABSENT
+            and created.template is not None
+            and not os.path.islink(created.root)
+        )
     )
     _outside_the_project(root, project_root=project_root, exempt=exempt)
     initialised = init_instance(root, owner, runner=runner)

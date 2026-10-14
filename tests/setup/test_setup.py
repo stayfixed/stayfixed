@@ -1133,30 +1133,86 @@ def test_a_created_overlays_destination_that_is_a_link_is_recorded_where_it_lead
     assert overlay_root(machine) == outside.resolve()
 
 
-def test_a_created_overlays_destination_that_is_a_dangling_link_is_there_and_compared(
-    tmp_path: Path,
+@pytest.mark.parametrize("leads", ["inside-the-root", "outside-the-root"])
+def test_a_created_overlays_destination_that_is_a_dangling_link_is_refused_before_anything(
+    tmp_path: Path, leads: str
 ) -> None:
-    # A link at `<home>/<name>` is there even when nothing is where it leads: read as absent, the
-    # destination was exempt from the comparison with a `--root` in no repository, and
-    # `gh repo create` cloned through the link to wherever it pointed. Compared at the target it
-    # names, which lies inside `--root`, it is refused before `gh` runs. Mutation
-    # (`mutations/`'s "setup takes a dangling link at a created overlay's destination for no
-    # destination") -> `gh` runs and this reddens.
+    # A link at `<home>/<name>` whose target is not there: read as absent, the destination was
+    # exempt from the comparison and `gh repo create` cloned through the link to wherever it
+    # pointed; compared at its target, a target outside `--root` still passed and `gh` created a
+    # repository before the clone failed on the link. It is refused where the overlay's place is
+    # asked, before anything is written or run. Mutation (`mutations/`'s "setup plans a created overlay
+    # through a link that leads nowhere") -> `gh` runs and each reddens.
     home = tmp_path / "home"
     home.mkdir()
-    (home / "stayfixed-private").symlink_to(home / "later" / "ov")
+    target = home / "later" / "ov" if leads == "inside-the-root" else tmp_path / "later" / "ov"
+    (home / "stayfixed-private").symlink_to(target)
+    machine = tmp_path / "config.toml"
     runner = Recorder(answers={_OCTOS_PROBE: _A_TEMPLATE}, on_call=_populate_overlay)
-    with pytest.raises(Refusal, match="holds it, or is it"):
+    with pytest.raises(Refusal, match="which is not there"):
         setup(
             "recommended",
             home=home,
-            machine=tmp_path / "config.toml",
+            machine=machine,
             runner=runner,
             yes=True,
             overlay="create:octo/stayfixed-private",
             project_root=home,
         )
-    assert runner.calls == []
+    assert runner.calls == [] and _wrote_anything(home, machine) == []
+
+
+@pytest.mark.parametrize("swap", ["recorded-link-repointed", "absent-then-a-link"])
+def test_a_created_overlays_destination_swapped_after_the_phase_is_compared(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, swap: str
+) -> None:
+    # The phase exempted the destination — the overlay root the machine file records, reached
+    # through a link, or nothing there yet — and between the phase and `create` something put a
+    # link there into `--root`. The exemption holds only for the directory the phase judged, and
+    # an absent destination only when `create` made a directory there and not a link to one, so
+    # the swapped destination is compared and refused before `overlay init`. Out of the threat
+    # model `setup` defends (a party writing `<home>/<name>` mid-run can write the machine file
+    # too); defence in depth. Mutations (`mutations/`'s "setup honours an exemption for a
+    # directory the phase did not judge" -> `recorded-link-repointed`; "setup honours an absent
+    # destination's exemption for a link create cloned through" -> `absent-then-a-link`).
+    home = tmp_path / "home"
+    home.mkdir()
+    destination = home / "stayfixed-private"
+    evil = home / "evil"
+    evil.mkdir()
+    machine = tmp_path / "config.toml"
+    if swap == "recorded-link-repointed":
+        recorded = tmp_path / "outside-ov"
+        _seed_overlay(recorded)
+        _seed_overlay(evil)
+        destination.symlink_to(recorded)
+        write_machine(machine, personal={}, overlay_root=recorded.resolve(), machine={})
+    real = write_machine
+    swapped: list[bool] = []
+
+    def swapping(*args: Any, **kwargs: Any) -> None:
+        if not swapped:
+            swapped.append(True)
+            if destination.is_symlink():
+                destination.unlink()
+            destination.symlink_to(evil)
+        real(*args, **kwargs)
+
+    monkeypatch.setattr("stayfixed.setup.run.write_machine", swapping)
+    runner = Recorder(answers={_OCTOS_PROBE: _A_TEMPLATE}, on_call=_populate_overlay)
+    with pytest.raises(Refusal, match="holds it, or is it"):
+        setup(
+            "recommended",
+            home=home,
+            machine=machine,
+            runner=runner,
+            yes=True,
+            overlay="create:octo/stayfixed-private",
+            project_root=home,
+        )
+    assert swapped
+    manifest = json.loads((evil / PLUGIN_MANIFEST).read_text(encoding="utf-8"))
+    assert manifest["name"] == "stayfixed-overlay", "overlay init ran in the swapped tree"
 
 
 @needs_git
