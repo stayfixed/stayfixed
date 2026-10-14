@@ -722,6 +722,35 @@ def _ask(start: Path, *args: str, keyed: bool = False) -> list[str] | None:
     raise Refusal(_SILENT_IN_A_CHECKOUT.format(start=start, no_answer=_silence(code)))
 
 
+_MISSHAPEN = (
+    "`git` answered a question asked from {start} in a shape it does not give — not a path and "
+    "`true` or `false` — so no overlay root can be shown to lie outside every checkout of the "
+    "project. The overlay root is the machine's trust anchor, and an answer that cannot be read "
+    "is not taken as a yes; check that the `git` on `PATH` is git itself, printing nothing of its "
+    "own, and is 2.31 or later, the first to answer `rev-parse --path-format`"
+)
+
+
+def _well_shaped(lines: list[str]) -> bool:
+    """Whether `lines` is the answer `_COMMON_AND_CHECKOUT` asks for: an absolute path, then
+    `true` or `false`. git 2.30 and older echo the `--path-format=absolute` they do not know as a
+    line of its own, and a wrapper can print a banner on standard output before git's answer."""
+    return len(lines) == 2 and Path(lines[0]).is_absolute() and lines[1] in ("true", "false")
+
+
+def _shaped(start: Path, lines: list[str] | None) -> list[str] | None:
+    """`lines`, git's answer to `_COMMON_AND_CHECKOUT`, when it has the shape git gives; a
+    refusal for any other shape where a `.git` is at or above `start`, as for an answer git did
+    not give; and `None` for one where none is, which names no checkout. Read as "step on", an
+    answer of another shape inside a work tree let the candidate walk pass every directory of a
+    repository holding the overlay."""
+    if lines is None or _well_shaped(lines):
+        return lines
+    if in_work_tree(start):
+        raise Refusal(_MISSHAPEN.format(start=start))
+    return None
+
+
 def _repository(project_root: Path) -> _Repository | None:
     """The repository `project_root` is in; `None`, which is "no repository"; or a refusal.
 
@@ -752,8 +781,10 @@ def _repository(project_root: Path) -> _Repository | None:
         answer = _ask(start, *_COMMON_AND_CHECKOUT)
         if answer is None:
             return None
-    if len(answer) != 2:
-        raise Refusal(unlisted)
+    # The same shape `_shaped` asks of the walk, asked wherever `--root` is: an answer for `--root`
+    # is never stepped past.
+    if not _well_shaped(answer):
+        raise Refusal(_MISSHAPEN.format(start=start))
     if answer[1] != "true":
         raise Refusal(
             f"git does not read {project_root} as inside a checkout: it is inside a bare "
@@ -791,7 +822,8 @@ def _candidate_repository(candidate: Path) -> Path | None:
     `safe.bareRepository`, a bare-shaped `ov/` answers for itself, and its committed `config` or
     `commondir` can make that answer say "not bare" with a common directory anywhere. It cannot
     make git say `ov/` is inside a work tree: that answer comes only through a checkout's `.git`,
-    which a repository cannot commit. So the walk goes on past every other answer.
+    which a repository cannot commit. So the walk goes on past every other answer of the shape git
+    gives (`_shaped`); an answer of any other shape inside a work tree refuses.
 
     Walked up rather than asked once, because git refuses to answer from inside a bare-shaped
     directory — which is exactly where a clone puts the candidate — and a git directory's answer
@@ -800,12 +832,12 @@ def _candidate_repository(candidate: Path) -> Path | None:
     """
     start = _nearest_directory(candidate)
     while True:
-        answer = _ask(start, *_EXPLICIT_BARE, *_COMMON_AND_CHECKOUT, keyed=True)
+        answer = _shaped(start, _ask(start, *_EXPLICIT_BARE, *_COMMON_AND_CHECKOUT, keyed=True))
         if answer is None and in_work_tree(start):
             # A bare-shaped directory, which git declines under the key and describes without
             # it, or a repository git refuses either way, which `_ask` refuses.
-            _ask(start, *_COMMON_AND_CHECKOUT)
-        if answer is not None and len(answer) == 2 and answer[1] == "true":
+            _shaped(start, _ask(start, *_COMMON_AND_CHECKOUT))
+        if answer is not None and answer[1] == "true":
             return Path(answer[0])
         if start == start.parent:
             return None

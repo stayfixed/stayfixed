@@ -2637,9 +2637,10 @@ control system, and a git work tree whose git directory is elsewhere and named o
 and `--work-tree` or `GIT_DIR`, as in a bare-repository dotfiles home. Containment is anchored on
 `--root`, which the command line chooses. Everywhere a `.git` is at or above the directory `git` is
 asked from, a `git` that gives no answer (it cannot be run, runs past its time limit, exits
-non-zero, is ended by a signal or prints nothing), that refuses the repository it found (another
-user's under `safe.directory`, or one whose `.git` it cannot read) or that cannot list its checkouts
-is a refusal.
+non-zero, is ended by a signal or prints nothing), that answers in a shape git does not give (an
+extra line, as git 2.30 and older print for the `--path-format` they do not know, or a wrapper's
+banner), that refuses the repository it found (another user's under `safe.directory`, or one whose
+`.git` it cannot read) or that cannot list its checkouts is a refusal.
 
 **Writes** `<home>` itself when it is not there yet; `--machine`'s file, with the directories above
 it, once for the preset and again for the overlay root `--overlay` records;

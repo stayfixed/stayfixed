@@ -1949,6 +1949,77 @@ def _quiet_git(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, rev_parse: str) 
     stand_in_git(monkeypatch, bin_dir / "git")
 
 
+# Two ways a `git` that runs answers `rev-parse` in a shape git does not give, each a stand-in's
+# body: git 2.30 and older echo the `--path-format=absolute` they do not know as an extra line
+# (stood in for by renaming the flag, which a current git echoes the same way), and a wrapper
+# prints a banner of its own on standard output before git's answer.
+MISSHAPEN = {
+    "an-extra-line": (
+        'for a in "$@"; do shift; '
+        'if [ "$a" = --path-format=absolute ]; then set -- "$@" --path-formatx=absolute; '
+        'else set -- "$@" "$a"; fi; done\n'
+    ),
+    "a-banner": "echo 'welcome to the managed toolchain'\n",
+}
+
+
+@needs_git
+@pytest.mark.parametrize("form", ["path", "create", "root"])
+@pytest.mark.parametrize("shape", sorted(MISSHAPEN))
+def test_git_answering_in_another_shape_inside_a_checkout_refuses_the_overlay(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, shape: str, form: str
+) -> None:
+    # The walk up from the overlay took only `<path>`, `true` as an answer and stepped past every
+    # other exit-0 answer, inside a work tree too, so with `--root` in no repository — where the
+    # walk is the only arm — an overlay, or a `create:` destination, inside another repository's
+    # work tree was recorded. Inside a work tree an answer that is not a path and `true` or
+    # `false` refuses; `root` is the same rule asked of `--root`'s own repository, which refused
+    # such an answer as an unlisted one. Mutations (`mutations/`'s "the candidate walk steps past
+    # an answer of the wrong shape inside a work tree" -> `path` and `create` are recorded;
+    # "setup reads --root's repository from an answer of the wrong shape" -> `root` is refused in
+    # other words).
+    repository = tmp_path / "code" / "R"
+    repository.mkdir(parents=True)
+    _git(repository, "init", "-q", "-b", "main")
+    root = tmp_path / "project"
+    root.mkdir()
+    real_git = shutil.which("git")
+    assert real_git is not None
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "git").write_text(
+        f'#!/bin/sh\n{MISSHAPEN[shape]}exec "{real_git}" "$@"\n', encoding="utf-8"
+    )
+    (bin_dir / "git").chmod(0o755)
+    stand_in_git(monkeypatch, bin_dir / "git")
+    if form == "root":
+        root, overlay, home = repository, tmp_path / "ov", tmp_path / "home"
+        _seed_overlay(overlay)
+        spelled = str(overlay)
+    elif form == "path":
+        overlay, home = repository / "ov", tmp_path / "home"
+        _seed_overlay(overlay)
+        spelled = str(overlay)
+    else:
+        overlay, home, spelled = (
+            repository / "stayfixed-private",
+            repository,
+            "create:octo/stayfixed-private",
+        )
+    runner = Recorder(answers={_OCTOS_PROBE: _A_TEMPLATE}, on_call=_populate_overlay)
+    with pytest.raises(Refusal, match="in a shape it does not give"):
+        setup(
+            "recommended",
+            home=home,
+            machine=tmp_path / "config.toml",
+            runner=runner,
+            yes=True,
+            overlay=spelled,
+            project_root=root,
+        )
+    assert runner.calls == [] and overlay_root(tmp_path / "config.toml") is None
+
+
 @needs_git
 @pytest.mark.parametrize("layout", QUIET_LAYOUTS)
 @pytest.mark.parametrize("quiet", sorted(QUIET))

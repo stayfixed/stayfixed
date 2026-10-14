@@ -379,8 +379,8 @@ reddens = [
 [[mutation]]
 name = "the candidate-side walk takes an answer from outside a work tree as the candidate's"
 file = "src/stayfixed/setup/run.py"
-before = '        if answer is not None and len(answer) == 2 and answer[1] == "true":'
-after = "        if answer is not None and len(answer) == 2:"
+before = '        if answer is not None and answer[1] == "true":'
+after = "        if answer is not None:"
 reddens = [
   "tests/setup/test_setup.py::test_a_checkout_the_listing_names_by_its_git_directory_is_still_refused",
 ]
@@ -1275,7 +1275,7 @@ reddens = [
 [[mutation]]
 name = "the candidate-side walk steps past a repository git refuses under the bare key"
 file = "src/stayfixed/setup/run.py"
-before = "            _ask(start, *_COMMON_AND_CHECKOUT)"
+before = "            _shaped(start, _ask(start, *_COMMON_AND_CHECKOUT))"
 after = "            pass"
 reddens = [
   "tests/setup/test_setup.py::test_git_refusing_the_repository_inside_a_checkout_refuses_the_overlay[the-candidate-side]",
@@ -1996,4 +1996,35 @@ after = """    initialised = init_instance(created.root, owner, runner=runner)
     _outside_the_project(created.root, project_root=project_root, exempt=exempt)"""
 reddens = [
   "tests/setup/test_setup.py::test_a_created_overlays_destination_that_appears_after_the_phase_is_compared_before_init",
+]
+
+# The walk up from the overlay took only an answer of `<path>`, `true` and stepped past any other
+# exit-0 answer, inside a work tree too: git 2.30 and older echo the `--path-format=absolute` they
+# do not know as a line of their own, and a wrapper can print a banner, so with `--root` in no
+# repository, where the walk is the only arm, an overlay inside another repository's work tree was
+# recorded. Inside a work tree an answer of another shape refuses.
+[[mutation]]
+name = "the candidate walk steps past an answer of the wrong shape inside a work tree"
+file = "src/stayfixed/setup/run.py"
+before = """    if in_work_tree(start):
+        raise Refusal(_MISSHAPEN.format(start=start))
+    return None"""
+after = """    return None"""
+reddens = [
+  "tests/setup/test_setup.py::test_git_answering_in_another_shape_inside_a_checkout_refuses_the_overlay[an-extra-line-path]",
+  "tests/setup/test_setup.py::test_git_answering_in_another_shape_inside_a_checkout_refuses_the_overlay[an-extra-line-create]",
+  "tests/setup/test_setup.py::test_git_answering_in_another_shape_inside_a_checkout_refuses_the_overlay[a-banner-path]",
+  "tests/setup/test_setup.py::test_git_answering_in_another_shape_inside_a_checkout_refuses_the_overlay[a-banner-create]",
+]
+
+[[mutation]]
+name = "setup reads --root's repository from an answer of the wrong shape"
+file = "src/stayfixed/setup/run.py"
+before = """    if not _well_shaped(answer):
+        raise Refusal(_MISSHAPEN.format(start=start))"""
+after = """    if False:
+        raise Refusal(_MISSHAPEN.format(start=start))"""
+reddens = [
+  "tests/setup/test_setup.py::test_git_answering_in_another_shape_inside_a_checkout_refuses_the_overlay[an-extra-line-root]",
+  "tests/setup/test_setup.py::test_git_answering_in_another_shape_inside_a_checkout_refuses_the_overlay[a-banner-root]",
 ]
