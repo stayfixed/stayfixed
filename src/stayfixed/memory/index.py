@@ -279,15 +279,8 @@ def _relative(note: Note) -> str:
 
 def _metadata_index(note: Note) -> str | None:
     """The short index line the note carries under `metadata:`, when it holds more than
-    whitespace, else `None`. One line by construction: the parser reads every value from one
-    frontmatter line and strips it.
-
-    The owner's own line, so it outranks a line harvested from `MEMORY.md`, which is what the
-    native writer appended — the description, in the case that asked for this. It is still a line
-    this run writes into the note, so it is provisional, as the description is: the note format
-    passes unknown `metadata.*` keys through, and this reads one as a source for that line and
-    nothing more. Once written, a later edit to `metadata.index` is shadowed by the `index:` it
-    became, as an edit to the description is."""
+    whitespace, else `None`: the owner's own line, which `reconcile` takes before a harvested one
+    and writes as provisional (its docstring says why)."""
     line = note.metadata.get("index", "").strip()
     return line or None
 
@@ -297,7 +290,10 @@ def reconcile(store: Store, config: Config, *, write: bool) -> Reconciliation:
 
     The line, in order: a top-level `index:` (curated, left alone); `metadata.index`
     (provisional, `_metadata_index`); a line harvested from `MEMORY.md` (native); the
-    description (provisional).
+    description (provisional). `metadata.index` outranks the harvest because it is the owner's own
+    line, where the harvested one is what the native writer appended. It is provisional because
+    this run writes it into the note, and once written it shadows a later edit to
+    `metadata.index`, as the description's line does an edit to the description.
 
     `config` rather than a bare group list: the groups came from it at every call site anyway,
     and the index's target rule needs `project.name` and the recorded overlay, which a

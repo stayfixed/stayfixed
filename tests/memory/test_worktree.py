@@ -1511,6 +1511,8 @@ def test_every_fault_of_asking_where_a_harness_link_may_point_is_one_refusal_nam
     with pytest.raises(PathEscape) as refused:
         worktree.harness_targets(side, owner, config)
     assert type(refused.value) is PathEscape
+    # Chained to the fault it translates, so a traceback still shows what was met.
+    assert refused.value.__cause__ is not None
     named = "the main checkout's" if whose == "main" else "the linked worktree's"
     assert str(refused.value) == (
         f"where a harness memory link may point cannot be asked of {named} paths.memory: "

@@ -783,10 +783,13 @@ def harness_targets(root: Path, owner: Path, config: Config) -> tuple[Path, ...]
     link tree is a directory of links, and a `paths.memory` that is itself a link to one is a
     layout the resolver reads too, so refusing it here alone would make `detach` refuse a checkout
     it attached.
+
+    A checkout is the owner when the two resolve alike, as `doctor` compares them: `git` names the
+    owner by its resolved path, and `--root` may spell the same checkout through a link.
     """
     found: list[Path] = []
     for checkout in (owner, root):
-        target = _harness_target(checkout, config, owner=checkout == owner)
+        target = _harness_target(checkout, config, owner=checkout.resolve() == owner.resolve())
         if target not in found:
             found.append(target)
     return tuple(found)
@@ -804,12 +807,11 @@ def _harness_target(checkout: Path, config: Config, *, owner: bool) -> Path:
     try:
         return contained(checkout, value, allow_final_symlink=True).resolve()
     except PathEscape as exc:
-        why = str(exc)
-    except RuntimeError:
-        why = f"{value!r} is a symlink loop"
+        raise PathEscape(f"{asked}: {exc}") from exc
+    except RuntimeError as exc:
+        raise PathEscape(f"{asked}: {value!r} is a symlink loop") from exc
     except OSError as exc:
-        why = f"{value!r} cannot be resolved ({fsops.said(exc)})"
-    raise PathEscape(f"{asked}: {why}")
+        raise PathEscape(f"{asked}: {value!r} cannot be resolved ({fsops.said(exc)})") from exc
 
 
 def detach_main(
@@ -895,16 +897,13 @@ def detach_main(
     # one. `OSError` covers "not empty", "not there" and a component the walk refuses.
     with contextlib.suppress(OSError):
         fsops.rmdir_within(home_root, str(PurePosixPath(harness_relative).parent))
-    # One link stands at that name, so at most one target matches it and `gone` holds it once.
-    gone = (
-        [path for target in targets for path in _withdraw_lapsed(root, target, elsewhere)]
-        if elsewhere is not None
-        else []
-    )
-    if elsewhere is not None and gone:
+    if elsewhere is not None:
+        # One link stands at that name, so at most one target matches it and `gone` holds it once.
+        gone = [path for target in targets for path in _withdraw_lapsed(root, target, elsewhere)]
         revoked += gone
-        with contextlib.suppress(OSError):
-            fsops.rmdir_within(elsewhere, str(PurePosixPath(harness_relative).parent))
+        if gone:
+            with contextlib.suppress(OSError):
+                fsops.rmdir_within(elsewhere, str(PurePosixPath(harness_relative).parent))
     if keep_tree:
         return Links([], revoked)
     for name in linked_names(config):
