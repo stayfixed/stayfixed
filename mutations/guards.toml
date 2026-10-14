@@ -431,7 +431,7 @@ file = "src/stayfixed/guards/commit.py"
 before = "|codex|chatgpt|devin|"
 after = "|codex|devin|"
 reddens = [
-  "tests/guards/test_commit.py::test_the_attribution_probes_are_judged_by_the_documented_contract[chatgpt]",
+  "tests/guards/test_commit.py::test_positive_samples_are_flagged[Assisted-by: ChatGPT]",
 ]
 
 [[mutation]]
@@ -440,7 +440,7 @@ file = "src/stayfixed/guards/commit.py"
 before = "|cursor agent|cursor|openai codex|"
 after = "|cursor agent|openai codex|"
 reddens = [
-  "tests/guards/test_commit.py::test_the_attribution_probes_are_judged_by_the_documented_contract[cursor]",
+  "tests/guards/test_commit.py::test_positive_samples_are_flagged[Generated-by: Cursor]",
 ]
 
 # The paragraph rule: only the final paragraph is judged, so a strip can never amputate a body
