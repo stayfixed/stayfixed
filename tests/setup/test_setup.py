@@ -943,7 +943,9 @@ def test_a_created_overlay_is_refused_before_the_repository_exists(tmp_path: Pat
     home.mkdir()
     _git(home, "init", "-q", "-b", "main")
     machine = tmp_path / "config.toml"
-    runner = Recorder(on_call=_populate_overlay)
+    # The template probe answered, so under the mutation `gh repo create` really runs and the
+    # floor's refusal follows it, as it did on the owner's machine.
+    runner = Recorder(answers={_OCTOS_PROBE: _A_TEMPLATE}, on_call=_populate_overlay)
     with pytest.raises(Refusal, match="is inside"):
         setup(
             "recommended",
