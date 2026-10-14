@@ -2618,7 +2618,8 @@ present; and it must lie outside the repository `--root` is in — not inside it
 not in another checkout of it, since a worktree is not a different repository and a clone ships
 its tree into all of them — and outside every checkout of any other repository, a checkout of its
 own nested in one included, because a repository can put files into any directory of its work
-tree. Where git finds no repository for `--root` (no `.git` at or above it), there are no other
+tree. For the same reason a linked worktree of the overlay's own repository nested in another
+checkout of it is refused, and the refusal says it is the overlay's own repository. Where git finds no repository for `--root` (no `.git` at or above it), there are no other
 checkouts to compare, and only one overlay is exempt from the comparison with `--root` itself: a
 `create:` destination, which this run makes, and the clone it made when the same command runs
 again. An existing `--overlay <path>` inside, around or equal to a `--root` in no repository is

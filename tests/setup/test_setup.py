@@ -1131,6 +1131,30 @@ def test_a_git_directory_git_names_reaches_a_containment_refusal_quoted(
 
 
 @needs_git
+def test_an_overlay_that_is_a_worktree_nested_in_its_own_checkout_is_refused_as_its_own(
+    tmp_path: Path,
+) -> None:
+    # A linked worktree of the overlay's own repository, nested in that repository's main
+    # checkout, lies where the main checkout can write: a branch there that tracks `.wt/ov/x`
+    # writes it into the worktree's directory. It stays refused, and the refusal says it is the
+    # overlay's own repository, where it said "another repository" of the one it belongs to.
+    # Mutation (`mutations/`'s "setup calls the overlay's own repository another one") -> the
+    # refusal says "another repository" and this reddens.
+    main = tmp_path / "overlay"
+    main.mkdir()
+    _git(main, "init", "-q", "-b", "main")
+    (main / "README.md").write_text("x", encoding="utf-8")
+    _git(main, "add", "-A")
+    _git(main, "commit", "-qm", "init")
+    candidate = main / ".wt" / "ov"
+    _git(main, "worktree", "add", "-q", str(candidate), "-b", "ov")
+    _seed_overlay(candidate)
+    with pytest.raises(Refusal, match="inside another checkout of its own repository"):
+        _record(tmp_path, candidate, tmp_path / "elsewhere")
+    assert overlay_root(tmp_path / "config.toml") is None
+
+
+@needs_git
 def test_an_overlay_that_is_a_checkout_of_its_own_is_recorded(tmp_path: Path) -> None:
     # The owner's own layout: the overlay is a clone of a private repository, in a directory no
     # other repository holds. That it is a checkout is not what refuses an overlay; where it lies

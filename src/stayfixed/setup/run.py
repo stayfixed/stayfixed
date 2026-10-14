@@ -874,13 +874,20 @@ def _outside_the_project(candidate: Path, *, project_root: Path, created: bool) 
     # repository can put files in it — a merge writes a tracked path into a nested checkout's
     # directory as into any other.
     outer = _candidate_repository(resolved_candidate.parent)
-    if outer is not None:
-        raise Refusal(
-            f"{candidate} is inside a checkout of another repository, whose git directory is "
-            f"{quoted(str(outer))}. The overlay root is the machine's trust anchor and must "
-            f"not lie where a repository can ship files: put it in a directory no repository's "
-            f"checkout holds"
-        )
+    if outer is None:
+        return
+    # A linked worktree of the overlay's own repository, nested in another checkout of it, is
+    # refused for the same reason — the outer checkout can write into it — and said as what it
+    # is: "another repository" sent the owner looking for one that is not there. Its own only
+    # when the candidate is a checkout's top, its `.git` there: a plain directory's nearest
+    # checkout is the outer one, and that is another repository.
+    own = os.path.lexists(resolved_candidate / ".git") and _same(outer.resolve(), found.resolve())
+    whose = "another checkout of its own repository" if own else "a checkout of another repository"
+    raise Refusal(
+        f"{candidate} is inside {whose}, whose git directory is {quoted(str(outer))}. The "
+        f"overlay root is the machine's trust anchor and must not lie where a repository can "
+        f"ship files: put it in a directory no repository's checkout holds"
+    )
 
 
 @dataclass(frozen=True)

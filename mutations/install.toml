@@ -677,8 +677,10 @@ reddens = [
 [[mutation]]
 name = "setup stops refusing an overlay inside another repository's checkout"
 file = "src/stayfixed/setup/run.py"
-before = "    if outer is not None:"
-after = "    if False:"
+before = """    if outer is None:
+        return"""
+after = """    if True:
+        return"""
 reddens = [
   "tests/setup/test_setup.py::test_an_overlay_inside_another_repository_is_refused_from_a_directory_in_no_repository",
   "tests/setup/test_setup.py::test_an_overlay_that_is_a_checkout_of_its_own_inside_another_repository_is_refused",
@@ -1822,8 +1824,29 @@ reddens = [
 [[mutation]]
 name = "setup prints another repository's git directory raw in a containment refusal"
 file = "src/stayfixed/setup/run.py"
-before = '            f"{quoted(str(outer))}. The overlay root'
-after = '            f"{outer}. The overlay root'
+before = '        f"{candidate} is inside {whose}, whose git directory is {quoted(str(outer))}. The "'
+after = '        f"{candidate} is inside {whose}, whose git directory is {outer}. The "'
 reddens = [
   "tests/setup/test_setup.py::test_a_git_directory_git_names_reaches_a_containment_refusal_quoted[another-repositorys]",
+]
+
+# A linked worktree of the overlay's own repository nested in another checkout of it is refused as
+# any nested checkout is, and the refusal says whose: "another repository" sent the owner looking
+# for a repository that is not there.
+[[mutation]]
+name = "setup calls the overlay's own repository another one"
+file = "src/stayfixed/setup/run.py"
+before = "    own = os.path.lexists(resolved_candidate / \".git\") and _same(outer.resolve(), found.resolve())"
+after = "    own = False"
+reddens = [
+  "tests/setup/test_setup.py::test_an_overlay_that_is_a_worktree_nested_in_its_own_checkout_is_refused_as_its_own",
+]
+
+[[mutation]]
+name = "setup calls a plain directory in another repository's checkout its own"
+file = "src/stayfixed/setup/run.py"
+before = "    own = os.path.lexists(resolved_candidate / \".git\") and _same(outer.resolve(), found.resolve())"
+after = "    own = _same(outer.resolve(), found.resolve())"
+reddens = [
+  "tests/setup/test_setup.py::test_an_overlay_inside_another_repository_is_refused_from_a_directory_in_no_repository",
 ]
