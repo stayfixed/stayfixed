@@ -1666,7 +1666,7 @@ file = "src/stayfixed/attach/doctor.py"
 before = "        return _LINK if fsops.exists(harness) else _DANGLING"
 after = "        return _LINK"
 reddens = [
-  "tests/attach/test_doctor.py::test_a_linked_worktree_whose_main_checkout_tree_is_gone_reads_its_link_as_dangling",
+  "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[tree-gone-links-dangle]",
 ]
 
 # Where a real directory sits at the harness memory path, `attach` takes the settings-file fallback,
@@ -1678,7 +1678,7 @@ file = "src/stayfixed/attach/doctor.py"
 before = "    recorded = _recorded_fallback(context) if shape == _REAL_DIRECTORY else None"
 after = "    recorded = None"
 reddens = [
-  "tests/attach/test_doctor.py::test_a_real_directory_beside_the_settings_fallback_attach_recorded_reads_as_in_place[the-store]",
+  "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[fallback-approved]",
 ]
 
 # That directory can hold notes the harness wrote on its own; `attach` says to move it aside.
@@ -1889,7 +1889,6 @@ after = "    return _Verdict(  # tree-there-not-resolving\n        \"ok\",\n    
 reddens = [
   "tests/attach/test_doctor.py::test_a_harness_link_beside_a_store_that_does_not_resolve_is_never_green_and_names_the_cause[tree-symlinked]",
   "tests/attach/test_doctor.py::test_a_harness_link_beside_a_store_that_does_not_resolve_is_never_green_and_names_the_cause[groups-gone]",
-  "tests/attach/test_doctor.py::test_a_harness_link_beside_a_store_that_does_not_resolve_is_never_green_and_names_the_cause[tree-empty]",
   "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[tree-there-not-resolving]",
 ]
 
@@ -3206,7 +3205,7 @@ file = "src/stayfixed/attach/doctor.py"
 before = "    if shape == _REAL_DIRECTORY and recorded != store.path.resolve():  # fallback-elsewhere\n"
 after = "    if False:  # fallback-elsewhere\n"
 reddens = [
-  "tests/attach/test_doctor.py::test_a_real_directory_beside_the_settings_fallback_attach_recorded_reads_as_in_place[elsewhere]",
+  "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[fallback-through-an-alias]",
 ]
 
 # `attach` writes one value into the fallback, the owning checkout's store, resolved. Compared with

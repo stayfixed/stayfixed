@@ -363,40 +363,29 @@ UNRESOLVED_TREES = {
     "tree-empty": _tree_empty,
 }
 
-# The `attached` row's status, detail and remedy for each, with the link `attach` makes at the
-# harness memory path, pasted rather than read back from the code under test.
-_RELINK = "run `stayfixed attach --store <overlay>/projects/<project>/memory`"
+# The `attached` row's status, detail and remedy for a tree that is there and does not resolve,
+# with the link `attach` makes at the harness memory path, pasted rather than read back from the
+# code under test.
 _UNCHECKED = (
     "warn",
     "attached; the harness memory path is a link, and the note store does not resolve, so what "
     "it points at could not be checked; the binding is bound",
     "run `stayfixed memory index --check`, then `stayfixed doctor` again",
 )
-UNRESOLVED_ROWS = {
-    "tree-gone": (
-        "red",
-        "attached; the harness memory path is a dangling link, so the harness reads nothing "
-        "through it; the binding is bound",
-        _RELINK,
-    ),
-    "tree-symlinked": _UNCHECKED,
-    "groups-gone": _UNCHECKED,
-    "tree-empty": _UNCHECKED,
-}
 
 
-@pytest.mark.parametrize("cause", sorted(UNRESOLVED_TREES))
+# The table below (`ONE_MACHINE_STATE`) holds the tree gone and the tree emptied, read from both
+# checkouts; these are the two causes it does not.
+@pytest.mark.parametrize("cause", ["groups-gone", "tree-symlinked"])
 def test_a_harness_link_beside_a_store_that_does_not_resolve_is_never_green_and_names_the_cause(
     tmp_path: Path, cause: str
 ) -> None:
     # A link at the harness memory path where `attach` points it, the link tree at `paths.memory`,
     # and a note store that does not resolve. Green there would be the false sentence the
     # comparison exists to prevent. The binding stays bound, so this is the harness path's answer
-    # and no earlier arm's. Split by cause: a tree that is gone leaves the link dangling, red with
-    # `attach` for remedy, as every dangling link is from every checkout; a tree that is there and
-    # does not resolve warns and sends the reader to `memory index --check`, which says why.
-    # Mutation (oracle): `mutations/`'s "doctor calls a harness link it could not check green" ->
-    # the row is ok for every case but `tree-gone`.
+    # and no earlier arm's. A tree that is there and does not resolve warns and sends the reader
+    # to `memory index --check`, which says why. Mutation (oracle): `mutations/`'s "doctor calls a
+    # harness link it could not check green" -> the row is ok.
     root = _attached(tmp_path)
     _harness(tmp_path, root).symlink_to(root / "docs" / "memory")
     UNRESOLVED_TREES[cause](tmp_path, root)
@@ -406,8 +395,7 @@ def test_a_harness_link_beside_a_store_that_does_not_resolve_is_never_green_and_
     check = _by_name(
         _checks(tmp_path, root, home=tmp_path / "home", machine=_machine(tmp_path)), "attached"
     )
-    status, detail, remedy = UNRESOLVED_ROWS[cause]
-    assert (check.status, check.detail, check.remedy) == (status, detail, remedy)
+    assert (check.status, check.detail, check.remedy) == _UNCHECKED
 
 
 def test_a_ledger_whose_link_tree_is_gone_warns_and_names_attach(tmp_path: Path) -> None:
@@ -489,54 +477,6 @@ def test_a_real_directory_at_the_harness_path_is_never_told_to_be_removed(tmp_pa
     assert "remove" not in row.remedy and "aside" in row.remedy
 
 
-@pytest.mark.parametrize("key", ["the-store", "elsewhere", "absent"])
-def test_a_real_directory_beside_the_settings_fallback_attach_recorded_reads_as_in_place(
-    tmp_path: Path, key: str
-) -> None:
-    # Where a real directory already sits at the harness memory path and the store is approved,
-    # `attach` takes the settings-file fallback: `autoMemoryDirectory` in
-    # `.claude/settings.local.json`, naming the store, which is where the harness then reads its
-    # memory. The row looked only at the directory and was red, telling the owner to remove it,
-    # on the one shape `attach` leaves on purpose. A key naming another directory, or none, is
-    # still the red real directory. Mutation (oracle): `mutations/`'s "doctor reads the real
-    # directory at the harness memory path without the settings fallback" -> `the-store` is red.
-    import json as _json
-
-    from tests.attach.test_links import _attach, _bound, _trusted
-
-    root, store, machine = _bound(tmp_path)
-    home = tmp_path / "home"
-    _attach(root, store, machine, home)
-    _trusted(root, machine)
-    _harness_link_of(root, home).mkdir(parents=True)
-    _attach(root, store, machine, home)
-    settings = root / LOCAL_SETTINGS
-    recorded = _json.loads(settings.read_text(encoding="utf-8"))
-    # Non-vacuous: `attach` took the fallback, naming this checkout's tree.
-    assert recorded["autoMemoryDirectory"] == str((root / "docs" / "memory").resolve())
-    if key == "elsewhere":
-        (tmp_path / "elsewhere").mkdir()
-        recorded["autoMemoryDirectory"] = str(tmp_path / "elsewhere")
-        settings.write_text(_json.dumps(recorded), encoding="utf-8")
-    elif key == "absent":
-        settings.unlink()
-    rows = doctor_checks.run_checks(
-        root, home=home, machine=machine, runner=Recorder(), env=_env(tmp_path)
-    )
-    row = _by_name(rows, "attached")
-    if key == "the-store":
-        assert (row.status, row.detail, row.remedy) == (
-            OK,
-            "attached; the harness memory path is a real directory, and autoMemoryDirectory in "
-            ".claude/settings.local.json points the harness at the store instead; the binding is "
-            "bound",
-            "",
-        )
-    else:
-        assert row.status == "red"
-        assert "real directory" in row.detail
-
-
 def _worktree_attached(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
     """The main checkout attached with its store approved, and a linked worktree attached after
     it by `attach` itself, which points the worktree's harness memory link at the main checkout's
@@ -585,20 +525,6 @@ def test_a_normally_attached_linked_worktree_is_ok(tmp_path: Path) -> None:
         "attached; the harness memory path is a link to the store; the binding is bound",
         "",
     )
-
-
-def test_a_linked_worktree_whose_main_checkout_tree_is_gone_reads_its_link_as_dangling(
-    tmp_path: Path,
-) -> None:
-    # The vacuity guard on the case above: recognising the main checkout's tree must not make a
-    # link to it green once that tree is gone, which a comparison of resolved paths does, since a
-    # dangling link resolves to the path it names. Mutation (oracle): `mutations/`'s "doctor
-    # compares a dangling harness link before asking whether it reaches anything" -> ok.
-    root, side, machine, home = _worktree_attached(tmp_path)
-    shutil.rmtree(root / "docs" / "memory")
-    row = _worktree_row(tmp_path, side, machine, home)
-    assert row.status == "red"
-    assert "dangling" in row.detail
 
 
 def test_a_linked_worktree_whose_main_checkout_tree_is_reached_through_a_symlink_warns(
@@ -840,7 +766,7 @@ _FALLBACK = (
     "a real directory, and autoMemoryDirectory in .claude/settings.local.json points the harness "
     "at the store"
 )
-_REAL_DIRECTORY = (
+_RED_REAL_DIRECTORY = (
     "red",
     "the harness memory path is a real directory rather than a link to the store, so this "
     "checkout looks attached and behaves like nothing",
@@ -848,15 +774,15 @@ _REAL_DIRECTORY = (
     "<overlay>/projects/<project>/memory` again",
 )
 # Each state: what is done to the machine, then the row as (status, the harness memory path's
-# shape, remedy); a shape of `None` is the real directory's red, whose sentence is the whole
-# detail. `{harness}` is the checkout's own harness memory path.
+# shape, remedy); for the real directory's red (`_RED_REAL_DIRECTORY`) the shape is the row's whole
+# detail, which never says "attached". `{harness}` is the checkout's own harness memory path.
 ONE_MACHINE_STATE: dict[str, tuple[Callable[[_Machine], None], tuple[str, str, str]]] = {
     "attached": (lambda case: None, ("ok", "a link to the store", "")),
     "tree-gone-links-dangle": (
         _main_tree_gone,
         ("red", "a dangling link, so the harness reads nothing through it", _LINK_REMEDY),
     ),
-    "real-directory-no-fallback": (_real_directories, _REAL_DIRECTORY),
+    "real-directory-no-fallback": (_real_directories, _RED_REAL_DIRECTORY),
     "targets-unaskable": (
         _targets_unaskable,
         (
@@ -868,7 +794,7 @@ ONE_MACHINE_STATE: dict[str, tuple[Callable[[_Machine], None], tuple[str, str, s
             "readable, then run `stayfixed doctor` again",
         ),
     ),
-    "fallback-through-an-alias": (_fallback_through_an_alias, _REAL_DIRECTORY),
+    "fallback-through-an-alias": (_fallback_through_an_alias, _RED_REAL_DIRECTORY),
     "links-elsewhere": (
         _links_elsewhere,
         (
@@ -993,7 +919,11 @@ def test_one_machine_state_reads_one_status_from_every_checkout(
     # "doctor reads a lapsed approval as one the trust record asks for" ->
     # `lapsed-links-withdrawn`; "doctor asks the gate of a worktree's own store" -> the worktree
     # half of `no-links-approved`; "doctor reads a link to the store as ok without asking the
-    # gate" -> `link-lapsed`, `link-never-approved`.
+    # gate" -> `link-lapsed`, `link-never-approved`; "doctor compares a dangling harness link
+    # before asking whether it reaches anything" -> `tree-gone-links-dangle`; "doctor reads the
+    # real directory at the harness memory path without the settings fallback" ->
+    # `fallback-approved`; "doctor reads a fallback naming another directory as the store" ->
+    # `fallback-through-an-alias`.
     root, side, machine, home = _worktree_attached(tmp_path)
     case = _Machine(tmp_path, root, side, machine, home, monkeypatch)
     change, (status, shape, remedy) = ONE_MACHINE_STATE[state]
@@ -1068,7 +998,7 @@ def test_a_fallback_naming_a_directory_a_branch_chose_is_never_ok(
     # Non-vacuous: the harness memory path is the real directory the fallback stands beside.
     assert harness.is_dir() and not harness.is_symlink()
     row = _worktree_row(tmp_path, side, machine, home)
-    status, shape, remedy = _REAL_DIRECTORY
+    status, shape, remedy = _RED_REAL_DIRECTORY
     assert (row.status, row.detail, row.remedy) == (
         status,
         shape,
