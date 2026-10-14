@@ -13,7 +13,6 @@ from __future__ import annotations
 import contextlib
 import errno
 import os
-import sys
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -141,13 +140,6 @@ def lstat_fault(path: Path) -> int | type[ValueError] | None:
     except ValueError:
         return ValueError
     return None
-
-
-# `Path.resolve()` of a symlink loop raises `RuntimeError` up to Python 3.12, and from 3.13 answers
-# the path the loop names, so a real loop proves a `RuntimeError` arm only on the older two.
-LOOPS_RAISE_ONLY_BEFORE_3_13 = pytest.mark.skipif(
-    sys.version_info >= (3, 13), reason="from 3.13 resolve() reads a symlink loop as its own path"
-)
 
 
 def resolving_raises(monkeypatch: pytest.MonkeyPatch, path: Path, raised: BaseException) -> None:

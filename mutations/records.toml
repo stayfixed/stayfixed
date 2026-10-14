@@ -3271,10 +3271,11 @@ reddens = [
 ]
 
 # Asking where a harness memory link may point resolves a `paths.memory` a checkout chose, and up to
-# Python 3.12 a symlink loop there raises `RuntimeError` out of `.resolve()`: `detach` ended in an
-# internal error and `doctor` in "this check could not run". Every fault is one `PathEscape`.
+# Python 3.12 a symlink loop there raised `RuntimeError` out of `.resolve()`: `detach` ended in an
+# internal error and `doctor` in "this check could not run". Every fault is one `PathEscape`, and a
+# loop, `fsops.resolved`'s `ELOOP` on every interpreter, is named as one.
 [[mutation]]
-name = "harness_targets lets a symlink loop out as RuntimeError"
+name = "harness_targets words a symlink loop as a path it cannot resolve"
 file = "src/stayfixed/memory/worktree.py"
 before = """        if exc.errno == errno.ELOOP:
             raise PathEscape(f"{asked}: {value!r} is a symlink loop") from exc

@@ -4,4 +4,5 @@ A `paths.memory` that is itself a loop, in the checkout `detach` runs in or in t
 refused before anything is withdrawn, the refusal saying whose `paths.memory` it is and that it is a
 symlink loop. A `MEMORY.md` that loops is refused like any index link that reaches no place in this
 project's share of the overlay, and a group's link that loops is left standing by `detach`, as it
-leaves any link that points elsewhere.
+leaves any link that points elsewhere. Each is answered alike on every Python, where 3.13 read such
+a loop as the path it names.
