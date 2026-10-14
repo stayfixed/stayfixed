@@ -1,22 +1,12 @@
-"""No script under `scripts/` imports another, but the one exemption named here.
+"""No script under `scripts/` imports another, but the one exemption named here; CONTRIBUTING.md,
+under "Areas", says why.
 
-The rule exists for two reasons. `scripts/publish_plugin.py` runs `scripts/plugin_tree.py` and
-`src/stayfixed` read out of the tag's objects, so nothing it runs may reach for a sibling script
-that extraction does not carry. And the constants two scripts share are copied, each into its own
-file, and held equal by tests (`tests/test_check_workflow.py`'s
-`test_one_commit_id_shape_everywhere` and `test_one_plugin_repository_everywhere`) rather than
-imported.
-
-The walk reads import statements in the syntax tree of every `scripts/*.py` and of the launcher
-`scripts/stayfixed`, at module level or inside a function. A script is importable by its stem
-only through a `.py` file, so the stems of those files are the names an offence can take; the
-launcher is read as an importer and never as a module. The directory's own name is one too, so a
-package-qualified sibling (`import scripts.plugin_tree`, `from scripts import plugin_tree`) is an
-offence under the name `scripts`. The walk's limits: a script run through
-`runpy` or loaded through `importlib` is not seen, nor one reached by a name built at run time; and
-`sys.path` is not followed, so an import statement is judged by its name alone, and a module of a
-sibling's name that `sys.path` would find elsewhere is an offence all the same. What the walk
-cannot see is reviewed by hand.
+The walk reads every import statement in every `scripts/*.py` and the launcher `scripts/stayfixed`
+through `tests/boundaries/astscan.py`, as the area rules do, and an offence is a module reached by a
+sibling's stem or by the directory's own name, which a package-qualified or relative import goes
+through. What it cannot see is reviewed by hand: a script run through `runpy` or loaded through
+`importlib`, and a name built at run time. `sys.path` is not followed, so a module of a sibling's
+name found elsewhere is an offence all the same.
 """
 
 from __future__ import annotations
@@ -24,6 +14,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+from tests.boundaries.astscan import imported_modules
 from tests.scriptload import SCRIPTS
 
 # The scripts allowed to import a sibling, as (the importing file's name, the module it imports).
@@ -44,30 +35,17 @@ def _script_modules() -> frozenset[str]:
     return frozenset({*(path.stem for path in SCRIPTS.glob("*.py")), SCRIPTS.name})
 
 
-def _top_level_names(node: ast.Import | ast.ImportFrom) -> list[str]:
-    """The top-level module names an import statement reaches for.
-
-    A relative import has no package to be relative to in a script, so it names the module after
-    its dots, or each imported name when there is none: `from . import smoke_hooks` reaches for
-    `smoke_hooks` all the same.
-    """
-    if isinstance(node, ast.Import):
-        return [alias.name.split(".")[0] for alias in node.names]
-    if node.module is not None:
-        return [node.module.split(".")[0]]
-    return [alias.name.split(".")[0] for alias in node.names]
-
-
 def _script_imports() -> set[tuple[str, str]]:
     """Every (file name, script module) pair an import statement in a script names; `scripts`
-    stands for any sibling reached through the directory's name."""
+    stands for any sibling reached through the directory's name, a relative import's included."""
     modules = _script_modules()
     found: set[tuple[str, str]] = set()
     for path in _script_files():
         tree = ast.parse(path.read_text("utf-8"), filename=str(path))
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Import | ast.ImportFrom):
-                found |= {(path.name, n) for n in _top_level_names(node) if n in modules}
+        for _, name in imported_modules(tree, (SCRIPTS.name,)):
+            top = name.split(".")[0]
+            if top in modules:
+                found.add((path.name, top))
     return found
 
 
