@@ -1094,6 +1094,72 @@ def test_a_created_overlays_destination_that_appears_after_the_phase_is_compared
 
 
 @needs_git
+def test_a_created_overlays_destination_that_is_a_link_is_recorded_where_it_leads(
+    tmp_path: Path,
+) -> None:
+    # A repository can commit `<home>/<name>` as a link: `create:` was judged at the link's
+    # target, which lay outside every checkout, and recorded the link, which the repository can
+    # later point into its own tree. `create:` records what `--overlay <path>` records, the
+    # destination resolved, and judges and compares that one value. Mutation (`mutations/`'s
+    # "setup records a created overlay at its link and not where it leads") -> the link is
+    # recorded and this reddens.
+    outside = tmp_path / "outside-ov"
+    outside.mkdir()
+    _git(outside, "init", "-q", "-b", "main")
+    _seed_overlay(outside)
+    repository = tmp_path / "A"
+    repository.mkdir()
+    _git(repository, "init", "-q", "-b", "main")
+    link = repository / "stayfixed-private"
+    link.symlink_to(outside)
+    _git(repository, "add", "-A")
+    _git(repository, "commit", "-qm", "the link")
+    machine = tmp_path / "config.toml"
+    runner = Recorder(answers={_OCTOS_PROBE: _A_TEMPLATE}, on_call=_populate_overlay)
+    setup(
+        "recommended",
+        home=repository,
+        machine=machine,
+        runner=runner,
+        yes=True,
+        overlay="create:octo/stayfixed-private",
+        project_root=repository,
+    )
+    assert overlay_root(machine) == outside.resolve()
+    # The repository points the link into its own tree; the record does not move with it.
+    (repository / "evil").mkdir()
+    link.unlink()
+    link.symlink_to(repository / "evil")
+    assert overlay_root(machine) == outside.resolve()
+
+
+def test_a_created_overlays_destination_that_is_a_dangling_link_is_there_and_compared(
+    tmp_path: Path,
+) -> None:
+    # A link at `<home>/<name>` is there even when nothing is where it leads: read as absent, the
+    # destination was exempt from the comparison with a `--root` in no repository, and
+    # `gh repo create` cloned through the link to wherever it pointed. Compared at the target it
+    # names, which lies inside `--root`, it is refused before `gh` runs. Mutation
+    # (`mutations/`'s "setup takes a dangling link at a created overlay's destination for no
+    # destination") -> `gh` runs and this reddens.
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "stayfixed-private").symlink_to(home / "later" / "ov")
+    runner = Recorder(answers={_OCTOS_PROBE: _A_TEMPLATE}, on_call=_populate_overlay)
+    with pytest.raises(Refusal, match="holds it, or is it"):
+        setup(
+            "recommended",
+            home=home,
+            machine=tmp_path / "config.toml",
+            runner=runner,
+            yes=True,
+            overlay="create:octo/stayfixed-private",
+            project_root=home,
+        )
+    assert runner.calls == []
+
+
+@needs_git
 def test_an_overlay_inside_another_repository_is_refused_from_a_directory_in_no_repository(
     tmp_path: Path,
 ) -> None:

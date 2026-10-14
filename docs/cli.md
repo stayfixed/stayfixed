@@ -2626,9 +2626,11 @@ exempt from the comparison with `--root` itself, and only while it is not there 
 asks, which this run then makes, or is the overlay root the machine configuration already records,
 the clone an earlier run made and recorded. A `create:` destination that is there and not recorded
 is compared like any overlay already on disk: `create:` leaves a populated destination alone and
-records it. An existing `--overlay <path>` inside, around or equal to a `--root` in no repository is
-refused, because a tree there can still have come from someone else — a project downloaded as an
-archive, or a checkout of another version control system, can ship one. So `setup --overlay
+records it. A link there is there, wherever it leads, and `create:`, like `--overlay <path>`, judges
+and records the destination resolved, so the record does not follow a link a repository retargets.
+An existing `--overlay <path>` inside, around or equal to a `--root` in no repository is refused,
+because a tree there can still have come from someone else — a project downloaded as an archive, or
+a checkout of another version control system, can ship one. So `setup --overlay
 create:<owner>/<name> --yes` run in a home directory that is no repository passes, `setup --overlay
 ~/stayfixed-private` run there is refused (run it from another directory), and the `create:` command
 run in a home that is a git work tree with its `.git` there (a dotfiles clone) is refused before

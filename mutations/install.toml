@@ -99,7 +99,7 @@ reddens = [
 [[mutation]]
 name = "setup creates a new overlay under the caller's cwd instead of --home"
 file = "src/stayfixed/setup/run.py"
-before = 'created = create(owner, name, source="template", root=planned.root.parent, runner=runner)'
+before = 'created = create(owner, name, source="template", root=destination.parent, runner=runner)'
 after = 'created = create(owner, name, source="template", root=Path.cwd(), runner=runner)'
 reddens = ["tests/setup/test_setup.py::test_overlay_create_asks_github_and_records_the_new_root"]
 
@@ -1959,7 +1959,7 @@ reddens = [
 [[mutation]]
 name = "setup exempts a created overlay's destination that is already there"
 file = "src/stayfixed/setup/run.py"
-before = """    if not fsops.exists(planned.root):
+before = """    if not os.path.lexists(planned.destination):
         return ABSENT"""
 after = """    if True:
         return ABSENT"""
@@ -1992,10 +1992,10 @@ reddens = [
 [[mutation]]
 name = "setup initialises a created overlay before asking where it lies"
 file = "src/stayfixed/setup/run.py"
-before = """    _outside_the_project(created.root, project_root=project_root, exempt=exempt)
-    initialised = init_instance(created.root, owner, runner=runner)"""
-after = """    initialised = init_instance(created.root, owner, runner=runner)
-    _outside_the_project(created.root, project_root=project_root, exempt=exempt)"""
+before = """    _outside_the_project(root, project_root=project_root, exempt=exempt)
+    initialised = init_instance(root, owner, runner=runner)"""
+after = """    initialised = init_instance(root, owner, runner=runner)
+    _outside_the_project(root, project_root=project_root, exempt=exempt)"""
 reddens = [
   "tests/setup/test_setup.py::test_a_created_overlays_destination_that_appears_after_the_phase_is_compared_before_init",
 ]
@@ -2100,4 +2100,25 @@ after = "    root = Path(args.root).resolve()"
 reddens = [
   "tests/setup/test_git_hooks.py::test_a_root_through_a_symlink_loop_is_refused_naming_it[install]",
   "tests/setup/test_git_hooks.py::test_a_root_through_a_symlink_loop_is_refused_naming_it[uninstall]",
+]
+
+# A link at `<home>/<name>` is the repository's to retarget, and its target is not: `create:`
+# records what `--overlay <path>` records, the destination resolved, and a link there, dangling or
+# not, is a destination that is there, not one this run makes.
+[[mutation]]
+name = "setup records a created overlay at its link and not where it leads"
+file = "src/stayfixed/setup/run.py"
+before = "    root = fsops.resolved(created.root)"
+after = "    root = created.root"
+reddens = [
+  "tests/setup/test_setup.py::test_a_created_overlays_destination_that_is_a_link_is_recorded_where_it_leads",
+]
+
+[[mutation]]
+name = "setup takes a dangling link at a created overlay's destination for no destination"
+file = "src/stayfixed/setup/run.py"
+before = "    if not os.path.lexists(planned.destination):"
+after = "    if not fsops.exists(planned.destination):"
+reddens = [
+  "tests/setup/test_setup.py::test_a_created_overlays_destination_that_is_a_dangling_link_is_there_and_compared",
 ]

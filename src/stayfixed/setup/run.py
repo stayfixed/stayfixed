@@ -988,6 +988,11 @@ class _Overlay:
     # `RECORDED` when it is the overlay root the machine file already records, which is the
     # owner's own run again. `_exemption` decides it; nothing else exempts a destination.
     exempt: str | None = None
+    # For `create:`, the destination as `overlay.api.target_root` names it, `<home>/<name>`,
+    # which is where `create` clones; `root` is that path resolved, which is what is judged,
+    # compared with the recorded root and recorded, as `--overlay <path>` records its path
+    # resolved. A link there is the repository's to retarget, its target is not.
+    destination: Path | None = None
 
 
 # `_Overlay.exempt`'s two values.
@@ -1001,9 +1006,11 @@ def _exemption(planned: _Overlay, *, machine: Path) -> str | None:
     makes nor already records. `create` leaves a populated destination alone and records it, so
     a tree an archive or a clone put at `<home>/<name>` would otherwise be recorded uncompared.
     The machine file is read only for a destination that is there."""
-    if planned.create is None:
+    if planned.create is None or planned.destination is None:
         return None
-    if not fsops.exists(planned.root):
+    # The destination itself, not where it leads: a link there, dangling or not, is not a
+    # directory this run makes.
+    if not os.path.lexists(planned.destination):
         return ABSENT
     recorded = overlay_root(machine)
     if recorded is not None and _same(recorded, planned.root):
@@ -1067,8 +1074,9 @@ def _requested_overlay(overlay: str | None, *, home: Path, yes: bool) -> _Overla
         # Refuses a name that is not one path segment, and answers where the tree would land —
         # both without creating anything, which is the whole point of asking here.
         destination, account = target_root(home, owner, name)
-        _recordable(destination)
-        return _Overlay(root=destination, create=(account, name))
+        root = fsops.resolved(destination)
+        _recordable(root)
+        return _Overlay(root=root, create=(account, name), destination=destination)
     candidate = fsops.resolved(Path(overlay).expanduser())
     _recordable(candidate)
     require_overlay(candidate, because=_RECORDING)
@@ -1097,22 +1105,24 @@ def _apply_overlay(planned: _Overlay, *, project_root: Path, runner: Runner) -> 
         _outside_the_project(planned.root, project_root=project_root, exempt=False)
         return planned.root, f"recorded the existing overlay at {planned.root}"
     owner, name = planned.create
-    created = create(owner, name, source="template", root=planned.root.parent, runner=runner)
+    destination = planned.destination if planned.destination is not None else planned.root
+    created = create(owner, name, source="template", root=destination.parent, runner=runner)
+    # The one value judged, initialised and recorded, as the phase planned it: what the clone's
+    # path resolves to now, so a link that arrived there since is followed and not recorded.
+    root = fsops.resolved(created.root)
     # Before `init_instance`, which now asks the same question and refuses with an answer that
     # does not say the repository exists; this one has to, and so it goes first.
-    fault = overlay_fault(created.root)
+    fault = overlay_fault(root)
     if fault is not None:
-        raise Refusal(
-            f"{fault}. {owner}/{name} was created and cloned to {created.root}, but {_CREATED}"
-        )
+        raise Refusal(f"{fault}. {owner}/{name} was created and cloned to {root}, but {_CREATED}")
     # Asked before `init_instance`, which writes in the tree and runs `pre-commit` there. A
     # destination the phase found absent is exempt only if `create` made it: one it left alone
     # arrived after the phase, from somewhere else.
     exempt = planned.exempt == RECORDED or (
         planned.exempt == ABSENT and created.template is not None
     )
-    _outside_the_project(created.root, project_root=project_root, exempt=exempt)
-    initialised = init_instance(created.root, owner, runner=runner)
+    _outside_the_project(root, project_root=project_root, exempt=exempt)
+    initialised = init_instance(root, owner, runner=runner)
     if created.template is None:
         # `create` found a populated destination and generated nothing (no `gh` call at all),
         # which is what re-running `setup --overlay create:` does after the first run, so there is
@@ -1120,8 +1130,8 @@ def _apply_overlay(planned: _Overlay, *, project_root: Path, runner: Runner) -> 
         # has its manifests completed or its old memory README removed, so the note says what
         # `init` changed rather than that the overlay was left alone.
         changed = initialised.changed
-        return created.root, (
-            f"found the overlay already at {created.root}, so nothing was generated; "
+        return root, (
+            f"found the overlay already at {root}, so nothing was generated; "
             + (
                 f"`overlay init` changed {', '.join(changed)}"
                 if changed
@@ -1130,7 +1140,7 @@ def _apply_overlay(planned: _Overlay, *, project_root: Path, runner: Runner) -> 
                 else "`overlay init` changed none of the overlay's tracked files"
             )
         )
-    return created.root, f"created the overlay at {created.root}, generated from {created.template}"
+    return root, f"created the overlay at {root}, generated from {created.template}"
 
 
 def _before_the_first_write(
