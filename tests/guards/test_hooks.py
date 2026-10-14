@@ -280,7 +280,7 @@ def test_the_hygiene_notice_is_an_open_handler_with_one_once_key_on_each_event(e
     # `Policy.CLOSED` in `register()`, on either registration; measured. `once_key` is asserted
     # against the literal "test-hygiene" rather than against `ONCE_TEST_HYGIENE`, so the expected
     # value is a fixed one and not one read from the subject; it is the same literal on both
-    # events because one key is what keeps a red run from being noted twice.
+    # events because one key is what holds a context to one note, whichever event carries it.
     handler = hygiene(event)
     assert handler.event == event
     assert handler.policy is Policy.OPEN

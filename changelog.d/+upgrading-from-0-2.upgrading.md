@@ -162,6 +162,8 @@ detail:
     checkout of another repository, whichever repository `--root` is in, a `--root` in an inner
     repository with the overlay elsewhere in the outer one's work tree among them; an overlay that
     is a checkout of its own nested in another repository's work tree; a linked worktree of the
-    overlay's own repository nested in another checkout of it; and any overlay, inside a checkout,
-    when `git` exits non-zero, is ended by a signal or prints nothing (Fixed, "`stayfixed setup
-    --overlay` now judges where an overlay may live").
+    overlay's own repository nested in another checkout of it; and any overlay whenever a `.git` is
+    at or above `--root` or the overlay and the `git` asked there exits non-zero, is ended by a
+    signal, prints nothing or answers in a shape git does not give, as git 2.30 and older do and a
+    wrapper printing a banner does (Fixed, "`stayfixed setup --overlay` now judges where an overlay
+    may live").

@@ -538,20 +538,20 @@ code_roots` to the directories that hold code``, which `--json` carries as its `
 The `PostToolUseFailure` `Bash` hook delivers the same note once per context after a red test run:
 Claude Code delivers a command that exited non-zero on that event, with `error` beginning `Exit code
 N`, and an `error` that begins otherwise, or with a run of more than nine digits, which no exit code
-has, gets no note. The same handler is registered on `PostToolUse` too, which no measured harness
-reaches with a red run: Codex delivers a failed command there but no exit code, so the note does not
-speak, and the registration is a placeholder for parity with Codex. The two share one
-once-per-context key, so a context gets at most one note, whichever event carries it. The note is
-chosen by the command that failed rather than by configuration: each simple command of the red run
-is offered to every shipped profile's hint, and the dirty-tree line and the line of each profile
-whose runner it recognises (Python's: `pytest`, or `python -m pytest`) are delivered together. A
-runner is recognised behind environment assignments, an `env` prefix and `uv run` with uv's own
-options (`uv run --locked pytest`, `uv --quiet run pytest`, `uv run -- pytest`). A value-taking
-option takes its value, so `uv run --with pytest echo` runs `echo`; an option outside uv's own list
-(`uv run --frobnicate pytest`) leaves the command whole, so no value is ever taken for the program.
-A red command no profile recognises gets no note. When Python's walk stopped at its bound, its line
-says the walk could not tell whether a stale build was imported, and names neither stale bytecode
-nor its absence.
+has, gets no note. The same handler is registered on `PostToolUse` too, where no measured harness
+delivers an exit code: Codex delivers a failed command there with none, so the note does not speak,
+and the registration is a placeholder for parity with Codex. The two share one once-per-context key,
+so a context gets at most one note, whichever event carries it. The note is chosen by the command
+that failed rather than by configuration: each simple command of the red run is offered to every
+shipped profile's hint, and the dirty-tree line and the line of each profile whose runner it
+recognises (Python's: `pytest`, or `python -m pytest`) are delivered together. A runner is
+recognised behind environment assignments, an `env` prefix and `uv run` with uv's own options (`uv
+run --locked pytest`, `uv --quiet run pytest`, `uv run -- pytest`). A value-taking option takes its
+value, so `uv run --with pytest echo` runs `echo`; an option outside uv's own list (`uv run
+--frobnicate pytest`) leaves the command whole, so no value is ever taken for the program. A red
+command no profile recognises gets no note. When Python's walk stopped at its bound, its line says
+the walk could not tell whether a stale build was imported, and names neither stale bytecode nor its
+absence.
 
 **Writes** nothing.
 
