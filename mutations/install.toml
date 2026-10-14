@@ -463,9 +463,9 @@ reddens = [
 name = "setup computes where a created overlay lands only after creating it"
 file = "src/stayfixed/setup/run.py"
 before = """        if planned is not None:
-            _outside_the_project("""
+            planned = replace("""
 after = """        if planned is not None and planned.create is None:
-            _outside_the_project("""
+            planned = replace("""
 reddens = ["tests/setup/test_setup.py::test_a_created_overlay_is_refused_before_the_repository_exists"]
 
 # An unusable `--home` reached the frame or the second write: under a read-only parent `mkdir`
@@ -584,12 +584,14 @@ before = """        if settings is None:
             _check_settings_parent(settings)
         _check_home_usable(home, settings=settings, created=created)
         if planned is not None:
+            planned = replace(planned, exempt=_exemption(planned, machine=machine))
             _outside_the_project(
-                planned.root, project_root=project_root, created=planned.create is not None
+                planned.root, project_root=project_root, exempt=planned.exempt is not None
             )"""
 after = """        if planned is not None:
+            planned = replace(planned, exempt=_exemption(planned, machine=machine))
             _outside_the_project(
-                planned.root, project_root=project_root, created=planned.create is not None
+                planned.root, project_root=project_root, exempt=planned.exempt is not None
             )
         if settings is None:
             _check_settings_path(home)
@@ -655,7 +657,7 @@ reddens = [
 [[mutation]]
 name = "setup compares a created overlay's place with --root outside any repository"
 file = "src/stayfixed/setup/run.py"
-before = "    compared = repository is not None or not created"
+before = "    compared = repository is not None or not exempt"
 after = "    compared = True"
 reddens = [
   "tests/setup/test_setup.py::test_an_overlay_created_from_a_directory_in_no_repository_passes_containment",
@@ -667,7 +669,7 @@ reddens = [
 [[mutation]]
 name = "setup exempts an existing overlay from the comparison with a --root in no repository"
 file = "src/stayfixed/setup/run.py"
-before = "    compared = repository is not None or not created"
+before = "    compared = repository is not None or not exempt"
 after = "    compared = repository is not None"
 reddens = [
   "tests/setup/test_setup.py::test_an_existing_overlay_placed_against_a_root_in_no_repository_is_refused[inside]",
@@ -1946,4 +1948,52 @@ after = """    if False:
             f"{path} is a directory; setup writes"""
 reddens = [
   "tests/setup/test_setup.py::test_a_settings_path_of_the_wrong_kind_under_home_is_refused_before_any_write[a-directory-at-settings]",
+]
+
+# A `create:` destination is exempt from the comparison with a `--root` in no repository only when
+# this run makes it or the machine file already records it: `create` leaves a populated
+# destination alone and records it, so a tree an archive or a clone put at `<home>/<name>` was
+# recorded uncompared, and `overlay init` ran in it.
+[[mutation]]
+name = "setup exempts a created overlay's destination that is already there"
+file = "src/stayfixed/setup/run.py"
+before = """    if not fsops.exists(planned.root):
+        return ABSENT"""
+after = """    if True:
+        return ABSENT"""
+reddens = [
+  "tests/setup/test_setup.py::test_a_created_overlays_destination_already_there_and_not_recorded_is_compared_with_the_root[plain]",
+  "tests/setup/test_setup.py::test_a_created_overlays_destination_already_there_and_not_recorded_is_compared_with_the_root[own-checkout]",
+  "tests/setup/test_setup.py::test_a_created_overlays_destination_already_there_and_not_recorded_is_compared_with_the_root[root-inside-it]",
+]
+
+[[mutation]]
+name = "setup stops exempting the overlay root the machine file records"
+file = "src/stayfixed/setup/run.py"
+before = "    if recorded is not None and _same(recorded, planned.root):"
+after = "    if False:"
+reddens = [
+  "tests/setup/test_setup.py::test_an_overlay_created_from_a_directory_in_no_repository_passes_containment",
+]
+
+[[mutation]]
+name = "setup exempts a destination create left alone"
+file = "src/stayfixed/setup/run.py"
+before = """    exempt = planned.exempt == RECORDED or (
+        planned.exempt == ABSENT and created.template is not None
+    )"""
+after = """    exempt = planned.exempt is not None"""
+reddens = [
+  "tests/setup/test_setup.py::test_a_created_overlays_destination_that_appears_after_the_phase_is_compared_before_init",
+]
+
+[[mutation]]
+name = "setup initialises a created overlay before asking where it lies"
+file = "src/stayfixed/setup/run.py"
+before = """    _outside_the_project(created.root, project_root=project_root, exempt=exempt)
+    initialised = init_instance(created.root, owner, runner=runner)"""
+after = """    initialised = init_instance(created.root, owner, runner=runner)
+    _outside_the_project(created.root, project_root=project_root, exempt=exempt)"""
+reddens = [
+  "tests/setup/test_setup.py::test_a_created_overlays_destination_that_appears_after_the_phase_is_compared_before_init",
 ]

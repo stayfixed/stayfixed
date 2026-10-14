@@ -2621,22 +2621,25 @@ and outside every checkout of any other repository, a checkout of its own nested
 because a repository can put files into any directory of its work tree. For the same reason a linked
 worktree of the overlay's own repository nested in another checkout of it is refused, and the
 refusal says it is the overlay's own repository. Where git finds no repository for `--root` (no
-`.git` at or above it), there are no other checkouts to compare, and only one overlay is exempt from
-the comparison with `--root` itself: a `create:` destination, which this run makes, and the clone it
-made when the same command runs again. An existing `--overlay <path>` inside, around or equal to a
-`--root` in no repository is refused, because a tree there can still have come from someone else — a
-project downloaded as an archive, or a checkout of another version control system, can ship one. So
-`setup --overlay create:<owner>/<name> --yes` run in a home directory that is no repository passes,
-`setup --overlay ~/stayfixed-private` run there is refused (run it from another directory), and the
-`create:` command run in a home that is a git work tree with its `.git` there (a dotfiles clone) is
-refused before `gh` runs. What git cannot find has no other checkouts compared: a work tree of
-another version control system, and a git work tree whose git directory is elsewhere and named only
-by `--git-dir` and `--work-tree` or `GIT_DIR`, as in a bare-repository dotfiles home. Containment is
-anchored on `--root`, which the command line chooses. Everywhere a `.git` is at or above the
-directory `git` is asked from, a `git` that gives no answer (it cannot be run, runs past its time
-limit, exits non-zero, is ended by a signal or prints nothing), that refuses the repository it found
-(another user's under `safe.directory`, or one whose `.git` it cannot read) or that cannot list its
-checkouts is a refusal.
+`.git` at or above it), there are no other checkouts to compare, and only a `create:` destination is
+exempt from the comparison with `--root` itself, and only while it is not there when the command
+asks, which this run then makes, or is the overlay root the machine configuration already records,
+the clone an earlier run made and recorded. A `create:` destination that is there and not recorded
+is compared like any overlay already on disk: `create:` leaves a populated destination alone and
+records it. An existing `--overlay <path>` inside, around or equal to a `--root` in no repository is
+refused, because a tree there can still have come from someone else — a project downloaded as an
+archive, or a checkout of another version control system, can ship one. So `setup --overlay
+create:<owner>/<name> --yes` run in a home directory that is no repository passes, `setup --overlay
+~/stayfixed-private` run there is refused (run it from another directory), and the `create:` command
+run in a home that is a git work tree with its `.git` there (a dotfiles clone) is refused before
+`gh` runs. What git cannot find has no other checkouts compared: a work tree of another version
+control system, and a git work tree whose git directory is elsewhere and named only by `--git-dir`
+and `--work-tree` or `GIT_DIR`, as in a bare-repository dotfiles home. Containment is anchored on
+`--root`, which the command line chooses. Everywhere a `.git` is at or above the directory `git` is
+asked from, a `git` that gives no answer (it cannot be run, runs past its time limit, exits
+non-zero, is ended by a signal or prints nothing), that refuses the repository it found (another
+user's under `safe.directory`, or one whose `.git` it cannot read) or that cannot list its checkouts
+is a refusal.
 
 **Writes** `<home>` itself when it is not there yet; `--machine`'s file, with the directories above
 it, once for the preset and again for the overlay root `--overlay` records;

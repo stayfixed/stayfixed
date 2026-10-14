@@ -975,15 +975,18 @@ def test_an_overlay_created_from_a_directory_in_no_repository_passes_containment
     # run in `~`: `--root` defaults to `.`, the home directory, and `home/<name>` lies inside it, so
     # the path comparison refused it — although `~` is in no repository and the destination is
     # one this run makes, which nothing can have shipped. With `--root` in no repository a
-    # `create:` destination is the one overlay not compared with it. Mutation (`mutations/`'s
-    # "setup compares a created overlay's place with --root outside any repository"): the path
-    # arm compares every overlay, as it did before -> refused, and this reddens.
+    # `create:` destination that is not there yet is not compared with it. Mutation
+    # (`mutations/`'s "setup compares a created overlay's place with --root outside any
+    # repository"): the path arm compares every overlay, as it did before -> refused, and this
+    # reddens.
     #
     # Run again, the clone it made is a checkout of its own, as `gh repo create --clone` leaves
-    # it: that checkout is not a repository holding the overlay, and it is still the `create:`
-    # destination, so the second run creates nothing and records the same root. Mutation
-    # (`mutations/`'s "setup asks whether an overlay lies in another repository from the overlay
-    # itself") -> the clone answers for itself, the second run is refused, and this reddens.
+    # it, and the overlay root the machine file records: that checkout is not a repository
+    # holding the overlay, and the recorded root is not compared with `--root` either, so the
+    # second run creates nothing and records the same root. Mutations (`mutations/`'s "setup asks
+    # whether an overlay lies in another repository from the overlay itself" -> the clone
+    # answers for itself and the second run is refused; "setup stops exempting the overlay root
+    # the machine file records" -> the second run is refused by the path arm).
     home = tmp_path / "home"
     home.mkdir()
     machine = tmp_path / "config.toml"
@@ -1012,6 +1015,78 @@ def test_an_overlay_created_from_a_directory_in_no_repository_passes_containment
     )
     assert not any(argv[:3] == ["gh", "repo", "create"] for argv in again.calls)
     assert overlay_root(machine) == clone
+
+
+@needs_git
+@pytest.mark.parametrize("planted", ["plain", "own-checkout", "root-inside-it"])
+def test_a_created_overlays_destination_already_there_and_not_recorded_is_compared_with_the_root(
+    tmp_path: Path, planted: str
+) -> None:
+    # `create:` leaves a populated destination alone and records it, so a tree someone else put at
+    # `<home>/<name>` — an archive's, a checkout of its own — was recorded with no comparison when
+    # `--root` is in no repository, and `overlay init` ran in it. The destination is exempt only
+    # when this run makes it (it is not there when the phase asks) or when it is the overlay root
+    # the machine file already records; anything else is compared as `--overlay <path>` is.
+    # Mutation (`mutations/`'s "setup exempts a created overlay's destination that is already
+    # there") -> each is recorded and reddens.
+    home = tmp_path / "home"
+    destination = home / "stayfixed-private"
+    _seed_overlay(destination)
+    if planted == "own-checkout":
+        _git(destination, "init", "-q", "-b", "main")
+    root = destination / "sub" if planted == "root-inside-it" else home
+    root.mkdir(exist_ok=True)
+    machine = tmp_path / "config.toml"
+    runner = Recorder(answers={_OCTOS_PROBE: _A_TEMPLATE}, on_call=_populate_overlay)
+    with pytest.raises(Refusal, match="holds it, or is it"):
+        setup(
+            "recommended",
+            home=home,
+            machine=machine,
+            runner=runner,
+            yes=True,
+            overlay="create:octo/stayfixed-private",
+            project_root=root,
+        )
+    assert runner.calls == [] and not machine.exists()
+    manifest = json.loads((destination / PLUGIN_MANIFEST).read_text(encoding="utf-8"))
+    assert manifest["name"] == "stayfixed-overlay", "overlay init ran in the planted tree"
+
+
+def test_a_created_overlays_destination_that_appears_after_the_phase_is_compared_before_init(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The phase found nothing at `<home>/<name>`, and a tree arrived before `create:` reached it:
+    # `create` leaves it alone, so this run did not make it, and the exemption the phase gave an
+    # absent destination does not carry over to it. It is compared where the overlay is first
+    # touched, before `overlay init` writes in it or runs `pre-commit` there. Mutations
+    # (`mutations/`'s "setup exempts a destination create left alone" -> recorded; "setup
+    # initialises a created overlay before asking where it lies" -> `init` renames its manifest).
+    home = tmp_path / "home"
+    home.mkdir()
+    destination = home / "stayfixed-private"
+    real = write_machine
+
+    def planting(*args: Any, **kwargs: Any) -> None:
+        if not destination.exists():
+            _seed_overlay(destination)
+        real(*args, **kwargs)
+
+    monkeypatch.setattr("stayfixed.setup.run.write_machine", planting)
+    runner = Recorder(answers={_OCTOS_PROBE: _A_TEMPLATE}, on_call=_populate_overlay)
+    with pytest.raises(Refusal, match="holds it, or is it"):
+        setup(
+            "recommended",
+            home=home,
+            machine=tmp_path / "config.toml",
+            runner=runner,
+            yes=True,
+            overlay="create:octo/stayfixed-private",
+            project_root=home,
+        )
+    assert not any(argv[:3] == ["gh", "repo", "create"] for argv in runner.calls)
+    manifest = json.loads((destination / PLUGIN_MANIFEST).read_text(encoding="utf-8"))
+    assert manifest["name"] == "stayfixed-overlay", "overlay init ran in the planted tree"
 
 
 @needs_git

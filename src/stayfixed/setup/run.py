@@ -69,10 +69,11 @@ machine file, the settings merge and the plugin installs, and for `create:` abov
   repository ships reaches its own checkouts and nowhere else, so refusing every checkout of it
   removes the tree a clone can stage. Nor may it lie inside a checkout of any other repository,
   its own nested checkout included. With no `.git` at or above `--root` there are no other
-  checkouts to list, and the one candidate not compared with `--root` itself is a `create:`
-  destination, which this run makes; an overlay already on disk inside, around or equal to a
-  `--root` in no repository is refused, because an archive or another version control system's
-  checkout can hold one (`_outside_the_project` names what is left uncompared).
+  checkouts to list, and the only candidates not compared with `--root` itself are a `create:`
+  destination that is not there yet, which this run makes, and one that is the overlay root the
+  machine file already records (`_exemption`); any other overlay already on disk inside, around
+  or equal to a `--root` in no repository is refused, because an archive or another version
+  control system's checkout can hold one (`_outside_the_project` names what is left uncompared).
   `_outside_the_project` says how `git` is asked and from which side, and why. It is not a claim
   that the same bytes cannot be somewhere else on the machine — a separate clone of the same
   remote passes — only that the owner put them there. Where a `.git` is, a `git` that gives no
@@ -108,11 +109,12 @@ import datetime
 import os
 import shutil
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
 from stayfixed import REPOSITORY_URL, __version__, fsops
+from stayfixed.config.overlay import overlay_root
 from stayfixed.config.paths import PathEscape, PathUnasked, contained
 from stayfixed.errors import Failure, Refusal
 from stayfixed.fsops import UnsafePath, utf_8_name
@@ -830,7 +832,7 @@ def _overlaps(a: Path, b: Path) -> bool:
     return any(_same(part, a) for part in b.parents)
 
 
-def _outside_the_project(candidate: Path, *, project_root: Path, created: bool) -> None:
+def _outside_the_project(candidate: Path, *, project_root: Path, exempt: bool) -> None:
     """Refuse an overlay root that sits where the repository an agent works in could reach it.
 
     A path arm and three `git` arms. The path arm is equality or nesting either way round — a
@@ -845,11 +847,13 @@ def _outside_the_project(candidate: Path, *, project_root: Path, created: bool) 
     candidate, and refuses any checkout that holds it, of whichever repository: a directory in a
     work tree is a place that repository can ship files into, a nested checkout's included.
 
-    **With `--root` in no repository, only a `create:` destination is exempt from the path arm.**
-    `created` says the candidate is one: this run makes that directory — `gh repo create` clones
-    into it — so nothing shipped it, and comparing it with `--root` refused the owner's own
+    **With `--root` in no repository, only an `exempt` `create:` destination skips the path
+    arm** (`_exemption`): one that is not there when the phase asks, which this run makes —
+    `gh repo create` clones into it — and the overlay root the machine file already records,
+    which is the owner's own run again. Comparing those with `--root` refused the owner's own
     `setup --overlay create:<owner>/<name> --yes` run in `~`, where `--root` defaults to the home
-    directory the overlay is created in. Run again, it is the clone the first run made. An
+    directory the overlay is created in. A destination that is there and not recorded is not
+    the run's making, since `create` leaves a populated destination alone, and any other
     overlay already on disk is compared with `--root` whether or not git finds a repository
     there: a directory in no repository can still hold a tree someone else made — a project
     downloaded as an archive, a work tree of another version control system, a `vendor/ov`
@@ -882,7 +886,7 @@ def _outside_the_project(candidate: Path, *, project_root: Path, created: bool) 
         f"works in — a worktree is not a different repository, and a clone ships its own tree "
         f"into all of them"
     )
-    compared = repository is not None or not created
+    compared = repository is not None or not exempt
     if compared and _overlaps(resolved_candidate, resolved_project):
         where = (
             # git names the directory, and a submodule's carries the name `.gitmodules` chose.
@@ -943,6 +947,32 @@ class _Overlay:
 
     root: Path
     create: tuple[str, str] | None
+    # Why a `create:` destination is not compared with a `--root` in no repository, or `None`
+    # when it is: `ABSENT` when nothing was there when the phase asked, so this run makes it, and
+    # `RECORDED` when it is the overlay root the machine file already records, which is the
+    # owner's own run again. `_exemption` decides it; nothing else exempts a destination.
+    exempt: str | None = None
+
+
+# `_Overlay.exempt`'s two values.
+ABSENT = "absent"
+RECORDED = "recorded"
+
+
+def _exemption(planned: _Overlay, *, machine: Path) -> str | None:
+    """Whether a `create:` destination is exempt from the comparison with a `--root` in no
+    repository, and why; `None` for `--overlay <path>` and for any destination this run neither
+    makes nor already records. `create` leaves a populated destination alone and records it, so
+    a tree an archive or a clone put at `<home>/<name>` would otherwise be recorded uncompared.
+    The machine file is read only for a destination that is there."""
+    if planned.create is None:
+        return None
+    if not fsops.exists(planned.root):
+        return ABSENT
+    recorded = overlay_root(machine)
+    if recorded is not None and _same(recorded, planned.root):
+        return RECORDED
+    return None
 
 
 def _recordable(root: Path) -> None:
@@ -1028,7 +1058,7 @@ def _apply_overlay(planned: _Overlay, *, project_root: Path, runner: Runner) -> 
 
     if planned.create is None:
         require_overlay(planned.root, because=_RECORDING)
-        _outside_the_project(planned.root, project_root=project_root, created=False)
+        _outside_the_project(planned.root, project_root=project_root, exempt=False)
         return planned.root, f"recorded the existing overlay at {planned.root}"
     owner, name = planned.create
     created = create(owner, name, source="template", root=planned.root.parent, runner=runner)
@@ -1039,8 +1069,14 @@ def _apply_overlay(planned: _Overlay, *, project_root: Path, runner: Runner) -> 
         raise Refusal(
             f"{fault}. {owner}/{name} was created and cloned to {created.root}, but {_CREATED}"
         )
+    # Asked before `init_instance`, which writes in the tree and runs `pre-commit` there. A
+    # destination the phase found absent is exempt only if `create` made it: one it left alone
+    # arrived after the phase, from somewhere else.
+    exempt = planned.exempt == RECORDED or (
+        planned.exempt == ABSENT and created.template is not None
+    )
+    _outside_the_project(created.root, project_root=project_root, exempt=exempt)
     initialised = init_instance(created.root, owner, runner=runner)
-    _outside_the_project(created.root, project_root=project_root, created=True)
     if created.template is None:
         # `create` found a populated destination and generated nothing (no `gh` call at all),
         # which is what re-running `setup --overlay create:` does after the first run, so there is
@@ -1065,6 +1101,7 @@ def _before_the_first_write(
     preset: str,
     *,
     home: Path,
+    machine: Path,
     project_root: Path,
     overlay: str | None,
     yes: bool,
@@ -1117,8 +1154,9 @@ def _before_the_first_write(
             _check_settings_parent(settings)
         _check_home_usable(home, settings=settings, created=created)
         if planned is not None:
+            planned = replace(planned, exempt=_exemption(planned, machine=machine))
             _outside_the_project(
-                planned.root, project_root=project_root, created=planned.create is not None
+                planned.root, project_root=project_root, exempt=planned.exempt is not None
             )
     except OSError as exc:
         asked = exc.filename if exc.filename is not None else "a path this run was given"
@@ -1155,7 +1193,13 @@ def setup(
     created.
     """
     data, planned_overlay = _before_the_first_write(
-        preset, home=home, project_root=project_root, overlay=overlay, yes=yes, settings=settings
+        preset,
+        home=home,
+        machine=machine,
+        project_root=project_root,
+        overlay=overlay,
+        yes=yes,
+        settings=settings,
     )
 
     # `home` is the root every write in this function lands under **except the one `--settings`
