@@ -2478,30 +2478,37 @@ def test_a_settings_directory_that_cannot_be_written_is_refused_before_the_machi
 
 
 @ROOT_SEARCHES_EVERYTHING
+@pytest.mark.parametrize("mode", [0o000, 0o600], ids=["no-access", "readable-only"])
 def test_a_created_overlay_whose_destination_cannot_be_searched_is_refused_before_anything(
-    tmp_path: Path,
+    tmp_path: Path, mode: int
 ) -> None:
     # Over a `<home>/<name>` that is there, `create:` clones nothing and the home takes no new
     # directory, so nothing about `--home` refused it; `overlay.create` then looked inside it for
     # an overlay, and a destination nobody may search raised `PermissionError` there, as
-    # `internal error`, after the machine file and both plugin installs. Mutation (`mutations/`'s
-    # "setup stops asking whether a created overlay's destination can be searched"): the question
-    # dropped -> the machine file is written and `PermissionError` leaves `setup`.
+    # `internal error`, after the machine file and both plugin installs. Looking inside asks the
+    # search bit alone, so a destination that can be read and not searched is refused too.
+    # Mutations (`mutations/`'s "setup stops asking whether a created overlay's destination can be
+    # searched" -> the machine file is written and `PermissionError` leaves `setup`; "setup asks
+    # whether a created overlay's destination can be read, not searched" -> `readable-only`).
     home = tmp_path / "home"
     destination = home / "stayfixed-private"
     destination.mkdir(parents=True)
     machine = tmp_path / "config.toml"
     runner = Recorder(answers={_OCTOS_PROBE: _A_TEMPLATE}, on_call=_populate_overlay)
-    with unsearchable(destination), pytest.raises(Refusal) as refused:
-        setup(
-            "recommended",
-            home=home,
-            machine=machine,
-            runner=runner,
-            yes=True,
-            overlay="create:octo/stayfixed-private",
-            project_root=tmp_path / "project",
-        )
+    destination.chmod(mode)
+    try:
+        with pytest.raises(Refusal) as refused:
+            setup(
+                "recommended",
+                home=home,
+                machine=machine,
+                runner=runner,
+                yes=True,
+                overlay="create:octo/stayfixed-private",
+                project_root=tmp_path / "project",
+            )
+    finally:
+        destination.chmod(0o755)
     assert str(refused.value) == f"--home {home} cannot be used: {destination} cannot be searched"
     assert runner.calls == []
     assert not machine.exists()

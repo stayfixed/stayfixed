@@ -1692,3 +1692,14 @@ after = "            UNREADABLE.format(path=path, reason=fsops.said(exc), outcom
 reddens = [
   "tests/guards/test_githooks.py::test_a_hooks_directory_git_names_reaches_every_install_refusal_quoted[unreadable]",
 ]
+
+# The self-chain check compares the bytes as they are: `Prepare-Commit-Msg.local` names another
+# file on a case-sensitive volume, and folding case would refuse a chain there that cannot loop.
+[[mutation]]
+name = "the self-chain check folds case"
+file = "src/stayfixed/guards/githooks.py"
+before = "    if content is not None and _CHAINED_NAME.encode() in content:"
+after = "    if content is not None and _CHAINED_NAME.lower().encode() in content.lower():"
+reddens = [
+  "tests/guards/test_githooks.py::test_a_predecessor_naming_its_local_in_another_case_is_installed",
+]

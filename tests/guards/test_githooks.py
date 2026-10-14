@@ -488,6 +488,24 @@ def test_a_reinstall_over_a_local_that_names_itself_is_refused(tmp_path: Path) -
     assert (target.read_bytes(), local.read_bytes()) == (ours, theirs)
 
 
+def test_a_predecessor_naming_its_local_in_another_case_is_installed(tmp_path: Path) -> None:
+    # The bytes are compared as they are: `Prepare-Commit-Msg.local` names another file on a
+    # case-sensitive volume, where refusing it would refuse a chain that cannot loop, so the
+    # installer keeps and chains it, and `docs/cli.md` names the spelling among the residuals
+    # (on a volume that folds case it is the same file). What is held here is the decision, not
+    # a commit through the chain. Mutation: `mutations/`'s "the self-chain check folds case".
+    root = repo(tmp_path)
+    target = hooks_dir(root) / HOOK_NAME
+    target.parent.mkdir(parents=True, exist_ok=True)
+    predecessor = (
+        '#!/bin/sh\nexec "$(git rev-parse --git-common-dir)/hooks/Prepare-Commit-Msg.local" "$@"\n'
+    )
+    target.write_text(predecessor, encoding="utf-8")
+    installed = install(root)
+    assert installed.preserved == target.with_name(HOOK_NAME + ".local")
+    assert installed.preserved.read_text(encoding="utf-8") == predecessor
+
+
 def test_a_predecessor_chaining_to_dollar_zero_local_is_installed(tmp_path: Path) -> None:
     # 'exec "$0.local" "$@"' names `prepare-commit-msg.local.local` once it is renamed to
     # `.local`: no loop, so no refusal. It is kept and chained like any foreign hook, and a commit

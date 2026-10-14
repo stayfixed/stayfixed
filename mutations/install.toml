@@ -633,7 +633,19 @@ file = "src/stayfixed/setup/run.py"
 before = "    elif created is not None and fsops.is_dir(created) and not os.access(created, os.X_OK):"
 after = "    elif False:"
 reddens = [
-  "tests/setup/test_setup.py::test_a_created_overlay_whose_destination_cannot_be_searched_is_refused_before_anything",
+  "tests/setup/test_setup.py::test_a_created_overlay_whose_destination_cannot_be_searched_is_refused_before_anything[no-access]",
+  "tests/setup/test_setup.py::test_a_created_overlay_whose_destination_cannot_be_searched_is_refused_before_anything[readable-only]",
+]
+
+# Looking inside the destination for an overlay asks its search bit, not its read bit: a
+# destination that can be read and not searched raised there all the same.
+[[mutation]]
+name = "setup asks whether a created overlay's destination can be read, not searched"
+file = "src/stayfixed/setup/run.py"
+before = "    elif created is not None and fsops.is_dir(created) and not os.access(created, os.X_OK):"
+after = "    elif created is not None and fsops.is_dir(created) and not os.access(created, os.R_OK):"
+reddens = [
+  "tests/setup/test_setup.py::test_a_created_overlay_whose_destination_cannot_be_searched_is_refused_before_anything[readable-only]",
 ]
 
 # With `--root` in no repository, a `create:` destination is the one overlay not compared with it:
