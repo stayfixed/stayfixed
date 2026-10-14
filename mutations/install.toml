@@ -2060,3 +2060,25 @@ after = "            str(exc.filename) if exc.filename is not None else \"a path
 reddens = [
   "tests/setup/test_setup.py::test_a_path_a_repository_spells_reaches_every_containment_refusal_quoted[the-floor]",
 ]
+
+# The hooks directory is git's answer, from a `core.hooksPath` the repository sets, and the
+# summaries of `setup --git-hooks` printed it raw where its refusals quote it.
+[[mutation]]
+name = "setup --git-hooks prints the installed hook's path raw"
+file = "src/stayfixed/setup/commands.py"
+before = "    hook = quoted(str(installed.path))"
+after = "    hook = str(installed.path)"
+reddens = [
+  "tests/setup/test_git_hooks.py::test_every_summary_prints_the_hooks_path_git_names_quoted[installed]",
+  "tests/setup/test_git_hooks.py::test_every_summary_prints_the_hooks_path_git_names_quoted[chained]",
+  "tests/setup/test_git_hooks.py::test_every_summary_prints_the_hooks_path_git_names_quoted[reinstalled]",
+]
+
+[[mutation]]
+name = "setup --git-hooks --uninstall prints the hook's path raw"
+file = "src/stayfixed/setup/commands.py"
+before = "        hook = quoted(str(removed.path))"
+after = "        hook = str(removed.path)"
+reddens = [
+  "tests/setup/test_git_hooks.py::test_every_summary_prints_the_hooks_path_git_names_quoted[uninstalled]",
+]

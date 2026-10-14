@@ -4,4 +4,5 @@ repository's `core.hooksPath` or a submodule's name chooses, a repository's git 
 `setup --overlay`'s refusals the overlay, `--root` and the directory `git` was asked from, any of
 which can be reached through a link a repository commits, as can the path `setup` could not ask
 about before its first write. An escape sequence in such a name reached the terminal that read the
-refusal.
+refusal. The lines `setup --git-hooks` prints when it installs or removes the hook quote the hook's
+path the same way; `--json` carries it as it is.

@@ -65,18 +65,20 @@ def run_git_hooks(args: argparse.Namespace) -> Result:
     from stayfixed.guards.api import Found, install, uninstall
 
     root = _root(args.root)
+    # Each path is git's answer, from a `core.hooksPath` the repository sets or under the name a
+    # submodule's `.gitmodules` chose, so each is printed through `printed.quoted`, as the
+    # refusals print it; `--json` carries it as it is.
     if args.uninstall:
         removed = uninstall(root)
+        hook = quoted(str(removed.path))
         if removed.found is Found.FOREIGN:
-            summary = (
-                f"left {removed.path} as it was: it is not stayfixed's hook; nothing was removed"
-            )
+            summary = f"left {hook} as it was: it is not stayfixed's hook; nothing was removed"
         elif removed.found is Found.ABSENT:
-            summary = f"there is no stayfixed hook at {removed.path}; nothing was removed"
+            summary = f"there is no stayfixed hook at {hook}; nothing was removed"
         elif removed.restored is not None:
-            summary = f"removed {removed.path}; restored the foreign hook chained to it"
+            summary = f"removed {hook}; restored the foreign hook chained to it"
         else:
-            summary = f"removed {removed.path}; there was no foreign hook to restore"
+            summary = f"removed {hook}; there was no foreign hook to restore"
         data: dict[str, Any] = {
             "path": str(removed.path),
             "restored": str(removed.restored) if removed.restored is not None else None,
@@ -85,15 +87,16 @@ def run_git_hooks(args: argparse.Namespace) -> Result:
         return Result(summary, data)
 
     installed = install(root)
+    hook = quoted(str(installed.path))
     if installed.preserved is not None:
         summary = (
-            f"installed the commit-message hook at {installed.path}; the hook that was there "
-            f"is kept at {installed.preserved} and chained to"
+            f"installed the commit-message hook at {hook}; the hook that was there "
+            f"is kept at {quoted(str(installed.preserved))} and chained to"
         )
     elif installed.replaced:
-        summary = f"reinstalled the commit-message hook at {installed.path}"
+        summary = f"reinstalled the commit-message hook at {hook}"
     else:
-        summary = f"installed the commit-message hook at {installed.path}"
+        summary = f"installed the commit-message hook at {hook}"
     install_data = {
         "path": str(installed.path),
         "preserved": str(installed.preserved) if installed.preserved is not None else None,

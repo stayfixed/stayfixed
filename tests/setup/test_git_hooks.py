@@ -14,6 +14,7 @@ import pytest
 
 from stayfixed.errors import Refusal
 from stayfixed.guards.api import HOOK_MARKER, HOOK_NAME, hooks_dir
+from stayfixed.printed import quoted
 from stayfixed.setup.commands import run_setup
 from tests import gitfixture
 
@@ -192,7 +193,7 @@ def test_uninstall_says_whether_it_removed_stayfixeds_hook(
     if ours:
         run_setup(_args(root=str(root)))
     result = run_setup(_args(root=str(root), uninstall=True))
-    assert result.summary == line.format(hook=hook)
+    assert result.summary == line.format(hook=quoted(str(hook)))
     found = "removed" if ours else "foreign" if mine else "absent"
     assert result.data["found"] == found
     if mine:
@@ -209,10 +210,33 @@ def test_uninstall_over_a_directory_at_the_hook_path_leaves_it_and_says_so(tmp_p
     hook.mkdir(parents=True)
     result = run_setup(_args(root=str(root), uninstall=True))
     assert (
-        result.summary == f"left {hook} as it was: it is not stayfixed's hook; nothing was removed"
+        result.summary
+        == f"left {quoted(str(hook))} as it was: it is not stayfixed's hook; nothing was removed"
     )
     assert (result.exit_code, result.data["found"]) == (0, "foreign")
     assert hook.is_dir()
+
+
+@pytest.mark.parametrize("run", ["installed", "chained", "reinstalled", "uninstalled"])
+def test_every_summary_prints_the_hooks_path_git_names_quoted(tmp_path: Path, run: str) -> None:
+    # The hooks directory is git's answer, from a `core.hooksPath` the repository sets, and the
+    # summaries printed it raw where the refusals quote it: an escape sequence and a bell in it
+    # drove the terminal that read the report. Mutations (`mutations/`'s "setup --git-hooks
+    # prints the installed hook's path raw" -> `installed`, `chained` and `reinstalled`; "setup
+    # --git-hooks --uninstall prints the hook's path raw" -> `uninstalled`).
+    root = _repo(tmp_path)
+    _git(tmp_path, root, "config", "core.hooksPath", ".hooks\x1b]0;owned\x07")
+    hook = hooks_dir(root) / HOOK_NAME
+    if run == "chained":
+        hook.parent.mkdir(parents=True, exist_ok=True)
+        hook.write_text("#!/bin/sh\necho mine\n", encoding="utf-8")
+        hook.chmod(0o755)
+    if run in ("reinstalled", "uninstalled"):
+        run_setup(_args(root=str(root)))
+    result = run_setup(_args(root=str(root), uninstall=run == "uninstalled"))
+    assert "\x1b" not in result.summary and "\x07" not in result.summary, result.summary
+    assert "\\x1b]0;owned\\x07" in result.summary, result.summary
+    assert result.data["path"] == str(hook)
 
 
 def test_a_second_install_over_our_own_hook_reports_a_reinstall(tmp_path: Path) -> None:
