@@ -1009,11 +1009,6 @@ def _requested_overlay(overlay: str | None, *, home: Path, yes: bool) -> _Overla
     return _Overlay(root=candidate, create=None)
 
 
-def _created_root(planned: _Overlay | None) -> Path | None:
-    """Where this run clones a `create:` overlay, or `None` when it creates none."""
-    return planned.root if planned is not None and planned.create is not None else None
-
-
 def _apply_overlay(planned: _Overlay, *, project_root: Path, runner: Runner) -> tuple[Path, str]:
     """Create the overlay if this run has to, record what there is, and say what happened.
 
@@ -1113,12 +1108,14 @@ def _before_the_first_write(
     """
     try:
         planned = _requested_overlay(overlay, home=home, yes=yes)
+        # Where this run clones a `create:` overlay, or `None` when it creates none.
+        created = planned.root if planned is not None and planned.create is not None else None
         data = load_preset(preset, key="--preset")
         if settings is None:
             _check_settings_path(home)
         else:
             _check_settings_parent(settings)
-        _check_home_usable(home, settings=settings, created=_created_root(planned))
+        _check_home_usable(home, settings=settings, created=created)
         if planned is not None:
             _outside_the_project(
                 planned.root, project_root=project_root, created=planned.create is not None

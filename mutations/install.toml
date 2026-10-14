@@ -476,7 +476,7 @@ reddens = ["tests/setup/test_setup.py::test_a_created_overlay_is_refused_before_
 [[mutation]]
 name = "setup stops asking whether --home can be used before its first write"
 file = "src/stayfixed/setup/run.py"
-before = "        _check_home_usable(home, settings=settings, created=_created_root(planned))"
+before = "        _check_home_usable(home, settings=settings, created=created)"
 after = "        pass"
 reddens = [
   "tests/setup/test_setup.py::test_a_home_that_cannot_take_the_write_is_refused_before_any_write[above-home]",
@@ -582,7 +582,7 @@ before = """        if settings is None:
             _check_settings_path(home)
         else:
             _check_settings_parent(settings)
-        _check_home_usable(home, settings=settings, created=_created_root(planned))
+        _check_home_usable(home, settings=settings, created=created)
         if planned is not None:
             _outside_the_project(
                 planned.root, project_root=project_root, created=planned.create is not None
@@ -595,7 +595,7 @@ after = """        if planned is not None:
             _check_settings_path(home)
         else:
             _check_settings_parent(settings)
-        _check_home_usable(home, settings=settings, created=_created_root(planned))"""
+        _check_home_usable(home, settings=settings, created=created)"""
 reddens = [
   "tests/setup/test_setup.py::test_a_created_overlay_under_a_home_nobody_may_search_is_refused_before_anything[no-repository]",
   "tests/setup/test_setup.py::test_a_created_overlay_under_a_home_nobody_may_search_is_refused_before_anything[repository]",

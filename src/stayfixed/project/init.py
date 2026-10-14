@@ -331,10 +331,9 @@ def precheck(root: Path, *, answering: bool, local: bool = False) -> None:
 
     A manifest means `init` has already run, so re-running it is `stayfixed upgrade` — and when
     the run asked for `--local`, which `upgrade` has no flag for, the refusal says which key does
-    the same there. While
-    `answering` — the questions always are, and `init` is whenever an answer flag is given — a
-    `stayfixed.toml` already answers every question, so asking them over it would collect
-    answers that nothing writes.
+    the same there. While `answering` — the questions always are, and `init` is whenever an answer
+    flag is given — a `stayfixed.toml` already answers every question, so asking them over it
+    would collect answers that nothing writes.
     """
     if Manifest.present(root):
         raise Refusal(f"{ALREADY}; {LOCAL_AFTER_INIT}" if local else ALREADY)
