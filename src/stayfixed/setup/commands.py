@@ -28,6 +28,7 @@ from stayfixed import fsops
 from stayfixed.areas import SubParsers
 from stayfixed.command import HOME_HELP, SETUP_MACHINE_HELP, SETUP_ROOT_HELP
 from stayfixed.errors import Failure, Refusal
+from stayfixed.printed import quoted
 from stayfixed.result import Result
 from stayfixed.runner import subprocess_runner
 
@@ -56,7 +57,7 @@ def _root(given: str) -> Path:
         return fsops.resolved(Path(given))
     except OSError as exc:
         raise Refusal(
-            f"--root {given} cannot be checked ({fsops.said(exc)}), so nothing was written"
+            f"--root {quoted(given)} cannot be checked ({fsops.said(exc)}), so nothing was written"
         ) from exc
 
 

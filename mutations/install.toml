@@ -324,7 +324,7 @@ reddens = [
 [[mutation]]
 name = "setup reads git giving no answer inside a checkout as no repository again"
 file = "src/stayfixed/setup/run.py"
-before = "    raise Refusal(_SILENT_IN_A_CHECKOUT.format(start=start, no_answer=_silence(code)))"
+before = "    raise Refusal(_SILENT_IN_A_CHECKOUT.format(start=quoted(str(start)), no_answer=_silence(code)))"
 after = "    return None"
 reddens = [
   "tests/setup/test_setup.py::test_git_giving_no_answer_inside_a_checkout_refuses_the_overlay[every-call]",
@@ -562,9 +562,11 @@ reddens = ["tests/setup/test_setup.py::test_a_home_mkdir_that_fails_is_a_refusal
 name = "setup lets a path it cannot ask about before its first write reach the frame"
 file = "src/stayfixed/setup/run.py"
 before = """    except OSError as exc:
-        asked = exc.filename"""
+        asked = (
+            quoted(str(exc.filename))"""
 after = """    except ValueError as exc:
-        asked = exc.filename"""
+        asked = (
+            quoted(str(exc.filename))"""
 reddens = [
   "tests/setup/test_setup.py::test_a_path_setup_cannot_ask_about_before_its_first_write_is_a_refusal_naming_it[overlay]",
   "tests/setup/test_setup.py::test_a_path_setup_cannot_ask_about_before_its_first_write_is_a_refusal_naming_it[root]",
@@ -1265,7 +1267,7 @@ reddens = [
 [[mutation]]
 name = "setup reads git refusing the repository inside a checkout as no repository"
 file = "src/stayfixed/setup/run.py"
-before = "        raise Refusal(_REFUSED_IN_A_CHECKOUT.format(start=start))"
+before = "        raise Refusal(_REFUSED_IN_A_CHECKOUT.format(start=quoted(str(start))))"
 after = "        return None"
 reddens = [
   "tests/setup/test_setup.py::test_git_refusing_the_repository_inside_a_checkout_refuses_the_overlay[every-call]",
@@ -1830,8 +1832,8 @@ reddens = [
 [[mutation]]
 name = "setup prints another repository's git directory raw in a containment refusal"
 file = "src/stayfixed/setup/run.py"
-before = '        f"{candidate} is inside {whose}, whose git directory is {quoted(str(outer))}. The "'
-after = '        f"{candidate} is inside {whose}, whose git directory is {outer}. The "'
+before = '        f"{shown} is inside {whose}, whose git directory is {quoted(str(outer))}. The "'
+after = '        f"{shown} is inside {whose}, whose git directory is {outer}. The "'
 reddens = [
   "tests/setup/test_setup.py::test_a_git_directory_git_names_reaches_a_containment_refusal_quoted[another-repositorys]",
 ]
@@ -2007,7 +2009,7 @@ reddens = [
 name = "the candidate walk steps past an answer of the wrong shape inside a work tree"
 file = "src/stayfixed/setup/run.py"
 before = """    if in_work_tree(start):
-        raise Refusal(_MISSHAPEN.format(start=start))
+        raise Refusal(_MISSHAPEN.format(start=quoted(str(start))))
     return None"""
 after = """    return None"""
 reddens = [
@@ -2021,10 +2023,40 @@ reddens = [
 name = "setup reads --root's repository from an answer of the wrong shape"
 file = "src/stayfixed/setup/run.py"
 before = """    if not _well_shaped(answer):
-        raise Refusal(_MISSHAPEN.format(start=start))"""
+        raise Refusal(_MISSHAPEN.format(start=quoted(str(start))))"""
 after = """    if False:
-        raise Refusal(_MISSHAPEN.format(start=start))"""
+        raise Refusal(_MISSHAPEN.format(start=quoted(str(start))))"""
 reddens = [
   "tests/setup/test_setup.py::test_git_answering_in_another_shape_inside_a_checkout_refuses_the_overlay[an-extra-line-root]",
   "tests/setup/test_setup.py::test_git_answering_in_another_shape_inside_a_checkout_refuses_the_overlay[a-banner-root]",
+]
+
+# A path resolved through a link a repository commits is spelled in bytes the repository chose, and
+# every containment refusal, and the floor under the phase, printed one raw: an escape sequence in
+# a name reached the terminal that read the refusal. Each prints it through `printed.quoted`.
+[[mutation]]
+name = "setup prints the overlay root raw in a containment refusal"
+file = "src/stayfixed/setup/run.py"
+before = "    shown, project = quoted(str(candidate)), quoted(str(project_root))"
+after = "    shown, project = str(candidate), str(project_root)"
+reddens = [
+  "tests/setup/test_setup.py::test_a_path_a_repository_spells_reaches_every_containment_refusal_quoted[the-overlay]",
+]
+
+[[mutation]]
+name = "setup prints the directory git was asked from raw"
+file = "src/stayfixed/setup/run.py"
+before = "    raise Refusal(_SILENT_IN_A_CHECKOUT.format(start=quoted(str(start)), no_answer=_silence(code)))"
+after = "    raise Refusal(_SILENT_IN_A_CHECKOUT.format(start=start, no_answer=_silence(code)))"
+reddens = [
+  "tests/setup/test_setup.py::test_a_path_a_repository_spells_reaches_every_containment_refusal_quoted[where-git-was-asked]",
+]
+
+[[mutation]]
+name = "the floor prints the path it could not ask about raw"
+file = "src/stayfixed/setup/run.py"
+before = "            quoted(str(exc.filename)) if exc.filename is not None else \"a path this run was given\""
+after = "            str(exc.filename) if exc.filename is not None else \"a path this run was given\""
+reddens = [
+  "tests/setup/test_setup.py::test_a_path_a_repository_spells_reaches_every_containment_refusal_quoted[the-floor]",
 ]

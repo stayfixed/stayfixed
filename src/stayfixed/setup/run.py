@@ -718,8 +718,8 @@ def _ask(start: Path, *args: str, keyed: bool = False) -> list[str] | None:
     if code == _GIT_REFUSED and keyed:
         return None
     if code == _GIT_REFUSED:
-        raise Refusal(_REFUSED_IN_A_CHECKOUT.format(start=start))
-    raise Refusal(_SILENT_IN_A_CHECKOUT.format(start=start, no_answer=_silence(code)))
+        raise Refusal(_REFUSED_IN_A_CHECKOUT.format(start=quoted(str(start))))
+    raise Refusal(_SILENT_IN_A_CHECKOUT.format(start=quoted(str(start)), no_answer=_silence(code)))
 
 
 _MISSHAPEN = (
@@ -747,7 +747,7 @@ def _shaped(start: Path, lines: list[str] | None) -> list[str] | None:
     if lines is None or _well_shaped(lines):
         return lines
     if in_work_tree(start):
-        raise Refusal(_MISSHAPEN.format(start=start))
+        raise Refusal(_MISSHAPEN.format(start=quoted(str(start))))
     return None
 
 
@@ -771,7 +771,7 @@ def _repository(project_root: Path) -> _Repository | None:
     the key; and a listing that fails or is empty.
     """
     start = _nearest_directory(project_root)
-    unlisted = _UNLISTED.format(root=project_root)
+    unlisted = _UNLISTED.format(root=quoted(str(project_root)))
     answer = _ask(start, *_EXPLICIT_BARE, *_COMMON_AND_CHECKOUT, keyed=True)
     retried = False
     if answer is None:
@@ -784,11 +784,11 @@ def _repository(project_root: Path) -> _Repository | None:
     # The same shape `_shaped` asks of the walk, asked wherever `--root` is: an answer for `--root`
     # is never stepped past.
     if not _well_shaped(answer):
-        raise Refusal(_MISSHAPEN.format(start=start))
+        raise Refusal(_MISSHAPEN.format(start=quoted(str(start))))
     if answer[1] != "true":
         raise Refusal(
-            f"git does not read {project_root} as inside a checkout: it is inside a bare "
-            f"repository, a git directory, or a directory holding `HEAD`, `objects/` and "
+            f"git does not read {quoted(str(project_root))} as inside a checkout: it is inside a "
+            f"bare repository, a git directory, or a directory holding `HEAD`, `objects/` and "
             f"`refs/`, which any repository can commit — so it has no checkout of its own for an "
             f"overlay root to be compared against. Run this command from the checkout itself"
         )
@@ -910,9 +910,12 @@ def _outside_the_project(candidate: Path, *, project_root: Path, exempt: bool) -
     """
     resolved_candidate = fsops.resolved(candidate)
     resolved_project = fsops.resolved(project_root)
+    # Both are printed through `printed.quoted`: a path resolved through a link a repository
+    # commits is spelled in bytes the repository chose.
+    shown, project = quoted(str(candidate)), quoted(str(project_root))
     repository = _repository(resolved_project)
     same_repository = (
-        f"{candidate} is inside a checkout of the same repository as {project_root}, the "
+        f"{shown} is inside a checkout of the same repository as {project}, the "
         f"project this command was run from, holds one, or is one. The overlay root is the "
         f"machine's trust anchor and must live outside every checkout of a repository an agent "
         f"works in — a worktree is not a different repository, and a clone ships its own tree "
@@ -930,7 +933,7 @@ def _outside_the_project(candidate: Path, *, project_root: Path, exempt: bool) -
             "someone else: an archive, or a checkout of another version control system"
         )
         raise Refusal(
-            f"{candidate} is inside {project_root}, holds it, or is it — and {project_root} "
+            f"{shown} is inside {project}, holds it, or is it — and {project} "
             f"is the project this command was run from, {where}. The overlay root is the "
             f"machine's trust anchor and must live outside the project an agent works in: it "
             f"could otherwise ship its own tree and have this command record it"
@@ -961,7 +964,7 @@ def _outside_the_project(candidate: Path, *, project_root: Path, exempt: bool) -
     )
     whose = "another checkout of its own repository" if own else "a checkout of another repository"
     raise Refusal(
-        f"{candidate} is inside {whose}, whose git directory is {quoted(str(outer))}. The "
+        f"{shown} is inside {whose}, whose git directory is {quoted(str(outer))}. The "
         f"overlay root is the machine's trust anchor and must not lie where a repository can "
         f"ship files: put it in a directory no repository's checkout holds"
     )
@@ -1015,8 +1018,8 @@ def _recordable(root: Path) -> None:
     every write."""
     if not utf_8_name(str(root)):
         raise Refusal(
-            f"{root} is not UTF-8 text, so the machine configuration, a UTF-8 file, cannot record "
-            f"it as the overlay root; keep the overlay under a path that is"
+            f"{quoted(str(root))} is not UTF-8 text, so the machine configuration, a UTF-8 file, "
+            f"cannot record it as the overlay root; keep the overlay under a path that is"
         )
 
 
@@ -1191,7 +1194,9 @@ def _before_the_first_write(
                 planned.root, project_root=project_root, exempt=planned.exempt is not None
             )
     except OSError as exc:
-        asked = exc.filename if exc.filename is not None else "a path this run was given"
+        asked = (
+            quoted(str(exc.filename)) if exc.filename is not None else "a path this run was given"
+        )
         raise Refusal(
             f"{asked} cannot be checked ({fsops.said(exc)}), so nothing was written"
         ) from exc

@@ -1,6 +1,7 @@
 # tests/setup/test_setup.py
 from __future__ import annotations
 
+import contextlib
 import errno
 import json
 import os
@@ -20,6 +21,7 @@ from stayfixed.errors import Failure, Refusal
 from stayfixed.jsonobject import LONG_NUMBER, NESTED
 from stayfixed.overlay.api import MARKETPLACE_MANIFEST, PLUGIN_MANIFEST
 from stayfixed.presets import load_preset
+from stayfixed.printed import quoted
 from stayfixed.runner import Completed
 from stayfixed.setup.api import USER_SETTINGS, setup
 from stayfixed.setup.machine import read_machine, write_machine
@@ -1206,6 +1208,56 @@ def test_a_git_directory_git_names_reaches_a_containment_refusal_quoted(
     root = checkout if whose == "the-projects" else tmp_path / "elsewhere"
     with pytest.raises(Refusal) as refused:
         _record(tmp_path, candidate, root)
+    said = str(refused.value)
+    assert "\x1b" not in said and "\x07" not in said, said
+    assert "\\x1b]0;owned\\x07" in said, said
+
+
+_DRIVES_A_TERMINAL = "x\x1b]0;owned\x07"
+
+
+@needs_git
+@pytest.mark.parametrize("printed", ["the-overlay", "where-git-was-asked", "the-floor"])
+def test_a_path_a_repository_spells_reaches_every_containment_refusal_quoted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, printed: str
+) -> None:
+    # A path resolved through a link a repository commits is spelled in bytes the repository
+    # chose, and the overlay, `--root`, the directory git was asked from and the path the floor
+    # could not ask about each reached a refusal raw: an escape sequence and a bell in a name drove
+    # the terminal that read it. Each is printed through `printed.quoted`. Mutations
+    # (`mutations/`'s "setup prints the overlay root raw in a containment refusal" ->
+    # `the-overlay`; "setup prints the directory git was asked from raw" ->
+    # `where-git-was-asked`; "the floor prints the path it could not ask about raw" ->
+    # `the-floor`).
+    if printed == "the-floor" and os.geteuid() == 0:
+        pytest.skip("root searches every directory")
+    root = tmp_path / "project"
+    root.mkdir()
+    overlay = tmp_path / "overlay"
+    _seed_overlay(overlay)
+    if printed == "the-overlay":
+        shipped = root / _DRIVES_A_TERMINAL
+        _seed_overlay(shipped)
+        (root / "link").symlink_to(shipped)
+        overlay = root / "link"
+    elif printed == "where-git-was-asked":
+        checkout = tmp_path / _DRIVES_A_TERMINAL
+        checkout.mkdir()
+        _git(checkout, "init", "-q", "-b", "main")
+        (tmp_path / "link").symlink_to(checkout)
+        root = tmp_path / "link"
+        _quiet_git(tmp_path, monkeypatch, "exit 1")
+    else:
+        locked = tmp_path / _DRIVES_A_TERMINAL
+        _seed_overlay(locked / "overlay")
+        overlay = locked / "overlay"
+    with (
+        unsearchable(tmp_path / _DRIVES_A_TERMINAL)
+        if printed == "the-floor"
+        else (contextlib.nullcontext()),
+        pytest.raises(Refusal) as refused,
+    ):
+        _record(tmp_path, overlay, root)
     said = str(refused.value)
     assert "\x1b" not in said and "\x07" not in said, said
     assert "\\x1b]0;owned\\x07" in said, said
@@ -2584,7 +2636,7 @@ def test_a_path_setup_cannot_ask_about_before_its_first_write_is_a_refusal_namin
     with unsearchable(tmp_path / "locked"), pytest.raises(Refusal) as refused:
         setup("recommended", machine=machine, runner=runner, yes=True, **arguments)
     assert str(refused.value) == (
-        f"{asked} cannot be checked (Permission denied), so nothing was written"
+        f"{quoted(str(asked))} cannot be checked (Permission denied), so nothing was written"
     )
     assert runner.calls == []
     assert not machine.exists()
@@ -2767,7 +2819,7 @@ def test_a_symlink_loop_at_any_path_setup_is_given_is_a_refusal_naming_it(
     assert code == 2, said
     assert said.startswith("stayfixed: refused: "), said
     # `--root` is resolved by the command before `setup` is called, and named as the flag.
-    named = f"--root {looped}" if place == "root" else str(looped)
+    named = f"--root {quoted(str(looped))}" if place == "root" else quoted(str(looped))
     assert f"{named} cannot be checked (" in said, said
     assert not machine.exists() and runner.calls == []
 
