@@ -316,24 +316,33 @@ reddens = [
 
 # `git_run`'s `-1` is git that could not be run or ran past its time limit, not git saying there
 # is no repository, and every caller of `_ask` read it as the second: a git that timed out on
-# `rev-parse` let the project's main checkout be recorded from one of its worktrees. Inside a
-# checkout, which the disk says, the silence refuses; where no `.git` is, it stays harmless.
+# `rev-parse` let the project's main checkout be recorded from one of its worktrees. So did every
+# other way a `git` that runs can say nothing — an exit of 1, 126 or 127 from a wrapper, a signal,
+# an exit 0 with nothing printed — and with them the clone's own `ov/` was recorded from inside it.
+# Inside a checkout, which the disk says, each of them refuses; where no `.git` is, git has no
+# checkout to name and it is "no repository".
 [[mutation]]
 name = "setup reads git giving no answer inside a checkout as no repository again"
 file = "src/stayfixed/setup/run.py"
-before = "    if code == -1 and in_work_tree(start):"
-after = "    if False:"
+before = "    raise Refusal(_SILENT_IN_A_CHECKOUT.format(start=start, no_answer=_silence(code)))"
+after = "    return None"
 reddens = [
   "tests/setup/test_setup.py::test_git_giving_no_answer_inside_a_checkout_refuses_the_overlay[every-call]",
   "tests/setup/test_setup.py::test_git_giving_no_answer_inside_a_checkout_refuses_the_overlay[the-candidate-side]",
   "tests/setup/test_setup.py::test_git_giving_no_answer_inside_a_checkout_refuses_the_overlay[the-listing]",
+  "tests/setup/test_setup.py::test_git_that_runs_and_answers_nothing_inside_a_checkout_refuses_the_overlay[exits-1-inside-the-root]",
+  "tests/setup/test_setup.py::test_git_that_runs_and_answers_nothing_inside_a_checkout_refuses_the_overlay[exits-1-in-a-sibling-checkout]",
+  "tests/setup/test_setup.py::test_git_that_runs_and_answers_nothing_inside_a_checkout_refuses_the_overlay[killed-by-a-signal-inside-the-root]",
+  "tests/setup/test_setup.py::test_git_that_runs_and_answers_nothing_inside_a_checkout_refuses_the_overlay[killed-by-a-signal-in-a-sibling-checkout]",
+  "tests/setup/test_setup.py::test_git_that_runs_and_answers_nothing_inside_a_checkout_refuses_the_overlay[answers-nothing-inside-the-root]",
+  "tests/setup/test_setup.py::test_git_that_runs_and_answers_nothing_inside_a_checkout_refuses_the_overlay[answers-nothing-in-a-sibling-checkout]",
 ]
 
 [[mutation]]
 name = "setup refuses an overlay whenever git gives no answer, checkout or not"
 file = "src/stayfixed/setup/run.py"
-before = "    if code == -1 and in_work_tree(start):"
-after = "    if code == -1:"
+before = "    if not in_work_tree(start):"
+after = "    if code != -1 and not in_work_tree(start):"
 reddens = [
   "tests/setup/test_setup.py::test_git_giving_no_answer_where_no_checkout_is_still_records_the_overlay",
 ]
@@ -454,9 +463,9 @@ reddens = [
 name = "setup computes where a created overlay lands only after creating it"
 file = "src/stayfixed/setup/run.py"
 before = """        if planned is not None:
-            _outside_the_project(planned.root, project_root=project_root)"""
+            _outside_the_project("""
 after = """        if planned is not None and planned.create is None:
-            _outside_the_project(planned.root, project_root=project_root)"""
+            _outside_the_project("""
 reddens = ["tests/setup/test_setup.py::test_a_created_overlay_is_refused_before_the_repository_exists"]
 
 # An unusable `--home` reached the frame or the second write: under a read-only parent `mkdir`
@@ -583,9 +592,13 @@ before = """        if settings is None:
             _check_settings_parent(settings)
         _check_home_usable(home, settings=settings, created=_created_root(planned))
         if planned is not None:
-            _outside_the_project(planned.root, project_root=project_root)"""
+            _outside_the_project(
+                planned.root, project_root=project_root, created=planned.create is not None
+            )"""
 after = """        if planned is not None:
-            _outside_the_project(planned.root, project_root=project_root)
+            _outside_the_project(
+                planned.root, project_root=project_root, created=planned.create is not None
+            )
         if settings is None:
             _check_settings_path(home)
         else:
@@ -631,17 +644,31 @@ reddens = [
   "tests/setup/test_setup.py::test_a_created_overlay_whose_destination_cannot_be_searched_is_refused_before_anything",
 ]
 
-# Containment is judged against a repository. With `--root` in none the path arm refused the
-# owner's own `setup --overlay create:<owner>/<name> --yes` run in `~`, which is no repository and
-# ships nothing. The mutation stands an empty repository in for the missing one, which is the
-# order the arms ran in before: the path arm first, whatever `_repository` answers.
+# With `--root` in no repository, a `create:` destination is the one overlay not compared with it:
+# the run makes that directory, so nothing shipped it, and the comparison refused the owner's own
+# `setup --overlay create:<owner>/<name> --yes` run in `~`. Compared always, as before, the
+# owner's command is refused.
 [[mutation]]
-name = "setup compares an overlay's place with --root outside any repository"
+name = "setup compares a created overlay's place with --root outside any repository"
 file = "src/stayfixed/setup/run.py"
-before = "    repository = _repository(resolved_project)"
-after = "    repository = _repository(resolved_project) or _Repository(resolved_project, ())"
+before = "    compared = repository is not None or not created"
+after = "    compared = True"
 reddens = [
   "tests/setup/test_setup.py::test_an_overlay_created_from_a_directory_in_no_repository_passes_containment",
+]
+
+# And no other overlay: a `--root` in no repository can still hold a tree someone else made — a
+# project downloaded as an archive, a checkout of another version control system, a `vendor/ov`
+# shipped in either — so an overlay already on disk inside, around or equal to it is refused.
+[[mutation]]
+name = "setup exempts an existing overlay from the comparison with a --root in no repository"
+file = "src/stayfixed/setup/run.py"
+before = "    compared = repository is not None or not created"
+after = "    compared = repository is not None"
+reddens = [
+  "tests/setup/test_setup.py::test_an_existing_overlay_placed_against_a_root_in_no_repository_is_refused[inside]",
+  "tests/setup/test_setup.py::test_an_existing_overlay_placed_against_a_root_in_no_repository_is_refused[holding]",
+  "tests/setup/test_setup.py::test_an_existing_overlay_placed_against_a_root_in_no_repository_is_refused[equal]",
 ]
 
 # And the candidate's own side, asked whichever repository `--root` is in: a directory inside a
@@ -1230,8 +1257,8 @@ reddens = [
 [[mutation]]
 name = "setup reads git refusing the repository inside a checkout as no repository"
 file = "src/stayfixed/setup/run.py"
-before = "    if code == _GIT_REFUSED and not keyed and in_work_tree(start):"
-after = "    if False:"
+before = "        raise Refusal(_REFUSED_IN_A_CHECKOUT.format(start=start))"
+after = "        return None"
 reddens = [
   "tests/setup/test_setup.py::test_git_refusing_the_repository_inside_a_checkout_refuses_the_overlay[every-call]",
   "tests/setup/test_setup.py::test_git_refusing_the_repository_inside_a_checkout_refuses_the_overlay[the-candidate-side]",
@@ -1249,8 +1276,8 @@ reddens = [
 [[mutation]]
 name = "setup refuses an overlay whenever git exits 128, checkout or not"
 file = "src/stayfixed/setup/run.py"
-before = "    if code == _GIT_REFUSED and not keyed and in_work_tree(start):"
-after = "    if code == _GIT_REFUSED and not keyed:"
+before = "    if not in_work_tree(start):"
+after = "    if code != _GIT_REFUSED and not in_work_tree(start):"
 reddens = [
   "tests/setup/test_setup.py::test_git_refusing_every_repository_where_no_checkout_is_still_records_the_overlay",
 ]
@@ -1261,8 +1288,8 @@ reddens = [
 [[mutation]]
 name = "a keyed question's 128 refuses before it is asked again without the key"
 file = "src/stayfixed/setup/run.py"
-before = "    if code == _GIT_REFUSED and not keyed and in_work_tree(start):"
-after = "    if code == _GIT_REFUSED and in_work_tree(start):"
+before = "    if code == _GIT_REFUSED and keyed:"
+after = "    if False:"
 reddens = [
   "tests/setup/test_setup.py::test_a_root_inside_a_bare_shaped_directory_is_refused[current-none]",
 ]

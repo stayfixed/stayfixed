@@ -68,14 +68,16 @@ machine file, the settings merge and the plugin installs, and for `create:` abov
   or equal to any checkout of the project root's repository that `git` can name: what a
   repository ships reaches its own checkouts and nowhere else, so refusing every checkout of it
   removes the tree a clone can stage. Nor may it lie inside a checkout of any other repository,
-  its own nested checkout included. Those comparisons with the project root need a repository
-  git finds: with no `.git` at or above `--root`, they are not made, and only the candidate's own
-  side is asked (`_outside_the_project` names what that leaves uncompared).
+  its own nested checkout included. With no `.git` at or above `--root` there are no other
+  checkouts to list, and the one candidate not compared with `--root` itself is a `create:`
+  destination, which this run makes; an overlay already on disk inside, around or equal to a
+  `--root` in no repository is refused, because an archive or another version control system's
+  checkout can hold one (`_outside_the_project` names what is left uncompared).
   `_outside_the_project` says how `git` is asked and from which side, and why. It is not a claim
   that the same bytes cannot be somewhere else on the machine — a separate clone of the same
-  remote passes — only that the owner put them there. When `git` gives no answer for the project
-  root nothing is compared with it, and that is stated rather than assumed; once `git` has said
-  there is a repository, a listing it cannot give is a refusal and not a pass.
+  remote passes — only that the owner put them there. Where a `.git` is, a `git` that gives no
+  answer, exits non-zero, is ended by a signal or cannot list the checkouts is a refusal and not
+  a pass (`_ask`).
 
 For `create:`, the destination is `home/<name>` and is knowable from the arguments
 (`overlay.api.target_root`), so it is checked before the call rather than after it: the first
@@ -623,40 +625,64 @@ _REFUSED_IN_A_CHECKOUT = (
 _GIT_REFUSED = 128
 
 
+def _silence(code: int) -> str:
+    """How a `git` that gave no answer gave none, from `git_run`'s exit code: in words for
+    `_SILENT_IN_A_CHECKOUT`, which a person reads to know where to look."""
+    if code == -1:
+        return NO_ANSWER
+    if code < 0:
+        # `subprocess` reports a process a signal ended as the signal's negative.
+        return f"git was ended by signal {-code}"
+    if code == 0:
+        return "git exited 0 and printed nothing"
+    return f"git exited {code}"
+
+
 def _ask(start: Path, *args: str, keyed: bool = False) -> list[str] | None:
-    """git's answer to `args` asked from `start`, one line per entry, or `None` when it gave
-    none. `gitenv.git_run` decodes losslessly, so a path in bytes that are not UTF-8 is part of
-    the answer and compares equal to itself.
+    """git's answer to `args` asked from `start`, one line per entry; `None` where no `.git` is
+    at or above `start`, which is "no repository"; or a refusal. `gitenv.git_run` decodes
+    losslessly, so a path in bytes that are not UTF-8 is part of the answer and compares equal
+    to itself.
 
-    **A git that said nothing is not a git that said "no repository" where a checkout could
-    be.** `git_run`'s `-1` — git could not be run or ran past its time limit — read as `None`
-    here, and every caller reads `None` as a directory git does not count as a checkout: a git
-    that timed out on `rev-parse` let the main checkout of the project be recorded from one of
-    its worktrees. Whether `start` could be inside a checkout is read off the disk
-    (`gitenv.in_work_tree`), because the question cannot go to the git that just failed to
-    answer it. Where it could, the silence refuses; where no `.git` is at or above `start`,
-    there is no checkout for git to have named, and it is `None` as before.
+    **Three answers, and the third fails closed.** Whether `start` could be inside a checkout is
+    read off the disk (`gitenv.in_work_tree`), because the question cannot go to the git that
+    just failed to answer it.
 
-    **Nor is a git that refused the repository it found.** Exit 128 inside a checkout is git
-    saying there is a repository it will not describe — another user's, under `safe.directory`,
-    or one whose `.git` it cannot read — and read as `None` it skipped every comparison with
-    `--root`, as `-1` did. It refuses too, except for a `keyed` question, asked with
-    `_EXPLICIT_BARE`, whose 128 can be git declining a bare-shaped directory: its caller asks
-    again without the key.
+    - Lines, when git exits 0 and prints some.
+    - `None`, for anything else where no `.git` is at or above `start`: git finds a work tree
+      only through a `.git`, and `gitenv` scrubs `GIT_DIR`, so there is no checkout for git to
+      have named, whatever it said — its own "not a git repository", or nothing at all.
+    - A refusal, for anything else where a `.git` is: any exit but 0, a signal, `git_run`'s
+      `-1` (git could not be run or ran past its time limit), and an exit 0 with nothing
+      printed. Each of them used to read as `None`, and every caller reads `None` as a directory
+      git does not count as a checkout: a git that timed out on `rev-parse` let the main checkout
+      of the project be recorded from one of its worktrees, and a git wrapper that exits 1 — asdf
+      or mise with no version chosen — or a git the kernel killed let a clone's own `ov/` be
+      recorded from inside it.
+
+    Exit 128 inside a checkout is git saying there is a repository it will not describe —
+    another user's, under `safe.directory`, or one whose `.git` it cannot read — and it refuses
+    in words of its own, except for a `keyed` question, asked with `_EXPLICIT_BARE`, whose 128
+    can be git declining a bare-shaped directory: that is `None`, and its caller asks again
+    without the key.
     """
     code, out = git_run(start, *args)
-    if code == -1 and in_work_tree(start):
-        raise Refusal(_SILENT_IN_A_CHECKOUT.format(start=start, no_answer=NO_ANSWER))
-    if code == _GIT_REFUSED and not keyed and in_work_tree(start):
-        raise Refusal(_REFUSED_IN_A_CHECKOUT.format(start=start))
     # Split where git ended each line: `splitlines()` also broke a path at a `\r` it holds, and
     # recorded `…/wt` among the checkouts for a worktree at `…/wt\rx` (`gitenv.answer_lines`).
     lines = answer_lines(out)
-    return lines if code == 0 and lines else None
+    if code == 0 and lines:
+        return lines
+    if not in_work_tree(start):
+        return None
+    if code == _GIT_REFUSED and keyed:
+        return None
+    if code == _GIT_REFUSED:
+        raise Refusal(_REFUSED_IN_A_CHECKOUT.format(start=start))
+    raise Refusal(_SILENT_IN_A_CHECKOUT.format(start=start, no_answer=_silence(code)))
 
 
 def _repository(project_root: Path) -> _Repository | None:
-    """The repository `project_root` is in, or `None` when `git` gives no answer for it at all.
+    """The repository `project_root` is in; `None`, which is "no repository"; or a refusal.
 
     **Its checkouts are asked from the project's side.** The first version asked
     `rev-parse --git-common-dir` from inside the *candidate* and compared the answers, which let
@@ -665,15 +691,14 @@ def _repository(project_root: Path) -> _Repository | None:
     and was recorded. `git worktree list` is the repository's own record of its checkouts, which
     a clone cannot commit into.
 
-    **`None` means git gave no answer where no `.git` is at or above `--root`**: it is in no
-    repository, or git could not be run or timed out there. Nothing is compared with `--root`
-    then (`_outside_the_project` says why), and neither is something a repository can commit.
-    Every other way of not answering refuses:
-    git that could not be run, timed out, or refused the repository it found (`safe.directory`,
-    an unreadable `.git`) inside a checkout (`_ask`), an answer that says `--root`
-    is not inside a work tree (a root inside a bare-shaped directory has no checkout of its own
-    to compare against), an answer git gives only without the key, and a listing that fails or
-    is empty.
+    **`None` only where no `.git` is at or above `--root`**, which is the one place `_ask`
+    answers `None` to an unkeyed question: there is no checkout for git to name, whatever git
+    said. `_outside_the_project` says what is still compared then. Every other way of not
+    answering refuses: a git inside a checkout that says nothing, exits non-zero, is ended by a
+    signal or refuses the repository it found (`safe.directory`, an unreadable `.git`), all in
+    `_ask`; an answer that says `--root` is not inside a work tree (a root inside a bare-shaped
+    directory has no checkout of its own to compare against); an answer git gives only without
+    the key; and a listing that fails or is empty.
     """
     start = _nearest_directory(project_root)
     unlisted = _UNLISTED.format(root=project_root)
@@ -717,8 +742,9 @@ def _candidate_repository(candidate: Path) -> Path | None:
     which does not record where the checkout is — so from a linked worktree the main checkout
     was on no list. Asked from the candidate's side, git finds it through the checkout's `.git`.
     The candidate's bytes can try to make this answer wrong, and whatever they make it say they
-    cannot remove a refusal the listing makes. Nor can a git that says nothing: on the walk, as
-    everywhere `_ask` is used, that is a refusal inside a checkout and not a step past it.
+    cannot remove a refusal the listing makes. Nor can a git that says nothing, exits non-zero
+    or is ended by a signal: on the walk, as everywhere `_ask` is used, that is a refusal inside
+    a checkout and not a step past it.
 
     **Only an answer from inside a work tree is the candidate's.** On a git that ignores
     `safe.bareRepository`, a bare-shaped `ov/` answers for itself, and its committed `config` or
@@ -765,7 +791,7 @@ def _overlaps(a: Path, b: Path) -> bool:
     return any(_same(part, a) for part in b.parents)
 
 
-def _outside_the_project(candidate: Path, *, project_root: Path) -> None:
+def _outside_the_project(candidate: Path, *, project_root: Path, created: bool) -> None:
     """Refuse an overlay root that sits where the repository an agent works in could reach it.
 
     A path arm and three `git` arms. The path arm is equality or nesting either way round — a
@@ -780,27 +806,32 @@ def _outside_the_project(candidate: Path, *, project_root: Path) -> None:
     candidate, and refuses any checkout that holds it, of whichever repository: a directory in a
     work tree is a place that repository can ship files into, a nested checkout's included.
 
-    **Containment is judged against a repository.** The path arm and the listing run only when
-    git finds a repository for `--root` (a `.git` at or above it): a directory in no repository
-    git can name ships nothing git can name, and comparing paths there refused the owner's own
+    **With `--root` in no repository, only a `create:` destination is exempt from the path arm.**
+    `created` says the candidate is one: this run makes that directory — `gh repo create` clones
+    into it — so nothing shipped it, and comparing it with `--root` refused the owner's own
     `setup --overlay create:<owner>/<name> --yes` run in `~`, where `--root` defaults to the home
-    directory the overlay is created in. The candidate's own side is asked either way. The anchor
-    is `--root`, which the command line chooses: run from a directory git finds no repository
-    for, nothing is compared with the project an agent works in. Nor is what git cannot find
-    there: a work tree of another version control system, and one whose git directory is
-    elsewhere and named only by `--git-dir` and `--work-tree` or `GIT_DIR` — a bare-repository
-    dotfiles home is one — are not compared, since `gitenv` scrubs `GIT_DIR` from every `git` it
-    runs and no `.git` leads to them.
+    directory the overlay is created in. Run again, it is the clone the first run made. An
+    overlay already on disk is compared with `--root` whether or not git finds a repository
+    there: a directory in no repository can still hold a tree someone else made — a project
+    downloaded as an archive, a work tree of another version control system, a `vendor/ov`
+    shipped inside either. What the comparison needs a repository for is the listing of the
+    other checkouts, and "no repository" is `_repository`'s `None`, which `_ask` answers only
+    where no `.git` is at or above `--root`: a git that is there and says nothing refuses. The
+    candidate's own side is asked either way. The anchor is `--root`, which the command line
+    chooses: run from a directory git finds no repository for, no other checkout of the project
+    an agent works in is compared. Nor is what git cannot find there: a work tree of another
+    version control system, and one whose git directory is elsewhere and named only by
+    `--git-dir` and `--work-tree` or `GIT_DIR` — a bare-repository dotfiles home is one — has no
+    other checkouts compared, since `gitenv` scrubs `GIT_DIR` from every `git` it runs and no
+    `.git` leads to them.
 
-    **What it does not cover, stated rather than implied.** When `git` gives no answer for the
-    project root, the arms that compare with it are silent — `_repository` says which answers
-    those are. A common directory whose path is not UTF-8 is an answer like any
-    other: `git_run` decodes it losslessly, so two checkouts of one repository still compare
-    equal. And what the whole check bounds is a repository *shipping* a tree: committed contents
-    reach that repository's own checkouts and nowhere else, so refusing all of them removes the
-    case a clone can stage. It is not a claim that no other directory on the machine can hold the
-    same bytes — a separate `git clone` of the same remote has its own common directory and
-    passes — only that the owner, and not the clone, put it there.
+    **What it does not cover, stated rather than implied.** A common directory whose path is not
+    UTF-8 is an answer like any other: `git_run` decodes it losslessly, so two checkouts of one
+    repository still compare equal. And what the whole check bounds is a repository *shipping* a
+    tree: committed contents reach that repository's own checkouts and nowhere else, so refusing
+    all of them removes the case a clone can stage. It is not a claim that no other directory on
+    the machine can hold the same bytes — a separate `git clone` of the same remote has its own
+    common directory and passes — only that the owner, and not the clone, put it there.
     """
     resolved_candidate = candidate.resolve()
     resolved_project = project_root.resolve()
@@ -812,15 +843,23 @@ def _outside_the_project(candidate: Path, *, project_root: Path) -> None:
         f"works in — a worktree is not a different repository, and a clone ships its own tree "
         f"into all of them"
     )
+    compared = repository is not None or not created
+    if compared and _overlaps(resolved_candidate, resolved_project):
+        where = (
+            f"in the repository whose git directory is {repository.common}"
+            if repository is not None
+            # Said, because "no repository" reads like "nothing could have shipped it", and an
+            # archive or another version control system's checkout can.
+            else "which is in no git repository, and a tree there can still have come from "
+            "someone else: an archive, or a checkout of another version control system"
+        )
+        raise Refusal(
+            f"{candidate} is inside {project_root}, holds it, or is it — and {project_root} "
+            f"is the project this command was run from, {where}. The overlay root is the "
+            f"machine's trust anchor and must live outside the project an agent works in: it "
+            f"could otherwise ship its own tree and have this command record it"
+        )
     if repository is not None:
-        if _overlaps(resolved_candidate, resolved_project):
-            raise Refusal(
-                f"{candidate} is inside {project_root}, holds it, or is it — and {project_root} "
-                f"is the project this command was run from, in the repository whose git "
-                f"directory is {repository.common}. The overlay root is the machine's trust "
-                f"anchor and must live outside any repository an agent works in: a repository "
-                f"could otherwise ship its own tree and have this command record it"
-            )
         for checkout in repository.checkouts:
             if _overlaps(resolved_candidate, checkout.resolve()):
                 raise Refusal(same_repository)
@@ -944,7 +983,7 @@ def _apply_overlay(planned: _Overlay, *, project_root: Path, runner: Runner) -> 
 
     if planned.create is None:
         require_overlay(planned.root, because=_RECORDING)
-        _outside_the_project(planned.root, project_root=project_root)
+        _outside_the_project(planned.root, project_root=project_root, created=False)
         return planned.root, f"recorded the existing overlay at {planned.root}"
     owner, name = planned.create
     created = create(owner, name, source="template", root=planned.root.parent, runner=runner)
@@ -956,7 +995,7 @@ def _apply_overlay(planned: _Overlay, *, project_root: Path, runner: Runner) -> 
             f"{fault}. {owner}/{name} was created and cloned to {created.root}, but {_CREATED}"
         )
     initialised = init_instance(created.root, owner, runner=runner)
-    _outside_the_project(created.root, project_root=project_root)
+    _outside_the_project(created.root, project_root=project_root, created=True)
     if created.template is None:
         # `create` found a populated destination and generated nothing (no `gh` call at all),
         # which is what re-running `setup --overlay create:` does after the first run, so there is
@@ -1031,7 +1070,9 @@ def _before_the_first_write(
             _check_settings_parent(settings)
         _check_home_usable(home, settings=settings, created=_created_root(planned))
         if planned is not None:
-            _outside_the_project(planned.root, project_root=project_root)
+            _outside_the_project(
+                planned.root, project_root=project_root, created=planned.create is not None
+            )
     except OSError as exc:
         asked = exc.filename if exc.filename is not None else "a path this run was given"
         raise Refusal(

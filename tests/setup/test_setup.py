@@ -965,17 +965,17 @@ def test_an_overlay_created_from_a_directory_in_no_repository_passes_containment
 ) -> None:
     # The owner's own documented command, `stayfixed setup --overlay create:<owner>/<name> --yes`
     # run in `~`: `--root` defaults to `.`, the home directory, and `home/<name>` lies inside it, so
-    # the path comparison refused it — although `~` is in no repository and nothing can ship the
-    # tree there. Containment is judged against a repository; with none there is nothing to compare.
-    # Mutation (`mutations/`'s "setup compares an overlay's place with --root outside any
-    # repository"): an empty repository stands in for the missing one, so the path arm compares
-    # as it did before -> refused, and this reddens.
+    # the path comparison refused it — although `~` is in no repository and the destination is
+    # one this run makes, which nothing can have shipped. With `--root` in no repository a
+    # `create:` destination is the one overlay not compared with it. Mutation (`mutations/`'s
+    # "setup compares a created overlay's place with --root outside any repository"): the path
+    # arm compares every overlay, as it did before -> refused, and this reddens.
     #
     # Run again, the clone it made is a checkout of its own, as `gh repo create --clone` leaves
-    # it: that checkout is not a repository holding the overlay, so the second run creates
-    # nothing and records the same root. Mutation (`mutations/`'s "setup asks whether an overlay
-    # lies in another repository from the overlay itself") -> the clone answers for itself, the
-    # second run is refused, and this reddens.
+    # it: that checkout is not a repository holding the overlay, and it is still the `create:`
+    # destination, so the second run creates nothing and records the same root. Mutation
+    # (`mutations/`'s "setup asks whether an overlay lies in another repository from the overlay
+    # itself") -> the clone answers for itself, the second run is refused, and this reddens.
     home = tmp_path / "home"
     home.mkdir()
     machine = tmp_path / "config.toml"
@@ -1021,6 +1021,8 @@ def test_an_overlay_inside_another_repository_is_refused_from_a_directory_in_no_
     candidate = repository / "ov"
     candidate.mkdir()
     _seed_overlay(candidate)
+    # `--root` beside the overlay, in no repository: one that held it would refuse it first, in
+    # the path arm's words.
     with pytest.raises(Refusal, match="inside a checkout of another repository"):
         setup(
             "recommended",
@@ -1029,8 +1031,45 @@ def test_an_overlay_inside_another_repository_is_refused_from_a_directory_in_no_
             runner=Recorder(),
             yes=True,
             overlay=str(candidate),
-            project_root=tmp_path,
+            project_root=tmp_path / "elsewhere",
         )
+
+
+@pytest.mark.parametrize("place", ["inside", "holding", "equal"])
+def test_an_existing_overlay_placed_against_a_root_in_no_repository_is_refused(
+    tmp_path: Path, place: str
+) -> None:
+    # A `--root` git finds no repository for can still hold a tree someone else made: a project
+    # downloaded as an archive, a checkout of another version control system, a `vendor/ov`
+    # shipped inside either. Only a `create:` destination, which the run itself makes, is
+    # exempt from the comparison with `--root` there; an overlay that is already on disk is
+    # compared as it is inside a repository.
+    #
+    # Mutation (`mutations/`'s "setup exempts an existing overlay from the comparison with a
+    # --root in no repository"): the exemption covers every overlay -> each place is recorded
+    # and reddens.
+    if place == "inside":
+        root, candidate = tmp_path / "project", tmp_path / "project" / "vendor" / "ov"
+    elif place == "holding":
+        root, candidate = tmp_path / "ov" / "sub", tmp_path / "ov"
+    else:
+        root = candidate = tmp_path / "ov"
+    candidate.mkdir(parents=True)
+    root.mkdir(parents=True, exist_ok=True)
+    _seed_overlay(candidate)
+    home, machine = tmp_path / "home", tmp_path / "config.toml"
+    with pytest.raises(Refusal, match="holds it, or is it") as refused:
+        setup(
+            "recommended",
+            home=home,
+            machine=machine,
+            runner=Recorder(),
+            yes=True,
+            overlay=str(candidate),
+            project_root=root,
+        )
+    assert "in no git repository" in str(refused.value)
+    assert _wrote_anything(home, machine) == []
 
 
 @needs_git
@@ -1050,6 +1089,8 @@ def test_an_overlay_that_is_a_checkout_of_its_own_inside_another_repository_is_r
     candidate.mkdir()
     _git(candidate, "init", "-q", "-b", "main")
     _seed_overlay(candidate)
+    # `--root` beside the overlay, in no repository: one that held it would refuse it first, in
+    # the path arm's words.
     with pytest.raises(Refusal, match="inside a checkout of another repository"):
         setup(
             "recommended",
@@ -1058,7 +1099,7 @@ def test_an_overlay_that_is_a_checkout_of_its_own_inside_another_repository_is_r
             runner=Recorder(),
             yes=True,
             overlay=str(candidate),
-            project_root=tmp_path,
+            project_root=tmp_path / "elsewhere",
         )
 
 
@@ -1552,8 +1593,9 @@ def test_checkouts_git_cannot_list_refuse_the_overlay_rather_than_pass_it(
     #
     # Mutation (`mutations/`'s "setup stops refusing an overlay when git cannot list the project's
     # checkouts"): the listing's refusal becomes `return _Repository(common, [])` → the
-    # legitimate-looking overlay below is recorded and `listing-exit` and `listing-empty`
-    # redden.
+    # legitimate-looking overlay below is recorded and `listing-exit` reddens. An empty listing
+    # with exit 0 is refused before it is read, as a git that printed nothing inside a checkout
+    # (`_ask`), so it says that instead.
     # Mutation (`mutations/`'s "setup takes an answer git gave only without the key"): the refusal
     # after the retry becomes `pass` → `answers-only-without-the-key` is recorded and reddens.
     project = tmp_path / "project"
@@ -1572,7 +1614,8 @@ def test_checkouts_git_cannot_list_refuse_the_overlay_rather_than_pass_it(
         return answer
 
     monkeypatch.setattr("stayfixed.setup.run.git_run", failing)
-    with pytest.raises(Refusal, match="could not list"):
+    said = "git exited 0 and printed nothing" if failure == "listing-empty" else "could not list"
+    with pytest.raises(Refusal, match=said):
         _record(tmp_path, overlay, project)
 
 
@@ -1741,6 +1784,71 @@ def test_git_refusing_every_repository_where_no_checkout_is_still_records_the_ov
     _dubious_git(tmp_path, monkeypatch, "true")
     _record(tmp_path, overlay, project)
     assert overlay_root(tmp_path / "config.toml") == overlay
+
+
+# How a `git` that runs can still say nothing about a repository, each a line of shell run in
+# place of `rev-parse`: a wrapper that exits 1 (asdf or mise with no version chosen), one the
+# kernel ends with a signal, and one that exits 0 having printed nothing.
+QUIET = {
+    "exits-1": "exit 1",
+    "killed-by-a-signal": "kill -KILL $$",
+    "answers-nothing": "exit 0",
+}
+# Where the overlay lies, in a checkout git is asked about: inside `--root`, which the path arm
+# would still see with no repository, and in a sibling checkout of `--root`'s repository, which
+# only git's answers can show.
+QUIET_LAYOUTS = ["inside-the-root", "in-a-sibling-checkout"]
+
+
+def _quiet_git(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, rev_parse: str) -> None:
+    real_git = shutil.which("git")
+    assert real_git is not None
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "git").write_text(
+        "#!/bin/sh\n"
+        'for arg in "$@"; do\n'
+        f'  if [ "$arg" = rev-parse ]; then {rev_parse}; fi\n'
+        "done\n"
+        f'exec "{real_git}" "$@"\n',
+        encoding="utf-8",
+    )
+    (bin_dir / "git").chmod(0o755)
+    stand_in_git(monkeypatch, bin_dir / "git")
+
+
+@needs_git
+@pytest.mark.parametrize("layout", QUIET_LAYOUTS)
+@pytest.mark.parametrize("quiet", sorted(QUIET))
+def test_git_that_runs_and_answers_nothing_inside_a_checkout_refuses_the_overlay(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, quiet: str, layout: str
+) -> None:
+    # Only a `git` that could not be run or ran out of time refused; every other way of saying
+    # nothing — an exit of 1, 126 or 127, a signal, an empty answer — read as "no repository",
+    # so the comparisons with `--root` were skipped and the walk up from the candidate stepped
+    # past every directory: the clone's own `ov/` was recorded as the machine's trust anchor,
+    # exit 0. Inside a checkout, which the disk says without asking git, any of them refuses.
+    #
+    # Mutation (`mutations/`'s "setup reads git giving no answer inside a checkout as no
+    # repository again"): the silent arm of `_ask` answers `None` -> `in-a-sibling-checkout` is
+    # recorded and `inside-the-root` is refused by the path arm in other words; all redden.
+    project = tmp_path / "proj"
+    project.mkdir()
+    _git(project, "init", "-q", "-b", "main")
+    (project / "README.md").write_text("x", encoding="utf-8")
+    _git(project, "add", "-A")
+    _git(project, "commit", "-qm", "init")
+    candidate = project / "ov"
+    candidate.mkdir()
+    _seed_overlay(candidate)
+    root = project
+    if layout == "in-a-sibling-checkout":
+        root = tmp_path / "proj.wt" / "feature"
+        _git(project, "worktree", "add", "-q", str(root), "-b", "feature")
+    _quiet_git(tmp_path, monkeypatch, QUIET[quiet])
+    with pytest.raises(Refusal, match="gave no answer"):
+        _record(tmp_path, candidate, root)
+    assert overlay_root(tmp_path / "config.toml") is None
 
 
 @pytest.mark.parametrize("git_version", GITS)
