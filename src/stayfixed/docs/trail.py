@@ -129,6 +129,12 @@ def _interpolable(value: str) -> bool:
     return not ({"\n", "\r"} & set(value)) and MARKER not in value and END_MARKER not in value
 
 
+def load_trail(root: Path, config: Config) -> Trail:
+    """`config`'s `trail.toml` under `root`, read: `read_trail` of `trail_path`, named in every
+    message by `trail_target`."""
+    return read_trail(trail_path(root, config), trail_target(config))
+
+
 def read_trail(path: Path, where: str) -> Trail:
     """`[[theme]]` tables in order (`label`, `pattern`) and a `[states]` table; absent is empty.
     Every value is repository-authored: a pattern outside `docs.themes`' language is a `Failure`,
@@ -394,7 +400,7 @@ def trail_gate(root: Path, config: Config, base: str = "") -> list[Finding]:
     if not fsops.is_file(roadmap):
         return [Finding(ROADMAP_MISSING, config.paths.roadmap, None, "")]
     current = read_document(roadmap, config.paths.roadmap)
-    trail = read_trail(trail_path(root, config), trail_target(config))
+    trail = load_trail(root, config)
     if current == rebuild(current, root, config, trail):
         return []
     return [Finding(TRAIL_STALE, config.paths.roadmap, None, "")]

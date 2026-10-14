@@ -24,13 +24,13 @@ from stayfixed.docs.trail import (
     TOO_MANY_THEMES,
     UNFILED,
     _ignored,
+    load_trail,
     read_trail,
     rebuild,
     render_listing,
     theme_of,
     trail_gate,
     trail_path,
-    trail_target,
     undeclared_new_documents,
 )
 from stayfixed.errors import Failure
@@ -95,7 +95,7 @@ def corpus(
 
 
 def listing(root: Path, config: Config) -> str:
-    return render_listing(root, config, read_trail(trail_path(root, config), trail_target(config)))
+    return render_listing(root, config, load_trail(root, config))
 
 
 def test_documents_are_grouped_by_the_first_theme_that_matches_and_linked_from_the_roadmap(
@@ -136,7 +136,7 @@ def test_links_are_relative_to_the_roadmap_not_the_root(tmp_path: Path) -> None:
 
 def test_a_missing_trail_file_is_one_unfiled_bucket_with_no_states(tmp_path: Path) -> None:
     root, config = corpus(tmp_path, plans=("2026-01-02-gizmo.md",), trail=None)
-    trail = read_trail(trail_path(root, config), trail_target(config))
+    trail = load_trail(root, config)
     assert trail.themes == () and trail.states == {}
     assert "### Unfiled (1)" in render_listing(root, config, trail)
 
@@ -157,7 +157,7 @@ def test_a_missing_trail_file_is_one_unfiled_bucket_with_no_states(tmp_path: Pat
 def test_a_trail_file_outside_the_contract_fails_loudly(tmp_path: Path, text: str) -> None:
     root, config = corpus(tmp_path, trail=text)
     with pytest.raises(Failure):
-        read_trail(trail_path(root, config), trail_target(config))
+        load_trail(root, config)
 
 
 @pytest.mark.parametrize(
@@ -194,14 +194,14 @@ def test_no_repository_authored_value_reaches_the_listing_carrying_a_marker(
         f'[[theme]]\nlabel = "{written}"\npattern = "widget"\n', encoding="utf-8"
     )
     with pytest.raises(Failure, match="single line"):
-        read_trail(trail_path(root, config), trail_target(config))
+        load_trail(root, config)
     (root / "docs" / "trail.toml").write_text(
         f'[[theme]]\nlabel = "Widgets"\npattern = "widget"\n\n[states]\n'
         f'"specs/2026-01-01-widget-design.md" = "{written}"\n',
         encoding="utf-8",
     )
     with pytest.raises(Failure, match="single line"):
-        read_trail(trail_path(root, config), trail_target(config))
+        load_trail(root, config)
     (root / "docs" / "trail.toml").unlink()
     named = root / "docs" / "plans" / f"2026-01-02-{carrier}.md"
     named.write_text("# doc\n", encoding="utf-8")
@@ -220,7 +220,7 @@ def test_a_generated_listing_passes_its_own_check_and_regenerates_byte_identical
     tmp_path: Path,
 ) -> None:
     root, config = corpus(tmp_path, specs=("2026-01-01-widget-design.md",))
-    trail = read_trail(trail_path(root, config), trail_target(config))
+    trail = load_trail(root, config)
     once = rebuild(SEED, root, config, trail)
     assert rebuild(once, root, config, trail) == once
     assert once.startswith("# Roadmap\n\nprose above\n\n") and once.endswith("\nprose below\n")
@@ -238,7 +238,7 @@ def test_the_check_is_red_for_every_way_the_listing_goes_stale(
     tmp_path: Path, edit: Callable[[str], str]
 ) -> None:
     root, config = corpus(tmp_path, specs=("2026-01-01-widget-design.md",))
-    trail = read_trail(trail_path(root, config), trail_target(config))
+    trail = load_trail(root, config)
     current = rebuild(SEED, root, config, trail)
     stale = edit(current)
     assert rebuild(stale, root, config, trail) != stale
@@ -256,7 +256,7 @@ def test_a_new_document_that_declares_no_state_is_reported_and_one_that_declares
     tmp_path: Path,
 ) -> None:
     root, config = corpus(tmp_path, specs=("2026-01-01-widget-design.md",))
-    trail = read_trail(trail_path(root, config), trail_target(config))
+    trail = load_trail(root, config)
     before = rebuild(SEED, root, config, trail)
     (root / "docs" / "plans" / "2026-02-02-new.md").write_text("# doc\n", encoding="utf-8")
     if shutil.which("git"):
@@ -276,25 +276,21 @@ def test_the_first_generation_does_not_call_the_whole_corpus_new(tmp_path: Path)
     root, config = corpus(
         tmp_path, specs=("2026-01-01-widget-design.md",), plans=("2026-01-02-gizmo.md",)
     )
-    trail = read_trail(trail_path(root, config), trail_target(config))
+    trail = load_trail(root, config)
     assert undeclared_new_documents(SEED, rebuild(SEED, root, config, trail), trail) == []
 
 
 def test_a_deeper_heading_above_the_marker_is_not_mistaken_for_it(tmp_path: Path) -> None:
     root, config = corpus(tmp_path, specs=("2026-01-01-widget-design.md",))
     text = SEED.replace("prose above", f"prose above\n\n### {MARKER[3:]}\n\nkeep me")
-    rebuilt = rebuild(
-        text, root, config, read_trail(trail_path(root, config), trail_target(config))
-    )
+    rebuilt = rebuild(text, root, config, load_trail(root, config))
     assert "keep me" in rebuilt
 
 
 def test_a_roadmap_without_the_markers_fails(tmp_path: Path) -> None:
     root, config = corpus(tmp_path, specs=("2026-01-01-widget-design.md",))
     with pytest.raises(Failure, match="missing"):
-        rebuild(
-            "# Roadmap\n", root, config, read_trail(trail_path(root, config), trail_target(config))
-        )
+        rebuild("# Roadmap\n", root, config, load_trail(root, config))
 
 
 @needs_git
@@ -379,7 +375,7 @@ def test_a_tracked_document_named_in_bytes_that_are_not_utf_8_is_refused_by_name
         pytest.skip(f"this filesystem cannot hold a name that is not UTF-8 ({exc.strerror})")
     git(root, "add", "-A")
     with pytest.raises(Failure, match="rename the file") as caught:
-        rebuild(SEED, root, config, read_trail(trail_path(root, config), trail_target(config)))
+        rebuild(SEED, root, config, load_trail(root, config))
     assert "\\udce9" in str(caught.value)
     str(caught.value).encode("utf-8")  # bounded: nothing in the message needs escaping to print
     os.rename(raw, os.fsencode(plans) + b"/2026-04-04-cafe.md")
@@ -422,7 +418,7 @@ def test_the_trail_gate_holds_a_local_only_document_out_beside_a_name_that_is_no
     git(root, "add", "-A")
     roadmap = root / "docs" / "roadmap.md"
     roadmap.write_text(
-        rebuild(SEED, root, config, read_trail(trail_path(root, config), trail_target(config))),
+        rebuild(SEED, root, config, load_trail(root, config)),
         encoding="utf-8",
     )
     assert trail_gate(root, config) == []
@@ -530,7 +526,7 @@ def test_a_trail_file_that_is_not_utf8_is_a_failure_not_an_internal_error(tmp_pa
     root, config = corpus(tmp_path, trail=None)
     (root / "docs" / "trail.toml").write_bytes(b'[states]\n"a.md" = "caf\xe9"\n')
     with pytest.raises(Failure, match="is not valid UTF-8"):
-        read_trail(trail_path(root, config), trail_target(config))
+        load_trail(root, config)
 
 
 @pytest.mark.parametrize(
@@ -573,7 +569,7 @@ def test_a_trail_file_that_will_not_parse_never_quotes_its_own_keys(tmp_path: Pa
         encoding="utf-8",
     )
     with pytest.raises(Failure) as caught:
-        read_trail(trail_path(root, config), trail_target(config))
+        load_trail(root, config)
     message = str(caught.value)
     assert "is not valid TOML" in message and "ignore-prior-rules" not in message
     assert re.search(r"\(at line \d+, column \d+\)\Z", message), message
@@ -584,7 +580,7 @@ def test_the_trail_gate_passes_a_current_listing_and_names_a_stale_one(tmp_path:
     # Mutation (advisory): the stale arm returning `[]` — the second assertion reddens.
     root, config = corpus(tmp_path, specs=("2026-01-01-widget-design.md",))
     roadmap = root / config.paths.roadmap
-    trail = read_trail(trail_path(root, config), trail_target(config))
+    trail = load_trail(root, config)
     roadmap.write_text(rebuild(SEED, root, config, trail), encoding="utf-8")
     assert trail_gate(root, config) == []
     (root / config.paths.plans / "2026-01-02-gadget-plan.md").write_text(
