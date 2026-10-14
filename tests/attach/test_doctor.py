@@ -551,10 +551,11 @@ def test_a_linked_worktree_whose_main_checkout_tree_is_reached_through_a_symlink
 
 
 def test_a_worktree_harness_link_the_session_start_relink_made_is_ok(tmp_path: Path) -> None:
-    # The second target R5 names: the `SessionStart` re-link points a worktree's harness link at
-    # the worktree's own `paths.memory`. Compared with the main checkout's alone, it read red, "a
-    # link to a directory that is not this project's note store". Mutation (oracle):
-    # `mutations/`'s "harness_targets names the owning checkout's tree alone" -> red.
+    # The second directory a harness link may point at and be stayfixed's: the `SessionStart`
+    # re-link points a worktree's harness link at the worktree's own `paths.memory`. Compared with
+    # the main checkout's alone, it read red, "a link to a directory that is not this project's
+    # note store". Mutation (oracle): `mutations/`'s "harness_targets names the owning checkout's
+    # tree alone" -> red.
     from tests.attach.test_detach import _relinked_to_its_own_tree
 
     _, side, machine, home = _relinked_to_its_own_tree(tmp_path)

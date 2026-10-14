@@ -3264,7 +3264,7 @@ reddens = [
   "tests/attach/test_detach.py::test_a_main_checkout_tree_reached_through_a_symlink_refuses_before_anything_is_withdrawn[worktree]",
 ]
 
-# R5: a harness link is stayfixed's when it points at the owning checkout's `paths.memory`, where
+# A harness link is stayfixed's when it points at the owning checkout's `paths.memory`, where
 # `attach` points it, or at the checkout's own, where the `SessionStart` re-link points a
 # worktree's. Without the second, `detach` left a re-linked worktree's link dangling and `doctor`
 # called it red.

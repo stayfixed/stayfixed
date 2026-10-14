@@ -284,7 +284,8 @@ def _relinked_to_its_own_tree(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
     record(own, config)
     link(side, own, config, harness=MakeUnder(home))
     harness = harness_memory_path(side, home)
-    # Non-vacuous: the link is the worktree's own tree now, the second target R5 names.
+    # Non-vacuous: the link is the worktree's own tree now, the second directory a harness link
+    # may point at and be stayfixed's.
     assert harness.is_symlink() and harness.exists()
     assert harness.resolve() == (side / DEFAULT_MEMORY).resolve()
     assert harness.resolve() != (root / DEFAULT_MEMORY).resolve()
