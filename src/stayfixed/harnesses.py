@@ -127,8 +127,8 @@ class Tier(StrEnum):
 class Reach:
     """One surface under one harness."""
 
-    # `None`: the surface is not claimed to reach this harness, whether it was measured absent or
-    # has not been verified there.
+    # `None`: no tier is claimed for the surface under this harness, which the README's table and
+    # `doctor`'s `codex-trust` row print as "not verified".
     tier: Tier | None
     # The observation the tier rests on and the public record that holds it, or "unmeasured".
     evidence: str
