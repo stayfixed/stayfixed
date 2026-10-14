@@ -1881,7 +1881,8 @@ def _withdraw_memory_directories(
     """The empty `paths.memory` directory, then the directories above it that the ledger records
     the attach as having created, in `root` alone; and the empty `paths.memory` in every other
     checkout this run withdrew a tree from. `trees` is `_reach`'s second answer, so a checkout
-    whose tree was kept keeps its directories too, `root` among them.
+    whose tree was kept keeps its directories too, `root` among them: its `paths.memory` still
+    stands inside every parent the ledger names, so `rmdir` takes none of them.
 
     In `root`, `paths.memory` goes only when the ledger says the attach created it — an empty
     one the owner made before is theirs — and the directories above it only when the ledger says
@@ -1901,12 +1902,6 @@ def _withdraw_memory_directories(
                 removed.append(config.paths.memory)
         else:
             _rmdir_if_empty(tree, config.paths.memory)
-    # Defensive, and no test can tell it is here: `root` is missing from `trees` only where it
-    # owns the store and its tree was kept, so `paths.memory` still stands inside every one of
-    # these parents and `rmdir` could take none of them. Asked anyway, so the ledger's names are
-    # never acted on beside a tree this run kept.
-    if own not in trees:
-        return tuple(removed)
     for name in _memory_parents(config):
         if name in recorded.memory_parents and _rmdir_if_empty(root, name):
             removed.append(name)
