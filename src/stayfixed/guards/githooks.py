@@ -218,15 +218,17 @@ def _ours(path: Path, outcome: str) -> Hook:
         return Hook(False, content)
 
 
-def _refuse_a_self_chain(content: bytes | None, words: str) -> None:
-    """Refuse, in `words`, a hook whose bytes name `prepare-commit-msg.local`, where it is or
-    would be kept and from where stayfixed's hook `exec`s it: it would then `exec` itself.
+def _refuse_a_self_chain(content: bytes | None, words: str, *, path: str, local: str) -> None:
+    """Refuse, in `words` (`CHAINS_TO_ITSELF` or `ALREADY_RUNS_ITSELF`, filled in only then), a
+    hook whose bytes name `prepare-commit-msg.local`, where it is or would be kept and from where
+    stayfixed's hook `exec`s it: it would then `exec` itself. `path` and `local` are the hook and
+    its `.local`, as the refusal prints them.
 
     `None` is a hook past the read cap, which is not judged: `install` keeps and chains it, as it
     always has (`docs/cli.md`). Bytes, not text, so a hook that is not UTF-8 is judged as well.
     """
     if content is not None and _CHAINED_NAME.encode() in content:
-        raise Refusal(words)
+        raise Refusal(words.format(path=path, name=_CHAINED_NAME, local=local))
 
 
 def _chained(local: Path) -> bytes | None:
@@ -266,13 +268,11 @@ def install(root: Path) -> Installed:
     # would `exec` itself. The check is made here, at install, and not by the shipped hook before
     # its `exec`, where a false positive would abort every commit.
     if found is not None and not replaced:
-        kept = CHAINS_TO_ITSELF.format(path=shown_target, name=_CHAINED_NAME, local=shown_local)
-        _refuse_a_self_chain(found.content, kept)
+        _refuse_a_self_chain(found.content, CHAINS_TO_ITSELF, path=shown_target, local=shown_local)
     if replaced and fsops.exists(local):
-        running = ALREADY_RUNS_ITSELF.format(
-            local=shown_local, name=_CHAINED_NAME, path=shown_target
+        _refuse_a_self_chain(
+            _chained(local), ALREADY_RUNS_ITSELF, path=shown_target, local=shown_local
         )
-        _refuse_a_self_chain(_chained(local), running)
     preserved: Path | None = None
     if found is not None and not replaced:
         target.rename(local)  # beside the hook, in git's own directory, as `docs/cli.md` says
