@@ -591,6 +591,30 @@ def test_a_worktree_harness_link_to_its_own_emptied_tree_is_never_green(tmp_path
     )
 
 
+def test_a_worktree_link_to_its_own_tree_nobody_approved_is_to_be_removed_and_not_left_to_attach(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The re-linked worktree's link to its own tree, with no approval recorded: the remedy said
+    # to run `attach`, which withdraws a harness link only where it points at the main checkout's
+    # tree, so the link stayed. It names the link to remove now. Mutation (oracle): `mutations/`'s
+    # "doctor leaves a worktree's link to its own tree to attach" -> the relink remedy.
+    from tests.attach.test_detach import _relinked_to_its_own_tree
+
+    root, side, machine, home = _relinked_to_its_own_tree(tmp_path)
+    _forget_the_approval(_Machine(tmp_path, root, side, machine, home, monkeypatch))
+    harness = _harness_link_of(side, home)
+    row = _worktree_row(tmp_path, side, machine, home)
+    assert (row.status, row.detail, row.remedy) == (
+        WARN,
+        "attached; the harness memory path is a link to the store, although no approval is "
+        "recorded for the store — the harness reads notes nobody approved; the binding is bound",
+        f"remove {harness}, a link to this checkout's own tree, which `stayfixed attach --store "
+        "<overlay>/projects/<project>/memory` does not withdraw",
+    )
+    # The main checkout's link, to its own tree, is one `attach` withdraws, and says so.
+    assert _worktree_row(tmp_path, root, machine, home).remedy == _LINK_REMEDY
+
+
 def test_a_worktree_reading_its_own_tree_is_not_told_it_reads_nothing_when_the_main_tree_goes(
     tmp_path: Path,
 ) -> None:
@@ -732,12 +756,54 @@ def _fallback_through_an_alias(case: _Machine) -> None:
 
 
 def _trust_record_unreadable(case: _Machine) -> None:
+    _no_links(case)
+    _trust_record_broken(case)
+
+
+def _trust_record_broken(case: _Machine) -> None:
     from stayfixed.memory.trust import record_path
 
-    _no_links(case)
     recorded = record_path(case.machine)
     assert recorded is not None
     recorded.write_text("not json", encoding="utf-8")
+
+
+def _name_in_the_settings(case: _Machine, directory: Path) -> None:
+    # What a branch that commits `.claude/settings.local.json` leaves in every checkout: the key
+    # naming `directory`, whatever stands at the harness memory path.
+    for checkout in (case.root, case.side):
+        settings = checkout / LOCAL_SETTINGS
+        settings.parent.mkdir(exist_ok=True)
+        document = json.loads(settings.read_text(encoding="utf-8")) if settings.is_file() else {}
+        document["autoMemoryDirectory"] = str(directory)
+        settings.write_text(json.dumps(document), encoding="utf-8")
+
+
+def _chosen(case: _Machine) -> Path:
+    chosen = case.tmp_path / "chosen"
+    chosen.mkdir(exist_ok=True)
+    (chosen / "MEMORY.md").write_text("- [a note](a.md) — read me\n", encoding="utf-8")
+    return chosen.resolve()
+
+
+def _fallback_elsewhere_beside_a_link(case: _Machine) -> None:
+    _name_in_the_settings(case, _chosen(case))
+
+
+def _fallback_elsewhere_beside_nothing(case: _Machine) -> None:
+    _never_approved(case)
+    _name_in_the_settings(case, _chosen(case))
+
+
+def _fallback_elsewhere_tree_gone(case: _Machine) -> None:
+    _fallback_everywhere(case)
+    _name_in_the_settings(case, _chosen(case))
+    _main_tree_gone(case)
+
+
+def _written_fallback_beside_nothing_never_approved(case: _Machine) -> None:
+    _never_approved(case)
+    _name_in_the_settings(case, (case.root / "docs" / "memory").resolve())
 
 
 def _targets_unaskable(case: _Machine) -> None:
@@ -774,9 +840,25 @@ _RED_REAL_DIRECTORY = (
     "move {harness} aside, then run `stayfixed attach --store "
     "<overlay>/projects/<project>/memory` again",
 )
+
+
+def _red_fallback_elsewhere(shape: str) -> tuple[str, str, str]:
+    """The row for an `autoMemoryDirectory` naming anything but the store `attach` writes there,
+    beside whatever `shape` the harness memory path has."""
+    return (
+        "red",
+        f"the harness memory path is {shape}, and autoMemoryDirectory in "
+        ".claude/settings.local.json names a directory other than the store `attach` writes "
+        "there, so the harness reads notes this repository is not bound to",
+        "remove autoMemoryDirectory from .claude/settings.local.json, then run `stayfixed "
+        "attach --store <overlay>/projects/<project>/memory`",
+    )
+
+
 # Each state: what is done to the machine, then the row as (status, the harness memory path's
-# shape, remedy); for the real directory's red (`_RED_REAL_DIRECTORY`) the shape is the row's whole
-# detail, which never says "attached". `{harness}` is the checkout's own harness memory path.
+# shape, remedy); for the two reds read before the ledger (`_RED_REAL_DIRECTORY`,
+# `_red_fallback_elsewhere`) the shape is the row's whole detail, which never says "attached".
+# `{harness}` is the checkout's own harness memory path.
 ONE_MACHINE_STATE: dict[str, tuple[Callable[[_Machine], None], tuple[str, str, str]]] = {
     "attached": (lambda case: None, ("ok", "a link to the store", "")),
     "tree-gone-links-dangle": (
@@ -795,7 +877,10 @@ ONE_MACHINE_STATE: dict[str, tuple[Callable[[_Machine], None], tuple[str, str, s
             "readable, then run `stayfixed doctor` again",
         ),
     ),
-    "fallback-through-an-alias": (_fallback_through_an_alias, _RED_REAL_DIRECTORY),
+    "fallback-through-an-alias": (
+        _fallback_through_an_alias,
+        _red_fallback_elsewhere("a real directory"),
+    ),
     "links-elsewhere": (
         _links_elsewhere,
         (
@@ -896,6 +981,38 @@ ONE_MACHINE_STATE: dict[str, tuple[Callable[[_Machine], None], tuple[str, str, s
             _LINK_REMEDY,
         ),
     ),
+    "link-trust-record-unreadable": (
+        _trust_record_broken,
+        (
+            "warn",
+            "a link, and this machine's trust record cannot be read, so whether the harness "
+            "should see this store could not be checked",
+            "run `stayfixed memory trust --in-repo-memory`, which says why the trust record cannot "
+            "be read, then `stayfixed doctor` again",
+        ),
+    ),
+    "fallback-elsewhere-beside-a-link": (
+        _fallback_elsewhere_beside_a_link,
+        _red_fallback_elsewhere("a link"),
+    ),
+    "fallback-elsewhere-beside-nothing": (
+        _fallback_elsewhere_beside_nothing,
+        _red_fallback_elsewhere("not in place"),
+    ),
+    "fallback-elsewhere-tree-gone": (
+        _fallback_elsewhere_tree_gone,
+        _red_fallback_elsewhere("a real directory"),
+    ),
+    "written-fallback-beside-nothing-never-approved": (
+        _written_fallback_beside_nothing_never_approved,
+        (
+            "warn",
+            "not in place, and autoMemoryDirectory in .claude/settings.local.json points the "
+            "harness at the store, although no approval is recorded for the store — the harness "
+            "reads notes nobody approved",
+            _LINK_REMEDY,
+        ),
+    ),
 }
 
 
@@ -924,7 +1041,13 @@ def test_one_machine_state_reads_one_status_from_every_checkout(
     # before asking whether it reaches anything" -> `tree-gone-links-dangle`; "doctor reads the
     # real directory at the harness memory path without the settings fallback" ->
     # `fallback-approved`; "doctor reads a fallback naming another directory as the store" ->
-    # `fallback-through-an-alias`.
+    # `fallback-through-an-alias`, `fallback-elsewhere-beside-a-link`; "doctor reads the settings
+    # fallback beside a real directory alone" -> `fallback-elsewhere-beside-a-link`,
+    # `fallback-elsewhere-beside-nothing`; "doctor lets a gone link tree answer before a fallback
+    # naming another directory" -> `fallback-elsewhere-tree-gone`. A committed
+    # `autoMemoryDirectory` beside a link to the store, or beside nothing, read ok, since the key
+    # was read only beside a real directory, though the harness reads the directory it names
+    # whatever stands at the harness memory path.
     root, side, machine, home = _worktree_attached(tmp_path)
     case = _Machine(tmp_path, root, side, machine, home, monkeypatch)
     change, (status, shape, remedy) = ONE_MACHINE_STATE[state]
@@ -934,7 +1057,7 @@ def test_one_machine_state_reads_one_status_from_every_checkout(
         row = _worktree_row(tmp_path, checkout, machine, home)
         detail = (
             shape.format(harness=harness)
-            if status == "red" and shape.startswith("the harness memory path is a real")
+            if shape.startswith("the harness memory path is ")
             else f"attached; the harness memory path is {shape}; the binding is bound"
         )
         assert (checkout.name, row.status, row.detail, row.remedy) == (
@@ -999,12 +1122,7 @@ def test_a_fallback_naming_a_directory_a_branch_chose_is_never_ok(
     # Non-vacuous: the harness memory path is the real directory the fallback stands beside.
     assert harness.is_dir() and not harness.is_symlink()
     row = _worktree_row(tmp_path, side, machine, home)
-    status, shape, remedy = _RED_REAL_DIRECTORY
-    assert (row.status, row.detail, row.remedy) == (
-        status,
-        shape,
-        remedy.format(harness=harness),
-    )
+    assert (row.status, row.detail, row.remedy) == _red_fallback_elsewhere("a real directory")
     # The main checkout's own fallback still names its own store, and still reads ok.
     assert _worktree_row(tmp_path, root, machine, home).status == OK
 
