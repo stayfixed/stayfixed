@@ -1603,8 +1603,8 @@ reddens = [
 [[mutation]]
 name = "doctor stops asking what the harness memory path points at"
 file = "src/stayfixed/attach/doctor.py"
-before = "    if shape == _LINK and harness.resolve() not in targets:  # 5"
-after = "    if False:  # 5"
+before = "    if shape == _LINK and harness.resolve() not in targets:  # links-elsewhere"
+after = "    if False:  # links-elsewhere"
 reddens = [
   "tests/attach/test_doctor.py::test_a_harness_link_pointing_at_an_unrelated_directory_is_never_green",
 ]
@@ -1626,8 +1626,8 @@ reddens = [
 [[mutation]]
 name = "doctor lets a refusal out of asking where a harness link may point"
 file = "src/stayfixed/attach/doctor.py"
-before = "    except Refusal as refused:  # 3"
-after = "    except OSError as refused:  # 3"
+before = "    except Refusal as refused:  # targets-unaskable"
+after = "    except OSError as refused:  # targets-unaskable"
 reddens = [
   "tests/attach/test_doctor.py::test_a_linked_worktree_whose_main_checkout_tree_is_reached_through_a_symlink_warns",
   "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[targets-unaskable]",
@@ -1860,8 +1860,8 @@ reddens = [
 [[mutation]]
 name = "doctor calls a harness link it could not check green"
 file = "src/stayfixed/attach/doctor.py"
-before = "    return _Verdict(\n        WARN,\n        f\"{words}, and the note store does not resolve, so {unchecked} could not be checked\","
-after = "    return _Verdict(\n        \"ok\",\n        f\"{words}, and the note store does not resolve, so {unchecked} could not be checked\","
+before = "    return _Verdict(  # tree-there-not-resolving\n        WARN,\n        f\"{words}, and the note store does not resolve, so {unchecked} could not be checked\","
+after = "    return _Verdict(  # tree-there-not-resolving\n        \"ok\",\n        f\"{words}, and the note store does not resolve, so {unchecked} could not be checked\","
 reddens = [
   "tests/attach/test_doctor.py::test_a_harness_link_beside_a_store_that_does_not_resolve_is_never_green_and_names_the_cause[tree-symlinked]",
   "tests/attach/test_doctor.py::test_a_harness_link_beside_a_store_that_does_not_resolve_is_never_green_and_names_the_cause[groups-gone]",
@@ -1874,8 +1874,8 @@ reddens = [
 [[mutation]]
 name = "doctor reads a store that does not resolve as one whose trust record asks for no link"
 file = "src/stayfixed/attach/doctor.py"
-before = "    if store is None:  # 6, 7\n        return _unresolved(context, owner, words, relink)"
-after = "    if store is None:  # 6, 7\n        return _Verdict(OK, \"not in place, which is what this store's trust record asks for\", \"\")"
+before = "    if store is None:  # tree-gone, tree-there-not-resolving\n        return _unresolved(context, owner, shape, words, relink)"
+after = "    if store is None:  # tree-gone, tree-there-not-resolving\n        return _Verdict(OK, \"not in place, which is what this store's trust record asks for\", \"\")"
 reddens = [
   "tests/attach/test_doctor.py::test_a_ledger_whose_link_tree_is_gone_warns_and_names_attach",
   "tests/attach/test_doctor.py::test_no_harness_link_beside_a_tree_that_does_not_resolve_is_never_green[groups-gone]",
@@ -1908,8 +1908,8 @@ reddens = [
 [[mutation]]
 name = "doctor sends a reader whose link tree is gone to memory index --check"
 file = "src/stayfixed/attach/doctor.py"
-before = "    if gone:\n"
-after = "    if False:\n"
+before = "    if gone:  # tree-gone\n"
+after = "    if False:  # tree-gone\n"
 reddens = [
   "tests/attach/test_doctor.py::test_a_ledger_whose_link_tree_is_gone_warns_and_names_attach",
   "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[tree-gone-no-links]",
@@ -3143,8 +3143,8 @@ reddens = [
 [[mutation]]
 name = "doctor asks whether the store resolves before whether the harness link dangles"
 file = "src/stayfixed/attach/doctor.py"
-before = "    shape = _shape_of(harness)\n    if shape == _DANGLING:  # 1\n"
-after = "    shape = _shape_of(harness)\n    if shape == _DANGLING and _owner_store(context, answers, _owner(context)) is None:\n        return _unresolved(context, _owner(context), \"a link\", relink)\n    if shape == _DANGLING:  # 1\n"
+before = "    shape = _shape_of(harness)\n    if shape == _DANGLING:  # dangling\n"
+after = "    shape = _shape_of(harness)\n    if shape == _DANGLING and _owner_store(context, answers, _owner(context)) is None:\n        return _unresolved(context, _owner(context), _LINK, \"a link\", relink)\n    if shape == _DANGLING:  # dangling\n"
 reddens = [
   "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[tree-gone-links-dangle]",
 ]
@@ -3156,8 +3156,8 @@ reddens = [
 [[mutation]]
 name = "doctor reads the settings fallback as in place without asking the gate"
 file = "src/stayfixed/attach/doctor.py"
-before = "        if allowed:  # 10\n"
-after = "        if True:  # 10\n"
+before = "        if allowed:  # fallback-approved\n"
+after = "        if True:  # fallback-approved\n"
 reddens = [
   "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[fallback-lapsed]",
   "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[fallback-never-approved]",
@@ -3179,8 +3179,8 @@ reddens = [
 [[mutation]]
 name = "doctor reads a fallback naming another directory as the store"
 file = "src/stayfixed/attach/doctor.py"
-before = "    if shape == _REAL_DIRECTORY and recorded != store.path.resolve():  # 4\n"
-after = "    if False:  # 4\n"
+before = "    if shape == _REAL_DIRECTORY and recorded != store.path.resolve():  # fallback-elsewhere\n"
+after = "    if False:  # fallback-elsewhere\n"
 reddens = [
   "tests/attach/test_doctor.py::test_a_real_directory_beside_the_settings_fallback_attach_recorded_reads_as_in_place[elsewhere]",
 ]
@@ -3192,8 +3192,8 @@ reddens = [
 [[mutation]]
 name = "doctor compares the settings fallback with every directory a harness link may point at"
 file = "src/stayfixed/attach/doctor.py"
-before = "    if shape == _REAL_DIRECTORY and recorded != store.path.resolve():  # 4\n"
-after = "    if shape == _REAL_DIRECTORY and recorded not in targets:  # 4\n"
+before = "    if shape == _REAL_DIRECTORY and recorded != store.path.resolve():  # fallback-elsewhere\n"
+after = "    if shape == _REAL_DIRECTORY and recorded not in targets:  # fallback-elsewhere\n"
 reddens = [
   "tests/attach/test_doctor.py::test_a_fallback_naming_a_directory_a_branch_chose_is_never_ok[a-link-to-it]",
 ]
@@ -3203,8 +3203,8 @@ reddens = [
 [[mutation]]
 name = "doctor reads a lapsed approval as one the trust record asks for"
 file = "src/stayfixed/attach/doctor.py"
-before = "    if lapsed:  # 13\n"
-after = "    if False:  # 13\n"
+before = "    if lapsed:  # lapsed-links-withdrawn\n"
+after = "    if False:  # lapsed-links-withdrawn\n"
 reddens = [
   "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[lapsed-links-withdrawn]",
 ]
@@ -3226,8 +3226,8 @@ reddens = [
 [[mutation]]
 name = "doctor lets an unreadable trust record out of the attached row"
 file = "src/stayfixed/attach/doctor.py"
-before = "    except Refusal:  # 9\n"
-after = "    except OSError:  # 9\n"
+before = "    except Refusal:  # trust-record-unreadable\n"
+after = "    except OSError:  # trust-record-unreadable\n"
 reddens = [
   "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[trust-record-unreadable]",
 ]

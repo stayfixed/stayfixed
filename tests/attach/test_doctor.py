@@ -634,10 +634,11 @@ def test_a_worktree_harness_link_the_session_start_relink_made_is_ok(tmp_path: P
     )
 
 
-# One machine state, one status, from every checkout: the `attached` row's state table
-# (`attach.doctor._harness_verdict`) walked from the main checkout and from a linked worktree, both
-# attached the ordinary way, so a state is made once and read from both. Each state is a change to
-# that machine; each row is pasted, never read back from the code under test.
+# One machine state, one status, from every checkout: the `attached` row's states, which
+# `attach.doctor._harness_verdict` reads in one order and names as this table does, walked from the
+# main checkout and from a linked worktree, both attached the ordinary way, so a state is made once
+# and read from both. Each state is a change to that machine; each row is pasted, never read back
+# from the code under test.
 
 
 def _no_links(case: _Machine) -> None:
