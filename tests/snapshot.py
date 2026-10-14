@@ -90,10 +90,11 @@ def tree_entries(*roots: Path) -> dict[str, str]:
     and a home, and must leave every one of them as it was."""
     found: dict[str, str] = {}
     for root in roots:
-        for dirpath, dirnames, filenames in os.walk(root):
-            dirnames[:] = [name for name in dirnames if name != ".git"]
-            for name in (*dirnames, *filenames):
-                path = Path(dirpath) / name
+        for directory, below, files in os.walk(root):
+            if ".git" in below:
+                below.remove(".git")
+            for name in (*below, *files):
+                path = Path(directory) / name
                 if path.is_symlink():
                     found[str(path)] = f"-> {os.readlink(path)}"
                 elif path.is_dir():
