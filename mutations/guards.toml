@@ -1703,3 +1703,14 @@ after = "    if content is not None and _CHAINED_NAME.lower().encode() in conten
 reddens = [
   "tests/guards/test_githooks.py::test_a_predecessor_naming_its_local_in_another_case_is_installed",
 ]
+
+# An exit code has at most three digits, and `int()` raises past 4,300: a `PostToolUseFailure`
+# whose `error` opened with a longer run of them cost the red-run note an exception.
+[[mutation]]
+name = "the red-run hint reads an exit code of any length"
+file = "src/stayfixed/guards/hygiene.py"
+before = '_EXIT_CODE_ERROR = re.compile(r"\AExit code (\d{1,9})(?!\d)")'
+after = '_EXIT_CODE_ERROR = re.compile(r"\AExit code (\d+)")'
+reddens = [
+  'tests/guards/test_hygiene.py::test_red_exit_reads_both_payload_shapes[raw8-None]',
+]
