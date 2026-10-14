@@ -29,7 +29,13 @@ from tests import parserlimits
 from tests.gitfixture import git as _git
 from tests.gitfixture import needs_git, stand_in_git
 from tests.parserlimits import overflowing
-from tests.pathfaults import ROOT_SEARCHES_EVERYTHING, read_only, unsearchable, write_only
+from tests.pathfaults import (
+    ROOT_SEARCHES_EVERYTHING,
+    at_mode,
+    read_only,
+    unsearchable,
+    write_only,
+)
 from tests.runners import Recorder
 
 # The minimal `stayfixed.toml` `attach.read_binding` needs (a project name and nothing else),
@@ -210,20 +216,16 @@ def test_a_user_settings_file_that_cannot_be_read_is_a_failure_saying_why_in_wor
     home = tmp_path / "home"
     (home / ".claude").mkdir(parents=True)
     (home / USER_SETTINGS).write_text("{}\n", encoding="utf-8")
-    (home / USER_SETTINGS).chmod(0)
-    try:
-        with pytest.raises(Failure) as caught:
-            setup(
-                "recommended",
-                home=home,
-                machine=tmp_path / "config.toml",
-                runner=Recorder(),
-                yes=True,
-                overlay=None,
-                project_root=tmp_path / "project",
-            )
-    finally:
-        (home / USER_SETTINGS).chmod(0o644)
+    with at_mode(home / USER_SETTINGS, 0, after=0o644), pytest.raises(Failure) as caught:
+        setup(
+            "recommended",
+            home=home,
+            machine=tmp_path / "config.toml",
+            runner=Recorder(),
+            yes=True,
+            overlay=None,
+            project_root=tmp_path / "project",
+        )
     assert (
         str(caught.value) == f"{home / USER_SETTINGS} cannot be read ({os.strerror(errno.EACCES)})"
     )
@@ -2693,20 +2695,16 @@ def test_a_created_overlay_whose_destination_cannot_be_searched_is_refused_befor
     destination.mkdir(parents=True)
     machine = tmp_path / "config.toml"
     runner = Recorder(answers={_OCTOS_PROBE: _A_TEMPLATE}, on_call=_populate_overlay)
-    destination.chmod(mode)
-    try:
-        with pytest.raises(Refusal) as refused:
-            setup(
-                "recommended",
-                home=home,
-                machine=machine,
-                runner=runner,
-                yes=True,
-                overlay="create:octo/stayfixed-private",
-                project_root=tmp_path / "project",
-            )
-    finally:
-        destination.chmod(0o755)
+    with at_mode(destination, mode, after=0o755), pytest.raises(Refusal) as refused:
+        setup(
+            "recommended",
+            home=home,
+            machine=machine,
+            runner=runner,
+            yes=True,
+            overlay="create:octo/stayfixed-private",
+            project_root=tmp_path / "project",
+        )
     assert str(refused.value) == f"--home {home} cannot be used: {destination} cannot be searched"
     assert runner.calls == []
     assert not machine.exists()

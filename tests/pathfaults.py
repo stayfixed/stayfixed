@@ -179,3 +179,14 @@ def write_only(directory: Path) -> Iterator[None]:
         yield
     finally:
         directory.chmod(0o755)
+
+
+@contextlib.contextmanager
+def at_mode(path: Path, mode: int, *, after: int) -> Iterator[None]:
+    """`path` at `mode` for the block and at `after` once it ends, for a mode the helpers above do
+    not name: a file nobody may read, a directory that can be read and not searched."""
+    path.chmod(mode)
+    try:
+        yield
+    finally:
+        path.chmod(after)
