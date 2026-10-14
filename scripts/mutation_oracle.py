@@ -72,9 +72,9 @@ DECLARATIONS = ROOT / "mutations"
 # of 512 files, while the repository root was the plugin folder and every tracked file counted
 # against it. The plugin's tree (`scripts/plugin_tree.py`) no longer holds `mutations/`, so that
 # limit no longer reaches these files, and no size cap holds a group file. The table stays because
-# regrouping about 1.46 MB of declarations into one file per area would rewrite every entry's
-# history and collide with every open branch's entries, for no reader's gain. CONTRIBUTING.md,
-# "Tests", states the same ruling.
+# regrouping the declarations into one file per area would rewrite every entry's history and
+# collide with every open branch's entries, for no reader's gain. CONTRIBUTING.md, "Tests", states
+# the same ruling.
 GROUP_OF: tuple[tuple[str, str], ...] = (
     ("src/stayfixed/assess/", "assess"),
     ("src/stayfixed/attach/", "attach"),

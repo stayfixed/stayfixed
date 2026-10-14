@@ -387,10 +387,10 @@ one file per area would need no table, and would have spent about twenty of thos
 do. The plugin is now published from a repository of its own, whose root is the tree
 `scripts/plugin_tree.py` generates from the paths its `PLUGIN_PATHS` names, and `mutations/` is not
 among them, so that limit no longer reaches these files, and there is no size cap on a group file.
-`GROUP_OF` stays all the same: regrouping about 1.46 MB of declarations into one file per area
-would rewrite every entry's history and collide with every open branch's entries, for no reader's
-gain. It remains the one exception to "no shared registry" under "Areas", and it is stated as such
-there and beside the table. `tests/scripts/test_mutation_oracle.py` reddens on an entry in the
+`GROUP_OF` stays all the same: regrouping the declarations into one file per area would rewrite
+every entry's history and collide with every open branch's entries, for no reader's gain. It
+remains the one exception to "no shared registry" under "Areas", and it is stated as such there and
+beside the table. `tests/scripts/test_mutation_oracle.py` reddens on an entry in the
 wrong file.
 A comment that cites an entry names the set and the entry's quoted name — `mutations/`'s "the
 containment walk stops refusing '..'" — and never its group file, so a regroup leaves the comment
