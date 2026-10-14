@@ -101,12 +101,13 @@ What it does, in order:
    are read back into its `index:` frontmatter, so nothing a session wrote is lost by
    regenerating.
 3. **Invents what is missing.** A note with none of these gets a provisional `index:` from its
-   `description`. The line names the notes this run wrote a provisional line into, from
-   `metadata.index` or the description, up to eight and then how many more, so you can curate
-   them; `--json`'s `provisional` lists them all.
+   `description`.
 4. **Renders.** One section per configured group, a note's `group:` value as a sub-heading
    inside it, ordered by `startup` rank first, then by `group_order`, then by name — so a
    note ranked for the session leads its section whatever its position within a sub-heading.
+
+The command's line names the notes this run wrote a provisional line into, in step 1 or step 3, up
+to eight and then how many more, so you can curate them; `--json`'s `provisional` lists them all.
 
 `--check` exits `1` when the index has drifted, when it is over its word budget, when it is past
 the harness's line or byte caps, or when a file in the store cannot be parsed as a note — one
@@ -2526,16 +2527,16 @@ It exits `2` on a refusal, in the order the run meets them:
 - A `git rev-parse --git-path info/exclude` that names no exclude file, an exclude file that cannot
   be read, a `stayfixed:attach` block in it opened or closed twice, or one to take out of a file in
   a directory you cannot write (the refusal names the file).
+- A `paths.memory` a harness link is compared with that cannot be asked where it leads: the main
+  checkout's, whenever a harness link is withdrawn, or the checkout's own — reached through a
+  symlink, a symlink loop, or one the system cannot resolve. The refusal says whether it is the
+  main checkout's or a linked worktree's, and why.
 - A path the withdrawal writes or removes reached through a directory that became a symlink after
   the attach: `.claude` when the settings file is to be rewritten, `.codex` or `.codex/rules` for
   a recorded rule copy, `paths.memory` or a directory above it in any checkout whose tree it
   withdraws, `.stayfixed` or `.stayfixed/local` for the ledger. The refusal names the path and
   the symlink. A rule copy that is itself a link is not one of these: it is unlinked, and what it
   points at stays.
-- A `paths.memory` a harness link is compared with that cannot be asked where it leads: the main
-  checkout's, whenever a harness link is withdrawn, or the checkout's own — reached through a
-  symlink, a symlink loop, or one the system cannot resolve. The refusal says whether it is the
-  main checkout's or a linked worktree's, and why.
 - A `memory.groups` entry added since the attach that does not name a subdirectory of
   `paths.memory`, in any checkout whose tree it withdraws. The refusal counts it and does not print
   it.
@@ -2764,12 +2765,39 @@ check with `name`, `status`, `detail` and `remedy`, so every remedy is there.
 | `ci-ref` | whether `[ci] ref` is the commit of a released stayfixed tag (or the `v1` alias: a warning, as mutable, once a `1.x` release creates it, and red until then), and whether the rendered workflow pins the same ref — under `[ci] mode = "reusable"`, a workflow that is not there at all is a warning and never a green row, and so are a path that is there and is not a regular file and a file past the 256 KiB bound on the read | `git ls-remote --exit-code` over the public repository's tags, bounded at 30 seconds; *.github/workflows/stayfixed.yml*, read as a regular file and to a bound |
 | `diagnostics` | how many reasons the hook sink recorded — a count, never a line of the file | `${CLAUDE_PLUGIN_DATA}/stayfixed/diagnostics.jsonl` |
 | `ignored-env` | `STAYFIXED_CONFIG` or `XDG_CONFIG_HOME` set and not honoured, and a `HOME` that is not the home the password database records for this user, with the directory stayfixed's machine files are under instead, or that it records none; from a terminal, the remedy says to move files of your own there first | the environment, the password database |
-| `attached` | the overlay binding, and the harness memory path's shape, judged off a terminal only where `HOME` is the database's home, and one machine state read alike from every checkout: a link that reaches nothing is red; a link counts as `attach`'s when it reaches the main checkout's `paths.memory`, where `attach` points it from every checkout, or this checkout's own; a real directory there is in place only beside the `autoMemoryDirectory` fallback naming the main checkout's store exactly, as `attach` writes it, and only while the store's approval holds (otherwise the row warns, and `attach` withdraws the key), and with no such fallback it is red and to be moved aside; where the main checkout's note store does not resolve, the row warns, naming `attach` when the link tree at `paths.memory` is gone and `memory index --check` otherwise; with nothing in place it warns while the approval holds, warns with the way to re-approve when the approval lapsed, and is green for a store never approved, the approval asked being the main checkout's store's, as `attach` asks it; where the main checkout's `paths.memory` cannot be asked where it leads (a symlink, a symlink loop, a fault the system names), or this machine's trust record cannot be read, the row warns and says which | `.stayfixed/local/attach.json`, `~/.claude/projects/<slug>/memory`, `.claude/settings.local.json`, the link tree |
+| `attached` | the overlay binding, and the harness memory path's shape, judged off a terminal only where `HOME` is the database's home and read alike from every checkout (the states are below the table) | `.stayfixed/local/attach.json`, `~/.claude/projects/<slug>/memory`, `.claude/settings.local.json`, the link tree |
 | `bundles` | a bundle that does not fit its slots, and one whose part reaches the cap | the note store |
 | `store-debris` | files in the note store that are not notes (at most 500,000 entries) | the note store |
 | `harness-link` | whether a hook can make the harness memory link, which it cannot while `HOME` is not the database's home, said as the session is told it, with what makes the link instead | the environment, the password database |
 | `pre-commit` | whether the overlay's commit-time secret scan is installed on this machine | the overlay |
 | `overlay-requires` | whether the overlay this machine records requires a stayfixed the running one satisfies — red when this project keeps its notes in that overlay, a warning when it does not | the overlay's `.claude-plugin/plugin.json`, `stayfixed.toml` |
+
+**How `attached` reads the harness memory path.** Once the overlay confirms the binding, the row
+reads `~/.claude/projects/<slug>/memory` in one order, and the first state that matches answers. The
+store and the approval it asks about are the main checkout's, as `attach` asks them, so one machine
+state reads the same from every checkout; the one exception is a link that reaches this checkout's
+own `paths.memory`, where a linked worktree's session-start re-link points it, which is judged by
+the store at that tree. A file, or anything else that is no link and no directory, reads as nothing
+in place. Each remedy below is shortened; the row spells the command in full.
+
+| State | What stands there | Status | Remedy |
+|---|---|---|---|
+| `dangling` | a link that reaches nothing | `red` | `attach` |
+| `real-directory-no-fallback` | a real directory, with no `autoMemoryDirectory` recorded in `.claude/settings.local.json` | `red` | move it aside, then `attach` |
+| `targets-unaskable` | anything else, where the main checkout's or this checkout's `paths.memory` cannot be asked where it leads (a symlink, a symlink loop, a fault the system names); the row says whose and why | `warn` | replace the symlink, or make the directory readable, then `doctor` |
+| `links-elsewhere` | a link to anything but the main checkout's `paths.memory` or this checkout's own | `red` | `attach` |
+| `tree-gone` | anything else, where the store does not resolve because its link tree at `paths.memory` is gone | `warn` | `attach` |
+| `tree-there-not-resolving` | anything else, where the store does not resolve and its link tree is there | `warn` | `memory index --check`, then `doctor` |
+| `fallback-elsewhere` | a real directory, with `autoMemoryDirectory` naming anything but the main checkout's store exactly as `attach` writes it | `red` | move it aside, then `attach` |
+| `trust-record-unreadable` | anything else, where this machine's trust record cannot be read | `warn` | `memory trust --in-repo-memory`, which says why, then `doctor` |
+| `attached` | a link to the store, its approval holding | `ok` | — |
+| `link-lapsed` | a link to the store, its approval lapsed | `warn` | read what changed, `memory trust --in-repo-memory`, then `attach` |
+| `link-never-approved` | a link to the store, no approval recorded | `warn` | `attach`, which withdraws the link |
+| `fallback-approved` | a real directory, with the fallback naming the store, its approval holding | `ok` | — |
+| `fallback-unapproved` | the same, its approval lapsed or never given; the row says which | `warn` | `attach`, which withdraws the key |
+| `no-links-approved` | nothing, the store's approval holding | `warn` | `attach` |
+| `lapsed-links-withdrawn` | nothing, its approval lapsed | `warn` | read what changed, `memory trust --in-repo-memory`, then `attach` |
+| `never-approved` | nothing, no approval recorded | `ok` | — |
 
 **Ten of the seventeen have a `skip` arm — sixteen arms between them: one no build can answer,
 and fifteen on a state of this machine or this repository.** A `skip` is **not** a finding and
