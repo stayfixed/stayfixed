@@ -1603,7 +1603,7 @@ reddens = [
 [[mutation]]
 name = "doctor stops asking what the harness memory path points at"
 file = "src/stayfixed/attach/doctor.py"
-before = "    if shape == _LINK and harness.resolve() not in targets:  # links-elsewhere"
+before = "    if reached is not None and reached not in targets:  # links-elsewhere"
 after = "    if False:  # links-elsewhere"
 reddens = [
   "tests/attach/test_doctor.py::test_a_harness_link_pointing_at_an_unrelated_directory_is_never_green",
@@ -1874,7 +1874,7 @@ reddens = [
 [[mutation]]
 name = "doctor reads a store that does not resolve as one whose trust record asks for no link"
 file = "src/stayfixed/attach/doctor.py"
-before = "    if store is None:  # tree-gone, tree-there-not-resolving\n        return _unresolved(context, owner, shape, words, relink)"
+before = "    if store is None:  # tree-gone, tree-there-not-resolving\n        return _unresolved(context, checkout, shape, words, relink)"
 after = "    if store is None:  # tree-gone, tree-there-not-resolving\n        return _Verdict(OK, \"not in place, which is what this store's trust record asks for\", \"\")"
 reddens = [
   "tests/attach/test_doctor.py::test_a_ledger_whose_link_tree_is_gone_warns_and_names_attach",
@@ -3209,12 +3209,49 @@ reddens = [
   "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[lapsed-links-withdrawn]",
 ]
 
+# A link to the store reads notes nobody approved once the approval lapses, or where none was
+# given, as surely as the settings fallback does, and the row read the link green while it warned
+# for the fallback.
+[[mutation]]
+name = "doctor reads a link to the store as ok without asking the gate"
+file = "src/stayfixed/attach/doctor.py"
+before = "        if gate == GATE_OPEN:  # attached\n"
+after = "        if True:  # attached\n"
+reddens = [
+  "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[link-lapsed]",
+  "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[link-never-approved]",
+]
+
+# A worktree's harness link the `SessionStart` re-link points at the worktree's own tree reads that
+# tree's store: judged at the main checkout's, a worktree reading its own tree was told the harness
+# read nothing once the main checkout's tree went.
+[[mutation]]
+name = "doctor judges a worktree's link to its own tree by the main checkout's store"
+file = "src/stayfixed/attach/doctor.py"
+before = "    checkout = context.root if reached is not None and reached != targets[0] else owner\n"
+after = "    checkout = owner\n"
+reddens = [
+  "tests/attach/test_doctor.py::test_a_worktree_reading_its_own_tree_is_not_told_it_reads_nothing_when_the_main_tree_goes",
+]
+
+# A linked worktree whose own tree does not resolve resolves through the main checkout, and that
+# store is not the one the harness reads through a link to the worktree's emptied tree: taken for
+# it, the row read green while the harness read nothing.
+[[mutation]]
+name = "doctor takes the main checkout's store for a worktree's own tree that does not resolve"
+file = "src/stayfixed/attach/doctor.py"
+before = "    if store is not None and reached is not None and store.path.resolve() != reached:\n"
+after = "    if False:\n"
+reddens = [
+  "tests/attach/test_doctor.py::test_a_worktree_harness_link_to_its_own_emptied_tree_is_never_green",
+]
+
 # The gate is asked of the store `attach` asks it of, the owning checkout's: asked of a linked
 # worktree's own, which nothing approves, a worktree read green where the main checkout warned.
 [[mutation]]
 name = "doctor asks the gate of a worktree's own store"
 file = "src/stayfixed/attach/doctor.py"
-before = "    if owner.resolve() == context.root.resolve():\n        return answers.store(context)\n"
+before = "    if checkout.resolve() == context.root.resolve():\n        return answers.store(context)\n"
 after = "    if True:\n        return answers.store(context)\n"
 reddens = [
   "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[no-links-approved]",

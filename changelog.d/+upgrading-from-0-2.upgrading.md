@@ -157,10 +157,10 @@ detail:
   - `stayfixed doctor`'s `attached` row is red, and the report exits `1`, for a harness memory
     link that reaches nothing because the main checkout's link tree is gone, where 0.2.0 warned
     from the main checkout; and it warns, where 0.2.0 read ok, for a real directory beside the
-    `autoMemoryDirectory` fallback while the store's approval does not hold, for an approval that
-    lapsed with no link in place, and, from a linked worktree, wherever the main checkout's store
-    warns (Fixed, "`stayfixed doctor`'s `attached` row now reads a checkout's harness memory
-    link").
+    `autoMemoryDirectory` fallback, or a harness link to the store, while the store's approval
+    does not hold, for an approval that lapsed with no link in place, and, from a linked worktree,
+    wherever the main checkout's store warns (Fixed, "`stayfixed doctor`'s `attached` row now reads
+    a checkout's harness memory link").
   - `stayfixed attach` and `attach --check` fail (exit `1`) on an overlay `codex/` directory that
     cannot be listed, where each ended in `internal error` with exit `2` (Fixed, "`stayfixed
     attach` and `attach --check` now fail (exit `1`) when the overlay's `common/codex/`").

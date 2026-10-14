@@ -12,12 +12,17 @@ row said ok. The value is compared exactly as written with the one directory `at
 the main checkout's store, and never with a checkout's own `paths.memory`: a branch that commits
 that path as a link beside a key naming where it leads is red, not ok. Where there is no such
 fallback, the remedy says to move that directory aside, as `attach` does, instead of removing it,
-since it can hold notes the harness wrote. With no harness link in place, an approval that lapsed
-now warns with the way to re-approve, instead of reading green as though the store had never been
-approved, and a linked worktree asks about the main checkout's store, as `attach` does, instead of
-its own. Beside an attach ledger whose note store does not resolve, the row warns instead of reading
-green and names the cause: a link tree that is gone is one `stayfixed attach` puts back, and
-anything else is for `stayfixed memory index --check` to explain. Where, from a linked worktree, the
-main checkout's `paths.memory` cannot be asked where it leads (reached through a symlink, a symlink
-loop, or a fault the system names), and where this machine's trust record cannot be read, the row
-warns and says which, instead of "this check could not run".
+since it can hold notes the harness wrote. A harness link that still reaches the store warns too
+where the approval lapsed, with the way to re-approve, or was never given, where it read green until
+the next `attach` withdrew it. A linked worktree's link to its own tree, which the session-start
+re-link makes, is judged by the store at that tree: an emptied tree warns instead of reading green,
+and with the main checkout's tree gone such a worktree is no longer told the harness reads nothing
+through it. With no harness link in place, an approval that lapsed now warns with the way to
+re-approve, instead of reading green as though the store had never been approved, and a linked
+worktree asks about the main checkout's store, as `attach` does, instead of its own. Beside an
+attach ledger whose note store does not resolve, the row warns instead of reading green and names
+the cause: a link tree that is gone is one `stayfixed attach` puts back, and anything else is for
+`stayfixed memory index --check` to explain. Where, from a linked worktree, the main checkout's
+`paths.memory` cannot be asked where it leads (reached through a symlink, a symlink loop, or a fault
+the system names), and where this machine's trust record cannot be read, the row warns and says
+which, instead of "this check could not run".

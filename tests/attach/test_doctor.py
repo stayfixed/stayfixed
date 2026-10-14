@@ -285,8 +285,13 @@ def test_a_harness_link_pointing_at_the_store_is_green(tmp_path: Path) -> None:
     # This assertion used to be the *only* one on this row's green path, and the check never
     # compared the link's target — so it passed for a symlink to anything at all and the three
     # cases below were green with it. It is kept because a fix that reddened the correct shape
-    # would be worse than the defect.
+    # would be worse than the defect. The store is approved, as `attach` makes the link only for
+    # an approved store: without the approval the link reads notes nobody approved, and warns.
     root = _attached(tmp_path)
+    config = load(root, machine=_machine(tmp_path))
+    store = resolve(root, config, machine=_machine(tmp_path))
+    assert store is not None
+    record(store, config)
     harness = _harness(tmp_path, root)
     harness.symlink_to(root / "docs" / "memory")
     check = _by_name(
@@ -634,6 +639,52 @@ def test_a_worktree_harness_link_the_session_start_relink_made_is_ok(tmp_path: P
     )
 
 
+def test_a_worktree_harness_link_to_its_own_emptied_tree_is_never_green(tmp_path: Path) -> None:
+    # The re-linked worktree's own tree emptied: the harness reads an empty directory through the
+    # link. The row judged the store at the main checkout's tree, which resolves, and read green,
+    # "a link to the store"; and the worktree's own store, asked instead, resolves through the
+    # main checkout when the worktree's tree does not. It judges the store at the tree the link
+    # reaches now. Mutation (oracle): `mutations/`'s "doctor takes the main checkout's store for
+    # a worktree's own tree that does not resolve" -> ok.
+    from tests.attach.test_detach import _relinked_to_its_own_tree
+
+    root, side, machine, home = _relinked_to_its_own_tree(tmp_path)
+    shutil.rmtree(side / DEFAULT_MEMORY)
+    (side / DEFAULT_MEMORY).mkdir()
+    # Non-vacuous: the link still resolves, and the main checkout's store still does.
+    assert _harness_link_of(side, home).exists()
+    assert resolve(root, load(root, machine=machine), machine=machine) is not None
+    row = _worktree_row(tmp_path, side, machine, home)
+    assert (row.status, row.detail, row.remedy) == (
+        WARN,
+        "attached; the harness memory path is a link, and the note store does not resolve, so "
+        "what it points at could not be checked; the binding is bound",
+        "run `stayfixed memory index --check`, then `stayfixed doctor` again",
+    )
+
+
+def test_a_worktree_reading_its_own_tree_is_not_told_it_reads_nothing_when_the_main_tree_goes(
+    tmp_path: Path,
+) -> None:
+    # The other half: with the main checkout's tree gone, a worktree whose harness link reaches
+    # its own tree, which still resolves, was told "the link tree at paths.memory is not there,
+    # so ... the harness reads nothing through it", which was false of the tree it reads.
+    # Mutation (oracle): `mutations/`'s "doctor judges a worktree's link to its own tree by the
+    # main checkout's store" -> that warning.
+    from tests.attach.test_detach import _relinked_to_its_own_tree
+
+    root, side, machine, home = _relinked_to_its_own_tree(tmp_path)
+    shutil.rmtree(root / DEFAULT_MEMORY)
+    # Non-vacuous: the worktree's link still resolves, through its own tree.
+    assert _harness_link_of(side, home).exists()
+    row = _worktree_row(tmp_path, side, machine, home)
+    assert (row.status, row.detail, row.remedy) == (
+        OK,
+        "attached; the harness memory path is a link to the store; the binding is bound",
+        "",
+    )
+
+
 # One machine state, one status, from every checkout: the `attached` row's states, which
 # `attach.doctor._harness_verdict` reads in one order and names as this table does, walked from the
 # main checkout and from a linked worktree, both attached the ordinary way, so a state is made once
@@ -714,6 +765,13 @@ def _lapsed_and_withdrawn(case: _Machine) -> None:
 def _never_approved(case: _Machine) -> None:
     _no_links(case)
     _forget_the_approval(case)
+
+
+def _link_lapsed(case: _Machine) -> None:
+    # A note changed, and no `attach` since: every checkout's link still resolves to the store.
+    _change_a_note(case)
+    for checkout in (case.root, case.side):
+        assert _harness_link_of(checkout, case.home).exists()
 
 
 def _real_directories(case: _Machine) -> None:
@@ -899,6 +957,26 @@ ONE_MACHINE_STATE: dict[str, tuple[Callable[[_Machine], None], tuple[str, str, s
         _never_approved,
         ("ok", "not in place, which is what this store's trust record asks for", ""),
     ),
+    "link-lapsed": (
+        _link_lapsed,
+        (
+            "warn",
+            "a link to the store, although the store or its memory.index_extra changed since its "
+            "approval was recorded, so that approval no longer holds — the harness reads notes "
+            "nobody approved",
+            "read what changed, run `stayfixed memory trust --in-repo-memory`, then `stayfixed "
+            "attach` again",
+        ),
+    ),
+    "link-never-approved": (
+        _forget_the_approval,
+        (
+            "warn",
+            "a link to the store, although no approval is recorded for the store — the harness "
+            "reads notes nobody approved",
+            _LINK_REMEDY,
+        ),
+    ),
 }
 
 
@@ -913,14 +991,17 @@ def test_one_machine_state_reads_one_status_from_every_checkout(
     # note, or for a store nobody approved whose clone commits the key, the harness read notes
     # nobody approved and the row said ok. A lapsed approval read green, "what this store's trust
     # record asks for", from every checkout, and a worktree asked the gate of its own store, which
-    # nothing approves. Each state below is now one status, sentence and remedy, from both.
+    # nothing approves. A link that still resolved to a store whose approval lapsed, or was never
+    # given, read green where the fallback for the same exposure warned. Each state below is now
+    # one status, sentence and remedy, from both.
     # Mutations (oracle): `mutations/`'s "doctor asks whether the store resolves before whether
     # the harness link dangles" -> `tree-gone-links-dangle`; "doctor reads the settings fallback
     # as in place without asking the gate" -> `fallback-lapsed`, `fallback-never-approved`;
     # "doctor resolves the directory the settings fallback names" -> `fallback-through-an-alias`;
     # "doctor reads a lapsed approval as one the trust record asks for" ->
     # `lapsed-links-withdrawn`; "doctor asks the gate of a worktree's own store" -> the worktree
-    # half of `no-links-approved`.
+    # half of `no-links-approved`; "doctor reads a link to the store as ok without asking the
+    # gate" -> `link-lapsed`, `link-never-approved`.
     root, side, machine, home = _worktree_attached(tmp_path)
     case = _Machine(tmp_path, root, side, machine, home, monkeypatch)
     change, (status, shape, remedy) = ONE_MACHINE_STATE[state]

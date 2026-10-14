@@ -407,21 +407,26 @@ def _owner(context: Context) -> Path:
         return context.root
 
 
-def _owner_store(context: Context, answers: Answers, owner: Path) -> Store | None:
-    """The owning checkout's note store, or `None` where it does not resolve: `answers`' own in the
-    main checkout, resolved the same way (`errors.resolved_or_none`) from a linked worktree.
+def _store_of(context: Context, answers: Answers, checkout: Path) -> Store | None:
+    """`checkout`'s note store, or `None` where it does not resolve: `answers`' own for this
+    checkout, resolved the same way (`errors.resolved_or_none`) for another.
 
-    The owner's and not this checkout's, because it is the store `attach` links every checkout's
-    harness link to and asks the gate of (`attach.write._fallback_store`). Asked of a worktree's
-    own store, one machine state read two ways: with the main checkout's store approved and no
-    link anywhere, the main checkout warned that the link is missing and the worktree read green,
-    since nothing ever approves a worktree's own store."""
+    `checkout` is the owning checkout for every shape but a link that reaches this checkout's own
+    tree, because the owner's is the store `attach` links every checkout's harness link to and
+    asks the gate of (`attach.write._fallback_store`). Asked of a worktree's own store, one
+    machine state read two ways: with the main checkout's store approved and no link anywhere,
+    the main checkout warned that the link is missing and the worktree read green, since `attach`
+    never approves a worktree's own store. A link to the worktree's own tree is the `SessionStart`
+    re-link's, made by the gate of that tree's store, so that store is the one it is judged by.
+
+    Compared resolved: `git` names the owner by its resolved path, and `--root` may spell the
+    same checkout through a link."""
     from stayfixed.errors import resolved_or_none
     from stayfixed.memory.api import resolve
 
-    if owner.resolve() == context.root.resolve():
+    if checkout.resolve() == context.root.resolve():
         return answers.store(context)
-    return resolved_or_none(lambda: resolve(owner, context.config, machine=context.machine))
+    return resolved_or_none(lambda: resolve(checkout, context.config, machine=context.machine))
 
 
 def _harness_verdict(context: Context, answers: Answers, harness: Path) -> _Verdict:
@@ -439,16 +444,20 @@ def _harness_verdict(context: Context, answers: Answers, harness: Path) -> _Verd
       refuses). Warn, naming whose `paths.memory` and why; replace the symlink, or make the
       directory readable.
     - `links-elsewhere`: a link to a directory a harness link may not point at. Red; `attach`.
-    - `tree-gone`: the owning checkout's store does not resolve, and its link tree is gone. Warn;
-      `attach` (`_unresolved`).
-    - `tree-there-not-resolving`: the owning checkout's store does not resolve, and its link tree
-      is there. Warn; `memory index --check` (`_unresolved`).
+    - `tree-gone`: the store does not resolve, and its link tree is gone. Warn; `attach`
+      (`_unresolved`).
+    - `tree-there-not-resolving`: the store does not resolve, and its link tree is there. Warn;
+      `memory index --check` (`_unresolved`).
     - `fallback-elsewhere`: a real directory, and `autoMemoryDirectory` naming anything but the
       owning checkout's store, resolved, the one value `attach` writes there. As
       `real-directory-no-fallback`.
-    - `attached`: a link to the store. Ok.
     - `trust-record-unreadable`: this machine's trust record cannot be read. Warn; `memory trust
       --in-repo-memory`, which says why.
+    - `attached`: a link to the store, the gate open. Ok.
+    - `link-lapsed`: a link to the store, the gate closed, the approval lapsed. Warn;
+      `HARNESS_LAPSED`'s remedy (read what changed, approve, `attach`).
+    - `link-never-approved`: a link to the store, the gate closed, never approved. Warn;
+      `attach`, which withdraws the link in exactly this state.
     - `fallback-approved`: a real directory beside the fallback, the gate open. Ok.
     - `fallback-unapproved`: a real directory beside the fallback, the gate closed, lapsed or
       never approved. Warn, naming which; `attach`, which withdraws the fallback in exactly this
@@ -463,11 +472,17 @@ def _harness_verdict(context: Context, answers: Answers, harness: Path) -> _Verd
     main checkout warn while a linked worktree said red. `doctor` exits non-zero only on red, and
     a link that reaches nothing is red from every checkout.
 
-    **The gate is the owning checkout's store's** (`_owner_store`), the one `attach` asks, and it
-    is asked only where the answer turns on it: a real directory beside the fallback, and nothing
-    in place. `attached` reads green without it, as it did: the link is in the home, never in the
-    repository, and only a run that asked the gate made it; the fallback is a key in a file a
-    clone can commit, so it is held to the gate here.
+    **The store is the one the harness reads** (`_store_of`): the owning checkout's, which
+    `attach` links every checkout to and asks the gate of, but for a link that reaches this
+    checkout's own tree, which the `SessionStart` re-link makes by the gate of that tree's store.
+    Judged at the owner's instead, a worktree linked to its own emptied tree read green while the
+    harness read nothing, and with the owner's tree gone a worktree reading its own tree was told
+    the harness read nothing through it.
+
+    **The gate is asked of every shape but the red ones and the unresolved ones**, a link to the
+    store included: after one changed note the harness reads notes nobody approved through a link
+    that still resolves as surely as through the fallback, and the row read that link green while
+    it warned for the fallback, one exposure, two verdicts, until the next `attach` withdrew it.
 
     **`harness_targets` is asked once, and its one refusal is one answer** (`targets-unaskable`),
     whatever the shape: it says whose `paths.memory` and why, in stayfixed's words, and the value
@@ -515,20 +530,27 @@ def _harness_verdict(context: Context, answers: Answers, harness: Path) -> _Verd
             "replace that symlink with the directory it points at, or make the directory "
             "readable, then run `stayfixed doctor` again",
         )
-    if shape == _LINK and harness.resolve() not in targets:  # links-elsewhere
+    reached = harness.resolve() if shape == _LINK else None
+    if reached is not None and reached not in targets:  # links-elsewhere
         return _Verdict(
             RED,
             "a link to a directory that is not this project's note store, so the harness "
             "reads notes this repository is not bound to",
             relink,
         )
-    store = _owner_store(context, answers, owner)
+    # `harness_targets` answers the owning checkout's tree first: a link that reaches the other
+    # one reaches this checkout's own.
+    checkout = context.root if reached is not None and reached != targets[0] else owner
+    store = _store_of(context, answers, checkout)
+    if store is not None and reached is not None and store.path.resolve() != reached:
+        # A linked worktree whose own tree does not resolve resolves through the main checkout
+        # (`memory.store.resolved`), and that store is not the one the harness reads through a
+        # link to the worktree's own tree.
+        store = None
     if store is None:  # tree-gone, tree-there-not-resolving
-        return _unresolved(context, owner, shape, words, relink)
+        return _unresolved(context, checkout, shape, words, relink)
     if shape == _REAL_DIRECTORY and recorded != store.path.resolve():  # fallback-elsewhere
         return _real_directory(harness)
-    if shape == _LINK:  # attached
-        return _Verdict(OK, "a link to the store", "")
     try:
         gate = harness_gate(store, context.config)
     except Refusal:  # trust-record-unreadable
@@ -538,6 +560,22 @@ def _harness_verdict(context: Context, answers: Answers, harness: Path) -> _Verd
             "should see this store could not be checked",
             "run `stayfixed memory trust --in-repo-memory`, which says why the trust record "
             "cannot be read, then `stayfixed doctor` again",
+        )
+    if shape == _LINK:
+        if gate == GATE_OPEN:  # attached
+            return _Verdict(OK, "a link to the store", "")
+        if gate == GATE_LAPSED:  # link-lapsed
+            return _Verdict(
+                WARN,
+                f"a link to the store, although {APPROVAL_LAPSED} — the harness reads notes "
+                "nobody approved",
+                REAPPROVE,
+            )
+        return _Verdict(  # link-never-approved
+            WARN,
+            "a link to the store, although no approval is recorded for the store — the harness "
+            "reads notes nobody approved",
+            relink,
         )
     if shape == _REAL_DIRECTORY:
         # The file named through the harness registry (`CLAUDE.local_settings`), as `attach`'s own
@@ -586,9 +624,9 @@ def _real_directory(harness: Path) -> _Verdict:
     )
 
 
-def _unresolved(context: Context, owner: Path, shape: str, words: str, relink: str) -> _Verdict:
-    """The `tree-gone` and `tree-there-not-resolving` rows of `_harness_verdict`: the owning
-    checkout's note store does not resolve, by what its tree is.
+def _unresolved(context: Context, checkout: Path, shape: str, words: str, relink: str) -> _Verdict:
+    """The `tree-gone` and `tree-there-not-resolving` rows of `_harness_verdict`: the note store
+    of `checkout`, the one `_store_of` was asked of, does not resolve, by what its tree is.
 
     A `paths.memory` that is not there is the tree `attach` builds, gone: `attach` puts it back,
     so the row names it. Anything else that keeps the store from resolving — `paths.memory` a
@@ -602,7 +640,7 @@ def _unresolved(context: Context, owner: Path, shape: str, words: str, relink: s
     from stayfixed import fsops
     from stayfixed.doctor.api import WARN
 
-    tree = owner / context.config.paths.memory
+    tree = checkout / context.config.paths.memory
     try:
         gone = not fsops.is_symlink(tree) and not fsops.exists(tree)
     except OSError:
