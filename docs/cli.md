@@ -2665,7 +2665,8 @@ hook).
   checkout of another repository, where `git` gives no answer inside a checkout, at a path that is
   not UTF-8 text and so cannot be recorded in the machine file, or `create:` without `--yes`;
 - a symlink between `<home>` and the settings file, which is written through a walk that never
-  follows one;
+  follows one (`<home>` itself may be a link to a directory: it is resolved once, before anything
+  else is asked, and every write under it lands where it leads);
 - something other than a directory at `<home>/.claude`, or a directory at
   `<home>/.claude/settings.json`: the two shapes `--settings` refuses at its own directory and file;
 - a directory `--settings` names that cannot take the write: the new file is renamed into it;

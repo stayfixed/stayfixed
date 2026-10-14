@@ -2241,6 +2241,34 @@ def test_an_overlay_beside_a_project_with_worktrees_is_still_recorded(
         assert overlay_root(machine) == overlay
 
 
+def test_a_home_that_is_a_link_to_a_directory_is_followed_once_and_written_where_it_leads(
+    tmp_path: Path,
+) -> None:
+    # `--home` is the machine owner's own directory, and one that is a link — a home on another
+    # volume — passed the questions before the first write, had the machine file written, and was
+    # then refused by the settings write, whose walk opens its root without following a link.
+    # It is resolved once, before anything else is asked, and every write under it lands where it
+    # leads; the walk below it still follows no link. Mutation (`mutations/`'s "setup asks about
+    # --home without resolving it first") -> refused after the machine file, and this reddens.
+    real = tmp_path / "volume" / "me"
+    real.mkdir(parents=True)
+    home = tmp_path / "home"
+    home.symlink_to(real)
+    machine = tmp_path / "config.toml"
+    setup(
+        "recommended",
+        home=home,
+        machine=machine,
+        runner=Recorder(),
+        yes=False,
+        overlay=None,
+        project_root=tmp_path / "project",
+    )
+    assert machine.is_file()
+    assert (real / USER_SETTINGS).is_file()
+    assert home.is_symlink()
+
+
 def test_a_symlinked_claude_directory_is_a_refusal_that_names_the_link(tmp_path: Path) -> None:
     # `fsops.write_within` walks `.claude` with `O_NOFOLLOW`, so a home managed by stow, chezmoi or
     # a synced directory raised `UnsafePath` — which `cli.run`'s final handler renders as

@@ -10,4 +10,6 @@ is every other path `setup` cannot ask about before its first write, naming it: 
 create:` destination that cannot be searched, each used to end in an internal error. A regular file
 at `<home>/.claude`, or a directory at `<home>/.claude/settings.json`, is refused too, before
 anything is written, where the machine configuration file was written and reading the settings file
-then failed (exit `1`).
+then failed (exit `1`). A `--home` that is a link to a directory, such as a home on another volume,
+is followed once and every write under it lands where it leads, where the machine configuration file
+was written and the settings write then refused.
