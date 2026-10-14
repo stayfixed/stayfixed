@@ -489,8 +489,8 @@ reddens = [
 [[mutation]]
 name = "setup stops asking whether an existing .claude can be written"
 file = "src/stayfixed/setup/run.py"
-before = "            landing.append(home / USER_SETTINGS)"
-after = '            landing.append(home / "x")'
+before = "        landing.append(home / USER_SETTINGS)"
+after = '        landing.append(home / "x")'
 reddens = [
   "tests/setup/test_setup.py::test_a_read_only_claude_directory_is_refused_before_the_machine_file_is_written",
   "tests/setup/test_setup.py::test_a_read_only_home_whose_claude_directory_is_writable_is_set_up",
@@ -499,17 +499,17 @@ reddens = [
 [[mutation]]
 name = "setup asks whether a --home that is there can be written although --settings sends the write elsewhere"
 file = "src/stayfixed/setup/run.py"
-before = """        elif not fsops.exists(home):
-            landing.append(home)"""
-after = """        else:
-            landing.append(home / "x")"""
+before = """    elif not fsops.exists(home):
+        landing.append(home)"""
+after = """    else:
+        landing.append(home / "x")"""
 reddens = ["tests/setup/test_setup.py::test_a_read_only_home_with_settings_named_elsewhere_is_set_up"]
 
 [[mutation]]
 name = "setup stops asking whether a missing --home can be created when --settings is given"
 file = "src/stayfixed/setup/run.py"
-before = "        elif not fsops.exists(home):"
-after = "        elif False:"
+before = "    elif not fsops.exists(home):"
+after = "    elif False:"
 reddens = [
   "tests/setup/test_setup.py::test_a_home_under_a_read_only_parent_is_refused_with_settings_named_elsewhere",
 ]
@@ -520,15 +520,15 @@ reddens = [
 [[mutation]]
 name = "setup stops asking whether --home can take a created overlay"
 file = "src/stayfixed/setup/run.py"
-before = "        if created is not None and not fsops.exists(created):"
-after = "        if False:"
+before = "    if created is not None and not fsops.exists(created):"
+after = "    if False:"
 reddens = ["tests/setup/test_setup.py::test_a_created_overlay_in_a_read_only_home_is_refused_before_gh_runs"]
 
 [[mutation]]
 name = "setup asks whether --home can take a created overlay that is already there"
 file = "src/stayfixed/setup/run.py"
-before = "        if created is not None and not fsops.exists(created):"
-after = "        if created is not None:"
+before = "    if created is not None and not fsops.exists(created):"
+after = "    if created is not None:"
 reddens = ["tests/setup/test_setup.py::test_a_created_overlay_already_in_a_read_only_home_is_set_up"]
 
 # A regular file where `--home` or a directory above it has to be is the `mkdir`'s to name; the walk
@@ -536,21 +536,12 @@ reddens = ["tests/setup/test_setup.py::test_a_created_overlay_already_in_a_read_
 [[mutation]]
 name = "setup calls a regular file in --home's place not writable"
 file = "src/stayfixed/setup/run.py"
-before = "            if fsops.is_dir(directory) and not fsops.creatable(path):"
-after = "            if not fsops.creatable(path):"
+before = "        if fsops.is_dir(directory) and not fsops.creatable(path):"
+after = "        if not fsops.creatable(path):"
 reddens = [
   "tests/setup/test_setup.py::test_a_home_that_is_a_regular_file_is_refused_as_one[home]",
   "tests/setup/test_setup.py::test_a_home_that_is_a_regular_file_is_refused_as_one[above-home]",
 ]
-
-[[mutation]]
-name = "setup lets a --home it cannot ask about reach the frame"
-file = "src/stayfixed/setup/run.py"
-before = """    except OSError as exc:
-        # A directory above `home` that cannot be searched"""
-after = """    except ValueError as exc:
-        # A directory above `home` that cannot be searched"""
-reddens = ["tests/setup/test_setup.py::test_a_home_below_a_directory_nobody_may_search_is_refused"]
 
 [[mutation]]
 name = "setup lets a failed --home mkdir reach the frame"
@@ -578,6 +569,7 @@ reddens = [
   "tests/setup/test_setup.py::test_a_path_setup_cannot_ask_about_before_its_first_write_is_a_refusal_naming_it[overlay]",
   "tests/setup/test_setup.py::test_a_path_setup_cannot_ask_about_before_its_first_write_is_a_refusal_naming_it[root]",
   "tests/setup/test_setup.py::test_a_path_setup_cannot_ask_about_before_its_first_write_is_a_refusal_naming_it[settings]",
+  "tests/setup/test_setup.py::test_a_path_setup_cannot_ask_about_before_its_first_write_is_a_refusal_naming_it[home]",
 ]
 
 # The order is load-bearing where two steps can refuse one layout: a `create:` destination under a
@@ -638,8 +630,8 @@ reddens = [
 [[mutation]]
 name = "setup stops asking whether a created overlay's destination can be searched"
 file = "src/stayfixed/setup/run.py"
-before = "        elif created is not None and fsops.is_dir(created) and not os.access(created, os.X_OK):"
-after = "        elif False:"
+before = "    elif created is not None and fsops.is_dir(created) and not os.access(created, os.X_OK):"
+after = "    elif False:"
 reddens = [
   "tests/setup/test_setup.py::test_a_created_overlay_whose_destination_cannot_be_searched_is_refused_before_anything",
 ]

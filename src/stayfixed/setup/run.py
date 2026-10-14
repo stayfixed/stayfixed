@@ -472,31 +472,26 @@ def _check_home_usable(
 
     The refusal names the directory `creatable` stopped at. `os.access` answers for the real uid
     and says yes to root whatever the mode, so the `mkdir` in `setup` keeps a refusal of its own
-    under this one.
+    under this one. A directory above `home` that cannot be searched leaves the question open,
+    and the `fsops` predicates raise for that rather than guess: the floor of
+    `_before_the_first_write` names the path they were asked about, as it does for every step.
     """
-    try:
-        landing: list[Path] = []
-        if settings is None:
-            landing.append(home / USER_SETTINGS)
-        elif not fsops.exists(home):
-            landing.append(home)
-        if created is not None and not fsops.exists(created):
-            landing.append(created)
-        elif created is not None and fsops.is_dir(created) and not os.access(created, os.X_OK):
-            raise Refusal(f"--home {home} cannot be used: {created} cannot be searched")
-        for path in landing:
-            directory = fsops.creation_directory(path)
-            # A regular file where a directory has to be (`home` itself, or one above it) is the
-            # `mkdir`'s to name, as "File exists" or "Not a directory": "is not writable" said of
-            # it would be a cause it does not have.
-            if fsops.is_dir(directory) and not fsops.creatable(path):
-                raise Refusal(f"--home {home} cannot be used: {directory} is not writable")
-    except OSError as exc:
-        # A directory above `home` that cannot be searched leaves the question open, and the
-        # `fsops` predicates raise for that rather than guess.
-        raise Refusal(
-            f"--home {home} cannot be used: it cannot be checked ({fsops.said(exc)})"
-        ) from exc
+    landing: list[Path] = []
+    if settings is None:
+        landing.append(home / USER_SETTINGS)
+    elif not fsops.exists(home):
+        landing.append(home)
+    if created is not None and not fsops.exists(created):
+        landing.append(created)
+    elif created is not None and fsops.is_dir(created) and not os.access(created, os.X_OK):
+        raise Refusal(f"--home {home} cannot be used: {created} cannot be searched")
+    for path in landing:
+        directory = fsops.creation_directory(path)
+        # A regular file where a directory has to be (`home` itself, or one above it) is the
+        # `mkdir`'s to name, as "File exists" or "Not a directory": "is not writable" said of it
+        # would be a cause it does not have.
+        if fsops.is_dir(directory) and not fsops.creatable(path):
+            raise Refusal(f"--home {home} cannot be used: {directory} is not writable")
 
 
 def _check_settings_parent(settings: Path) -> None:

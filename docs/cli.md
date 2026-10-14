@@ -2664,9 +2664,9 @@ there yet, or, while it is there, whether it can be searched, since `create:` lo
 first. A `<home>` you cannot write into is not refused for that alone: with a writable `.claude`
 already in it, and no overlay to create, nothing this check asks about is made in it. The machine
 file's directory is not asked about here: a write there that fails ends the run `1`. Otherwise it
-says that `<home>` could not be created, or could not be checked because a directory above it
-cannot be searched. Any other path this command cannot ask about before its first write — an
-`--overlay`, a `--root` or a `--settings` directory below a directory nobody may search, and a
+says that `<home>` could not be created. Any other path this command cannot ask about before its
+first write — `<home>`, an `--overlay`, a `--root` or a `--settings` directory below a directory
+nobody may search, and a
 symbolic-link loop at `~/.claude`, `--home`, `--root`, `--settings` or `--overlay`, on every
 Python — is refused (`2`) naming that path and why.
 

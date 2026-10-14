@@ -2114,35 +2114,6 @@ def test_a_read_only_claude_directory_is_refused_before_the_machine_file_is_writ
 
 
 @ROOT_SEARCHES_EVERYTHING
-def test_a_home_below_a_directory_nobody_may_search_is_refused(tmp_path: Path) -> None:
-    # With `--settings`, `_check_settings_path`'s walk below `home` is not asked, and the first
-    # question about `home` itself raised `PermissionError` into the frame as `internal error`.
-    # Mutation (`mutations/`'s "setup lets a --home it cannot ask about reach the frame"): the
-    # `except OSError` in `_check_home_usable` dropped -> `PermissionError` leaves `setup`.
-    locked = tmp_path / "locked"
-    locked.mkdir()
-    home = locked / "home"
-    settings = tmp_path / "dotfiles" / "settings.json"
-    settings.parent.mkdir()
-    machine = tmp_path / "config.toml"
-    with unsearchable(locked), pytest.raises(Refusal) as refused:
-        setup(
-            "recommended",
-            home=home,
-            machine=machine,
-            runner=Recorder(),
-            yes=True,
-            overlay=None,
-            project_root=tmp_path / "project",
-            settings=settings,
-        )
-    assert (
-        str(refused.value)
-        == f"--home {home} cannot be used: it cannot be checked (Permission denied)"
-    )
-    assert not machine.exists()
-
-
 def test_a_home_mkdir_that_fails_is_a_refusal(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -2391,8 +2362,8 @@ def test_a_created_overlay_under_a_home_nobody_may_search_is_refused_before_anyt
 
 
 def _below_a_locked_directory(tmp_path: Path, what: str) -> tuple[dict[str, Any], Path]:
-    """`setup`'s keyword arguments with `what` — `--overlay`, `--root` or `--settings` — below
-    `tmp_path/locked`, and the path below it that cannot be asked about once it is locked."""
+    """`setup`'s keyword arguments with `what` — `--overlay`, `--root`, `--settings` or `--home` —
+    below `tmp_path/locked`, and the path below it that cannot be asked about once it is locked."""
     locked = tmp_path / "locked"
     locked.mkdir()
     overlay = tmp_path / "overlay"
@@ -2410,6 +2381,13 @@ def _below_a_locked_directory(tmp_path: Path, what: str) -> tuple[dict[str, Any]
         asked = locked / "project"
         asked.mkdir()
         arguments["project_root"] = asked
+    elif what == "home":
+        # With `--settings` elsewhere, the walk below `home` to the settings file is not asked,
+        # and the first question about `home` is whether it is there.
+        asked = locked / "home"
+        arguments["home"] = asked
+        (tmp_path / "dotfiles").mkdir()
+        arguments["settings"] = tmp_path / "dotfiles" / "settings.json"
     else:
         asked = locked / "dotfiles"
         asked.mkdir()
@@ -2418,14 +2396,15 @@ def _below_a_locked_directory(tmp_path: Path, what: str) -> tuple[dict[str, Any]
 
 
 @ROOT_SEARCHES_EVERYTHING
-@pytest.mark.parametrize("what", ["overlay", "root", "settings"])
+@pytest.mark.parametrize("what", ["overlay", "root", "settings", "home"])
 def test_a_path_setup_cannot_ask_about_before_its_first_write_is_a_refusal_naming_it(
     tmp_path: Path, what: str
 ) -> None:
     # Each of these ended in `stayfixed: internal error: PermissionError`, with the path in a
     # traceback's words: `--overlay` from the overlay probe's `is_dir`, `--root` from the walk to
-    # the nearest directory git is asked from, and `--settings` from the question whether its
-    # directory is a real one. None of those steps words that fault itself, so the phase's floor
+    # the nearest directory git is asked from, `--settings` from the question whether its
+    # directory is a real one, and `--home`, with `--settings` elsewhere, from the question
+    # whether it is there yet. None of those steps words that fault itself, so the phase's floor
     # does, naming the path the predicate was handed. Mutation (`mutations/`'s "setup lets a path
     # it cannot ask about before its first write reach the frame"): the floor's `except` dropped
     # -> `PermissionError` leaves `setup`, and every case reddens.
