@@ -326,7 +326,7 @@ after = ""
 reddens = [
   "tests/guards/test_hooks.py::test_a_red_run_on_post_tool_use_failure_is_annotated[bare]",
   "tests/guards/test_hooks.py::test_a_red_run_on_post_tool_use_failure_is_annotated[with-output]",
-  "tests/guards/test_hooks.py::test_a_red_run_killed_at_its_timeout_on_post_tool_use_failure_is_annotated",
+  "tests/guards/test_hooks.py::test_a_red_run_on_post_tool_use_failure_is_annotated[killed-at-its-timeout]",
 ]
 
 # The red-run hint is registered on both events a failed command can arrive on, under one

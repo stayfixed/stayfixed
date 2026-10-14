@@ -27,7 +27,7 @@ from tests import parserlimits
 from tests.gitfixture import git as _git
 from tests.gitfixture import needs_git, stand_in_git
 from tests.parserlimits import overflowing
-from tests.pathfaults import ROOT_SEARCHES_EVERYTHING, unsearchable
+from tests.pathfaults import ROOT_SEARCHES_EVERYTHING, read_only, unsearchable
 from tests.runners import Recorder
 
 # The minimal `stayfixed.toml` `attach.read_binding` needs (a project name and nothing else),
@@ -2039,78 +2039,38 @@ def _setup_through_the_cli(
 
 
 @_ROOT_WRITES_EVERYWHERE
-def test_a_home_under_a_read_only_parent_is_refused_before_any_write(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+@pytest.mark.parametrize("locked", ["above-home", "home", "claude"])
+def test_a_home_that_cannot_take_the_write_is_refused_before_any_write(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    locked: str,
 ) -> None:
-    # `home.mkdir(parents=True)` raised `PermissionError` into the frame: `stayfixed: internal
-    # error: PermissionError: [Errno 13] Permission denied: '…/home'`, exit 2, with no word of
-    # which directory to fix. Mutation (`mutations/`'s "setup stops asking whether --home can be
-    # used before its first write"): the `_check_home_usable(home)` call dropped -> the `mkdir`
-    # floor refuses instead, in words that do not say "is not writable", and this reddens.
-    parent = tmp_path / "locked"
-    parent.mkdir()
-    home = parent / "home"
-    machine = tmp_path / "config.toml"
-    parent.chmod(0o555)
-    try:
-        code, runner = _setup_through_the_cli(monkeypatch, home, machine)
-    finally:
-        parent.chmod(0o755)
-    out = capsys.readouterr().err
-    assert code == 2 and out.startswith("stayfixed: refused:"), out
-    assert f"--home {home} cannot be used: {parent} is not writable" in out
-    assert not machine.exists()
-    assert runner.calls == []
-
-
-@_ROOT_WRITES_EVERYWHERE
-def test_a_read_only_home_is_refused_before_the_machine_file_is_written(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    # With `--home` there and mode 555, the machine file was written, and only then did the
-    # settings write refuse — saying the directory "has to exist and be a real directory, because
-    # stayfixed writes .claude/settings.json through a walk that never follows a symlink", about a
-    # home with no symlink anywhere in it. Mutation (`mutations/`'s "setup stops asking whether
-    # --home can be used before its first write"): the call dropped -> the machine file is on
-    # disk and the refusal speaks of a symlink, and this reddens on both.
+    # Where the settings file lands, at mode 555: the directory a home that is not there yet
+    # would be made in, the home, or the `.claude` already in it. Under a read-only parent
+    # `home.mkdir(parents=True)` raised `PermissionError` into the frame as `internal error`; a
+    # read-only home or `.claude` had the machine file written, and only then did the settings
+    # write refuse, in words about a symlink that was not there. Each is refused naming the
+    # directory, with nothing written and nothing run. Mutations (`mutations/`'s "setup stops
+    # asking whether --home can be used before its first write" -> `above-home` and `home`;
+    # "setup stops asking whether an existing .claude can be written" -> `claude`, asked of the
+    # writable home instead).
     home = tmp_path / "home"
-    home.mkdir()
+    directory = {"above-home": tmp_path / "locked", "home": home, "claude": home / ".claude"}[
+        locked
+    ]
+    directory.mkdir(parents=True)
+    if locked == "above-home":
+        home = directory / "home"
     machine = tmp_path / "config.toml"
-    home.chmod(0o555)
-    try:
+    with read_only(directory):
         code, runner = _setup_through_the_cli(monkeypatch, home, machine)
-    finally:
-        home.chmod(0o755)
     out = capsys.readouterr().err
     assert code == 2 and out.startswith("stayfixed: refused:"), out
-    assert f"--home {home} cannot be used: {home} is not writable" in out
+    assert f"--home {home} cannot be used: {directory} is not writable" in out
     assert "symlink" not in out
     assert not machine.exists()
     assert runner.calls == []
-
-
-@_ROOT_WRITES_EVERYWHERE
-def test_a_read_only_claude_directory_is_refused_before_the_machine_file_is_written(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    # The same question one directory down: `<home>/.claude` is where the settings file is
-    # written, and when it is there already it is the directory that has to take a new file.
-    # Mutation (`mutations/`'s "setup stops asking whether an existing .claude can be written"):
-    # the question asked of `home`, which is writable, instead of where the settings file lands
-    # -> the machine file is written first and this reddens.
-    home = tmp_path / "home"
-    claude = home / ".claude"
-    claude.mkdir(parents=True)
-    machine = tmp_path / "config.toml"
-    claude.chmod(0o555)
-    try:
-        code, _ = _setup_through_the_cli(monkeypatch, home, machine)
-    finally:
-        claude.chmod(0o755)
-    out = capsys.readouterr().err
-    assert code == 2, out
-    assert f"--home {home} cannot be used: {claude} is not writable" in out
-    assert not machine.exists()
 
 
 @ROOT_SEARCHES_EVERYTHING
@@ -2156,8 +2116,7 @@ def test_a_read_only_home_whose_claude_directory_is_writable_is_set_up(tmp_path:
     claude = home / ".claude"
     claude.mkdir(parents=True)
     machine = tmp_path / "config.toml"
-    home.chmod(0o555)
-    try:
+    with read_only(home):
         setup(
             "recommended",
             home=home,
@@ -2167,8 +2126,6 @@ def test_a_read_only_home_whose_claude_directory_is_writable_is_set_up(tmp_path:
             overlay=None,
             project_root=tmp_path / "project",
         )
-    finally:
-        home.chmod(0o755)
     assert machine.is_file()
     assert (home / USER_SETTINGS).is_file()
 
@@ -2183,8 +2140,7 @@ def test_a_read_only_home_with_settings_named_elsewhere_is_set_up(tmp_path: Path
     settings = tmp_path / "dot" / "settings.json"
     settings.parent.mkdir()
     machine = tmp_path / "config.toml"
-    home.chmod(0o555)
-    try:
+    with read_only(home):
         setup(
             "recommended",
             home=home,
@@ -2195,8 +2151,6 @@ def test_a_read_only_home_with_settings_named_elsewhere_is_set_up(tmp_path: Path
             project_root=tmp_path / "project",
             settings=settings,
         )
-    finally:
-        home.chmod(0o755)
     assert machine.is_file()
     assert settings.is_file()
 
@@ -2216,21 +2170,17 @@ def test_a_home_under_a_read_only_parent_is_refused_with_settings_named_elsewher
     settings = tmp_path / "dot" / "settings.json"
     settings.parent.mkdir()
     machine = tmp_path / "config.toml"
-    parent.chmod(0o555)
-    try:
-        with pytest.raises(Refusal) as refused:
-            setup(
-                "recommended",
-                home=home,
-                machine=machine,
-                runner=Recorder(),
-                yes=False,
-                overlay=None,
-                project_root=tmp_path / "project",
-                settings=settings,
-            )
-    finally:
-        parent.chmod(0o755)
+    with read_only(parent), pytest.raises(Refusal) as refused:
+        setup(
+            "recommended",
+            home=home,
+            machine=machine,
+            runner=Recorder(),
+            yes=False,
+            overlay=None,
+            project_root=tmp_path / "project",
+            settings=settings,
+        )
     assert str(refused.value) == f"--home {home} cannot be used: {parent} is not writable"
     assert not machine.exists()
 
@@ -2246,8 +2196,7 @@ def test_a_created_overlay_already_in_a_read_only_home_is_set_up(tmp_path: Path)
     _seed_overlay(home / "stayfixed-private")
     machine = tmp_path / "config.toml"
     runner = Recorder(answers={_OCTOS_PROBE: _A_TEMPLATE}, on_call=_populate_overlay)
-    home.chmod(0o555)
-    try:
+    with read_only(home):
         setup(
             "recommended",
             home=home,
@@ -2257,8 +2206,6 @@ def test_a_created_overlay_already_in_a_read_only_home_is_set_up(tmp_path: Path)
             overlay="create:octo/stayfixed-private",
             project_root=tmp_path / "project",
         )
-    finally:
-        home.chmod(0o755)
     assert not any(argv[:3] == ["gh", "repo", "create"] for argv in runner.calls)
     assert machine.is_file()
 
@@ -2300,20 +2247,16 @@ def test_a_created_overlay_in_a_read_only_home_is_refused_before_gh_runs(tmp_pat
     (home / ".claude").mkdir(parents=True)
     machine = tmp_path / "config.toml"
     runner = Recorder(answers={_OCTOS_PROBE: _A_TEMPLATE}, on_call=_populate_overlay)
-    home.chmod(0o555)
-    try:
-        with pytest.raises(Refusal) as refused:
-            setup(
-                "recommended",
-                home=home,
-                machine=machine,
-                runner=runner,
-                yes=True,
-                overlay="create:octo/stayfixed-private",
-                project_root=tmp_path / "project",
-            )
-    finally:
-        home.chmod(0o755)
+    with read_only(home), pytest.raises(Refusal) as refused:
+        setup(
+            "recommended",
+            home=home,
+            machine=machine,
+            runner=runner,
+            yes=True,
+            overlay="create:octo/stayfixed-private",
+            project_root=tmp_path / "project",
+        )
     assert str(refused.value) == f"--home {home} cannot be used: {home} is not writable"
     assert runner.calls == []
     assert not machine.exists()
@@ -2436,21 +2379,17 @@ def test_a_settings_directory_that_cannot_be_written_is_refused_before_the_machi
     settings = dotfiles / "settings.json"
     machine = tmp_path / "config.toml"
     runner = Recorder()
-    dotfiles.chmod(0o555)
-    try:
-        with pytest.raises(Refusal) as refused:
-            setup(
-                "recommended",
-                home=tmp_path / "home",
-                machine=machine,
-                runner=runner,
-                yes=False,
-                overlay=None,
-                project_root=tmp_path / "project",
-                settings=settings,
-            )
-    finally:
-        dotfiles.chmod(0o755)
+    with read_only(dotfiles), pytest.raises(Refusal) as refused:
+        setup(
+            "recommended",
+            home=tmp_path / "home",
+            machine=machine,
+            runner=runner,
+            yes=False,
+            overlay=None,
+            project_root=tmp_path / "project",
+            settings=settings,
+        )
     assert str(refused.value) == f"{settings} cannot be written: {dotfiles} is not writable"
     assert "symlink" not in str(refused.value)
     assert runner.calls == []

@@ -446,33 +446,23 @@ def failure_payload(root: Path, error: str) -> str:
 @needs_git
 @pytest.mark.parametrize(
     "error",
-    ["Exit code 1", "Exit code 1\nFAILED tests/test_m.py::test_x - assert 1 == 2"],
-    ids=["bare", "with-output"],
+    [
+        "Exit code 1",
+        "Exit code 1\nFAILED tests/test_m.py::test_x - assert 1 == 2",
+        "Exit code 143\nCommand timed out after 4s",
+    ],
+    ids=["bare", "with-output", "killed-at-its-timeout"],
 )
 def test_a_red_run_on_post_tool_use_failure_is_annotated(tmp_path: Path, error: str) -> None:
     # The hint was registered on `PostToolUse` alone, and Claude Code delivers a Bash command that
     # exits non-zero to `PostToolUseFailure` and never to `PostToolUse`: the note never reached a
     # red run there. `bare` is the shape measured on Claude Code 2.1.296 for `false`, the exit
-    # code and nothing after it. Through the real dispatcher, so what is asserted is what the
-    # harness reads. Mutation: `mutations/`'s "the red-run hint is not registered on the event a
-    # failed command arrives on".
+    # code and nothing after it; `killed-at-its-timeout` the shape it gave, with background tasks
+    # disabled, for a foreground command killed at its timeout, a real non-zero exit annotated
+    # like any red run. Through the real dispatcher, so what is asserted is what the harness
+    # reads. Mutation: `mutations/`'s "the red-run hint is not registered on the event a failed
+    # command arrives on".
     root = dirty_project(tmp_path)
-    completed = hook("PostToolUseFailure", failure_payload(root, error), root)
-    assert completed.returncode == 0, completed.stderr
-    out = json.loads(completed.stdout)
-    assert out["hookSpecificOutput"]["hookEventName"] == "PostToolUseFailure"
-    assert "uncommitted" in out["hookSpecificOutput"]["additionalContext"]
-
-
-@needs_git
-def test_a_red_run_killed_at_its_timeout_on_post_tool_use_failure_is_annotated(
-    tmp_path: Path,
-) -> None:
-    # Measured on Claude Code 2.1.296 with background tasks disabled: a foreground command killed
-    # at its timeout arrives with `error` "Exit code 143\nCommand timed out after 4s". It begins
-    # with an exit code and is a real non-zero exit, so it is annotated like any red run.
-    root = dirty_project(tmp_path)
-    error = "Exit code 143\nCommand timed out after 4s"
     completed = hook("PostToolUseFailure", failure_payload(root, error), root)
     assert completed.returncode == 0, completed.stderr
     out = json.loads(completed.stdout)
@@ -484,7 +474,7 @@ def test_a_red_run_killed_at_its_timeout_on_post_tool_use_failure_is_annotated(
 def test_a_failure_whose_error_does_not_begin_with_an_exit_code_is_not_annotated(
     tmp_path: Path,
 ) -> None:
-    # The same fixture and command as the two cases above, with an `error` whose first line is not
+    # The same fixture and command as the cases above, with an `error` whose first line is not
     # the exit code: the hint says nothing rather than guess at what failed. The shape is an
     # assumption, not one observed on Claude Code 2.1.296, which put the exit code first in every
     # failure measured. Beside its positive twins this is what shows the handler, not the absence

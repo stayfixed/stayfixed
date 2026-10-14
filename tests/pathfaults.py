@@ -155,3 +155,15 @@ def resolving_as_3_11_does(monkeypatch: pytest.MonkeyPatch, name: str = "loop") 
         return resolve(self, strict)
 
     monkeypatch.setattr(Path, "resolve", resolve_as_older_pythons_do)
+
+
+@contextlib.contextmanager
+def read_only(directory: Path) -> Iterator[None]:
+    """`directory` at mode 555 for the block, so nothing new can be made in it, and 755 again after
+    it, so the scratch tree can be removed. Root writes into every directory: a test that needs
+    the refusal skips there."""
+    directory.chmod(0o555)
+    try:
+        yield
+    finally:
+        directory.chmod(0o755)

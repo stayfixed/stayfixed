@@ -479,8 +479,8 @@ file = "src/stayfixed/setup/run.py"
 before = "        _check_home_usable(home, settings=settings, created=_created_root(planned))"
 after = "        pass"
 reddens = [
-  "tests/setup/test_setup.py::test_a_home_under_a_read_only_parent_is_refused_before_any_write",
-  "tests/setup/test_setup.py::test_a_read_only_home_is_refused_before_the_machine_file_is_written",
+  "tests/setup/test_setup.py::test_a_home_that_cannot_take_the_write_is_refused_before_any_write[above-home]",
+  "tests/setup/test_setup.py::test_a_home_that_cannot_take_the_write_is_refused_before_any_write[home]",
 ]
 
 # The question is asked where a write lands, never of `home` for its own sake: asking it of `home`
@@ -492,7 +492,7 @@ file = "src/stayfixed/setup/run.py"
 before = "        landing.append(home / USER_SETTINGS)"
 after = '        landing.append(home / "x")'
 reddens = [
-  "tests/setup/test_setup.py::test_a_read_only_claude_directory_is_refused_before_the_machine_file_is_written",
+  "tests/setup/test_setup.py::test_a_home_that_cannot_take_the_write_is_refused_before_any_write[claude]",
   "tests/setup/test_setup.py::test_a_read_only_home_whose_claude_directory_is_writable_is_set_up",
 ]
 
