@@ -3178,7 +3178,7 @@ reddens = [
 name = "doctor asks whether the store resolves before whether the harness link dangles"
 file = "src/stayfixed/attach/doctor.py"
 before = "    shape = _shape_of(harness)\n    if shape == _DANGLING:  # dangling\n"
-after = "    shape = _shape_of(harness)\n    if shape == _DANGLING and _owner_store(context, answers, _owner(context)) is None:\n        return _unresolved(context, _owner(context), _LINK, \"a link\", relink)\n    if shape == _DANGLING:  # dangling\n"
+after = "    shape = _shape_of(harness)\n    if shape == _DANGLING and _store_of(context, answers, _owner(context)) is None:\n        return _unresolved(context, _owner(context), _LINK, \"a link\", relink)\n    if shape == _DANGLING:  # dangling\n"
 reddens = [
   "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[tree-gone-links-dangle]",
 ]
