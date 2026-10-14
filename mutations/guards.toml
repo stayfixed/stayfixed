@@ -1614,8 +1614,8 @@ reddens = ["tests/guards/test_githooks.py::test_a_reinstall_over_a_local_that_na
 [[mutation]]
 name = "a re-install over a .local that names itself is told nothing was installed"
 file = "src/stayfixed/guards/githooks.py"
-before = "        running = ALREADY_RUNS_ITSELF.format(local=local, name=_CHAINED_NAME, path=target)"
-after = "        running = CHAINS_TO_ITSELF.format(path=local, name=_CHAINED_NAME, local=local)"
+before = "        running = ALREADY_RUNS_ITSELF.format("
+after = "        running = CHAINS_TO_ITSELF.format("
 reddens = ["tests/guards/test_githooks.py::test_a_reinstall_over_a_local_that_names_itself_is_refused"]
 
 # A vendor's domain is tried after each label of an address, a label at a time, so `re` keeps no
@@ -1665,4 +1665,30 @@ before = '_FOOTER_WORD = re.compile(r"[ \t]+(?:\S*[\d/]\S*|(?-i:[A-Z0-9])[\w.]*)
 after = '_FOOTER_WORD = re.compile(r"(?:[ \t]+(?:\S*[\d/]\S*|(?-i:[A-Z0-9])[\w.]*))++", re.IGNORECASE)'
 reddens = [
   "tests/test_patterns.py::test_no_pattern_repeats_a_group_in_a_shape_python_3_11_4_misreads",
+]
+
+# git names the hooks directory, from a `core.hooksPath` the repository sets or, in a submodule's
+# work tree, under the name its `.gitmodules` chose, and every refusal `setup --git-hooks` made
+# about a path in it printed that answer raw: an escape sequence in it reached the terminal. Each
+# is printed through `printed.quoted`.
+[[mutation]]
+name = "setup --git-hooks prints git's hooks path raw in its refusals"
+file = "src/stayfixed/guards/githooks.py"
+before = "    shown_target, shown_local = quoted(str(target)), quoted(str(local))"
+after = "    shown_target, shown_local = str(target), str(local)"
+reddens = [
+  "tests/guards/test_githooks.py::test_a_hooks_directory_git_names_reaches_every_install_refusal_quoted[symlink]",
+  "tests/guards/test_githooks.py::test_a_hooks_directory_git_names_reaches_every_install_refusal_quoted[directory]",
+  "tests/guards/test_githooks.py::test_a_hooks_directory_git_names_reaches_every_install_refusal_quoted[stray-local]",
+  "tests/guards/test_githooks.py::test_a_hooks_directory_git_names_reaches_every_install_refusal_quoted[self-chain]",
+  "tests/guards/test_githooks.py::test_a_hooks_directory_git_names_reaches_every_install_refusal_quoted[reinstall-self-chain]",
+]
+
+[[mutation]]
+name = "setup --git-hooks prints git's hooks path raw for a hook it cannot read"
+file = "src/stayfixed/guards/githooks.py"
+before = "            UNREADABLE.format(path=quoted(str(path)), reason=fsops.said(exc), outcome=outcome)"
+after = "            UNREADABLE.format(path=path, reason=fsops.said(exc), outcome=outcome)"
+reddens = [
+  "tests/guards/test_githooks.py::test_a_hooks_directory_git_names_reaches_every_install_refusal_quoted[unreadable]",
 ]

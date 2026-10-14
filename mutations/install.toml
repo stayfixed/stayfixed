@@ -1805,3 +1805,25 @@ after = "    if False:"
 reddens = [
   "tests/setup/test_commands.py::test_an_empty_home_is_no_default_for_home",
 ]
+
+# A git directory is git's answer, and a submodule's lies at `.git/modules/<name>`, the name the
+# repository's `.gitmodules` chose: printed raw, an escape sequence in it reached the terminal
+# that read the refusal. Both containment refusals that name one print it through
+# `printed.quoted`.
+[[mutation]]
+name = "setup prints the project's git directory raw in a containment refusal"
+file = "src/stayfixed/setup/run.py"
+before = '            f"in the repository whose git directory is {quoted(str(repository.common))}"'
+after = '            f"in the repository whose git directory is {repository.common}"'
+reddens = [
+  "tests/setup/test_setup.py::test_a_git_directory_git_names_reaches_a_containment_refusal_quoted[the-projects]",
+]
+
+[[mutation]]
+name = "setup prints another repository's git directory raw in a containment refusal"
+file = "src/stayfixed/setup/run.py"
+before = '            f"{quoted(str(outer))}. The overlay root'
+after = '            f"{outer}. The overlay root'
+reddens = [
+  "tests/setup/test_setup.py::test_a_git_directory_git_names_reaches_a_containment_refusal_quoted[another-repositorys]",
+]

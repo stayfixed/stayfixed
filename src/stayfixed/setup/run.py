@@ -119,7 +119,7 @@ from stayfixed.fsops import UnsafePath, utf_8_name
 from stayfixed.gitenv import NO_ANSWER, answer_lines, git_run, in_work_tree
 from stayfixed.jsonobject import json_object, json_text
 from stayfixed.presets import load_preset
-from stayfixed.printed import answered
+from stayfixed.printed import answered, quoted
 from stayfixed.runner import Runner
 from stayfixed.setup.machine import USER_SETTINGS, read_personal, write_machine
 
@@ -846,7 +846,8 @@ def _outside_the_project(candidate: Path, *, project_root: Path, created: bool) 
     compared = repository is not None or not created
     if compared and _overlaps(resolved_candidate, resolved_project):
         where = (
-            f"in the repository whose git directory is {repository.common}"
+            # git names the directory, and a submodule's carries the name `.gitmodules` chose.
+            f"in the repository whose git directory is {quoted(str(repository.common))}"
             if repository is not None
             # Said, because "no repository" reads like "nothing could have shipped it", and an
             # archive or another version control system's checkout can.
@@ -876,8 +877,9 @@ def _outside_the_project(candidate: Path, *, project_root: Path, created: bool) 
     if outer is not None:
         raise Refusal(
             f"{candidate} is inside a checkout of another repository, whose git directory is "
-            f"{outer}. The overlay root is the machine's trust anchor and must not lie where a "
-            f"repository can ship files: put it in a directory no repository's checkout holds"
+            f"{quoted(str(outer))}. The overlay root is the machine's trust anchor and must "
+            f"not lie where a repository can ship files: put it in a directory no repository's "
+            f"checkout holds"
         )
 
 

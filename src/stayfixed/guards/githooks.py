@@ -28,6 +28,7 @@ from typing import NamedTuple
 from stayfixed import fsops
 from stayfixed.errors import Refusal
 from stayfixed.gitenv import NO_ANSWER, git_run
+from stayfixed.printed import quoted
 
 HOOK_NAME = "prepare-commit-msg"
 HOOK_MARKER = "# stayfixed:prepare-commit-msg"
@@ -178,7 +179,9 @@ def hooks_dir(root: Path) -> Path:
 
 
 # What `install` and `uninstall` say of a hook they cannot read. `{path}` is git's own hooks
-# directory, which the reports name absolutely, as every other line of this module does.
+# directory, which the reports name absolutely, as every other line of this module does, and
+# through `printed.quoted`: git names it, from a `core.hooksPath` the repository sets or a
+# submodule name `.gitmodules` chose, so its bytes are the repository's.
 UNREADABLE = "{path} could not be read ({reason}); {outcome}"
 
 
@@ -207,7 +210,7 @@ def _ours(path: Path, outcome: str) -> Hook:
         return Hook(False, None)
     except OSError as exc:
         raise Refusal(
-            UNREADABLE.format(path=path, reason=fsops.said(exc), outcome=outcome)
+            UNREADABLE.format(path=quoted(str(path)), reason=fsops.said(exc), outcome=outcome)
         ) from exc
     try:
         return Hook(HOOK_MARKER in content.decode("utf-8"), content)
@@ -240,10 +243,12 @@ def install(root: Path) -> Installed:
     directory = hooks_dir(root)
     target = directory / HOOK_NAME
     local = directory / (HOOK_NAME + LOCAL_SUFFIX)
+    # Every refusal below names these two as `UNREADABLE` does, quoted: git chose the directory.
+    shown_target, shown_local = quoted(str(target)), quoted(str(local))
     if fsops.is_symlink(target):
-        raise Refusal(f"{target} is a symlink; refusing to write through it")
+        raise Refusal(f"{shown_target} is a symlink; refusing to write through it")
     if fsops.is_dir(target):
-        raise Refusal(f"{target} is a directory; refusing to install a hook over it")
+        raise Refusal(f"{shown_target} is a directory; refusing to install a hook over it")
     found = _ours(target, "nothing was installed") if fsops.exists(target) else None
     replaced = found is not None and found.ours
     # A `.local` found where our hook is *not* installed was put there by somebody else, and
@@ -253,16 +258,20 @@ def install(root: Path) -> Installed:
     # beside it is presumed to be the one we preserved, and a file that appears there
     # afterwards is vouched for by nothing here — see `uninstall`.
     if fsops.exists(local) and not replaced:
-        raise Refusal(f"{local} already exists and was not preserved by stayfixed; move it aside")
+        raise Refusal(
+            f"{shown_local} already exists and was not preserved by stayfixed; move it aside"
+        )
     # A hook that names `prepare-commit-msg.local` is refused before it is kept there, and the
     # `.local` beside a hook being reinstalled is read for the same name: either way the chain
     # would `exec` itself. The check is made here, at install, and not by the shipped hook before
     # its `exec`, where a false positive would abort every commit.
     if found is not None and not replaced:
-        kept = CHAINS_TO_ITSELF.format(path=target, name=_CHAINED_NAME, local=local)
+        kept = CHAINS_TO_ITSELF.format(path=shown_target, name=_CHAINED_NAME, local=shown_local)
         _refuse_a_self_chain(found.content, kept)
     if replaced and fsops.exists(local):
-        running = ALREADY_RUNS_ITSELF.format(local=local, name=_CHAINED_NAME, path=target)
+        running = ALREADY_RUNS_ITSELF.format(
+            local=shown_local, name=_CHAINED_NAME, path=shown_target
+        )
         _refuse_a_self_chain(_chained(local), running)
     preserved: Path | None = None
     if found is not None and not replaced:

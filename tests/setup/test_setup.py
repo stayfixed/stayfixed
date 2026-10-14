@@ -1106,6 +1106,31 @@ def test_an_overlay_that_is_a_checkout_of_its_own_inside_another_repository_is_r
 
 
 @needs_git
+@pytest.mark.parametrize("whose", ["the-projects", "another-repositorys"])
+def test_a_git_directory_git_names_reaches_a_containment_refusal_quoted(
+    tmp_path: Path, whose: str
+) -> None:
+    # Both refusals name a git directory as git answers it, and a submodule's lies at
+    # `.git/modules/<name>`, the name `.gitmodules` chose: an escape sequence and a bell in it
+    # reached the terminal. Here a separate git directory carries them. Each is printed through
+    # `printed.quoted` now. Mutations (`mutations/`'s "setup prints the project's git directory
+    # raw in a containment refusal" -> `the-projects` reddens; "setup prints another
+    # repository's git directory raw in a containment refusal" -> `another-repositorys`).
+    gitdir = tmp_path / "git\x1b]0;owned\x07"
+    checkout = tmp_path / "checkout"
+    _git(tmp_path, "init", "-q", "-b", "main", "--separate-git-dir", str(gitdir), str(checkout))
+    candidate = checkout / "ov"
+    candidate.mkdir()
+    _seed_overlay(candidate)
+    root = checkout if whose == "the-projects" else tmp_path / "elsewhere"
+    with pytest.raises(Refusal) as refused:
+        _record(tmp_path, candidate, root)
+    said = str(refused.value)
+    assert "\x1b" not in said and "\x07" not in said, said
+    assert "\\x1b]0;owned\\x07" in said, said
+
+
+@needs_git
 def test_an_overlay_that_is_a_checkout_of_its_own_is_recorded(tmp_path: Path) -> None:
     # The owner's own layout: the overlay is a clone of a private repository, in a directory no
     # other repository holds. That it is a checkout is not what refuses an overlay; where it lies
