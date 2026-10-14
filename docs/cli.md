@@ -2773,9 +2773,9 @@ check with `name`, `status`, `detail` and `remedy`, so every remedy is there.
 | `overlay-requires` | whether the overlay this machine records requires a stayfixed the running one satisfies — red when this project keeps its notes in that overlay, a warning when it does not | the overlay's `.claude-plugin/plugin.json`, `stayfixed.toml` |
 
 **How `attached` reads the harness memory path.** The row reads `~/.claude/projects/<slug>/memory`,
-and `autoMemoryDirectory` in `.claude/settings.local.json` beside whatever stands there, in one
-order, and the first state that matches answers. Two states answer before the ledger and the
-overlay's binding are read, since the harness reads what they name whatever the ledger says:
+and `autoMemoryDirectory` in the two settings files the repository controls beside whatever stands
+there, in one order, and the first state that matches answers. Two states answer before the ledger
+and the overlay's binding are read, since the harness reads what they name whatever the ledger says:
 `real-directory-no-fallback` and `fallback-elsewhere`, each the row's whole detail. Every other
 state answers only once the overlay confirms the binding. The store and the approval it asks about
 are the main checkout's, as `attach` asks them, so one machine state reads the same from every
@@ -2784,12 +2784,24 @@ linked worktree's session-start re-link points it, which is judged by the store 
 file, or anything else that is no link and no directory, reads as nothing in place. Each remedy
 below is shortened; the row spells the command in full.
 
+**The settings fallback is a whitelist, not a reading of the harness's settings.** The two files are
+`.claude/settings.local.json` and the shared `.claude/settings.json`, the local file's key in effect
+over the shared one's. Each is no file, or one JSON object, read strictly, with no
+`autoMemoryDirectory`; or it holds the key; or it cannot be read as settings: unreadable, not a
+regular file, not UTF-8, a byte-order mark, a comment, a trailing comma, `NaN`, a key given twice,
+or anything but one object. One value is admitted, the main checkout's store exactly as `attach`
+writes it; any other value in effect, of any type, `~/…`, relative, empty or another spelling of the
+store, is `fallback-elsewhere`. A file that cannot be read as settings is never read as having no
+key: beside it, every state that would read `ok` warns that what the harness makes of the file is
+unknown (`settings-unreadable`). The value is never printed. Your own `~/.claude/settings.json`,
+policy settings and `--settings` are yours, not the repository's, and this row does not read them.
+
 | State | What stands there | Status | Remedy |
 |---|---|---|---|
 | `dangling` | a link that reaches nothing | `red` | `attach` |
 | `real-directory-no-fallback` | a real directory, with no `autoMemoryDirectory` recorded in `.claude/settings.local.json` | `red` | move it aside, then `attach` |
 | `targets-unaskable` | anything else, where the main checkout's or this checkout's `paths.memory` cannot be asked where it leads (a symlink, a symlink loop, a fault the system names); the row says whose and why | `warn` | replace the symlink, or make the directory readable, then `doctor` |
-| `fallback-elsewhere` | anything else, with `autoMemoryDirectory` naming anything but the main checkout's store exactly as `attach` writes it, another spelling of that store included; whether or not the store resolves | `red` | remove the key, then `attach` |
+| `fallback-elsewhere` | anything else, with `autoMemoryDirectory` in effect and set to anything but the main checkout's store exactly as `attach` writes it; whether or not the store resolves; the row names the file | `red` | remove the key from that file, then `attach` |
 | `links-elsewhere` | a link to anything but the main checkout's `paths.memory` or this checkout's own | `red` | `attach` |
 | `tree-gone` | anything else, where the store does not resolve because its link tree at `paths.memory` is gone | `warn` | `attach` |
 | `tree-there-not-resolving` | anything else, where the store does not resolve and its link tree is there | `warn` | `memory index --check`, then `doctor` |
@@ -2799,9 +2811,11 @@ below is shortened; the row spells the command in full.
 | `link-never-approved` | a link to the store, no approval recorded | `warn` | `attach`, which withdraws a link to the main checkout's tree; a link to this checkout's own tree, which it does not withdraw, is named to be removed |
 | `fallback-unapproved` | anything but a link, with the fallback naming the store, its approval lapsed or never given; the row says which | `warn` | `attach`, which withdraws the key |
 | `fallback-approved` | a real directory, with the fallback naming the store, its approval holding | `ok` | — |
+| `fallback-instead-of-a-link` | nothing, with the fallback naming the store, its approval holding | `warn` | `attach`, which makes the link |
 | `no-links-approved` | nothing, the store's approval holding | `warn` | `attach` |
 | `lapsed-links-withdrawn` | nothing, its approval lapsed | `warn` | read what changed, `memory trust --in-repo-memory`, then `attach` |
 | `never-approved` | nothing, no approval recorded | `ok` | — |
+| `settings-unreadable` | any state above that reads `ok`, beside a settings file that cannot be read as settings; the row names the file | `warn` | make the file one JSON object, then `doctor` |
 
 **Ten of the seventeen have a `skip` arm — sixteen arms between them: one no build can answer,
 and fifteen on a state of this machine or this repository.** A `skip` is **not** a finding and
