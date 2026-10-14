@@ -1226,10 +1226,22 @@ reddens = [
 [[mutation]]
 name = "attach finds out the exclude file cannot be written by writing it"
 file = "src/stayfixed/attach/exclude.py"
-before = "    if not _writable(path):"
-after = "    if False:"
+before = "    if not _writable(path):\n        raise Refusal(UNWRITABLE.format(path=quoted(str(path))))\n    return ExcludeWrite(path, updated)"
+after = "    if False:\n        raise Refusal(UNWRITABLE.format(path=quoted(str(path))))\n    return ExcludeWrite(path, updated)"
 reddens = [
   "tests/attach/test_write.py::test_an_exclude_file_that_cannot_be_written_is_refused_by_name_before_the_first_write",
+]
+
+# `detach` withdraws the block by replacing or removing the exclude file in its directory, and a
+# `.git/info` this user cannot write was found out by doing it: after the settings file, the rule
+# copies and the link tree were withdrawn, with the ledger and the block left in place.
+[[mutation]]
+name = "detach finds out the exclude file cannot be written by writing it"
+file = "src/stayfixed/attach/exclude.py"
+before = "    if not _writable(path):\n        raise Refusal(UNWRITABLE.format(path=quoted(str(path))))\n    records = _lines(body)"
+after = "    if False:\n        raise Refusal(UNWRITABLE.format(path=quoted(str(path))))\n    records = _lines(body)"
+reddens = [
+  "tests/attach/test_detach.py::test_an_exclude_file_detach_cannot_write_is_refused_before_anything_is_withdrawn",
 ]
 
 [[mutation]]

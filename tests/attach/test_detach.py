@@ -25,6 +25,7 @@ from stayfixed.config.layout import IGNORE_BODY, IGNORE_REGION
 from stayfixed.errors import Failure, Refusal
 from stayfixed.memory.api import harness_memory_path, resolve
 from stayfixed.memory.trust import record
+from stayfixed.printed import quoted
 from stayfixed.project.init import init
 from stayfixed.project.uninstall import uninstall
 from stayfixed.scaffold import MANIFEST_PATH, Kind, Location, Manifest, Record, digest
@@ -1525,6 +1526,36 @@ def test_a_doubled_exclude_block_refuses_detach_naming_the_exclude_file(tmp_path
         _detach(root, machine, home)
     assert "info/exclude" in str(refused.value)
     assert_snapshot_unchanged(root, before)
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root writes into a directory it cannot write")
+def test_an_exclude_file_detach_cannot_write_is_refused_before_anything_is_withdrawn(
+    tmp_path: Path,
+) -> None:
+    # A `.git/info` this user cannot write: `detach` found out by writing the exclude file, after
+    # the settings file, the rule copies and the link tree were withdrawn, and stopped there with
+    # the ledger and the block still in place, half detached. It is asked while nothing has been
+    # withdrawn now, as `attach` asks it, and refused naming the file. Mutation (oracle):
+    # `mutations/`'s "detach finds out the exclude file cannot be written by writing it" -> the
+    # settings file and the rule copies go.
+    root, _store, machine, home = _withdrawable(tmp_path)
+    info = _exclude_file(root).parent
+    # Non-vacuous: there is a block to take out, and a settings file and rule copies before it.
+    assert "stayfixed:attach:begin" in _exclude_file(root).read_text(encoding="utf-8")
+    assert (root / SETTINGS).is_file()
+    assert any((root / ".codex" / "rules").iterdir())
+    before = _entries(root, home)
+    info.chmod(0o555)
+    try:
+        with pytest.raises(Refusal) as refused:
+            _detach(root, machine, home)
+    finally:
+        info.chmod(0o755)
+    assert str(refused.value) == (
+        f"{quoted(str(_exclude_file(root)))} cannot be written, because this user cannot write "
+        "the directory that holds it, so nothing was written"
+    )
+    assert _entries(root, home) == before
 
 
 def test_detach_writes_nothing_through_an_exclude_file_that_became_a_symlink(

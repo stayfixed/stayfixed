@@ -2523,8 +2523,8 @@ It exits `2` on a refusal, in the order the run meets them:
 - A `stayfixed:ignore` region in `.gitignore` opened or closed twice, or otherwise with markers
   that no longer say where it ends (the refusal names the file).
 - A `git rev-parse --git-path info/exclude` that names no exclude file, an exclude file that cannot
-  be read, or a `stayfixed:attach` block in it opened or closed twice (the refusal names the
-  file).
+  be read, a `stayfixed:attach` block in it opened or closed twice, or one to take out of a file in
+  a directory you cannot write (the refusal names the file).
 - A path the withdrawal writes or removes reached through a directory that became a symlink after
   the attach: `.claude` when the settings file is to be rewritten, `.codex` or `.codex/rules` for
   a recorded rule copy, `paths.memory` or a directory above it in any checkout whose tree it
@@ -2545,8 +2545,8 @@ Every one of those is answered before the first withdrawal, so a refused `detach
 nothing. What is left can only happen once withdrawing has begun, and leaves the ledger in place
 with part of the attach already undone:
 
-- An exclude file that cannot be written, which is refused, naming it, once the settings, the rule
-  copies, the link trees and the `.gitignore` region are withdrawn.
+- An exclude file whose write fails for any other reason, which is refused, naming it, once the
+  settings, the rule copies, the link trees and the `.gitignore` region are withdrawn.
 - Any other write or removal that fails, which ends as `internal error` with the error the system
   gave.
 
