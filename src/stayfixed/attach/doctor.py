@@ -484,7 +484,7 @@ def _harness_verdict(context: Context, answers: Answers, harness: Path) -> _Verd
     from stayfixed.attach.write import APPROVAL_LAPSED, FALLBACK_KEY, REAPPROVE
     from stayfixed.doctor.api import OK, RED, WARN
     from stayfixed.errors import Refusal
-    from stayfixed.memory.api import harness_approval_lapsed, harness_link_needed, harness_targets
+    from stayfixed.memory.api import GATE_LAPSED, GATE_OPEN, harness_gate, harness_targets
 
     # The remedy every arm but the green ones and the named ones carries: one command puts the link
     # back where `attach` puts it, whatever the wrong shape was.
@@ -530,8 +530,7 @@ def _harness_verdict(context: Context, answers: Answers, harness: Path) -> _Verd
     if shape == _LINK:  # attached
         return _Verdict(OK, "a link to the store", "")
     try:
-        allowed = harness_link_needed(store, context.config)
-        lapsed = not allowed and harness_approval_lapsed(store, context.config)
+        gate = harness_gate(store, context.config)
     except Refusal:  # trust-record-unreadable
         return _Verdict(
             WARN,
@@ -545,22 +544,22 @@ def _harness_verdict(context: Context, answers: Answers, harness: Path) -> _Verd
         # fallback line names it: a harness fact spelled here is one more place a new harness
         # would have to be found.
         fallback = f"a real directory, and {FALLBACK_KEY} in {LOCAL_SETTINGS} points the harness"
-        if allowed:  # fallback-approved
+        if gate == GATE_OPEN:  # fallback-approved
             return _Verdict(OK, f"{fallback} at the store instead", "")
-        why = APPROVAL_LAPSED if lapsed else "no approval is recorded for the store"
+        why = APPROVAL_LAPSED if gate == GATE_LAPSED else "no approval is recorded for the store"
         return _Verdict(  # fallback-unapproved
             WARN,
             f"{fallback} at the store, although {why} — the harness reads notes nobody approved",
             relink,
         )
-    if allowed:  # no-links-approved
+    if gate == GATE_OPEN:  # no-links-approved
         return _Verdict(
             WARN,
             "not in place, although this store's trust record allows it, so the harness sees "
             "no memory here",
             relink,
         )
-    if lapsed:  # lapsed-links-withdrawn
+    if gate == GATE_LAPSED:  # lapsed-links-withdrawn
         return _Verdict(
             WARN,
             f"not in place, because {APPROVAL_LAPSED} — the harness sees no memory here",

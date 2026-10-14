@@ -3308,3 +3308,25 @@ after = """    resolved = target.resolve()
 reddens = [
   "tests/memory/test_index.py::test_an_index_link_that_is_a_symlink_loop_is_refused_and_sources_nothing",
 ]
+
+# `attach` and `doctor`'s `attached` row both tell a lapsed approval from one never given, since
+# only the first withdraws links an earlier run made.
+[[mutation]]
+name = "the harness gate reads a lapsed approval as one never given"
+file = "src/stayfixed/memory/worktree.py"
+before = "    return GATE_LAPSED if trust.approval_recorded(store.path, store.machine) else GATE_UNAPPROVED"
+after = "    return GATE_UNAPPROVED"
+reddens = [
+  "tests/memory/test_worktree.py::test_the_harness_gate_tells_an_approval_that_lapsed_from_one_never_given",
+]
+
+# The two used to be two questions, each digesting every note in the store; a closed gate with a
+# record behind it is a lapse, so the second digest told nothing the first had not.
+[[mutation]]
+name = "the harness gate digests the store a second time to tell a lapse"
+file = "src/stayfixed/memory/worktree.py"
+before = "    return GATE_LAPSED if trust.approval_recorded(store.path, store.machine) else GATE_UNAPPROVED"
+after = "    return GATE_LAPSED if trust.changed(trust.state(store, config)) else GATE_UNAPPROVED"
+reddens = [
+  "tests/memory/test_worktree.py::test_the_harness_gate_tells_an_approval_that_lapsed_from_one_never_given",
+]

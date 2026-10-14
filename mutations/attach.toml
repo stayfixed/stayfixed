@@ -2633,7 +2633,7 @@ reddens = [
 [[mutation]]
 name = "attach says a lapsed approval was never given"
 file = "src/stayfixed/attach/write.py"
-before = "    return HARNESS_LAPSED if harness_approval_lapsed(store, config) else HARNESS_WAITS"
+before = "    return HARNESS_LAPSED if gate == GATE_LAPSED else HARNESS_WAITS"
 after = "    return HARNESS_WAITS"
 reddens = [
   "tests/attach/test_commands.py::test_a_changed_store_says_the_approval_lapsed_and_counts_the_withdrawn_links",
@@ -3156,7 +3156,7 @@ reddens = [
 [[mutation]]
 name = "doctor reads the settings fallback as in place without asking the gate"
 file = "src/stayfixed/attach/doctor.py"
-before = "        if allowed:  # fallback-approved\n"
+before = "        if gate == GATE_OPEN:  # fallback-approved\n"
 after = "        if True:  # fallback-approved\n"
 reddens = [
   "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[fallback-lapsed]",
@@ -3203,7 +3203,7 @@ reddens = [
 [[mutation]]
 name = "doctor reads a lapsed approval as one the trust record asks for"
 file = "src/stayfixed/attach/doctor.py"
-before = "    if lapsed:  # lapsed-links-withdrawn\n"
+before = "    if gate == GATE_LAPSED:  # lapsed-links-withdrawn\n"
 after = "    if False:  # lapsed-links-withdrawn\n"
 reddens = [
   "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[lapsed-links-withdrawn]",

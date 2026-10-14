@@ -95,6 +95,8 @@ from stayfixed.jsonobject import NESTED, json_object
 from stayfixed.memory.api import (
     COMMON_GROUP,
     DIFFERENT_REMOTE,
+    GATE_LAPSED,
+    GATE_OPEN,
     MISMATCH,
     NO_ORIGIN,
     NO_REMOTE,
@@ -110,7 +112,7 @@ from stayfixed.memory.api import (
     attach_main,
     detach_main,
     harness_anchor,
-    harness_approval_lapsed,
+    harness_gate,
     harness_link_needed,
     harness_memory_path,
     harness_targets,
@@ -1137,12 +1139,13 @@ def _harness_waits(owner: Path, config: Config, *, machine: Path | None) -> str 
     """Why the gate kept the harness link from being made, or `None` where it did not:
     `harness_link_needed`, asked exactly as `_apply_harness_link` asks it, of the store the run
     just linked, which is the owning checkout's (`_fallback_store`). `HARNESS_LAPSED` where an
-    approval is recorded and the store changed since it (`harness_approval_lapsed`), and
-    `HARNESS_WAITS` where none is."""
+    approval is recorded and the store changed since it (`harness_gate`), and `HARNESS_WAITS`
+    where none is."""
     store = _fallback_store(owner, config, machine=machine)
-    if store is None or harness_link_needed(store, config):
+    gate = GATE_OPEN if store is None else harness_gate(store, config)
+    if gate == GATE_OPEN:
         return None
-    return HARNESS_LAPSED if harness_approval_lapsed(store, config) else HARNESS_WAITS
+    return HARNESS_LAPSED if gate == GATE_LAPSED else HARNESS_WAITS
 
 
 @dataclass(frozen=True)

@@ -695,6 +695,37 @@ def test_a_committed_index_reaches_no_harness_link_before_trust(tmp_path: Path) 
     assert not harness_memory_path(tree, home).exists()
 
 
+def test_the_harness_gate_tells_an_approval_that_lapsed_from_one_never_given(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `attach` and `doctor`'s `attached` row both say which closed gate it is, and they asked it
+    # as two questions, each digesting every note of the store. One question now, asked once:
+    # open, lapsed (a record the store no longer matches), or never approved. Mutation (oracle):
+    # `mutations/`'s "the harness gate reads a lapsed approval as one never given" -> `lapsed`
+    # reads `unapproved`.
+    from stayfixed.memory import trust
+
+    _, store, config = a_checkout(tmp_path)
+    digests: list[Store] = []
+    digest = trust.store_digest
+
+    def counted(store: Store, config: Config) -> str:
+        digests.append(store)
+        return digest(store, config)
+
+    monkeypatch.setattr(trust, "store_digest", counted)
+    assert worktree.harness_gate(store, config) == worktree.GATE_UNAPPROVED
+    record(store, config)
+    digests.clear()
+    assert worktree.harness_gate(store, config) == worktree.GATE_OPEN
+    (store.groups["developer"] / "added.md").write_text(
+        "---\nname: added\ndescription: d\n---\n\nA note a pull added.\n", encoding="utf-8"
+    )
+    assert worktree.harness_gate(store, config) == worktree.GATE_LAPSED
+    # The store is digested once per question, closed gate included.
+    assert len(digests) == 2
+
+
 def test_the_harness_link_is_withdrawn_once_the_trust_record_lapses(tmp_path: Path) -> None:
     # The mirror of the two tests above, and the direction nothing checked. The gate ran at
     # creation only, over state that persists — so a `git pull` that adds one note to an

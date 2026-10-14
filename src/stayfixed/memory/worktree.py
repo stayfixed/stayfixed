@@ -410,14 +410,26 @@ def harness_link_needed(store: Store, config: Config) -> bool:
     return trust.may_inject(store, config, repository_data=in_repository(store, store.path))
 
 
-def harness_approval_lapsed(store: Store, config: Config) -> bool:
-    """Whether the gate withholds the harness link because an approval lapsed: the machine records
-    one for this store and the store, or its `memory.index_extra`, has changed since
-    (`trust.changed`). `False` where none is recorded, which is a store never approved.
+# `harness_gate`'s three answers. Not statuses and not sentences: each caller says its own.
+GATE_OPEN = "open"
+GATE_LAPSED = "lapsed"
+GATE_UNAPPROVED = "unapproved"
 
-    Asked by `attach` to say which of the two it is, since both close the gate and only the
-    second withdraws links a run before made: one line appended to one note is enough."""
-    return trust.changed(trust.state(store, config))
+
+def harness_gate(store: Store, config: Config) -> str:
+    """`harness_link_needed`'s answer, and where it is no, why: `GATE_OPEN` where the harness link
+    may point at this store; `GATE_LAPSED` where the machine records an approval for it and the
+    store, or its `memory.index_extra`, has changed since (`trust.changed`); `GATE_UNAPPROVED`
+    where none is recorded, which is a store never approved.
+
+    Asked by `attach` and by its `doctor.py` to say which of the two closed gates it is, since
+    both close the gate and only the second withdraws links a run before made: one line appended
+    to one note is enough. One question and not two: the store is digested once, by the gate.
+    A closed gate with a record behind it is a record the digest no longer matches, so whether
+    one is recorded is the whole of the rest, and no second digest is taken to tell."""
+    if harness_link_needed(store, config):
+        return GATE_OPEN
+    return GATE_LAPSED if trust.approval_recorded(store.path, store.machine) else GATE_UNAPPROVED
 
 
 def _apply_harness_link(
