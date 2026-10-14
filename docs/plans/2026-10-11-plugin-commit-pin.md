@@ -1216,7 +1216,8 @@ session's scratchpad.
   without `--yes` exited `2`: "your local v0.3.0 names 0ff38a4…, and GitHub's stayfixed/stayfixed
   holds no such tag … nothing was run"; the bare remote held no ref afterwards.
 - **Step 3, an empty repository's answer.**
-  `gh api repos/stayfixed/stayfixed-plugin/git/ref/heads/main` answered `409` ("Git Repository is empty"), as Task 4 step 8 reads it.
+  `gh api repos/stayfixed/stayfixed-plugin/git/ref/heads/main` answered `409` ("Git Repository is
+  empty"), as Task 4 step 8 reads it.
 - **The release itself (2026-10-14).** `0.3.0` was cut on `main` at `45f8266` (the merge of
   `dev`); `pin` wrote `d34a4f0`, the plugin commit the rehearsal computed, since only plans and the
   changelog differ between the two sources; `publish_plugin.py --tag v0.3.0` planned "would push
