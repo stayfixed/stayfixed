@@ -1533,6 +1533,28 @@ def test_a_paths_memory_that_is_a_symlink_loop_is_the_same_refusal(tmp_path: Pat
     assert str(refused.value).endswith(f"{DEFAULT_MEMORY!r} is a symlink loop")
 
 
+def test_a_link_under_a_second_home_to_either_target_is_withdrawn(tmp_path: Path) -> None:
+    # `detach_main` withdraws the link under a second home a harness may read, only where it points
+    # at a directory `harness_targets` names, and a worktree's names two: the main checkout's tree,
+    # where `attach` points it, and the worktree's own, where the `SessionStart` re-link points it.
+    # A link to the second under that home was the one case no test made. Mutation (oracle):
+    # `mutations/`'s "the withdrawal under a second home compares with the first target alone"
+    # -> the link to the worktree's own tree stays.
+    root, _store, config = a_checkout(tmp_path)
+    side = a_worktree(root, tmp_path / "side")
+    home, other = a_home(tmp_path), tmp_path / "other"
+    other.mkdir()
+    targets = worktree.harness_targets(side, root, config)
+    # Non-vacuous: two targets, and the link names the second.
+    assert len(targets) == 2 and targets[1] == (side / DEFAULT_MEMORY).resolve()
+    under_other = harness_memory_path(side, other)
+    under_other.parent.mkdir(parents=True)
+    under_other.symlink_to(targets[1], target_is_directory=True)
+    links = detach_main(side, config, home=home, elsewhere=other, targets=targets, keep_tree=True)
+    assert not os.path.lexists(under_other)
+    assert links.revoked == [under_other]
+
+
 def _a_config(tmp_path: Path) -> Config:
     """A configuration whose `paths.memory` is the preset's, loaded from a directory of its own:
     `harness_targets` reads nothing else of it."""

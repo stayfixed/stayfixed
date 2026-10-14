@@ -3330,3 +3330,14 @@ after = "    return GATE_LAPSED if trust.changed(trust.state(store, config)) els
 reddens = [
   "tests/memory/test_worktree.py::test_the_harness_gate_tells_an_approval_that_lapsed_from_one_never_given",
 ]
+
+# A worktree's harness link is stayfixed's when it points at the main checkout's tree or at the
+# worktree's own, under a second home a harness may read as under the first.
+[[mutation]]
+name = "the withdrawal under a second home compares with the first target alone"
+file = "src/stayfixed/memory/worktree.py"
+before = "        [path for target in targets for path in _withdraw_lapsed(root, target, elsewhere)]\n"
+after = "        [path for target in targets[:1] for path in _withdraw_lapsed(root, target, elsewhere)]\n"
+reddens = [
+  "tests/memory/test_worktree.py::test_a_link_under_a_second_home_to_either_target_is_withdrawn",
+]
