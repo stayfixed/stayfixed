@@ -1686,8 +1686,8 @@ reddens = [
 [[mutation]]
 name = "doctor reads the real directory at the harness memory path without the settings fallback"
 file = "src/stayfixed/attach/doctor.py"
-before = "        recorded = _recorded_fallback(context)\n"
-after = "        recorded = None\n"
+before = "        fallback = _settings_fallback(context.root)\n"
+after = "        fallback = _Fallback()\n"
 reddens = [
   "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[fallback-approved]",
 ]
@@ -1920,8 +1920,8 @@ reddens = [
 [[mutation]]
 name = "doctor spells the local settings file again"
 file = "src/stayfixed/attach/doctor.py"
-before = "    fallback = f\"{plain}, and {FALLBACK_KEY} in {LOCAL_SETTINGS} points the harness\""
-after = "    fallback = f\"{plain}, and {FALLBACK_KEY} in .claude/settings.local.json points the harness\""
+before = "    points = f\"{plain}, and {FALLBACK_KEY} in {fallback.where} points the harness\""
+after = "    points = f\"{plain}, and {FALLBACK_KEY} in .claude/settings.local.json points the harness\""
 reddens = [
   "tests/test_harnesses.py::test_every_harness_fact_outside_the_registry_is_listed_where_the_registry_says",
 ]
@@ -3190,7 +3190,7 @@ reddens = [
 [[mutation]]
 name = "doctor reads the settings fallback as in place without asking the gate"
 file = "src/stayfixed/attach/doctor.py"
-before = "    if recorded is not None and gate != GATE_OPEN:  # fallback-unapproved\n"
+before = "    if fallback.held and gate != GATE_OPEN:  # fallback-unapproved\n"
 after = "    if False:  # fallback-unapproved\n"
 reddens = [
   "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[written-fallback-beside-nothing-never-approved]",
@@ -3198,13 +3198,13 @@ reddens = [
   "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[fallback-never-approved]",
 ]
 
-# The fallback's value is the repository's, so it is compared as written with what a harness link
-# may point at: resolved, a committed value naming a committed link to the store read as the store.
+# The fallback's value is the repository's, so it is compared as written with the one value
+# `attach` writes: resolved, a committed value naming a committed link to the store read as the store.
 [[mutation]]
 name = "doctor resolves the directory the settings fallback names"
 file = "src/stayfixed/attach/doctor.py"
-before = "    return Path(value)\n"
-after = "    return Path(value).resolve()\n"
+before = "    if fallback.held and fallback.value != written:\n"
+after = "    if fallback.held and __import__(\"os\").path.realpath(str(fallback.value)) != written:\n"
 reddens = [
   "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[fallback-through-an-alias]",
 ]
@@ -3214,7 +3214,7 @@ reddens = [
 [[mutation]]
 name = "doctor reads a fallback naming another directory as the store"
 file = "src/stayfixed/attach/doctor.py"
-before = "    if recorded is not None and recorded != _written_fallback(owner, context.config):\n"
+before = "    if fallback.held and fallback.value != written:\n"
 after = "    if False:\n"
 reddens = [
   "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[fallback-elsewhere-beside-a-link]",
@@ -3228,8 +3228,8 @@ reddens = [
 [[mutation]]
 name = "doctor compares the settings fallback with every directory a harness link may point at"
 file = "src/stayfixed/attach/doctor.py"
-before = "    if recorded is not None and recorded != _written_fallback(owner, context.config):\n"
-after = "    if recorded is not None and recorded not in targets:\n"
+before = "    if fallback.held and fallback.value != written:\n"
+after = "    if fallback.held and fallback.value not in {str(target) for target in targets}:\n"
 reddens = [
   "tests/attach/test_doctor.py::test_a_fallback_naming_a_directory_a_branch_chose_is_never_ok[a-link-to-it]",
 ]
@@ -3288,8 +3288,8 @@ reddens = [
 [[mutation]]
 name = "doctor reads the settings fallback beside a real directory alone"
 file = "src/stayfixed/attach/doctor.py"
-before = "        recorded = _recorded_fallback(context)\n"
-after = "        recorded = _recorded_fallback(context) if _shape_of(harness) == _REAL_DIRECTORY else None\n"
+before = "        fallback = _settings_fallback(context.root)\n"
+after = "        fallback = _settings_fallback(context.root) if _shape_of(harness) == _REAL_DIRECTORY else _Fallback()\n"
 reddens = [
   "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[fallback-elsewhere-beside-a-link]",
   "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[fallback-elsewhere-beside-nothing]",
@@ -3301,8 +3301,8 @@ reddens = [
 [[mutation]]
 name = "doctor lets a gone link tree answer before a fallback naming another directory"
 file = "src/stayfixed/attach/doctor.py"
-before = "    if recorded is not None and recorded != _written_fallback(owner, context.config):\n"
-after = "    if recorded is not None and recorded != _written_fallback(owner, context.config) and _store_of(context, answers, owner) is not None:\n"
+before = "    if fallback.held and fallback.value != written:\n"
+after = "    if fallback.held and fallback.value != written and _store_of(context, answers, owner) is not None:\n"
 reddens = [
   "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[fallback-elsewhere-tree-gone]",
 ]
@@ -3316,6 +3316,62 @@ before = "            if own\n"
 after = "            if False\n"
 reddens = [
   "tests/attach/test_doctor.py::test_a_worktree_link_to_its_own_tree_nobody_approved_is_to_be_removed_and_not_left_to_attach",
+]
+
+# The harness reads `autoMemoryDirectory` from the shared `.claude/settings.json` too, under the
+# local file; read from the local file alone, a key a branch committed there read green.
+[[mutation]]
+name = "doctor reads the settings fallback from the local settings file alone"
+file = "src/stayfixed/attach/doctor.py"
+before = "    for relative in (*CLAUDE.local_settings, *CLAUDE.settings):\n"
+after = "    for relative in CLAUDE.local_settings:\n"
+reddens = [
+  "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[shared-fallback-beside-a-link]",
+  "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[shared-fallback-beside-nothing]",
+]
+
+# The harness expands a leading `~/`, so a value that is not an absolute path still names a
+# directory; read as no key, it was green beside a link or nothing.
+[[mutation]]
+name = "doctor reads a settings fallback that is no absolute path as no key"
+file = "src/stayfixed/attach/doctor.py"
+before = "    return document.get(FALLBACK_KEY, _NO_KEY)"
+after = "    return document.get(FALLBACK_KEY, _NO_KEY) if str(document.get(FALLBACK_KEY, \"/\")).startswith(\"/\") else _NO_KEY"
+reddens = [
+  "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[tilde-fallback-beside-a-link]",
+]
+
+# The harness reads more than strict JSON, so a settings file this cannot parse may still point it
+# elsewhere: read as no key, it was green.
+[[mutation]]
+name = "doctor reads a settings file it cannot parse as one with no fallback"
+file = "src/stayfixed/attach/doctor.py"
+before = "    except (ValueError, RecursionError):\n        return _CANNOT_TELL\n"
+after = "    except (ValueError, RecursionError):\n        return _NO_KEY\n"
+reddens = [
+  "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[settings-unparseable-beside-a-link]",
+]
+
+# A green answer beside a settings file that cannot be read as settings is one nobody checked.
+[[mutation]]
+name = "doctor reads green beside a settings file it could not read"
+file = "src/stayfixed/attach/doctor.py"
+before = "    if verdict.status != OK or not fallback.unread:\n"
+after = "    if True:\n"
+reddens = [
+  "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[settings-unparseable-beside-a-link]",
+  "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[shared-settings-not-an-object-beside-nothing]",
+]
+
+# With the written fallback in place and nothing at the harness memory path, the harness reads the
+# store through the key: "the harness sees no memory here" was false there.
+[[mutation]]
+name = "doctor says the harness sees no memory beside the fallback attach writes"
+file = "src/stayfixed/attach/doctor.py"
+before = "    if fallback.held:  # fallback-instead-of-a-link\n"
+after = "    if False:  # fallback-instead-of-a-link\n"
+reddens = [
+  "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[written-fallback-beside-nothing-approved]",
 ]
 
 # The gate is asked of the store `attach` asks it of, the owning checkout's: asked of a linked

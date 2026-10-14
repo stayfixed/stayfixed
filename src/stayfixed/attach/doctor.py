@@ -164,6 +164,7 @@ def _attached(context: Context, answers: Answers, ledger: _Ledger) -> Row:
     unread = unread_home() if context.home is None else None
     harness: Path | UnreadHome
     verdict: _Verdict | None = None
+    fallback = _Fallback()
     if unread is not None:
         harness = unread
     else:
@@ -193,9 +194,9 @@ def _attached(context: Context, answers: Answers, ledger: _Ledger) -> Row:
         # and a fallback naming anything but the store `attach` writes there is red beside any
         # shape: either is where the harness then reads its memory whatever the ledger says, so
         # both are read before the ledger is. The verdict is the one the row ends with, read once.
-        recorded = _recorded_fallback(context)
-        if recorded is not None or _shape_of(harness) == _REAL_DIRECTORY:
-            verdict = _harness_verdict(context, answers, harness, recorded)
+        fallback = _settings_fallback(context.root)
+        if fallback.held or _shape_of(harness) == _REAL_DIRECTORY:
+            verdict = _harness_verdict(context, answers, harness, fallback)
             if verdict.whole:
                 return Row(verdict.status, verdict.shape, verdict.remedy)
     if ledger.state(context.root) == NO_LEDGER:
@@ -245,7 +246,7 @@ def _attached(context: Context, answers: Answers, ledger: _Ledger) -> Row:
             remedy += f"; {_CHECKED_AT_A_TERMINAL}"
         return Row(WARN, f"attached; {harness.cause}; the binding is {state}", remedy)
     if verdict is None:
-        verdict = _harness_verdict(context, answers, harness, None)
+        verdict = _harness_verdict(context, answers, harness, fallback)
     return Row(
         verdict.status,
         f"attached; the harness memory path is {verdict.shape}; the binding is {state}",
@@ -370,30 +371,98 @@ def _shape_of(harness: Path) -> str:
     return _OTHER if fsops.exists(harness) else _ABSENT
 
 
-def _recorded_fallback(context: Context) -> Path | None:
-    """The directory `autoMemoryDirectory` in `.claude/settings.local.json` names, as written, or
-    `None` where the file holds no such absolute path or cannot be read as a settings document.
+class _Fallback(NamedTuple):
+    """What the two settings files a repository controls say about `autoMemoryDirectory`, as
+    `_settings_fallback` reads them: one of none, a value, or cannot tell.
 
-    The file is one a clone can commit, so the value is never resolved and never printed: it is
-    compared exactly with the one value `attach` writes there, the owning checkout's store,
-    resolved (`str(store.path.resolve())`), and so only once that store has resolved. Resolved, a
-    committed value naming a link the clone also committed would be read as the store. Nor is it
-    compared with every directory a harness link may point at (`harness_targets`): that set holds
-    this checkout's own `paths.memory`, followed through a final link, and a branch that commits
-    that link and this file beside it names any directory it likes."""
-    from pathlib import Path
+    `held` is whether a key is in effect, `value` its value, of any type and never printed, and
+    `where` the file it is in effect from. `unread` names a file that could not be read as
+    settings, where no value is in effect: what the harness makes of that file is unknown."""
 
-    from stayfixed.attach.permissions import local_document, settings_document
+    held: bool = False
+    value: object = None
+    where: str = ""
+    unread: str = ""
+
+
+# `_settings_key`'s two answers about one file besides a key's value: no key, and a file that
+# cannot be read as settings. Objects and not strings, since a value may be any string.
+_NO_KEY: Final = object()
+_CANNOT_TELL: Final = object()
+
+
+def _settings_fallback(root: Path) -> _Fallback:
+    """`autoMemoryDirectory` as a whitelist over the two settings files a repository controls,
+    `.claude/settings.local.json` and the shared `.claude/settings.json`, the local file's key in
+    effect over the shared one's, as the harness takes them.
+
+    **A whitelist, and not a model of the harness's reader.** Every file the harness may read the
+    key from is answered as one of: no file, or a JSON object, read strictly, with no such key;
+    a key, of any value; or a file that cannot be read as settings — unreadable, not a regular
+    file, not UTF-8, a byte-order mark, a comment, a trailing comma, a constant JSON does not
+    have, a key given twice, or anything but one object. The verdict then admits one value, the
+    one `attach` writes (`_written_fallback`), and nothing else: a `~/…` value, a relative one,
+    an empty one, another spelling of the store, a number. The harness reads more than strict
+    JSON and expands more than absolute paths, so modelling it one spelling at a time read each
+    new spelling as no key, and green. A file this cannot read is never read as no key: where
+    the row would be green beside it, it warns that what the harness makes of it is unknown.
+
+    The user's own `~/.claude/settings.json`, policy settings and `--settings` are not the
+    repository's, and this row does not read them."""
+    from stayfixed.harnesses import CLAUDE
+
+    effective = _Fallback()
+    unread = ""
+    for relative in (*CLAUDE.local_settings, *CLAUDE.settings):
+        found = _settings_key(root / relative)
+        if found is _CANNOT_TELL:
+            unread = unread or relative
+        elif found is not _NO_KEY and not effective.held:
+            effective = _Fallback(True, found, relative)
+    if effective.held and effective.where in CLAUDE.local_settings:
+        # The local key is in effect whatever the shared file holds.
+        return effective
+    # The shared file's key, or none, beside a file that may not have been read: a value that is
+    # not the written one is still red, and nothing beside an unread file is green.
+    return effective._replace(unread=unread)
+
+
+def _settings_key(path: Path) -> object:
+    """`autoMemoryDirectory`'s value in one settings file, `_NO_KEY`, or `_CANNOT_TELL`."""
+    import json
+
+    from stayfixed import fsops
     from stayfixed.attach.write import FALLBACK_KEY
-    from stayfixed.errors import Failure, Refusal
 
     try:
-        value = settings_document(local_document(context.root)).get(FALLBACK_KEY)
-    except (Failure, Refusal, OSError, ValueError):
-        return None
-    if not isinstance(value, str) or not Path(value).is_absolute():
-        return None
-    return Path(value)
+        text = fsops.read_regular_text(path, newline="")
+    except (FileNotFoundError, NotADirectoryError):
+        return _NO_KEY
+    except (OSError, UnicodeDecodeError):
+        return _CANNOT_TELL
+    if not text.strip():
+        return _NO_KEY
+    try:
+        document = json.loads(text, object_pairs_hook=_once_each, parse_constant=_no_constant)
+    except (ValueError, RecursionError):
+        return _CANNOT_TELL
+    if not isinstance(document, dict):
+        return _CANNOT_TELL
+    return document.get(FALLBACK_KEY, _NO_KEY)
+
+
+def _once_each(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    """A JSON object whose keys are each given once: one given twice is a file two readers can
+    take two ways."""
+    document = dict(pairs)
+    if len(document) != len(pairs):
+        raise ValueError("a key is given twice")
+    return document
+
+
+def _no_constant(name: str) -> object:
+    """`NaN` and `Infinity`, which Python's `json` reads and JSON does not have."""
+    raise ValueError(f"{name} is not JSON")
 
 
 def _owner(context: Context) -> Path:
@@ -433,7 +502,27 @@ def _store_of(context: Context, answers: Answers, checkout: Path) -> Store | Non
 
 
 def _harness_verdict(
-    context: Context, answers: Answers, harness: Path, recorded: Path | None
+    context: Context, answers: Answers, harness: Path, fallback: _Fallback
+) -> _Verdict:
+    """The one reading of the harness memory path; `_read_harness` is the reading, and this is
+    it with a settings file that cannot be read said beside every green answer: what the harness
+    makes of that file is unknown, so nothing beside it is green."""
+    from stayfixed.doctor.api import OK, WARN
+
+    verdict = _read_harness(context, answers, harness, fallback)
+    if verdict.status != OK or not fallback.unread:
+        return verdict
+    return _Verdict(  # settings-unreadable
+        WARN,
+        f"{verdict.shape}, but {fallback.unread} could not be read as settings, so whether it "
+        "points the harness elsewhere is unknown",
+        f"make {fallback.unread} one JSON object, as the harness reads it, then run `stayfixed "
+        "doctor` again",
+    )
+
+
+def _read_harness(
+    context: Context, answers: Answers, harness: Path, fallback: _Fallback
 ) -> _Verdict:
     """The one reading of the harness memory path: each machine state one status, sentence and
     remedy, answered alike from the main checkout and from a linked worktree.
@@ -443,8 +532,9 @@ def _harness_verdict(
     the comment on the line that answers it:
 
     - `dangling`: a link that reaches nothing. Red; `attach`.
-    - `real-directory-no-fallback`: a real directory, and no `autoMemoryDirectory` recorded. Red,
-      the row's whole detail; move it aside, then `attach`.
+    - `real-directory-no-fallback`: a real directory, and no `autoMemoryDirectory` in effect in
+      either settings file the repository controls (`_settings_fallback`). Red, the row's whole
+      detail; move it aside, then `attach`.
     - `targets-unaskable`: where a harness link may point cannot be asked (`harness_targets`
       refuses). Warn, naming whose `paths.memory` and why; replace the symlink, or make the
       directory readable.
@@ -453,9 +543,10 @@ def _harness_verdict(
       (`_unresolved`).
     - `tree-there-not-resolving`: the store does not resolve, and its link tree is there. Warn;
       `memory index --check` (`_unresolved`).
-    - `fallback-elsewhere`: whatever stands there, `autoMemoryDirectory` naming anything but the
-      owning checkout's store, resolved, the one value `attach` writes there
-      (`_written_fallback`). Red, the row's whole detail; remove the key, then `attach`.
+    - `fallback-elsewhere`: whatever stands there, `autoMemoryDirectory` in effect and set to
+      anything but the owning checkout's store, resolved, the one value `attach` writes there
+      (`_written_fallback`), compared as a string. Red, the row's whole detail, naming the file;
+      remove the key, then `attach`.
     - `trust-record-unreadable`: this machine's trust record cannot be read. Warn; `memory trust
       --in-repo-memory`, which says why.
     - `attached`: a link to the store, the gate open. Ok.
@@ -468,6 +559,8 @@ def _harness_verdict(
       closed, lapsed or never approved. Warn, naming which; `attach`, which withdraws the
       fallback in exactly this state.
     - `fallback-approved`: a real directory beside the fallback, the gate open. Ok.
+    - `fallback-instead-of-a-link`: nothing in place beside the fallback, the gate open. Warn;
+      `attach`, which makes the link the gate allows.
     - `no-links-approved`: nothing in place, the gate open. Warn; `attach`.
     - `lapsed-links-withdrawn`: nothing in place, the gate closed, the approval lapsed. Warn;
       `HARNESS_LAPSED`'s remedy (read what changed, approve, `attach`).
@@ -496,18 +589,18 @@ def _harness_verdict(
     `real-directory-no-fallback` are red without asking it, since nothing it could answer would
     change that.
 
-    **The recorded fallback is read for every shape** (`recorded`, `_recorded_fallback`'s answer,
-    which the caller reads once): `.claude/settings.local.json` is a file a branch can commit, and
-    the harness reads the directory `autoMemoryDirectory` names whatever stands at the harness
-    memory path, a link to the store included. Read only beside a real directory, a committed key
-    naming any directory read green beside a link or beside nothing.
+    **The fallback is read for every shape** (`fallback`, `_settings_fallback`'s answer, which
+    the caller reads once): both settings files are ones a branch can commit, and the harness
+    reads `autoMemoryDirectory` whatever stands at the harness memory path, a link to the store
+    included. Read only beside a real directory, a committed key read green beside a link or
+    beside nothing. Where a settings file cannot be read as settings, `_harness_verdict` turns
+    every green answer of this reading into the `settings-unreadable` warning.
 
     A file or anything else that is no link and no directory reads as nothing in place
     (`tree-gone`, `tree-there-not-resolving`, `no-links-approved`, `lapsed-links-withdrawn`,
     `never-approved`), as it did.
     """
     from stayfixed.attach import ATTACH_STORE
-    from stayfixed.attach.permissions import LOCAL_SETTINGS
     from stayfixed.attach.write import APPROVAL_LAPSED, FALLBACK_KEY, REAPPROVE
     from stayfixed.doctor.api import OK, RED, WARN
     from stayfixed.errors import Refusal
@@ -519,7 +612,7 @@ def _harness_verdict(
     shape = _shape_of(harness)
     if shape == _DANGLING:  # dangling
         return _Verdict(RED, "a dangling link, so the harness reads nothing through it", relink)
-    if shape == _REAL_DIRECTORY and recorded is None:  # real-directory-no-fallback
+    if shape == _REAL_DIRECTORY and not fallback.held:  # real-directory-no-fallback
         return _real_directory(harness)
     words = {
         _LINK: "a link",
@@ -548,8 +641,9 @@ def _harness_verdict(
         _OTHER: "something other than a link",
         _ABSENT: "not in place",
     }[shape]
-    if recorded is not None and recorded != _written_fallback(owner, context.config):
-        return _fallback_elsewhere(plain)  # fallback-elsewhere
+    written = str(_written_fallback(owner, context.config))
+    if fallback.held and fallback.value != written:
+        return _fallback_elsewhere(plain, fallback.where)  # fallback-elsewhere
     reached = harness.resolve() if shape == _LINK else None
     if reached is not None and reached not in targets:  # links-elsewhere
         return _Verdict(
@@ -604,16 +698,23 @@ def _harness_verdict(
     # The file named through the harness registry (`CLAUDE.local_settings`), as `attach`'s own
     # fallback line names it: a harness fact spelled here is one more place a new harness would
     # have to be found.
-    fallback = f"{plain}, and {FALLBACK_KEY} in {LOCAL_SETTINGS} points the harness"
-    if recorded is not None and gate != GATE_OPEN:  # fallback-unapproved
+    points = f"{plain}, and {FALLBACK_KEY} in {fallback.where} points the harness"
+    if fallback.held and gate != GATE_OPEN:  # fallback-unapproved
         why = APPROVAL_LAPSED if gate == GATE_LAPSED else "no approval is recorded for the store"
         return _Verdict(
             WARN,
-            f"{fallback} at the store, although {why} — the harness reads notes nobody approved",
+            f"{points} at the store, although {why} — the harness reads notes nobody approved",
             relink,
         )
     if shape == _REAL_DIRECTORY:  # fallback-approved
-        return _Verdict(OK, f"{fallback} at the store instead", "")
+        return _Verdict(OK, f"{points} at the store instead", "")
+    if fallback.held:  # fallback-instead-of-a-link
+        return _Verdict(
+            WARN,
+            f"{points} at the store instead, where this store's trust record allows the link "
+            "`attach` makes",
+            relink,
+        )
     if gate == GATE_OPEN:  # no-links-approved
         return _Verdict(
             WARN,
@@ -646,23 +747,22 @@ def _written_fallback(owner: Path, config: Config) -> Path:
     return tree.parent.resolve() / tree.name
 
 
-def _fallback_elsewhere(plain: str) -> _Verdict:
-    """The `fallback-elsewhere` row of `_harness_verdict`: `autoMemoryDirectory` names a
-    directory other than the one `attach` writes there, beside whatever stands at the harness
+def _fallback_elsewhere(plain: str, where: str) -> _Verdict:
+    """The `fallback-elsewhere` row of `_read_harness`: `autoMemoryDirectory` in `where` is set
+    to anything but the one value `attach` writes there, beside whatever stands at the harness
     memory path, which the harness then does not read. The value is a committed file's and is
-    never printed; a value naming the store by another spelling is this row too, since only the
-    written one is compared. Read before the ledger, so it is the row's whole detail."""
+    never printed; another spelling of the store is this row too, since only the written one is
+    admitted. Read before the ledger, so it is the row's whole detail."""
     from stayfixed.attach import ATTACH_STORE
-    from stayfixed.attach.permissions import LOCAL_SETTINGS
     from stayfixed.attach.write import FALLBACK_KEY
     from stayfixed.doctor.api import RED
 
     return _Verdict(
         RED,
-        f"the harness memory path is {plain}, and {FALLBACK_KEY} in {LOCAL_SETTINGS} names a "
-        "directory other than the store `attach` writes there, so the harness reads notes this "
+        f"the harness memory path is {plain}, and {FALLBACK_KEY} in {where} is set to something "
+        "other than the store `attach` writes there, so the harness may read notes this "
         "repository is not bound to",
-        f"remove {FALLBACK_KEY} from {LOCAL_SETTINGS}, then run `{ATTACH_STORE}`",
+        f"remove {FALLBACK_KEY} from {where}, then run `{ATTACH_STORE}`",
         whole=True,
     )
 

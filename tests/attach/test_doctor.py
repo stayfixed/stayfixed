@@ -768,15 +768,59 @@ def _trust_record_broken(case: _Machine) -> None:
     recorded.write_text("not json", encoding="utf-8")
 
 
-def _name_in_the_settings(case: _Machine, directory: Path) -> None:
-    # What a branch that commits `.claude/settings.local.json` leaves in every checkout: the key
-    # naming `directory`, whatever stands at the harness memory path.
+def _name_in_the_settings(
+    case: _Machine, directory: Path | str, *, settings: str = LOCAL_SETTINGS
+) -> None:
+    # What a branch that commits `.claude/settings.local.json`, or the shared
+    # `.claude/settings.json`, leaves in every checkout: the key naming `directory`, whatever
+    # stands at the harness memory path.
     for checkout in (case.root, case.side):
-        settings = checkout / LOCAL_SETTINGS
-        settings.parent.mkdir(exist_ok=True)
-        document = json.loads(settings.read_text(encoding="utf-8")) if settings.is_file() else {}
+        path = checkout / settings
+        path.parent.mkdir(exist_ok=True)
+        document = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
         document["autoMemoryDirectory"] = str(directory)
-        settings.write_text(json.dumps(document), encoding="utf-8")
+        path.write_text(json.dumps(document), encoding="utf-8")
+
+
+def _settings_text(case: _Machine, text: str, *, settings: str = LOCAL_SETTINGS) -> None:
+    for checkout in (case.root, case.side):
+        path = checkout / settings
+        path.parent.mkdir(exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+
+
+def _tilde_fallback_beside_a_link(case: _Machine) -> None:
+    # The harness expands a leading `~/`, so this names the chosen directory too.
+    _name_in_the_settings(case, "~/" + "../" * 12 + str(_chosen(case)).lstrip("/"))
+
+
+def _shared_fallback_beside_a_link(case: _Machine) -> None:
+    _name_in_the_settings(case, _chosen(case), settings=_SHARED_SETTINGS)
+
+
+def _shared_fallback_beside_nothing(case: _Machine) -> None:
+    _never_approved(case)
+    _name_in_the_settings(case, _chosen(case), settings=_SHARED_SETTINGS)
+
+
+def _settings_unparseable_beside_a_link(case: _Machine) -> None:
+    # A trailing comma: JSON has none, and the harness's reader may take the key all the same.
+    _settings_text(case, f'{{"autoMemoryDirectory": "{_chosen(case)}",}}')
+
+
+def _shared_settings_not_an_object_beside_nothing(case: _Machine) -> None:
+    _never_approved(case)
+    _settings_text(case, "[]", settings=_SHARED_SETTINGS)
+
+
+def _written_fallback_beside_nothing_approved(case: _Machine) -> None:
+    _no_links(case)
+    _name_in_the_settings(case, (case.root / "docs" / "memory").resolve())
+
+
+def _local_written_over_shared_elsewhere(case: _Machine) -> None:
+    _fallback_everywhere(case)
+    _name_in_the_settings(case, _chosen(case), settings=_SHARED_SETTINGS)
 
 
 def _chosen(case: _Machine) -> Path:
@@ -842,16 +886,27 @@ _RED_REAL_DIRECTORY = (
 )
 
 
-def _red_fallback_elsewhere(shape: str) -> tuple[str, str, str]:
-    """The row for an `autoMemoryDirectory` naming anything but the store `attach` writes there,
-    beside whatever `shape` the harness memory path has."""
+_SHARED_SETTINGS = ".claude/settings.json"
+
+
+def _red_fallback_elsewhere(shape: str, settings: str = LOCAL_SETTINGS) -> tuple[str, str, str]:
+    """The row for an `autoMemoryDirectory` set to anything but the store `attach` writes there,
+    in `settings`, beside whatever `shape` the harness memory path has."""
     return (
         "red",
-        f"the harness memory path is {shape}, and autoMemoryDirectory in "
-        ".claude/settings.local.json names a directory other than the store `attach` writes "
-        "there, so the harness reads notes this repository is not bound to",
-        "remove autoMemoryDirectory from .claude/settings.local.json, then run `stayfixed "
-        "attach --store <overlay>/projects/<project>/memory`",
+        f"the harness memory path is {shape}, and autoMemoryDirectory in {settings} is set to "
+        "something other than the store `attach` writes there, so the harness may read notes "
+        "this repository is not bound to",
+        f"remove autoMemoryDirectory from {settings}, then run `stayfixed attach --store "
+        "<overlay>/projects/<project>/memory`",
+    )
+
+
+def _unknown(shape: str, settings: str) -> str:
+    """A shape that would read ok, beside a settings file that cannot be read as settings."""
+    return (
+        f"{shape}, but {settings} could not be read as settings, so whether it points the "
+        "harness elsewhere is unknown"
     )
 
 
@@ -981,6 +1036,52 @@ ONE_MACHINE_STATE: dict[str, tuple[Callable[[_Machine], None], tuple[str, str, s
             _LINK_REMEDY,
         ),
     ),
+    "tilde-fallback-beside-a-link": (
+        _tilde_fallback_beside_a_link,
+        _red_fallback_elsewhere("a link"),
+    ),
+    "shared-fallback-beside-a-link": (
+        _shared_fallback_beside_a_link,
+        _red_fallback_elsewhere("a link", _SHARED_SETTINGS),
+    ),
+    "shared-fallback-beside-nothing": (
+        _shared_fallback_beside_nothing,
+        _red_fallback_elsewhere("not in place", _SHARED_SETTINGS),
+    ),
+    "settings-unparseable-beside-a-link": (
+        _settings_unparseable_beside_a_link,
+        (
+            "warn",
+            _unknown("a link to the store", LOCAL_SETTINGS),
+            f"make {LOCAL_SETTINGS} one JSON object, as the harness reads it, then run `stayfixed "
+            "doctor` again",
+        ),
+    ),
+    "shared-settings-not-an-object-beside-nothing": (
+        _shared_settings_not_an_object_beside_nothing,
+        (
+            "warn",
+            _unknown(
+                "not in place, which is what this store's trust record asks for", _SHARED_SETTINGS
+            ),
+            f"make {_SHARED_SETTINGS} one JSON object, as the harness reads it, then run "
+            "`stayfixed doctor` again",
+        ),
+    ),
+    "written-fallback-beside-nothing-approved": (
+        _written_fallback_beside_nothing_approved,
+        (
+            "warn",
+            "not in place, and autoMemoryDirectory in .claude/settings.local.json points the "
+            "harness at the store instead, where this store's trust record allows the link "
+            "`attach` makes",
+            _LINK_REMEDY,
+        ),
+    ),
+    "local-written-over-shared-elsewhere": (
+        _local_written_over_shared_elsewhere,
+        ("ok", f"{_FALLBACK} instead", ""),
+    ),
     "link-trust-record-unreadable": (
         _trust_record_broken,
         (
@@ -1047,7 +1148,17 @@ def test_one_machine_state_reads_one_status_from_every_checkout(
     # naming another directory" -> `fallback-elsewhere-tree-gone`. A committed
     # `autoMemoryDirectory` beside a link to the store, or beside nothing, read ok, since the key
     # was read only beside a real directory, though the harness reads the directory it names
-    # whatever stands at the harness memory path.
+    # whatever stands at the harness memory path. And the key was looked for only as an absolute
+    # path in `.claude/settings.local.json`: a `~/…` value, a key in the shared
+    # `.claude/settings.json`, and a file the reader could not parse each read as no key, and
+    # green. Mutations (oracle): `mutations/`'s "doctor reads the settings fallback from the local
+    # settings file alone" -> `shared-fallback-beside-a-link`, `shared-fallback-beside-nothing`;
+    # "doctor reads a settings fallback that is no absolute path as no key" ->
+    # `tilde-fallback-beside-a-link`; "doctor reads a settings file it cannot parse as one with no
+    # fallback" -> `settings-unparseable-beside-a-link`; "doctor reads green beside a settings file
+    # it could not read" -> it and `shared-settings-not-an-object-beside-nothing`; "doctor says the
+    # harness sees no memory beside the fallback attach writes" ->
+    # `written-fallback-beside-nothing-approved`.
     root, side, machine, home = _worktree_attached(tmp_path)
     case = _Machine(tmp_path, root, side, machine, home, monkeypatch)
     change, (status, shape, remedy) = ONE_MACHINE_STATE[state]
