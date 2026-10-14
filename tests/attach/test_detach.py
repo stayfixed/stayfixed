@@ -34,7 +34,12 @@ from tests.attach.test_links import _attach, _bound, _config, _trusted
 from tests.attach.test_write import SETTINGS
 from tests.gitfixture import git
 from tests.parserlimits import LONG_NUMBER, NESTED, PAST_ENCODING, overflowing_indent
-from tests.pathfaults import ROOT_SEARCHES_EVERYTHING, unsearchable
+from tests.pathfaults import (
+    LOOPS_RAISE_ONLY_BEFORE_3_13,
+    ROOT_SEARCHES_EVERYTHING,
+    symlink_loop_at,
+    unsearchable,
+)
 from tests.runners import LsRemote, git_that_cannot_run
 from tests.snapshot import assert_snapshot_changed, assert_snapshot_unchanged, snapshot
 
@@ -404,6 +409,52 @@ def test_a_main_checkout_tree_that_is_a_symlink_loop_refuses_before_anything_is_
     assert "the main checkout's paths.memory" in str(refused.value)
     assert "symlink loop" in str(refused.value)
     assert _entries(root, side, home) == before
+
+
+@pytest.mark.parametrize(
+    "loop", [pytest.param("real", marks=LOOPS_RAISE_ONLY_BEFORE_3_13), "stood-in"]
+)
+@pytest.mark.parametrize("checkout", ["lone-main", "worktree"])
+def test_a_checkouts_own_paths_memory_that_is_a_symlink_loop_refuses_before_anything_is_withdrawn(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, checkout: str, loop: str
+) -> None:
+    # The checkout `detach` runs in, with its own `paths.memory` a symlink loop: a lone main
+    # checkout, and a linked worktree detached while the main checkout stays attached. The walk to
+    # every path the withdrawal removes resolved that loop before anything asked where a harness
+    # link may point, and up to Python 3.12 `.resolve()` raises `RuntimeError` there: `internal
+    # error`, where the refusal that names the loop was documented. Nothing was removed, but the
+    # run ended in a traceback. `stood-in` makes `.resolve()` of the loop raise as 3.11 does, so
+    # every interpreter meets it. Mutation (oracle): `mutations/`'s "detach walks the trees it
+    # withdraws before asking where a harness link may point" -> RuntimeError.
+    if checkout == "lone-main":
+        root, store, machine = _bound(tmp_path)
+        _grant(store.parents[2])
+        home = tmp_path / "home"
+        _attach(root, store, machine, home)
+        _trusted(root, machine)
+        _attach(root, store, machine, home)
+        checkouts: tuple[Path, ...] = (root,)
+        run_in, whose = root, "the main checkout's"
+    else:
+        root, side, _, machine, home = _both_attached(tmp_path)
+        checkouts = (root, side)
+        run_in, whose = side, "the linked worktree's"
+    shutil.rmtree(run_in / DEFAULT_MEMORY)
+    if loop == "real":
+        (run_in / DEFAULT_MEMORY).symlink_to(PurePosixPath(DEFAULT_MEMORY).name)
+    else:
+        symlink_loop_at(monkeypatch, run_in / DEFAULT_MEMORY)
+    # Non-vacuous: there is a rule copy and a harness link to withdraw.
+    assert any((run_in / ".codex" / "rules").iterdir())
+    assert os.path.lexists(harness_memory_path(run_in, home))
+    before = _entries(*checkouts, home)
+    with pytest.raises(Refusal) as refused:
+        _detach(run_in, machine, home)
+    assert str(refused.value) == (
+        f"where a harness memory link may point cannot be asked of {whose} paths.memory: "
+        f"{DEFAULT_MEMORY!r} is a symlink loop"
+    )
+    assert _entries(*checkouts, home) == before
 
 
 def test_detach_withdraws_the_settings_fallback_it_recorded(tmp_path: Path) -> None:

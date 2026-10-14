@@ -2147,13 +2147,16 @@ def detach(root: Path, *, machine: Path | None, home: Path | None) -> Detached:
     hidden = None if kept else exclude.withdrawn_block(root)
     harnessed, trees = _reach(root, checkouts, kept=kept)
     settings = _planned_settings(root, recorded)
-    _refuse_unwithdrawable(root, recorded, trees, config, settings)
     # Where each checkout's harness link may point and be ours, asked here because it walks the
     # owning checkout's `paths.memory` as well as the checkout's own, and while another ledger
     # stands `_refuse_unwithdrawable` walks no tree but `--root`'s. Asked from inside the
     # withdrawal, a main checkout whose `paths.memory` came to be reached through a symlink
-    # refused after the rule copies were gone.
+    # refused after the rule copies were gone. And asked before `_refuse_unwithdrawable`, which
+    # walks only checkouts asked here: it resolves each tree's `paths.memory` with no answer for
+    # a symlink loop, where `.resolve()` raises `RuntimeError` up to Python 3.12, and this
+    # question's one refusal names the loop.
     targets = {tree: harness_targets(tree, checkouts[0], config) for tree in harnessed}
+    _refuse_unwithdrawable(root, recorded, trees, config, settings)
     allow_removed = _withdraw_settings(root, settings)
     rules_removed: list[str] = []
     for rule in recorded.rules:

@@ -349,13 +349,15 @@ reddens = [
 name = "detach asks where a harness link may point only once it has begun withdrawing"
 file = "src/stayfixed/attach/write.py"
 before = """    targets = {tree: harness_targets(tree, checkouts[0], config) for tree in harnessed}
+    _refuse_unwithdrawable(root, recorded, trees, config, settings)
     allow_removed = _withdraw_settings(root, settings)
     rules_removed: list[str] = []
     for rule in recorded.rules:
         if fsops.is_file(root / rule):
             fsops.remove_within(root, rule)
             rules_removed.append(rule)"""
-after = """    allow_removed = _withdraw_settings(root, settings)
+after = """    _refuse_unwithdrawable(root, recorded, trees, config, settings)
+    allow_removed = _withdraw_settings(root, settings)
     rules_removed: list[str] = []
     for rule in recorded.rules:
         if fsops.is_file(root / rule):
@@ -364,6 +366,24 @@ after = """    allow_removed = _withdraw_settings(root, settings)
     targets = {tree: harness_targets(tree, checkouts[0], config) for tree in harnessed}"""
 reddens = [
   "tests/attach/test_detach.py::test_a_main_checkout_tree_reached_through_a_symlink_refuses_before_anything_is_withdrawn[worktree]",
+]
+
+# The walk to every path the withdrawal removes resolves each tree's `paths.memory`, and up to
+# Python 3.12 `.resolve()` of a symlink loop raises `RuntimeError`, which that walk does not
+# answer: asked first, a checkout's own looping `paths.memory` ended `detach` in an internal error
+# where asking where a harness link may point refuses, naming the loop.
+[[mutation]]
+name = "detach walks the trees it withdraws before asking where a harness link may point"
+file = "src/stayfixed/attach/write.py"
+before = """    targets = {tree: harness_targets(tree, checkouts[0], config) for tree in harnessed}
+    _refuse_unwithdrawable(root, recorded, trees, config, settings)
+"""
+after = """    _refuse_unwithdrawable(root, recorded, trees, config, settings)
+    targets = {tree: harness_targets(tree, checkouts[0], config) for tree in harnessed}
+"""
+reddens = [
+  "tests/attach/test_detach.py::test_a_checkouts_own_paths_memory_that_is_a_symlink_loop_refuses_before_anything_is_withdrawn[lone-main-stood-in]",
+  "tests/attach/test_detach.py::test_a_checkouts_own_paths_memory_that_is_a_symlink_loop_refuses_before_anything_is_withdrawn[worktree-stood-in]",
 ]
 
 # `permissions.check` reduces `already_present` to a count because that list "comes out of the
@@ -419,8 +439,8 @@ file = "src/stayfixed/attach/write.py"
 # The block this moves runs from the anchor loop through the manifest's answer to the region read.
 # What it proves: `git` is asked before the first withdrawal, and a `git` that cannot run must not
 # strand a half-detached repository.
-before = "    checkouts = _checkouts(root)\n    for tree in checkouts:\n        harness_anchor(tree, home)\n    # The other home a harness may read a link under, asked here too, and best-effort: a home its\n    # anchor refuses is passed over with a note rather than refused, since `detach` is the one\n    # command that takes back what `attach` made under either.\n    other = _other_harness_home() if home is None else None\n    elsewhere: Path | None = None\n    notes: tuple[str, ...] = ()\n    if other is not None:\n        elsewhere, where = other\n        try:\n            for tree in checkouts:\n                harness_anchor(tree, elsewhere)\n        except Refusal:\n            elsewhere, notes = None, (_LEFT_UNDER.format(where=where),)\n    ignore_remainder = None if _footprint_owns_region(root) else _ignore_region_remainder(root)\n    # The `info/exclude` block is found above the first withdrawal for the same reason: `git`\n    # names the file and a region opened twice refuses, and both are knowable now. It is shared\n    # by every checkout while the ledger, the settings file and the `.codex/rules/` copies are\n    # each checkout's own, so it stays while another checkout still holds a ledger: taking it\n    # would show that checkout's settings file and rule copies in its `git status`.\n    kept = _another_attached(root, checkouts)\n    hidden = None if kept else exclude.withdrawn_block(root)\n    harnessed, trees = _reach(root, checkouts, kept=kept)\n    settings = _planned_settings(root, recorded)\n    _refuse_unwithdrawable(root, recorded, trees, config, settings)\n    # Where each checkout's harness link may point and be ours, asked here because it walks the\n    # owning checkout's `paths.memory` as well as the checkout's own, and while another ledger\n    # stands `_refuse_unwithdrawable` walks no tree but `--root`'s. Asked from inside the\n    # withdrawal, a main checkout whose `paths.memory` came to be reached through a symlink\n    # refused after the rule copies were gone.\n    targets = {tree: harness_targets(tree, checkouts[0], config) for tree in harnessed}\n    allow_removed = _withdraw_settings(root, settings)"
-after = "    ignore_remainder = None if _footprint_owns_region(root) else _ignore_region_remainder(root)\n    settings = _planned_settings(root, recorded)\n    allow_removed = _withdraw_settings(root, settings)\n    checkouts = _checkouts(root)\n    for tree in checkouts:\n        harness_anchor(tree, home)\n    # The other home a harness may read a link under, asked here too, and best-effort: a home its\n    # anchor refuses is passed over with a note rather than refused, since `detach` is the one\n    # command that takes back what `attach` made under either.\n    other = _other_harness_home() if home is None else None\n    elsewhere: Path | None = None\n    notes: tuple[str, ...] = ()\n    if other is not None:\n        elsewhere, where = other\n        try:\n            for tree in checkouts:\n                harness_anchor(tree, elsewhere)\n        except Refusal:\n            elsewhere, notes = None, (_LEFT_UNDER.format(where=where),)\n    kept = _another_attached(root, checkouts)\n    hidden = None if kept else exclude.withdrawn_block(root)\n    harnessed, trees = _reach(root, checkouts, kept=kept)\n    _refuse_unwithdrawable(root, recorded, trees, config, settings)\n    # Where each checkout's harness link may point and be ours, asked here because it walks the\n    # owning checkout's `paths.memory` as well as the checkout's own, and while another ledger\n    # stands `_refuse_unwithdrawable` walks no tree but `--root`'s. Asked from inside the\n    # withdrawal, a main checkout whose `paths.memory` came to be reached through a symlink\n    # refused after the rule copies were gone.\n    targets = {tree: harness_targets(tree, checkouts[0], config) for tree in harnessed}"
+before = "    checkouts = _checkouts(root)\n    for tree in checkouts:\n        harness_anchor(tree, home)\n    # The other home a harness may read a link under, asked here too, and best-effort: a home its\n    # anchor refuses is passed over with a note rather than refused, since `detach` is the one\n    # command that takes back what `attach` made under either.\n    other = _other_harness_home() if home is None else None\n    elsewhere: Path | None = None\n    notes: tuple[str, ...] = ()\n    if other is not None:\n        elsewhere, where = other\n        try:\n            for tree in checkouts:\n                harness_anchor(tree, elsewhere)\n        except Refusal:\n            elsewhere, notes = None, (_LEFT_UNDER.format(where=where),)\n    ignore_remainder = None if _footprint_owns_region(root) else _ignore_region_remainder(root)\n    # The `info/exclude` block is found above the first withdrawal for the same reason: `git`\n    # names the file and a region opened twice refuses, and both are knowable now. It is shared\n    # by every checkout while the ledger, the settings file and the `.codex/rules/` copies are\n    # each checkout's own, so it stays while another checkout still holds a ledger: taking it\n    # would show that checkout's settings file and rule copies in its `git status`.\n    kept = _another_attached(root, checkouts)\n    hidden = None if kept else exclude.withdrawn_block(root)\n    harnessed, trees = _reach(root, checkouts, kept=kept)\n    settings = _planned_settings(root, recorded)\n    # Where each checkout's harness link may point and be ours, asked here because it walks the\n    # owning checkout's `paths.memory` as well as the checkout's own, and while another ledger\n    # stands `_refuse_unwithdrawable` walks no tree but `--root`'s. Asked from inside the\n    # withdrawal, a main checkout whose `paths.memory` came to be reached through a symlink\n    # refused after the rule copies were gone. And asked before `_refuse_unwithdrawable`, which\n    # walks only checkouts asked here: it resolves each tree's `paths.memory` with no answer for\n    # a symlink loop, where `.resolve()` raises `RuntimeError` up to Python 3.12, and this\n    # question's one refusal names the loop.\n    targets = {tree: harness_targets(tree, checkouts[0], config) for tree in harnessed}\n    _refuse_unwithdrawable(root, recorded, trees, config, settings)\n    allow_removed = _withdraw_settings(root, settings)"
+after = "    ignore_remainder = None if _footprint_owns_region(root) else _ignore_region_remainder(root)\n    settings = _planned_settings(root, recorded)\n    allow_removed = _withdraw_settings(root, settings)\n    checkouts = _checkouts(root)\n    for tree in checkouts:\n        harness_anchor(tree, home)\n    # The other home a harness may read a link under, asked here too, and best-effort: a home its\n    # anchor refuses is passed over with a note rather than refused, since `detach` is the one\n    # command that takes back what `attach` made under either.\n    other = _other_harness_home() if home is None else None\n    elsewhere: Path | None = None\n    notes: tuple[str, ...] = ()\n    if other is not None:\n        elsewhere, where = other\n        try:\n            for tree in checkouts:\n                harness_anchor(tree, elsewhere)\n        except Refusal:\n            elsewhere, notes = None, (_LEFT_UNDER.format(where=where),)\n    kept = _another_attached(root, checkouts)\n    hidden = None if kept else exclude.withdrawn_block(root)\n    harnessed, trees = _reach(root, checkouts, kept=kept)\n    # Where each checkout's harness link may point and be ours, asked here because it walks the\n    # owning checkout's `paths.memory` as well as the checkout's own, and while another ledger\n    # stands `_refuse_unwithdrawable` walks no tree but `--root`'s. Asked from inside the\n    # withdrawal, a main checkout whose `paths.memory` came to be reached through a symlink\n    # refused after the rule copies were gone. And asked before `_refuse_unwithdrawable`, which\n    # walks only checkouts asked here: it resolves each tree's `paths.memory` with no answer for\n    # a symlink loop, where `.resolve()` raises `RuntimeError` up to Python 3.12, and this\n    # question's one refusal names the loop.\n    targets = {tree: harness_targets(tree, checkouts[0], config) for tree in harnessed}\n    _refuse_unwithdrawable(root, recorded, trees, config, settings)"
 reddens = [
   "tests/attach/test_detach.py::test_a_git_that_cannot_run_is_answered_before_anything_is_withdrawn",
 ]
@@ -1297,23 +1317,29 @@ file = "src/stayfixed/attach/write.py"
 before = """    hidden = None if kept else exclude.withdrawn_block(root)
     harnessed, trees = _reach(root, checkouts, kept=kept)
     settings = _planned_settings(root, recorded)
-    _refuse_unwithdrawable(root, recorded, trees, config, settings)
     # Where each checkout's harness link may point and be ours, asked here because it walks the
     # owning checkout's `paths.memory` as well as the checkout's own, and while another ledger
     # stands `_refuse_unwithdrawable` walks no tree but `--root`'s. Asked from inside the
     # withdrawal, a main checkout whose `paths.memory` came to be reached through a symlink
-    # refused after the rule copies were gone.
+    # refused after the rule copies were gone. And asked before `_refuse_unwithdrawable`, which
+    # walks only checkouts asked here: it resolves each tree's `paths.memory` with no answer for
+    # a symlink loop, where `.resolve()` raises `RuntimeError` up to Python 3.12, and this
+    # question's one refusal names the loop.
     targets = {tree: harness_targets(tree, checkouts[0], config) for tree in harnessed}
+    _refuse_unwithdrawable(root, recorded, trees, config, settings)
     allow_removed = _withdraw_settings(root, settings)"""
 after = """    harnessed, trees = _reach(root, checkouts, kept=kept)
     settings = _planned_settings(root, recorded)
-    _refuse_unwithdrawable(root, recorded, trees, config, settings)
     # Where each checkout's harness link may point and be ours, asked here because it walks the
     # owning checkout's `paths.memory` as well as the checkout's own, and while another ledger
     # stands `_refuse_unwithdrawable` walks no tree but `--root`'s. Asked from inside the
     # withdrawal, a main checkout whose `paths.memory` came to be reached through a symlink
-    # refused after the rule copies were gone.
+    # refused after the rule copies were gone. And asked before `_refuse_unwithdrawable`, which
+    # walks only checkouts asked here: it resolves each tree's `paths.memory` with no answer for
+    # a symlink loop, where `.resolve()` raises `RuntimeError` up to Python 3.12, and this
+    # question's one refusal names the loop.
     targets = {tree: harness_targets(tree, checkouts[0], config) for tree in harnessed}
+    _refuse_unwithdrawable(root, recorded, trees, config, settings)
     allow_removed = _withdraw_settings(root, settings)
     hidden = None if kept else exclude.withdrawn_block(root)"""
 reddens = [
