@@ -53,6 +53,7 @@ from tests.floor import is_developers
 from tests.gitfixture import git as _git
 from tests.ownerhome import as_owner_home
 from tests.parserlimits import LONG_NUMBER, NESTED
+from tests.pathfaults import LOOPS_RAISE_ONLY_BEFORE_3_13, resolving_raises
 from tests.runners import Recorder, git_that_cannot_run
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
@@ -817,20 +818,11 @@ def _targets_unaskable(case: _Machine) -> None:
     # raise `RuntimeError`; 3.13 reads it as the path it names, and a loop there would also leave
     # every link dangling. So `.resolve()` of that one path is made to raise as 3.11 does, which
     # `tests/memory/test_worktree.py` measures with a real loop where the interpreter allows.
-    from stayfixed.config.paths import contained
-    from stayfixed.memory import worktree
-
-    main = case.root.resolve()
-
-    class _Loop:
-        def resolve(self) -> Path:
-            raise RuntimeError("Symlink loop from '/somewhere'")
-
-    def resolving_raises(root: Path, relative: str, **kwargs: object) -> object:
-        found = contained(root, relative, **kwargs)  # type: ignore[arg-type]
-        return _Loop() if root.resolve() == main and relative == DEFAULT_MEMORY else found
-
-    case.monkeypatch.setattr(worktree, "contained", resolving_raises)
+    resolving_raises(
+        case.monkeypatch,
+        case.root.resolve() / DEFAULT_MEMORY,
+        RuntimeError("Symlink loop from '/somewhere'"),
+    )
 
 
 @dataclass(frozen=True)
@@ -1023,9 +1015,7 @@ def test_one_machine_state_reads_one_status_from_every_checkout(
     assert str(tmp_path) not in row.detail
 
 
-@pytest.mark.skipif(
-    sys.version_info >= (3, 13), reason="from 3.13 resolve() reads a symlink loop as its own path"
-)
+@LOOPS_RAISE_ONLY_BEFORE_3_13
 def test_a_fallback_beside_a_main_checkout_tree_that_is_a_symlink_loop_is_a_named_warning(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -745,10 +745,10 @@ def test_an_index_link_that_is_a_symlink_loop_is_refused_and_sources_nothing(
     # permitted place, so it is refused like any other: nothing to read, and no write through it.
     # Mutation (oracle): `mutations/`'s "the index link rule lets a symlink loop out" ->
     # RuntimeError.
-    from tests.memory.test_worktree import _a_loop_at
+    from tests.pathfaults import symlink_loop_at
 
     store, config, _machine_file = an_overlay_store(tmp_path)
-    _a_loop_at(monkeypatch, store.path / INDEX_NAME)
+    symlink_loop_at(monkeypatch, store.path / INDEX_NAME)
     assert index_source(store, config) is None
     with pytest.raises(Refusal):
         write_index(store, config, "text")

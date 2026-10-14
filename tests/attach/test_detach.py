@@ -7,11 +7,9 @@ the owner wrote by hand — which is worse than removing none.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import shutil
-import sys
 from collections.abc import Callable
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -42,7 +40,12 @@ from tests.pathfaults import (
     unsearchable,
 )
 from tests.runners import LsRemote, git_that_cannot_run
-from tests.snapshot import assert_snapshot_changed, assert_snapshot_unchanged, snapshot
+from tests.snapshot import (
+    assert_snapshot_changed,
+    assert_snapshot_unchanged,
+    snapshot,
+    tree_entries,
+)
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
@@ -303,24 +306,6 @@ def test_detach_withdraws_a_worktree_harness_link_the_session_start_relink_made(
     assert harness_memory_path(root, home).exists()
 
 
-def _entries(*roots: Path) -> dict[str, str]:
-    """Every entry under each root, `.git` aside: a file by its bytes' digest, a link by its
-    target, a directory by its name, so a removed directory or a retargeted link shows too."""
-    found: dict[str, str] = {}
-    for root in roots:
-        for dirpath, dirnames, filenames in os.walk(root):
-            dirnames[:] = [name for name in dirnames if name != ".git"]
-            for name in (*dirnames, *filenames):
-                path = Path(dirpath) / name
-                if path.is_symlink():
-                    found[str(path)] = f"-> {os.readlink(path)}"
-                elif path.is_dir():
-                    found[str(path)] = "dir"
-                else:
-                    found[str(path)] = hashlib.sha256(path.read_bytes()).hexdigest()
-    return found
-
-
 @pytest.mark.parametrize("run_in", ["main", "worktree", "lone"])
 def test_a_second_detach_exits_one_and_writes_nothing(tmp_path: Path, run_in: str) -> None:
     # Run twice in one checkout: the first takes that checkout's ledger, so the second has nothing
@@ -342,7 +327,7 @@ def test_a_second_detach_exits_one_and_writes_nothing(tmp_path: Path, run_in: st
         checkouts = (root, side)
         target = root if run_in == "main" else side
     _detach(target, machine, home)
-    before = _entries(*checkouts, home)
+    before = tree_entries(*checkouts, home)
     # Non-vacuous: the walk sees what the first left — the other checkout's tree and harness
     # link, and its own tree's directory where it was the main checkout's.
     if run_in != "lone":
@@ -355,7 +340,7 @@ def test_a_second_detach_exits_one_and_writes_nothing(tmp_path: Path, run_in: st
     with pytest.raises(Failure) as failed:
         _detach(target, machine, home)
     assert LEDGER in str(failed.value)
-    assert _entries(*checkouts, home) == before
+    assert tree_entries(*checkouts, home) == before
 
 
 @pytest.mark.parametrize("detached", ["worktree", "main"])
@@ -381,19 +366,17 @@ def test_a_main_checkout_tree_reached_through_a_symlink_refuses_before_anything_
     # Non-vacuous: there is a rule copy to withdraw before the harness links are reached.
     assert (run_in / ".codex" / "rules").is_dir()
     assert any((run_in / ".codex" / "rules").iterdir())
-    before = _entries(root, side, home)
+    before = tree_entries(root, side, home)
     with pytest.raises(Refusal) as refused:
         _detach(run_in, machine, home)
     assert "symlink" in str(refused.value)
     if detached == "worktree":
         assert "the main checkout's paths.memory" in str(refused.value)
     assert str(tmp_path) not in str(refused.value)
-    assert _entries(root, side, home) == before
+    assert tree_entries(root, side, home) == before
 
 
-@pytest.mark.skipif(
-    sys.version_info >= (3, 13), reason="from 3.13 resolve() reads a symlink loop as its own path"
-)
+@LOOPS_RAISE_ONLY_BEFORE_3_13
 def test_a_main_checkout_tree_that_is_a_symlink_loop_refuses_before_anything_is_withdrawn(
     tmp_path: Path,
 ) -> None:
@@ -404,12 +387,12 @@ def test_a_main_checkout_tree_that_is_a_symlink_loop_refuses_before_anything_is_
     root, side, _, machine, home = _both_attached(tmp_path)
     shutil.rmtree(root / DEFAULT_MEMORY)
     (root / DEFAULT_MEMORY).symlink_to(PurePosixPath(DEFAULT_MEMORY).name)
-    before = _entries(root, side, home)
+    before = tree_entries(root, side, home)
     with pytest.raises(Refusal) as refused:
         _detach(side, machine, home)
     assert "the main checkout's paths.memory" in str(refused.value)
     assert "symlink loop" in str(refused.value)
-    assert _entries(root, side, home) == before
+    assert tree_entries(root, side, home) == before
 
 
 @pytest.mark.parametrize(
@@ -448,14 +431,14 @@ def test_a_checkouts_own_paths_memory_that_is_a_symlink_loop_refuses_before_anyt
     # Non-vacuous: there is a rule copy and a harness link to withdraw.
     assert any((run_in / ".codex" / "rules").iterdir())
     assert os.path.lexists(harness_memory_path(run_in, home))
-    before = _entries(*checkouts, home)
+    before = tree_entries(*checkouts, home)
     with pytest.raises(Refusal) as refused:
         _detach(run_in, machine, home)
     assert str(refused.value) == (
         f"where a harness memory link may point cannot be asked of {whose} paths.memory: "
         f"{DEFAULT_MEMORY!r} is a symlink loop"
     )
-    assert _entries(*checkouts, home) == before
+    assert tree_entries(*checkouts, home) == before
 
 
 def test_detach_withdraws_the_settings_fallback_it_recorded(tmp_path: Path) -> None:
@@ -1544,7 +1527,7 @@ def test_an_exclude_file_detach_cannot_write_is_refused_before_anything_is_withd
     assert "stayfixed:attach:begin" in _exclude_file(root).read_text(encoding="utf-8")
     assert (root / SETTINGS).is_file()
     assert any((root / ".codex" / "rules").iterdir())
-    before = _entries(root, home)
+    before = tree_entries(root, home)
     info.chmod(0o555)
     try:
         with pytest.raises(Refusal) as refused:
@@ -1555,7 +1538,7 @@ def test_an_exclude_file_detach_cannot_write_is_refused_before_anything_is_withd
         f"{quoted(str(_exclude_file(root)))} cannot be written, because this user cannot write "
         "the directory that holds it, so nothing was written"
     )
-    assert _entries(root, home) == before
+    assert tree_entries(root, home) == before
 
 
 def test_detach_writes_nothing_through_an_exclude_file_that_became_a_symlink(

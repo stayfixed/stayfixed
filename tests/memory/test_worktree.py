@@ -9,7 +9,7 @@ from pathlib import Path, PurePosixPath
 import pytest
 
 from stayfixed.config.loader import CONFIG_FILE, load
-from stayfixed.config.paths import PathEscape, contained
+from stayfixed.config.paths import PathEscape
 from stayfixed.config.schema import Config
 from stayfixed.errors import Refusal
 from stayfixed.memory import worktree
@@ -29,7 +29,13 @@ from stayfixed.memory.worktree import (
 from stayfixed.presets import load_preset
 from tests.gitfixture import git
 from tests.ownerhome import as_owner_home
-from tests.pathfaults import ROOT_SEARCHES_EVERYTHING, unsearchable
+from tests.pathfaults import (
+    LOOPS_RAISE_ONLY_BEFORE_3_13,
+    ROOT_SEARCHES_EVERYTHING,
+    resolving_raises,
+    symlink_loop_at,
+    unsearchable,
+)
 from tests.snapshot import assert_snapshot_unchanged, snapshot
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
@@ -1452,18 +1458,6 @@ def test_a_database_home_that_is_itself_a_symlink_still_gets_the_harness_link(
     assert harness_memory_path(tree, real).resolve() == store.path.resolve()
 
 
-class _ResolveRaises:
-    """What `contained` hands back where `.resolve()` then fails: a symlink loop up to Python 3.12
-    (`RuntimeError`), or a fault the system names (`OSError`). Python 3.13 reads a loop as the path
-    it names, so on the interpreter the oracle runs only this stand-in reaches that arm."""
-
-    def __init__(self, fault: BaseException) -> None:
-        self.fault = fault
-
-    def resolve(self) -> Path:
-        raise self.fault
-
-
 # `harness_targets`' reason for each fault, after the checkout it names. The configuration is the
 # preset's, so `paths.memory` is `DEFAULT_MEMORY`, two components deep.
 _UNASKABLE_TARGETS = {
@@ -1497,17 +1491,15 @@ def test_every_fault_of_asking_where_a_harness_link_may_point_is_one_refusal_nam
         shutil.move(faulty / parent, moved)
         (faulty / parent).symlink_to(moved, target_is_directory=True)
     else:
-        raised: BaseException = (
+        # Python 3.13 reads a loop as the path it names, so on the interpreter the oracle runs only
+        # this stand-in reaches the `RuntimeError` arm.
+        resolving_raises(
+            monkeypatch,
+            faulty / DEFAULT_MEMORY,
             RuntimeError("Symlink loop from '/somewhere'")
             if fault == "loop"
-            else PermissionError(13, "Permission denied", "/somewhere")
+            else PermissionError(13, "Permission denied", "/somewhere"),
         )
-
-        def resolving_raises(root: Path, relative: str, **kwargs: object) -> object:
-            found = contained(root, relative, **kwargs)  # type: ignore[arg-type]
-            return _ResolveRaises(raised) if root == faulty else found
-
-        monkeypatch.setattr(worktree, "contained", resolving_raises)
     with pytest.raises(PathEscape) as refused:
         worktree.harness_targets(side, owner, config)
     assert type(refused.value) is PathEscape
@@ -1521,9 +1513,7 @@ def test_every_fault_of_asking_where_a_harness_link_may_point_is_one_refusal_nam
     assert str(tmp_path) not in str(refused.value)
 
 
-@pytest.mark.skipif(
-    sys.version_info >= (3, 13), reason="from 3.13 resolve() reads a symlink loop as its own path"
-)
+@LOOPS_RAISE_ONLY_BEFORE_3_13
 def test_a_paths_memory_that_is_a_symlink_loop_is_the_same_refusal(tmp_path: Path) -> None:
     # The stand-in above, measured: on 3.11 and 3.12 a loop raises `RuntimeError` out of
     # `.resolve()`, which no caller caught.
@@ -1570,20 +1560,6 @@ def _a_config(tmp_path: Path) -> Config:
     return config
 
 
-def _a_loop_at(monkeypatch: pytest.MonkeyPatch, link: Path) -> None:
-    """`link` made a symlink loop, and `.resolve()` of it made to raise as Python 3.11 and 3.12
-    do (3.13 answers the path it names), so every interpreter meets what 3.11 meets."""
-    link.symlink_to(link.name)
-    real = Path.resolve
-
-    def resolving(self: Path, strict: bool = False) -> Path:
-        if self == link:
-            raise RuntimeError(f"Symlink loop from {str(self)!r}")
-        return real(self, strict)
-
-    monkeypatch.setattr(Path, "resolve", resolving)
-
-
 def test_a_withdrawal_leaves_a_group_link_that_is_a_symlink_loop(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1598,7 +1574,7 @@ def test_a_withdrawal_leaves_a_group_link_that_is_a_symlink_loop(
     attach_main(root, own, config, machine=machine, home=a_home(tmp_path))
     base = root / DEFAULT_MEMORY
     (base / "project-stable").unlink()
-    _a_loop_at(monkeypatch, base / "project-stable")
+    symlink_loop_at(monkeypatch, base / "project-stable")
     links = detach_main(
         root, config, machine=machine, home=a_home(tmp_path), targets=_own(root, config)
     )

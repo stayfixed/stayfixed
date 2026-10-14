@@ -1,4 +1,4 @@
-"""The tree-snapshot helpers five test modules share.
+"""The tree-snapshot helpers the test modules share.
 
 Here rather than in `tests/test_install_path.py`, because an `attach` test module that imports an
 installer-focused module's private names is coupled to a module it does not test. The `git` this
@@ -8,6 +8,7 @@ back are two concerns, and only one of them was duplicated twenty-three times.
 
 from __future__ import annotations
 
+import hashlib
 import os
 from pathlib import Path
 
@@ -80,3 +81,23 @@ def assert_snapshot_changed(root: Path, before: dict[str, bytes]) -> dict[str, b
     after = snapshot(root)
     assert after != before, "expected at least one file under the root to differ; none did"
     return after
+
+
+def tree_entries(*roots: Path) -> dict[str, str]:
+    """Every entry under each root, `.git` aside, by absolute path: a file by its bytes' digest, a
+    link by its target, a directory by its name, so a removed directory or a retargeted link shows
+    too, where `snapshot` sees regular files alone. For a test whose run spans several checkouts
+    and a home, and must leave every one of them as it was."""
+    found: dict[str, str] = {}
+    for root in roots:
+        for dirpath, dirnames, filenames in os.walk(root):
+            dirnames[:] = [name for name in dirnames if name != ".git"]
+            for name in (*dirnames, *filenames):
+                path = Path(dirpath) / name
+                if path.is_symlink():
+                    found[str(path)] = f"-> {os.readlink(path)}"
+                elif path.is_dir():
+                    found[str(path)] = "dir"
+                else:
+                    found[str(path)] = hashlib.sha256(path.read_bytes()).hexdigest()
+    return found
