@@ -3148,15 +3148,28 @@ reddens = [
   "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[fallback-through-an-alias]",
 ]
 
-# A fallback naming a directory no harness link may point at is no fallback: the real directory
+# A fallback naming anything but the store `attach` writes there is no fallback: the real directory
 # keeps its red.
 [[mutation]]
 name = "doctor reads a fallback naming another directory as the store"
 file = "src/stayfixed/attach/doctor.py"
-before = "    if shape == _REAL_DIRECTORY and recorded not in targets:  # 4\n"
+before = "    if shape == _REAL_DIRECTORY and recorded != store.path.resolve():  # 4\n"
 after = "    if False:  # 4\n"
 reddens = [
   "tests/attach/test_doctor.py::test_a_real_directory_beside_the_settings_fallback_attach_recorded_reads_as_in_place[elsewhere]",
+]
+
+# `attach` writes one value into the fallback, the owning checkout's store, resolved. Compared with
+# every directory a harness link may point at instead, a checkout's own `paths.memory` followed
+# through a link is one of them, so a branch committing that link and a key naming where it leads
+# read ok for a directory nobody approved.
+[[mutation]]
+name = "doctor compares the settings fallback with every directory a harness link may point at"
+file = "src/stayfixed/attach/doctor.py"
+before = "    if shape == _REAL_DIRECTORY and recorded != store.path.resolve():  # 4\n"
+after = "    if shape == _REAL_DIRECTORY and recorded not in targets:  # 4\n"
+reddens = [
+  "tests/attach/test_doctor.py::test_a_fallback_naming_a_directory_a_branch_chose_is_never_ok[a-link-to-it]",
 ]
 
 # An approval that lapsed closes the gate, and `attach` withdraws every link: the row read that as

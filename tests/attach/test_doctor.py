@@ -964,6 +964,48 @@ def test_a_fallback_beside_a_main_checkout_tree_that_is_a_symlink_loop_is_a_name
     )
 
 
+@pytest.mark.parametrize("paths_memory", ["a-link-to-it", "a-real-directory"])
+def test_a_fallback_naming_a_directory_a_branch_chose_is_never_ok(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, paths_memory: str
+) -> None:
+    # A linked worktree attached with the settings-file fallback, then a branch checked out there
+    # that commits `paths.memory` as a link to a directory of its choosing and a
+    # `.claude/settings.local.json` naming that directory: both paths are ignored, so `git checkout`
+    # replaces them without a word. The row compared the recorded value with every directory a
+    # harness link may point at, the worktree's own `paths.memory` among them, followed through
+    # its link, and read ok, "points the harness at the store instead", for a directory nobody
+    # approved. `attach` writes one value there, the owning checkout's store, and the row compares
+    # with that one. The real directory in place of the link is the control: red at every
+    # revision. Mutation (oracle): `mutations/`'s "doctor compares the settings fallback with
+    # every directory a harness link may point at" -> `a-link-to-it` reads ok.
+    root, side, machine, home = _worktree_attached(tmp_path)
+    _fallback_everywhere(_Machine(tmp_path, root, side, machine, home, monkeypatch))
+    chosen = tmp_path / "chosen"
+    chosen.mkdir()
+    (chosen / "MEMORY.md").write_text("- [a note](a.md) — read me\n", encoding="utf-8")
+    shutil.rmtree(side / DEFAULT_MEMORY)
+    if paths_memory == "a-link-to-it":
+        (side / DEFAULT_MEMORY).symlink_to(chosen, target_is_directory=True)
+    else:
+        (side / DEFAULT_MEMORY).mkdir()
+    settings = side / LOCAL_SETTINGS
+    document = json.loads(settings.read_text(encoding="utf-8"))
+    document["autoMemoryDirectory"] = str(chosen.resolve())
+    settings.write_text(json.dumps(document), encoding="utf-8")
+    harness = _harness_link_of(side, home)
+    # Non-vacuous: the harness memory path is the real directory the fallback stands beside.
+    assert harness.is_dir() and not harness.is_symlink()
+    row = _worktree_row(tmp_path, side, machine, home)
+    status, shape, remedy = _REAL_DIRECTORY
+    assert (row.status, row.detail, row.remedy) == (
+        status,
+        shape,
+        remedy.format(harness=harness),
+    )
+    # The main checkout's own fallback still names its own store, and still reads ok.
+    assert _worktree_row(tmp_path, root, machine, home).status == OK
+
+
 def test_an_absent_harness_path_is_green_only_while_the_trust_record_asks_for_that(
     tmp_path: Path,
 ) -> None:

@@ -373,9 +373,12 @@ def _recorded_fallback(context: Context) -> Path | None:
     `None` where the file holds no such absolute path or cannot be read as a settings document.
 
     The file is one a clone can commit, so the value is never resolved and never printed: it is
-    compared exactly with what a harness link may point at (`harness_targets`), which is what
-    `attach` writes there (`str(store.path.resolve())`). Resolved, a committed value naming a link
-    the clone also committed would be read as the store."""
+    compared exactly with the one value `attach` writes there, the owning checkout's store,
+    resolved (`str(store.path.resolve())`), and so only once that store has resolved. Resolved, a
+    committed value naming a link the clone also committed would be read as the store. Nor is it
+    compared with every directory a harness link may point at (`harness_targets`): that set holds
+    this checkout's own `paths.memory`, followed through a final link, and a branch that commits
+    that link and this file beside it names any directory it likes."""
     from pathlib import Path
 
     from stayfixed.attach.permissions import local_document, settings_document
@@ -433,11 +436,12 @@ def _harness_verdict(context: Context, answers: Answers, harness: Path) -> _Verd
        it aside, then `attach`.
     3. Where a harness link may point cannot be asked (`harness_targets` refuses): warn, naming
        whose `paths.memory` and why; replace the symlink, or make the directory readable.
-    4. A real directory, and `autoMemoryDirectory` naming no such directory: as 2.
     5. A link to a directory a harness link may not point at: red; `attach`.
     6. The owning checkout's store does not resolve, and its link tree is gone: warn; `attach`.
     7. The owning checkout's store does not resolve, and its link tree is there: warn;
        `memory index --check`.
+    4. A real directory, and `autoMemoryDirectory` naming anything but the owning checkout's
+       store, resolved, the one value `attach` writes there: as 2.
     8. A link to the store: ok.
     9. This machine's trust record cannot be read: warn; `memory trust --in-repo-memory`, which
        says why.
@@ -504,8 +508,6 @@ def _harness_verdict(context: Context, answers: Answers, harness: Path) -> _Verd
             "replace that symlink with the directory it points at, or make the directory "
             "readable, then run `stayfixed doctor` again",
         )
-    if shape == _REAL_DIRECTORY and recorded not in targets:  # 4
-        return _real_directory(harness)
     if shape == _LINK and harness.resolve() not in targets:  # 5
         return _Verdict(
             RED,
@@ -516,6 +518,8 @@ def _harness_verdict(context: Context, answers: Answers, harness: Path) -> _Verd
     store = _owner_store(context, answers, owner)
     if store is None:  # 6, 7
         return _unresolved(context, owner, words, relink)
+    if shape == _REAL_DIRECTORY and recorded != store.path.resolve():  # 4
+        return _real_directory(harness)
     if shape == _LINK:  # 8
         return _Verdict(OK, "a link to the store", "")
     try:
