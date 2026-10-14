@@ -2788,8 +2788,9 @@ def test_a_symlink_loop_at_any_path_setup_is_given_is_a_refusal_naming_it(
     # `fsops.resolved`, so each is the floor's refusal, naming the path, on every interpreter, with
     # nothing written and nothing run. Mutations (`mutations/`'s "setup's command resolves --root
     # past fsops" -> `root`; "setup resolves --overlay past fsops" -> `overlay`; "setup resolves a
-    # --settings link past fsops" -> `settings`; "contained resolves its root past fsops" and
-    # "fsops.resolved answers a loop with a path where the interpreter does" -> `home`).
+    # --settings link past fsops" -> `settings`; "setup resolves a symlinked ~/.claude past
+    # fsops" -> `claude`; "contained resolves its root past fsops" and "fsops.resolved answers a
+    # loop with a path where the interpreter does" -> `home`).
     from stayfixed.cli import build_parser, discover_registrars, run
 
     home, machine = tmp_path / "home", tmp_path / "config.toml"

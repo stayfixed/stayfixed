@@ -239,6 +239,25 @@ def test_every_summary_prints_the_hooks_path_git_names_quoted(tmp_path: Path, ru
     assert result.data["path"] == str(hook)
 
 
+@pytest.mark.parametrize("uninstall", [False, True], ids=["install", "uninstall"])
+def test_a_root_through_a_symlink_loop_is_refused_naming_it(
+    tmp_path: Path, uninstall: bool
+) -> None:
+    # Python 3.11 and 3.12 raised `RuntimeError` resolving a looping `--root`, and
+    # `setup --git-hooks` ended in `internal error` there; 3.13 handed the loop to `git`, which
+    # could not name a hooks directory in it. Resolved through `fsops.resolved`, it is refused
+    # naming `--root` on every interpreter, before `git` is asked. Mutation (`mutations/`'s
+    # "setup --git-hooks resolves --root past fsops") -> each reddens.
+    loop = tmp_path / "loop"
+    loop.symlink_to(loop)
+    with pytest.raises(Refusal) as refused:
+        run_setup(_args(root=str(loop), uninstall=uninstall))
+    assert str(refused.value) == (
+        f"--root {quoted(str(loop))} cannot be checked (Too many levels of symbolic links), so "
+        f"nothing was written"
+    )
+
+
 def test_a_second_install_over_our_own_hook_reports_a_reinstall(tmp_path: Path) -> None:
     # `installed.replaced` is true when the hook already there is ours, not a stranger's —
     # `run_git_hooks` reports that case with its own summary rather than the "kept and chained

@@ -371,7 +371,7 @@ def _settings_symlink(home: Path) -> Path | None:
     return None
 
 
-def _home_that_leads_there(home: Path, link: Path) -> Path | None:
+def _home_that_leads_there(home: Path, link: Path, real: Path) -> Path | None:
     """The `--home` whose own walk writes the file this link leads to, or `None` for a layout no
     `--home` can express.
 
@@ -388,10 +388,11 @@ def _home_that_leads_there(home: Path, link: Path) -> Path | None:
     What `--home H` actually writes is `H/<USER_SETTINGS>` and nothing else, so a remedy exists
     exactly when what the link leads to *is* a `<USER_SETTINGS>` inside some directory — and
     that directory is the answer. Whatever of `USER_SETTINGS` lies below the link still follows
-    it, which is what puts the directory and the file shapes into one expression.
+    it, which is what puts the directory and the file shapes into one expression. `real` is where
+    the link leads, resolved once by the caller, which names it in the refusal too.
     """
     wanted = Path(USER_SETTINGS).parts
-    leads_to = fsops.resolved(link) / (home / USER_SETTINGS).relative_to(link)
+    leads_to = real / (home / USER_SETTINGS).relative_to(link)
     if leads_to.parts[-len(wanted) :] != wanted:
         return None
     return leads_to.parents[len(wanted) - 1]
@@ -422,7 +423,7 @@ def _check_settings_path(home: Path) -> None:
         if link is None:
             raise
         real = fsops.resolved(link)
-        instead = _home_that_leads_there(home, link)
+        instead = _home_that_leads_there(home, link, real)
         kind = "file" if link == home / USER_SETTINGS else "directory"
         if instead is not None:
             remedy = (

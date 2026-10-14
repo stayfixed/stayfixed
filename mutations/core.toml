@@ -3670,7 +3670,13 @@ after = """    return answer"""
 reddens = [
   "tests/test_fsops.py::test_a_symlink_loop_resolves_to_the_systems_eloop_naming_the_path_on_every_interpreter[loop]",
   "tests/test_fsops.py::test_a_symlink_loop_resolves_to_the_systems_eloop_naming_the_path_on_every_interpreter[loop/below]",
+  "tests/config/test_paths.py::test_a_root_through_a_symlink_loop_is_an_oserror_naming_it[this-one]",
+  "tests/setup/test_setup.py::test_a_symlink_loop_at_any_path_setup_is_given_is_a_refusal_naming_it[claude]",
   "tests/setup/test_setup.py::test_a_symlink_loop_at_any_path_setup_is_given_is_a_refusal_naming_it[home]",
+  "tests/setup/test_setup.py::test_a_symlink_loop_at_any_path_setup_is_given_is_a_refusal_naming_it[root]",
+  "tests/setup/test_setup.py::test_a_symlink_loop_at_any_path_setup_is_given_is_a_refusal_naming_it[settings]",
+  "tests/setup/test_setup.py::test_a_symlink_loop_at_any_path_setup_is_given_is_a_refusal_naming_it[overlay]",
+  "tests/setup/test_setup.py::test_a_project_root_through_a_symlink_loop_handed_to_setup_is_refused",
 ]
 
 [[mutation]]
