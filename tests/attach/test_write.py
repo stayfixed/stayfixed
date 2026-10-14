@@ -809,6 +809,43 @@ def test_an_unlistable_codex_directory_fails_and_writes_nothing(
     assert_snapshot_unchanged(root, before)
 
 
+@pytest.mark.parametrize("fault", ["not-utf8", "unreadable"])
+@pytest.mark.parametrize("where", ["common", "project"])
+def test_an_overlay_rule_file_that_cannot_be_read_fails_naming_it_as_its_directory_is_named(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, where: str, fault: str
+) -> None:
+    # The sibling of the unlistable `codex/` directory above, one fault class: a rule file inside
+    # it this user cannot read, or that is not UTF-8. Its directory is printed through
+    # `printed.quoted` and the file was printed raw, though the project's path carries
+    # `project.name`, which the repository chooses. Mutation (oracle): `mutations/`'s "an overlay
+    # rule file that cannot be read is printed raw" -> the path loses its quotes.
+    if fault == "unreadable" and os.geteuid() == 0:
+        pytest.skip("root reads every file")
+    monkeypatch.setattr(Path, "home", lambda: tmp_path / "home")
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    root, store, machine = _attachable(tmp_path, allow=(RULE,), codex="# a standing rule\n")
+    overlay = store.parents[2]
+    directory = overlay / COMMON_CODEX if where == "common" else store.parent / "codex"
+    directory.mkdir(exist_ok=True)
+    rule = directory / "z.rules"
+    if fault == "not-utf8":
+        rule.write_bytes(b"\xff\xfe not text\n")
+    else:
+        rule.write_text("# a rule\n", encoding="utf-8")
+        rule.chmod(0o000)
+    flags = ("--store", str(store))
+    before = snapshot(root)
+    try:
+        checked = cli(root, tmp_path, "attach", "--check", *flags, machine=machine)
+        attached = cli(root, tmp_path, "attach", "--yes", *flags, machine=machine)
+    finally:
+        rule.chmod(0o644)
+    why = "is not UTF-8 text" if fault == "not-utf8" else "cannot be read (Permission denied)"
+    line = f"stayfixed: failed: {quoted(str(rule))} {why}, so nothing was written\n"
+    assert (checked[0], checked[2]) == (attached[0], attached[2]) == (1, line)
+    assert_snapshot_unchanged(root, before)
+
+
 def test_a_rule_the_overlay_never_granted_is_left_alone(tmp_path: Path) -> None:
     # `doctor` lists every rule with its provenance, so one no overlay granted is visible. attach's
     # own contribution to that is narrower and stricter: it does not touch one.

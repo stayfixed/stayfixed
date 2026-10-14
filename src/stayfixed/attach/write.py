@@ -124,7 +124,7 @@ from stayfixed.memory.api import (
     resolve,
 )
 from stayfixed.overlay.api import PRE_COMMIT_CONFIG, PRE_COMMIT_HOOK
-from stayfixed.printed import answered
+from stayfixed.printed import answered, quoted
 from stayfixed.runner import Runner
 from stayfixed.scaffold import (
     Manifest,
@@ -538,16 +538,17 @@ def _codex_rule_texts(binding: Binding) -> tuple[tuple[str, str], ...]:
     """
     texts: list[tuple[str, str]] = []
     for target, source in codex_rules(binding):
-        # The overlay is the owner's, so its path may print.
-        try:
+        # The overlay is the owner's, so its path may print, and through `quoted`, as the
+        # directory holding it is printed when it cannot be listed (`permissions.codex_rules`): the
+        # project's `codex/` carries `project.name`, which the repository chooses.
+        with fsops.reading(quoted(str(source)), _nothing_written):
             texts.append((target, source.read_text(encoding="utf-8")))
-        except UnicodeDecodeError:
-            raise Failure(f"{source} is not UTF-8 text, so nothing was written") from None
-        except OSError as exc:
-            raise Failure(
-                f"{source} cannot be read ({fsops.said(exc)}), so nothing was written"
-            ) from exc
     return tuple(texts)
+
+
+def _nothing_written(sentence: str) -> Failure:
+    """`fsops.reading`'s sentence about an overlay rule file, as the failure it ends a run in."""
+    return Failure(f"{sentence}, so nothing was written")
 
 
 def _record_binding(binding: Binding) -> bool:

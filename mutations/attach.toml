@@ -1204,10 +1204,22 @@ reddens = [
 [[mutation]]
 name = "attach copies past an overlay rule that is not UTF-8"
 file = "src/stayfixed/attach/write.py"
-before = '            raise Failure(f"{source} is not UTF-8 text, so nothing was written") from None'
-after = "            continue"
+before = '            texts.append((target, source.read_text(encoding="utf-8")))'
+after = '            texts.append((target, source.read_text(encoding="utf-8", errors="replace")))'
 reddens = [
   "tests/attach/test_write.py::test_an_overlay_rule_that_is_not_utf8_stops_attach_before_it_writes",
+]
+
+# The rule file was printed raw beside its directory, which is printed through `quoted` when it
+# cannot be listed: one fault class, and the project's `codex/` carries `project.name`.
+[[mutation]]
+name = "an overlay rule file that cannot be read is printed raw"
+file = "src/stayfixed/attach/write.py"
+before = "        with fsops.reading(quoted(str(source)), _nothing_written):\n"
+after = "        with fsops.reading(source, _nothing_written):\n"
+reddens = [
+  "tests/attach/test_write.py::test_an_overlay_rule_file_that_cannot_be_read_fails_naming_it_as_its_directory_is_named[common-not-utf8]",
+  "tests/attach/test_write.py::test_an_overlay_rule_file_that_cannot_be_read_fails_naming_it_as_its_directory_is_named[project-unreadable]",
 ]
 
 # The trust record was first read by the index render and the harness link, after the settings,

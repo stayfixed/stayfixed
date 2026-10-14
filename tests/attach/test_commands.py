@@ -20,6 +20,7 @@ from stayfixed import fsops
 from stayfixed.cli import build_parser, discover_registrars, run
 from stayfixed.config.schema import Config
 from stayfixed.overlay.layout import COMMON_MEMORY
+from stayfixed.printed import quoted
 from tests.attach.test_binding import DEFAULT_MEMORY, _machine, _project_and_store
 from tests.attach.test_write import ENTRY, LEDGER, RULE, SETTINGS, _overlay_grants, _wide
 from tests.cli import cli
@@ -770,7 +771,7 @@ def test_check_ends_on_an_overlay_rule_that_is_not_utf8_with_the_runs_code_and_l
     rule.write_bytes(b"\xff\xfe not text\n")
     before = snapshot(tmp_path)
     checked, attached = _check_then_attach(_flags(root, store, machine), capsys)
-    line = f"stayfixed: failed: {rule} is not UTF-8 text, so nothing was written\n"
+    line = f"stayfixed: failed: {quoted(str(rule))} is not UTF-8 text, so nothing was written\n"
     assert checked == attached == (1, line)
     assert_snapshot_unchanged(tmp_path, before)
 
