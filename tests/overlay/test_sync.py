@@ -1,6 +1,6 @@
 """What `overlay_sync` reports about the overlay's own repository, and why it declares no mutation.
 
-**No `mutations.toml` entry for this module, stated rather than left silent.** Every value here
+**No entry in `mutations/` for this module, stated rather than left silent.** Every value here
 comes from `git` itself under constant arguments — `status --porcelain` and
 `rev-list --count @{upstream}..HEAD`, in the overlay root this machine recorded — and nothing
 downstream reads the answer as permission: `attach/hooks.py` turns it into one session line and
@@ -8,7 +8,7 @@ downstream reads the answer as permission: `attach/hooks.py` turns it into one s
 are `code != 0 -> asked=False`, which keeps "git could not be asked" apart from "there is nothing
 to report" and which the last case below asserts, and `isdigit()` before `int()`, which keeps a
 reader that must answer for every input from raising into a handler whose backstop would take the
-whole result with it. `mutations.toml` is for load-bearing guards — a containment check, a trust
+whole result with it. `mutations/` is for load-bearing guards — a containment check, a trust
 gate, a refusal something reads as permission — and breaking either of these costs a line of a
 nudge, so there is none here.
 """

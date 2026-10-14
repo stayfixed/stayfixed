@@ -16,14 +16,15 @@ from pathlib import Path
 
 import pytest
 
-from stayfixed.attach.permissions import check
+from stayfixed.attach.check import check
 from stayfixed.attach.write import attach
 from stayfixed.config.loader import load
 from stayfixed.doctor.api import run_checks
 from stayfixed.errors import Refusal
 from stayfixed.memory.store import NO_ORIGIN_CAUSE, NO_ORIGIN_WAY_OUT, resolved
-from tests.attach.test_write import RULE, FakeRunner, _attachable
+from tests.attach.test_write import RULE, _attachable
 from tests.gitfixture import git
+from tests.runners import Recorder
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
@@ -36,7 +37,7 @@ def _attached_then_origin_removed(tmp_path: Path) -> tuple[Path, Path, Path]:
         machine=machine,
         confirmed=True,
         trust_remote=False,
-        runner=FakeRunner(),
+        runner=Recorder(),
         home=tmp_path / "home",
     )
     git(root, "remote", "remove", "origin")
@@ -46,7 +47,7 @@ def _attached_then_origin_removed(tmp_path: Path) -> tuple[Path, Path, Path]:
 def test_a_checkout_with_no_origin_hears_one_cause_and_one_way_out_everywhere(
     tmp_path: Path,
 ) -> None:
-    # Mutation: `mutations.toml`'s "the binding classifier reads a missing origin as a
+    # Mutation: `mutations/`'s "the binding classifier reads a missing origin as a
     # different remote".
     root, store, machine = _attached_then_origin_removed(tmp_path)
     home = tmp_path / "home"
@@ -65,17 +66,17 @@ def test_a_checkout_with_no_origin_hears_one_cause_and_one_way_out_everywhere(
                 machine=machine,
                 confirmed=True,
                 trust_remote=trust_remote,
-                runner=FakeRunner(),
+                runner=Recorder(),
                 home=home,
             )
         refusals.append(str(refused.value))
 
-    checked = check(root, store=store, machine=machine)
+    checked = check(root, store=store, machine=machine, home=home)
 
     doctor = next(
         row
         for row in run_checks(
-            root, home=home, machine=machine, runner=FakeRunner(), env={"HOME": str(home)}
+            root, home=home, machine=machine, runner=Recorder(), env={"HOME": str(home)}
         )
         if row.name == "attached"
     )

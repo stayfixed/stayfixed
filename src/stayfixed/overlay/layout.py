@@ -17,7 +17,6 @@ from __future__ import annotations
 from stayfixed.memory.api import PROJECTS
 
 COMMON = "common"
-COMMON_RULES = f"{COMMON}/rules"
 COMMON_MEMORY = f"{COMMON}/memory"
 COMMON_CLAUDE = f"{COMMON}/claude"
 COMMON_CODEX = f"{COMMON}/codex"
@@ -28,6 +27,17 @@ MARKETPLACE_MANIFEST = ".claude-plugin/marketplace.json"
 # two — a harness installs a plugin by the name in its manifest, and this project ships a Codex
 # half of everything else.
 CODEX_PLUGIN_MANIFEST = ".codex-plugin/plugin.json"
+# The overlay's commit-time secret scan, and the hook `pre-commit install` writes for it: `attach`
+# installs the hook when it is missing, and `doctor`'s `pre-commit` row asks whether it is there.
+# The hook's *name* only: where it lives is `guards.hooks_dir`'s answer and never `.git/hooks`,
+# because an overlay with `core.hooksPath` set -- a common global dotfiles setting -- or one that is
+# a worktree or a submodule, where `.git` is a file, keeps its hooks somewhere else entirely. A
+# hardcoded path would find the scan missing on every attach, shell out to `pre-commit install`
+# every time, and warn in `doctor` with a remedy that cannot clear it. `docs/cli.md`'s
+# `setup --git-hooks` section states the rule: `git rev-parse --git-path hooks`, never
+# `core.hooksPath`.
+PRE_COMMIT_CONFIG = ".pre-commit-config.yaml"
+PRE_COMMIT_HOOK = "pre-commit"
 
 # Every file `templates/overlay/` ships, in one fixed order. The list and the tree are two
 # statements of one thing: `tests/overlay/test_template.py` asserts each way round, so a file
@@ -37,34 +47,32 @@ CODEX_PLUGIN_MANIFEST = ".codex-plugin/plugin.json"
 # has a decision list at all: an upgrade diffs these and asks about them "regardless of hash",
 # because a hash match is not consent for a permission or a hook entry. Named once, unpacked
 # into OVERLAY_FILES below, and published as CAPABILITY_FILES: one spelling, so a rename here is
-# a rename everywhere. The list used to be derived by filtering OVERLAY_FILES against a second
-# spelling of the two names, under a comment claiming they were not spelled twice.
+# a rename everywhere, where a list derived by filtering OVERLAY_FILES against a second spelling
+# of the two names would let the two drift apart.
 CAPABILITY_NAMES = (f"{COMMON_CLAUDE}/permissions.json", f"{COMMON_CLAUDE}/hooks.json")
 
 # A directory's own documentation rather than a file in its own right: `overlay create`
 # drops one of these into each directory the owner fills, and the template README describes
 # those as directories on purpose. `tests/overlay/test_template.py` accounts for the tree
-# by this rule; a fourth such directory needs no edit there. The root `README.md` is not a
+# by this rule; a third such directory needs no edit there. The root `README.md` is not a
 # placeholder — the rule applies to a basename BELOW a directory, never to the root.
 #
 # `_README.md` is the spelling for a directory the note reader walks: `memory.notes.walk` reads
 # every `*.md` in a note store as a note and skips a name that starts with `_`, so a `README.md`
 # there is a note with no frontmatter and `memory index --check` fails on it in every project
 # attached to the overlay. `common/memory/` is that directory.
-PLACEHOLDER_NAMES = ("README.md", "_README.md", "SKILL.md")
+PLACEHOLDER_NAMES = ("README.md", "_README.md")
 
 OVERLAY_FILES = (
     PLUGIN_MANIFEST,
     MARKETPLACE_MANIFEST,
     CODEX_PLUGIN_MANIFEST,
     "hooks/hooks.json",
-    "skills/attach/SKILL.md",
-    f"{COMMON_RULES}/README.md",
     f"{COMMON_MEMORY}/_README.md",
     *CAPABILITY_NAMES,
     f"{COMMON_CODEX}/common.rules",
     f"{PROJECTS}/README.md",
-    ".pre-commit-config.yaml",
+    PRE_COMMIT_CONFIG,
     ".github/workflows/scan.yml",
     ".github/dependabot.yml",
     ".gitignore",
@@ -73,12 +81,10 @@ OVERLAY_FILES = (
 
 CAPABILITY_FILES = CAPABILITY_NAMES
 
-# Files an earlier release shipped and this one does not, which `overlay upgrade` removes where
-# they still hold what stayfixed wrote (`overlay.template.retired`). `common/memory/README.md` is
-# `_README.md` now, for the reason `PLACEHOLDER_NAMES` gives. None of them is ever a member of
-# `OVERLAY_FILES`: `tests/overlay/test_template.py` holds that.
+# The memory README an earlier release shipped, `_README.md` now for the reason `PLACEHOLDER_NAMES`
+# gives. The files a release no longer ships are listed in `overlay.template`, beside the digests
+# that say a copy of each is stayfixed's; this one is named here as well because it has a successor.
 RETIRED_MEMORY_README = f"{COMMON_MEMORY}/README.md"
-RETIRED_OVERLAY_FILES = (RETIRED_MEMORY_README,)
 # The shipped file that took each retired one's place, which `overlay init` writes when it removes
 # the old name and the new one is not there (`overlay.create._retire` says why).
 SUCCESSORS = {RETIRED_MEMORY_README: f"{COMMON_MEMORY}/_README.md"}

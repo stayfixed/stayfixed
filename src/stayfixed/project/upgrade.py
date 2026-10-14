@@ -40,8 +40,8 @@ and no such guard. That is why `docs/cli.md` says to run it on a checkout you tr
 
 What prints is bounded. `Moved.before` is the repository's own value, so a version outside
 `X.Y.Z` prints as `(not a version)` and a ref outside `CI_REF` as `(not a commit)`. `Moved.after`
-is stayfixed's own: the running version, and a sha the release area resolved from the public
-repository. `orphans` is a count, because the ids of records this build does not produce are
+is stayfixed's own: the running version, and a sha the `release` package resolved from the
+public repository. `orphans` is a count, because the ids of records this build does not produce are
 repository-authored.
 """
 
@@ -56,13 +56,13 @@ from stayfixed.config.loader import loads, read_document
 from stayfixed.config.owned import Value, rewrite
 from stayfixed.config.schema import Config
 from stayfixed.errors import Refusal
-from stayfixed.overlay.api import RELEASE, later
 from stayfixed.project.footprint import Passes, prepare
 from stayfixed.project.rewrite import NO_DOCUMENT, rewrite_owned
 from stayfixed.project.templates import CI_ARTIFACT, CI_REF
 from stayfixed.release.api import Resolution, resolve_pin
 from stayfixed.runner import Runner
 from stayfixed.scaffold import MANIFEST_PATH, Manifest, Plan, Verb, apply
+from stayfixed.semver import RELEASE, later
 
 NOT_INITIALISED = (
     f"{MANIFEST_PATH} is not there, so there is no footprint to upgrade; "
@@ -174,7 +174,7 @@ def upgrade(
     dry_run: bool,
     force: Sequence[str],
 ) -> UpgradeReport:
-    if not (root / MANIFEST_PATH).is_file():
+    if not Manifest.present(root):
         raise Refusal(NOT_INITIALISED)
     text = read_document(root)
     if text is None:

@@ -6,10 +6,9 @@ mismatch is reported and a match is not — so a green CI row means the plugin, 
 
 from __future__ import annotations
 
-import importlib.util
 import json
+import os
 import shutil
-import sys
 from pathlib import Path
 from types import ModuleType
 
@@ -17,30 +16,33 @@ import pytest
 
 from stayfixed import gitenv
 from tests.floor import SUITE_GIT_FLOOR_SECONDS
+from tests.gitfixture import needs_git
+from tests.ownerhome import pin_git_home
+from tests.scriptload import SCRIPTS, load
 
 ROOT = Path(__file__).resolve().parents[2]
-needs_git = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
 
 def _load(name: str) -> ModuleType:
-    spec = importlib.util.spec_from_file_location(name, ROOT / "scripts" / f"{name}.py")
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[name] = module
-    spec.loader.exec_module(module)
-    return module
+    return load(SCRIPTS / f"{name}.py", name)
 
 
 def _plugin(tmp_path: Path, *, launcher: str | None = None, hooks: Path | None = None) -> Path:
-    """A plugin root: the shipped `hooks/`, and either the real launcher or a planted one."""
+    """A plugin root: the shipped `hooks/`, and either the real launcher or a planted one. The
+    wrapper's own `git` reads this test's `HOME` (`tests/ownerhome.py`, `pin_git_home`)."""
     planted = tmp_path / "plugin"
-    shutil.copytree(hooks or ROOT / "hooks", planted / "hooks")
+    _copy_hooks(hooks or ROOT / "hooks", planted)
     if launcher is None:
         shutil.copytree(ROOT / "scripts", planted / "scripts")
     else:
         (planted / "scripts").mkdir()
         (planted / "scripts" / "stayfixed").write_text(launcher, encoding="utf-8")
     return planted
+
+
+def _copy_hooks(hooks: Path, planted: Path) -> None:
+    shutil.copytree(hooks, planted / "hooks")
+    pin_git_home(planted / "hooks" / "run-hook.sh", Path(os.environ["HOME"]))
 
 
 # A launcher that performs the owner's trust act for real and answers everything else the way
@@ -86,7 +88,7 @@ def test_every_hook_entry_answers_its_sample_event_through_the_checkout(
     )
     out = capsys.readouterr().out
     assert code == 0, out
-    assert "13 entries, 14 row(s), 0 failure(s)" in out, out
+    assert "10 entries, 11 row(s), 0 failure(s)" in out, out
 
 
 @needs_git
@@ -99,8 +101,8 @@ def test_a_launcher_fault_is_not_mistaken_for_a_refusal(
     # Measured against a `scripts/stayfixed` that writes to stderr and exits 1: thirteen of the
     # fourteen rows green, including that one.
     #
-    # Mutation (declared, "the hook smoke stops reading the refusal it was handed"): the
-    # `stderr_says` loop is emptied -> the first assertion below reddens.
+    # Mutation (declared, `mutations/`'s "the hook smoke stops reading the refusal it was handed"):
+    # the `stderr_says` loop is emptied -> the first assertion below reddens.
     smoke = _load("smoke_hooks")
     code = smoke.main(
         [
@@ -115,12 +117,51 @@ def test_a_launcher_fault_is_not_mistaken_for_a_refusal(
     out = capsys.readouterr().out
     assert code == 1, out
     assert "stderr does not say 'refused: bg-cleanup'" in out, out
-    # And the ten entries that carry repository bytes: they emitted nothing, which is what all
-    # ten of them did against the checkout before the fixture had a store at all.
+    # And the entries that carry repository bytes: they emitted nothing, which is what every
+    # one of them did against the checkout before the fixture had a store at all.
     #
-    # Mutation (declared, "the hook smoke stops reading what an injection entry injected"):
-    # the registry lookup answers `None` -> this reddens and the row above does not.
+    # Mutation (declared, `mutations/`'s "the hook smoke stops reading what an injection entry
+    # injected"): the registry lookup answers `None` -> this reddens and the row above does not.
     assert "injected nothing carrying '<<<stayfixed:repository-data'" in out, out
+
+
+# A launcher that is the real one for everything but the red-run entry, which it answers as an
+# entry whose handler said nothing does: exit 0 and the event's envelope with no context in it.
+SILENT_ON_FAILURE = f"""
+import json, runpy, sys
+
+if sys.argv[1:3] == ["hook", "PostToolUseFailure"]:
+    sys.stdin.read()
+    print(json.dumps({{"hookSpecificOutput": {{"hookEventName": "PostToolUseFailure"}}}}))
+    sys.exit(0)
+runpy.run_path({str(ROOT / "scripts" / "stayfixed")!r}, run_name="__main__")
+"""
+
+
+@needs_git
+def test_a_red_run_entry_that_says_nothing_is_reported(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The red-run note is all the `PostToolUseFailure` entry is for, and an envelope naming the
+    # event, exit 0, is what that entry prints whether or not its handler spoke: the row asks for
+    # the note by its words. Every other row is the real launcher's, so the one failure is this
+    # row's. Mutation (declared, `mutations/`'s "the hook smoke stops reading the context an
+    # entry printed"): the `context_says` check never fails -> this reddens.
+    smoke = _load("smoke_hooks")
+    code = smoke.main(
+        [
+            "--plugin-root",
+            str(_plugin(tmp_path, launcher=SILENT_ON_FAILURE)),
+            "--fixture",
+            str(ROOT / "tests" / "fixtures" / "smoke-project"),
+            "--scratch",
+            str(tmp_path / "s"),
+        ]
+    )
+    out = capsys.readouterr().out
+    assert code == 1, out
+    assert "the context does not say 'Before calling this red a flake" in out, out
+    assert "10 entries, 11 row(s), 1 failure(s)" in out, out
 
 
 @needs_git
@@ -132,7 +173,7 @@ def test_a_wrapper_that_answers_wrongly_is_reported(
     # comparison in `smoke_hooks.check_entry` -> this passes with code 0 and reddens.
     smoke = _load("smoke_hooks")
     planted = tmp_path / "plugin"
-    shutil.copytree(ROOT / "hooks", planted / "hooks")
+    _copy_hooks(ROOT / "hooks", planted)
     (planted / "scripts").mkdir()
     (planted / "scripts" / "stayfixed").write_text("raise SystemExit(0)\n", encoding="utf-8")
     code = smoke.main(
@@ -163,12 +204,12 @@ def test_hooks_json_losing_an_event_fails_instead_of_running_fewer_rows(
     # `PostToolUse` is the event removed because it is the one with exactly one sample, so its
     # rows are the whole of what goes missing.
     #
-    # Mutation (declared, "the hook smoke stops noticing an event that lost its entry"): the
-    # `unentered` set is emptied -> the run proceeds on the remaining entries, every row passes,
-    # `main` returns 0, and both assertions below redden.
+    # Mutation (declared, `mutations/`'s "the hook smoke stops noticing an event that lost its
+    # entry"): the `unentered` set is emptied -> the run proceeds on the remaining entries, every
+    # row passes, `main` returns 0, and both assertions below redden.
     smoke = _load("smoke_hooks")
     planted = tmp_path / "plugin"
-    shutil.copytree(ROOT / "hooks", planted / "hooks")
+    _copy_hooks(ROOT / "hooks", planted)
     shutil.copytree(ROOT / "scripts", planted / "scripts")
     entries = planted / "hooks" / "hooks.json"
     document = json.loads(entries.read_text(encoding="utf-8"))
@@ -193,20 +234,20 @@ def test_hooks_json_losing_an_event_fails_instead_of_running_fewer_rows(
 def test_hooks_json_losing_a_bundle_fails_instead_of_injecting_one_fewer(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # The same question for the ten entries that carry repository bytes. `SAMPLES` is keyed by
-    # EVENT, so dropping one of the eleven `SessionStart` entries leaves every event still
+    # The same question for the six entries that carry repository bytes. `SAMPLES` is keyed by
+    # EVENT, so dropping one of the seven `SessionStart` entries leaves every event still
     # sampled, runs one row fewer and prints a green summary — the bundle stopped being
     # smoke-tested and nothing said so.
     #
-    # Mutation (declared, "the hook smoke stops noticing a bundle that lost its entry"): the
-    # `ungathered` set is emptied -> the run proceeds on ten entries and both assertions below
-    # redden.
+    # Mutation (declared, `mutations/`'s "the hook smoke stops noticing a bundle that lost its
+    # entry"): the `ungathered` set is emptied -> the run proceeds on eight entries and both
+    # assertions below redden.
     smoke = _load("smoke_hooks")
     planted = _plugin(tmp_path)
     entries = planted / "hooks" / "hooks.json"
     document = json.loads(entries.read_text(encoding="utf-8"))
     groups = document["hooks"]["SessionStart"][0]["hooks"]
-    dropped = "--bundle index --part 3"
+    dropped = "--bundle volatile-notes --part 3"
     kept = [entry for entry in groups if dropped not in entry["command"]]
     assert len(kept) == len(groups) - 1, "the fixture removes an entry that is there"
     document["hooks"]["SessionStart"][0]["hooks"] = kept
@@ -231,11 +272,11 @@ def test_hooks_json_gaining_an_entry_is_reported_rather_than_quietly_run(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # The other side of the count, and the one neither event set can see: a duplicated entry
-    # changes no event and no bundle, runs a fifteenth row and prints a summary that reads
+    # changes no event and no bundle, runs a twelfth row and prints a summary that reads
     # green. The floor is the only thing that answers.
     #
-    # Mutation (declared, "the hook smoke stops counting its own entries and rows"): the
-    # comparison against `EXPECTED_ENTRIES`/`EXPECTED_ROWS` is disabled -> `main` returns 0
+    # Mutation (declared, `mutations/`'s "the hook smoke stops counting its own entries and rows"):
+    # the comparison against `EXPECTED_ENTRIES`/`EXPECTED_ROWS` is disabled -> `main` returns 0
     # and both assertions below redden.
     smoke = _load("smoke_hooks")
     planted = _plugin(tmp_path)
@@ -256,7 +297,7 @@ def test_hooks_json_gaining_an_entry_is_reported_rather_than_quietly_run(
     )
     out = capsys.readouterr().out
     assert code == 1, out
-    assert "14 entries and 15 rows, expected 13 and 14" in out, out
+    assert "11 entries and 12 rows, expected 10 and 11" in out, out
 
 
 @needs_git
@@ -271,11 +312,12 @@ def test_the_exfiltration_scenario_holds_against_the_checkout(
     # not run: stayfixed ships no MCP server yet (the README lists the memory MCP server under
     # "Not yet"), and the script says so in its own output.
     #
-    # The count as well as the exit code, because six of the eight rows assert an ABSENCE and a
+    # The count as well as the exit code, because seven of the nine rows assert an ABSENCE and a
     # report holding one row satisfies `failures == 0` identically. Measured: with
     # `report.rows = report.rows[:1]` before the summary, this file was still five green.
-    # Mutation (declared, "the exfiltration scenario stops recording the rows that passed"):
-    # `Report.row` banks only the failures, the report empties, and the floor is what notices.
+    # Mutation (declared, `mutations/`'s "the exfiltration scenario stops recording the rows that
+    # passed"): `Report.row` banks only the failures, the report empties, and the floor is what
+    # notices.
     exfil = _load("smoke_exfiltration")
     code = exfil.main(
         [
@@ -289,7 +331,7 @@ def test_the_exfiltration_scenario_holds_against_the_checkout(
     )
     out = capsys.readouterr().out
     assert code == 0, out
-    assert "8 row(s), 0 failure(s)" in out, out
+    assert "9 row(s), 0 failure(s)" in out, out
 
 
 @needs_git
@@ -318,14 +360,24 @@ def test_the_exfiltration_scenario_reports_a_row_that_went_the_wrong_way(
     assert "FAIL  the owner's own trust record lets the note through" in out, out
 
 
+def test_the_hook_smoke_asks_for_the_red_run_note_in_the_words_the_note_opens_with() -> None:
+    # `RED_RUN_NOTE` is copied from `stayfixed.guards.hygiene.LEAD` rather than imported, as
+    # `FLOOR_VARIABLE` is, and held equal here: a lead reworded in the guard would otherwise turn
+    # the `PostToolUseFailure` row red in CI for a note that still speaks. Mutation (oracle):
+    # `mutations/`'s "the hook smoke asks for a red-run note the guard does not open with".
+    from stayfixed.guards.hygiene import LEAD
+
+    assert _load("smoke_hooks").RED_RUN_NOTE == LEAD
+
+
 def test_a_hook_entry_keeps_the_suite_floor_and_no_other_stayfixed_variable(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # Both smoke scripts strip every `STAYFIXED_*` variable so an entry never reads this
     # developer's own stayfixed, and without an exception that strip would take the suite's floor
     # under the product's `git` bounds too. The floor alone is kept, spelled as the product
-    # spells it, in the one base environment both scripts build on. Mutation (oracle): "the hook
-    # smoke strips the suite's floor" -> this reddens.
+    # spells it, in the one base environment both scripts build on. Mutation (oracle):
+    # `mutations/`'s "the hook smoke strips the suite's floor" -> this reddens.
     smoke = _load("smoke_hooks")
     assert smoke.FLOOR_VARIABLE == gitenv.FLOOR_VARIABLE
     monkeypatch.setenv("STAYFIXED_CONFIG", str(tmp_path / "developer.toml"))

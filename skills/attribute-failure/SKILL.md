@@ -6,8 +6,8 @@ description: Attribute one failing test or command to the change or to the envir
 # Attributing a failure
 
 1. Take the exact failing command, including the environment sync it needs to be
-   meaningful: `uv sync --locked && uv run pytest tests/test_example.py::test_case` for a
-   Python project; the equivalent for another stack. The command is the whole of what makes
+   meaningful: `uv sync --locked && uv run --locked pytest tests/test_example.py::test_case`
+   for a Python project; the equivalent for another stack. The command is the whole of what makes
    runs 2 and 3 "synced"; a command that does not sync compares two drifted environments.
 2. Run `stayfixed test attribute --command "the command from step 1"`. The base defaults to
    the project's base branch; pass `--base` to compare against another ref. The command

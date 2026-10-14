@@ -37,7 +37,7 @@ skills in the format every harness reads [S4] [S14].
 a sentence saying why no mutation exists. A test that cannot fail is not a test; a test that
 fails for a reason other than the one it names proves nothing about that reason.
 
-**What stayfixed does.** `mutations.toml` declares, for each load-bearing guard, the one line
+**What stayfixed does.** `mutations/` declares, for each load-bearing guard, the one line
 to change and the tests that must go red when it does; `scripts/mutation_oracle.py` applies
 each, runs only the named tests, and fails on a survivor, on a `before` line that no longer
 exists, and on a named test that does not pass on the clean tree first. CI runs the whole
@@ -66,7 +66,7 @@ renders `MEMORY.md` from them under a declared section order and harvests back a
 second writer appended, so the harness's own memory writer and stayfixed share one directory
 without either rewriting the other's keys. `memory inventory` reports each note's size and
 whether its line is curated, harvested or provisional; `memory refs` checks that every path a
-note names still exists; `docs check --memory-graph` checks the link graph.
+note names still exists, and reports the link graph beside it as advice.
 
 **Why.** The harness loads the first 200 lines or 25 KB of the index into every session
 [S5], so the index is a budget and every word in it is paid on every turn [S17]. There is no
@@ -91,10 +91,10 @@ to.
 
 **What stayfixed does.** Which rules those are is each person's to write, and stayfixed ships
 none: a standing rule is a note with `metadata.startup` in the overlay's `common/memory/` or a
-project's memory, and the `recommended` preset carries no `[rules]` table. `memory
-session-context` renders four bundles — preset rules, standing rules, volatile notes, the
-index — each across numbered parts sized to the platform's per-entry cap, and `memory fit`
-reports a bundle that does not fit its slots.
+project's memory, and the `recommended` preset carries no rule of its own. `memory
+session-context` renders two bundles — standing rules and volatile notes — each across
+numbered parts sized to the platform's per-entry cap, and `memory fit` reports a bundle that
+does not fit its slots.
 Standing rules are flagged when they outgrow their budget and still delivered, because a
 standing rule that does not arrive is a standing rule that gets broken; volatile notes
 degrade to descriptions instead.
@@ -141,18 +141,22 @@ platform blocks on a non-zero exit — before a tool call — and never on sessi
 exit codes are ignored, or on prompt submission, where a blocking exit erases the prompt.
 A guard that cannot fail closed must say so rather than pretend.
 
-**What stayfixed does today.** Every handler declares its policy, `open` or `closed`; the
-guards over a shell call, a commit message and a test run are closed, the memory handlers
-open. Not this, yet: the guarantee belongs in a shell wrapper rather than in Python, because
-a Python process cannot fail closed about its own absence — the wrapper is designed to probe
-for an interpreter at or above the floor, refuse with the blocking exit when none is found,
-and map every other exit code to it with a printed reason. It ships with the hooks file that
-calls it, in the `hooks-core` package; neither is in the tree today.
+**What stayfixed does today.** Every handler declares its policy, `open` or `closed`, and one is
+closed: `bg-cleanup`, the guard over a backgrounded shell call, which runs before the tool call.
+The note after a failing test run and the session-start handlers are open, and the
+commit-message hook git runs locally never fails a commit itself, though a hook it chains to can
+— its gate is `stayfixed commit check` in CI. The guarantee lives in a shell wrapper rather than
+in Python, because a Python process cannot fail closed about its own absence: every entry in
+`hooks/hooks.json` runs `hooks/run-hook.sh` with its policy, and the wrapper looks for a
+`python3` of 3.11 or newer outside the project root. On every fault it can see — no interpreter,
+no `git`, a project root it cannot enter, a launcher it cannot read, and afterwards an exit
+other than `0` or `2` — it prints its reason and refuses with the blocking exit under `closed`,
+or continues under `open`.
 
 **Why.** The exit-code semantics differ per event and are documented per event [S3]; Codex
 runs some hooks asynchronously and an asynchronous hook cannot block [S7]. A hook whose
 binary is missing exits 127, which the harness treats as a non-blocking error — so the
-guard silently becomes permission, which is why the wrapper is specified at all.
+guard silently becomes permission, which is why the wrapper exists.
 
 **Backing:** sourced. The per-event semantics are the platforms' [S3] [S7], and that is the
 claim the label is about: where fail-closed is expressible at all is a platform fact, not a
@@ -168,9 +172,9 @@ where it would pass, and only then enforce — and the decision to enforce shoul
 the base branch, never from the change under review.
 
 **What stayfixed does today.** The state machine ships per gate. `stayfixed assess` inventories
-what stands between a repository and enforcement. `stayfixed adopt begin` starts an adoption
-with a plan, and `stayfixed adopt promote` enforces every gate that passes now and names the
-rest, or enforces the gates it is given only if all of them pass. The gate a pull request faces
+what stands between a repository and enforcement, and `stayfixed adopt promote` enforces every
+gate that passes now and names the rest, or enforces the gates it is given only if all of them
+pass; its first promotion is what starts the adoption. The gate a pull request faces
 reads the base branch's configuration and admits only a change that tightens it, under the
 repository settings `docs/cli.md` names. What it does not do yet is hold the line inside a gate
 — fail new findings while grandfathering old ones — which current linters do [S33] and which is
@@ -192,10 +196,15 @@ travel as a plugin that declares a dependency on the public one and carries its 
 manifest — installable on a fresh machine by the same command that installs everything
 else, private by construction, and never a prerequisite for the public tool to be useful.
 
-**What stayfixed does today.** The public plugin runs with `memory.mode = "local-only"` and
-no overlay; `overlay` mode, `attach` and the template repository are later work packages.
-The memory store's resolution already honours an overlay symlink only when its target lies
-inside a recorded overlay root that binds this repository's remote.
+**What stayfixed does today.** The public plugin needs no overlay: with `[memory] mode` set to
+`local-only` or `in-repo` it runs whole. The overlay is its delivery layer, and the core runs
+without it. `stayfixed overlay create` makes a private overlay repository from the template
+repository, or renders one locally. `overlay init` names it after its owner, `overlay upgrade`
+refreshes the files nobody edited, `stayfixed setup --overlay` records it on a machine, and
+`stayfixed attach` binds a repository to it in `overlay` mode; `detach` takes back what `attach`
+wrote and keeps the overlay's record of the binding. The memory store honours an overlay link
+only when its target lies inside this project's share of the recorded overlay root and the
+overlay's record binds this repository's `origin`.
 
 **Why.** A plugin with a declared dependency and a manifest is now a specified, portable
 unit [S15]; one plugin root serves both harnesses, because each reads its own manifest from
@@ -218,11 +227,11 @@ reach installed users. A project's reference to a shared workflow is a full-leng
 SHA written by the tool that installed it and bumped by the tool that upgrades it; a
 floating alias is a documented opt-in.
 
-**What stayfixed does.** `release check` cross-checks the version across `pyproject.toml`,
-the lockfile, the package, both plugin manifests and `CHANGELOG.md`; the marketplace
-entries carry no version because the plugin's own overrides it silently [S6]. Changelog
-entries are fragments assembled at release [S12]. The CLI installs from a git tag with no
-resolver at hook time [S13].
+**What stayfixed does.** Its repository's release check, `scripts/release.py check`,
+cross-checks the version across `pyproject.toml`, the lockfile, the package, both plugin
+manifests and `CHANGELOG.md`; the marketplace entries carry no version because the plugin's
+own overrides it silently [S6]. Changelog entries are fragments assembled at release [S12].
+The CLI installs from a git tag with no resolver at hook time [S13].
 
 **Why.** `plugin.json`'s `version` is what update delivery reads [S2]; a full-length SHA is
 the only immutable reference to a reusable workflow [S25].

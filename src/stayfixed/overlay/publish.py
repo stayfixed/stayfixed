@@ -21,7 +21,6 @@ becomes one. `gh` decides the protocol and carries the token; this module only n
 
 from __future__ import annotations
 
-import json
 import re
 import tempfile
 from dataclasses import dataclass
@@ -30,6 +29,7 @@ from pathlib import Path
 import stayfixed
 from stayfixed import fsops
 from stayfixed.errors import Failure, Refusal
+from stayfixed.jsonobject import json_object
 from stayfixed.overlay.create import TEMPLATE_REPOSITORY, _render_locally
 from stayfixed.overlay.identity import segment
 from stayfixed.overlay.layout import OVERLAY_FILES
@@ -77,7 +77,7 @@ def _detail(done: Completed) -> str:
 
 
 def _gh(runner: Runner, argv: list[str], cwd: Path) -> Completed:
-    done = runner.run(["gh", *argv], cwd)
+    done = runner.launch(["gh", *argv], cwd)
     if done.code in (NOT_FOUND, TIMED_OUT):
         raise Failure(
             f"`gh {' '.join(argv[:2])} …` could not be run ({_detail(done)}); install and "
@@ -89,7 +89,7 @@ def _gh(runner: Runner, argv: list[str], cwd: Path) -> Completed:
 def _git(runner: Runner, argv: list[str], cwd: Path) -> Completed:
     """`_gh`'s twin for the `git` half, and it exists because the `git` half had no guard.
 
-    The four `git` calls in this module went through `runner.run` directly, and two of them —
+    The four `git` calls in this module went through the runner directly, and two of them —
     `add -A` and `status --porcelain` — had their exit codes read by nothing. A `git` that is
     absent, hung, blocked by an `index.lock` another process left, or failed by a
     `core.hooksPath` pre-commit hook returns an empty `stdout`, so `changed` came out empty and
@@ -100,7 +100,7 @@ def _git(runner: Runner, argv: list[str], cwd: Path) -> Completed:
     `NOT_FOUND` and `TIMED_OUT` are the two the seam invents rather than `git` reporting, which
     is why they get their own sentence: neither is an answer from `git` at all.
     """
-    done = runner.run(["git", *argv], cwd)
+    done = runner.launch(["git", *argv], cwd)
     if done.code in (NOT_FOUND, TIMED_OUT):
         raise Failure(
             f"`git {' '.join(argv[2:4])} …` could not be run ({_detail(done)}); this command "
@@ -149,12 +149,17 @@ def _inspect_repository(runner: Runner, slug: str, cwd: Path) -> Existing:
                 f"{slug} exists is not known; authenticate gh, or retry"
             )
         return Existing(False, False, "", DEFAULT_BRANCH)
-    try:
-        document = json.loads(view.stdout or "{}")
-    except json.JSONDecodeError as exc:
-        raise Failure(f"`gh repo view {slug}` did not answer with JSON: {exc}") from None
-    if not isinstance(document, dict):
-        raise Failure(f"`gh repo view {slug}` answered with JSON that is not an object")
+    # Through `jsonobject`, the one reader of a JSON object: valid JSON past the parser, its
+    # depth bound or the integers it converts is one more answer this cannot read.
+    document = json_object(
+        view.stdout or "{}",
+        f"what `gh repo view {slug}` answered",
+        error=Failure,
+        limit=lambda _: Failure(
+            f"`gh repo view {slug}` answered with JSON past what this reader follows"
+        ),
+        shape=lambda _: Failure(f"`gh repo view {slug}` answered with JSON that is not an object"),
+    )
     branch = document.get("defaultBranchRef")
     named = branch.get("name") if isinstance(branch, dict) else None
     return Existing(
@@ -218,7 +223,7 @@ def _ensure_repository(
 
 def _render_tree(rendered: Path) -> tuple[str, ...]:
     """The shipped files the render actually left, in `OVERLAY_FILES` order."""
-    return tuple(relative for relative in OVERLAY_FILES if (rendered / relative).is_file())
+    return tuple(relative for relative in OVERLAY_FILES if fsops.is_file(rendered / relative))
 
 
 def _replace_tree(clone: Path, rendered: Path, written: tuple[str, ...]) -> None:
@@ -243,9 +248,9 @@ def _replace_tree(clone: Path, rendered: Path, written: tuple[str, ...]) -> None
         if ".git" in path.relative_to(clone).parts:
             continue
         relative = str(path.relative_to(clone))
-        if path.is_file():
+        if fsops.is_file(path):
             fsops.remove_within(clone, relative)
-        elif path.is_dir() and not any(path.iterdir()):
+        elif fsops.is_dir(path) and not any(path.iterdir()):
             fsops.rmdir_within(clone, relative)
     for relative in written:
         fsops.write_within(clone, relative, (rendered / relative).read_text(encoding="utf-8"))
@@ -293,9 +298,9 @@ def publish_template(
         # `gh repo clone`, not `git clone git@…`: it uses whichever protocol `gh` is
         # authenticated over, which is the premise the whole command rests on. A full clone,
         # not `--depth 1`: a shallow graft is not a history anyone wants pushed.
-        cloned = runner.run(["gh", "repo", "clone", slug, "clone"], scratch)
+        cloned = runner.launch(["gh", "repo", "clone", slug, "clone"], scratch)
         clone = scratch / "clone"
-        if cloned.code != 0 or not clone.is_dir():
+        if cloned.code != 0 or not fsops.is_dir(clone):
             raise Failure(f"`gh repo clone {slug}` exited {cloned.code} ({_detail(cloned)})")
         _replace_tree(clone, rendered, written)
         added = _git(runner, ["-C", str(clone), "add", "-A"], clone)

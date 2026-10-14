@@ -3,7 +3,7 @@
 One entry per bundle, each rendered by `memory session-context --bundle <name> --part <n>`,
 and **no dispatcher handler**. That is not a style choice. Foundation's `hook <event>` takes
 an event name and runs every handler registered for it, joining their contexts and clamping
-the join to one platform cap — so nine numbered slots registered as handlers would concatenate
+the join to one platform cap — so the six numbered slots registered as handlers would concatenate
 back into a single 10,000-character budget and be truncated, which is precisely the defect
 a cap per `SessionStart` slot exists to remove. Invoked as separate `hooks.json` entries, each
 slot gets its own cap, and the text is emitted raw rather than through a JSON envelope, so the
@@ -21,38 +21,25 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
 from enum import StrEnum
-from pathlib import Path
 
 from stayfixed.config.schema import Config
 from stayfixed.memory import trust
-from stayfixed.memory.index import index_source, is_volatile
+from stayfixed.memory.index import is_volatile
 from stayfixed.memory.notes import Note, walk
-from stayfixed.memory.store import Store, in_repository
-from stayfixed.presets import load_preset
+from stayfixed.memory.store import Store
 
 
 class Bundle(StrEnum):
-    PRESET_RULES = "preset-rules"
     STANDING_RULES = "standing-rules"
     VOLATILE_NOTES = "volatile-notes"
-    INDEX = "index"
 
 
 # How many numbered entries `hooks/hooks.json` declares for each bundle. Raising one edits
 # that shipped file, which the hooks area owns; `doctor` compares these against what a store
 # actually needs and reports a bundle that does not fit.
 SLOTS: dict[Bundle, int] = {
-    Bundle.PRESET_RULES: 1,
     Bundle.STANDING_RULES: 3,
     Bundle.VOLATILE_NOTES: 3,
-    # Three, and the arithmetic is the reason. `memory_index_bytes` is 25600 and a part holds
-    # `hook_output_chars - CAP_MARGIN` = 9984, so an index written right up to its own
-    # configured cap needs three parts and two could never hold it. It was two, and worse, the
-    # second was unreachable: `_index` returned the whole file as one block and `split` never
-    # breaks a block, so a 22,816-byte index — under every configured cap — packed into one
-    # part of 23,126 characters that the harness truncated at 10,000, with part 2 empty and
-    # `stayfixed memory index` exiting 0 saying "index is current".
-    Bundle.INDEX: 3,
 }
 
 # How much of `native_caps.hook_output_chars` this area keeps back. `_cap` subtracts it, so a
@@ -179,78 +166,15 @@ def _volatile(store: Store, config: Config) -> list[str]:
     ]
 
 
-def _preset_rules(config: Config) -> list[str]:
-    # `presets/` belongs to `stayfixed.setup`; the configuration loader reads only budgets, caps
-    # and defaults from it. When the configured preset carries no `[rules]` table, this bundle
-    # is silent by design.
-    rules = load_preset(config.stayfixed.preset).get("rules", {})
-    if not isinstance(rules, dict):
-        return []
-    # `.strip()` is not cosmetic: a TOML `"""…"""` body keeps the newline before its closing
-    # quotes, and `split` joins blocks on `"\n\n"`, so an unstripped body puts three
-    # consecutive newlines in front of the next `### ` heading in the text the model reads.
-    # The `or not rules` that used to stand in the guard above is gone with it: an empty table
-    # renders nothing through this comprehension anyway, so nothing could ever redden it.
-    return [
-        f"### {name}\n\n{body.strip()}" for name, body in rules.items() if isinstance(body, str)
-    ]
-
-
-# Where `_index` is allowed to break the index into blocks: the start of a `## ` section, which
-# is the same boundary `index.render_index` builds it on. `split` packs blocks and never breaks
-# one, so a bundle that returns a single block can only ever fill a single slot however many
-# the platform gives it — the mistake the `INDEX: 3` comment above describes.
-_SECTION = "\n## "
-
-
-def _index(source: Path | None) -> list[str]:
-    """The index, once `index.index_source` has said which file the index actually is.
-
-    Reading `store.path / INDEX_NAME` directly was the defect: `is_file()` follows symlinks and
-    nothing asked where the link went, while `worktree.link` already applied the per-link
-    target rule to the very same file. This is the path that reaches the model, so it gets the
-    rule first, not last.
-
-    Returned as one block per section rather than as the whole file, so `split` has something
-    to pack. The header and every section keep their own text exactly; only the joins between
-    them are re-made, and `split` re-makes them as the blank line `render_index` already writes.
-    A section that is on its own larger than one part is still one block — the honest answer is
-    that it does not fit, which `Fit.oversized` reports and `doctor` reads, rather than a cut
-    made at whatever character the budget ran out on.
-    """
-    if source is None or not source.is_file():
-        return []
-    try:
-        text = source.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError):
-        return []
-    if not text.strip():
-        return []
-    head, *sections = text.split(_SECTION)
-    blocks = [head.rstrip("\n"), *(f"## {section}".rstrip("\n") for section in sections)]
-    return [block for block in blocks if block.strip()]
-
-
 def blocks(bundle: Bundle, store: Store, config: Config) -> list[str]:
-    if bundle is Bundle.PRESET_RULES:
-        # The owner's own rules, from the plugin. Never repository content, so no trust gate.
-        return _preset_rules(config)
-    # The index is asked about by file, not by store. `trust.inside_project` inspects
-    # `store.groups`, and in overlay mode every group resolves into the overlay while
-    # `store.path` is a real directory *in the repository* — so a committed `MEMORY.md` sitting
-    # there used to reach the model with `may_inject` returning True on no trust record and
-    # `is_repository_data` returning False, unwrapped. Where the file itself sits is the
-    # question, and `in_repository` is the one that asks it.
-    source = index_source(store, config) if bundle is Bundle.INDEX else None
-    from_repository = trust.is_repository_data(store) or (
-        source is not None and in_repository(store, source)
-    )
+    # Every bundle is built from the store's notes, so one question decides both the gate and
+    # the wrap: whether those notes are content the repository shipped.
+    from_repository = trust.is_repository_data(store)
     if not trust.may_inject(store, config, repository_data=from_repository):
         return []
     produced = {
         Bundle.STANDING_RULES: lambda: _standing(store, config),
         Bundle.VOLATILE_NOTES: lambda: _volatile(store, config),
-        Bundle.INDEX: lambda: _index(source),
     }[bundle]()
     if not produced or not from_repository:
         return produced

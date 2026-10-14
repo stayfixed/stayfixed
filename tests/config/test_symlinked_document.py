@@ -45,9 +45,6 @@ def test_load_refuses_a_symlinked_stayfixed_toml(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     "argv",
     [
-        pytest.param(
-            ["adopt", "begin", "docs/plans/2026-09-26-stayfixed-adoption.md"], id="adopt-begin"
-        ),
         pytest.param(["adopt", "promote"], id="adopt-promote"),
         pytest.param(["bugs", "check"], id="bugs-check"),
         pytest.param(["plan", "check"], id="plan-check"),

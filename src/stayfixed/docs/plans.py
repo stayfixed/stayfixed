@@ -9,6 +9,11 @@ doubt from whoever executes it. That one shipped an open defect. The verb is not
 guarded against the compound-word false positive a bare `no` produces (`no-op` is not the
 negation `no`).
 
+A path the plan removes is the first rule's claim run backwards: it resolves until its task lands
+and never after, and a finished plan is history that a later change may still edit. So a
+`Delete:` line declares its paths as `Create:` does, and `(delete)` marks its line as `(create)`
+does.
+
 The `Scope:` and `Premise:` rules come from the same retro: an unrelated change rode a bugfix
 plan because nothing on the plan named what belonged to it, and a fix's own discriminator
 outran the entry evidence it was supposedly fixing because nothing forced that evidence onto
@@ -59,6 +64,13 @@ at the file on disk, not at a commit that does not exist yet; the plans the work
 beyond the diff are reported as `unlinted` rather than linted silently, so the remedy is to name
 the file.
 
+The same holds within a plan. A delivered plan's `Interfaces:` blocks are kept current, so a later
+change edits plans whose other lines name paths the tree has since moved or removed, and holding
+it to those made the only way through a rewrite of history. In the diff-scoped mode a reference
+is therefore settled only on a line the change wrote (`written_lines`): a new plan is all such
+lines, and an edit is held to its own. Every other rule still reads the whole plan, and naming a
+plan as `PATH` still settles every reference in it.
+
 A repository whose BASE will not resolve is a finding and not an OK. Printing a note and exiting
 0 is how a gate like this one runs green for its whole life without ever having linted anything:
 a CI checkout made at the default depth of 1 holds no base ref, so the diff cannot be taken and
@@ -73,20 +85,25 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from stayfixed import fsops
 from stayfixed.config.layout import local_base
 from stayfixed.config.paths import contained
 from stayfixed.docs.hygiene import read_document
 from stayfixed.errors import Failure, Refusal
 from stayfixed.findings import Finding
 from stayfixed.gitenv import NO_ANSWER, ForkUnknown, fork_points, git_run
-from stayfixed.identifiers import identifiers
-from stayfixed.prose import blank_fences, path_references, resolves_within
+from stayfixed.ledger.api import bug_register
+from stayfixed.prose import blank_fences, path_references, present_within, resolves_within
 
 if TYPE_CHECKING:
     from stayfixed.config.schema import Config
 
-_DECLARES = re.compile(r"^\s*-\s*(?:Create|Test):\s*(.+)$", re.MULTILINE)
-_CREATE_MARK = re.compile(r"\(create\)", re.IGNORECASE)
+# A line declaring paths: a dash, after blanks on its own line. Led by `^\s*`, the pattern reached
+# the same dash from every line start in the blank lines above it, reading them again from each:
+# 0.33 s over 16,000 of them, and four times as long at each doubling. A match from a line above
+# ends where the one from the dash's own line does, so the paths declared are the same.
+_DECLARES = re.compile(r"^[^\S\n]*-\s*(?:Create|Test|Delete):\s*(.+)$", re.MULTILINE)
+_LINE_MARK = re.compile(r"\((?:create|delete)\)", re.IGNORECASE)
 # "confirm", "verify", and "check" all phrase a step as already knowing the answer it claims to
 # test. `no(?!-)` keeps a compound word like "no-op" out of the negation: a hyphen is a word
 # boundary, so plain `\bno\b` matches inside it and flags correct prose.
@@ -99,7 +116,12 @@ _LEADING = re.compile(
 # anywhere later in the document — exactly the unfilled-marker case these rules exist to catch.
 # Anchoring to non-newline whitespace forces the content onto the marker's own line.
 _SCOPE_LINE = re.compile(r"^\*\*Scope:\*\*[^\S\n]*\S", re.MULTILINE)
-_PREMISE_LINE = re.compile(r"^\*\*Premise[^:]*:\*\*[^\S\n]*\S", re.MULTILINE)
+#
+# A premise marker, read to the first colon after it, past line ends; the group holds when the
+# marker closes there and has content on its line. Every marker before that colon reaches the same
+# one, so `_has_premise` reads each stretch once with `finditer`, where a search from each marker
+# read the stretch again: 0.51 s over 16,000 markers with no colon after them.
+_PREMISE_LINE = re.compile(r"^\*\*Premise[^:]*+(:\*\*[^\S\n]*\S)?", re.MULTILINE)
 # The colour idiom, present tense. `fails`/`passes` are deliberately absent: see the module
 # docstring for the measurement that removed them.
 _OUTCOME = r"(?:reddens?|go(?:es)?\s+red|turns?\s+red|stays?\s+green|remains?\s+green)"
@@ -124,6 +146,9 @@ _MARKED_AS_EXPECTATION = re.compile(r"\bexpect(?:s|ed|ation|ations)?\b", re.IGNO
 # A sentence boundary: terminal punctuation, any closing bracket or quote, then whitespace.
 # The dot inside `src/widget/thing.py` is followed by a letter, so a path is not a boundary.
 _SENTENCE_END = re.compile(r"[.!?][)\]\"'`]*\s")
+# A unified-diff hunk header's new-side range, `+start[,count]`: the lines of the file as it is now
+# that the hunk holds. A missing count is one line, and a count of 0 a hunk that only removed.
+_HUNK = re.compile(r"^@@ -\S+ \+(\d+)(?:,(\d+))? @@", re.MULTILINE)
 
 _BASE_UNRESOLVABLE = (
     "which plans HEAD changes against `{base}` is unknown under {root} ({cause}), so NOTHING "
@@ -223,21 +248,34 @@ def touched_plans(root: Path, base: str, plans_dir: Path) -> list[Path]:
     if base.startswith("-"):
         raise Refusal(f"{base!r} looks like an option, not a base ref")
     relative = plans_dir.relative_to(root).as_posix()
-    forks = fork_points(root, base)
-    if isinstance(forks, ForkUnknown):
-        raise _unresolved(forks, base, root)
 
     def changed(since: str) -> set[str]:
-        code, out = git_run(root, "diff", "--name-only", "-z", since, "HEAD", "--", relative)
-        if code != 0:
-            raise _unresolved(ForkUnknown.of(code), base, root)
+        out = _diff(root, base, "--name-only", "-z", since, "HEAD", "--", relative)
         return {name for name in out.split("\0") if name.endswith(".md")}
 
     found: set[str] = set()
-    for fork in forks:
+    for fork in _forks(root, base):
         found |= changed(fork)
     found &= changed(base)
     return [root / name for name in sorted(found)]
+
+
+def _forks(root: Path, base: str) -> tuple[str, ...]:
+    """`gitenv.fork_points`, or the failure that says why they are not known. One spelling for
+    `touched_plans` and `written_lines`, which ask the same question of the same base."""
+    forks = fork_points(root, base)
+    if isinstance(forks, ForkUnknown):
+        raise _unresolved(forks, base, root)
+    return tuple(forks)
+
+
+def _diff(root: Path, base: str, *args: str) -> str:
+    """What `git diff args` printed, or the failure that says why git gave no diff. A diff git
+    did not answer is never an empty one: read as one, it is a change that touched nothing."""
+    code, out = git_run(root, "diff", *args)
+    if code != 0:
+        raise _unresolved(ForkUnknown.of(code), base, root)
+    return out
 
 
 def unlinted_plans(root: Path, plans_dir: Path) -> list[Path] | None:
@@ -285,6 +323,31 @@ def unlinted_plans(root: Path, plans_dir: Path) -> list[Path] | None:
     return found
 
 
+def written_lines(root: Path, base: str, plan: Path) -> set[int]:
+    """The lines of `plan`, as the working tree holds it, that this change wrote.
+
+    A line the change wrote is one that differs from every fork point's copy and from the
+    base's, for the reason `touched_plans` reads a plan as touched only against all of them: a
+    line the base changed since the fork reads as added against the base alone, and one an old
+    fork point lacks reads as added against that fork point alone. Diffed against the working
+    tree, the file `lint` reads, so the numbers are the ones its findings carry. `--no-textconv`
+    and `--no-ext-diff`, so the numbers are of the file's own lines and not of a filter's output.
+    `base` has been through `touched_plans`, which refuses one shaped like an option.
+    """
+    relative = plan.relative_to(root).as_posix()
+    written: set[int] | None = None
+    for since in (*_forks(root, base), base):
+        out = _diff(
+            root, base, "-U0", "--no-color", "--no-ext-diff", "--no-textconv", since, "--", relative
+        )
+        lines: set[int] = set()
+        for hunk in _HUNK.finditer(out):
+            start = int(hunk.group(1))
+            lines.update(range(start, start + int(hunk.group(2) or 1)))
+        written = lines if written is None else written & lines
+    return written or set()
+
+
 def logical_blocks(prose: str) -> list[tuple[str, list[int]]]:
     """Blank-line blocks joined into one string each, with every character's source line.
 
@@ -315,45 +378,67 @@ def asserted_outcomes(prose: str) -> list[int]:
     """Lines opening a claim that states a mutation's outcome as fact."""
     found: set[int] = set()
     for text, line_of in logical_blocks(prose):
+        # The marker is read over the claim's own SENTENCE, up to where the claim ends, and never
+        # over the lines the match happens to span. A match starts at its GOVERNOR, so a marker
+        # written before the governor fell outside that span whenever the text wrapped between
+        # the two — the same wrap-dependence the paragraph reading removed from detection,
+        # relocated into the exemption. A sentence is the unit `Expected:` marks: a marker in a
+        # neighbouring sentence still exempts nothing, and one written after the claim is not
+        # read at all.
+        #
+        # Claims come in order, so the sentence ends and the markers are read forward once each
+        # beside them. Read again from the block's start at every claim, a paragraph of 32,000
+        # claims took 52 s, four times as long at each doubling. A marker is a word, so one lies
+        # within a claim's sentence exactly when the first that starts in it ends by the claim's
+        # end.
+        ends = _SENTENCE_END.finditer(text)
+        markers = _MARKED_AS_EXPECTATION.finditer(text)
+        end, marker, opening = next(ends, None), next(markers, None), 0
         for match in _ASSERTED_OUTCOME.finditer(text):
-            # The marker is read over the claim's own SENTENCE, up to where the claim ends, and
-            # never over the lines the match happens to span. A match starts at its GOVERNOR, so
-            # a marker written before the governor fell outside that span whenever the text
-            # wrapped between the two — the same wrap-dependence the paragraph reading removed
-            # from detection, relocated into the exemption. A sentence is the unit `Expected:`
-            # marks: a marker in a neighbouring sentence still exempts nothing, and one written
-            # after the claim is not read at all.
-            opening = max(
-                (end.end() for end in _SENTENCE_END.finditer(text, 0, match.start())),
-                default=0,
-            )
-            if _MARKED_AS_EXPECTATION.search(text[opening : match.end()]):
+            while end is not None and end.end() <= match.start():
+                opening, end = end.end(), next(ends, None)
+            while marker is not None and marker.start() < opening:
+                marker = next(markers, None)
+            if marker is not None and marker.end() <= match.end():
                 continue
             found.add(line_of[match.start()])
     return sorted(found)
 
 
-def _lint_one(path: Path, where: str, root: Path, *, fixes: re.Pattern[str]) -> list[Finding]:
-    """Every finding one plan carries, with the line numbers of the file as it is on disk."""
+def _has_premise(prose: str) -> bool:
+    """Whether a premise marker in `prose` closes with content on its line (`_PREMISE_LINE`)."""
+    return any(marker.group(1) for marker in _PREMISE_LINE.finditer(prose))
+
+
+def _lint_one(
+    path: Path, where: str, root: Path, *, fixes: re.Pattern[str], judged: set[int] | None = None
+) -> list[Finding]:
+    """Every finding one plan carries, with the line numbers of the file as it is on disk.
+
+    `judged`, when given, is the lines whose references are settled against the tree: the ones
+    the change wrote (`written_lines`). Every other rule reads the whole plan either way.
+    """
     # Fenced code is not plan prose: its fixtures name deliberately fake paths.
     prose = blank_fences(read_document(path, where))
     found: list[Finding] = []
     # Per plan, not per line: these are properties of the document, not of one line in it.
     if not _SCOPE_LINE.search(prose):
         found.append(Finding("scope-missing", where, None, _SCOPE_MISSING))
-    if fixes.search(prose) and not _PREMISE_LINE.search(prose):
+    if fixes.search(prose) and not _has_premise(prose):
         found.append(Finding("premise-missing", where, None, _PREMISE_MISSING))
     declared: set[str] = set()
     for line in _DECLARES.findall(prose):
         declared |= set(path_references(line))
     for number, line in enumerate(prose.splitlines(), 1):
-        if not _CREATE_MARK.search(line):
+        if not _LINE_MARK.search(line) and (judged is None or number in judged):
             for target in path_references(line):
                 # A claim that lands outside the root is not asked of the filesystem: the
                 # answer would be about this disk rather than about the repository, and a plan
                 # naming an absolute path that exists locally would pass here and fail in CI.
                 landed = resolves_within(root, target)
-                if landed is None or landed.exists() or target in declared:
+                if landed is None or target in declared:
+                    continue
+                if present_within(root, landed) is not False:
                     continue
                 found.append(Finding("dead-reference", where, number, target))
         if _LEADING.search(line):
@@ -368,8 +453,9 @@ def lint(root: Path, config: Config, *, plans: list[Path], base: str | None = No
     plans_dir = contained(root, config.paths.plans)
     base = base or local_base(config)
     unlinted: list[Path] = []
+    diff_scoped = False
     if plans:
-        missing = [p for p in plans if not p.is_file()]
+        missing = [p for p in plans if not fsops.is_file(p)]
         if missing:
             raise Failure("not a plan file: " + ", ".join(str(p) for p in missing))
         # Every finding carries a repo-relative path, so a named plan outside the root is
@@ -384,6 +470,7 @@ def lint(root: Path, config: Config, *, plans: list[Path], base: str | None = No
             )
         selected = list(plans)
     elif _is_git_repo(root):
+        diff_scoped = True
         touched = touched_plans(root, base, plans_dir)
         pending = unlinted_plans(root, plans_dir)
         if pending is None:
@@ -391,14 +478,16 @@ def lint(root: Path, config: Config, *, plans: list[Path], base: str | None = No
                 f"git status could not be read under {root}, so uncommitted plans could not "
                 "be found"
             )
-        selected = [p for p in touched if p.is_file()]
+        selected = [p for p in touched if fsops.is_file(p)]
         unlinted = [p for p in pending if p not in set(touched)]
     else:
-        selected = sorted(plans_dir.glob("*.md")) if plans_dir.is_dir() else []
+        selected = sorted(plans_dir.glob("*.md")) if fsops.is_dir(plans_dir) else []
     findings: list[Finding] = []
-    fixes = identifiers(config).fixes
+    fixes = bug_register(config).ids.fixes
     for path in sorted(selected):
-        findings.extend(_lint_one(path, path.relative_to(root).as_posix(), root, fixes=fixes))
+        judged = written_lines(root, base, path) if diff_scoped else None
+        where = path.relative_to(root).as_posix()
+        findings.extend(_lint_one(path, where, root, fixes=fixes, judged=judged))
     return Lint(findings, sorted(selected), sorted(unlinted))
 
 

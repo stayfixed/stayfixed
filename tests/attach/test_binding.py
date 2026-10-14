@@ -8,17 +8,27 @@ lives in `test_write.py`.
 
 from __future__ import annotations
 
+import errno
 import json
+import os
 import shutil
 from pathlib import Path
 
 import pytest
 
+from stayfixed import fsops
+from stayfixed.attach import binding
 from stayfixed.attach.api import Binding, read_binding
-from stayfixed.attach.binding import MEMORY_GROUP_ESCAPES, binding_for, unlinked_groups
+from stayfixed.attach.binding import (
+    MEMORY_GROUP_ESCAPES,
+    MEMORY_GROUP_UNASKED,
+    UnreadableRecord,
+    binding_for,
+    unlinked_groups,
+)
 from stayfixed.attach.permissions import diff_permissions
 from stayfixed.config.loader import CONFIG_FILE, ConfigError, load, loads
-from stayfixed.config.paths import PathEscape
+from stayfixed.config.paths import PathEscape, PathUnasked
 from stayfixed.errors import Failure, Refusal
 from stayfixed.memory.api import NO_ORIGIN, PROJECT_RECORD, PROJECTS, UNBOUND
 from stayfixed.overlay.api import COMMON_CLAUDE, COMMON_CODEX, COMMON_MEMORY
@@ -26,6 +36,8 @@ from stayfixed.presets import load_preset
 from stayfixed.scaffold import EntriesError
 from tests.gitfixture import git as _git
 from tests.gitfixture import run_git
+from tests.pathfaults import ROOT_SEARCHES_EVERYTHING, unsearchable
+from tests.runners import git_that_cannot_run
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
@@ -53,20 +65,6 @@ mode = "overlay"
 groups = ["developer", "project-stable"]
 index_extra = []
 """
-
-
-def _git_that_cannot_run(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A `git` that cannot be launched at all, which is what `GitUnavailable` is about.
-
-    The same helper `tests/memory/test_store.py` carries, and patched at the same seam. A
-    repository with *no* `origin` remote is a different state — `git` ran and answered
-    nothing — and it is the ordinary "not bound" one rather than a machine fault.
-    """
-
-    def refuse(*args: object, **kwargs: object) -> tuple[int, str]:
-        return -1, ""  # `git_run`'s own answer for a `git` that could not be launched
-
-    monkeypatch.setattr("stayfixed.memory.store.git_run", refuse)
 
 
 def _project_and_store(
@@ -118,7 +116,7 @@ def test_the_overlay_root_comes_from_the_machine_file_and_not_from_the_argument(
     tmp_path: Path,
 ) -> None:
     # This is the overlay's whole trust model. The overlay is trusted BY CONSTRUCTION, and the
-    # construction is that `machine_config_path(interactive=False)` makes the machine file
+    # construction is that `machine_config_path` makes the machine file
     # unselectable by a repository — `machine.py` spends twenty lines on why gating one of a pair of
     # equivalent inputs "is not a partial defence, it is a redirect with a longer name". Deriving
     # the root from `--store`'s own parent throws all of that away: the source of every allow rule
@@ -132,6 +130,37 @@ def test_the_overlay_root_comes_from_the_machine_file_and_not_from_the_argument(
     assert "overlay" in str(refused.value)
 
 
+def test_read_binding_reads_the_machine_file_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `read_binding` asked the machine file for the overlay root to check `--store` against, and
+    # `binding_for` asked it again for the binding it returned, so one call read the file twice
+    # and the store could be checked against one root and bound under another if the file changed
+    # in between. Called with the caller's `Config`, as every caller in `src/` calls it, so the
+    # count is the binding's own reads and not the loader's.
+    #
+    # Counted at `config.overlay.read_machine_toml`, the read `overlay_root` makes, so any second
+    # route to the root counts too. The binding is asserted first so the count is not vacuous.
+    #
+    # Mutation (oracle): `mutations/`'s "read_binding reads the machine file a second time for the
+    # binding" -> two reads, and this reddens.
+    from stayfixed.config.loader import read_machine_toml as real
+
+    root, store = _project_and_store(tmp_path, recorded=None, origin="git@github.com:o/p.git")
+    machine = _machine(tmp_path, overlay=store.parents[2])
+    config = load(root, machine=machine)
+    reads: list[Path] = []
+
+    def counted(path: Path) -> dict[str, object] | None:
+        reads.append(path)
+        return real(path)
+
+    monkeypatch.setattr("stayfixed.config.overlay.read_machine_toml", counted)
+    binding = read_binding(root, store=store, machine=machine, config=config)
+    assert binding.overlay == store.parents[2]
+    assert reads == [machine]
+
+
 def test_a_store_that_is_not_this_projects_directory_is_refused(tmp_path: Path) -> None:
     # `--store` names `<overlay>/projects/<name>/memory` and nothing else. A store elsewhere
     # under the overlay attaches and then fails on every session start, because
@@ -142,6 +171,36 @@ def test_a_store_that_is_not_this_projects_directory_is_refused(tmp_path: Path) 
     sibling.mkdir(parents=True)
     with pytest.raises(Refusal):
         read_binding(root, store=sibling, machine=_machine(tmp_path, overlay=real.parents[2]))
+
+
+def test_a_store_through_a_symlink_loop_is_refused_like_any_other_store_that_is_not_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `doctor` hands this function the store the attach ledger names, and the ledger is a file a
+    # clone can commit, beside a symlink loop of its own. Python 3.11 and 3.12 raise
+    # `RuntimeError` resolving a path through a loop where 3.13 answers a path, so on the two
+    # older interpreters the resolve escaped the refusal, and `doctor`'s `attached` and
+    # `hook-entries` rows read red, "this check could not run". The loop is real; the
+    # older interpreters' answer to it is stood in for, so the case holds on every interpreter.
+    #
+    # Mutation (oracle): `mutations/`'s "read_binding lets a store it cannot resolve raise" ->
+    # the `RuntimeError` escapes.
+    root, real = _project_and_store(tmp_path, recorded=None, origin="git@github.com:o/p.git")
+    (root / "loop").symlink_to("loop")
+    resolve = Path.resolve
+
+    def resolve_as_older_pythons_do(self: Path, strict: bool = False) -> Path:
+        if "loop" in self.parts:
+            raise RuntimeError(f"Symlink loop from {str(self)!r}")
+        return resolve(self, strict)
+
+    monkeypatch.setattr(Path, "resolve", resolve_as_older_pythons_do)
+    with pytest.raises(Refusal):
+        read_binding(
+            root,
+            store=root / "loop" / "memory",
+            machine=_machine(tmp_path, overlay=real.parents[2]),
+        )
 
 
 def test_a_first_attach_reports_unbound_rather_than_binding_silently(tmp_path: Path) -> None:
@@ -189,11 +248,11 @@ def test_git_being_unavailable_is_a_machine_fault_and_not_an_unbound_state(
     # caller "became a silent no-op … while every memory bundle was empty and nothing reported
     # a failure". An unreadable remote must not read as "never bound", which is the state that
     # invites a rebind.
-    from stayfixed.memory.api import GitUnavailable
+    from stayfixed.gitenv import GitUnavailable
 
     root, store = _project_and_store(tmp_path, recorded="u", origin="u")
     machine = _machine(tmp_path, overlay=store.parents[2])
-    _git_that_cannot_run(monkeypatch)
+    git_that_cannot_run(monkeypatch)
     with pytest.raises(GitUnavailable):
         read_binding(root, store=store, machine=machine)
 
@@ -206,7 +265,7 @@ def test_a_repository_with_no_origin_remote_is_its_own_state_and_not_a_machine_f
     # repository. It used to be read as a mismatch, whose way out, `--trust-remote`, then refused
     # for the missing `origin`; it is `no-origin`, recorded or not, and every surface says so.
     #
-    # Mutation: `mutations.toml`'s "the binding classifier reads a missing origin as a different
+    # Mutation: `mutations/`'s "the binding classifier reads a missing origin as a different
     # remote".
     assert _read(tmp_path, recorded="u", origin=None).state == NO_ORIGIN
     assert _read(tmp_path, recorded=None, origin=None).state == NO_ORIGIN
@@ -327,7 +386,7 @@ def test_a_project_name_reaches_neither_refusal_of_this_module(tmp_path: Path) -
     # `project.name` is repository-authored and one lowercase segment is a wide enough grammar for
     # instruction-shaped text; `skills/attach/SKILL.md` tells the model to relay these messages. Two
     # of them interpolated a path with the name in it. The rule was already applied correctly in
-    # `permissions.check` and `write.py`; this is the same rule, two messages over. Mutation: either
+    # `attach.check` and `write.py`; this is the same rule, two messages over. Mutation: either
     # message formatted with `expected` / `record` again → reddens.
     root, store = _project_and_store(tmp_path, recorded=None, origin="x", name=HOSTILE_NAME)
     machine = _machine(tmp_path, overlay=tmp_path / "overlay")
@@ -359,8 +418,14 @@ def test_check_refuses_the_allow_list_shape_the_real_run_refuses(tmp_path: Path)
         json.dumps({"permissions": {"allow": "all"}}), encoding="utf-8"
     )
     binding = read_binding(root, store=store, machine=_machine(tmp_path, overlay=overlay))
-    with pytest.raises(EntriesError):
+    with pytest.raises(EntriesError) as refused:
         diff_permissions(root, binding)
+    # Named as the project names it, never by the machine's absolute path. Mutation (oracle):
+    # `mutations/`'s "the allow-list refusal names the project's settings file by its absolute
+    # path" -> the message carries the temporary directory.
+    assert str(refused.value) == (
+        ".claude/settings.local.json: 'permissions.allow' is not a list of strings"
+    )
     # And a rule that is not a string, in the overlay's own file: refused, not dropped.
     (overlay / COMMON_CLAUDE / "permissions.json").write_text(
         json.dumps({"permissions": {"allow": [42]}}), encoding="utf-8"
@@ -368,6 +433,26 @@ def test_check_refuses_the_allow_list_shape_the_real_run_refuses(tmp_path: Path)
     (root / ".claude" / "settings.local.json").unlink()
     with pytest.raises(EntriesError):
         diff_permissions(root, binding)
+
+
+def test_a_binding_record_past_the_read_cap_is_unreadable_in_words_not_a_class_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The record is read to the read cap (`fsops.read_regular_text`), and one past it stops the
+    # run as any record that cannot be read does. The refusal says why in the reader's words: the
+    # class name it printed before named stayfixed's internals (`TooLarge`) and no condition. The
+    # cap is lowered so the record is small. Mutation (oracle): `mutations/`'s "a read refusal says
+    # an unreadable file by its error's class name" -> `(TooLarge)`.
+    root, store = _project_and_store(tmp_path, recorded="x", origin="x")
+    limit = 4 * 1024
+    record = store.parent / PROJECT_RECORD
+    record.write_text(record.read_text(encoding="utf-8") + "#" * limit + "\n", encoding="utf-8")
+    monkeypatch.setattr(fsops, "REGULAR_READ_LIMIT", limit)
+    with pytest.raises(UnreadableRecord) as refused:
+        read_binding(root, store=store, machine=_machine(tmp_path, overlay=store.parents[2]))
+    assert str(refused.value).endswith(
+        f"<this project's name>/{PROJECT_RECORD} cannot be read (larger than this reader reads)"
+    )
 
 
 def test_binding_for_takes_the_config_it_is_handed_rather_than_loading_a_second_time(
@@ -447,6 +532,25 @@ def test_a_group_name_that_escapes_paths_memory_is_refused_with_the_fixed_senten
     assert "ignore-prior-rules" not in str(caught.value)
 
 
+@ROOT_SEARCHES_EVERYTHING
+def test_a_group_whose_place_cannot_be_asked_about_is_refused_for_that_and_not_as_an_escape(
+    tmp_path: Path,
+) -> None:
+    # A real `paths.memory` nobody may search leaves every group under it unaskable, and no link
+    # is on the way: "does not name a subdirectory, or paths.memory is a symlink" named two causes
+    # it did not have. Mutation (oracle): `mutations/`'s "unlinked_groups words a group it cannot
+    # ask about as an escape".
+    text = (
+        '[stayfixed]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n\n'
+        '[memory]\nmode = "overlay"\ngroups = ["developer"]\nindex_extra = []\n'
+    )
+    config = loads(text, tmp_path, machine=tmp_path / "absent.toml")
+    (tmp_path / DEFAULT_MEMORY).mkdir(parents=True)
+    with unsearchable(tmp_path / DEFAULT_MEMORY), pytest.raises(PathUnasked) as caught:
+        unlinked_groups(tmp_path, config)
+    assert str(caught.value) == MEMORY_GROUP_UNASKED.format(fault="Permission denied")
+
+
 @pytest.mark.parametrize("group", ["", ".", "a/", "a//b"])
 def test_a_group_that_is_not_a_subdirectory_is_refused_by_a_sentence_that_is_true(
     tmp_path: Path, group: str
@@ -464,7 +568,7 @@ def test_a_group_that_is_not_a_subdirectory_is_refused_by_a_sentence_that_is_tru
     every entry it is raised for. Asserted about the refusal a repository or an owner can
     provoke, and not about a crash.
 
-    Mutation: `mutations.toml`'s "the memory-group refusal describes an escape again".
+    Mutation: `mutations/`'s "the memory-group refusal describes an escape again".
     """
     text = (
         '[stayfixed]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n\n'
@@ -476,3 +580,27 @@ def test_a_group_that_is_not_a_subdirectory_is_refused_by_a_sentence_that_is_tru
         unlinked_groups(tmp_path, config)
     assert str(caught.value) == MEMORY_GROUP_ESCAPES
     assert "subdirectory" in str(caught.value) and "stay inside" not in str(caught.value)
+
+
+@pytest.mark.parametrize(
+    ("kernel_says", "too_long"),
+    [(errno.ENOENT, False), (errno.ENAMETOOLONG, True)],
+    ids=["no-such-file", "name-too-long"],
+)
+def test_whether_a_name_is_too_long_is_the_kernels_verdict_and_never_a_count(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, kernel_says: int, too_long: bool
+) -> None:
+    # 200 x "é" is 400 bytes: too long for Linux's 255-byte names, a name on APFS, which counts
+    # 255 characters. The share check asks the kernel, so it answers as the filesystem does on
+    # either; the lookup is stubbed so both answers are tested on any OS. Mutation (declared):
+    # `mutations/`'s "the share check counts a name's bytes" -> `no-such-file` reads as too long.
+    name = "é" * 200
+    real = Path.lstat
+
+    def lstat(self: Path, *args: object, **kwargs: object) -> os.stat_result:
+        if self.name == name:
+            raise OSError(kernel_says, "stubbed")
+        return real(self)
+
+    monkeypatch.setattr(Path, "lstat", lstat)
+    assert binding._name_too_long(tmp_path, name) is too_long

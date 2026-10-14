@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import inspect
 import io
+import posixpath
 import re
 import shlex
 from contextlib import redirect_stderr
@@ -29,6 +30,9 @@ import pytest
 
 from stayfixed import __version__
 from stayfixed.cli import build_parser, discover_registrars, split_json_flag
+from tests.cli import subparsers
+from tests.scriptload import plugin_tree, publish_plugin
+from tests.test_neutral import tracked_files
 
 ROOT = Path(__file__).resolve().parents[1]
 README = ROOT / "README.md"
@@ -118,10 +122,10 @@ def test_no_module_claims_the_test_tree_cannot_share_a_helper() -> None:
     Three modules said, in as many words, that a helper was copied rather than imported
     because the test tree was not importable as a package and CONTRIBUTING forbade a
     cross-module import. Both halves are false: `tests/__init__.py` is tracked, `CONTRIBUTING.md`
-    carries no such rule,
-    and `tests/overlay/test_upgrade.py` imports the very class one of those comments said it
-    could not. What it cost, measured at the time: the hardened-`git` helper defined in 26
-    modules, six of them already drifted, while `tests/snapshot.py` published it.
+    carries no such rule, and `tests/overlay/test_upgrade.py` imported the very class one of those
+    comments said it could not (it and `tests/overlay/test_create.py` now import
+    `tests.runners.Recorder`). What it cost, measured at the time: the hardened-`git` helper
+    defined in 26 modules, six of them already drifted, while `tests/snapshot.py` published it.
 
     In a tree whose whole discipline is that a comment is evidence, a false comment that
     *authorises* a practice is worse than the practice. So the claim is a finding, and the
@@ -282,17 +286,15 @@ def readme_invocations() -> list[str]:
 def registered_commands() -> set[str]:
     """`group command` for every subcommand the real parser registers; a group with no
     subcommands (`hook <event>`) counts as its bare name."""
-    parser = build_parser(discover_registrars())
+    groups = subparsers(build_parser(discover_registrars()))
+    assert groups is not None
     found: set[str] = set()
-    for action in parser._actions:
-        if not isinstance(action, argparse._SubParsersAction):
-            continue
-        for group, sub in action.choices.items():
-            inner = [a for a in sub._actions if isinstance(a, argparse._SubParsersAction)]
-            if not inner:
-                found.add(group)
-            for nested in inner:
-                found.update(f"{group} {command}" for command in nested.choices)
+    for group, sub in groups.choices.items():
+        nested = subparsers(sub)
+        if nested is None:
+            found.add(group)
+        else:
+            found.update(f"{group} {command}" for command in nested.choices)
     return found
 
 
@@ -310,6 +312,109 @@ def test_the_parser_registers_what_this_test_expects_to_walk() -> None:
     found = registered_commands()
     assert {"memory index", "bugs check", "docs check", "plan check", "hook"} <= found
     assert len(found) >= REGISTERED_COMMANDS_FLOOR
+
+
+# Where a tracked file names a command: in backticks, on a line that runs it through `uv run`,
+# and on a line of a fenced block in a document. A mention wrapped onto the next line carries
+# the comment marker or the string-concatenation quotes that continue it, which `_WRAP` reads
+# as the space they stand for.
+_MENTION = re.compile(r"`stayfixed\s([^`]{1,300})`")
+_RUN = re.compile(r"\buv run stayfixed\s+([^\n`\"']*)")
+_FENCED_LINE = re.compile(r"^\s*(?:\$ )?stayfixed\s+([^\n]*)", re.MULTILINE)
+_WRAP = re.compile(r'"?\s*\n\s*(?:#\s*|f?")?')
+_COMMAND_NAME = re.compile(r"[a-z][a-z0-9-]*")
+# What the walk does not read, and why: a plan, the changelog and its fragments are the record of
+# what a command was called when they were written, and a mutation entry plants an old spelling
+# on purpose, in an `after` value no mention walk can tell from prose.
+_NAMES_AS_THEY_WERE = ("docs/plans/", "changelog.d/", "mutations/", "CHANGELOG.md")
+_NAMING_SUFFIXES = (".md", ".yml", ".yaml", ".toml", ".py")
+# A vacuity floor, not a count: the walk read 877 mentions when it was written, and a regex
+# that matched nothing would satisfy the check below it.
+NAMED_COMMANDS_FLOOR = 500
+
+
+def named_commands(relative: str, text: str) -> list[str]:
+    """The text after `stayfixed` in each place `text` names a command."""
+    found = [_WRAP.sub(" ", body) for body in _MENTION.findall(text)]
+    found += _RUN.findall(text)
+    if relative.endswith(".md"):
+        for block in _FENCE.findall(text):
+            found += _FENCED_LINE.findall(block)
+    return found
+
+
+def unregistered(named: list[str]) -> list[str]:
+    """Each of `named` whose group, or whose command under a group, the parser does not register.
+
+    Names only, never a parse: a synopsis carries placeholders (`<group>`, `…`, `{name}`), and a
+    token that is not a command's name is not asked about.
+    """
+    groups = subparsers(build_parser(discover_registrars()))
+    assert groups is not None
+    wrong: list[str] = []
+    for body in named:
+        words = body.split()
+        if not words or not _COMMAND_NAME.fullmatch(words[0]):
+            continue
+        if words[0] not in groups.choices:
+            wrong.append(body)
+            continue
+        nested = subparsers(groups.choices[words[0]])
+        if (
+            nested is not None
+            and len(words) > 1
+            and _COMMAND_NAME.fullmatch(words[1])
+            and words[1] not in nested.choices
+        ):
+            wrong.append(body)
+    return wrong
+
+
+def test_the_command_name_walk_discriminates() -> None:
+    # The guard for the walk below, which asserts an absence: a walk that read no mention, or
+    # asked nothing of one, would pass it. Spelled through `tick` and `run` so this file names no
+    # command the walk would then find in it.
+    tick, run = "`", "uv run"
+    old = [
+        f"run {tick}stayfixed release check{tick} first",
+        f"{tick}stayfixed adopt begin{tick} and {tick}stayfixed test audit-entrypoints{tick}",
+        f"# {tick}stayfixed overlay\n# publish{tick}",
+        f"        run: {run} stayfixed release check --tag x",
+    ]
+    for text in old:
+        assert unregistered(named_commands("x.py", text)), text
+    assert unregistered(named_commands("x.md", "```bash\nstayfixed release check\n```\n"))
+    fine = [
+        f"{tick}stayfixed adopt promote{tick}, {tick}stayfixed hook <event>{tick}",
+        f"{tick}stayfixed <group>{tick}, {tick}stayfixed …{tick}, {tick}stayfixed {{name}}{tick}",
+        f'"{tick}stayfixed memory "\n    "index --check{tick}"',
+        f"{tick}stayfixed --version{tick}, {run} stayfixed init --yes",
+    ]
+    for text in fine:
+        named = named_commands("x.py", text)
+        assert named and not unregistered(named), text
+
+
+def test_every_command_a_tracked_file_names_is_one_the_parser_registers() -> None:
+    # The release commands left the CLI for `scripts/release.py`, `adopt begin` and `test
+    # audit-entrypoints` left it outright, and the tests that held the new spellings checked that
+    # each was present, never that an old one was gone: five old spellings planted across the
+    # contributor documents, the README, `docs/cli.md` and `release.yml` left them green. And a
+    # source comment had named `overlay publish` since that command became `publish-template`.
+    # Mutation (declared): `mutations/`'s "a source comment names the overlay command by its old
+    # name".
+    named: dict[str, list[str]] = {}
+    count = 0
+    for path in tracked_files():
+        relative = path.relative_to(ROOT).as_posix()
+        if relative.startswith(_NAMES_AS_THEY_WERE) or not relative.endswith(_NAMING_SUFFIXES):
+            continue
+        found = named_commands(relative, path.read_text(encoding="utf-8"))
+        count += len(found)
+        if wrong := unregistered(found):
+            named[relative] = wrong
+    assert count >= NAMED_COMMANDS_FLOOR, count
+    assert named == {}
 
 
 def test_every_registered_command_has_a_readme_row() -> None:
@@ -343,35 +448,40 @@ def test_every_readme_row_parses() -> None:
 # scripting against it would have treated a `findings` list as "this command does not report
 # findings". Bound to the real parser's functions rather than to a second hand-written list.
 _FINDINGS_SENTENCE = re.compile(
-    r"The commands that report a list of\nfindings — (.+?) —\nall spell it `findings`", re.MULTILINE
+    r"The commands that report a list of\s+findings — (.+?) —\s+all spell it `findings`", re.DOTALL
 )
+
+
+def command_parsers() -> dict[str, argparse.ArgumentParser]:
+    """`group command` -> the parser of every command the real parser registers; a group with no
+    subcommands (`hook <event>`) is its own command, under its bare name."""
+    groups = subparsers(build_parser(discover_registrars()))
+    assert groups is not None
+    found: dict[str, argparse.ArgumentParser] = {}
+    for group, sub in groups.choices.items():
+        nested = subparsers(sub)
+        if nested is None:
+            found[group] = sub
+        else:
+            found.update((f"{group} {command}", leaf) for command, leaf in nested.choices.items())
+    return found
 
 
 def command_functions() -> dict[str, object]:
     """`group command` -> the `run_*` callable the real parser dispatches to."""
-    parser = build_parser(discover_registrars())
     found: dict[str, object] = {}
-    for action in parser._actions:
-        if not isinstance(action, argparse._SubParsersAction):
-            continue
-        for group, sub in action.choices.items():
-            inner = [a for a in sub._actions if isinstance(a, argparse._SubParsersAction)]
-            if not inner:
-                func = sub.get_default("func")
-                if func is not None:
-                    found[group] = func
-            for nested in inner:
-                for command, leaf in nested.choices.items():
-                    func = leaf.get_default("func")
-                    if func is not None:
-                        found[f"{group} {command}"] = func
+    for name, leaf in command_parsers().items():
+        func = leaf.get_default("func")
+        if func is not None:
+            found[name] = func
     return found
 
 
 def test_the_readme_names_every_command_whose_json_carries_findings() -> None:
     # Mutation: drop `memory refs` from the README sentence -> reddens naming it.
     # The floor first: a walk that resolved no functions would make the comparison below
-    # vacuously true, and a regex that stopped matching would look the same.
+    # vacuously true, and a regex that stopped matching would look the same. Four emit the key
+    # today: `bugs check`, `docs check`, `memory refs` and `plan check`.
     functions = command_functions()
     assert len(functions) >= REGISTERED_COMMANDS_FLOOR, sorted(functions)
     emitting = {
@@ -379,7 +489,7 @@ def test_the_readme_names_every_command_whose_json_carries_findings() -> None:
         for name, func in functions.items()
         if '"findings":' in inspect.getsource(func)  # type: ignore[arg-type]
     }
-    assert len(emitting) >= 5, sorted(emitting)
+    assert len(emitting) >= 4, sorted(emitting)
     match = _FINDINGS_SENTENCE.search(README.read_text(encoding="utf-8"))
     assert match is not None, "README's --json paragraph no longer names the findings commands"
     named = set(re.findall(r"`([^`]+)`", match.group(1)))
@@ -396,9 +506,9 @@ def test_the_readme_installs_the_release_the_tree_carries() -> None:
 
     Before 0.1.0 the section described the untagged install forms and a marked region the release
     commit replaced; `RELEASING.md` step 5 now bumps the two places the section names the
-    version, and this holds them to the version `release check` holds everywhere else, which it
-    cannot see in a README example. An untagged `git+` install or a promise about "the first
-    release" would put a second install command beside the released one.
+    version, and this holds them to the version `scripts/release.py check` holds everywhere else,
+    which it cannot see in a README example. An untagged `git+` install or a promise about "the
+    first release" would put a second install command beside the released one.
 
     Mutation (declared): the PyPI form becomes an untagged `git+` install -> this reddens.
     """
@@ -419,12 +529,203 @@ def test_the_readme_installs_the_release_the_tree_carries() -> None:
     assert "set both to the new version" in RELEASING.read_text(encoding="utf-8")
 
 
+# A `gh` version `RELEASING.md` names as the floor: "`gh` 2.101.0 or later", "a `gh` older than
+# 2.101.0", either wrapped across a line.
+_GH_FLOOR_NAMED = re.compile(r"`gh`(?:\s+older\s+than)?\s+(\d+(?:\.\d+)+)")
+
+
+def test_every_gh_floor_releasing_names_is_the_one_the_publisher_refuses_below() -> None:
+    """Step 7 names the oldest `gh` the publisher accepts three times, and `GH_FLOOR` is the one
+    the publisher enforces; a floor raised in the script and not in the document sends the owner
+    to install a `gh` the publisher then refuses.
+
+    Mutation (oracle): `mutations/`'s "RELEASING names an older gh floor than the publisher"
+    -> reddens naming it. The set is held non-empty first, so a pattern that found none would
+    hold the document to nothing: `mutations/`'s "the gh floor test reads no version from
+    RELEASING" -> reddens.
+    """
+    floor = ".".join(str(part) for part in publish_plugin().GH_FLOOR)
+    named = _GH_FLOOR_NAMED.findall(RELEASING.read_text(encoding="utf-8"))
+    assert named, "RELEASING.md names no gh floor"
+    assert set(named) == {floor}, (named, floor)
+
+
+# The floor as the publisher's own docstring states it: "a release at least 2.101.0".
+_GH_FLOOR_IN_DOCSTRING = re.compile(r"a release at least\s+(\d+(?:\.\d+)+)")
+
+
+def test_the_publisher_s_docstring_names_the_gh_floor_it_refuses_below() -> None:
+    """The publisher's module docstring, which `RELEASING.md` calls its reference, states the
+    floor in prose beside `GH_FLOOR`; a floor raised in the constant alone leaves that reference
+    naming a `gh` the publisher refuses.
+
+    Mutation (oracle): `mutations/`'s "the publisher's docstring names an older gh floor than it
+    refuses below" -> reddens naming it. Held to exactly one mention, so a pattern that found
+    none holds nothing: the docstring rewritten without the phrase reddens too.
+    """
+    module = publish_plugin()
+    floor = ".".join(str(part) for part in module.GH_FLOOR)
+    named = _GH_FLOOR_IN_DOCSTRING.findall(module.__doc__ or "")
+    assert named == [floor], (named, floor)
+
+
+# `README.md`'s `## What each agent enforces` section: everything to the next `## ` heading.
+_REACH_SECTION = re.compile(
+    r"^## What each agent enforces\n(.*?)(?=^## )", re.MULTILINE | re.DOTALL
+)
+# A cell's words where no tier is claimed for a surface under an agent.
+NOT_REACHED = "not verified"
+# A measurement the section's prose cites, as "(<agent> <version>)", the version with a
+# pre-release suffix where the measured build carried one (`0.162.0-alpha.17.2`).
+_MEASURED_AT = re.compile(r"\(([A-Z][A-Za-z ]* \d+(?:\.\d+)+(?:-[0-9A-Za-z.]+)?)\)")
+
+
+def _reach_table() -> str:
+    """The README's table as the harness registry states it: a row per surface, a column per
+    harness under the name `[stayfixed] agents` lists it by, and each cell its tier."""
+    from stayfixed.harnesses import HARNESSES, Surface
+
+    head = "| Surface | " + " | ".join(f"`{harness.name}`" for harness in HARNESSES) + " |"
+    rule = "|---" * (len(HARNESSES) + 1) + "|"
+    rows = [
+        f"| {surface} | "
+        + " | ".join(
+            NOT_REACHED if (tier := harness.reach[surface].tier) is None else str(tier)
+            for harness in HARNESSES
+        )
+        + " |"
+        for surface in Surface
+    ]
+    return "\n".join([head, rule, *rows]) + "\n"
+
+
+def test_the_readme_states_each_agents_reach_as_the_registry_does() -> None:
+    # The table is rendered here from the registry and the README is held equal to it, so the
+    # README stays a plain file a reader can open and the claim it makes about each agent cannot
+    # drift from the one `doctor` reports. An empty table equals nothing rendered, so a section
+    # that lost its table reddens too. Mutation (declared, on `harnesses`): Codex's session
+    # guards stated as blocking -> this reddens.
+    from stayfixed.harnesses import HARNESSES, Surface
+
+    match = _REACH_SECTION.search(README.read_text(encoding="utf-8"))
+    assert match, "README.md has no ## What each agent enforces section"
+    lines = match.group(1).splitlines(keepends=True)
+    table = "".join(line for line in lines if line.startswith("|"))
+    assert table == _reach_table(), table
+    # The prose under the table says what each agent's session guards did when they were
+    # measured, and at which version; the registry records the agent and version that surface was
+    # measured on, so a retaken measurement is one edit there and this reddens until the README
+    # follows it. Mutation (declared, on `harnesses`): Claude Code's guard measurement restated
+    # at another version -> this reddens.
+    measured = {harness.reach[Surface.GUARDS].measured_on for harness in HARNESSES}
+    assert set(_MEASURED_AT.findall(match.group(1))) == measured
+
+
+def test_the_readme_says_the_guards_have_no_off_switch_and_how_to_pass_one() -> None:
+    # A blocked agent's first question is how to get past the block, and a user's is how to turn
+    # it off. The section answers both where the table says a guard blocks: the one blocking
+    # guard judges only backgrounded commands, so the same command run in the foreground passes;
+    # nothing turns a guard off; and a false block is a defect to report. Each clause is one
+    # needle, read from the section alone, so a paragraph moved elsewhere in the README reddens
+    # too. Mutations (declared), one per needle: the foreground sentence deleted, the scope's
+    # "only" dropped, the guards given a switch, and the false block no longer called a defect ->
+    # each reddens this.
+    match = _REACH_SECTION.search(README.read_text(encoding="utf-8"))
+    assert match, "README.md has no ## What each agent enforces section"
+    section = " ".join(match.group(1).split())
+    assert "judges only a command the agent runs in the background" in section
+    assert "The same command run in the foreground passes." in section
+    assert "stayfixed has no switch that turns a guard off" in section
+    assert "a false block is a defect" in section
+
+
+# A fenced `toml` block, and inside one the `[stayfixed]` table's `version =` line: the table
+# runs to the next table header or the end of the block, so a `version` key in another table
+# is not taken for it.
+_TOML_FENCE = re.compile(r"^```toml\n(.*?)^```", re.MULTILINE | re.DOTALL)
+_STAYFIXED_TABLE = re.compile(r"^\[stayfixed\]\n((?:(?!\[).*\n)*)", re.MULTILINE)
+_VERSION_KEY = re.compile(r'^version = "([^"]*)"', re.MULTILINE)
+
+
+@pytest.mark.parametrize("document", [README, ROOT / "docs" / "cli.md"], ids=lambda path: path.name)
+def test_the_example_configurations_carry_the_running_version(document: Path) -> None:
+    """`doctor` warns whenever `[stayfixed] version` is not `__version__`, so an example that
+    kept the last release's number is a copy-paste that makes a brand-new project warn.
+
+    `scripts/release.py check` reads seven sources and none of them is an example in a document, so
+    `RELEASING.md` step 3 once named these two blocks as held by nothing but the person cutting
+    the release. This holds them, the way the Install section is held above.
+
+    Mutation (declared, one per document): the example's `version` becomes `0.0.1-<version>`
+    -> this reddens for that document.
+    """
+    versions = [
+        key.group(1)
+        for fence in _TOML_FENCE.finditer(document.read_text(encoding="utf-8"))
+        for table in _STAYFIXED_TABLE.finditer(fence.group(1))
+        for key in _VERSION_KEY.finditer(table.group(1))
+    ]
+    # A floor as well as the equality: a document whose example lost its `[stayfixed]` table
+    # would otherwise compare an empty list and pass.
+    assert versions, f"{document.name} has no example `[stayfixed]` table with a version"
+    assert versions == [__version__] * len(versions), (document.name, versions)
+
+
 def test_the_readme_points_at_the_methodology_and_the_reference() -> None:
     # The two documents a reader is sent to; a README that lost either link would still pass
     # the link walk (it checks the links that exist). Mutation: remove the methodology link.
     text = prose(README)
     assert "docs/methodology/README.md" in text
     assert "docs/cli.md" in text
+
+
+# The paths `scripts/plugin_tree.py` renders into the plugin repository, read from its
+# `PLUGIN_PATHS`. The subject here is the README's links, not that list: what the list holds is
+# spelled out and pinned by `tests/scripts/test_plugin_tree.py`, so a fourth copy here would only
+# be one more place to forget when the plugin gains a path.
+PLUGIN_PATHS: tuple[str, ...] = plugin_tree().PLUGIN_PATHS
+# A link to a file of this repository as `main` holds it, which moves only at a release.
+_THIS_REPOSITORY_MAIN = re.compile(r"^https://github\.com/stayfixed/stayfixed/blob/main/([^#]+)")
+
+
+def test_the_readme_links_only_inside_the_plugin_or_absolutely() -> None:
+    """The README is published three times — here, on PyPI as the long description, and at the
+    root of the plugin repository, which holds only the plugin's paths. A relative link to
+    `docs/cli.md` resolves here and in nothing else, so a link to a file outside the plugin is
+    absolute, to this repository's `main`. One inside it stays relative: it resolves here and in
+    the plugin repository, though not on PyPI.
+
+    `test_every_relative_link_resolves` holds that a relative link names a file here; this holds
+    that the file is one the plugin repository has too, and that every absolute link to `main`
+    names a tracked file, which the link walk skips as a URL.
+
+    Mutations (declared): the reference link made relative again, `](docs/cli.md)` -> `outside`
+    reddens; the same link spelled through a plugin path, `](src/stayfixed/../../docs/cli.md)`,
+    which only the normalisation tells from one inside it -> `outside` reddens; the outbound
+    walk's link naming a file that is not there -> `missing` reddens.
+    """
+    relative = links_in(README)
+    # Floors: a README whose links all vanished, or a regex that stopped matching, would make
+    # both walks vacuously true. `skills/README.md` and `LICENSE` stay relative today.
+    assert len(relative) >= 2, relative
+    # Normalised first: `src/stayfixed/../../docs/cli.md` starts with a plugin path and names a
+    # file outside every one of them.
+    normal = [posixpath.normpath(target) for target in relative]
+    outside = [
+        target
+        for target in normal
+        if not any(target == path or target.startswith(path + "/") for path in PLUGIN_PATHS)
+    ]
+    assert outside == [], outside
+    absolute = [
+        match.group(1)
+        for target in _LINK.findall(prose(README))
+        if (match := _THIS_REPOSITORY_MAIN.match(target))
+    ]
+    assert absolute, "README.md links nothing of this repository's main"
+    tracked = set(tracked_files())
+    missing = [path for path in absolute if ROOT / path not in tracked]
+    assert missing == [], missing
 
 
 CLI_REFERENCE = ROOT / "docs" / "cli.md"
@@ -480,6 +781,43 @@ def test_the_shared_flag_tables_are_the_constants_and_not_a_second_spelling() ->
         for flag, sentence in expected.items()
         if rows.get(flag) != sentence
     }
+
+
+# The Shared flags sentence naming the commands that take neither `--root` nor `--machine`, up to
+# the reason it gives, so the list it holds is the one the sentence states and nothing around it.
+_TAKES_NEITHER = re.compile(
+    r"Neither flag is taken by (.+?),\s+because none of them reads a project", re.DOTALL
+)
+_PROJECT_FLAGS = frozenset({"--root", "--machine"})
+
+
+def test_shared_flags_names_every_command_that_takes_neither_root_nor_machine() -> None:
+    # The rule is stated once, in Shared flags, and the README and the `memory` bullet link to it:
+    # it was spelled by hand in both, in two wordings, and nothing held either to the parser. Held
+    # here to the same walk as the command table: the commands named as taking neither flag are
+    # exactly those whose parser declares neither, every other `overlay` command takes `--root`
+    # alone, and every command besides takes both.
+    #
+    # Mutation (declared): a command dropped from the takes-neither sentence -> this reddens.
+    section = _SHARED_FLAGS_SECTION.search(CLI_REFERENCE.read_text(encoding="utf-8"))
+    assert section is not None, "docs/cli.md has no `## Shared flags` section"
+    match = _TAKES_NEITHER.search(section.group(1))
+    assert match is not None, "Shared flags no longer names the commands that take neither flag"
+    named = {" ".join(name.split()) for name in re.findall(r"`stayfixed ([^`]+)`", match.group(1))}
+    options = {
+        name: {flag for action in leaf._actions for flag in action.option_strings}
+        for name, leaf in command_parsers().items()
+    }
+    # The walk's floor, for the reason the command-table test gives: a walk that found nothing
+    # would make every comparison below vacuously true.
+    assert len(options) >= 20, sorted(options)
+    neither = {name for name, flags in options.items() if not flags & _PROJECT_FLAGS}
+    assert named == neither, (sorted(named), sorted(neither))
+    overlay = {name for name in options if name.startswith("overlay ")} - neither
+    assert overlay, "no `overlay` command takes `--root`"
+    assert {name for name in overlay if options[name] & _PROJECT_FLAGS != {"--root"}} == set()
+    rest = set(options) - neither - overlay
+    assert {name for name in rest if not options[name] >= _PROJECT_FLAGS} == set()
 
 
 _REUSABLE_WORKFLOW_SECTION = re.compile(
@@ -549,7 +887,7 @@ def test_the_configuration_block_lists_the_built_in_gates_in_their_one_order() -
 # `plan check`'s rule count, stated in the reference and emitted by `docs/plans.py`. The
 # sentence said "Four rules" and then listed five, in one breath, for as long as the fifth rule
 # has existed. `base-unresolvable` is the refusal, not one of the rules the sentence counts.
-_PLAN_RULES_SENTENCE = re.compile(r"\. (\w+) rules, each from a\nretrospective:")
+_PLAN_RULES_SENTENCE = re.compile(r"\. (\w+) rules,\s+each\s+from\s+a\s+retrospective:")
 _PLAN_FINDING_CODE = re.compile(r'Finding\("([a-z-]+)"')
 PLAN_REFUSAL_CODE = "base-unresolvable"
 
@@ -566,13 +904,14 @@ def test_the_plan_rule_count_is_the_number_of_rules_plan_check_emits() -> None:
     assert _NUMBER_WORDS.get(match.group(1).lower()) == len(codes), (match.group(1), sorted(codes))
 
 
-# The `doctor` check table: sixteen rows, each spelling a check name, and the one
+# The `doctor` check table: seventeen rows, each spelling a check name, and the one
 # code-restating table in this document the branch that built this binding mechanism did not
-# bind. `tests/doctor/test_checks.py` pins each name as a literal exactly once *inside*
-# `checks.py`, so the document's copy is a *second* spelling of each of the sixteen — one that
+# bind. `tests/doctor/test_checks.py` pins each name as a literal exactly once *inside* the module
+# that registers it — `checks.py` or an area's `doctor.py` — so the document's copy is a *second*
+# spelling of each of the seventeen — one that
 # guard cannot see, and a renamed check would leave this page green and wrong. That the unbound
-# ones drift is not a hypothesis: `len(OVERLAY_FILES)` is sixteen and four comments one directory
-# over still said fourteen.
+# ones drift is not a hypothesis: `len(OVERLAY_FILES)` was sixteen while four comments one
+# directory over still said fourteen.
 _DOCTOR_SECTION = re.compile(
     r"^## `stayfixed doctor[^\n]*\n(.*?)(?=^## )", re.MULTILINE | re.DOTALL
 )
@@ -583,8 +922,9 @@ _CHECK_ROW = re.compile(r"^\| `([a-z-]+)` \| [^|]+ \| [^|]+ \|$", re.MULTILINE)
 def test_the_doctor_table_is_the_registry_and_not_a_second_spelling() -> None:
     # Mutation: rename one check in `docs/cli.md`'s table -> reddens naming the row. In order
     # and not as a set, because the table's order is the report's order and the document says
-    # so.
+    # so: the core's checks, then each area's contribution in area-name order.
     from stayfixed.doctor.checks import CHECKS
+    from stayfixed.doctor.registry import contributions
 
     section = _DOCTOR_SECTION.search(CLI_REFERENCE.read_text(encoding="utf-8"))
     assert section is not None, "docs/cli.md has no `stayfixed doctor` section"
@@ -592,8 +932,9 @@ def test_the_doctor_table_is_the_registry_and_not_a_second_spelling() -> None:
     # The walk's floor before anything is compared, for the reason the Shared flags test gives:
     # a regex that matched nothing would make the comparison below vacuously true, and a
     # section that lost its table would look exactly like one that never had it.
-    assert len(rows) == len(CHECKS), rows
     expected = [name for name, _ in CHECKS]
+    expected += [name for contribution in contributions(CHECKS) for name, _ in contribution.checks]
+    assert len(rows) == len(expected), rows
     assert rows == expected, [
         (row, name) for row, name in zip(rows, expected, strict=True) if row != name
     ]
@@ -637,14 +978,13 @@ def _anchor(heading: str) -> str:
 def test_the_cli_reference_contents_lists_every_section_in_order() -> None:
     # Every `## ` heading after the Contents, in order, each linked by GitHub's anchor: a command
     # section added without its Contents line, or a heading renamed under a stale link, is
-    # a reference a reader cannot navigate. The floor is today's section count (44: the 39 there
-    # were before `assess`, `gate`, `adopt begin`, `adopt promote` and `init --questions`), so a
-    # walk that found nothing, or half, cannot pass.
+    # a reference a reader cannot navigate. The floor is today's count of sections after the
+    # Contents, 39, so a walk that found nothing, or half, cannot pass.
     # Mutation (declared): drop the `memory fit` Contents line -> the lists differ.
     text = (ROOT / "docs" / "cli.md").read_text(encoding="utf-8")
     _, _, after = text.partition("## Contents\n")
     contents, _, rest = after.partition("\n## ")
     listed = re.findall(r"^- \[(.+)\]\(#([^)]+)\)$", contents, re.MULTILINE)
     headings = re.findall(r"^## (.+)$", "## " + rest, re.MULTILINE)
-    assert len(headings) >= 44, len(headings)
+    assert len(headings) >= 39, len(headings)
     assert listed == [(heading, _anchor(heading)) for heading in headings]

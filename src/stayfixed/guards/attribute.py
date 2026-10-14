@@ -26,6 +26,7 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
+from stayfixed import fsops
 from stayfixed.errors import Failure, Refusal
 from stayfixed.findings import listed
 from stayfixed.gitenv import NO_ANSWER, SHALLOW, ForkUnknown, fork_points, git_run, scrubbed_env
@@ -147,7 +148,9 @@ def _extract(root: Path, ref: str, into: Path) -> None:
     # produced in three separate shapes.
     expected = {name for name in listing.split("\0") if name}
     missing = [
-        name for name in expected if not (into / name).exists() and not (into / name).is_symlink()
+        name
+        for name in expected
+        if not fsops.exists(into / name) and not fsops.is_symlink(into / name)
     ]
     if code == 0 and missing:
         raise Failure(
@@ -190,14 +193,14 @@ def attribute(root: Path, *, command: str, base: str, runner: Runner) -> Attribu
     if base.startswith("-"):
         raise Refusal("--base must name a ref, not an option")
     merge_base = _merge_base(root, base)
-    ambient = _executed("working tree", runner.run(["sh", "-c", command], root))
+    ambient = _executed("working tree", runner.launch(["sh", "-c", command], root))
     with tempfile.TemporaryDirectory(prefix="stayfixed-attribute-") as scratch:
         head = Path(scratch) / "head"
         merge = Path(scratch) / "base"
         _extract(root, "HEAD", head)
         _extract(root, merge_base, merge)
-        head_clean = _executed("head", runner.run(["sh", "-c", command], head))
-        base_clean = _executed("base", runner.run(["sh", "-c", command], merge))
+        head_clean = _executed("head", runner.launch(["sh", "-c", command], head))
+        base_clean = _executed("base", runner.launch(["sh", "-c", command], merge))
     return Attribution(
         ambient, head_clean, base_clean, base, merge_base, _verdict(ambient, head_clean, base_clean)
     )

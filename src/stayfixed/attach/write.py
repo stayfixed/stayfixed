@@ -42,65 +42,93 @@ overlay root is a root, so there is no carve-out to take anywhere here.
 from __future__ import annotations
 
 import datetime
+import functools
 import json
-import tomllib
-from collections.abc import Callable
+import os
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from stayfixed import fsops, tomlout
-from stayfixed.attach import exclude
+from stayfixed.attach import ATTACH_STORE, exclude
 from stayfixed.attach.binding import (
     Binding,
+    not_overlay,
     read_binding,
-    refuse_unless_overlay,
+    refuse_unless_share_can_exist,
     unlinked_groups,
 )
 from stayfixed.attach.permissions import (
     CODEX_RULES,
     LOCAL_SETTINGS,
     PermissionDiff,
+    allow_list,
     codex_rules,
     diff_permissions,
     local_document,
+    marked_commands,
     overlay_entries,
     settings_document,
 )
+from stayfixed.config.layout import (
+    ATTACH_LEDGER,
+    IGNORE_BODY,
+    IGNORE_REGION,
+    LOCAL_STATE_PATHS,
+)
 from stayfixed.config.loader import UNPARSEABLE, load
-from stayfixed.config.paths import PathEscape, contained
+from stayfixed.config.machine import (
+    anchor_home,
+    home_is_empty,
+    homes_agree,
+    override_is_honoured,
+    passwd_home,
+)
+from stayfixed.config.paths import PathEscape, PathUnasked, contained
 from stayfixed.config.schema import Config
 from stayfixed.errors import Failure, Refusal
 from stayfixed.fsops import UnsafePath
-from stayfixed.gitenv import answer_lines, git_run
+from stayfixed.gitenv import GitUnavailable, Unasked, answer_lines, git_run
 from stayfixed.guards.api import hooks_dir
+from stayfixed.jsonobject import NESTED, json_object
 from stayfixed.memory.api import (
     COMMON_GROUP,
     DIFFERENT_REMOTE,
+    GATE_LAPSED,
+    GATE_OPEN,
     MISMATCH,
     NO_ORIGIN,
     NO_REMOTE,
     PROJECT_RECORD,
     PROJECTS,
+    STORE_DIR,
     Links,
+    MakeUnder,
     PartialLink,
+    Store,
+    Withhold,
     approval_recorded,
     attach_main,
     detach_main,
     harness_anchor,
+    harness_gate,
     harness_link_needed,
     harness_memory_path,
+    harness_targets,
     link,
     linked_names,
     main_checkout,
+    read_binding_record,
     require_readable_record,
     resolve,
 )
-from stayfixed.printed import answered
+from stayfixed.overlay.api import PRE_COMMIT_CONFIG, PRE_COMMIT_HOOK
+from stayfixed.printed import answered, quoted
 from stayfixed.runner import Runner
 from stayfixed.scaffold import (
-    EntriesError,
     Manifest,
+    ParserLimitError,
     RegionError,
     Style,
     apply_entries,
@@ -108,29 +136,12 @@ from stayfixed.scaffold import (
     mark,
     marker_id,
     owned_ids,
+    settings_text,
     upsert,
 )
 
-LEDGER = ".stayfixed/local/attach.json"
 LEDGER_FORMAT = 1
 GITIGNORE = ".gitignore"
-IGNORE_REGION = "ignore"
-# Both paths the ignore region keeps out of git: the ledger's directory, and the inventory
-# `stayfixed assess` writes.
-IGNORED = (".stayfixed/local/", ".stayfixed/assessment.json")
-IGNORE_NOTE = "# stayfixed's local state: yours, never a collaborator's."
-# The region body, spelled once. `init` (the `project` area) records this same region as a
-# scaffold artifact, and a second spelling would let `init` and `attach` each report the other's
-# region as hand-edited.
-IGNORE_BODY = "\n".join((IGNORE_NOTE, *IGNORED))
-PRE_COMMIT_CONFIG = ".pre-commit-config.yaml"
-# The hook's *name*; where it lives is `guards.hooks_dir`'s answer and not `.git/hooks`. An
-# overlay with `core.hooksPath` set -- a common global dotfiles setting -- or one that is a
-# worktree or a submodule, where `.git` is a file, has its hooks somewhere else entirely, and a
-# hardcoded path finds the scan missing on every attach and shells out to `pre-commit install`
-# every time. `docs/cli.md`'s `setup --git-hooks` section states the rule this now follows:
-# `git rev-parse --git-path hooks`, never `core.hooksPath`.
-PRE_COMMIT_HOOK = "pre-commit"
 # `attach`'s fallback for the one link that leaves stayfixed's own channel: a settings-file value
 # is subject to workspace trust and a link is not, so the symlink is preferred and this is taken
 # only when it cannot be made.
@@ -153,6 +164,12 @@ GROUP_ESCAPES = (
     "a memory.groups entry does not stay inside this project's share of the overlay, so it is "
     "refused rather than created"
 )
+# Said instead when no symlink is on the way and a directory on it cannot be asked whether it is
+# one, which the sentence above would misname; `{fault}` is the system's words, never a path.
+GROUP_UNASKED = (
+    "a memory.groups entry's place in this project's share of the overlay cannot be checked for "
+    "a symlink ({fault}), so it is refused rather than created"
+)
 # The ninth, and the second of the two whose trigger is repository-authored. Its anchor is
 # `root` -- the checkout the command was pointed at, never a value the repository chose -- so a
 # repository cannot move the directory this count is taken under: `unlinked_groups` contains
@@ -172,7 +189,7 @@ _INSIDE = ".keep"
 # deepest first — which is also the order `detach` has to remove them in.
 #
 # There are exactly three writes that create a directory here, and each one's parents are on
-# this list: `LEDGER` under `.stayfixed/local/`, the rule copies under `.codex/rules/`, and
+# this list: `ATTACH_LEDGER` under `.stayfixed/local/`, the rule copies under `.codex/rules/`, and
 # `LOCAL_SETTINGS` under `.claude/`. The link tree's directory (`paths.memory`, wherever the
 # project configures it) is deliberately **not** here: it is repository-configured, so it cannot
 # be a member of a closed list. The ledger's `memory_parents` records the directories above it
@@ -209,10 +226,10 @@ class AttachLedger:
     Not *authority*, and the difference is the whole of this docstring. `.gitignore` does not
     untrack a file a clone committed, so this path can arrive in a fresh checkout with contents
     nobody on this machine wrote — and `detach` then deletes files by the strings in `rules` and
-    drops settings keys by the strings in `settings_keys`. A ledger claiming
-    `settings_keys = ["permissions"]` deleted the owner's whole `permissions` block, **deny rules
-    included**: a widening driven by repository-authored bytes, out of a file this module used to
-    call an authority.
+    drops settings keys by the strings in `settings_keys`. Obeyed, a ledger claiming
+    `settings_keys = ["permissions"]` would delete the owner's whole `permissions` block, **deny
+    rules included**: a widening driven by repository-authored bytes, out of a file that is no
+    authority.
 
     So `ledger()` answers one question about every field before `detach` sees it — *what could
     `attach` possibly have written here?* — and refuses anything outside that answer rather than
@@ -243,7 +260,10 @@ class AttachLedger:
     removes a rule the settings file already holds, so the worst a committed `allow` achieves is
     taking a permission away. `store` is read by nothing: `detach` derives every path it
     withdraws from the configuration and the overlay root, never from this field, so it is a
-    record for a human reading the file and for `doctor`, and a committed value costs nothing.
+    record for a human reading the file and for `doctor`, and a committed value costs nothing —
+    except one holding a NUL, which no path holds and `doctor`'s `Path.resolve` meets with
+    `ValueError`, so that one is a ledger no attach wrote. So is any list field holding something
+    other than a list, which reading it would meet with `TypeError`.
 
     `entries` maps each marker id to its event, which is the shape `scaffold.owned_ids` answers
     in, so `doctor` can compare the two without a translation in between.
@@ -275,6 +295,16 @@ def _rule_is_writable(rule: str) -> bool:
     return bool(name) and "/" not in name and not name.startswith(".")
 
 
+def _listed(raw: dict[str, Any], key: str, path: Path) -> list[Any]:
+    """The ledger's `key`, which `attach` always writes as a list: absent reads as empty, and
+    anything else is a ledger no attach wrote — a `Failure`, the answer every reader of this file
+    already handles, and not the `TypeError` iterating a number would raise past them."""
+    value = raw.get(key, [])
+    if not isinstance(value, list):
+        raise Failure(f"{path} is not a ledger `stayfixed attach` wrote: its {key!r} is not a list")
+    return value
+
+
 def _checked(
     raw: dict[str, Any], path: Path
 ) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
@@ -283,13 +313,13 @@ def _checked(
     Counted and never quoted: these strings are repository-authored (principle 5), and a
     refusal built out of one is still one.
     """
-    rules = tuple(r for r in raw.get("rules", []) if isinstance(r, str))
-    keys = tuple(k for k in raw.get("settings_keys", []) if isinstance(k, str))
+    rules = tuple(r for r in _listed(raw, "rules", path) if isinstance(r, str))
+    keys = tuple(k for k in _listed(raw, "settings_keys", path) if isinstance(k, str))
     # Held to the same standard as the two above rather than merely filtered at the removal
     # site, so the answer to "is this a record of an attach on this machine?" is one answer.
     # `detach` also intersects with `CREATED_DIRS` when it walks them, which is the floor under
     # this; a name outside the list is a ledger no attach wrote, and that is a refusal.
-    directories = tuple(d for d in raw.get("directories", []) if isinstance(d, str))
+    directories = tuple(d for d in _listed(raw, "directories", path) if isinstance(d, str))
     foreign = sum(1 for rule in rules if not _rule_is_writable(rule))
     foreign += sum(1 for key in keys if key != FALLBACK_KEY)
     foreign += sum(1 for name in directories if name not in CREATED_DIRS)
@@ -315,48 +345,89 @@ def ledger(root: Path) -> AttachLedger:
     ledger keep the members it is entitled to and lose only the hostile ones, which is a partial
     defence reported as a success.
     """
-    path = root / LEDGER
-    try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
-    except FileNotFoundError as exc:
-        raise Failure(
-            f"{LEDGER} is not there, so nothing records what `stayfixed attach` added to this "
-            f"repository; there is no safe way to guess it from the settings file"
-        ) from exc
-    except OSError as exc:
-        raise Failure(f"{path} cannot be read: {exc}") from exc
-    except UnicodeDecodeError:
-        raise Failure(f"{path} is not UTF-8 text") from None
-    except json.JSONDecodeError as exc:
-        raise Failure(f"{path} is not valid JSON: {exc}") from exc
-    if not isinstance(raw, dict):
-        raise Failure(f"{path} is not a JSON object")
+    path = root / ATTACH_LEDGER
+    with fsops.reading(ATTACH_LEDGER, Failure):
+        try:
+            # A regular file only (`fsops.read_regular_text`): a clone can commit the ledger, and
+            # `detach` read it with no other check first, so a link to `/dev/zero` read until
+            # memory ran out.
+            text = fsops.read_regular_text(path)
+        except FileNotFoundError as exc:
+            raise Failure(
+                f"{ATTACH_LEDGER} is not there, so nothing records what `stayfixed attach` added "
+                f"to this repository; there is no safe way to guess it from the settings file"
+            ) from exc
+    # Empty text fails as JSON: `attach` never writes an empty ledger, so one is no record. Valid
+    # JSON past the parser's reach, which a clone can commit, is unreadable like the arms above,
+    # and said in the words every other refusal of a ledger here uses: not one `attach` wrote.
+    raw = json_object(
+        text,
+        str(path),
+        error=Failure,
+        limit=lambda clause: Failure(
+            f"{path} is not a ledger `stayfixed attach` wrote: it {clause}"
+        ),
+    )
     rules, keys, directories = _checked(raw, path)
+    store = raw.get("store", "")
+    if not isinstance(store, str):
+        # `attach` writes the store as a string. Anything else is refused rather than passed
+        # through `str()`: `{"store": 5}` would read as the store `5`, and from Python 3.14, whose
+        # parser follows deeper nesting than `str()` does, a deeply nested value raised
+        # `RecursionError` past every reader's catch.
+        raise Failure(f"{path} is not a ledger `stayfixed attach` wrote: its 'store' is not text")
+    if "\0" in store:
+        # `attach` records the store it was handed as a path, and no path holds a NUL; `doctor`
+        # hands this field to `Path.resolve`, which meets one with `ValueError`.
+        raise Failure(f"{path} is not a ledger `stayfixed attach` wrote: its 'store' holds a NUL")
+    try:
+        os.fsencode(store)
+    except UnicodeEncodeError:
+        # The same reason as the NUL: a lone surrogate (`"\ud800"` in the JSON) is no path this
+        # system can name, and `Path.resolve` meets one with `UnicodeEncodeError`.
+        raise Failure(
+            f"{path} is not a ledger `stayfixed attach` wrote: its 'store' is not a path this "
+            f"system can encode"
+        ) from None
     entries = raw.get("entries")
+    if isinstance(entries, dict) and not all(isinstance(v, str) for v in entries.values()):
+        # `attach` records each entry's event as a string; refused for the reason `store` is.
+        raise Failure(
+            f"{path} is not a ledger `stayfixed attach` wrote: its 'entries' hold a value that "
+            f"is not text"
+        )
     return AttachLedger(
-        store=str(raw.get("store", "")),
-        allow=tuple(r for r in raw.get("allow", []) if isinstance(r, str)),
+        store=store,
+        allow=tuple(r for r in _listed(raw, "allow", path) if isinstance(r, str)),
         entries=(
             # `mark`/`marker_id` and not a second copy of the marker grammar: `_write_ledger`
             # builds these keys with `marker_id`, so a key that does not round-trip through the
             # engine's own pair is one no attach could have recorded. Dropped rather than
             # refused, because a key names nothing to destroy: what it costs is a provenance
             # row, and `doctor` reporting an entry as unrecorded is the conservative answer.
-            {k: str(v) for k, v in entries.items() if marker_id(mark("", k)) == k}
+            {k: v for k, v in entries.items() if marker_id(mark("", k)) == k}
             if isinstance(entries, dict)
             else {}
         ),
         rules=rules,
         settings_keys=keys,
         directories=directories,
-        memory_parents=tuple(d for d in raw.get("memory_parents", []) if isinstance(d, str)),
+        memory_parents=tuple(d for d in _listed(raw, "memory_parents", path) if isinstance(d, str)),
         memory_created=raw.get("memory_created") is True,
     )
 
 
-def _existing_ledger(root: Path) -> AttachLedger | None:
-    """The ledger, or `None` when there is none — the one caller that may carry on without it."""
-    if not (root / LEDGER).is_file():
+def existing_ledger(root: Path) -> AttachLedger | None:
+    """The ledger, or `None` when there is none: `attach` and `attach --check`, the two callers
+    that may carry on without it, read it here, so the two end with one code on a ledger the run
+    cannot take.
+
+    Its path is held to the project before anything reads it: it is the one path `attach` writes
+    inside the project that no other candidate names, so a `.stayfixed` committed as a link is
+    refused here by name rather than by the walk that writes the ledger, after every write before
+    it."""
+    contained(root, ATTACH_LEDGER)
+    if not fsops.is_file(root / ATTACH_LEDGER):
         return None
     return ledger(root)
 
@@ -368,11 +439,17 @@ def _planned_ignore_region(root: Path) -> str | None:
     One `scaffold.upsert` with the `stayfixed:ignore` marker: everything outside the region comes
     back out as it went in, which is the whole point of a managed region and the reason this
     does not need the scaffold engine's manifest. Asked while the run is planned, and only when
-    git does not already ignore both `IGNORED` paths; `_write_ignore_region` writes the answer.
+    git does not already ignore both `LOCAL_STATE_PATHS`; `_write_ignore_region` writes the
+    answer.
     """
     path = root / GITIGNORE
     try:
-        text = path.read_text(encoding="utf-8") if path.exists() else ""
+        # A regular file only: `exists()` and `read_text` followed a committed link, so
+        # `.gitignore -> /dev/zero` read until memory ran out and a FIFO there waited for a
+        # writer. Anything else is a `.gitignore` that cannot be read.
+        text = fsops.read_regular_text(path)
+    except FileNotFoundError:
+        text = ""
     except UnicodeDecodeError:
         raise Refusal(
             f"{GITIGNORE} is not UTF-8 text, so `.stayfixed/local/` cannot be made untracked — and "
@@ -381,8 +458,8 @@ def _planned_ignore_region(root: Path) -> str | None:
         ) from None
     except OSError as exc:
         raise Refusal(
-            f"{GITIGNORE} cannot be read ({exc}), so `.stayfixed/local/` cannot be made "
-            f"untracked — and writing the attach ledger into a tracked path would publish "
+            f"{GITIGNORE} cannot be read ({fsops.said(exc)}), so `.stayfixed/local/` cannot be "
+            f"made untracked — and writing the attach ledger into a tracked path would publish "
             f"your personal allow rules to every collaborator"
         ) from exc
     updated = _in_gitignore(upsert, text, IGNORE_REGION, IGNORE_BODY, Style.HASH)
@@ -411,13 +488,11 @@ def _write_ignore_region(root: Path, updated: str) -> None:
 
 
 def _allow_list(raw: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
-    permissions = raw.get("permissions", {})
-    if not isinstance(permissions, dict):
-        raise EntriesError(f"{LOCAL_SETTINGS}: 'permissions' is not an object")
-    allow = permissions.get("allow", [])
-    if not isinstance(allow, list) or not all(isinstance(rule, str) for rule in allow):
-        raise EntriesError(f"{LOCAL_SETTINGS}: 'permissions.allow' is not a list of strings")
-    return dict(permissions), list(allow)
+    """The local settings document's `permissions` object, copied, and its allow list, read by
+    `permissions.allow_list`: the reader `--check` reads the same file with, so the two refuse
+    the same documents."""
+    allow = allow_list(raw, LOCAL_SETTINGS)
+    return dict(raw.get("permissions", {})), allow
 
 
 def _merged_settings(document: str, diff: PermissionDiff, binding: Binding) -> str:
@@ -435,7 +510,7 @@ def _merged_settings(document: str, diff: PermissionDiff, binding: Binding) -> s
         # is the engine's *removal* path, and an overlay that has had its last hook entry taken
         # out reaches here with `wanted` empty — so without this the marked entry stays in the
         # file and goes on firing, while the ledger (built from the overlay, not unioned) loses
-        # it. `doctor._hook_entries` then reads an entry claiming the marker and named in no
+        # it. `doctor.entries.hook_entries` then reads an entry claiming the marker and named in no
         # ledger, goes RED, and tells the owner to remove an entry stayfixed installed. This is
         # the twin of the case already fixed for `rules`, answered on the settings side rather
         # than in the ledger, because the honest repair is to take the entry back out.
@@ -446,7 +521,7 @@ def _merged_settings(document: str, diff: PermissionDiff, binding: Binding) -> s
     if allow or permissions:
         permissions["allow"] = allow
         raw["permissions"] = permissions
-    return apply_entries(json.dumps(raw, indent=2) + "\n", wanted)
+    return apply_entries(settings_text(raw, LOCAL_SETTINGS) + "\n", wanted)
 
 
 def _codex_rule_texts(binding: Binding) -> tuple[tuple[str, str], ...]:
@@ -457,22 +532,23 @@ def _codex_rule_texts(binding: Binding) -> tuple[tuple[str, str], ...]:
     shared path would hide which. The list itself is `permissions.codex_rules`, so that
     `attach --check` reports exactly the files `attach` then writes rather than a second
     enumeration that could disagree with this one. Every source is read and decoded here and none
-    while copying: a source that was not UTF-8 used to stop the copy after `.gitignore`, the
-    exclude block and the rules before it were written, with the partial copies hidden by the
-    block and no ledger for `detach` to remove them by.
+    while copying: a source that is not UTF-8, met while copying, would stop the copy after
+    `.gitignore`, the exclude block and the rules before it were written, with the partial copies
+    hidden by the block and no ledger for `detach` to remove them by.
     """
     texts: list[tuple[str, str]] = []
     for target, source in codex_rules(binding):
-        # The overlay is the owner's, so its path may print.
-        try:
+        # The overlay is the owner's, so its path may print, and through `quoted`, as the
+        # directory holding it is printed when it cannot be listed (`permissions.codex_rules`): the
+        # project's `codex/` carries `project.name`, which the repository chooses.
+        with fsops.reading(quoted(str(source)), _nothing_written):
             texts.append((target, source.read_text(encoding="utf-8")))
-        except UnicodeDecodeError:
-            raise Failure(f"{source} is not UTF-8 text, so nothing was written") from None
-        except OSError as exc:
-            raise Failure(
-                f"{source} cannot be read ({fsops.said(exc)}), so nothing was written"
-            ) from exc
     return tuple(texts)
+
+
+def _nothing_written(sentence: str) -> Failure:
+    """`fsops.reading`'s sentence about an overlay rule file, as the failure it ends a run in."""
+    return Failure(f"{sentence}, so nothing was written")
 
 
 def _record_binding(binding: Binding) -> bool:
@@ -504,14 +580,12 @@ def _record_binding(binding: Binding) -> bool:
 
 
 def _first_attach(record: Path) -> str | None:
-    if not record.is_file():
+    if not fsops.is_file(record):
         return None
     try:
-        raw = tomllib.loads(record.read_text(encoding="utf-8"))
+        return read_binding_record(record).get("first_attach")
     except (OSError, UnicodeDecodeError, *UNPARSEABLE):
         return None
-    value = raw.get("first_attach")
-    return value if isinstance(value, str) and value else None
 
 
 def _secret_scan(binding: Binding, runner: Runner) -> str | None:
@@ -523,10 +597,10 @@ def _secret_scan(binding: Binding, runner: Runner) -> str | None:
     unarmed on exactly the machine that thinks it is set up. A missing `pre-commit` is a note,
     never a traceback.
     """
-    if not (binding.overlay / PRE_COMMIT_CONFIG).is_file():
+    if not fsops.is_file(binding.overlay / PRE_COMMIT_CONFIG):
         return None
     try:
-        installed = (hooks_dir(binding.overlay) / PRE_COMMIT_HOOK).exists()
+        installed = fsops.exists(hooks_dir(binding.overlay) / PRE_COMMIT_HOOK)
     except Refusal:
         # `hooks_dir` shells out to `git`, and a `git` that cannot answer is this area's own
         # kind of missing optional binary: a note, never a traceback, and never a `pre-commit
@@ -537,7 +611,7 @@ def _secret_scan(binding: Binding, runner: Runner) -> str | None:
         )
     if installed:
         return None
-    done = runner.run(["pre-commit", "install"], binding.overlay)
+    done = runner.launch(["pre-commit", "install"], binding.overlay)
     if done.code == 0:
         return "installed the overlay's commit-time secret scan with `pre-commit install`"
     detail = answered(done)
@@ -551,14 +625,27 @@ def _absent_directories(root: Path) -> tuple[str, ...]:
     """Which of `CREATED_DIRS` this repository does not have, asked before the first write.
 
     Asked *before*, because after the ledger is written `.stayfixed/local/` exists and the answer
-    is no longer the one `detach` needs. `attach` therefore takes it at the top of the run and
+    is not the one `detach` needs. `attach` therefore takes it at the top of the run and
     hands it down, the same way it hands down `previous`.
 
     `is_dir()` and not `exists()`: a path of this name that is a file, or a symlink to one, is
     not a directory this run created and `rmdir` would refuse it anyway — recording it would
     only put a name in the ledger that nothing can act on.
+
+    A path the question cannot reach, below a committed `.codex` that links into a directory
+    nobody may search, is not one either: every write of this run goes through the `O_NOFOLLOW`
+    walk, which never reaches it, so this run cannot create it. Raised, the fault ended `attach`
+    and `--check` in an internal error before the containment refusal that names the link.
     """
-    return tuple(name for name in CREATED_DIRS if not (root / name).is_dir())
+    return tuple(name for name in CREATED_DIRS if not _reached_directory(root / name))
+
+
+def _reached_directory(path: Path) -> bool:
+    """`fsops.is_dir`, and `True` for a path no write of this run can reach; see above."""
+    try:
+        return fsops.is_dir(path)
+    except OSError:
+        return True
 
 
 def _memory_parents(config: Config) -> tuple[str, ...]:
@@ -574,13 +661,13 @@ def _memory_parents(config: Config) -> tuple[str, ...]:
 def _absent_memory_parents(root: Path, config: Config) -> tuple[str, ...]:
     """Which directories above `paths.memory` this repository does not have, asked before the
     first write for the reason `_absent_directories` is."""
-    return tuple(name for name in _memory_parents(config) if not (root / name).is_dir())
+    return tuple(name for name in _memory_parents(config) if not fsops.is_dir(root / name))
 
 
 def _memory_absent(root: Path, config: Config) -> bool:
     """Whether this checkout has no `paths.memory` directory, asked before the first write for the
     reason `_absent_directories` is: an empty one the owner made is theirs, and survives."""
-    return not (root / config.paths.memory).is_dir()
+    return not fsops.is_dir(root / config.paths.memory)
 
 
 def _placed(binding: Binding, config: Config, *, settings: bool) -> tuple[str, ...]:
@@ -600,8 +687,21 @@ def _placed(binding: Binding, config: Config, *, settings: bool) -> tuple[str, .
     )
 
 
+def _fallback_store(owner: Path, config: Config, *, machine: Path | None) -> Store | None:
+    """The store the harness link and its settings-file fallback point at: the owning
+    checkout's, `owner`, which `_link_everywhere` points every checkout's harness link at.
+
+    One function, because three places ask it and must ask it alike: `_fallback_possible` above
+    the first write, which makes the settings file a candidate for the exclude block,
+    `_fallback_wanted` after the links, which writes the file, and `_harness_waits`, which says
+    why the link is missing. Each used to resolve a store of its own, and from a linked worktree
+    the plan asked the worktree's while the write asked the owner's: with only the owner's
+    approved, the run wrote a settings file the plan had not hidden."""
+    return resolve(owner, config, machine=machine)
+
+
 def _fallback_possible(
-    root: Path, config: Config, *, machine: Path | None, home: Path | None
+    root: Path, config: Config, *, owner: Path, machine: Path | None, home: Path | None
 ) -> bool:
     """Whether this run may take the settings-file fallback, answered before its first write.
 
@@ -609,22 +709,23 @@ def _fallback_possible(
     link is not there to point at the store. `_link` leaves only one thing standing where the link
     goes — a real entry, which is what the harness makes of the path on its own — so a path that
     is absent or already a symlink is a link this run makes, and no fallback. Where a real entry
-    sits, the gate is asked of the store as it resolves now, and of a store that does not resolve
-    yet as the next paragraph says. The two agree with `_harness_fallback` by construction, so its
-    write is never one this run did not hold to the project and hide above its first write.
+    sits, the gate is asked of the store as it resolves now (`_fallback_store`, the one
+    `_harness_fallback` asks), and of a store that does not resolve yet as the next paragraph
+    says. The two agree with `_harness_fallback` by construction, so its write is never one this
+    run did not hold to the project and hide above its first write.
 
     **A first attach is answered too, without the link tree.** `resolve` needs the tree this run
     is about to build, so before it exists the gate is asked the one question it can be: does
-    this machine record any approval for a store at `paths.memory`? None is a gate that cannot
-    open, which is the ordinary first attach; a record, current or stale, is one that might, and
-    is answered "possible", because this answer decides a refusal.
+    this machine record any approval for a store at the owning checkout's `paths.memory`? None is
+    a gate that cannot open, which is the ordinary first attach; a record, current or stale, is
+    one that might, and is answered "possible", because this answer decides a refusal.
     """
     harness = harness_memory_path(root, home)
-    if harness.is_symlink() or not harness.exists():
+    if fsops.is_symlink(harness) or not fsops.exists(harness):
         return False
-    store = resolve(root, config, machine=machine)
+    store = _fallback_store(owner, config, machine=machine)
     if store is None:
-        return approval_recorded(root / config.paths.memory, machine)
+        return approval_recorded(owner / config.paths.memory, machine)
     return harness_link_needed(store, config)
 
 
@@ -654,12 +755,12 @@ def _write_ledger(root: Path, planned: AttachPlan, settings_keys: tuple[str, ...
     forget what the first one added and leave `detach` nothing to remove.
 
     **The earlier ledger arrives in the plan and is not read here**, which is a refusal's
-    position and not a refactor. This function used to call `_existing_ledger` itself, and
-    `ledger()` refuses a ledger naming files or settings keys `attach` could not have written —
-    so that refusal fired from the fourth write of the run, with the ignore region, the
-    `.codex/rules/` copies and the settings merge already on disk and the committed ledger still
-    there for `doctor._attached` to read as "attached". That is the shape `attach`'s own
-    docstring says all its refusals must not have. `_plan` reads it once, above every write.
+    position and not a refactor. `ledger()` refuses a ledger naming files or settings keys
+    `attach` could not have written, and read here that refusal would fire from the fourth write
+    of the run, with the ignore region, the `.codex/rules/` copies and the settings merge already
+    on disk and the committed ledger still there for `doctor._attached` to read as "attached".
+    That is the shape `attach`'s own docstring says all its refusals must not have. `_plan` reads
+    it once, above every write.
 
     Reading it once is also the more correct union: `attach` writes the ledger twice in a run,
     and the second call would otherwise union against the file the first call just wrote.
@@ -683,10 +784,8 @@ def _write_ledger(root: Path, planned: AttachPlan, settings_keys: tuple[str, ...
     # ledger recorded a marker id as a permission rule.
     entries = {
         found: event
-        for event, groups in overlay_entries(binding).items()
-        for group in groups
-        for entry in group["hooks"]
-        for found in (marker_id(entry["command"]),)
+        for event, command in marked_commands(overlay_entries(binding))
+        for found in (marker_id(command),)
         if found is not None
     }
     # The same union as `allow` and `rules`, for the same reason sharpened once more: the second
@@ -710,7 +809,7 @@ def _write_ledger(root: Path, planned: AttachPlan, settings_keys: tuple[str, ...
         "memory_created": planned.memory_created
         or (previous is not None and previous.memory_created),
     }
-    fsops.write_within(root, LEDGER, json.dumps(document, indent=2, sort_keys=True) + "\n")
+    fsops.write_within(root, ATTACH_LEDGER, json.dumps(document, indent=2, sort_keys=True) + "\n")
 
 
 def _group_directories(binding: Binding, config: Config) -> list[str]:
@@ -722,7 +821,7 @@ def _group_directories(binding: Binding, config: Config) -> list[str]:
     create` ships it — and skipping it in one of the two would be the first way they drift.
     """
     return [
-        f"{PROJECTS}/{binding.project}/memory/{group}/{_INSIDE}"
+        f"{PROJECTS}/{binding.project}/{STORE_DIR}/{group}/{_INSIDE}"
         for group in config.memory.groups
         if group != COMMON_GROUP
     ]
@@ -754,6 +853,8 @@ def _check_groups(binding: Binding, config: Config) -> None:
     for relative in _group_directories(binding, config):
         try:
             contained(binding.overlay, relative, resolved_root=resolved)
+        except PathUnasked as exc:
+            raise Refusal(GROUP_UNASKED.format(fault=exc.fault)) from exc
         except PathEscape as exc:
             # The entry itself is repository-authored, so it is refused rather than quoted back.
             raise Refusal(GROUP_ESCAPES) from exc
@@ -846,6 +947,7 @@ def _link_everywhere(
     *,
     machine: Path | None,
     home: Path | None,
+    withhold: bool = False,
 ) -> Links:
     """The owning checkout first, then every other worktree.
 
@@ -856,19 +958,17 @@ def _link_everywhere(
 
     That accumulation is the whole of the re-raise below. `link` builds its own `.created` per
     call, so an exception let out untouched carries the failing checkout's links and not the
-    owning checkout's — which are on disk, made by `attach_main` one call earlier. This
-    docstring claimed "`.created` intact" while that was false, and a list missing the links
-    that were actually made defeats the type: a caller repairing from it is told nothing was
-    made. `attach_main` itself is the first call, so its own `.created` is already the whole of
-    what this run made and needs no wrapping.
+    owning checkout's — which are on disk, made by `attach_main` one call earlier — and a list
+    missing the links that were actually made defeats the type: a caller repairing from it is told
+    nothing was made. `attach_main` itself is the first call, so its own `.created` is already the
+    whole of what this run made and needs no wrapping.
 
-    **`attach_main` is applied to the owning checkout and never to `--root`.** It used to be
-    applied to whatever `--root` named, and the loop below then skipped `main_checkout(root)`
-    unconditionally — so `stayfixed attach` run from a linked worktree built that worktree's tree
-    twice and the main checkout's not at all. `worktree.link` is documented as a no-op for the
-    main checkout, so nothing downstream would have caught it: every session in the owning
-    checkout saw no memory, silently, and the command exited 0. The code already computed
-    `owner`; it simply handed the owning-checkout entry point the wrong root.
+    **`attach_main` is applied to the owning checkout and never to `--root`.** The loop below
+    skips `main_checkout(root)` unconditionally, so applied to whatever `--root` names, `stayfixed
+    attach` run from a linked worktree would build that worktree's tree twice and the main
+    checkout's not at all. `worktree.link` is documented as a no-op for the main checkout, so
+    nothing downstream would catch it: every session in the owning checkout would see no memory,
+    silently, and the command would exit 0.
 
     The skip is by resolved path and accumulates, so `root` — which `_worktrees` lists like any
     other — is linked exactly once whether or not it is the owner. `checkouts` is `_checkouts`'
@@ -876,7 +976,10 @@ def _link_everywhere(
     worktrees is knowable before anything is written.
     """
     owner = checkouts[0]
-    links = attach_main(owner, binding.store, config, machine=machine, home=home)
+    # `withhold` makes no harness link in any checkout, and still withdraws one under the home it
+    # goes under that points at a store whose approval lapsed (`plan_writes` asked its anchor).
+    withheld = Withhold(anchor_home()) if withhold else None
+    links = attach_main(owner, binding.store, config, machine=machine, home=home, withhold=withheld)
     created, revoked = list(links.created), list(links.revoked)
     # Resolved against the owner and not against `root`: in overlay mode `resolve` reads the
     # link tree, and the tree that exists at this point is the one `attach_main` just built.
@@ -888,12 +991,21 @@ def _link_everywhere(
         )
     for tree in checkouts[1:]:
         try:
-            more = link(tree, store, config, home=home)
+            more = link(
+                tree, store, config, harness=MakeUnder(home) if withheld is None else withheld
+            )
         except PartialLink as partial:
             raise PartialLink([*created, *partial.created], partial) from partial
+        except GitUnavailable as unasked:
+            # Removed after `git worktree list` named it, and before `link` asked in it: no
+            # checkout to link any more, as a `prunable` one is not (`_worktrees`). Asked first
+            # thing in `link`, so nothing was written there. Any other cause is reported.
+            if unasked.cause is not Unasked.GONE:
+                raise
+            continue
         created += more.created
         revoked += more.revoked
-    return Links(created, revoked)
+    return Links(created, revoked, withheld=links.withheld)
 
 
 def _keys_in(document: str) -> tuple[str, ...]:
@@ -905,24 +1017,29 @@ def _recorded_keys(root: Path) -> tuple[str, ...]:
     """The settings keys `attach` owns that `.claude/settings.local.json` holds *right now*.
 
     Read back from the file rather than carried out of the run that wrote it, because
-    `settings_keys` is a claim about state that persists. `_write_ledger` used to be handed `()`
-    on every run and the fallback's own return value only when it had just written the key — so
-    the second attach after a fallback reset the record to `[]` while the key was still in the
-    file, and `detach` then left it there for good.
+    `settings_keys` is a claim about state that persists. Carried out of the run, it would be the
+    key only when this run had just written it — so the second attach after a fallback would
+    reset the record to `[]` while the key was still in the file, and `detach` would then leave
+    it there for good.
     """
     return _keys_in(local_document(root))
 
 
 def _fallback_wanted(
-    root: Path, config: Config, *, machine: Path | None, home: Path | None
+    root: Path, config: Config, *, owner: Path, machine: Path | None, home: Path | None
 ) -> str | None:
     """The store directory the fallback would record, or `None` when the gate does not want the
-    harness link or the link already points at the store."""
-    store = resolve(root, config, machine=machine)
+    harness link or the link already points at the store.
+
+    The store is the owning checkout's, `owner`, which is the one `_link_everywhere` points every
+    checkout's harness link at. Resolved against `root` instead, a linked worktree answered with
+    its own link tree, a different directory: the link just made never matched it, and the run
+    said the link could not be created and recorded the fallback beside it."""
+    store = _fallback_store(owner, config, machine=machine)
     if store is None or not harness_link_needed(store, config):
         return None
     harness = harness_memory_path(root, home)
-    if harness.is_symlink() and harness.readlink() == store.path.resolve():
+    if fsops.is_symlink(harness) and harness.readlink() == store.path.resolve():
         return None
     return str(store.path.resolve())
 
@@ -938,7 +1055,7 @@ FALLBACK_UNAVAILABLE = (
 
 
 def _harness_fallback(
-    root: Path, config: Config, *, machine: Path | None, home: Path | None
+    root: Path, config: Config, *, owner: Path, machine: Path | None, home: Path | None
 ) -> tuple[str, ...]:
     """The settings-file fallback, taken only when no symlink could be made — and withdrawn here.
 
@@ -952,14 +1069,14 @@ def _harness_fallback(
     one hop over: "a gate evaluated once, at creation, over state that persists is not a gate".
     A settings value is exactly such state, and this is the same channel that module calls "the
     one hop that leaves stayfixed's gate" — the harness's own native reader, outside every
-    delimiter and every trust record this area controls. `_apply_harness_link` already revokes
-    the *symlink* when the record lapses; this key outlived it, so a `git pull` that added one
+    delimiter and every trust record this area controls. `_apply_harness_link` revokes the
+    *symlink* when the record lapses; a key that outlived it would let a `git pull` that added one
     note shut every channel except the one pointing the harness straight at the new bytes.
 
-    The two arms that return without writing are the two that used to leak: the link is no
-    longer needed, and the symlink now exists so the fallback is no longer warranted. Both now
-    take the key back out. The answer is what the file holds afterwards, so the caller's ledger
-    is the file's own state rather than a memory of this run.
+    The two arms that return without writing are the two that would otherwise leak: the link is
+    not needed, and the symlink exists so the fallback is not warranted. Both take the key back
+    out. The answer is what the file holds afterwards, so the caller's ledger is the file's own
+    state rather than a memory of this run.
 
     **This is the one place `attach` removes a file**, and it is worth saying out loud rather
     than leaving to be discovered. Withdrawing the key can empty `.claude/settings.local.json`,
@@ -969,7 +1086,7 @@ def _harness_fallback(
     byte-for-byte. It can only fire when stayfixed's own key was all the file held, so nothing of
     the owner's is ever what goes.
     """
-    wanted = _fallback_wanted(root, config, machine=machine, home=home)
+    wanted = _fallback_wanted(root, config, owner=owner, machine=machine, home=home)
     document = settings_document(local_document(root))
     if document.get(FALLBACK_KEY) == wanted:
         # Includes the ordinary case where the key is absent and is not wanted: nothing to do,
@@ -980,7 +1097,7 @@ def _harness_fallback(
     else:
         document[FALLBACK_KEY] = wanted
     if document:
-        fsops.write_within(root, LOCAL_SETTINGS, json.dumps(document, indent=2) + "\n")
+        fsops.write_within(root, LOCAL_SETTINGS, settings_text(document, LOCAL_SETTINGS) + "\n")
     else:
         # `{}` is not what the file looked like before the fallback was taken, and a document
         # holding only this key is one `attach` created — the same rule `_withdraw_settings`
@@ -999,11 +1116,37 @@ HARNESS_WAITS = (
 )
 
 
-def _harness_waits(root: Path, config: Config, *, machine: Path | None) -> bool:
-    """Whether the gate kept the harness link from being made: `harness_link_needed`, asked
-    exactly as `_apply_harness_link` asks it, of the store the run just linked."""
-    store = resolve(root, config, machine=machine)
-    return store is not None and not harness_link_needed(store, config)
+# Why an approval no longer holds, and what to do about it: said by `attach` (`HARNESS_LAPSED`)
+# and by `doctor`'s `attached` row, which reads the same state after the run, so the two say it
+# alike. Nothing in either is repository-authored, so both print.
+APPROVAL_LAPSED = (
+    "the store or its memory.index_extra changed since its approval was recorded, so that "
+    "approval no longer holds"
+)
+REAPPROVE = (
+    "read what changed, run `stayfixed memory trust --in-repo-memory`, then `stayfixed attach` "
+    "again"
+)
+# Said instead of `HARNESS_WAITS` where the machine records an approval and the store changed
+# since, which closes the gate as surely as no approval and also withdraws the links an earlier run
+# made: one line appended to one note is enough.
+HARNESS_LAPSED = f"the harness memory link was not created, because {APPROVAL_LAPSED}; {REAPPROVE}"
+# Said whenever the run withdrew harness memory links, which only the gate does, so the line
+# never leaves a withdrawal unsaid; the count is the one `--json` gives as `links_revoked`.
+HARNESS_WITHDREW = "withdrew {count} harness memory link(s)"
+
+
+def _harness_waits(owner: Path, config: Config, *, machine: Path | None) -> str | None:
+    """Why the gate kept the harness link from being made, or `None` where it did not:
+    `harness_link_needed`, asked exactly as `_apply_harness_link` asks it, of the store the run
+    just linked, which is the owning checkout's (`_fallback_store`). `HARNESS_LAPSED` where an
+    approval is recorded and the store changed since it (`harness_gate`), and `HARNESS_WAITS`
+    where none is."""
+    store = _fallback_store(owner, config, machine=machine)
+    gate = GATE_OPEN if store is None else harness_gate(store, config)
+    if gate == GATE_OPEN:
+        return None
+    return HARNESS_LAPSED if gate == GATE_LAPSED else HARNESS_WAITS
 
 
 @dataclass(frozen=True)
@@ -1031,6 +1174,9 @@ class AttachPlan:
     # Each `.codex/rules/` target and the text to copy there.
     rules: tuple[tuple[str, str], ...]
     checkouts: tuple[Path, ...]
+    # Why the harness memory link is not made, where `HOME` is not the home it goes under off a
+    # terminal (`unread_home`); `None` where it is made as the gate says.
+    unread: UnreadHome | None = None
 
 
 def attach(
@@ -1112,6 +1258,104 @@ def attach(
     return _carry_out(root, planned, machine=machine, runner=runner, home=home)
 
 
+# The flags that take the run past a stop: `--yes` past a widening, `--trust-remote` past a
+# mismatch.
+CONFIRMED = "--yes"
+TRUST_REMOTE = "--trust-remote"
+
+
+@dataclass(frozen=True)
+class Stop:
+    """A gate past the binding that stops `attach`: the refusal it makes, and the flag that takes
+    the run past it, where one does."""
+
+    refusal: str
+    flag: str | None = None
+
+
+class Gates:
+    """The gates `attach` meets past the binding, in the order it meets them.
+
+    Iterated, it yields each stop and makes the reads that lie between them, so `_plan` and
+    `attach --check` take one order and cannot come to disagree about it. `_plan` refuses at the
+    first stop no flag it was given answers, and reads nothing past it. `--check` takes every stop
+    and reports it: it reads past a flag's stop as the run does with the flag, and past the mode's
+    only for the rest of its report, so a read the run makes only once every stop before it is
+    passed is made only where none was the mode's. Past a checkout's with no `origin` it reads
+    nothing, as the run reads nothing: the iteration ends there. `diff` and `real` are what the
+    reads found, for the plan and the report.
+    """
+
+    def __init__(self, root: Path, config: Config, binding: Binding) -> None:
+        self.root = root
+        self.config = config
+        self.binding = binding
+        self.real = 0
+
+    @functools.cached_property
+    def diff(self) -> PermissionDiff:
+        """What the overlay grants and the local settings lack, read past the mode and the share."""
+        return diff_permissions(self.root, self.binding)
+
+    def __iter__(self) -> Iterator[Stop]:
+        binding, config = self.binding, self.config
+        # Beside the binding's own refusals and above every write: nothing below applies to a
+        # repository whose notes do not live in the overlay, and every write below would be one
+        # `attach_main` then refuses after the fact. After `read_binding`, so a `--store` outside
+        # the recorded overlay is still refused for that reason first.
+        refused = not_overlay(config)
+        if refused is not None:
+            yield Stop(refused)
+        # Beside the binding too: a `project.name` no directory under the overlay can carry leaves
+        # the binding record and the group directories nowhere to go, and the overlay's sources
+        # read under it answer "none" rather than refusing, so nothing below would ask before
+        # writing.
+        refuse_unless_share_can_exist(binding, config)
+        if self.diff.widens:
+            yield Stop(
+                f"attaching would add {len(self.diff.added_allow)} allow rule(s) and "
+                f"{len(self.diff.added_hooks)} hook entr(ies) to {LOCAL_SETTINGS}, which grants "
+                f"capability. Read the diff with `stayfixed attach --check` and pass --yes to "
+                f"confirm it",
+                CONFIRMED,
+            )
+        # The fifth refusal, a checkout with no `origin`, is its own state
+        # (`memory.store.binding_state` asks it first) and is refused with the sentence every
+        # other surface says. Read as a mismatch, its answer would be `--trust-remote`, which then
+        # refuses for the missing `origin`. Kept above every write rather than in
+        # `_record_binding`, which runs after the ignore region, the Codex rules, the settings
+        # merge and the ledger: refused there, it would leave four artifacts behind and
+        # `doctor._attached` would report the repository attached. Nothing past it is read, not
+        # for `--check` either: the count below refuses a group outside `paths.memory`, which
+        # would end `--check` in that refusal where the run ends with the missing `origin`.
+        if binding.state == NO_ORIGIN:
+            yield Stop(NO_REMOTE)
+            return
+        if binding.state == MISMATCH:
+            # The name is not quoted back, for the reason `attach.check` states at length:
+            # `project.name` is repository-authored and looser than the marker-id grammar
+            # `doctor` already refuses to print, and a refusal built out of one is still one.
+            yield Stop(
+                f"{DIFFERENT_REMOTE}; pass --trust-remote only if this checkout should be bound "
+                f"to it",
+                TRUST_REMOTE,
+            )
+        if refused is None:
+            refuse_unless_share_holds(binding, config)
+        # The ninth, and the one whose remedy is an act no command performs: `attach` **links**,
+        # so a group that is still a real directory under `paths.memory` has its notes in the
+        # repository and its share of the overlay empty, and linking over it would leave every
+        # session reading the repository's copy with the binding record, the settings merge and
+        # the ledger already written. Above every write for that reason, and beside the
+        # `memory.groups` containment because it reads the same repository-authored list -- the
+        # anchor it is contained against is `root`, the checkout this command was pointed at,
+        # which is why a repository cannot move the directory the count is taken under. A
+        # `PathEscape` out of `unlinked_groups` propagates as the refusal it already is.
+        self.real = len(unlinked_groups(self.root, config))
+        if self.real:
+            yield Stop(REAL_DIRECTORIES.format(count=self.real))
+
+
 def _plan(
     root: Path,
     *,
@@ -1122,9 +1366,16 @@ def _plan(
     home: Path | None,
 ) -> AttachPlan:
     """Every read, decode and check `attach` makes, in the order `attach` enumerates them, and
-    nothing written: what it returns is all `_carry_out` may act on."""
+    nothing written: what it returns is all `_carry_out` may act on.
+
+    The gates -- `memory.mode`, the widening `--yes` confirms, a checkout with no `origin`, the
+    mismatch `--trust-remote` accepts and the groups that never moved -- are `Gates`', which
+    `attach --check` iterates too, and the run refuses at the first one its flags do not answer.
+    What lies between and after them is `refuse_unless_share_holds` and `plan_writes`, which
+    `--check` asks where the run would, so the preview stops on every refusal the run makes past
+    those gates, with the same code and line, by calling what the run calls."""
     # One load for the whole run, handed to `read_binding` rather than left for it to make a
-    # second of. `permissions.check` took this ruling for `--check` -- "two loads could
+    # second of. `attach.check` took this ruling for `--check` -- "two loads could
     # disagree, and a `--check` whose two halves read different documents is exactly what it
     # exists to rule out" -- and the writing command has the stronger version of that argument:
     # a `--check` that read two documents reports the wrong thing, while an `attach` that reads
@@ -1134,61 +1385,100 @@ def _plan(
     # same document the binding was read under.
     config = load(root, machine=machine)
     binding = read_binding(root, store=store, machine=machine, config=config)
-    # Beside the binding's own refusals and above every write: nothing below applies to a
-    # repository whose notes do not live in the overlay, and every write below would be one
-    # `attach_main` then refuses after the fact. After `read_binding`, so a `--store` outside
-    # the recorded overlay is still refused for that reason first.
-    refuse_unless_overlay(config)
-    diff = diff_permissions(root, binding)
-    if diff.widens and not confirmed:
-        raise Refusal(
-            f"attaching would add {len(diff.added_allow)} allow rule(s) and "
-            f"{len(diff.added_hooks)} hook entr(ies) to {LOCAL_SETTINGS}, which grants "
-            f"capability. Read the diff with `stayfixed attach --check` and pass --yes to "
-            f"confirm it"
-        )
-    # The fifth refusal, a checkout with no `origin`, is its own state (`memory.store.binding_state`
-    # asks it first) and is refused with the sentence every other surface says. It used to be
-    # read as a mismatch here, so the answer was `--trust-remote`, which then refused for the
-    # missing `origin`. Kept above every write rather than in `_record_binding`, which runs after
-    # the ignore region, the Codex rules, the settings merge and the ledger: refused there, it
-    # left four artifacts behind and `doctor._attached` reported the repository attached.
-    if binding.state == NO_ORIGIN:
-        raise Refusal(NO_REMOTE)
-    if binding.state == MISMATCH and not trust_remote:
-        # The name is not quoted back, for the reason `permissions.check` states at length:
-        # `project.name` is repository-authored and looser than the marker-id grammar `doctor`
-        # already refuses to print, and a refusal built out of one is still one.
-        raise Refusal(
-            f"{DIFFERENT_REMOTE}; pass --trust-remote only if this checkout should be bound to it"
-        )
+    gates = Gates(root, config, binding)
+    for stop in gates:
+        if not (
+            (stop.flag == CONFIRMED and confirmed) or (stop.flag == TRUST_REMOTE and trust_remote)
+        ):
+            raise Refusal(stop.refusal)
+    return plan_writes(root, config, binding, gates.diff, machine=machine, home=home)
+
+
+def refuse_unless_share_holds(binding: Binding, config: Config) -> None:
+    """Refuse a binding this project's share of the overlay cannot hold: an `origin` URL its
+    record cannot be written with, and a `memory.groups` entry that leaves the share.
+
+    Asked between the run's gates (`Gates`), above every write, by `attach` and by
+    `attach --check` alike where the run would reach it, so the two end alike on either.
+    """
     if binding.remote is not None and not fsops.utf_8_name(binding.remote):
         raise Refusal(ORIGIN_NOT_TEXT)
     # The seventh refusal, and it belongs here for the reason the six above it do; the sixth,
-    # the ledger's, is read a few lines below and is above every write too. `ledger()` refuses
-    # a ledger naming files or settings keys `attach` could not have written, and
-    # `_write_ledger` used to ask for it — from the fourth write of the run. A clone that
-    # commits such a ledger could therefore make `attach` write the ignore region, copy
-    # `.codex/rules/*` and merge `.claude/settings.local.json` before exiting 2, with the
-    # committed ledger still on disk for `doctor._attached` to read as "attached", and with
-    # `attach --check` reporting clean beforehand because it does not read the ledger at all.
-    # The `Config` the two checks below read is loaded at the top of this function, which is
-    # where the binding needs it anyway; it used to be loaded here, and before that after the
-    # binding record, where a check could not happen above the writes while what it reads was
-    # loaded below them.
+    # the ledger's, is read in `plan_writes` and is above every write too. `ledger()` refuses
+    # a ledger naming files or settings keys `attach` could not have written, and asked for by
+    # `_write_ledger`, the fourth write of the run, it would let a clone that commits such a
+    # ledger make `attach` write the ignore region, copy `.codex/rules/*` and merge
+    # `.claude/settings.local.json` before exiting 2, with the committed ledger still on disk for
+    # `doctor._attached` to read as "attached"; `attach --check` reads it through the same
+    # `existing_ledger`, so it no longer reports clean beforehand. The `Config` this and the
+    # never-moved check read is loaded at the top of `_plan`, which is where the binding needs it
+    # anyway: a check cannot happen above the writes while what it reads is loaded below them.
     _check_groups(binding, config)
-    # The ninth, and the one whose remedy is an act no command performs: `attach` **links**,
-    # so a group that is still a real directory under `paths.memory` has its notes in the
-    # repository and its share of the overlay empty, and linking over it would leave every
-    # session reading the repository's copy with the binding record, the settings merge and
-    # the ledger already written. Above every write for that reason, and beside the
-    # `memory.groups` containment because it reads the same repository-authored list -- the
-    # anchor it is contained against is `root`, the checkout this command was pointed at,
-    # which is why a repository cannot move the directory the count is taken under. A
-    # `PathEscape` out of `unlinked_groups` propagates as the refusal it already is.
-    real = unlinked_groups(root, config)
-    if real:
-        raise Refusal(REAL_DIRECTORIES.format(count=len(real)))
+
+
+# Off a terminal the harness memory link goes under the password database's home
+# (`config.machine.anchor_home`), and a harness finds its memory directory through `HOME`. Where
+# the two differ, a link made there is one the harness this `HOME` starts never reads, so `attach`
+# makes none and says so, and does everything else; it never makes the link under `HOME` instead,
+# which off a terminal may be a directory the clone chose. A hook withholds the link in the same
+# state (`memory.hooks`), and `doctor`'s `attached` row says the same words.
+@dataclass(frozen=True)
+class UnreadHome:
+    """Why, off a terminal, `attach` makes no harness memory link, and what makes one a harness
+    reads: one wording for the run's note, `--check`'s and `doctor`'s `attached` row."""
+
+    cause: str
+    remedy: str
+
+    @property
+    def note(self) -> str:
+        return f"{self.cause}; {self.remedy}"
+
+
+HOME_DIFFERS = UnreadHome(
+    "attach run here makes no harness memory link, since off a terminal it goes only under this "
+    "user's home in the password database and a harness started with this HOME looks under HOME",
+    f"run `{ATTACH_STORE}` from a terminal, or in a session started with HOME set to that home",
+)
+HOME_EMPTY = UnreadHome(
+    "attach run here makes no harness memory link, since off a terminal it goes only under this "
+    "user's home in the password database and a harness started with an empty HOME does not look "
+    "there",
+    f"run `{ATTACH_STORE}` in a session started with HOME set to that home",
+)
+
+
+def unread_home() -> UnreadHome | None:
+    """Why the harness memory link the real command would make is one no harness this `HOME`
+    starts reads, or `None` where it is the one it reads.
+
+    `None` at a terminal, where `HOME` is the home the link goes under (and an empty one is refused
+    by `harness_anchor`); where `HOME` agrees with the database, unset included; and for a user the
+    database lists no home for, whom `harness_anchor` refuses in words naming that cause.
+    """
+    if override_is_honoured() or homes_agree() or passwd_home() is None:
+        return None
+    return HOME_EMPTY if home_is_empty() else HOME_DIFFERS
+
+
+def plan_writes(
+    root: Path,
+    config: Config,
+    binding: Binding,
+    diff: PermissionDiff,
+    *,
+    machine: Path | None,
+    home: Path | None,
+) -> AttachPlan:
+    """The rest of `_plan`: every read and refusal `attach` makes once the groups have all moved,
+    and nothing written. The anchor for the harness memory link, the ledger, the settings merge,
+    the checkouts and the fallback, what git already hides and the ignore files' blocks, the
+    overlay's rule sources and the machine's trust record, in that order.
+
+    `attach --check` calls it too and drops the plan, which is how the preview meets every one of
+    these refusals with the run's code and line: each read here was once left out of the preview,
+    and `--check` answered clean over a checkout the run then stopped on.
+    """
     # The eighth, and the one that is not about this repository at all: the anchor for the
     # harness memory link. `_apply_harness_link` asks it per checkout, which is one frame
     # below every write here — so a home directory that is not there, and the ordinary
@@ -1200,14 +1490,13 @@ def _plan(
     # read below: every checkout shares `.claude/projects` under one home, which is the
     # component a dotfiles manager links, so the layout that reaches production is refused
     # here for all of them. A `<slug>` component that is itself a symlink is left to the
-    # per-call floor in `harness_anchor`, which is a `Refusal` either way.
+    # per-call floor in `harness_anchor`, which is a `Refusal` either way. Asked where the link is
+    # withheld too: a link there to a store whose approval lapsed is still withdrawn. The real
+    # command's home (`None`) is first asked whether it is the one a harness reads; where it is
+    # not, the run makes no harness link, and no fallback for it either, and says so.
+    unread = unread_home() if home is None else None
     harness_anchor(root, home)
-    # The ledger's own path, held to the project before anything reads or writes under it: it is
-    # the one path this run writes inside the project that no candidate below names, so a
-    # `.stayfixed` committed as a link is refused here by name rather than by the walk that
-    # writes the ledger, after every write before it.
-    contained(root, LEDGER)
-    previous = _existing_ledger(root)
+    previous = existing_ledger(root)
     # Above every write, because the first of them creates `.stayfixed/local/` and the answer
     # would then be wrong by exactly the directory this run brought into existence.
     absent = _absent_directories(root)
@@ -1224,23 +1513,28 @@ def _plan(
     document = local_document(root)
     merged = _merged_settings(document, diff, binding)
     written = merged != document
+    # The checkouts the link tree goes into, read here because the fallback below is asked of the
+    # owning checkout's store, the first of them, as the write after the links asks it. Their
+    # refusal is a `git` that cannot list them, knowable before anything is written.
+    checkouts = tuple(_checkouts(root))
     # The fallback's write is decided here too, for the same reason: it is the one write to the
     # settings file that happens after the links, and a refusal it earned there would come after
     # every write above it.
-    possible = _fallback_possible(root, config, machine=machine, home=home)
+    possible = unread is None and _fallback_possible(
+        root, config, owner=checkouts[0], machine=machine, home=home
+    )
     # A `.claude` linked in from elsewhere takes the fallback off the table rather than refusing
     # the run: the link is a layout the owner chose, and the note below says what the harness
     # link is missing and how to get it.
     fallback = possible and _settings_containable(root)
     settings = written or fallback or _settings_placed(previous, document)
-    ignore = _planned_ignore_region(root) if exclude.unignored(root, IGNORED) else None
+    ignore = _planned_ignore_region(root) if exclude.unignored(root, LOCAL_STATE_PATHS) else None
     hidden = exclude.planned_block(root, _placed(binding, config, settings=settings))
-    # The three reads the writes below used to make for themselves, each of which could refuse
-    # after the first write: the overlay's rule sources (a file that is not UTF-8), the checkouts
-    # the link tree goes into (a `git` that cannot list them) and the machine's trust record,
-    # which the index render and the harness link both read (a `trust.json` that does not parse).
+    # The two reads the writes below would otherwise make for themselves, each of which can
+    # refuse after the first write: the overlay's rule sources (a file that is not UTF-8) and the
+    # machine's trust record, which the index render and the harness link both read (a
+    # `trust.json` that does not parse).
     rules = _codex_rule_texts(binding)
-    checkouts = tuple(_checkouts(root))
     require_readable_record(machine)
     return AttachPlan(
         config=config,
@@ -1260,6 +1554,7 @@ def _plan(
         hidden=hidden,
         rules=rules,
         checkouts=checkouts,
+        unread=unread,
     )
 
 
@@ -1290,26 +1585,52 @@ def _carry_out(
     _write_ledger(root, planned, carried)
     recorded = _record_binding(binding)
     _prepare_store(binding, config)
-    links = _link_everywhere(planned.checkouts, binding, config, machine=machine, home=home)
+    links = _link_everywhere(
+        planned.checkouts,
+        binding,
+        config,
+        machine=machine,
+        home=home,
+        withhold=planned.unread is not None,
+    )
     notes = [] if (note := _secret_scan(binding, runner)) is None else [note]
+    owner = planned.checkouts[0]
     unavailable = False
-    if _settings_containable(root):
-        keys = _harness_fallback(root, config, machine=machine, home=home)
+    if links.withheld:
+        # The fallback stands in for a link this run would make, and it makes none: the key is left
+        # as it stands. A store not approved is not withheld, and its key is withdrawn below.
+        keys = carried
+    elif _settings_containable(root):
+        keys = _harness_fallback(root, config, owner=owner, machine=machine, home=home)
     else:
         keys = carried
-        unavailable = _fallback_wanted(root, config, machine=machine, home=home) is not None
+        wanted = _fallback_wanted(root, config, owner=owner, machine=machine, home=home)
+        unavailable = wanted is not None
     if keys != carried:
         _write_ledger(root, planned, keys)
         written = True
-    if keys:
+    if links.revoked:
+        notes.append(HARNESS_WITHDREW.format(count=len(links.revoked)))
+    if keys and links.withheld:
+        # Left as an earlier run recorded it, and said so: "was recorded" would read as this run's
+        # act, beside a note that this run makes no link at all.
+        notes.append(
+            f"{FALLBACK_KEY} stays in {LOCAL_SETTINGS}, where an earlier attach recorded it; "
+            "`stayfixed detach` removes it"
+        )
+    elif keys:
         notes.append(
             f"the harness memory link could not be created, so {FALLBACK_KEY} was recorded in "
             f"{LOCAL_SETTINGS} instead; `stayfixed detach` removes it"
         )
     elif unavailable:
         notes.append(FALLBACK_UNAVAILABLE)
-    elif _harness_waits(root, config, machine=machine):
-        notes.append(HARNESS_WAITS)
+    # Asked only here, where its answer is said: it reads the store's trust record and digests
+    # its notes, and a run that says something else above has no use for that.
+    elif (waits := _harness_waits(owner, config, machine=machine)) is not None:
+        notes.append(waits)
+    if planned.unread is not None:
+        notes.append(planned.unread.note)
     return Attached(written, rules, recorded, tuple(notes), links)
 
 
@@ -1328,6 +1649,11 @@ class Detached:
     # The block was left in place because another checkout of this repository still holds a
     # ledger: the exclude file is shared, and that checkout's files still need hiding.
     exclude_block_kept: bool = False
+    # Fixed sentences about what was left, for the command's line.
+    notes: tuple[str, ...] = ()
+    # This checkout's link tree was left in place because it owns the store and another checkout
+    # of this repository still holds a ledger: that checkout's harness memory link points at it.
+    link_tree_kept: bool = False
 
 
 def _emptied(raw: dict[str, Any]) -> dict[str, Any]:
@@ -1372,20 +1698,31 @@ def _planned_settings(root: Path, recorded: AttachLedger) -> SettingsWithdrawal:
     if not document.strip():
         return SettingsWithdrawal((), None)
     raw = settings_document(document)
-    held = json.loads(json.dumps(raw))
-    permissions, allow = _allow_list(raw)
-    removed = tuple(rule for rule in recorded.allow if rule in allow)
-    if permissions:
-        permissions["allow"] = [rule for rule in allow if rule not in recorded.allow]
-        raw["permissions"] = permissions
-    for key in recorded.settings_keys:
-        raw.pop(key, None)
-    remaining = json.loads(apply_entries(json.dumps(_emptied(raw), indent=2) + "\n", {}))
-    if remaining == held:
+    try:
+        # The copy and the comparison recurse as the encoder does, and on Python 3.14 under a
+        # reduced stack either overflows for a document the parser read: the reader's refusal of
+        # one nested too deep, never an internal error.
+        held = json.loads(json.dumps(raw))
+        permissions, allow = _allow_list(raw)
+        removed = tuple(rule for rule in recorded.allow if rule in allow)
+        if permissions:
+            permissions["allow"] = [rule for rule in allow if rule not in recorded.allow]
+            raw["permissions"] = permissions
+        for key in recorded.settings_keys:
+            raw.pop(key, None)
+        # Through `settings_text`, as every write-back of a parsed settings document: on Python
+        # 3.12 an indented encode stops near 994 levels, under what the parser read.
+        emptied = settings_text(_emptied(raw), LOCAL_SETTINGS) + "\n"
+        remaining = json.loads(apply_entries(emptied, {}))
+        unchanged = remaining == held
+    except RecursionError:
+        raise ParserLimitError(f"{LOCAL_SETTINGS} {NESTED}") from None
+    if unchanged:
         return SettingsWithdrawal(removed, None)
     # `{}` is not what the file looked like before `attach`; a file holding nothing is one this
     # command created and is the last thing it takes away.
-    return SettingsWithdrawal(removed, json.dumps(remaining, indent=2) + "\n" if remaining else "")
+    text = settings_text(remaining, LOCAL_SETTINGS) + "\n" if remaining else ""
+    return SettingsWithdrawal(removed, text)
 
 
 def _withdraw_settings(root: Path, planned: SettingsWithdrawal) -> tuple[str, ...]:
@@ -1403,20 +1740,20 @@ def _ignore_region_remainder(root: Path) -> str | None:
 
     Asked **before the first withdrawal**, for the reason `_checkouts` is: `drop()` refuses a
     region that is opened or closed twice -- which a merge that kept both sides produces -- and
-    asked where the write used to happen, that refusal came after the settings, the rule files
-    and every link tree were gone, with the ledger still present. `doctor` then reported the
-    repository attached, and a second `detach` failed at the same line. A region that cannot be
-    withdrawn is knowable at the start, and so is a file that cannot be read.
+    asked at the write, that refusal would come after the settings, the rule files and every link
+    tree were gone, with the ledger still present: `doctor` would report the repository attached,
+    and a second `detach` would fail at the same line. A region that cannot be withdrawn is
+    knowable at the start, and so is a file that cannot be read.
+
+    Read as `_planned_ignore_region` reads it (`fsops.read_regular_text`), so a `.gitignore` past
+    the read cap that stops an `attach` stops the `detach` beside it too, rather than being read
+    to its end; and named as the project names it, never by the path it was opened by.
     """
     path = root / GITIGNORE
-    if not path.is_file():
+    if not fsops.is_file(path):
         return None
-    try:
-        text = path.read_text(encoding="utf-8")
-    except OSError as exc:
-        raise Failure(f"{GITIGNORE} cannot be read: {exc}") from exc
-    except UnicodeDecodeError:
-        raise Failure(f"{GITIGNORE} is not UTF-8 text") from None
+    with fsops.reading(GITIGNORE, Failure):
+        text = fsops.read_regular_text(path)
     remaining = _in_gitignore(drop, text, IGNORE_REGION, Style.HASH)
     return None if remaining == text else remaining
 
@@ -1486,9 +1823,9 @@ def _withdraw_directories(root: Path, recorded: AttachLedger) -> tuple[str, ...]
     """Remove the directories this repository did not have before the attach, and only those.
 
     The last step of a detach, after the ledger itself is gone, because `.stayfixed/local/` holds
-    it. `docs/cli.md` promises "an attach and a detach leave the tree byte-for-byte as it was";
-    that was false for directories and the test that backed it could not see it, because
-    `_snapshot` filters on `is_file()`. Four directories survived every round trip.
+    it. `docs/cli.md` promises "an attach and a detach leave the tree byte-for-byte as it was",
+    and directories are part of the tree, though a snapshot that filters on `is_file()` cannot
+    see them.
 
     **Three things keep this from deleting somebody's directory.** It walks `CREATED_DIRS`, a
     closed list, and keeps only what the ledger named — so a committed ledger can shorten the
@@ -1496,7 +1833,7 @@ def _withdraw_directories(root: Path, recorded: AttachLedger) -> tuple[str, ...]
     the first write, so a directory that was already there is never on it. And the removal is
     `rmdir`: a directory holding anything else at all — the owner's own `.claude/settings.json`,
     a `.codex/rules/` file they wrote by hand, a file some other tool left — survives, and its
-    parents then survive with it because they are no longer empty either.
+    parents then survive with it because they are not empty either.
 
     `ENOTEMPTY` is therefore an ordinary outcome and not a failure, and it is the one this
     `except OSError` is written for: `fsops.rmdir_within` already contains the walk to `root` and
@@ -1515,7 +1852,7 @@ def _withdraw_directories(root: Path, recorded: AttachLedger) -> tuple[str, ...]
         # `is_dir()` before the call and not only the ledger's say-so: `rmdir_within` tolerates
         # an absent target, so without this a directory the run never created — `.claude/`, when
         # the overlay grants nothing to merge — would be reported as one this detach removed.
-        if name not in recorded.directories or not (root / name).is_dir():
+        if name not in recorded.directories or not fsops.is_dir(root / name):
             continue
         try:
             fsops.rmdir_within(root, name)
@@ -1532,7 +1869,7 @@ def _rmdir_if_empty(base: Path, name: str) -> bool:
     `_withdraw_directories` gives, and so is a component the walk refuses.
     """
     target = base / name
-    if target.is_symlink() or not target.is_dir():
+    if fsops.is_symlink(target) or not fsops.is_dir(target):
         return False
     try:
         fsops.rmdir_within(base, name)
@@ -1542,11 +1879,13 @@ def _rmdir_if_empty(base: Path, name: str) -> bool:
 
 
 def _withdraw_memory_directories(
-    root: Path, checkouts: list[Path], config: Config, recorded: AttachLedger
+    root: Path, trees: list[Path], config: Config, recorded: AttachLedger
 ) -> tuple[str, ...]:
     """The empty `paths.memory` directory, then the directories above it that the ledger records
     the attach as having created, in `root` alone; and the empty `paths.memory` in every other
-    checkout.
+    checkout this run withdrew a tree from. `trees` is `_reach`'s second answer, so a checkout
+    whose tree was kept keeps its directories too, `root` among them: its `paths.memory` still
+    stands inside every parent the ledger names, so `rmdir` takes none of them.
 
     In `root`, `paths.memory` goes only when the ledger says the attach created it — an empty
     one the owner made before is theirs — and the directories above it only when the ledger says
@@ -1560,7 +1899,7 @@ def _withdraw_memory_directories(
     """
     removed: list[str] = []
     own = root.resolve()
-    for tree in checkouts:
+    for tree in trees:
         if tree.resolve() == own:
             if recorded.memory_created and _rmdir_if_empty(tree, config.paths.memory):
                 removed.append(config.paths.memory)
@@ -1573,22 +1912,30 @@ def _withdraw_memory_directories(
 
 
 # Said when a path `detach` removes or rewrites is reached through a symlink: a directory on the
-# way to it became one after the attach. Its removal used to find that out, after the settings
-# file was withdrawn, as `internal error: UnsafePath`. The path is named by what it is, never by
-# its spelling: a recorded rule copy's name is a ledger's, which a clone can commit, and
-# `paths.memory` and the group names are the repository's.
+# way to it became one after the attach. Asked before the first withdrawal, because its removal
+# would find that out after the settings file was withdrawn, as `internal error: UnsafePath`. The
+# path is named by what it is, never by its spelling: a recorded rule copy's name is a ledger's,
+# which a clone can commit, and `paths.memory` and the group names are the repository's.
 LINKED_ON_THE_WAY = (
     "{what} is reached through a symlink ({where} is one now), and `detach` removes nothing "
     "through one, so nothing was withdrawn; replace the link with the directory it points at and "
     "run `stayfixed detach` again"
 )
 # Said when a `memory.groups` entry added since the attach is not one name inside `paths.memory`.
-# The link tree's withdrawal used to find that out, after the settings, the rule copies and the
-# earlier links were withdrawn, and printed the entry, which the repository wrote.
+# Asked before the first withdrawal, because the link tree's withdrawal would find that out after
+# the settings, the rule copies and the earlier links were withdrawn, and would print the entry,
+# which the repository wrote.
 GROUP_LEAVES_TREE = (
     "a memory.groups entry is not one directory name inside paths.memory, so its link cannot be "
     "withdrawn, and nothing was; take it out of stayfixed.toml, or put back the list the attach "
     "ran with, and run `stayfixed detach` again"
+)
+# Said instead when the entry is one name and a directory on the way cannot be asked whether it
+# is a symlink: taking the entry out would not be the remedy. `{fault}` is the system's words.
+GROUP_UNASKED_IN_TREE = (
+    "a memory.groups entry's place inside paths.memory cannot be checked for a symlink "
+    "({fault}), so its link cannot be withdrawn, and nothing was; run `stayfixed detach` again "
+    "once that directory can be read"
 )
 
 
@@ -1603,20 +1950,21 @@ def _walked(root: Path, relative: str, *, what: str, where: str) -> None:
 def _refuse_unwithdrawable(
     root: Path,
     recorded: AttachLedger,
-    checkouts: list[Path],
+    trees: list[Path],
     config: Config,
     settings: SettingsWithdrawal,
 ) -> None:
     """Walk to every path the withdrawal writes or removes, before the first withdrawal: the
-    settings file when it is rewritten, each recorded rule copy, each name of every checkout's
-    link tree that is a link, and the ledger.
+    settings file when it is rewritten, each recorded rule copy, each name that is a link in the
+    link tree of every checkout in `trees` — `_reach`'s answer, the checkouts whose tree this run
+    withdraws, and no other — and the ledger.
 
-    The writes and removals are `fsops` walks that refuse a symlinked component, and they used to
-    be the first to ask, after the settings file was already withdrawn. An earlier check here
-    asked `contained` instead, which is not the walk's question: it let `paths.memory`'s own last
-    component be a link, which the walk refuses, and refused a rule copy that is itself a link,
-    which the walk unlinks. `fsops.check_within` is the walk, so the two cannot disagree; it stays
-    the floor for a component that changes in between.
+    The writes and removals are `fsops` walks that refuse a symlinked component, and asked first
+    by them, the question would come after the settings file was already withdrawn. `contained`
+    is not the walk's question: it lets `paths.memory`'s own last component be a link, which the
+    walk refuses, and refuses a rule copy that is itself a link, which the walk unlinks.
+    `fsops.check_within` is the walk, so the two cannot disagree; it stays the floor for a
+    component that changes in between.
     """
     if settings.text is not None:
         _walked(root, LOCAL_SETTINGS, what=f"`{LOCAL_SETTINGS}`", where="`.claude`")
@@ -1627,14 +1975,16 @@ def _refuse_unwithdrawable(
             what="a `.codex/rules/` copy this checkout's attach recorded",
             where="`.codex` or `.codex/rules`",
         )
-    for tree in checkouts:
+    for tree in trees:
         base = contained(tree, config.paths.memory, allow_final_symlink=True)
         for name in linked_names(config):
             try:
                 target = contained(base, name, allow_final_symlink=True)
+            except PathUnasked as exc:
+                raise Refusal(GROUP_UNASKED_IN_TREE.format(fault=exc.fault)) from exc
             except PathEscape as exc:
                 raise Refusal(GROUP_LEAVES_TREE) from exc
-            if target.is_symlink():
+            if fsops.is_symlink(target):
                 _walked(
                     tree,
                     f"{config.paths.memory}/{name}",
@@ -1642,7 +1992,10 @@ def _refuse_unwithdrawable(
                     where="`paths.memory` or a directory above it",
                 )
     _walked(
-        root, LEDGER, what=f"the ledger, `{LEDGER}`", where="`.stayfixed` or `.stayfixed/local`"
+        root,
+        ATTACH_LEDGER,
+        what=f"the ledger, `{ATTACH_LEDGER}`",
+        where="`.stayfixed` or `.stayfixed/local`",
     )
 
 
@@ -1651,15 +2004,15 @@ def _another_attached(root: Path, checkouts: list[Path]) -> bool:
 
     Only a ledger an attach in that checkout wrote counts: one git does not track, since
     `attach` never commits it and a clone that did puts the file in every worktree, and one that
-    reads as a ledger, since a file that does not records no attach. Either kind used to keep the
-    shared exclude block for good. A `git` that cannot say whether the file is tracked counts it,
-    which keeps the block: the answer that hides too much rather than too little.
+    reads as a ledger, since a file that does not records no attach. Counted, either kind would
+    keep the shared exclude block for good. A `git` that cannot say whether the file is tracked
+    counts it, which keeps the block: the answer that hides too much rather than too little.
     """
     own = root.resolve()
     for tree in checkouts:
-        if tree == own or not (tree / LEDGER).is_file():
+        if tree == own or not fsops.is_file(tree / ATTACH_LEDGER):
             continue
-        code, tracked = git_run(tree, "ls-files", "-z", "--", LEDGER)
+        code, tracked = git_run(tree, "ls-files", "-z", "--", ATTACH_LEDGER)
         if code == 0 and tracked:
             continue
         try:
@@ -1668,6 +2021,54 @@ def _another_attached(root: Path, checkouts: list[Path]) -> bool:
             continue
         return True
     return False
+
+
+def _reach(root: Path, checkouts: list[Path], *, kept: bool) -> tuple[list[Path], list[Path]]:
+    """The checkouts whose harness memory link this detach withdraws, and those whose link tree
+    it withdraws.
+
+    With no other checkout attached, every checkout's of both, as `attach` made them. While
+    another checkout still holds a ledger (`kept`, `_another_attached`), only `--root`'s harness
+    link, and `--root`'s tree unless `--root` owns the store: every checkout's harness link points
+    at the owning checkout's tree (`_link_everywhere`), so taking that tree, or another
+    checkout's, left a checkout whose ledger still stands half attached and its harness link
+    dangling. A later `attach` anywhere builds the owner's tree first, so keeping it loses
+    nothing. `checkouts` is `_checkouts`' answer, owner first and resolved.
+    """
+    if not kept:
+        return checkouts, checkouts
+    own = root.resolve()
+    return [own], [] if own == checkouts[0] else [own]
+
+
+# Said where the other home's anchor refuses, so `detach` withdrew nothing under it.
+_LEFT_UNDER = (
+    "the harness memory link under {where} was not looked for, because a directory on the way to "
+    "it is missing, a symlink or unreadable"
+)
+
+
+def _other_harness_home() -> tuple[Path, str] | None:
+    """The home besides `anchor_home`'s that a harness may read this checkout's memory link under,
+    with how a note names it, or `None` where there is no other.
+
+    `attach` puts the link under `HOME` at a terminal and under the password database's home off
+    one, so where the two differ a link can stand under either, and a harness started with the
+    other `HOME` reads it there. At a terminal the other is the database's home. Off one it is
+    `HOME`, read as a hook reads it for a lapsed link (`memory.hooks._lapsed_link_home`): set,
+    not empty and absolute, since a relative one names a directory inside the clone. Under it
+    nothing is made or judged; only a link that points at this store is removed
+    (`worktree.detach_main`), which a `HOME` the clone chose gains nothing from.
+    """
+    if homes_agree():
+        return None
+    if override_is_honoured():
+        recorded = anchor_home(interactive=False)
+        return None if recorded is None else (recorded, "the home the password database records")
+    chosen = os.environ.get("HOME")
+    if not chosen or not os.path.isabs(chosen):
+        return None
+    return Path(chosen), "HOME"
 
 
 def detach(root: Path, *, machine: Path | None, home: Path | None) -> Detached:
@@ -1703,26 +2104,41 @@ def detach(root: Path, *, machine: Path | None, home: Path | None) -> Detached:
     carry the ledger of the checkout an attach was run from and `detach --root <that worktree>`
     answers "no ledger". Without one there is nothing to reverse — guessing which allow rules
     were stayfixed's from their content is the heuristic the ledger exists to replace. So the
-    reach this function has *once it starts* is every checkout (`_worktrees` below), and the
-    place it may be started from is the one that holds the record.
+    place it may be started from is the one that holds the record, and the reach it has *once it
+    starts* is `_reach`'s: every checkout (`_worktrees` below) when no other holds a ledger, and
+    `--root` alone while one does, keeping the owning checkout's tree that other checkout's
+    harness link points at.
     """
     recorded = ledger(root)
     config = load(root, machine=machine)
     entries = tuple(sorted(owned_ids(local_document(root))))
     # Asked before the first withdrawal, because it is the one thing here that needs `git` and a
-    # `git` that cannot run is knowable at the start. It used to be asked between the settings
-    # withdrawal and the link trees, so a machine whose `git` was gone got exit 1 with the
-    # settings file and the `.codex/rules/` copies already removed and every link still in place.
+    # `git` that cannot run is knowable at the start. Asked between the settings withdrawal and
+    # the link trees, a machine whose `git` is gone would get exit 1 with the settings file and the
+    # `.codex/rules/` copies already removed and every link still in place.
     #
     # The anchor for each checkout's harness link is the same shape and is asked in the same
     # breath, with this list as its argument: `detach_main` asks it per checkout from inside the
-    # withdrawal, so a home whose `.claude` became a symlink after the attach — a dotfiles
-    # manager adopting it is the ordinary way — let a raw `UnsafePath` out of `detach` as
-    # `internal error`, with the rule files already deleted and every later run failing at the
-    # same line.
+    # withdrawal, so left to it, a home whose `.claude` became a symlink after the attach — a
+    # dotfiles manager adopting it is the ordinary way — would let a raw `UnsafePath` out of
+    # `detach` as `internal error`, with the rule files already deleted and every later run
+    # failing at the same line.
     checkouts = _checkouts(root)
     for tree in checkouts:
         harness_anchor(tree, home)
+    # The other home a harness may read a link under, asked here too, and best-effort: a home its
+    # anchor refuses is passed over with a note rather than refused, since `detach` is the one
+    # command that takes back what `attach` made under either.
+    other = _other_harness_home() if home is None else None
+    elsewhere: Path | None = None
+    notes: tuple[str, ...] = ()
+    if other is not None:
+        elsewhere, where = other
+        try:
+            for tree in checkouts:
+                harness_anchor(tree, elsewhere)
+        except Refusal:
+            elsewhere, notes = None, (_LEFT_UNDER.format(where=where),)
     ignore_remainder = None if _footprint_owns_region(root) else _ignore_region_remainder(root)
     # The `info/exclude` block is found above the first withdrawal for the same reason: `git`
     # names the file and a region opened twice refuses, and both are knowable now. It is shared
@@ -1731,27 +2147,46 @@ def detach(root: Path, *, machine: Path | None, home: Path | None) -> Detached:
     # would show that checkout's settings file and rule copies in its `git status`.
     kept = _another_attached(root, checkouts)
     hidden = None if kept else exclude.withdrawn_block(root)
+    harnessed, trees = _reach(root, checkouts, kept=kept)
     settings = _planned_settings(root, recorded)
-    _refuse_unwithdrawable(root, recorded, checkouts, config, settings)
+    # Where each checkout's harness link may point and be ours, asked here because it walks the
+    # owning checkout's `paths.memory` as well as the checkout's own, and while another ledger
+    # stands `_refuse_unwithdrawable` walks no tree but `--root`'s. Asked from inside the
+    # withdrawal, a main checkout whose `paths.memory` came to be reached through a symlink
+    # refused after the rule copies were gone. And asked before `_refuse_unwithdrawable`, which
+    # walks only checkouts asked here: it resolves each tree's `paths.memory` with no answer for
+    # a symlink loop, where `.resolve()` raises `RuntimeError` up to Python 3.12, and this
+    # question's one refusal names the loop.
+    targets = {tree: harness_targets(tree, checkouts[0], config) for tree in harnessed}
+    _refuse_unwithdrawable(root, recorded, trees, config, settings)
     allow_removed = _withdraw_settings(root, settings)
     rules_removed: list[str] = []
     for rule in recorded.rules:
-        if (root / rule).is_file():
+        if fsops.is_file(root / rule):
             fsops.remove_within(root, rule)
             rules_removed.append(rule)
     # The mirror of `_link_everywhere`, and it had the mirror defect: `detach_main` was applied
     # to `--root` and the loop then skipped the owning checkout unconditionally, so a detach run
     # from a linked worktree withdrew that worktree's tree twice and left the main checkout's
     # link tree — and its harness link — in place. `_checkouts` is the one spelling of "every
-    # checkout, owner first, each exactly once" that both halves now read.
+    # checkout, owner first, each exactly once" that both halves now read, and `_reach` says
+    # which of them this run withdraws from.
     revoked: list[Path] = []
-    for tree in checkouts:
-        revoked += detach_main(tree, config, machine=machine, home=home).revoked
+    for tree in harnessed:
+        revoked += detach_main(
+            tree,
+            config,
+            machine=machine,
+            home=home,
+            elsewhere=elsewhere,
+            targets=targets[tree],
+            keep_tree=tree not in trees,
+        ).revoked
     region = _withdraw_ignore_region(root, ignore_remainder)
     if hidden is not None:
         exclude.write(hidden)
-    memory = _withdraw_memory_directories(root, checkouts, config, recorded)
-    fsops.remove_within(root, LEDGER)
+    memory = _withdraw_memory_directories(root, trees, config, recorded)
+    fsops.remove_within(root, ATTACH_LEDGER)
     # Last, because the ledger lives in one of them.
     directories = _withdraw_directories(root, recorded)
     return Detached(
@@ -1764,4 +2199,6 @@ def detach(root: Path, *, machine: Path | None, home: Path | None) -> Detached:
         directories + memory,
         hidden is not None,
         kept,
+        notes,
+        root.resolve() not in trees,
     )

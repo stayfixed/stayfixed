@@ -1,15 +1,21 @@
 """The scaffold engine: manifest, regions, keyed entries, plan and apply.
 
-Everything a consumer needs is re-exported here, including the four primitives other areas
-reach for directly: `owned_ids` for `doctor`'s provenance list, `mark` for any caller that
-builds `Template.entries`, and `drop` / `apply_entries` for `uninstall`. The three refusals a
-consumer has to catch by name are here too: a caller that cannot import `ManifestError`,
-`RegionError` or `EntriesError` from this list has no way to tell a bad merge from a bug except
-by catching `Refusal` whole. `effective_target` and `unlinks` are for `uninstall`, which must
-compare paths the way the engine resolves them (an `[artifacts] local` artifact lives where
-`Template.target` does not say) and must know which planned removal deletes a file rather than
-rewriting it without stayfixed's part: both are the engine's facts, and a second copy of either
-would drift from it. `ours_locally`, `local_copies` and `left_copies` are for `uninstall` too
+Everything a consumer needs is re-exported here, including the primitives other areas reach for
+directly: `judged_entries` for `doctor`'s provenance list, each entry a `Placed`, for
+`assess`'s foreign-hook probe, which reads the same walk, and for `attach --check`, which reads
+the settings file `attach` merges into as strictly as the merge does; `wanted_placements` for the
+grants it is compared with, which `attach` answers; `owned_ids` for the ids `attach` records in its
+ledger, `mark` for any caller that builds `Template.entries`, and `drop` / `apply_entries` for
+`uninstall`. The three refusals a consumer has to catch by name
+are here too: a caller that cannot import `ManifestError`, `RegionError` or `EntriesError`
+from this list has no way to tell a bad merge from a bug except by catching `Refusal` whole;
+`ParserLimitError`, an `EntriesError` too, is the valid JSON past a limit of the parser that
+`doctor` must tell from a malformed document. `effective_target` and
+`unlinks` are for `uninstall`, which must compare paths the way the engine resolves them (an
+`[artifacts] local` artifact lives where `Template.target` does not say) and must know which
+planned removal deletes a file rather than rewriting it without stayfixed's part: both are the
+engine's facts, and a second copy of either would drift from it. `ours_locally`, `local_copies`
+and `left_copies` are for `uninstall` too
 (the last two through the project area's planning seam, `project.footprint.Passes`): before any
 write it predicts whether the write-once pass will remove what a region's removal
 leaves in a file kept out of git, and that verdict, which file it is asked of, and which copy a
@@ -33,11 +39,17 @@ from stayfixed.scaffold.engine import (
 )
 from stayfixed.scaffold.entries import (
     EntriesError,
+    ParserLimitError,
+    Placed,
     apply_entries,
+    judged_entries,
     mark,
     marker_id,
     owned,
     owned_ids,
+    settings_object,
+    settings_text,
+    wanted_placements,
 )
 from stayfixed.scaffold.local import LOCAL_ARTIFACTS, LOCAL_DIGESTS, LOCAL_ROOT, LocalDigests
 from stayfixed.scaffold.manifest import (
@@ -68,6 +80,8 @@ __all__ = [
     "Location",
     "Manifest",
     "ManifestError",
+    "ParserLimitError",
+    "Placed",
     "Plan",
     "Record",
     "Refused",
@@ -81,6 +95,7 @@ __all__ = [
     "drop",
     "effective_target",
     "extract",
+    "judged_entries",
     "left_copies",
     "local_copies",
     "mark",
@@ -91,7 +106,10 @@ __all__ = [
     "plan",
     "printable",
     "render_report",
+    "settings_object",
+    "settings_text",
     "unlinks",
     "upsert",
     "validate_sources",
+    "wanted_placements",
 ]

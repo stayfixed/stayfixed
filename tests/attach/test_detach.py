@@ -8,24 +8,43 @@ the owner wrote by hand — which is worse than removing none.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 from collections.abc import Callable
 from pathlib import Path, PurePosixPath
+from typing import Any
 
 import pytest
 
-from stayfixed.attach.api import LEDGER
-from stayfixed.attach.write import GITIGNORE, IGNORE_BODY, IGNORE_REGION, Detached, detach
+from stayfixed import fsops, jsonobject
+from stayfixed.attach.write import GITIGNORE, GROUP_UNASKED_IN_TREE, Detached, detach
+from stayfixed.config.layout import ATTACH_LEDGER as LEDGER
+from stayfixed.config.layout import IGNORE_BODY, IGNORE_REGION
 from stayfixed.errors import Failure, Refusal
 from stayfixed.memory.api import harness_memory_path, resolve
 from stayfixed.memory.trust import record
+from stayfixed.printed import quoted
+from stayfixed.project.init import init
+from stayfixed.project.uninstall import uninstall
 from stayfixed.scaffold import MANIFEST_PATH, Kind, Location, Manifest, Record, digest
 from stayfixed.scaffold.regions import RegionError, Style, extract, markers, upsert
 from tests.attach.test_binding import DEFAULT_MEMORY
-from tests.attach.test_links import _attach, _bound, _config
+from tests.attach.test_links import _attach, _bound, _config, _trusted
 from tests.attach.test_write import SETTINGS
 from tests.gitfixture import git
-from tests.snapshot import assert_snapshot_changed, assert_snapshot_unchanged, snapshot
+from tests.parserlimits import LONG_NUMBER, NESTED, PAST_ENCODING, overflowing_indent
+from tests.pathfaults import (
+    ROOT_SEARCHES_EVERYTHING,
+    symlink_loop_at,
+    unsearchable,
+)
+from tests.runners import LsRemote, git_that_cannot_run
+from tests.snapshot import (
+    assert_snapshot_changed,
+    assert_snapshot_unchanged,
+    snapshot,
+    tree_entries,
+)
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
@@ -63,6 +82,29 @@ def test_detach_removes_exactly_what_attach_added(tmp_path: Path) -> None:
     assert_snapshot_changed(root, before)
     _detach(root, machine, home)
     assert_snapshot_unchanged(root, before)
+
+
+def test_uninstall_after_a_real_detach_takes_the_footprint_back(tmp_path: Path) -> None:
+    # The lifecycle's "uninstalled after a detach": `stayfixed uninstall` refuses an attached
+    # repository, so what a detach leaves behind decides whether it runs at all. An `init`
+    # footprint, a real attach that merged a rule and a hook entry, a detach, and the tree is the
+    # one `init` left; `uninstall` then runs and takes the footprint back, and a second one finds
+    # nothing to take. Mutation: `mutations/`'s "detach leaves its ledger behind".
+    root, store, machine = _bound(tmp_path)
+    init(root, machine=machine, runner=LsRemote(), yes=True, dry_run=False, ci=False)
+    git(root, "add", "-A")
+    git(root, "-c", "user.email=a@b.c", "-c", "user.name=a", "commit", "-qm", "footprint")
+    initialised = snapshot(root)
+    _grant(store.parents[2], allow=(RULE,), hooks=True)
+    home = tmp_path / "home"
+    _attach(root, store, machine, home, confirmed=True)
+    assert_snapshot_changed(root, initialised)
+    _detach(root, machine, home)
+    assert_snapshot_unchanged(root, initialised)
+    uninstall(root, machine=machine, dry_run=False, force=())
+    assert not (root / MANIFEST_PATH).exists() and not (root / LEDGER).exists()
+    with pytest.raises(Refusal):
+        uninstall(root, machine=machine, dry_run=False, force=())
 
 
 def test_detach_leaves_a_rule_the_ledger_does_not_claim(tmp_path: Path) -> None:
@@ -152,6 +194,250 @@ def test_detach_withdraws_the_link_tree_from_every_worktree(tmp_path: Path) -> N
     assert not (side / "docs" / "memory" / "developer").is_symlink()
 
 
+# --- a checkout another ledger still serves stays attached -----------------------------------
+
+
+def _both_attached(tmp_path: Path) -> tuple[Path, Path, Path, Path, Path]:
+    """The main checkout attached, its store approved, and a linked worktree attached after it,
+    each with its harness memory link made by `attach` itself: the main checkout's to its own
+    `paths.memory`, the worktree's to the main checkout's, which is where `attach` points every
+    checkout's link. Asserted here, so no case below asserts about links that were never made.
+    Returns `(root, side, store, machine, home)`."""
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2])
+    side = tmp_path / "side"
+    git(root, "worktree", "add", "-q", str(side), "-b", "side")
+    home = tmp_path / "home"
+    _attach(root, store, machine, home)
+    _trusted(root, machine)
+    _attach(root, store, machine, home)
+    _attach(side, store, machine, home)
+    assert (root / LEDGER).is_file() and (side / LEDGER).is_file()
+    for checkout in (root, side):
+        harness = harness_memory_path(checkout, home)
+        assert harness.is_symlink() and harness.exists(), checkout
+        assert harness.resolve() == (root / DEFAULT_MEMORY).resolve()
+        assert (checkout / DEFAULT_MEMORY / "developer").is_symlink()
+    return root, side, store, machine, home
+
+
+def _dangling_under(home: Path) -> list[Path]:
+    """Every link under the home's `.claude/projects/` that resolves to nothing."""
+    found: list[Path] = []
+    for dirpath, dirnames, filenames in os.walk(home / ".claude" / "projects"):
+        for name in (*dirnames, *filenames):
+            path = Path(dirpath) / name
+            if path.is_symlink() and not path.exists():
+                found.append(path)
+    return found
+
+
+def test_detach_in_a_worktree_leaves_the_attached_main_checkout_whole(tmp_path: Path) -> None:
+    # The main checkout attached, a worktree attached after it, and `detach` run in the worktree:
+    # the main checkout still holds its ledger, and `detach` took its link tree and its harness
+    # link anyway, leaving it half attached; and the worktree's own harness link, which points at
+    # the main checkout's tree, was compared with the worktree's tree, never matched, and stayed
+    # behind dangling. Mutation (oracle): `mutations/`'s "detach withdraws every checkout's tree
+    # while another ledger still serves one" -> the main checkout's tree goes.
+    root, side, _, machine, home = _both_attached(tmp_path)
+    _detach(side, machine, home)
+    assert (root / DEFAULT_MEMORY / "developer").is_symlink()
+    assert harness_memory_path(root, home).exists()
+    assert (root / LEDGER).is_file()
+    assert not os.path.lexists(harness_memory_path(side, home))
+    assert not (side / LEDGER).exists()
+    assert not (side / DEFAULT_MEMORY / "developer").is_symlink()
+    assert _dangling_under(home) == []
+
+
+def test_detach_in_the_main_checkout_leaves_an_attached_worktree_whole(tmp_path: Path) -> None:
+    # The other direction. The main checkout's tree is what the worktree's harness link points
+    # at, so while the worktree's ledger stands it stays; only the main checkout's own harness
+    # link, ledger, settings and rule copies go. A later `attach` anywhere rebuilds that tree
+    # first, so keeping it loses nothing. Mutation (oracle): `mutations/`'s "detach takes the
+    # owning checkout's tree while another ledger still serves it" -> the main checkout's tree
+    # goes.
+    root, side, _, machine, home = _both_attached(tmp_path)
+    _detach(root, machine, home)
+    assert (root / DEFAULT_MEMORY / "developer").is_symlink()
+    assert not os.path.lexists(harness_memory_path(root, home))
+    assert not (root / LEDGER).exists()
+    assert (side / DEFAULT_MEMORY / "developer").is_symlink()
+    assert harness_memory_path(side, home).exists()
+    assert (side / LEDGER).is_file()
+    assert _dangling_under(home) == []
+
+
+def _relinked_to_its_own_tree(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
+    """`_both_attached`, with the worktree's harness memory link then made the way the
+    `SessionStart` re-link makes it: `memory.worktree.link` handed the worktree's own store, which
+    points the link at the worktree's own `paths.memory` rather than at the main checkout's. The
+    gate that link asks is the worktree's own store's, so that store is approved first. Returns
+    `(root, side, machine, home)`."""
+    from stayfixed.memory.api import MakeUnder, link
+
+    root, side, _, machine, home = _both_attached(tmp_path)
+    config = _config(side, machine)
+    own = resolve(side, config, machine=machine)
+    assert own is not None
+    record(own, config)
+    link(side, own, config, harness=MakeUnder(home))
+    harness = harness_memory_path(side, home)
+    # Non-vacuous: the link is the worktree's own tree now, the second directory a harness link
+    # may point at and be stayfixed's.
+    assert harness.is_symlink() and harness.exists()
+    assert harness.resolve() == (side / DEFAULT_MEMORY).resolve()
+    assert harness.resolve() != (root / DEFAULT_MEMORY).resolve()
+    return root, side, machine, home
+
+
+def test_detach_withdraws_a_worktree_harness_link_the_session_start_relink_made(
+    tmp_path: Path,
+) -> None:
+    # A worktree's harness link is `attach`'s when it points at the main checkout's tree or at the
+    # worktree's own, which is where the `SessionStart` re-link points it. Compared with the main
+    # checkout's alone, the re-linked one was left standing and, once the worktree's tree went,
+    # dangling. Mutation (oracle): `mutations/`'s "harness_targets names the owning checkout's
+    # tree alone" -> the link stays and dangles.
+    root, side, machine, home = _relinked_to_its_own_tree(tmp_path)
+    _detach(side, machine, home)
+    assert not os.path.lexists(harness_memory_path(side, home))
+    assert _dangling_under(home) == []
+    assert harness_memory_path(root, home).exists()
+
+
+@pytest.mark.parametrize("run_in", ["main", "worktree", "lone"])
+def test_a_second_detach_exits_one_and_writes_nothing(tmp_path: Path, run_in: str) -> None:
+    # Run twice in one checkout: the first takes that checkout's ledger, so the second has nothing
+    # to reverse and fails (exit 1) naming the missing ledger, with every checkout and every
+    # harness link exactly as the first left them. From the main checkout and from the worktree
+    # while the other is attached, and from a lone checkout, where the first takes everything.
+    if run_in == "lone":
+        root, store, machine = _bound(tmp_path)
+        _grant(store.parents[2])
+        home = tmp_path / "home"
+        _attach(root, store, machine, home)
+        _trusted(root, machine)
+        _attach(root, store, machine, home)
+        assert harness_memory_path(root, home).exists()
+        checkouts: tuple[Path, ...] = (root,)
+        target = root
+    else:
+        root, side, _, machine, home = _both_attached(tmp_path)
+        checkouts = (root, side)
+        target = root if run_in == "main" else side
+    _detach(target, machine, home)
+    before = tree_entries(*checkouts, home)
+    # Non-vacuous: the walk sees what the first left — the other checkout's tree and harness
+    # link, and its own tree's directory where it was the main checkout's.
+    if run_in != "lone":
+        other = side if run_in == "main" else root
+        assert str(harness_memory_path(other, home)) in before
+        assert any(path.endswith("developer") for path in before)
+    else:
+        assert str(root / "stayfixed.toml") in before
+        assert not os.path.lexists(harness_memory_path(root, home))
+    with pytest.raises(Failure) as failed:
+        _detach(target, machine, home)
+    assert LEDGER in str(failed.value)
+    assert tree_entries(*checkouts, home) == before
+
+
+@pytest.mark.parametrize("detached", ["worktree", "main"])
+def test_a_main_checkout_tree_reached_through_a_symlink_refuses_before_anything_is_withdrawn(
+    tmp_path: Path, detached: str
+) -> None:
+    # While another checkout's ledger stands, `detach` withdraws no tree but `--root`'s, so the
+    # walk before the first withdrawal no longer reaches the main checkout's; but each harness
+    # link is still compared with the main checkout's `paths.memory`, and that question was asked
+    # from inside the withdrawal. With the main checkout's `docs` moved away and linked back, it
+    # refused there, after the rule copies were gone: a refused `detach` that had removed some of
+    # what it promises to remove all of or none of. Both directions: run in the worktree, and in
+    # the main checkout, which keeps its own tree and whose configuration already refuses the
+    # link when it is loaded, the twin that holds the refusal's place. From the worktree the
+    # refusal names whose `paths.memory` it could not ask, which the raw `PathEscape` did not: it
+    # read as the worktree's own. Mutation (oracle): `mutations/`'s "detach asks where a harness
+    # link may point only once it has begun withdrawing".
+    root, side, _, machine, home = _both_attached(tmp_path)
+    moved = tmp_path / "moved-docs"
+    shutil.move(root / "docs", moved)
+    (root / "docs").symlink_to(moved, target_is_directory=True)
+    run_in = side if detached == "worktree" else root
+    # Non-vacuous: there is a rule copy to withdraw before the harness links are reached.
+    assert (run_in / ".codex" / "rules").is_dir()
+    assert any((run_in / ".codex" / "rules").iterdir())
+    before = tree_entries(root, side, home)
+    with pytest.raises(Refusal) as refused:
+        _detach(run_in, machine, home)
+    assert "symlink" in str(refused.value)
+    if detached == "worktree":
+        assert "the main checkout's paths.memory" in str(refused.value)
+    assert str(tmp_path) not in str(refused.value)
+    assert tree_entries(root, side, home) == before
+
+
+def test_a_main_checkout_tree_that_is_a_symlink_loop_refuses_before_anything_is_withdrawn(
+    tmp_path: Path,
+) -> None:
+    # Up to Python 3.12 `.resolve()` raised `RuntimeError` on a loop, and asking where the
+    # worktree's harness link may point resolves the main checkout's `paths.memory`: `detach` from
+    # the worktree ended in an internal error. It is the refusal above now, before the first
+    # withdrawal, on every interpreter (`fsops.resolved`).
+    root, side, _, machine, home = _both_attached(tmp_path)
+    shutil.rmtree(root / DEFAULT_MEMORY)
+    (root / DEFAULT_MEMORY).symlink_to(PurePosixPath(DEFAULT_MEMORY).name)
+    before = tree_entries(root, side, home)
+    with pytest.raises(Refusal) as refused:
+        _detach(side, machine, home)
+    assert "the main checkout's paths.memory" in str(refused.value)
+    assert "symlink loop" in str(refused.value)
+    assert tree_entries(root, side, home) == before
+
+
+@pytest.mark.parametrize("loop", ["real", "stood-in"])
+@pytest.mark.parametrize("checkout", ["lone-main", "worktree"])
+def test_a_checkouts_own_paths_memory_that_is_a_symlink_loop_refuses_before_anything_is_withdrawn(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, checkout: str, loop: str
+) -> None:
+    # The checkout `detach` runs in, with its own `paths.memory` a symlink loop: a lone main
+    # checkout, and a linked worktree detached while the main checkout stays attached. The walk to
+    # every path the withdrawal removes resolved that loop before anything asked where a harness
+    # link may point, and up to Python 3.12 `.resolve()` raises `RuntimeError` there: `internal
+    # error`, where the refusal that names the loop was documented. Nothing was removed, but the
+    # run ended in a traceback. `stood-in` makes `.resolve()` of the loop raise as 3.11 does, so
+    # every interpreter meets it. Mutation (oracle): `mutations/`'s "detach walks the trees it
+    # withdraws before asking where a harness link may point" -> RuntimeError.
+    if checkout == "lone-main":
+        root, store, machine = _bound(tmp_path)
+        _grant(store.parents[2])
+        home = tmp_path / "home"
+        _attach(root, store, machine, home)
+        _trusted(root, machine)
+        _attach(root, store, machine, home)
+        checkouts: tuple[Path, ...] = (root,)
+        run_in, whose = root, "the main checkout's"
+    else:
+        root, side, _, machine, home = _both_attached(tmp_path)
+        checkouts = (root, side)
+        run_in, whose = side, "the linked worktree's"
+    shutil.rmtree(run_in / DEFAULT_MEMORY)
+    if loop == "real":
+        (run_in / DEFAULT_MEMORY).symlink_to(PurePosixPath(DEFAULT_MEMORY).name)
+    else:
+        symlink_loop_at(monkeypatch, run_in / DEFAULT_MEMORY)
+    # Non-vacuous: there is a rule copy and a harness link to withdraw.
+    assert any((run_in / ".codex" / "rules").iterdir())
+    assert os.path.lexists(harness_memory_path(run_in, home))
+    before = tree_entries(*checkouts, home)
+    with pytest.raises(Refusal) as refused:
+        _detach(run_in, machine, home)
+    assert str(refused.value) == (
+        f"where a harness memory link may point cannot be asked of {whose} paths.memory: "
+        f"{DEFAULT_MEMORY!r} is a symlink loop"
+    )
+    assert tree_entries(*checkouts, home) == before
+
+
 def test_detach_withdraws_the_settings_fallback_it_recorded(tmp_path: Path) -> None:
     # The fallback is a setting, not a link, so nothing expires it: if `detach` left it behind
     # the harness would keep reading the store of a repository that is no longer bound.
@@ -222,7 +508,7 @@ def test_a_ledger_naming_a_file_attach_could_not_have_written_removes_nothing(
     # ever writes `.codex/rules/<file>`, so anything else in `rules` is a repository asking for
     # a deletion no attach could have earned.
     #
-    # Mutation: `mutations.toml`'s "detach deletes whatever file the ledger names" — make
+    # Mutation: `mutations/`'s "detach deletes whatever file the ledger names" — make
     # `_rule_is_writable` answer True unconditionally and the workflow file goes.
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2])
@@ -239,6 +525,70 @@ def test_a_ledger_naming_a_file_attach_could_not_have_written_removes_nothing(
         _detach(root, machine, home)
     assert_snapshot_unchanged(root, before)
     assert workflow.is_file()
+
+
+def test_a_ledger_nested_past_the_parsers_reach_removes_nothing(tmp_path: Path) -> None:
+    # A committed ledger nested deeper than `json.loads` follows ended `detach` in an internal
+    # error. It is a ledger that cannot be read, so the run fails before it withdraws anything.
+    # Mutation (oracle): `mutations/`'s "the JSON object reader lets a document nested past the
+    # parser raise" -> `RecursionError`.
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2])
+    home = tmp_path / "home"
+    _attach(root, store, machine, home)
+    (root / LEDGER).write_text('{"entries": ' + NESTED + "}", encoding="utf-8")
+    before = snapshot(root)
+    assert before
+    with pytest.raises(Failure, match="nested deeper"):
+        _detach(root, machine, home)
+    assert_snapshot_unchanged(root, before)
+
+
+def test_a_ledger_holding_a_number_past_the_parsers_reach_removes_nothing(tmp_path: Path) -> None:
+    # A committed ledger holding an integer literal longer than the interpreter converts ended
+    # `detach` in an internal error, `ValueError`. It is a ledger that cannot be read, so the run
+    # fails before it withdraws anything. Mutation (oracle): `mutations/`'s "the JSON object
+    # reader lets a number past the parser's reach raise" -> `ValueError`.
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2])
+    home = tmp_path / "home"
+    _attach(root, store, machine, home)
+    (root / LEDGER).write_text('{"entries": {"x": ' + LONG_NUMBER + "}}", encoding="utf-8")
+    before = snapshot(root)
+    assert before
+    with pytest.raises(Failure, match="number longer"):
+        _detach(root, machine, home)
+    assert_snapshot_unchanged(root, before)
+
+
+@pytest.mark.parametrize("bound", ["real-depth", "cap-forced"])
+def test_a_local_settings_file_past_the_encoder_is_refused_and_removes_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, bound: str
+) -> None:
+    # On Python 3.14 the parser follows about 57,800 levels and `json.dumps` overflows near
+    # 50,000, so a `settings.local.json` nested between the two parsed and then ended `detach` in
+    # `internal error: RecursionError … while encoding a JSON object`, where 3.11 to 3.13 refuse
+    # it as nested deeper than the reader follows. The reader now bounds the depth it follows, so
+    # every interpreter refuses it in those words. `real-depth` is that file, and exercises the
+    # bound only where the parser reaches it (3.14); `cap-forced` lowers the bound so the same
+    # refusal is reached on every interpreter. Mutation (declared): the depth bound never refuses
+    # -> `cap-forced` detaches.
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2])
+    home = tmp_path / "home"
+    _attach(root, store, machine, home)
+    if bound == "cap-forced":
+        monkeypatch.setattr(jsonobject, "DEPTH_CAP", 4)
+        deep = "[" * 5 + "]" * 5
+    else:
+        deep = PAST_ENCODING
+    (root / SETTINGS).parent.mkdir(exist_ok=True)
+    (root / SETTINGS).write_text('{"x": ' + deep + "}", encoding="utf-8")
+    before = snapshot(root)
+    assert before
+    with pytest.raises((Failure, Refusal), match="nested deeper than this reader follows"):
+        _detach(root, machine, home)
+    assert_snapshot_unchanged(root, before)
 
 
 def test_a_ledger_claiming_the_permissions_key_never_drops_the_owners_deny_rules(
@@ -292,20 +642,6 @@ def test_the_two_values_attach_really_writes_are_still_acted_on(tmp_path: Path) 
     assert not (root / SETTINGS).exists()
 
 
-def _a_git_that_cannot_run(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A `git` that cannot be launched at all, at the seam `memory.store` runs it through.
-
-    The state `GitUnavailable` exists for, and its own docstring says a review machine hit it.
-    Patched rather than arranged, because the alternative is removing `git` from `PATH` for the
-    whole process.
-    """
-
-    def refuse(*args: object, **kwargs: object) -> tuple[int, str]:
-        return -1, ""  # `git_run`'s own answer for a `git` that could not be launched
-
-    monkeypatch.setattr("stayfixed.memory.store.git_run", refuse)
-
-
 def test_a_git_that_cannot_run_is_answered_before_anything_is_withdrawn(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -320,7 +656,7 @@ def test_a_git_that_cannot_run_is_answered_before_anything_is_withdrawn(
     # exit 1 with `.claude/settings.local.json` and `.codex/rules/common.rules` already removed
     # and every link, the ignore region and the ledger still in place. Both are pure reads.
     #
-    # Mutation: `mutations.toml`'s "detach asks git where the checkouts are after it has already
+    # Mutation: `mutations/`'s "detach asks git where the checkouts are after it has already
     # withdrawn".
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2], allow=(RULE,), hooks=True)
@@ -329,7 +665,7 @@ def test_a_git_that_cannot_run_is_answered_before_anything_is_withdrawn(
     before = snapshot(root)
     # `snapshot` is a walk, and an empty one satisfies the comparison below on its own.
     assert before
-    _a_git_that_cannot_run(monkeypatch)
+    git_that_cannot_run(monkeypatch)
     with pytest.raises(Failure):
         _detach(root, machine, home)
     assert_snapshot_unchanged(root, before)
@@ -377,7 +713,7 @@ def test_detach_removes_the_directories_the_attach_created(tmp_path: Path) -> No
     # leaves the tree changed. `.claude/` is on the list too — the overlay here grants a rule,
     # so the attach creates it.
     #
-    # Mutation: `mutations.toml`'s "detach leaves behind the directories the attach created".
+    # Mutation: `mutations/`'s "detach leaves behind the directories the attach created".
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2], allow=(RULE,), hooks=True)
     home = tmp_path / "home"
@@ -478,8 +814,8 @@ def test_a_home_whose_claude_became_a_symlink_refuses_above_every_withdrawal(
     # manager adopt `~/.claude`. That is also why this is `detach`'s case and not a repeat of
     # `attach`'s — the home directory was fine when the repository was attached.
     #
-    # Mutation (declared, "detach discovers the harness anchor from inside the withdrawal"):
-    # the hoisted loop goes -> the refusal still arrives, from `detach_main`, and
+    # Mutation (declared, `mutations/`'s "detach discovers the harness anchor from inside the
+    # withdrawal"): the hoisted loop goes -> the refusal still arrives, from `detach_main`, and
     # `assert_snapshot_unchanged` reddens with the rule files already removed.
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2], allow=(RULE,), hooks=True)
@@ -499,7 +835,8 @@ def test_a_home_whose_claude_became_a_symlink_refuses_above_every_withdrawal(
     assert before
     with pytest.raises(Refusal) as refused:
         _detach(root, machine, home)
-    assert str(home / ".claude") in str(refused.value)
+    # The symlink is named by its place under the home directory, `contained`'s root.
+    assert "passes through a symlink at '.claude'" in str(refused.value)
     # Nothing was withdrawn, so the repository is still the one the attach left and a second
     # `detach` — against a home whose `.claude` is a real directory — still has everything to
     # withdraw.
@@ -519,8 +856,8 @@ def test_a_gitignore_region_that_cannot_be_withdrawn_is_answered_before_anything
     # failing at the same line. The region is now read beside the ledger and `_checkouts`, so a
     # broken one refuses above the first withdrawal.
     #
-    # Mutation (`mutations.toml`, "detach reads the ignore region after it has already
-    # withdrawn"): the remainder computed where the write happens → the snapshot below changes.
+    # Mutation (`mutations/`'s "detach stops reading the ignore region before its first
+    # withdrawal"): the region is met only where it is written → the snapshot below changes.
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2], allow=(RULE,), hooks=True)
     home = tmp_path / "home"
@@ -531,12 +868,37 @@ def test_a_gitignore_region_that_cannot_be_withdrawn_is_answered_before_anything
     before = snapshot(root)
     with pytest.raises(RegionError) as refused:
         _detach(root, machine, home)
-    # The refusal names the file, as the exclude block's does. Mutation: `mutations.toml`'s "a
+    # The refusal names the file, as the exclude block's does. Mutation: `mutations/`'s "a
     # doubled .gitignore region is refused without its file".
     assert GITIGNORE in str(refused.value)
     assert_snapshot_unchanged(root, before)
     assert (root / LEDGER).is_file()
     assert (root / "docs" / "memory" / "developer").is_symlink()
+
+
+def test_a_gitignore_past_the_read_cap_is_refused_by_detach_as_by_attach_and_removes_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `attach` reads `.gitignore` to the read cap, and `detach` read the same file whole: a
+    # `.gitignore` past the cap stopped an `attach` and was read to its end by the `detach` beside
+    # it. Both read it through `fsops.read_regular_text` now, and `detach` refuses it above the
+    # first withdrawal, naming the file as the project names it and never by the path it opened.
+    # The cap is lowered so the file is small. Mutation (oracle): `mutations/`'s "detach reads
+    # .gitignore with no bound" -> the region is withdrawn.
+    root, store, machine = _bound(tmp_path)
+    home = tmp_path / "home"
+    _attach(root, store, machine, home)
+    ignore = root / GITIGNORE
+    assert extract(ignore.read_text(encoding="utf-8"), IGNORE_REGION, Style.HASH) is not None
+    limit = 16 * 1024
+    ignore.write_text(ignore.read_text(encoding="utf-8") + "#" * limit + "\n", encoding="utf-8")
+    monkeypatch.setattr(fsops, "REGULAR_READ_LIMIT", limit)
+    before = snapshot(root)
+    with pytest.raises(Failure) as refused:
+        _detach(root, machine, home)
+    assert str(refused.value) == ".gitignore cannot be read (larger than this reader reads)"
+    assert_snapshot_unchanged(root, before)
+    assert (root / LEDGER).is_file()
 
 
 def test_a_whitespace_only_gitignore_survives_the_round_trip(tmp_path: Path) -> None:
@@ -568,7 +930,7 @@ def test_a_region_init_recorded_survives_a_detach(tmp_path: Path) -> None:
     per-checkout and untracked, and the question "whose region is this" is answered for every
     clone by the committed manifest.
 
-    Mutation: `mutations.toml`'s "detach withdraws a region the footprint owns".
+    Mutation: `mutations/`'s "detach withdraws a region the footprint owns".
     """
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2])
@@ -605,7 +967,7 @@ def _not_utf8(manifest: Path, outside: Path) -> None:
 
 
 def _nested_past_the_stack(manifest: Path, outside: Path) -> None:
-    manifest.write_text("[" * 200_000 + "]" * 200_000, encoding="utf-8")
+    manifest.write_text(NESTED, encoding="utf-8")
 
 
 def _symlinked_out_of_the_root(manifest: Path, outside: Path) -> None:
@@ -643,8 +1005,8 @@ def test_a_manifest_a_clone_committed_cannot_block_the_withdrawal(
     committed as a symlink out of the root (`PathEscape`, raised before any byte is read). Each
     one made the detach exit 2 exactly as `{"format": 99}` had.
 
-    Mutations: `mutations.toml`'s "an unreadable manifest blocks the detach again" and "the
-    manifest reader lets undecodable bytes out as a crash again".
+    Mutations: `mutations/`'s "an unreadable manifest blocks the detach again" and "a read
+    refusal lets undecodable bytes out as a crash again".
     """
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2], allow=(RULE,), hooks=True)
@@ -701,7 +1063,7 @@ def test_the_settings_fallback_written_after_the_links_is_hidden_too(tmp_path: P
     # the fallback key is written after the links. Whether it will be is decided before the
     # first write (`write._fallback_possible`), so the run hides the file in its one block.
     #
-    # Mutation: `mutations.toml`'s "attach decides the settings fallback only once it has
+    # Mutation: `mutations/`'s "attach decides the settings fallback only once it has
     # written" reddens this through `check-ignore`.
     from tests.attach.test_write import _check_ignore
 
@@ -748,7 +1110,7 @@ def test_a_fallback_that_would_write_through_a_symlinked_claude_is_skipped_with_
     # missing and how to get it. Before, the write failed with an `OSError` after every earlier
     # write; then, a refusal took the whole attach away from an ordinary layout.
     #
-    # Mutation: `mutations.toml`'s "attach takes the fallback through a linked-in .claude".
+    # Mutation: `mutations/`'s "attach takes the fallback through a linked-in .claude".
     from stayfixed.attach.write import FALLBACK_UNAVAILABLE
 
     root, store, machine, home = _fallback_forced(tmp_path)
@@ -798,7 +1160,7 @@ def test_a_first_attach_with_a_symlinked_exclude_that_hides_everything_attaches(
     # cannot open and no settings file is written. A symlinked exclude file that already hides
     # every path the run places is therefore never written, and never refused.
     #
-    # Mutation: `mutations.toml`'s "a first attach treats the unapproved gate as possibly open":
+    # Mutation: `mutations/`'s "a first attach treats the unapproved gate as possibly open":
     # the settings file becomes a candidate, the exclude file must take a line, and its symlink
     # is refused. (The linked-`.claude` case in `test_write.py` cannot see this guard: the
     # fallback is off the table there for the link alone.)
@@ -837,7 +1199,7 @@ def test_a_tracked_settings_file_the_owners_symlinked_exclude_hides_does_not_ref
     # symlinked file written, which is refused: an attach nothing had to write into the exclude
     # file exited 2. Only what the owner's own two files leave visible gets a line.
     #
-    # Mutation: `mutations.toml`'s "the exclude block also lists what git shows in spite of the
+    # Mutation: `mutations/`'s "the exclude block also lists what git shows in spite of the
     # owner's excludes".
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2], allow=(RULE,))
@@ -877,7 +1239,7 @@ def test_detaching_one_checkout_keeps_the_block_another_attached_checkout_needs(
     # block away while a worktree was still attached, and `git status` there listed that
     # worktree's settings file and rule copy.
     #
-    # Mutation: `mutations.toml`'s "detach takes the shared block while another checkout is
+    # Mutation: `mutations/`'s "detach takes the shared block while another checkout is
     # attached".
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2], allow=(RULE,))
@@ -907,7 +1269,7 @@ def test_an_exclude_file_attach_created_is_removed_by_detach(tmp_path: Path) -> 
     # from `attach`, and `detach` left it behind empty, against "a file left holding nothing is
     # removed rather than left empty".
     #
-    # Mutation: `mutations.toml`'s "detach leaves the exclude file attach created".
+    # Mutation: `mutations/`'s "detach leaves the exclude file attach created".
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2], allow=(RULE,))
     home = tmp_path / "home"
@@ -939,7 +1301,7 @@ def test_an_exclude_file_with_no_final_line_ending_comes_back_without_one(
     # `detach` left that line ending behind. The block records that it added one, and `detach`
     # takes it back when nothing follows the block.
     #
-    # Mutation: `mutations.toml`'s "detach keeps the line ending attach added".
+    # Mutation: `mutations/`'s "detach keeps the line ending attach added".
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2], allow=(RULE,))
     home = tmp_path / "home"
@@ -980,7 +1342,7 @@ def test_an_exclude_file_that_is_not_utf8_neither_blocks_attach_nor_detach(
     # outside it -- a comment in Latin-1, say -- refused `attach` and `detach` both. Its bytes are
     # kept exactly, in the attach and in the round trip.
     #
-    # Mutation: `mutations.toml`'s "the exclude file is read as UTF-8 text".
+    # Mutation: `mutations/`'s "the exclude file is read as UTF-8 text".
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2], allow=(RULE,))
     home = tmp_path / "home"
@@ -1001,7 +1363,7 @@ def test_the_exclude_file_refusals_print_the_path_through_the_quoting_rule(
     # is printed through `printed.quoted`, which escapes a line break or an escape sequence in
     # it, as the store's refusals already print theirs.
     #
-    # Mutation: `mutations.toml`'s "the exclude file's symlink refusal prints its path raw".
+    # Mutation: `mutations/`'s "the exclude file's symlink refusal prints its path raw".
     from stayfixed.attach.exclude import planned_block
 
     root = tmp_path / "clone\n::error::x"
@@ -1024,7 +1386,7 @@ def test_an_empty_docs_directory_the_owner_had_survives_the_round_trip(tmp_path:
     # only those: an empty `docs/` the owner already had is not the attach's. Nothing tested that
     # half, so dropping the record check left every test green.
     #
-    # Mutation: `mutations.toml`'s "detach removes a directory above paths.memory it never made".
+    # Mutation: `mutations/`'s "detach removes a directory above paths.memory it never made".
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2], allow=(RULE,))
     home = tmp_path / "home"
@@ -1043,7 +1405,7 @@ def test_an_empty_memory_directory_the_owner_had_survives_the_round_trip(tmp_pat
     # owner had made before the attach, against a round trip documented as byte for byte. The
     # ledger now records whether the attach created it.
     #
-    # Mutation: `mutations.toml`'s "detach removes a paths.memory it never made".
+    # Mutation: `mutations/`'s "detach removes a paths.memory it never made".
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2], allow=(RULE,))
     home = tmp_path / "home"
@@ -1077,7 +1439,7 @@ def test_a_codex_directory_linked_in_after_attach_refuses_before_anything_is_wit
     # the settings gone, the links and the ledger in place, and every later run failing at the
     # same line. Each recorded rule copy is held to the project while the run is planned now.
     #
-    # Mutation: `mutations.toml`'s "detach finds a linked .codex by removing through it".
+    # Mutation: `mutations/`'s "detach finds a linked .codex by removing through it".
     root, _store, machine, home = _withdrawable(tmp_path)
     elsewhere = tmp_path / "codex-elsewhere"
     shutil.move(root / ".codex", elsewhere)
@@ -1099,7 +1461,7 @@ def test_a_group_added_since_the_attach_refuses_before_anything_is_withdrawn(
     # link tree while the run is planned now, and the refusal counts it rather than quoting it:
     # the entry is the repository's.
     #
-    # Mutation: `mutations.toml`'s "detach finds an escaping group by withdrawing the tree".
+    # Mutation: `mutations/`'s "detach finds an escaping group by withdrawing the tree".
     root, _store, machine, home = _withdrawable(tmp_path)
     text = (root / "stayfixed.toml").read_text(encoding="utf-8")
     (root / "stayfixed.toml").write_text(
@@ -1113,10 +1475,28 @@ def test_a_group_added_since_the_attach_refuses_before_anything_is_withdrawn(
     assert_snapshot_unchanged(root, before)
 
 
+@ROOT_SEARCHES_EVERYTHING
+def test_a_link_tree_nobody_may_search_refuses_for_that_before_anything_is_withdrawn(
+    tmp_path: Path,
+) -> None:
+    # Every entry is one plain name and no link is on the way: the link tree itself cannot be
+    # searched, so whether a group's place is a link cannot be asked. "is not one directory name"
+    # and its remedy, taking the entry out, named a cause the entry did not have.
+    #
+    # Mutation (oracle): `mutations/`'s "detach words a group it cannot ask about as one that
+    # leaves the tree".
+    root, _store, machine, home = _withdrawable(tmp_path)
+    before = snapshot(root)
+    with unsearchable(root / DEFAULT_MEMORY), pytest.raises(Refusal) as refused:
+        _detach(root, machine, home)
+    assert str(refused.value) == GROUP_UNASKED_IN_TREE.format(fault="Permission denied")
+    assert_snapshot_unchanged(root, before)
+
+
 def test_a_doubled_exclude_block_refuses_detach_naming_the_exclude_file(tmp_path: Path) -> None:
     # The same refusal `attach` makes, and the same missing file name.
     #
-    # Mutation: `mutations.toml`'s "a doubled exclude block is refused without its file".
+    # Mutation: `mutations/`'s "a doubled exclude block is refused without its file".
     root, _store, machine, home = _withdrawable(tmp_path)
     path = _exclude_file(root)
     begin = "# stayfixed:attach:begin\n"
@@ -1128,6 +1508,36 @@ def test_a_doubled_exclude_block_refuses_detach_naming_the_exclude_file(tmp_path
     assert_snapshot_unchanged(root, before)
 
 
+@pytest.mark.skipif(os.geteuid() == 0, reason="root writes into a directory it cannot write")
+def test_an_exclude_file_detach_cannot_write_is_refused_before_anything_is_withdrawn(
+    tmp_path: Path,
+) -> None:
+    # A `.git/info` this user cannot write: `detach` found out by writing the exclude file, after
+    # the settings file, the rule copies and the link tree were withdrawn, and stopped there with
+    # the ledger and the block still in place, half detached. It is asked while nothing has been
+    # withdrawn now, as `attach` asks it, and refused naming the file. Mutation (oracle):
+    # `mutations/`'s "detach finds out the exclude file cannot be written by writing it" -> the
+    # settings file and the rule copies go.
+    root, _store, machine, home = _withdrawable(tmp_path)
+    info = _exclude_file(root).parent
+    # Non-vacuous: there is a block to take out, and a settings file and rule copies before it.
+    assert "stayfixed:attach:begin" in _exclude_file(root).read_text(encoding="utf-8")
+    assert (root / SETTINGS).is_file()
+    assert any((root / ".codex" / "rules").iterdir())
+    before = tree_entries(root, home)
+    info.chmod(0o555)
+    try:
+        with pytest.raises(Refusal) as refused:
+            _detach(root, machine, home)
+    finally:
+        info.chmod(0o755)
+    assert str(refused.value) == (
+        f"{quoted(str(_exclude_file(root)))} cannot be written, because this user cannot write "
+        "the directory that holds it, so nothing was written"
+    )
+    assert tree_entries(root, home) == before
+
+
 def test_detach_writes_nothing_through_an_exclude_file_that_became_a_symlink(
     tmp_path: Path,
 ) -> None:
@@ -1135,7 +1545,7 @@ def test_detach_writes_nothing_through_an_exclude_file_that_became_a_symlink(
     # put there, and `detach` leaves the link and the file it points at alone rather than reading
     # the block through it and replacing the link with a regular file.
     #
-    # Mutation: `mutations.toml`'s "detach reads the block through a symlinked exclude file".
+    # Mutation: `mutations/`'s "detach reads the block through a symlinked exclude file".
     root, _store, machine, home = _withdrawable(tmp_path)
     path = _exclude_file(root)
     elsewhere = tmp_path / "dotfiles-exclude"
@@ -1157,9 +1567,9 @@ def test_an_exclude_file_ending_in_a_lone_carriage_return_keeps_its_last_pattern
     # marker was glued onto that line and `zz` showed in `git status` while the repository was
     # attached. The file comes back byte for byte on detach.
     #
-    # Mutations: `mutations.toml`'s "a hash region reads a lone carriage return as a line end",
-    # "the exclude block reads a lone carriage return as a line end" and "detach takes back a
-    # line ending attach never added".
+    # Mutations: `mutations/`'s "a hash region reads a lone carriage return as a line end",
+    # "the exclude block reads a lone carriage return as a line end" and "detach leaves the
+    # newline it added after a lone carriage return".
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2], allow=(RULE,))
     home = tmp_path / "home"
@@ -1182,7 +1592,7 @@ def test_a_ledger_no_attach_of_that_checkout_wrote_does_not_keep_the_block(
     # worktree, and one that will not parse records no attach, so the block was kept for good.
     # Only an untracked ledger that reads as one counts now.
     #
-    # Mutations: `mutations.toml`'s "detach counts a committed ledger as another attach" and
+    # Mutations: `mutations/`'s "detach counts a committed ledger as another attach" and
     # "detach counts an unreadable ledger as another attach".
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2], allow=(RULE,))
@@ -1210,7 +1620,7 @@ def test_an_info_directory_attach_created_is_removed_by_detach(tmp_path: Path) -
     # records that its directory was created for it, and `detach` takes the directory back when
     # it is empty.
     #
-    # Mutation: `mutations.toml`'s "detach leaves the info directory attach created".
+    # Mutation: `mutations/`'s "detach leaves the info directory attach created".
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2], allow=(RULE,))
     home = tmp_path / "home"
@@ -1252,7 +1662,7 @@ def test_a_directory_linked_in_after_attach_refuses_before_anything_is_withdrawn
     # as `internal error: UnsafePath` with the settings file already withdrawn. Every removal
     # target is walked first now, and the refusal says which one.
     #
-    # Mutations: `mutations.toml`'s "detach walks to the ledger only when it removes it", "detach
+    # Mutations: `mutations/`'s "detach walks to the ledger only when it removes it", "detach
     # walks to the settings file only when it rewrites it" and "detach walks to a link-tree name
     # only when it removes it".
     root, _store, machine, home = _withdrawable(tmp_path)
@@ -1272,7 +1682,7 @@ def test_a_rule_copy_that_is_itself_a_symlink_is_withdrawn(tmp_path: Path) -> No
     # name and follows nothing, as it did before the check above existed, which refused this
     # with a sentence that blamed `.codex`.
     #
-    # Mutation: `mutations.toml`'s "detach refuses a rule copy that is itself a symlink".
+    # Mutation: `mutations/`'s "detach refuses a rule copy that is itself a symlink".
     root, _store, machine, home = _withdrawable(tmp_path)
     rule = root / ".codex" / "rules" / "common.rules"
     mine = tmp_path / "mine.rules"
@@ -1293,7 +1703,7 @@ def test_a_linked_claude_directory_attach_never_wrote_into_does_not_stop_detach(
     # not it held anything of stayfixed's, so the same layout that attached cleanly could not be
     # detached. A file with nothing to withdraw is not written at all.
     #
-    # Mutation: `mutations.toml`'s "detach rewrites a settings file it withdraws nothing from".
+    # Mutation: `mutations/`'s "detach rewrites a settings file it withdraws nothing from".
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2])
     home = tmp_path / "home"
@@ -1305,3 +1715,180 @@ def test_a_linked_claude_directory_attach_never_wrote_into_does_not_stop_detach(
     _detach(root, machine, home)
     assert (dotfiles / "settings.local.json").read_text(encoding="utf-8") == '{"theme": "dark"}'
     assert not (root / LEDGER).exists()
+
+
+def test_a_local_settings_file_read_but_too_deep_to_write_back_is_refused_or_withdrawn(
+    tmp_path: Path,
+) -> None:
+    # 3,000 levels: read by every supported parser but 3.11's, and past 3.12's indenting encoder,
+    # so `detach` read it there and then ended in `RecursionError` writing it back. Every
+    # interpreter now either withdraws what `attach` wrote or refuses before removing anything.
+    # Real depth, so it reddens on 3.12 in CI;
+    # `test_a_local_settings_write_back_the_encoder_cannot_follow_is_refused_and_removes_nothing`
+    # proves the arm on every interpreter, for the oracle.
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2])
+    home = tmp_path / "home"
+    _attach(root, store, machine, home)
+    (root / SETTINGS).parent.mkdir(exist_ok=True)
+    (root / SETTINGS).write_text('{"x": ' + "[" * 3_000 + "]" * 3_000 + "}", encoding="utf-8")
+    before = snapshot(root)
+    try:
+        _detach(root, machine, home)
+    except (Failure, Refusal) as refused:
+        assert "nested deeper than this reader follows" in str(refused)
+        assert_snapshot_unchanged(root, before)
+
+
+def test_a_local_settings_write_back_the_encoder_cannot_follow_is_refused_and_removes_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Forced on every interpreter: the encode that writes the withdrawn settings back overflowing,
+    # as it does on Python 3.12 near 994 levels. No single mutation reddens it, and that is the
+    # point: two layers answer the overflow, `json_text` and the guard around `detach`'s copy and
+    # comparison, and each is proven alone -- `mutations/`'s "the JSON writer lets an encode past
+    # the interpreter's recursion escape" -> by the engine's forced case; "detach copies and
+    # compares the settings document unguarded" -> by
+    # `test_a_settings_document_too_deep_to_copy_or_compare_is_refused_and_removes_nothing`.
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2])
+    home = tmp_path / "home"
+    _attach(root, store, machine, home)
+    (root / SETTINGS).parent.mkdir(exist_ok=True)
+    (root / SETTINGS).write_text('{"theme": "dark"}', encoding="utf-8")
+    before = snapshot(root)
+    assert before
+    monkeypatch.setattr(jsonobject, "_encode", overflowing_indent)
+    monkeypatch.setattr(json, "dumps", overflowing_indent)
+    with pytest.raises(Refusal, match="nested deeper than this reader follows"):
+        _detach(root, machine, home)
+    assert_snapshot_unchanged(root, before)
+
+
+def test_a_local_settings_file_linked_to_a_device_stops_detach_before_it_removes_anything(
+    tmp_path: Path,
+) -> None:
+    # `detach` reads `.claude/settings.local.json` to take back what `attach` merged into it, and
+    # read a link to a device through: `/dev/null` read as an empty file and the run went on.
+    # Only a regular file is read, so it stops before it removes anything. Mutation (declared):
+    # `mutations/`'s "the settings reader reads a file through any link".
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2])
+    home = tmp_path / "home"
+    _attach(root, store, machine, home)
+    settings = root / SETTINGS
+    settings.parent.mkdir(exist_ok=True)
+    if settings.exists():
+        settings.unlink()
+    settings.symlink_to("/dev/null")
+    before = snapshot(root)
+    assert before
+    with pytest.raises(Failure, match=r"settings\.local\.json cannot be read"):
+        _detach(root, machine, home)
+    assert_snapshot_unchanged(root, before)
+
+
+def test_a_ledger_linked_to_a_device_stops_detach_and_is_never_read(tmp_path: Path) -> None:
+    # `detach` reads the ledger with no check before it, and a clone can commit the ledger: a link
+    # there to `/dev/zero` read until memory ran out. Only a regular file is read, and the refusal
+    # names the ledger as the project names it, never the machine's path. `/dev/null` tells the
+    # guard apart without hanging: read, it is an empty ledger, "not valid JSON". Mutation
+    # (declared): `mutations/`'s "the attach ledger is read through any link".
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2])
+    home = tmp_path / "home"
+    _attach(root, store, machine, home)
+    (root / LEDGER).unlink()
+    (root / LEDGER).symlink_to("/dev/null")
+    before = snapshot(root)
+    with pytest.raises(Failure) as refused:
+        _detach(root, machine, home)
+    assert str(refused.value) == f"{LEDGER} cannot be read (not a regular file)"
+    assert_snapshot_unchanged(root, before)
+
+
+def test_a_ledger_that_is_not_utf8_is_named_as_the_project_names_it(tmp_path: Path) -> None:
+    # The ledger's other refusal, held to the rule its first one keeps: the project's own name for
+    # the file, never the machine's path. Mutation (oracle): `mutations/`'s "the ledger refusal of
+    # a file that is not UTF-8 prints the path it opened".
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2])
+    home = tmp_path / "home"
+    _attach(root, store, machine, home)
+    (root / LEDGER).write_bytes(b'{"entries": {"\xff": "PreToolUse"}}')
+    before = snapshot(root)
+    with pytest.raises(Failure) as refused:
+        _detach(root, machine, home)
+    assert str(refused.value) == f"{LEDGER} is not UTF-8 text"
+    assert_snapshot_unchanged(root, before)
+
+
+class _ComparedTooDeep(dict[str, object]):
+    """A parsed settings document whose comparison overflows, as `==` does on Python 3.14 for a
+    document a few thousand levels deep under a reduced stack (`ulimit -s 2048`)."""
+
+    def __eq__(self, other: object) -> bool:
+        raise RecursionError
+
+    __hash__ = None
+
+
+@pytest.mark.parametrize("step", ["copy", "compare"])
+def test_a_settings_document_too_deep_to_copy_or_compare_is_refused_and_removes_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, step: str
+) -> None:
+    # `detach` copies the parsed settings document through `json.dumps` and compares what is
+    # left with it, and neither step was guarded: on Python 3.14 under a reduced stack a document
+    # the parser read raised `RecursionError` at either, an internal error. Forced at each step
+    # here; both are the reader's refusal of a document nested too deep. Mutation (declared):
+    # `mutations/`'s "detach copies and compares the settings document unguarded".
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2])
+    home = tmp_path / "home"
+    _attach(root, store, machine, home)
+    (root / SETTINGS).parent.mkdir(exist_ok=True)
+    (root / SETTINGS).write_text('{"theme": "dark"}', encoding="utf-8")
+    before = snapshot(root)
+    if step == "copy":
+        real_dumps = json.dumps
+
+        def dumps(value: object, *args: Any, **kwargs: Any) -> str:
+            if not args and not kwargs:
+                raise RecursionError
+            return real_dumps(value, *args, **kwargs)
+
+        monkeypatch.setattr(json, "dumps", dumps)
+    else:
+        real_loads = json.loads
+
+        def loads(text: str, **kwargs: Any) -> object:
+            loaded = real_loads(text, **kwargs)
+            return _ComparedTooDeep(loaded) if isinstance(loaded, dict) else loaded
+
+        monkeypatch.setattr(json, "loads", loads)
+    with pytest.raises(Refusal, match="nested deeper than this reader follows"):
+        _detach(root, machine, home)
+    assert_snapshot_unchanged(root, before)
+
+
+def test_a_settings_write_back_past_the_read_cap_is_refused_and_removes_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `detach` writes the withdrawn settings back indented, which can make a file the reader's
+    # cap admits one it refuses: written, every later read of it refused. `jsonobject.json_text`
+    # refuses such a write-back, so `detach` stops before it removes anything. The cap is lowered
+    # so the document is small. Mutation (oracle): `mutations/`'s "the JSON writer writes back a
+    # text past the read cap" -> `detach` writes it.
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2])
+    home = tmp_path / "home"
+    _attach(root, store, machine, home)
+    settings = root / SETTINGS
+    settings.parent.mkdir(exist_ok=True)
+    document = {"theme": "dark", "a": [[[[[[[[[[[] for _ in range(1_000)]]]]]]]]]]}
+    settings.write_text(json.dumps(document, separators=(",", ":")), encoding="utf-8")
+    monkeypatch.setattr(fsops, "REGULAR_READ_LIMIT", 16 * 1024)
+    before = snapshot(root)
+    with pytest.raises(Refusal, match=jsonobject.WRITTEN_PAST):
+        _detach(root, machine, home)
+    assert_snapshot_unchanged(root, before)

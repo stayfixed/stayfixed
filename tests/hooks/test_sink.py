@@ -46,7 +46,7 @@ def test_a_relative_data_root_is_no_sink_at_all(
     # choose, and this is the half taken back. The cwd is `tmp_path` here so the assertion can
     # say what was not written and where.
     #
-    # Mutation (`mutations.toml`, "the sink accepts a relative data root"): the `is_absolute`
+    # Mutation (`mutations/`'s "the sink accepts a relative data root"): the `is_absolute`
     # guard removed → a `DataSink` comes back and `stayfixed/` appears under the cwd.
     monkeypatch.chdir(tmp_path)
     for spelling in (".", "stayfixed-data", "./sub"):
@@ -155,7 +155,7 @@ def test_a_diagnostic_never_carries_a_payload_verbatim(tmp_path: Path) -> None:
 def test_the_session_a_record_is_filed_under_is_capped_like_any_other_field(
     tmp_path: Path,
 ) -> None:
-    # The session id is off the hook's stdin, type-checked by `parse_event` as `str` and no
+    # The session id is off the hook's stdin, type-checked by `read_event` as `str` and no
     # more, so it is payload-controlled exactly as a handler's reason string is. Merged into the
     # record after the cap — which is where it started — it was the one field a repository could
     # write to this log at any length it liked.

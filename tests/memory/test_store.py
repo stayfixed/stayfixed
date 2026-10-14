@@ -1,24 +1,26 @@
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from stayfixed.config.loader import CONFIG_FILE, load
 from stayfixed.config.schema import Config
+from stayfixed.gitenv import GitUnavailable, Unasked
 from stayfixed.memory.store import (
-    GitUnavailable,
-    MachineConfigError,
     Store,
     inside_project,
     main_checkout,
-    overlay_root,
     refusal_reason,
     resolve,
 )
 from tests.gitfixture import git
+from tests.pathfaults import ROOT_SEARCHES_EVERYTHING, unsearchable
+from tests.runners import git_that_cannot_run
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
@@ -159,6 +161,44 @@ def test_local_only_refuses_a_store_reached_through_a_symlinked_ancestor(tmp_pat
     config = a_config(root, "local-only")
     assert resolve(root, config) is None
     assert "symlink" in (refusal_reason(root, config) or "")
+
+
+@ROOT_SEARCHES_EVERYTHING
+def test_a_local_only_store_that_cannot_be_asked_about_is_refused_for_that(tmp_path: Path) -> None:
+    # `.stayfixed/local` is a real directory nobody may search, so whether the store is a link
+    # cannot be asked; no link is on the way, and "not a real directory inside the project" named
+    # a cause the store did not have. Mutation (oracle): `mutations/`'s "the store words a
+    # local-only store it cannot ask about as a link".
+    root = tmp_path / "project"
+    a_repo(root)
+    (root / ".stayfixed" / "local" / "memory" / "developer").mkdir(parents=True)
+    config = a_config(root, "local-only")
+    with unsearchable(root / ".stayfixed" / "local"):
+        assert resolve(root, config) is None
+        reason = refusal_reason(root, config) or ""
+    assert reason.startswith(
+        "a directory on the way to the local-only store cannot be checked for a symlink"
+    )
+    assert "(Permission denied)" in reason
+
+
+@ROOT_SEARCHES_EVERYTHING
+def test_a_paths_memory_that_cannot_be_asked_about_is_refused_for_that(tmp_path: Path) -> None:
+    # The same for `paths.memory`. The loader asks the same question of every `[paths]` value, so
+    # a directory that stops being searchable once the configuration has loaded is the way here.
+    # Mutation (oracle): `mutations/`'s "the store words a paths.memory it cannot ask about as an
+    # escape".
+    root = tmp_path / "project"
+    a_repo(root)
+    (root / "docs" / "memory" / "developer").mkdir(parents=True)
+    config = a_config(root, "in-repo")
+    with unsearchable(root / "docs"):
+        assert resolve(root, config) is None
+        reason = refusal_reason(root, config) or ""
+    assert reason.startswith(
+        "a directory on the way to paths.memory cannot be checked for a symlink"
+    )
+    assert "stay inside" not in reason
 
 
 def test_notes_that_resolve_outside_the_repository_are_repository_data_outside_overlay_mode(
@@ -307,8 +347,8 @@ def test_an_inherited_git_dir_never_reaches_the_git_helper(
     # One of two locks, pinned on its own. Asked through `resolve`, this property is guarded
     # twice over — `_registered_worktree` refuses a root that is nobody's registered worktree
     # whatever git answered — so a single test there dies only when *both* locks are broken and
-    # pins neither. `main_checkout` is the same scrubbed `_git` with nothing behind it, and it
-    # is also the answer `worktree.link` decides its main-checkout no-op on, so an inherited
+    # pins neither. `main_checkout` is the same scrubbed `git_answer` with nothing behind it, and
+    # it is also the answer `worktree.link` decides its main-checkout no-op on, so an inherited
     # `GIT_DIR` reaching it would make a worktree look like the checkout that owns the store.
     victim = tmp_path / "victim"
     a_repo(victim)
@@ -334,14 +374,6 @@ def test_a_worktree_resolves_through_the_main_checkout(tmp_path: Path) -> None:
     store = resolve(tree, a_config(tree, "in-repo"))
     assert store is not None
     assert store.path.resolve() == (root / "docs" / "memory").resolve()
-
-
-def test_overlay_root_reads_the_machine_file(tmp_path: Path) -> None:
-    overlay = tmp_path / "o"
-    overlay.mkdir()
-    assert overlay_root(a_machine_file(tmp_path, overlay)) == overlay
-    assert overlay_root(a_machine_file(tmp_path, None)) is None
-    assert overlay_root(tmp_path / "absent.toml") is None
 
 
 # --- the layout git's own documentation uses: a worktree beside the checkout, not under it ---
@@ -527,17 +559,10 @@ def test_a_store_resolved_with_no_machine_file_says_so(tmp_path: Path) -> None:
 
 # --- "could not ask" is not "the answer is nothing" -----------------------------------------
 #
-# `_git` returned `None` for an `OSError`, a non-zero exit *and* an empty stdout alike, so every
-# caller read a broken `git` as a fact about the repository. The review machine hit exactly that
-# state — `/usr/bin/git` was the Xcode shim with an unaccepted licence and `GIT_ENV_KEEP`
-# scrubs `DEVELOPER_DIR` — and was told to run `stayfixed attach`.
-
-
-def _git_that_cannot_run(monkeypatch: pytest.MonkeyPatch) -> None:
-    def refuse(*args: object, **kwargs: object) -> tuple[int, str]:
-        return -1, ""  # `git_run`'s own answer for a `git` that could not be launched
-
-    monkeypatch.setattr("stayfixed.memory.store.git_run", refuse)
+# The store's git helper returned `None` for an `OSError`, a non-zero exit *and* an empty stdout
+# alike, so every caller read a broken `git` as a fact about the repository. The review machine hit
+# exactly that state — `/usr/bin/git` was the Xcode shim with an unaccepted licence and
+# `GIT_ENV_KEEP` scrubs `DEVELOPER_DIR` — and was told to run `stayfixed attach`.
 
 
 def test_a_git_that_cannot_run_is_not_reported_as_an_unbound_overlay(
@@ -549,22 +574,25 @@ def test_a_git_that_cannot_run_is_not_reported_as_an_unbound_overlay(
     a_tree(root, overlay)
     config = a_config(root, "overlay")
     machine = a_machine_file(tmp_path, overlay)
-    _git_that_cannot_run(monkeypatch)
+    git_that_cannot_run(monkeypatch)
     with pytest.raises(GitUnavailable) as excinfo:
         resolve(root, config, machine=machine)
     assert "stayfixed attach" not in str(excinfo.value)
-    assert "git" in str(excinfo.value)
+    # The remedy is the machine's `git`, never "run the command again". Mutation (declared):
+    # `mutations/`'s "a git that cannot be started is told to run the command again".
+    assert Unasked.NOT_STARTED.value in str(excinfo.value)
+    assert Unasked.TIMED_OUT.value not in str(excinfo.value)
 
 
 def test_a_git_that_cannot_run_does_not_make_a_worktree_look_like_the_main_checkout(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # `main_checkout` answered `root` when `_git` failed, so `worktree.link` opened with "this
-    # is the main checkout" and became a silent no-op: no links at all, `hooks.py` emitting
+    # `main_checkout` answered `root` when its git query failed, so `worktree.link` opened with
+    # "this is the main checkout" and became a silent no-op: no links at all, `hooks.py` emitting
     # "nothing to do", every memory bundle empty, and nothing reporting a failure.
     root = tmp_path / "project"
     a_repo(root)
-    _git_that_cannot_run(monkeypatch)
+    git_that_cannot_run(monkeypatch)
     with pytest.raises(GitUnavailable):
         main_checkout(root)
 
@@ -582,25 +610,6 @@ def test_an_empty_git_answer_is_still_an_answer(tmp_path: Path) -> None:
     assert resolve(root, config, machine=machine) is None
     reason = refusal_reason(root, config, machine=machine)
     assert reason is not None and "stayfixed attach" in reason
-
-
-def test_a_machine_file_that_is_not_valid_toml_is_not_an_unrecorded_overlay(
-    tmp_path: Path,
-) -> None:
-    # `config.loader._personal` raises `ConfigError` for this very file and this very syntax
-    # error. This reader answered `None`, which `_resolve_at` renders as "no overlay root is
-    # recorded … run `stayfixed setup`" — wrong advice for a file that is already there.
-    broken = tmp_path / "machine.toml"
-    broken.write_text("[overlay\nroot = 'x'\n", encoding="utf-8")
-    with pytest.raises(MachineConfigError):
-        overlay_root(broken)
-
-
-def test_a_machine_file_recording_no_overlay_still_answers_none(tmp_path: Path) -> None:
-    blank = tmp_path / "machine.toml"
-    blank.write_text("[personal]\n", encoding="utf-8")
-    assert overlay_root(blank) is None
-    assert overlay_root(tmp_path / "absent.toml") is None
 
 
 def test_a_git_that_exits_non_zero_for_everything_is_unavailable_not_unbound(
@@ -626,3 +635,95 @@ def test_a_git_that_exits_non_zero_for_everything_is_unavailable_not_unbound(
     with pytest.raises(GitUnavailable):
         resolve(root, config, machine=machine)
     monkeypatch.setattr("stayfixed.gitenv.subprocess.run", real)
+
+
+def test_a_git_that_exits_non_zero_for_everything_cannot_name_the_main_checkout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The same broken `git`, asked the store's own question rather than the origin remote:
+    # `main_checkout` reads git through the three-valued `git_answer`, and a broken `git` read as
+    # one that answered nothing made it answer `root`, the silent no-op `worktree.link` turns that
+    # into. Its remedy is to check that `git` runs; "run the command again" would repeat for ever.
+    # Mutations (declared): `mutations/`'s "a broken git reads as a repository that answered" and
+    # "a broken git is told to run the command again".
+    root = tmp_path / "project"
+    a_repo(root)
+
+    def broken(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[bytes]:
+        return subprocess.CompletedProcess(args, 69, b"", b"You have not agreed to the licence\n")
+
+    monkeypatch.setattr("stayfixed.gitenv.subprocess.run", broken)
+    with pytest.raises(GitUnavailable, match=re.escape(Unasked.BROKEN.value)):
+        main_checkout(root)
+
+
+def _a_worktree(tmp_path: Path) -> Path:
+    root = tmp_path / "project"
+    a_repo(root)
+    side = tmp_path / "side"
+    git(root, "worktree", "add", "-q", str(side), "-b", "side")
+    return side
+
+
+def test_a_git_a_signal_ended_cannot_make_a_worktree_look_like_the_main_checkout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `subprocess` reports a `git` a signal ended — the OOM killer on a loaded machine — as the
+    # signal's negative. Read as "git said no", it made `main_checkout` answer the worktree
+    # itself, the silent no-op the test above forbids. Mutation (declared): `mutations/`'s "a git
+    # a signal ended reads as a repository that answered nothing".
+    side = _a_worktree(tmp_path)
+    real = subprocess.run
+
+    def killed(args: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        if "--git-common-dir" in args:
+            return subprocess.CompletedProcess(args, -9, b"", b"")
+        return real(args, **kwargs)
+
+    monkeypatch.setattr("stayfixed.gitenv.subprocess.run", killed)
+    with pytest.raises(GitUnavailable) as excinfo:
+        main_checkout(side)
+    assert excinfo.value.cause is Unasked.ENDED
+
+
+def test_a_probe_that_runs_out_of_time_is_not_a_broken_git(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A question `git` declined is followed by `git --version` to tell a broken `git` from one
+    # that said no. On a loaded machine that probe can run out of time too, and read as broken it
+    # sent the owner back to check a `git` that worked. Mutation (declared): `mutations/`'s "a
+    # probe that ran out of time reads as a broken git".
+    side = _a_worktree(tmp_path)
+    real = subprocess.run
+
+    def declined_then_slow(args: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        if "--git-common-dir" in args:
+            return subprocess.CompletedProcess(args, 128, b"", b"")
+        if "--version" in args:
+            raise subprocess.TimeoutExpired(args, kwargs.get("timeout") or 0)
+        return real(args, **kwargs)
+
+    monkeypatch.setattr("stayfixed.gitenv.subprocess.run", declined_then_slow)
+    with pytest.raises(GitUnavailable) as excinfo:
+        main_checkout(side)
+    assert excinfo.value.cause is Unasked.TIMED_OUT
+    assert "check that `git` runs here" not in str(excinfo.value)
+
+
+def test_a_worktree_removed_before_it_is_asked_about_is_gone_not_a_broken_git(
+    tmp_path: Path,
+) -> None:
+    # `git -C <gone> --version` exits 128 before it reads `--version`, so the discriminator that
+    # tells a broken `git` from one that declined read a removed worktree as a broken `git`, and
+    # the refusal sent the owner to check a `git` that worked. The cause is the directory, and
+    # it is named, so a caller walking every worktree can skip the one that went away.
+    root = tmp_path / "project"
+    a_repo(root)
+    side = tmp_path / "side"
+    git(root, "worktree", "add", "-q", str(side), "-b", "side")
+    shutil.rmtree(side)
+    with pytest.raises(GitUnavailable) as excinfo:
+        main_checkout(side)
+    assert excinfo.value.cause is Unasked.GONE
+    assert str(side) in str(excinfo.value)
+    assert "check that `git` runs here" not in str(excinfo.value)

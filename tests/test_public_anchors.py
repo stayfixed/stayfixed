@@ -63,9 +63,19 @@ CITATIONS = (
     # module or the command they mean instead: "the foundation lane" told a reader nothing that
     # `stayfixed.hooks.dispatch` does not tell them better. A letter and not a word character is the
     # boundary, because `\b` counts `_` as a word character and a snake_case test name walked past
-    # it. The pattern spells the word `l[a]nes` so that `mutations.toml`, which quotes this line,
-    # is not refused for quoting it; the bookkeeping arm below spells its word the same way.
+    # it. The pattern spells the word `l[a]nes` so that the two entries that quote this line,
+    # `mutations/`'s "the public-anchor gate stops seeing the plans' unit of work" and "the
+    # public-anchor gate lets a snake_case name carry the plans' unit of work", are not refused for
+    # quoting it; the bookkeeping arm below spells its word the same way.
     ("plan unit", re.compile(r"(?i:(?<![^\W\d_])l[a]nes?(?![^\W\d_]))")),
+    # A plan's name for a package of work, which names no module, command or file here: two module
+    # docstrings and one function docstring used `hooks-core` as if it named a part of the tree,
+    # the first two as the owner of the entries `hooks/hooks.json` holds. Only that name is
+    # refused, hyphenated, because the plans' other package names are commands and ordinary words
+    # (`setup`, `attach`, `upgrade`, onboarding) that a refusal would take from correct sentences.
+    # It is spelled `hooks-c[o]re` so the entry in `mutations/` that quotes this line is not
+    # refused for quoting it.
+    ("plan package", re.compile(r"(?i:\bhooks-c[o]re\b)")),
 )
 
 # The plans' own bookkeeping, which means nothing once the code has shipped: the wave a line
@@ -181,6 +191,8 @@ def test_the_citation_gate_discriminates() -> None:
         "the foundation lane",
         "Lanes that scaffold",
         "def test_what_every_downstream_lane_reaches_for",
+        "`hooks-core` owns the entries that invoke them",
+        "the Hooks-Core package",
     ):
         assert citations(planted), planted
     for clean in (
@@ -195,6 +207,8 @@ def test_the_citation_gate_discriminates() -> None:
         "a global constant",
         "a plane of glass",
         "planes and lanemarks",
+        "the core's `hooks` area answers through it",
+        "the `hooks` area's sink",
     ):
         assert citations(clean) == [], clean
 
@@ -258,7 +272,7 @@ def test_the_arms_follow_where_a_file_lives() -> None:
         "src/stayfixed/runner.py",
         "tests/test_cli.py",
         "scripts/x.py",
-        "mutations.toml",
+        "mutations/x.toml",
         ".github/workflows/ci.yml",
         "hooks/run-hook.sh",
     ):
@@ -301,7 +315,6 @@ def test_the_citation_walk_reads_every_tracked_file_but_the_exemptions() -> None
         "CHANGELOG.md",
         "SECURITY.md",
         "pyproject.toml",
-        "mutations.toml",
         ".claude-plugin/plugin.json",
         ".codex-plugin/plugin.json",
         ".github/workflows/ci.yml",
@@ -317,6 +330,9 @@ def test_the_citation_walk_reads_every_tracked_file_but_the_exemptions() -> None
         "scripts/mutation_oracle.py",
     ):
         assert wanted in names, wanted
+    # The mutation declarations by their directory, not by a group file's name: `GROUP_OF` names
+    # the groups.
+    assert any(name.startswith("mutations/") for name in names), "no declaration file is walked"
     plans = [p for p in tracked_files() if p.relative_to(ROOT).as_posix().startswith("docs/plans/")]
     assert plans
     assert not names.intersection(p.relative_to(ROOT).as_posix() for p in plans)

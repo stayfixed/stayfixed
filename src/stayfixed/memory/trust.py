@@ -22,10 +22,12 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from stayfixed import fsops
 from stayfixed.config.machine import machine_config_path
 from stayfixed.config.schema import Config
-from stayfixed.errors import Refusal
+from stayfixed.errors import Failure, Refusal
 from stayfixed.fsops import write_atomically
+from stayfixed.jsonobject import json_object
 from stayfixed.memory.index import INDEX_NAME
 from stayfixed.memory.store import Store, inside_project
 
@@ -68,18 +70,65 @@ def wrap(text: str, nonce: str) -> str:
     return f"{begin}\n{_LEAD}\n\n{text}\n{end}"
 
 
-def _trust_file(machine: Path | None) -> Path:
+def _trust_file(machine: Path | None) -> Path | None:
     """The record `may_inject` consults, beside the machine configuration file.
 
-    `machine=None` resolves it through `machine_config_path`, which gates **both** variables
-    that can name that file behind `interactive`. It gated only `STAYFIXED_CONFIG` once, and
-    `XDG_CONFIG_HOME` beside it chose this very file for a committed `.claude/settings.json`
-    `env` block, wherever no `--machine` was threaded — the gate the security record of this
-    module rests on, bypassed by the variable three lines below it. `store.py`'s module
-    docstring states what that exposure was and what bounded it.
+    `machine=None` resolves it through `machine_config_path`, which reads **neither** variable
+    that could name that file. It gated only `STAYFIXED_CONFIG` once, and
+    `XDG_CONFIG_HOME` beside it chose this very file for direnv, mise or a devcontainer applying
+    a file the clone commits (Claude Code's `env` block cannot set it), wherever no `--machine`
+    was threaded — the gate the security record of this module rests on, bypassed by the
+    variable three lines below it. `store.py`'s module docstring states what that exposure was
+    and what bounded it. `HOME` chose it the same way until the home directory, too, came from
+    the password database off a terminal.
+
+    `None` for a machine with no such home (`config.machine.owner_home`): it holds no record,
+    so nothing is trusted, and `record` refuses to invent a place for one.
     """
-    base = machine_config_path(interactive=False) if machine is None else machine
-    return base.parent / "trust.json"
+    base = machine_config_path() if machine is None else machine
+    return None if base is None else base.parent / "trust.json"
+
+
+NO_HOME = (
+    "the password database lists no home directory for this user, so there is no trust record "
+    "to write; pass --machine PATH to keep one beside that file, which no hook reads"
+)
+
+
+def record_path(machine: Path | None) -> Path | None:
+    """Where this machine's trust record is, for a command that says where it wrote."""
+    return _trust_file(machine)
+
+
+def _writable_trust_file(machine: Path | None) -> Path:
+    path = _trust_file(machine)
+    if path is None:
+        raise Failure(NO_HOME)
+    return path
+
+
+def _write_record(machine: Path | None, raw: dict[str, str]) -> None:
+    """Write the record, and fail naming its directory when that cannot be written.
+
+    With no `--machine` the directory is under the home the password database records, which a
+    system user's entry often names as a directory that is not there or not theirs. There is no
+    second place to put it that a hook would read, so the failure says which directory it was
+    rather than ending as an internal error about a temporary file.
+    """
+    path = _writable_trust_file(machine)
+    try:
+        write_atomically(path, json.dumps(raw, indent=2, sort_keys=True) + "\n")
+    except OSError as exc:
+        where = (
+            "it is under the home the password database records for this user, which is the "
+            "only place a hook reads a trust record"
+            if machine is None
+            else "it is beside the machine configuration file --machine names"
+        )
+        raise Failure(
+            f"{path.parent} cannot be written ({fsops.said(exc)}), so the trust record cannot be "
+            f"kept there; {where}"
+        ) from None
 
 
 @dataclass(frozen=True)
@@ -100,21 +149,34 @@ def changed(state: TrustState) -> bool:
 # these bytes collides with an unreadable one — it buys nothing, since both states are chosen
 # by whoever can already write the file, and the marker's own content is inert.
 _UNREADABLE = b"\0stayfixed:unreadable\0"
+# What leads the bytes of a file longer than the reader's cap, ahead of the part of it that was
+# read. A constant in its place would digest every such file alike, and a store trusted with one
+# would keep its trust when its first lines -- the part a session loads -- were rewritten. Framed,
+# what was read moves the digest, and no file inside the cap digests as one past it: the framed
+# bytes are longer than any file the cap admits.
+_TOO_LARGE = b"\0stayfixed:too-large\0"
 
 
 def _content_digest(path: Path) -> str:
     """One file's bytes as a fixed-width hex digest — or the marker's, when it has none.
 
     `notes.walk` deliberately quarantines this class of file rather than letting one of them
-    cost the whole store, and `bundles._index` guards `OSError` for the same reason. An
-    unguarded `read_bytes` here takes `store_digest`, `may_inject` and `record` down together,
-    so one committed dangling `gone.md` symlink turns every trust-dependent command into exit
-    2 — `memory trust`, the command that would recover the state, included.
+    cost the whole store. An unguarded `read_bytes` here takes `store_digest`, `may_inject` and
+    `record` down together, so one committed dangling `gone.md` symlink turns every
+    trust-dependent command into exit 2 — `memory trust`, the command that would recover the
+    state, included.
     """
     try:
-        content = path.read_bytes()
+        # A regular file only, followed through a link: `MEMORY.md` is one in overlay mode and
+        # is hashed through it. Anything else is unreadable, and still moves the digest. Read to
+        # the cap `fsops.read_regular_bytes` reads to, and a file past it is hashed as what was
+        # read under `_TOO_LARGE`, never as one constant.
+        content, over = fsops.read_bounded(path, fsops.REGULAR_READ_LIMIT)
     except OSError:
         content = _UNREADABLE
+    else:
+        if over:
+            content = _TOO_LARGE + content
     return hashlib.sha256(content).hexdigest()
 
 
@@ -151,8 +213,8 @@ def _config_digest(config: Config) -> str:
     """The repository-controlled configuration this area renders into a file the gate covers.
 
     `memory.index_extra` lives in `stayfixed.toml`, which no store file covers, and `_extra`
-    renders it straight into `MEMORY.md` — the file the `index` bundle injects. An attacker who
-    changed nothing else therefore left the digest untouched, and the next `memory index`
+    renders it straight into `MEMORY.md` — the file the harness memory link exposes. An attacker
+    who changed nothing else therefore left the digest untouched, and the next `memory index`
     carried their pointers in under a still-valid record, blessed on the way past by
     `refresh_if_trusted` because stayfixed itself authored that write. The rule that a changed
     hash re-prompts has to mean the hash covers what actually reaches the file.
@@ -178,7 +240,7 @@ def _files(store: Store) -> list[tuple[str, Path]]:
     notes sorted, then the index last.
 
     `MEMORY.md` is covered too, though it is neither a note nor a `memory.groups` entry. It is
-    the file the `index` bundle injects, and a digest built from the group directories alone
+    the file the harness memory link exposes, and a digest built from the group directories alone
     would let a store be trusted once and its index afterwards rewritten — or swapped for a
     symlink to anything — without ever losing that trust. It is folded in here rather than
     covered "another way" because trust is one hash over everything a session reads, and a
@@ -190,7 +252,8 @@ def _files(store: Store) -> list[tuple[str, Path]]:
         for path in sorted(store.groups[group].glob("*.md"))
     ]
     index = store.path / INDEX_NAME
-    if index.exists() or index.is_symlink():  # `is_symlink` so a dangling index still counts
+    # `is_symlink` so a dangling index still counts.
+    if fsops.exists(index) or fsops.is_symlink(index):
         found.append((INDEX_NAME, index))
     return found
 
@@ -260,32 +323,34 @@ def _recorded(machine: Path | None) -> dict[str, str]:
     costs that project a re-approval instead of costing every project its record.
     """
     path = _trust_file(machine)
-    if not path.is_file():
+    if path is None or not fsops.is_file(path):
         return {}
     try:
         text = path.read_text(encoding="utf-8")
     except OSError as exc:
         raise UnreadableTrustRecord(
-            f"{path} cannot be read ({exc}); refusing to answer about trust or to overwrite it"
+            f"{path} cannot be read ({fsops.said(exc)}); refusing to answer about trust or to "
+            "overwrite it"
         ) from exc
     except UnicodeDecodeError:
         raise UnreadableTrustRecord(
             f"{path} is not UTF-8 text; it holds every project's approval on this machine, so "
             f"nothing here will overwrite it — repair or delete it"
         ) from None
-    try:
-        raw = json.loads(text)
-    except json.JSONDecodeError as exc:
-        raise UnreadableTrustRecord(
-            f"{path} is not valid JSON ({exc}); it holds every project's approval on this "
-            f"machine, so nothing here will overwrite it — repair or delete it"
-        ) from exc
-    if not isinstance(raw, dict):
-        raise UnreadableTrustRecord(
-            f"{path} is not a JSON object; it holds every project's approval on this machine, "
-            f"so nothing here will overwrite it — repair or delete it"
-        )
+    # Through `jsonobject`, whose parser-limit arms are what this reader lacked: a record nested
+    # past the parser or holding an integer longer than it converts is valid JSON that
+    # `json.loads` meets with no `JSONDecodeError`, and it ended `memory trust` and the gate in an
+    # internal error. Each of its sentences is this record's refusal, with the record's reason.
+    raw = json_object(text, str(path), error=_refused_record)
     return {k: v for k, v in raw.items() if isinstance(v, str)}
+
+
+def _refused_record(reason: str) -> UnreadableTrustRecord:
+    """The refusal for a `trust.json` that does not parse as the record, `reason` first."""
+    return UnreadableTrustRecord(
+        f"{reason}; it holds every project's approval on this machine, so nothing here will "
+        f"overwrite it — repair or delete it"
+    )
 
 
 def approval_recorded(path: Path, machine: Path | None) -> bool:
@@ -318,7 +383,7 @@ def state(store: Store, config: Config) -> TrustState:
 def record(store: Store, config: Config) -> TrustState:
     raw = _recorded(store.machine)
     raw[_key(store)] = store_digest(store, config)
-    write_atomically(_trust_file(store.machine), json.dumps(raw, indent=2, sort_keys=True) + "\n")
+    _write_record(store.machine, raw)
     return state(store, config)
 
 
@@ -386,7 +451,7 @@ def refresh_if_trusted(
         return False  # an approved file is gone, and stayfixed does not delete notes
     raw = _recorded(store.machine)
     raw[_key(store)] = _digest_of(expected)
-    write_atomically(_trust_file(store.machine), json.dumps(raw, indent=2, sort_keys=True) + "\n")
+    _write_record(store.machine, raw)
     return True
 
 

@@ -9,8 +9,11 @@ reader's file and asks for what that reader already answers a broken file with: 
 unreadable file as absent, the same absent answer.
 
 Mutation (by hand, per case): take `UnicodeDecodeError` out of the reader's `except` -> that
-case reddens on the decode error itself. The two readers `mutations.toml` declares are the ones
-a command's first read meets, `stayfixed.toml` and the machine file.
+case reddens on the decode error itself. Three of these readers are declared: the two a
+command's first read meets, `stayfixed.toml` and the machine file, and the trust gate's, as
+`mutations/`'s "a stayfixed.toml that is not UTF-8 crashes every command that loads it", "a
+machine file that is not UTF-8 crashes every command that loads the configuration" and "a trust
+record that is not UTF-8 crashes instead of refusing loudly".
 """
 
 from __future__ import annotations
@@ -21,8 +24,10 @@ from pathlib import Path
 
 import pytest
 
+from stayfixed import fsops
 from stayfixed.attach import binding, permissions, write
 from stayfixed.attach.binding import Binding
+from stayfixed.config.layout import ATTACH_LEDGER
 from stayfixed.config.loader import (
     CONFIG_FILE,
     ConfigError,
@@ -30,18 +35,22 @@ from stayfixed.config.loader import (
     load,
     read_document,
 )
+from stayfixed.config.overlay import overlay_root
 from stayfixed.errors import Failure, Refusal
-from stayfixed.memory import bundles, index, store, trust
+from stayfixed.memory import index, store, trust
 from stayfixed.overlay import create, identity
 from stayfixed.overlay.api import COMMON_CODEX
 from stayfixed.overlay.layout import PLUGIN_MANIFEST
 from stayfixed.project.init import _existing
-from stayfixed.release import versions
 from stayfixed.setup.machine import read_machine
 from stayfixed.setup.run import _read_document
 from tests.cli import cli
 from tests.gitfixture import git, needs_git
 from tests.project.repos import DOCUMENT, repository
+from tests.scriptload import release
+
+# The repository's release script, whose version check is one more reader below.
+script = release()
 
 UNDECODABLE = b"\xff\xfe[overlay]\n"
 
@@ -79,8 +88,8 @@ RAISING: list[tuple[str, Callable[[Path], Callable[[], object]], type[Exception]
     ),
     (
         "the machine file, for its overlay root",
-        lambda t: lambda: store.overlay_root(_plant(t / "machine.toml")),
-        Failure,
+        lambda t: lambda: overlay_root(_plant(t / "machine.toml")),
+        MachineConfigError,
     ),
     (
         "the machine file, under setup",
@@ -107,7 +116,7 @@ RAISING: list[tuple[str, Callable[[Path], Callable[[], object]], type[Exception]
     ),
     (
         "the attach ledger",
-        lambda t: (_plant(t / write.LEDGER), lambda: write.ledger(t))[1],
+        lambda t: (_plant(t / ATTACH_LEDGER), lambda: write.ledger(t))[1],
         Failure,
     ),
     (
@@ -142,25 +151,25 @@ RAISING: list[tuple[str, Callable[[Path], Callable[[], object]], type[Exception]
     ),
     (
         "pyproject.toml, for the release check",
-        lambda t: (_plant(t / versions.PYPROJECT), lambda: versions._pyproject(t))[1],
-        versions.MalformedSource,
+        lambda t: (_plant(t / script.PYPROJECT), lambda: script._pyproject(t))[1],
+        script.MalformedSource,
     ),
     (
         "a version source, for the release check",
         lambda t: (
-            _plant(t / versions.PYPROJECT),
-            lambda: versions._read(t, versions.PYPROJECT),
+            _plant(t / script.PYPROJECT),
+            lambda: script._read(t, script.PYPROJECT),
         )[1],
-        versions.MalformedSource,
+        script.MalformedSource,
     ),
     (
         "the marketplace manifest, for the release check",
         lambda t: (
-            (t / versions.PYPROJECT).write_text('[project]\nversion = "0.1.0"\n', encoding="utf-8"),
-            _plant(t / versions.MARKETPLACE),
-            lambda: versions.check(t),
+            (t / script.PYPROJECT).write_text('[project]\nversion = "0.1.0"\n', encoding="utf-8"),
+            _plant(t / script.MARKETPLACE),
+            lambda: script.check(t),
         )[2],
-        versions.MalformedSource,
+        script.MalformedSource,
     ),
 ]
 
@@ -178,11 +187,6 @@ def test_an_undecodable_file_is_its_readers_own_failure(
 
 # (id, what to plant, the call, what the reader answers for a file it cannot read)
 ABSENT: list[tuple[str, Callable[[Path], Callable[[], object]], object]] = [
-    (
-        "the memory index a bundle injects",
-        lambda t: lambda: bundles._index(_plant(t / "MEMORY.md")),
-        [],
-    ),
     (
         "the memory index a second writer appended to",
         lambda t: lambda: index._appended(_plant(t / "MEMORY.md")),
@@ -280,29 +284,57 @@ def test_the_questions_read_an_undecodable_machine_file_as_recording_no_overlay(
 # OSError` taken out of that reader -> the case reddens on the `OSError` itself.
 def test_a_stayfixed_toml_that_is_a_directory_cannot_be_read_and_says_so(tmp_path: Path) -> None:
     (tmp_path / CONFIG_FILE).mkdir()
-    with pytest.raises(ConfigError, match=r"cannot be read \(IsADirectoryError\)"):
+    with pytest.raises(ConfigError, match=r"cannot be read \(not a regular file\)"):
         load(tmp_path, machine=tmp_path / "absent.toml")
-    with pytest.raises(ConfigError, match=r"cannot be read \(IsADirectoryError\)"):
+    with pytest.raises(ConfigError, match=r"cannot be read \(not a regular file\)"):
         read_document(tmp_path)
 
 
-@pytest.mark.parametrize("which", ["machine", CONFIG_FILE])
+def test_a_stayfixed_toml_past_the_read_cap_cannot_be_read_and_says_so(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `stayfixed.toml` is committed and is the first thing most commands and every hook read, so it
+    # is read to the read cap by the bounded reader every committed file is read with, and one past
+    # it is a file that cannot be read rather than one read to its end. The cap is lowered so the
+    # file is small. Mutation (oracle): `mutations/`'s "stayfixed.toml is read with no bound" -> the
+    # document is read.
+    limit = 4 * 1024
+    (tmp_path / CONFIG_FILE).write_text("#" * (limit + 1), encoding="utf-8")
+    monkeypatch.setattr(fsops, "REGULAR_READ_LIMIT", limit)
+    with pytest.raises(ConfigError) as refused:
+        read_document(tmp_path)
+    assert str(refused.value) == f"{CONFIG_FILE} cannot be read (larger than this reader reads)"
+
+
+@pytest.mark.parametrize("which", ["machine", "overlay-root", "setup", CONFIG_FILE])
 def test_a_file_without_read_permission_cannot_be_read_and_says_so(
     tmp_path: Path, which: str
 ) -> None:
+    # `overlay-root` is the machine file again, through the one reader of its `[overlay] root`
+    # key. Its `PermissionError` escaped as itself, past the `Failure` every caller of the overlay
+    # root catches — the memory hooks among them. `setup` is the same file through the reader
+    # `stayfixed setup` merges into: without the arm, setup ended in an internal error quoting the
+    # operating system's message. Mutation (oracle): `mutations/`'s "the overlay root's reader lets
+    # a machine file it cannot read raise past its callers".
     if os.geteuid() == 0:
         pytest.skip("root reads everything")
     (tmp_path / CONFIG_FILE).write_text(DOCUMENT, encoding="utf-8")
     machine = tmp_path / "machine.toml"
     machine.write_text("[personal]\n", encoding="utf-8")
-    locked = machine if which == "machine" else tmp_path / CONFIG_FILE
+    locked = tmp_path / CONFIG_FILE if which == CONFIG_FILE else machine
     locked.chmod(0)
     try:
         if which == "machine":
-            with pytest.raises(MachineConfigError, match=r"cannot be read \(PermissionError\)"):
+            with pytest.raises(MachineConfigError, match=r"cannot be read \(Permission denied\)"):
                 load(tmp_path, machine=machine)
+        elif which == "overlay-root":
+            with pytest.raises(MachineConfigError, match=r"cannot be read \(Permission denied\)"):
+                overlay_root(machine)
+        elif which == "setup":
+            with pytest.raises(MachineConfigError, match=r"cannot be read \(Permission denied\)"):
+                read_machine(machine)
         else:
-            with pytest.raises(Failure, match=r"cannot be read \(PermissionError\)"):
+            with pytest.raises(Failure, match=r"cannot be read \(Permission denied\)"):
                 _existing(tmp_path)
     finally:
         locked.chmod(0o644)

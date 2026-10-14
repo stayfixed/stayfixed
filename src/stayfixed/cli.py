@@ -67,8 +67,8 @@ def _finish(groups: SubParsers) -> None:
     name order", and that is now true of what the user sees and not only of the modules.
 
     `_choices_actions` and `_name_parser_map` are argparse's own bookkeeping, unchanged since
-    Python 3.2 and declared in typeshed; the alternative is thirty-six call sites each passing
-    the same string twice.
+    Python 3.2 and declared in typeshed; the alternative is every `add_parser` call passing the
+    same string twice.
     """
     groups._choices_actions.sort(key=lambda action: action.dest)
     helps = {action.dest: action.help for action in groups._choices_actions}

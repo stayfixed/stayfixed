@@ -1,48 +1,60 @@
 """The memory area's import surface: everything a consumer may import from this area.
 
-A module and not the package's `__init__`, for one measured reason: `stayfixed.hooks.registry`
+A module and not the package's `__init__`, for one reason: `stayfixed.hooks.registry`
 imports `stayfixed.memory.hooks`, which imports the package first, so a re-export list in
 `__init__.py` pulls the whole area — configuration included — into every `discover()` call and
-reddens `tests/test_areas.py`. Keeping the surface one level down costs a consumer six
-characters and keeps discovery cheap, without a lazy `__getattr__` that would cost every
+reddens `tests/boundaries/test_discovery.py`. Keeping the surface one level down costs a consumer
+six characters and keeps discovery cheap, without a lazy `__getattr__` that would cost every
 consumer its types.
 
-**The list is what consumers outside this area import, plus what those names oblige.** That is
-a change of rule and not only of length: it used to be what the areas named in this docstring
-were said to need, and this area's own history is what that produces — seventy names, of which
-forty-five had no importer anywhere in `src/`, `scripts/` or `tests/`. An area that needs
-something absent from this list grows it deliberately, in a commit that says which area and why
-— it does not import a private module of this area.
+**The list is what consumers outside this area import, plus what those names oblige** — not
+what an area might be said to need, which is a list that grows names nothing imports. An area
+that needs something absent from this list grows it deliberately, in a commit that says which
+area and why — it does not import a private module of this area.
 
-Twenty-eight names are imported from outside this area today, and the areas that reach for them
-are `attach`, `doctor` and `docs`: the resolver and its store (`resolve`, `Store`,
-`overlay_root`, `permitted_roots`, `main_checkout`, and `resolved`, which `docs check
---memory-graph` reads so that a store that does not resolve is said rather than skipped), the
-overlay layout `attach` writes and `overlay` renders (`PROJECTS`, `PROJECT_RECORD`,
-`COMMON_GROUP`), the link tree
-(`link`, `attach_main`, `detach_main`, `harness_anchor`, `harness_link_needed`,
-`harness_memory_path`, `Links`, `PartialLink`, and `linked_names`, which `attach` reads to hide
-every name the tree holds from git), whether the machine records any approval for a store that
+Thirty-eight names are imported from outside this area today, by the `attach` and `overlay` areas
+and by this repository's tests: the resolver (`resolve`, `permitted_roots` and `main_checkout`),
+the overlay layout `attach` writes and `overlay` renders (`PROJECTS`, `PROJECT_RECORD`,
+`STORE_DIR`, `COMMON_GROUP`), the one reader of the binding record, which `attach` reads it with
+and answers its own way when it cannot (`read_binding_record`), the link tree
+(`link`, `MakeUnder`, the home `attach` hands it for the harness link, `attach_main`,
+`detach_main`, `harness_anchor`, `harness_link_needed`, `harness_gate` with the two of its answers
+a caller compares with (`GATE_OPEN`, `GATE_LAPSED`), which `attach` and its `doctor.py` ask to tell
+a lapsed approval from none, `harness_memory_path`,
+`harness_targets`, which `attach`'s `detach` asks before its first withdrawal and the `attach`
+area's `doctor.py` reads a checkout's harness link by, `Links`,
+`PartialLink`, `linked_names`, which `attach` reads to hide
+every name the tree holds from git, and `link_sources`, every path the tree points at in the
+overlay, which `attach` asks the length of before its first write), whether the machine records
+any approval for a store that
 does not exist yet (`approval_recorded`, which `attach` asks before a first link tree is built),
 whether the machine's trust record can be read at all (`require_readable_record`, which `attach`
 asks before its first write, since the index render and the harness link read it after), the
-binding's one classifier and its vocabulary (`binding_state`, `BINDING_STATES` and its four
-members, and the causes `NO_REMOTE`, `NO_ORIGIN_CAUSE`, `NO_ORIGIN_WAY_OUT` and
-`DIFFERENT_REMOTE`), which `attach` and `doctor` answer the binding question with instead of a
-second classifier of their own,
-the bundles `doctor` reports on (`fit`, `render`, `SLOTS`), the wiki-link grammar and the note
-walk the graph check reads (`WIKI_LINK`, `walk`), the binding's git answer (`origin_remote`,
-`GitUnavailable`), and the trust region `tests/test_install_path.py` asserts end to end
-(`DELIMITER`, `markers`).
+binding's one classifier and the states and causes it answers in (`binding_state`, `UNBOUND`,
+`BOUND`, which `attach`'s own doctor row reads, `MISMATCH`, `NO_ORIGIN`, and the causes
+`NO_REMOTE`, `NO_ORIGIN_CAUSE`, `NO_ORIGIN_WAY_OUT` and `DIFFERENT_REMOTE`), which `attach` answers
+the binding question with instead of a second classifier of its own, the bundle slots
+`tests/hooks/test_hooks_json.py` holds the hooks file to (`SLOTS`), the note store a `doctor` row
+reads, resolved once per area per report (`Answers`, which the `attach` area's own `doctor.py`
+creates for its row), and
+the trust region `tests/test_install_path.py` asserts end to end (`DELIMITER`, `markers`). The
+link graph's check is this area's own (`memory.graph`, which `memory refs` reports), so the
+wiki-link grammar, the note walk and `resolved` have no reader outside it and are not here. The
+overlay root the machine file records and the checkout's `origin` are the core's to answer
+(`config.overlay.overlay_root`, `gitenv.origin_remote` and `gitenv.GitUnavailable`), because
+`init` asks them too and the core may not import this area; the crossings still pinned are
+listed in `tests/boundaries/test_delivery.py`.
 
-**Thirteen more have no importer and stay, each for a reason written here**, because a name
+**Ten more have no importer and stay, each for a reason written here**, because a name
 kept in silence is what made this pass necessary:
 
-- **The types those twenty-eight name in their signatures**: `Bundle` and `Fit` (`fit`,
-  `render`), `Unresolved` (`resolved`), `Walk` (`walk`), and `Note` with the `Provenance` inside
-  it, which `Walk` names in turn. `tests/test_surfaces.py` derives this rather than restating
-  it, and a return type absent from a surface is a value a consumer can hold and cannot
-  declare — the one thing a surface exists to prevent.
+- **The store, and the rest of the binding's vocabulary**: `Store` is what `resolve` returns, and a
+  return type absent from a surface is a value a consumer can hold and cannot declare, which
+  `tests/test_surfaces.py` derives rather than restates. `Withhold` is the other half of what
+  `link`'s `harness` takes, beside the `MakeUnder` `attach` hands it, for the same reason.
+  `BINDING_STATES` completes the closed vocabulary `binding_state` answers in, beside the four
+  states that have a caller, for the reason the trust region's bullet below gives.
+
 - **The rest of the trust region's vocabulary**: `wrap`, `new_nonce` and `UnsafeNote`, beside
   the `DELIMITER` and `markers` that already have a caller. Reading such a region needs
   `markers` and `DELIMITER`; producing one needs `wrap` and a nonce from `new_nonce`; a forged
@@ -60,48 +72,37 @@ kept in silence is what made this pass necessary:
   meet it, and this is the one group on this list where the cost of being wrong is a
   repository's bytes reaching a model unwrapped.
 
-**Trimmed, by the pass that set this rule: thirty-three names**, every one of them with no importer
-in `src/`, `scripts/` or `tests/`, no published signature naming it, and no reader reaching it by
-string. Nothing was deleted: each is still where it was written and is reachable from this area's
-own module, which is what `memory/commands.py`, `memory/hooks.py` and this area's tests already do.
-What went is the claim that another area reads it.
+**Not here, though they look like candidates**: names with no importer in `src/`, `scripts/` or
+`tests/`, no published signature naming them, and no reader reaching them by string. Each is
+reachable from this area's own module, which is what `memory/commands.py`, `memory/hooks.py` and
+this area's tests use; an area that comes to need one grows this list by the rule above.
 
 - **The index group** — `INDEX_NAME`, `index_source`, `write_index`, `render_index`,
-  `check_index`, `reconcile`, `Reconciliation`, `IndexCheck`. Published on the argument that
-  `worktree.py` and `bundles.py` both present `index_source` as *the* place the per-link target
-  rule reaches the index, and that neither a reader nor `attach`, which creates the symlinked
-  index in the first place, could call it. `attach` calls none of them; the index is a command
-  (`memory index`) and the areas that want one run it.
+  `check_index`, `reconcile`, `Reconciliation`, `IndexCheck`. `attach`, which creates the
+  symlinked index, calls none of them; the index is a command (`memory index`) and the areas
+  that want one run it.
 - **The notes group** — `read_note`, `render_note`, `with_index`, `write_note`, `NoteError`,
-  `NoteType` — published for a notes consumer, and nothing outside this area imports them.
-  `snapshot`, `refresh_if_trusted` and `Snapshot` went with them: they were published as the
-  dance a caller of the exported `write_note` must perform, and with `write_note` gone there is
-  no caller on this surface to perform it. That argument comes back with the verb if an area
-  ever needs the verb.
-- **The refs group** — `check_refs`, `unresolved`, `audience_violations`, `RefsReport`.
-  `docs` is a real consumer of this surface; it imports `WIKI_LINK`, `Store` and `walk`, and
-  none of these four. The paragraph that said this debt was paid was measuring the wrong thing:
-  an area existing is not the same as an area importing.
-- **The inventory group** — `inventory`, `totals`, `Entry` — published for a skills consumer,
-  and nothing outside this area imports them.
+  `NoteType` — and nothing outside this area imports them. `snapshot`, `refresh_if_trusted` and
+  `Snapshot` are the dance a caller of `write_note` must perform, so with `write_note` off this
+  surface they have no caller here either.
+- **The refs group** — `check_refs`, `unresolved`, `audience_violations`, `RefsReport`: an area
+  existing is not the same as an area importing, and none imports these.
+- **The inventory group** — `inventory`, `totals`, `Entry` — and nothing outside this area
+  imports them.
 - **The store predicates** — `in_repository`, `inside_project`, `refusal_reason`,
-  `overlay_group_target` (and `resolved`, until `docs` needed it). `in_repository` was published
-  "because `inside_project` hands the reader to it in as many words", which is this surface
-  citing itself; `refusal_reason` was
-  published for an overlay hook that does not exist; `overlay_group_target` is read by
-  `worktree.py`, one module over, and by nothing else.
-- **The leftovers** — `blocks`, `split`, `harness_link_parts`. Three helpers with no argument
-  beside them in the docstring this one replaces, which is how they survived. (`linked_names`
-  was a fourth, and came back when `attach` began hiding the tree it names.)
+  `overlay_group_target` and `resolved`. `overlay_group_target` is read by `worktree.py`, one
+  module over, and by nothing else, and none of the others has a reader outside this area.
+- **The helpers** — `blocks`, `split`, `harness_link_parts`, with no reader outside this area.
+- **The bundles group** — `fit`, `render`, and the `Bundle` and `Fit` their signatures name. The
+  `bundles` row is this area's own (`memory/doctor.py`) and reads `memory.bundles` directly.
 
-`PartialLink` stays: `attach` imports it, which is what the paragraph that argued for it
-predicted. `Links` stays for the same reason and is the one name on this list a
-`mutations.toml` entry names.
+`PartialLink` and `Links` are here because `attach` imports them, and `Links` is the one name on
+this list an entry names: `mutations/`'s "a type the surface names in a signature drops off the
+surface".
 """
 
-from stayfixed.memory.bundles import SLOTS, Bundle, Fit, fit, render
-from stayfixed.memory.notes import Note, Provenance, Walk, walk
-from stayfixed.memory.refs import WIKI_LINK
+from stayfixed.memory.answers import Answers
+from stayfixed.memory.bundles import SLOTS
 from stayfixed.memory.store import (
     BINDING_STATES,
     BOUND,
@@ -114,17 +115,14 @@ from stayfixed.memory.store import (
     NO_REMOTE,
     PROJECT_RECORD,
     PROJECTS,
+    STORE_DIR,
     UNBOUND,
-    GitUnavailable,
     Store,
-    Unresolved,
     binding_state,
     main_checkout,
-    origin_remote,
-    overlay_root,
     permitted_roots,
+    read_binding_record,
     resolve,
-    resolved,
 )
 from stayfixed.memory.trust import (
     DELIMITER,
@@ -140,14 +138,21 @@ from stayfixed.memory.trust import (
     wrap,
 )
 from stayfixed.memory.worktree import (
+    GATE_LAPSED,
+    GATE_OPEN,
     Links,
+    MakeUnder,
     PartialLink,
+    Withhold,
     attach_main,
     detach_main,
     harness_anchor,
+    harness_gate,
     harness_link_needed,
     harness_memory_path,
+    harness_targets,
     link,
+    link_sources,
     linked_names,
 )
 
@@ -157,6 +162,8 @@ __all__ = [
     "COMMON_GROUP",
     "DELIMITER",
     "DIFFERENT_REMOTE",
+    "GATE_LAPSED",
+    "GATE_OPEN",
     "MISMATCH",
     "NO_ORIGIN",
     "NO_ORIGIN_CAUSE",
@@ -165,43 +172,37 @@ __all__ = [
     "PROJECTS",
     "PROJECT_RECORD",
     "SLOTS",
+    "STORE_DIR",
     "UNBOUND",
-    "WIKI_LINK",
-    "Bundle",
-    "Fit",
-    "GitUnavailable",
+    "Answers",
     "Links",
-    "Note",
+    "MakeUnder",
     "PartialLink",
-    "Provenance",
     "Store",
     "TrustState",
     "UnreadableTrustRecord",
-    "Unresolved",
     "UnsafeNote",
-    "Walk",
+    "Withhold",
     "approval_recorded",
     "attach_main",
     "binding_state",
     "changed",
     "detach_main",
-    "fit",
     "harness_anchor",
+    "harness_gate",
     "harness_link_needed",
     "harness_memory_path",
+    "harness_targets",
     "link",
+    "link_sources",
     "linked_names",
     "main_checkout",
     "markers",
     "may_inject",
     "new_nonce",
-    "origin_remote",
-    "overlay_root",
     "permitted_roots",
-    "render",
+    "read_binding_record",
     "require_readable_record",
     "resolve",
-    "resolved",
-    "walk",
     "wrap",
 ]

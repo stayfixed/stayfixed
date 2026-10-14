@@ -95,7 +95,7 @@ ADVERSARIAL = (
     "from stayfixed.docs.trail import read_trail, theme_of\n"
     "path = pathlib.Path(sys.argv[1]) / 'trail.toml'\n"
     "path.write_text('[[theme]]\\nlabel = \"x\"\\npattern = \"' + '.*a' * 8 + '.*b\"\\n')\n"
-    "print(theme_of('a' * 300 + '.md', read_trail(path)))\n"
+    "print(theme_of('a' * 300 + '.md', read_trail(path, 'docs/trail.toml')))\n"
 )
 
 

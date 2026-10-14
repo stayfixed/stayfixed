@@ -7,23 +7,52 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Read-only, both, and set here alone: a job's own `permissions:` block would replace this one, so
+# the job below has none. `pull-requests: read` is for the action's reads of the pull request on
+# a `pull_request` run. It lists the pull request's commits through
+# `GET /repos/{owner}/{repo}/pulls/{n}/commits` to find the commits to scan and, when it finds a
+# leak, the pull request's review comments through `GET /repos/{owner}/{repo}/pulls/{n}/comments`.
+# A private repository, which an overlay is, answers those only to a token holding it. Leaks are
+# still reported without a write scope: the action's pull-request review comment is best-effort
+# and its failure is a warning; the job fails, and the summary and artifact name the leak.
 permissions:
   contents: read
+  pull-requests: read
 
 jobs:
   gitleaks:
+    # The template repository itself is public and owned by an organisation, and the action
+    # fails every run there for want of the licence key an organisation needs. A repository
+    # created from the template is not itself a template, so it is scanned. Any repository
+    # marked as a template is skipped, though: the published one, an owner's own published
+    # template, or an overlay its owner later marks as one. `is_template` is in the repository
+    # object of all three triggers' payloads; where it is absent it is false, and the job runs.
+    if: ${{ !github.event.repository.is_template }}
     runs-on: ubuntu-latest
     steps:
       # Both actions are pinned at a full-length commit sha, for the reason
-      # `.pre-commit-config.yaml` one directory up gives about `rev:`: a tag is a name its owner
-      # can move, and `v4` or `v2` resolving to different code tomorrow is somebody else choosing
-      # what runs against a repository holding your rules and your notes, with a token. The
-      # trailing comment is the release each sha is; `.github/dependabot.yml` keeps both current.
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      # `.pre-commit-config.yaml` at the repository root gives about `rev:`: a tag is a name its
+      # owner can move, and `v7` or `v3` resolving to different code tomorrow is somebody else
+      # choosing what runs against a repository holding your rules and your notes, with a token.
+      # The trailing comment is the release each sha is; `.github/dependabot.yml` keeps both
+      # current.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # The whole history is fetched so that the commits the action names are reachable. It
+          # scans `--no-merges --first-parent <first>^..<last>`: on a push, from the first to the
+          # last commit in the push's event payload (a payload with no commits scans nothing, and
+          # one with a single commit scans just that commit, with `-1`); on a pull request, from
+          # the first to the last of the commits it lists, which is one page of 30 at most; on a
+          # manual run (`workflow_dispatch`), all of the history.
           fetch-depth: 0
+          # The job never pushes, so the checkout leaves no token behind for the steps after it.
+          persist-credentials: false
       # A personal account needs no licence key; an organisation-owned repository does, and adds
       # `GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}` here (the action's own README).
-      - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.9
+      - uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # The gitleaks the action downloads and runs. Pinning the action does not pin this: the
+          # action falls back to its own default (8.24.3 for v3.0.0), so it is named here, at
+          # the version `.pre-commit-config.yaml` pins, and Dependabot does not move it.
+          GITLEAKS_VERSION: "8.30.1"

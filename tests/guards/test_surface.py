@@ -15,16 +15,17 @@ def test_the_surface_carries_what_every_consumer_reaches_for() -> None:
     # `__all__` entry together satisfied both, so between them the two could only catch a
     # REMOVED export.
     #
-    # No `mutations.toml` entry: the mutation is adding an export, which is two lines in
+    # No entry in `mutations/`: the mutation is adding an export, which is two lines in
     # `api.py` (the import and the `__all__` entry) and not one substituted line. Measured by
-    # hand instead — re-exporting `hygiene.is_pytest_run` reddens this test and this test alone,
+    # hand instead — re-exporting `hygiene.red_exit` reddens this test and this test alone,
     # and under the old `required <= set(...)` the very same change left all three tests green.
     #
     # What is below is what another area reaches for, with the argument for each in `api.py`.
     required = {
-        # the git hook, for setup, and the two results its verbs return
+        # the git hook, for setup, the two results its verbs return, and what uninstall found
         "HOOK_NAME",
         "HOOK_MARKER",
+        "Found",
         "Installed",
         "Removed",
         "install",

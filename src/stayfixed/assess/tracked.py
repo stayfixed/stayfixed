@@ -38,6 +38,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from stayfixed import fsops
 from stayfixed.assess.gates import Gate, GateResult, configured
 from stayfixed.assess.model import Item, item
 from stayfixed.errors import StayfixedError
@@ -104,7 +105,7 @@ class Unseen:
 def _reads(root: Path, config: Config, gate: Gate) -> list[Path]:
     """The files `gate` reads by path that are there now, as its record declares them."""
     wanted = gate.reads(root, config) if gate.reads is not None else []
-    return [path for path in wanted if path.exists()]
+    return [path for path in wanted if fsops.exists(path)]
 
 
 @dataclass(frozen=True)
@@ -217,7 +218,7 @@ def _not_checked_out(relative: str, listing: _Listing) -> str | None:
         if not _is_tracked(here, listing):
             return named  # the first untracked step
         link = listing.top / here
-        if not link.is_symlink():
+        if not fsops.is_symlink(link):
             continue
         if here in listing.changed:
             return named  # a link changed on disk: a checkout writes the one git has

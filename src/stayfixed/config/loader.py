@@ -12,7 +12,7 @@ from functools import cache
 from pathlib import Path
 from typing import Any, TypeVar, cast, get_origin, get_type_hints
 
-from stayfixed import __version__
+from stayfixed import __version__, fsops
 from stayfixed.config.machine import machine_config_path
 from stayfixed.config.paths import contained, validate_paths
 from stayfixed.config.schema import (
@@ -43,7 +43,8 @@ from stayfixed.config.schema import (
 )
 from stayfixed.errors import Failure
 from stayfixed.findings import LISTED_LIMIT, listed
-from stayfixed.presets import load_preset
+from stayfixed.fsops import read_regular_text, said
+from stayfixed.presets import available, load_preset
 
 CONFIG_FILE = "stayfixed.toml"
 # Where `tomllib` stopped, and nothing else it had to say. Every `TOMLDecodeError` this
@@ -62,9 +63,16 @@ NO_POSITION = "(at a position tomllib did not report)"
 # `tomllib` reads nested arrays and inline tables by recursion, so a document nested a few
 # thousand levels deep — `a = [[[…]]]` — raises `RecursionError` and not `TOMLDecodeError`.
 # Uncaught, that is an internal error, the class stayfixed keeps for its own defects, and in a
-# gate run it ended every gate. Every reader of a document somebody else wrote catches both.
-UNPARSEABLE = (tomllib.TOMLDecodeError, RecursionError)
+# gate run it ended every gate. And an integer literal longer than the interpreter converts
+# (4,300 digits by default, `sys.get_int_max_str_digits`) is valid TOML that `tomllib` answers with
+# a plain `ValueError`, which is not a `TOMLDecodeError`: one line of a committed file ended
+# `doctor`, `gate` and `init` the same way. Every reader of a document somebody else wrote catches
+# all three. `ValueError` is caught whole, `TOMLDecodeError` being one: no reader's `try` holds
+# anything else that raises it but a decode, whose `UnicodeDecodeError` it catches first or
+# answers as it answers a record that does not parse.
+UNPARSEABLE = (tomllib.TOMLDecodeError, RecursionError, ValueError)
 TOO_DEEP = "(nested deeper than the parser reads)"
+TOO_LONG = "(holds a number longer than the parser converts)"
 SECTIONS = (
     "stayfixed",
     "project",
@@ -108,6 +116,16 @@ GATES_PARTIAL = (
 
 T = TypeVar("T")
 
+# A named cap: every integer a configuration key holds is below it. `tomllib` converts a hex,
+# octal or binary literal of any length (a power-of-two base is exempt from the interpreter's
+# 4,300-digit limit), and a decimal of 401 digits is inside that limit, so a key checked only for
+# `<= 0` handed its reader a number no `str` could print or no `float` could hold: `[gates]
+# custom_timeout_seconds` ended `assess` and `gate` in an internal error. 2**31 is what a signed
+# 32-bit count holds, far above any budget, cap or timeout a project writes (the preset's largest
+# integer is `memory_index_bytes = 25600`), and below what every reader of one handles: `str`,
+# `float`, a comparison. No shipped file states it.
+INTEGER_LIMIT = 2**31
+
 
 class ConfigError(Failure):
     """A stayfixed.toml that cannot be trusted as written."""
@@ -116,7 +134,9 @@ class ConfigError(Failure):
 # Fixed text and a path stayfixed chose or the owner typed. Not the decoder's message: it is only
 # a byte and an offset, but the one sentence says what to do about every such file.
 NOT_UTF8 = "{path} is not UTF-8 text; stayfixed reads it only as UTF-8"
-# The error's class name and not its message, which repeats the path and adds nothing to act on.
+# What the error says, in `fsops.said`'s words, and not its message, which repeats the path and
+# adds nothing to act on; never its class's name, which for a reader's own refusal is a name of
+# stayfixed's internals (`fsops.TooLarge`, `fsops.NotRegularFile`) and names no condition.
 UNREADABLE = "{path} cannot be read ({error})"
 NOT_THERE = "{path} does not exist; run `stayfixed init` first"
 
@@ -127,13 +147,13 @@ class MachineConfigError(ConfigError):
     A subclass and not a message, because the one caller that has to tell them apart must not
     do it by reading the text: `doctor` deliberately never quotes a loader message — the loader
     builds it out of the file's own keys and values — so its only way to say which of the two
-    files is broken was the type. It said `stayfixed.toml is here and does not load` for a
-    `~/.config/stayfixed/config.toml` with a stray bracket in it, and sent the owner to edit a
-    file with nothing wrong with it.
+    files is broken is the type. Without it, a `~/.config/stayfixed/config.toml` with a stray
+    bracket in it would read as `stayfixed.toml is here and does not load`, sending the owner to
+    edit a file with nothing wrong with it.
     """
 
 
-def toml_position(exc: tomllib.TOMLDecodeError | RecursionError) -> str:
+def toml_position(exc: tomllib.TOMLDecodeError | RecursionError | ValueError) -> str:
     """The `(at line N, column M)` suffix `tomllib` appends, with its message text dropped.
 
     One extractor for every caller in this package that reports a document it did not write,
@@ -144,12 +164,40 @@ def toml_position(exc: tomllib.TOMLDecodeError | RecursionError) -> str:
     A suffix this cannot find is reported as absent rather than as the message: a `tomllib` that
     stopped appending a position would otherwise take this guard with it silently, which is the
     shape every other bounded value in this file refuses. A document nested past the parser's
-    recursion has no position, and says so.
+    recursion has no position, and says so; so does one holding a number past the conversion
+    limit, whose own message would tell the reader to raise a process-wide limit rather than fix a
+    file somebody else wrote.
     """
     if isinstance(exc, RecursionError):
         return TOO_DEEP
+    if not isinstance(exc, tomllib.TOMLDecodeError):
+        return TOO_LONG
     found = _TOML_POSITION.search(str(exc))
     return found.group(0) if found is not None else NO_POSITION
+
+
+def read_machine_toml(path: Path) -> dict[str, Any] | None:
+    """The machine file at `path` as `tomllib` parses it, or `None` when no file is there.
+
+    One reader for every reader of the file — `[personal]` here, `[overlay] root` in
+    `config.overlay` — so a file that cannot be read, is not UTF-8 or is not TOML is one failure
+    in one set of words: `MachineConfigError`, the type `doctor` tells it from a broken
+    `stayfixed.toml` by, naming the error's class or the parser's position and never the parser's
+    message, which quotes the file's own text. An absent file is the ordinary state before
+    `stayfixed setup` has run, and each caller says what it means.
+    """
+    if not fsops.is_file(path):
+        return None
+    try:
+        text = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        raise MachineConfigError(NOT_UTF8.format(path=path)) from None
+    except OSError as exc:
+        raise MachineConfigError(UNREADABLE.format(path=path, error=said(exc))) from None
+    try:
+        return tomllib.loads(text)
+    except UNPARSEABLE as exc:
+        raise MachineConfigError(f"{path} is not valid TOML {toml_position(exc)}") from None
 
 
 def _table(raw: dict[str, Any], name: str) -> dict[str, Any]:
@@ -167,9 +215,9 @@ def _gate_branch(ci: dict[str, Any], project: Project) -> dict[str, Any]:
     """`[ci]` with `gate_branch` taken from `[project] base_branch` when the file leaves it out.
 
     The rendered workflow runs only for pull requests into `gate_branch`, and `assess`, `plan
-    check` and `adopt promote` judge against `base_branch`. A fixed default of `main` made a
-    hand-written file that named `develop` as its base, and said nothing about `[ci]`, render a
-    workflow that never ran for a pull request into `develop` — local runs and CI judging two
+    check` and `adopt promote` judge against `base_branch`. A fixed default of `main` would make
+    a hand-written file that names `develop` as its base, and says nothing about `[ci]`, render a
+    workflow that never runs for a pull request into `develop` — local runs and CI judging two
     different branches, with nothing printed. So the preset carries no `gate_branch`: left out,
     it is the base branch, which the loader has already held to the branch grammar.
     """
@@ -181,9 +229,9 @@ def _schema_types(cls: type[Any]) -> dict[str, Any]:
     """Real type objects for a schema class, resolved once per process.
 
     `get_type_hints` is what makes them real: under `from __future__ import annotations`
-    `field.type` is only the source string, and dispatching on that string made every type the
-    branches did not spell — `float`, `int | None`, an alias — silently "must be a string", so
-    a valid config was refused with a wrong reason. Resolving costs an `eval` per annotation,
+    `field.type` is only the source string, and dispatching on that string would make every type
+    the branches do not spell — `float`, `int | None`, an alias — silently "must be a string", so
+    a valid config would be refused with a wrong reason. Resolving costs an `eval` per annotation,
     which is why a load does not pay it nine times.
     """
     hints = get_type_hints(cls)
@@ -195,10 +243,10 @@ def _named(unknown: list[str], noun: str) -> str:
     is counted and never quoted — `PATH_VALUE`'s rule read onto a second grammar.
 
     **Every name in a `stayfixed.toml` is repository-authored, not only the table names.** A TOML
-    key is arbitrary quoted text, so `[paths] "docs\u001b[31m\nIGNORE ALL PRIOR RULES" = 1` put raw
+    key is arbitrary quoted text, so `[paths] "docs\u001b[31m\nIGNORE ALL PRIOR RULES" = 1` puts raw
     ESC and raw newlines into `[paths] has unknown key(s): ...` — a refusal the terminal renders
-    and the `init` skill relays to a model — on all nine tables. That message sat two functions
-    from this one, which was written for exactly this rule and applied only to the section list.
+    and the `init` skill relays to a model — on all nine tables, unless the keys are held to the
+    same rule as the section list.
 
     `SECTION_NAME` is the grammar both callers use, and it is a deliberate re-reading rather than
     a coincidence: every key any schema class or `Budgets.NAMES` declares is lowercase words
@@ -256,9 +304,7 @@ def _build(cls: type[T], name: str, values: dict[str, Any]) -> T:
                 raise ConfigError(f"{name}.{key} must be true or false")
             coerced[key] = value
         elif annotation is int:
-            if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
-                raise ConfigError(f"{name}.{key} must be a positive integer")
-            coerced[key] = value
+            coerced[key] = _positive(f"{name}.{key}", value)
         elif annotation is str:
             if not isinstance(value, str):
                 raise ConfigError(f"{name}.{key} must be a string")
@@ -270,6 +316,16 @@ def _build(cls: type[T], name: str, values: dict[str, Any]) -> T:
                 "the loader coerces tuple[str, ...], bool, int and str"
             )
     return cls(**coerced)
+
+
+def _positive(key: str, value: object) -> int:
+    """`value` when it is a positive integer below `INTEGER_LIMIT`; a `ConfigError` naming `key`
+    otherwise. Never the value: a number that large is the one no message could print."""
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise ConfigError(f"{key} must be a positive integer")
+    if value >= INTEGER_LIMIT:
+        raise ConfigError(f"{key} must be a positive integer below {INTEGER_LIMIT:,}")
+    return value
 
 
 def _enum(section: str, key: str, value: str, allowed: tuple[str, ...]) -> None:
@@ -396,27 +452,18 @@ def _budgets(raw: dict[str, Any], preset: dict[str, Any]) -> Budgets:
     if unknown:
         raise ConfigError(f"[budgets] has unknown key(s): {_named(unknown, 'key')}")
     for key, value in configured.items():
-        if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
-            raise ConfigError(f"budgets.{key} must be a positive integer")
+        _positive(f"budgets.{key}", value)
     return Budgets(preset=dict(preset["budgets"]), configured=dict(configured))
 
 
-def _personal(machine: Path, preset: dict[str, Any]) -> Personal:
+def _personal(machine: Path | None, preset: dict[str, Any]) -> Personal:
     values: dict[str, Any] = dict(preset.get("defaults", {}).get("personal", {}))
-    if not machine.is_file():
+    # `None` is a machine with no home to hold the file (`machine_config_path`), read as no file.
+    raw = None if machine is None else read_machine_toml(machine)
+    if raw is None:
         # No machine file, so `values` is the preset's own `[personal]` defaults and nothing
         # else. A fault here would be the preset's, not a machine's, and must not be relabelled.
         return _build(Personal, "personal", values)
-    try:
-        raw = tomllib.loads(machine.read_text(encoding="utf-8"))
-    except UnicodeDecodeError:
-        raise MachineConfigError(NOT_UTF8.format(path=machine)) from None
-    except OSError as exc:
-        raise MachineConfigError(
-            UNREADABLE.format(path=machine, error=type(exc).__name__)
-        ) from None
-    except UNPARSEABLE as exc:
-        raise MachineConfigError(f"{machine} is not valid TOML {toml_position(exc)}") from None
     try:
         values.update(_table(raw, "personal"))
         return _build(Personal, "personal", values)
@@ -426,46 +473,26 @@ def _personal(machine: Path, preset: dict[str, Any]) -> Personal:
         raise MachineConfigError(f"{machine}: {exc}") from None
 
 
-def load(root: Path, *, machine: Path | None = None, interactive: bool | None = False) -> Config:
+def load(root: Path, *, machine: Path | None = None) -> Config:
     """Read `stayfixed.toml` under the preset, and `[personal]` out of the machine file.
 
-    `interactive` is threaded to `machine_config_path`, and exists because the seam was missing:
-    `machine.py`'s docstring says "a caller that knows it is a hook, the MCP server or a
-    `stayfixed gate` run says `interactive=False` rather than relying on the terminal check", and
-    the one shipped non-interactive caller — `hooks.commands.run_hook` — had no way to say it.
-    `load` called `machine_config_path()` with no argument, so the path the docstring singles
-    out fell back to the `isatty` sniff. It evaluated `False` in practice, because a hook's
-    stdin is a pipe, which means the gate held by circumstance rather than by construction.
-
-    **It defaults to `False`, so that one command reads one machine file.** The sniff was the
-    default, and `store.overlay_root` and `trust._trust_file` — the two anchors that locating the
-    note store and trusting in-repo notes rest on — resolve that same file with `interactive=False`
-    always. On an interactive run with `XDG_CONFIG_HOME` or `STAYFIXED_CONFIG` set, the two
-    disagreed: `[personal]` came from the owner's chosen file while `[overlay] root` and
-    `trust.json` came from `~/.config/stayfixed/`, so an XDG-honouring owner who wrote one file with
-    both tables got `[personal]` honoured and the overlay silently unrecorded — `stayfixed memory
-    index` refusing with "no overlay root is recorded in the machine configuration; run `stayfixed
-    setup`" about a file it had just read successfully.
-
-    Half a file behind a gate is not a gate, exactly as `machine.py` says of one variable of a
-    pair. So the whole file follows the stricter of the two rules, and `--machine` stays the
-    supported way to name another one — honoured by all three readers, because it is a path a
-    person typed rather than one an environment chose. `stayfixed doctor` is where an ignored
-    `XDG_CONFIG_HOME` should be reported, which `machine.py`'s docstring already nominates it
-    for.
-
-    `None` asks for the sniff explicitly, and is what a future diagnostic would pass to say
-    what *would* have been honoured.
+    With no `machine`, the machine file is `config.machine.machine_config_path`'s, the one file
+    the overlay root's reader and `trust._trust_file` read too, which no variable moves: an
+    interactive run with `XDG_CONFIG_HOME` set once read `[personal]` from the file it named and
+    `[overlay] root` and `trust.json` from `~/.config/stayfixed/`, so an owner who wrote one file
+    with both tables got `[personal]` honoured and the overlay silently unrecorded. `--machine`
+    is the supported way to name another file, honoured by all three readers, because it is a
+    path a person typed rather than one an environment chose.
 
     **One reader of the file.** Through `read_document`, which goes through `contained()`: a
-    `stayfixed.toml` that is a symlink is refused by every command, as `stayfixed gate` has always
-    refused it. Read with a plain `read_text`, a clone's link to `/dev/zero` kept `adopt`, `bugs
+    `stayfixed.toml` that is a symlink is refused by every command, as `stayfixed gate` refuses
+    it. Read with a plain `read_text`, a clone's link to `/dev/zero` would keep `adopt`, `bugs
     check` and `plan check` reading until the machine ran out of memory.
     """
     text = read_document(root)
     if text is None:
         raise ConfigError(NOT_THERE.format(path=root / CONFIG_FILE))
-    return loads(text, root, machine=machine, interactive=interactive)
+    return loads(text, root, machine=machine)
 
 
 def read_document(root: Path) -> str | None:
@@ -474,17 +501,18 @@ def read_document(root: Path) -> str | None:
     `newline=""` and not `read_text`: this is the text a command hands to `config.owned.rewrite`,
     which keeps every byte but the values it sets, and universal-newline translation would have
     rewritten every CRLF in a file somebody else owns before the editor saw it. `contained`
-    first, as for every configured path, so a symlinked `stayfixed.toml` is a refusal.
+    first, as for every configured path, so a symlinked `stayfixed.toml` is a refusal; then read
+    to the read cap, a regular file only (`fsops.read_regular_text`), as every reader of a
+    committed file reads one.
     """
     try:
-        with contained(root, CONFIG_FILE).open(encoding="utf-8", newline="") as stream:
-            return stream.read()
+        return read_regular_text(contained(root, CONFIG_FILE), newline="")
     except FileNotFoundError:
         return None
     except UnicodeDecodeError:
         raise ConfigError(NOT_UTF8.format(path=CONFIG_FILE)) from None
     except OSError as exc:
-        raise ConfigError(UNREADABLE.format(path=CONFIG_FILE, error=type(exc).__name__)) from None
+        raise ConfigError(UNREADABLE.format(path=CONFIG_FILE, error=said(exc))) from None
 
 
 def loads(
@@ -492,8 +520,8 @@ def loads(
     root: Path,
     *,
     machine: Path | None = None,
-    interactive: bool | None = False,
     label: str | None = None,
+    personal: Personal | None = None,
 ) -> Config:
     """Build a `Config` from `text` as `stayfixed.toml`'s contents, without reading a file.
 
@@ -502,6 +530,12 @@ def loads(
     `label` is what a refusal calls the document when it is not the file at `root`: the base's
     copy `stayfixed gate` reads out of git is validated against the tree's disk, and a refusal
     naming `<root>/stayfixed.toml` would send its owner to a file with nothing wrong in it.
+    `personal` is the `[personal]` a load earlier in the same command already read, taken in
+    place of reading the machine file again: a caller that holds a `Config` and not the path
+    its machine file came from — a gate, handed `(root, config, base)` — loads a second
+    document with it, and so reads no machine file but the one the command was given. Given
+    both, `personal` wins and `machine` is never read. Every argument after `root` is
+    keyword-only.
     """
     path = label or root / CONFIG_FILE
     try:
@@ -513,7 +547,11 @@ def loads(
         raise ConfigError(f"{path} has unknown section(s): {_named(unknown, 'section')}")
 
     head = _table(raw, "stayfixed")
-    preset_name = str(head.get("preset", "recommended"))
+    # Asked before anything spells it: a hex literal of any length converts, and its `str`
+    # raises past 4,300 digits.
+    preset_name = head.get("preset", "recommended")
+    if not isinstance(preset_name, str):
+        raise ConfigError(f"stayfixed.preset must be a string; {available()}")
     preset = load_preset(preset_name)
     defaults = dict(preset.get("defaults", {}))
     defaults["stayfixed"] = {**defaults.get("stayfixed", {}), "preset": preset_name}
@@ -541,7 +579,8 @@ def loads(
         CommitMessages, "commit_messages", _merged(raw, defaults, "commit_messages")
     )
     caps = _build(NativeCaps, "native_caps", dict(preset["native_caps"]))
-    personal = _personal(machine or machine_config_path(interactive=interactive), preset)
+    if personal is None:
+        personal = _personal(machine or machine_config_path(), preset)
     config = Config(
         stayfixed=stayfixed,
         project=project,

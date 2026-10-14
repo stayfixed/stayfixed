@@ -1,33 +1,68 @@
-"""The environment every `git` this project runs is given, and the bound on how long it may take.
+"""Which `git` this project runs, the environment it is given, and the bound on how long it may
+take.
 
-One module because there are two callers and the rule is the same for both, and being the same
-for both is the point. `memory.store._git` scrubbed and said why — "it must be a real git
-answer, not one an inherited `GIT_DIR` produced" — while `hooks.dispatch._git_toplevel` passed
-no `env=` at all and inherited whatever the session had. That one feeds `project_root()`, which
-every hook decision is derived from, so an inherited `GIT_DIR` or `GIT_WORK_TREE` made every
-handler in the process answer for a different repository than the one the user is sitting in.
+One module because every caller needs the same rule, and being the same for all of them is the
+point: a git answer must be a real one about the repository asked, never one an inherited
+`GIT_DIR` produced. The hook path's toplevel query feeds the hook's project root
+(`checkout_root` below), which every hook decision is derived from, so a query that inherited
+the session's `GIT_DIR` or `GIT_WORK_TREE` would make every handler in the process answer for a
+different repository than the one the user is sitting in; the memory store's queries decide
+whose notes a session reads, and the same variable would choose another project's.
 
-A leaf module: it imports nothing from `stayfixed`, so the hook path pays no area import to
-reach it, and neither caller has to import the other's area to share the constant.
+A leaf module: it imports `stayfixed.errors` and `stayfixed.fsops`, two leaves, and nothing else
+from `stayfixed` when it loads, so the hook path pays no area import to reach it, and no caller has
+to import another's area to share the constants. In a hook, `scrubbed_env` also asks
+`stayfixed.config.machine`, which imports the standard library alone, for the password database's
+home, inside `hook_home`.
 
-**`PATH` is here on purpose, and it is the one entry with a cost.** `git` is resolved through it
-rather than pinned to `/usr/bin/git`, because the machine owner's `git` is the one that must
-answer — a hardcoded path is what picks the Xcode shim on macOS over the working `git` they
-installed. A committed `.claude/settings.json` `env` block can set `PATH` in a non-interactive
-session, which is a harness-level exposure this module cannot close and does not pretend to.
+**In a stayfixed the hook wrapper launched, `git` is never found through `PATH`.** A committed
+`.claude/settings.json` `env` block can set `PATH` for every hook — Claude Code applies it, and
+resolves a relative entry against the project (measured on 2.1.293) — so a bare `git` there was
+whatever binary the clone ships. There `git_program` takes the first executable of
+`GIT_CANDIDATES`, the absolute paths `hooks/run-hook.sh` takes its own `git` from, in the same
+order, and hands it a `PATH` of those paths' directories and the system's (`trusted_path`) and
+never an inherited entry: git runs helpers by name — the program a `filter.<driver>.process`
+names, such as `git-lfs`, and a `core.fsmonitor` hook — and an inherited `PATH` would choose
+those for an absolute `git` just the same. No candidate is no answer, as a `git` that cannot be
+launched is, and never a lookup on `PATH`. The wrapper says it launched this process through
+`HOOK_WRAPPER_VARIABLE`, and nothing else is asked: not whether a terminal is attached, since a
+hook run by hand from one is still a hook. This rule covers the programs stayfixed runs; the
+wrapper keeps an exported function from standing in for its own builtins, and what the shell
+acts on before the wrapper's first line, `SHELLOPTS` with `PS4` or a loader variable, Claude Code
+passes on from a trusted folder by design (`SECURITY.md`).
 
-`git_run` is the one runner for every question this project asks git about a repository it
-works on — the hook path's toplevel, the memory store's three-valued answer and its usability
-probe, the hooks directory, the dirty count and the commit range included. One decoding
-boundary, and a lossless one, so no byte of git's answer can raise out of a command and each
-site decides only what an answer means to it. The
+**Anywhere else, `git` and its `PATH` are the environment's**, as they always were. At a
+terminal that is the person's own shell, where a fixed list is what picks the Xcode shim at
+`/usr/bin/git` on macOS over the working `git` they installed. A `stayfixed gate` step
+in CI runs in the repository's own job, and in a command an agent runs through its shell tool
+`PATH` has already chosen the `stayfixed` binary itself, so a fixed list would buy nothing there
+and would cost a machine whose only `git` is under a Nix store or `/opt/local/bin` every answer.
+
+**`HOME` chooses git's global configuration**: `$HOME/.gitconfig` and
+`$HOME/.config/git/config`, whose `core.fsmonitor` names a program git runs on `status`,
+`ls-files` and `diff`. git is handed one so that the owner's `safe.directory` and excludes
+answer. In a stayfixed the hook wrapper launched it is the password database's home for this
+user (`config.machine.passwd_home`, the home the machine file is read under), and no `HOME` at
+all when the database lists none, never the inherited one: Claude Code does not apply `HOME` from
+a project's `env` block (`SECURITY.md`), but direnv, mise or a devcontainer can set it from a
+file a clone commits, and the wrapper enters the project before Python starts, so `HOME=fakehome`
+named a `.gitconfig` the clone ships, and git ran the program it named on the `status` a hook
+asks. Anywhere else `HOME` is the environment's, as `PATH` is. Every
+`GIT_CONFIG_*` variable and `XDG_CONFIG_HOME` are dropped, which closes git's other doors to that
+configuration.
+
+`git_run` is the one runner for every question this project asks git about a repository it works on
+— the hook path's toplevel, the three-valued answer (`git_answer`) the memory store and
+`origin_remote` read and its usability probe, the hooks directory, the dirty count and the commit
+range included. One decoding boundary, and a lossless one, so no byte of git's answer can raise out
+of a command and each site decides only what an answer means to it. The
 `Runner` seam in `stayfixed.runner`, which launches the owner's own commands — `git clone` among
 them — for their exit code and a message, is the other. One question goes through that seam
-and not through `git_run`, on purpose: `stayfixed overlay publish`, a maintainer command, asks
-`git status --porcelain` of a scratch clone it has just filled with stayfixed's own template,
-beside the `add`, `commit` and `push` it runs the same way, so its tests stub all four at one
-seam. It only counts and reports the changed names, and the seam reads them with a replacement
-character, so a name that is not UTF-8 cannot end it as an internal error.
+and not through `git_run`, on purpose: `stayfixed overlay publish-template`, a maintainer
+command, asks `git status --porcelain` of a scratch clone it has just filled with stayfixed's own
+template, beside the `add`, `commit` and `push` it runs the same way, so its tests stub all four
+at one seam. It only counts and reports the changed names, and the seam reads them with a
+replacement character, so a name that is not UTF-8 cannot end it as an internal error.
 """
 
 from __future__ import annotations
@@ -36,10 +71,42 @@ import os
 import subprocess
 import sys
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 
-# Everything else is dropped, `GIT_DIR` and `GIT_WORK_TREE` above all.
+from stayfixed import fsops
+from stayfixed.errors import Failure
+
+# Everything else is dropped, `GIT_DIR` and `GIT_WORK_TREE` above all. In a stayfixed the hook
+# wrapper launched, `git_program` replaces `PATH` and `scrubbed_env` replaces `HOME` (the module
+# docstring).
 GIT_ENV_KEEP = ("PATH", "HOME", "LANG", "LC_ALL", "SYSTEMROOT")
+
+# The variable `hooks/run-hook.sh` exports, with this value, immediately before it runs the
+# launcher: "this process is one the hook wrapper launched", and the one thing `git_program` asks.
+# The wrapper overwrites whatever value it inherited, so on the hook path no `env` block or parent
+# can turn it off; set anywhere else, it can only make the `git` choice stricter, never looser.
+# Spelled twice, here and in the wrapper; `tests/hooks/test_wrapper.py` holds the two equal.
+HOOK_WRAPPER_VARIABLE = "STAYFIXED_HOOK_WRAPPER"
+HOOK_WRAPPER_LAUNCHED = "1"
+
+# Where `git` is taken from in a stayfixed the hook wrapper launched: the first of these that is
+# executable, as the wrapper's `test -x` asks. The list `hooks/run-hook.sh` takes its own `git`
+# from, in its order, and one list spelled twice, since a shell script cannot import it:
+# `tests/test_git_run.py` holds the two equal, and the `PATH` the wrapper hands its `git` equal to
+# `trusted_path()`. The machine owner's own installs come before
+# `/usr/bin/git`, for the reason a `PATH` lookup is kept everywhere else, and nothing under `HOME`
+# is on it, since `HOME` is the environment's too.
+GIT_CANDIDATES: tuple[str, ...] = (
+    "/opt/homebrew/bin/git",
+    "/usr/local/bin/git",
+    "/home/linuxbrew/.linuxbrew/bin/git",
+    "/run/current-system/sw/bin/git",
+    "/usr/bin/git",
+    "/bin/git",
+)
+# What follows the candidates' own directories in the `PATH` git is handed there.
+SYSTEM_PATH: tuple[str, ...] = ("/usr/bin", "/bin", "/usr/sbin", "/sbin")
 
 # Wall-clock bound on one `git` call: a named cap (CONTRIBUTING.md#named-caps), and no shipped file
 # changes with it. It is the bound for a local, argument-free, read-only query against the
@@ -70,23 +137,24 @@ QUERY_TIMEOUT_SECONDS = 30
 # caller's bound, so no value of it shortens any bound, and one that is not a positive number is
 # ignored. A repository reaches a process's environment only through something that applies a file
 # it commits — a harness's `.claude/settings.json` `env` block, which applies without a trust
-# prompt in a non-interactive session, or a `direnv`, `mise` or devcontainer environment — and
-# every one of those sets `PATH` as readily, which chooses the `git` every call here executes (the
-# module docstring). So a repository that sets this variable gains only a longer wait on a `git` it
-# could replace outright. In a hook that wait can outlast the harness's own timeout on the entry,
-# which ends the hook unanswered; what an unanswered hook lets through, the same file's own `git`
-# lets through at once, by answering whatever a guard wants to hear. The wait is capped all the
-# same, at `FLOOR_CEILING_SECONDS`.
+# prompt in a non-interactive session, or a `direnv`, `mise` or devcontainer environment. In a
+# stayfixed the hook wrapper launched none of those chooses the `git` a call runs or the `PATH` it
+# is handed (the module docstring), and anywhere else whatever sets this variable can set `PATH`
+# as readily, which chooses that `git` outright; so a repository that sets it gains a longer wait,
+# and never an answer it could not have had without it. In a hook that wait can outlast the
+# harness's own timeout on the entry, which ends the hook unanswered where the bound would have
+# ended git with no answer, so the wait is capped, at `FLOOR_CEILING_SECONDS`.
 FLOOR_VARIABLE = "STAYFIXED_GIT_FLOOR_SECONDS"
 # Ten minutes: far above what any load makes a local `git` take, and far below a timeout that
 # `subprocess` cannot represent — `timeout=1e300` raises `OverflowError`, which `git_run` does
 # not catch, so an uncapped value would end every caller as an internal error.
 FLOOR_CEILING_SECONDS: float = 600
 
-# What `git_run`'s `(-1, "")` means, in one clause a caller's message can build on. The runner
+# What `git_run`'s `(-1, "")` means, in one clause a caller's message can build on. `git_run`
 # does not say which of the three it was, because none of them is an answer about the
 # repository: a caller that words `-1` as one cause — "git is not installed", "the fetch timed
-# out" — is wrong about the other two. What git printed is never one of them: its output is
+# out" — is wrong about the other two. `git_answer`, whose refusal has to name the cause, reads
+# it from `_ask`, where it is known. What git printed is never one of them: its output is
 # decoded losslessly, so an answer is always read.
 NO_ANSWER = "git could not be run, ran past its time limit, or could not be given its input"
 
@@ -121,8 +189,73 @@ def in_work_tree(root: Path) -> bool:
     return any(os.path.lexists(directory / ".git") for directory in (root, *root.parents))
 
 
-def scrubbed_env() -> dict[str, str]:
-    return {key: os.environ[key] for key in GIT_ENV_KEEP if key in os.environ}
+def scrubbed_env(path: str | None = None) -> dict[str, str]:
+    """The variables `GIT_ENV_KEEP` names, as this process has them, with `PATH` set to `path`
+    when one is given: what `git_run` hands git, and `test attribute` the `tar` it runs.
+
+    `HOME` but in a stayfixed the hook wrapper launched, where it is `hook_home`'s: no
+    environment chooses it there (the module docstring).
+    """
+    env = {key: os.environ[key] for key in GIT_ENV_KEEP if key in os.environ}
+    if launched_by_the_hook_wrapper():
+        env.pop("HOME", None)
+        home = hook_home()
+        if home is not None:
+            env["HOME"] = home
+    if path is not None:
+        env["PATH"] = path
+    return env
+
+
+def hook_home() -> str | None:
+    """`HOME` for a program a stayfixed the hook wrapper launched runs: the password database's
+    home for this user (`config.machine.passwd_home`, the home the machine file is read under), or
+    `None` when the database lists none, which hands the program no `HOME` at all."""
+    from stayfixed.config.machine import passwd_home
+
+    home = passwd_home()
+    return None if home is None else str(home)
+
+
+def launched_by_the_hook_wrapper() -> bool:
+    """Whether `hooks/run-hook.sh` launched this process: `HOOK_WRAPPER_VARIABLE` holds exactly
+    `HOOK_WRAPPER_LAUNCHED`. Read at every call, like the list below."""
+    return os.environ.get(HOOK_WRAPPER_VARIABLE) == HOOK_WRAPPER_LAUNCHED
+
+
+def trusted_path() -> str:
+    """The `PATH` git is handed in a stayfixed the hook wrapper launched: the directory of each of
+    `GIT_CANDIDATES`, once and in the list's order, then `SYSTEM_PATH`. Built from constants
+    alone, so no entry of it is inherited, and the helpers an installed `git` runs by name —
+    `git-lfs` beside a Homebrew `git`, `ssh` — are found where that `git` was."""
+    directories = [os.path.dirname(candidate) for candidate in GIT_CANDIDATES]
+    return os.pathsep.join(dict.fromkeys([*directories, *SYSTEM_PATH]))
+
+
+@dataclass(frozen=True)
+class GitProgram:
+    """The `git` a `git_run` call executes, and the `PATH` it is handed: `None` hands on this
+    process's own."""
+
+    executable: str
+    path: str | None
+
+
+def git_program() -> GitProgram | None:
+    """The `git` to run here, or `None` in a hook when no candidate is executable.
+
+    In a stayfixed the hook wrapper launched, the first of `GIT_CANDIDATES` that is executable,
+    with `trusted_path`; the first that exists is *the* `git`, as in `hooks/run-hook.sh`, and one
+    that then fails to answer is no answer rather than a reason to try the next. Anywhere else,
+    `git` through this process's `PATH`, which git is handed as it is. Read at every call, so a
+    test that changes the variable or the list is under its own choice from its next call.
+    """
+    if not launched_by_the_hook_wrapper():
+        return GitProgram("git", None)
+    for candidate in GIT_CANDIDATES:
+        if os.access(candidate, os.X_OK):
+            return GitProgram(candidate, trusted_path())
+    return None
 
 
 def pipe_encoding() -> str:
@@ -130,10 +263,11 @@ def pipe_encoding() -> str:
     the one `os.fsdecode`, `Path.iterdir` and `sys.argv` use for the same names.
 
     Not the locale's. The two agree on Linux, where the filesystem codec follows the locale, and
-    differ on macOS, where it is UTF-8 whatever `LC_ALL` says: under a latin-1 locale there, git's
-    `café.md` came back as mojibake and a name sent on `stdin` reached git as bytes that were not
-    its own, so every comparison between git's answer and a path missed — a gitignored document
-    read as not ignored. The error handler is `surrogateescape`, the filesystem's own on POSIX.
+    differ on macOS, where it is UTF-8 whatever `LC_ALL` says: under a latin-1 locale there, the
+    locale's codec turns git's `café.md` into mojibake and sends a name on `stdin` to git as bytes
+    that are not its own, so every comparison between git's answer and a path would miss — a
+    gitignored document would read as not ignored. The error handler is `surrogateescape`, the
+    filesystem's own on POSIX.
 
     Named once so `answer_bytes` undoes exactly what `git_run` did: where the codec is latin-1
     every byte decodes, so an answer carries no surrogate escape to show it was not UTF-8, and
@@ -147,7 +281,7 @@ def answer_lines(answer: str) -> list[str]:
 
     Never `str.splitlines()`, which also breaks at `\\r`, `\\v`, `\\f`, `\\x1c` to `\\x1e`,
     `\\x85` and the Unicode line and paragraph separators — characters git prints raw inside a
-    path — so a worktree at `…/wt\\rx` was listed as `…/wt`, a directory that is not it. A
+    path — so a worktree at `…/wt\\rx` would be listed as `…/wt`, a directory that is not it. A
     single-line answer is `answer.removesuffix("\\n")` for the same reason, and never `strip()`,
     which takes a trailing space or `\\r` off a path that ends in one. No answer is no lines.
     """
@@ -173,9 +307,13 @@ def git_run(
     The one place this project runs `git` to ask it something: every argument list is built
     from constants by the caller, every pathspec follows `--` or `--end-of-options`, and no
     configuration value reaches this list without `contained()` having refused the `-`-shaped
-    ones. Resolved through PATH for the reason above: the machine
-    owner's git must answer. A non-zero exit is returned, not collapsed — `check-ignore` answers
-    1 for "nothing matched", and that is an answer.
+    ones. The `git` and the `PATH` it is handed are `git_program`'s, and its `HOME` is
+    `scrubbed_env`'s: in a stayfixed the hook wrapper launched, an absolute candidate, a `PATH` of
+    fixed directories and the password database's home, so neither a `PATH` nor a `HOME` an
+    environment sets for a checkout chooses git, a helper git runs by name or a program git's
+    global configuration names; anywhere else, the environment's own. A non-zero exit is
+    returned, not collapsed — `check-ignore` answers 1 for "nothing matched", and that is an
+    answer.
 
     **Decoded with `surrogateescape`, both ways.** git speaks bytes, and a worktree path, a
     common directory, a name in `ls-files` or a ref can hold one the filesystem's codec cannot
@@ -198,26 +336,246 @@ def git_run(
     file or parsing it as UTF-8 text: a caller whose answer ends up in one checks it itself, as
     `assess.rule.read_base` does for the base's `stayfixed.toml`.
 
-    No answer is three things, and `NO_ANSWER` names all three: git could not be launched, it
-    ran past `timeout`, or `stdin` held a character the filesystem's codec has no bytes for: a
-    name from a note or a file written in UTF-8, asked on Linux under a locale that is not. A
-    name read off the disk never does, because it was decoded with that same codec.
+    No answer is three things, and `NO_ANSWER` names all three: git could not be launched —
+    in a hook, no candidate is executable — it ran past `timeout`, or `stdin` held a
+    character the filesystem's codec has no bytes for: a name from a note or a file written in
+    UTF-8, asked on Linux under a locale that is not. A name read off the disk never does,
+    because it was decoded with that same codec.
     """
+    asked = _ask(root, *args, timeout=timeout, stdin=stdin)
+    return (-1, "") if isinstance(asked, _NoAnswer) else asked
+
+
+class _NoAnswer(Enum):
+    """Which of `NO_ANSWER`'s three causes `_ask` met, kept where it is known. `git_run` flattens
+    all three into `-1` for the callers that read them as one; `git_answer` must not, because its
+    refusal says what to do, and a timeout and a `git` that cannot start need different words."""
+
+    UNLAUNCHABLE = "unlaunchable"
+    TIMED_OUT = "timed out"
+    UNENCODABLE_INPUT = "unencodable input"
+
+
+def _ask(
+    root: Path, *args: str, timeout: float = GIT_TIMEOUT_SECONDS, stdin: str | None = None
+) -> tuple[int, str] | _NoAnswer:
+    """`git_run`'s question, answered as `(returncode, stdout)` or as why there was no answer.
+
+    The one place a `git` process is started to ask something; everything `git_run`'s docstring
+    says of the call is true of this one. A `returncode` below zero is a `git` a signal ended,
+    which `subprocess` reports as the signal's negative.
+    """
+    program = git_program()
+    if program is None:
+        return _NoAnswer.UNLAUNCHABLE
     codec = pipe_encoding()
     try:
         given = None if stdin is None else stdin.encode(codec, "surrogateescape")
-        completed = subprocess.run(  # noqa: S603 - see the docstring
-            ["git", "-C", str(root), *args],  # noqa: S607 - PATH on purpose, see the module docstring
+        completed = subprocess.run(  # noqa: S603 - see `git_run`'s docstring
+            [program.executable, "-C", str(root), *args],
             input=given,
             capture_output=True,
             check=False,
             timeout=max(timeout, bound_floor()),
-            env=scrubbed_env(),
+            env=scrubbed_env(program.path),
         )
-    except (OSError, subprocess.SubprocessError, UnicodeEncodeError):
-        return -1, ""
+    except subprocess.TimeoutExpired:
+        return _NoAnswer.TIMED_OUT
+    except UnicodeEncodeError:
+        return _NoAnswer.UNENCODABLE_INPUT
+    except (OSError, subprocess.SubprocessError):
+        return _NoAnswer.UNLAUNCHABLE
     answer = completed.stdout.decode(codec, "surrogateescape")
     return completed.returncode, answer
+
+
+def _git_toplevel(cwd: Path) -> Path | None:
+    """The checkout git names for `cwd`, as the path on disk, or `None` when git named none.
+
+    Through `git_run`, which scrubs the environment because the answer must be a real git answer,
+    not one an inherited `GIT_DIR` produced, and `checkout_root` feeds *every* hook decision, so
+    an inherited `GIT_DIR` or `GIT_WORK_TREE` would make every handler answer for a different
+    repository than the session is in. It also decodes
+    the answer losslessly, so on Linux a checkout under a directory named in latin-1 bytes is
+    that directory; decoded strictly, it would make every hook an internal error, which
+    PreToolUse turns into a refusal of every tool call. The line ending alone is taken off, so a
+    path that ends in a space is still that path.
+    """
+    code, out = git_run(cwd, "rev-parse", "--show-toplevel")
+    top = out.removesuffix("\n")
+    return Path(top) if code == 0 and top else None
+
+
+def _walk_to_git_root(cwd: Path) -> Path | None:
+    """`.git` is a directory in a clone and a file in a worktree or a submodule; both count.
+
+    `git rev-parse --show-toplevel` resolves symlinks in `cwd` before it reports the toplevel,
+    so the walk must too: otherwise the same repository reached through its real path and
+    through a symlink to it would report two different roots where git collapses them into one.
+
+    Asked through `fsops.exists`, never `Path.exists()`: within a few characters of the longest
+    path, `<cwd>/.git` is past it, which `Path.exists()` raised on up to Python 3.13 and answered
+    `False` from 3.14. Under Codex, where `cwd` is the payload's, every hook in such a directory
+    was an internal error on one interpreter, and `PreToolUse` refused every tool call. `fsops`
+    reads it as nothing there, as 3.14 did, so the walk goes on to the parents, as git itself,
+    which cannot open the path either, would have to.
+    """
+    if not cwd.is_absolute():
+        return None
+    for directory in [cwd, *cwd.parents]:
+        if fsops.exists(directory / ".git"):
+            return directory.resolve()
+    return None
+
+
+def checkout_root(cwd: Path) -> Path | None:
+    """The checkout `cwd` sits in: a walk for `.git`, else git itself; `None` if neither names one.
+
+    The hook's project root when no registered harness's variable names one, which makes this
+    Codex's hot path: `stayfixed hook` runs as a subprocess on every tool call, and `git
+    rev-parse --show-toplevel` costs about 8 ms of a 33 ms invocation where the walk costs about
+    0.004 ms. git stays behind the walk for what a walk cannot see, such as `GIT_DIR` and a bare
+    repository. It reads no harness variable: those are the registry's
+    (`harnesses.Harness.project_dir_env`), and `hooks.dispatch.read_event` asks them first.
+    """
+    return _walk_to_git_root(cwd) or _git_toplevel(cwd)
+
+
+class GitUnavailable(Failure):
+    """`git` could not be run at all, or answered with an error.
+
+    Distinct from "git ran and said no", and the distinction is the whole point of the class.
+    A reader that took "could not ask" for "the answer is nothing" tells the user to run
+    `stayfixed attach` when the real fault is their `git` — the state a macOS machine is in when
+    `/usr/bin/git` is the Xcode shim with an unaccepted licence, since `GIT_ENV_KEEP` scrubs
+    `DEVELOPER_DIR`.
+
+    `cause` is the `GitAnswer.cause` the refusal was built from, so a caller walking several
+    checkouts can tell a directory that went away (`Unasked.GONE`) from a fault it has to report.
+    """
+
+    def __init__(self, message: str, cause: Unasked | None = None) -> None:
+        super().__init__(message)
+        self.cause = cause
+
+
+class Unasked(Enum):
+    """Why `git_answer` has no answer. Each value is the sentence a refusal ends with, and ends in
+    what to do about it, so a refusal names the cause it found rather than "check that `git` runs
+    here" for every one: on a machine at a load average of 140, one `rev-parse` among 65 worktrees
+    outlived its five seconds, and the owner was sent to check a `git` that worked.
+    """
+
+    TIMED_OUT = (
+        "`git` gave this question no answer within its time limit, which a heavily loaded "
+        "machine causes; run the command again"
+    )
+    ENDED = (
+        "`git` was ended by a signal before it answered, which a machine out of memory causes; "
+        "run the command again"
+    )
+    GONE = (
+        "the directory it was asked in no longer exists, which a worktree removed while the "
+        "command ran causes"
+    )
+    NOT_STARTED = "`git` could not be started here; check that `git` runs here"
+    BROKEN = "`git` fails here even for `git --version`; check that `git` runs here"
+
+
+def _unanswered(asked: _NoAnswer) -> Unasked:
+    """The cause a question `_ask` got no answer to is refused for. An input `git` could not be
+    given is a `git` never started, and `git_answer` gives none, so it reads as one."""
+    return Unasked.TIMED_OUT if asked is _NoAnswer.TIMED_OUT else Unasked.NOT_STARTED
+
+
+@dataclass(frozen=True)
+class GitAnswer:
+    """git's one-line answer to one question, in three values: an answer, no answer, or could
+    not ask.
+
+    `value` is the answer when there is one. `cause` is set only when `git` could not be asked,
+    and says why (`Unasked`). An empty stdout from a successful run, and a refusal from a `git`
+    that works, are "no answer", which is a fact about the repository rather than about the
+    machine, and carry no cause.
+    """
+
+    value: str | None
+    cause: Unasked | None = None
+
+    def require(self, refusal: str) -> str | None:
+        """The answer, raising `GitUnavailable` rather than answering `None` when `git` could not
+        be asked. `refusal` is the caller's, because only the caller knows what went unanswered
+        and what that stops; what follows it is the cause, which says what to do."""
+        if self.cause is not None:
+            raise GitUnavailable(f"{refusal}: {self.cause.value}", self.cause)
+        return self.value
+
+
+def git_answer(root: Path, *args: str) -> GitAnswer:
+    """git's one-line answer to `args` asked in `root`, through `_ask`, `git_run`'s own call.
+
+    Scrubbed and decoded losslessly as `git_run` is, so an `origin` URL holding a byte that is not
+    UTF-8 is still an answer `init --questions` and `init --yes` can read: the answer is what git
+    printed, a path as the filesystem spells it, less its line ending alone — never `strip()`, for
+    `answer_lines`'s reason.
+
+    **When there is no answer, why**, read where it is known rather than guessed afterwards. No
+    process at all is `_ask`'s own cause: ran out of time, or could not be started. A negative exit
+    is a `git` a signal ended — no answer, as `ForkUnknown.of` reads it, and never "git said no",
+    which made `main_checkout` answer `root` for a `git` the OOM killer ended. A positive exit is
+    "git declined" or "git is broken", and two questions tell them apart, asked only after it.
+    First whether `root` is still a directory: `git -C <gone>` exits 128 for `--version` too, so a
+    worktree removed mid-walk read as a broken `git`. Then `git --version` from the same `root`,
+    which needs no repository: the Xcode shim with an unaccepted licence exits non-zero for every
+    invocation, and a `git` that answers it declined the question. That probe is the only second
+    process, and it runs only after `git` has exited on its own.
+    """
+    asked = _ask(root, *args)
+    if isinstance(asked, _NoAnswer):
+        return GitAnswer(None, _unanswered(asked))
+    code, out = asked
+    if code == 0:
+        return GitAnswer(out.removesuffix("\n") or None)
+    if code < 0:
+        return GitAnswer(None, Unasked.ENDED)
+    if not fsops.is_dir(root):
+        return GitAnswer(None, Unasked.GONE)
+    probe = _ask(root, "--version")
+    if isinstance(probe, _NoAnswer):
+        return GitAnswer(None, _unanswered(probe))
+    if probe[0] != 0:
+        return GitAnswer(None, Unasked.BROKEN)
+    return GitAnswer(None)
+
+
+def origin_remote(root: Path) -> str | None:
+    """This checkout's `origin` URL, or `None` when `git` ran and there is no such remote.
+
+    Public because `attach` compares it against the overlay's record and `init` derives a name
+    from it, and neither may reach for a `subprocess.run` of its own: `git_run` scrubs `GIT_DIR`
+    and `GIT_WORK_TREE`, and an inherited one would make the answer one about a different
+    repository than the session is in. Two areas asking one question two ways is how they stop
+    agreeing.
+
+    A URL in bytes that are not UTF-8 is answered, as the filesystem's codec spells it, and not
+    raised: it never equals a URL read out of a TOML file, so the binding reads as not this
+    repository's, and `attach`, which would write it into one, refuses it by name. The answer is
+    what git printed less its line ending alone, never `strip()`, for `answer_lines`'s reason.
+
+    Raises `GitUnavailable` rather than answering `None` when `git` could not be asked at all.
+    "No origin remote" is a fact about the repository and reads as *not this one*, while "could
+    not ask" is a fault on this machine, and collapsing them tells the user to run `stayfixed
+    attach` about their own `git`. A non-zero exit is either, so `git_answer` asks a second
+    question that needs no repository from the same `root`: git answers "no such remote" with an
+    exit of its own, and a broken install exits non-zero for everything.
+
+    The value is repository-authored (principle 5): a clone chooses its own remote URL, so a caller
+    that shows it wraps it first.
+    """
+    return git_answer(root, "remote", "get-url", "origin").require(
+        "`git` could not read this repository's origin remote — the fault is on this "
+        "machine rather than in the repository"
+    )
 
 
 SHALLOW = (

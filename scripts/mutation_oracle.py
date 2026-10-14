@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Apply each mutation `mutations.toml` declares and check that the named tests go red.
+"""Apply each mutation `mutations/` declares and check that the named tests go red.
 
 The plans ask that "every new assertion ships with the mutation that reddens it, or a sentence
 saying why none exists", and until now those mutations existed only as English sentences inside
@@ -14,7 +14,8 @@ by twelve tests and still contain nothing.
 Each entry names one file, one exact substring to replace, and the tests that must fail when it
 is. A mutation that survives — the tests still pass with the guard broken — is a finding, and so
 is one whose `before` no longer appears in the file, because that means the assertion and the
-line it is about have drifted apart.
+line it is about have drifted apart. Each entry's `name` is its own across every group file,
+because a comment anywhere in the tree cites an entry by its name.
 
 Usage:
 
@@ -50,9 +51,51 @@ from collections.abc import Iterator
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
-DECLARATION = ROOT / "mutations.toml"
+# The declarations, one TOML file per group of the tree rather than one file: the set grows with
+# every guard, and a single file had passed the 256 KiB at which the plugin directory holds the
+# version for a reviewer. Every `*.toml` here is read; which file an entry belongs in is
+# `GROUP_OF`'s.
+DECLARATIONS = ROOT / "mutations"
+# Which group file an entry belongs in, by the path its `file` names: the longest prefix that
+# matches wins, so the order of the rows decides nothing, and the empty prefix takes everything no
+# other row names. This table is the one place the groups are spelled: each group file's header
+# says what its group holds in words and points here, `scripts/check_artifacts.py` globs the
+# directory rather than naming its files, and the tests hold every entry to the file its `file`
+# routes to.
+#
+# **A hand-kept table, and the one deliberate exception to CONTRIBUTING's "areas are discovered
+# by name — there is no shared registry to edit".** One file per area would need no table, and it
+# would be about twenty files, not twelve. The groups were sized for the plugin directory's limit
+# of 512 files, while the repository root was the plugin folder and every tracked file counted
+# against it. The plugin's tree (`scripts/plugin_tree.py`) no longer holds `mutations/`, so that
+# limit no longer reaches these files, and no size cap holds a group file. The table stays because
+# regrouping the declarations into one file per area would rewrite every entry's history and
+# collide with every open branch's entries, for no reader's gain. CONTRIBUTING.md, "Tests", states
+# the same ruling.
+GROUP_OF: tuple[tuple[str, str], ...] = (
+    ("src/stayfixed/assess/", "assess"),
+    ("src/stayfixed/attach/", "attach"),
+    ("src/stayfixed/project/", "project"),
+    ("src/stayfixed/templates/", "project"),
+    ("src/stayfixed/profiles/", "project"),
+    ("src/stayfixed/presets/", "project"),
+    ("src/stayfixed/scaffold/", "scaffold"),
+    ("src/stayfixed/guards/", "guards"),
+    ("src/stayfixed/setup/", "install"),
+    ("src/stayfixed/overlay/", "install"),
+    ("src/stayfixed/doctor/", "doctor"),
+    ("src/stayfixed/memory/", "records"),
+    ("src/stayfixed/docs/", "records"),
+    ("src/stayfixed/ledger/", "records"),
+    ("src/stayfixed/", "core"),
+    ("scripts/publish_plugin.py", "publish"),
+    ("scripts/", "tooling"),
+    (".github/", "tooling"),
+    ("", "repository"),
+)
 # Where scratch checkouts are made and where the sweep looks for leaked ones. A module-level
 # name rather than a `gettempdir()` call at each site, for the reason `ROOT` is one: this
 # module deletes directories, and its own tests have to be able to aim both halves somewhere
@@ -71,8 +114,30 @@ class Mutation:
     reddens: tuple[str, ...]
 
 
+def group_for(file: str) -> str:
+    """The group whose file declares a mutation of `file`, a path from the repository root: the
+    group of the longest `GROUP_OF` prefix that `file` starts with."""
+    _, group = max(
+        ((prefix, group) for prefix, group in GROUP_OF if file.startswith(prefix)),
+        key=lambda row: len(row[0]),
+    )
+    return group
+
+
+def group_files() -> list[Path]:
+    """Every group file, in sorted order: the one place the declarations directory is globbed."""
+    return sorted(DECLARATIONS.glob("*.toml"))
+
+
 def declared() -> list[Mutation]:
-    raw = tomllib.loads(DECLARATION.read_text(encoding="utf-8"))
+    """Every entry of every group file: the files in sorted order, each file's in its own."""
+    found: list[Mutation] = []
+    for path in group_files():
+        found.extend(_entries(tomllib.loads(path.read_text(encoding="utf-8"))))
+    return found
+
+
+def _entries(raw: dict[str, Any]) -> list[Mutation]:
     return [
         Mutation(
             name=str(entry["name"]),
@@ -591,13 +656,18 @@ def static_findings(mutations: list[Mutation]) -> list[str]:
     """What is wrong with `mutations` that no pytest run is needed to see.
 
     A file that does not exist, a `before` that does not occur exactly once, a `reddens` id that
-    names no test, and an entry repeating another's `(file, before, after)` — which proves
-    nothing the first did not, since an entry is caught when any of its ids reddens. One read
-    and one parse per file, and one collection for every parametrized id.
+    names no test, an entry repeating another's `(file, before, after)` — which proves nothing
+    the first did not, since an entry is caught when any of its ids reddens — and a `name` another
+    entry also carries. A name is how every comment cites an entry (CONTRIBUTING.md, "Tests"), so
+    two entries under one name make each such citation point at two guards, and the suite's
+    citation test resolves a name to an entry only while there is one. Over the entries this is
+    handed: an unfiltered run, and the suite, see every group file at once. One read and one parse
+    per file, and one collection for every parametrized id.
     """
     findings: list[str] = []
     texts: dict[Path, str | None] = {}
     seen: dict[tuple[Path, str, str], str] = {}
+    named: set[str] = set()
     for mutation in mutations:
         if mutation.file not in texts:
             texts[mutation.file] = (
@@ -615,6 +685,9 @@ def static_findings(mutations: list[Mutation]) -> list[str]:
         if key in seen:
             findings.append(f"{mutation.name}: repeats the mutation of {seen[key]!r}")
         seen.setdefault(key, mutation.name)
+        if mutation.name in named:
+            findings.append(f"{mutation.name}: another entry is declared under this name")
+        named.add(mutation.name)
     bracketed = {
         node_id.split("::", 1)[0] for m in mutations for node_id in m.reddens if "[" in node_id
     }
@@ -732,7 +805,7 @@ def _uncommitted(files: set[Path]) -> str | None:
 
     **"Could not ask" is not "clean"**: it
     read any non-zero `git` exit as a clean tree, which is precisely the state an unpacked
-    sdist is in (`scripts/**` and `mutations.toml` ship in it, and it is not a checkout) and
+    sdist is in (`scripts/**` and `mutations/` ship in it, and it is not a checkout) and
     the state a broken `git` installation produces. `git status` exits 128 outside a
     repository, so the one arrangement with no way to recover a clobbered file was the one
     where the guard stood down.
@@ -799,7 +872,7 @@ def _positive(text: str) -> int:
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(
         prog="mutation_oracle.py",
-        description="Apply each mutation mutations.toml declares and check the named tests go red.",
+        description="Apply each mutation mutations/ declares and check the named tests go red.",
     )
     parser.add_argument(
         "pattern", nargs="?", default="", help="only entries whose name or file contains this"

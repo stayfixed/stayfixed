@@ -34,6 +34,22 @@ runs of the same fixture on two machines produce the same author. Three modules 
 `-c user.email=…` at the call site to buy exactly this; those call sites still work and are
 now merely redundant.
 
+**Git's automatic maintenance is off**, because it outlives the command that started it. A
+`commit`, `merge`, `fetch`, `pull`, `am` or `rebase`, and the `receive-pack` behind a push, ends
+by starting `git maintenance run --auto --detach`, and from git 2.55 the process that detaches
+keeps `objects/maintenance.lock` until its background work is done — after the fixture's
+`commit` has returned. A test that removes or walks `.git` straight after one races it: on
+2026-10-05 `shutil.rmtree(root / ".git")` listed the lock and then found it gone, and the test
+failed with `FileNotFoundError: 'maintenance.lock'` on one leg of four (Python 3.13's `rmtree`
+ignores a file that vanishes; 3.11's and 3.12's raise). `maintenance.auto = false` stops the
+spawn, and `gc.auto = 0` stops the `gc --auto` an older git ran in its place. They go in as
+`GIT_CONFIG_COUNT` entries, which reach every `git` the fixture's own starts in the same
+repository. They do not reach the other side of a push to a local remote: git unsets
+`GIT_CONFIG_COUNT` for the `receive-pack` it starts there, so a pushed-to bare repository can
+still be left with maintenance running, and no test removes or walks one after pushing to it.
+The `git` the product runs reads neither variable, and `tests/conftest.py` gives it the same two
+keys through the `HOME` it does read.
+
 `home` defaults to `root.parent`, which is inside `tmp_path` for every fixture in this suite:
 CONTRIBUTING.md's Tests section holds a test to never reading or writing the developer's real
 home, and pointing the two configuration variables at `os.devnull` is the first half of that,
@@ -46,14 +62,13 @@ import os
 import shutil
 import subprocess
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import pytest
 
 from stayfixed import gitenv
-from stayfixed.runner import Completed
 
 # The one spelling of the skip, published here because five modules had written it out.
 needs_git = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
@@ -65,31 +80,19 @@ needs_git = pytest.mark.skipif(shutil.which("git") is None, reason="git is not i
 # fixtures are built under one.
 ENV_KEEP = ("PATH", "LANG", "LC_ALL", "SYSTEMROOT", "TMPDIR")
 
+# The configuration that keeps every `git` the suite runs from leaving maintenance running behind
+# it, for the reason in the module docstring: as `GIT_CONFIG_COUNT` entries in `env` below, and as
+# the per-test global configuration `tests/conftest.py` writes for the product's own `git`.
+MAINTENANCE_OFF = (("maintenance.auto", "false"), ("gc.auto", "0"))
 
-@dataclass
-class LsRemote:
-    """A `stayfixed.runner.Runner` answering `git ls-remote` from a string, with no network.
 
-    Here rather than in one module because two already share it, and they shared it by importing
-    a *private* name across test modules — `tests/project/test_gates.py` took `_Git` from
-    `tests/project/test_init.py`, which made `test_init` load-bearing for `test_gates` in a way
-    neither file stated. This module is where the suite publishes what more than one module needs
-    (see its own first paragraph on the twenty-three drifted copies of the `git` helper), and this
-    stub belongs to the same subject: what a fixture repository's `git` is allowed to be asked.
-
-    It is not the only stub of its shape in the suite. `tests/release/test_pins.py` and
-    `tests/doctor/test_checks.py` each keep their own, because each answers a different question
-    with it — a tag listing to assert the parse, and a whole `doctor` context. This one is "no
-    tags, and record what you were asked", which is what a project fixture wants.
-    """
-
-    stdout: str = ""
-    code: int = 2
-    calls: list[list[str]] = field(default_factory=list)
-
-    def run(self, argv: list[str], cwd: Path) -> Completed:
-        self.calls.append(argv)
-        return Completed(self.code, self.stdout, "")
+def gitconfig(entries: tuple[tuple[str, str], ...]) -> str:
+    """`entries`, each a dotted `section.name` and its value, as the text of a gitconfig file."""
+    lines: list[str] = []
+    for key, value in entries:
+        section, _, name = key.partition(".")
+        lines += [f"[{section}]", f"\t{name} = {value}"]
+    return "".join(f"{line}\n" for line in lines)
 
 
 def env(home: Path, **extra: str) -> dict[str, str]:
@@ -117,6 +120,10 @@ def env(home: Path, **extra: str) -> dict[str, str]:
             "GIT_COMMITTER_EMAIL": "t@example.com",
         }
     )
+    sealed["GIT_CONFIG_COUNT"] = str(len(MAINTENANCE_OFF))
+    for index, (key, value) in enumerate(MAINTENANCE_OFF):
+        sealed[f"GIT_CONFIG_KEY_{index}"] = key
+        sealed[f"GIT_CONFIG_VALUE_{index}"] = value
     sealed.update(extra)
     return sealed
 
@@ -151,6 +158,22 @@ def git(root: Path, *args: str, home: Path | None = None, **extra: str) -> str:
     done = run_git(root, *args, home=home, **extra)
     done.check_returncode()
     return done.stdout
+
+
+def git_bytes(root: Path, *args: str, stdin: bytes = b"", home: Path | None = None) -> bytes:
+    """`git -C root args` in the sealed environment, in bytes both ways; raising on a non-zero exit.
+
+    For a call whose answer is not text: `tests/test_payload.py` reads every blob of a tree
+    through `cat-file --batch`, and a binary blob has no decoding. `stdin` is the whole input
+    rather than an inherited stream, for the reason `run_git` closes it.
+    """
+    return subprocess.run(
+        ["git", "-C", str(root), *args],
+        input=stdin,
+        capture_output=True,
+        check=True,
+        env=env(home if home is not None else root.parent),
+    ).stdout
 
 
 def plant_path(root: Path, raw: bytes, content: str = "planted\n") -> None:
@@ -222,3 +245,48 @@ def answer_shallow_check(monkeypatch: pytest.MonkeyPatch, code: int) -> None:
         return real(where, *args, **kwargs)
 
     monkeypatch.setattr(gitenv, "git_run", answered)
+
+
+class _Stdin:
+    """A `sys.stdin` that is, or is not, a terminal."""
+
+    def __init__(self, tty: bool) -> None:
+        self.tty = tty
+
+    def isatty(self) -> bool:
+        return self.tty
+
+
+def at_a_terminal(monkeypatch: pytest.MonkeyPatch, tty: bool) -> None:
+    """Have this process be run from a terminal, or not, for the length of one test: the seam
+    `stayfixed.config.machine.override_is_honoured` reads. It does not choose the `git` the
+    product runs, which only `launched_by_the_hook_wrapper` does; a case that shows so sets both."""
+    monkeypatch.setattr("sys.stdin", _Stdin(tty))
+
+
+def launched_by_the_hook_wrapper(monkeypatch: pytest.MonkeyPatch, launched: bool) -> None:
+    """Have this process be one `hooks/run-hook.sh` launched, or not, for the length of one test:
+    the variable `stayfixed.gitenv.git_program` reads, and with it which `git` the product runs.
+    A test is not one unless its environment says so; a case about the difference says which."""
+    if launched:
+        monkeypatch.setenv(gitenv.HOOK_WRAPPER_VARIABLE, gitenv.HOOK_WRAPPER_LAUNCHED)
+    else:
+        monkeypatch.delenv(gitenv.HOOK_WRAPPER_VARIABLE, raising=False)
+
+
+def stand_in_git(monkeypatch: pytest.MonkeyPatch, stand_in: Path) -> None:
+    """Have the product run `stand_in` wherever it runs `git`, for the length of one test.
+
+    The first `git` on `PATH`, which a `Runner` launch and every `git_run` outside a hook resolve
+    it through, and the one candidate `stayfixed.gitenv` takes in a stayfixed the hook wrapper
+    launched. A `git` put on `PATH` alone is never run there: that is the rule, not a seam.
+    """
+    monkeypatch.setattr(gitenv, "GIT_CANDIDATES", (str(stand_in),))
+    monkeypatch.setenv("PATH", f"{stand_in.parent}{os.pathsep}{os.environ.get('PATH', '')}")
+
+
+def no_git(monkeypatch: pytest.MonkeyPatch, nowhere: Path) -> None:
+    """Have no `git` the product can launch, for the length of one test: no candidate exists and
+    `PATH` names only `nowhere`, a directory with no `git` in it."""
+    monkeypatch.setattr(gitenv, "GIT_CANDIDATES", (str(nowhere / "git"),))
+    monkeypatch.setenv("PATH", str(nowhere))

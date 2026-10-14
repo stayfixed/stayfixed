@@ -14,6 +14,7 @@ import pytest
 
 from stayfixed.errors import Refusal
 from stayfixed.guards.api import HOOK_MARKER, HOOK_NAME, hooks_dir
+from stayfixed.printed import quoted
 from stayfixed.setup.commands import run_setup
 from tests import gitfixture
 
@@ -92,8 +93,9 @@ def test_the_hook_is_installed_into_the_repositorys_own_hooks_path(tmp_path: Pat
 def test_a_foreign_hook_is_kept_and_chained_to(tmp_path: Path) -> None:
     # The reason this is not a plain overwrite: a developer's own prepare-commit-msg is theirs, and
     # silently replacing it is data loss. Mutation: none of this test's own — the preserve-and-chain
-    # guard is `guards.githooks.install`'s, already load-bearing in `mutations.toml`; this test is
-    # about the CLI reporting the same outcome, not a new guard.
+    # guard is `guards.githooks.install`'s, already load-bearing as `mutations/`'s "the hook stops
+    # chaining to the hook it displaced"; this test is about the CLI reporting the same outcome, not
+    # a new guard.
     root = _repo(tmp_path)
     directory = hooks_dir(root)
     directory.mkdir(parents=True, exist_ok=True)
@@ -155,6 +157,105 @@ def test_uninstall_with_nothing_installed_reports_that_and_writes_nothing(tmp_pa
     result = run_setup(_args(root=str(root), uninstall=True))
     assert not (hooks_dir(root) / HOOK_NAME).exists()
     assert result.data["restored"] is None
+
+
+# What `--uninstall` finds at the hook path — whether a foreign hook was there first, and whether
+# stayfixed's was installed over it — and the line it prints, `{hook}` being that path.
+UNINSTALLED = {
+    "ours": (False, True, "removed {hook}; there was no foreign hook to restore"),
+    "chained": (True, True, "removed {hook}; restored the foreign hook chained to it"),
+    "nothing": (False, False, "there is no stayfixed hook at {hook}; nothing was removed"),
+    "foreign": (
+        True,
+        False,
+        "left {hook} as it was: it is not stayfixed's hook; nothing was removed",
+    ),
+}
+
+
+@pytest.mark.parametrize(("mine", "ours", "line"), UNINSTALLED.values(), ids=UNINSTALLED)
+def test_uninstall_says_whether_it_removed_stayfixeds_hook(
+    tmp_path: Path, mine: bool, ours: bool, line: str
+) -> None:
+    # It said "removed …; there was no foreign hook to restore" whatever it found: with no hook
+    # there it removed nothing, and with a foreign hook there both halves were false, that hook
+    # being in place and untouched. The installed hook's own text names this command, so the line
+    # says which of the four it met, and `--json` carries it as `found`. Mutations:
+    # `mutations/`'s "uninstall says it removed a hook when there was none" and "uninstall says
+    # it removed a hook when the hook there is not stayfixed's".
+    root = _repo(tmp_path)
+    directory = hooks_dir(root)
+    directory.mkdir(parents=True, exist_ok=True)
+    hook = directory / HOOK_NAME
+    if mine:
+        hook.write_text("#!/bin/sh\necho mine\n", encoding="utf-8")
+        hook.chmod(0o755)
+    if ours:
+        run_setup(_args(root=str(root)))
+    result = run_setup(_args(root=str(root), uninstall=True))
+    assert result.summary == line.format(hook=quoted(str(hook)))
+    found = "removed" if ours else "foreign" if mine else "absent"
+    assert result.data["found"] == found
+    if mine:
+        assert hook.read_text(encoding="utf-8") == "#!/bin/sh\necho mine\n"
+
+
+def test_uninstall_over_a_directory_at_the_hook_path_leaves_it_and_says_so(tmp_path: Path) -> None:
+    # The command's half of `tests/guards/test_githooks.py`'s case: what is not a regular file at
+    # the hook path is not stayfixed's, so the line says it was left, and the run exits 0, where
+    # it refused with exit 2. Mutation: `mutations/`'s "uninstall reads a hook that is not a
+    # regular file".
+    root = _repo(tmp_path)
+    hook = hooks_dir(root) / HOOK_NAME
+    hook.mkdir(parents=True)
+    result = run_setup(_args(root=str(root), uninstall=True))
+    assert (
+        result.summary
+        == f"left {quoted(str(hook))} as it was: it is not stayfixed's hook; nothing was removed"
+    )
+    assert (result.exit_code, result.data["found"]) == (0, "foreign")
+    assert hook.is_dir()
+
+
+@pytest.mark.parametrize("run", ["installed", "chained", "reinstalled", "uninstalled"])
+def test_every_summary_prints_the_hooks_path_git_names_quoted(tmp_path: Path, run: str) -> None:
+    # The hooks directory is git's answer, from a `core.hooksPath` the repository sets, and the
+    # summaries printed it raw where the refusals quote it: an escape sequence and a bell in it
+    # drove the terminal that read the report. Mutations (`mutations/`'s "setup --git-hooks
+    # prints the installed hook's path raw" -> `installed`, `chained` and `reinstalled`; "setup
+    # --git-hooks --uninstall prints the hook's path raw" -> `uninstalled`).
+    root = _repo(tmp_path)
+    _git(tmp_path, root, "config", "core.hooksPath", ".hooks\x1b]0;owned\x07")
+    hook = hooks_dir(root) / HOOK_NAME
+    if run == "chained":
+        hook.parent.mkdir(parents=True, exist_ok=True)
+        hook.write_text("#!/bin/sh\necho mine\n", encoding="utf-8")
+        hook.chmod(0o755)
+    if run in ("reinstalled", "uninstalled"):
+        run_setup(_args(root=str(root)))
+    result = run_setup(_args(root=str(root), uninstall=run == "uninstalled"))
+    assert "\x1b" not in result.summary and "\x07" not in result.summary, result.summary
+    assert "\\x1b]0;owned\\x07" in result.summary, result.summary
+    assert result.data["path"] == str(hook)
+
+
+@pytest.mark.parametrize("uninstall", [False, True], ids=["install", "uninstall"])
+def test_a_root_through_a_symlink_loop_is_refused_naming_it(
+    tmp_path: Path, uninstall: bool
+) -> None:
+    # Python 3.11 and 3.12 raised `RuntimeError` resolving a looping `--root`, and
+    # `setup --git-hooks` ended in `internal error` there; 3.13 handed the loop to `git`, which
+    # could not name a hooks directory in it. Resolved through `fsops.resolved`, it is refused
+    # naming `--root` on every interpreter, before `git` is asked. Mutation (`mutations/`'s
+    # "setup --git-hooks resolves --root past fsops") -> each reddens.
+    loop = tmp_path / "loop"
+    loop.symlink_to(loop)
+    with pytest.raises(Refusal) as refused:
+        run_setup(_args(root=str(loop), uninstall=uninstall))
+    assert str(refused.value) == (
+        f"--root {quoted(str(loop))} cannot be checked (Too many levels of symbolic links), so "
+        f"nothing was written"
+    )
 
 
 def test_a_second_install_over_our_own_hook_reports_a_reinstall(tmp_path: Path) -> None:

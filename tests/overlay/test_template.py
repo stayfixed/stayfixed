@@ -9,8 +9,8 @@ import pytest
 from stayfixed import __version__
 from stayfixed.config.loader import preset_defaults
 from stayfixed.hooks.api import EVENTS
-from stayfixed.overlay.layout import OVERLAY_FILES, PLACEHOLDER_NAMES, RETIRED_OVERLAY_FILES
-from stayfixed.overlay.template import template_root, templates
+from stayfixed.overlay.layout import OVERLAY_FILES, PLACEHOLDER_NAMES
+from stayfixed.overlay.template import retired, template_root, templates
 from stayfixed.presets import load_preset
 from stayfixed.scaffold import MANIFEST_PATH
 
@@ -22,8 +22,8 @@ def _json_files() -> list[Path]:
 def test_the_template_tree_is_reachable_at_all() -> None:
     # The non-vacuity guard, and it is not hypothetical: `rglob` over a directory that is not
     # in the wheel or the sdist returns nothing, and every assertion below then passes by
-    # finding no files to fail on. `tests/test_import_boundary.py` carries the same idiom for
-    # the same reason.
+    # finding no files to fail on. The standard-library walk in
+    # `tests/boundaries/test_layering.py` carries the same idiom for the same reason.
     assert template_root().is_dir()
     assert _json_files(), "no JSON in templates/overlay — the invariants below are vacuous"
 
@@ -78,9 +78,10 @@ def test_the_template_ignores_env_files() -> None:
     assert {".env", ".env.*"} <= patterns, patterns
 
 
-# A `rev:` a pre-commit hook may carry: an immutable release tag, or a full commit sha. A
-# branch name is neither, and a branch is the whole of what this row exists to refuse.
-_PINNED_REV = re.compile(r"\Av\d+\.\d+\.\d+\Z|\A[0-9a-f]{40}\Z")
+# A `rev:` a pre-commit hook may carry: a full commit sha, the only reference its owner cannot
+# move. A release tag is a name its owner can move (the gitleaks release reads `immutable: false`)
+# and a branch is the whole of what this row exists to refuse, so neither passes.
+_PINNED_REV = re.compile(r"\A[0-9a-f]{40}\Z")
 
 
 def test_the_template_pins_gitleaks_at_a_revision() -> None:
@@ -91,10 +92,12 @@ def test_the_template_pins_gitleaks_at_a_revision() -> None:
     # possible pre-commit configuration, including one pinned at `main`, which is exactly the
     # state it is named for refusing.
     #
-    # Mutation: `mutations.toml`'s "the overlay template follows gitleaks' default branch".
+    # Mutations: `mutations/`'s "the overlay template follows gitleaks' default branch" and
+    # "the overlay template's hook goes back to naming gitleaks by its tag".
     config = (template_root() / ".pre-commit-config.yaml").read_text(encoding="utf-8")
     assert "gitleaks" in config
-    revisions = re.findall(r"^\s*rev:\s*(\S+)\s*$", config, re.MULTILINE)
+    # A trailing `# frozen: vX.Y.Z` comment is the release a sha is, and is not part of the value.
+    revisions = re.findall(r"^\s*rev:\s*(\S+)(?:\s+#.*)?\s*$", config, re.MULTILINE)
     assert revisions, "no `rev:` at all, so the hook follows whatever the repo's default branch is"
     for revision in revisions:
         assert _PINNED_REV.match(revision), revision
@@ -115,7 +118,7 @@ def test_the_template_ships_permissions_that_are_neither_granted_nor_pretended()
     # `tests/setup/test_setup.py::test_setup_writes_the_machine_file_and_the_deny_rules`.
     # What is left here is the shape: a `permissions` table with no rule of any kind in it.
     #
-    # Mutation: `mutations.toml`'s "the overlay template starts granting a permission".
+    # Mutation: `mutations/`'s "the overlay template starts granting a permission".
     payload = json.loads(
         (template_root() / "common" / "claude" / "permissions.json").read_text(encoding="utf-8")
     )
@@ -163,31 +166,111 @@ def _block(text: str, key: str) -> list[str]:
     return found
 
 
+def _top_level_lines(text: str, key: str) -> list[str]:
+    """The non-comment lines of the top-level `key:` block, nested keys included."""
+    lines = text.splitlines()
+    if f"{key}:" not in lines:
+        return []
+    found: list[str] = []
+    for line in lines[lines.index(f"{key}:") + 1 :]:
+        if line and not line.startswith(" "):
+            break
+        if line.strip() and not line.strip().startswith("#"):
+            found.append(line)
+    return found
+
+
 def test_the_scan_workflow_never_runs_a_forks_head_with_the_repositorys_own_token() -> None:
     # Nothing asserted anything about this file before -- the reviewer rewrote it to
     # `pull_request_target:` with `contents: write` and `id-token: write` and all 43 cases
     # passed. Both halves are asserted: the trigger that makes a fork's code privileged, and
-    # any write scope, because `contents: read` alone is what a secret scan needs.
+    # any write scope, because a secret scan needs read scopes only (`contents`, and `pull-requests`
+    # for the action's reads of a pull request, asserted below) and never a write one. That the
+    # workflow-level block is exactly those two scopes, and that no job replaces it, is asserted
+    # below.
     #
-    # Mutations: `mutations.toml`'s "the overlay's secret scan runs a fork's head" and "the
+    # Mutations: `mutations/`'s "the overlay's secret scan runs a fork's head" and "the
     # overlay's secret scan is given a write token".
     text = _scan_workflow()
     triggers = _block(text, "on")
     assert triggers, "no `on:` block was found, so the assertion below measures nothing"
     assert "pull_request_target" not in triggers, triggers
-    assert re.search(r"^permissions:\n  contents: read\n", text, re.MULTILINE), text
     assert _WRITE_SCOPE.search(text) is None, _WRITE_SCOPE.search(text)
+
+
+def test_the_scan_workflow_can_read_a_pull_requests_commits_in_a_private_repository() -> None:
+    # On `pull_request` the gitleaks action calls `GET /repos/{owner}/{repo}/pulls/{n}/commits`
+    # to find what to scan, and on a private repository -- which an overlay is, `overlay create`
+    # passes `--private` -- that endpoint needs the "Pull requests: read" permission. A
+    # `permissions:` block naming `contents` alone leaves every other scope at none, so the scan
+    # would fail for want of it. The block is asserted by value and in full: exactly these two
+    # read scopes, so that neither a dropped scope nor an added one passes. And no job carries a
+    # `permissions:` key of its own, because a job's block replaces the workflow's: a job with
+    # `permissions: read-all`, or with `contents: read` alone, would leave this block looking
+    # right above a token that is not the one it describes.
+    #
+    # Mutations: `mutations/`'s "the overlay's secret scan cannot list a pull request's
+    # commits" and "the overlay's secret scan sets its own permissions on the job".
+    text = _scan_workflow()
+    assert re.search(
+        r"^permissions:\n  contents: read\n  pull-requests: read\n(?!  )", text, re.MULTILINE
+    ), text
+    jobs = _top_level_lines(text, "jobs")
+    assert jobs, "no `jobs:` block was found, so the assertion below measures nothing"
+    assert not [line for line in jobs if "permissions" in line], jobs
+
+
+def test_the_scan_workflow_checkout_leaves_no_token_behind() -> None:
+    # The job never pushes, so the checkout has no use for the token it would otherwise persist
+    # for every later step, the third-party action among them. `fetch-depth: 0` sits in the same
+    # `with:` block, so the key is looked for by value and not by name.
+    #
+    # Mutation: `mutations/`'s "the overlay's secret scan checks out with a persisted token".
+    assert re.search(r"^ +persist-credentials: false$", _scan_workflow(), re.MULTILINE)
+
+
+def test_the_scan_workflow_skips_a_repository_marked_as_a_template_and_scans_the_rest() -> None:
+    # The public template repository is organisation-owned, and the action fails every run there
+    # for want of a licence key. A repository made from the template has `is_template` false, so
+    # the condition below runs it; any repository marked as a template, an owner's own published
+    # one or an overlay flagged later, is skipped with it. The expression is asserted whole: its
+    # inverse, `is_template` without the `!`, would scan the template and skip every overlay,
+    # which is the worst of both.
+    #
+    # Mutations: `mutations/`'s "the overlay's secret scan runs on the template repository"
+    # and "the overlay's secret scan skips every repository made from the template".
+    lines = _top_level_lines(_scan_workflow(), "jobs")
+    assert "    if: ${{ !github.event.repository.is_template }}" in lines, lines
+
+
+def test_the_scan_workflow_runs_the_gitleaks_the_pre_commit_hook_pins() -> None:
+    # gitleaks-action v3.0.0 runs its own default, 8.24.3, unless `GITLEAKS_VERSION` says
+    # otherwise, so pinning the action at a sha does not choose the rules a push is scanned by.
+    # The workflow is the scan that cannot be skipped and the hook is the one that can; the two
+    # name one release, and the hook's `rev:` is a sha whose release is its `# frozen:` comment.
+    #
+    # Mutations: `mutations/`'s "the overlay's secret scan runs the action's older default
+    # gitleaks", "the overlay's secret scan runs a different gitleaks than the hook" and "the
+    # overlay template's hook goes back to naming gitleaks by its tag".
+    config = (template_root() / ".pre-commit-config.yaml").read_text(encoding="utf-8")
+    frozen = re.findall(
+        r"^\s*rev:\s*[0-9a-f]{40}\s+# frozen: v(\d+\.\d+\.\d+)$", config, re.MULTILINE
+    )
+    assert len(frozen) == 1, "the hook's `rev:` is not a sha followed by `# frozen: vX.Y.Z`"
+    pinned = re.findall(r'^ +GITLEAKS_VERSION: "(\d+\.\d+\.\d+)"$', _scan_workflow(), re.MULTILINE)
+    assert pinned == frozen, (pinned, frozen)
 
 
 def test_the_scan_workflow_pins_every_action_at_an_immutable_revision() -> None:
     # The same argument the `rev:` case above makes one directory over: a tag is
-    # a name its owner can move. `actions/checkout@v4` and `gitleaks/gitleaks-action@v2` were
+    # a name its owner can move. `actions/checkout@v7` and `gitleaks/gitleaks-action@v3` would be
     # mutable major tags in a file that runs with `secrets.GITHUB_TOKEN` over a repository
     # holding the owner's rules and notes -- while the sibling `.pre-commit-config.yaml` argued
     # at length that an unpinned revision "lets somebody else choose what runs on your machine".
     # A full-length commit sha is the only immutable reference Actions has.
     #
-    # Mutation: `mutations.toml`'s "the overlay's secret scan follows a moveable action tag".
+    # Mutations: `mutations/`'s "the overlay's secret scan follows a moveable action tag" and
+    # "the overlay's secret scan follows a moveable gitleaks-action tag".
     steps = [
         stripped.removeprefix("- uses:").strip()
         for line in _scan_workflow().splitlines()
@@ -214,11 +297,12 @@ def test_no_file_in_the_tree_is_undeclared() -> None:
 def test_no_retired_file_is_one_the_template_ships() -> None:
     # `overlay upgrade` plans a retired file's removal beside the shipped files' refresh, under
     # the same id. A name in both would be refreshed and removed by one run, and the tree would
-    # ship a file the next upgrade deletes. No mutation: the two tuples are constants, and this
-    # holds them apart for whoever edits either.
-    assert RETIRED_OVERLAY_FILES
-    assert set(RETIRED_OVERLAY_FILES).isdisjoint(OVERLAY_FILES)
-    for relative in RETIRED_OVERLAY_FILES:
+    # ship a file the next upgrade deletes. No mutation: both lists are constants, and this holds
+    # them apart for whoever edits either.
+    names = [template.target for template in retired()]
+    assert names
+    assert set(names).isdisjoint(OVERLAY_FILES)
+    for relative in names:
         assert not (template_root() / relative).exists(), relative
 
 
@@ -296,7 +380,7 @@ def test_the_overlay_readme_counts_the_files_a_create_actually_leaves() -> None:
     # against `OVERLAY_FILES` and nothing read the document, which is how a file the scaffold
     # engine adds slips past a sentence that counts them.
     #
-    # Mutation: `mutations.toml`'s "the overlay README stops counting the manifest".
+    # Mutation: `mutations/`'s "the overlay README stops counting the manifest".
     expected = _rendered_paths()
     assert expected, "no overlay files at all — every assertion below is vacuous"
     text = (template_root() / "README.md").read_text(encoding="utf-8")
@@ -331,13 +415,12 @@ def test_the_capability_files_are_spelled_once_and_are_shipped_files() -> None:
 def _is_placeholder(relative: str) -> bool:
     """Whether this path is a directory's own documentation rather than a file in its own right.
 
-    `overlay create` drops a `README.md` into each directory the owner fills — `common/rules/`,
-    `common/memory/`, `projects/` — and a `SKILL.md` under `skills/`. The template README
-    describes those as *directories* on purpose, and naming four placeholders inside them would
-    be noise. Derived from the basename rather than listed, so a fourth such directory needs no
-    edit here. The convention is stated in `layout.py`, beside `PLACEHOLDER_NAMES`, which is
-    also where the sentence about the root `README.md` now lives; the `/` conjunct below is
-    what excludes it.
+    `overlay create` drops a README into each directory the owner fills — `common/memory/`'s
+    `_README.md` and `projects/`'s `README.md`. The template README describes those as
+    *directories* on purpose, and naming the placeholders inside them would be noise. Derived
+    from the basename rather than listed, so a third such directory needs no edit here. The
+    convention is stated in `layout.py`, beside `PLACEHOLDER_NAMES`, which is also where the
+    sentence about the root `README.md` now lives; the `/` conjunct below is what excludes it.
     """
     return "/" in relative and relative.rsplit("/", 1)[1] in PLACEHOLDER_NAMES
 
@@ -354,7 +437,7 @@ def test_the_overlay_readme_accounts_for_every_file_a_create_leaves() -> None:
     # this README says which fires where. An accounting rule that cannot see that rename is not
     # an accounting rule.
     #
-    # Mutation: `mutations.toml`'s "the overlay README stops naming the hooks file".
+    # Mutation: `mutations/`'s "the overlay README stops naming the hooks file".
     text = (template_root() / "README.md").read_text(encoding="utf-8")
     assert text.strip(), "an empty README accounts for nothing"
     missing = []
@@ -426,43 +509,6 @@ def test_the_overlay_ships_a_marketplace_and_manifests_the_harness_validates() -
         manifest = json.loads((root / relative).read_text(encoding="utf-8"))
         assert isinstance(manifest.get("author"), dict), relative
         assert manifest["author"].get("name"), relative
-
-
-def _paragraphs(text: str) -> list[str]:
-    """Blank-line separated blocks, and each table row on its own."""
-    found: list[str] = []
-    for block in re.split(r"\n\s*\n", text):
-        found.extend(block.splitlines() if block.lstrip().startswith("|") else [block])
-    return found
-
-
-def test_no_rendered_markdown_says_a_rules_file_is_injected(tmp_path: Path) -> None:
-    # Nothing reads `common/rules/`: the rules a session starts with are notes carrying
-    # `metadata.startup`, injected by `memory session-context --bundle standing-rules`. A
-    # directory whose README promises injection is a promise nothing keeps, so the README says
-    # what is true, and every paragraph anywhere that speaks of the directory agrees.
-    # Mutation: restore "injected at the start of every session" to the row in the overlay's
-    # README, or to `common/rules/README.md` → reddens.
-    rendered = _render_into(tmp_path)
-    rules = (rendered / "common" / "rules" / "README.md").read_text(encoding="utf-8")
-    assert "nothing reads" in rules.lower()
-    assert "metadata.startup" in rules
-    assert "common/memory" in rules
-    spoken = 0
-    for path in sorted(rendered.rglob("*.md")):
-        text = path.read_text(encoding="utf-8")
-        for paragraph in _paragraphs(text):
-            if path.parent.name == "rules" or "common/rules" in paragraph:
-                spoken += 1
-                # Injection may be spoken of, but only of the notes that are injected (named by
-                # their `metadata.startup` or by the bundle that injects them), never of the
-                # directory's own files.
-                if "inject" in paragraph:
-                    assert "metadata.startup" in paragraph or "standing-rules" in paragraph, (
-                        path.name,
-                        paragraph,
-                    )
-    assert spoken, "no paragraph spoke of the directory, so nothing above was checked"
 
 
 def test_the_overlay_documents_its_own_install_where_a_user_reads_it() -> None:

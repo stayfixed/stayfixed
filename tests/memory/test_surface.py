@@ -14,50 +14,52 @@ def test_the_memory_surface_carries_what_every_consumer_reaches_for() -> None:
     # An equality, because every name below has its argument, in `api.py` or beside it here, and
     # a subset lets an export arrive unnoticed — the hole `tests/guards/test_surface.py` names.
     #
-    # No `mutations.toml` entry, for the reason every other area's surface test gives: the
+    # No entry in `mutations/`, for the reason every other area's surface test gives: the
     # mutation is adding an export, which is two lines in `api.py` — the import and the
     # `__all__` entry — and not one substituted line. Measured by hand instead: re-exporting
     # `store.refusal_reason` reddens this test and this test alone, and under the old
     # `required <= set(...)` it reddened nothing at all.
     required = {
-        # the resolver and the store it yields, for attach, doctor and docs
+        # the resolver and the store it yields, for attach
         "resolve",
         "Store",
-        # the store and why there is none, for `docs check --memory-graph`'s notice
-        "resolved",
-        "Unresolved",  # what `resolved` answers when there is no store
-        "overlay_root",
         "permitted_roots",
         "main_checkout",
         # the overlay's per-project layout: attach writes it, overlay renders it
         "PROJECTS",
         "PROJECT_RECORD",
+        "STORE_DIR",
         "COMMON_GROUP",
-        # the link tree attach builds and doctor reports on
+        # the one reader of the binding record, which attach reads with a policy of its own
+        "read_binding_record",
+        # the link tree attach builds and its `attached` row reports on
         "link",
         "attach_main",
         "detach_main",
         "harness_anchor",
         "harness_link_needed",
+        # whether the gate lets the link through, and if not whether an approval lapsed or none
+        # was given, which attach and its attached row say, with the two answers they compare with
+        "harness_gate",
+        "GATE_OPEN",
+        "GATE_LAPSED",
         "harness_memory_path",
+        # what a harness link may point at and be stayfixed's, which detach asks before its first
+        # withdrawal and the attached row reads
+        "harness_targets",
+        "MakeUnder",  # the home `link` makes the harness link under, which attach hands it
+        "Withhold",  # the other half of what `link`'s `harness` takes: no harness link
         "Links",  # what `link` returns
         "PartialLink",  # what it raises part-way, carrying `.created`
         "linked_names",  # every name the tree holds, which attach hides from git
-        # the bundles doctor reports on, and the two types they are made of
-        "fit",
-        "render",
+        # every path the tree points at in the overlay, which attach asks the length of before
+        # its first write
+        "link_sources",
+        # the note store a doctor row reads, resolved once per area per report, for the attach
+        # area's row
+        "Answers",
+        # the bundle slots, which tests/hooks/test_hooks_json.py holds the hooks file to
         "SLOTS",
-        "Bundle",
-        "Fit",
-        # the wiki-link grammar and the note walk the graph check reads
-        "WIKI_LINK",
-        "walk",
-        "Walk",  # what `walk` returns
-        "Note",  # what a `Walk` carries
-        "Provenance",  # what a `Note` carries
-        # the binding's git answer: "git said no" told from "git could not be asked"
-        "origin_remote",
-        "GitUnavailable",
         # the trust region, whole. Reading one needs `markers` and `DELIMITER`, which
         # tests/test_install_path.py already imports; producing one needs `wrap` and a nonce,
         # and a forged marker raises `UnsafeNote`. Half a closed vocabulary cannot be used by
@@ -75,8 +77,8 @@ def test_the_memory_surface_carries_what_every_consumer_reaches_for() -> None:
         "approval_recorded",  # the gate answered for a store attach has not built yet
         "require_readable_record",  # the trust record read before attach writes anything
         # the binding's one classifier and its whole vocabulary: `attach`, `attach --check`,
-        # `doctor` and the session-start line answer the binding question with it, where a second
-        # classifier in `attach` had drifted from this one
+        # the `attached` row and the session-start line answer the binding question with it, where
+        # a second classifier in `attach` had drifted from this one
         "binding_state",
         "BINDING_STATES",
         "BOUND",

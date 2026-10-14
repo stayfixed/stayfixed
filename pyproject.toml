@@ -22,6 +22,7 @@ classifiers = [
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
   "Topic :: Software Development :: Quality Assurance",
   "Typing :: Typed",
 ]
@@ -67,7 +68,7 @@ source-include = [
   "CODE_OF_CONDUCT.md",
   "RELEASING.md",
   "changelog.d/**",
-  "mutations.toml",
+  "mutations/*.toml",
   ".claude-plugin/**",
   ".codex-plugin/**",
 ]
@@ -143,6 +144,14 @@ start_string = "<!-- towncrier release notes start -->\n"
 underlines = ["", "", ""]
 title_format = "## {version} ({project_date})"
 issue_format = "{issue}"
+
+# First, so the release notes open with it: what a script, a CI step or a habit relied on in the
+# previous release and now has to change, each pointing at its full entry below (RELEASING.md,
+# step 4, "Contract changes are not fixes").
+[[tool.towncrier.type]]
+directory = "upgrading"
+name = "Upgrading"
+showcontent = true
 
 [[tool.towncrier.type]]
 directory = "feature"

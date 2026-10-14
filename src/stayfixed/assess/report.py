@@ -34,8 +34,8 @@ from typing import Any
 from stayfixed.assess.gates import ALREADY_FAILED, GateResult
 from stayfixed.assess.rule import ConfigVerdict, Verdict
 from stayfixed.config.loader import CONFIG_FILE
-from stayfixed.config.schema import PATH_VALUE
 from stayfixed.findings import listed
+from stayfixed.grammar import PATH_VALUE
 
 ANNOTATION_CAP = 10
 

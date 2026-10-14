@@ -9,7 +9,6 @@ advisory is a finding (1); a clean command is 0.
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -20,6 +19,7 @@ from stayfixed.command import common_flags
 from stayfixed.config.loader import load
 from stayfixed.errors import Failure, Refusal
 from stayfixed.findings import listed
+from stayfixed.jsonobject import json_object
 from stayfixed.result import Result
 
 if TYPE_CHECKING:
@@ -34,12 +34,15 @@ _NOT_BASH = "not a Bash call; nothing to judge"
 
 def _tool_input(raw: str) -> dict[str, Any] | None:
     """The Bash input to judge, or None for a whole payload naming another tool."""
-    try:
-        payload = json.loads(raw or "")
-    except ValueError as exc:
-        raise Refusal(f"{_UNREADABLE}; {exc}") from None
-    if not isinstance(payload, dict):
-        raise Refusal(_UNREADABLE)
+    # Through `jsonobject`, the one reader of a JSON object, so stdin nested past the parser or
+    # its depth bound, or holding an integer longer than the interpreter converts, is refused in
+    # the words every reader uses rather than ending the guard in an internal error.
+    payload = json_object(
+        raw or "",
+        "stdin",
+        error=lambda reason: Refusal(f"{_UNREADABLE}; {reason}"),
+        shape=lambda _: Refusal(_UNREADABLE),
+    )
     if "tool_name" in payload and payload["tool_name"] != "Bash":
         return None  # the handler is silent here too (`hooks.bash_command`)
     tool_input = payload.get("tool_input", payload)
@@ -172,7 +175,7 @@ def run_commit_strip(args: argparse.Namespace) -> Result:
     if raw.startswith("-"):
         raise Refusal(f"{raw!r} looks like an option, not a file")
     path = Path(raw)
-    if path.is_symlink():
+    if fsops.is_symlink(path):
         raise Refusal(f"{path} is a symlink; refusing to write through it")
     # `--root` elsewhere is never `-`-checked and is safe only because `Path(...).resolve()`
     # makes it absolute before any `git -C` sees it; this argument is not resolved, so it is.
@@ -182,8 +185,8 @@ def run_commit_strip(args: argparse.Namespace) -> Result:
     # encoding — `i18n.commitEncoding` is a real git setting — reached the CLI frame as
     # `internal error: UnicodeDecodeError` and exit 2, the code a caller is told never to read
     # as permission. It is a file this command cannot read, exactly like the `OSError` beside
-    # it, so it is the same `Failure`. `audit.py` and `githooks.py` both catch it explicitly;
-    # this was the one place that did not. It does not render the exception: that one names the
+    # it, so it is the same `Failure`. `githooks.py` catches it explicitly; this was the one
+    # place that did not. It does not render the exception: that one names the
     # offending byte, and the byte came out of the file.
     except OSError as exc:
         raise Failure(f"cannot read {path}: {exc}") from None
@@ -204,74 +207,71 @@ def run_commit_strip(args: argparse.Namespace) -> Result:
 # value of this command is that it answers "can this red run be trusted", and "I do not know"
 # reported as "yes" is the one wrong answer.
 _NO_GIT = "git could not report the tree's status, so this tree cannot be judged"
+# The same answer for a profile this command could not ask, which is not one with nothing to
+# report: its hint did not load, answered outside its protocol, or raised. `{name}` is a shipped
+# profile's directory name, never a repository value, and of an exception only its type is
+# printed: its message can carry a path the hint walked, and a path is repository-authored text.
+_UNLOADED = "the {name} profile's red-run hint could not be loaded"
+_WORDLESS = "the {name} profile's red-run hint answered in something other than text"
+_FAILED = "the {name} profile's red-run hint failed: {kind}"
+# And for a hint whose walk stopped at its bound (a report of `None`): it has not seen the tree,
+# so neither its count nor its silence is an answer, and a refusal is the one that says so. Even
+# over a tree with no bytecode in it: a walk cut short that met none has not seen the rest, and
+# the order it lists in is the filesystem's. The bound is not configurable and what it walks is,
+# so the refusal names that way out.
+_UNTOLD = "the {name} profile's red-run hint stopped its walk at a bound and could not tell"
+_UNJUDGED = ", so this tree cannot be judged"
+_NARROW = "; narrow `[ledger] code_roots` to the directories that hold code"
 
 
 def run_test_hygiene(args: argparse.Namespace) -> Result:
-    from stayfixed.guards.hygiene import inspect
+    from stayfixed.guards.hygiene import dirty_count
+    from stayfixed.guards.roots import contained_roots
+    from stayfixed.profiles import detects, load_profile
+    from stayfixed.profiles.hints import NotText, answer, shipped_hints
 
     root, config = _root_and_config(args)
-    found = inspect(root, config)
-    if found.dirty is None:
+    dirty = dirty_count(root)
+    if dirty is None:
         raise Refusal(_NO_GIT)
     findings: list[str] = []
-    if found.dirty:
-        findings.append(f"{found.dirty} uncommitted change(s) in the tree")
-    if found.stale:
-        findings.append(f"{found.stale} stale .pyc file(s) under {found.roots} code root(s)")
-    # Counts and labels only: a `ledger.code_roots` entry is a repository-authored string and
-    # never reaches the summary. `data` is the documented exception and carries none either.
-    summary = (
-        "; ".join(findings)
-        or f"tree is clean and bytecode under {found.roots} code root(s) is fresh"
+    if dirty:
+        findings.append(f"{dirty} uncommitted change(s) in the tree")
+    hints = shipped_hints()
+    unloaded = [name for name, hint in hints if hint is None]
+    if unloaded:
+        raise Refusal("; ".join(_UNLOADED.format(name=name) for name in unloaded) + _UNJUDGED)
+    # Every stack the repository is written in, and not the one `[stayfixed] profile` names: a
+    # repository in two stacks gets two entries. A profile is listed when its markers sit at the
+    # root, and also, whether or not they do, when it has something to say: the hook asks every
+    # hint and detects nothing, so a Python project in a subdirectory gets the stale-bytecode
+    # note after a failed run, and this command must not call the same tree clean.
+    reports: dict[str, dict[str, int]] = {}
+    for name, hint in ((name, hint) for name, hint in hints if hint is not None):
+        try:
+            report, note = answer(hint, contained_roots(root, config))
+        except NotText:
+            raise Refusal(_WORDLESS.format(name=name) + _UNJUDGED) from None
+        except Exception as exc:
+            kind = type(exc).__name__
+            raise Refusal(_FAILED.format(name=name, kind=kind) + _UNJUDGED) from None
+        if report is None:
+            raise Refusal(_UNTOLD.format(name=name) + _UNJUDGED + _NARROW)
+        if note is None and not detects(load_profile(name), root):
+            continue
+        reports[name] = report
+        if note:
+            findings.append(f"{name}: {note}")
+    # Counts, fixed sentences and shipped profiles' names only: a `ledger.code_roots` entry is a
+    # repository-authored string and never reaches the summary. `data` is the documented
+    # exception and carries none either: each report is what `counts` kept, count names in a
+    # fixed grammar with plain integers.
+    clean = "tree is clean" + "".join(
+        f"; the {name} profile has nothing to report" for name in reports
     )
-    data = {"dirty": found.dirty, "stale": found.stale, "roots": found.roots}
+    summary = "; ".join(findings) or clean
+    data = {"dirty": dirty, "profiles": reports}
     return Result(summary, data, exit_code=1 if findings else 0)
-
-
-def run_test_audit(args: argparse.Namespace) -> Result:
-    from stayfixed.guards.audit import SHAPES, import_roots, run_self_test, scan_paths, suite_files
-    from stayfixed.guards.roots import contained_roots
-
-    problems = run_self_test()
-    if problems:
-        raise Refusal("the scanner no longer discriminates: " + "; ".join(problems))
-    root, config = _root_and_config(args)
-    roots = contained_roots(root, config)
-    names = import_roots(roots)
-    files = suite_files(roots)
-    findings = scan_paths(files, SHAPES, names)
-    # `data` is the documented exception to "repository bytes are data": the JSON object is
-    # read by the person or the CI job that owns the repository, so it carries the test paths
-    # and the derived import names. The summary below is counts only.
-    # Spelled out rather than `f.__dict__`: the dataclass is an internal shape and the JSON is a
-    # documented contract (`docs/cli.md`), so reflecting one into the other made every attribute
-    # rename a silent wire break and every attribute added a key nobody documented. These five
-    # keys are the contract; a sixth arrives by being written here.
-    data = {
-        "findings": [
-            {
-                "path": finding.path,
-                "line": finding.line,
-                "test": finding.test,
-                "shape": finding.shape,
-                "detail": finding.detail,
-            }
-            for finding in sorted(findings, key=lambda f: (f.path, f.line))
-        ],
-        "files": len(files),
-        "import_roots": sorted(names),
-    }
-    # Exit 0 with findings, on purpose: candidates are for triage, not a build failure. Run
-    # over stayfixed's own tests with stayfixed's own code roots this command reports six
-    # candidates across 43 test files (measured), and every one of them is a name collision
-    # rather than a defect -- a test that states one imported symbol's tokens in its name and
-    # exercises a neighbouring one, `override_is_honoured` inside
-    # `test_the_override_is_honoured_from_an_interactive_shell`. So exit 1 would be red on its
-    # own repository from the first run, and the schema has no per-command enable switch to
-    # turn it off with. Gating belongs to a change that has triaged these to zero.
-    if findings:
-        return Result(f"{len(findings)} candidate(s) in {len(files)} test file(s)", data)
-    return Result(f"no candidates in {len(files)} test file(s)", data)
 
 
 def run_test_attribute(args: argparse.Namespace) -> Result:
@@ -318,10 +318,6 @@ def register(groups: SubParsers) -> None:
         test_sub.add_parser("hygiene", help="what could falsify a red run in this tree")
     )
     hygiene.set_defaults(func=run_test_hygiene)
-    audit = common_flags(
-        test_sub.add_parser("audit-entrypoints", help="tests that never exercise what they name")
-    )
-    audit.set_defaults(func=run_test_audit)
     attribute = common_flags(
         test_sub.add_parser(
             "attribute", help="attribute a failing command to the change or to the environment"

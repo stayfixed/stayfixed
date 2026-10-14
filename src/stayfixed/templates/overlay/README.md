@@ -18,19 +18,17 @@ stayfixed is told rather than stopped.
 
 ## What is where
 
-`stayfixed overlay create` renders seventeen files here: the sixteen this layout ships, and
+`stayfixed overlay create` renders fifteen files here: the fourteen this layout ships, and
 `.stayfixed/manifest.json`, which the scaffold engine writes beside them and which the last table
 below accounts for. These are the ones that are yours to fill in:
 
 | Path | What it holds |
 |---|---|
-| `common/rules/` | reserved, and read by nothing yet: a personal standing rule is a note in `common/memory/` that carries `metadata.startup` |
 | `common/memory/` | notes that belong to you rather than to one project, and your personal standing rules: a note carrying `metadata.startup` is injected in full at the start of every session |
 | `common/claude/permissions.json` | **your own** `permissions.allow` rules. `stayfixed attach` merges this list into a bound repository's `.claude/settings.local.json`, and nothing else in the file is read — a `deny` list here reaches nothing. It ships empty, because a plugin author may never grant a permission; only you may, on your own instance. |
 | `common/claude/hooks.json` | **your own** hook entries, merged into a bound repository the same way. Ships empty for the same reason. |
 | `common/codex/common.rules` | the same, for the other harness: one standing-rule file, which `attach` copies into a bound repository's `.codex/rules/`. Ships with a header comment and nothing else. |
 | `projects/<name>/` | one directory per bound repository: its record (`project.toml`), and its notes |
-| `skills/` | the procedures a session follows against this overlay |
 
 And these are the machinery. Leave them alone unless you know why:
 
@@ -44,7 +42,7 @@ And these are the machinery. Leave them alone unless you know why:
 | `.github/dependabot.yml` | what keeps those pins from rotting: a monthly grouped pull request that moves each sha and the version comment beside it. You read it before you merge it. |
 | `.gitignore` | env files, in every spelling, so a credential cannot be added by accident. |
 | `README.md` | this file. |
-| `.stayfixed/manifest.json` | the digest of every file above as `stayfixed overlay create` wrote it. `stayfixed overlay upgrade` compares against it to tell a file you have edited from one you have not, and refreshes only the second kind. It is the seventeenth file, and the one nothing in `templates/overlay/` holds: the scaffold engine writes it at create time. |
+| `.stayfixed/manifest.json` | the digest of every file above as `stayfixed overlay create` wrote it. `stayfixed overlay upgrade` compares against it to tell a file you have edited from one you have not, and refreshes only the second kind. It is the fifteenth file, and the one nothing in `templates/overlay/` holds: the scaffold engine writes it at create time. |
 
 Your `.env` files are denied to the agent by `stayfixed setup`, which writes those deny rules into
 `~/.claude/settings.json` at machine scope — once, for every project on the machine. They are not

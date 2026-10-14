@@ -334,12 +334,14 @@ def _begins_with_sleep(tokens: list[str]) -> bool:
     of `(` the first word decides, and here that word is the assignment's own token.
 
     STILL MISSED, recorded rather than implied: `time sleep 30`, and any other prefix command
-    outside `command_words`' two tables.
+    `command_words` does not resolve -- it resolves `env` and `uv run` with uv's options, and
+    no other launcher.
     """
     commands = bashscan.segments(tokens)
     if not commands:
         return False
-    words = bashscan.command_words(list(dropwhile(lambda t: t == "(", commands[0])))
+    segment = list(dropwhile(lambda t: t == "(", commands[0]))
+    words = bashscan.command_words(segment)
     return bool(words) and Path(words[0]).name == "sleep"
 
 

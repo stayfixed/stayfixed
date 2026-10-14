@@ -2,8 +2,8 @@
 
 Four values, each one `git` question or a probe of the root: the name, the base branch, the
 harnesses whose directories the root carries, and the shipped profile whose markers it
-carries. `origin_remote` is the memory area's, so "what is this checkout's origin" is asked one
-way.
+carries. `origin_remote` is `gitenv`'s, so "what is this checkout's origin" is asked one way
+wherever it is asked.
 
 **Three of them are repository-authored strings, and each is held to a grammar before it is
 returned:** the remote's last path segment and the checkout's directory name to `[project]
@@ -26,10 +26,10 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from stayfixed import fsops
 from stayfixed.config.schema import BRANCH_NAME, NAME_RULE, PROJECT_NAME
 from stayfixed.errors import Refusal
-from stayfixed.gitenv import git_run, in_work_tree
-from stayfixed.memory.api import GitUnavailable, origin_remote
+from stayfixed.gitenv import GitUnavailable, git_run, in_work_tree, origin_remote
 
 DEFAULT_BRANCH = "main"
 ORIGIN_PREFIX = "refs/remotes/origin/"
@@ -149,7 +149,7 @@ def _base_branch(root: Path) -> tuple[str, str, bool, bool, bool]:
 def _agents(root: Path) -> tuple[tuple[str, ...], str]:
     from stayfixed.harnesses import HARNESSES
 
-    agents = tuple(h.name for h in HARNESSES if (root / h.marker_dir).is_dir())
+    agents = tuple(h.name for h in HARNESSES if fsops.is_dir(root / h.marker_dir))
     if agents:
         return agents, HARNESS_DIRECTORIES
     return tuple(h.name for h in HARNESSES), DEFAULT

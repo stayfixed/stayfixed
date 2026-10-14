@@ -1,0 +1,3701 @@
+# The core group: the package's shared modules and every area no other group takes.
+# Which group an entry belongs in is `GROUP_OF` in `scripts/mutation_oracle.py`; what an entry is:
+# CONTRIBUTING.md, "Tests".
+
+# The containment walk refuses a `..` component, so a relative path cannot climb out of its root.
+[[mutation]]
+name = "the containment walk stops refusing '..'"
+file = "src/stayfixed/fsops.py"
+before = '        if part in (_PARENT, _HERE):'
+after = '        if part in (_HERE,):'
+reddens = ["tests/test_fsops.py::test_a_parent_component_never_leaves_the_root"]
+
+# The oracle found this one itself on its first run: with the explicit check gone, an absolute
+# path is still refused — by the empty-first-component rule, because `"/etc".split("/")` starts
+# with `""`. The guard is therefore load-bearing for the *message* rather than for the refusal,
+# and the test asserts the message, because "refused for a reason nobody wrote down" is how a
+# later edit to the empty-component rule would quietly take the absolute case with it.
+[[mutation]]
+name = "the containment walk stops refusing an absolute path by name"
+file = "src/stayfixed/fsops.py"
+before = '    if relative.startswith("/"):'
+after = '    if False:'
+reddens = ["tests/test_fsops.py::test_an_absolute_path_is_refused"]
+
+# The machine file's location is moved by no variable, from a terminal or not, so every reader and
+# writer of it, `load`, the overlay root and `setup`'s default among them, asks for one file.
+[[mutation]]
+name = "the machine path honours XDG_CONFIG_HOME again"
+file = "src/stayfixed/config/machine.py"
+before = '    return home / DEFAULT_CONFIG_DIR / "stayfixed" / "config.toml"'
+after = '    return Path(os.environ.get("XDG_CONFIG_HOME") or home / DEFAULT_CONFIG_DIR) / "stayfixed" / "config.toml"'
+reddens = [
+  "tests/config/test_machine.py::test_no_variable_moves_the_machine_file",
+  "tests/config/test_loader.py::test_one_command_reads_one_machine_file",
+  "tests/setup/test_commands.py::test_the_machine_default_is_the_file_every_reader_reads",
+]
+
+# Off a terminal and at one, the machine file is under the password database's home, never
+# `HOME`'s: every reader and writer asks for the file a hook reads, and the trust record a clone
+# ships under a `HOME` it chose is never read.
+[[mutation]]
+name = "the machine file follows HOME again"
+file = "src/stayfixed/config/machine.py"
+before = "    home = passwd_home()\n    if home is None:"
+after = "    home = Path.home()\n    if home is None:"
+reddens = [
+  "tests/config/test_machine.py::test_home_is_ignored_when_the_caller_is_not_interactive",
+  "tests/config/test_machine.py::test_home_is_honoured_from_an_interactive_shell",
+  "tests/memory/test_commands.py::test_an_owner_whose_home_differs_from_the_database_trusts_from_a_terminal_unrefused",
+  "tests/memory/test_commands.py::test_a_trust_record_under_a_home_the_environment_names_opens_nothing_off_a_terminal",
+  "tests/hooks/test_wrapper.py::test_a_trust_record_under_a_home_the_environment_names_is_never_read",
+  "tests/scripts/test_smoke_scripts.py::test_the_exfiltration_scenario_holds_against_the_checkout",
+]
+
+# Off a terminal the home directory is the password database's, never `HOME`: direnv, mise or a
+# devcontainer can set `HOME` from a file the clone commits, and relative, it names a directory
+# inside the clone a hook runs in, where a harness link would be made. The machine file and the
+# trust record beside it are held by `mutations/`'s "the machine file follows HOME again".
+[[mutation]]
+name = "the hook path takes the home directory from HOME again"
+file = "src/stayfixed/config/machine.py"
+before = '    return passwd_home()'
+after = '    return Path.home()'
+reddens = [
+  "tests/config/test_machine.py::test_home_is_ignored_when_the_caller_is_not_interactive",
+  "tests/memory/test_worktree.py::test_the_harness_link_is_anchored_on_home_only_from_a_terminal",
+]
+
+# A home the database records as no absolute path is no home: read as one, it is a directory
+# relative to wherever the process is, which on the hook path is the project.
+[[mutation]]
+name = "a home the password database records as a relative path is used"
+file = "src/stayfixed/config/machine.py"
+before = '    return Path(recorded) if os.path.isabs(recorded) else None'
+after = '    return Path(recorded)'
+reddens = ["tests/config/test_machine.py::test_a_home_the_database_records_as_no_absolute_path_is_no_home"]
+
+# A user the database does not list has no home off a terminal, and that is an answer, not an
+# exception that ends the command.
+[[mutation]]
+name = "a user the password database does not list ends the command"
+file = "src/stayfixed/config/machine.py"
+before = '    except KeyError:'
+after = '    except OSError:'
+reddens = [
+  "tests/config/test_machine.py::test_a_user_the_password_database_does_not_list_has_no_home_off_a_terminal",
+]
+
+# `~` in the machine file is the home that file lives under, never `HOME`.
+[[mutation]]
+name = "the overlay root's tilde is read from HOME"
+file = "src/stayfixed/config/overlay.py"
+before = '    return in_owner_home(value) if isinstance(value, str) and value else None'
+after = '    return Path(value).expanduser() if isinstance(value, str) and value else None'
+reddens = ["tests/config/test_overlay_root.py::test_a_root_under_tilde_is_the_owners_home_and_never_home"]
+
+[[mutation]]
+name = "a tilde with no home behind it is left to name a directory"
+file = "src/stayfixed/config/machine.py"
+before = '        return None if home is None else home / value[2:]'
+after = '        return Path(value) if home is None else home / value[2:]'
+reddens = [
+  "tests/config/test_overlay_root.py::test_a_root_under_tilde_is_not_recorded_where_the_database_lists_no_home",
+]
+
+# No home off a terminal is no machine file, for each of its readers, and never an error: a
+# `closed` hook that raised would refuse every tool call on such a machine.
+[[mutation]]
+name = "the configuration reads a machine file that has no home"
+file = "src/stayfixed/config/loader.py"
+before = '    raw = None if machine is None else read_machine_toml(machine)'
+after = '    raw = read_machine_toml(machine)'
+reddens = ["tests/hooks/test_dispatch.py::test_a_user_the_password_database_does_not_list_still_gets_an_answer"]
+
+[[mutation]]
+name = "the overlay root is read from a machine file that has no home"
+file = "src/stayfixed/config/overlay.py"
+before = '    raw = None if path is None else read_machine_toml(path)'
+after = '    raw = read_machine_toml(path)'
+reddens = ["tests/memory/test_hooks.py::test_no_harness_link_is_made_where_home_is_not_the_databases[no entry]"]
+
+# Every `git` this project asks a question of now goes through `git_run`, the hook path's
+# toplevel and the memory store's resolver included, so one scrub is what keeps an inherited
+# `GIT_DIR` from answering for a different repository than the session is in.
+[[mutation]]
+name = "the git runner, and with it the hook path and the store, inherits the session's GIT_DIR"
+file = "src/stayfixed/gitenv.py"
+before = '            env=scrubbed_env(program.path),'
+after = ''
+reddens = [
+  "tests/hooks/test_dispatch.py::test_an_inherited_git_dir_never_reaches_the_hook_paths_git",
+  "tests/memory/test_store.py::test_an_inherited_git_dir_never_reaches_the_git_helper",
+  "tests/test_git_run.py::test_the_environment_is_scrubbed",
+  "tests/scripts/test_plugin_tree.py::test_the_plugin_commit_is_the_same_under_an_inherited_git_environment_and_configuration",
+]
+
+# In a stayfixed the hook wrapper launched `git` is never found through `PATH`: Claude Code applies
+# a committed `env` block's `PATH` to every hook, so a bare `git` was the one the clone ships, run
+# by every hook that asked git anything. The choice as a whole is mutated, not `argv[0]` alone:
+# `subprocess` resolves a bare name through the `PATH` of the environment it is handed, which is
+# the fixed one, so a bare `git` there finds the same first candidate, and that mutant is
+# equivalent.
+[[mutation]]
+name = "the git runner takes git from PATH in a hook again"
+file = "src/stayfixed/gitenv.py"
+before = '    program = git_program()'
+after = '    program = GitProgram("git", None)'
+reddens = [
+  "tests/test_git_run.py::test_launched_by_the_hook_wrapper_the_first_existing_candidate_runs_never_the_git_on_path[off a terminal]",
+  "tests/hooks/test_wrapper.py::test_no_program_a_committed_path_plants_runs_on_a_hook_that_asks_git",
+]
+
+# An absolute `git` handed the inherited `PATH` still runs the helpers it names by name from it: a
+# `git-lfs` filter, a `core.fsmonitor` program.
+[[mutation]]
+name = "the git runner hands git the inherited PATH in a hook again"
+file = "src/stayfixed/gitenv.py"
+before = '            env=scrubbed_env(program.path),'
+after = '            env=scrubbed_env(),'
+reddens = [
+  "tests/test_git_run.py::test_launched_by_the_hook_wrapper_git_is_handed_a_path_with_no_inherited_entry",
+  "tests/hooks/test_wrapper.py::test_no_program_a_committed_path_plants_runs_on_a_hook_that_asks_git",
+]
+
+# `HOME` chooses git's global configuration, whose `core.fsmonitor` names a program git runs on
+# `status`, and direnv, mise or a devcontainer can point it into the clone: measured, a clone's
+# `fakehome/.gitconfig` ran the clone's own program on a hook's `git status`. So in a hook git is
+# handed the password database's home, or none, and outside one the environment's.
+[[mutation]]
+name = "the git runner hands git the inherited HOME in a hook again"
+file = "src/stayfixed/gitenv.py"
+before = """    if launched_by_the_hook_wrapper():
+        env.pop("HOME", None)"""
+after = """    if False:
+        env.pop("HOME", None)"""
+reddens = [
+  "tests/test_git_run.py::test_launched_by_the_hook_wrapper_git_is_handed_the_database_home_and_never_an_inherited_one[not listed]",
+  "tests/hooks/test_wrapper.py::test_a_home_inside_the_clone_names_no_program_a_hooks_git_runs[relative]",
+]
+
+[[mutation]]
+name = "a hook's git is handed no HOME where the password database lists one"
+file = "src/stayfixed/gitenv.py"
+before = """        if home is not None:
+            env["HOME"] = home"""
+after = """        if False:
+            env["HOME"] = home"""
+reddens = [
+  "tests/test_git_run.py::test_launched_by_the_hook_wrapper_git_is_handed_the_database_home_and_never_an_inherited_one[listed]",
+  "tests/hooks/test_wrapper.py::test_a_home_inside_the_clone_names_no_program_a_hooks_git_runs[absolute]",
+]
+
+[[mutation]]
+name = "git is handed the password database's home outside a hook too"
+file = "src/stayfixed/gitenv.py"
+before = """    if launched_by_the_hook_wrapper():
+        env.pop("HOME", None)"""
+after = """    if True:
+        env.pop("HOME", None)"""
+reddens = [
+  "tests/test_git_run.py::test_not_launched_by_the_hook_wrapper_git_is_handed_the_environment_s_home",
+]
+
+# The trusted `PATH` names each candidate's directory once.
+[[mutation]]
+name = "the trusted PATH repeats a directory"
+file = "src/stayfixed/gitenv.py"
+before = '    return os.pathsep.join(dict.fromkeys([*directories, *SYSTEM_PATH]))'
+after = '    return os.pathsep.join([*directories, *SYSTEM_PATH])'
+reddens = ["tests/test_git_run.py::test_launched_by_the_hook_wrapper_git_is_handed_a_path_with_no_inherited_entry"]
+
+# The first candidate that is executable is the `git`; one that is missing is passed over.
+[[mutation]]
+name = "the git runner takes the first candidate whether or not it exists"
+file = "src/stayfixed/gitenv.py"
+before = '        if os.access(candidate, os.X_OK):'
+after = '        if True:'
+reddens = [
+  "tests/test_git_run.py::test_launched_by_the_hook_wrapper_the_first_existing_candidate_runs_never_the_git_on_path[off a terminal]",
+]
+
+# No candidate is no answer, never a lookup on the `PATH` a repository can set.
+[[mutation]]
+name = "no git candidate falls back to the one on PATH"
+file = "src/stayfixed/gitenv.py"
+before = """            return GitProgram(candidate, trusted_path())
+    return None"""
+after = """            return GitProgram(candidate, trusted_path())
+    return GitProgram("git", None)"""
+reddens = [
+  "tests/test_git_run.py::test_launched_by_the_hook_wrapper_no_candidate_is_no_answer_and_never_a_lookup_on_path",
+]
+
+# Outside a hook — a person's terminal, a CI step, a command an agent runs — the environment's own
+# `PATH` chooses `git` and is handed to it: the rule above is for the hook wrapper's processes.
+[[mutation]]
+name = "the git runner stops asking whether the hook wrapper launched it"
+file = "src/stayfixed/gitenv.py"
+before = '    if not launched_by_the_hook_wrapper():'
+after = '    if False:'
+reddens = [
+  "tests/test_git_run.py::test_not_launched_by_the_hook_wrapper_git_and_its_path_are_the_environment_s_own[at a terminal]",
+  "tests/test_git_run.py::test_not_launched_by_the_hook_wrapper_git_and_its_path_are_the_environment_s_own[off a terminal]",
+  "tests/test_git_run.py::test_a_stayfixed_no_hook_wrapper_launched_runs_the_git_on_path_off_a_terminal",
+  "tests/test_git_run.py::test_a_git_that_cannot_run_is_minus_one",
+  "tests/guards/test_commit.py::test_the_log_is_bounded_scrubbed_and_terminated",
+]
+
+# Only the value the wrapper writes counts, which is what makes its overwriting an inherited one
+# the guard: any value counting would leave the wrapper's overwrite deciding nothing.
+[[mutation]]
+name = "any value of the hook wrapper's variable takes git from the fixed list"
+file = "src/stayfixed/gitenv.py"
+before = '    return os.environ.get(HOOK_WRAPPER_VARIABLE) == HOOK_WRAPPER_LAUNCHED'
+after = '    return HOOK_WRAPPER_VARIABLE in os.environ'
+reddens = ["tests/test_git_run.py::test_not_launched_by_the_hook_wrapper_git_and_its_path_are_the_environment_s_own[another value]"]
+
+# One variable spelled twice, in Python and in the hook wrapper, and held equal.
+[[mutation]]
+name = "the git runner's hook wrapper variable drifts from the one the wrapper sets"
+file = "src/stayfixed/gitenv.py"
+before = 'HOOK_WRAPPER_VARIABLE = "STAYFIXED_HOOK_WRAPPER"'
+after = 'HOOK_WRAPPER_VARIABLE = "STAYFIXED_HOOK"'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_the_launcher_is_told_the_wrapper_launched_it_whatever_value_was_inherited[unset]",
+  "tests/hooks/test_wrapper.py::test_no_program_a_committed_path_plants_runs_on_a_hook_that_asks_git",
+]
+
+# One candidate list spelled twice, in Python and in the hook wrapper, and held equal in order.
+[[mutation]]
+name = "the git runner's candidates drift from the hook wrapper's"
+file = "src/stayfixed/gitenv.py"
+before = """    "/usr/bin/git",
+    "/bin/git","""
+after = """    "/bin/git",
+    "/usr/bin/git","""
+reddens = ["tests/test_git_run.py::test_the_hook_wrapper_and_git_run_take_git_from_one_list"]
+
+# The atomic write syncs the bytes to disk before it renames the file into place.
+[[mutation]]
+name = "the atomic write stops syncing the bytes before the rename"
+file = "src/stayfixed/fsops.py"
+before = '            os.fsync(stream.fileno())'
+after = ''
+reddens = ["tests/test_fsops.py::test_the_bytes_are_fsynced_before_the_rename"]
+
+# A repository-controlled prefix reaches a regular expression only after its shape is checked.
+[[mutation]]
+name = "an unchecked ledger prefix reaches the regular expression"
+file = "src/stayfixed/identifiers.py"
+before = '        if not PREFIX.match(self.prefix):'
+after = '        if False:'
+reddens = ["tests/test_identifiers.py::test_a_prefix_outside_the_contract_is_refused_before_it_meets_a_regex"]
+
+# One digit rule for the ledger and the plan lint.
+[[mutation]]
+name = "the Fixes claim stops sharing the identifier digit rule"
+file = "src/stayfixed/identifiers.py"
+before = '        return re.compile(rf"\bFixes\s+{re.escape(self.prefix)}-{DIGITS}\b")'
+after = '        return re.compile(rf"\bFixes\s+{re.escape(self.prefix)}-\d+\b")'
+reddens = ["tests/test_identifiers.py::test_the_fixes_claim_shares_the_digit_rule"]
+
+# A non-zero exit is an answer some callers need (`check-ignore` says 1 for "nothing matched").
+[[mutation]]
+name = "the git runner collapses every non-zero exit into could-not-run"
+file = "src/stayfixed/gitenv.py"
+before = '    return completed.returncode, answer'
+after = '    return (completed.returncode, answer) if completed.returncode == 0 else (-1, "")'
+reddens = ["tests/test_git_run.py::test_a_non_zero_exit_is_returned_not_collapsed"]
+
+# git speaks bytes, and `-z` prints a tracked name raw: decoded strictly, one name that is not
+# UTF-8 raised `UnicodeDecodeError` out of `git_run` and every caller, a gate's included. Decoded
+# with `surrogateescape`, the answer is the path itself.
+[[mutation]]
+name = "the git runner decodes strictly again, so a non-UTF-8 byte is a traceback"
+file = "src/stayfixed/gitenv.py"
+before = '    answer = completed.stdout.decode(codec, "surrogateescape")'
+after = '    answer = completed.stdout.decode(codec)'
+reddens = [
+  "tests/test_git_run.py::test_a_path_the_locale_cannot_decode_is_answered_and_not_raised",
+  "tests/setup/test_setup.py::test_a_sibling_checkout_git_names_in_bytes_that_are_not_utf_8_is_still_refused",
+  "tests/guards/test_attribute.py::test_a_tracked_name_that_is_not_utf_8_does_not_switch_off_the_export_rule_check",
+  "tests/assess/test_probes.py::test_a_path_git_prints_raw_hides_no_committed_env_file",
+  "tests/docs/test_plans.py::test_a_touched_plan_named_in_bytes_that_are_not_utf_8_is_listed_and_linted",
+  "tests/test_git_answers.py::test_the_hook_path_reads_a_checkout_path_that_is_not_utf_8_as_that_path",
+  "tests/test_git_answers.py::test_an_origin_url_that_is_not_utf_8_is_answered_as_itself",
+  "tests/test_git_answers.py::test_init_questions_on_an_origin_url_that_is_not_utf_8_asks_and_does_not_crash",
+  "tests/test_git_answers.py::test_a_hooks_path_that_is_not_utf_8_is_the_directory_git_names",
+  "tests/test_git_answers.py::test_a_dirty_name_that_is_not_utf_8_is_counted_and_not_raised",
+]
+
+# The other way to read a byte that is not UTF-8, and the one that fails open: as no answer.
+# Four callers read that as "nothing" and passed what they exist to refuse — `setup` recorded a
+# sibling checkout of the project as the trust anchor, `test attribute` skipped the export-rule
+# comparison, the docs trail's ignore filter listed a local-only document in the roadmap, and
+# `assess` reported could-not-look over a committed `.env` — and the plan gate failed every run
+# of a repository holding one such plan name.
+[[mutation]]
+name = "the git runner reads an answer that is not UTF-8 as no answer again"
+file = "src/stayfixed/gitenv.py"
+before = """    answer = completed.stdout.decode(codec, "surrogateescape")
+    return completed.returncode, answer"""
+after = """    try:
+        answer = completed.stdout.decode(codec)
+    except UnicodeDecodeError:
+        return -1, ""
+    return completed.returncode, answer"""
+reddens = [
+  "tests/test_git_run.py::test_a_path_the_locale_cannot_decode_is_answered_and_not_raised",
+  "tests/setup/test_setup.py::test_a_sibling_checkout_git_names_in_bytes_that_are_not_utf_8_is_still_refused",
+  "tests/guards/test_attribute.py::test_a_tracked_name_that_is_not_utf_8_does_not_switch_off_the_export_rule_check",
+  "tests/assess/test_probes.py::test_a_path_git_prints_raw_hides_no_committed_env_file",
+  "tests/docs/test_plans.py::test_a_touched_plan_named_in_bytes_that_are_not_utf_8_is_listed_and_linted",
+]
+
+# The same byte in the other direction: a name read off a Linux disk carries surrogate escapes,
+# and encoded strictly it made the whole `stdin` question unaskable — the docs trail's ignore
+# filter then answered "nothing is ignored" and listed a local-only document in the roadmap.
+[[mutation]]
+name = "the git runner cannot ask about a name read off the disk in bytes that are not UTF-8"
+file = "src/stayfixed/gitenv.py"
+before = '        given = None if stdin is None else stdin.encode(codec, "surrogateescape")'
+after = '        given = None if stdin is None else stdin.encode(codec)'
+reddens = [
+  "tests/test_git_run.py::test_a_name_sent_on_stdin_reaches_git_as_the_bytes_it_names",
+  "tests/docs/test_trail.py::test_a_document_named_in_bytes_that_are_not_utf_8_does_not_unignore_the_others",
+  "tests/docs/test_trail.py::test_the_trail_gate_holds_a_local_only_document_out_beside_a_name_that_is_not_utf_8",
+]
+
+# git's own stderr, which nobody reads, quotes a name raw — a ref, a path — and decoding it at all
+# turned an ordinary non-zero exit, an answer every caller has an arm for, into a traceback.
+[[mutation]]
+name = "the git runner decodes git's own diagnostics again"
+file = "src/stayfixed/gitenv.py"
+before = '    answer = completed.stdout.decode(codec, "surrogateescape")'
+after = '    answer = completed.stdout.decode(codec, "surrogateescape") + completed.stderr.decode(codec)[:0]'
+reddens = [
+  "tests/test_git_run.py::test_git_s_own_diagnostics_are_never_decoded_into_a_failure",
+  "tests/guards/test_attribute.py::test_git_diagnostics_this_process_cannot_decode_still_reach_a_verdict[merge-base]",
+  "tests/guards/test_attribute.py::test_git_diagnostics_this_process_cannot_decode_still_reach_a_verdict[archive]",
+  "tests/guards/test_attribute.py::test_git_diagnostics_this_process_cannot_decode_still_reach_a_verdict[ls-tree]",
+  "tests/guards/test_attribute.py::test_a_base_git_names_in_bytes_that_are_not_text_keeps_git_s_own_exit_code",
+]
+
+# Text mode translated line endings in git's answer: a `\r` in a name printed raw by a `-z`
+# query came back as `\n`, a different name, and a gitignored plan so named went into the
+# committed roadmap. The mutation is what `text=True` did, spelled as the wrapper it used.
+[[mutation]]
+name = "the git runner translates a carriage return in git's answer again"
+file = "src/stayfixed/gitenv.py"
+before = '    answer = completed.stdout.decode(codec, "surrogateescape")'
+after = '    answer = __import__("io").TextIOWrapper(__import__("io").BytesIO(completed.stdout), codec, "surrogateescape").read()'
+reddens = [
+  "tests/test_git_run.py::test_a_carriage_return_in_a_name_comes_back_as_itself",
+  "tests/test_git_run.py::test_a_carriage_return_asked_on_stdin_is_matched_and_answered_as_itself",
+  "tests/docs/test_trail.py::test_an_ignored_document_whose_name_holds_a_carriage_return_is_not_listed",
+]
+
+# A path answer loses its line ending and nothing else: `strip()` also took a trailing space
+# off, so the hook path named a checkout that is not there and the ledger sweep, whose root no
+# longer equalled itself, walked the disk and swept ignored files.
+[[mutation]]
+name = "the hook path strips a checkout path that ends in a space"
+file = "src/stayfixed/gitenv.py"
+before = '    top = out.removesuffix("\n")'
+after = "    top = out.strip()"
+reddens = [
+  "tests/test_git_answers.py::test_the_hook_path_reads_a_checkout_path_that_is_not_utf_8_as_that_path",
+]
+
+# A launched program's output is a message or a grammar's input, never a path, so a byte that
+# is not text reads as U+FFFD. Strict, one such byte in a test run's output ended `test
+# attribute` as an internal error, and in the wrapper's stderr it lost `doctor` the refusal token.
+[[mutation]]
+name = "the runner decodes a launched program's output strictly again"
+file = "src/stayfixed/runner.py"
+before = '_DECODE_ERRORS = "replace"'
+after = '_DECODE_ERRORS = "strict"'
+reddens = [
+  "tests/test_runner.py::test_output_that_is_not_text_is_read_with_replacement_characters_not_raised",
+]
+
+# git's answers were decoded, and its `stdin` encoded, with the locale's codec while every path
+# they are compared with uses the filesystem's. On macOS the filesystem is UTF-8 whatever the
+# locale, so under a latin-1 locale a non-ASCII name never matched: a gitignored document read
+# as not ignored and went into the committed roadmap.
+[[mutation]]
+name = "the git runner decodes with the locale's codec rather than the filesystem's"
+file = "src/stayfixed/gitenv.py"
+before = "    return sys.getfilesystemencoding()"
+after = '    return __import__("locale").getpreferredencoding(False)'
+reddens = [
+  "tests/test_git_run.py::test_git_s_answer_and_the_filesystem_spell_a_name_alike_whatever_the_locale",
+  "tests/test_git_run.py::test_a_name_asked_on_stdin_matches_the_rule_that_names_it_whatever_the_locale",
+]
+
+# A `stdin` with no bytes under the locale means git could not be asked: `(-1, "")`, never a
+# `UnicodeEncodeError` out of the caller.
+[[mutation]]
+name = "the git runner lets a stdin it cannot encode escape as a traceback"
+file = "src/stayfixed/gitenv.py"
+before = "    except UnicodeEncodeError:\n        return _NoAnswer.UNENCODABLE_INPUT\n"
+after = ""
+reddens = ["tests/test_git_run.py::test_a_stdin_this_process_cannot_encode_is_minus_one"]
+
+# The floor under every `git_run` bound is the test suite's, so a loaded machine cannot decide a
+# test; in the product it is zero, or it would widen every bound a caller chose, the two-second
+# session-start sync's among them.
+[[mutation]]
+name = "the product ships a floor under every git bound"
+file = "src/stayfixed/gitenv.py"
+before = 'asked = float(os.environ.get(FLOOR_VARIABLE, ""))'
+after = 'asked = float(os.environ.get(FLOOR_VARIABLE, "60"))'
+reddens = ["tests/test_git_run.py::test_the_product_ships_with_no_floor_under_its_bounds"]
+
+# The floor reaches the product through one environment variable, so a `stayfixed` the suite
+# starts as a separate process runs under it too. Ignore it, and the launcher's hook runs its
+# `git` out at the product's own bound.
+[[mutation]]
+name = "the git runner ignores the floor a test runner sets"
+file = "src/stayfixed/gitenv.py"
+before = "            timeout=max(timeout, bound_floor()),"
+after = "            timeout=timeout,"
+reddens = [
+  "tests/test_floor.py::test_a_stayfixed_the_suite_starts_runs_its_git_under_the_floor",
+  "tests/test_git_run.py::test_the_suite_floor_outlasts_a_bound_its_caller_asked_for",
+]
+
+# The variable may only raise a bound: one that stands in for the caller's bound shortens it.
+[[mutation]]
+name = "the floor replaces the caller's bound instead of raising it"
+file = "src/stayfixed/gitenv.py"
+before = "            timeout=max(timeout, bound_floor()),"
+after = "            timeout=bound_floor() or timeout,"
+reddens = ["tests/test_git_run.py::test_the_floor_variable_never_shortens_a_bound"]
+
+# Uncapped, a huge value reaches `subprocess.run` as a timeout it cannot represent, and its
+# `OverflowError` is not one of the causes `git_run` reads as no answer.
+[[mutation]]
+name = "the floor variable is honoured without its ceiling"
+file = "src/stayfixed/gitenv.py"
+before = "    return min(asked, FLOOR_CEILING_SECONDS)"
+after = "    return asked"
+reddens = [
+  "tests/test_git_run.py::test_the_floor_variable_is_capped[1e300]",
+  "tests/test_git_run.py::test_the_floor_variable_is_capped[inf]",
+]
+
+# `nan` compares false with everything, so only a check that asks "above zero?" refuses it; one
+# that asks "zero or below?" lets it through as the floor.
+[[mutation]]
+name = "a floor variable that is not a number is honoured"
+file = "src/stayfixed/gitenv.py"
+before = "    if not asked > 0:"
+after = "    if asked <= 0:"
+reddens = ["tests/test_git_run.py::test_a_floor_variable_that_is_no_positive_number_raises_nothing[nan]"]
+
+# The suite's floor lifts every bound past git's latency, so a bound shrunk below it passes every
+# test that runs through it; a table of the named bounds holds each to a second.
+[[mutation]]
+name = "the bound on a query that grows is shrunk below git's latency"
+file = "src/stayfixed/gitenv.py"
+before = "QUERY_TIMEOUT_SECONDS = 30"
+after = "QUERY_TIMEOUT_SECONDS = 0.001"
+reddens = [
+  "tests/test_git_run.py::test_a_named_git_bound_leaves_git_a_second_to_answer[stayfixed.gitenv.QUERY_TIMEOUT_SECONDS]",
+  "tests/test_git_run.py::test_a_query_that_grows_with_the_repository_is_given_at_least_the_default_bound",
+]
+
+[[mutation]]
+name = "the default git bound outgrows the one for a query that grows"
+file = "src/stayfixed/gitenv.py"
+before = "GIT_TIMEOUT_SECONDS = 5"
+after = "GIT_TIMEOUT_SECONDS = 60"
+reddens = [
+  "tests/test_git_run.py::test_a_query_that_grows_with_the_repository_is_given_at_least_the_default_bound",
+]
+
+# `number` is the identifier grammar's one lossy reader: a caller that did not ask
+# `is_identifier` first must not be handed a number guessed out of a filename that has none.
+[[mutation]]
+name = "reading the number out of a non-identifier answers zero instead of refusing"
+file = "src/stayfixed/identifiers.py"
+before = '            raise Refusal(f"{identifier!r} is not a {self.shape} identifier")'
+after = '            return 0'
+reddens = ["tests/test_identifiers.py::test_reading_the_number_out_of_a_non_identifier_is_refused"]
+
+# The extension is any word that starts with a letter, a decision rather than a default: a
+# closed list leaves every stack it does not name unchecked (`src/lib.rs`, `cmd/main.go`).
+[[mutation]]
+name = "the reference grammar closes its extension list again"
+file = "src/stayfixed/prose.py"
+before = '    r"`([A-Za-z0-9_./-]+\.[A-Za-z][A-Za-z0-9]*)"'
+after = '    r"`([A-Za-z0-9_./-]+\.(?:py|sh|md|json|ya?ml|toml|tsx?))"'
+reddens = ["tests/docs/test_prose.py::test_a_file_any_stack_stores_is_a_path_claim"]
+
+# The letter is what keeps a version number (`releases/0.1.9596`) from reading as a file.
+[[mutation]]
+name = "an extension may start with a digit"
+file = "src/stayfixed/prose.py"
+before = '    r"`([A-Za-z0-9_./-]+\.[A-Za-z][A-Za-z0-9]*)"'
+after = '    r"`([A-Za-z0-9_./-]+\.[A-Za-z0-9]+)"'
+reddens = ["tests/docs/test_prose.py::test_a_version_number_is_not_an_extension"]
+
+# `src/b.c:3:14` names a line and a column; without the column the span claims no path.
+[[mutation]]
+name = "a column stops being part of a location suffix"
+file = "src/stayfixed/prose.py"
+before = '    r"(?::\d+(?::\d+)?|(::[\w.:]+))?`"'
+after = '    r"(?::\d+|(::[\w.:]+))?`"'
+reddens = ["tests/docs/test_prose.py::test_a_location_suffix_is_not_part_of_the_name"]
+
+# `::` joins a symbol path of any depth (`::TestA::test_x`, `::parser::parse`).
+[[mutation]]
+name = "a symbol path stops being read past its first `::`"
+file = "src/stayfixed/prose.py"
+before = '    r"(?::\d+(?::\d+)?|(::[\w.:]+))?`"'
+after = '    r"(?::\d+(?::\d+)?|(::[\w.]+))?`"'
+reddens = ["tests/docs/test_prose.py::test_a_location_suffix_is_not_part_of_the_name"]
+
+# A first component ending in a host's label (`example.com/`) is a dependency or a page, not a
+# directory of this repository: read as one, a Go module path fails the plan gate.
+[[mutation]]
+name = "a host-shaped first component is read as a directory"
+file = "src/stayfixed/prose.py"
+before = '        if "/" in target and not HOST.match(target):'
+after = '        if "/" in target:'
+reddens = [
+  "tests/docs/test_prose.py::test_a_span_whose_first_component_is_a_host_is_prose",
+  "tests/docs/test_plans.py::test_a_dependency_named_by_its_host_is_not_a_dead_reference",
+]
+
+# The host's label has two characters or more, so `changelog.d/` stays a directory.
+[[mutation]]
+name = "a `.d` directory reads as a host"
+file = "src/stayfixed/prose.py"
+before = 'HOST = re.compile(r"[^/]*[^./]\.[A-Za-z][A-Za-z0-9-]+/")'
+after = 'HOST = re.compile(r"[^/]*[^./]\.[A-Za-z][A-Za-z0-9-]*/")'
+reddens = ["tests/docs/test_prose.py::test_a_span_whose_first_component_is_a_host_is_prose"]
+
+# The dot comes after some other character, so `.github/` stays a hidden directory.
+[[mutation]]
+name = "a hidden directory reads as a host"
+file = "src/stayfixed/prose.py"
+before = 'HOST = re.compile(r"[^/]*[^./]\.[A-Za-z][A-Za-z0-9-]+/")'
+after = 'HOST = re.compile(r"[^/]*\.[A-Za-z][A-Za-z0-9-]+/")'
+reddens = ["tests/docs/test_prose.py::test_a_span_whose_first_component_is_a_host_is_prose"]
+
+# A symbol path is read as one run, so `re` keeps no record per part: read as a greedy repeat of
+# its parts, a line of a million parts took 154 MiB more to read.
+[[mutation]]
+name = "a symbol path's parts are given back"
+file = "src/stayfixed/prose.py"
+before = '    r"(?::\d+(?::\d+)?|(::[\w.:]+))?`"'
+after = '    r"(?::\d+(?::\d+)?|((?:::[\w.]+)+))?`"'
+reddens = ["tests/docs/test_prose.py::test_a_long_symbol_path_is_read_in_memory_linear_in_its_length"]
+
+# Read alike by every supported Python: Python 3.11.0 to 3.11.4 went on past a failed pass of
+# a possessive group from where the pass stopped, and this shape is the one it misread.
+[[mutation]]
+name = "a symbol path's parts are a possessive repeat"
+file = "src/stayfixed/prose.py"
+before = '    r"(?::\d+(?::\d+)?|(::[\w.:]+))?`"'
+after = '    r"(?::\d+(?::\d+)?|((?:::[\w.]++)++))?`"'
+reddens = [
+  "tests/test_patterns.py::test_no_pattern_repeats_a_group_in_a_shape_python_3_11_4_misreads",
+]
+
+# A symbol path's run is judged after it is read: no colon alone, no three in a row, and none at its
+# end, which is an empty part. Python 3.11.0 to 3.11.4 read the last as a claim when the parts were
+# a possessive repeat. One entry per rule.
+[[mutation]]
+name = "a symbol path with an empty last part is read"
+file = "src/stayfixed/prose.py"
+before = '_BROKEN_SYMBOL = re.compile(r":::|(?<!:):(?!:)|:\Z")'
+after = '_BROKEN_SYMBOL = re.compile(r":::|(?<!:):(?!:)")'
+reddens = [
+  "tests/docs/test_prose.py::test_a_symbol_path_with_an_empty_part_or_a_lone_colon_claims_no_path[an empty last part]",
+]
+
+[[mutation]]
+name = "a symbol path with three colons is read"
+file = "src/stayfixed/prose.py"
+before = '_BROKEN_SYMBOL = re.compile(r":::|(?<!:):(?!:)|:\Z")'
+after = '_BROKEN_SYMBOL = re.compile(r"(?<!:):(?!:)|:\Z")'
+reddens = [
+  "tests/docs/test_prose.py::test_a_symbol_path_with_an_empty_part_or_a_lone_colon_claims_no_path[three colons]",
+  "tests/docs/test_prose.py::test_a_symbol_path_with_an_empty_part_or_a_lone_colon_claims_no_path[an empty first part]",
+]
+
+[[mutation]]
+name = "a symbol path with a lone colon is read"
+file = "src/stayfixed/prose.py"
+before = '_BROKEN_SYMBOL = re.compile(r":::|(?<!:):(?!:)|:\Z")'
+after = '_BROKEN_SYMBOL = re.compile(r":::|:\Z")'
+reddens = [
+  "tests/docs/test_prose.py::test_a_symbol_path_with_an_empty_part_or_a_lone_colon_claims_no_path[a colon alone]",
+]
+
+# Where no claim opens at a backtick, the search goes on from the next character, as a search for
+# the pattern does: from the span's end, the backtick that closed it is passed over.
+[[mutation]]
+name = "a broken symbol path's closing backtick opens no claim"
+file = "src/stayfixed/prose.py"
+before = "            at = match.start() + 1"
+after = "            at = match.end()"
+reddens = [
+  "tests/docs/test_prose.py::test_a_symbol_path_with_an_empty_part_or_a_lone_colon_claims_no_path[a claim at its closing backtick]",
+]
+
+# Fences are read a line at a time. The pattern they were read by scanned the rest of the text from
+# every opening line no later line closes, and from a long run at every length down to three: a
+# plan of 4,000 unclosed fences took 0.31 s, and the time grew with the square of the length.
+[[mutation]]
+name = "fences are found by a lazy match again"
+file = "src/stayfixed/prose.py"
+before = '''    lines = text.split("\n")
+    closers:'''
+after = '''    return re.sub(r"^[ \t]*(`{3,}|~{3,}).*?^[ \t]*\1[ \t]*$", lambda m: "\n" * m.group(0).count("\n"), text, flags=re.MULTILINE | re.DOTALL)
+    lines = text.split("\n")
+    closers:'''
+reddens = [
+  "tests/docs/test_prose.py::test_fences_are_read_in_time_linear_in_the_text[openers no line closes]",
+  "tests/docs/test_prose.py::test_fences_are_read_in_time_linear_in_the_text[a long run]",
+]
+
+# An opening run no line closes at its own length is closed by the first line of one mark fewer,
+# down to three, as the pattern's backtracking read it.
+[[mutation]]
+name = "a fence's run is tried at its full length only"
+file = "src/stayfixed/prose.py"
+before = "        for length in range(run, _FENCE_MIN - 1, -1):"
+after = "        for length in range(run, max(run - 1, _FENCE_MIN - 1), -1):"
+reddens = [
+  "tests/docs/test_prose.py::test_a_fence_is_read_as_its_pattern_reads_one[a run closed one mark shorter]",
+]
+
+[[mutation]]
+name = "a fence's closer may not stand between blanks"
+file = "src/stayfixed/prose.py"
+before = '''        bare = line.strip(" \t")'''
+after = "        bare = line"
+reddens = [
+  "tests/docs/test_prose.py::test_a_fence_is_read_as_its_pattern_reads_one[a closer between blanks]",
+]
+
+# A closer is the same run, of the same mark, alone on its line: indexed under its own mark and
+# length only, so neither a longer run nor the other mark's closes a block.
+[[mutation]]
+name = "a longer run closes a shorter one"
+file = "src/stayfixed/prose.py"
+before = "            closers.setdefault((bare[0], len(bare)), []).append(number)"
+after = """            for size in range(_FENCE_MIN, len(bare) + 1):
+                closers.setdefault((bare[0], size), []).append(number)"""
+reddens = [
+  "tests/docs/test_prose.py::test_a_fence_is_read_as_its_pattern_reads_one[a longer run closes nothing]",
+]
+
+[[mutation]]
+name = "a closer of either mark closes"
+file = "src/stayfixed/prose.py"
+before = "            closers.setdefault((bare[0], len(bare)), []).append(number)"
+after = """            for either in _FENCE_MARKS:
+                closers.setdefault((either, len(bare)), []).append(number)"""
+reddens = [
+  "tests/docs/test_prose.py::test_a_fence_is_read_as_its_pattern_reads_one[the other mark closes nothing]",
+]
+
+# A run is tried at its full length before any shorter one, as the pattern's backtracking did.
+[[mutation]]
+name = "a run is tried from three marks up"
+file = "src/stayfixed/prose.py"
+before = "        for length in range(run, _FENCE_MIN - 1, -1):"
+after = "        for length in range(_FENCE_MIN, run + 1):"
+reddens = [
+  "tests/docs/test_prose.py::test_a_fence_is_read_as_its_pattern_reads_one[a run closed at its own length]",
+]
+
+# Each run's pointer into its closers only moves forward: without it every opening line passes
+# over the closers above it again, N²/2 steps over N closed pairs.
+[[mutation]]
+name = "a fence's closers are searched from the first again"
+file = "src/stayfixed/prose.py"
+before = """            passed[mark, length] = index
+            if index < len(later):"""
+after = """            if index < len(later):"""
+reddens = [
+  "tests/docs/test_prose.py::test_fences_are_read_in_time_linear_in_the_text[closed pairs]",
+]
+
+# A claim is settled by its real path and only inside the root's: a committed symlink out of the
+# tree made each reader an existence oracle for the machine.
+[[mutation]]
+name = "a path claim is followed through a symlink out of the tree"
+file = "src/stayfixed/prose.py"
+before = "        if not real.is_relative_to(os.path.realpath(root)):"
+after = "        if False:"
+reddens = [
+  "tests/docs/test_plans.py::test_a_reference_through_a_symlink_out_of_the_tree_is_not_asked_of_the_filesystem",
+  "tests/docs/test_hygiene.py::test_a_link_through_a_symlink_out_of_the_tree_is_not_asked_of_the_filesystem",
+  "tests/memory/test_refs.py::test_a_reference_through_a_symlink_out_of_the_tree_is_not_asked_of_the_filesystem",
+]
+
+# A claim the filesystem cannot answer for -- a directory on its way that cannot be searched -- is
+# reported as not found, never a crash of the check. A name too long for the filesystem no longer
+# reaches this arm: `fsops.exists` answers it on every interpreter.
+[[mutation]]
+name = "a path the filesystem cannot answer for crashes the reference checks"
+file = "src/stayfixed/prose.py"
+before = "    except OSError:\n        return False\n"
+after = "    except NotImplementedError:\n        return False\n"
+reddens = [
+  "tests/docs/test_plans.py::test_a_reference_below_a_directory_that_cannot_be_searched_is_not_found_rather_than_a_crash",
+  "tests/docs/test_hygiene.py::test_a_link_below_a_directory_that_cannot_be_searched_is_missing_rather_than_a_crash",
+  "tests/memory/test_refs.py::test_a_reference_below_a_directory_that_cannot_be_searched_is_a_finding_rather_than_a_crash",
+]
+
+# One digit rule, and every reader takes it from the constant. The allocator's `git log` source
+# respelled it inline, where widening the rule would have left it counting by the old one and
+# handing out a number some ref already holds — a survivor of `mutations/`'s "the Fixes claim stops
+# sharing the identifier digit rule", which is exactly what this entry now proves it is not.
+[[mutation]]
+name = "the identifier digit rule widens and the allocator keeps the old one"
+file = "src/stayfixed/identifiers.py"
+before = 'DIGITS = r"\d{3,}"'
+after = 'DIGITS = r"\d+"'
+reddens = [
+  "tests/test_identifiers.py::test_fewer_than_three_digits_is_not_an_identifier",
+  "tests/ledger/test_write.py::test_the_allocator_reads_the_git_source_with_the_shared_digit_rule",
+]
+
+# The grammar was shared and the resolution was not. `Path(root) / "/etc/passwd.md"` discards
+# `root` and a `..` walks out of it, so a plan naming an absolute path that happens to exist on
+# the developer's disk passed the dead-reference lint and did not exist in CI — and both readers
+# were an existence oracle for every path outside the root.
+[[mutation]]
+name = "a path claim is settled against the filesystem wherever it lands"
+file = "src/stayfixed/prose.py"
+before = '    return landed if landed.is_relative_to(os.path.normpath(str(root))) else None'
+after = "    return landed"
+reddens = [
+  "tests/docs/test_prose.py::test_a_claim_that_lands_outside_the_root_resolves_nowhere",
+  "tests/docs/test_plans.py::test_a_path_claim_outside_the_root_is_never_settled_against_this_disk",
+  "tests/docs/test_hygiene.py::test_a_link_out_of_the_root_is_never_settled_against_this_disk",
+]
+
+# The roadmap and `MEMORY.md` are UTF-8, and a file name the disk holds in other bytes reaches
+# Python with surrogate escapes: written into either it raised `UnicodeEncodeError`, an internal
+# error from `docs trail` (with `--check` stale for good) and from `memory index`.
+[[mutation]]
+name = "a file name that is not UTF-8 is read as one a UTF-8 file can hold"
+file = "src/stayfixed/fsops.py"
+before = '        os.fsencode(name).decode("utf-8")'
+after = '        os.fsencode(name).decode("utf-8", "surrogateescape")'
+reddens = [
+  "tests/test_fsops.py::test_a_name_is_utf_8_by_its_bytes_on_disk_not_by_its_str",
+  "tests/docs/test_trail.py::test_a_tracked_document_named_in_bytes_that_are_not_utf_8_is_refused_by_name_not_crashed_on",
+  "tests/memory/test_notes.py::test_a_note_named_in_bytes_that_are_not_utf_8_is_quarantined",
+]
+
+# The marker key and the session id are both payload-controlled. Used verbatim, `../../escape` is a
+# write -- and a `remove_within` loop -- outside the one directory the enumerated-writes rule
+# permits.
+[[mutation]]
+name = "the sink stops hashing a payload-controlled path segment"
+file = "src/stayfixed/hooks/sink.py"
+before = '    return hashlib.sha256(value.encode("utf-8")).hexdigest()[:32]'
+after = '    return value'
+reddens = [
+  "tests/hooks/test_sink.py::test_a_marker_lands_at_two_hashed_segments_and_nowhere_else",
+]
+
+# Codex exports `PLUGIN_DATA` where Claude Code exports `CLAUDE_PLUGIN_DATA`. With the fallback gone
+# the sink is a `NullSink` on Codex, so every `once_key` handler silently degrades back to "every
+# invocation" -- the defect the sink exists to remove, on one harness only.
+[[mutation]]
+name = "the sink stops recognising Codex's name for the data directory"
+file = "src/stayfixed/hooks/api.py"
+before = 'DATA_ROOT_VARIABLES = ("CLAUDE_PLUGIN_DATA", "PLUGIN_DATA")'
+after = 'DATA_ROOT_VARIABLES = ("CLAUDE_PLUGIN_DATA",)'
+reddens = [
+  "tests/hooks/test_sink.py::test_codex_names_the_data_directory_differently_and_still_gets_a_durable_sink",
+]
+
+# The dispatcher refuses a handler on an event `EVENTS` does not carry, so an event dropped from it
+# takes discovery down for every caller: every dispatch reddens, the vocabulary's own test among
+# them, and the red-run note on the event Claude Code delivers a failed command on with it.
+[[mutation]]
+name = "the dispatcher stops carrying the event a failed command arrives on"
+file = "src/stayfixed/hooks/api.py"
+before = """    "PostToolUse",
+    "PostToolUseFailure",
+)"""
+after = """    "PostToolUse",
+)"""
+reddens = [
+  "tests/hooks/test_registry.py::test_the_vocabulary_is_the_six_events_the_design_table_carries",
+  "tests/guards/test_hooks.py::test_a_red_run_on_post_tool_use_failure_is_annotated[bare]",
+]
+
+# The sink writes under the data root and `doctor` counts what it wrote there, and the hook reads
+# its project root beside them: all three find a directory by one rule, which asks every variable
+# it is given and not only the first. Each of the two tests below reddens on its own, one per
+# root, so neither reader can stop asking the rule unseen.
+[[mutation]]
+name = "the first-set-variable rule asks only its first variable"
+file = "src/stayfixed/hooks/api.py"
+before = "    for name in names:"
+after = "    for name in tuple(names)[:1]:"
+reddens = [
+  "tests/doctor/test_checks.py::test_the_sink_and_doctor_find_the_data_root_by_one_rule[second]",
+  "tests/hooks/test_dispatch.py::test_a_detected_harness_renders_its_own_answer",
+]
+
+# `seen()` was a plain `Path.exists()`, which follows a symlink and counts a directory -- so
+# anything able to write the data root could silence a `once_key` handler with one `mkdir`. A
+# marker is the regular file `mark()` writes and nothing else is one.
+[[mutation]]
+name = "a marker is any name that exists again, not a file the sink wrote"
+file = "src/stayfixed/hooks/sink.py"
+before = "        return stat.S_ISREG(info.st_mode)"
+after = "        return True"
+reddens = [
+  "tests/hooks/test_sink.py::test_a_marker_is_a_regular_file_and_not_merely_a_name_that_exists",
+]
+
+# `UNKEYED_SESSION` was `""`, so an invocation whose payload carried no session id filed its
+# markers under `sha256("")` -- a hex pair anything can precompute. With a data root the
+# environment names, that is the one direction a read out of this tree can be used in: plant a
+# file at the known pair and a `once_key` handler never runs.
+[[mutation]]
+name = "an unkeyed session's marker path is predictable again"
+file = "src/stayfixed/hooks/sink.py"
+before = 'UNKEYED_SESSION = f"unkeyed:{os.getpid()}:{os.urandom(16).hex()}"'
+after = 'UNKEYED_SESSION = ""'
+reddens = [
+  "tests/hooks/test_sink.py::test_a_payload_with_no_session_id_gets_a_segment_nothing_can_precompute",
+]
+
+# Every call through this seam captures its output, so a `git` or `gh` that asks for a
+# credential on an inherited stdin is invisible and blocks for the whole of
+# NETWORK_TIMEOUT_SECONDS. What makes that a finding is which callers reach the network through
+# it: `overlay create --template` launches `gh` with the machine owner's own authentication, and
+# `release.pins.released` runs `git ls-remote` for `stayfixed init` and for `doctor`'s `ci-ref`
+# row. (This used to cite that row's URL as repository-authored; it is
+# `stayfixed.REPOSITORY_URL`, a module constant. See `stayfixed.runner._ENV_FORCE`.)
+[[mutation]]
+name = "a launched command gets this process's stdin again"
+file = "src/stayfixed/runner.py"
+before = "                stdin=subprocess.DEVNULL,"
+after = ""
+reddens = [
+  "tests/test_runner.py::test_a_launched_command_gets_no_stdin_and_no_credential_prompt",
+]
+
+[[mutation]]
+name = "a launched git may prompt for a credential again"
+file = "src/stayfixed/runner.py"
+before = '_ENV_FORCE = {"GIT_TERMINAL_PROMPT": "0"}'
+after = "_ENV_FORCE = {}"
+reddens = [
+  "tests/test_runner.py::test_a_launched_command_gets_no_stdin_and_no_credential_prompt",
+  "tests/test_runner.py::test_the_variables_that_redirect_git_are_dropped",
+]
+
+# The comment beside this list used to claim `GIT_DIR` and `GIT_WORK_TREE` were "the two" that
+# redirect git. They are not: this is one of several counterexamples, and a clone into a fresh
+# directory must not inherit an index from elsewhere either.
+[[mutation]]
+name = "the runner stops dropping a variable that redirects git's index"
+file = "src/stayfixed/runner.py"
+before = '    "GIT_INDEX_FILE",'
+after = ""
+reddens = ["tests/test_runner.py::test_the_variables_that_redirect_git_are_dropped"]
+
+# `TimeoutExpired` is a `SubprocessError`, so a `gh` that hung for the full five minutes
+# arrived as NOT_FOUND -- which every caller reads as "gh is not installed". A wrong finding is
+# worse than a slow one, and the two have different remedies. Repointed when the bound became the
+# caller's to narrow: the sentence now names the bound that was applied rather than the module's.
+[[mutation]]
+name = "a command that hangs is reported as one that is not installed"
+file = "src/stayfixed/runner.py"
+before = '            return Completed(TIMED_OUT, "", f"{argv[0]} did not finish within {bound}s")'
+after = '            return Completed(NOT_FOUND, "", f"{argv[0]} did not finish within {bound}s")'
+reddens = [
+  "tests/test_runner.py::test_a_command_that_hangs_is_not_reported_as_one_that_is_missing",
+]
+
+# --- follow-up to the second pull request: the review's important findings, each a guard
+# something reads ---
+
+# `CLAUDE_PLUGIN_DATA` arrives through a committed `env` block. A relative value anchored the
+# sink's contained walk on the hook's cwd -- the checkout -- so `CLAUDE_PLUGIN_DATA=.` landed the
+# diagnostics log inside the repository. Where the walk is anchored was the repository's choice.
+[[mutation]]
+name = "the sink accepts a relative data root"
+file = "src/stayfixed/hooks/sink.py"
+before = "    if not base.is_absolute():"
+after = "    if False:"
+reddens = ["tests/hooks/test_sink.py::test_a_relative_data_root_is_no_sink_at_all"]
+
+# `_emit` writes no header for the root table, so a root emitted after `[n]` bound its keys to
+# `[n]` -- the misplacement this serialiser exists to prevent, reached by ordering.
+[[mutation]]
+name = "tomlout emits the root table wherever it was given"
+file = "src/stayfixed/tomlout.py"
+before = '    for name, table in sorted(tables.items(), key=lambda item: item[0] != ""):'
+after = "    for name, table in tables.items():"
+reddens = ["tests/test_tomlout.py::test_the_root_table_is_hoisted_when_it_is_not_given_first"]
+
+# A once-per-context handler is marked on delivery, not on any run: an empty result used to spend
+# its one delivery.
+[[mutation]]
+name = "the dispatcher marks a once-per-context handler on any run again"
+file = "src/stayfixed/hooks/dispatch.py"
+before = "            delivered = bool(result.context) or result.decision == Decision.DENY"
+after = "            delivered = True"
+reddens = [
+  "tests/guards/test_hooks.py::test_an_unrelated_call_does_not_consume_the_one_delivery",
+]
+
+# The delivery is banked BELOW the two validations that can discard the result. Marking it above
+# them spent a once-per-context handler's single delivery on a result that then raised into the
+# per-handler `except`. The mutation re-adds the early mark rather than moving the late one, so one
+# substituted line restores the whole defect.
+[[mutation]]
+name = "a once-per-context delivery is banked before the result is validated"
+file = "src/stayfixed/hooks/dispatch.py"
+before = "            delivered = bool(result.context) or result.decision == Decision.DENY"
+after = """            delivered = bool(result.context) or result.decision == Decision.DENY
+            if handler.once_key is not None and delivered:
+                sink.mark(handler.once_key)"""
+reddens = [
+  "tests/hooks/test_dispatch.py::test_a_once_per_context_handler_whose_result_is_rejected_keeps_its_one_delivery",
+]
+
+# The clamp keeps the largest prefix whose whole rendered string fits the cap. Either off-by-one
+# changes where the escaping case lands on one of its two caps, whichever of them is odd.
+[[mutation]]
+name = "the clamp keeps a string one short of fitting"
+file = "src/stayfixed/hooks/dispatch.py"
+before = "        if len(stdout) <= cap:"
+after = "        if len(stdout) < cap:"
+reddens = [
+  "tests/hooks/test_dispatch.py::test_json_escaping_is_charged_to_the_same_budget",
+]
+
+[[mutation]]
+name = "the clamp keeps a string one past the cap"
+file = "src/stayfixed/hooks/dispatch.py"
+before = "        if len(stdout) <= cap:"
+after = "        if len(stdout) <= cap + 1:"
+reddens = [
+  "tests/hooks/test_dispatch.py::test_json_escaping_is_charged_to_the_same_budget",
+]
+
+[[mutation]]
+name = "the clamp drops the truncation mark"
+file = "src/stayfixed/hooks/dispatch.py"
+before = "        stdout = render(event_name, context[:keep] + TRUNCATION_MARK)"
+after = "        stdout = render(event_name, context[:keep])"
+reddens = [
+  "tests/hooks/test_dispatch.py::test_json_escaping_is_charged_to_the_same_budget",
+]
+
+# The hook answers through the harness value detection chose: a value whose output differs
+# renders its own answer, and the clamp searches that value's own envelope for the prefix that
+# fits, since one measured against Claude Code's is the wrong width for any other.
+[[mutation]]
+name = "the dispatcher renders every answer in Claude Code's shape"
+file = "src/stayfixed/hooks/dispatch.py"
+before = "    stdout = harness.render(event.name, context)"
+after = '    stdout = __import__("stayfixed.harnesses", fromlist=["CANONICAL"]).CANONICAL.render(event.name, context)'
+reddens = [
+  "tests/hooks/test_dispatch.py::test_a_detected_harness_renders_its_own_answer",
+]
+
+[[mutation]]
+name = "the clamp measures Claude Code's envelope whatever the harness"
+file = "src/stayfixed/hooks/dispatch.py"
+before = "        stdout = _clamp(harness.render, event.name, context, cap)"
+after = '        stdout = _clamp(__import__("stayfixed.harnesses", fromlist=["CANONICAL"]).CANONICAL.render, event.name, context, cap)'
+reddens = [
+  "tests/hooks/test_dispatch.py::test_a_clamped_answer_is_the_detected_harnesss_envelope",
+]
+
+# A refusal is exit 2, an empty stdout and the reasons on stderr under every harness, and no
+# harness value is asked to shape one, so a rendering that fails cannot cost a deny.
+[[mutation]]
+name = "a deny is rendered through the detected harness"
+file = "src/stayfixed/hooks/dispatch.py"
+before = '        return Outcome(2, "", "stayfixed: refused: "'
+after = '        return Outcome(2, harness.render(event.name, ""), "stayfixed: refused: "'
+reddens = [
+  "tests/hooks/test_dispatch.py::test_a_deny_never_goes_through_render",
+]
+
+# The README's prose cites the version each agent's session guards were measured at, and the
+# registry records it beside that surface's evidence; the README is held to it.
+[[mutation]]
+name = "Claude Code's guard measurement is restated at another version"
+file = "src/stayfixed/harnesses.py"
+before = """                f"({_P0_SPIKES}, the fail-closed matrix)",
+                measured_on="Claude Code 2.1.261","""
+after = """                f"({_P0_SPIKES}, the fail-closed matrix)",
+                measured_on="Claude Code 2.1.262","""
+reddens = [
+  "tests/test_documents.py::test_the_readme_states_each_agents_reach_as_the_registry_does",
+]
+
+# A harness's `render` shapes context and nothing else: a deny travels on the exit code alone, and an
+# allow spelled in the envelope would let a call through that no guard judged.
+[[mutation]]
+name = "the canonical render spells an allow beside the context"
+file = "src/stayfixed/harnesses.py"
+before = '    payload: dict[str, Any] = {"hookSpecificOutput": {"hookEventName": event_name}}'
+after = '    payload: dict[str, Any] = {"hookSpecificOutput": {"hookEventName": event_name, "permissionDecision": "allow"}}'
+reddens = [
+  "tests/test_harnesses.py::test_no_harness_renders_a_decision[plain-PreToolUse-claude]",
+]
+
+# The detected harness is a repository's to steer (a committed `env` block can set `PLUGIN_ROOT`),
+# and the project root decides which configuration loads, so the event is read from every
+# registered harness's variable whichever one was detected, and is never told which.
+[[mutation]]
+name = "the root is read from the detected harness only"
+file = "src/stayfixed/hooks/commands.py"
+before = "        event = read_event(payload, os.environ)"
+after = "        event = read_event(payload, os.environ if harness.project_dir_env else {})"
+reddens = [
+  "tests/hooks/test_dispatch.py::test_a_handler_sees_one_event_whichever_harness_is_detected",
+]
+
+# Detection reads the process's environment and the payload, and the test that holds the event to
+# one shape under every harness also holds that its runs were answered by three harnesses, so it
+# cannot quietly become Claude Code three times.
+[[mutation]]
+name = "the hook asks detection with neither environment nor payload"
+file = "src/stayfixed/hooks/commands.py"
+before = "        harness = detect(os.environ, payload)"
+after = "        harness = detect({}, None)"
+reddens = [
+  "tests/hooks/test_dispatch.py::test_a_handler_sees_one_event_whichever_harness_is_detected",
+]
+
+# Two values that claim one input would leave the registry's order to decide which harness a
+# session gets, so detection claims only what is its own.
+[[mutation]]
+name = "Codex's detection claims every input"
+file = "src/stayfixed/harnesses.py"
+before = """    if "PLUGIN_ROOT" in env:
+        return True"""
+after = """    if True:
+        return True"""
+reddens = [
+  "tests/test_harnesses.py::test_no_input_is_claimed_by_two_harnesses",
+]
+
+# Detection reads inputs a repository can steer, so no harness renders apart from the canonical
+# one until it is detected by a signal the wrapper controls.
+[[mutation]]
+name = "Codex is given a render of its own"
+file = "src/stayfixed/harnesses.py"
+before = """    # than a measured shape: `detect` says what.
+    render=hook_specific_output,"""
+after = """    # than a measured shape: `detect` says what.
+    render=lambda event_name, context: hook_specific_output(event_name, context),"""
+reddens = [
+  "tests/test_harnesses.py::test_every_harness_renders_through_the_canonical_render",
+]
+
+# The registry's order is the order `init` writes `[stayfixed] agents` in, so it is not the root's
+# precedence: the canonical harness's variable is asked first, and a harness registered ahead of
+# Claude Code cannot move a Claude Code session's root to a variable of its own.
+[[mutation]]
+name = "the project-root variables are asked in registry order"
+file = "src/stayfixed/harnesses.py"
+before = "    ordered = (CANONICAL, *(harness for harness in HARNESSES if harness is not CANONICAL))"
+after = "    ordered = HARNESSES"
+reddens = [
+  "tests/hooks/test_dispatch.py::test_a_harness_registered_first_never_takes_the_root_from_claude_code",
+]
+
+# Hook discovery imports the handler vocabulary and the areas that ship a `hooks.py`, and neither
+# the harness registry nor the configuration layer. That holds for discovery alone: the CLI frame
+# imports the registry when it builds its parser, before any hook runs.
+[[mutation]]
+name = "the handler vocabulary imports the harness registry"
+file = "src/stayfixed/hooks/api.py"
+before = "from typing import TYPE_CHECKING, Any, Protocol\n"
+after = """from typing import TYPE_CHECKING, Any, Protocol
+
+from stayfixed.harnesses import project_root_variables
+"""
+reddens = [
+  "tests/boundaries/test_discovery.py::test_in_isolation_an_area_with_no_such_submodule_is_never_imported",
+]
+
+# One sentence per shared flag, held to every parser by a walk over the real parser rather than by a
+# convention. The mutation drifts `common_flags`' own `--machine` sentence, which is what every
+# `--machine` but `setup`'s inherits.
+[[mutation]]
+name = "a shared flag's help drifts from the one sentence"
+file = "src/stayfixed/command.py"
+before = '    parser.add_argument("--machine", default=None, help=MACHINE_HELP)'
+after = '    parser.add_argument("--machine", default=None, help="machine file")'
+reddens = [
+  "tests/test_command.py::test_every_shared_flag_carries_the_one_help_string_or_a_named_exception",
+]
+
+# A link created by path follows a parent that became a symlink after the check.
+[[mutation]]
+name = "a link is created by path, outside the walk"
+file = "src/stayfixed/fsops.py"
+before = "    mkdirs_within(root, target)\n    with open_within(root, target) as (dir_fd, name):\n        os.symlink(str(source), name, dir_fd=dir_fd)"
+after = "    os.symlink(str(source), root / target)"
+reddens = [
+  "tests/test_fsops.py::test_a_symlink_is_created_through_the_walk_and_never_through_a_symlinked_parent",
+]
+
+# `unlink_within` removes a link only when it points where the caller says it does.
+[[mutation]]
+name = "unlink_within removes a link that points elsewhere"
+file = "src/stayfixed/fsops.py"
+before = "        if pointing_at is not None and Path(os.readlink(name, dir_fd=dir_fd)) != pointing_at:"
+after = "        if False:"
+reddens = [
+  "tests/test_fsops.py::test_unlink_within_removes_only_a_link_that_points_where_it_was_told",
+]
+
+# "Absent" and "present and unreadable" are different answers and the callers branch on the
+# difference: an absent record skips in `doctor` and an unreadable one must be red. A decoder
+# error that read as `None` would turn a corrupted record into a quiet skip.
+[[mutation]]
+name = "a record that is not JSON reads as no record at all"
+file = "src/stayfixed/release/hashes.py"
+before = """
+    # Through `jsonobject`, the one reader of a JSON object, so every way the parse can fail --
+"""
+after = """
+    if text.count("{") != text.count("}"):
+        return None
+    # Through `jsonobject`, the one reader of a JSON object, so every way the parse can fail --
+"""
+reddens = ["tests/release/test_hashes.py::test_a_record_that_is_not_json_is_unreadable_rather_than_absent"]
+
+# Valid JSON of the wrong shape decodes cleanly, so the decoder catch never sees it — the same
+# hole `versions._parse` had for a lockfile that was valid TOML of the wrong shape.
+[[mutation]]
+name = "a record of another format is read as this one"
+file = "src/stayfixed/release/hashes.py"
+before = """
+        document.get("format") != FORMAT
+        or not isinstance(files, dict)
+"""
+after = """
+        False
+        or not isinstance(files, dict)
+"""
+reddens = [
+  "tests/release/test_hashes.py::test_a_record_of_the_wrong_shape_is_unreadable[another-format]",
+]
+
+# The release record's tests compared `write_record`, `read_record` and `drift` against
+# `digests` — both sides of every assertion moving together, and nothing anywhere pinning what
+# `digests` computes. Measured: the digest truncated to its first eight characters left every
+# record test passing, which is the algorithm and the length a downstream verifier depends on
+# going unchecked.
+[[mutation]]
+name = "the release record records a truncated digest"
+file = "src/stayfixed/release/hashes.py"
+before = "            found[relative] = hashlib.sha256(path.read_bytes()).hexdigest()"
+after = "            found[relative] = hashlib.sha256(path.read_bytes()).hexdigest()[:8]"
+reddens = [
+  "tests/release/test_hashes.py::test_each_file_is_hashed_to_its_full_sha256",
+]
+
+# No record and a record naming nothing are different answers: `doctor` skips the first and
+# reports every shipped file unrecorded on the second.
+[[mutation]]
+name = "no release record reads as a record naming nothing"
+file = "src/stayfixed/release/hashes.py"
+before = "    if not fsops.is_file(path):\n        return None"
+after = "    if not fsops.is_file(path):\n        return {}"
+reddens = [
+  "tests/release/test_hashes.py::test_no_record_reads_as_none_and_a_record_reads_back_as_written",
+]
+
+# A record is read back as written: the digests `doctor` compares are the ones the record names.
+[[mutation]]
+name = "the release record reader truncates the digests it read"
+file = "src/stayfixed/release/hashes.py"
+before = "    return {str(key): str(value) for key, value in files.items()}"
+after = "    return {str(key): str(value)[:8] for key, value in files.items()}"
+reddens = [
+  "tests/release/test_hashes.py::test_no_record_reads_as_none_and_a_record_reads_back_as_written",
+]
+
+# A `hooks/hashes.json` carrying non-UTF-8 bytes raised `UnicodeDecodeError` past every caller and
+# surfaced as `stayfixed: internal error`, exit 2 — through `doctor`, with the remedy "report this,
+# with the command you ran".
+[[mutation]]
+name = "a record that is not UTF-8 escapes UnreadableRecord again"
+file = "src/stayfixed/release/hashes.py"
+before = "    except UnicodeDecodeError as exc:"
+# NOT `except ValueError`: `UnicodeDecodeError` is a subclass of it (so is
+# `json.JSONDecodeError`), so that substitution still caught the error it was meant to stop
+# catching, and the entry survived while reading as coverage. Measured by the unfiltered run.
+after = "    except InterruptedError as exc:"
+reddens = [
+  "tests/release/test_hashes.py::test_a_record_that_is_not_utf8_is_unreadable_rather_than_an_internal_error",
+]
+
+# The other escape through the same `try`: a record the process cannot read took the wrong
+# turn to `warn` rather than to the red "present and unreadable" arm.
+[[mutation]]
+name = "a record that cannot be read escapes UnreadableRecord again"
+file = "src/stayfixed/release/hashes.py"
+before = """
+    except OSError as exc:
+        raise UnreadableRecord"""
+after = """
+    except InterruptedError as exc:
+        raise UnreadableRecord"""
+reddens = [
+  "tests/release/test_hashes.py::test_a_record_the_process_cannot_read_is_unreadable_rather_than_a_warning",
+]
+
+# The type is the only thing `doctor` may branch on here: it does not quote the loader's text,
+# because the loader builds that text out of the file's own keys and values.
+[[mutation]]
+name = "a broken machine file is blamed on stayfixed.toml again"
+file = "src/stayfixed/config/loader.py"
+before = '        raise MachineConfigError(f"{path} is not valid TOML {toml_position(exc)}") from None'
+after = '        raise ConfigError(f"{path} is not valid TOML {toml_position(exc)}") from None'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_machine_file_that_does_not_load_is_not_blamed_on_stayfixed_toml",
+]
+
+# A `[paths]` value outside the path grammar is refused, and never quoted back.
+[[mutation]]
+name = "the [paths] grammar check is dropped"
+file = "src/stayfixed/config/paths.py"
+before = "        if not PATH_VALUE.match(relative):"
+after = "        if False:"
+reddens = [
+  "tests/config/test_paths.py::test_a_paths_value_outside_the_grammar_is_refused_and_never_quoted",
+]
+
+# The release pins read off a tag listing: an annotated tag resolves to the commit it points at and
+# not to its tag object, and only a semver tag is a release, never the `v1` alias.
+[[mutation]]
+name = "an annotated tag's peeled commit no longer wins over its tag object"
+file = "src/stayfixed/release/pins.py"
+before = "    return {**plain, **peeled}"
+after = "    return {**peeled, **plain}"
+reddens = [
+  "tests/release/test_pins.py::test_an_annotated_tag_resolves_to_its_commit_not_its_tag_object",
+]
+
+[[mutation]]
+name = "is_released stops filtering to semver tags, so the v1 alias counts as a release"
+file = "src/stayfixed/release/pins.py"
+before = "    return any(value == sha for tag, value in pins.items() if _SEMVER.match(tag))"
+after = "    return any(value == sha for tag, value in pins.items())"
+reddens = [
+  "tests/release/test_pins.py::test_is_released_judges_semver_tags_and_never_the_alias",
+]
+
+# One helper, two readers: the section list and the unknown-key lists inside a known table. Dropping
+# the filter reddens both, which is the point of their sharing it.
+[[mutation]]
+name = "an unknown name is no longer bounded before it prints"
+file = "src/stayfixed/config/loader.py"
+before = "    named = [name for name in unknown if SECTION_NAME.match(name)]"
+after = "    named = list(unknown)"
+reddens = [
+  "tests/config/test_loader.py::test_unknown_sections_name_the_typo_and_count_the_rest_never_quoting_them",
+  "tests/config/test_loader.py::test_unknown_keys_name_the_typo_and_count_the_rest_never_quoting_them",
+]
+
+# Repository bytes never print unbounded, and this is the third leak of that family closed in this
+# loader. `tomllib` builds its message as `f"{msg} (at line N, column M)"` and `msg` embeds the
+# source for at least five of its own faults — a duplicate table, a duplicate inline-table key, a
+# redefined namespace, an invalid character, an overwritten value. A TOML key is arbitrary quoted
+# text, so interpolating the exception whole put unbounded repository bytes into a `ConfigError`
+# and, through `project.init._existing`, into a refusal the `init` skill is instructed to relay to a
+# model and stop on. Only the position prints, and the fallback reports an absent suffix rather than
+# the message — a fallback to `str(exc)` is the one change that would reopen this silently. The
+# sibling leak in the same loader function, the unknown-section list, is bounded to `SECTION_NAME`;
+# this completes it, and one extractor serves all three call sites.
+[[mutation]]
+name = "a tomllib message is quoted back whole, so a hostile key reaches a refusal"
+file = "src/stayfixed/config/loader.py"
+before = "    return found.group(0) if found is not None else NO_POSITION"
+after = "    return str(exc)"
+reddens = [
+  "tests/config/test_loader.py::test_a_document_that_will_not_parse_reports_only_where_the_parser_stopped",
+  "tests/config/test_loader.py::test_a_parse_failure_with_no_position_says_so_rather_than_quoting_the_message",
+  "tests/project/test_init.py::test_a_configuration_that_will_not_parse_never_quotes_its_own_keys",
+  "tests/docs/test_trail.py::test_a_trail_file_that_will_not_parse_never_quotes_its_own_keys",
+]
+
+# Two readers of one value. `PATH_VALUE` says what a `[paths]` value may look like and
+# `fsops.checked_components` says what a path *is*; for four review rounds they disagreed about
+# `docs//x.md`, `docs/x/` and `./docs`, so `plan()` reported no refusal for a value `apply()` could
+# not write — and `apply()` raised part-way through the pass, with earlier artifacts on disk and its
+# `finally` having already persisted the manifest. The anchor's provenance: both rules are read off
+# the clone's own spelling of its own `stayfixed.toml`, and neither consults anything the clone can
+# move, so a repository cannot choose which of the two answers it gets.
+# Measured: with the charset form restored, `docs//roadmap-history.md`, `docs/architecture/`
+# and `./docs` all match the grammar again. The entries after it take one rule out each.
+[[mutation]]
+name = "the [paths] grammar admits a spelling the write refuses again"
+file = "src/stayfixed/grammar.py"
+before = '''    r"^(?![/-])"
+    r"(?!.*//)(?!.*/\Z)"
+    r"(?!(?:.*/)?\.\.?(?:/|\Z))"
+    r"[A-Za-z0-9._/-]+\Z"'''
+after = '    r"^[A-Za-z0-9._][A-Za-z0-9._/-]*\Z"'
+reddens = [
+  "tests/config/test_paths.py::test_the_grammar_admits_exactly_what_the_component_rule_accepts",
+]
+
+[[mutation]]
+name = "the [paths] grammar admits an empty segment"
+file = "src/stayfixed/grammar.py"
+before = '    r"(?!.*//)(?!.*/\Z)"'
+after = '    r"(?!.*/\Z)"'
+reddens = [
+  "tests/config/test_paths.py::test_the_grammar_admits_exactly_what_the_component_rule_accepts",
+]
+
+[[mutation]]
+name = "the [paths] grammar admits a trailing slash"
+file = "src/stayfixed/grammar.py"
+before = '    r"(?!.*//)(?!.*/\Z)"'
+after = '    r"(?!.*//)"'
+reddens = [
+  "tests/config/test_paths.py::test_the_grammar_admits_exactly_what_the_component_rule_accepts",
+]
+
+[[mutation]]
+name = "the [paths] grammar admits a segment of one or two dots"
+file = "src/stayfixed/grammar.py"
+before = '    r"(?!(?:.*/)?\.\.?(?:/|\Z))"'
+after = '    r"(?!\.\.?(?:/|\Z))"'
+reddens = [
+  "tests/config/test_paths.py::test_the_grammar_admits_exactly_what_the_component_rule_accepts",
+]
+
+[[mutation]]
+name = "the [paths] grammar admits an absolute path"
+file = "src/stayfixed/grammar.py"
+before = '    r"^(?![/-])"'
+after = '    r"^(?!-)"'
+reddens = [
+  "tests/config/test_paths.py::test_the_grammar_admits_exactly_what_the_component_rule_accepts",
+]
+
+[[mutation]]
+name = "the [paths] grammar admits a value that opens on a dash"
+file = "src/stayfixed/grammar.py"
+before = '    r"^(?![/-])"'
+after = '    r"^(?!/)"'
+reddens = [
+  "tests/config/test_paths.py::test_a_paths_value_outside_the_grammar_is_refused_and_never_quoted",
+]
+
+# The grammar repeats no group, so `re` keeps no record per segment: read as a greedy repeat of
+# the segment, a name of a million segments took 124 MiB more to judge.
+[[mutation]]
+name = "a path's segments are given back"
+file = "src/stayfixed/grammar.py"
+before = '''    r"^(?![/-])"
+    r"(?!.*//)(?!.*/\Z)"
+    r"(?!(?:.*/)?\.\.?(?:/|\Z))"
+    r"[A-Za-z0-9._/-]+\Z"'''
+after = '    r"^(?!\.\.?(?:/|\Z))[A-Za-z0-9._][A-Za-z0-9._-]*(?:/(?!\.\.?(?:/|\Z))[A-Za-z0-9._-]+)*\Z"'
+reddens = ["tests/test_printed.py::test_a_long_name_is_judged_in_memory_linear_in_its_length"]
+
+# Read alike by every supported Python: Python 3.11.0 to 3.11.4 went on past a failed pass of
+# a possessive group from where the pass stopped, and this shape is the one it misread.
+[[mutation]]
+name = "the path grammar repeats its segments possessively"
+file = "src/stayfixed/grammar.py"
+before = '''    r"^(?![/-])"
+    r"(?!.*//)(?!.*/\Z)"
+    r"(?!(?:.*/)?\.\.?(?:/|\Z))"
+    r"[A-Za-z0-9._/-]+\Z"'''
+after = '    r"^(?!\.\.?(?:/|\Z))[A-Za-z0-9._][A-Za-z0-9._-]*(?:/(?!\.\.?(?:/|\Z))[A-Za-z0-9._-]++)*+\Z"'
+reddens = [
+  "tests/test_patterns.py::test_no_pattern_repeats_a_group_in_a_shape_python_3_11_4_misreads",
+]
+
+# The other half of the two readers, beside `mutations/`'s "the [paths] grammar admits a spelling
+# the write refuses again", and the one the half-write actually turned on: `contained()` is what
+# `plan()` asks, so a spelling the walk will refuse has to be refused *here*, above the first write.
+# `Path(relative).parts` drops an empty component, a trailing slash and a leading `./`, which is why
+# `plan` said yes. Restoring that spelling restores the disagreement, with the grammar left
+# tightened — the two guards must not be able to cover for each other.
+[[mutation]]
+name = "contained normalises the value away, so plan stops agreeing with apply"
+file = "src/stayfixed/config/paths.py"
+before = "        parts = checked_components(relative)"
+after = "        parts = Path(relative).parts"
+reddens = [
+  "tests/config/test_paths.py::test_contained_refuses_every_spelling_the_write_would_refuse",
+  "tests/scaffold/test_containment.py::test_a_target_that_survives_plan_is_one_apply_can_write",
+]
+
+# A containment ruling and its anchor's provenance. Nothing reserved git's control directory:
+# `PATH_VALUE` admits a leading dot, and `contained()` and this walk each refused an absolute path,
+# `..` and a symlink — a control directory is none of those. So a clone could aim a `MANAGED_REGION`
+# artifact at `.git/hooks/pre-commit`, which the engine's "exists and stayfixed did not write it"
+# guard exempts, and `_mode_of` then carried the developer's 0755 onto the replacement. The anchor
+# is the project root the CLI resolved and `.git` is git's own name inside it, so the clone — which
+# authors the path string and nothing else — cannot move the directory being reserved. Measured:
+# with the check dropped here, `write_within` creates `.git/stayfixed-roadmap.md` and rewrites an
+# existing executable `pre-commit` in place at 0755.
+[[mutation]]
+name = "the walk writes inside git's control directory again"
+file = "src/stayfixed/fsops.py"
+before = "    if names_control_directory(relative):"
+after = "    if False:"
+reddens = [
+  "tests/test_fsops.py::test_gits_control_directory_is_reserved_at_every_depth_and_in_any_case",
+  "tests/test_fsops.py::test_an_existing_git_hook_is_never_rewritten_in_place",
+  "tests/config/test_paths.py::test_contained_refuses_gits_control_directory_at_any_depth_and_in_any_case",
+]
+
+# The same rule where it can name the key instead of quoting the value. Separate from the walk's
+# copy because the refusal a user reads for a `[paths]` value must not print that value back,
+# and because a guard proven only through the layer beneath it is a guard that can be deleted
+# with nothing going red.
+[[mutation]]
+name = "a [paths] value may name git's control directory again"
+file = "src/stayfixed/config/paths.py"
+before = "        if names_control_directory(relative):"
+after = "        if False:"
+reddens = [
+  "tests/config/test_paths.py::test_a_paths_value_naming_gits_control_directory_is_refused_and_never_quoted",
+]
+
+# stayfixed's own directory, reserved the same way. `.stayfixed/local/` holds attach's ledger and
+# the local-only notes, state git never sees, and `agents-md` is a region inserted into whatever
+# file `[paths] agents_md` names. Measured before the rule: a committed
+# `agents_md = ".stayfixed/local/attach.json"` had `upgrade` exit 0 with `region_update
+# .stayfixed/local/attach.json (refreshed)`. The anchor is the resolved root and the
+# `STAYFIXED_DIRECTORY` constant in the installed package; a clone authors only the value.
+[[mutation]]
+name = "a [paths] value may name stayfixed's own directory"
+file = "src/stayfixed/config/paths.py"
+before = "        if names_stayfixed_directory(relative):"
+after = "        if False:"
+reddens = [
+  "tests/config/test_paths.py::test_a_paths_value_inside_stayfixeds_own_directory_is_refused_and_never_quoted",
+  "tests/project/test_upgrade.py::test_a_committed_path_into_stayfixeds_own_directory_refuses_upgrade_before_any_write",
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[region-into-another-artifact-s-hidden-copy-upgrade]",
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[region-into-attach-s-ledger-init]",
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[region-into-attach-s-ledger-case-folded-init]",
+]
+
+# The case half, on its own. A rule that matched `.git` exactly would be green on every test
+# above that does not spell `.GIT`, and the default filesystem on macOS is case-insensitive, so
+# `.GIT/hooks/pre-commit` reaches the developer's hook there.
+[[mutation]]
+name = "the control-directory rule stops folding case, so .GIT reaches the same directory"
+file = "src/stayfixed/fsops.py"
+before = "    return any(part.lower() == name for part in relative.split(\"/\"))"
+after = "    return any(part == name for part in relative.split(\"/\"))"
+reddens = [
+  "tests/test_fsops.py::test_gits_control_directory_is_reserved_at_every_depth_and_in_any_case",
+  "tests/config/test_paths.py::test_contained_refuses_gits_control_directory_at_any_depth_and_in_any_case",
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[region-into-git-s-hook-case-folded-init]",
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[region-into-git-s-hook-case-folded-upgrade]",
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[region-into-attach-s-ledger-case-folded-init]",
+]
+
+# The call site, which is what regressed. A TOML key is arbitrary quoted text, so this message
+# joined a repository's own bytes straight into a `ConfigError` — raw ESC and raw newlines into
+# a terminal and into a refusal the `init` skill is instructed to relay to a model. Reachable on
+# all nine tables, and two functions from the helper written in that file for this rule. The
+# *missing*-key message beside it is built from schema field names and is deliberately not
+# bounded.
+[[mutation]]
+name = "an unknown key in a known table is echoed back raw"
+file = "src/stayfixed/config/loader.py"
+before = '''        raise ConfigError(f"[{name}] has unknown key(s): {_named(unknown, 'key')}")'''
+after = '''        raise ConfigError(f"[{name}] has unknown key(s): {', '.join(unknown)}")'''
+reddens = [
+  "tests/config/test_loader.py::test_unknown_keys_name_the_typo_and_count_the_rest_never_quoting_them",
+]
+
+# `[budgets]` is a second reader with a second message and its own name list, so it is a second
+# entry rather than a second assertion under `mutations/`'s "an unknown key in a known table is
+# echoed back raw".
+[[mutation]]
+name = "an unknown budget key is echoed back raw"
+file = "src/stayfixed/config/loader.py"
+before = '''        raise ConfigError(f"[budgets] has unknown key(s): {_named(unknown, 'key')}")'''
+after = '''        raise ConfigError(f"[budgets] has unknown key(s): {', '.join(unknown)}")'''
+reddens = [
+  "tests/config/test_loader.py::test_unknown_keys_name_the_typo_and_count_the_rest_never_quoting_them",
+]
+
+# The third enumerated-value leak in this loader, after `_build`'s and `_budgets`'. `!r` escapes
+# the control characters, which is why it read as milder than the raw bytes those two printed —
+# but `stayfixed.state`, `memory.mode` and `ci.mode` are repository-authored and bounded by no
+# grammar, so what it prints is unbounded in content and in length, and the same branch deleted
+# `; got {project.name!r}` from the refusal one screen below on exactly this reasoning.
+[[mutation]]
+name = "a configuration enum quotes the value back again"
+file = "src/stayfixed/config/loader.py"
+before = '''        raise ConfigError(f"{section}.{key} must be one of {', '.join(allowed)}")'''
+after = '''        raise ConfigError(f"{section}.{key} must be one of {', '.join(allowed)}; got {value!r}")'''
+reddens = [
+  "tests/config/test_loader.py::test_an_enumerated_value_is_refused_without_being_quoted",
+]
+
+# `stayfixed.toml` is committed and read by every command and hook: to the read cap, a regular file
+# only, and one past the cap cannot be read.
+[[mutation]]
+name = "stayfixed.toml is read with no bound"
+file = "src/stayfixed/config/loader.py"
+before = '        return read_regular_text(contained(root, CONFIG_FILE), newline="")'
+after = """        with contained(root, CONFIG_FILE).open(encoding="utf-8", newline="") as stream:
+            return stream.read()"""
+reddens = [
+  "tests/test_undecodable.py::test_a_stayfixed_toml_past_the_read_cap_cannot_be_read_and_says_so",
+]
+
+# A file that cannot be read is said in `fsops.said`'s words, never by its error's class name: for a
+# reader's own refusal that name is stayfixed's internals (`TooLarge`, `NotRegularFile`), and it
+# names no condition a user can act on.
+[[mutation]]
+name = "stayfixed.toml that cannot be read is said by its error's class name"
+file = "src/stayfixed/config/loader.py"
+before = "raise ConfigError(UNREADABLE.format(path=CONFIG_FILE, error=said(exc))) from None"
+after = "raise ConfigError(UNREADABLE.format(path=CONFIG_FILE, error=type(exc).__name__)) from None"
+reddens = [
+  "tests/test_undecodable.py::test_a_stayfixed_toml_past_the_read_cap_cannot_be_read_and_says_so",
+  "tests/test_undecodable.py::test_a_stayfixed_toml_that_is_a_directory_cannot_be_read_and_says_so",
+]
+
+[[mutation]]
+name = "a machine file that cannot be read is said by its error's class name"
+file = "src/stayfixed/config/loader.py"
+before = "raise MachineConfigError(UNREADABLE.format(path=path, error=said(exc))) from None"
+after = "raise MachineConfigError(UNREADABLE.format(path=path, error=type(exc).__name__)) from None"
+reddens = [
+  "tests/test_undecodable.py::test_a_file_without_read_permission_cannot_be_read_and_says_so[machine]",
+]
+
+# The one list four places report as a count, and the one fault none of those areas can fix for
+# itself. `_build` coerced it with `tuple(value)`, so a repeated entry was walked twice and
+# counted twice -- in `attach`'s refusal, in `--check`'s `real_directories` and in the session
+# line -- about one directory whose remedy was already done.
+[[mutation]]
+name = "a repeated memory group is counted twice again"
+file = "src/stayfixed/config/loader.py"
+before = '    memory = _deduplicated(_build(Memory, "memory", _merged(raw, defaults, "memory")))'
+after = '    memory = _build(Memory, "memory", _merged(raw, defaults, "memory"))'
+reddens = [
+  "tests/config/test_loader.py::test_a_repeated_memory_group_is_one_group",
+]
+
+# The delivery rule `attach/hooks.py`'s corrected docstring rests on. Banking a `once_key` for a
+# result that said nothing would spend a handler's single delivery on silence -- and the
+# consequence, which no test stated until now, is that a handler whose healthy answer IS silence
+# runs on every matching event and pays its `git` calls every time.
+[[mutation]]
+name = "a silent handler spends its one delivery"
+file = "src/stayfixed/hooks/dispatch.py"
+before = "            if handler.once_key is not None and delivered:"
+after = "            if handler.once_key is not None:"
+reddens = [
+  "tests/hooks/test_dispatch.py::test_a_once_per_context_handler_that_says_nothing_keeps_its_one_delivery",
+]
+
+# In the block led by `mutations/`'s "doctor asks the public repository with no bound of its own": a
+# caller's bound is chosen in one module and honoured in another, an entry each.
+[[mutation]]
+name = "the runner ignores the bound its caller asked for"
+file = "src/stayfixed/runner.py"
+before = "                timeout=bound,"
+after = "                timeout=NETWORK_TIMEOUT_SECONDS,"
+reddens = [
+  "tests/test_runner.py::test_a_caller_that_asks_for_a_narrower_bound_gets_it",
+]
+
+# The one writer into a `stayfixed.toml` somebody else owns: an edit is kept only when reading it
+# back gives exactly the document before it with that one key set. The multi-line case is the one
+# where the returned text still parses, which is the silent failure the read-back exists for.
+[[mutation]]
+name = "the tool-owned key editor returns an edit it never read back"
+file = "src/stayfixed/config/owned.py"
+before = "            proved = tomllib.loads(candidate) == expected"
+after = "            proved = True"
+reddens = [
+  "tests/config/test_owned.py::test_a_table_header_inside_a_multi_line_string_is_not_where_the_key_is",
+]
+
+[[mutation]]
+name = "the tool-owned key editor lets a parse failure quote the document"
+file = "src/stayfixed/config/owned.py"
+before = "    except UNPARSEABLE as exc:"
+after = "    except KeyError as exc:"
+reddens = [
+  "tests/config/test_owned.py::test_a_document_that_does_not_parse_is_refused_by_position_alone",
+]
+
+# The gate set and per-gate enforcement. `mutations/`'s "the loader admits a gate the project does
+# not run into [stayfixed] enforced", "a custom gate's name reaches the loader's refusals unbounded"
+# and "the loader admits a built-in gate stayfixed does not have" bound what a repository-authored
+# gate name may reach in a refusal; `mutations/`'s "an installed project stops enforcing every gate
+# it runs" and "an installed project's partial enforced list loads again" hold the one fact `state`
+# and `enforced` state together.
+[[mutation]]
+name = "the loader admits a gate the project does not run into [stayfixed] enforced"
+file = "src/stayfixed/config/loader.py"
+before = "    unknown = [name for name in stayfixed.enforced if name not in names]"
+after = "    unknown: list[str] = []"
+reddens = [
+  "tests/config/test_loader.py::test_a_gate_the_project_does_not_run_is_counted_and_never_quoted",
+]
+
+[[mutation]]
+name = "an installed project stops enforcing every gate it runs"
+file = "src/stayfixed/config/loader.py"
+before = "    return replace(config, stayfixed=replace(stayfixed, enforced=names))"
+after = "    return config"
+reddens = [
+  "tests/config/test_loader.py::test_an_installed_project_enforces_every_configured_gate",
+]
+
+[[mutation]]
+name = "an installed project's partial enforced list loads again"
+file = "src/stayfixed/config/loader.py"
+before = "    if stayfixed.enforced and set(stayfixed.enforced) != set(names):"
+after = "    if False:"
+reddens = [
+  "tests/config/test_loader.py::test_an_installed_project_with_a_partial_list_is_refused",
+]
+
+[[mutation]]
+name = "a custom gate's name reaches the loader's refusals unbounded"
+file = "src/stayfixed/config/loader.py"
+before = "    unusable = [name for name in tables if not PROJECT_NAME.match(name) or name in reserved]"
+after = "    unusable: list[str] = []"
+reddens = [
+  "tests/config/test_loader.py::test_a_custom_gate_name_outside_the_grammar_is_counted_and_never_quoted",
+]
+
+[[mutation]]
+name = "the loader admits a built-in gate stayfixed does not have"
+file = "src/stayfixed/config/loader.py"
+before = "    unknown = [name for name in gates.builtin if name not in BUILTIN_GATES]"
+after = "    unknown: list[str] = []"
+reddens = [
+  "tests/config/test_loader.py::test_a_built_in_gate_stayfixed_does_not_have_is_counted_and_never_quoted",
+]
+
+# A harness's files are rendered only for a harness the project lists.
+[[mutation]]
+name = "a harness's rendering is applied though the project does not list it"
+file = "src/stayfixed/harnesses.py"
+before = "    chosen = tuple(harness for harness in HARNESSES if harness.name in listed)"
+after = "    chosen = HARNESSES"
+reddens = [
+  "tests/project/test_templates.py::test_a_harness_not_listed_gets_no_file_of_its_own",
+  "tests/test_harnesses.py::test_select_answers_the_listed_harnesses_and_counts_the_rest",
+]
+
+# Detection asks every value that detects before it falls back to Claude Code's schema: Codex
+# mirrors its own root variable under Claude Code's name, so only a positive answer tells it apart.
+[[mutation]]
+name = "detection answers Claude Code before asking any harness"
+file = "src/stayfixed/harnesses.py"
+before = "    for harness in HARNESSES:"
+after = """    return CANONICAL
+    for harness in HARNESSES:"""
+reddens = [
+  "tests/test_harnesses.py::test_an_environment_codex_sets_is_codex",
+]
+
+# A harness's reach is what the README's table of what each agent enforces says, so a tier the
+# registry moves without a measurement is a README that no longer matches it.
+[[mutation]]
+name = "Codex's session guards are stated as blocking"
+file = "src/stayfixed/harnesses.py"
+before = "            Surface.GUARDS: _CODEX_HOOKS_UNVERIFIED,"
+after = "            Surface.GUARDS: Reach(Tier.BLOCKS, _CODEX_HOOKS_UNVERIFIED.evidence, _CODEX_HOOKS_UNVERIFIED.measured_on),"
+reddens = [
+  "tests/test_documents.py::test_the_readme_states_each_agents_reach_as_the_registry_does",
+]
+
+# Every harness states every surface, so the table and `doctor` never meet a cell nobody filled.
+[[mutation]]
+name = "Codex's reach leaves out the session notices"
+file = "src/stayfixed/harnesses.py"
+before = "            Surface.NOTICES: _CODEX_HOOKS_UNVERIFIED,\n"
+after = ""
+reddens = [
+  "tests/test_harnesses.py::test_every_harness_states_every_surface",
+]
+
+# A harness is a value that keys a set or a dict, and its reach is a mapping, which has no hash.
+[[mutation]]
+name = "a harness's reach makes the value unhashable"
+file = "src/stayfixed/harnesses.py"
+before = "    reach: Mapping[Surface, Reach] = field(hash=False)"
+after = "    reach: Mapping[Surface, Reach]"
+reddens = [
+  "tests/test_harnesses.py::test_a_harness_can_key_a_set_and_a_dict",
+]
+
+# The footprint commands' hidden-write invariant (`tests/project/test_footprint_invariant.py`) is
+# also named by other entries whose guards it holds. Its own are `mutations/`'s "git's control
+# directory is named by no path", the shared `.git` predicate both call sites ask, and the guards
+# made to refuse more than they should, which the legitimate cases catch: `mutations/`'s "the ignore
+# guard refuses a fixed name in the clone's excludes", "the ignore guard refuses a new file at an
+# ignored place", "the ignore guard refuses an artifact kept out of git", "the ignore guard reads a
+# tracked file as ignored" and "the engine refuses every recorded artifact".
+
+[[mutation]]
+name = "git's control directory is named by no path"
+file = "src/stayfixed/fsops.py"
+before = '    return names_component(relative, CONTROL_DIRECTORY)'
+after = '    return False'
+reddens = [
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[region-into-git-s-hook-init]",
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[region-into-git-s-hook-upgrade]",
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[region-into-git-s-hook-case-folded-init]",
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[region-into-git-s-hook-case-folded-upgrade]",
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[a-new-file-under-git-init]",
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[a-new-file-under-git-upgrade]",
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[forged-record-at-git-s-hook-upgrade]",
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[forged-record-at-git-s-hook-uninstall]",
+]
+
+# A file a person or a repository owns that is not UTF-8 is its reader's own failure, never an
+# internal error: `stayfixed.toml` and the machine file, which most commands read first, and the
+# trust record, which fails loudly rather than reading as empty.
+[[mutation]]
+name = "a stayfixed.toml that is not UTF-8 crashes every command that loads it"
+file = "src/stayfixed/config/loader.py"
+before = """    except UnicodeDecodeError:
+        raise ConfigError(NOT_UTF8.format(path=CONFIG_FILE)) from None"""
+after = """    except KeyError:
+        raise ConfigError(NOT_UTF8.format(path=CONFIG_FILE)) from None"""
+reddens = [
+  "tests/test_undecodable.py::test_an_undecodable_file_is_its_readers_own_failure[stayfixed.toml, as every command loads it]",
+  "tests/test_undecodable.py::test_a_command_meeting_an_undecodable_file_fails_and_does_not_crash[bugs-check-stayfixed-toml]",
+]
+
+[[mutation]]
+name = "a machine file that is not UTF-8 crashes every command that loads the configuration"
+file = "src/stayfixed/config/loader.py"
+before = """    except UnicodeDecodeError:
+        raise MachineConfigError(NOT_UTF8.format(path=path)) from None"""
+after = """    except KeyError:
+        raise MachineConfigError(NOT_UTF8.format(path=path)) from None"""
+reddens = [
+  "tests/test_undecodable.py::test_an_undecodable_file_is_its_readers_own_failure[the machine file, under the loader]",
+  "tests/test_undecodable.py::test_a_command_meeting_an_undecodable_file_fails_and_does_not_crash[init-machine]",
+]
+
+# The default base is the remote-tracking ref spelled in full, so a tag named like the branch cannot
+# answer for it.
+[[mutation]]
+name = "the local default base is a short name a tag can answer for"
+file = "src/stayfixed/config/layout.py"
+before = '    return f"refs/remotes/origin/{config.project.base_branch}"'
+after = '    return f"origin/{config.project.base_branch}"'
+reddens = ["tests/assess/test_read_base.py::test_the_default_base_is_the_remote_tracking_ref_whatever_a_tag_is_called"]
+
+# A flag with a grammar refuses a value outside it at the parser: `gate --base` a short name a tag
+# could answer for, and `init` an answer outside its set.
+[[mutation]]
+name = "a flag's grammar takes a value outside it as typed: gate --base a short name a tag answers for, init an answer"
+file = "src/stayfixed/command.py"
+before = '        if not pattern.match(value):'
+after = '        if False:'
+reddens = [
+  "tests/assess/test_gate_command.py::test_a_short_base_name_is_refused_at_the_parser",
+  "tests/project/test_command.py::test_the_parser_refuses_an_answer_outside_its_grammar_and_writes_nothing",
+]
+
+# A `stayfixed.toml` that leaves `[ci] gate_branch` out gates its own base branch, whether this run
+# created it or a person wrote it, so the caller it renders runs for the repository's own pull
+# requests.
+[[mutation]]
+name = "a document that leaves [ci] gate_branch out gates main, not its base branch"
+file = "src/stayfixed/config/loader.py"
+before = '    return {"gate_branch": project.base_branch, **ci}'
+after = '    return {"gate_branch": "main", **ci}'
+reddens = [
+  "tests/project/test_answer_flags.py::test_a_fresh_repository_gates_the_branch_it_chose",
+  "tests/project/test_answer_flags.py::test_an_adopted_document_s_workflow_gates_the_branch_its_file_names",
+]
+
+# The branch a rendered caller names follows git's own branch-name rules, so no workflow gates a
+# branch no repository can have. Each rule dropped once.
+[[mutation]]
+name = "the gate branch grammar takes a '..' git refuses"
+file = "src/stayfixed/config/schema.py"
+before = '''    r"^(?!HEAD$)(?!.*\.\.)(?!.*//)(?!.*/\.)(?!.*\.lock(?:/|$))(?!.*[./]$)"'''
+after = '''    r"^(?!HEAD$)(?!.*//)(?!.*/\.)(?!.*\.lock(?:/|$))(?!.*[./]$)"'''
+reddens = [
+  "tests/project/test_templates.py::test_the_gate_branch_grammar_refuses_what_git_refuses",
+  "tests/project/test_templates.py::test_a_hand_written_gate_branch_git_would_refuse_renders_no_workflow",
+  "tests/project/test_command.py::test_the_parser_refuses_an_answer_outside_its_grammar_and_writes_nothing",
+]
+
+[[mutation]]
+name = "the gate branch grammar takes a '.lock' component git refuses"
+file = "src/stayfixed/config/schema.py"
+before = '''    r"^(?!HEAD$)(?!.*\.\.)(?!.*//)(?!.*/\.)(?!.*\.lock(?:/|$))(?!.*[./]$)"'''
+after = '''    r"^(?!HEAD$)(?!.*\.\.)(?!.*//)(?!.*/\.)(?!.*[./]$)"'''
+reddens = [
+  "tests/project/test_templates.py::test_the_gate_branch_grammar_refuses_what_git_refuses",
+  "tests/project/test_templates.py::test_a_hand_written_gate_branch_git_would_refuse_renders_no_workflow",
+]
+
+[[mutation]]
+name = "the gate branch grammar takes the name HEAD git refuses"
+file = "src/stayfixed/config/schema.py"
+before = '''    r"^(?!HEAD$)(?!.*\.\.)(?!.*//)(?!.*/\.)(?!.*\.lock(?:/|$))(?!.*[./]$)"'''
+after = '''    r"^(?!.*\.\.)(?!.*//)(?!.*/\.)(?!.*\.lock(?:/|$))(?!.*[./]$)"'''
+reddens = [
+  "tests/project/test_templates.py::test_the_gate_branch_grammar_refuses_what_git_refuses",
+  "tests/project/test_templates.py::test_a_hand_written_gate_branch_git_would_refuse_renders_no_workflow",
+  "tests/project/test_command.py::test_the_parser_refuses_an_answer_outside_its_grammar_and_writes_nothing",
+]
+
+# The loader holds `[project] base_branch` and `release_branch` to the branch grammar: the value
+# becomes `refs/remotes/origin/<it>`, reaches `test attribute`'s and `plan check`'s messages, and
+# `stayfixed gate` blamed `--base` for it.
+[[mutation]]
+name = "a project branch outside the branch grammar loads"
+file = "src/stayfixed/config/loader.py"
+before = "        if not BRANCH_NAME.match(getattr(project, key)):"
+after = "        if False:"
+reddens = [
+  "tests/config/test_loader.py::test_a_project_branch_outside_the_branch_grammar_is_refused_by_name[spaced-base_branch]",
+  "tests/config/test_loader.py::test_a_project_branch_outside_the_branch_grammar_is_refused_by_name[range-release_branch]",
+  "tests/assess/test_gate_command.py::test_a_base_branch_outside_its_grammar_is_named_and_never_blamed_on_base",
+]
+
+# `tomllib` reads nested arrays by recursion, so a document nested a few thousand levels deep
+# raises `RecursionError`, not `TOMLDecodeError`. Uncaught, it was an internal error, and in a
+# gate run it ended every gate: no `config:` line, no enforced gate's result. Every reader of a
+# document somebody else wrote answers it as one that does not parse.
+[[mutation]]
+name = "the TOML readers answer a document nested past the parser as an internal error"
+file = "src/stayfixed/config/loader.py"
+before = "UNPARSEABLE = (tomllib.TOMLDecodeError, RecursionError, ValueError)"
+after = "UNPARSEABLE = (tomllib.TOMLDecodeError, ValueError)"
+reddens = [
+  "tests/config/test_deep_toml.py::test_a_reader_answers_a_document_nested_past_the_parser_as_one_that_does_not_parse[loads]",
+  "tests/assess/test_gate_command.py::test_a_stayfixed_toml_nested_past_the_parser_does_not_load_naming_the_side[tree]",
+]
+
+# An integer literal longer than the interpreter converts is valid TOML that `tomllib` answers
+# with a plain `ValueError`, not a `TOMLDecodeError`: `doctor` and `gate` ended in an internal
+# error, a hook said "internal error" where it says "does not load", and three `doctor` rows went
+# red "could not run" on an overlay record holding one. Every reader shares the one tuple.
+[[mutation]]
+name = "the TOML readers answer a number past the parser as an internal error"
+file = "src/stayfixed/config/loader.py"
+before = "UNPARSEABLE = (tomllib.TOMLDecodeError, RecursionError, ValueError)"
+after = "UNPARSEABLE = (tomllib.TOMLDecodeError, RecursionError)"
+reddens = [
+  "tests/config/test_deep_toml.py::test_a_reader_answers_a_number_past_the_parser_as_a_document_that_does_not_parse[loads]",
+  "tests/config/test_deep_toml.py::test_a_reader_that_degrades_on_a_broken_record_degrades_on_a_long_number[store-bound]",
+  "tests/config/test_deep_toml.py::test_a_profile_document_holding_a_number_past_the_parser_resolves_to_nothing",
+  "tests/assess/test_gate_command.py::test_a_stayfixed_toml_holding_a_number_past_the_parser_does_not_load_naming_the_side[tree]",
+  "tests/assess/test_gate_command.py::test_a_stayfixed_toml_holding_a_number_past_the_parser_does_not_load_naming_the_side[base]",
+  "tests/assess/test_gate_command.py::test_a_trail_toml_holding_a_number_past_the_parser_is_one_gate_that_could_not_run",
+  "tests/doctor/test_checks.py::test_a_configuration_holding_a_number_past_the_parser_does_not_load",
+  "tests/hooks/test_hook_command.py::test_an_unloadable_config_refuses_a_tool_call_in_its_own_words[long-number]",
+  "tests/hooks/test_hook_command.py::test_an_unloadable_config_leaves_a_session_open_in_its_own_words[long-number]",
+  "tests/attach/test_doctor.py::test_an_owners_binding_record_holding_a_number_past_the_parser_reads_as_one_that_will_not_parse",
+]
+
+# The same document refused in stayfixed's words: the interpreter's message tells the reader to
+# raise a process-wide limit, which is no remedy for a file somebody else wrote.
+[[mutation]]
+name = "a TOML number past the parser is refused with no reason given"
+file = "src/stayfixed/config/loader.py"
+before = """
+    if not isinstance(exc, tomllib.TOMLDecodeError):
+        return TOO_LONG
+"""
+after = """
+    if False:
+        return TOO_LONG
+"""
+reddens = [
+  "tests/config/test_deep_toml.py::test_a_number_past_the_parser_is_refused_in_stayfixeds_words_not_the_interpreters",
+  "tests/assess/test_gate_command.py::test_a_stayfixed_toml_holding_a_number_past_the_parser_does_not_load_naming_the_side[tree]",
+]
+
+[[mutation]]
+name = "stayfixed.toml nested past the parser is an internal error"
+file = "src/stayfixed/config/loader.py"
+before = """
+        raw = tomllib.loads(text)
+    except UNPARSEABLE as exc:
+"""
+after = """
+        raw = tomllib.loads(text)
+    except tomllib.TOMLDecodeError as exc:
+"""
+reddens = [
+  "tests/config/test_deep_toml.py::test_a_reader_answers_a_document_nested_past_the_parser_as_one_that_does_not_parse[loads]",
+  "tests/assess/test_gate_command.py::test_a_stayfixed_toml_nested_past_the_parser_does_not_load_naming_the_side[tree]",
+  "tests/assess/test_gate_command.py::test_a_stayfixed_toml_nested_past_the_parser_does_not_load_naming_the_side[base]",
+  "tests/config/test_deep_toml.py::test_a_reader_answers_a_number_past_the_parser_as_a_document_that_does_not_parse[loads]",
+]
+
+[[mutation]]
+name = "a machine file nested past the parser is an internal error"
+file = "src/stayfixed/config/loader.py"
+before = """
+    except UNPARSEABLE as exc:
+        raise MachineConfigError(f"{path} is not valid TOML {toml_position(exc)}") from None
+"""
+after = """
+    except tomllib.TOMLDecodeError as exc:
+        raise MachineConfigError(f"{path} is not valid TOML {toml_position(exc)}") from None
+"""
+reddens = [
+  "tests/config/test_deep_toml.py::test_a_reader_answers_a_document_nested_past_the_parser_as_one_that_does_not_parse[personal]",
+  "tests/config/test_deep_toml.py::test_a_reader_answers_a_document_nested_past_the_parser_as_one_that_does_not_parse[overlay-root]",
+  "tests/config/test_deep_toml.py::test_a_reader_answers_a_document_nested_past_the_parser_as_one_that_does_not_parse[machine]",
+  "tests/config/test_deep_toml.py::test_a_reader_answers_a_number_past_the_parser_as_a_document_that_does_not_parse[personal]",
+  "tests/config/test_deep_toml.py::test_a_reader_answers_a_number_past_the_parser_as_a_document_that_does_not_parse[overlay-root]",
+  "tests/config/test_deep_toml.py::test_a_reader_answers_a_number_past_the_parser_as_a_document_that_does_not_parse[machine]",
+]
+
+[[mutation]]
+name = "the owned-key editor meets a document nested past the parser as an internal error"
+file = "src/stayfixed/config/owned.py"
+before = """
+        expected: dict[str, Any] = tomllib.loads(text)
+    except UNPARSEABLE as exc:
+"""
+after = """
+        expected: dict[str, Any] = tomllib.loads(text)
+    except tomllib.TOMLDecodeError as exc:
+"""
+reddens = [
+  "tests/config/test_deep_toml.py::test_a_reader_answers_a_document_nested_past_the_parser_as_one_that_does_not_parse[owned-rewrite]",
+  "tests/config/test_deep_toml.py::test_a_reader_answers_a_number_past_the_parser_as_a_document_that_does_not_parse[owned-rewrite]",
+]
+
+# Two readers of `stayfixed.toml` followed two rules: `read_document` refuses a symlink, and
+# `load` read the file with a plain `read_text`, so `adopt`, `bugs check`, `plan check` and the
+# rest followed a clone's `stayfixed.toml -> /dev/zero` until memory ran out. `load` reads through
+# `read_document` now; the case's link points at a valid document, so a reader that follows it
+# loads and goes on, and a regression cannot hang the run.
+[[mutation]]
+name = "load follows a symlinked stayfixed.toml"
+file = "src/stayfixed/config/loader.py"
+before = """
+    text = read_document(root)
+    if text is None:
+        raise ConfigError(NOT_THERE.format(path=root / CONFIG_FILE))
+"""
+after = """
+    text = (root / CONFIG_FILE).read_text(encoding="utf-8")
+    if text is None:
+        raise ConfigError(NOT_THERE.format(path=root / CONFIG_FILE))
+"""
+reddens = [
+  "tests/config/test_symlinked_document.py::test_load_refuses_a_symlinked_stayfixed_toml",
+  "tests/config/test_symlinked_document.py::test_every_command_family_refuses_a_symlinked_stayfixed_toml[bugs-check]",
+  "tests/assess/test_command.py::test_a_symlinked_stayfixed_toml_is_refused_and_never_followed",
+]
+
+# Every integer the schema holds is a count or a bound, so the loader refuses zero, a negative and
+# a bool (an `int` to Python). `[gates] custom_timeout_seconds` at 0 or below would make every
+# custom gate "could not run" without a word about why.
+[[mutation]]
+name = "an integer setting at or below zero loads"
+file = "src/stayfixed/config/loader.py"
+before = "    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:"
+after = "    if isinstance(value, bool) or not isinstance(value, int):"
+reddens = [
+  "tests/config/test_loader.py::test_a_gates_table_in_the_wrong_shape_is_refused[no-time-at-all]",
+  "tests/config/test_loader.py::test_a_gates_table_in_the_wrong_shape_is_refused[negative-time]",
+]
+
+[[mutation]]
+name = "a bool loads as an integer setting"
+file = "src/stayfixed/config/loader.py"
+before = "    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:"
+after = "    if not isinstance(value, int) or value <= 0:"
+reddens = [
+  "tests/config/test_loader.py::test_a_gates_table_in_the_wrong_shape_is_refused[time-as-a-bool]",
+]
+
+# `stayfixed hook` asked `is_file()` of stayfixed.toml, which follows a link: one to a regular file
+# reached the loader's refusal as an internal error, one to `/dev/zero` read as no file and ran
+# every handler without the project's configuration. The name itself is asked first now.
+[[mutation]]
+name = "the hook takes a symlinked stayfixed.toml by what it points at"
+file = "src/stayfixed/hooks/commands.py"
+before = "        if document is not None and fsops.is_symlink(document):"
+after = "        if False:"
+reddens = [
+  "tests/hooks/test_hook_command.py::test_a_symlinked_config_gets_one_named_verdict_whatever_it_points_at[PreToolUse-2-refused-regular-file]",
+  "tests/hooks/test_hook_command.py::test_a_symlinked_config_gets_one_named_verdict_whatever_it_points_at[PreToolUse-2-refused-/dev/zero]",
+  "tests/hooks/test_hook_command.py::test_a_symlinked_config_gets_one_named_verdict_whatever_it_points_at[SessionStart-0-continuing open-/dev/zero]",
+]
+
+# In the block led by `mutations/`'s "the --name refusal prints the pattern": a name refusal words
+# the grammar rather than printing the pattern.
+[[mutation]]
+name = "a custom gate's name refusal prints the pattern"
+file = "src/stayfixed/config/loader.py"
+before = "        raise ConfigError(GATES_CUSTOM_NAME.format(count=len(unusable), rule=NAME_RULE))"
+after = "        raise ConfigError(GATES_CUSTOM_NAME.format(count=len(unusable), rule=PROJECT_NAME.pattern))"
+reddens = [
+  "tests/config/test_loader.py::test_every_name_refusal_words_the_rule_and_never_prints_the_pattern",
+]
+
+# A name the repository chose — a file name, a note's name, a `memory.groups` entry, a TOML key —
+# printed raw forged a workflow command in CI with a line break and `::error::`, and drove the
+# terminal with an escape sequence. `printed.printable` withholds such a name where `--json`
+# carries it, `printed.quoted` escapes it where a refusal is the only channel, and each entry on
+# this class pins one bound or one printer that must go through it.
+
+[[mutation]]
+name = "printable passes a name outside the grammar through"
+file = "src/stayfixed/printed.py"
+before = "    return name if PATH_VALUE.match(name) else withheld"
+after = "    return name"
+reddens = [
+  "tests/test_printed.py::test_a_name_outside_the_grammar_is_withheld_by_printable",
+  "tests/test_findings.py::test_a_path_outside_the_grammar_never_reaches_a_label_raw",
+]
+
+[[mutation]]
+name = "quoted passes a name outside the grammar through"
+file = "src/stayfixed/printed.py"
+before = "    return name if PATH_VALUE.match(name) else repr(name)"
+after = "    return name"
+reddens = [
+  "tests/test_printed.py::test_a_name_outside_the_grammar_arrives_whole_and_inert_through_quoted",
+  "tests/docs/test_plans.py::test_a_crafted_plan_name_reaches_the_refusal_escaped_never_raw",
+]
+
+[[mutation]]
+name = "quoted withholds the name instead of escaping it"
+file = "src/stayfixed/printed.py"
+before = "    return name if PATH_VALUE.match(name) else repr(name)"
+after = "    return name if PATH_VALUE.match(name) else UNPRINTABLE"
+reddens = [
+  "tests/test_printed.py::test_a_name_outside_the_grammar_arrives_whole_and_inert_through_quoted",
+  "tests/ledger/test_commands.py::test_index_names_a_crafted_entry_it_cannot_read_escaped_never_raw",
+]
+
+[[mutation]]
+name = "a finding's label prints its path unbounded"
+file = "src/stayfixed/findings.py"
+before = "        where = printable(self.path, withheld) if self.path else \"-\""
+after = "        where = self.path or \"-\""
+reddens = [
+  "tests/test_findings.py::test_a_path_outside_the_grammar_never_reaches_a_label_raw",
+  "tests/ledger/test_commands.py::test_check_never_prints_a_crafted_entry_file_name_raw",
+]
+
+[[mutation]]
+name = "a finding's label ignores the caller's stand-in"
+file = "src/stayfixed/findings.py"
+before = "        where = printable(self.path, withheld) if self.path else \"-\""
+after = "        where = printable(self.path) if self.path else \"-\""
+reddens = [
+  "tests/test_findings.py::test_a_caller_without_json_names_its_own_stand_in",
+  "tests/assess/test_assessment.py::test_a_gate_finding_outside_the_path_grammar_is_withheld_without_pointing_at_json",
+]
+
+# In the block led by `mutations/`'s "the stale-key refusal says a re-run names the rest at exactly
+# the limit": a name a refusal carries is clipped, and the reason for a failed read names no
+# absolute path.
+[[mutation]]
+name = "clipped never clips"
+file = "src/stayfixed/printed.py"
+before = "    if len(name) <= CLIPPED_CHARS:"
+after = "    if True:"
+reddens = [
+  "tests/test_printed.py::test_a_name_past_the_clip_prints_its_first_characters_and_its_length",
+  "tests/docs/test_commands.py::test_a_stale_key_of_any_length_prints_clipped_to_its_start_and_its_length",
+]
+
+[[mutation]]
+name = "the scan records a read failure in words that name its absolute path"
+file = "src/stayfixed/fsops.py"
+before = "    return error.strerror or type(error).__name__"
+after = "    return str(error)"
+reddens = [
+  "tests/ledger/test_commands.py::test_renumber_names_a_file_it_could_not_read_without_this_machine_s_paths",
+]
+
+[[mutation]]
+name = "stayfixed's own path refusal is said as its class name"
+file = "src/stayfixed/fsops.py"
+before = "        return str(error)\n    return error.strerror"
+after = "        return type(error).__name__\n    return error.strerror"
+reddens = [
+  "tests/test_fsops.py::test_an_error_is_said_in_its_words_never_with_the_path_it_was_opened_by",
+]
+
+[[mutation]]
+name = "an error is said whole by having no file name rather than by its type"
+file = "src/stayfixed/fsops.py"
+before = "    if isinstance(error, UnsafePath):\n        return str(error)"
+after = "    if error.filename is None:\n        return str(error)"
+reddens = [
+  "tests/test_fsops.py::test_an_error_is_said_in_its_words_never_with_the_path_it_was_opened_by",
+]
+
+# In the block led by `mutations/`'s "init's custom-gate note keeps a limit of its own": every list
+# of names nothing bounds in number takes `findings.listed`.
+[[mutation]]
+name = "the enforced-gate refusal names every gate the project runs"
+file = "src/stayfixed/config/loader.py"
+before = "        known = listed(list(names)) or \"none\""
+after = "        known = \", \".join(names) or \"none\""
+reddens = [
+  "tests/config/test_loader.py::test_the_gates_a_project_runs_are_named_at_most_to_the_listed_limit",
+]
+
+[[mutation]]
+name = "an unknown-key refusal names every plain key"
+file = "src/stayfixed/config/loader.py"
+before = "    shown = named[:LISTED_LIMIT]"
+after = "    shown = named"
+reddens = [
+  "tests/config/test_loader.py::test_unknown_keys_are_named_at_most_to_the_listed_limit",
+]
+
+# In the block led by `mutations/`'s "printable passes a name outside the grammar through": a name
+# the repository chose is printed through `printed.printable` or `printed.quoted`.
+[[mutation]]
+name = "contained names the symlinked ancestor unescaped"
+file = "src/stayfixed/config/paths.py"
+before = "passes through a symlink at {named!r}"
+after = "passes through a symlink at {named}"
+reddens = [
+  "tests/config/test_paths.py::test_a_crafted_symlink_on_the_way_is_named_escaped_never_raw",
+]
+
+# The ancestor's absolute path said where this machine keeps the tree, and `overlay init` relayed
+# it on a `left` line.
+[[mutation]]
+name = "contained names the symlinked ancestor by its absolute path"
+file = "src/stayfixed/config/paths.py"
+before = "            named = ancestor.relative_to(root).as_posix()"
+after = "            named = str(ancestor)"
+reddens = [
+  "tests/config/test_paths.py::test_a_crafted_symlink_on_the_way_is_named_escaped_never_raw",
+  "tests/overlay/test_upgrade.py::test_init_names_a_retired_file_behind_a_symlink_by_its_place_in_the_overlay",
+]
+
+# `contained` asks each ancestor with `lstat` and gives each fault its answer, rather than
+# inheriting `Path.is_symlink()`'s, which differs between Python 3.13 and 3.14. A fault that leaves
+# the question open is a refusal: no path is contained until every ancestor is asked.
+[[mutation]]
+name = "contained reads an ancestor it cannot ask about as no link"
+file = "src/stayfixed/config/paths.py"
+before = "            if exc.errno in REACHES_NO_FILE:"
+after = "            if True:"
+reddens = [
+  "tests/config/test_paths.py::test_each_fault_an_ancestor_meets_has_one_answer_on_every_interpreter[below-a-directory-that-cannot-be-searched]",
+]
+
+# And by its place under the root, for the reason the symlink refusal gives.
+[[mutation]]
+name = "contained names an ancestor it cannot ask about by its absolute path"
+file = "src/stayfixed/config/paths.py"
+before = "                place = ancestor.relative_to(root).as_posix()"
+after = "                place = str(ancestor)"
+reddens = [
+  "tests/config/test_paths.py::test_each_fault_an_ancestor_meets_has_one_answer_on_every_interpreter[below-a-directory-that-cannot-be-searched]",
+]
+
+# The link check itself, which the explicit `lstat` now answers. A link below one that loops, or
+# below one whose target no file can have, is still found at the link.
+[[mutation]]
+name = "contained lets a symlinked ancestor through"
+file = "src/stayfixed/config/paths.py"
+before = "        if stat.S_ISLNK(mode) and not (allow_final_symlink and ancestor == target):"
+after = "        if False:"
+reddens = [
+  "tests/config/test_paths.py::test_a_symlinked_intermediate_directory_is_refused",
+  "tests/config/test_paths.py::test_each_fault_an_ancestor_meets_has_one_answer_on_every_interpreter[through-a-link-loop]",
+  "tests/config/test_paths.py::test_each_fault_an_ancestor_meets_has_one_answer_on_every_interpreter[through-a-link-to-a-name-longer-than-a-name]",
+]
+
+# A link into a directory nobody may search makes every path through it unaskable, and the link is
+# the cause: the walk asks every ancestor before it refuses the deepest one it could not ask.
+[[mutation]]
+name = "contained refuses at the first ancestor it cannot ask, before it looks for a link above"
+file = "src/stayfixed/config/paths.py"
+before = "                unasked.__cause__ = exc\n            continue"
+after = "                unasked.__cause__ = exc\n            raise unasked"
+reddens = [
+  "tests/config/test_paths.py::test_each_fault_an_ancestor_meets_has_one_answer_on_every_interpreter[through-a-link-into-a-directory-that-cannot-be-searched]",
+]
+
+# A path on which a directory cannot be asked whether it is a link neither leaves the project nor
+# passes through a symlink, so the hook's line says what it is.
+[[mutation]]
+name = "the hook words a path it cannot check as an escape"
+file = "src/stayfixed/hooks/commands.py"
+before = "            except PathUnasked:\n                return _unloadable(event_name, UNASKED_PATH)"
+after = "            except PathUnasked:\n                return _unloadable(event_name, ESCAPING_PATH)"
+reddens = [
+  "tests/hooks/test_hook_command.py::test_a_path_that_cannot_be_checked_for_a_symlink_refuses_a_tool_call_in_those_words",
+]
+
+# The fork points, asked once for `plan`, `bugs` and `test attribute`. A history the change shapes
+# itself can have several merge bases, and the one git picks alone, the newest by date, can already
+# hold what the change puts back or deletes.
+[[mutation]]
+name = "the fork points are the one merge base git picks"
+file = "src/stayfixed/gitenv.py"
+before = """    code, out = git_run(root, "merge-base", "--all", base, "HEAD")"""
+after = """    code, out = git_run(root, "merge-base", base, "HEAD")"""
+reddens = [
+  "tests/test_fork_points.py::test_every_merge_base_is_named_in_git_s_order",
+  "tests/ledger/test_check.py::test_a_deletion_is_named_whichever_of_several_merge_bases_git_would_pick",
+  "tests/docs/test_plans.py::test_a_plan_is_linted_whichever_of_several_merge_bases_git_would_pick",
+  "tests/guards/test_attribute.py::test_several_merge_bases_leave_the_attribution_undetermined",
+]
+
+# In a shallow clone the fork point can be cut off and an older commit be what git names.
+[[mutation]]
+name = "a shallow clone's merge base is a fork point"
+file = "src/stayfixed/gitenv.py"
+before = """    if out.strip() == "true":
+        return ForkUnknown(SHALLOW, answered=True)"""
+after = """    if False:
+        return ForkUnknown(SHALLOW, answered=True)"""
+reddens = [
+  "tests/test_fork_points.py::test_a_shallow_clone_is_not_known",
+  "tests/ledger/test_check.py::test_a_shallow_clone_is_a_failure_never_an_older_fork_point",
+  "tests/docs/test_plans.py::test_a_shallow_clone_is_a_base_that_will_not_resolve_never_an_older_fork_point",
+  "tests/guards/test_attribute.py::test_a_shallow_clone_leaves_the_attribution_undetermined",
+]
+
+# Whether the clone is shallow is a question too, and one git does not answer is not "not shallow".
+[[mutation]]
+name = "a shallow check git does not answer reads as a full clone"
+file = "src/stayfixed/gitenv.py"
+before = """    code, out = git_run(root, "rev-parse", "--is-shallow-repository")
+    if code != 0:
+        return ForkUnknown.of(code)"""
+after = """    code, out = git_run(root, "rev-parse", "--is-shallow-repository")
+    if False:
+        return ForkUnknown.of(code)"""
+reddens = [
+  "tests/test_fork_points.py::test_a_shallow_check_git_does_not_answer_is_not_known[no-answer]",
+  "tests/test_fork_points.py::test_a_shallow_check_git_does_not_answer_is_not_known[signalled]",
+  "tests/test_fork_points.py::test_a_shallow_check_git_does_not_answer_is_not_known[refused]",
+  "tests/ledger/test_check.py::test_a_shallow_check_git_does_not_answer_is_a_failure_never_a_full_clone[no-answer]",
+  "tests/ledger/test_check.py::test_a_shallow_check_git_does_not_answer_is_a_failure_never_a_full_clone[refused]",
+  "tests/docs/test_plans.py::test_a_shallow_check_git_does_not_answer_never_reads_as_a_full_clone[no-answer]",
+  "tests/docs/test_plans.py::test_a_shallow_check_git_does_not_answer_never_reads_as_a_full_clone[refused]",
+  "tests/guards/test_attribute.py::test_a_shallow_check_git_does_not_answer_leaves_the_attribution_undetermined[no-answer]",
+  "tests/guards/test_attribute.py::test_a_shallow_check_git_does_not_answer_leaves_the_attribution_undetermined[refused]",
+]
+
+# A base that shares no commit with HEAD has no fork point, and none to compare with would pass
+# whatever the change deleted or put back.
+[[mutation]]
+name = "a base that shares no commit reads as no fork point to compare"
+file = "src/stayfixed/gitenv.py"
+before = """    if code == 1 and not forks:
+        return ForkUnknown(DISJOINT, answered=True)"""
+after = """    if code == 1 and not forks:
+        return []"""
+reddens = [
+  "tests/test_fork_points.py::test_a_base_that_shares_no_commit_is_not_known_and_says_so",
+  "tests/ledger/test_check.py::test_a_base_that_shares_no_history_with_the_tree_is_a_failure",
+  "tests/docs/test_plans.py::test_a_base_that_shares_no_history_with_the_tree_will_not_resolve",
+]
+
+# A base git cannot resolve names no fork point, and that is not "none to compare".
+[[mutation]]
+name = "a base git cannot resolve reads as no fork point to compare"
+file = "src/stayfixed/gitenv.py"
+before = """    if code != 0 or not forks:
+        return ForkUnknown.of(code)"""
+after = """    if code < 0:
+        return ForkUnknown.of(code)"""
+reddens = [
+  "tests/test_fork_points.py::test_a_merge_base_git_does_not_give_is_not_known[missing-ref]",
+  "tests/ledger/test_check.py::test_a_base_git_cannot_list_never_reads_as_a_base_with_no_ledger",
+  "tests/docs/test_plans.py::test_a_base_that_will_not_resolve_is_raised_never_an_ok",
+  "tests/guards/test_attribute.py::test_a_base_git_names_in_bytes_that_are_not_text_keeps_git_s_own_exit_code",
+  "tests/assess/test_gates.py::test_a_base_the_bugs_gate_cannot_list_is_a_gate_that_could_not_run",
+]
+
+# A git a signal ended answered nothing, whatever negative number `subprocess` gives it: read as a
+# refusal, it sends a reader to fetch a ref that is already here.
+[[mutation]]
+name = "a git a signal ended reads as a refusal"
+file = "src/stayfixed/gitenv.py"
+before = """        if code < 0:
+            return cls(NO_ANSWER, answered=False)"""
+after = """        if code == -1:
+            return cls(NO_ANSWER, answered=False)"""
+reddens = [
+  "tests/test_fork_points.py::test_a_shallow_check_git_does_not_answer_is_not_known[signalled]",
+  "tests/test_fork_points.py::test_a_merge_base_git_does_not_give_is_not_known[signalled]",
+]
+
+# A `stayfixed.toml` that does not load reached the generic handler and printed `internal error`
+# with the loader's message, which reads as a stayfixed bug and carries the repository's text to
+# the model on a refused `PreToolUse`. The two named branches are the guard; their exit code
+# matches the generic one's, so only the words can tell them apart.
+[[mutation]]
+name = "the hook reports an unloadable config as an internal error"
+file = "src/stayfixed/hooks/commands.py"
+before = "            except PathEscape:"
+after = "            except OSError:"
+reddens = [
+  "tests/hooks/test_hook_command.py::test_an_unloadable_config_refuses_a_tool_call_in_its_own_words[escaping-path]",
+]
+
+[[mutation]]
+name = "the hook prints a refused value's own text as an internal error"
+file = "src/stayfixed/hooks/commands.py"
+before = "            except ConfigError:"
+after = "            except OSError:"
+reddens = [
+  "tests/hooks/test_hook_command.py::test_an_unloadable_config_refuses_a_tool_call_in_its_own_words[refused-value]",
+]
+
+# A broken machine file raises a `ConfigError` too; caught with the others, the hook blamed it on
+# `stayfixed.toml` and pointed at `stayfixed docs check` about a file that loads.
+[[mutation]]
+name = "the hook blames a broken machine file on stayfixed.toml"
+file = "src/stayfixed/hooks/commands.py"
+before = """            except MachineConfigError:
+                # The machine file's fault, not `stayfixed.toml`'s: this line would name the
+                # wrong file, so it keeps the generic verdict below.
+                raise
+"""
+after = ""
+reddens = [
+  "tests/hooks/test_hook_command.py::test_a_machine_file_that_does_not_load_is_not_blamed_on_stayfixed_toml",
+]
+
+# What `gh`, `git clone`, `git init` and `pre-commit` print reached a terminal and a CI log raw: a
+# line break followed by `::error::` is a workflow command there, and an escape drives a terminal.
+[[mutation]]
+name = "a subprocess's answer is quoted raw"
+file = "src/stayfixed/printed.py"
+before = '    return clipped(done.stderr.strip() or done.stdout.strip() or f"exit {done.code}")'
+after = '    return done.stderr.strip() or done.stdout.strip() or f"exit {done.code}"'
+reddens = [
+  "tests/overlay/test_publish.py::test_what_gh_prints_cannot_drive_a_terminal",
+  "tests/attach/test_write.py::test_what_pre_commit_prints_cannot_drive_a_terminal",
+  "tests/setup/test_setup.py::test_what_a_plugin_command_prints_cannot_drive_a_terminal[marketplace add]",
+  "tests/setup/test_setup.py::test_what_a_plugin_command_prints_cannot_drive_a_terminal[install]",
+  "tests/overlay/test_create.py::test_what_gh_and_git_print_cannot_drive_a_terminal[repo-create]",
+  "tests/overlay/test_create.py::test_what_gh_and_git_print_cannot_drive_a_terminal[clone-and-view]",
+  "tests/overlay/test_create.py::test_what_git_init_prints_cannot_drive_a_terminal",
+  "tests/overlay/test_create.py::test_a_probe_failure_is_printed_without_letting_it_drive_a_terminal",
+]
+
+# The note store a delivery row reads is resolved once per area per report, and a resolution
+# that refuses is the row's skip, by the one rule `errors.resolved_or_none` holds for every answer a
+# row reads and does not own. A `Refusal` that escaped it would reach the report's guard and turn
+# both store rows red, "this check could not run", for a `stayfixed.toml` the repository is
+# entitled to write.
+[[mutation]]
+name = "the delivery rows let a refusing store escape"
+file = "src/stayfixed/errors.py"
+before = "    except (Failure, Refusal, OSError):"
+after = "    except (Failure, OSError):"
+reddens = [
+  "tests/memory/test_doctor.py::test_a_store_that_refuses_skips_the_store_checks[resolver-raises]",
+]
+
+# A document nested past what `json.loads` follows raises `RecursionError` on every supported
+# Python, and every caller of the shared reader catches its refusal and nothing else: the settings
+# engine's (`doctor`'s `hook-entries` read "this check could not run" and `attach` ended in an
+# internal error), `attach`'s reader of the settings file it merges into, and its reader of the
+# ledger it wrote (`doctor` warns and `attach` and `detach` fail before they write), each on a file
+# a clone can commit. One line serves all three readers, so one entry names a test of each.
+[[mutation]]
+name = "the JSON object reader lets a document nested past the parser raise"
+file = "src/stayfixed/jsonobject.py"
+before = """
+    except RecursionError:
+        raise _past(label, NESTED, error, limit) from None
+    except ValueError:
+"""
+after = """
+    except ZeroDivisionError:
+        raise _past(label, NESTED, error, limit) from None
+    except ValueError:
+"""
+reddens = [
+  "tests/scaffold/test_entries.py::test_a_document_nested_past_the_parsers_reach_refuses_as_one_past_a_limit",
+  "tests/doctor/test_checks.py::test_a_settings_file_nested_past_the_parsers_reach_is_one_the_walk_cannot_check[.claude/settings.json]",
+  "tests/attach/test_write.py::test_a_settings_file_nested_past_the_parsers_reach_is_refused",
+  "tests/attach/test_doctor.py::test_a_committed_ledger_of_a_shape_attach_never_writes_reads_as_unreadable[nested]",
+  "tests/attach/test_write.py::test_a_ledger_nested_past_the_parsers_reach_is_a_failure_and_never_an_internal_error",
+  "tests/attach/test_detach.py::test_a_ledger_nested_past_the_parsers_reach_removes_nothing",
+  "tests/overlay/test_requires.py::test_a_manifest_past_the_parsers_reach_is_nothing_declared",
+]
+
+# The same document holding an integer literal longer than the interpreter converts: `json.loads`
+# raises a plain `ValueError`, which is neither of the two errors above. Each reader refuses it as
+# it refuses the nesting — a committed ledger holding one read red, "this check could not run", in
+# `doctor`'s `attached` and `hook-entries` rows — and `owned_ids` reads the number as its text,
+# below, so `doctor` never meets it in a settings file.
+[[mutation]]
+name = "the JSON object reader lets a number past the parser's reach raise"
+file = "src/stayfixed/jsonobject.py"
+before = "    except ValueError:"
+after = "    except ZeroDivisionError:"
+reddens = [
+  "tests/scaffold/test_entries.py::test_a_number_past_the_parsers_reach_is_read_for_ids_and_refused_by_a_merge",
+  "tests/attach/test_write.py::test_a_settings_file_holding_a_number_past_the_parsers_reach_is_refused",
+  "tests/attach/test_doctor.py::test_a_committed_ledger_of_a_shape_attach_never_writes_reads_as_unreadable[long-number]",
+  "tests/attach/test_doctor.py::test_a_forged_entry_beside_an_unreadable_ledger_fails_the_report[long-number-overlay]",
+  "tests/attach/test_write.py::test_a_ledger_holding_a_number_past_the_parsers_reach_is_a_failure_and_never_an_internal_error",
+  "tests/attach/test_detach.py::test_a_ledger_holding_a_number_past_the_parsers_reach_removes_nothing",
+]
+
+# The other half of the overlay's requires reader's "this reader answers for every string", after
+# the digit bound `mutations/`'s "the version grammar stops bounding its components" holds.
+# `json.loads` answers for a list, a string and a number as readily as for an object and `raw.get`
+# exists on none of them, so without the shared reader's object arm a manifest an owner can save
+# raised `AttributeError` out of a function whose docstring promises `None` for anything it cannot
+# read. The session handler rests on that promise: its backstop swallows a raised reader together
+# with every other line of the same result — which is how an overlay manifest silenced
+# `NOT_ATTACHED` once already.
+[[mutation]]
+name = "the requires reader raises for a manifest that is not an object"
+file = "src/stayfixed/jsonobject.py"
+before = "    if not isinstance(raw, dict):"
+after = "    if False:"
+reddens = [
+  "tests/overlay/test_requires.py::test_a_manifest_whose_top_level_is_not_an_object_is_nothing_declared",
+]
+
+# stayfixed declares that it makes no network request of its own; that holds only while no module
+# imports one of the standard library's network modules.
+[[mutation]]
+name = "a module imports a network-capable library"
+file = "src/stayfixed/runner.py"
+before = "import subprocess"
+after = "import socket, subprocess"
+reddens = ["tests/test_outbound.py::test_no_module_imports_a_network_or_native_module"]
+
+# A file a run removed left the directories above it empty: noise git does not even keep. The
+# walk up from the file's own directory is what takes them.
+[[mutation]]
+name = "the empty parents of a removed file are never walked"
+file = "src/stayfixed/fsops.py"
+before = "    for depth in range(len(parts) - 1, 0, -1):"
+after = "    for depth in range(0):"
+reddens = [
+  "tests/test_fsops.py::test_rmdir_parents_within_removes_each_empty_parent_and_never_the_root",
+]
+
+# Every walk here opens each directory with `O_NOFOLLOW`, so a component that is a symlink is
+# refused rather than followed out of the root.
+[[mutation]]
+name = "the containment walk follows a symlinked directory"
+file = "src/stayfixed/fsops.py"
+before = '_DIR_FLAGS = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)'
+after = '_DIR_FLAGS = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)'
+reddens = [
+  "tests/test_fsops.py::test_rmdir_parents_within_leaves_a_symlinked_directory_and_what_it_points_at",
+  "tests/config/test_paths.py::test_a_link_inside_a_tree_past_the_longest_path_is_missed_by_contained_and_refused_by_the_write",
+]
+
+# A command named by a name the parser no longer registers, in a file a reader or a model reads.
+[[mutation]]
+name = "a source comment names the overlay command by its old name"
+file = "src/stayfixed/gitenv.py"
+before = "and not through `git_run`, on purpose: `stayfixed overlay publish-template`, a maintainer"
+after = "and not through `git_run`, on purpose: `stayfixed overlay publish`, a maintainer"
+reddens = [
+  "tests/test_documents.py::test_every_command_a_tracked_file_names_is_one_the_parser_registers",
+]
+
+# `doctor`'s report imports every area's `doctor.py` through `area_imports`, which hands an import
+# that raises over in the area's place, so one broken area costs one red row and not the report.
+[[mutation]]
+name = "discovery lets an area's import failure escape"
+file = "src/stayfixed/areas.py"
+before = "        except Exception as exc:  # an area's broken import is handed over, never raised here"
+after = "        except OSError as exc:  # an area's broken import is handed over, never raised here"
+reddens = [
+  "tests/boundaries/test_discovery.py::test_an_area_submodule_that_fails_to_import_is_handed_over_as_its_exception",
+  "tests/doctor/test_command.py::test_an_area_whose_doctor_module_fails_to_import_costs_one_red_row_and_not_the_report",
+]
+
+# The delivery areas are pinned as a literal, because the one crossing meant to stay exercises only
+# `overlay`: a constant that lost `memory` would let a new crossing into it through.
+[[mutation]]
+name = "memory stops being a delivery area"
+file = "src/stayfixed/areas.py"
+before = 'DELIVERY_AREAS: frozenset[str] = frozenset({"attach", "memory", "overlay"})'
+after = 'DELIVERY_AREAS: frozenset[str] = frozenset({"attach", "overlay"})'
+reddens = ["tests/boundaries/test_delivery.py::test_the_delivery_areas_are_attach_memory_and_overlay"]
+
+# The delivery rule reads import statements, so the core reaching the private layer by a string —
+# inside a function, where no import-time probe sees it run — crossed with every boundary test
+# green. A string import in the core is discovery's alone, under each spelling of it.
+[[mutation]]
+name = "a core function imports the note store through importlib"
+file = "src/stayfixed/cli.py"
+before = '    return [module.register for module in area_modules("commands")]'
+after = '''    import importlib
+
+    importlib.import_module("stayfixed.memory.store")
+    return [module.register for module in area_modules("commands")]'''
+reddens = ["tests/boundaries/test_delivery.py::test_no_core_module_imports_by_a_string_but_discovery"]
+
+[[mutation]]
+name = "a core function imports the note store through __import__"
+file = "src/stayfixed/cli.py"
+before = '    return [module.register for module in area_modules("commands")]'
+after = '''    __import__("stayfixed.memory.store")
+    return [module.register for module in area_modules("commands")]'''
+reddens = ["tests/boundaries/test_delivery.py::test_no_core_module_imports_by_a_string_but_discovery"]
+
+[[mutation]]
+name = "a core function imports the note store through an alias of import_module"
+file = "src/stayfixed/cli.py"
+before = '    return [module.register for module in area_modules("commands")]'
+after = '''    from importlib import import_module as load
+
+    load("stayfixed.memory.store")
+    return [module.register for module in area_modules("commands")]'''
+reddens = ["tests/boundaries/test_delivery.py::test_no_core_module_imports_by_a_string_but_discovery"]
+
+# The standard library imports by a string without either name that rule reads:
+# `pkgutil.resolve_name` crossed with every import-boundary test green.
+# So the core's imports of the import machinery are pinned, each with what it reaches.
+[[mutation]]
+name = "a core function imports the note store through pkgutil.resolve_name"
+file = "src/stayfixed/cli.py"
+before = '    return [module.register for module in area_modules("commands")]'
+after = '''    import pkgutil
+
+    pkgutil.resolve_name("stayfixed.memory.store")
+    return [module.register for module in area_modules("commands")]'''
+reddens = ["tests/boundaries/test_delivery.py::test_no_core_module_reaches_the_import_machinery_but_where_pinned"]
+
+# `importlib.resources.files` imports the anchor it is handed when that names a module, so it reads
+# only the package's own data when handed `__package__` or `"stayfixed"`, and is the import
+# machinery in every other spelling.
+[[mutation]]
+name = "a core function opens the note store's resources by its module name"
+file = "src/stayfixed/cli.py"
+before = '    return [module.register for module in area_modules("commands")]'
+after = '''    from importlib import resources
+
+    resources.files("stayfixed.memory.store")
+    return [module.register for module in area_modules("commands")]'''
+reddens = ["tests/boundaries/test_delivery.py::test_no_core_module_reaches_the_import_machinery_but_where_pinned"]
+
+[[mutation]]
+name = "a core function opens the note store's resources through files imported by name"
+file = "src/stayfixed/cli.py"
+before = '    return [module.register for module in area_modules("commands")]'
+after = '''    from importlib.resources import files
+
+    files("stayfixed.memory.store")
+    return [module.register for module in area_modules("commands")]'''
+reddens = ["tests/boundaries/test_delivery.py::test_no_core_module_reaches_the_import_machinery_but_where_pinned"]
+
+# The standard library's other doors that import a module named by a string, each of which crossed
+# with every boundary test green: `pydoc.locate`, an unpickler, `marshal`'s code objects and
+# `logging.config`'s resolver. `logging.config` is a network module as well, which the outbound
+# rule holds on its own.
+[[mutation]]
+name = "a core function imports the note store through pydoc.locate"
+file = "src/stayfixed/cli.py"
+before = '    return [module.register for module in area_modules("commands")]'
+after = '''    import pydoc
+
+    pydoc.locate("stayfixed.memory.store.resolve")
+    return [module.register for module in area_modules("commands")]'''
+reddens = ["tests/boundaries/test_delivery.py::test_no_core_module_reaches_the_import_machinery_but_where_pinned"]
+
+[[mutation]]
+name = "a core function unpickles a reference to the note store"
+file = "src/stayfixed/cli.py"
+before = '    return [module.register for module in area_modules("commands")]'
+after = '''    import pickle
+
+    pickle.loads(b"cstayfixed.memory.store\nresolve\n.")
+    return [module.register for module in area_modules("commands")]'''
+reddens = ["tests/boundaries/test_delivery.py::test_no_core_module_reaches_the_import_machinery_but_where_pinned"]
+
+[[mutation]]
+name = "a core function loads code through marshal"
+file = "src/stayfixed/cli.py"
+before = '    return [module.register for module in area_modules("commands")]'
+after = '''    import marshal
+
+    marshal.loads(marshal.dumps(None))
+    return [module.register for module in area_modules("commands")]'''
+reddens = ["tests/boundaries/test_delivery.py::test_no_core_module_reaches_the_import_machinery_but_where_pinned"]
+
+[[mutation]]
+name = "a core function resolves the note store through logging.config"
+file = "src/stayfixed/cli.py"
+before = '    return [module.register for module in area_modules("commands")]'
+after = '''    import logging.config
+
+    logging.config.BaseConfigurator({}).resolve("stayfixed.memory.store.resolve")
+    return [module.register for module in area_modules("commands")]'''
+reddens = [
+  "tests/boundaries/test_delivery.py::test_no_core_module_reaches_the_import_machinery_but_where_pinned",
+  "tests/test_outbound.py::test_no_module_imports_a_network_or_native_module",
+]
+
+# Discovery is exempt from the name rule for its two imports by name and nothing else, so it may
+# not run text, read a finder or reach a loader the way no other core module may.
+[[mutation]]
+name = "discovery runs text beside its two imports by name"
+file = "src/stayfixed/areas.py"
+before = "    return [importlib.import_module(name) for name in _qualified(submodule)]"
+after = """    def _load() -> None:
+        exec("import stayfixed.memory.store")
+
+    return [importlib.import_module(name) for name in _qualified(submodule)]"""
+reddens = ["tests/boundaries/test_delivery.py::test_no_core_module_imports_by_a_string_but_discovery"]
+
+# Discovery is the door the delivery rule leaves open, and asking it for any submodule but the three
+# it is for walks every area through it, the private layer's included.
+[[mutation]]
+name = "a core module asks discovery for every area's api.py"
+file = "src/stayfixed/hooks/registry.py"
+before = "                raise UnknownHookEvent("
+after = '''                area_modules("api")
+                raise UnknownHookEvent('''
+reddens = ["tests/boundaries/test_discovery.py::test_discovery_is_asked_only_for_the_submodules_it_names"]
+
+# The path grammar is a leaf that imports nothing from the package, because the configuration
+# reads it and prints through `findings`, which prints through `printed`, which reads it too: with
+# the grammar reading `config.schema` again, the configuration and the grammar import each other.
+[[mutation]]
+name = "the path grammar reads the configuration's schema again"
+file = "src/stayfixed/grammar.py"
+before = "import re"
+after = """import re
+
+from stayfixed.config.schema import Config"""
+reddens = [
+  "tests/boundaries/test_layering.py::test_the_packages_import_one_another_without_a_cycle_at_module_level",
+]
+
+# `profiles/__init__.py` imports `evaluate`, which imports `gitenv`, so `gitenv` reading any
+# submodule of `profiles`, even inside a function where no import fails, is a cycle through that
+# `__init__`: the import a review planted, which every cycle test passed until the module graph ran
+# the packages above the module imported.
+[[mutation]]
+name = "gitenv reads the profiles inside a function"
+file = "src/stayfixed/gitenv.py"
+before = "    env = {key: os.environ[key] for key in GIT_ENV_KEEP if key in os.environ}"
+after = """    from stayfixed.profiles.model import Check  # noqa: F401
+
+    env = {key: os.environ[key] for key in GIT_ENV_KEEP if key in os.environ}"""
+reddens = [
+  "tests/boundaries/test_layering.py::test_the_modules_import_one_another_without_a_cycle_even_inside_functions",
+]
+
+# One line for both halves of the bound, because one regex holds both. Unbounded `\d+` restores
+# the `ValueError` past CPython's 4300-digit `int()` cap — which `doctor` renders as "this check
+# could not run" and the session handler's backstop swallows along with every other line of the
+# same result, `NOT_ATTACHED` included — and restores the Unicode-aware digit class, which let a
+# floor written in Eastern Arabic-Indic numerals validate and print back verbatim. The core's own
+# reader is named first: `later` is what `upgrade`, `doctor` and `stayfixed gate` call, so the
+# bound is held by a test of the core and not only by the overlay's and `attach`'s.
+[[mutation]]
+name = "the version grammar stops bounding its components"
+file = "src/stayfixed/semver.py"
+before = 'COMPONENT = r"([0-9]{1,9})"'
+after = 'COMPONENT = r"(\d+)"'
+reddens = [
+  "tests/test_semver.py::test_a_component_past_nine_digits_is_no_version_and_never_an_exception",
+  "tests/test_semver.py::test_a_version_in_digits_that_are_not_ascii_is_no_version",
+  "tests/overlay/test_requires.py::test_a_component_too_long_to_convert_is_unreadable_and_not_an_exception",
+  "tests/overlay/test_requires.py::test_only_ascii_digits_are_a_version",
+  "tests/attach/test_hooks.py::test_an_unreadable_floor_costs_its_own_line_and_never_the_whole_result",
+]
+
+# Read by the triple alone, a release and its own pre-release were one version, so a pre-release
+# build moved a project recording the release down to itself and re-pinned it.
+[[mutation]]
+name = "a release reads as older than its own pre-release"
+file = "src/stayfixed/semver.py"
+before = "    if not suffix and _PRE_RELEASE.match(other):\n        return True"
+after = "    if not suffix and _PRE_RELEASE.match(other):\n        return False"
+reddens = [
+  "tests/test_semver.py::test_equal_triples_order_a_release_after_its_pre_release_and_nothing_else",
+  "tests/project/test_upgrade.py::test_a_pre_release_build_never_moves_a_project_recording_the_release_down_to_itself",
+]
+
+# `init` writes the `.gitignore` block as a scaffold artifact and `attach` merges it into the file;
+# both are held to the bytes a project already carries, so changing the one spelling of the block
+# changes what both write.
+[[mutation]]
+name = "the ignore block's note changes under both of its writers"
+file = "src/stayfixed/config/layout.py"
+before = """IGNORE_NOTE = "# stayfixed's local state: yours, never a collaborator's.""""
+after = """IGNORE_NOTE = "# stayfixed's local state.""""
+reddens = [
+  "tests/project/test_templates.py::test_the_ignore_block_init_writes_is_the_block_attach_writes",
+]
+
+# A git that fails at everything is unavailable, never a repository that answered — with no
+# `origin` remote, or with no checkout that owns a worktree: the exit code alone cannot tell the
+# two apart, so the three-valued answer both readers take asks a second question that needs no
+# repository. One line serves both readers, so one entry names a test of each.
+[[mutation]]
+name = "a broken git reads as a repository that answered"
+file = "src/stayfixed/gitenv.py"
+before = "    if probe[0] != 0:"
+after = "    if False:"
+reddens = [
+  "tests/test_git_answers.py::test_a_git_that_fails_everything_is_not_a_repository_without_an_origin",
+  "tests/memory/test_store.py::test_a_git_that_exits_non_zero_for_everything_cannot_name_the_main_checkout",
+]
+
+# A machine file the overlay root's reader cannot open is the loader's `MachineConfigError`, in the
+# loader's words, so it reaches every caller as the `Failure` they catch rather than as a bare
+# `PermissionError`. The reader is the loader's own, which `[personal]` is read through too.
+[[mutation]]
+name = "the overlay root's reader lets a machine file it cannot read raise past its callers"
+file = "src/stayfixed/config/loader.py"
+before = "    except OSError as exc:\n        raise MachineConfigError(UNREADABLE.format("
+after = "    except FileNotFoundError as exc:\n        raise MachineConfigError(UNREADABLE.format("
+reddens = [
+  "tests/test_undecodable.py::test_a_file_without_read_permission_cannot_be_read_and_says_so[overlay-root]",
+  "tests/test_undecodable.py::test_a_file_without_read_permission_cannot_be_read_and_says_so[machine]",
+  "tests/test_undecodable.py::test_a_file_without_read_permission_cannot_be_read_and_says_so[setup]",
+]
+
+# `fsops.names_regular_file` is the one place a path that names no file is told from one that cannot
+# be asked about, for `hook-entries`' walk over settings files and for `attach`'s ledger reader, so
+# one entry per decision proves it for both. A path a clone can commit that names no file -- nothing
+# there, a dangling link, a loop -- is skipped by the walk and is no ledger to the reader: there is
+# nothing there for a harness to read either. Neither reader may call it one it cannot read.
+[[mutation]]
+name = "hook-entries is blind to a settings path that names no file"
+file = "src/stayfixed/fsops.py"
+before = "        if exc.errno in NAMES_NO_FILE:"
+after = "        if False:"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_settings_path_that_names_no_file_is_skipped_as_before[a-dangling-link]",
+  "tests/doctor/test_checks.py::test_a_settings_path_that_names_no_file_is_skipped_as_before[a-link-loop]",
+  "tests/attach/test_doctor.py::test_a_ledger_path_that_names_no_file_is_no_ledger_as_before[a-dangling-link]",
+  "tests/attach/test_doctor.py::test_a_ledger_path_that_names_no_file_is_no_ledger_as_before[a-link-loop]",
+  "tests/attach/test_doctor.py::test_a_marked_entry_with_no_ledger_at_all_is_still_reported",
+]
+
+# Something other than a regular file -- a directory -- names no file to read, whichever reader asks.
+[[mutation]]
+name = "hook-entries reads a settings path that is no regular file"
+file = "src/stayfixed/fsops.py"
+before = "    return stat.S_ISREG(mode)"
+after = "    return True"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_settings_path_that_names_no_file_is_skipped_as_before[a-directory]",
+  "tests/attach/test_doctor.py::test_a_ledger_path_that_names_no_file_is_no_ledger_as_before[a-directory]",
+]
+
+# Any other fault is the caller's to classify, and the probe raises it rather than answering for
+# the caller: read as no file, a symbolic link to a name longer than a file name may be hides a
+# settings file from `hook-entries` and a ledger from `attached`.
+[[mutation]]
+name = "the regular-file probe reads a path it cannot ask about as no file"
+file = "src/stayfixed/fsops.py"
+before = "        if exc.errno in NAMES_NO_FILE:"
+after = "        if True:"
+reddens = [
+  "tests/test_fsops.py::test_a_path_names_a_regular_file_or_no_file_and_any_other_fault_is_the_callers",
+]
+
+# `fsops`' four path predicates answer one way on every interpreter, where `pathlib`'s raise on a
+# fault up to Python 3.13 and answer `False` from 3.14. A name or a path longer than the system
+# takes reaches no file, as a dangling link and a loop do: raised, it ended `attach` over an
+# overlay with nothing wrong with it in an internal error on 3.11 to 3.13 alone. `contained` reads
+# the same set, so an ancestor past the longest path holds no link to follow there either.
+[[mutation]]
+name = "the path predicates read a name longer than the system takes as a fault"
+file = "src/stayfixed/fsops.py"
+before = "REACHES_NO_FILE = NAMES_NO_FILE | {errno.ENAMETOOLONG}"
+after = "REACHES_NO_FILE = NAMES_NO_FILE"
+reddens = [
+  "tests/test_fsops.py::test_the_path_predicates_answer_each_fault_alike_on_every_interpreter[a-name-longer-than-a-name]",
+  "tests/test_fsops.py::test_the_path_predicates_answer_each_fault_alike_on_every_interpreter[past-the-longest-path]",
+  "tests/test_fsops.py::test_the_path_predicates_answer_each_fault_alike_on_every_interpreter[through-a-link-to-a-name-longer-than-a-name]",
+  "tests/test_fsops.py::test_the_path_predicates_answer_each_fault_alike_on_every_interpreter[a-link-to-a-name-longer-than-a-name]",
+  "tests/config/test_paths.py::test_each_fault_an_ancestor_meets_has_one_answer_on_every_interpreter[a-name-longer-than-a-name]",
+  "tests/config/test_paths.py::test_each_fault_an_ancestor_meets_has_one_answer_on_every_interpreter[past-the-longest-path]",
+  "tests/attach/test_write.py::test_a_source_past_the_longest_path_under_a_project_with_no_directory_is_no_source[projects-kept]",
+  "tests/attach/test_write.py::test_a_source_past_the_longest_path_under_a_project_with_no_directory_is_no_source[projects-absent]",
+  "tests/hooks/test_dispatch.py::test_the_walk_finds_the_root_above_a_directory_too_deep_to_name_its_dot_git",
+  "tests/config/test_paths.py::test_a_link_inside_a_tree_past_the_longest_path_is_missed_by_contained_and_refused_by_the_write",
+]
+
+# The hook's walk for `.git` asks `fsops` too: `Path.exists()` raised on a `<cwd>/.git` past the
+# longest path up to 3.13, so every hook in such a directory was an internal error there. The guard
+# walk reddens on every interpreter, and the walk's own case on 3.11 to 3.13.
+[[mutation]]
+name = "the hook's walk for .git asks pathlib what is there"
+file = "src/stayfixed/gitenv.py"
+before = '        if fsops.exists(directory / ".git"):'
+after = '        if (directory / ".git").exists():'
+reddens = [
+  "tests/test_fsops.py::test_no_module_asks_pathlib_what_is_at_a_path_a_repository_can_shape",
+]
+
+# Any other fault leaves the question open, and "cannot tell" is not "no": a directory that cannot
+# be searched raises, as it did up to 3.13, where 3.14 answered `False`.
+[[mutation]]
+name = "the path predicates read a fault they cannot answer as nothing there"
+file = "src/stayfixed/fsops.py"
+before = "        if exc.errno in REACHES_NO_FILE:"
+after = "        if True:"
+reddens = [
+  "tests/test_fsops.py::test_the_path_predicates_answer_each_fault_alike_on_every_interpreter[below-a-directory-that-cannot-be-searched]",
+  "tests/test_fsops.py::test_the_path_predicates_answer_each_fault_alike_on_every_interpreter[through-a-link-into-a-directory-that-cannot-be-searched]",
+]
+
+# A NUL names no file anywhere, and `pathlib`'s predicates answer it `False` on every interpreter.
+[[mutation]]
+name = "the path predicates raise on a NUL"
+file = "src/stayfixed/fsops.py"
+before = "        raise\n    except ValueError:\n        return None"
+after = "        raise"
+reddens = [
+  "tests/test_fsops.py::test_the_path_predicates_answer_each_fault_alike_on_every_interpreter[a-nul]",
+]
+
+[[mutation]]
+name = "is_file answers for anything that is there"
+file = "src/stayfixed/fsops.py"
+before = "    return mode is not None and stat.S_ISREG(mode)"
+after = "    return mode is not None"
+reddens = [
+  "tests/test_fsops.py::test_the_path_predicates_answer_each_fault_alike_on_every_interpreter[a-directory]",
+]
+
+[[mutation]]
+name = "is_dir answers for anything that is there"
+file = "src/stayfixed/fsops.py"
+before = "    return mode is not None and stat.S_ISDIR(mode)"
+after = "    return mode is not None"
+reddens = [
+  "tests/test_fsops.py::test_the_path_predicates_answer_each_fault_alike_on_every_interpreter[a-regular-file]",
+]
+
+# `exists` follows a link as `Path.exists()` does: a dangling one reaches nothing.
+[[mutation]]
+name = "exists answers for a link it did not follow"
+file = "src/stayfixed/fsops.py"
+before = "    return _reached_mode(path, follow=True) is not None"
+after = "    return _reached_mode(path, follow=False) is not None"
+reddens = [
+  "tests/test_fsops.py::test_the_path_predicates_answer_each_fault_alike_on_every_interpreter[a-dangling-link]",
+]
+
+# `is_symlink` asks `lstat`, as `Path.is_symlink()` does: followed, a link is what it names.
+[[mutation]]
+name = "is_symlink follows the link it is asked about"
+file = "src/stayfixed/fsops.py"
+before = "    mode = _reached_mode(path, follow=False)"
+after = "    mode = _reached_mode(path, follow=True)"
+reddens = [
+  "tests/test_fsops.py::test_the_path_predicates_answer_each_fault_alike_on_every_interpreter[a-link-to-a-file]",
+]
+
+# A `memory.groups` entry holding a NUL reached `lstat` and every later path call as a `ValueError`,
+# which no caller of the containment rule catches, so `attach` and `attach --check` ended in an
+# internal error. The rule refuses the component, and each caller's own refusal follows.
+[[mutation]]
+name = "a path component holding a NUL passes the containment rule"
+file = "src/stayfixed/fsops.py"
+before = "        if \"\\x00\" in part:"
+after = "        if False:"
+reddens = [
+  "tests/test_fsops.py::test_a_component_holding_a_nul_is_refused",
+  "tests/attach/test_commands.py::test_a_group_holding_a_nul_is_refused_by_check_and_attach_alike",
+]
+
+# A release's hash record is read where the plugin is installed, through the one JSON object
+# reader, so a record nested past the parser or its depth bound, or holding an integer longer than
+# the interpreter converts, is present and unreadable; parsed with a bare `json.loads`, either
+# escaped the record's reader and `doctor`'s `files` row read "this check could not run".
+[[mutation]]
+name = "the hash record is parsed with a bare json.loads"
+file = "src/stayfixed/release/hashes.py"
+before = "    document = json_object(text, RECORD, error=UnreadableRecord, shape=lambda _: not_a_record)"
+after = "    document = json.loads(text)"
+reddens = [
+  "tests/release/test_hashes.py::test_a_record_past_the_parser_is_unreadable_rather_than_an_internal_error[nested]",
+  "tests/release/test_hashes.py::test_a_record_past_the_parser_is_unreadable_rather_than_an_internal_error[long-number]",
+  "tests/release/test_hashes.py::test_a_record_past_the_depth_bound_is_unreadable_as_one_past_the_parser",
+]
+
+# Python 3.14's JSON parser follows about 57,800 levels, further than its own `json.dumps` and
+# `str` do, so a document 3.13 refuses as nested too deep was read on 3.14 and then ended `detach`
+# and the settings engine in an internal error when they wrote it back. The object reader bounds
+# the depth it follows; the cases lower the bound, so they run on every interpreter.
+[[mutation]]
+name = "the JSON object reader follows whatever depth the parser does"
+file = "src/stayfixed/jsonobject.py"
+before = """
+    if _deeper_than(raw, DEPTH_CAP):
+        raise _past(label, NESTED, error, limit)
+"""
+after = """
+    if False:
+        raise _past(label, NESTED, error, limit)
+"""
+reddens = [
+  "tests/scaffold/test_entries.py::test_the_object_reader_refuses_a_value_past_its_depth_bound",
+  "tests/attach/test_detach.py::test_a_local_settings_file_past_the_encoder_is_refused_and_removes_nothing[cap-forced]",
+]
+
+# And the bound is the deepest a document may hold, not one less: a document at it is read.
+[[mutation]]
+name = "the JSON object reader refuses a document at its depth bound"
+file = "src/stayfixed/jsonobject.py"
+before = "        if depth > cap:"
+after = "        if depth >= cap:"
+reddens = [
+  "tests/scaffold/test_entries.py::test_the_object_reader_refuses_a_value_past_its_depth_bound",
+]
+
+# The readers of files a repository commits and a reader globs (bug ledger entries, notes, the
+# trust digest's notes and `MEMORY.md`, plans) followed a committed link to whatever it named: a
+# link to `/dev/zero` read until memory ran out, in CI too, and one to `/dev/stdin` or a FIFO
+# waited forever. `open_regular` reads a regular file only, through a link as before.
+[[mutation]]
+name = "the regular-file reader opens whatever a path names"
+file = "src/stayfixed/fsops.py"
+before = """
+    if not stat.S_ISREG(checked.st_mode):
+        raise NotRegularFile(errno.EINVAL, "not a regular file", str(path))
+"""
+after = """
+    if False:
+        raise NotRegularFile(errno.EINVAL, "not a regular file", str(path))
+"""
+reddens = [
+  "tests/test_fsops.py::test_a_regular_file_is_read_through_a_link_and_anything_else_is_refused",
+  "tests/test_fsops.py::test_a_fifo_is_refused_without_waiting_for_a_writer",
+]
+
+# And what it opened is the file it checked: a path repointed between the check and the open is
+# judged by the descriptor.
+[[mutation]]
+name = "the regular-file reader reads a file swapped in after its check"
+file = "src/stayfixed/fsops.py"
+before = "        if (opened.st_dev, opened.st_ino) != (checked.st_dev, checked.st_ino):"
+after = "        if False:"
+reddens = [
+  "tests/test_fsops.py::test_a_file_swapped_after_the_check_is_judged_by_what_was_opened",
+]
+
+# Read is not written: Python 3.12's C encoder does not handle `indent`, so an indented encode runs
+# the pure-Python encoder, which stops near 994 levels while the parser follows about 9,996. A
+# document between the two was read and then ended its writer in an internal error. The writer
+# answers it as the reader answers a document nested past the parser.
+[[mutation]]
+name = "the JSON writer lets an encode past the interpreter's recursion escape"
+file = "src/stayfixed/jsonobject.py"
+before = """
+        text = _encode(value, indent=indent, sort_keys=sort_keys)
+    except RecursionError:
+"""
+after = """
+        text = _encode(value, indent=indent, sort_keys=sort_keys)
+    except ZeroDivisionError:
+"""
+reddens = [
+  "tests/scaffold/test_entries.py::test_a_write_back_the_encoder_cannot_follow_is_refused_as_nested[apply-entries]",
+]
+
+# The depth bound sits where every interpreter can write back what it read: above what a harness
+# writes, and under what Python 3.14, whose parser follows past it, still encodes.
+[[mutation]]
+name = "the JSON object reader's depth bound is raised past what 3.14 encodes"
+file = "src/stayfixed/jsonobject.py"
+before = "DEPTH_CAP = 10_000"
+after = "DEPTH_CAP = 1_000_000"
+reddens = [
+  "tests/scaffold/test_entries.py::test_a_real_settings_document_sits_far_inside_the_depth_bound",
+]
+
+[[mutation]]
+name = "the JSON object reader's depth bound is lowered under what a harness writes"
+file = "src/stayfixed/jsonobject.py"
+before = "DEPTH_CAP = 10_000"
+after = "DEPTH_CAP = 999"
+reddens = [
+  "tests/scaffold/test_entries.py::test_a_real_settings_document_sits_far_inside_the_depth_bound",
+]
+
+# A hex, octal or binary literal of any length converts, and so does a decimal under 4,300 digits,
+# so a configuration integer checked only for `<= 0` handed its reader a number no `str` could
+# print or no `float` could hold: `[gates] custom_timeout_seconds` ended `assess` and `gate` in an
+# internal error. Every integer key is bounded by `INTEGER_LIMIT`.
+[[mutation]]
+name = "a configuration integer is bounded only below"
+file = "src/stayfixed/config/loader.py"
+before = "    if value >= INTEGER_LIMIT:"
+after = "    if False:"
+reddens = [
+  "tests/config/test_loader.py::test_an_integer_key_at_or_past_its_bound_is_refused_without_printing_it[hex]",
+  "tests/assess/test_command.py::test_a_timeout_too_large_for_its_reader_is_the_configurations_own_error[hex]",
+  "tests/assess/test_gate_command.py::test_a_timeout_too_large_for_its_reader_fails_the_gate_with_the_configurations_error[decimal]",
+]
+
+[[mutation]]
+name = "the schema's integer keys are taken unchecked"
+file = "src/stayfixed/config/loader.py"
+before = '            coerced[key] = _positive(f"{name}.{key}", value)'
+after = "            coerced[key] = value"
+reddens = [
+  "tests/config/test_loader.py::test_an_integer_key_at_or_past_its_bound_is_refused_without_printing_it[octal]",
+]
+
+[[mutation]]
+name = "a `[budgets]` value is taken unchecked"
+file = "src/stayfixed/config/loader.py"
+before = '        _positive(f"budgets.{key}", value)'
+after = "        pass"
+reddens = [
+  "tests/config/test_loader.py::test_an_integer_key_at_or_past_its_bound_is_refused_without_printing_it[budget]",
+]
+
+# In the block led by `mutations/`'s "the regular-file reader opens whatever a path names": the open
+# never waits, so a FIFO swapped in after the check cannot block it, and it follows a link at the
+# last component, because `attach` links each memory group and `MEMORY.md` into the overlay and
+# those are read and hashed through the link.
+[[mutation]]
+name = "the regular-file reader waits on a FIFO swapped in after its check"
+file = "src/stayfixed/fsops.py"
+before = "_REGULAR_OPEN = os.O_RDONLY | os.O_NONBLOCK | os.O_NOCTTY | os.O_CLOEXEC"
+after = "_REGULAR_OPEN = os.O_RDONLY | os.O_NOCTTY | os.O_CLOEXEC"
+reddens = [
+  "tests/test_fsops.py::test_a_fifo_swapped_in_after_the_check_is_refused_without_waiting",
+]
+
+[[mutation]]
+name = "the regular-file reader refuses a link to a regular file"
+file = "src/stayfixed/fsops.py"
+before = "_REGULAR_OPEN = os.O_RDONLY | os.O_NONBLOCK | os.O_NOCTTY | os.O_CLOEXEC"
+after = "_REGULAR_OPEN = os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW | os.O_CLOEXEC"
+reddens = [
+  "tests/test_fsops.py::test_a_regular_file_is_read_through_a_link_and_anything_else_is_refused",
+  "tests/memory/test_trust.py::test_an_overlay_owners_linked_index_and_groups_are_hashed_through_their_links",
+  "tests/ledger/test_entries.py::test_a_ledger_file_linked_to_a_device_is_a_ledger_error_and_one_linked_to_a_file_is_read",
+]
+
+# Under a root, `read_bounded` reaches a file as a write does, no link followed, the file's own
+# included, and judges what it opened by the descriptor; `.pyc` bytecode is read this way. Following
+# a symlinked one reads a file outside every code root, opening a named pipe without `O_NONBLOCK`
+# waits for a writer for good (a link to `/dev/stdin` hung `test hygiene` in a terminal), and a pipe
+# whose writer has written a header reads like bytecode.
+[[mutation]]
+name = "a symlinked .pyc is followed"
+file = "src/stayfixed/fsops.py"
+before = '_WITHIN_OPEN = _REGULAR_OPEN | getattr(os, "O_NOFOLLOW", 0)'
+after = "_WITHIN_OPEN = _REGULAR_OPEN"
+reddens = [
+  "tests/profiles/python/test_hygiene.py::test_a_pyc_that_is_a_symlink_is_not_followed",
+  "tests/test_fsops.py::test_a_bounded_read_under_a_root_follows_no_link_and_reads_only_a_regular_file",
+  "tests/test_fsops.py::test_a_bounded_read_under_an_open_directory_takes_one_name_and_follows_no_link",
+]
+
+[[mutation]]
+name = "a name under an open directory may be a path"
+file = "src/stayfixed/fsops.py"
+before = """        if len(parts) != 1:
+            raise UnsafePath(f"{relative!r} is not one name in the directory it is read from")
+        descriptor = os.open(parts[0], _WITHIN_OPEN, dir_fd=root)"""
+after = """        descriptor = os.open(relative, _WITHIN_OPEN, dir_fd=root)"""
+reddens = [
+  "tests/test_fsops.py::test_a_bounded_read_under_an_open_directory_takes_one_name_and_follows_no_link",
+]
+
+[[mutation]]
+name = "a .pyc that is a named pipe is opened waiting for a writer"
+file = "src/stayfixed/fsops.py"
+before = '_WITHIN_OPEN = _REGULAR_OPEN | getattr(os, "O_NOFOLLOW", 0)'
+after = '_WITHIN_OPEN = (_REGULAR_OPEN & ~os.O_NONBLOCK) | getattr(os, "O_NOFOLLOW", 0)'
+reddens = [
+  "tests/profiles/python/test_hygiene.py::test_a_pyc_that_is_a_named_pipe_never_blocks_the_walk",
+  "tests/test_fsops.py::test_a_fifo_under_a_root_is_refused_without_waiting_for_a_writer",
+]
+
+[[mutation]]
+name = "a .pyc that is not a regular file is read"
+file = "src/stayfixed/fsops.py"
+before = """        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            raise NotRegularFile(errno.EINVAL, "not a regular file", relative)"""
+after = """        if False:
+            raise NotRegularFile(errno.EINVAL, "not a regular file", relative)"""
+reddens = [
+  "tests/profiles/python/test_hygiene.py::test_a_pyc_that_is_a_named_pipe_is_never_read",
+  "tests/test_fsops.py::test_a_fifo_under_a_root_is_refused_without_waiting_for_a_writer",
+]
+
+# `tomllib` converts a hex, octal or binary literal of any length, and `str` of one past 4,300
+# digits raises: `init --yes` re-rendering an adopted `stayfixed.toml`, and `setup` rewriting the
+# owner's machine file, ended in an internal error on one such line. The serialiser spells it in
+# hexadecimal, which TOML reads back.
+[[mutation]]
+name = "the TOML writer spells every integer in decimal"
+file = "src/stayfixed/tomlout.py"
+before = "        return _integer(value, where)"
+after = "        return str(value)"
+reddens = [
+  "tests/test_tomlout.py::test_an_integer_past_the_conversion_limit_round_trips_in_hexadecimal",
+  "tests/project/test_init.py::test_an_adopted_document_holding_a_hex_integer_of_any_length_is_the_configurations_error[integer-key]",
+  "tests/project/test_init.py::test_an_adopted_document_holding_a_hex_integer_of_any_length_is_the_configurations_error[string-key]",
+  "tests/setup/test_machine.py::test_a_hand_written_hex_integer_of_any_length_survives_the_rewrite",
+]
+
+[[mutation]]
+name = "the TOML writer spells a negative integer past the limit in hexadecimal"
+file = "src/stayfixed/tomlout.py"
+before = "        if value < 0:"
+after = "        if False:"
+reddens = [
+  "tests/test_tomlout.py::test_a_negative_integer_no_toml_spelling_holds_is_refused",
+]
+
+# A preset's name was spelled with `str()` before it was checked, so a hex literal there ended
+# every command that loads the file in an internal error.
+[[mutation]]
+name = "the loader spells a preset that is not a string with str"
+file = "src/stayfixed/config/loader.py"
+before = '    preset_name = head.get("preset", "recommended")'
+after = '    preset_name = str(head.get("preset", "recommended"))'
+reddens = [
+  "tests/config/test_loader.py::test_a_preset_that_is_a_number_past_the_conversion_limit_is_refused_as_any_non_name",
+]
+
+# The bound is the first integer refused, not one under it: the largest value it admits loads.
+[[mutation]]
+name = "a configuration integer one under the bound is refused"
+file = "src/stayfixed/config/loader.py"
+before = "    if value >= INTEGER_LIMIT:"
+after = "    if value > INTEGER_LIMIT - 2:"
+reddens = [
+  "tests/config/test_loader.py::test_an_integer_key_just_under_its_bound_loads",
+]
+
+# In the block led by `mutations/`'s "the regular-file reader opens whatever a path names": the read
+# stops one byte past its limit, `REGULAR_READ_LIMIT` for this reader, because a regular file can be
+# endless (`/proc/self/pagemap`), and a file at the limit is read.
+[[mutation]]
+name = "the regular-file reader reads past its limit"
+file = "src/stayfixed/fsops.py"
+before = "    return content[:limit], len(content) > limit"
+after = "    return content, False"
+reddens = [
+  "tests/test_fsops.py::test_a_regular_file_past_the_read_limit_is_refused_and_one_at_it_is_read",
+]
+
+[[mutation]]
+name = "the regular-file reader refuses a file at its limit"
+file = "src/stayfixed/fsops.py"
+before = "    return content[:limit], len(content) > limit"
+after = "    return content[:limit], len(content) >= limit"
+reddens = [
+  "tests/test_fsops.py::test_a_regular_file_past_the_read_limit_is_refused_and_one_at_it_is_read",
+]
+
+# A reader may hold its files to a cap of its own below the read cap, a profile's configuration
+# files among them; the reader honours it rather than reading to the read cap.
+[[mutation]]
+name = "the regular-file reader ignores the cap a reader hands it"
+file = "src/stayfixed/fsops.py"
+before = "    content, over = read_bounded(path, REGULAR_READ_LIMIT if limit is None else limit)"
+after = "    content, over = read_bounded(path, REGULAR_READ_LIMIT)"
+reddens = ["tests/profiles/test_evaluate.py::test_a_file_at_the_text_cap_is_read_and_one_past_it_is_not"]
+
+# A reader that refuses a file it could not read says why in `fsops.said`'s words, through
+# `fsops.reading`: never by the error's class name, which names stayfixed's internals and no
+# condition, and never in the error's own text, which carries the path the file was opened by.
+[[mutation]]
+name = "a read refusal says an unreadable file by its error's class name"
+file = "src/stayfixed/fsops.py"
+before = '    return f"{label} cannot be read ({said(error)})"'
+after = '    return f"{label} cannot be read ({type(error).__name__})"'
+reddens = [
+  "tests/attach/test_binding.py::test_a_binding_record_past_the_read_cap_is_unreadable_in_words_not_a_class_name",
+]
+
+[[mutation]]
+name = "a read refusal says an unreadable file in its error's own text"
+file = "src/stayfixed/fsops.py"
+before = '    return f"{label} cannot be read ({said(error)})"'
+after = '    return f"{label} cannot be read: {error}"'
+reddens = [
+  "tests/setup/test_setup.py::test_a_user_settings_file_that_cannot_be_read_is_a_failure_saying_why_in_words",
+  "tests/overlay/test_upgrade.py::test_init_meets_a_manifest_past_the_read_cap_as_one_it_cannot_read",
+  "tests/scaffold/test_manifest.py::test_a_manifest_past_the_read_cap_is_unreadable_and_never_read_whole",
+  "tests/attach/test_detach.py::test_a_gitignore_past_the_read_cap_is_refused_by_detach_as_by_attach_and_removes_nothing",
+]
+
+# Bytes that are not UTF-8 are the reader's refusal, never a `UnicodeDecodeError` out of it: the
+# footprint manifest's left `Manifest.read` that way, and a detach exited 2 on a committed one.
+[[mutation]]
+name = "a read refusal lets undecodable bytes out as a crash again"
+file = "src/stayfixed/fsops.py"
+before = """    except UnicodeDecodeError as exc:
+        raise refusal(unreadable(label, exc)) from None
+"""
+after = ""
+reddens = [
+  "tests/attach/test_detach.py::test_a_manifest_a_clone_committed_cannot_block_the_withdrawal",
+  "tests/attach/test_detach.py::test_a_ledger_that_is_not_utf8_is_named_as_the_project_names_it",
+  "tests/attach/test_write.py::test_a_local_settings_file_that_is_not_utf8_is_named_as_the_project_names_it",
+]
+
+# Making a name in a directory takes its search bit as well as its write bit: `setup`'s `--home`
+# check and `attach`'s exclude-file check refuse on `creatable`'s answer above their first write,
+# and with the write bit alone asked, a write-only directory reads as one a file can be made in and
+# both let it through to the write.
+[[mutation]]
+name = "creatable asks only for the write bit"
+file = "src/stayfixed/fsops.py"
+before = "    return os.access(creation_directory(path), os.W_OK | os.X_OK)"
+after = "    return os.access(creation_directory(path), os.W_OK)"
+reddens = [
+  "tests/test_fsops.py::test_a_directory_that_can_be_written_but_not_searched_cannot_take_a_new_file",
+]
+
+# A commit's copy of a document at the project's own path (`committed.py`), read one way for the
+# base's `stayfixed.toml` that governs `stayfixed gate` and for each fork point's that places the
+# ledger. A copy that reads as missing is the bootstrap, where the change decides for itself, so
+# each git argument and refusal whose removal reaches it by accident is a guard: git failing read
+# as "no copy", the bytes read in the locale's codec, a root reached through a symlink or spelled
+# otherwise than git spells it, a project in a subdirectory, a directory named like pathspec magic.
+[[mutation]]
+name = "git failing to read the base is read as the base having no stayfixed.toml"
+file = "src/stayfixed/committed.py"
+before = """    if code != 0:
+        raise failed(code)
+    if not listed:
+        return None"""
+after = """    if not listed:
+        return None"""
+reddens = [
+  "tests/assess/test_read_base.py::test_git_failing_to_list_the_base_is_a_failure_and_never_the_bootstrap",
+  "tests/ledger/test_check.py::test_a_listing_of_the_base_s_configuration_git_refuses_is_a_failure_never_the_bootstrap",
+]
+
+[[mutation]]
+name = "the base copy is read in the locale's codec rather than as UTF-8"
+file = "src/stayfixed/committed.py"
+before = '    return answer_bytes(text)'
+after = '    return text.encode("utf-8")'
+reddens = [
+  "tests/assess/test_read_base.py::test_the_base_copy_is_read_as_utf_8_whatever_the_locale_decodes_git_s_answers_with[utf-8]",
+  "tests/assess/test_read_base.py::test_the_base_copy_is_read_as_utf_8_whatever_the_locale_decodes_git_s_answers_with[not-utf-8]",
+]
+
+[[mutation]]
+name = "a project root reached through a symlink reads the base at a path it never had"
+file = "src/stayfixed/committed.py"
+before = '    if linked or spelled != prefix.rstrip("\n"):'
+after = "    if False:"
+reddens = [
+  "tests/assess/test_read_base.py::test_a_project_root_moved_behind_a_symlink_is_refused",
+  "tests/assess/test_read_base.py::test_a_component_linked_back_to_the_repository_s_top_is_refused",
+  "tests/assess/test_gate_command.py::test_a_project_root_a_change_made_a_symlink_is_refused_by_the_gate_and_by_bugs_check",
+]
+
+[[mutation]]
+name = "the ancestor that resolves to the top is looked for from the nearest end"
+file = "src/stayfixed/committed.py"
+before = "    chain = (*reversed(lexical.parents), lexical)"
+after = "    chain = (lexical, *lexical.parents)"
+reddens = ["tests/assess/test_read_base.py::test_a_component_linked_back_to_the_repository_s_top_is_refused"]
+
+[[mutation]]
+name = "a project in a subdirectory reads the base's copy at the repository's top"
+file = "src/stayfixed/committed.py"
+before = '    path = f"{prefix}{name}"'
+after = "    path = name"
+reddens = ["tests/assess/test_read_base.py::test_a_project_in_a_subdirectory_reads_the_base_s_copy_at_its_own_path"]
+
+[[mutation]]
+name = "a root outside any repository is judged as if git had answered"
+file = "src/stayfixed/committed.py"
+before = """    code, out = git_run(lexical, "rev-parse", "--show-toplevel", "--show-prefix")
+    if code != 0:"""
+after = """    code, out = git_run(lexical, "rev-parse", "--show-toplevel", "--show-prefix")
+    if False:"""
+reddens = ["tests/assess/test_read_base.py::test_a_root_outside_any_repository_is_a_failure"]
+
+[[mutation]]
+name = "a project under a directory named like pathspec magic reads no copy on the base"
+file = "src/stayfixed/committed.py"
+before = '        "--literal-pathspecs",'
+after = '        "--no-pager",'
+reddens = ["tests/assess/test_read_base.py::test_a_project_under_a_directory_named_like_pathspec_magic_reads_its_own_copy"]
+
+[[mutation]]
+name = "the base's copy is listed relative to the project root rather than the repository's top"
+file = "src/stayfixed/committed.py"
+before = '        "--full-tree",'
+after = '        "--name-only",'
+reddens = [
+  "tests/assess/test_read_base.py::test_a_project_in_a_subdirectory_reads_the_base_s_copy_at_its_own_path",
+  "tests/assess/test_read_base.py::test_a_project_under_a_directory_named_like_pathspec_magic_reads_its_own_copy",
+]
+
+[[mutation]]
+name = "a prefix git spells otherwise than the caller is read at the caller's spelling"
+file = "src/stayfixed/committed.py"
+before = '    if linked or spelled != prefix.rstrip("\n"):'
+after = "    if linked:"
+reddens = ["tests/assess/test_read_base.py::test_a_prefix_git_spells_otherwise_than_the_caller_is_refused"]
+
+[[mutation]]
+name = "a root spelled with '..' is refused as a symlink"
+file = "src/stayfixed/committed.py"
+before = '    if ".." in lexical.parts:'
+after = "    if False:"
+reddens = ["tests/assess/test_gate_command.py::test_a_root_spelled_with_dot_dot_is_refused_for_what_it_is"]
+
+# The release record reads in every encoding `json` detects, a byte-order mark and UTF-16 or
+# UTF-32 included, and not as UTF-8 alone.
+[[mutation]]
+name = "the release record is decoded as UTF-8 alone"
+file = "src/stayfixed/release/hashes.py"
+before = '        text = raw.decode(json.detect_encoding(raw), "surrogatepass")'
+after = '        text = raw.decode("utf-8")'
+reddens = [
+  "tests/release/test_hashes.py::test_a_record_with_a_byte_order_mark_or_in_utf_16_or_32_reads_as_it_did",
+]
+
+[[mutation]]
+name = "the JSON writer writes back a text past the read cap"
+file = "src/stayfixed/jsonobject.py"
+before = "    if len(text) > fsops.REGULAR_READ_LIMIT:\n        raise _past(label, WRITTEN_PAST, error, limit)"
+after = "    if False:\n        raise _past(label, WRITTEN_PAST, error, limit)"
+reddens = [
+  "tests/attach/test_detach.py::test_a_settings_write_back_past_the_read_cap_is_refused_and_removes_nothing",
+]
+
+# The registry states where Claude Code reads Markdown whose frontmatter can declare hooks, and
+# `hook-entries` walks what it states: commands and agents declare hooks as skills do.
+[[mutation]]
+name = "hook-entries reads no command or agent file"
+file = "src/stayfixed/harnesses.py"
+before = """
+        Hooked(f"{CLAUDE_DIR}/commands", None),
+        Hooked(f"{CLAUDE_DIR}/agents", None),
+"""
+after = """
+"""
+reddens = [
+  "tests/doctor/test_checks.py::test_a_command_agent_or_nested_skill_declaring_hooks_is_a_warning_naming_it[command]",
+  "tests/doctor/test_checks.py::test_a_command_agent_or_nested_skill_declaring_hooks_is_a_warning_naming_it[agent]",
+]
+
+# Claude Code keeps a project's memory under a slug of its resolved path, `/` and `.` each read as
+# `-`, which the registry states and `memory` links into.
+[[mutation]]
+name = "Claude Code's memory slug keeps a dot"
+file = "src/stayfixed/harnesses.py"
+before = '    slug = project.replace("/", "-").replace(".", "-")'
+after = '    slug = project.replace("/", "-")'
+reddens = [
+  "tests/test_harnesses.py::test_claude_codes_memory_directory_is_keyed_by_the_projects_path",
+]
+
+# `HOME` agrees with the database's home only when it resolves to it; read as agreeing anyway, a
+# hook makes the harness link where the harness does not look.
+[[mutation]]
+name = "any HOME agrees with the password database's home"
+file = "src/stayfixed/config/machine.py"
+before = '    return chosen != "" and Path(chosen).resolve() == recorded.resolve()'
+after = '    return True'
+reddens = [
+  "tests/memory/test_hooks.py::test_no_harness_link_is_made_where_home_is_not_the_databases",
+  "tests/config/test_machine.py::test_an_empty_home_is_a_value_that_names_no_home[another-False]",
+]
+
+# An empty `HOME` is a value that names no home, as every program measured reads it, and never an
+# unset one; read as unset, a hook links where the harness does not look and both rows read ok.
+[[mutation]]
+name = "an empty HOME agrees with the password database's home"
+file = "src/stayfixed/config/machine.py"
+before = "    if chosen is None:"
+after = "    if not chosen:"
+reddens = [
+  "tests/config/test_machine.py::test_an_empty_home_is_a_value_that_names_no_home[empty-False]",
+  "tests/memory/test_hooks.py::test_an_empty_home_gets_no_harness_link_even_in_the_databases_home",
+  "tests/memory/test_doctor.py::test_an_empty_home_is_told_the_hook_makes_no_link",
+  "tests/doctor/test_checks.py::test_an_empty_home_is_named_as_a_home_the_database_does_not_record",
+]
+
+[[mutation]]
+name = "an empty HOME is read as the directory a command runs in"
+file = "src/stayfixed/config/machine.py"
+before = '    return chosen != "" and Path(chosen).resolve() == recorded.resolve()'
+after = '    return Path(chosen).resolve() == recorded.resolve()'
+reddens = [
+  "tests/config/test_machine.py::test_an_empty_home_is_a_value_that_names_no_home[empty-False]",
+  "tests/memory/test_hooks.py::test_an_empty_home_gets_no_harness_link_even_in_the_databases_home",
+  "tests/memory/test_doctor.py::test_an_empty_home_is_told_the_hook_makes_no_link",
+  "tests/doctor/test_checks.py::test_an_empty_home_is_named_as_a_home_the_database_does_not_record",
+]
+
+# The database's home is resolved before it is a root, since the walk opens its root without
+# following a symlink and an entry naming one would otherwise get no harness link.
+[[mutation]]
+name = "a database home that is a symlink is used unresolved as a root"
+file = "src/stayfixed/config/machine.py"
+before = '    return home.resolve()'
+after = '    return home'
+reddens = [
+  "tests/config/test_machine.py::test_the_anchor_is_the_databases_home_resolved_and_home_as_typed_at_a_terminal",
+  "tests/memory/test_worktree.py::test_a_database_home_that_is_itself_a_symlink_still_gets_the_harness_link",
+]
+
+# At a terminal with `HOME` unset, for a user the database lists no home for, there is no home, and
+# `attach` says so rather than ending in `Path.home`'s error.
+[[mutation]]
+name = "a terminal with no home at all raises"
+file = "src/stayfixed/config/machine.py"
+before = """
+        try:
+            return Path.home()
+        except RuntimeError:
+            return None
+"""
+after = """
+        return Path.home()
+"""
+reddens = [
+  "tests/attach/test_commands.py::test_attach_at_a_terminal_with_no_home_at_all_refuses_in_words",
+]
+
+# At a terminal an empty `HOME` names no home, where `Path.home` answers `/`: `attach` there aimed the
+# harness memory link at `/.claude/...` and ended in an internal error on a read-only root.
+[[mutation]]
+name = "an empty HOME at a terminal is read as the root directory"
+file = "src/stayfixed/config/machine.py"
+before = "        if home_is_empty():\n            return None"
+after = "        if False:\n            return None"
+reddens = [
+  "tests/config/test_machine.py::test_an_empty_home_at_a_terminal_names_no_home",
+  "tests/attach/test_commands.py::test_attach_at_a_terminal_whose_home_is_empty_refuses_in_words",
+  "tests/attach/test_doctor.py::test_a_terminal_whose_home_is_empty_is_told_it_is_home_that_names_none",
+]
+
+# Whether a version orders before its release by its suffix, read by PEP 440's grammar for one:
+# segments may run together with no separator, a further release component other than zero names
+# a later release, the local label after `+` is no segment, a pre-release segment makes a
+# pre-release, and a `dev` after a post-release is a development release of that post-release,
+# which comes after the release. A suffix outside the grammar leaves the triple to decide.
+[[mutation]]
+name = "segments run together are no suffix PEP 440 allows"
+file = "src/stayfixed/semver.py"
+before = '    r"(?P<post>-[0-9]+|[-_.]?(?:post|rev|r)[-_.]?[0-9]*)?"'
+after = '    r"(?P<post>-[0-9]+|[-_.](?:post|rev|r)[-_.]?[0-9]*)?"'
+reddens = ["tests/overlay/test_requires.py::test_the_floor_is_met_by_a_later_triple_or_its_own_and_never_a_pre_release_of_it[1.0.0rc1post2-False]"]
+
+[[mutation]]
+name = "a further release component is read as no later release"
+file = "src/stayfixed/semver.py"
+before = '    if parts["release"].replace(".", "").strip("0"):'
+after = "    if False:"
+reddens = ["tests/overlay/test_requires.py::test_the_floor_is_met_by_a_later_triple_or_its_own_and_never_a_pre_release_of_it[1.0.0.1rc1-True]"]
+
+[[mutation]]
+name = "a local label is no part of the suffix grammar"
+file = "src/stayfixed/semver.py"
+before = '    r"(?:\+[a-z0-9]+(?:[-_.][a-z0-9]+)*)?\Z",'
+after = '    r"\Z",'
+reddens = ["tests/overlay/test_requires.py::test_the_floor_is_met_by_a_later_triple_or_its_own_and_never_a_pre_release_of_it[1.0.0rc1+local-False]"]
+
+[[mutation]]
+name = "a pre-release segment no longer makes a pre-release"
+file = "src/stayfixed/semver.py"
+before = '    if parts["pre"] is not None:'
+after = "    if False:"
+reddens = [
+  "tests/overlay/test_requires.py::test_a_pre_release_of_the_floor_does_not_meet_it[1.0.0rc1]",
+  "tests/overlay/test_requires.py::test_the_floor_is_met_by_a_later_triple_or_its_own_and_never_a_pre_release_of_it[1.0.0rc1.post2-False]",
+]
+
+[[mutation]]
+name = "a development release of a post-release reads as a pre-release"
+file = "src/stayfixed/semver.py"
+before = '    return parts["dev"] is not None and parts["post"] is None'
+after = '    return parts["dev"] is not None'
+reddens = [
+  "tests/overlay/test_requires.py::test_a_suffix_later_leaves_unordered_still_meets_the_floor_by_its_triple",
+  "tests/overlay/test_requires.py::test_the_floor_is_met_by_a_later_triple_or_its_own_and_never_a_pre_release_of_it[1.0.0.post1dev2-True]",
+]
+
+[[mutation]]
+name = "a suffix outside PEP 440 reads as a pre-release"
+file = "src/stayfixed/semver.py"
+before = """    if parts is None:
+        return False"""
+after = """    if parts is None:
+        return True"""
+reddens = ["tests/overlay/test_requires.py::test_the_floor_is_met_by_a_later_triple_or_its_own_and_never_a_pre_release_of_it[1.0.0x-True]"]
+
+# Why git gave no answer is the refusal's remedy, so each cause is its own sentence. A question
+# that ran out of time in a `git` that answers `--version` is load, cured by running again; one
+# asked in a directory that is gone is a removed worktree, which a walk skips. Read as a broken
+# `git`, each sent the owner to check a `git` that worked.
+[[mutation]]
+name = "a question that ran out of time reads as a broken git"
+file = "src/stayfixed/gitenv.py"
+before = "    return Unasked.TIMED_OUT if asked is _NoAnswer.TIMED_OUT else Unasked.NOT_STARTED"
+after = "    return Unasked.BROKEN if asked is _NoAnswer.TIMED_OUT else Unasked.NOT_STARTED"
+reddens = [
+  "tests/attach/test_write.py::test_a_worktree_whose_question_runs_out_of_time_is_named_and_not_called_a_broken_git",
+]
+
+[[mutation]]
+name = "a question asked in a removed worktree reads as a broken git"
+file = "src/stayfixed/gitenv.py"
+before = "    if not fsops.is_dir(root):"
+after = "    if False:"
+reddens = [
+  "tests/memory/test_store.py::test_a_worktree_removed_before_it_is_asked_about_is_gone_not_a_broken_git",
+  "tests/attach/test_write.py::test_a_worktree_removed_while_attach_walks_is_skipped_and_the_rest_is_linked",
+]
+
+# The other causes, each with the remedy that fits it. A `git` a signal ended is no answer, as
+# `ForkUnknown.of` already reads one; read as "git said no", it made `main_checkout` answer the
+# worktree itself. A `git` that cannot start, or fails `--version`, is told to check that `git`
+# runs, never to run the command again, which would repeat for ever. And the `--version` probe
+# that tells "declined" from "broken" can itself run out of time on a loaded machine, which is
+# load, not a broken `git`.
+[[mutation]]
+name = "a git a signal ended reads as a repository that answered nothing"
+file = "src/stayfixed/gitenv.py"
+before = "    if code < 0:\n        return GitAnswer(None, Unasked.ENDED)"
+after = "    if False:\n        return GitAnswer(None, Unasked.ENDED)"
+reddens = [
+  "tests/memory/test_store.py::test_a_git_a_signal_ended_cannot_make_a_worktree_look_like_the_main_checkout",
+]
+
+[[mutation]]
+name = "a git that cannot be started is told to run the command again"
+file = "src/stayfixed/gitenv.py"
+before = "    return Unasked.TIMED_OUT if asked is _NoAnswer.TIMED_OUT else Unasked.NOT_STARTED"
+after = "    return Unasked.TIMED_OUT if asked is _NoAnswer.TIMED_OUT else Unasked.TIMED_OUT"
+reddens = [
+  "tests/memory/test_store.py::test_a_git_that_cannot_run_is_not_reported_as_an_unbound_overlay",
+]
+
+[[mutation]]
+name = "a broken git is told to run the command again"
+file = "src/stayfixed/gitenv.py"
+before = "        return GitAnswer(None, Unasked.BROKEN)"
+after = "        return GitAnswer(None, Unasked.TIMED_OUT)"
+reddens = [
+  "tests/test_git_answers.py::test_a_git_that_fails_everything_is_not_a_repository_without_an_origin",
+  "tests/memory/test_store.py::test_a_git_that_exits_non_zero_for_everything_cannot_name_the_main_checkout",
+]
+
+[[mutation]]
+name = "a probe that ran out of time reads as a broken git"
+file = "src/stayfixed/gitenv.py"
+before = "        return GitAnswer(None, _unanswered(probe))"
+after = "        return GitAnswer(None, Unasked.BROKEN)"
+reddens = [
+  "tests/memory/test_store.py::test_a_probe_that_runs_out_of_time_is_not_a_broken_git",
+]
+
+# A captured `gh` told to write for a terminal colours its JSON, and every caller that parses it
+# reads no answer; the runner drops both variables that do it.
+[[mutation]]
+name = "the runner hands gh GH_FORCE_TTY"
+file = "src/stayfixed/runner.py"
+before = "    \"GH_FORCE_TTY\",\n"
+after = ""
+reddens = [
+  "tests/test_runner.py::test_the_variables_that_make_gh_write_for_a_terminal_are_dropped",
+]
+
+[[mutation]]
+name = "the runner hands gh CLICOLOR_FORCE"
+file = "src/stayfixed/runner.py"
+before = "    \"CLICOLOR_FORCE\",\n"
+after = ""
+reddens = [
+  "tests/test_runner.py::test_the_variables_that_make_gh_write_for_a_terminal_are_dropped",
+]
+
+# Python 3.11 and 3.12 raise `RuntimeError` resolving a path through a symlink loop, past every
+# `except OSError`, and 3.13 answers a path with the loop left in it: one input, a traceback on one
+# interpreter and a quiet answer on the other. `fsops.resolved` answers both as the system's
+# `ELOOP`, naming the path, and every resolve of a path a clone or a command line can shape goes
+# through it.
+[[mutation]]
+name = "fsops.resolved answers a loop with a path where the interpreter does"
+file = "src/stayfixed/fsops.py"
+before = """    _meets_a_loop(path)
+    return answer"""
+after = """    return answer"""
+reddens = [
+  "tests/test_fsops.py::test_a_symlink_loop_resolves_to_the_systems_eloop_naming_the_path_on_every_interpreter[loop]",
+  "tests/test_fsops.py::test_a_symlink_loop_resolves_to_the_systems_eloop_naming_the_path_on_every_interpreter[loop/below]",
+  "tests/config/test_paths.py::test_a_root_through_a_symlink_loop_is_an_oserror_naming_it[this-one]",
+  "tests/setup/test_setup.py::test_a_symlink_loop_at_any_path_setup_is_given_is_a_refusal_naming_it[claude]",
+  "tests/setup/test_setup.py::test_a_symlink_loop_at_any_path_setup_is_given_is_a_refusal_naming_it[home]",
+  "tests/setup/test_setup.py::test_a_symlink_loop_at_any_path_setup_is_given_is_a_refusal_naming_it[root]",
+  "tests/setup/test_setup.py::test_a_symlink_loop_at_any_path_setup_is_given_is_a_refusal_naming_it[settings]",
+  "tests/setup/test_setup.py::test_a_symlink_loop_at_any_path_setup_is_given_is_a_refusal_naming_it[overlay]",
+  "tests/setup/test_setup.py::test_a_project_root_through_a_symlink_loop_handed_to_setup_is_refused",
+]
+
+[[mutation]]
+name = "fsops.resolved lets the RuntimeError of a loop through"
+file = "src/stayfixed/fsops.py"
+before = """    except RuntimeError as exc:
+        _meets_a_loop(path)"""
+after = """    except ValueError as exc:
+        _meets_a_loop(path)"""
+reddens = [
+  "tests/test_fsops.py::test_the_runtime_error_older_pythons_raise_for_a_loop_is_the_systems_eloop",
+]
+
+[[mutation]]
+name = "contained resolves its root past fsops"
+file = "src/stayfixed/config/paths.py"
+before = "        resolved_root = resolved(root)"
+after = "        resolved_root = root.resolve()"
+reddens = [
+  "tests/config/test_paths.py::test_a_root_through_a_symlink_loop_is_an_oserror_naming_it[as-3-11]",
+  "tests/setup/test_setup.py::test_a_symlink_loop_at_any_path_setup_is_given_is_a_refusal_naming_it[home]",
+]

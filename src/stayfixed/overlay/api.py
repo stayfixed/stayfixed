@@ -27,26 +27,29 @@ carries every template file and can only answer that against this list. It is th
 outside `src/`, and the reason this docstring names it is that an earlier trim removed the
 export on the strength of "nothing outside this area imports it" while that script, added in the
 same branch, imported it out of `layout` — a sentence and a violation merged green together,
-because `tests/test_areas.py` walked `src/` alone. It walks `scripts/` too now.
+because the surface rule walked `src/` alone. It walks `scripts/` too now
+(`tests/boundaries/test_api_surface.py`).
 
-**Trimmed, when the area boundaries were drawn tight.** `COMMON` and `COMMON_RULES` had no importer
-anywhere. `CAPABILITY_FILES`, `template_root`, `templates`, `upgrade` and `OverlayUpgrade` had
-none outside this area: `upgrade` is driven by this area's own command module, and the template
-tree was published against a sentence predicting that the `release` area would need it, which
-nothing in `stayfixed.release` does. If it ever does, it grows the list then, which is what this
-docstring asks of every other area.
+**Trimmed, when the area boundaries were drawn tight.** `COMMON` had no importer anywhere.
+`CAPABILITY_FILES`, `template_root`, `templates`, `upgrade` and `OverlayUpgrade` had none outside
+this area: `upgrade` is driven by this area's own command module, and the template tree was
+published against a sentence predicting that the `release` package would need it,
+which nothing in `stayfixed.release` does. If it ever does, it grows the list then, which is what
+this docstring asks of every other area.
 
-`requires_of`, `satisfies`, `Sync` and `overlay_sync` are published for `doctor` (the
-`overlay-requires` row) and the `attach` area's session-start handler; the floor is one grammar
-and two readers, and the overlay's sync state is the overlay's question, asked where the overlay
-is owned.
+`PRE_COMMIT_CONFIG` and `PRE_COMMIT_HOOK` are published for `attach`, which installs the
+overlay's commit-time secret scan on a machine where it is missing: the overlay ships the
+configuration, and this area's own `pre-commit` row in `stayfixed doctor` asks about the same two
+names, so they are spelled once, in the layout, beside the files the overlay ships.
 
-`later` is the same reader asked of two versions, for the `project` area's `upgrade`, which refuses
-to move a project backward, `doctor`'s `versions` row, which points by direction, and the rule
-`stayfixed gate` judges an upgrade by, which admits a version only where `upgrade` would move to it:
-one comparison, so the three cannot disagree about which way a recorded version lies. `RELEASE` is
-that reader's `X.Y.Z` grammar whole, for `upgrade`, which prints a recorded version back only when
-it is one: a second spelling of the grammar would bound its components differently.
+`requires_of`, `satisfies`, `Sync` and `overlay_sync` are published for the `attach` area's
+session-start handler. The floor is one grammar and two readers, and the other is this area's own
+`overlay-requires` row in `stayfixed doctor` (`overlay/doctor.py`); the overlay's sync state is the
+overlay's question, asked where the overlay is owned.
+
+`later` and `RELEASE`, the order of two versions and the `X.Y.Z` grammar whole, are the core's
+`stayfixed.semver`, which the floor's reader builds on; `upgrade`, `doctor` and `stayfixed gate`
+import them from there.
 """
 
 from stayfixed.overlay.create import Created, Initialised, create, init_instance, target_root
@@ -59,8 +62,10 @@ from stayfixed.overlay.layout import (
     MARKETPLACE_MANIFEST,
     OVERLAY_FILES,
     PLUGIN_MANIFEST,
+    PRE_COMMIT_CONFIG,
+    PRE_COMMIT_HOOK,
 )
-from stayfixed.overlay.requires import RELEASE, later, requires_of, satisfies
+from stayfixed.overlay.requires import requires_of, satisfies
 from stayfixed.overlay.sync import Sync, overlay_sync
 
 __all__ = [
@@ -71,13 +76,13 @@ __all__ = [
     "MARKETPLACE_MANIFEST",
     "OVERLAY_FILES",
     "PLUGIN_MANIFEST",
-    "RELEASE",
+    "PRE_COMMIT_CONFIG",
+    "PRE_COMMIT_HOOK",
     "Created",
     "Initialised",
     "Sync",
     "create",
     "init_instance",
-    "later",
     "overlay_fault",
     "overlay_sync",
     "require_overlay",

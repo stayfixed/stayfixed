@@ -90,8 +90,8 @@ def _planners_reached(path: Path) -> set[str]:
 
 def test_only_the_planning_seam_imports_the_planner_or_the_ignore_guard() -> None:
     # The walk first: the seam itself must be seen reaching all of them, or a check that
-    # matched nothing would pass every module. Mutation (oracle): "a footprint command imports
-    # the planner past the seam" -> `init` imports `plan` again, and this reddens.
+    # matched nothing would pass every module. Mutation (oracle): `mutations/`'s "a footprint
+    # command imports the planner past the seam" -> `init` imports `plan` again, and this reddens.
     assert _planners_reached(SEAM) == {"plan", "left_copies", "local_copies", "refuse_ignored"}
     modules = sorted(p for p in AREA.glob("*.py") if p != SEAM)
     assert len(modules) >= 10, modules
@@ -103,8 +103,8 @@ def test_only_the_seam_calls_its_private_planner() -> None:
     # `Passes._plan` plans without the order check, and it is private only by convention: a
     # command that called it would plan what no `predict` asked the ignore guard about. The seam
     # is seen calling it first, so a check that matched nothing would not pass every module.
-    # Mutation (oracle): "a footprint command plans through the seam's private planner" -> `init`
-    # re-plans with `passes._plan`, and this reddens.
+    # Mutation (oracle): `mutations/`'s "a footprint command plans through the seam's private
+    # planner" -> `init` re-plans with `passes._plan`, and this reddens.
     def calls(path: Path) -> bool:
         tree = ast.parse(path.read_text(encoding="utf-8"))
         return any(isinstance(n, ast.Attribute) and n.attr == "_plan" for n in ast.walk(tree))
@@ -115,8 +115,8 @@ def test_only_the_seam_calls_its_private_planner() -> None:
 
 def test_the_checker_sees_a_planner_reached_through_the_seam_module(tmp_path: Path) -> None:
     # The seam module binds the planner at its top level, so a command could import it from
-    # there and plan past every guard the seam binds. Mutation (oracle): "the planning seam's
-    # checker stops knowing the seam module binds the planner" -> the seam's row in
+    # there and plan past every guard the seam binds. Mutation (oracle): `mutations/`'s "the
+    # planning seam's checker stops knowing the seam module binds the planner" -> the seam's row in
     # `PLANNERS` deleted, and this finds nothing.
     module = tmp_path / "bypass.py"
     module.write_text("from stayfixed.project.footprint import plan\n", encoding="utf-8")
@@ -126,8 +126,8 @@ def test_the_checker_sees_a_planner_reached_through_the_seam_module(tmp_path: Pa
 def test_the_checker_sees_a_fully_dotted_planner(tmp_path: Path) -> None:
     # `import stayfixed.scaffold.engine` binds only `stayfixed`, so a check that looked one
     # attribute deep saw `stayfixed.scaffold`, never the planner at the chain's end. Mutation
-    # (oracle): "the planning seam's checker stops resolving a dotted chain" -> the dotted
-    # branch records nothing, and this finds nothing.
+    # (oracle): `mutations/`'s "the planning seam's checker stops resolving a dotted chain" -> the
+    # dotted branch records nothing, and this finds nothing.
     module = tmp_path / "dotted.py"
     module.write_text(
         "import stayfixed.scaffold.engine\n\n\ndef f(root):\n"
@@ -140,9 +140,9 @@ def test_the_checker_sees_a_fully_dotted_planner(tmp_path: Path) -> None:
 def test_the_checker_sees_a_planner_imported_relatively(tmp_path: Path) -> None:
     # Nothing in the tree imports relatively today, which is why a check that read `.footprint`
     # as a module named `footprint` passed; the first relative import would have been a bypass
-    # it could not see. Mutation (oracle): "the planning seam's checker reads a relative import
-    # as a top-level module" -> `_absolute` ignores the level, both spellings find nothing, and
-    # this reddens.
+    # it could not see. Mutation (oracle): `mutations/`'s "the planning seam's checker reads a
+    # relative import as a top-level module" -> `_absolute` ignores the level, both spellings find
+    # nothing, and this reddens.
     module = tmp_path / "relative.py"
     module.write_text(
         "from . import footprint\nfrom .ignored import refuse_ignored\n\n\ndef f(root):\n"
@@ -156,8 +156,8 @@ def test_replanning_before_predicting_is_refused(tmp_path: Path) -> None:
     # `replan` plans without asking the ignore guard, because `predict` already asked it about
     # the same templates at the same targets; before `predict` nothing has asked it, so a
     # command that called `replan` first would write where git hides a file. Mutation (oracle):
-    # "a footprint command replans what it never predicted" -> the order check disabled, and
-    # `replan` plans instead of raising.
+    # `mutations/`'s "a footprint command replans what it never predicted" -> the order check
+    # disabled, and `replan` plans instead of raising.
     root = repository(tmp_path)
     (root / CONFIG_FILE).write_text(DOCUMENT, encoding="utf-8")
     config = load(root, machine=tmp_path / "absent.toml")
@@ -172,8 +172,8 @@ def test_replanning_before_predicting_is_refused(tmp_path: Path) -> None:
 
 def test_a_predict_the_ignore_guard_refused_leaves_replanning_refused(tmp_path: Path) -> None:
     # The flag is set only after the guard passed: a `predict` it refused has asked it about
-    # nothing a command may write, so `replan` must stay shut. Mutation (oracle): "a refused
-    # prediction opens replan" -> the flag set before the guard, and `replan` plans.
+    # nothing a command may write, so `replan` must stay shut. Mutation (oracle): `mutations/`'s "a
+    # refused prediction opens replan" -> the flag set before the guard, and `replan` plans.
     root = repository(tmp_path)
     (root / ".gitignore").write_text(".env\n", encoding="utf-8")
     (root / ".env").write_text("SECRET=1\n", encoding="utf-8")

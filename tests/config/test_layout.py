@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from stayfixed.config.layout import is_adoption_plan, rules_file
+from stayfixed.config.layout import rules_file
 from stayfixed.config.loader import loads
 from stayfixed.config.paths import PathEscape
 from stayfixed.config.schema import Config
@@ -30,24 +30,3 @@ def test_the_stayfixed_directory_is_contained_like_every_other_path(tmp_path: Pa
     # proves it reached the walk. `PATH_VALUE` refuses the spelling before `contained()` runs.
     with pytest.raises(PathEscape):
         _config(tmp_path, 'stayfixed = "../elsewhere"')
-
-
-@pytest.mark.parametrize(
-    ("path", "adoption"),
-    [
-        ("docs/plans/2026-09-23-stayfixed-adoption.md", True),
-        ("docs/plans/2026-09-23-stayfixed-adoption-billing.md", True),
-        ("docs/plans/2026-09-23-adoption.md", False),
-        ("docs/plans/2026-09-23-stayfixeds.md", False),
-        ("docs/plans/2026-09-23-stayfixed-adoption.txt", False),
-        ("docs/plans/archive/2026-09-23-stayfixed-adoption.md", False),
-        ("docs/specs/2026-09-23-stayfixed-adoption-design.md", False),
-    ],
-    ids=["dated", "with-a-slug", "no-word", "a-longer-word", "not-markdown", "nested", "a-spec"],
-)
-def test_an_adoption_plan_is_a_plan_whose_name_says_stayfixed(
-    tmp_path: Path, path: str, adoption: bool
-) -> None:
-    # A plan directly in `[paths] plans`, where `plan check` and the trail look. Mutation: drop
-    # the directory comparison and the nested and spec cases redden.
-    assert is_adoption_plan(_config(tmp_path), path) is adoption

@@ -47,6 +47,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 import stayfixed
+from stayfixed import fsops
 from stayfixed.config.loader import (
     CONFIG_FILE,
     UNPARSEABLE,
@@ -63,7 +64,7 @@ from stayfixed.project.rewrite import rewrite_owned
 from stayfixed.project.templates import CI_ARTIFACT
 from stayfixed.release.api import Resolution, resolve_pin
 from stayfixed.runner import Runner
-from stayfixed.scaffold import MANIFEST_PATH, Plan, apply
+from stayfixed.scaffold import MANIFEST_PATH, Manifest, Plan, apply
 from stayfixed.tomlout import dumps
 
 STATE_NEW = "initialised"
@@ -86,6 +87,12 @@ NEEDS_YES = (
 ALREADY = (
     f"{MANIFEST_PATH} exists, so this repository is initialised; re-running `init` is "
     "`stayfixed upgrade`"
+)
+# Said after `ALREADY` when the refused run asked for `--local`: `upgrade` has no such flag, and
+# the key it reads instead is what relocates an artifact already written.
+LOCAL_AFTER_INIT = (
+    "to add a local artifact later, list its id under `[artifacts] local` in stayfixed.toml, "
+    "then run `stayfixed upgrade`"
 )
 ANSWER_SHEET = (
     "this repository already has a stayfixed.toml, which answers the questions `init` would ask; "
@@ -319,20 +326,21 @@ def _as_on_disk(read: tuple[str, dict[str, object]] | None) -> tuple[str | None,
     return rewrite(text, {VERSION: stayfixed.__version__}), True
 
 
-def precheck(root: Path, *, answering: bool) -> None:
+def precheck(root: Path, *, answering: bool, local: bool = False) -> None:
     """The refusals `init` and `init --questions` share, before anything beyond the root is read.
 
-    A manifest means `init` has already run, so re-running it is `stayfixed upgrade`. While
-    `answering` — the questions always are, and `init` is whenever an answer flag is given — a
-    `stayfixed.toml` already answers every question, so asking them over it would collect
-    answers that nothing writes.
+    A manifest means `init` has already run, so re-running it is `stayfixed upgrade` — and when
+    the run asked for `--local`, which `upgrade` has no flag for, the refusal says which key does
+    the same there. While `answering` — the questions always are, and `init` is whenever an answer
+    flag is given — a `stayfixed.toml` already answers every question, so asking them over it
+    would collect answers that nothing writes.
     """
-    if (root / MANIFEST_PATH).is_file():
-        raise Refusal(ALREADY)
+    if Manifest.present(root):
+        raise Refusal(f"{ALREADY}; {LOCAL_AFTER_INIT}" if local else ALREADY)
     # `contained` and not a bare `is_file`, which follows a link: a symlinked `stayfixed.toml` is
     # refused as every command refuses it, whatever it points at, and not taken for an answer
     # sheet (a link to a file) or for no file at all (a link to `/dev/zero`).
-    if answering and contained(root, CONFIG_FILE).is_file():
+    if answering and fsops.is_file(contained(root, CONFIG_FILE)):
         raise Refusal(ANSWER_SHEET)
 
 
@@ -363,7 +371,7 @@ def init(
     """
     if not yes:
         raise Refusal(NEEDS_YES)
-    precheck(root, answering=given != NO_ANSWERS)
+    precheck(root, answering=given != NO_ANSWERS, local=given.local is not None)
     read = _existing(root)
     existing = read[1] if read is not None else None
     tables, head_note = _tables(root, existing, ci=ci, given=given)
@@ -400,7 +408,7 @@ def init(
     # when no workflow was planned. The two are one value by construction, which is the
     # invariant `templates._ci` states and `doctor`'s `ci-ref` row enforces.
     ref = "" if CI_ARTIFACT in passes.skipped else config.ci.ref
-    note = VERB_NOTE if not (root / config.paths.agents_md).exists() else ""
+    note = VERB_NOTE if not fsops.exists(root / config.paths.agents_md) else ""
     once, footprint = passes.predict((passes.once, ()), (passes.footprint, ()))
     report = InitReport(
         once,

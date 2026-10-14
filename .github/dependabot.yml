@@ -23,7 +23,7 @@ updates:
         patterns: ["*"]
 
   # Development dependencies only — stayfixed has no runtime dependencies, and
-  # `tests/test_import_boundary.py` is what keeps it that way.
+  # `tests/boundaries/test_layering.py` is what keeps it that way.
   - package-ecosystem: uv
     directory: /
     target-branch: dev

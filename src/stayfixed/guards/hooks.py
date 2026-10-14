@@ -1,9 +1,10 @@
-"""Handlers this area contributes; `hooks-core` owns the entries that invoke them.
+"""Handlers this area contributes; the `hook <event>` entries in `hooks/hooks.json` invoke them.
 
 Every import of `stayfixed.guards.*` and of the configuration layer happens **inside** a
-handler body. `tests/test_areas.py` asserts that `discover()` in a clean interpreter imports
-neither the configuration layer nor the presets, and discovery imports every area's `hooks`
-module — so a module-level import here reddens a test that belongs to no area at all.
+handler body. `tests/boundaries/test_discovery.py` asserts that `discover()` in a clean
+interpreter imports neither the configuration layer nor the presets, and discovery imports every
+area's `hooks` module — so a module-level import here reddens a test that belongs to no area at
+all.
 
 `bg-cleanup` is the one `Policy.CLOSED` handler in the plugin. It does not catch its own exceptions:
 a guard for an action with a high cost of error fails closed (principle 6), and the dispatcher is
@@ -13,8 +14,8 @@ command.
 
 Nothing a repository controls is put into `HookResult.context`. The restore hint is built from
 the command's own text — model- or user-authored, never repository bytes — and the hygiene
-notice carries counts this module computed and fixed sentences, never a path from
-`stayfixed.toml`.
+notice carries counts and fixed sentences, its own and those a shipped profile's hint renders
+from its counts, never a path from `stayfixed.toml`.
 
 Both handlers are silent without a configuration: with no `stayfixed.toml`, no hook handler says
 anything. For the guard that is a design decision, not a degradation: a repository that has not run
@@ -36,7 +37,7 @@ if TYPE_CHECKING:
 BASH = "Bash"
 
 # The dispatcher owns the once-per-context bookkeeping, so the handler declares the key
-# and stays pure. A red pytest over a dirty tree is the normal state of TDD — every "run it to
+# and stays pure. A red test run over a dirty tree is the normal state of TDD — every "run it to
 # watch it fail" step would otherwise carry the same paragraph — so the note is worth one
 # appearance and no more.
 ONCE_TEST_HYGIENE = "test-hygiene"
@@ -75,8 +76,9 @@ def _bg_cleanup(event: HookEvent, config: Config | None) -> HookResult:
 
 
 def _test_hygiene(event: HookEvent, config: Config | None) -> HookResult:
-    """Name what could have falsified a red pytest run. Never a decision: the tool has already
-    run, and `Policy.OPEN` means a failure here costs the note and not the call."""
+    """Name what could have falsified a red test run, in the words of the profile whose runner
+    failed. Never a decision: the tool has already run, and `Policy.OPEN` means a failure here
+    costs the note and not the call."""
     if config is None or event.project_root is None:
         return HookResult()
     command = bash_command(event)
@@ -92,18 +94,25 @@ def _test_hygiene(event: HookEvent, config: Config | None) -> HookResult:
 def register() -> list[Handler]:
     return [
         Handler(name="bg-cleanup", event="PreToolUse", policy=Policy.CLOSED, run=_bg_cleanup),
-        # Per the Claude Code hooks reference, a non-zero exit arrives on `PostToolUseFailure`,
-        # which `stayfixed.hooks.api.EVENTS` does not carry yet — and `registry.discover` refuses a
-        # handler whose event is not in that tuple, so registering it here today would take
-        # the whole plugin down. `EVENTS` is `stayfixed.hooks`' file. When it gains the
-        # event, register the same handler there too:
-        # Handler(name="test-hygiene", event="PostToolUseFailure", policy=Policy.OPEN,
-        #         run=_test_hygiene, once_key=ONCE_TEST_HYGIENE),
-        # Kept ABOVE the row it annotates, not below it: a later change appending a handler to
+        # The red-run note, on both events a failed command can arrive on. Claude Code delivers a
+        # Bash command that exited non-zero to `PostToolUseFailure`, with `error` beginning
+        # `Exit code N`, and never to `PostToolUse`. No measured harness delivers an exit code on
+        # `PostToolUse`: Codex delivers a failed command there with none, so the note does not
+        # speak (`red_exit` answers `None`). The registration is a placeholder for parity with
+        # Codex. One `once_key`, which the dispatcher files per session: at most one
+        # note per context, whichever event carries it.
+        # Kept ABOVE the rows it annotates, not below them: a later change appending a handler to
         # the tail of this list would otherwise detach the comment from its subject.
         Handler(
             name="test-hygiene",
             event="PostToolUse",
+            policy=Policy.OPEN,
+            run=_test_hygiene,
+            once_key=ONCE_TEST_HYGIENE,
+        ),
+        Handler(
+            name="test-hygiene",
+            event="PostToolUseFailure",
             policy=Policy.OPEN,
             run=_test_hygiene,
             once_key=ONCE_TEST_HYGIENE,

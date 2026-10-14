@@ -4,9 +4,7 @@
 
 from __future__ import annotations
 
-import importlib.util
 import io
-import sys
 import tarfile
 import zipfile
 from pathlib import Path
@@ -17,18 +15,18 @@ import pytest
 from stayfixed.overlay.api import OVERLAY_FILES
 from stayfixed.project.api import PROJECT_FILES
 from stayfixed.scaffold import MANIFEST_PATH
+from tests.scriptload import SCRIPTS, load
 
-SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "check_artifacts.py"
 WHEEL_LAST = f"stayfixed/templates/overlay/{OVERLAY_FILES[-1]}"
+# The Python profile's code, which the red-run hint imports at runtime.
+PROFILE_CODE = (
+    "stayfixed/profiles/python/__init__.py",
+    "stayfixed/profiles/python/hygiene.py",
+)
 
 
 def checker() -> ModuleType:
-    spec = importlib.util.spec_from_file_location("check_artifacts_under_test", SCRIPT)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules["check_artifacts_under_test"] = module
-    spec.loader.exec_module(module)
-    return module
+    return load(SCRIPTS / "check_artifacts.py", "check_artifacts_under_test")
 
 
 def _wheel(path: Path, *, without: str | None = None) -> Path:
@@ -39,6 +37,7 @@ def _wheel(path: Path, *, without: str | None = None) -> Path:
         *(f"stayfixed/templates/project/{n}" for n in PROJECT_FILES),
         "stayfixed/profiles/python/profile.toml",
         "stayfixed/profiles/python/rules.md",
+        *PROFILE_CODE,
     ]
     with zipfile.ZipFile(path, "w") as archive:
         for name in names:
@@ -83,6 +82,18 @@ def test_a_template_file_missing_from_the_wheel_is_named(tmp_path: Path) -> None
     ]
 
 
+@pytest.mark.parametrize("missing", PROFILE_CODE)
+def test_a_wheel_without_the_python_profiles_code_is_named(tmp_path: Path, missing: str) -> None:
+    # `hint_modules` finds a profile's `hygiene.py` through `importlib.resources`, so a build that
+    # dropped it would leave every installed stayfixed with no Python note after a failed pytest
+    # run, silently, while the checkout's own suite stayed green. Oracle: `mutations/`'s "the
+    # wheel need not carry the Python profile's hint" and "the wheel need not carry the Python
+    # profile's package marker".
+    module = checker()
+    findings = module.check_wheel(_wheel(tmp_path / "k.whl", without=missing))
+    assert findings == [f"wheel: missing {missing}"]
+
+
 def test_a_wrapper_that_lost_its_executable_bit_in_the_sdist_is_named(tmp_path: Path) -> None:
     # `tar` preserves the mode, and a downstream packager unpacks it: a wrapper at 0644 exits
     # 126 for every hook entry, which Claude Code reads as permission.
@@ -104,7 +115,7 @@ def test_a_wrapper_that_lost_its_executable_bit_in_the_sdist_is_named(tmp_path: 
 def test_a_member_missing_from_the_sdist_is_named(tmp_path: Path) -> None:
     # `_sdist`'s `without=` parameter existed and was passed by nothing, so the packager-facing
     # half of the gate — that `tests/`, `CHANGELOG.md`, `skills/`, `hooks/hashes.json` and
-    # `mutations.toml` actually ship — was checked by no test. Measured: the whole
+    # `mutations/` actually ship — was checked by no test. Measured: the whole
     # missing-member comprehension replaced by `findings: list[str] = []`, mode check kept,
     # 5 passed.
     #
@@ -118,6 +129,22 @@ def test_a_member_missing_from_the_sdist_is_named(tmp_path: Path) -> None:
         _sdist(tmp_path / "k.tar.gz", module, without="hooks/hashes.json")
     )
     assert findings == ["sdist: missing hooks/hashes.json"], findings
+
+
+def test_the_sdist_must_carry_every_mutation_group_file() -> None:
+    # The group files are globbed rather than spelled, and a glob that matches nothing — a moved
+    # directory, a mistyped pattern — drops the requirement without a sound: the sdist check stays
+    # green over an artifact a packager cannot run the oracle from. So the checkout's own set is
+    # the floor, and it is stated non-empty before it is compared.
+    #
+    # Mutation: the checker's pattern becomes `*.tom` -> no group file is required and the
+    # comparison reddens.
+    module = checker()
+    required = {name for name in module.SDIST_MUST if name.startswith("mutations/")}
+    declarations = SCRIPTS.parent / "mutations"
+    carried = {f"mutations/{path.name}" for path in declarations.glob("*.toml")}
+    assert carried  # a walk-based assertion states its walk is non-empty
+    assert required == carried
 
 
 def _rendered(root: Path, *, repository: bool = True) -> Path:
@@ -183,7 +210,7 @@ def test_a_directory_named_git_is_not_enough_it_is_a_repository_on_main(
     # `--local` makes. `HEAD` naming `refs/heads/main` says both that it is a repository and that
     # it is on the branch the contract names, with no subprocess.
     #
-    # Mutation: `mutations.toml`'s "the rendered-artifact check takes any directory named .git".
+    # Mutation: `mutations/`'s "the rendered-artifact check takes any directory named .git".
     module = checker()
     root = _rendered(tmp_path / "rendered", repository=False)
     (root / ".git").mkdir()

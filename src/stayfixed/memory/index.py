@@ -17,10 +17,12 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from stayfixed import fsops
+from stayfixed.config.overlay import overlay_root
 from stayfixed.config.paths import PathEscape, contained
-from stayfixed.config.schema import Config
+from stayfixed.config.schema import OVERLAY_MODE, Config
 from stayfixed.errors import Failure, Refusal
-from stayfixed.fsops import write_atomically
+from stayfixed.fsops import TooLarge, read_regular_text, write_atomically
 from stayfixed.memory.notes import (
     UNRANKED,
     Note,
@@ -30,7 +32,7 @@ from stayfixed.memory.notes import (
     with_index,
     write_note,
 )
-from stayfixed.memory.store import Store, in_repository, overlay_root, permitted_roots
+from stayfixed.memory.store import Store, in_repository, permitted_roots
 
 INDEX_NAME = "MEMORY.md"
 EXTRA_TITLE = "Elsewhere"
@@ -132,13 +134,19 @@ def _resolved_if_permitted(store: Store, config: Config, target: Path) -> Path |
     `memory index` must be able to create, and answering the permission question without
     existence is what lets it.
     """
-    if store.mode != "overlay":
+    if store.mode != OVERLAY_MODE:
         return None
     overlay = overlay_root(store.machine)
     if overlay is None:
         return None
     allowed = permitted_roots(overlay, config.project.name)
-    resolved = target.resolve()
+    try:
+        resolved = fsops.resolved(target)
+    except OSError:
+        # A link the repository can commit, and a symlink loop, which `fsops.resolved` answers
+        # as `ELOOP` on every interpreter: a link that cannot be followed to a place is no link to
+        # a permitted one, so it is refused like any other, never an internal error.
+        return None
     if not any(resolved.is_relative_to(root.resolve()) for root in allowed):
         return None
     return resolved
@@ -150,9 +158,9 @@ def index_source(store: Store, config: Config) -> Path | None:
 
     `store.py` does not track the index as a group (it is not a `memory.groups` entry), so no
     per-link target check has ever reached it. Every reader of `store.path / INDEX_NAME` needs
-    this same answer — `worktree.link`, which materialises it into a worktree, and
-    `bundles._index`, which injects it into the model — so it lives here, beside `INDEX_NAME`,
-    and is called rather than reimplemented.
+    this same answer — `worktree.link`, which materialises it into a worktree, the writer and
+    the check (`_destination`), and the harvest (`_appended`) — so it lives here, beside
+    `INDEX_NAME`, and is called rather than reimplemented.
 
     `None` has three causes, and this function's callers only ever need to ask the read
     question: is there something here to source. An absent target and a *refused* symlink
@@ -167,10 +175,10 @@ def index_source(store: Store, config: Config) -> Path | None:
     behind it sources that file, resolved.
     """
     target = store.path / INDEX_NAME
-    if not target.is_symlink():
-        return target.resolve() if target.exists() else None
+    if not fsops.is_symlink(target):
+        return target.resolve() if fsops.exists(target) else None
     resolved = _resolved_if_permitted(store, config, target)
-    return resolved if resolved is not None and resolved.exists() else None
+    return resolved if resolved is not None and fsops.exists(resolved) else None
 
 
 def _appended(path: Path | None) -> dict[str, str]:
@@ -181,10 +189,11 @@ def _appended(path: Path | None) -> dict[str, str]:
     index symlinked at another project's share would persist that project's text into this
     one's notes — and in overlay mode from there onto every machine.
     """
-    if path is None or not path.is_file():
+    if path is None or not fsops.is_file(path):
         return {}
     try:
-        text = path.read_text(encoding="utf-8")
+        # To the read cap, as `check_index` reads the same file.
+        text = read_regular_text(path)
     except (OSError, UnicodeDecodeError):
         return {}
     return {target: title for title, target in entries_in(text)}
@@ -240,7 +249,7 @@ def _to_machine(store: Store, config: Config) -> bool:
     if source is not None:
         return not in_repository(store, source)
     target = store.path / INDEX_NAME
-    if not target.is_symlink():
+    if not fsops.is_symlink(target):
         return not in_repository(store, target)
     resolved = _resolved_if_permitted(store, config, target)
     return resolved is not None and not in_repository(store, resolved)
@@ -268,8 +277,23 @@ def _relative(note: Note) -> str:
     return f"{note.group_name}/{note.path.name}"
 
 
+def _metadata_index(note: Note) -> str | None:
+    """The short index line the note carries under `metadata:`, when it holds more than
+    whitespace, else `None`: the owner's own line, which `reconcile` takes before a harvested one
+    and writes as provisional (its docstring says why)."""
+    line = note.metadata.get("index", "").strip()
+    return line or None
+
+
 def reconcile(store: Store, config: Config, *, write: bool) -> Reconciliation:
     """Give every note an `index:` line, harvesting the second writer's before inventing one.
+
+    The line, in order: a top-level `index:` (curated, left alone); `metadata.index`
+    (provisional, `_metadata_index`); a line harvested from `MEMORY.md` (native); the
+    description (provisional). `metadata.index` outranks the harvest because it is the owner's own
+    line, where the harvested one is what the native writer appended. It is provisional because
+    this run writes it into the note, and once written it shadows a later edit to
+    `metadata.index`, as the description's line does an edit to the description.
 
     `config` rather than a bare group list: the groups came from it at every call site anyway,
     and the index's target rule needs `project.name` and the recorded overlay, which a
@@ -293,11 +317,15 @@ def reconcile(store: Store, config: Config, *, write: bool) -> Reconciliation:
                 refused_publish.append(note.name)
             notes.append(note)
             continue
-        line = appended.get(_relative(note))
+        own = _metadata_index(note)
+        line = None if own else appended.get(_relative(note))
         if line and not _harvestable(store, source, note):
             refused.append(note.name)
             line = None
-        if line:
+        if own:
+            note = with_index(note, own, Provenance.PROVISIONAL)
+            provisional.append(note.name)
+        elif line:
             note = with_index(note, line, Provenance.NATIVE)
             harvested.append(note.name)
         else:
@@ -369,8 +397,8 @@ def _extra(config: Config, store: Store) -> list[str]:
 
     `config/paths.py` names this field, alongside `memory.groups`, as one its own guard does
     not cover, and assigns the check to "the module that first reads those fields". The
-    strings are repository-controlled and land verbatim in `MEMORY.md`, which the `index`
-    bundle injects — the same channel a symlinked index reaches. `contained` is called without
+    strings are repository-controlled and land verbatim in `MEMORY.md`, the file the harness
+    memory link exposes — the same channel a symlinked index reaches. `contained` is called without
     `allow_final_symlink`, unlike `_group_targets`: a group legitimately *is* a symlink in
     overlay mode, while these are pointers to documents in the repository and a link at the
     last component escaping the root is the same escape as one halfway up.
@@ -448,15 +476,14 @@ class IndexCheck:
 def _destination(store: Store, config: Config) -> Path:
     """The one file the writer writes and the check compares against: what the readers source.
 
-    `index_source` is the rule every *reader* applies — `bundles._index`, `_appended`,
-    `worktree.link`. The writer did not apply it and neither did the check, and each half of
-    that was its own defect. `write_atomically` ends in `os.replace`, which replaces the
-    **link** rather than its target: one run stranded the overlay's shared copy on every other
-    machine, turned the index into a real file inside the repository, and so flipped
-    `in_repository` to True and closed the gate on the index bundle for good. `check_index`
-    meanwhile read `store.path / INDEX_NAME` through `is_file()`, which follows the link, so
-    `--check` answered about a file nothing injects: exit 0 and "index is current" while the
-    index bundle produced `[]`.
+    `index_source` is the rule every *reader* applies — `_appended`, `worktree.link`. The writer
+    did not apply it and neither did the check, and each half of that was its own defect.
+    `write_atomically` ends in `os.replace`, which replaces the **link** rather than its target:
+    one run stranded the overlay's shared copy on every other machine, turned the index into a
+    real file inside the repository, and so flipped `in_repository` to True and closed the trust
+    gate on the index for good. `check_index` meanwhile read `store.path / INDEX_NAME` through
+    `is_file()`, which follows the link, so `--check` answered about a file no reader sources:
+    exit 0 and "index is current" while every reader refused the link it had followed.
 
     Both are the same question, so both ask it here, once.
 
@@ -484,7 +511,7 @@ def _destination(store: Store, config: Config) -> Path:
     if source is not None:
         return source
     target = store.path / INDEX_NAME
-    if not target.is_symlink():
+    if not fsops.is_symlink(target):
         return target
     resolved = _resolved_if_permitted(store, config, target)
     if resolved is None:
@@ -506,8 +533,9 @@ def check_index(store: Store, config: Config, reconciled: Reconciliation) -> Ind
     text = render_index(reconciled, config, store)
     path = _destination(store, config)
     try:
-        current = path.read_text(encoding="utf-8") if path.is_file() else None
-    except UnicodeDecodeError:
+        # To the read cap, as every reader of a file a clone can commit reads it.
+        current = read_regular_text(path) if fsops.is_file(path) else None
+    except (UnicodeDecodeError, TooLarge):
         # Not what the render writes, whatever else it holds: drifted, and `stayfixed memory
         # index` replaces it.
         current = None
@@ -540,7 +568,7 @@ def write_index(store: Store, config: Config, text: str) -> Path:
     checkout; `trust.refresh_if_trusted` resolves both to the same file, so the record still
     covers the index it just wrote.
     """
-    if not store.path.is_dir():
+    if not fsops.is_dir(store.path):
         raise Failure(f"{store.path} does not exist; the store was not created")
     path = _destination(store, config)
     write_atomically(path, text)

@@ -11,11 +11,21 @@ under test that `git` read the developer's `~/.gitconfig` and `~/.config/git/ign
 tests failed by the dozen on one machine and passed on the next.
 
 Here, rather than in the product, because the product's behaviour for a real user is right; it
-is the suite that must not depend on whose machine it runs on. `HOME` points at an empty
+is the suite that must not depend on whose machine it runs on. `HOME` points at a fresh
 directory for each test and `XDG_CONFIG_HOME`, which `git` reads before `HOME/.config`, is
 dropped. A test that needs a global configuration writes one into that directory. What `HOME`
 cannot seal is git's system configuration, which `scrubbed_env` gives no variable to redirect;
 no shipped system file carries an excludes rule.
+
+The directory is empty but for one file: a `.gitconfig` that turns git's automatic maintenance
+off, with the two keys and for the reason `tests/gitfixture.py` gives the fixture's `git`.
+`scrubbed_env` drops the variables that carry them there, and `HOME` is how the same two reach
+the product's `git` — a ledger `fetch` starts maintenance like a `commit` does — and every
+`stayfixed` and `Runner` launch a test starts, which inherit this `HOME`.
+
+The password database answers whatever `HOME` holds for this user, in this process only: off a
+terminal, the product takes the machine owner's home from there and not from `HOME`
+(`tests/ownerhome.py` says how a test reaches a process it starts).
 """
 
 from __future__ import annotations
@@ -29,6 +39,8 @@ import pytest
 
 from stayfixed import gitenv
 from tests.floor import SUITE_GIT_FLOOR_SECONDS
+from tests.gitfixture import MAINTENANCE_OFF, gitconfig
+from tests.ownerhome import follows_home
 
 
 @pytest.fixture(autouse=True)
@@ -44,8 +56,12 @@ def _a_home_of_its_own(
     tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
 ) -> Path:
     home = tmp_path_factory.mktemp("home")
+    (home / ".gitconfig").write_text(gitconfig(MAINTENANCE_OFF), encoding="utf-8")
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    # The password database answers whatever `HOME` holds, which is where every command not run
+    # from a terminal finds the machine owner's home (`tests/ownerhome.py`).
+    follows_home(monkeypatch)
     return home
 
 

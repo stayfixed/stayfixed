@@ -7,11 +7,13 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.parse import unquote
 
+from stayfixed import fsops
 from stayfixed.config.paths import contained
 from stayfixed.errors import Failure
 from stayfixed.findings import Finding
+from stayfixed.fsops import read_regular_text, said
 from stayfixed.printed import quoted
-from stayfixed.prose import blank_fences, resolves_within
+from stayfixed.prose import blank_fences, present_within, resolves_within
 
 if TYPE_CHECKING:
     from stayfixed.config.schema import Config
@@ -55,11 +57,13 @@ def read_document(path: Path, where: str | Path) -> str:
     """
     shown = quoted(Path(where).as_posix())
     try:
-        return path.read_text(encoding="utf-8")
+        # A regular file only: a plan globbed outside a work tree can be a committed link to
+        # `/dev/stdin`, which hung `plan check`.
+        return read_regular_text(path)
     except UnicodeDecodeError as error:
         raise Failure(f"{shown}: is not valid UTF-8 ({error.reason})") from None
     except OSError as error:
-        raise Failure(f"{shown}: could not be read ({error.strerror or error})") from None
+        raise Failure(f"{shown}: could not be read ({said(error)})") from None
 
 
 def section_lines(text: str, heading: str) -> int | None:
@@ -107,7 +111,7 @@ def _over(
 def check_budgets(root: Path, config: Config) -> list[Finding]:
     found: list[Finding] = []
     agents_path = contained(root, config.paths.agents_md)
-    if not agents_path.is_file():
+    if not fsops.is_file(agents_path):
         detail = "the always-loaded document does not exist"
         return [Finding("missing-document", config.paths.agents_md, None, detail)]
     agents = read_document(agents_path, config.paths.agents_md)
@@ -137,7 +141,7 @@ def check_budgets(root: Path, config: Config) -> list[Finding]:
     else:
         _over(found, "status-lines", config.paths.agents_md, status, config, "status_lines")
     roadmap_path = contained(root, config.paths.roadmap)
-    if roadmap_path.is_file():
+    if fsops.is_file(roadmap_path):
         prose = roadmap_prose(read_document(roadmap_path, config.paths.roadmap))
         _over(
             found,
@@ -162,7 +166,7 @@ def _links(root: Path, config: Config) -> list[tuple[str, Path]]:
     """Each local link target in the always-loaded document, with where it lands inside the
     root; a target that lands outside it is left out."""
     agents_path = contained(root, config.paths.agents_md)
-    if not agents_path.is_file():
+    if not fsops.is_file(agents_path):
         return []
     found: list[tuple[str, Path]] = []
     agents = read_document(agents_path, config.paths.agents_md)
@@ -181,7 +185,7 @@ def check_links(root: Path, config: Config) -> list[Finding]:
     return [
         Finding("missing-link", config.paths.agents_md, None, target)
         for target, landed in _links(root, config)
-        if not landed.exists()
+        if present_within(root, landed) is False
     ]
 
 

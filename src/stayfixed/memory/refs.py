@@ -1,5 +1,5 @@
-"""Backticked repository paths in notes that no longer resolve (`memory refs`), and the one
-grammar for a wiki-link.
+"""Backticked repository paths in notes that no longer resolve (`memory refs`), and the link
+graph's advice beside them, over one walk of the store.
 
 Notes are read as authoritative and they age silently: nothing in the tree points back at
 them, so a module they name can be deleted without anything going red, and the next session
@@ -18,23 +18,22 @@ record.
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
-from stayfixed.config.schema import Config
+from stayfixed.config.overlay import overlay_root
+from stayfixed.config.schema import OVERLAY_MODE, Config
 from stayfixed.errors import Failure
 from stayfixed.findings import Finding
+from stayfixed.fsops import read_regular_text, resolved, said
 from stayfixed.gitenv import git_run
 from stayfixed.guards.api import contained_roots
+from stayfixed.memory.graph import check_memory_graph, wiki_links
 from stayfixed.memory.notes import Note, Walk, walk
-from stayfixed.memory.store import Store, overlay_root, permitted_roots
+from stayfixed.memory.store import Store, permitted_roots
 from stayfixed.printed import quoted
-from stayfixed.prose import blank_fences, path_references
+from stayfixed.prose import blank_fences, path_references, present_within
 
-# `[[name]]` addresses a note by its stem. Owned here because a wiki-link is the memory area's
-# grammar; the docs area's graph check imports it from `memory/api.py` rather than respelling it.
-WIKI_LINK = re.compile(r"\[\[([^\]]+)\]\]")
 # Deliberate placeholders a note may write without claiming a file. Not a config key.
 _PLACEHOLDER_STEMS = frozenset({"foo", "bar", "baz", "qux", "xxx"})
 DEAD_REFERENCE = "dead-reference"
@@ -46,6 +45,7 @@ class RefsReport:
     findings: list[Finding]
     unavailable: dict[str, str]  # group -> the resolver's reason (`Store.unavailable`)
     unreadable: list[tuple[Path, str]]  # `Walk.unreadable`: notes that exist and would not parse
+    notices: list[Finding]  # the link graph's advice (`memory.graph`), which never gates
 
 
 def source_roots(root: Path, config: Config) -> tuple[str, ...]:
@@ -71,13 +71,21 @@ def _resolves(root: Path, target: str, roots: tuple[str, ...]) -> bool:
     if target.startswith("/"):
         # A path from another host's filesystem: notes quote deployment layouts verbatim. An
         # absolute path that does happen to sit in this checkout is still checked.
-        return not Path(target).is_relative_to(root) or Path(target).exists()
-    return any((root / prefix / target).exists() for prefix in roots)
+        return not Path(target).is_relative_to(root) or _settled(root, Path(target))
+    return any(_settled(root, root / prefix / target) for prefix in roots)
+
+
+def _settled(root: Path, path: Path) -> bool:
+    """A candidate names something in the tree, or leads out of it through a symlink and is
+    not this repository's to answer (`prose.present_within`): either way it is not reported."""
+    return present_within(root, path) is not False
 
 
 def _inside_store(root: Path, store: Store, target: str) -> bool:
+    # Through `fsops.resolved`, which answers a symlink loop as an `OSError` on every interpreter:
+    # both the note's path and the loop are bytes a clone can commit.
     try:
-        return (root / target).resolve().is_relative_to(store.path.resolve())
+        return resolved(root / target).is_relative_to(resolved(store.path))
     except OSError:
         return False
 
@@ -112,7 +120,10 @@ def _lines(note: Note) -> list[tuple[int, str]]:
     never as an internal error (2).
     """
     try:
-        text = note.path.read_text(encoding="utf-8")
+        # To the read cap, as the walk read it: a note past it by now is named, never read whole.
+        text = read_regular_text(note.path)
+    except OSError as exc:
+        raise Failure(f"{quoted(note.path.name)} cannot be read ({said(exc)})") from exc
     except UnicodeDecodeError as exc:
         raise Failure(f"{quoted(note.path.name)} is not valid UTF-8 ({exc.reason})") from None
     return list(enumerate(blank_fences(text).splitlines(), start=1))
@@ -144,7 +155,7 @@ def audience_violations(store: Store, config: Config, walked: Walk) -> list[Find
     because that link dangles for every other project. Empty for a store with no cross-project
     group — every non-overlay store."""
     overlay = overlay_root(store.machine)
-    if overlay is None or store.mode != "overlay":
+    if overlay is None or store.mode != OVERLAY_MODE:
         return []
     common, _project = permitted_roots(overlay, config.project.name)
     common_groups = {
@@ -158,16 +169,19 @@ def audience_violations(store: Store, config: Config, walked: Walk) -> list[Find
         if note.store_group not in common_groups:
             continue
         for number, line in _lines(note):
-            for target in WIKI_LINK.findall(line):
-                if target in project_notes:
-                    found.append(Finding(AUDIENCE, _where(note, store), number, target))
+            for link in wiki_links(line):
+                if link.group(1) in project_notes:
+                    found.append(Finding(AUDIENCE, _where(note, store), number, link.group(1)))
     return found
 
 
 def check_refs(root: Path, config: Config, store: Store) -> RefsReport:
+    # One walk for every report below: the link graph reads the notes this walk found, rather
+    # than walking the store again for the same groups.
     walked = walk(store.path, [g for g in config.memory.groups if g in store.groups])
     return RefsReport(
         unresolved(root, config, store, walked) + audience_violations(store, config, walked),
         dict(store.unavailable),
         list(walked.unreadable),
+        check_memory_graph(store, config, walked),
     )

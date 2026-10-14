@@ -2,13 +2,17 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 import tomllib
 from collections.abc import Iterable
 from pathlib import Path
 
+import pytest
+
 from stayfixed import __version__
-from stayfixed.release.api import drift
-from stayfixed.release.versions import check
+from stayfixed.release.api import HASHED_FILES, RECORD
+from tests.plugintree import PLUGIN_URL
+from tests.scriptload import release
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -31,12 +35,26 @@ def test_claude_manifest_names_the_plugin_its_version_and_titled_user_config() -
 
 
 def test_marketplace_has_a_description_and_an_unversioned_entry() -> None:
+    # The entry fetches the plugin from its own repository, pinned to this release's tag by `ref`
+    # and, on a release commit after `scripts/release.py pin`, to the plugin commit by `sha`: `dev`
+    # pins none before the first release that carries one, and a release commit runs this suite
+    # with one. Whether the `sha` is the plugin commit is the release check's, at the tag.
+    # Mutations (declared): the `ref` made `v0.0.1-<version>`, which is no tag of this release ->
+    # this reddens; `mutations/`'s "the marketplace pins a sha that is no commit id" -> this
+    # reddens.
     marketplace = json.loads((ROOT / ".claude-plugin" / "marketplace.json").read_text())
     assert marketplace["name"] == "stayfixed-marketplace"
     assert marketplace["description"]
     (entry,) = marketplace["plugins"]
     assert entry["name"] == "stayfixed"
-    assert entry["source"] == "./"
+    source = dict(entry["source"])
+    sha = source.pop("sha", None)
+    assert sha is None or re.fullmatch(r"[0-9a-f]{40}", sha), sha
+    assert source == {
+        "source": "url",
+        "url": PLUGIN_URL,
+        "ref": "v" + json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text())["version"],
+    }
     assert "version" not in entry
 
 
@@ -53,15 +71,39 @@ def test_codex_manifest_carries_no_hooks_or_skills_key() -> None:
     assert "skills" not in manifest
 
 
-def test_the_repository_itself_passes_release_check() -> None:
-    assert check(ROOT) == []
+def test_the_repository_passes_release_check(capsys: pytest.CaptureFixture[str]) -> None:
+    # Through the script's own `main`, as CI runs it: the version sources agree, and the record
+    # of the shipped files is current.
+    assert release().main(["check", "--root", str(ROOT)]) == 0, capsys.readouterr().out
 
 
 def test_the_repository_itself_carries_a_current_release_record() -> None:
     # The release record is kept true on every commit and not only at a tag, which is what makes it
     # a record anyone has watched fail. A change to the wrapper, to `hooks/hooks.json` or to
-    # `scripts/stayfixed` that forgot `stayfixed release hashes` reddens here and in the gate.
-    assert drift(ROOT) == []
+    # `scripts/stayfixed` that forgot `scripts/release.py hashes` reddens here and in the gate.
+    assert release().drift(ROOT) == []
+
+
+def test_a_drifted_record_fails_the_hashes_check(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The test above holds the committed record clean; this one holds that the same check can
+    # say otherwise about it. A copy of the repository's shipped files and its record, with one
+    # recorded digest changed, exits 1 naming that file and no other.
+    #
+    # Mutation (declared): `hashes --check` exits clean on a drifted record -> exit 0, and this
+    # reddens.
+    for relative in (*HASHED_FILES, RECORD):
+        (tmp_path / relative).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(ROOT / relative, tmp_path / relative)
+    record = json.loads((tmp_path / RECORD).read_text(encoding="utf-8"))
+    record["files"]["hooks/hooks.json"] = "0" * 64
+    (tmp_path / RECORD).write_text(json.dumps(record), encoding="utf-8")
+    assert release().main(["hashes", "--check", "--root", str(tmp_path), "--json"]) == 1
+    problems = json.loads(capsys.readouterr().out)["problems"]
+    assert problems == [
+        f"{RECORD} does not match hooks/hooks.json; run `uv run python scripts/release.py hashes`"
+    ]
 
 
 def test_no_top_level_bin_directory() -> None:
@@ -124,7 +166,7 @@ def test_no_storefront_string_advertises_what_the_readme_says_is_not_yet() -> No
     `pyproject.toml`'s description is the PyPI page; the two Claude manifests are the plugin
     card and the marketplace row; the Codex listing is the third storefront. All four
     advertised "an adoption state machine" while `stayfixed assess` did not exist and the
-    README listed it under **Not yet**, and nothing in `stayfixed release check` or
+    README listed it under **Not yet**, and nothing in `scripts/release.py check` or
     `RELEASING.md` looked. Mutation (declared): put the memory MCP server into
     `pyproject.toml`'s description -> reddens naming the file.
 
@@ -153,7 +195,7 @@ def test_every_changelog_fragment_carries_towncriers_orphan_prefix() -> None:
     reference and leaves the slug readable in the repository, and it is per-fragment, so a
     fragment that one day names a real issue still renders its reference.
 
-    No `mutations.toml` entry: the invariant is over a set of file *names* and the oracle
+    No entry in `mutations/`: the invariant is over a set of file *names* and the oracle
     applies a textual change to a file's *contents*, so there is no line for it to mutate.
     The directory is empty right after a release, so the rule is also shown to reject a name
     without the prefix, which keeps the check from passing on nothing.

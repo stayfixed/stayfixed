@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import shutil
-import tomllib
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -10,7 +9,6 @@ import pytest
 
 from stayfixed.config.loader import CONFIG_FILE, load
 from stayfixed.config.schema import Config
-from stayfixed.memory import bundles as bundles_module
 from stayfixed.memory.bundles import (
     CAP_MARGIN,
     SLOTS,
@@ -21,7 +19,6 @@ from stayfixed.memory.bundles import (
     render,
     split,
 )
-from stayfixed.memory.index import INDEX_NAME
 from stayfixed.memory.store import Store, resolve
 from stayfixed.memory.trust import DELIMITER, record
 from tests.gitfixture import git
@@ -144,150 +141,6 @@ def test_volatile_notes_degrade_to_one_line_each_over_budget(tmp_path: Path) -> 
     assert "Body." not in text
 
 
-def test_the_index_bundle_returns_the_rendered_index_file(tmp_path: Path) -> None:
-    store, config = a_store(tmp_path)
-    content = "# Memory Index\n\nA line only this test wrote, not a literal the code repeats.\n"
-    (store.path / INDEX_NAME).write_text(content, encoding="utf-8")
-    assert blocks(Bundle.INDEX, store, config) == [content.rstrip("\n")]
-
-
-def test_the_index_bundle_is_empty_when_no_index_file_exists(tmp_path: Path) -> None:
-    store, config = a_store(tmp_path)
-    assert not (store.path / INDEX_NAME).exists()
-    assert blocks(Bundle.INDEX, store, config) == []
-
-
-RULES = ("first-rule", "second-rule", "third-rule", "fourth-rule", "fifth-rule")
-# A rule body with fewer words than this is a stub rather than a rule.
-MIN_RULE_BODY_WORDS = 20
-# A preset that carries a `[rules]` table, written the way a preset is: TOML, with `"""` bodies
-# that keep the newline before their closing quotes. The shipped `recommended` preset carries none
-# (a standing rule is the user's own note, `metadata.startup`), so the bundle's behaviour *with*
-# rules is held on this fixture and its behaviour without them on the shipped file, below.
-A_PRESET_WITH_RULES = tomllib.loads(
-    "[rules]\n"
-    + "".join(
-        f'{name} = """\n'
-        + ("A sentence of the rule that is long enough to count. " * 4)
-        + '\n"""\n'
-        for name in RULES
-    )
-)
-
-
-def _preset_with_rules(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Make the preset the bundle reads one that carries rules, as a user's own would."""
-    monkeypatch.setattr(bundles_module, "load_preset", lambda name: A_PRESET_WITH_RULES)
-
-
-def test_the_recommended_preset_imposes_no_standing_rule(tmp_path: Path) -> None:
-    # stayfixed supports standing rules (`metadata.startup` notes) and imposes none: the shipped
-    # preset carries no `[rules]` table, so the `preset-rules` bundle is silent for it. Read the
-    # real file, not a fixture: a rule added back to `recommended.toml` reddens here.
-    # Mutation: put any `[rules]` table with one string back in `recommended.toml` → both
-    # assertions redden.
-    from stayfixed.presets import load_preset
-
-    assert "rules" not in load_preset("recommended")
-    store, config = a_store(tmp_path)
-    assert blocks(Bundle.PRESET_RULES, store, config) == []
-
-
-def test_a_presets_rules_render_in_table_order(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # A rule dropped from the table, renamed, or reordered reddens here. Mutation: swap the first
-    # two tables in the fixture → reddens on order; delete the last → reddens on length.
-    _preset_with_rules(monkeypatch)
-    store, config = a_store(tmp_path)
-    produced = blocks(Bundle.PRESET_RULES, store, config)
-    assert [block.split("\n", 1)[0] for block in produced] == [f"### {name}" for name in RULES]
-    # Every rule has a body of at least one sentence; a heading with nothing under it is a
-    # rule nobody wrote.
-    assert all(len(block.split("\n\n", 1)[1].split()) >= MIN_RULE_BODY_WORDS for block in produced)
-
-
-def test_a_presets_rules_fit_one_hook_slot(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    # A bundle that needs two parts is not wrong, but it is a change the hooks file has to
-    # know about (`SLOTS`), so a preset that grows past one slot is counted, not silently
-    # spilled. The rules that fit are one part; the same rules padded past the cap are two, which
-    # is what makes the first assertion a measurement and not a constant.
-    # Mutation: make `split` return every block as its own part → the first assertion reddens.
-    _preset_with_rules(monkeypatch)
-    store, config = a_store(tmp_path)
-    produced = blocks(Bundle.PRESET_RULES, store, config)
-    cap = config.native_caps.hook_output_chars - CAP_MARGIN
-    assert len(split(produced, cap=cap)) == 1
-    padded = [*produced, "### padding\n\n" + "word " * (cap // 5 + 10)]
-    assert len(split(padded, cap=cap)) == 2
-
-
-def test_a_rule_renders_as_one_heading_one_blank_line_and_a_stripped_body(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # The join shape, which nothing pinned. A TOML `"""…"""` body keeps the newline before its
-    # closing quotes and `split` joins blocks on `"\n\n"`, so an unstripped body puts three
-    # consecutive newlines in front of the next `### ` heading — in the text a session-start
-    # hook injects, where nobody sees it until they read the rendered bundle. The fixture is
-    # deliberately padded at both ends, because a body written in TOML is padded at one.
-    monkeypatch.setattr(
-        bundles_module, "load_preset", lambda name: {"rules": {"spaced": "\n  A body.\n\n"}}
-    )
-    store, config = a_store(tmp_path)
-    assert blocks(Bundle.PRESET_RULES, store, config) == ["### spaced\n\nA body."]
-
-
-def test_no_rule_of_a_preset_written_as_toml_renders_with_padding(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # The same claim against a preset parsed from TOML, which is where the stray line was found:
-    # the fixture above proves the code strips a padded string, this proves a `"""` body as TOML
-    # hands it over strips to something. It ran against the shipped file while that carried rules.
-    _preset_with_rules(monkeypatch)
-    store, config = a_store(tmp_path)
-    produced = blocks(Bundle.PRESET_RULES, store, config)
-    assert produced != []
-    assert all(block == block.strip() and "\n\n\n" not in block for block in produced)
-
-
-def test_preset_rules_emit_nothing_when_a_preset_has_none(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # The silent case the shipped preset no longer exercises, kept on a fixture: a preset
-    # without the table renders nothing rather than a heading over nothing. This fixture does
-    # *not* redden the guard it sits beside — `.get("rules", {})` returns `{}` here, which the
-    # comprehension renders as nothing on its own — which is why the two tests below exist.
-    monkeypatch.setattr(bundles_module, "load_preset", lambda name: {"budgets": {}})
-    store, config = a_store(tmp_path)
-    assert blocks(Bundle.PRESET_RULES, store, config) == []
-
-
-def test_a_rules_key_that_is_not_a_table_renders_nothing_rather_than_raising(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # The `isinstance(rules, dict)` arm, which had no test at all. A preset is data read at run
-    # time, and this bundle runs inside a session-start handler whose policy is `open`: a
-    # malformed `rules` key must render nothing, not raise `AttributeError` out of a hook.
-    monkeypatch.setattr(bundles_module, "load_preset", lambda name: {"rules": "oops"})
-    store, config = a_store(tmp_path)
-    assert blocks(Bundle.PRESET_RULES, store, config) == []
-
-
-def test_a_rule_whose_body_is_not_a_string_is_skipped(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # The `isinstance(body, str)` filter, likewise untested. A nested table under `[rules]` —
-    # the easiest thing to write by accident in TOML — is a malformed rule, and a malformed
-    # rule is dropped rather than rendered as a heading over a repr.
-    monkeypatch.setattr(
-        bundles_module,
-        "load_preset",
-        lambda name: {"rules": {"good": "A body.", "bad": {"nested": "table"}}},
-    )
-    store, config = a_store(tmp_path)
-    assert blocks(Bundle.PRESET_RULES, store, config) == ["### good\n\nA body."]
-
-
 def test_notes_that_live_in_the_repository_inject_nothing_before_trust(tmp_path: Path) -> None:
     store, config = a_store(tmp_path, mode="local-only")
     assert blocks(Bundle.STANDING_RULES, store, config) == []
@@ -295,21 +148,6 @@ def test_notes_that_live_in_the_repository_inject_nothing_before_trust(tmp_path:
     produced = blocks(Bundle.STANDING_RULES, store, config)
     assert produced != []
     assert all(block.startswith(DELIMITER) for block in produced)
-
-
-def test_the_owners_own_preset_rules_need_no_trust(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # A preset ships with the plugin; it is never repository content, so gating it on a
-    # repository's trust record would make the owner's own rules hostage to a clone. That is
-    # supplying a fixture for the `load_preset` collaborator `setup` owns, not
-    # mocking the unit under test.
-    monkeypatch.setattr(
-        bundles_module, "load_preset", lambda name: {"rules": {"greeting": "Hello."}}
-    )
-    store, config = a_store(tmp_path, mode="local-only")
-    assert blocks(Bundle.PRESET_RULES, store, config) != []
-    assert blocks(Bundle.STANDING_RULES, store, config) == []
 
 
 def test_an_overlay_store_is_not_wrapped_as_repository_data(tmp_path: Path) -> None:
@@ -471,20 +309,18 @@ def test_many_standing_rules_overflow_the_declared_slots(tmp_path: Path) -> None
 
 
 def test_the_declared_slot_counts_are_the_ones_hooks_json_has_to_ship() -> None:
-    # `SLOTS[bundle] >= 1` left three of these four free: only `standing-rules == 3` was
-    # asserted anywhere, so `preset-rules`, `volatile-notes` and `index` could each be changed
-    # without a test noticing, while every one of them is a count of numbered `hooks.json`
-    # entries a session actually gets. The mapping is the contract, so the mapping is pinned —
-    # a bundle added or dropped fails this too.
+    # `SLOTS[bundle] >= 1` left every bundle but `standing-rules` free: only `standing-rules == 3`
+    # was asserted anywhere, so the others could each be changed without a test noticing, while
+    # every one of them is a count of numbered `hooks.json` entries a session actually gets. The
+    # mapping is the contract, so the mapping is pinned — a bundle added or dropped fails this
+    # too.
     #
     # The other side of that contract, `hooks/hooks.json` itself, belongs to `stayfixed.hooks`:
     # `tests/hooks/test_hooks_json.py` cross-checks these counts against the entries that file
     # declares, which is not a check this file can fake.
     assert SLOTS == {
-        Bundle.PRESET_RULES: 1,
         Bundle.STANDING_RULES: 3,
         Bundle.VOLATILE_NOTES: 3,
-        Bundle.INDEX: 3,
     }
 
 
@@ -521,13 +357,11 @@ def test_the_margin_is_additive_because_the_text_is_emitted_raw(tmp_path: Path) 
 
 # --- an overlay store built the way overlay mode really builds one ----------------------------
 #
-# `a_store` above hand-builds a `Store` whose `base` sits *outside* the project root. That is
-# the one shape in which the index cannot leak, which is why no test here could ever have
-# exercised the shape in which it does: in overlay mode `paths.memory` is a real directory of
-# links **inside the repository**, every group resolves out into the overlay, and so
-# `inside_project` is False — `may_inject` returns True with no trust record and
-# `is_repository_data` returns False, while `store.path / MEMORY.md` is a repository file all
-# along. This fixture goes through `resolve()` so the shape is the real one.
+# `a_store` above hand-builds a `Store` whose `base` sits *outside* the project root. In overlay
+# mode `paths.memory` is a real directory of links **inside the repository** while every group
+# resolves out into the overlay, so `inside_project` is False and the notes are the machine
+# owner's own, however much of the store's path the repository holds. This fixture goes through
+# `resolve()` so the shape is the real one.
 
 needs_git = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
@@ -579,112 +413,11 @@ def a_resolved_overlay_store(tmp_path: Path) -> tuple[Store, Config, Path, Path]
 
 
 @needs_git
-def test_an_index_symlinked_outside_this_projects_share_is_never_injected(tmp_path: Path) -> None:
-    # `_index` reads `store.path / MEMORY.md` through `is_file()`, which follows symlinks, and
-    # nothing asks where the link goes — while `worktree._index_source` already applies the
-    # per-link target rule to the very same file for the *link* path. This is the path that
-    # reaches the model.
-    store, config, _machine, overlay = a_resolved_overlay_store(tmp_path)
-    other = overlay / "projects" / "other-client" / "memory"
-    other.mkdir(parents=True)
-    (other / INDEX_NAME).write_text("# another client's index\n", encoding="utf-8")
-    (store.path / INDEX_NAME).symlink_to(other / INDEX_NAME)
-    assert blocks(Bundle.INDEX, store, config) == []
-
-
-@needs_git
-def test_an_index_symlinked_inside_this_projects_share_is_still_injected(tmp_path: Path) -> None:
-    # A symlinked index is a legitimate member of the link tree `attach` creates, so the rule
-    # is "inside this project's share", never "refuse every symlinked index".
-    store, config, _machine, overlay = a_resolved_overlay_store(tmp_path)
-    share = overlay / "projects" / "widget" / "memory"
-    share.mkdir(parents=True)
-    content = "# Memory Index\n\nA line only this test wrote, not a literal the code repeats.\n"
-    (share / INDEX_NAME).write_text(content, encoding="utf-8")
-    (store.path / INDEX_NAME).symlink_to(share / INDEX_NAME)
-    assert blocks(Bundle.INDEX, store, config) == [content.rstrip("\n")]
-
-
-@needs_git
-def test_an_index_committed_to_the_repository_is_gated_and_wrapped(tmp_path: Path) -> None:
-    # A real `MEMORY.md` at `store.path` in overlay mode is a file the clone ships: repository
-    # content, however far outside the repository every group resolves.
-    store, config, _machine, _ = a_resolved_overlay_store(tmp_path)
-    content = "# Memory Index\n\nA line only this test wrote, not a literal the code repeats.\n"
-    (store.path / INDEX_NAME).write_text(content, encoding="utf-8")
-    assert blocks(Bundle.INDEX, store, config) == []
-    record(store, config)
-    produced = blocks(Bundle.INDEX, store, config)
-    assert produced != []
-    assert all(block.startswith(DELIMITER) for block in produced)
-    assert content in "\n".join(produced)
-
-
-@needs_git
 def test_the_overlay_groups_themselves_are_neither_gated_nor_wrapped(tmp_path: Path) -> None:
-    # Widening the gate for the index must not widen it for the notes: the machine owner's
-    # overlay notes are not repository content, and wrapping them as data would defeat every
-    # standing rule in the mode this project actually ships.
+    # The store's directory sitting in the repository must not gate the notes behind it: the
+    # machine owner's overlay notes are not repository content, and wrapping them as data would
+    # defeat every standing rule in the mode this project actually ships.
     store, config, _machine, _ = a_resolved_overlay_store(tmp_path)
     produced = blocks(Bundle.STANDING_RULES, store, config)
     assert produced != []
     assert not any(DELIMITER in block for block in produced)
-
-
-# --- the slots the index declares have to be fillable ----------------------------------------
-
-
-def _an_index_of(sections: int, per_section: int) -> str:
-    body = "\n".join(f"- [t{i} → a{i}](developer/n{i}.md)" for i in range(per_section))
-    return "# Memory Index\n\n" + "\n\n".join(
-        f"## Section {s}\n\n{body}\n" for s in range(sections)
-    )
-
-
-def test_an_index_over_one_part_fills_the_second_slot(tmp_path: Path) -> None:
-    # `_index` returned the whole file as one block and `split` never breaks a block, so slot 2
-    # was dead: a 22,816-byte index — inside `memory_index_bytes` (25600) and inside every
-    # other configured cap — packed into one part of 23,126 characters that the harness
-    # truncated at 10,000, with part 2 `None` and `stayfixed memory index` exiting 0 saying
-    # "index is current".
-    store, config = a_store(tmp_path)
-    text = _an_index_of(sections=6, per_section=90)
-    assert len(text.encode("utf-8")) < config.native_caps.memory_index_bytes
-    (store.path / INDEX_NAME).write_text(text, encoding="utf-8")
-
-    cap = config.native_caps.hook_output_chars - CAP_MARGIN
-    assert len(text) > cap, "the fixture has to be bigger than one part or it proves nothing"
-    found = fit(Bundle.INDEX, store, config)
-    assert found.parts > 1
-    assert found.fits
-    assert render(Bundle.INDEX, store, config, part=2) is not None
-    assert all(
-        len(render(Bundle.INDEX, store, config, part=n) or "") <= cap
-        for n in range(1, found.parts + 1)
-    )
-
-
-def test_every_section_of_a_split_index_still_reaches_some_part(tmp_path: Path) -> None:
-    # Packing must not drop anything: the whole point of numbered slots is that the index
-    # arrives in full across them rather than truncated in one.
-    store, config = a_store(tmp_path)
-    text = _an_index_of(sections=6, per_section=90)
-    (store.path / INDEX_NAME).write_text(text, encoding="utf-8")
-    found = fit(Bundle.INDEX, store, config)
-    joined = "\n\n".join(
-        render(Bundle.INDEX, store, config, part=n) or "" for n in range(1, found.parts + 1)
-    )
-    for section in range(6):
-        assert f"## Section {section}" in joined
-    assert "- [t89 → a89](developer/n89.md)" in joined
-
-
-def test_the_slots_the_index_declares_can_hold_an_index_at_its_configured_cap(
-    tmp_path: Path,
-) -> None:
-    # The arithmetic `SLOTS[Bundle.INDEX]` is set from: `memory_index_bytes` over one part's
-    # capacity, rounded up. Two could never hold a cap-sized index however well it split.
-    _store, config = a_store(tmp_path)
-    cap = config.native_caps.hook_output_chars - CAP_MARGIN
-    needed = -(-config.native_caps.memory_index_bytes // cap)
-    assert SLOTS[Bundle.INDEX] >= needed

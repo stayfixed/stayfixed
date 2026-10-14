@@ -8,6 +8,8 @@ denies directly.
 
 from __future__ import annotations
 
+import subprocess
+import sys
 from dataclasses import replace
 from pathlib import Path
 
@@ -30,6 +32,7 @@ from stayfixed.attach.hooks import (
 from stayfixed.config.loader import CONFIG_FILE, load
 from stayfixed.hooks.api import EVENTS, HookEvent, HookResult, Policy
 from stayfixed.hooks.registry import discover
+from tests.boundaries.test_discovery import LIST_IMPORTS, ROOT
 from tests.gitfixture import git, needs_git
 from tests.overlay.test_requires import overlay_with
 
@@ -51,7 +54,7 @@ def _event(root: Path, source: str | None = None) -> HookEvent:
     raw: dict[str, object] = {"hook_event_name": "SessionStart"}
     if source is not None:
         raw["source"] = source
-    return HookEvent("SessionStart", "s1", None, None, {}, root, root, "claude", raw)
+    return HookEvent("SessionStart", "s1", None, None, {}, root, root, raw)
 
 
 def _machine_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
@@ -115,6 +118,43 @@ def test_an_unattached_overlay_project_is_told_to_attach(
     assert _run(root, machine, None) == NOT_ATTACHED
 
 
+def test_the_session_start_line_names_the_attach_command_every_remedy_names() -> None:
+    # One spelling of `stayfixed attach --store ...` serves the session-start line and every row
+    # of `attached` and `hook-entries`, so the line is pinned as bytes here: built from the shared
+    # constant, a change to it would otherwise reach the session unread. The constant spells the
+    # overlay's `projects` directory out, because this module is imported by discovery and must
+    # not import the memory area, so it is held to the memory area's name for it. No mutation: a
+    # changed spelling on either side reddens one of the two lines.
+    from stayfixed.attach import ATTACH_STORE
+    from stayfixed.memory.api import PROJECTS
+
+    assert f"stayfixed attach --store <overlay>/{PROJECTS}/<project>/memory" == ATTACH_STORE
+    assert NOT_ATTACHED == (
+        "stayfixed: this repository is not attached to the overlay this machine records; "
+        "run `stayfixed attach --store <overlay>/projects/<project>/memory --check`"
+    )
+
+
+def test_hook_discovery_in_a_clean_interpreter_loads_no_doctor_module() -> None:
+    # `hooks/registry.py` imports every area's `hooks` module with no guard, because a hook fails
+    # fast. So whatever `hooks.py` imports at module level is on every hook's path: a defect
+    # confined to `attach/doctor.py` would stop discovery for every event, and every hook run would
+    # load the report's code. Asked in a clean interpreter, because in this one the suite has
+    # already imported everything. Mutation (oracle): `mutations/`'s "attach's hooks import the
+    # area's doctor module".
+    completed = subprocess.run(
+        [sys.executable, "-c", LIST_IMPORTS],
+        capture_output=True,
+        text=True,
+        check=False,
+        env={"PATH": "/usr/bin:/bin", "PYTHONPATH": str(ROOT / "src")},
+    )
+    assert completed.returncode == 0, completed.stderr
+    loaded = completed.stdout.split()
+    assert "stayfixed.attach.hooks" in loaded, "the probe discovered nothing"
+    assert [name for name in loaded if name.split(".")[-1] == "doctor"] == []
+
+
 @needs_git
 def test_a_mismatched_record_and_a_missing_overlay_each_get_their_own_line(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -133,7 +173,7 @@ def test_a_checkout_with_no_origin_hears_the_cause_every_other_surface_says(
     # different remote and sent the reader to `--check` about it. It says the one cause and way
     # out the memory commands, `attach`, `--check` and `doctor` say.
     #
-    # Mutation: `mutations.toml`'s "the session-start line says nothing about a missing origin".
+    # Mutation: `mutations/`'s "the session-start line says nothing about a missing origin".
     from stayfixed.attach.hooks import NO_ORIGIN
     from stayfixed.memory.api import NO_ORIGIN_CAUSE, NO_ORIGIN_WAY_OUT
 
@@ -209,7 +249,7 @@ def test_unpushed_work_is_named_by_its_counts_and_only_when_nothing_else_is_wron
     it. They are mutually exclusive now, and `NO_UPSTREAM` carries the dirty count, which is the
     half that is knowable here.
 
-    Mutation: `mutations.toml`'s "a session with no upstream is told it has 0 unpushed commits".
+    Mutation: `mutations/`'s "a session with no upstream is told it has 0 unpushed commits".
     """
     root, overlay, machine = _recorded(tmp_path, monkeypatch)
     git(overlay, "init", "-q", "-b", "main")
@@ -383,7 +423,7 @@ def test_a_context_that_has_already_been_asked_does_not_re_pay_the_sync(
     The `git` calls are counted rather than timed: a wall-clock assertion in a suite that runs
     beside other work measures the machine, not the gate.
 
-    Mutation: `mutations.toml`'s "a compacted session re-pays the overlay sync".
+    Mutation: `mutations/`'s "a compacted session re-pays the overlay sync".
     """
     from stayfixed.overlay import api as overlay_api
 
@@ -442,7 +482,7 @@ def test_a_failure_with_no_except_of_its_own_is_silence_not_an_exception(
     same repository is told `NOT_ATTACHED` by `test_an_unattached_overlay_project_is_told_to_attach`
     when nothing raises.
 
-    Mutation: `mutations.toml`'s "an open session handler lets an unforeseen failure out".
+    Mutation: `mutations/`'s "an open session handler lets an unforeseen failure out".
     """
     from stayfixed.attach import binding as binding_module
 
@@ -480,6 +520,7 @@ def test_the_registration_is_what_the_dispatcher_acts_on(
     what this assertion is for.
     """
     from stayfixed.attach import hooks as attach_hooks
+    from stayfixed.harnesses import CLAUDE
     from stayfixed.hooks.dispatch import Recorder, dispatch
 
     seen: list[str] = []
@@ -491,7 +532,7 @@ def test_the_registration_is_what_the_dispatcher_acts_on(
     monkeypatch.setattr(attach_hooks, "_overlay_status", failing)
     handlers = register()
     sink = Recorder()
-    outcome = dispatch(_event(tmp_path), handlers, None, sink=sink)
+    outcome = dispatch(_event(tmp_path), handlers, None, harness=CLAUDE, sink=sink)
     assert seen == ["SessionStart"]
     assert outcome.exit_code == 0 and outcome.decision is None
     assert "overlay-status: RuntimeError" in outcome.stderr
@@ -500,5 +541,5 @@ def test_the_registration_is_what_the_dispatcher_acts_on(
     ]
     for name in (event for event in EVENTS if event != "SessionStart"):
         other = replace(_event(tmp_path), name=name)
-        assert dispatch(other, handlers, None, sink=Recorder()).exit_code == 0, name
+        assert dispatch(other, handlers, None, harness=CLAUDE, sink=Recorder()).exit_code == 0, name
     assert seen == ["SessionStart"]

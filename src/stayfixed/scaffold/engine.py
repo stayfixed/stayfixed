@@ -32,6 +32,7 @@ creates one component at a time through the same walk rather than with `Path.mkd
 
 from __future__ import annotations
 
+import os
 from collections.abc import Sequence, Set
 from pathlib import Path
 from typing import Protocol
@@ -39,7 +40,15 @@ from typing import Protocol
 from stayfixed.config.paths import PathEscape, contained
 from stayfixed.config.schema import PROJECT_NAME, Config
 from stayfixed.errors import Refusal
-from stayfixed.fsops import UnsafePath, path_key, remove_within, write_within
+from stayfixed.fsops import (
+    UnsafePath,
+    path_key,
+    read_regular_text,
+    remove_within,
+    unreadable,
+    write_within,
+)
+from stayfixed.printed import quoted
 from stayfixed.scaffold.entries import ENTRY_MARKER, EntriesError, apply_entries, owned, unmarked
 from stayfixed.scaffold.local import LOCAL_ARTIFACTS, LocalDigests
 from stayfixed.scaffold.manifest import Kind, Location, Manifest, Record, digest
@@ -55,6 +64,9 @@ CHANGED_LOCALLY = "kept out of git, and changed since stayfixed wrote it"
 NOT_OURS_LOCALLY = (
     "kept out of git, with no record of what stayfixed wrote there, and not the bytes it writes now"
 )
+# The reason a retired artifact whose file is already gone is planned for removal at all: there is
+# nothing to unlink, and the action exists so that `apply` drops the record the file outlived.
+ALREADY_GONE = "retired, already gone"
 # A copy stayfixed wrote under `LOCAL_ARTIFACTS` at a place this configuration no longer gives the
 # artifact (its id left `[artifacts] local`, or its `[paths]` value moved), and whose bytes are no
 # longer the ones it wrote. `--force` with the path the report prints takes it.
@@ -197,21 +209,28 @@ def local_copies(
     return (*current, *left_copies(template, config, digests, owners))
 
 
-def _read(path: Path) -> tuple[str | None, str | None]:
+def _read(path: Path, relative: str) -> tuple[str | None, str | None]:
     """`(content, reason)`: a reason is a refusal for this one artifact, never for the plan.
+
+    The reason names the file by `relative`, its path from the project root, and says why in
+    words (`fsops.unreadable`), as every other refusal here does: the error's own text carries the
+    absolute path, this machine's layout, and `path` is a configured target a clone may choose.
 
     `newline=""` and not `read_text`: universal-newline translation turns every `\\r\\n` and
     every lone `\\r` into `\\n` before `regions.py` is reached, and `regions.py` is the module
     promising to return every byte outside its own markers unchanged. Translating on the way in
     makes that promise false for a CRLF file no matter how carefully the rewrite is done.
+
+    To the read cap, a regular file only (`fsops.read_regular_text`): the file is one a clone
+    commits, so one past the cap, or a FIFO a local process left there, is this artifact's
+    refusal rather than a read to its end or a wait on a writer.
     """
     try:
-        with path.open(encoding="utf-8", newline="") as stream:
-            return stream.read(), None
+        return read_regular_text(path, newline=""), None
     except FileNotFoundError:
         return None, None
     except (OSError, UnicodeDecodeError) as exc:
-        return None, f"{path} cannot be read: {exc}"
+        return None, unreadable(quoted(relative), exc)
 
 
 def _payload_and_stamp(template: Template, current: str | None) -> tuple[str, str]:
@@ -345,7 +364,7 @@ def plan(
         if refused:
             continue
 
-        current, reason = _read(path)
+        current, reason = _read(path, target)
         if reason is not None:
             refusals.append(Refused(template.id, target, reason))
             continue
@@ -490,7 +509,7 @@ def _relocation(root: Path, resolved_root: Path, template: Template, record: Rec
         old_path = contained(root, record.target, resolved_root=resolved_root)
     except PathEscape as exc:
         return _left_behind(template, record, str(exc))
-    old, reason = _read(old_path)
+    old, reason = _read(old_path, record.target)
     if reason is not None:
         return _left_behind(template, record, reason)
     if old is None:
@@ -534,7 +553,7 @@ def _left_locally(
         path = contained(root, copy, resolved_root=resolved_root)
     except PathEscape as exc:
         return Action(Verb.SKIP_MODIFIED, template.id, copy, None, str(exc), None)
-    current, reason = _read(path)
+    current, reason = _read(path, copy)
     if reason is not None:
         return Action(Verb.SKIP_MODIFIED, template.id, copy, None, reason, None)
     if current is None or _present_stamp(template, current) is None:
@@ -563,7 +582,16 @@ def _plan_retired(
     digests: LocalDigests,
 ) -> None:
     if current is None:
-        unchanged.append(template.id)
+        if record is not None:
+            # The file is gone and its record is not: read as unchanged, the record outlived
+            # the file for good, since every later run found the same nothing to remove. A
+            # removal with nothing to unlink, so `apply` drops the record. `plan` has already
+            # dropped a record whose target differs, so this one names `target`.
+            actions.append(Action(Verb.REMOVE, template.id, target, None, ALREADY_GONE, record))
+            return
+        # Gone and unrecorded: nothing of it is left to plan or to report. Listed as unchanged,
+        # it told the owner every run after its removal that the file the release notes say was
+        # removed is "unchanged", and counted it, and a fresh overlay that never had it the same.
         return
     if location is Location.LOCAL:
         # No manifest record exists for a local artifact, so it is judged by `ours_locally`: the
@@ -646,8 +674,12 @@ def apply(root: Path, planned: Plan) -> Applied:
             # write happens through a descriptor `open_within` walked with O_NOFOLLOW.
             contained(root, action.target, resolved_root=resolved_root)
             if action.verb is Verb.REMOVE:
-                _remove(root, action.target, action.payload)
-                removed.append(action.target)
+                # A removal whose file is already gone unlinks nothing and drops the record below.
+                # Walking to it anyway failed on a directory that is gone too, as a refusal, and
+                # `removed` would name a file this run did not remove.
+                if action.payload is not None or os.path.lexists(root / action.target):
+                    _remove(root, action.target, action.payload)
+                    removed.append(action.target)
                 # A record goes with the file it names and no other. The copy an artifact left
                 # kept out of git carries the artifact's id too, and dropping by id alone took
                 # the live record of its committed file with it: that file then read as nobody's,
@@ -690,8 +722,8 @@ def _write(root: Path, target: str, payload: str) -> None:
 
     The walk, the parent creation and the atomic replacement are `fsops.write_within`; what is
     this area's is the translation below. That split is deliberate: `attach`, `setup`,
-    `overlay` and `hooks-core` all write files that are not `Template`s, and the half they need
-    is the walk, not this area's verdict vocabulary.
+    `overlay` and the `hooks` area's sink all write files that are not `Template`s, and the half
+    they need is the walk, not this area's verdict vocabulary.
 
     The second clause is what keeps the refusal exit code, 2, reachable. A user who saves a file
     where a directory component belongs while reading the dry-run report, then confirms, would

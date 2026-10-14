@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import errno
+import os
 import tomllib
 from pathlib import Path
 
@@ -75,8 +77,8 @@ def test_a_write_that_fails_puts_the_record_back_so_a_run_with_other_bytes_still
     # The record is re-stamped first, so a write that fails left it naming bytes the file never
     # held. The next run computing different bytes (a later version) then found the record
     # describing neither, never re-stamped it, and `uninstall` kept an untouched `stayfixed.toml`
-    # as edited for good. Mutation (oracle): "a failed write of stayfixed.toml leaves its record
-    # naming bytes the file never held" -> the first assertion after the failure reddens.
+    # as edited for good. Mutation (oracle): `mutations/`'s "a failed write of stayfixed.toml leaves
+    # its record naming bytes the file never held" -> the first assertion after the failure reddens.
     root = initialised(tmp_path)
     before = _record_digest(root)
 
@@ -108,7 +110,7 @@ def test_a_restore_that_fails_too_still_names_stayfixed_toml_s_own_failure(
     calls: list[int] = []
 
     def failing(where: Path, target: str, text: str) -> None:
-        raise OSError("no space left on device")
+        raise OSError(errno.ENOSPC, os.strerror(errno.ENOSPC), f".stayfixed-1-{target}.tmp")
 
     def second_fails(self: Manifest, where: Path) -> Path:
         calls.append(1)
@@ -120,7 +122,11 @@ def test_a_restore_that_fails_too_still_names_stayfixed_toml_s_own_failure(
     monkeypatch.setattr(Manifest, "write", second_fails)
     with pytest.raises(Refusal) as refused:
         rewrite_owned(root, MOVED)
-    assert str(refused.value).startswith(f"{CONFIG_FILE} cannot be written: no space left")
+    # The reason in words, `fsops.said`, and not the error's text, which names the temporary file
+    # the write went through. Mutation: `mutations/`'s "a stayfixed.toml that cannot be written is
+    # reported with the error's own text".
+    reason = os.strerror(errno.ENOSPC)
+    assert str(refused.value) == f"{CONFIG_FILE} cannot be written ({reason})"
     assert isinstance(refused.value.__cause__, ManifestError)
 
 

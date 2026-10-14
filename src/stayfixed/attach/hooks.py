@@ -55,8 +55,8 @@ The cost, stated rather than hidden: an overlay that becomes unpushed *during* a
 compaction of a repository with nothing wrong with it, inside a budget shared with the handler
 that links the note store.
 
-Every import below the vocabulary is inside the handler body: `tests/test_areas.py` asserts
-that discovery in a clean interpreter leaves `stayfixed.config`, `stayfixed.presets` and
+Every import below the vocabulary is inside the handler body: `tests/boundaries/test_discovery.py`
+asserts that discovery in a clean interpreter leaves `stayfixed.config`, `stayfixed.presets` and
 `stayfixed.release` out of `sys.modules`.
 """
 
@@ -64,12 +64,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from stayfixed.attach import ATTACH_STORE
 from stayfixed.hooks.api import Handler, HookEvent, HookResult, Policy
 
 if TYPE_CHECKING:
     from stayfixed.config.schema import Config
 
-OVERLAY_MODE = "overlay"
 # `SessionStart.source` values that are one context asking again, and the only thing this module
 # reads the payload for.
 #
@@ -103,7 +103,7 @@ NO_OVERLAY = (
 NOT_ASKABLE = "stayfixed: the overlay binding could not be checked on this machine"
 NOT_ATTACHED = (
     "stayfixed: this repository is not attached to the overlay this machine records; "
-    "run `stayfixed attach --store <overlay>/projects/<project>/memory --check`"
+    f"run `{ATTACH_STORE} --check`"
 )
 REMOTE_MISMATCH = (
     "stayfixed: the overlay records a different remote under this project's name; "
@@ -168,14 +168,17 @@ def _asked_before(event: HookEvent) -> bool:
 
 
 def _overlay_status(event: HookEvent, config: Config | None) -> HookResult:
+    from stayfixed.config.schema import OVERLAY_MODE
+
     if config is None or event.project_root is None or config.memory.mode != OVERLAY_MODE:
         return HookResult()
     try:
         import stayfixed
         from stayfixed.attach.binding import binding_for, unlinked_groups
+        from stayfixed.config.overlay import overlay_root
         from stayfixed.config.paths import PathEscape
         from stayfixed.errors import Failure, Refusal
-        from stayfixed.memory.api import MISMATCH, UNBOUND, overlay_root
+        from stayfixed.memory.api import MISMATCH, UNBOUND
         from stayfixed.memory.api import NO_ORIGIN as NO_ORIGIN_STATE
         from stayfixed.overlay.api import overlay_sync, requires_of, satisfies
 
@@ -196,9 +199,8 @@ def _overlay_status(event: HookEvent, config: Config | None) -> HookResult:
         elif binding.state == MISMATCH:
             lines.append(REMOTE_MISMATCH)
         elif binding.state == NO_ORIGIN_STATE:
-            # The sentence every other surface says for this state: it used to be read as a
-            # mismatch here too, and the line sent the reader to `--check` about a different
-            # remote that was not there.
+            # The sentence every other surface says for this state, and never a mismatch's: that
+            # line would send the reader to `--check` about a different remote that is not there.
             lines.append(NO_ORIGIN)
         try:
             real = unlinked_groups(root, config)

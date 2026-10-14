@@ -16,7 +16,8 @@ from stayfixed.config.loader import preset_defaults
 from stayfixed.project.init import init
 from stayfixed.runner import Runner
 from stayfixed.scaffold import Manifest
-from tests.gitfixture import LsRemote, git
+from tests.gitfixture import git
+from tests.runners import LsRemote
 
 BEFORE = "# ours, from before stayfixed\n"
 # The smallest `stayfixed.toml` a test writes by hand: this build's version, a name, and no CI.

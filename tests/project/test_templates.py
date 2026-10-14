@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import posixpath
 import re
 from dataclasses import replace
 from importlib import resources
@@ -9,12 +10,13 @@ from pathlib import Path
 
 import pytest
 
-from stayfixed.attach.api import IGNORE_BODY, IGNORE_REGION
+from stayfixed.attach.write import _planned_ignore_region
+from stayfixed.config.layout import IGNORE_BODY, IGNORE_REGION
 from stayfixed.config.loader import CONFIG_FILE, preset_defaults
 from stayfixed.config.schema import BRANCH_NAME, Config
 from stayfixed.errors import Failure, Refusal
 from stayfixed.harnesses import HARNESSES
-from stayfixed.ledger.api import render_index
+from stayfixed.ledger.api import BUG_AUDITS, BUG_RUNBOOK, bug_register, render_index
 from stayfixed.profiles import load_profile
 from stayfixed.project.api import PROJECT_FILES, Prepared, project_templates
 from stayfixed.project.footprint import LOCAL_PROFILE, refuse_local_profile
@@ -37,7 +39,7 @@ from stayfixed.project.templates import (
     read,
 )
 from stayfixed.release.api import Pin, Resolution
-from stayfixed.scaffold import Kind, Style
+from stayfixed.scaffold import Kind, Style, upsert
 from stayfixed.templates import tree
 from tests.gitfixture import needs_git, run_git
 from tests.workflow_yaml import load
@@ -159,7 +161,70 @@ def test_targets_follow_the_configured_paths_and_not_the_preset() -> None:
     assert by_id["gitignore"].style is Style.HASH and by_id["gitignore"].render() == IGNORE_BODY
     assert by_id["agents-md"].region == "harness"
     assert "docs/plan/roadmap.md" in by_id["agents-md"].render()
-    assert by_id["bug-index"].render() == render_index([], moved)
+    assert by_id["bug-index"].render() == render_index([], bug_register(moved))
+
+
+def test_init_writes_the_runbook_and_audits_readme_where_the_bug_index_links_them() -> None:
+    # The index `init` writes links the runbook and the audits directory, so the two files `init`
+    # writes beside it are found where it links them, on a layout where every path moved.
+    # Mutation (oracle): the audits README written under a directory the register does not name
+    # -> its link resolves to nothing `init` wrote.
+    config = preset_defaults("widget")
+    moved = replace(
+        config,
+        paths=replace(
+            config.paths, bugs="ledger/entries", bug_index="ledger/INDEX.md", runbooks="guides"
+        ),
+    )
+    by_id = {t.id: t for t in _prepared(moved).footprint}
+    preamble = by_id["bug-index"].render().split("\n## ", 1)[0]
+    directory = posixpath.dirname(by_id["bug-index"].target)
+    linked = {
+        posixpath.normpath(f"{directory}/{link}") for link in re.findall(r"\]\(([^)]+)\)", preamble)
+    }
+    assert by_id["ledger-runbook"].target == "guides/bug-reports.md"
+    assert by_id["ledger-audits"].target == "ledger/entries/audits/README.md"
+    assert by_id["ledger-runbook"].target in linked
+    assert posixpath.dirname(by_id["ledger-audits"].target) in linked
+
+
+def test_the_runbook_and_audits_readme_take_their_names_from_the_bug_ledgers_register() -> None:
+    # The register links the runbook and the audits directory, and `init` writes both files; the
+    # two names live once, beside the register, so neither side can be respelled alone and no
+    # target is built from a link a register may leave unset. Mutations (oracle): `mutations/`'s
+    # "init writes the runbook where the bug index does not link it" and "init writes the audits
+    # README under a directory the bug index does not link" -> the equalities below redden.
+    config = preset_defaults("widget")
+    moved = replace(config, paths=replace(config.paths, bugs="ledger", runbooks="guides"))
+    ledger = bug_register(moved)
+    by_id = {t.id: t for t in _prepared(moved).footprint}
+    assert ledger.runbook == f"guides/{BUG_RUNBOOK}" == by_id["ledger-runbook"].target
+    assert ledger.audits == BUG_AUDITS
+    assert by_id["ledger-audits"].target == f"ledger/{BUG_AUDITS}/README.md"
+
+
+# The `.gitignore` region as a project carries it, copied from the smoke fixture's `.gitignore`
+# and never read back from the code that writes it: `init` records the region in the manifest by
+# its digest, so a change to these bytes is a change every `upgrade` reports as drift.
+IGNORE_BLOCK = (
+    "# stayfixed:ignore:begin\n"
+    "# stayfixed's local state: yours, never a collaborator's.\n"
+    ".stayfixed/local/\n"
+    ".stayfixed/assessment.json\n"
+    "# stayfixed:ignore:end\n"
+)
+
+
+def test_the_ignore_block_init_writes_is_the_block_attach_writes(tmp_path: Path) -> None:
+    # Two areas write one region into one file: `init` as a scaffold artifact, `attach` by
+    # merging it into whatever `.gitignore` holds. Each reporting the other's region as
+    # hand-edited is what a second spelling of the block would cost, so both are held to the
+    # same bytes, into an empty file. Mutation (declared): `mutations/`'s "the ignore block's
+    # note changes under both of its writers".
+    template = {t.id: t for t in _prepared(preset_defaults("widget")).footprint}[IGNORE_ARTIFACT]
+    assert template.region is not None
+    assert upsert("", template.region, template.render(), template.style) == IGNORE_BLOCK
+    assert _planned_ignore_region(tmp_path) == IGNORE_BLOCK
 
 
 def test_the_ci_workflow_is_offered_only_with_a_recorded_ref_and_says_why_otherwise() -> None:
@@ -359,9 +424,9 @@ def test_no_two_artifacts_of_one_pass_resolve_to_the_same_file() -> None:
     them, read off one relation (`templates.Owners`); a guard of its own for one pass, which this
     test used to pin, was shadowed by it and is gone.
 
-    Mutation (oracle): "an artifact may target a file another artifact is built to write" ->
-    no refusal, and every case reddens; "places are compared case-sensitively for ownership" ->
-    the case-variant case does.
+    Mutation (oracle): `mutations/`'s "an artifact may target a file another artifact is built to
+    write" -> no refusal, and every case reddens; "places are compared case-sensitively for
+    ownership" -> the case-variant case does.
     """
     config = preset_defaults("widget")
     footprint_clash = replace(
@@ -404,9 +469,9 @@ def test_one_relation_says_whose_file_a_place_is_and_excepts_only_the_agents_md_
     place is one file in any case, and a place only another configuration builds (the workflow
     under `mode = "none"`) is still another artifact's.
 
-    Mutations (oracle): "the AGENTS.md skeleton and its region stop sharing a file by design" ->
-    the pair's place is foreign to each; "places are compared case-sensitively for ownership" ->
-    `claude.md` is nobody's.
+    Mutations (oracle): `mutations/`'s "the AGENTS.md skeleton and its region stop sharing a file by
+    design" -> the pair's place is foreign to each; "places are compared case-sensitively for
+    ownership" -> `claude.md` is nobody's.
     """
     owners = _prepared(preset_defaults("widget")).owners
     assert owners.foreign("agents-md", "AGENTS.md") == frozenset()
@@ -723,10 +788,10 @@ def test_the_gate_branch_grammar_refuses_what_git_refuses(tmp_path: Path, name: 
     # branches are all held to `BRANCH_NAME` before a rendered caller names the branch; a name git
     # itself refuses as a branch (`a..b`, `a//b`, a trailing `/` or `.`, a `.lock` component, a
     # component starting with `.`, the name `HEAD`) is a caller that can never run, so the grammar
-    # refuses it too, and `release/2.0` and `a/HEAD` stay legal. Mutations (oracle): "the gate
-    # branch grammar takes a '..' git refuses", "the gate branch grammar takes a '.lock' component
-    # git refuses" and "the gate branch grammar takes the name HEAD git refuses" -> the `a..b`,
-    # `.lock` and `HEAD` cases redden.
+    # refuses it too, and `release/2.0` and `a/HEAD` stay legal. Mutations (oracle): `mutations/`'s
+    # "the gate branch grammar takes a '..' git refuses", "the gate branch grammar takes a '.lock'
+    # component git refuses" and "the gate branch grammar takes the name HEAD git refuses" -> the
+    # `a..b`, `.lock` and `HEAD` cases redden.
     accepted = run_git(tmp_path, "check-ref-format", "--branch", name).returncode == 0
     assert bool(BRANCH_NAME.match(name)) == accepted, name
 

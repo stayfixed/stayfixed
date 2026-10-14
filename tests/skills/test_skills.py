@@ -1,6 +1,6 @@
 """Skills are documents held to a contract: frontmatter, a line budget, action language rather
 than tool or product names, and invocations that parse against the real parser or are
-allow-listed by the package that will ship them."""
+allow-listed by the area that will ship them."""
 
 from __future__ import annotations
 
@@ -12,15 +12,13 @@ from pathlib import Path
 
 import pytest
 
+from stayfixed.areas import area_modules
 from stayfixed.cli import build_parser, discover_registrars, split_json_flag
+from stayfixed.overlay.template import template_root
+from stayfixed.project.commands import CUSTOM_GATES
 
 ROOT = Path(__file__).resolve().parents[2]
 SKILLS = ROOT / "skills"
-# The skills that ship *into* an overlay. They moved under `src/stayfixed/templates/` with the
-# overlay template and this walk did not follow, so the one document the invocation lint exists
-# for -- that file once shipped an invocation that does not parse -- was walked by nothing while
-# a model read it in every overlay a user creates.
-TEMPLATE_SKILLS = ROOT / "src" / "stayfixed" / "templates" / "overlay" / "skills"
 AGENTS = ROOT / "agents"
 # The plugin's own skill_lines lint: a SKILL.md is an entry point, and detail belongs in
 # `references/`. Not a config key — it bounds a file this repository ships, not a project's.
@@ -45,12 +43,12 @@ TOOL_NAMES = (
 )
 _TOOL = re.compile(r"\b(?:" + "|".join(TOOL_NAMES) + r")\b")
 # Commands the wrapper skills describe against the CLI frame before the command exists, keyed to the
-# package that ships each. The change that ships one DELETES its entry: a parsing command that is
-# still listed here reddens `test_every_invocation_parses_or_is_allowlisted`. Empty since
-# `uninstall` shipped; kept, with its check against `PACKAGES`, for the next wrapper written ahead
-# of its command.
+# area whose `commands.py` will register each — an area that already registers commands, so a
+# command a new area will ship is listed once that area exists. The change that ships one DELETES
+# its entry: a parsing command that is still listed here reddens
+# `test_every_invocation_parses_or_is_allowlisted`. Empty since `uninstall` shipped; kept, with its
+# check against the areas that register commands, for the next wrapper written ahead of its command.
 NOT_YET_SHIPPED: dict[str, str] = {}
-PACKAGES = {"onboarding", "upgrade", "attach", "setup", "hooks-core"}
 _INVOCATION = re.compile(r"`stayfixed ([^`\n]+)`")
 _FRONTMATTER = re.compile(r"\A---\n(.*?)\n---\n(.*)\Z", re.DOTALL)
 
@@ -59,49 +57,17 @@ def skills() -> list[Path]:
     return sorted(SKILLS.glob("*/SKILL.md"))
 
 
-def entry_points() -> list[Path]:
-    """Every `SKILL.md` this repository ships, in the plugin **and** in the overlay template.
-
-    `skills()` never saw the template tree, so the one skill that goes into every overlay a user
-    creates was held to exactly one of the three rules `skills/README.md` states: it reached the
-    invocation lint through `documents()` and was walked by nothing else. The 80-line cap, the
-    frontmatter check and the harness-tool rule all parametrise over `skills()`, so that file
-    passed them by not being one of their cases. It passes today on its merits; nothing was
-    checking that it would tomorrow.
-
-    `skills()` itself is left alone, because `test_the_walk_finds_the_ported_skills` and
-    `test_every_reference_file_is_linked_from_its_skill` are statements about the plugin's own
-    `skills/` directory and its `references/` convention, which the template does not use.
-    """
-    return sorted([*skills(), *TEMPLATE_SKILLS.glob("*/SKILL.md")])
-
-
-def _id(path: Path) -> str:
-    """A case id that is unique across both trees: `attach` exists in each of them."""
-    return str(path.parent.relative_to(ROOT))
-
-
 def documents() -> list[Path]:
     """Every skill document the invocation check reads: the `SKILL.md` entry points and the
-    `references/` files beside them, in the plugin's own `skills/` **and** in the overlay
-    template.
+    `references/` files beside them.
 
     A reference is skill content a model reads and copies, so an invocation that does not parse
     is as wrong there as in a procedure. `skills/README.md` is excluded because its table names
     harness tools rather than commands. The tool-name rule is deliberately *not* widened this
     way: a reference writes ordinary English about writing ("Write the rule, not the incident")
     that `_TOOL` would read as the harness tool of the same name.
-
-    The template's skills are walked for the same reason the plugin's are: they ship into every
-    overlay a user creates and a model reads them there. Where they live is not the question the
-    lint asks.
     """
-    return sorted(
-        path
-        for tree in (SKILLS, TEMPLATE_SKILLS)
-        for path in tree.rglob("*.md")
-        if path.name != "README.md"
-    )
+    return sorted(path for path in SKILLS.rglob("*.md") if path.name != "README.md")
 
 
 def split(path: Path) -> tuple[dict[str, str], str]:
@@ -131,25 +97,24 @@ def test_the_walk_finds_the_ported_skills() -> None:
         "retro-to-guard",
     } <= names
     # The same guard for the wider walk: a `references/` that goes quiet takes its own
-    # invocation cases with it, and so does a template tree that moves again.
+    # invocation cases with it.
     walked = documents()
     assert SKILLS / "memory-sweep" / "references" / "protocol.md" in walked
-    assert TEMPLATE_SKILLS / "attach" / "SKILL.md" in walked
-    # And the same guard for the walk the three rules above parametrise over. The template tree
-    # moving again, or emptying, would otherwise silently take its cases with it -- which is
-    # exactly how that tree came to be held to one rule of the three in the first place.
-    assert TEMPLATE_SKILLS / "attach" / "SKILL.md" in entry_points()
-    assert set(skills()) < set(entry_points())
+    # The overlay template ships no skill since its copy of `attach` was retired for the
+    # plugin's own, so the rules below walk only `skills/`. A skill added to the template again
+    # reddens this, which makes it a decision: whoever adds one widens these walks to it.
+    # No mutation entry: what breaks this is a directory added to the tree, not a line changed.
+    assert not (template_root() / "skills").exists()
 
 
-@pytest.mark.parametrize("path", entry_points(), ids=_id)
+@pytest.mark.parametrize("path", skills(), ids=lambda p: p.parent.name)
 def test_every_skill_has_a_name_matching_its_directory_and_a_description(path: Path) -> None:
     fields, _ = split(path)
     assert fields["name"] == path.parent.name
     assert len(fields["description"]) > 40, "a description is what the harness matches on"
 
 
-@pytest.mark.parametrize("path", entry_points(), ids=_id)
+@pytest.mark.parametrize("path", skills(), ids=lambda p: p.parent.name)
 def test_every_skill_stays_within_the_line_budget(path: Path) -> None:
     assert len(path.read_text(encoding="utf-8").splitlines()) <= SKILL_MAX_LINES
 
@@ -167,7 +132,7 @@ def test_the_tool_name_lint_matches_a_tool_name() -> None:
     assert _TOOL.search("an Agentic workflow") is None
 
 
-@pytest.mark.parametrize("path", entry_points(), ids=_id)
+@pytest.mark.parametrize("path", skills(), ids=lambda p: p.parent.name)
 def test_no_skill_body_names_a_harness_tool(path: Path) -> None:
     # Mutation: write "use the Grep tool" into a skill body — that skill's case reddens.
     _, body = split(path)
@@ -204,8 +169,16 @@ def test_every_invocation_parses_or_is_allowlisted(path: Path) -> None:
             assert parsed, f"`stayfixed {invocation}` does not parse against the real parser"
 
 
-def test_the_allowlist_names_only_packages_the_design_defines() -> None:
-    assert set(NOT_YET_SHIPPED.values()) <= PACKAGES
+def test_the_allowlist_names_only_areas_that_register_commands() -> None:
+    # A command reaches the CLI through an area's `commands.py`, so the owner an entry names is one
+    # of those areas, and the message the parse check prints names where the command shipped. The
+    # anchor holds the derivation: an `areas` read wrong would otherwise refuse every entry, or
+    # none, with the allowlist empty and the subset check unable to tell. No mutation is declared
+    # for that check while the allowlist is empty, since an empty set is a subset of anything.
+    # Mutation (declared): the area read from the wrong part of the module name -> this reddens.
+    areas = {module.__name__.split(".")[1] for module in area_modules("commands")}
+    assert {"setup", "attach"} <= areas
+    assert set(NOT_YET_SHIPPED.values()) <= areas
 
 
 def test_the_readme_maps_every_tool_name_for_both_harnesses() -> None:
@@ -233,8 +206,6 @@ def test_the_init_skill_asks_before_it_runs_a_kept_file_s_custom_gates() -> None
     # assess`, runs every command its `[gates.custom]` names. `init` says so in a note, and the
     # skill names that note by its words and asks before the first `stayfixed assess`. Mutation
     # (by hand): the step's question removed -> the ask no longer comes first and this reddens.
-    from stayfixed.project.commands import CUSTOM_GATES
-
     text = (SKILLS / "init" / "references" / "adoption.md").read_text(encoding="utf-8")
     adoption = " ".join(text.split())
     lead = CUSTOM_GATES.split("{count}", 1)[0].strip()

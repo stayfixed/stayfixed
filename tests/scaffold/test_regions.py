@@ -147,7 +147,7 @@ def test_a_hash_region_reads_lines_where_git_does() -> None:
     # the block's first marker is glued onto it and that pattern is lost. A Markdown region keeps
     # reading a lone `\r` as a line end, which is what a Markdown reader does.
     #
-    # Mutations: `mutations.toml`'s "a hash region reads a lone carriage return as a line end"
+    # Mutations: `mutations/`'s "a hash region reads a lone carriage return as a line end"
     # and "a hash region finds a marker across a lone carriage return".
     begin, _ = markers("x", Style.HASH)
     assert upsert("/a\n/b\r", "x", "/c", Style.HASH).startswith(f"/a\n/b\r\n{begin}\n")

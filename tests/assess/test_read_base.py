@@ -19,15 +19,9 @@ from typing import Any
 import pytest
 
 import stayfixed
-from stayfixed import gitenv
-from stayfixed.assess import rule
-from stayfixed.assess.rule import (
-    BASE_NOT_UTF8,
-    NOT_A_REPOSITORY,
-    ROOT_UNANSWERED,
-    read_base,
-    repository_prefix,
-)
+from stayfixed import committed, gitenv
+from stayfixed.assess.rule import BASE_NOT_UTF8, read_base
+from stayfixed.committed import NOT_A_REPOSITORY, ROOT_UNANSWERED, repository_prefix
 from stayfixed.config.layout import local_base
 from stayfixed.config.loader import load
 from stayfixed.errors import Failure, Refusal
@@ -200,7 +194,7 @@ def test_a_prefix_git_spells_otherwise_than_the_caller_is_refused(
             out = f"{top}\n{prefix.upper()}"
         return code, out
 
-    monkeypatch.setattr(rule, "git_run", upper_prefix)
+    monkeypatch.setattr(committed, "git_run", upper_prefix)
     with pytest.raises(Refusal, match="symlink"):
         read_base(project / "sub", REMOTE_MAIN, branch="main")
 

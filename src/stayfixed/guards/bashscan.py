@@ -133,6 +133,8 @@ import shlex
 from pathlib import Path
 from typing import NamedTuple
 
+from stayfixed.guards import uvrun
+
 _SEPARATORS = frozenset({";", "&&", "||", "|", "&"})
 # `shlex`'s `punctuation_chars` mode emits a RUN of adjacent punctuation as ONE token, so a
 # separator glued to whatever stands beside it -- `);`, `;;`, `&;`, `));`, `;>` -- is not a
@@ -190,15 +192,13 @@ _WORD_BOUNDARY = frozenset({";", "&", "|", "(", ")", "<", ">"})
 # purpose -- `.match` already anchors at index 0, and the token's own tail (the value) is
 # irrelevant to "is this an assignment", so nothing needs to anchor the end.
 _ASSIGNMENT = re.compile(r"\A[A-Za-z_][A-Za-z0-9_]*=")
-# `env pytest`: a bare wrapper token, not the command. `uv run pytest`: an exact two-token
-# wrapper pair -- CI's own invocation shape. Deliberately not a general argv resolver:
-# `uv run --python 3.11 pytest` (a flag between `run` and the real command) is not unwrapped,
-# and no other launcher is recognised. Under-reporting stays the safe direction for the
-# warn-only callers this exists for -- an unrecognised wrapper just leaves a note
-# undelivered, never wrongly delivered, so the set only grows when a real shape is
-# reproduced, not speculatively.
+# `env pytest`: a bare wrapper token, not the command. Deliberately not a general argv
+# resolver: `env` and `uv run` (`guards/uvrun.py`) are the only launchers read through, and
+# `poetry run`, `npx`, `sudo` and `time` are not. Under-reporting stays the safe direction for
+# the warn-only callers this exists for -- an unrecognised launcher just leaves a note
+# undelivered, never wrongly delivered -- so a launcher is added only when a real shape has been
+# reproduced, not speculatively; once one is read at all, its tables are its whole option list.
 _SINGLE_WRAPPERS = frozenset({"env"})
-_DOUBLE_WRAPPER = ("uv", "run")
 
 
 class Heredoc(NamedTuple):
@@ -784,22 +784,27 @@ def segments(tokens: list[str]) -> list[list[str]]:
     return result
 
 
-def command_words(segment: list[str]) -> list[str]:
+def command_words(segment: list[str], *, modules_as_programs: bool = False) -> list[str]:
     """This segment's own command and arguments, with any leading environment-assignment
-    tokens and the small `_SINGLE_WRAPPERS`/`_DOUBLE_WRAPPER` wrapper prefixes stripped off
-    the front -- repeatedly, so `env FOO=1 pytest` and `FOO=1 uv run pytest` both resolve
-    to `pytest` as the real command, not to the assignment or the launcher.
+    tokens and the wrapper prefixes -- `_SINGLE_WRAPPERS`, and `uv run` with uv's options --
+    stripped off the front, repeatedly, so `env FOO=1 pytest` and `FOO=1 uv run --locked
+    pytest` both resolve to `pytest` as the real command, not to the assignment or the
+    launcher.
 
     `Path(segment[0]).name` alone missed `PYTHONPATH=src pytest` and `FOO=1 BAR=2 pytest`
     entirely, and neither is contrived: an assignment prefix is the ordinary way to run a
     suite against a checkout that has no venv of its own.
 
-    THE UNDER-REPORT IS DOCUMENTED, not accidental: `uv run --python 3.11 pytest` is NOT
-    unwrapped, because a flag between `run` and the real command is not the exact two-token
-    pair, and no launcher outside these two tables is recognised at all. Under-reporting is
-    the safe direction for the warn-only callers this serves -- an unrecognised wrapper
-    leaves a note undelivered rather than wrongly delivered -- so the tables grow only when
-    a real shape has been reproduced.
+    A `uv run` whose next word is a module or a script (`-m`, `--script`) is left whole,
+    since that word names no program, unless `modules_as_programs` asks for it: a caller
+    asking which runner ran, as the red-run hint does, reads `uv run -m pytest` as `pytest`.
+
+    THE UNDER-REPORT IS DOCUMENTED, not accidental: a `uv` command with an option outside
+    uv's tables (`uv run --frobnicate pytest`), or one that is not `uv run`, is left whole and
+    its program is `uv`, and no other launcher is recognised at all. Under-reporting is the
+    safe direction for the warn-only callers this serves -- an unrecognised launcher leaves a
+    note undelivered rather than wrongly delivered -- so a launcher is added only when a real
+    shape has been reproduced.
     """
 
     index = 0
@@ -809,12 +814,11 @@ def command_words(segment: list[str]) -> list[str]:
             index += 1
             continue
         name = Path(token).name
-        if (
-            name == _DOUBLE_WRAPPER[0]
-            and index + 1 < len(segment)
-            and segment[index + 1] == _DOUBLE_WRAPPER[1]
-        ):
-            index += 2
+        if uvrun.is_launcher(name):
+            launched = uvrun.past_run(segment, index + 1, modules_as_programs=modules_as_programs)
+            if launched is None:
+                break
+            index = launched
             continue
         if name in _SINGLE_WRAPPERS:
             index += 1

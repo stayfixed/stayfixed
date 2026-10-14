@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 import stayfixed
-from stayfixed.attach.api import IGNORE_REGION
+from stayfixed.config.layout import IGNORE_REGION
 from stayfixed.config.loader import CONFIG_FILE, ConfigError, load
 from stayfixed.config.owned import OWNED, OwnedKeyError
 from stayfixed.errors import Failure, Refusal
@@ -21,8 +21,11 @@ from stayfixed.project.uninstall import uninstall
 from stayfixed.project.upgrade import upgrade
 from stayfixed.release.api import Pin
 from stayfixed.scaffold import MANIFEST_PATH, Manifest, Style, Verb, extract
-from tests.gitfixture import LsRemote, git, needs_git
+from tests.cli import cli
+from tests.gitfixture import git, needs_git
+from tests.parserlimits import LONG_HEX
 from tests.project.repos import repository
+from tests.runners import LsRemote
 from tests.snapshot import assert_snapshot_unchanged, snapshot
 
 SHA = "b" * 40
@@ -237,6 +240,58 @@ def test_an_initialised_repository_is_refused_and_offered_upgrade(tmp_path: Path
 
 
 @needs_git
+def test_local_after_init_names_the_artifacts_key_and_upgrade(tmp_path: Path) -> None:
+    # `init --local ID` after `init` was refused with "re-running `init` is `stayfixed upgrade`",
+    # and `upgrade` has no `--local`: the refusal pointed at a command that cannot do what was
+    # asked, and nothing said the way that works. "stayfixed upgrade" alone was in that refusal
+    # already, so the sentence is asserted whole. Mutation (`mutations/`'s "init stops saying how
+    # to add a local artifact after init"): the sentence dropped -> this reddens.
+    root = _repo(tmp_path)
+    code, out, err = cli(root, tmp_path, "init", "--yes", "--no-ci")
+    assert code == 0, (out, err)
+    code, out, err = cli(root, tmp_path, "init", "--yes", "--local", "adr-template")
+    assert code == 2 and err.startswith("stayfixed: refused:"), (out, err)
+    assert (
+        "; to add a local artifact later, list its id under `[artifacts] local` in stayfixed.toml, "
+        "then run `stayfixed upgrade`\n"
+    ) in err
+
+
+@needs_git
+def test_another_answer_flag_after_init_keeps_the_plain_refusal(tmp_path: Path) -> None:
+    # The directions are for `--local` alone: an answer such as `--name` after `init` is an edit
+    # to stayfixed.toml, and naming `[artifacts] local` there would send the reader to a key
+    # that has nothing to do with what they asked. Mutation (`mutations/`'s "init says how to add
+    # a local artifact after any answer flag") -> this reddens.
+    root = _repo(tmp_path)
+    code, out, err = cli(root, tmp_path, "init", "--yes", "--no-ci")
+    assert code == 0, (out, err)
+    code, out, err = cli(root, tmp_path, "init", "--yes", "--name", "x")
+    assert code == 2 and "re-running `init` is `stayfixed upgrade`" in err, (out, err)
+    assert "[artifacts] local" not in err
+
+
+@needs_git
+def test_adding_a_local_id_and_upgrading_relocates_the_artifact(tmp_path: Path) -> None:
+    # The route the refusal above names, pinned so the directions stay true: an id added under
+    # `[artifacts] local` after `init`, then `stayfixed upgrade`, moves the artifact under
+    # `.stayfixed/local/artifacts/`.
+    root = _repo(tmp_path)
+    code, out, err = cli(root, tmp_path, "init", "--yes", "--no-ci")
+    assert code == 0, (out, err)
+    config = root / CONFIG_FILE
+    config.write_text(
+        config.read_text(encoding="utf-8") + '\n[artifacts]\nlocal = ["adr-template"]\n',
+        encoding="utf-8",
+    )
+    code, out, err = cli(root, tmp_path, "upgrade")
+    assert code == 0, (out, err)
+    assert (root / ".stayfixed/local/artifacts/docs/adr/0000-template.md").is_file()
+    assert not (root / "docs/adr/0000-template.md").exists()
+    assert "relocated" in out, out
+
+
+@needs_git
 def test_without_yes_and_with_a_broken_configuration_nothing_happens(tmp_path: Path) -> None:
     root = _repo(tmp_path)
     before = snapshot(root)
@@ -288,7 +343,7 @@ def test_an_adopted_ref_is_what_the_workflow_pins_and_the_document_is_not_rewrit
         f'[ci]\nmode = "reusable"\nref = "{ADOPTED}"\n',
         encoding="utf-8",
     )
-    report = _init(root, tmp_path, runner=LsRemote(stdout=LISTING, code=0))
+    report = _init(root, tmp_path, runner=LsRemote(stdout=LISTING))
     workflow = (root / ".github" / "workflows" / "stayfixed.yml").read_text(encoding="utf-8")
     assert f"check.yml@{ADOPTED}" in workflow and SHA not in workflow
     assert load(root, machine=tmp_path / "absent.toml").ci.ref == ADOPTED
@@ -305,12 +360,13 @@ def test_an_adopted_document_with_no_ref_gets_no_workflow_at_all(tmp_path: Path)
     # name a ref `stayfixed.toml` does not record, which is the state `doctor` reports as red.
     # The remote is not asked at all: `_ci` answers this path before it reads the resolution,
     # and the ask was a network round trip, up to its whole timeout, for an answer nothing
-    # printed. Mutation (oracle): "the adoption path with no ref asks the network again".
+    # printed. Mutation (oracle): `mutations/`'s "the adoption path with no ref asks the network
+    # again".
     root = _repo(tmp_path)
     (root / CONFIG_FILE).write_text(
         '[stayfixed]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n', encoding="utf-8"
     )
-    runner = LsRemote(stdout=LISTING, code=0)
+    runner = LsRemote(stdout=LISTING)
     report = _init(root, tmp_path, runner=runner)
     assert runner.calls == [] and report.resolution.pin is None
     assert report.ref == "" and not (root / ".github").exists()
@@ -360,11 +416,11 @@ def test_an_unreachable_remote_is_answered_with_a_command_that_can_act(tmp_path:
     A dry run has written nothing, so `init --yes` with the network back pins. A run that wrote
     has persisted `.stayfixed/manifest.json`, so `init` refuses it and `upgrade` pins instead.
 
-    Mutation (oracle): "an unreachable remote is answered with the adoption path's reason instead
-    of its own".
+    Mutation (oracle): `mutations/`'s "an unreachable remote is answered with the adoption path's
+    reason instead of its own".
     """
     offline = LsRemote(stdout="", code=128)
-    online = LsRemote(stdout=LISTING, code=0)
+    online = LsRemote(stdout=LISTING)
     dry_root = _repo(tmp_path / "dry")
     dry = _init(dry_root, tmp_path, runner=offline, dry_run=True)
     assert dry.skipped["ci-workflow"] == NOT_ASKED
@@ -385,7 +441,7 @@ def test_the_pin_is_written_and_the_workflow_rendered_when_a_release_matches(
     tmp_path: Path,
 ) -> None:
     root = _repo(tmp_path)
-    runner = LsRemote(stdout=LISTING, code=0)
+    runner = LsRemote(stdout=LISTING)
     report = _init(root, tmp_path, runner=runner)
     assert report.resolution.pin == Pin(TAG, SHA)
     assert load(root, machine=tmp_path / "absent.toml").ci.ref == SHA
@@ -409,7 +465,7 @@ def test_a_gate_branch_outside_the_grammar_leaves_a_pin_with_no_workflow(tmp_pat
         f'[ci]\nref = "{ADOPTED}"\ngate_branch = "main\'; rm -rf"\n',
         encoding="utf-8",
     )
-    report = _init(root, tmp_path, runner=LsRemote(stdout=LISTING, code=0))
+    report = _init(root, tmp_path, runner=LsRemote(stdout=LISTING))
     assert report.resolution.pin == Pin(TAG, SHA)
     assert report.skipped["ci-workflow"].startswith("[ci] gate_branch is not a plain branch name")
     assert report.ref == "" and not (root / ".github").exists()
@@ -438,7 +494,7 @@ def test_a_configuration_that_will_not_parse_never_quotes_its_own_keys(tmp_path:
 @needs_git
 def test_no_ci_writes_mode_none_and_asks_no_remote(tmp_path: Path) -> None:
     root = _repo(tmp_path)
-    runner = LsRemote(stdout=LISTING, code=0)
+    runner = LsRemote(stdout=LISTING)
     _init(root, tmp_path, runner=runner, ci=False)
     assert load(root, machine=tmp_path / "absent.toml").ci.mode == "none"
     assert runner.calls == []
@@ -467,7 +523,8 @@ def test_stayfixed_toml_or_the_ignore_block_kept_out_of_git_refuses_init_before_
 ) -> None:
     # Every command reads `stayfixed.toml` at the root, and the ignore block at the root is what
     # keeps `.stayfixed/local/` out of git: a copy under `.stayfixed/local/artifacts/` is never
-    # read. Mutation (declared): "stayfixed.toml or the ignore block may be kept out of git".
+    # read. Mutation (declared): `mutations/`'s "stayfixed.toml or the ignore block may be kept out
+    # of git".
     root = _repo(tmp_path)
     (root / "stayfixed.toml").write_text(
         f'[stayfixed]\nversion = "{stayfixed.__version__}"\n\n[project]\nname = "widget"\n\n'
@@ -488,10 +545,10 @@ def test_a_paths_value_naming_another_artifact_s_file_refuses_init_before_any_wr
 ) -> None:
     # `[paths] roadmap = "CLAUDE.md"`: each pass on its own has one artifact at that file, and
     # across the two, `roadmap` and `claude-md` would share it. Refused with nothing written.
-    # Mutation (oracle): "an artifact may target a file another artifact is built to write" ->
-    # init writes both into one `CLAUDE.md` and this reddens. `claude.md` is the same file where
-    # case folds, and is refused on every filesystem ("places are compared case-sensitively for
-    # ownership" reddens that case).
+    # Mutation (oracle): `mutations/`'s "an artifact may target a file another artifact is built to
+    # write" -> init writes both into one `CLAUDE.md` and this reddens. `claude.md` is the same file
+    # where case folds, and is refused on every filesystem: `mutations/`'s "places are compared
+    # case-sensitively for ownership" -> that case reddens.
     root = _repo(tmp_path)
     (root / "stayfixed.toml").write_text(
         f'[stayfixed]\nversion = "{stayfixed.__version__}"\n\n[project]\nname = "widget"\n\n'
@@ -536,7 +593,7 @@ def test_an_adopted_document_with_no_version_gets_one_and_keeps_every_line(
     # `[stayfixed] version` is the one key stayfixed owns that the loader requires, so an adopted
     # file without it was left unloadable by the very run that adopted it. The dry run plans
     # the stamp and writes nothing; the real run adds that one line through the key editor.
-    # Mutation (oracle): "an adopted document without a version is left unloadable".
+    # Mutation (oracle): `mutations/`'s "an adopted document without a version is left unloadable".
     root = _repo(tmp_path)
     hand_written = '# ours\n[project]\nname = "widget"\n'
     (root / CONFIG_FILE).write_text(hand_written, encoding="utf-8")
@@ -568,7 +625,8 @@ def test_an_adopted_document_the_loader_would_refuse_is_refused_before_anything_
     # The merged document `init` validates forces `state`, drops `enforced` and detects a name
     # the file may lack, so each of these passed `init` and left a manifest over a file no later
     # command could load. The file is now checked as it will be on disk, in the dry run too.
-    # Mutation (oracle): "an adopted document the next command cannot load is adopted anyway".
+    # Mutation (oracle): `mutations/`'s "an adopted document the next command cannot load is adopted
+    # anyway".
     root = _repo(tmp_path)
     document = ""
     if case != "empty-file":
@@ -588,9 +646,9 @@ def test_an_adopted_document_the_loader_would_refuse_is_refused_before_anything_
 @needs_git
 def test_a_version_the_editor_cannot_add_is_refused_by_the_dry_run_too(tmp_path: Path) -> None:
     # The stamp is computed while planning, so the key editor's refusal of an inline `stayfixed`
-    # table meets the dry run as it would the real one. Mutation (oracle): "the adopted version
-    # is checked without being added" -> the loader refuses the version-less text instead, a
-    # `ConfigError` and not an `OwnedKeyError`.
+    # table meets the dry run as it would the real one. Mutation (oracle): `mutations/`'s "the
+    # adopted version is checked without being added" -> the loader refuses the version-less text
+    # instead, a `ConfigError` and not an `OwnedKeyError`.
     root = _repo(tmp_path)
     (root / CONFIG_FILE).write_text(
         'stayfixed = { preset = "recommended" }\n\n[project]\nname = "widget"\n',
@@ -675,3 +733,37 @@ def test_an_adopted_document_with_no_name_is_answered_by_the_loader_and_not_by_d
         with pytest.raises(ConfigError, match=r"\[project\] is missing required key\(s\): name"):
             _init(root, tmp_path, dry_run=dry_run, ci=False)
         assert_snapshot_unchanged(root, before)
+
+
+# An adopted `stayfixed.toml` holding a hexadecimal integer longer than any decimal Python prints:
+# under an integer key, and under a key that holds a string.
+HEX_HEADS = {
+    "integer-key": "\n[gates]\ncustom_timeout_seconds = 0x" + "f" * 5_000 + "\n",
+    "string-key": None,
+}
+
+
+@needs_git
+@pytest.mark.parametrize("case", sorted(HEX_HEADS))
+def test_an_adopted_document_holding_a_hex_integer_of_any_length_is_the_configurations_error(
+    tmp_path: Path, case: str
+) -> None:
+    # `init` re-renders the adopted document before the loader asks a thing of it, and the
+    # renderer spelled every integer with `str()`, which raises past 4,300 digits: a hex literal
+    # of any length converts, so `init --yes` ended in an internal error on one line of it, under
+    # any key. The document renders, and the loader refuses it as the configuration's own error,
+    # before anything is written and without printing the value. Mutation (declared): the
+    # serialiser spells an integer with `str` alone again -> `ValueError`.
+    root = _repo(tmp_path)
+    large = LONG_HEX
+    if case == "string-key":
+        document = f'[stayfixed]\nversion = "0.1.0"\n\n[project]\nname = {large}\n'
+    else:
+        document = '[stayfixed]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n'
+        document += str(HEX_HEADS[case])
+    (root / CONFIG_FILE).write_text(document, encoding="utf-8")
+    before = snapshot(root)
+    with pytest.raises(ConfigError) as refused:
+        _init(root, tmp_path, dry_run=False, ci=False)
+    assert "f" * 50 not in str(refused.value)
+    assert_snapshot_unchanged(root, before)

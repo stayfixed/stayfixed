@@ -23,8 +23,9 @@ from stayfixed.project.questions import (
     questions,
 )
 from stayfixed.scaffold import MANIFEST_PATH
-from tests.gitfixture import LsRemote, git, needs_git
+from tests.gitfixture import git, needs_git
 from tests.project.repos import DOCUMENT, repository
+from tests.runners import LsRemote
 
 
 def _schema(tmp_path: Path, root: Path) -> dict[str, Any]:

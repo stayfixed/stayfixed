@@ -413,3 +413,26 @@ def test_a_rewritten_key_keeps_the_body_and_the_files_own_line_endings(tmp_path:
     assert "index: t → a\r\n" in written
     assert written.endswith("\r\n\r\nBody, unchanged.\r\n")
     assert "\n\n" not in written.replace("\r\n", "")
+
+
+def test_a_note_linked_to_a_device_is_quarantined_and_one_through_a_linked_group_is_read(
+    tmp_path: Path,
+) -> None:
+    # `read_note` followed a committed link to whatever it named: `/dev/stdin` hung `memory refs`
+    # and `memory inventory`, and `/dev/zero` would read until memory ran out. A link to anything
+    # but a regular file is a note this reader cannot read, so `walk` quarantines it; unguarded,
+    # the `/dev/null` case read as an empty note and was quarantined for having no frontmatter,
+    # which the reason tells apart. The group directory beside it is a link, as `attach` makes
+    # it in overlay mode, and its note is read. Mutation (declared): `read_note` opens with
+    # `path.open` again -> the reason is the frontmatter's.
+    elsewhere = tmp_path / "overlay" / "developer"
+    elsewhere.mkdir(parents=True)
+    write(tmp_path / "overlay", MINIMAL, "developer/a.md")
+    store = tmp_path / "store"
+    store.mkdir()
+    (store / "developer").symlink_to(elsewhere, target_is_directory=True)
+    (elsewhere / "null.md").symlink_to("/dev/null")
+    found = walk(store, ["developer"])
+    assert [note.name for note in found.notes] == ["bare"]
+    assert [path.name for path, _ in found.unreadable] == ["null.md"]
+    assert "not a regular file" in found.unreadable[0][1]

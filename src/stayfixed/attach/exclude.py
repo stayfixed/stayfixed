@@ -49,7 +49,6 @@ hides everything, where `attach` changes nothing and so never needs the file at 
 from __future__ import annotations
 
 import contextlib
-import os
 import tempfile
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -259,7 +258,7 @@ def planned_block(root: Path, relatives: Sequence[str]) -> ExcludeWrite | None:
     if not lines:
         return None
     path = git_path(root, EXCLUDE, "exclude file")
-    if path.is_symlink():
+    if fsops.is_symlink(path):
         raise Refusal(LINKED.format(path=quoted(str(path))))
     read = _read(path)
     current = read or ""
@@ -267,7 +266,7 @@ def planned_block(root: Path, relatives: Sequence[str]) -> ExcludeWrite | None:
     if earlier is None:
         records = [
             *((EXCLUDE_CREATED,) if read is None else ()),
-            *((EXCLUDE_DIRECTORY_CREATED,) if not path.parent.is_dir() else ()),
+            *((EXCLUDE_DIRECTORY_CREATED,) if not fsops.is_dir(path.parent) else ()),
             # git's line end, `\n` alone: a last line ending in a lone `\r` is not ended.
             *((EXCLUDE_ENDED,) if current and not current.endswith(("\n", "\r")) else ()),
             *((EXCLUDE_ENDED_AFTER_CR,) if current.endswith("\r") else ()),
@@ -280,7 +279,7 @@ def planned_block(root: Path, relatives: Sequence[str]) -> ExcludeWrite | None:
     updated = upsert(current, EXCLUDE_REGION, body, Style.HASH)
     if updated == current:
         return None
-    if not _writable(path):
+    if not fsops.creatable(path):
         raise Refusal(UNWRITABLE.format(path=quoted(str(path))))
     return ExcludeWrite(path, updated)
 
@@ -299,21 +298,12 @@ def _named(
         raise RegionError(f"{quoted(str(path))}: {exc}") from exc
 
 
-def _writable(path: Path) -> bool:
-    """Whether this user can replace `path`: `write_atomically` renames a new file in beside it,
-    so the directory it lives in (or, while that is not there yet, the nearest one above it that
-    is, where it would be created) must be writable and searchable."""
-    directory = path.parent
-    while not directory.exists() and directory != directory.parent:
-        directory = directory.parent
-    return os.access(directory, os.W_OK | os.X_OK)
-
-
 def withdrawn_block(root: Path) -> ExcludeWrite | None:
     """The exclude file with this attach's block taken out, or `None` when there is none.
 
     Asked above `detach`'s first withdrawal, for the reason `_ignore_region_remainder` is: a
-    block opened twice is a `RegionError` knowable at the start. A symlinked file is left alone
+    block opened twice is a `RegionError` knowable at the start, and a directory this user cannot
+    write the file into is `UNWRITABLE`, as it is for `attach`. A symlinked file is left alone
     rather than refused, because `attach` never writes through one, so a block behind a link is
     not one this command put there.
 
@@ -324,12 +314,18 @@ def withdrawn_block(root: Path) -> ExcludeWrite | None:
     block, taking it back would join two lines, so it stays.
     """
     path = git_path(root, EXCLUDE, "exclude file")
-    if path.is_symlink() or not path.is_file():
+    if fsops.is_symlink(path) or not fsops.is_file(path):
         return None
     current = _read(path) or ""
     body = _named(path, extract, current)
     if body is None:
         return None
+    # Asked here, above `detach`'s first withdrawal, as `planned_block` asks it above `attach`'s
+    # first write: the block's withdrawal replaces or removes the file in its directory, and found
+    # out by doing it, after the settings, the rule copies and the link tree, the run stopped half
+    # detached with the ledger still on disk.
+    if not fsops.creatable(path):
+        raise Refusal(UNWRITABLE.format(path=quoted(str(path))))
     records = _lines(body)
     remaining = drop(current, EXCLUDE_REGION, Style.HASH)
     # Nothing follows the block exactly when what is left is what came before it.

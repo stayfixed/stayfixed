@@ -19,13 +19,13 @@ from typing import Any
 import pytest
 
 from stayfixed.cli import build_parser, discover_registrars, run
-from tests.gitfixture import git
+from tests.declarations import declared
+from tests.gitfixture import git, needs_git
 from tests.workflow_yaml import load, runs
 
 ROOT = Path(__file__).resolve().parents[1]
 SMOKE = ROOT / "tests" / "fixtures" / "smoke-project"
 HOSTILE = ROOT / "tests" / "fixtures" / "hostile-project"
-needs_git = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 PLAN = "docs/plans/2026-09-19-the-fixtures-own-plan.md"
 
 
@@ -234,6 +234,10 @@ CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 needs_ci_workflow = pytest.mark.skipif(
     not CI_WORKFLOW.is_file(), reason="ci.yml is not in the sdist"
 )
+SMOKE_WORKFLOW = ROOT / ".github" / "workflows" / "smoke.yml"
+needs_smoke_workflow = pytest.mark.skipif(
+    not SMOKE_WORKFLOW.is_file(), reason="smoke.yml is not in the sdist"
+)
 CONTRIBUTING = ROOT / "CONTRIBUTING.md"
 PR_TEMPLATE = ROOT / ".github" / "pull_request_template.md"
 _SHORT_VERSION = re.compile(
@@ -247,6 +251,9 @@ _RELEASE_BLOCK = re.compile(
     re.MULTILINE | re.DOTALL,
 )
 RELEASING = ROOT / "RELEASING.md"
+# The release check, in the one spelling five places hold: the three blocks and `ci.yml` below,
+# and `release.yml` (`test_the_release_workflow_runs_the_release_check_in_the_one_spelling`).
+RELEASE_CHECK = "uv run python scripts/release.py check"
 _COVERAGE_FLOOR = re.compile(r"--cov-fail-under=(\d+)")
 
 
@@ -295,7 +302,7 @@ def test_the_block_a_contributor_copies_is_the_one_ci_runs() -> None:
         "ruff check .",
         "ruff format --check .",
         "mypy",
-        "stayfixed release check",
+        RELEASE_CHECK,
     )
     for name, text in blocks.items():
         assert text.strip(), name
@@ -304,16 +311,45 @@ def test_the_block_a_contributor_copies_is_the_one_ci_runs() -> None:
         # And each one is really a gate CI runs, so the block cannot drift into naming a
         # command nobody checks.
         assert all(gate in ci for gate in required), [g for g in required if g not in ci]
+    # A gate CI runs and then excuses is a gate in name only: `uv run mypy || true` carries the
+    # spelling every check above reads and lets the step pass whatever mypy found. Mutation
+    # (declared): `mutations/`'s "ci lets a failed type check through" -> reddens.
+    excused = [
+        line for line in ci.splitlines() if any(gate in line for gate in required) and "||" in line
+    ]
+    assert excused == [], excused
+
+
+def test_the_release_is_cut_on_origin_main_whatever_the_local_main_holds() -> None:
+    """After a stopped release the local `main` holds the spent release commit, which
+    `origin/main` lacks. Step 1 pulled, which exits 128 on the divergent branches once a fix has
+    reached `origin/main`, or merges and leaves the spent commit as the next release's first
+    parent; it now lists what `origin/main` lacks and resets `main` to `origin/main`.
+
+    Mutations (oracle): `mutations/`'s "the release pulls main again" -> the three commands are
+    gone; "the release pulls after it cuts on origin/main" -> a `git pull` follows them.
+    """
+    match = _RELEASE_BLOCK.search(RELEASING.read_text(encoding="utf-8"))
+    assert match is not None, "RELEASING.md's first step has no bash block"
+    lines = [line.split("#")[0].strip() for line in match.group(1).splitlines()]
+    cut = [line for line in lines if line.startswith("git ")][:3]
+    assert cut == [
+        "git fetch origin",
+        "git log --oneline --decorate origin/main..main",
+        "git switch -C main origin/main",
+    ], cut
+    assert not any("git pull" in line for line in lines), lines
 
 
 ORACLE_COMMAND = "scripts/mutation_oracle.py"
 ORACLE_JOB = "oracle"
-# Measured on the `oracle` job's own run: 173 s for the 566 entries `mutations.toml` held that
-# day, four jobs on `ubuntu-latest` against a warm bytecode cache. It was 751 s for 372 while the
-# oracle ran one entry at a time and compiled from source on every run. Re-measure it from that
-# job's runs; it is here as a number rather than as prose so that the budget below is checked
-# rather than described.
-ORACLE_SECONDS_PER_ENTRY = 173 / 566
+# Measured on the `oracle` job's own run of 2026-10-14: 1,186 s for the 2,606 entries `mutations/`
+# held that day, four jobs on `ubuntu-latest` against a warm bytecode cache. It was 719 s for
+# 1,869 on 2026-10-08, 0.385 s an entry, 173 s for 566 on an earlier run, 0.31 s, and 751 s for 372
+# while the oracle ran one entry at a time and compiled from source on every run. Re-measure it
+# from that job's runs; it is here as a number rather than as prose so that the budget below is
+# checked rather than described.
+ORACLE_SECONDS_PER_ENTRY = 1186 / 2606
 # Checkout, `setup-uv` against a warm cache and `uv sync --locked` — the whole of the job that
 # is not the oracle itself. Estimated from the 128 s of non-oracle work in `checks` on the same
 # runner, which also carries lint, types, the test run, the build and a wheel install.
@@ -358,7 +394,7 @@ def test_the_mutation_oracle_has_a_job_of_its_own_with_a_budget_that_fits() -> N
 
     It used to be a step of `checks`, where it was 76% of the job: 751 s of 879 s on Linux
     against a 900 s bound, on all four configurations at once, and the branch that took
-    `mutations.toml` past 380 entries took `checks (macos-latest, 3.13)` over the bound. Running
+    `mutations/` past 380 entries took `checks (macos-latest, 3.13)` over the bound. Running
     it on one configuration was necessary and not sufficient — `timeout-minutes` is a per-job
     bound, so paying once instead of four times gave 751 s back to the three configurations that
     stopped running it and nothing to the one that still did.
@@ -372,7 +408,7 @@ def test_the_mutation_oracle_has_a_job_of_its_own_with_a_budget_that_fits() -> N
 
     **The budget assertion is the one that earns its place.** The oracle grows by construction:
     the rule is that every new assertion ships with the mutation that reddens it, so the entry
-    count only goes up, at about a third of a second each on four CPUs. Projecting the cost from
+    count only goes up, at about four tenths of a second each on four CPUs. Projecting the cost from
     the live entry count means the next branch to outgrow the bound reddens *here*, in a
     contributor's own test run, rather than as a cancelled job minutes into CI. That is the whole
     difference between arithmetic somebody can act on and arithmetic somebody discovers.
@@ -383,8 +419,6 @@ def test_the_mutation_oracle_has_a_job_of_its_own_with_a_budget_that_fits() -> N
     """
     # Mutations (declared): the budget cut below the projection; the job given an `if:` that can
     # skip it. Both redden this case.
-    import tomllib
-
     jobs = _ci_jobs()
     # The walk first: an empty reading would make every "exactly one" below come out zero for a
     # reason that is not about the workflow.
@@ -407,8 +441,8 @@ def test_the_mutation_oracle_has_a_job_of_its_own_with_a_budget_that_fits() -> N
     bounds = [x for x in body if x.strip().startswith("timeout-minutes:")]
     assert len(bounds) == 1, bounds
     budget = int(bounds[0].split(":", 1)[1].strip()) * 60
-    entries = len(tomllib.loads((ROOT / "mutations.toml").read_text(encoding="utf-8"))["mutation"])
-    assert entries > 0, "mutations.toml declares nothing, so this projects no cost at all"
+    entries = len(declared())
+    assert entries > 0, "mutations/ declares nothing, so this projects no cost at all"
     projected = entries * ORACLE_SECONDS_PER_ENTRY + ORACLE_SETUP_SECONDS + ORACLE_VARIANCE_SECONDS
     assert budget >= projected, (
         f"{entries} mutation entries project ~{projected:.0f} s against a {budget} s bound — "
@@ -445,8 +479,8 @@ def test_no_workflow_splices_an_expression_into_a_shell() -> None:
     # `${{ }}` inside a `run:` is interpolated by the platform before the shell sees the script,
     # so a ref name, a branch name or a pull-request title that carries shell metacharacters
     # runs as the workflow's own code. Every value in these files reaches a shell through
-    # `env:` instead. Mutation (oracle): "a workflow splices an expression into a shell" puts one
-    # into `check.yml`'s checkout assertion.
+    # `env:` instead. Mutation (oracle): `mutations/`'s "a workflow splices an expression into a
+    # shell" puts one into `check.yml`'s checkout assertion.
     #
     # `*.y*ml`: the platform reads `.yaml` too, and a workflow added with the other spelling
     # would never be read while the `>=` assertion below went on passing.
@@ -461,7 +495,8 @@ def test_no_workflow_splices_an_expression_into_a_shell() -> None:
 def test_an_expression_is_found_in_every_spelling_of_a_script(tmp_path: Path) -> None:
     # The check above is only as good as what it reads: a script in each spelling the reader
     # takes, each carrying an expression, is found, and one kept in `env:` is not. Mutation
-    # (oracle): "the expression check reads no script" -> nothing is found and this reddens.
+    # (oracle): `mutations/`'s "the expression check reads no script" -> nothing is found and this
+    # reddens.
     text = (
         "jobs:\n"
         "  one:\n"
@@ -772,6 +807,27 @@ def _gate_environment() -> str:
     match = re.search(r"^\s+ENVIRONMENT: (\S+)$", text, re.M)
     assert match is not None
     return match.group(1)
+
+
+@needs_release_workflow
+def test_the_release_workflow_runs_the_release_check_in_the_one_spelling() -> None:
+    # The fifth place: the release workflow runs the check against the tag, and it runs no
+    # mypy and no oracle, so it is held to this one gate rather than to the contributor's list.
+    # Its spelling had moved with the other four only because one commit moved all five.
+    # The whole command line, not a substring of it: `… check --tag "$GITHUB_REF_NAME" || true`
+    # carries the spelling and lets a failed check through, and so would a second command after
+    # a `;`. Mutation (declared): `release.yml` runs the command the CLI used to ship -> reddens;
+    # and `mutations/`'s "the release workflow lets a failed release check through" -> reddens.
+    bodies = scripts(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
+    assert bodies, "release.yml runs no script"
+    checks = [body.strip() for body in bodies if RELEASE_CHECK in body]
+    assert checks == [f'{RELEASE_CHECK} --tag "$GITHUB_REF_NAME"'], checks
+    # And no step runs the commands the CLI used to ship, beside the one above or instead of it:
+    # the line above filters to steps that already carry the new spelling, so a second step with
+    # the old one passed it. Mutation (declared): `mutations/`'s "the release workflow builds
+    # after running the release check the CLI no longer ships".
+    for body in bodies:
+        assert "stayfixed release" not in body, body
 
 
 @needs_release_workflow

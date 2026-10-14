@@ -34,12 +34,21 @@ VOLATILE_NOTE = "SMOKE-VOLATILE-NOTE"
 # own bounds on `git` (`stayfixed.gitenv.FLOOR_VARIABLE`, which can only raise them). Spelled out
 # rather than imported, because this script runs without `stayfixed` importable.
 FLOOR_VARIABLE = "STAYFIXED_GIT_FLOOR_SECONDS"
-# Measured 2026-09-19 against the shipped `hooks/hooks.json` and this fixture: thirteen
-# entries, fourteen rows (`PreToolUse` carries two samples). Both are asserted because a run
-# that executes fewer rows prints an identically green summary — the shape `unsampled` and
-# `unentered` close for events and nothing closed for rows.
-EXPECTED_ENTRIES = 13
-EXPECTED_ROWS = 14
+# Counted against the shipped `hooks/hooks.json` and this fixture: ten entries, eleven rows
+# (`PreToolUse` carries two samples). Both are asserted because a run that executes fewer rows
+# prints an identically green summary — the shape `unsampled` and `unentered` close for events
+# and nothing closed for rows.
+EXPECTED_ENTRIES = 10
+EXPECTED_ROWS = 11
+# What the red-run note opens with, `stayfixed.guards.hygiene.LEAD`, spelled out for the reason
+# `FLOOR_VARIABLE` is. The note is all a `PostToolUseFailure` entry is for, so its row asks for it
+# by its words and not only for an envelope naming the event, which an entry whose handler said
+# nothing also prints.
+RED_RUN_NOTE = "Before calling this red a flake, pre-existing, or caused by the branch:"
+# The note speaks only of something in the tree that could have falsified the run, and the
+# fixture's tree is clean as committed, so the rows run over one uncommitted file: the dirty-tree
+# line is then the note's, as it is after a red run in the middle of a change.
+UNCOMMITTED = "uncommitted-by-the-smoke.txt"
 
 
 @dataclass(frozen=True)
@@ -56,6 +65,8 @@ class Sample:
     # proves the guard denies GREEN, along with twelve of the other thirteen.
     stderr_says: tuple[str, ...] = ()
     stderr_never: tuple[str, ...] = ()
+    # What the `additionalContext` a dispatched entry prints must say. Empty asks nothing of it.
+    context_says: tuple[str, ...] = ()
 
 
 SAMPLES: dict[str, tuple[Sample, ...]] = {
@@ -93,13 +104,32 @@ SAMPLES: dict[str, tuple[Sample, ...]] = {
             stderr_never=(FAULT,),
         ),
     ),
+    # The shape Claude Code delivers a Bash command that exited non-zero in, measured on Claude
+    # Code 2.1.296 for `false`: no `tool_response`, and `error` the exit code alone.
+    "PostToolUseFailure": (
+        Sample(
+            {
+                # A session of its own: the note is delivered once per session whichever event
+                # carried it, and the `PostToolUse` row above has spent the shared session's.
+                "session_id": "smoke-failure",
+                "tool_name": "Bash",
+                "tool_input": {"command": "uv run pytest -q"},
+                "error": "Exit code 1",
+            },
+            0,
+            False,
+            "a red run Claude Code reports as a failure is annotated, never blocked",
+            stderr_never=(FAULT,),
+            context_says=(RED_RUN_NOTE,),
+        ),
+    ),
 }
 
 # What each `memory session-context` entry must have put in front of the model, by the part of
 # its command after the wrapper. An empty tuple is the other claim and not an absence: that
 # part renders nothing on this fixture, so anything at all in its stdout is a finding.
 #
-# **Why this registry exists.** Before it, all ten of these rows ran against a project with no
+# **Why this registry exists.** Before it, every one of these rows ran against a project with no
 # memory store: `stayfixed` answered "no memory store", the wrapper degraded that to 0 under the
 # `open` policy, and each row asserted an exit code it would have had if `session-context` were
 # `/bin/false`. Measured 2026-09-19 on the storeless fixture: ten rows, 0 bytes of stdout, all
@@ -107,23 +137,59 @@ SAMPLES: dict[str, tuple[Sample, ...]] = {
 # thing the smoke scenario exists to watch.
 #
 # Measured 2026-09-19 against the fixture's store, trusted: standing-rules part 1 1,010,
-# volatile-notes part 1 993, every other part empty. `preset-rules` is empty too, and for a reason
-# of its own: the shipped preset carries no `[rules]` table (stayfixed imposes no standing rule),
-# so that row asserts the bundle says nothing rather than that it renders something. The index
-# bundle is empty on purpose — `memory session-context` renders it only under Codex, and this
-# run is not Codex — so those three rows assert that harness gate rather than a store.
+# volatile-notes part 1 993, every other part empty — so the second and third part of each
+# bundle assert that a store which fits one part says nothing in the slots after it.
 INJECTED: dict[str, tuple[str, ...]] = {
-    "open memory session-context --bundle preset-rules --part 1": (),
     "open memory session-context --bundle standing-rules --part 1": (DELIMITER, STANDING_RULE),
     "open memory session-context --bundle standing-rules --part 2": (),
     "open memory session-context --bundle standing-rules --part 3": (),
     "open memory session-context --bundle volatile-notes --part 1": (DELIMITER, VOLATILE_NOTE),
     "open memory session-context --bundle volatile-notes --part 2": (),
     "open memory session-context --bundle volatile-notes --part 3": (),
-    "open memory session-context --bundle index --part 1": (),
-    "open memory session-context --bundle index --part 2": (),
-    "open memory session-context --bundle index --part 3": (),
 }
+
+
+def owner_home_prelude(home: Path) -> str:
+    """Python source that has the password database record `home` as this user's home directory.
+
+    stayfixed takes the machine owner's home from the password database whenever no person is at
+    a terminal, and never from `HOME`, which direnv, mise or a devcontainer can set from a file
+    the repository commits. So a scratch `HOME` no longer keeps a run away from the owner's own
+    `~/.config/stayfixed`: recording trust here would write the owner's real `trust.json`. No
+    variable can say otherwise, because the point is that no variable moves that home, so the
+    scratch home goes in through the launcher instead.
+    """
+    return (
+        "import pwd as _pwd\n"
+        "_real = _pwd.getpwuid\n"
+        "def _lookup(uid):\n"
+        "    try:\n"
+        "        entry = tuple(_real(uid))\n"
+        "    except KeyError:\n"
+        "        entry = ('stayfixed-smoke', 'x', uid, 0, '', '', '/bin/sh')\n"
+        f"    return _pwd.struct_passwd((*entry[:5], {str(home)!r}, *entry[6:]))\n"
+        "_pwd.getpwuid = _lookup\n"
+    )
+
+
+def with_owner_home(plugin_root: Path, into: Path, home: Path) -> Path:
+    """`plugin_root` again at `into`, with the password database's home pinned to `home`.
+
+    `hooks/` is copied byte for byte with its modes, `src` is linked where the root has one, and
+    `scripts/stayfixed` is the root's own launcher run after `owner_home_prelude`. The wrapper
+    finds its launcher beside itself and starts it under `-I`, so this is the one place the
+    prelude can go; every line after it is the plugin root's.
+    """
+    shutil.copytree(plugin_root / "hooks", into / "hooks")
+    (into / "scripts").mkdir(parents=True)
+    if (plugin_root / "src").is_dir():
+        (into / "src").symlink_to(plugin_root / "src", target_is_directory=True)
+    shipped = (plugin_root / "scripts" / "stayfixed").read_text(encoding="utf-8")
+    first, _, rest = shipped.partition("\n")
+    launcher = into / "scripts" / "stayfixed"
+    launcher.write_text(f"{first}\n{owner_home_prelude(home)}{rest}", encoding="utf-8")
+    launcher.chmod(0o755)
+    return into
 
 
 def tail_of(command: str) -> str:
@@ -190,7 +256,7 @@ def trust_the_store(plugin_root: Path, project: Path, env: dict[str, str]) -> st
     so — which is the boundary these entries exist to exercise, and it cannot be exercised
     from the outside of it. The owner's own act is performed here, once, the way
     `smoke_exfiltration.py`'s positive control performs it, and the rows below then assert
-    what came through. A failure here is a failure of the run, not a row: the ten injection
+    what came through. A failure here is a failure of the run, not a row: the six injection
     rows after it would go green on empty output.
     """
     done = subprocess.run(  # noqa: S603
@@ -269,8 +335,9 @@ def check_entry(
                 return f"injected nothing carrying {phrase!r} ({len(done.stdout)} characters)"
         if not wanted and done.stdout.strip():
             return f"this part renders nothing on the fixture, yet emitted {len(done.stdout)}"
-    # Only the dispatcher's own entries (`… hook <event>`) speak JSON; the ten
+    # Only the dispatcher's own entries (`… hook <event>`) speak JSON; the six
     # `memory session-context` entries print a bundle as prose, which is how they inject it.
+    context = ""
     if "hook" in argv and done.stdout.strip():
         try:
             emitted = json.loads(done.stdout)
@@ -279,6 +346,10 @@ def check_entry(
         if emitted.get("hookSpecificOutput", {}).get("hookEventName") != event:
             named = emitted.get("hookSpecificOutput", {}).get("hookEventName")
             return f"stdout names {named!r}, not {event!r}"
+        context = str(emitted["hookSpecificOutput"].get("additionalContext", ""))
+    for phrase in sample.context_says:
+        if phrase not in context:
+            return f"the context does not say {phrase!r} ({len(context)} characters)"
     return None
 
 
@@ -301,6 +372,9 @@ def main(argv: list[str]) -> int:
     if not os.access(wrapper, os.X_OK):
         print(f"FAIL  {wrapper} is not executable")
         failures += 1
+    # Every row runs under the scratch home, in the password database as in `HOME`: the plugin
+    # root's own files, with only the launcher's lookup of the home directory pinned.
+    args.plugin_root = with_owner_home(args.plugin_root, args.scratch / "owner-home-plugin", home)
     found = entries(args.plugin_root)
     if not found:
         print("FAIL  no hook entries at all")
@@ -322,7 +396,7 @@ def main(argv: list[str]) -> int:
         print(f"FAIL  no hook entry for {sorted(unentered)}; hooks.json lost an event")
         return 1
     # The same two directions for the entries that inject. An injection entry with no registry
-    # line would be checked for its exit code alone, which is what all ten of them were;
+    # line would be checked for its exit code alone, which is what every one of them was;
     # a registry line with no entry means `hooks.json` dropped a bundle and the run would
     # simply stop testing it.
     injecting = {tail_of(command) for _, command in found if "session-context" in command}
@@ -342,6 +416,7 @@ def main(argv: list[str]) -> int:
     if untrusted:
         print(f"FAIL  {untrusted}")
         return 1
+    (project / UNCOMMITTED).write_text("a change nobody has committed\n", encoding="utf-8")
     rows = 0
     for event, command in found:
         for sample in SAMPLES.get(event, ()):

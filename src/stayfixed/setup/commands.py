@@ -24,9 +24,11 @@ import argparse
 from pathlib import Path
 from typing import Any
 
+from stayfixed import fsops
 from stayfixed.areas import SubParsers
 from stayfixed.command import HOME_HELP, SETUP_MACHINE_HELP, SETUP_ROOT_HELP
-from stayfixed.errors import Refusal
+from stayfixed.errors import Failure, Refusal
+from stayfixed.printed import quoted
 from stayfixed.result import Result
 from stayfixed.runner import subprocess_runner
 
@@ -37,8 +39,8 @@ from stayfixed.runner import subprocess_runner
 # left the patch depending on an import this module does not own the shape of. The runner was
 # the `overlay` area's when that was written; it has since become the leaf module `runner.py`,
 # and this sentence follows it. `commands.py` is never imported by the hook registry (only
-# `hooks.py` files are, per `tests/test_areas.py`), so a module-scope import here does not
-# reach the clean-interpreter `discover()` that `tests/test_areas.py` holds `hooks.py` to.
+# `hooks.py` files are), so a module-scope import here does not reach the clean-interpreter
+# `discover()` that `tests/boundaries/test_discovery.py` holds `hooks.py` to.
 
 _BOTH_MODES = (
     "--git-hooks installs a hook into one repository; --preset writes machine-level files. "
@@ -47,32 +49,54 @@ _BOTH_MODES = (
 )
 
 
-def run_git_hooks(args: argparse.Namespace) -> Result:
-    from stayfixed.guards.api import install, uninstall
+def _root(given: str) -> Path:
+    """`--root`, resolved through `fsops.resolved`: a symlink loop there is a refusal naming it,
+    in the words `setup`'s questions before its first write use, on every interpreter, where 3.11
+    and 3.12 ended in `internal error`."""
+    try:
+        return fsops.resolved(Path(given))
+    except OSError as exc:
+        raise Refusal(
+            f"--root {quoted(given)} cannot be checked ({fsops.said(exc)}), so nothing was written"
+        ) from exc
 
-    root = Path(args.root).resolve()
+
+def run_git_hooks(args: argparse.Namespace) -> Result:
+    from stayfixed.guards.api import Found, install, uninstall
+
+    root = _root(args.root)
+    # Each path is git's answer, from a `core.hooksPath` the repository sets or under the name a
+    # submodule's `.gitmodules` chose, so each is printed through `printed.quoted`, as the
+    # refusals print it; `--json` carries it as it is.
     if args.uninstall:
         removed = uninstall(root)
-        if removed.restored is not None:
-            summary = f"removed {removed.path}; restored the foreign hook chained to it"
+        hook = quoted(str(removed.path))
+        if removed.found is Found.FOREIGN:
+            summary = f"left {hook} as it was: it is not stayfixed's hook; nothing was removed"
+        elif removed.found is Found.ABSENT:
+            summary = f"there is no stayfixed hook at {hook}; nothing was removed"
+        elif removed.restored is not None:
+            summary = f"removed {hook}; restored the foreign hook chained to it"
         else:
-            summary = f"removed {removed.path}; there was no foreign hook to restore"
+            summary = f"removed {hook}; there was no foreign hook to restore"
         data: dict[str, Any] = {
             "path": str(removed.path),
             "restored": str(removed.restored) if removed.restored is not None else None,
+            "found": removed.found.value,
         }
         return Result(summary, data)
 
     installed = install(root)
+    hook = quoted(str(installed.path))
     if installed.preserved is not None:
         summary = (
-            f"installed the commit-message hook at {installed.path}; the hook that was there "
-            f"is kept at {installed.preserved} and chained to"
+            f"installed the commit-message hook at {hook}; the hook that was there "
+            f"is kept at {quoted(str(installed.preserved))} and chained to"
         )
     elif installed.replaced:
-        summary = f"reinstalled the commit-message hook at {installed.path}"
+        summary = f"reinstalled the commit-message hook at {hook}"
     else:
-        summary = f"installed the commit-message hook at {installed.path}"
+        summary = f"installed the commit-message hook at {hook}"
     install_data = {
         "path": str(installed.path),
         "preserved": str(installed.preserved) if installed.preserved is not None else None,
@@ -81,33 +105,47 @@ def run_git_hooks(args: argparse.Namespace) -> Result:
     return Result(summary, install_data)
 
 
+NO_MACHINE_HOME = (
+    "the password database lists no home directory for this user, so there is no default "
+    "machine configuration file; pass --machine PATH to write one, which no hook reads"
+)
+# `--home`'s default is `HOME`, and an empty one names no home (`config.machine.homes_agree`), where
+# `Path.home` answers `/`: this command once ended in an internal error creating `/.config`, or,
+# given `--machine`, wrote that file and then refused to write `/.claude/settings.json`. Said
+# before anything is written.
+EMPTY_HOME = (
+    "HOME is empty, so it names no home directory and there is no default for --home; set HOME "
+    "to your home directory, or pass --home PATH"
+)
+
+
 def run_setup(args: argparse.Namespace) -> Result:
     if args.git_hooks:
         if args.preset is not None:
             raise Refusal(_BOTH_MODES)
         return run_git_hooks(args)
 
-    from stayfixed.config.machine import machine_config_path
+    from stayfixed.config.machine import home_is_empty, homes_agree, machine_config_path
     from stayfixed.setup.run import setup
 
-    # `interactive=False`, like every *reader* of this file (`config.loader.load`,
-    # `memory.store.overlay_root`, `config.loader._trust_file`) — and unlike this command until
-    # now, which was the one `machine_config_path()` call in the tree taking the `isatty` sniff.
-    # With `XDG_CONFIG_HOME=/xdg`, an owner running `stayfixed setup` in their own shell wrote
-    # `/xdg/stayfixed/config.toml`, got exit 0, and every reader then said "no overlay root is
-    # recorded in the machine configuration; run `stayfixed setup`" — the defect
-    # `config.loader.load`'s docstring says it fixed ("Half a file behind a gate is not a
-    # gate"), reintroduced on the write side. `--machine` itself is still honoured: a path the
-    # owner typed on their own command line is not an environment variable a repository can set.
+    # The file every *reader* of it reads (`config.loader.load`, `config.overlay.overlay_root`,
+    # `memory.trust._trust_file`), which no variable moves. This command once took the `isatty`
+    # sniff there: with `XDG_CONFIG_HOME=/xdg`, an owner running `stayfixed setup` in their own
+    # shell wrote `/xdg/stayfixed/config.toml`, got exit 0, and every reader then said "no overlay
+    # root is recorded in the machine configuration; run `stayfixed setup`". `--machine` itself is
+    # still honoured: a path the owner typed on their own command line is not an environment
+    # variable a repository can set.
     #
     # Resolved here rather than in `register()`, so that `stayfixed setup --help` prints the
     # sentence and not whichever home directory the parser happened to be built under.
+    if args.home is None and home_is_empty():
+        raise Failure(EMPTY_HOME)
     home = Path.home() if args.home is None else Path(args.home).expanduser()
-    machine = (
-        machine_config_path(interactive=False)
-        if args.machine is None
-        else Path(args.machine).expanduser()
-    )
+    machine = machine_config_path() if args.machine is None else Path(args.machine).expanduser()
+    if machine is None:
+        # Off `--machine`, the file is under the home the password database records, and this
+        # user has none there; a file put under `HOME` instead would be one no hook reads.
+        raise Failure(NO_MACHINE_HOME)
     report = setup(
         args.preset or "recommended",
         home=home,
@@ -115,7 +153,7 @@ def run_setup(args: argparse.Namespace) -> Result:
         runner=subprocess_runner(),
         yes=args.yes,
         overlay=args.overlay,
-        project_root=Path(args.root).resolve(),
+        project_root=_root(args.root),
         settings=Path(args.settings).expanduser() if args.settings else None,
     )
     data = {
@@ -126,13 +164,23 @@ def run_setup(args: argparse.Namespace) -> Result:
         "overlay": str(report.overlay) if report.overlay is not None else None,
         "notes": list(report.notes),
     }
+    # Where `HOME` is not the database's home, the file is not where the person may look for it,
+    # so the line says which home it went under (`config.machine`'s docstring says why).
+    under = (
+        ", under the home the password database records for this user rather than HOME, "
+        "because that is where a hook reads it"
+        if args.machine is None and not homes_agree()
+        else ""
+    )
     summary = "; ".join(
         (
-            f"machine configuration written to {machine}",
+            f"machine configuration written to {machine}{under}",
             f"{len(report.plugins_installed)} plugin(s) installed",
             "deny rules merged" if report.deny_written else "deny rules unchanged",
             "stayfixed is on PATH" if report.cli_on_path else "stayfixed is not on PATH",
-            f"overlay recorded at {report.overlay}" if report.overlay else "no overlay recorded",
+            f"overlay recorded at {quoted(str(report.overlay))}"
+            if report.overlay
+            else "no overlay recorded",
             *report.notes,
         )
     )

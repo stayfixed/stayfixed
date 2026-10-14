@@ -22,28 +22,6 @@ NAME_RULE = (
     "one lowercase path segment: lowercase letters, digits, '.', '_' and '-', led by a letter "
     "or digit"
 )
-# The grammar a `[paths]` value must match before it may be printed anywhere; `contained()`
-# decides whether it may be written, and a shape rule cannot bound a charset.
-#
-# The segment shape is part of the grammar because the two readers of a path have to agree about
-# what a path is. A charset alone admitted `docs//x.md`, `docs/x/` and `./docs`: `contained()`
-# read them through `Path(relative).parts`, which drops an empty component, a trailing slash and
-# a leading `./` without a word, so `plan()` reported no refusal — while `fsops` splits the raw
-# string and refuses all three, so `apply()` raised part-way through a pass that had already put
-# earlier artifacts on disk and whose `finally` had already persisted the manifest. The value
-# was never writable; only the two spellings of "a path" disagreed about saying so.
-#
-# So the grammar is written per segment: exactly one `/` between segments, no segment empty, and
-# the lookahead per segment because the charset alone cannot say it. `.` and `..` are spelled
-# entirely out of the charset the segments already use, so a segment rule without the lookahead
-# admits `./docs`, `docs/../x` and `..` itself — measured, on the charset-plus-segments form this
-# started from. `.hidden` and `..foo` are ordinary names and stay admitted: the lookahead refuses
-# a segment that is one or two dots *and nothing else*. What is left is exactly the set
-# `fsops.checked_components` accepts, intersected with the charset, and `contained()` asks that
-# function for the component rule rather than keeping a second copy of it.
-PATH_VALUE = re.compile(
-    r"^(?!\.\.?(?:/|\Z))[A-Za-z0-9._][A-Za-z0-9._-]*(?:/(?!\.\.?(?:/|\Z))[A-Za-z0-9._-]+)*\Z"
-)
 # The grammar an unknown *name* in a `stayfixed.toml` must match before a refusal may print it —
 # a top-level section's, and a key's inside a known table. Both are repository-authored the same
 # way a `[paths]` value is, and a refusal that echoed one back would print it whole, newlines
@@ -79,7 +57,13 @@ STATES = ("initialised", "adopting", "installed")
 BUILTIN_GATES = ("docs", "bugs", "plan", "commit", "trail")
 # The configuration check: a gate runner's other verdict, and never a gate's name.
 CONFIG_CHECK = "config"
-MEMORY_MODES = ("overlay", "in-repo", "local-only")
+# The memory modes, each spelled here and nowhere else, since the areas that read the store branch
+# on them: notes in the private overlay, the one mode `attach` binds; notes committed with the
+# code; and notes on this machine only, under `.stayfixed/local/`.
+OVERLAY_MODE = "overlay"
+IN_REPO_MODE = "in-repo"
+LOCAL_ONLY_MODE = "local-only"
+MEMORY_MODES = (OVERLAY_MODE, IN_REPO_MODE, LOCAL_ONLY_MODE)
 CI_MODES = ("reusable", "uvx", "none")
 
 

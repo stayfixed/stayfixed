@@ -29,7 +29,7 @@ def test_detection_reads_root_level_names_and_globs(tmp_path: Path) -> None:
 
 
 def test_present_reports_only_when_no_locator_resolves(tmp_path: Path) -> None:
-    # Advisory output, so the mutation stays here rather than in `mutations.toml`: the
+    # Advisory output, so the mutation stays here rather than in `mutations/`: the
     # `present` arm's `hits = [] if any(...) else locators` -> `hits = []` reddens the first
     # assertion, and `_names` without `dict.fromkeys` reddens it too.
     check = _check(
@@ -43,6 +43,24 @@ def test_present_reports_only_when_no_locator_resolves(tmp_path: Path) -> None:
     assert [(o.check.id, o.located) for o in outcomes] == [("present-check", ("a.toml", "b.ini"))]
     (tmp_path / "b.ini").write_text("[checker]\nstrict = true\n", encoding="utf-8")
     assert evaluate(_profile(check), tmp_path) == []
+
+
+def test_a_file_at_the_text_cap_is_read_and_one_past_it_is_not(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A profile reads configuration files, each held to `_TEXT_CAP`: one at the cap is read, one
+    # past it reads as no file. The cap is lowered so the files are small. Mutations (oracle):
+    # `mutations/`'s "a profile reads a configuration file past its cap" -> the longer one is
+    # read; "a profile refuses a configuration file at its cap" -> the shorter one is not.
+    check = _check(CheckKind.PRESENT, Locator("a.toml", toml="tool.checker"))
+    text = "[tool]\nchecker = 1\n"
+    (tmp_path / "a.toml").write_text(text, encoding="utf-8")
+    monkeypatch.setattr(
+        importlib.import_module("stayfixed.profiles.evaluate"), "_TEXT_CAP", len(text)
+    )
+    assert evaluate(_profile(check), tmp_path) == []
+    (tmp_path / "a.toml").write_text(text + "#", encoding="utf-8")
+    assert [o.check.id for o in evaluate(_profile(check), tmp_path)] == ["present-check"]
 
 
 def test_absent_reports_the_locators_whose_value_matches(tmp_path: Path) -> None:
@@ -81,15 +99,22 @@ def test_a_boolean_is_matched_as_toml_spells_it(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize(
     "text",
-    ["[tool\nchecker = 1\n", "checker = " + "[" * 1000 + "]" * 1000 + "\n"],
-    ids=["malformed", "nested-past-the-stack"],
+    [
+        "[tool\nchecker = 1\n",
+        "checker = " + "[" * 1000 + "]" * 1000 + "\n",
+        "[tool]\nchecker = 0x" + "f" * 5_000 + "\n",
+    ],
+    ids=["malformed", "nested-past-the-stack", "hex-past-str"],
 )
 def test_a_file_that_does_not_parse_resolves_to_nothing(tmp_path: Path, text: str) -> None:
     # A repository chooses these bytes. About a kilobyte of nested arrays is enough for
     # `tomllib` to raise `RecursionError` rather than `TOMLDecodeError` (measured on 3.13.0 at a
-    # depth of 500), and a raise here would end the whole evaluation, not one locator. Mutations:
-    # drop `RecursionError` from `_toml_document`'s catch (declared) or from `_toml_value`'s
-    # (by hand; advisory output) -> `nested-past-the-stack` reddens.
+    # depth of 500), and a raise here would end the whole evaluation, not one locator. A hex
+    # literal of any length parses, and `str()` of it past 4,300 digits raises `ValueError` when
+    # the locator reads its text: `stayfixed assess` ended in an internal error. Mutations: drop
+    # `RecursionError` from `_toml_document`'s catch (declared) or from `_toml_value`'s (by hand;
+    # advisory output) -> `nested-past-the-stack` reddens; `mutations/`'s "a profile locator
+    # stringifies a number past the conversion limit" -> `hex-past-str` reddens.
     check = _check(CheckKind.PRESENT, Locator("a.toml", toml="tool.checker"))
     (tmp_path / "a.toml").write_text(text, encoding="utf-8")
     assert [o.check.id for o in evaluate(_profile(check), tmp_path)] == ["present-check"]

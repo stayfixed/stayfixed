@@ -20,13 +20,13 @@ module's own words, and it goes to the machine-readable output only; the summary
 these items prints counts and this module's vocabulary.
 
 Two inventory items are not built. Another tool's design-document directories are that tool's
-convention, and stayfixed names no other tool's convention. The test-entrypoint audit stays its
-own advisory command until its candidates are triaged (its module says why).
+convention, and stayfixed names no other tool's convention. And whether a test exercises what
+its name says can be judged only by reading one stack's test files, which the inventory does not
+read.
 """
 
 from __future__ import annotations
 
-import json
 import os
 import re
 from collections.abc import Callable
@@ -34,13 +34,16 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
 
+from stayfixed import fsops
 from stayfixed.assess.model import Item, item
 from stayfixed.config.paths import PathEscape, contained
-from stayfixed.config.schema import PATH_VALUE
+from stayfixed.config.schema import IN_REPO_MODE
 from stayfixed.findings import Severity
+from stayfixed.fsops import read_bounded, read_regular_text
 from stayfixed.gitenv import QUERY_TIMEOUT_SECONDS, git_run
+from stayfixed.grammar import PATH_VALUE
 from stayfixed.guards.api import contained_roots
-from stayfixed.scaffold import EntriesError, marker_id, owned_ids
+from stayfixed.scaffold import EntriesError, judged_entries
 
 if TYPE_CHECKING:
     from stayfixed.config.schema import Config
@@ -69,9 +72,9 @@ _UNOWNED = f"{_WORKFLOWS}/"
 # workflows directory, or more. `stayfixed*` or `*.yml` owned a single `stayfixed-….yml` probe.
 _ANY_WORKFLOWS = tuple(f"{_WORKFLOWS}/any-other-workflow.{ext}" for ext in ("yml", "yaml"))
 # What reading a file the repository wrote can raise: a path through a symlink, a file that
-# cannot be opened, bytes that are not UTF-8 (a `ValueError`), a settings shape the engine
-# refuses, and JSON nested past the parser's depth, which `json` answers with `RecursionError`.
-_UNREADABLE = (PathEscape, OSError, ValueError, EntriesError, RecursionError)
+# cannot be opened, bytes that are not UTF-8 (a `ValueError`), and a settings document the engine
+# refuses, JSON nested past the parser's depth included (`scaffold.ParserLimitError`).
+_UNREADABLE = (PathEscape, OSError, ValueError, EntriesError)
 
 
 @dataclass(frozen=True)
@@ -147,7 +150,7 @@ def _tracked_env(context: ProbeContext) -> Looked:
 
 
 def _memory_history(context: ProbeContext) -> Looked:
-    if context.config.memory.mode == "in-repo":
+    if context.config.memory.mode == IN_REPO_MODE:
         return Looked()  # the store is meant to be committed
     # Every ref, not `HEAD`'s history: notes committed on one branch are readable from a clone
     # checked out on an orphan one. With no commit anywhere git answers 0 and prints nothing.
@@ -159,10 +162,20 @@ def _memory_history(context: ProbeContext) -> Looked:
 
 
 def _foreign_hooks(context: ProbeContext) -> Looked:
-    """Settings files of the selected harnesses that hold a hook entry without stayfixed's
-    marker. The engine's own shape check runs first, and every way repository content can make
-    reading fail is "could not look"."""
-    from stayfixed.harnesses import select
+    """Committed settings files of the selected harnesses that hold any hook entry, read by the
+    walk `doctor`'s `hook-entries` reads them with (`scaffold.judged_entries`,
+    lenient for the files a harness was measured running partly malformed): a file one names and
+    the other cannot read would be two answers about one file. Every way repository content can
+    make reading fail is "could not look", and so is a part of the file the walk skipped that
+    could hold a command. One difference stays: this decodes strictly, so a byte that is not
+    UTF-8 is "could not look" here where `doctor` reads past it.
+
+    **An entry claiming stayfixed's marker is foreign here too.** stayfixed writes no hook entry
+    into a committed settings file -- `attach` merges into the one a repository keeps out of git --
+    and this probe has no grant to compare an entry with, which is what lets `hook-entries` vouch
+    for one. So a marker in a committed file is the repository's word alone, and one an entry of
+    any `type`, carrying any id, can give."""
+    from stayfixed.harnesses import LENIENT_SETTINGS, select
 
     harnesses, _ = select(context.config.stayfixed.agents)
     found: list[str] = []
@@ -170,19 +183,17 @@ def _foreign_hooks(context: ProbeContext) -> Looked:
     for relative in sorted({s for h in harnesses for s in h.settings}):
         try:
             path = contained(context.root, relative)
-            text = path.read_text(encoding="utf-8") if path.is_file() else ""
-            owned_ids(text)  # raises EntriesError for a shape `doctor` would name
-            hooks = json.loads(text).get("hooks", {}) if text.strip() else {}
+            # To the read cap, as `doctor` reads the same file: a committed one past it is a file
+            # this probe could not look at, never one read to its end.
+            text = read_regular_text(path) if fsops.is_file(path) else ""
+            # Raises `EntriesError` for a shape `doctor` names as one it could not read.
+            walked = judged_entries(text, lenient=relative in LENIENT_SETTINGS)
         except _UNREADABLE:
             unread.append(relative)
             continue
-        entries = [
-            e for groups in hooks.values() for group in groups for e in group.get("hooks", [])
-        ]
-        if any(
-            not isinstance(e.get("command"), str) or marker_id(e["command"]) is None
-            for e in entries
-        ):
+        if walked.partly:
+            unread.append(relative)
+        if walked.entries:
             found.append(relative)
     return Looked(tuple(found), tuple(unread))
 
@@ -212,10 +223,15 @@ def _foreign_workflows(context: ProbeContext) -> Looked:
 # accept. Anything outside these shapes is read as a line GitHub skips, even where GitHub might
 # accept it, and that errs on the side that warns: a skipped line can only leave an earlier
 # line deciding, and a real owner on it would have owned the file anyway. No class overlaps the
-# character after it, so a word of any length is matched in linear time.
+# character after it, so a word of any length is matched in linear time; and the domain's labels
+# are possessive, so it is matched in linear memory too: `re` keeps a record for every pass of a
+# repeated group it might give back, 62 MiB over a word of half a million labels, and a label
+# given back could only end the word before a dot, which `fullmatch` refuses anyway. A label's
+# first character is read ahead of its possessive rest, so a pass of the repeat can fail only
+# before it reads a run: the shape every supported Python reads alike (CONTRIBUTING.md, "Tests").
 _OWNER = re.compile(
     r"@[A-Za-z0-9][A-Za-z0-9-]*(?:/[A-Za-z0-9][A-Za-z0-9_.-]*)?"
-    r"|[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+"
+    r"|[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-][A-Za-z0-9-]*+)++"
 )
 
 # How a code-owners line is read: words separated by spaces and tabs; a comment, from a `#` at
@@ -412,7 +428,7 @@ def _owns(text: str, path: str) -> bool:
 def _exact_file(path: Path) -> bool:
     """A file under exactly this name: a case-folding filesystem answers `is_file()` for
     `codeowners` when asked for `CODEOWNERS`, and GitHub reads only the exact name."""
-    return path.is_file() and path.name in os.listdir(path.parent)
+    return fsops.is_file(path) and path.name in os.listdir(path.parent)
 
 
 def _codeowners_file(context: ProbeContext) -> tuple[str, str] | Looked:
@@ -426,9 +442,12 @@ def _codeowners_file(context: ProbeContext) -> tuple[str, str] | Looked:
             path = contained(context.root, relative)
             if not _exact_file(path):
                 continue
-            if path.stat().st_size >= CODEOWNERS_MAX_BYTES:
+            # Read to one byte under GitHub's limit, and a file that has that byte is one GitHub
+            # does not load; a regular file only, so no committed link reads on past it.
+            content, over = read_bounded(path, CODEOWNERS_MAX_BYTES - 1)
+            if over:
                 return Looked((_UNOWNED,))  # GitHub does not load it
-            return relative, path.read_bytes().decode("utf-8")
+            return relative, content.decode("utf-8")
         except (PathEscape, OSError, ValueError):
             return Looked(unread=(relative,))
     return Looked((_UNOWNED,))

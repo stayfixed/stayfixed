@@ -2,18 +2,20 @@ from __future__ import annotations
 
 import io
 import json
-import os
-import py_compile
 import shutil
 import sys
-import time
+import types
 from pathlib import Path
 
 import pytest
 
+from stayfixed import jsonobject
 from stayfixed.cli import build_parser, discover_registrars, run
 from stayfixed.findings import LISTED_LIMIT
 from tests.gitfixture import git
+from tests.parserlimits import DEEPER_THAN_FOUR, LONG_NUMBER, NESTED
+from tests.profiles import redrun
+from tests.profiles.python.bytecode import compile_module, make_stale
 
 
 def invoke(argv: list[str]) -> int:
@@ -350,9 +352,11 @@ def test_test_hygiene_reports_the_two_faults(
     # measured. The `roots == 1` assertion has no mutation of its own here — `code_roots` is
     # overridden to the single entry `src`, which exists, so neither the `is_dir()` filter nor
     # the containment call changes this number (both were applied and this test stayed green).
-    # It is the wiring assertion: it pins that `--json` reports the walk's own count, and the
-    # filter and the containment check are pinned in `tests/guards/test_hygiene.py`.
+    # It is the wiring assertion: it pins that `--json` reports the profile's own counts, under
+    # the profile's name, and the filter and the containment check are pinned in
+    # `tests/profiles/python/test_hygiene.py`.
     root = repo(tmp_path)
+    (root / "pyproject.toml").write_text('[project]\nname = "widget"\n', encoding="utf-8")
     (root / "src").mkdir()
     (root / "src" / "m.py").write_text("x = 1\n", encoding="utf-8")
     (root / "stayfixed.toml").write_text(
@@ -361,21 +365,48 @@ def test_test_hygiene_reports_the_two_faults(
     argv = ["test", "hygiene", "--root", str(root), "--machine", str(tmp_path / "m.toml"), "--json"]
     assert invoke(argv) == 1
     out = json.loads(capsys.readouterr().out)
-    assert out["dirty"] >= 1 and out["stale"] == 0 and out["roots"] == 1
+    assert out["dirty"] >= 1 and out["profiles"] == {"python": {"stale": 0, "roots": 1}}
+
+
+@needs_git
+def test_test_hygiene_reports_every_stack_by_its_markers_and_not_by_configuration(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # `[stayfixed] profile` names one stack, and a repository may be written in several: the
+    # report goes to every profile whose markers sit at the root. `CONFIG` names no profile, so
+    # the Python entry here comes from `pyproject.toml` alone, and a repository with no marker
+    # gets no entry while it has nothing to say. Reddened by mutating `run_test_hygiene`'s
+    # `if note is None and not detects(load_profile(name), root):` to `if False:` (the second
+    # assertion); measured.
+    root = repo(tmp_path)
+    argv = ["test", "hygiene", "--root", str(root), "--machine", str(tmp_path / "m.toml"), "--json"]
+    (root / "pyproject.toml").write_text('[project]\nname = "widget"\n', encoding="utf-8")
+    invoke(argv)
+    assert set(json.loads(capsys.readouterr().out)["profiles"]) == {"python"}
+    (root / "pyproject.toml").unlink()
+    invoke(argv)
+    assert json.loads(capsys.readouterr().out)["profiles"] == {}
 
 
 @needs_git
 def test_test_hygiene_is_clean_on_a_committed_tree(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # `repo()` leaves no `[ledger]`, so the roots are the preset's (`src`, `tests`, `scripts`)
-    # and none of them exists here: this pins the clean-tree path, not the walk. The walk is
-    # pinned in `tests/guards/test_hygiene.py`. Reddened by mutating `run_test_hygiene`'s
-    # `exit_code=1 if findings else 0` to `1`; measured.
+    # `repo()` leaves no `[ledger]` and no stack's marker, so no profile reports: this pins the
+    # clean-tree path, not the walk. The walk is pinned in
+    # `tests/profiles/python/test_hygiene.py`. Reddened by mutating `run_test_hygiene`'s
+    # `exit_code=1 if findings else 0` to `1`; measured. Then a committed `pyproject.toml`, so
+    # Python is detected with nothing to report, and the summary says so in the words a person
+    # reads. Oracle: `mutations/`'s "test hygiene's clean summary names no stack".
     root = repo(tmp_path)
     argv = ["test", "hygiene", "--root", str(root), "--machine", str(tmp_path / "m.toml")]
     assert invoke(argv) == 0
-    assert "clean" in capsys.readouterr().out
+    assert capsys.readouterr().out == "tree is clean\n"
+    (root / "pyproject.toml").write_text('[project]\nname = "widget"\n', encoding="utf-8")
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "chore: python")
+    assert invoke(argv) == 0
+    assert capsys.readouterr().out == "tree is clean; the python profile has nothing to report\n"
 
 
 @needs_git
@@ -385,7 +416,7 @@ def test_test_hygiene_refuses_a_tree_git_cannot_report_on(
     # Not in the ported plan: exit 2 is the third of the three exit codes the CLI row
     # promises, and without this the `Refusal` branch of `run_test_hygiene` is unexercised —
     # deleting it would report an unjudgeable tree as clean and exit 0. Reddened by replacing
-    # `raise Refusal(_NO_GIT)` with `found = found._replace(dirty=0)`; measured.
+    # `raise Refusal(_NO_GIT)` with `dirty = 0`; measured.
     root = tmp_path / "bare"
     root.mkdir()
     (root / "stayfixed.toml").write_text(CONFIG, encoding="utf-8")
@@ -398,106 +429,306 @@ def test_test_hygiene_refuses_a_tree_git_cannot_report_on(
 def test_test_hygiene_names_the_stale_count_in_its_summary(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # The summary's stale branch, which nothing else at the CLI level renders: the two tests
-    # above report `stale == 0` (and the clean one runs with `roots == 0`), so
-    # `f"{found.stale} stale .pyc file(s) under {found.roots} code root(s)"` could be deleted
-    # with both still green. The walk itself is pinned in `tests/guards/test_hygiene.py`; this
-    # is the string a person reads. Reddened by mutating `run_test_hygiene`'s `if found.stale:`
-    # to `if False:`; measured.
+    # The summary's profile branch, which nothing else at the CLI level renders: the tests
+    # above report `stale == 0`, so the profile's line could be dropped from the summary with
+    # them still green. The walk itself is pinned in `tests/profiles/python/test_hygiene.py`;
+    # this is the string a person reads, the profile's name and then its own note. Reddened by
+    # mutating `run_test_hygiene`'s `if note:` to `if False:`; measured.
     root = repo(tmp_path)
+    (root / "pyproject.toml").write_text('[project]\nname = "widget"\n', encoding="utf-8")
     (root / "src").mkdir()
     module = root / "src" / "m.py"
     module.write_text("x = 1\n", encoding="utf-8")
-    # Explicit `cfile` and `TIMESTAMP`, for the reasons `tests/guards/test_hygiene.py`'s
-    # `compile_module` gives: `cfile=None` follows `PYTHONPYCACHEPREFIX` out of the fixture,
-    # and `SOURCE_DATE_EPOCH` in the environment would make the header hash-based.
-    py_compile.compile(
-        str(module),
-        cfile=str(root / "src" / "__pycache__" / f"m.{sys.implementation.cache_tag}.pyc"),
-        doraise=True,
-        invalidation_mode=py_compile.PycInvalidationMode.TIMESTAMP,
-    )
-    future = time.time() + 60
-    os.utime(module, (future, future))
+    compile_module(module)
+    make_stale(module)
     (root / "stayfixed.toml").write_text(
         CONFIG + '\n[ledger]\ncode_roots = ["src"]\n', encoding="utf-8"
     )
     argv = ["test", "hygiene", "--root", str(root), "--machine", str(tmp_path / "m.toml")]
     assert invoke(argv) == 1
-    assert "1 stale .pyc file(s) under 1 code root(s)" in capsys.readouterr().out
+    assert "python: 1 .pyc file(s) whose recorded source mtime" in capsys.readouterr().out
 
 
 @needs_git
-def test_test_audit_entrypoints_scans_the_configured_roots(
+def test_test_hygiene_reports_a_profile_with_something_to_say_wherever_its_markers_sit(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # Exit 0 *with* findings, on purpose: this is an audit for triage, not a gate. Run over
-    # stayfixed's own tests with its own `ledger.code_roots` the scanner names six
-    # name-collision candidates (measured, and recorded in the command's own comment), so an
-    # exit 1 would be red on this repository from the first run, and the schema has no
-    # per-command enable switch to turn it off with. It stays its own advisory command, and
-    # `stayfixed assess` leaves it out of the inventory until its candidates are triaged.
-    # Reddened by giving `run_test_audit`'s findings branch `exit_code=1`; measured, and it
-    # reddened this test alone -- so the exit code is pinned, not merely the default.
+    # A monorepo whose Python project lives in a subdirectory has no Python marker at its root,
+    # and the hook, which asks every hint and detects nothing, still reports its stale bytecode
+    # after a failed pytest run. Listing only the profiles detected at the root answered "tree is
+    # clean", exit 0, for the same tree: the command contradicted the notice it documents. A
+    # profile whose note is not `None` is listed whether or not its markers sit at the root, and
+    # the exit code follows. The tree is committed, with the bytecode ignored, so the only
+    # finding is the stale `.pyc`. Oracle: `mutations/`'s "test hygiene hides a profile its
+    # markers do not detect at the root".
     root = repo(tmp_path)
-    (root / "src" / "widget").mkdir(parents=True)
-    (root / "src" / "widget" / "__init__.py").write_text("", encoding="utf-8")
-    (root / "tests").mkdir()
-    (root / "tests" / "test_sample.py").write_text(
-        "from widget.boot import boot_demo\n\n\ndef test_boot_demo_x() -> None:\n    assert 1\n",
-        encoding="utf-8",
-    )
+    (root / ".gitignore").write_text("__pycache__/\n", encoding="utf-8")
+    (root / "src").mkdir()
+    module = root / "src" / "m.py"
+    module.write_text("x = 1\n", encoding="utf-8")
     (root / "stayfixed.toml").write_text(
-        CONFIG + '\n[ledger]\ncode_roots = ["src", "tests"]\n', encoding="utf-8"
+        CONFIG + '\n[ledger]\ncode_roots = ["src"]\n', encoding="utf-8"
     )
-    argv = [
-        "test",
-        "audit-entrypoints",
-        "--root",
-        str(root),
-        "--machine",
-        str(tmp_path / "m.toml"),
-        "--json",
-    ]
-    assert invoke(argv) == 0  # advisory, never a failure; the candidates are in the data
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "chore: code")
+    compile_module(module)
+    make_stale(module)
+    assert not (root / "pyproject.toml").exists()
+    argv = ["test", "hygiene", "--root", str(root), "--machine", str(tmp_path / "m.toml"), "--json"]
+    assert invoke(argv) == 1
     out = json.loads(capsys.readouterr().out)
-    assert out["import_roots"] == ["widget"]
-    assert out["findings"][0]["shape"] == "names-but-never-invokes"
-    # The JSON keys are a documented contract (`docs/cli.md`), and they used to be produced by
-    # `f.__dict__` — so renaming a dataclass attribute changed the wire format silently and
-    # nothing here noticed. Against fixed literals, not against anything `Finding` produced.
-    # No `mutations.toml` entry: this is a wire contract, not a guard something reads as
-    # permission. Measured by hand — renaming the emitted `shape` key to `shapes` reddens this
-    # test and nothing else in the file.
-    assert sorted(out) == ["files", "findings", "import_roots", "summary"]
-    assert sorted(out["findings"][0]) == ["detail", "line", "path", "shape", "test"]
+    assert out["dirty"] == 0 and out["profiles"] == {"python": {"stale": 1, "roots": 1}}
 
 
 @needs_git
-def test_test_audit_entrypoints_refuses_when_the_scanner_stops_discriminating(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize("as_json", [False, True])
+def test_test_hygiene_refuses_a_failing_hint_without_printing_its_message(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    as_json: bool,
 ) -> None:
-    # A scanner that cannot go red is not evidence, so a self-test problem is exit 2 and not a
-    # quiet exit 0 over a suite nothing actually graded. The self-test grades the module's own
-    # corpora, which is exactly why no fixture can produce this state: the seam is patched on
-    # the module object (`run_test_audit` does its `from ... import` inside the function body,
-    # so the patched attribute is the one it binds). The root is a real, scannable repository
-    # on purpose: the refusal has to win over a tree the command could otherwise have reported
-    # on, not merely over a tree that was broken anyway. Reddened by deleting the
-    # `if problems:` raise in `run_test_audit`; measured -- this test then exits 0, and it
-    # reddened alone.
+    # An exception's message can carry what the hint walked: an `OSError` names the path it
+    # failed on, in full, and a repository chooses its directories' names. The failure is
+    # injected into the walk itself, since the walk passes over what it cannot list and so
+    # raises for no tree a test can build. Printed as an internal error, that text reached
+    # whoever ran this command, the agent the shipped skills send here included. The refusal
+    # names the profile and the exception's type and nothing the exception carried, in either
+    # output. Oracle:
+    # `mutations/`'s "test hygiene prints a failing hint's own message".
     root = repo(tmp_path)
-    monkeypatch.setattr("stayfixed.guards.audit.run_self_test", lambda: ["known-bad was missed"])
-    argv = [
-        "test",
-        "audit-entrypoints",
-        "--root",
-        str(root),
-        "--machine",
-        str(tmp_path / "m.toml"),
-    ]
+    (root / "src").mkdir()
+    (root / "src" / "m.py").write_text("x = 1\n", encoding="utf-8")
+    (root / "stayfixed.toml").write_text(
+        CONFIG + '\n[ledger]\ncode_roots = ["src"]\n', encoding="utf-8"
+    )
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "chore: code")
+
+    def broken(roots: object) -> object:
+        raise OSError("<injected text>")
+
+    monkeypatch.setattr("stayfixed.profiles.python.hygiene._bytecode", broken)
+    json_flag = ["--json"] if as_json else []
+    argv = ["test", "hygiene", "--root", str(root), "--machine", str(tmp_path / "m.toml")]
+    assert invoke([*argv, *json_flag]) == 2
+    captured = capsys.readouterr()
+    assert "<injected text>" not in captured.out + captured.err
+    assert "the python profile's red-run hint failed: OSError" in captured.out + captured.err
+
+
+@needs_git
+@pytest.mark.parametrize("as_json", [False, True])
+def test_test_hygiene_refuses_a_tree_its_bytecode_walk_could_not_finish(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    as_json: bool,
+) -> None:
+    # A walk that stopped at its cap has not seen the tree, so this command cannot call it clean
+    # and cannot name a stale count: it refuses, as it does for a tree git cannot report on, and
+    # says the profile could not tell. The tree is committed with its stale `.pyc` ignored, so
+    # an uncut walk answers exit 1 with that count. Oracle: `mutations/`'s "test hygiene reads a
+    # walk cut short as a judged tree".
+    root = repo(tmp_path)
+    (root / ".gitignore").write_text("__pycache__/\n", encoding="utf-8")
+    (root / "src").mkdir()
+    module = root / "src" / "m.py"
+    module.write_text("x = 1\n", encoding="utf-8")
+    (root / "stayfixed.toml").write_text(
+        CONFIG + '\n[ledger]\ncode_roots = ["src"]\n', encoding="utf-8"
+    )
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "chore: code")
+    compile_module(module)
+    make_stale(module)
+    monkeypatch.setattr("stayfixed.fsops.WALK_ENTRIES", 1)
+    json_flag = ["--json"] if as_json else []
+    argv = ["test", "hygiene", "--root", str(root), "--machine", str(tmp_path / "m.toml")]
+    assert invoke([*argv, *json_flag]) == 2
+    captured = capsys.readouterr()
+    said = json.loads(captured.out)["summary"] if as_json else captured.err
+    assert said.strip() == ("refused: " if as_json else "stayfixed: refused: ") + CUT_WALK
+
+
+# The refusal for a walk cut at its bound, and the way out of it: the bound is not configurable,
+# what it walks is.
+CUT_WALK = (
+    "the python profile's red-run hint stopped its walk at a bound and could not tell, so this "
+    "tree cannot be judged; narrow `[ledger] code_roots` to the directories that hold code"
+)
+
+
+def test_test_hygiene_refuses_a_cut_walk_over_a_tree_with_no_python(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A JavaScript tree past the bound gets the same refusal as a Python one, by decision: a walk
+    # cut short that met no `__pycache__` has seen no more of the tree than one that met a fresh
+    # one, since the order it lists in is the filesystem's, and the stale `.pyc` can sit just past
+    # the bound. So the refusal names the way out instead, and narrowing `code_roots` is it.
+    root = repo(tmp_path)
+    (root / "src").mkdir()
+    for index in range(3):
+        (root / "src" / f"m{index}.js").write_text("", encoding="utf-8")
+    (root / "stayfixed.toml").write_text(
+        CONFIG + '\n[ledger]\ncode_roots = ["src"]\n', encoding="utf-8"
+    )
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "chore: code")
+    argv = ["test", "hygiene", "--root", str(root), "--machine", str(tmp_path / "m.toml")]
+    assert invoke(argv) == 0
+    capsys.readouterr()
+    monkeypatch.setattr("stayfixed.fsops.WALK_ENTRIES", 2)
     assert invoke(argv) == 2
-    assert "refused:" in capsys.readouterr().err
+    assert capsys.readouterr().err.strip() == "stayfixed: refused: " + CUT_WALK
+
+
+def detected_everywhere(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every shipped profile's markers sit at the root, whatever the tree holds."""
+    monkeypatch.setattr("stayfixed.profiles.load_profile", lambda name: name)
+    monkeypatch.setattr("stayfixed.profiles.detects", lambda profile, root: True)
+
+
+def committed_project(tmp_path: Path) -> Path:
+    """A repository whose one file, its configuration, is committed: a clean tree."""
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / "stayfixed.toml").write_text(redrun.CONFIG, encoding="utf-8")
+    git(root, "init", "-q", "-b", "main")
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "chore: seed")
+    return root
+
+
+@needs_git
+def test_test_hygiene_reports_a_repository_in_two_stacks_as_two_entries(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # `[stayfixed] profile` names one stack; a repository written in two gets both stacks'
+    # counts, each under its profile's name, and only counts: the report that carried a path
+    # reaches `--json` as its integers alone. `beta` has nothing to say, so it is listed only
+    # because detection, replaced here, puts its markers at the root: its entry is the proof that
+    # detection was asked. Oracle: `mutations/`'s "test hygiene reports the first stack and
+    # stops", "test hygiene prints a report as the hint returned it" and "test hygiene lists
+    # only the profiles with something to say".
+    loud, quiet = redrun.LoudHint("x", "alpha says"), redrun.FakeHint("y", None)
+    redrun.ship(monkeypatch, {"alpha": loud, "beta": quiet})
+    detected_everywhere(monkeypatch)
+    root = committed_project(tmp_path)
+    argv = ["test", "hygiene", "--root", str(root), "--machine", str(tmp_path / "m.toml"), "--json"]
+    assert invoke(argv) == 1
+    out = json.loads(capsys.readouterr().out)
+    assert out["dirty"] == 0
+    assert out["profiles"] == {"alpha": {"found": 1}, "beta": {"found": 1}}
+    assert out["summary"] == "alpha: alpha says (1)"
+
+
+@needs_git
+def test_test_hygiene_reads_a_count_named_undetermined_as_a_count(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # "Could not tell" is a report of `None`, not a key in the counts: a key is a count name a
+    # hint chose, and `undetermined` matches that grammar like any other, so carried in the counts
+    # it turned a hint's real count into a refusal of the whole tree. Here it is a count, listed
+    # and reported as the finding the note makes of it. Oracle: `mutations/`'s "test hygiene reads
+    # a walk cut short as a judged tree" holds the refusal on a report of `None`.
+    redrun.ship(monkeypatch, {"alpha": redrun.NamedUndeterminedHint("x", "alpha says")})
+    detected_everywhere(monkeypatch)
+    root = committed_project(tmp_path)
+    argv = ["test", "hygiene", "--root", str(root), "--machine", str(tmp_path / "m.toml"), "--json"]
+    assert invoke(argv) == 1
+    out = json.loads(capsys.readouterr().out)
+    assert out["profiles"] == {"alpha": {"found": 1, "undetermined": 1}}
+    assert out["summary"] == "alpha: alpha says (1)"
+
+
+@needs_git
+def test_test_hygiene_names_every_detected_stack_that_has_nothing_to_report(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A clean tree in two stacks says so for each of them, in name order, and exits 0: the
+    # summary is what tells a person which stacks were looked at. Oracle: `mutations/`'s "test
+    # hygiene's clean summary names only the first stack".
+    redrun.ship(
+        monkeypatch, {"alpha": redrun.FakeHint("x", None), "beta": redrun.FakeHint("y", None)}
+    )
+    detected_everywhere(monkeypatch)
+    root = committed_project(tmp_path)
+    argv = ["test", "hygiene", "--root", str(root), "--machine", str(tmp_path / "m.toml"), "--json"]
+    assert invoke(argv) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["profiles"] == {"alpha": {"found": 1}, "beta": {"found": 1}}
+    assert out["summary"] == (
+        "tree is clean; the alpha profile has nothing to report; "
+        "the beta profile has nothing to report"
+    )
+
+
+@needs_git
+@pytest.mark.parametrize("broken", ["absent", "no-hint"])
+def test_test_hygiene_refuses_when_a_shipped_hint_cannot_load(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    broken: str,
+) -> None:
+    # The hook leaves out a profile whose `hygiene.py` does not import or has no `HINT`, so one
+    # stack's broken module costs only its own line. This command answers whether a red run can
+    # be trusted, and a profile it could not ask is "I do not know", never "tree is clean": it
+    # refuses (exit 2) and names the profile, a shipped name. `gamma` loads and has nothing to
+    # say, so without the refusal the answer would be clean. Oracle: `mutations/`'s "test hygiene
+    # calls a tree clean without a hint it could not load".
+    redrun.ship(monkeypatch, {"gamma": redrun.FakeHint("x", None)})
+    if broken == "no-hint":
+        alpha = types.ModuleType("stayfixed.profiles.alpha.hygiene")
+        monkeypatch.setitem(sys.modules, alpha.__name__, alpha)
+    monkeypatch.setattr("stayfixed.profiles.hints.hint_modules", lambda: ("alpha", "gamma"))
+    detected_everywhere(monkeypatch)
+    root = committed_project(tmp_path)
+    argv = ["test", "hygiene", "--root", str(root), "--machine", str(tmp_path / "m.toml")]
+    assert invoke(argv) == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "the alpha profile's red-run hint could not be loaded" in captured.err
+
+
+@needs_git
+def test_test_hygiene_refuses_a_note_that_is_not_text(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The hook drops a note that is not text and keeps the rest of its notice. This command
+    # answers whether a red run can be trusted, and a hint that answered outside its protocol is
+    # "I do not know", never "tree is clean" and never a finding printed as whatever the object
+    # renders to: it refuses (exit 2) and names the profile, as for a hint that did not load.
+    # Oracle: `mutations/`'s "a note that is not text passes as one".
+    redrun.ship(monkeypatch, {"alpha": redrun.WordlessHint("x", "alpha says")})
+    monkeypatch.setattr("stayfixed.profiles.load_profile", lambda name: name)
+    monkeypatch.setattr("stayfixed.profiles.detects", lambda profile, root: False)
+    root = committed_project(tmp_path)
+    argv = ["test", "hygiene", "--root", str(root), "--machine", str(tmp_path / "m.toml")]
+    assert invoke(argv) == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "the alpha profile's red-run hint answered in something other than text" in captured.err
+
+
+@needs_git
+def test_test_hygiene_does_not_list_an_undetected_stack_whose_note_is_empty(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # An empty note is text with nothing in it: nothing to report, the same answer the hook
+    # gives by leaving the line out. So a stack whose markers are not at the root and whose note
+    # is "" is not listed, and the tree reads clean. Oracle: `mutations/`'s "an empty note is
+    # something to report".
+    redrun.ship(monkeypatch, {"alpha": redrun.EmptyHint("x", "alpha says")})
+    monkeypatch.setattr("stayfixed.profiles.load_profile", lambda name: name)
+    monkeypatch.setattr("stayfixed.profiles.detects", lambda profile, root: False)
+    root = committed_project(tmp_path)
+    argv = ["test", "hygiene", "--root", str(root), "--machine", str(tmp_path / "m.toml"), "--json"]
+    assert invoke(argv) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["profiles"] == {}
+    assert out["summary"] == "tree is clean"
 
 
 @needs_git
@@ -603,8 +834,8 @@ def test_commit_check_names_at_most_the_listed_limit_of_offences(
 ) -> None:
     # A range holds any number of commits, so the offences on the line are bounded in number by
     # nothing: it counts every commit, names the first `LISTED_LIMIT` offences, and says how many
-    # more, and `--json`'s `violations` carries every one. Mutation (oracle): "commit check names
-    # every offence" -> this reddens.
+    # more, and `--json`'s `violations` carries every one. Mutation (oracle): `mutations/`'s "commit
+    # check names every offence" -> this reddens.
     dirty = "fix: dirty\n\nCo-Authored-By: Claude <noreply@anthropic.com>\n"
     root = repo(tmp_path, *[dirty] * (LISTED_LIMIT + 2))
     argv = ["commit", "check", "--range", "base..HEAD", "--root", str(root)]
@@ -613,3 +844,38 @@ def test_commit_check_names_at_most_the_listed_limit_of_offences(
     assert line.startswith(f"FAIL: {LISTED_LIMIT + 2} of {LISTED_LIMIT + 2} commit message(s)")
     assert line.count("[attribution trailer naming an AI tool]") == LISTED_LIMIT
     assert "[attribution trailer naming an AI tool], and 2 more. " in line
+
+
+@pytest.mark.parametrize(
+    ("stdin", "said"),
+    [
+        pytest.param(NESTED, "is nested deeper than this reader follows", id="nested"),
+        pytest.param(f'{{"command": "ls", "n": {LONG_NUMBER}}}', "holds a number", id="long"),
+    ],
+)
+def test_guard_bg_cleanup_refuses_stdin_past_the_parser_in_its_own_words(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], stdin: str, said: str
+) -> None:
+    # Valid JSON past the parser: nesting raised `RecursionError` past the `ValueError` arm and
+    # read `internal error`, and a long integer refused with the interpreter's advice to raise a
+    # process-wide limit. Both refuse as stdin the guard cannot read. Mutation (declared): the
+    # `RecursionError` arm removed -> `nested` is an internal error.
+    feed(monkeypatch, stdin)
+    assert invoke(["guard", "bg-cleanup"]) == 2
+    err = capsys.readouterr().err
+    assert "refused" in err
+    assert said in err
+    assert "internal error" not in err
+    assert "set_int_max_str_digits" not in err
+
+
+def test_guard_bg_cleanup_refuses_stdin_past_the_depth_bound(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Stdin goes through the one JSON object reader, so its depth bound holds here as it does for
+    # every other JSON document. Mutation (declared): `mutations/`'s "guard bg-cleanup parses stdin
+    # with a bare json.loads".
+    monkeypatch.setattr(jsonobject, "DEPTH_CAP", 4)
+    feed(monkeypatch, DEEPER_THAN_FOUR)
+    assert invoke(["guard", "bg-cleanup"]) == 2
+    assert "nested deeper than this reader follows" in capsys.readouterr().err

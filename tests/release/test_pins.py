@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from pathlib import Path
 
 from stayfixed import REPOSITORY_URL
 from stayfixed.release.api import Pin, Resolution, is_released, released, resolve_pin
-from stayfixed.runner import NOT_FOUND, Completed
+from stayfixed.release.pins import NO_MATCH
+from stayfixed.runner import NOT_FOUND
+from tests.runners import LsRemote
 
 LIGHT, TAG_OBJECT, COMMIT, ALIAS = "1" * 40, "2" * 40, "3" * 40, "9" * 40
 # The per-plugin tag `claude plugin tag` writes beside every release (`RELEASING.md` step 6). It
@@ -21,21 +22,10 @@ LISTING = (
 )
 
 
-@dataclass
-class _Stub:
-    code: int = 0
-    stdout: str = LISTING
-    calls: list[list[str]] = field(default_factory=list)
-
-    def run(self, argv: list[str], cwd: Path) -> Completed:
-        self.calls.append(argv)
-        return Completed(self.code, self.stdout, "")
-
-
 def test_an_annotated_tag_resolves_to_its_commit_not_its_tag_object(tmp_path: Path) -> None:
     # Mutation (oracle): `{**peeled, **plain}` -> the annotated case answers the tag object,
     # which a workflow pin could not check out.
-    stub = _Stub()
+    stub = LsRemote(stdout=LISTING)
     assert resolve_pin("1.0.0", stub, cwd=tmp_path) == Resolution(Pin("v1.0.0", COMMIT), True)
     assert resolve_pin("0.1.0", stub, cwd=tmp_path) == Resolution(Pin("v0.1.0", LIGHT), True)
     assert len(stub.calls) == 2
@@ -48,21 +38,19 @@ def test_the_answer_that_stays_apart_is_the_failed_ask(tmp_path: Path) -> None:
     # `project.templates._ci` and one red row in `doctor` — and the first two assertions below are
     # what say so. `Resolution.asked` is what keeps the failed ask apart from both, which is the
     # distinction every caller does depend on: running again can help only that one.
-    assert resolve_pin("9.9.9", _Stub(), cwd=tmp_path) == Resolution(None, True)
-    assert resolve_pin("0.1.0", _Stub(code=2, stdout=""), cwd=tmp_path) == Resolution(None, True)
-    assert resolve_pin("0.1.0", _Stub(code=NOT_FOUND, stdout=""), cwd=tmp_path) == Resolution(
-        None, False
-    )
-    assert released(_Stub(code=128, stdout=""), cwd=tmp_path) is None
+    assert resolve_pin("9.9.9", LsRemote(stdout=LISTING), cwd=tmp_path) == Resolution(None, True)
+    assert resolve_pin("0.1.0", LsRemote(code=NO_MATCH), cwd=tmp_path) == Resolution(None, True)
+    assert resolve_pin("0.1.0", LsRemote(code=NOT_FOUND), cwd=tmp_path) == Resolution(None, False)
+    assert released(LsRemote(code=128), cwd=tmp_path) is None
 
 
 def test_is_released_judges_semver_tags_and_never_the_alias(tmp_path: Path) -> None:
-    assert is_released(LIGHT, _Stub(), cwd=tmp_path) is True
-    assert is_released(COMMIT, _Stub(), cwd=tmp_path) is True
-    assert is_released(ALIAS, _Stub(), cwd=tmp_path) is False
-    assert is_released("5" * 40, _Stub(code=2, stdout=""), cwd=tmp_path) is False
-    assert is_released(LIGHT, _Stub(code=NOT_FOUND, stdout=""), cwd=tmp_path) is None
-    pins = released(_Stub(), cwd=tmp_path)
+    assert is_released(LIGHT, LsRemote(stdout=LISTING), cwd=tmp_path) is True
+    assert is_released(COMMIT, LsRemote(stdout=LISTING), cwd=tmp_path) is True
+    assert is_released(ALIAS, LsRemote(stdout=LISTING), cwd=tmp_path) is False
+    assert is_released("5" * 40, LsRemote(code=NO_MATCH), cwd=tmp_path) is False
+    assert is_released(LIGHT, LsRemote(code=NOT_FOUND), cwd=tmp_path) is None
+    pins = released(LsRemote(stdout=LISTING), cwd=tmp_path)
     assert pins is not None
     assert "v1" in pins
     # And the per-plugin tag is not a tag this module answers about. `_LINE` is what drops it — the
@@ -71,4 +59,4 @@ def test_is_released_judges_semver_tags_and_never_the_alias(tmp_path: Path) -> N
     # fixture line was inert until now: a `uses:` pin resolved to this sha would check out a ref
     # the reusable workflow's own gate never ran on.
     assert "stayfixed--v1.0.0" not in pins
-    assert is_released(PLUGIN_TAG_SHA, _Stub(), cwd=tmp_path) is False
+    assert is_released(PLUGIN_TAG_SHA, LsRemote(stdout=LISTING), cwd=tmp_path) is False

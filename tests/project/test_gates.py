@@ -17,7 +17,8 @@ import pytest
 
 from stayfixed.cli import build_parser, discover_registrars, run
 from stayfixed.project.init import init
-from tests.gitfixture import LsRemote, git, needs_git
+from tests.gitfixture import git, needs_git
+from tests.runners import LsRemote
 
 GATES = (
     ["docs", "check"],

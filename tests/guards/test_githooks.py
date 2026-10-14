@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import signal
 import subprocess
 import sys
 from pathlib import Path
@@ -12,11 +13,22 @@ import pytest
 
 from stayfixed.errors import Refusal
 from stayfixed.guards.commit import offending_lines
-from stayfixed.guards.githooks import HOOK_MARKER, HOOK_NAME, hooks_dir, install, uninstall
+from stayfixed.guards.githooks import (
+    HOOK_MARKER,
+    HOOK_NAME,
+    Found,
+    hooks_dir,
+    install,
+    uninstall,
+)
+from stayfixed.printed import quoted
 from tests import gitfixture
+from tests.cli import cli
 from tests.floor import floor_env
 
 ROOT = Path(__file__).resolve().parents[2]
+# The hook exactly as stayfixed 0.2.0 wrote it into a repository, generated once from the tag.
+RELEASED_0_2_0 = ROOT / "tests" / "fixtures" / "prepare-commit-msg-0.2.0"
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
 
@@ -237,6 +249,37 @@ def test_install_is_idempotent_over_its_own_hook(tmp_path: Path) -> None:
     assert not again.path.with_name(HOOK_NAME + ".local").exists()
 
 
+def test_a_hook_an_earlier_release_wrote_is_still_ours(tmp_path: Path) -> None:
+    # The hook's text changes between releases, and every repository keeps the bytes the release
+    # that installed it wrote. The marker line, not the text, is what makes a hook stayfixed's:
+    # an install over an earlier text rewrites it in place rather than preserving it as a
+    # stranger's `.local` and chaining to it, and an uninstall removes it rather than leaving it
+    # orphaned. The earlier text is frozen in a file, `HOOK_TEXT` as the v0.2.0 tag evaluates it,
+    # and never rebuilt from today's module: a hook built from today's text carries today's marker,
+    # so a changed marker, which would orphan every hook 0.2.0 installed, would pass unseen.
+    # Mutation (declared): a hook is ours only when its bytes equal today's text -> this reddens.
+    # Mutation (declared): the marker line changes -> this reddens.
+    from stayfixed.guards.githooks import HOOK_TEXT
+
+    old_text = RELEASED_0_2_0.read_text(encoding="utf-8")
+    assert old_text != HOOK_TEXT
+    root = repo(tmp_path)
+    hook = hooks_dir(root) / HOOK_NAME
+    hook.parent.mkdir(parents=True, exist_ok=True)
+    hook.write_text(old_text, encoding="utf-8")
+    hook.chmod(0o755)
+
+    again = install(root)
+    assert again.replaced is True and again.preserved is None
+    assert hook.read_text(encoding="utf-8") == HOOK_TEXT
+    assert not hook.with_name(HOOK_NAME + ".local").exists()
+
+    hook.write_text(old_text, encoding="utf-8")
+    removed = uninstall(root)
+    assert removed.restored is None
+    assert not hook.exists()
+
+
 def test_install_refuses_to_overwrite_a_stale_local_hook(tmp_path: Path) -> None:
     # Two foreign hooks cannot both be preserved under one name; refusing beats losing one.
     root = repo(tmp_path)
@@ -306,14 +349,382 @@ def test_reinstalling_over_a_chained_setup_keeps_the_preserved_hook(tmp_path: Pa
     assert "foreign" in foreign.read_text(encoding="utf-8")
 
 
+# Each spelling a predecessor chains to `prepare-commit-msg.local` with once it is renamed there:
+# from the common directory, as husky-style chains do, and from its own directory off `$0`. Each
+# names the file the predecessor becomes, so stayfixed's hook execs it and it execs itself.
+SELF_CHAINS = {
+    "common-dir": 'exec "$(git rev-parse --git-common-dir)/hooks/prepare-commit-msg.local" "$@"',
+    "dirname-expansion": 'exec "${0%/*}/prepare-commit-msg.local" "$@"',
+    "dirname-command": 'exec "$(dirname "$0")/prepare-commit-msg.local" "$@"',
+}
+# How long a `git commit` through the installed chain may take before it is taken for a loop. Not
+# a bound on the product: a commit here ends in well under a second, and the margin is for a
+# worker under the oracle's load, where a tight bound would read a slow run as a loop.
+COMMIT_BOUND = 60
+
+
+def bounded_commit(tmp_path: Path, root: Path, message: str) -> int:
+    """Commit a staged change through the installed hook, failing the case if it never ends.
+
+    A new session, so a timeout kills the whole group: `subprocess.run`'s own timeout kills
+    `git` alone and leaves the hook chain it started running, still `exec`ing itself.
+    """
+    (root / "a.txt").write_text(message + "\n", encoding="utf-8")
+    git(tmp_path, root, "add", "-A")
+    child = subprocess.Popen(
+        ["git", "-C", str(root), "commit", "-q", "-m", message],
+        env=gitfixture.env(tmp_path, **launching(tmp_path)),
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        start_new_session=True,
+    )
+    try:
+        child.communicate(timeout=COMMIT_BOUND)
+    except subprocess.TimeoutExpired:
+        os.killpg(child.pid, signal.SIGKILL)
+        child.communicate()
+        pytest.fail("git commit did not end: the hook chain kept running itself")
+    return child.returncode
+
+
+@pytest.mark.parametrize("chain", SELF_CHAINS.values(), ids=SELF_CHAINS)
+def test_a_predecessor_that_names_its_own_local_is_refused_and_left_in_place(
+    tmp_path: Path, chain: str
+) -> None:
+    # `install` renamed such a hook to `prepare-commit-msg.local` without reading it, and
+    # stayfixed's hook execs that name last: the renamed predecessor then execs itself, and
+    # `git commit` ran until it was killed. It is refused before the rename, naming the file and
+    # the name it chains to, and nothing is written. Mutation: `mutations/`'s "a predecessor that
+    # names its own .local is installed over".
+    root = repo(tmp_path)
+    target = hooks_dir(root) / HOOK_NAME
+    local = target.with_name(HOOK_NAME + ".local")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(f"#!/bin/sh\n{chain}\n", encoding="utf-8")
+    target.chmod(0o755)
+    before = target.read_bytes()
+    exit_code, _, out = cli(root, tmp_path, "setup", "--git-hooks")
+    assert exit_code == 2 and "prepare-commit-msg.local" in out
+    assert out.startswith(
+        f"stayfixed: refused: {quoted(str(target))} names prepare-commit-msg.local"
+    ), out
+    assert target.read_bytes() == before and not local.exists()
+
+
+def test_a_predecessor_that_is_not_utf_8_and_names_its_own_local_is_refused(
+    tmp_path: Path,
+) -> None:
+    # A hook is not text by contract: one holding a byte that is not UTF-8 is foreign to `_ours`,
+    # and its bytes are still read for the name, so the chain in it is refused like any other.
+    # Mutation: `mutations/`'s "a predecessor that is not UTF-8 is installed over unread".
+    root = repo(tmp_path)
+    target = hooks_dir(root) / HOOK_NAME
+    local = target.with_name(HOOK_NAME + ".local")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(b"#!/bin/sh\n# \xff\xfe\n" + SELF_CHAINS["common-dir"].encode() + b"\n")
+    target.chmod(0o755)
+    before = target.read_bytes()
+    exit_code, _, out = cli(root, tmp_path, "setup", "--git-hooks")
+    assert exit_code == 2, out
+    assert out.startswith(
+        f"stayfixed: refused: {quoted(str(target))} names prepare-commit-msg.local"
+    ), out
+    assert target.read_bytes() == before and not local.exists()
+
+
+@gitfixture.needs_git
+def test_a_predecessor_that_names_its_own_local_is_refused_from_a_linked_worktree(
+    tmp_path: Path,
+) -> None:
+    # From a linked worktree the hooks directory is the common one, shared with the main
+    # checkout: the predecessor read and the `.local` it would be kept as are both there, and
+    # the refusal names them there. Mutation: `mutations/`'s "a predecessor that names its own
+    # .local is installed over".
+    root = repo(tmp_path)
+    worktree = tmp_path / "wt"
+    git(tmp_path, root, "worktree", "add", "-q", str(worktree), "-b", "wp")
+    target = hooks_dir(root) / HOOK_NAME
+    assert hooks_dir(worktree) == hooks_dir(root)
+    local = target.with_name(HOOK_NAME + ".local")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(f"#!/bin/sh\n{SELF_CHAINS['common-dir']}\n", encoding="utf-8")
+    target.chmod(0o755)
+    before = target.read_bytes()
+    exit_code, _, out = cli(worktree, tmp_path, "setup", "--git-hooks")
+    assert exit_code == 2, out
+    shown_target, shown_local = quoted(str(target)), quoted(str(local))
+    assert out.startswith(
+        f"stayfixed: refused: {shown_target} names prepare-commit-msg.local: kept as {shown_local}"
+    ), out
+    assert target.read_bytes() == before and not local.exists()
+
+
+def test_a_reinstall_over_a_local_that_names_itself_is_refused(tmp_path: Path) -> None:
+    # The re-install arm never read `.local`: our hook beside one that execs itself already loops
+    # on every commit, and a re-install that says "reinstalled" vouches for it. It is refused
+    # instead, both files left as they are, in words of its own: what is on disk already loops,
+    # and the installed hook was left as it was, where the fresh install's "would run itself ...
+    # nothing was installed" was false of both. Mutations: `mutations/`'s "a re-install over a
+    # .local that names itself goes through", and "a re-install over a .local that names itself
+    # is told nothing was installed".
+    root = repo(tmp_path)
+    target = hooks_dir(root) / HOOK_NAME
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("#!/bin/sh\necho mine\n", encoding="utf-8")
+    target.chmod(0o755)
+    install(root)
+    local = target.with_name(HOOK_NAME + ".local")
+    local.write_text(f"#!/bin/sh\n{SELF_CHAINS['common-dir']}\n", encoding="utf-8")
+    ours, theirs = target.read_bytes(), local.read_bytes()
+    exit_code, _, out = cli(root, tmp_path, "setup", "--git-hooks")
+    assert exit_code == 2
+    shown_target, shown_local = quoted(str(target)), quoted(str(local))
+    assert out.startswith(
+        f"stayfixed: refused: {shown_local} names prepare-commit-msg.local: stayfixed's hook at "
+        f"{shown_target} runs it last, so it runs itself and every commit runs until it is killed"
+    ), out
+    assert "the installed hook was left as it was" in out and "nothing was installed" not in out
+    assert (target.read_bytes(), local.read_bytes()) == (ours, theirs)
+
+
+def test_a_predecessor_naming_its_local_in_another_case_is_installed(tmp_path: Path) -> None:
+    # The bytes are compared as they are: `Prepare-Commit-Msg.local` names another file on a
+    # case-sensitive volume, where refusing it would refuse a chain that cannot loop, so the
+    # installer keeps and chains it, and `docs/cli.md` names the spelling among the residuals
+    # (on a volume that folds case it is the same file). What is held here is the decision, not
+    # a commit through the chain. Mutation: `mutations/`'s "the self-chain check folds case".
+    root = repo(tmp_path)
+    target = hooks_dir(root) / HOOK_NAME
+    target.parent.mkdir(parents=True, exist_ok=True)
+    predecessor = (
+        '#!/bin/sh\nexec "$(git rev-parse --git-common-dir)/hooks/Prepare-Commit-Msg.local" "$@"\n'
+    )
+    target.write_text(predecessor, encoding="utf-8")
+    installed = install(root)
+    assert installed.preserved == target.with_name(HOOK_NAME + ".local")
+    assert installed.preserved.read_text(encoding="utf-8") == predecessor
+
+
+def test_a_predecessor_chaining_to_dollar_zero_local_is_installed(tmp_path: Path) -> None:
+    # 'exec "$0.local" "$@"' names `prepare-commit-msg.local.local` once it is renamed to
+    # `.local`: no loop, so no refusal. It is kept and chained like any foreign hook, and a commit
+    # through the chain ends. The bytes never spell `prepare-commit-msg.local`, which is why the
+    # check reads them for that name and does not refuse any `.local` mention.
+    root = repo(tmp_path)
+    target = hooks_dir(root) / HOOK_NAME
+    target.parent.mkdir(parents=True, exist_ok=True)
+    predecessor = '#!/bin/sh\nif [ -x "$0.local" ]; then exec "$0.local" "$@"; fi\n'
+    target.write_text(predecessor, encoding="utf-8")
+    target.chmod(0o755)
+    exit_code, _, err = cli(root, tmp_path, "setup", "--git-hooks")
+    assert exit_code == 0, err
+    local = target.with_name(HOOK_NAME + ".local")
+    assert local.read_text(encoding="utf-8") == predecessor
+    assert bounded_commit(tmp_path, root, TRAILER) == 0
+
+
+@gitfixture.needs_git
+def test_a_commit_after_installing_over_a_plain_predecessor_ends(tmp_path: Path) -> None:
+    # The ordinary chain, run to its end under a bound that kills the whole process group: the
+    # liveness half of the refusal above, so a chain that loops is a failed case rather than a
+    # hung worker.
+    root = repo(tmp_path)
+    target = hooks_dir(root) / HOOK_NAME
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text('#!/bin/sh\necho ran > "$(dirname "$0")/../foreign-ran"\n', encoding="utf-8")
+    target.chmod(0o755)
+    install(root)
+    assert bounded_commit(tmp_path, root, TRAILER) == 0
+    assert (hooks_dir(root).parent / "foreign-ran").read_text(encoding="utf-8").strip() == "ran"
+
+
 def test_uninstall_leaves_a_hook_it_did_not_write(tmp_path: Path) -> None:
+    # And says so, `Found.FOREIGN`, where the answer was the one an uninstall of stayfixed's own
+    # hook with nothing chained gave; with no hook at all, `Found.ABSENT`. Mutations:
+    # `mutations/`'s "uninstall says it removed a hook when the hook there is not stayfixed's" and
+    # "uninstall says it removed a hook when there was none".
     root = repo(tmp_path)
     foreign = hooks_dir(root) / HOOK_NAME
     foreign.parent.mkdir(parents=True, exist_ok=True)
+    assert uninstall(root) == (foreign, None, Found.ABSENT)
     foreign.write_text("#!/bin/sh\necho foreign\n", encoding="utf-8")
     removed = uninstall(root)
-    assert removed.restored is None
+    assert removed == (foreign, None, Found.FOREIGN)
     assert "foreign" in foreign.read_text(encoding="utf-8")
+
+
+def _in_a_child(probe: str, root: Path, verb: str) -> str:
+    """What `probe` prints, run over `root` in a child under a timeout: a hook path that is a FIFO
+    hangs a reader that opens it, and a hang here fails the case rather than the worker."""
+    try:
+        done = subprocess.run(
+            [sys.executable, "-c", probe, str(root)],
+            capture_output=True,
+            text=True,
+            timeout=20,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        pytest.fail(f"{verb} waited on the hook path")
+    assert done.returncode == 0, done.stderr
+    return done.stdout
+
+
+def test_a_fifo_at_the_hook_path_is_refused_by_install_and_never_waited_on(tmp_path: Path) -> None:
+    # Whether a hook is stayfixed's is read off its bytes, and the read waited on a FIFO for a
+    # writer that never came: `setup --git-hooks` and `--uninstall` both hung. It is read as a
+    # regular file only, to the read cap, so a FIFO is a hook `install` cannot read, and it can
+    # neither chain one nor write over it: refused. (`uninstall` leaves it as foreign, below.)
+    # Mutation: `mutations/`'s "the hook installer reads a hook with no bound".
+    root = repo(tmp_path)
+    hook = hooks_dir(root) / HOOK_NAME
+    hook.parent.mkdir(parents=True, exist_ok=True)
+    os.mkfifo(hook)
+    probe = (
+        "import sys\n"
+        "from pathlib import Path\n"
+        "from stayfixed.errors import Refusal\n"
+        "from stayfixed.guards.githooks import install\n"
+        "try:\n"
+        "    install(Path(sys.argv[1]))\n"
+        "except Refusal as refused:\n"
+        "    print(refused)\n"
+    )
+    said = _in_a_child(probe, root, "install")
+    assert said.startswith(f"{quoted(str(hook))} could not be read (not a regular file); "), said
+    assert hook.is_fifo()
+
+
+@pytest.mark.parametrize("shape", ["fifo", "directory"])
+def test_uninstall_leaves_a_fifo_or_a_directory_at_the_hook_path_as_a_foreign_hook(
+    tmp_path: Path, shape: str
+) -> None:
+    # stayfixed writes only a regular file at the hook path, so anything else there is as surely
+    # not its own as a regular file past the read cap: `--uninstall` leaves it in place and says
+    # it is not stayfixed's, where it refused it as a hook it could not read. A FIFO is never
+    # opened, and so never waited on; a regression to a plain open would wait for a writer, so
+    # this runs in a child under a timeout as its `install` sibling does. Mutation:
+    # `mutations/`'s "uninstall reads a hook that is not a regular file".
+    root = repo(tmp_path)
+    hook = hooks_dir(root) / HOOK_NAME
+    hook.parent.mkdir(parents=True, exist_ok=True)
+    if shape == "fifo":
+        os.mkfifo(hook)
+    else:
+        hook.mkdir()
+    probe = (
+        "import sys\n"
+        "from pathlib import Path\n"
+        "from stayfixed.guards.githooks import uninstall\n"
+        "path, restored, found = uninstall(Path(sys.argv[1]))\n"
+        "print(path, restored, found.name, sep='\\n')\n"
+    )
+    said = _in_a_child(probe, root, "uninstall")
+    assert said.splitlines() == [str(hook), "None", Found.FOREIGN.name]
+    assert hook.is_fifo() if shape == "fifo" else hook.is_dir()
+
+
+@pytest.mark.parametrize("verb", ["install", "uninstall"])
+def test_a_hook_that_cannot_be_read_is_neither_ours_nor_foreign(tmp_path: Path, verb: str) -> None:
+    # Whether it is stayfixed's cannot be told, so it is neither: read as foreign, `--uninstall`
+    # said "it is not stayfixed's hook" of stayfixed's own hook at mode 000, and `install`
+    # renamed that hook to `.local` and chained it. Each refuses, naming the reason, and leaves it
+    # where it is. Mutation: `mutations/`'s "a hook that cannot be read is read as a foreign one".
+    if os.geteuid() == 0:
+        pytest.skip("root reads everything")
+    root = repo(tmp_path)
+    hook = install(root).path
+    hook.chmod(0o000)
+    try:
+        with pytest.raises(Refusal) as refused:
+            install(root) if verb == "install" else uninstall(root)
+    finally:
+        hook.chmod(0o755)
+    assert str(refused.value).startswith(
+        f"{quoted(str(hook))} could not be read (Permission denied); "
+    )
+    assert HOOK_MARKER in hook.read_text(encoding="utf-8")
+    assert not hook.with_name(HOOK_NAME + ".local").exists()
+
+
+# Each refusal `install` makes about a path under the hooks directory, arranged in a directory
+# whose name git hands back: `core.hooksPath` is the repository's configuration, and in a
+# submodule's work tree the common directory carries the name `.gitmodules` chose.
+def _arrange_a_refusal(root: Path, target: Path, refusal: str) -> None:
+    local = target.with_name(HOOK_NAME + ".local")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if refusal == "symlink":
+        target.symlink_to(target.parent / "elsewhere")
+    elif refusal == "directory":
+        target.mkdir()
+    elif refusal == "stray-local":
+        local.write_text("#!/bin/sh\n", encoding="utf-8")
+    elif refusal == "self-chain":
+        target.write_text(f"#!/bin/sh\n{SELF_CHAINS['common-dir']}\n", encoding="utf-8")
+    elif refusal == "reinstall-self-chain":
+        install(root)
+        local.write_text(f"#!/bin/sh\n{SELF_CHAINS['common-dir']}\n", encoding="utf-8")
+    else:
+        target.write_text("#!/bin/sh\n", encoding="utf-8")
+        target.chmod(0o000)
+
+
+@pytest.mark.parametrize(
+    "refusal",
+    ["symlink", "directory", "stray-local", "self-chain", "reinstall-self-chain", "unreadable"],
+)
+def test_a_hooks_directory_git_names_reaches_every_install_refusal_quoted(
+    tmp_path: Path, refusal: str
+) -> None:
+    # git's `--git-path hooks` answer is the repository's to choose, and the refusals printed it
+    # raw: a name carrying an escape sequence and a bell drove the terminal that read the refusal.
+    # Each is printed through `printed.quoted` now, which escapes both. Mutations: `mutations/`'s
+    # "setup --git-hooks prints git's hooks path raw in its refusals" -> every case but
+    # `unreadable`; "setup --git-hooks prints git's hooks path raw for a hook it cannot read" ->
+    # `unreadable`.
+    if refusal == "unreadable" and os.geteuid() == 0:
+        pytest.skip("root reads everything")
+    root = repo(tmp_path)
+    git(tmp_path, root, "config", "core.hooksPath", ".hooks\x1b]0;owned\x07")
+    target = hooks_dir(root) / HOOK_NAME
+    _arrange_a_refusal(root, target, refusal)
+    try:
+        with pytest.raises(Refusal) as refused:
+            install(root)
+    finally:
+        if refusal == "unreadable":
+            target.chmod(0o755)
+    said = str(refused.value)
+    assert "\x1b" not in said and "\x07" not in said, said
+    assert "\\x1b]0;owned\\x07" in said, said
+
+
+def test_a_hook_past_the_read_cap_is_a_foreign_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # stayfixed's own hook is a couple of kilobytes, so a regular file longer than the read cap
+    # is certainly not it: it is foreign, chained by `install` and left alone by `--uninstall`,
+    # as 0.2.0 did, rather than refused as a hook that cannot be read. The cap is lowered to
+    # just past stayfixed's own hook, which is still read whole. Mutation: `mutations/`'s "a hook
+    # past the read cap is refused as one that cannot be read".
+    from stayfixed import fsops
+    from stayfixed.guards.githooks import HOOK_TEXT
+
+    limit = len(HOOK_TEXT.encode("utf-8")) + 16
+    monkeypatch.setattr(fsops, "REGULAR_READ_LIMIT", limit)
+    root = repo(tmp_path)
+    hook = hooks_dir(root) / HOOK_NAME
+    hook.parent.mkdir(parents=True, exist_ok=True)
+    foreign = "#!/bin/sh\necho foreign\n" + "#" * limit + "\n"
+    hook.write_text(foreign, encoding="utf-8")
+    assert uninstall(root) == (hook, None, Found.FOREIGN)
+    installed = install(root)
+    local = hook.with_name(HOOK_NAME + ".local")
+    assert (installed.replaced, installed.preserved) == (False, local)
+    assert local.read_text(encoding="utf-8") == foreign
+    assert uninstall(root) == (hook, hook, Found.REMOVED)
+    assert hook.read_text(encoding="utf-8") == foreign
 
 
 def test_hooks_dir_honours_core_hooks_path(tmp_path: Path) -> None:

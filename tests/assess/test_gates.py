@@ -408,8 +408,8 @@ def test_a_group_the_gate_may_not_signal_still_leaves_the_exit_status(
     # macOS answers `PermissionError` for a group left with only the exited, unreaped command,
     # and any platform does for a descendant stayfixed may not signal (a sudo or setuid one),
     # which is then not ended. Either way the command's own exit is the gate's answer. Driven
-    # portably: every `killpg` refuses. Mutation (oracle): "a group the gate may not signal ends
-    # the gate run" -> `PermissionError` escapes `run_gates` and this reddens.
+    # portably: every `killpg` refuses. Mutation (oracle): `mutations/`'s "a group the gate may not
+    # signal ends the gate run" -> `PermissionError` escapes `run_gates` and this reddens.
     def refused(pid: int, sig: int) -> None:
         raise PermissionError(1, "Operation not permitted")
 

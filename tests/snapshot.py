@@ -1,4 +1,4 @@
-"""The tree-snapshot helpers five test modules share.
+"""The tree-snapshot helpers the test modules share.
 
 Here rather than in `tests/test_install_path.py`, because an `attach` test module that imports an
 installer-focused module's private names is coupled to a module it does not test. The `git` this
@@ -8,6 +8,7 @@ back are two concerns, and only one of them was duplicated twenty-three times.
 
 from __future__ import annotations
 
+import hashlib
 import os
 from pathlib import Path
 
@@ -15,9 +16,10 @@ from pathlib import Path
 # into `.git/hooks/`, a rule written to `.git/config`, an ignore region added to
 # `.git/info/exclude`. Everything else under `.git` — `objects/`, `logs/`, `refs/`, a fresh
 # `commit-graph`, a pack, `gc.log`, `objects/maintenance.lock` — is git's own background
-# bookkeeping. The fixtures that build these repositories pin `GIT_CONFIG_GLOBAL` and
-# `GIT_CONFIG_SYSTEM` to `os.devnull`, which leaves `gc.auto` and `maintenance.auto` at their
-# defaults, so that bookkeeping can run — and does — between two snapshots taken moments apart.
+# bookkeeping. It ran between two snapshots taken moments apart while the fixtures that build
+# these repositories left `gc.auto` and `maintenance.auto` at their defaults; they turn both off
+# now (`tests/gitfixture.py`), and the walk stays this narrow because none of those paths is one
+# that a write by `attach` or `detach` could land in.
 _STABLE_GIT_FILES = (Path("config"), Path("info") / "exclude")
 
 
@@ -79,3 +81,24 @@ def assert_snapshot_changed(root: Path, before: dict[str, bytes]) -> dict[str, b
     after = snapshot(root)
     assert after != before, "expected at least one file under the root to differ; none did"
     return after
+
+
+def tree_entries(*roots: Path) -> dict[str, str]:
+    """Every entry under each root, `.git` aside, by absolute path: a file by its bytes' digest, a
+    link by its target, a directory by its name, so a removed directory or a retargeted link shows
+    too, where `snapshot` sees regular files alone. For a test whose run spans several checkouts
+    and a home, and must leave every one of them as it was."""
+    found: dict[str, str] = {}
+    for root in roots:
+        for directory, below, files in os.walk(root):
+            if ".git" in below:
+                below.remove(".git")
+            for name in (*below, *files):
+                path = Path(directory) / name
+                if path.is_symlink():
+                    found[str(path)] = f"-> {os.readlink(path)}"
+                elif path.is_dir():
+                    found[str(path)] = "dir"
+                else:
+                    found[str(path)] = hashlib.sha256(path.read_bytes()).hexdigest()
+    return found

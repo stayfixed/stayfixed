@@ -4,12 +4,14 @@ from pathlib import Path
 
 import pytest
 
+from stayfixed import fsops
 from stayfixed.config.loader import CONFIG_FILE, load
 from stayfixed.config.schema import Config
 from stayfixed.errors import Refusal
 from stayfixed.memory.index import (
     EXTRA_TITLE,
     INDEX_NAME,
+    _appended,
     check_index,
     entries_in,
     index_source,
@@ -21,6 +23,8 @@ from stayfixed.memory.index import (
 )
 from stayfixed.memory.notes import Provenance, read_note
 from stayfixed.memory.store import Store
+from tests.cli import cli
+from tests.snapshot import assert_snapshot_unchanged, snapshot
 
 CONFIG = """
 [stayfixed]
@@ -256,6 +260,112 @@ def test_reconcile_is_idempotent(tmp_path: Path) -> None:
     assert second.provisional == []
 
 
+# A note may carry its short index line under `metadata:`, which `memory index` passed over: the
+# note got its description, or the description the native writer had appended to `MEMORY.md`,
+# as its `index:` line. The order is a top-level `index:` (curated, untouched), then
+# `metadata.index` (provisional), then a line harvested from `MEMORY.md` (native), then the
+# description (provisional). Mutation (oracle): `mutations/`'s "memory index passes over a note's
+# metadata index line".
+
+
+def a_metadata_note(*, index: str = "") -> str:
+    head = ["name: m", 'description: "long description"']
+    if index:
+        head.append(f'index: "{index}"')
+    return "---\n" + "\n".join([*head, "metadata:", "  index: short line"]) + "\n---\n\nBody.\n"
+
+
+def test_metadata_index_is_the_provisional_line_before_the_description(tmp_path: Path) -> None:
+    store, config = a_store(tmp_path)
+    path = store.groups["developer"] / "m.md"
+    path.write_text(a_metadata_note(), encoding="utf-8")
+    result = reconcile(store, config, write=True)
+    memory_md = render_index(result, config, store)
+    assert "- [short line](developer/m.md)" in memory_md
+    assert "long description" not in memory_md
+    text = path.read_text(encoding="utf-8")
+    assert "\nindex: short line\n" in text and "\nindex_provenance: provisional\n" in text
+    assert result.provisional == ["m"] and result.harvested == []
+
+
+def test_metadata_index_wins_over_a_line_harvested_from_memory_md(tmp_path: Path) -> None:
+    # What the native writer appended is the description; the owner's own short line outranks it.
+    store, config = a_store(tmp_path)
+    path = store.groups["developer"] / "m.md"
+    path.write_text(a_metadata_note(), encoding="utf-8")
+    (store.path / INDEX_NAME).write_text("- [long description](developer/m.md)\n", "utf-8")
+    result = reconcile(store, config, write=True)
+    memory_md = render_index(result, config, store)
+    assert "- [short line](developer/m.md)" in memory_md
+    assert "long description" not in memory_md
+    written = read_note(path)
+    assert written.index == "short line"
+    assert written.index_provenance is Provenance.PROVISIONAL
+    assert result.provisional == ["m"] and result.harvested == []
+
+
+@pytest.mark.parametrize("empty", ["", '"   "'], ids=["no-value", "only-spaces"])
+def test_a_metadata_index_of_nothing_falls_through_to_the_description(
+    tmp_path: Path, empty: str
+) -> None:
+    store, config = a_store(tmp_path)
+    path = store.groups["developer"] / "m.md"
+    text = a_metadata_note().replace("  index: short line", f"  index: {empty}".rstrip())
+    path.write_text(text, encoding="utf-8")
+    result = reconcile(store, config, write=True)
+    assert read_note(path).index == "long description"
+    assert result.provisional == ["m"]
+
+
+def test_a_top_level_index_wins_over_metadata_index_and_the_note_is_untouched(
+    tmp_path: Path,
+) -> None:
+    store, config = a_store(tmp_path)
+    path = store.groups["developer"] / "m.md"
+    path.write_text(a_metadata_note(index="top line"), encoding="utf-8")
+    before = path.read_bytes()
+    result = reconcile(store, config, write=True)
+    memory_md = render_index(result, config, store)
+    assert path.read_bytes() == before
+    assert "- [top line](developer/m.md)" in memory_md and "short line" not in memory_md
+    assert result.provisional == []
+
+
+def _index_cli(store: Store, tmp_path: Path, *argv: str) -> tuple[int, str, str]:
+    return cli(store.root, tmp_path, "memory", "index", *argv, machine=tmp_path / "machine.toml")
+
+
+def test_the_summary_names_the_provisional_lines(tmp_path: Path) -> None:
+    # What `memory index` wrote into notes is said on its line, not only in `--json`: a line it
+    # invented, from `metadata.index` or the description, is the owner's to curate.
+    store, _ = a_store(tmp_path)
+    (store.groups["developer"] / "m.md").write_text(a_metadata_note(), encoding="utf-8")
+    (store.groups["developer"] / "bare.md").write_text(note("bare"), encoding="utf-8")
+    code, out, _ = _index_cli(store, tmp_path)
+    assert code == 0
+    assert "wrote a provisional index line into 2 note(s): bare, m" in out
+
+
+def test_index_check_writes_nothing(tmp_path: Path) -> None:
+    store, _ = a_store(tmp_path)
+    (store.groups["developer"] / "m.md").write_text(a_metadata_note(), encoding="utf-8")
+    before = snapshot(store.path)
+    code, _, _ = _index_cli(store, tmp_path, "--check")
+    assert code == 1
+    assert_snapshot_unchanged(store.path, before)
+
+
+def test_a_second_index_run_writes_nothing(tmp_path: Path) -> None:
+    store, _ = a_store(tmp_path)
+    (store.groups["developer"] / "m.md").write_text(a_metadata_note(), encoding="utf-8")
+    assert _index_cli(store, tmp_path)[0] == 0
+    before = snapshot(store.path)
+    code, out, _ = _index_cli(store, tmp_path)
+    assert code == 0 and "provisional index line" not in out
+    assert_snapshot_unchanged(store.path, before)
+    assert _index_cli(store, tmp_path, "--check")[0] == 0
+
+
 def test_a_file_that_will_not_parse_is_quarantined_not_fatal(tmp_path: Path) -> None:
     store, config = a_store(tmp_path)
     (store.groups["project-stable"] / "superseded.md").write_text("no frontmatter\n", "utf-8")
@@ -284,6 +394,40 @@ def test_an_index_that_is_not_utf8_is_drift_and_not_a_crash(tmp_path: Path) -> N
     path = write_index(store, config, render_index(reconciled, config, store))
     path.write_bytes(b"\xff\xfe# Memory\n")
     assert check_index(store, config, reconciled).drifted is True
+
+
+def test_an_index_past_the_read_cap_is_drift_and_never_read_to_its_end(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The index is a file a clone can commit, so it is read to the read cap, as every reader of a
+    # committed file is, and one past it is not what the render writes: drift, which `stayfixed
+    # memory index` replaces. The cap is lowered to one byte under the render, the one case where
+    # a bounded read and a whole one give different answers: read whole, the file equals the
+    # render. Mutation (oracle): `mutations/`'s "the index check reads the index with no bound" ->
+    # it is not drift.
+    store, config = a_store(tmp_path)
+    reconciled = reconcile(store, config, write=False)
+    text = render_index(reconciled, config, store)
+    write_index(store, config, text)
+    assert check_index(store, config, reconciled).drifted is False
+    monkeypatch.setattr(fsops, "REGULAR_READ_LIMIT", len(text.encode("utf-8")) - 1)
+    assert check_index(store, config, reconciled).drifted is True
+
+
+def test_an_index_past_the_read_cap_hands_the_harvest_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The harvest reads the same file the check does, and to the same cap: an index past it
+    # contributes no entry rather than being read to its end. The cap is lowered to one byte under
+    # the render, which read whole hands back every entry. Mutation (oracle): `mutations/`'s "the
+    # harvest reads the index with no bound" -> the entries come back.
+    store, config = a_store(tmp_path)
+    reconciled = reconcile(store, config, write=False)
+    text = render_index(reconciled, config, store)
+    path = write_index(store, config, text)
+    assert _appended(path) != {}
+    monkeypatch.setattr(fsops, "REGULAR_READ_LIMIT", len(text.encode("utf-8")) - 1)
+    assert _appended(path) == {}
 
 
 def test_check_reports_the_budget_and_the_caps_separately(tmp_path: Path) -> None:
@@ -332,7 +476,7 @@ def test_a_two_line_index_entry_never_corrupts_the_note_it_names(tmp_path: Path)
 def test_index_extra_entries_that_leave_the_project_root_are_dropped(tmp_path: Path) -> None:
     # `config/paths.py` names `memory.index_extra` among the fields its own guard does not
     # cover and assigns the check to the area that consumes them. These strings land verbatim
-    # in `MEMORY.md`, which the `index` bundle injects.
+    # in `MEMORY.md`, which the harness memory link exposes.
     store, config = a_store(
         tmp_path, extra='["docs/handbooks/ledger.md", "../../secret.md", "/etc/passwd"]'
     )
@@ -376,8 +520,8 @@ def test_a_symlinked_index_sources_nothing_when_no_overlay_is_recorded(tmp_path:
     # `overlay_root` answers None and there is no `permitted_roots` left to hold the link's
     # target to. The only safe answer is the one an ungoverned group symlink already gets.
     # Returning the target instead honours a link nothing ever validated: `worktree.link`
-    # materialises it into the worktree and `bundles._index` reads what it points at straight
-    # into the model.
+    # materialises it into the worktree, where the harness's own memory reader reads what it
+    # points at straight into the model.
     #
     # This used to be reachable the other way round too — a *caller* that did not thread the
     # machine file the store was resolved with, which `worktree.link`'s docstring warned about
@@ -537,7 +681,7 @@ def test_a_dangling_but_permitted_symlinked_index_sources_nothing_to_read(
     tmp_path: Path,
 ) -> None:
     # The read answer must stay "nothing to read": there is no content at the far end yet, and
-    # `bundles._index`, `_appended` and `worktree.link` all route through this function.
+    # `_appended` and `worktree.link` both route through this function.
     store, config, _machine_file = an_overlay_store(tmp_path)
     target = tmp_path / "overlay" / "projects" / "widget" / "memory" / INDEX_NAME
     (store.path / INDEX_NAME).symlink_to(target)
@@ -588,6 +732,24 @@ def test_the_write_destination_still_refuses_a_link_outside_this_projects_share(
     store, config, _machine_file = an_overlay_store(tmp_path)
     another_projects_share = tmp_path / "overlay" / "projects" / "other" / "memory" / INDEX_NAME
     (store.path / INDEX_NAME).symlink_to(another_projects_share)  # dangling, and not permitted
+    with pytest.raises(Refusal):
+        write_index(store, config, "text")
+
+
+def test_an_index_link_that_is_a_symlink_loop_is_refused_and_sources_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `MEMORY.md` a symlink loop, which a clone can commit under `paths.memory`: resolving it to
+    # ask whether it reaches this project's share raised `RuntimeError` on Python 3.11 and 3.12,
+    # and `memory index` ended in an internal error. A link that cannot be followed reaches no
+    # permitted place, so it is refused like any other: nothing to read, and no write through it.
+    # Mutation (oracle): `mutations/`'s "the index link rule lets a symlink loop out" ->
+    # RuntimeError.
+    from tests.pathfaults import symlink_loop_at
+
+    store, config, _machine_file = an_overlay_store(tmp_path)
+    symlink_loop_at(monkeypatch, store.path / INDEX_NAME)
+    assert index_source(store, config) is None
     with pytest.raises(Refusal):
         write_index(store, config, "text")
 

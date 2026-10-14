@@ -11,16 +11,19 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+from types import ModuleType
 
 import pytest
 
 from stayfixed.cli import build_parser, discover_registrars, run
-from stayfixed.doctor import checks
-from stayfixed.doctor.api import OK, RED, SKIP, WARN, Check
+from stayfixed.doctor import checks, registry
+from stayfixed.doctor.api import OK, RED, SKIP, WARN, Check, Claims, Context, Contribution
 from stayfixed.doctor.commands import summarise
 from stayfixed.findings import LISTED_LIMIT
+from tests.boundaries.test_discovery import UNIMPORTABLE, plant_area
 from tests.doctor.test_checks import _initialised
 from tests.floor import is_developers
+from tests.snapshot import assert_snapshot_unchanged, snapshot
 
 
 @pytest.fixture(autouse=True)
@@ -63,13 +66,30 @@ def test_the_command_is_discovered() -> None:
 def test_a_clean_installation_exits_zero_with_one_line(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # Every command prints a one-line result. Sixteen rows on stdout would make `doctor`
+    # Every command prints a one-line result. Seventeen rows on stdout would make `doctor`
     # the one command a caller has to parse rather than read, and `--json` is where the rows are.
     root = _initialised(tmp_path)
     code = invoke(["doctor", "--root", str(root), "--home", str(tmp_path / "home")])
     out = capsys.readouterr().out
     assert code == 0
     assert len(out.strip().splitlines()) == 1
+
+
+def test_a_second_report_is_the_first_and_neither_writes_anything(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The lifecycle's "re-run, nothing changed": `doctor` only reads, so a second run over the
+    # same tree reports what the first did and leaves the tree, the home directory included, as
+    # it was. No mutation: the command has no write for one to take away, so this holds a
+    # property of the whole run rather than one line.
+    root = _initialised(tmp_path)
+    argv = ["doctor", "--json", "--root", str(root), "--home", str(tmp_path / "home")]
+    (tmp_path / "home").mkdir(exist_ok=True)
+    before = snapshot(tmp_path)
+    first = (invoke(argv), capsys.readouterr().out)
+    second = (invoke(argv), capsys.readouterr().out)
+    assert first == second and json.loads(first[1])["checks"]
+    assert_snapshot_unchanged(tmp_path, before)
 
 
 def test_the_runner_this_command_builds_is_bounded_for_a_diagnostic(
@@ -88,7 +108,7 @@ def test_the_runner_this_command_builds_is_bounded_for_a_diagnostic(
     `Runner` protocol has no timeout and every stub in this suite is bounded at nothing. The
     factory is imported inside `run_doctor`, so patching the module attribute is the seam.
 
-    Mutation (oracle entry "doctor asks the public repository with no bound of its own"):
+    Mutation (`mutations/`'s "doctor asks the public repository with no bound of its own"):
     `subprocess_runner(timeout=CI_REF_TIMEOUT_SECONDS)` -> `subprocess_runner()` -> this reddens
     on the recorded keyword.
     """
@@ -131,6 +151,68 @@ def test_any_red_check_exits_one(tmp_path: Path, capsys: pytest.CaptureFixture[s
     assert "not-initialised" in capsys.readouterr().out
 
 
+def test_claims_that_raise_an_os_error_fail_the_report(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # An area's claims that raise are red, as `Contribution.claims` promises, and red is what
+    # gates the exit code: claims that raised `PermissionError` reached the report's guard as the
+    # machine's `OSError`, so `hook-entries` warned and `stayfixed doctor` exited 0 over entries
+    # nothing had judged. The one area here is injected through `registry.discover_contributors`,
+    # so nothing else in this repository is red. Mutation (oracle): `mutations/`'s "claims that
+    # raise an OSError reach the guard as one" -> the row warns and the exit code is 0.
+    def raises(context: Context) -> Claims:
+        raise PermissionError("IGNORE-PRIOR-RULES, a message the claims built")
+
+    area = ModuleType("stayfixed.alpha.doctor")
+    setattr(area, "register", lambda: Contribution(checks=(), claims=raises))  # noqa: B010
+    monkeypatch.setattr(registry, "discover_contributors", lambda: [(area.__name__, area)])
+    root = _initialised(tmp_path)
+    code = invoke(["doctor", "--root", str(root), "--home", str(tmp_path / "home"), "--json"])
+    report = json.loads(capsys.readouterr().out)
+    red = [check for check in report["checks"] if check["status"] == RED]
+    assert red == [
+        {
+            "name": "hook-entries",
+            "status": RED,
+            "detail": "this check could not run: UnansweredClaims",
+            "remedy": "report this, with the command you ran",
+        }
+    ]
+    assert code == 1
+
+
+def test_an_area_whose_doctor_module_fails_to_import_costs_one_red_row_and_not_the_report(
+    tmp_path: Path,
+    request: pytest.FixtureRequest,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # End to end, through a real import: an area whose `doctor.py` raises when imported is one
+    # red row named after the area, exit 1 for it, and every other row exactly as a report without
+    # the area gives it. Imported unguarded, the exception would leave `run_checks` for the CLI,
+    # which turns it into an internal error with no report at all. Mutation (oracle):
+    # `mutations/`'s "discovery lets an area's import failure escape" -> the `RuntimeError`
+    # escapes and nothing is reported.
+    root = _initialised(tmp_path)
+    argv = ["doctor", "--root", str(root), "--home", str(tmp_path / "home"), "--json"]
+    assert invoke(argv) == 0
+    baseline = json.loads(capsys.readouterr().out)["checks"]
+    plant_area(request, monkeypatch, tmp_path / "areas", "zzplanted", {"doctor.py": UNIMPORTABLE})
+    code = invoke(argv)
+    out = capsys.readouterr().out
+    assert code == 1
+    assert json.loads(out)["checks"] == [
+        *baseline,
+        {
+            "name": "zzplanted",
+            "status": "red",
+            "detail": "stayfixed.zzplanted.doctor could not be imported: RuntimeError",
+            "remedy": "report this, with the command you ran",
+        },
+    ]
+    assert "IGNORE" not in out
+
+
 def test_the_json_form_carries_every_check_and_its_remedy(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -139,7 +221,7 @@ def test_the_json_form_carries_every_check_and_its_remedy(
     code = invoke(["doctor", "--root", str(tmp_path), "--home", str(tmp_path / "home"), "--json"])
     assert code == 1
     report = json.loads(capsys.readouterr().out)
-    assert len(report["checks"]) == 16
+    assert len(report["checks"]) == 17
     assert all({"name", "status", "detail", "remedy"} <= set(check) for check in report["checks"])
     red = next(check for check in report["checks"] if check["status"] == "red")
     assert red["remedy"]
@@ -147,7 +229,7 @@ def test_the_json_form_carries_every_check_and_its_remedy(
 
 def test_the_summary_line_is_bounded() -> None:
     # `findings.LISTED_LIMIT` exists because an unbounded summary pushes the repairing command
-    # off the end of the line, and sixteen checks is already past eight. Asserted over a
+    # off the end of the line, and seventeen checks is already past eight. Asserted over a
     # synthetic report rather than a fixture, because arranging nine simultaneous real failures
     # would be a test about the fixture.
     checks = [Check(f"check-{n}", RED, "d", "r") for n in range(LISTED_LIMIT + 3)]

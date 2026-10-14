@@ -19,6 +19,7 @@ from stayfixed.command import (
     common_flags,
     root_and_config,
 )
+from tests.cli import subparsers
 
 SHARED = {
     "--root": ROOT_HELP,
@@ -39,9 +40,9 @@ EXCEPTIONS = {
     ("overlay", "upgrade", "--root"): OVERLAY_ROOT_HELP,
     ("setup", None, "--root"): SETUP_ROOT_HELP,
     ("setup", None, "--machine"): SETUP_MACHINE_HELP,
-    # `attach --check` reports the same way `bugs index`, `docs trail`, `memory index` and
-    # `release hashes` do, and exits differently on purpose: its 1 is a binding mismatch and
-    # not a non-empty diff. `command.ATTACH_CHECK_HELP` carries the argument.
+    # `attach --check` reports the same way `bugs index`, `docs trail` and `memory index` do,
+    # and exits differently on purpose: its 1 is a binding mismatch and not a non-empty diff.
+    # `command.ATTACH_CHECK_HELP` carries the argument.
     ("attach", None, "--check"): ATTACH_CHECK_HELP,
 }
 
@@ -88,19 +89,18 @@ def _flags() -> list[tuple[str, str | None, str, str | None]]:
     """`(group, command, flag, help)` for every shared flag the real parser registers."""
     parser = build_parser(discover_registrars())
     found: list[tuple[str, str | None, str, str | None]] = []
-    for action in parser._actions:
-        if not isinstance(action, argparse._SubParsersAction):
-            continue
-        for group, sub in action.choices.items():
-            nested = [a for a in sub._actions if isinstance(a, argparse._SubParsersAction)]
-            targets: list[tuple[str | None, argparse.ArgumentParser]] = [(None, sub)] + [
-                (name, inner) for n in nested for name, inner in n.choices.items()
-            ]
-            for command, target in targets:
-                for flag_action in target._actions:
-                    for flag in flag_action.option_strings:
-                        if flag in SHARED:
-                            found.append((group, command, flag, flag_action.help))
+    groups = subparsers(parser)
+    assert groups is not None
+    for group, sub in groups.choices.items():
+        nested = subparsers(sub)
+        targets: list[tuple[str | None, argparse.ArgumentParser]] = [(None, sub)] + [
+            (name, inner) for name, inner in (nested.choices if nested is not None else {}).items()
+        ]
+        for command, target in targets:
+            for flag_action in target._actions:
+                for flag in flag_action.option_strings:
+                    if flag in SHARED:
+                        found.append((group, command, flag, flag_action.help))
     return found
 
 

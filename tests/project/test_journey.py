@@ -1,6 +1,6 @@
 """The whole path a person takes onto stayfixed, run as one scenario through the real parser: the
 questions, `init --yes` with an answer, `assess`, an adoption design and plan with an accurate
-trail, `adopt begin`, `adopt promote`, and an `upgrade` that keeps a hand edit.
+trail, `adopt promote`, and an `upgrade` that keeps a hand edit.
 
 Each command's own tests hold one guard each. What none of them holds is the composition: that
 the repository one command leaves is one every later command accepts, on a base branch that is
@@ -28,8 +28,9 @@ from stayfixed.config.schema import BUILTIN_GATES
 from stayfixed.project.templates import CI_WORKFLOW, CONFIG_ARTIFACT
 from stayfixed.scaffold import Manifest, digest
 from tests.cli import cli
-from tests.gitfixture import LsRemote, git, needs_git, run_git
+from tests.gitfixture import git, needs_git, run_git
 from tests.project.repos import repository
+from tests.runners import LsRemote
 from tests.snapshot import assert_snapshot_unchanged, snapshot
 
 pytestmark = needs_git
@@ -50,7 +51,7 @@ def released(monkeypatch: pytest.MonkeyPatch) -> LsRemote:
     """The runner every command builds, answering one release tag at the running version."""
     from stayfixed import runner as runner_module
 
-    listing = LsRemote(stdout=f"{SHA}\trefs/tags/v{stayfixed.__version__}\n", code=0)
+    listing = LsRemote(stdout=f"{SHA}\trefs/tags/v{stayfixed.__version__}\n")
     monkeypatch.setattr(runner_module, "subprocess_runner", lambda **_: listing)
     return listing
 
@@ -120,20 +121,17 @@ def test_a_fresh_non_main_repository_goes_from_its_answers_to_an_upgrade_that_ke
     git(root, "add", "-A")
     git(root, "commit", "-qm", "docs: the stayfixed adoption design and plan")
 
-    # 6. `adopt begin`.
-    code, out, err = cli(root, tmp_path, "adopt", "begin", str(root / PLAN))
-    assert code == 0, out + err
-    assert load(root, machine=tmp_path / "absent.toml").stayfixed.state == "adopting"
-
-    # 7. `adopt promote`, judged against the `init` commit. The fresh tree passes all five
-    # built-ins over that range, so every one is promoted and the project is installed.
+    # 6. `adopt promote`, judged against the `init` commit, straight from `initialised`. The
+    # fresh tree passes all five built-ins over that range, so every one is promoted and the
+    # project is installed.
     code, out, err = cli(root, tmp_path, "adopt", "promote", "--base", initialised, "--json")
     assert code == 0, out + err
     promoted = json.loads(out)
     assert promoted["promoted"] == list(BUILTIN_GATES), promoted
-    assert promoted["failing"] == {} and promoted["after"] == "installed", promoted
+    assert promoted["failing"] == {} and promoted["before"] == "initialised", promoted
+    assert promoted["after"] == "installed", promoted
 
-    # 8. A hand edit to a whole-file template survives an upgrade, planned and real.
+    # 7. A hand edit to a whole-file template survives an upgrade, planned and real.
     record = Manifest.read(root).get(POLICY)
     assert record is not None
     policy = root / record.target

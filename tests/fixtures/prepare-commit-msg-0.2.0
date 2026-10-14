@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# stayfixed:prepare-commit-msg
+# Strip AI/tool attribution trailers before the commit message is presented.
+#
+# prepare-commit-msg rather than commit-msg on purpose: `git commit --no-verify` bypasses
+# pre-commit and commit-msg, but not this hook. It is still only the local convenience layer;
+# the authoritative gate is `stayfixed commit check` in CI, which sees commits this machine
+# never produced. Written, and removed again, by stayfixed's git-hook installer; no `stayfixed`
+# subcommand offers it yet, so today it is reached from Python as `guards.api.install(root)`.
+#
+# Chains to whatever hook was here before, kept beside this one as `<hook>.local`, so
+# installing this never silently disables husky, pre-commit, or what the repository had.
+set -euo pipefail
+
+msg_file="$1"
+gate="CI's commit check is the gate"
+failed="stayfixed: commit strip failed; $gate"
+absent="stayfixed: not installed for this shell; trailers are not stripped locally; $gate"
+quiet='^nothing to strip'
+
+# Expanded unquoted where it is used, so the two-word form splits into words. It is only ever
+# one of the two literals assigned just below, and never anything a repository chose.
+runner=""
+if command -v stayfixed >/dev/null 2>&1; then
+    runner="stayfixed"
+elif python3 -c 'import stayfixed' >/dev/null 2>&1; then
+    runner="python3 -m stayfixed"
+fi
+
+# `commit strip` prints one line on stdout: "stripped N ..." or "nothing to strip". Only a
+# rewrite is worth a line on the terminal, so the quiet one is filtered out and everything
+# else is said. The branch is on the command's own status and never on `grep`'s: `grep -v`
+# exits 1 when it selects no lines, which is exactly the quiet case, so a `||` hung off the
+# pipe announces a failure on every clean commit. No outcome here may fail the commit.
+if [ -z "$runner" ]; then
+    printf '%s\n' "$absent" >&2
+elif out=$($runner commit strip "$msg_file"); then
+    printf '%s\n' "$out" | grep -v "$quiet" >&2 || true
+else
+    printf '%s\n' "$failed" >&2
+fi
+
+previous="$0.local"
+if [ -x "$previous" ]; then
+    exec "$previous" "$@"
+fi

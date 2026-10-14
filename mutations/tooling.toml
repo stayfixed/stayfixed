@@ -1,0 +1,3507 @@
+# The tooling group: the repository's own scripts and its CI workflows — the mutation oracle, the
+# release and artifact checks, and the jobs under `.github/`.
+# Which group an entry belongs in is `GROUP_OF` in `scripts/mutation_oracle.py`; what an entry is:
+# CONTRIBUTING.md, "Tests".
+
+# The oracle's own two guards, declared here like any other. Self-mutation works because
+# `_check` rewrites the file on disk and the run it then launches is a subprocess that loads
+# this script fresh from that path — the parent's already-imported copy decides nothing.
+[[mutation]]
+name = "the oracle stops proving the named tests pass before it mutates"
+file = "scripts/mutation_oracle.py"
+before = '    if not clean.passed:'
+after = '    if False:'
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_test_id_that_does_not_exist_is_a_finding_not_a_catch",
+  "tests/scripts/test_mutation_oracle.py::test_a_run_where_every_named_test_skipped_proves_nothing",
+]
+
+[[mutation]]
+name = "the oracle reads a git that could not answer as a clean tree again"
+file = "scripts/mutation_oracle.py"
+before = '    if status.returncode != 0:'
+after = '    if False:'
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_tree_git_cannot_answer_about_is_refused_not_assumed_clean",
+]
+
+# Both smoke scripts build a session on one base environment that strips every `STAYFIXED_*`
+# variable; the suite's floor is the one it keeps, or their entries run under the bare bounds the
+# floor exists to lift.
+[[mutation]]
+name = "the hook smoke strips the suite's floor"
+file = "scripts/smoke_hooks.py"
+before = """        if k == FLOOR_VARIABLE or not k.startswith(("STAYFIXED_", "XDG_", "CLAUDE_", "PLUGIN_"))"""
+after = """        if not k.startswith(("STAYFIXED_", "XDG_", "CLAUDE_", "PLUGIN_"))"""
+reddens = [
+  "tests/scripts/test_smoke_scripts.py::test_a_hook_entry_keeps_the_suite_floor_and_no_other_stayfixed_variable",
+]
+
+# The oracle proves HEAD in a detached worktree. Three entries are on the run itself — this one,
+# `mutations/`'s "the scratch checkout's src no longer precedes the editable install" and "the
+# dirty-tree sweep forgets the tests every entry names" — so a regression to in-place mutation, or a
+# scratch `src` that does not precede the editable install on sys.path, or a dirty-tree sweep that
+# forgets the named tests, is a finding rather than a quiet wrong answer.
+[[mutation]]
+name = "the oracle collects pytest from the working tree again"
+file = "scripts/mutation_oracle.py"
+before = "            cwd=cwd,"
+after = "            cwd=ROOT,"
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_the_working_tree_is_never_written_and_pytest_runs_in_the_scratch_checkout",
+]
+
+# The oracle's own pytest run captured stdout with a strict decode that nothing needed: a
+# failing test whose diff carried a latin-1 byte killed the run on a mutation it had caught.
+[[mutation]]
+name = "the oracle decodes pytest's output strictly again"
+file = "scripts/mutation_oracle.py"
+before = """                # reads — a strict decode then killed the run on a mutation it had caught.
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,"""
+after = """                # reads — a strict decode then killed the run on a mutation it had caught.
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,"""
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_red_test_that_prints_an_undecodable_byte_is_still_reported_caught",
+]
+
+# The same strict decode in the other pytest the oracle launches: the collection that warms the
+# bytecode cache forgives only a timeout, so a byte no codec reads there ended the run.
+[[mutation]]
+name = "the oracle decodes its warming collection's output strictly again"
+file = "scripts/mutation_oracle.py"
+before = """            # cache, and a byte no codec reads in the collection's output killed the oracle.
+            capture_output=True,"""
+after = """            # cache, and a byte no codec reads in the collection's output killed the oracle.
+            capture_output=True,
+            text=True,"""
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_collection_that_prints_an_undecodable_byte_still_warms_the_cache",
+]
+
+# Two more on the run itself, beside `mutations/`'s "the oracle collects pytest from the working
+# tree again": the scratch checkout's `src` precedes the editable install, and an uncommitted test a
+# `reddens` names stops the run.
+[[mutation]]
+name = "the scratch checkout's src no longer precedes the editable install"
+file = "scripts/mutation_oracle.py"
+before = '    pythonpath = str(cwd / "src") + (os.pathsep + inherited if inherited else "")'
+after = "    pythonpath = inherited"
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_the_scratch_copy_wins_over_a_main_checkout_already_on_the_path",
+]
+
+[[mutation]]
+name = "the dirty-tree sweep forgets the tests every entry names"
+file = "scripts/mutation_oracle.py"
+before = "    watched = {m.file for m in mutations} | {path for path in named_tests if path.is_file()}"
+after = "    watched = {m.file for m in mutations}"
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_an_uncommitted_reddens_test_file_is_refused_like_an_uncommitted_source_file",
+]
+
+# The built artifact's modes. `tar` preserves the mode and a downstream packager unpacks it: a
+# wrapper at 0644 exits 126 for every hook entry, which Claude Code reports as a permission error
+# rather than as a broken install. Nothing in `tests/` can see this — only the built artifact can.
+[[mutation]]
+name = "the sdist check stops reading the wrapper's mode"
+file = "scripts/check_artifacts.py"
+before = "        if member is not None and member.mode & 0o111 == 0:"
+after = "        if False:"
+reddens = [
+  "tests/scripts/test_check_artifacts.py::test_a_wrapper_that_lost_its_executable_bit_in_the_sdist_is_named",
+]
+
+# `overlay create --local` leaves a git repository, and the rendered check asks for it rather than
+# stepping over it: a tree that is exact but has no `.git/` is a `--local` that stopped initialising.
+[[mutation]]
+name = "the rendered check stops asking for the repository"
+file = "scripts/check_artifacts.py"
+before = '        ([] if inside else ["rendered: missing .git"])'
+after = "        []"
+reddens = [
+  "tests/scripts/test_check_artifacts.py::test_a_rendered_overlay_is_a_repository_and_a_tree_without_one_fails",
+]
+
+# And the walk sets aside the repository directory only, not everything that shares its prefix.
+[[mutation]]
+name = "the rendered walk skips every path that starts with .git"
+file = "scripts/check_artifacts.py"
+before = "        if p.is_file() and not (inside and p.is_relative_to(repository))"
+after = '        if p.is_file() and not p.relative_to(root).parts[0].startswith(".git")'
+reddens = [
+  "tests/scripts/test_check_artifacts.py::test_the_repository_directory_does_not_hide_an_unexpected_file_beside_it",
+]
+
+# `rendered` with the directory omitted used to be reinterpreted as a dist path: the length check
+# was part of the arm's condition, so a bare `rendered` fell through and was globbed as a directory
+# name.
+[[mutation]]
+name = "a rendered with no directory is globbed as a dist path again"
+file = "scripts/check_artifacts.py"
+before = '    if argv[:1] == ["rendered"]:'
+after = '    if argv[:1] == ["rendered"] and len(argv) == 2:'
+reddens = [
+  "tests/scripts/test_check_artifacts.py::test_rendered_without_a_directory_is_the_usage_message_and_not_a_dist_walk",
+]
+
+# A `${{ }}` inside a workflow's `run:` is interpolated by the platform before the shell sees
+# the script, so a branch name or a pull-request title carrying shell metacharacters runs as the
+# workflow's own code. Every value in these files reaches a shell through `env:` instead, and
+# that is a rule nothing but this scan can hold: the repository carries no YAML parser, so a
+# workflow is otherwise proven only by the run that first executes it.
+[[mutation]]
+name = "a workflow splices an expression into a shell"
+file = ".github/workflows/check.yml"
+before = '          actual="$(git -C stayfixed rev-parse HEAD)"'
+after = '          actual="$(git -C stayfixed rev-parse ${{ github.ref }})"'
+reddens = [
+  "tests/test_fixtures.py::test_no_workflow_splices_an_expression_into_a_shell",
+]
+
+# The checkout step peels the ref the platform names to its commit before comparing it with the
+# commit the gates are handed.
+[[mutation]]
+name = "the checkout step compares the platform's workflow sha without peeling it"
+file = ".github/workflows/check.yml"
+before = """expected="$(git -C stayfixed rev-parse --verify --quiet "$EXPECTED^{commit}")""""
+after = """expected="$EXPECTED" && [ -n "$expected" ]"""
+reddens = [
+  "tests/test_check_workflow.py::test_the_checkout_step_peels_an_annotated_tag_to_the_commit_the_gates_are_handed",
+]
+
+# The hook smoke is the only thing that feeds the INSTALLED plugin a real event, and every one
+# of its rows is an exit-code comparison. Drop the comparison and the closed `PreToolUse` entry
+# reports `ok` while exiting 0 — a plugin whose refusal has stopped refusing, reported green.
+[[mutation]]
+name = "the hook smoke stops comparing exit codes"
+file = "scripts/smoke_hooks.py"
+before = "    if done.returncode != sample.expected_code:"
+after = "    if False:"
+reddens = [
+  "tests/scripts/test_smoke_scripts.py::test_a_wrapper_that_answers_wrongly_is_reported",
+]
+
+# And the same question asked of the other script. Every row but the first in the exfiltration
+# scenario asserts an ABSENCE, and a scenario whose pipeline is broken prints the same
+# absences — so the first row is a positive control, and a control nothing holds to its own
+# result is decoration. This mutation blinds THAT ROW and nothing else: the control stops being
+# able to notice that the note never arrived, so the scenario reports success over a store that
+# emitted nothing while the four absence rows stay green, which is exactly the shape the control
+# exists to catch. (An earlier form pinned `Report.failures` to zero, which made every row
+# unfailable and so claimed more than the control's own argument needed.)
+[[mutation]]
+name = "the exfiltration scenario's positive control cannot fail"
+file = "scripts/smoke_exfiltration.py"
+before = "        and CANARY in emitted.stdout"
+after = "        and True"
+reddens = [
+  "tests/scripts/test_smoke_scripts.py::test_the_exfiltration_scenario_reports_a_row_that_went_the_wrong_way",
+]
+
+# The smoke job's `grep -qx` is the CI side of each script's own floor, and a hand-kept copy of
+# the counts went stale once already: the hooks file lost four entries, the script and the suite
+# agreed on the new counts, and the job failed on every pull request. Each guard derives the line
+# from the script's constants; these put back a count the script no longer prints.
+[[mutation]]
+name = "the smoke job demands a hook summary the script no longer prints"
+file = ".github/workflows/smoke.yml"
+before = '          grep -qx "10 entries, 11 row(s), 0 failure(s)" "$RUNNER_TEMP/hooks.out"'
+after = '          grep -qx "13 entries, 14 row(s), 0 failure(s)" "$RUNNER_TEMP/hooks.out"'
+reddens = [
+  "tests/test_check_workflow.py::test_the_smoke_job_demands_the_summary_the_hook_script_prints_over_every_entry",
+]
+
+[[mutation]]
+name = "the smoke job demands an exfiltration summary the scenario no longer prints"
+file = ".github/workflows/smoke.yml"
+before = '          grep -qx "9 row(s), 0 failure(s)" "$RUNNER_TEMP/hostile.out"'
+after = '          grep -qx "8 row(s), 0 failure(s)" "$RUNNER_TEMP/hostile.out"'
+reddens = [
+  "tests/test_check_workflow.py::test_the_smoke_job_demands_the_summary_the_exfiltration_scenario_prints_over_every_row",
+]
+
+# The plugin is published from a repository of its own whose root is the tree
+# `scripts/plugin_tree.py render` writes, so the workflows that judge the plugin judge a render of
+# this commit, and this repository's catalog where it is. Each of these weakens one of those
+# judgements: it points a step at something other than this commit's render (the checkout, or
+# another commit), drops or empties a step that ties the render to what is validated, installed,
+# attested or released, stops validating the catalog, or lets the release go on without the
+# plugin's manifest.
+[[mutation]]
+name = "the smoke installs the checkout again"
+file = ".github/workflows/smoke.yml"
+before = '          claude plugin marketplace add "$RUNNER_TEMP/market"'
+after = '          claude plugin marketplace add "$PWD"'
+reddens = [
+  "tests/test_check_workflow.py::test_the_smoke_installs_the_rendered_tree_and_never_the_checkout",
+]
+
+[[mutation]]
+name = "the smoke's doctor imports the checkout again"
+file = ".github/workflows/smoke.yml"
+before = '          PYTHONPATH: ${{ steps.install.outputs.root }}/src'
+after = '          PYTHONPATH: src'
+reddens = [
+  "tests/test_check_workflow.py::test_the_smoke_runs_doctor_from_the_installed_tree",
+]
+
+[[mutation]]
+name = "the smoke's hook entries run from the checkout"
+file = ".github/workflows/smoke.yml"
+before = '          python3 scripts/smoke_hooks.py --plugin-root "$INSTALLED" \'
+after = '          python3 scripts/smoke_hooks.py --plugin-root . \'
+reddens = [
+  "tests/test_check_workflow.py::test_the_smoke_runs_its_hook_and_exfiltration_scripts_on_the_installed_tree[smoke_hooks.py]",
+]
+
+[[mutation]]
+name = "the smoke's exfiltration scenario runs from the checkout"
+file = ".github/workflows/smoke.yml"
+before = '          python3 scripts/smoke_exfiltration.py --plugin-root "$INSTALLED" \'
+after = '          python3 scripts/smoke_exfiltration.py --plugin-root . \'
+reddens = [
+  "tests/test_check_workflow.py::test_the_smoke_runs_its_hook_and_exfiltration_scripts_on_the_installed_tree[smoke_exfiltration.py]",
+]
+
+[[mutation]]
+name = "the smoke's hook entries take the checkout as the installed tree"
+file = ".github/workflows/smoke.yml"
+before = '''      - name: Every hook entry, fed its sample event through the installed wrapper
+        env:
+          INSTALLED: ${{ steps.install.outputs.root }}
+'''
+after = '''      - name: Every hook entry, fed its sample event through the installed wrapper
+        env:
+          INSTALLED: ${{ github.workspace }}
+'''
+reddens = [
+  "tests/test_check_workflow.py::test_the_smoke_runs_its_hook_and_exfiltration_scripts_on_the_installed_tree[smoke_hooks.py]",
+]
+
+[[mutation]]
+name = "the smoke's exfiltration scenario takes the checkout as the installed tree"
+file = ".github/workflows/smoke.yml"
+before = '''      - name: The clone-to-exfiltration scenario
+        env:
+          INSTALLED: ${{ steps.install.outputs.root }}
+'''
+after = '''      - name: The clone-to-exfiltration scenario
+        env:
+          INSTALLED: ${{ github.workspace }}
+'''
+reddens = [
+  "tests/test_check_workflow.py::test_the_smoke_runs_its_hook_and_exfiltration_scripts_on_the_installed_tree[smoke_exfiltration.py]",
+]
+
+[[mutation]]
+name = "the smoke stops holding the install to the render"
+file = ".github/workflows/smoke.yml"
+before = '        run: diff -r -x .git -x .in_use "$RUNNER_TEMP/plugin-repo" "$INSTALLED"'
+after = '        run: "true"'
+reddens = [
+  "tests/test_check_workflow.py::test_the_smoke_holds_the_install_to_the_render",
+]
+
+[[mutation]]
+name = "the smoke installs a render of another commit"
+file = ".github/workflows/smoke.yml"
+before = '          uv run python scripts/plugin_tree.py render --root . --rev HEAD \'
+after = '          uv run python scripts/plugin_tree.py render --root . --rev HEAD^ \'
+reddens = [
+  "tests/test_check_workflow.py::test_the_smoke_installs_the_rendered_tree_and_never_the_checkout",
+]
+
+[[mutation]]
+name = "the validator reads a render of another commit"
+file = ".github/workflows/ci.yml"
+before = '        run: uv run python scripts/plugin_tree.py render --root . --rev HEAD --out "$RUNNER_TEMP/plugin"'
+after = '        run: uv run python scripts/plugin_tree.py render --root . --rev HEAD^ --out "$RUNNER_TEMP/plugin"'
+reddens = [
+  "tests/test_check_workflow.py::test_the_validator_reads_the_rendered_manifests",
+]
+
+[[mutation]]
+name = "the validator stops reading this repository's catalog"
+file = ".github/workflows/ci.yml"
+before = "\n          claude plugin validate .claude-plugin/marketplace.json --strict"
+after = ""
+reddens = [
+  "tests/test_check_workflow.py::test_the_validator_reads_the_rendered_manifests",
+]
+
+[[mutation]]
+name = "the validator reads the checkout's manifest again"
+file = ".github/workflows/ci.yml"
+before = '          claude plugin validate "$RUNNER_TEMP/plugin/.claude-plugin/plugin.json" --strict'
+after = '          claude plugin validate .claude-plugin/plugin.json --strict'
+reddens = [
+  "tests/test_check_workflow.py::test_the_validator_reads_the_rendered_manifests",
+]
+
+[[mutation]]
+name = "the release stops attesting the plugin tree"
+file = ".github/workflows/release.yml"
+before = '''      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        # The plugin tree's manifest, attested on its own: one line per file, its mode, its
+        # sha256 and its path, the tree of the commit handed on above.
+        with:
+          subject-path: ${{ runner.temp }}/plugin-tree.txt
+'''
+after = ''
+reddens = [
+  "tests/test_check_workflow.py::test_the_release_attests_the_plugin_tree_it_rendered_from_the_commit",
+]
+
+[[mutation]]
+name = "a missing plugin manifest uploads as a warning"
+file = ".github/workflows/release.yml"
+before = '          if-no-files-found: error'
+after = '          if-no-files-found: warn'
+reddens = [
+  "tests/test_check_workflow.py::test_the_release_attests_the_plugin_tree_it_rendered_from_the_commit",
+]
+
+[[mutation]]
+name = "the Release stops carrying the plugin's manifest"
+file = ".github/workflows/release.yml"
+before = ' dist/* "$RUNNER_TEMP/plugin-tree/plugin-tree.txt"'
+after = ' dist/*'
+reddens = [
+  "tests/test_check_workflow.py::test_the_release_attests_the_plugin_tree_it_rendered_from_the_commit",
+]
+
+# The marketplace entry pins the plugin repository's commit by `sha`, a function of the release
+# commit alone. These weaken how the workflows compute it, gate on it and install by it: the
+# release reads the first parent's pin from a clone that lacks it, the job that runs the suite
+# can sign again, `attest` hands on a commit the release commit does not pin, the gated jobs
+# compare the tag object or another tag's line or ask another repository, the smoke installs by
+# `ref` alone or builds a commit whose parent its scratch repository lacks, and the validator
+# stops seeing an entry that carries a `sha`.
+[[mutation]]
+name = "the release build fetches the tag's commit alone"
+file = ".github/workflows/release.yml"
+before = "          fetch-depth: 2\n          persist-credentials: false\n      - uses: astral-sh/setup-uv"
+after = "          persist-credentials: false\n      - uses: astral-sh/setup-uv"
+reddens = [
+  "tests/test_check_workflow.py::test_build_fetches_the_first_parent[build]",
+]
+
+[[mutation]]
+name = "the release build can sign again"
+file = ".github/workflows/release.yml"
+before = "  build:\n    runs-on: ubuntu-latest\n    timeout-minutes: 15\n    permissions:\n      contents: read\n"
+after = "  build:\n    runs-on: ubuntu-latest\n    timeout-minutes: 15\n    permissions:\n      id-token: write\n      contents: read\n"
+reddens = [
+  "tests/test_check_workflow.py::test_only_the_attest_job_can_attest",
+]
+
+[[mutation]]
+name = "the attest job hands on a commit the release commit does not pin"
+file = ".github/workflows/release.yml"
+before = '            --require-pin --json > "$RUNNER_TEMP/plugin-commit.json"'
+after = '            --json > "$RUNNER_TEMP/plugin-commit.json"'
+reddens = [
+  "tests/test_check_workflow.py::test_the_attest_job_hands_on_the_commit_its_source_pins",
+]
+
+# The gated step is written twice, once in each job behind the approval, so each of these anchors
+# on `publish`'s copy through the job's own permissions above it.
+[[mutation]]
+name = "the plugin gate asks another repository"
+file = ".github/workflows/release.yml"
+before = '''      contents: read
+    steps:
+      - name: The plugin repository holds this release's commit
+        env:
+          TAG: ${{ github.ref_name }}
+          PINNED: ${{ needs.attest.outputs.commit }}
+        run: |
+          listing="$(git ls-remote https://github.com/stayfixed/stayfixed-plugin.git'''
+after = '''      contents: read
+    steps:
+      - name: The plugin repository holds this release's commit
+        env:
+          TAG: ${{ github.ref_name }}
+          PINNED: ${{ needs.attest.outputs.commit }}
+        run: |
+          listing="$(git ls-remote https://github.com/stayfixed/stayfixed-plugins.git'''
+reddens = [
+  "tests/test_check_workflow.py::test_one_plugin_repository_everywhere",
+]
+
+[[mutation]]
+name = "the plugin gate compares the tag object of an annotated tag"
+file = ".github/workflows/release.yml"
+before = '''      contents: read
+    steps:
+      - name: The plugin repository holds this release's commit
+        env:
+          TAG: ${{ github.ref_name }}
+          PINNED: ${{ needs.attest.outputs.commit }}
+        run: |
+          listing="$(git ls-remote https://github.com/stayfixed/stayfixed-plugin.git "refs/tags/$TAG" "refs/tags/$TAG^{}")" || {
+            echo "::error::stayfixed/stayfixed-plugin could not be listed; re-run this job, or see RELEASING.md section 2, step 7"
+            exit 1
+          }
+          tagged=""
+          peeled=""
+          while IFS=$'\t' read -r id ref; do
+            case "$ref" in
+              "refs/tags/$TAG") tagged="$id" ;;
+              "refs/tags/$TAG^{}") peeled="$id" ;;
+            esac
+          done <<< "$listing"
+          found="${peeled:-$tagged}"'''
+after = '''      contents: read
+    steps:
+      - name: The plugin repository holds this release's commit
+        env:
+          TAG: ${{ github.ref_name }}
+          PINNED: ${{ needs.attest.outputs.commit }}
+        run: |
+          listing="$(git ls-remote https://github.com/stayfixed/stayfixed-plugin.git "refs/tags/$TAG" "refs/tags/$TAG^{}")" || {
+            echo "::error::stayfixed/stayfixed-plugin could not be listed; re-run this job, or see RELEASING.md section 2, step 7"
+            exit 1
+          }
+          tagged=""
+          peeled=""
+          while IFS=$'\t' read -r id ref; do
+            case "$ref" in
+              "refs/tags/$TAG") tagged="$id" ;;
+              "refs/tags/$TAG^{}") peeled="$id" ;;
+            esac
+          done <<< "$listing"
+          found="${tagged:-$peeled}"'''
+reddens = [
+  "tests/test_check_workflow.py::test_the_gated_step_compares_the_peeled_id[annotated-publish]",
+  "tests/test_check_workflow.py::test_the_gated_step_compares_the_peeled_id[annotated-tag-object-publish]",
+]
+
+[[mutation]]
+name = "the plugin gate selects the tag by the tail of its name"
+file = ".github/workflows/release.yml"
+before = '''      contents: read
+    steps:
+      - name: The plugin repository holds this release's commit
+        env:
+          TAG: ${{ github.ref_name }}
+          PINNED: ${{ needs.attest.outputs.commit }}
+        run: |
+          listing="$(git ls-remote https://github.com/stayfixed/stayfixed-plugin.git "refs/tags/$TAG" "refs/tags/$TAG^{}")" || {
+            echo "::error::stayfixed/stayfixed-plugin could not be listed; re-run this job, or see RELEASING.md section 2, step 7"
+            exit 1
+          }
+          tagged=""
+          peeled=""
+          while IFS=$'\t' read -r id ref; do
+            case "$ref" in
+              "refs/tags/$TAG") tagged="$id" ;;
+              "refs/tags/$TAG^{}") peeled="$id" ;;'''
+after = '''      contents: read
+    steps:
+      - name: The plugin repository holds this release's commit
+        env:
+          TAG: ${{ github.ref_name }}
+          PINNED: ${{ needs.attest.outputs.commit }}
+        run: |
+          listing="$(git ls-remote https://github.com/stayfixed/stayfixed-plugin.git "refs/tags/$TAG" "refs/tags/$TAG^{}")" || {
+            echo "::error::stayfixed/stayfixed-plugin could not be listed; re-run this job, or see RELEASING.md section 2, step 7"
+            exit 1
+          }
+          tagged=""
+          peeled=""
+          while IFS=$'\t' read -r id ref; do
+            case "$ref" in
+              *"refs/tags/$TAG") tagged="$id" ;;
+              *"refs/tags/$TAG^{}") peeled="$id" ;;'''
+reddens = [
+  "tests/test_check_workflow.py::test_the_gated_step_compares_the_peeled_id[decoy-publish]",
+  "tests/test_check_workflow.py::test_the_gated_step_compares_the_peeled_id[decoy-annotated-publish]",
+]
+
+[[mutation]]
+name = "the smoke installs by ref alone"
+file = ".github/workflows/smoke.yml"
+before = '"ref": sys.argv[4], "sha": sys.argv[5]}'
+after = '"ref": sys.argv[4]}'
+reddens = [
+  "tests/test_check_workflow.py::test_the_smoke_installs_by_ref_and_sha",
+]
+
+[[mutation]]
+name = "the smoke's plugin commit names the first parent's pin as its parent"
+file = ".github/workflows/smoke.yml"
+before = '--git-dir "$RUNNER_TEMP/plugin-repo.git" --no-parent --json'
+after = '--git-dir "$RUNNER_TEMP/plugin-repo.git" --json'
+reddens = [
+  "tests/test_check_workflow.py::test_the_smoke_installs_by_ref_and_sha",
+]
+
+[[mutation]]
+name = "the validator reads a catalog that pins no sha"
+file = ".github/workflows/ci.yml"
+before = "          entry[\"source\"][\"sha\"] = \"0\" * 40\n"
+after = ""
+reddens = [
+  "tests/test_check_workflow.py::test_the_validator_reads_a_catalog_whose_entry_pins_a_sha",
+]
+
+# The same jobs' remaining holds: what `attest` fetches, may write, installs and runs, the name it
+# hands its commit on under and the package its script imports; whether the gated jobs wait for
+# `attest`, read its output, may fail and stay one step; whether the gate takes an empty pin; the
+# smoke's `main`; the pinned catalog's `--strict`; and the commit id's one shape.
+[[mutation]]
+name = "the attest job fetches the tag's commit alone"
+file = ".github/workflows/release.yml"
+before = "          fetch-depth: 2\n          persist-credentials: false\n      - uses: actions/download-artifact"
+after = "          persist-credentials: false\n      - uses: actions/download-artifact"
+reddens = [
+  "tests/test_check_workflow.py::test_build_fetches_the_first_parent[attest]",
+]
+
+[[mutation]]
+name = "the attest job keeps a token in its checkout"
+file = ".github/workflows/release.yml"
+before = "          fetch-depth: 2\n          persist-credentials: false\n      - uses: actions/download-artifact"
+after = "          fetch-depth: 2\n      - uses: actions/download-artifact"
+reddens = [
+  "tests/test_check_workflow.py::test_no_checkout_in_the_release_keeps_its_token",
+]
+
+[[mutation]]
+name = "the attest job downloads build's packages into its checkout"
+file = ".github/workflows/release.yml"
+before = "          name: dist\n          path: ${{ runner.temp }}/dist\n"
+after = "          name: dist\n          path: dist/\n"
+reddens = [
+  "tests/test_check_workflow.py::test_the_release_attests_the_plugin_tree_it_rendered_from_the_commit",
+]
+
+[[mutation]]
+name = "the attest job can write the repository"
+file = ".github/workflows/release.yml"
+before = "      attestations: write\n      contents: read\n    outputs:"
+after = "      attestations: write\n      contents: write\n    outputs:"
+reddens = [
+  "tests/test_check_workflow.py::test_only_the_attest_job_can_attest",
+]
+
+[[mutation]]
+name = "the Release job can sign"
+file = ".github/workflows/release.yml"
+before = "      contents: write   # the one job that writes"
+after = "      id-token: write\n      contents: write   # the one job that writes"
+reddens = [
+  "tests/test_check_workflow.py::test_only_the_attest_job_can_attest",
+]
+
+[[mutation]]
+name = "the environment gate can record attestations"
+file = ".github/workflows/release.yml"
+before = "    timeout-minutes: 5\n    permissions:\n      contents: read\n"
+after = "    timeout-minutes: 5\n    permissions:\n      attestations: write\n      contents: read\n"
+reddens = [
+  "tests/test_check_workflow.py::test_only_the_attest_job_can_attest",
+]
+
+[[mutation]]
+name = "the attest job installs uv"
+file = ".github/workflows/release.yml"
+before = "      - name: The plugin commit of the commit this run builds\n"
+after = "      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0\n      - name: The plugin commit of the commit this run builds\n"
+reddens = [
+  "tests/test_check_workflow.py::test_only_the_attest_job_can_attest",
+]
+
+[[mutation]]
+name = "the attest job runs the suite"
+file = ".github/workflows/release.yml"
+before = '          echo "commit=$commit" >> "$GITHUB_OUTPUT"'
+after = '''          python3 -m pytest -q
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"'''
+reddens = [
+  "tests/test_check_workflow.py::test_only_the_attest_job_can_attest",
+]
+
+[[mutation]]
+name = "the attest job writes the commit under another name"
+file = ".github/workflows/release.yml"
+before = '          echo "commit=$commit" >> "$GITHUB_OUTPUT"'
+after = '          echo "sha=$commit" >> "$GITHUB_OUTPUT"'
+reddens = [
+  "tests/test_check_workflow.py::test_the_attest_job_hands_on_the_commit_its_source_pins",
+]
+
+[[mutation]]
+name = "the attest job hands on another step's output"
+file = ".github/workflows/release.yml"
+before = "      commit: ${{ steps.plugin-commit.outputs.commit }}"
+after = "      commit: ${{ steps.plugin-commit.outputs.sha }}"
+reddens = [
+  "tests/test_check_workflow.py::test_the_gated_jobs_refuse_until_the_plugin_tag_names_the_pin",
+]
+
+# The runner's interpreter has no `stayfixed` of its own, so without the checkout's `src` the
+# script fails to import; the suite's interpreter has one, so only the step's `env:` pin holds it.
+[[mutation]]
+name = "the attest job runs the plugin script without the checkout's package"
+file = ".github/workflows/release.yml"
+before = "        env:\n          PYTHONPATH: src\n        run: |\n"
+after = "        run: |\n"
+reddens = [
+  "tests/test_check_workflow.py::test_the_attest_job_hands_on_the_commit_its_source_pins",
+]
+
+[[mutation]]
+name = "publish starts before attest finished"
+file = ".github/workflows/release.yml"
+before = "    needs: [build, environment-gate, attest]\n    runs-on: ubuntu-latest\n    timeout-minutes: 15"
+after = "    needs: [build, environment-gate]\n    runs-on: ubuntu-latest\n    timeout-minutes: 15"
+reddens = [
+  "tests/test_check_workflow.py::test_the_gated_jobs_refuse_until_the_plugin_tag_names_the_pin",
+]
+
+[[mutation]]
+name = "the plugin gate reads the commit build hands on"
+file = ".github/workflows/release.yml"
+before = '''      contents: read
+    steps:
+      - name: The plugin repository holds this release's commit
+        env:
+          TAG: ${{ github.ref_name }}
+          PINNED: ${{ needs.attest.outputs.commit }}'''
+after = '''      contents: read
+    steps:
+      - name: The plugin repository holds this release's commit
+        env:
+          TAG: ${{ github.ref_name }}
+          PINNED: ${{ needs.build.outputs.commit }}'''
+reddens = [
+  "tests/test_check_workflow.py::test_the_gated_jobs_refuse_until_the_plugin_tag_names_the_pin",
+]
+
+[[mutation]]
+name = "the plugin gate may fail and the job go on"
+file = ".github/workflows/release.yml"
+before = "      contents: read\n    steps:\n      - name: The plugin repository holds this release's commit\n"
+after = "      contents: read\n    steps:\n      - name: The plugin repository holds this release's commit\n        continue-on-error: true\n"
+reddens = [
+  "tests/test_check_workflow.py::test_the_gated_jobs_refuse_until_the_plugin_tag_names_the_pin",
+]
+
+[[mutation]]
+name = "github-release's plugin gate drifts from publish's"
+file = ".github/workflows/release.yml"
+before = '''this release pins, $PINNED"
+      - uses: actions/checkout'''
+after = '''this release pins: $PINNED"
+      - uses: actions/checkout'''
+reddens = [
+  "tests/test_check_workflow.py::test_the_gated_jobs_refuse_until_the_plugin_tag_names_the_pin",
+]
+
+[[mutation]]
+name = "the plugin gate takes an empty pin for a match"
+file = ".github/workflows/release.yml"
+before = '''          if ! [[ "$PINNED" =~ ^[0-9a-f]{40}$ ]] || [ "$found" != "$PINNED" ]; then
+            echo "::error::stayfixed/stayfixed-plugin's $TAG names ${found:-no commit}, not the plugin commit '$PINNED' this release pins: publish it as RELEASING.md section 2, step 7 says, then re-run this job"
+            exit 1
+          fi
+          echo "stayfixed/stayfixed-plugin's $TAG is the plugin commit this release pins, $PINNED"
+      - uses: actions/download-artifact'''
+after = '''          if [ "$found" != "$PINNED" ]; then
+            echo "::error::stayfixed/stayfixed-plugin's $TAG names ${found:-no commit}, not the plugin commit '$PINNED' this release pins: publish it as RELEASING.md section 2, step 7 says, then re-run this job"
+            exit 1
+          fi
+          echo "stayfixed/stayfixed-plugin's $TAG is the plugin commit this release pins, $PINNED"
+      - uses: actions/download-artifact'''
+reddens = [
+  "tests/test_check_workflow.py::test_the_gated_step_compares_the_peeled_id[nothing-pinned-publish]",
+]
+
+[[mutation]]
+name = "the smoke tags the pinned commit and not a decoy"
+file = ".github/workflows/smoke.yml"
+before = 'update-ref "refs/tags/v$version" "$decoy"'
+after = 'update-ref "refs/tags/v$version" "$commit"'
+reddens = [
+  "tests/test_check_workflow.py::test_the_smoke_installs_by_ref_and_sha",
+]
+
+[[mutation]]
+name = "the smoke's decoy holds the pinned commit's tree"
+file = ".github/workflows/smoke.yml"
+before = """printf '100644 blob %s\\tdecoy\\n' "$blob"; """
+after = ""
+reddens = [
+  "tests/test_check_workflow.py::test_the_smoke_installs_by_ref_and_sha",
+]
+
+# `plugin_tree.py commit --json` writes a refusal's sentence into the file the step reads, so the
+# step prints the file when the script fails; without it the job stops with an exit code alone.
+[[mutation]]
+name = "the smoke hides why it built no plugin commit"
+file = ".github/workflows/smoke.yml"
+before = '|| { cat "$RUNNER_TEMP/plugin-commit.json" >&2; exit 1; }'
+after = '|| { exit 1; }'
+reddens = [
+  "tests/test_check_workflow.py::test_the_smoke_says_why_it_built_no_plugin_commit",
+]
+
+[[mutation]]
+name = "the attest job hides why it computed no commit"
+file = ".github/workflows/release.yml"
+before = '|| { cat "$RUNNER_TEMP/plugin-commit.json" >&2; exit 1; }'
+after = '|| { exit 1; }'
+reddens = [
+  "tests/test_check_workflow.py::test_the_attest_job_hands_on_the_commit_its_source_pins",
+]
+
+[[mutation]]
+name = "the smoke's scratch repository has no main"
+file = ".github/workflows/smoke.yml"
+before = '          git --git-dir="$RUNNER_TEMP/plugin-repo.git" update-ref refs/heads/main "$commit"'
+after = ""
+reddens = [
+  "tests/test_check_workflow.py::test_the_smoke_installs_by_ref_and_sha",
+]
+
+[[mutation]]
+name = "the validator checks the pinned catalog without --strict"
+file = ".github/workflows/ci.yml"
+before = '          claude plugin validate "$RUNNER_TEMP/pinned/.claude-plugin/marketplace.json" --strict'
+after = '          claude plugin validate "$RUNNER_TEMP/pinned/.claude-plugin/marketplace.json"'
+reddens = [
+  "tests/test_check_workflow.py::test_the_validator_reads_a_catalog_whose_entry_pins_a_sha",
+]
+
+# The scripts and the workflows each spell a commit id's shape, and a workflow's copy is reached
+# by no run: the script before it prints no other shape. The equality is the hold.
+[[mutation]]
+name = "the smoke checks the plugin commit's shape by another pattern"
+file = ".github/workflows/smoke.yml"
+before = '          if ! [[ "$commit" =~ ^[0-9a-f]{40}$ ]]; then'
+after = '          if ! [[ "$commit" =~ ^[0-9a-f]+$ ]]; then'
+reddens = [
+  "tests/test_check_workflow.py::test_one_commit_id_shape_everywhere",
+]
+
+# `inputs.path` is appended to `$GITHUB_OUTPUT`, which the runner parses line by line, so a
+# `path:` carrying a newline writes further `key=value` lines — and the key the gate steps read
+# is `base_sha`, the commit whose configuration governs the gates. Disable the character check
+# and a caller's `path:` forges that commit, and with it what a pull request is judged against.
+[[mutation]]
+name = "the reusable workflow lets `path:` write its own outputs"
+file = ".github/workflows/check.yml"
+before = "            *[!A-Za-z0-9._/-]*)"
+after = "            unmatchable-pattern-that-is-never-a-path)"
+reddens = [
+  "tests/test_fixtures.py::test_a_path_input_cannot_write_the_steps_own_outputs",
+]
+
+# The hook smoke's guard held one direction: it caught `hooks.json` gaining an event with no
+# sample, and not `hooks.json` losing one — which shrinks the walk, runs fewer rows and prints a
+# green summary. With this mutation every remaining row still passes and `main` returns 0, so
+# the exit code and the sentence are both the claim.
+[[mutation]]
+name = "the hook smoke stops noticing an event that lost its entry"
+file = "scripts/smoke_hooks.py"
+before = "    unentered = SAMPLES.keys() - events"
+after = "    unentered = SAMPLES.keys() - SAMPLES.keys()"
+reddens = [
+  "tests/scripts/test_smoke_scripts.py::test_hooks_json_losing_an_event_fails_instead_of_running_fewer_rows",
+]
+
+# `environment: pypi` is a human gate only if the environment has protection rules, and GitHub
+# auto-creates an environment a job names and the repository lacks with none on it.
+# `environment-gate` is the check; these three are what make it one.
+[[mutation]]
+name = "the release gate stops failing an environment with zero protection rules"
+file = ".github/workflows/release.yml"
+before = '          if [ "$rules" -eq 0 ]; then'
+after = '          if false; then'
+reddens = [
+  "tests/test_fixtures.py::test_the_gate_admits_a_release_only_where_the_environment_is_one[no-rules]",
+  "tests/test_fixtures.py::test_the_gate_admits_a_release_only_where_the_environment_is_one[no-rules-declared]",
+]
+
+# The fallback exists because the environments endpoint is not open to every default token, and
+# it may answer one question only: whether the READ failed. Consulted without that condition it
+# would let a repository variable an administrator once set stand in for the gate itself.
+[[mutation]]
+name = "the release gate's repository-variable fallback answers for the read it did get"
+file = ".github/workflows/release.yml"
+before = '              if [ "$DECLARED" = "true" ]; then'
+after = '              if true; then'
+reddens = [
+  "tests/test_fixtures.py::test_the_gate_admits_a_release_only_where_the_environment_is_one[unreadable]",
+  "tests/test_fixtures.py::test_the_gate_admits_a_release_only_where_the_environment_is_one[denied]",
+]
+
+# A gate that asks about an environment no job names is a gate about nothing, and the two
+# spellings are seven lines apart in one file. The equality is what ties them together.
+[[mutation]]
+name = "the release gate checks an environment no job names"
+file = ".github/workflows/release.yml"
+before = "          ENVIRONMENT: pypi"
+after = "          ENVIRONMENT: production"
+reddens = [
+  "tests/test_fixtures.py::test_every_job_behind_the_pypi_environment_waits_for_the_environment_gate",
+]
+
+# The group that most qualifies a green smoke run. Each entry is a different way a row can report
+# on something it never looked at.
+#
+# The first is the headline: the row that proves the `PreToolUse` guard denies could not tell a
+# genuine deny from any launcher fault at all. `hooks/run-hook.sh` maps a launcher `rc=1` under
+# the `closed` policy to exit 2 with a `SF_` token on stderr, which is byte-for-byte what
+# `expected_code=2` and `stderr_required=True` ask for — measured against a three-line
+# `scripts/stayfixed`: thirteen of the fourteen rows green, that one among them.
+[[mutation]]
+name = "the hook smoke stops reading the refusal it was handed"
+file = "scripts/smoke_hooks.py"
+before = "    for phrase in sample.stderr_says:"
+after = "    for phrase in ():"
+reddens = [
+  "tests/scripts/test_smoke_scripts.py::test_a_launcher_fault_is_not_mistaken_for_a_refusal",
+]
+
+# Six of the ten entries are `memory session-context` — the ones that carry repository bytes
+# toward the model — and they ran against a fixture with no memory store at all. Measured on that
+# fixture, when there were ten of them: ten rows, 0 bytes of stdout, every one green; they would
+# have been identically green if `session-context` were `/bin/false`.
+[[mutation]]
+name = "the hook smoke stops reading what an injection entry injected"
+file = "scripts/smoke_hooks.py"
+before = "    wanted = INJECTED.get(tail_of(command))"
+after = "    wanted = None"
+reddens = [
+  "tests/scripts/test_smoke_scripts.py::test_a_launcher_fault_is_not_mistaken_for_a_refusal",
+]
+
+# The red-run entry prints the event's envelope, exit 0, whether or not its handler spoke, so a row
+# that reads only the exit code and the envelope is green over an entry that never says the note.
+[[mutation]]
+name = "the hook smoke stops reading the context an entry printed"
+file = "scripts/smoke_hooks.py"
+before = "        if phrase not in context:"
+after = "        if False:"
+reddens = [
+  "tests/scripts/test_smoke_scripts.py::test_a_red_run_entry_that_says_nothing_is_reported",
+]
+
+# The registry's converse, which is the direction that fails silently: `SAMPLES` is keyed by
+# EVENT, so dropping one of the seven `SessionStart` entries leaves every event sampled, runs
+# one row fewer and prints a green summary.
+[[mutation]]
+name = "the hook smoke stops noticing a bundle that lost its entry"
+file = "scripts/smoke_hooks.py"
+before = "    ungathered = INJECTED.keys() - injecting"
+after = "    ungathered = INJECTED.keys() - INJECTED.keys()"
+reddens = [
+  "tests/scripts/test_smoke_scripts.py::test_hooks_json_losing_a_bundle_fails_instead_of_injecting_one_fewer",
+]
+
+# And the count itself, which neither event set nor bundle registry can see: a duplicated entry
+# changes no event and no bundle and runs an eleventh row.
+[[mutation]]
+name = "the hook smoke stops counting its own entries and rows"
+file = "scripts/smoke_hooks.py"
+before = "    if (len(found), rows) != (EXPECTED_ENTRIES, EXPECTED_ROWS):"
+after = "    if False:"
+reddens = [
+  "tests/scripts/test_smoke_scripts.py::test_hooks_json_gaining_an_entry_is_reported_rather_than_quietly_run",
+]
+
+# The owner's own act, without which the injection rows are back to proving nothing: the store
+# is repository data and emits only once somebody has said so. `inventory` is a command that
+# does not take the store flags, so the run reports the failure instead of proceeding — which
+# is the behaviour under test, because a smoke run that could not trust the fixture must say so
+# rather than print ten green rows over empty output.
+[[mutation]]
+name = "the hook smoke stops recording the owner's trust"
+file = "scripts/smoke_hooks.py"
+before = """
+            "memory",
+            "trust",
+            "--in-repo-memory",
+"""
+after = """
+            "memory",
+            "inventory",
+            "--in-repo-memory",
+"""
+reddens = [
+  "tests/scripts/test_smoke_scripts.py::test_every_hook_entry_answers_its_sample_event_through_the_checkout",
+]
+
+# The other script's floor. Six of its eight rows assert an ABSENCE, and a report holding one
+# row satisfies `failures == 0` identically — measured, with `report.rows[:1]` before the
+# summary and the whole test module still green. Banking only the failures is the same shape
+# said the other way round.
+[[mutation]]
+name = "the exfiltration scenario stops recording the rows that passed"
+file = "scripts/smoke_exfiltration.py"
+before = "        self.rows.append((ok, label, evidence))"
+after = "        self.rows.append((ok, label, evidence)) if not ok else None"
+reddens = [
+  "tests/scripts/test_smoke_scripts.py::test_the_exfiltration_scenario_holds_against_the_checkout",
+]
+
+# Row 4 of the scenario — "with no record at all the note is never injected" — was row 2's
+# result read a second time: row 2 changed `canary.md` and never restored it, so the record had
+# already lapsed and the unlink could not change anything. Measured: pointing `trust_record()`
+# at a path that does not exist made the unlink a no-op, left `trust.json` 240 bytes on disk,
+# and the row still reported ok. It now restores the note, re-records, and asserts the record's
+# presence before and absence after.
+[[mutation]]
+name = "the exfiltration scenario deletes a trust record that was never there"
+file = "scripts/smoke_exfiltration.py"
+before = '    return planted.home / ".config" / "stayfixed" / "trust.json"'
+after = '    return planted.home / ".config" / "stayfixed" / "absent.json"'
+reddens = [
+  "tests/scripts/test_smoke_scripts.py::test_the_exfiltration_scenario_holds_against_the_checkout",
+]
+
+# Three of the built-artifact gate's four claims were unheld, each removable with the module's five
+# tests still passing. The executable case compared `check_sdist`'s output against a list recomputed
+# from the same tuple the fixture builds the archive from; `_sdist`'s `without=` parameter was
+# passed by nothing; and `main`'s `dist` arm — the one CI runs — was reached by no test at all, so
+# both CI steps would have reported success while printing findings.
+[[mutation]]
+name = "the sdist executable claim covers no file"
+file = "scripts/check_artifacts.py"
+before = 'SDIST_EXECUTABLE = ("hooks/run-hook.sh", "scripts/stayfixed")'
+after = "SDIST_EXECUTABLE = ()"
+reddens = [
+  "tests/scripts/test_check_artifacts.py::test_a_wrapper_that_lost_its_executable_bit_in_the_sdist_is_named",
+]
+
+[[mutation]]
+name = "the sdist stops reporting a member it does not carry"
+file = "scripts/check_artifacts.py"
+before = '    findings = [f"sdist: missing {name}" for name in SDIST_MUST if name not in members]'
+after = "    findings: list[str] = []"
+reddens = [
+  "tests/scripts/test_check_artifacts.py::test_a_member_missing_from_the_sdist_is_named",
+]
+
+[[mutation]]
+name = "the artifact checker reports success whatever it found"
+file = "scripts/check_artifacts.py"
+before = "    return 1 if findings else 0"
+after = "    return 0"
+reddens = [
+  "tests/scripts/test_check_artifacts.py::test_the_dist_arm_reports_a_finding_and_is_clean_when_there_is_none",
+]
+
+# The suite runs across workers: 95 s against 335 s one test at a time, same tests, same
+# coverage. CI going back to one process is the side that goes quiet — every check stays green,
+# only slower — so it is the side that is measured.
+[[mutation]]
+name = "CI runs the suite one test at a time again"
+file = ".github/workflows/ci.yml"
+before = "        run: uv run pytest -n auto --cov --cov-report=term-missing --cov-fail-under=92"
+after = "        run: uv run pytest --cov --cov-report=term-missing --cov-fail-under=92"
+reddens = [
+  "tests/test_fixtures.py::test_the_block_a_contributor_copies_is_the_one_ci_runs",
+]
+
+# `scripts/check_artifacts.py` imported `stayfixed.overlay.layout` for the very constant
+# `overlay/api.py` said had been trimmed *because* nothing outside the area imported it. The
+# boundary walk stopped at `src/`, so the false docstring and the violation merged green together.
+# This is that import put back, against the widened walk.
+[[mutation]]
+name = "a script reaches past an area's api.py again"
+file = "scripts/check_artifacts.py"
+before = "from stayfixed.overlay.api import OVERLAY_FILES"
+after = "from stayfixed.overlay.layout import OVERLAY_FILES"
+reddens = [
+  "tests/boundaries/test_api_surface.py::test_no_module_reaches_into_another_packages_private_module",
+]
+
+# The step whose exit status is the verdict. `stayfixed gate` already exits 0 for an advisory
+# gate's findings, so `continue-on-error` there could only turn a refusal or an enforced gate's
+# failure green — and the job with it, for every caller.
+[[mutation]]
+name = "a judging step that may fail turns an enforced gate green"
+file = ".github/workflows/check.yml"
+before = """
+      - name: The configuration and the built-in gates
+"""
+after = """
+      - name: The configuration and the built-in gates
+        continue-on-error: true
+"""
+reddens = [
+  "tests/test_check_workflow.py::test_one_job_whose_judging_steps_may_not_fail_and_run_in_order",
+]
+
+# On a `pull_request` the caller workflow comes from the merge commit, so `with: base:` is the
+# author's. A `base:` naming a branch the author pushed would choose the configuration the change
+# is judged against, without the tree's own `stayfixed.toml` being touched.
+[[mutation]]
+name = "a pull request's base: input is preferred over the platform's own answer again"
+file = ".github/workflows/check.yml"
+before = '          if [ -n "$PR_BASE" ] && [ -n "$INPUT_BASE" ] && [ "$INPUT_BASE" != "$PR_BASE" ]; then'
+after = '          if false; then'
+reddens = [
+  "tests/test_fixtures.py::test_a_base_input_that_disagrees_with_the_pull_requests_own_base_is_refused",
+]
+
+# The clean run is gated on `Outcome.passed` with a long paragraph about why an exit code alone
+# cannot tell a green assertion from an absent one; the mutated run was then judged by
+# `mutated.code` alone, with `mutated.executed` computed and discarded. A mutation that breaks the
+# import exits 2 from a collection error, which is not zero, which read as `caught`.
+[[mutation]]
+name = "the mutated run is judged on its exit code alone again"
+file = "scripts/mutation_oracle.py"
+before = "    if mutated.executed == 0:"
+after = "    if False:"
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_mutation_that_breaks_collection_is_a_finding_and_not_a_catch",
+]
+
+# An interrupted run left a `git worktree` registration that `git worktree prune` will not take,
+# because prune only drops entries whose directory is gone and the `mkdtemp` tree is still standing.
+# One was live in the development repository at review time, 6.5 MB.
+#
+# The mutation is the `rmtree` and not the `worktree remove` beside it, and the unfiltered run
+# is what said so: with the directory gone, the `prune` at the end of the sweep collects the
+# registration by itself, so removing `worktree remove` changed no outcome this test can see
+# and the entry survived. `rmtree` is the line the leak is really about — the tree on disk.
+[[mutation]]
+name = "the scratch sweep leaves the leaked tree on disk"
+file = "scripts/mutation_oracle.py"
+before = """
+        _git("worktree", "remove", "--force", str(tree))
+        shutil.rmtree(tree.parent, ignore_errors=True)"""
+after = """
+        _git("worktree", "remove", "--force", str(tree))"""
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_leaked_scratch_checkout_is_swept_where_git_worktree_prune_will_not_take_it",
+]
+
+# The oracle's own job, from the two sides that go quiet rather than loud. A budget that no
+# longer fits the set it has to prove is the failure this shape exists to end, and it is worth
+# catching in a test run rather than fifteen minutes into a cancelled job. A job that can be
+# skipped is worse: GitHub reports a skipped job as a green check, so the whole set switches off
+# and says nothing. `before` carries two lines in a basic string, because a literal string would
+# make `\n` two characters and the entry would match nothing.
+[[mutation]]
+name = "the oracle's job keeps a budget that no longer fits its own set"
+file = ".github/workflows/ci.yml"
+before = "    timeout-minutes: 30"
+after = "    timeout-minutes: 1"
+reddens = [
+  "tests/test_fixtures.py::test_the_mutation_oracle_has_a_job_of_its_own_with_a_budget_that_fits",
+]
+
+[[mutation]]
+name = "the oracle's job becomes one a condition can skip"
+file = ".github/workflows/ci.yml"
+before = "  oracle:\n    runs-on: ubuntu-latest"
+after = "  oracle:\n    if: github.event_name == 'push'\n    runs-on: ubuntu-latest"
+reddens = [
+  "tests/test_fixtures.py::test_the_mutation_oracle_has_a_job_of_its_own_with_a_budget_that_fits",
+]
+
+# --- One oracle at a time --------------------------------------------------------------------
+# `sweep_stale_scratch` has always assumed a single writer and said so in its own docstring, and
+# nothing enforced it. Once, a filtered run started beside an unfiltered one removed its scratch
+# checkout, and every mutation after that point reported FINDING — 138 of them, all false, on a
+# clean tree. `O_EXCL` is the whole mechanism: the create either wins or raises, with no window
+# between the test and the write.
+[[mutation]]
+name = "a second oracle takes the lock instead of refusing"
+file = "scripts/mutation_oracle.py"
+before = '            handle = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)'
+after = '            handle = os.open(lock, os.O_CREAT | os.O_WRONLY, 0o600)'
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_second_oracle_refuses_rather_than_sweeping_the_first_ones_checkout",
+]
+
+# And the other direction, which has to hold or the cure is worse than the disease: a `SIGKILL`
+# runs no `finally`, so a lock outliving its writer is the ordinary aftermath of an interrupted
+# run. One that refused for ever would need a person with a shell before the oracle ran again.
+[[mutation]]
+name = "a lock left by a dead process refuses for ever"
+file = "scripts/mutation_oracle.py"
+before = '''    except ProcessLookupError:
+        return None'''
+after = '''    except ProcessLookupError:
+        return "a process that has gone"'''
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_lock_left_by_a_dead_process_is_taken_over_rather_than_obeyed",
+]
+
+# The lock shares the scratch prefix, so the sweep's glob finds it and only the `is_dir()` arm
+# spares it. That is an invariant between two functions and nothing stated it: a sweep that took the
+# lock with it would let the next run in while the first was still working, which is the hazard of
+# `mutations/`'s "a second oracle takes the lock instead of refusing" with one more step in it.
+[[mutation]]
+name = "the housekeeping sweep takes the lock with it"
+file = "scripts/mutation_oracle.py"
+before = '        if str(stale) in dropped or not stale.is_dir():'
+after = '        if str(stale) in dropped:'
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_the_housekeeping_sweep_leaves_the_lock_alone",
+]
+
+# The oracle's own declaration check, run before any mutation and by the suite.
+
+[[mutation]]
+name = 'a duplicated before line is accepted as an anchor'
+file = "scripts/mutation_oracle.py"
+before = '    if occurrences > 1:'
+after = '    if occurrences > 99:'
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_before_line_must_occur_exactly_once",
+]
+
+[[mutation]]
+name = 'a reddens id naming a function its file lacks passes the static check'
+file = "scripts/mutation_oracle.py"
+before = '                    and node.name == name'
+after = '                    and bool(name)'
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_reddens_id_must_name_a_test_its_file_defines",
+]
+
+[[mutation]]
+name = 'a parametrized reddens id the collection lacks passes the static check'
+file = "scripts/mutation_oracle.py"
+before = '        if scope is None or not names or ("[" in node_id and node_id not in (collected or ())):'
+after = '        if scope is None or not names:'
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_reddens_id_must_name_a_test_its_file_defines",
+]
+
+[[mutation]]
+name = 'a mutation declared twice passes the static check'
+file = "scripts/mutation_oracle.py"
+before = '        if key in seen:'
+after = '        if False:'
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_mutation_declared_twice_is_a_finding",
+]
+
+# The oracle's runs share a bytecode cache warmed from HEAD, and a `.pyc` is trusted on
+# mtime-in-whole-seconds and size. A mutated write that kept HEAD's mtime and HEAD's length
+# would run HEAD's bytecode and read as surviving; the stamp is what keeps them apart.
+[[mutation]]
+name = "a mutated write keeps HEAD's mtime, so warm bytecode stands in for it"
+file = "scripts/mutation_oracle.py"
+before = "    stamp = _next_stamp()"
+after = "    stamp = 0"
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_warm_bytecode_cache_never_stands_in_for_a_mutated_source",
+]
+
+# The stamp is read back, because a filesystem with coarser timestamps would round two stamps
+# into one without a sound.
+[[mutation]]
+name = "a mutated file's stamp is assumed rather than read back"
+file = "scripts/mutation_oracle.py"
+before = "        if subject.stat().st_mtime_ns // _SECOND != head.st_mtime_ns // _SECOND + stamp:"
+after = "        if False:"
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_mutated_file_that_does_not_keep_its_stamp_is_a_finding",
+]
+
+# Jobs prove entries at once, and two of them in one checkout would interleave their mutations
+# over one file. One checkout per job is what the queue hands out.
+[[mutation]]
+name = "every job shares one scratch checkout"
+file = "scripts/mutation_oracle.py"
+before = "            trees = [stack.enter_context(scratch_checkout()) for _ in range(jobs)]"
+after = "            trees = [stack.enter_context(scratch_checkout()) for _ in range(1)]"
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_every_job_proves_its_entries_in_a_scratch_checkout_of_its_own",
+]
+
+# A job's pytest runs in a worker thread, where no signal reaches it; a stop terminates the
+# runs in flight and refuses to start another, so a terminate is not a wait for every entry.
+[[mutation]]
+name = "a stop leaves the pytest runs in flight going"
+file = "scripts/mutation_oracle.py"
+before = "            child.terminate()"
+after = "            pass"
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_stop_ends_the_pytest_in_flight_and_starts_no_other",
+]
+
+[[mutation]]
+name = "a stopped run still starts pytest"
+file = "scripts/mutation_oracle.py"
+before = "            if _stopping.is_set():"
+after = "            if False:"
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_stop_ends_the_pytest_in_flight_and_starts_no_other",
+]
+
+# The same stop, reached the way it really is: a terminate in the middle of a run. The test that
+# `mutations/`'s "a stopped run still starts pytest" reddens calls `_stop_runs` itself, so without
+# this `_prove`'s arm could stop calling it.
+[[mutation]]
+name = "a terminate mid-run waits out the pytest runs in flight again"
+file = "scripts/mutation_oracle.py"
+before = "                    _stop_runs()\n"
+after = "                    pass\n"
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_terminate_mid_run_ends_the_pytest_in_flight_and_leaves_no_checkout",
+]
+
+# Jobs run pytest side by side, and pytest's default base directory is shared by all of them and
+# pruned by each on exit; a run of its own base is what keeps a neighbour from removing a test's
+# `tmp_path` mid-run.
+[[mutation]]
+name = "the jobs' pytest runs share pytest's default base directory again"
+file = "scripts/mutation_oracle.py"
+before = "                    f\"--basetemp={Path(scratch) / 'basetemp'}\",\n"
+after = ""
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_every_run_keeps_its_temporary_files_to_itself",
+]
+
+# The custom gates execute files the pull request can change. Under the default `if: success()`
+# they run only once the judging step passed; `if: always()` would run them after a refusal, in
+# a job whose verdict is already failing, and a step that may run whatever came before it is a
+# step nothing orders.
+[[mutation]]
+name = "the custom step runs after a refusal"
+file = ".github/workflows/check.yml"
+before = """
+      - name: The project's own gates
+"""
+after = """
+      - name: The project's own gates
+        if: always()
+"""
+reddens = [
+  "tests/test_check_workflow.py::test_one_job_whose_judging_steps_may_not_fail_and_run_in_order",
+]
+
+# `--builtin` is what keeps every command from `[gates.custom]` out of the process that decides
+# the verdict. Drop it and the judging step runs the pull request's own test suite, `Makefile`
+# or script, with the runner's privileges, before its exit status is read.
+[[mutation]]
+name = "the judging step runs the repository's own gate commands"
+file = ".github/workflows/check.yml"
+before = '          python3 -P -s -m stayfixed gate --builtin --root "$ROOT" --base "$BASE_SHA" \'
+after = '          python3 -P -s -m stayfixed gate --root "$ROOT" --base "$BASE_SHA" \'
+reddens = [
+  "tests/test_check_workflow.py::test_the_judging_step_runs_no_custom_gate_and_the_next_step_runs_them",
+]
+
+# The base step resolves the base once to a commit, and the judging step must judge against
+# that commit. Judged against the tree's own HEAD, every change to `stayfixed.toml` compares
+# equal to itself, and a pull request that stops enforcing a gate passes the configuration check.
+[[mutation]]
+name = "the judging step judges the tree against itself"
+file = ".github/workflows/check.yml"
+before = '          python3 -P -s -m stayfixed gate --builtin --root "$ROOT" --base "$BASE_SHA" \'
+after = '          python3 -P -s -m stayfixed gate --builtin --root "$ROOT" --base "$(git -C "$ROOT" rev-parse HEAD)" \'
+reddens = [
+  "tests/test_check_workflow.py::test_the_judging_step_fails_a_change_that_loosens_what_the_base_enforces",
+]
+
+# A refused key and an enforcing gate's findings reach the pull request's page as annotations.
+# Without `--annotate` the job fails with no line saying which key or which finding, and the
+# author reads the raw log to find out.
+[[mutation]]
+name = "the judging step stops annotating"
+file = ".github/workflows/check.yml"
+before = '''
+          python3 -P -s -m stayfixed gate --builtin --root "$ROOT" --base "$BASE_SHA" \
+            --workflow-sha "$WORKFLOW_SHA" --annotate --summary "$GITHUB_STEP_SUMMARY" "${only[@]}"'''
+after = '''
+          python3 -P -s -m stayfixed gate --builtin --root "$ROOT" --base "$BASE_SHA" \
+            --workflow-sha "$WORKFLOW_SHA" --summary "$GITHUB_STEP_SUMMARY" "${only[@]}"'''
+reddens = [
+  "tests/test_check_workflow.py::test_the_judging_step_fails_a_change_that_loosens_what_the_base_enforces",
+]
+
+# The job summary is the one place every gate's mode and outcome and every changed key's verdict
+# are listed together, uncapped by the platform's ten annotations per level.
+[[mutation]]
+name = "the judging step writes no job summary"
+file = ".github/workflows/check.yml"
+before = '''
+          python3 -P -s -m stayfixed gate --builtin --root "$ROOT" --base "$BASE_SHA" \
+            --workflow-sha "$WORKFLOW_SHA" --annotate --summary "$GITHUB_STEP_SUMMARY" "${only[@]}"'''
+after = '''
+          python3 -P -s -m stayfixed gate --builtin --root "$ROOT" --base "$BASE_SHA" \
+            --workflow-sha "$WORKFLOW_SHA" --annotate "${only[@]}"'''
+reddens = [
+  "tests/test_check_workflow.py::test_the_judging_step_fails_a_change_that_loosens_what_the_base_enforces",
+]
+
+# An upgrade's moved `[ci] ref` is admitted only at the commit the platform says is running.
+# Without `--workflow-sha` nothing names that commit, so every upgrade pull request that moves
+# the pin is refused and lands only by a direct push.
+[[mutation]]
+name = "the judging step drops the running workflow's commit"
+file = ".github/workflows/check.yml"
+before = '''
+          python3 -P -s -m stayfixed gate --builtin --root "$ROOT" --base "$BASE_SHA" \
+            --workflow-sha "$WORKFLOW_SHA" --annotate --summary "$GITHUB_STEP_SUMMARY" "${only[@]}"'''
+after = '''
+          python3 -P -s -m stayfixed gate --builtin --root "$ROOT" --base "$BASE_SHA" \
+            --annotate --summary "$GITHUB_STEP_SUMMARY" "${only[@]}"'''
+reddens = [
+  "tests/test_check_workflow.py::test_the_judging_step_passes_the_platform_s_workflow_sha_through_env",
+]
+
+# `python3 -m` puts the working directory first on `sys.path`. The gate steps run from the
+# workspace, which the pull request writes nothing into; `-P` is the second layer, and the one
+# that keeps a module the checkout carries from standing in for stayfixed's own if a gate step
+# ever runs from the caller's checkout, as the base step it replaced once did.
+[[mutation]]
+name = "the judging step imports from its working directory"
+file = ".github/workflows/check.yml"
+before = '          python3 -P -s -m stayfixed gate --builtin --root "$ROOT" --base "$BASE_SHA" \'
+after = '          python3 -s -m stayfixed gate --builtin --root "$ROOT" --base "$BASE_SHA" \'
+reddens = [
+  "tests/test_check_workflow.py::test_both_gate_steps_start_python_without_the_working_directory_on_its_path",
+]
+
+# `only:` is how a matrix caller gives each gate its own check row. Drop the loop and every leg
+# runs every gate, so each row reports the whole job's verdict under one gate's name.
+[[mutation]]
+name = "only: runs every gate whatever it names"
+file = ".github/workflows/check.yml"
+before = '''
+          for name in $ONLY; do only+=("--only=$name"); done
+          set +f
+          python3 -P -s -m stayfixed gate --builtin --root "$ROOT" --base "$BASE_SHA" \
+'''
+after = '''
+          :
+          set +f
+          python3 -P -s -m stayfixed gate --builtin --root "$ROOT" --base "$BASE_SHA" \
+'''
+reddens = [
+  "tests/test_check_workflow.py::test_only_runs_the_names_it_is_given_and_nothing_else",
+]
+
+# `$ONLY` is split unquoted, which is also where the shell globs: a name like `d*` would be
+# expanded against the workspace and reach `stayfixed gate` as whatever files matched.
+[[mutation]]
+name = "only: names are expanded as file patterns"
+file = ".github/workflows/check.yml"
+before = '''
+          set -f
+          only=()
+          for name in $ONLY; do only+=("--only=$name"); done
+          set +f
+          python3 -P -s -m stayfixed gate --builtin --root "$ROOT" --base "$BASE_SHA" \
+'''
+after = '''
+          :
+          only=()
+          for name in $ONLY; do only+=("--only=$name"); done
+          set +f
+          python3 -P -s -m stayfixed gate --builtin --root "$ROOT" --base "$BASE_SHA" \
+'''
+reddens = [
+  "tests/test_check_workflow.py::test_an_only_name_is_never_expanded_as_a_file_pattern",
+]
+
+# git resolves a short `origin/<base>` through `refs/tags/` before `refs/remotes/`, and
+# `fetch-depth: 0` fetches every tag. So whoever may push a tag named `origin/main` would choose
+# the commit whose configuration every pull request is judged against. The anchor is the fully
+# qualified remote-tracking ref, which `actions/checkout` writes from the platform.
+[[mutation]]
+name = "a tag named like the tracking branch chooses the base"
+file = ".github/workflows/check.yml"
+before = '          base_sha="$(git rev-parse --verify --quiet "refs/remotes/origin/$base^{commit}")" ||'
+after = '          base_sha="$(git rev-parse --verify --quiet "origin/$base^{commit}")" ||'
+reddens = [
+  "tests/test_fixtures.py::test_a_tag_named_like_the_tracking_branch_does_not_choose_the_base",
+]
+
+# `-P` keeps the working directory off `sys.path` and nothing else: a `PYTHONPATH` entry inside
+# the caller's checkout puts every module the pull request adds ahead of the standard library in
+# the process that decides the verdict. Measured when the case was written: a planted
+# `tomllib.py` ran and the step still exited 0.
+[[mutation]]
+name = "the judging step's PYTHONPATH reaches into the checkout"
+file = ".github/workflows/check.yml"
+before = '''
+      - name: The configuration and the built-in gates
+        env:
+          PYTHONPATH: stayfixed/src
+'''
+after = '''
+      - name: The configuration and the built-in gates
+        env:
+          PYTHONPATH: stayfixed/src:project
+'''
+reddens = [
+  "tests/test_check_workflow.py::test_no_module_the_checkout_carries_is_imported_by_a_gate_step[judging]",
+  "tests/test_check_workflow.py::test_the_verdict_s_process_gets_only_the_environment_its_step_names",
+]
+
+# And in the custom step, where a planted module in stayfixed's own process could report an
+# enforcing custom gate as passing whatever its command exited with.
+[[mutation]]
+name = "the custom step's PYTHONPATH reaches into the checkout"
+file = ".github/workflows/check.yml"
+before = '''
+      - name: The project's own gates
+        env:
+          PYTHONPATH: stayfixed/src
+'''
+after = '''
+      - name: The project's own gates
+        env:
+          PYTHONPATH: stayfixed/src:project
+'''
+reddens = [
+  "tests/test_check_workflow.py::test_no_module_the_checkout_carries_is_imported_by_a_gate_step[custom]",
+  "tests/test_check_workflow.py::test_the_verdict_s_process_gets_only_the_environment_its_step_names",
+]
+
+# The judging step runs from the workspace, which the pull request writes nothing into. From the
+# caller's checkout, `-P` would be the only thing between a module the pull request adds and the
+# verdict, and a relative `PYTHONPATH` would resolve inside the checkout.
+[[mutation]]
+name = "the judging step runs from the caller's checkout"
+file = ".github/workflows/check.yml"
+before = '''
+      - name: The configuration and the built-in gates
+        env:
+'''
+after = '''
+      - name: The configuration and the built-in gates
+        working-directory: project
+        env:
+'''
+reddens = [
+  "tests/test_check_workflow.py::test_the_verdict_s_process_gets_only_the_environment_its_step_names",
+]
+
+# An `if:` on the job skips it, and a skipped job is a required check the platform reports as
+# passing: every step's own guard would hold while the verdict never ran.
+[[mutation]]
+name = "the gates job gains a condition of its own"
+file = ".github/workflows/check.yml"
+before = """
+    runs-on: ubuntu-latest
+"""
+after = """
+    if: false
+    runs-on: ubuntu-latest
+"""
+reddens = [
+  "tests/test_check_workflow.py::test_one_job_whose_judging_steps_may_not_fail_and_run_in_order",
+]
+
+# A program handed to an interpreter with `-c` runs with its working directory first on
+# `sys.path` unless a flag says otherwise, and a spelling check for `python3 -c` alone missed
+# `python3 -P -c`, `python -I -c` and every other spelling in between.
+[[mutation]]
+name = "a step hands the interpreter a program on the command line again"
+file = ".github/workflows/check.yml"
+before = "        run: python3 -m stayfixed --version"
+after = "        run: python3 -P -c 'import stayfixed'"
+reddens = [
+  "tests/test_check_workflow.py::test_both_gate_steps_start_python_without_the_working_directory_on_its_path",
+]
+
+# The custom step reads `only:` the way the judging step does, so a matrix leg named for one
+# gate runs that gate. Drop its loop and every leg runs every custom gate's command, each one
+# reported under the leg's name.
+[[mutation]]
+name = "the custom step runs every custom gate whatever only: names"
+file = ".github/workflows/check.yml"
+before = '''
+          for name in $ONLY; do only+=("--only=$name"); done
+          set +f
+          python3 -P -s -m stayfixed gate --custom --root "$ROOT" --base "$BASE_SHA" \
+'''
+after = '''
+          :
+          set +f
+          python3 -P -s -m stayfixed gate --custom --root "$ROOT" --base "$BASE_SHA" \
+'''
+reddens = [
+  "tests/test_check_workflow.py::test_the_custom_step_runs_only_the_custom_gates_only_names",
+]
+
+# The custom step's process reports whether an enforcing custom gate passed, so a module the
+# checkout carries must not load in it either.
+[[mutation]]
+name = "the custom step imports from its working directory"
+file = ".github/workflows/check.yml"
+before = '          python3 -P -s -m stayfixed gate --custom --root "$ROOT" --base "$BASE_SHA" \'
+after = '          python3 -s -m stayfixed gate --custom --root "$ROOT" --base "$BASE_SHA" \'
+reddens = [
+  "tests/test_check_workflow.py::test_both_gate_steps_start_python_without_the_working_directory_on_its_path",
+]
+
+# A step spelled `- run:` has no `- name:` line, and the step walk read it as more lines of the
+# step above: eight steps counted over nine, and a script the pull request supplied running
+# before the judging step, unseen.
+[[mutation]]
+name = "a step with no name hides inside the step above it"
+file = ".github/workflows/check.yml"
+before = """
+      - name: stayfixed runs at all
+"""
+after = """
+      - run: bash project/setup.sh
+      - name: stayfixed runs at all
+"""
+reddens = [
+  "tests/test_check_workflow.py::test_one_job_whose_judging_steps_may_not_fail_and_run_in_order",
+]
+
+# `-c` with its flags joined, `-Pc`, is the same program on the command line, and it slipped a
+# pattern written for `-c` alone.
+[[mutation]]
+name = "a step runs a program with joined short flags"
+file = ".github/workflows/check.yml"
+before = "        run: python3 -m stayfixed --version"
+after = "        run: python3 -Pc 'import stayfixed'"
+reddens = [
+  "tests/test_check_workflow.py::test_both_gate_steps_start_python_without_the_working_directory_on_its_path",
+]
+
+# A program on standard input puts the working directory first on `sys.path` just as `-c` does.
+[[mutation]]
+name = "a step runs a program from standard input"
+file = ".github/workflows/check.yml"
+before = "        run: python3 -m stayfixed --version"
+after = "        run: echo 'import stayfixed' | python3 -"
+reddens = [
+  "tests/test_check_workflow.py::test_both_gate_steps_start_python_without_the_working_directory_on_its_path",
+]
+
+# An earlier step's environment reaches the judging step through `$GITHUB_ENV` and `$GITHUB_PATH`
+# the moment that step runs anything the pull request wrote: `BASH_ENV` on the proof step
+# sources a file from the checkout before `python3 -m stayfixed --version`.
+[[mutation]]
+name = "the proof step's shell sources a file from the checkout"
+file = ".github/workflows/check.yml"
+before = """
+        env:
+          PYTHONPATH: stayfixed/src
+        run: python3 -m stayfixed --version
+"""
+after = """
+        env:
+          PYTHONPATH: stayfixed/src
+          BASH_ENV: project/.ci-env
+        run: python3 -m stayfixed --version
+"""
+reddens = [
+  "tests/test_check_workflow.py::test_the_verdict_s_process_gets_only_the_environment_its_step_names",
+]
+
+# And the base step, which runs from the caller's checkout, so a relative `BASH_ENV` names a file
+# the pull request wrote.
+[[mutation]]
+name = "the base step's shell sources a file from the checkout"
+file = ".github/workflows/check.yml"
+before = "          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}"
+after = """          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          BASH_ENV: .ci-env"""
+reddens = [
+  "tests/test_check_workflow.py::test_the_verdict_s_process_gets_only_the_environment_its_step_names",
+]
+
+# A script that writes `$GITHUB_ENV` or `$GITHUB_PATH` chooses every later step's environment or
+# interpreter, outside any step's `env:` block, where no equality over the blocks can see it.
+[[mutation]]
+name = "the base step sets the environment of every later step"
+file = ".github/workflows/check.yml"
+before = """          } >> "$GITHUB_OUTPUT\""""
+after = """          } >> "$GITHUB_OUTPUT"
+          echo "PYTHONPATH=project" >> "$GITHUB_ENV\""""
+reddens = [
+  "tests/test_check_workflow.py::test_the_verdict_s_process_gets_only_the_environment_its_step_names",
+]
+
+# The whitelist read only what followed `python`: an assignment in front of the command, such as
+# `PYTHONUSERBASE=…`, passed it, and an assignment of another name reaches the interpreter too.
+[[mutation]]
+name = "the judging step's command gains an assignment in front of it"
+file = ".github/workflows/check.yml"
+before = '          python3 -P -s -m stayfixed gate --builtin --root "$ROOT" --base "$BASE_SHA" \'
+after = '          PYTHONUSERBASE=project/.local python3 -P -s -m stayfixed gate --builtin --root "$ROOT" --base "$BASE_SHA" \'
+reddens = [
+  "tests/test_check_workflow.py::test_both_gate_steps_start_python_without_the_working_directory_on_its_path",
+]
+
+# A script line that changes the verdict's process without being an invocation: an exported
+# variable reaches the interpreter, and a sourced file runs whatever it says. Every script is held
+# line for line.
+[[mutation]]
+name = "the judging step exports a user base inside the caller's checkout"
+file = ".github/workflows/check.yml"
+before = '''
+          set +f
+          python3 -P -s -m stayfixed gate --builtin --root "$ROOT" --base "$BASE_SHA" \
+'''
+after = '''
+          set +f
+          export PYTHONUSERBASE=project/.local
+          python3 -P -s -m stayfixed gate --builtin --root "$ROOT" --base "$BASE_SHA" \
+'''
+reddens = [
+  "tests/test_check_workflow.py::test_every_script_the_job_runs_is_held_line_for_line",
+]
+
+[[mutation]]
+name = "the custom step sources a file from the caller's checkout"
+file = ".github/workflows/check.yml"
+before = '''
+          set +f
+          python3 -P -s -m stayfixed gate --custom --root "$ROOT" --base "$BASE_SHA" \
+'''
+after = '''
+          set +f
+          [ -f project/.ci-env ] && . project/.ci-env || true
+          python3 -P -s -m stayfixed gate --custom --root "$ROOT" --base "$BASE_SHA" \
+'''
+reddens = [
+  "tests/test_check_workflow.py::test_every_script_the_job_runs_is_held_line_for_line",
+]
+
+# The same class in an earlier step: the gate steps' `PYTHONPATH` is `stayfixed/src`, and the
+# interpreter imports a `sitecustomize.py` it finds there at start-up, so a copy into stayfixed's
+# own checkout is code in the verdict's process.
+[[mutation]]
+name = "the base step copies a file into stayfixed's own checkout"
+file = ".github/workflows/check.yml"
+before = """
+          git check-ref-format --branch "$base" >/dev/null
+"""
+after = """
+          git check-ref-format --branch "$base" >/dev/null
+          cp .ci/sitecustomize.py ../stayfixed/src/ 2>/dev/null || true
+"""
+reddens = [
+  "tests/test_check_workflow.py::test_every_script_the_job_runs_is_held_line_for_line",
+]
+
+# An invocation matched as a prefix admitted a line that runs something else after it.
+[[mutation]]
+name = "the judging step's command line runs a second command before the gate"
+file = ".github/workflows/check.yml"
+before = '          python3 -P -s -m stayfixed gate --builtin --root "$ROOT" --base "$BASE_SHA" \'
+after = '          python3 -P -s -m stayfixed gate --help >/dev/null; PYTHONUSERBASE=project/.local python3 -P -s -m stayfixed gate --builtin --root "$ROOT" --base "$BASE_SHA" \'
+reddens = [
+  "tests/test_check_workflow.py::test_both_gate_steps_start_python_without_the_working_directory_on_its_path",
+  "tests/test_check_workflow.py::test_every_script_the_job_runs_is_held_line_for_line",
+]
+
+# The token's grant, held by value and not only by key: the project's own gates run with it in
+# reach, and the caller's grant is the ceiling for every step of the reusable workflow.
+[[mutation]]
+name = "the reusable workflow's token may write the repository"
+file = ".github/workflows/check.yml"
+before = "  contents: read"
+after = "  contents: write"
+reddens = [
+  "tests/test_check_workflow.py::test_the_job_s_token_can_read_the_repository_and_nothing_more",
+]
+
+# `-P` leaves the user site directory on, and a `.pth` file in it runs at the interpreter's
+# start-up; `-s` is what keeps one the pull request commits out of the gate steps' processes if
+# anything ever points the user base into the checkout.
+[[mutation]]
+name = "the judging step reads the user site directory again"
+file = ".github/workflows/check.yml"
+before = '          python3 -P -s -m stayfixed gate --builtin --root "$ROOT" --base "$BASE_SHA" \'
+after = '          python3 -P -m stayfixed gate --builtin --root "$ROOT" --base "$BASE_SHA" \'
+reddens = [
+  "tests/test_check_workflow.py::test_no_pth_file_under_a_user_base_in_the_checkout_runs_in_a_gate_step[judging]",
+]
+
+[[mutation]]
+name = "the custom step reads the user site directory again"
+file = ".github/workflows/check.yml"
+before = '          python3 -P -s -m stayfixed gate --custom --root "$ROOT" --base "$BASE_SHA" \'
+after = '          python3 -P -m stayfixed gate --custom --root "$ROOT" --base "$BASE_SHA" \'
+reddens = [
+  "tests/test_check_workflow.py::test_no_pth_file_under_a_user_base_in_the_checkout_runs_in_a_gate_step[custom]",
+]
+
+# The reusable workflow's time limit is the caller's to move, and the caller is pull-request
+# content: the expression reads the caller's value only inside 5 to 60, so the input cannot give
+# one run of this job more than an hour.
+[[mutation]]
+name = "the reusable workflow's time limit reaches ten hours"
+file = ".github/workflows/check.yml"
+before = "    timeout-minutes: ${{ inputs.timeout-minutes >= 5 && inputs.timeout-minutes <= 60 && inputs.timeout-minutes || 15 }}"
+after = "    timeout-minutes: ${{ inputs.timeout-minutes >= 5 && inputs.timeout-minutes <= 600 && inputs.timeout-minutes || 15 }}"
+reddens = [
+  "tests/test_check_workflow.py::test_the_job_s_time_limit_is_an_input_the_expression_holds_inside_its_bounds",
+]
+
+# A value outside the range would otherwise run silently under the default the expression stands
+# in for it: the caller asked for a bound it did not get. The first step refuses it.
+[[mutation]]
+name = "the time limit's bound step admits any value"
+file = ".github/workflows/check.yml"
+before = "            [5-9]|[1-5][0-9]|60) ;;"
+after = "            *) ;;"
+reddens = [
+  "tests/test_check_workflow.py::test_a_time_limit_outside_its_bounds_fails_the_job_before_anything_runs[4]",
+  "tests/test_check_workflow.py::test_a_time_limit_outside_its_bounds_fails_the_job_before_anything_runs[61]",
+  "tests/test_check_workflow.py::test_a_time_limit_outside_its_bounds_fails_the_job_before_anything_runs[7.5]",
+]
+
+[[mutation]]
+name = "the time limit's refusal stops failing the job"
+file = ".github/workflows/check.yml"
+before = """
+              echo "::error::timeout-minutes: must be a whole number of minutes from 5 to 60"
+              exit 1
+"""
+after = """
+              echo "::error::timeout-minutes: must be a whole number of minutes from 5 to 60"
+"""
+reddens = [
+  "tests/test_check_workflow.py::test_a_time_limit_outside_its_bounds_fails_the_job_before_anything_runs[61]",
+]
+
+# RELEASING.md's last step dispatches the release smoke at every release, and a job naming a tag
+# that does not exist fails the whole dispatch before any job runs: during `0.x` that is `v1`.
+[[mutation]]
+name = "the release smoke calls the alias a 0.x release does not have"
+file = ".github/workflows/smoke-release.yml"
+before = "    uses: stayfixed/stayfixed/.github/workflows/check.yml@v0.2.0"
+after = "    uses: stayfixed/stayfixed/.github/workflows/check.yml@v1"
+reddens = [
+  "tests/test_fixtures.py::test_the_release_smoke_calls_the_release_this_tree_carries",
+]
+
+# Every caller `init` writes passes no time limit, so only the smoke's own call of the reusable
+# workflow shows the platform taking a caller's value, through the expression, as the job's bound.
+[[mutation]]
+name = "no real run passes the reusable workflow a time limit of its own"
+file = ".github/workflows/smoke.yml"
+before = "      timeout-minutes: 25"
+after = "      timeout-minutes: 15"
+reddens = [
+  "tests/test_check_workflow.py::test_a_real_run_passes_the_time_limit_a_value_of_its_own",
+]
+
+# CI's rendered-artifact check accepted any directory named `.git`, so an empty `mkdir .git` stood
+# in for the repository `overlay create --local` makes on `main`.
+[[mutation]]
+name = "the rendered-artifact check takes any directory named .git"
+file = "scripts/check_artifacts.py"
+before = "    on_main = inside and head.is_file() and head.read_bytes() == MAIN_HEAD"
+after = "    on_main = inside"
+reddens = [
+  "tests/scripts/test_check_artifacts.py::test_a_directory_named_git_is_not_enough_it_is_a_repository_on_main[no-head]",
+  "tests/scripts/test_check_artifacts.py::test_a_directory_named_git_is_not_enough_it_is_a_repository_on_main[another-branch]",
+  "tests/scripts/test_check_artifacts.py::test_a_directory_named_git_is_not_enough_it_is_a_repository_on_main[detached]",
+  "tests/scripts/test_check_artifacts.py::test_a_directory_named_git_is_not_enough_it_is_a_repository_on_main[not-utf8]",
+]
+
+# The declarations are a directory of group files, and a reader that stops after one proves one
+# group's entries and reports the run as the whole set.
+[[mutation]]
+name = "the oracle reads only the first group file"
+file = "scripts/mutation_oracle.py"
+before = '    for path in group_files():'
+after = '    for path in group_files()[:1]:'
+reddens = ["tests/scripts/test_mutation_oracle.py::test_the_oracle_reads_every_group_file"]
+
+# Every entry sits in the group file `GROUP_OF` routes its `file` to; a table that lost a row
+# would file the next entry for that area in the wrong group, and nothing else would notice.
+[[mutation]]
+name = "the group table loses a row and its entries route to the catch-all"
+file = "scripts/mutation_oracle.py"
+before = '    ("src/stayfixed/doctor/", "doctor"),'
+after = ''
+reddens = ["tests/scripts/test_mutation_oracle.py::test_every_entry_lives_in_its_group_file"]
+
+# `GROUP_OF` routes by the longest prefix, so a row appended after `src/stayfixed/` is not dead;
+# taken first-match, that catch-all row would take the new row's files without a sound.
+[[mutation]]
+name = "the group table routes a file by its first matching row again"
+file = "scripts/mutation_oracle.py"
+before = "        key=lambda row: len(row[0]),"
+after = "        key=lambda row: 0,"
+reddens = ["tests/scripts/test_mutation_oracle.py::test_a_row_routes_its_files_wherever_it_stands_in_the_table"]
+
+# A comment cites an entry by its name and nothing else, so a name two entries share points every
+# such citation at two guards at once.
+[[mutation]]
+name = "the oracle lets two entries share a name"
+file = "scripts/mutation_oracle.py"
+before = "        if mutation.name in named:"
+after = "        if False:"
+reddens = ["tests/scripts/test_mutation_oracle.py::test_an_entry_name_declared_twice_is_a_finding"]
+
+# The tag is the seventh version source, and the one a release is actually created from. Accept any
+# tag and the gate that exists to say "one version everywhere" stops saying it about the only claim
+# a user ever sees.
+[[mutation]]
+name = "release check accepts a tag naming another version"
+file = "scripts/release.py"
+before = "        if tag not in tag_for(canonical):"
+after = "        if False:"
+reddens = ["tests/scripts/test_release.py::test_a_tag_that_names_another_version_is_drift"]
+
+# The other half: without `--tag` a pending fragment is why CHANGELOG.md may lag, and at a tag
+# it is why the changelog is wrong. Skip the check under a tag and a release ships a changelog
+# that does not carry the section the tag claims.
+[[mutation]]
+name = "release check tags over a pending fragment"
+file = "scripts/release.py"
+before = "        if pending:\n            problems.append("
+after = "        if False:\n            problems.append("
+reddens = ["tests/scripts/test_release.py::test_a_tag_with_pending_fragments_is_refused"]
+
+# The release script's `notes` writes CHANGELOG.md. Under a version that is not the project's it
+# writes a heading its `check` then refuses — and the fragments are consumed by then, so the fix is
+# a revert rather than a re-run.
+[[mutation]]
+name = "release notes assembles under a version that is not the project's"
+file = "scripts/release.py"
+before = "    if version != current:"
+after = "    if False:"
+reddens = [
+  "tests/scripts/test_release.py::test_a_version_that_is_not_the_projects_is_refused_before_anything_runs",
+]
+
+# `drift` walks the tree and the record and compares them. Compare the record to itself and every
+# answer is "no drift" — the shape the `files` check skipped for years rather than ship, because a
+# check that compares a file against itself is worse than none.
+[[mutation]]
+name = "the release record is compared against itself"
+file = "scripts/release.py"
+before = "    actual = digests(root)\n    problems = ["
+after = "    actual = recorded\n    problems = ["
+reddens = ["tests/scripts/test_release.py::test_a_written_record_has_no_drift_and_one_changed_byte_is_named"]
+
+# A record naming two of three files says "this is what the release shipped" while naming less
+# than it did. Refused where the tree can still be fixed, and nothing is written.
+[[mutation]]
+name = "a partial release record is written instead of refused"
+file = "scripts/release.py"
+before = "    if len(found) != len(HASHED_FILES):"
+after = "    if False:"
+reddens = ["tests/scripts/test_release.py::test_a_tree_missing_a_shipped_file_cannot_be_recorded_at_all"]
+
+# The release script's `check --root` defaults to `.` and may run in other repositories. The
+# first spelling of this guard asked whether a `hooks/` directory existed, which plenty of
+# projects have, and told them a record they never had was missing.
+[[mutation]]
+name = "release check asks for a hooks directory instead of the recorded files"
+file = "scripts/release.py"
+before = "    if (root / RECORD).is_file() or all((root / name).is_file() for name in HASHED_FILES):"
+after = '    if (root / "hooks").is_dir():'
+reddens = [
+  "tests/scripts/test_release.py::test_a_project_with_its_own_hooks_directory_is_not_told_about_a_release_record",
+]
+
+# The release check's `--tag` derived the drift message with `tag.split("v", 1)[-1]`, so
+# `--tag 1.2.3` reported `tag 1.2.3 names 1.2.3` — two identical strings asserted to disagree.
+[[mutation]]
+name = "the tag drift message invents a version by splitting on the letter v"
+file = "scripts/release.py"
+before = """
+            workflow_tag, platform_tag = tag_for(canonical)
+            problems.append(
+                f"tag {tag} is neither {workflow_tag} nor {platform_tag}; "
+                f"{PYPROJECT} says {canonical!r}"
+            )"""
+after = """
+            named = tag.split("v", 1)[-1]
+            problems.append(f"tag {tag} names {named}; {PYPROJECT} says {canonical!r}")"""
+reddens = [
+  "tests/scripts/test_release.py::test_the_drift_message_says_what_was_checked_rather_than_inventing_a_version",
+]
+
+# At a tag the plugin tree may hold no more files than the plugin directory lists unheld; the tree
+# is the plugin's paths at HEAD, which `scripts/plugin_tree.py` reads, and nothing beside them.
+[[mutation]]
+name = "release check stops refusing a plugin tree over the directory's count"
+file = "scripts/release.py"
+before = "    if count > PLUGIN_FILES_MAX:"
+after = "    if False:"
+reddens = [
+  "tests/scripts/test_release.py::test_a_tag_refuses_a_plugin_tree_over_the_directory_count",
+]
+
+[[mutation]]
+name = "release check refuses a plugin tree at the directory's count"
+file = "scripts/release.py"
+before = "    if count > PLUGIN_FILES_MAX:"
+after = "    if count >= PLUGIN_FILES_MAX:"
+reddens = [
+  "tests/scripts/test_release.py::test_a_tag_passes_a_plugin_tree_at_the_count",
+]
+
+# The tree is read from a commit: listed from the index, a file only staged under a plugin path
+# is counted, and the count is not the one the directory reads.
+[[mutation]]
+name = "release check counts the plugin tree in the index instead of HEAD"
+file = "scripts/plugin_tree.py"
+before = '"ls-tree", "-r", "-z", "--full-tree", sha, *pathspec'
+after = '"ls-files", "--format=%(objectmode) blob %(objectname)%x09%(path)", "-z", *pathspec'
+reddens = [
+  "tests/scripts/test_release.py::test_a_tag_passes_a_plugin_tree_at_the_count",
+]
+
+[[mutation]]
+name = "release check counts the whole repository instead of the plugin tree"
+file = "scripts/release.py"
+before = '    count, made, pinned = report["files"], report["commit"], report["pinned"]'
+after = '    count, made, pinned = len(subprocess_runner().launch(["git", "ls-tree", "-r", "--name-only", "HEAD"], root).stdout.splitlines()), report["commit"], report["pinned"]'
+reddens = [
+  "tests/scripts/test_release.py::test_a_tag_passes_a_plugin_tree_at_the_count",
+]
+
+[[mutation]]
+name = "release check counts the plugin tree without a tag"
+file = "scripts/release.py"
+before = "    if tag is not None and not entry_problems:\n        kinds.update(plugin_commit_problems(root))"
+after = "    if not entry_problems:\n        kinds.update(plugin_commit_problems(root))"
+reddens = [
+  "tests/scripts/test_release.py::test_a_tag_refuses_a_plugin_tree_over_the_directory_count",
+  "tests/scripts/test_release.py::test_a_tag_outside_a_git_checkout_is_refused_for_want_of_a_count",
+  "tests/scripts/test_release.py::test_a_tag_whose_plugin_tree_cannot_be_read_is_a_count_finding",
+  "tests/scripts/test_release.py::test_plain_check_does_not_compute_the_commit",
+]
+
+# No test reddens on `_reported`'s checks one at a time — its exit code, its JSON, an object,
+# `files` a count, and `commit`, `pinned` and `parent` ids or null — and none is arranged:
+# `scripts/plugin_tree.py` prints no other shape. It exits 0 only with the commit's report, whose
+# fields its own `PluginCommit` types, and exits 1 or 2 with the frame's object, which carries no
+# `files`, or with a traceback and nothing on stdout; so each check is another's backstop, and
+# together they keep a report of another shape from being read as the plugin commit.
+# A gate that cannot count does not pass: read as nought files and a matching pin, a tree
+# `plugin_tree.py` refused, or no checkout at all, passes the count.
+[[mutation]]
+name = "release check reads a plugin tree it could not count as empty"
+file = "scripts/release.py"
+before = "    if report is None:\n        return {"
+after = """    report = report or {"files": 0, "commit": "0" * 40, "pinned": "0" * 40}\n    if False:\n        return {"""
+reddens = [
+  "tests/scripts/test_release.py::test_a_tag_outside_a_git_checkout_is_refused_for_want_of_a_count",
+  "tests/scripts/test_release.py::test_a_tag_whose_plugin_tree_cannot_be_read_is_a_count_finding",
+]
+
+# At a tag the marketplace pins the plugin commit the tree makes: not the commit's parent, which is
+# the previous release's pin left as it was, and not no commit at all.
+[[mutation]]
+name = "release check holds the pin to the plugin commit's parent"
+file = "scripts/release.py"
+before = "    elif pinned != made:"
+after = '    elif pinned != report["parent"]:'
+reddens = [
+  "tests/scripts/test_release.py::test_a_tag_whose_pin_is_the_plugin_commit_passes",
+  "tests/scripts/test_release.py::test_a_tag_whose_pin_is_not_the_plugin_commit_is_a_finding",
+]
+
+[[mutation]]
+name = "release check passes any pin"
+file = "scripts/release.py"
+before = "    elif pinned != made:"
+after = "    elif False:"
+reddens = ["tests/scripts/test_release.py::test_a_tag_whose_pin_is_not_the_plugin_commit_is_a_finding"]
+
+[[mutation]]
+name = "release check passes a marketplace pinning no sha"
+file = "scripts/release.py"
+before = "    if pinned is None:\n        pins.append("
+after = "    if False:\n        pins.append("
+reddens = ["tests/scripts/test_release.py::test_a_tag_without_a_pin_is_a_finding_naming_the_commit"]
+
+# `pin` writes the plugin commit into the entry only once the plugin repository's `main` is its
+# parent, read by its exact name, from a remote that answered, and the file is written last.
+[[mutation]]
+name = "pin skips the main comparison"
+file = "scripts/release.py"
+before = "    if main != parent:"
+after = "    if False:"
+reddens = [
+  "tests/scripts/test_release.py::test_pin_refuses_when_the_plugin_main_is_not_the_parent[no-main]",
+  "tests/scripts/test_release.py::test_pin_refuses_when_the_plugin_main_is_not_the_parent[no-parent]",
+  "tests/scripts/test_release.py::test_pin_refuses_when_the_plugin_main_is_not_the_parent[another-main]",
+]
+
+[[mutation]]
+name = "pin refuses a main it should follow"
+file = "scripts/release.py"
+before = "    if main != parent:"
+after = "    if main is not None:"
+reddens = ["tests/scripts/test_release.py::test_pin_writes_the_commit_into_the_entry[after-a-release]"]
+
+[[mutation]]
+name = "pin writes before it compares"
+file = "scripts/release.py"
+before = "    main = _main_at(remote, runner, root)\n"
+after = "    fsops.write_within(root, MARKETPLACE, body)\n    main = _main_at(remote, runner, root)\n"
+reddens = [
+  "tests/scripts/test_release.py::test_pin_refuses_when_the_plugin_main_is_not_the_parent[no-main]",
+  "tests/scripts/test_release.py::test_pin_refuses_when_the_plugin_main_is_not_the_parent[no-parent]",
+  "tests/scripts/test_release.py::test_pin_refuses_when_the_plugin_main_is_not_the_parent[another-main]",
+]
+
+[[mutation]]
+name = "pin takes ls-remote's first line for main"
+file = "scripts/release.py"
+before = '        if ref == "refs/heads/main":'
+after = "        if ref:"
+reddens = ["tests/scripts/test_release.py::test_pin_reads_main_by_its_exact_name"]
+
+[[mutation]]
+name = "pin reads a remote it could not list as empty"
+file = "scripts/release.py"
+before = "    if done.code != 0:\n        lines = [line for line in done.stderr.splitlines() if line.strip()]"
+after = "    if False:\n        lines = [line for line in done.stderr.splitlines() if line.strip()]"
+reddens = ["tests/scripts/test_release.py::test_pin_refuses_an_unreachable_remote"]
+
+# What the repository, `plugin_tree.py` or a remote said reaches a finding or a refusal through
+# `clipped`: a line break before `::error::`, an escape sequence or an unbounded length is not
+# printed as it is.
+[[mutation]]
+name = "release check prints the marketplace's ref as it is"
+file = "scripts/release.py"
+before = '        problems.append(f"{said} pins ref {_shown(ref)}, which is no release tag vX.Y.Z")'
+after = '        problems.append(f"{said} pins ref {ref!r}, which is no release tag vX.Y.Z")'
+reddens = ["tests/scripts/test_release.py::test_a_marketplace_value_is_printed_escaped_and_clipped"]
+
+[[mutation]]
+name = "release check prints the marketplace's sha as it is"
+file = "scripts/release.py"
+before = '        problems.append(f"{said} pins sha {_shown(sha)}, which is no commit id")'
+after = '        problems.append(f"{said} pins sha {sha!r}, which is no commit id")'
+reddens = ["tests/scripts/test_release.py::test_a_marketplace_value_is_printed_escaped_and_clipped"]
+
+[[mutation]]
+name = "release reads no summary from the plugin tree script"
+file = "scripts/release.py"
+before = '    if isinstance(report, dict) and isinstance(report.get("summary"), str):'
+after = "    if False:"
+reddens = [
+  "tests/scripts/test_release.py::test_a_tag_whose_plugin_tree_cannot_be_read_is_a_count_finding",
+]
+
+[[mutation]]
+name = "release quotes the plugin tree script's summary as it is"
+file = "scripts/release.py"
+before = '        return clipped(str(report["summary"]))'
+after = '        return str(report["summary"])'
+reddens = ["tests/scripts/test_release.py::test_what_the_plugin_tree_script_said_is_quoted_clipped[its-summary]"]
+
+[[mutation]]
+name = "release quotes the plugin tree script's last stderr line as it is"
+file = "scripts/release.py"
+before = '    return clipped(lines[-1]) if lines else f"it exited {done.code} and said nothing"'
+after = '    return lines[-1] if lines else f"it exited {done.code} and said nothing"'
+reddens = ["tests/scripts/test_release.py::test_what_the_plugin_tree_script_said_is_quoted_clipped[a-traceback]"]
+
+[[mutation]]
+name = "release lets a plugin tree script that printed no JSON out as an internal error"
+file = "scripts/release.py"
+before = "    except ValueError:\n        report = None\n"
+after = "    except TypeError:\n        report = None\n"
+reddens = [
+  "tests/scripts/test_release.py::test_what_the_plugin_tree_script_said_is_quoted_clipped[a-traceback]",
+  "tests/scripts/test_release.py::test_what_the_plugin_tree_script_said_is_quoted_clipped[nothing]",
+]
+
+[[mutation]]
+name = "release quotes a plugin tree script that said nothing as its last line"
+file = "scripts/release.py"
+before = '    return clipped(lines[-1]) if lines else f"it exited {done.code} and said nothing"'
+after = "    return clipped(lines[-1])"
+reddens = ["tests/scripts/test_release.py::test_what_the_plugin_tree_script_said_is_quoted_clipped[nothing]"]
+
+[[mutation]]
+name = "pin quotes a remote that said nothing as its first line"
+file = "scripts/release.py"
+before = '            + (clipped(lines[0]) if lines else "it said nothing")'
+after = "            + clipped(lines[0])"
+reddens = ["tests/scripts/test_release.py::test_a_remote_s_refusal_is_quoted_clipped[nothing]"]
+
+# A string the marketplace holds prints as itself inside the path grammar; anything else prints as
+# its `repr`, which for every value JSON can hold but a string is its `str` as well, so no test
+# tells the two apart and none is declared for that half.
+[[mutation]]
+name = "release check prints a marketplace string as its repr"
+file = "scripts/release.py"
+before = "    return clipped(value if isinstance(value, str) else repr(value))"
+after = "    return clipped(repr(value))"
+reddens = [
+  "tests/scripts/test_release.py::test_an_entry_naming_another_repository_or_no_ref_is_refused[a-branch-ref]",
+]
+
+[[mutation]]
+name = "pin quotes the remote's refusal as it is"
+file = "scripts/release.py"
+before = '            + (clipped(lines[0]) if lines else "it said nothing")'
+after = '            + (lines[0] if lines else "it said nothing")'
+reddens = ["tests/scripts/test_release.py::test_a_remote_s_refusal_is_quoted_clipped"]
+
+[[mutation]]
+name = "pin reads a commit it could not make"
+file = "scripts/release.py"
+before = "    if report is None:\n        raise Refusal(f\"the plugin commit could not be made"
+after = "    if False:\n        raise Refusal(f\"the plugin commit could not be made"
+reddens = ["tests/scripts/test_release.py::test_pin_refuses_a_tree_it_cannot_make_the_commit_of"]
+
+[[mutation]]
+name = "pin lets a marketplace it cannot read out as a finding"
+file = "scripts/release.py"
+before = "    except (OSError, UnicodeDecodeError, MalformedSource) as exc:"
+after = "    except (OSError, UnicodeDecodeError) as exc:"
+reddens = [
+  "tests/scripts/test_release.py::test_pin_refuses_a_marketplace_edited_out_of_shape_since_head[plugins-a-string]",
+]
+
+[[mutation]]
+name = "pin writes a sha into a source that is no object"
+file = "scripts/release.py"
+before = "    if not isinstance(source, dict):\n        raise Refusal("
+after = "    if False:\n        raise Refusal("
+reddens = [
+  "tests/scripts/test_release.py::test_pin_refuses_a_marketplace_edited_out_of_shape_since_head[a-string-source]",
+]
+
+[[mutation]]
+name = "pin reads the source of an entry that is not there"
+file = "scripts/release.py"
+before = "    if entry is None:\n        raise Refusal("
+after = "    if False:\n        raise Refusal("
+reddens = [
+  "tests/scripts/test_release.py::test_pin_refuses_a_marketplace_edited_out_of_shape_since_head[no-entry]",
+  "tests/scripts/test_release.py::test_pin_refuses_a_marketplace_edited_out_of_shape_since_head[two-entries]",
+]
+
+[[mutation]]
+name = "pin says a first release's commit has a parent"
+file = "scripts/release.py"
+before = '''        follows = f"parent {parent}" if parent is not None else "no parent"'''
+after = '''        follows = f"parent {parent}"'''
+reddens = [
+  "tests/scripts/test_release.py::test_pin_refuses_when_the_plugin_main_is_not_the_parent[no-parent]",
+]
+
+[[mutation]]
+name = "pin says a plugin repository with no main has one"
+file = "scripts/release.py"
+before = '''        holds = f"main at {main}" if main is not None else "no main"'''
+after = '''        holds = f"main at {main}"'''
+reddens = [
+  "tests/scripts/test_release.py::test_pin_refuses_when_the_plugin_main_is_not_the_parent[no-main]",
+]
+
+[[mutation]]
+name = "pin's default remote is another repository"
+file = "scripts/release.py"
+before = '    pinning.add_argument("--remote", default=PLUGIN_URL, help=REMOTE_HELP)'
+after = '    pinning.add_argument("--remote", default=".", help=REMOTE_HELP)'
+reddens = ["tests/scripts/test_release.py::test_pin_reads_the_plugin_repository_by_default"]
+
+# The marketplace's plugin entry is the plugin repository, pinned to the release's tag by `ref` and
+# to the plugin commit by `sha`: its `ref` is a version source, and the entry's shape is held so
+# that a release commit cannot name another repository, a branch, a `sha` that is no commit id, or
+# a version of its own. Whether the `sha` is the plugin commit is asked at the tag, below.
+[[mutation]]
+name = "release check leaves the marketplace out of the version sources"
+file = "scripts/release.py"
+before = """    "CHANGELOG.md",
+    MARKETPLACE,
+)"""
+after = """    "CHANGELOG.md",
+)"""
+reddens = [
+  "tests/scripts/test_release.py::test_the_marketplace_ref_is_a_version_source",
+  "tests/scripts/test_release.py::test_collect_reads_every_source_value",
+]
+
+[[mutation]]
+name = "release check accepts a marketplace entry fetching any url"
+file = "scripts/release.py"
+before = '        or source.get("url") != PLUGIN_URL'
+after = '        or not source.get("url")'
+reddens = [
+  "tests/scripts/test_release.py::test_an_entry_naming_another_repository_or_no_ref_is_refused[another-url]",
+]
+
+[[mutation]]
+name = "release check accepts a marketplace entry pinned to no release tag"
+file = "scripts/release.py"
+before = "    if not isinstance(ref, str) or _RELEASE_REF.fullmatch(ref) is None:"
+after = "    if False:"
+reddens = [
+  "tests/scripts/test_release.py::test_an_entry_naming_another_repository_or_no_ref_is_refused[no-ref]",
+  "tests/scripts/test_release.py::test_an_entry_naming_another_repository_or_no_ref_is_refused[a-branch-ref]",
+]
+
+[[mutation]]
+name = "release check accepts a marketplace ref with a suffix after the version"
+file = "scripts/release.py"
+before = "    if not isinstance(ref, str) or _RELEASE_REF.fullmatch(ref) is None:"
+after = "    if not isinstance(ref, str) or _RELEASE_REF.match(ref) is None:"
+reddens = [
+  "tests/scripts/test_release.py::test_an_entry_naming_another_repository_or_no_ref_is_refused[a-suffixed-ref]",
+]
+
+[[mutation]]
+name = "release check takes any script's digits in a marketplace ref"
+file = "scripts/release.py"
+before = '_RELEASE_REF = re.compile(r"v([0-9]+\.[0-9]+\.[0-9]+)")'
+after = '_RELEASE_REF = re.compile(r"v(\d+\.\d+\.\d+)")'
+reddens = [
+  "tests/scripts/test_release.py::test_an_entry_naming_another_repository_or_no_ref_is_refused[a-non-ascii-digit]",
+]
+
+[[mutation]]
+name = "release check refuses every sha beside the ref"
+file = "scripts/release.py"
+before = '    if "sha" in source and not _is_sha(sha):'
+after = '    if "sha" in source:'
+reddens = ["tests/scripts/test_release.py::test_a_sha_beside_the_ref_is_accepted"]
+
+[[mutation]]
+name = "release check accepts any sha"
+file = "scripts/release.py"
+before = '    if "sha" in source and not _is_sha(sha):'
+after = "    if False:"
+reddens = [
+  "tests/scripts/test_release.py::test_a_sha_that_is_not_a_commit_id_is_refused[upper-case]",
+  "tests/scripts/test_release.py::test_a_sha_that_is_not_a_commit_id_is_refused[39-characters]",
+  "tests/scripts/test_release.py::test_a_sha_that_is_not_a_commit_id_is_refused[empty]",
+  "tests/scripts/test_release.py::test_a_sha_that_is_not_a_commit_id_is_refused[a-number]",
+]
+
+[[mutation]]
+name = "release check accepts a sha in upper case"
+file = "scripts/release.py"
+before = 'SHA1 = re.compile(r"[0-9a-f]{40}")'
+after = 'SHA1 = re.compile(r"[0-9a-fA-F]{40}")'
+reddens = ["tests/scripts/test_release.py::test_a_sha_that_is_not_a_commit_id_is_refused[upper-case]"]
+
+[[mutation]]
+name = "release check accepts a marketplace entry carrying a version"
+file = "scripts/release.py"
+before = '    if "version" in entry:'
+after = "    if False:"
+reddens = [
+  "tests/scripts/test_release.py::test_an_entry_naming_another_repository_or_no_ref_is_refused[a-version-on-the-entry]",
+]
+
+[[mutation]]
+name = "release check takes the first of several plugin entries for the one"
+file = "scripts/release.py"
+before = "    return (named[0] if len(named) == 1 else None), len(named)"
+after = "    return (named[0] if named else None), len(named)"
+reddens = ["tests/scripts/test_release.py::test_a_marketplace_without_the_plugin_entry_is_named[two]"]
+
+[[mutation]]
+name = "release check says a marketplace pinning no tag twice, once as version drift"
+file = "scripts/release.py"
+before = "        if name == MARKETPLACE and value is None:"
+after = "        if False:"
+reddens = [
+  "tests/scripts/test_release.py::test_a_path_source_is_refused_as_the_plugin_folder_it_used_to_be",
+]
+
+# A record problem is spelled one way by both commands: `check` said "version drift" of a record no
+# version disagrees with, and a record that is not one left `drift` as a `Failure`, a third
+# spelling on stderr with `--json`'s object lost.
+[[mutation]]
+name = "the release check reports a record problem as version drift"
+file = "scripts/release.py"
+before = "        kinds[RECORD_DRIFT] = drift(root)"
+after = "        kinds[VERSION_DRIFT] += drift(root)"
+reddens = [
+  "tests/scripts/test_release.py::test_both_commands_spell_a_record_problem_one_way[missing]",
+  "tests/scripts/test_release.py::test_both_commands_spell_a_record_problem_one_way[a-file-gone]",
+  "tests/scripts/test_release.py::test_both_commands_spell_a_record_problem_one_way[a-file-edited]",
+]
+
+[[mutation]]
+name = "a record that cannot be read leaves the drift check as a failure"
+file = "scripts/release.py"
+before = "    except UnreadableRecord as exc:\n        return [f\"{exc}; run `{COMMAND} hashes`\"]"
+after = "    except UnreadableRecord:\n        raise"
+reddens = [
+  "tests/scripts/test_release.py::test_a_record_that_cannot_be_read_is_drift_naming_it_and_never_reads_clean[not-json]",
+  "tests/scripts/test_release.py::test_a_record_that_cannot_be_read_is_drift_naming_it_and_never_reads_clean[not-utf8]",
+  "tests/scripts/test_release.py::test_both_commands_spell_a_record_problem_one_way[not-a-record]",
+]
+
+# --- The release script returns its findings as every command does ---------------------------
+# While these were the installed CLI's `release` group, it was the one area reporting a finding
+# by raising `Failure`, and the cost was in `--json`: the frame (which the script still runs
+# through) turns a `Failure` into `{"error": "failed", ...}` and drops `Result.data`, so the
+# machine-readable object changed shape on exactly the condition a consumer runs the command to
+# detect. `{}` for the drift arm's data is precisely what raising produced.
+[[mutation]]
+name = "release check's drift arm carries no data again"
+file = "scripts/release.py"
+before = "        return Result(summary, data, exit_code=1)"
+after = "        return Result(summary, {}, exit_code=1)"
+reddens = [
+  "tests/scripts/test_release.py::test_the_json_object_has_the_same_shape_whether_or_not_there_is_drift",
+]
+
+[[mutation]]
+name = "release hashes --check's drift arm carries no data again"
+file = "scripts/release.py"
+before = '            return Result(f"{RECORD_DRIFT}: " + "; ".join(problems), data, exit_code=1)'
+after = '            return Result(f"{RECORD_DRIFT}: " + "; ".join(problems), {}, exit_code=1)'
+reddens = [
+  "tests/scripts/test_release.py::test_the_check_json_object_has_the_same_shape_whether_or_not_there_is_drift",
+]
+
+# In the block led by `mutations/`'s "the TOML readers answer a document nested past the parser as
+# an internal error": the release script's version check is one more such reader.
+[[mutation]]
+name = "release check meets a version source nested past the parser as an internal error"
+file = "scripts/release.py"
+before = "    except UNPARSEABLE as exc:\n        raise MalformedSource(f\"{name} is not valid TOML: {exc}\") from None"
+after = "    except tomllib.TOMLDecodeError as exc:\n        raise MalformedSource(f\"{name} is not valid TOML: {exc}\") from None"
+reddens = [
+  "tests/config/test_deep_toml.py::test_a_reader_answers_a_document_nested_past_the_parser_as_one_that_does_not_parse[versions-read]",
+  "tests/config/test_deep_toml.py::test_a_reader_answers_a_number_past_the_parser_as_a_document_that_does_not_parse[versions-read]",
+]
+
+[[mutation]]
+name = "release check meets a pyproject.toml nested past the parser as an internal error"
+file = "scripts/release.py"
+before = "    except UNPARSEABLE as exc:\n        raise MalformedSource(f\"{PYPROJECT} is not valid TOML: {exc}\") from None"
+after = "    except tomllib.TOMLDecodeError as exc:\n        raise MalformedSource(f\"{PYPROJECT} is not valid TOML: {exc}\") from None"
+reddens = [
+  "tests/config/test_deep_toml.py::test_a_reader_answers_a_document_nested_past_the_parser_as_one_that_does_not_parse[versions-pyproject]",
+  "tests/config/test_deep_toml.py::test_a_reader_answers_a_number_past_the_parser_as_a_document_that_does_not_parse[versions-pyproject]",
+]
+
+# A JSON source is read through the product's own reader, which refuses by the source's name every
+# way the parse can fail and a document nested past its cap at the same depth on every platform:
+# `json`'s own reach is the C stack's on 3.14, and a deep `plugin.json` was once "not valid TOML".
+[[mutation]]
+name = "release check reads a JSON source past the shared reader"
+file = "scripts/release.py"
+before = "    return json_object(text, name, error=MalformedSource)"
+after = "    return json.loads(text)"
+reddens = [
+  "tests/scripts/test_release.py::test_a_manifest_nested_past_the_reader_is_refused_alike_on_every_platform[.claude-plugin/plugin.json]",
+  "tests/scripts/test_release.py::test_a_manifest_nested_past_the_reader_is_refused_alike_on_every_platform[.codex-plugin/plugin.json]",
+  "tests/scripts/test_release.py::test_a_malformed_source_is_reported_with_its_filename[.claude-plugin/plugin.json-{not json-JSON]",
+  "tests/scripts/test_release.py::test_a_version_source_of_the_wrong_shape_is_reported_by_name[claude-manifest-list]",
+  "tests/scripts/test_release.py::test_a_version_source_of_the_wrong_shape_is_reported_by_name[marketplace-list]",
+  "tests/scripts/test_release.py::test_a_version_source_of_the_wrong_shape_is_reported_by_name[marketplace-not-json]",
+]
+
+# A version source of the wrong shape decodes cleanly, so the decoder's catches never see it:
+# a `.get` on a list or a string was an internal error naming no file. Each reader asks the
+# shape it reads in, and the marketplace's rule stops reading a string entry with `in`.
+[[mutation]]
+name = "a pyproject.toml whose project is not a table is read with .get"
+file = "scripts/release.py"
+before = "        if not isinstance(project, dict):"
+after = "        if False:"
+reddens = [
+  "tests/scripts/test_release.py::test_a_version_source_of_the_wrong_shape_is_reported_by_name[project-not-a-table]",
+]
+
+[[mutation]]
+name = "the marketplace reads a plugins value that is not a list of objects"
+file = "scripts/release.py"
+before = "    if not isinstance(entries, list) or not all(isinstance(e, dict) for e in entries):"
+after = "    if False:"
+reddens = [
+  "tests/scripts/test_release.py::test_a_version_source_of_the_wrong_shape_is_reported_by_name[marketplace-entry-string]",
+  "tests/scripts/test_release.py::test_a_version_source_of_the_wrong_shape_is_reported_by_name[marketplace-plugins-string]",
+]
+
+# The repository's own record of its shipped files is held clean by one test and shown able to fail
+# by another: a copy of it with one digest changed must exit 1, or the check that keeps it current
+# could pass anything.
+[[mutation]]
+name = "hashes --check exits clean on a drifted record"
+file = "scripts/release.py"
+before = '            return Result(f"{RECORD_DRIFT}: " + "; ".join(problems), data, exit_code=1)'
+after = '            return Result(f"{RECORD_DRIFT}: " + "; ".join(problems), data, exit_code=0)'
+reddens = ["tests/test_manifests.py::test_a_drifted_record_fails_the_hashes_check"]
+
+# Every message that sends the reader back to the release script names the command to run. The
+# tests used to build the expected text from the script's own `COMMAND`, so the script could tell
+# its reader to run a command that no longer exists and every assertion agreed with it; they now
+# spell the command out.
+[[mutation]]
+name = "the release script tells its reader to run the command the CLI no longer ships"
+file = "scripts/release.py"
+before = 'COMMAND = "uv run python scripts/release.py"'
+after = 'COMMAND = "uv run stayfixed release"'
+reddens = [
+  "tests/scripts/test_release.py::test_a_tag_with_pending_fragments_is_refused",
+  "tests/scripts/test_release.py::test_a_version_that_is_not_the_projects_is_refused_before_anything_runs",
+  "tests/test_manifests.py::test_a_drifted_record_fails_the_hashes_check",
+]
+
+# The fifth place the release check is spelled, and the one run last before a tag: the other four
+# are held by the block test, which this workflow cannot join because it runs no mypy and no oracle.
+[[mutation]]
+name = "the release workflow runs the release check the CLI no longer ships"
+file = ".github/workflows/release.yml"
+before = '        run: uv run python scripts/release.py check --tag "$GITHUB_REF_NAME"'
+after = '        run: uv run stayfixed release check --tag "$GITHUB_REF_NAME"'
+reddens = [
+  "tests/test_fixtures.py::test_the_release_workflow_runs_the_release_check_in_the_one_spelling",
+]
+
+# CI's own gates are read by the spelling a contributor's block copies, and a gate followed by
+# `|| true` carries that spelling and passes whatever the gate found.
+[[mutation]]
+name = "ci lets a failed type check through"
+file = ".github/workflows/ci.yml"
+before = "        run: uv run mypy\n"
+after = "        run: uv run mypy || true\n"
+reddens = [
+  "tests/test_fixtures.py::test_the_block_a_contributor_copies_is_the_one_ci_runs",
+]
+
+# The step is held to its whole command line: the spelling followed by `|| true` runs the check and
+# publishes whatever it found.
+[[mutation]]
+name = "the release workflow lets a failed release check through"
+file = ".github/workflows/release.yml"
+before = '        run: uv run python scripts/release.py check --tag "$GITHUB_REF_NAME"'
+after = '        run: uv run python scripts/release.py check --tag "$GITHUB_REF_NAME" || true'
+reddens = [
+  "tests/test_fixtures.py::test_the_release_workflow_runs_the_release_check_in_the_one_spelling",
+]
+
+# A second step running the command the CLI used to ship, beside the one in the new spelling.
+[[mutation]]
+name = "the release workflow builds after running the release check the CLI no longer ships"
+file = ".github/workflows/release.yml"
+before = "        run: uv build"
+after = "        run: uv run stayfixed release check && uv build"
+reddens = [
+  "tests/test_fixtures.py::test_the_release_workflow_runs_the_release_check_in_the_one_spelling",
+]
+
+# The installed CLI's frame gives every command its `help=` sentence as its description; the
+# release script has its own parser and no frame, and each command's `--help` opened with
+# `usage:` and went straight to the options.
+[[mutation]]
+name = "the release script's commands open their help with no description again"
+file = "scripts/release.py"
+before = '        return sub.add_parser(name, help=sentence, description=sentence, epilog=JSON_EPILOG)'
+after = '        return sub.add_parser(name, help=sentence, epilog=JSON_EPILOG)'
+reddens = ["tests/scripts/test_release.py::test_every_command_opens_its_own_help_with_what_it_does"]
+
+# The shipped reader's tests build their records with a fixture of their own instead of loading
+# the release script, and that fixture writes exactly what the script writes.
+[[mutation]]
+name = "the release script writes its record in another layout"
+file = "scripts/release.py"
+before = '    body = json.dumps({"format": FORMAT, "files": found}, indent=2, sort_keys=True) + "\n"'
+after = '    body = json.dumps({"format": FORMAT, "files": found}, indent=4, sort_keys=True) + "\n"'
+reddens = [
+  "tests/scripts/test_release.py::test_the_tests_record_builder_writes_what_the_release_script_writes",
+]
+
+# A command registered with neither sentence, `help=None` explicitly, has `None` for both, and an
+# equality between the two holds over nothing.
+[[mutation]]
+name = "the release script registers a command with no sentence at all"
+file = "scripts/release.py"
+before = '        return sub.add_parser(name, help=sentence, description=sentence, epilog=JSON_EPILOG)'
+after = '        return sub.add_parser(name, help=None, epilog=JSON_EPILOG)'
+reddens = ["tests/scripts/test_release.py::test_every_command_opens_its_own_help_with_what_it_does"]
+
+# The wheel must carry the Python profile's code: the red-run hint is found and imported from the
+# installed package, and a build without it loses the Python note with nothing failing.
+[[mutation]]
+name = "the wheel need not carry the Python profile's hint"
+file = "scripts/check_artifacts.py"
+before = """    "stayfixed/profiles/python/hygiene.py",
+)"""
+after = ")"
+reddens = [
+  "tests/scripts/test_check_artifacts.py::test_a_wheel_without_the_python_profiles_code_is_named[stayfixed/profiles/python/hygiene.py]",
+]
+
+[[mutation]]
+name = "the wheel need not carry the Python profile's package marker"
+file = "scripts/check_artifacts.py"
+before = """    "stayfixed/profiles/python/__init__.py",
+"""
+after = ""
+reddens = [
+  "tests/scripts/test_check_artifacts.py::test_a_wheel_without_the_python_profiles_code_is_named[stayfixed/profiles/python/__init__.py]",
+]
+
+# A `--root` that is no repository root is no version disagreeing: printed under "version drift:",
+# it read as one.
+[[mutation]]
+name = "a root the release check cannot read is reported as version drift"
+file = "scripts/release.py"
+before = "        return {NOT_A_ROOT: [unusable]}, found"
+after = "        return {VERSION_DRIFT: [unusable]}, found"
+reddens = ["tests/scripts/test_release.py::test_a_root_the_check_cannot_read_is_said_without_a_label_it_is_not"]
+
+
+# The plugin's tree is read from a commit, under nine paths named once in `scripts/plugin_tree.py`,
+# and every reader of the plugin runs that script: a path dropped, a look-alike taken for a plugin
+# path or a byte read off the disk is a tree the directory, the attestation and the plugin
+# repository would all see wrongly at once.
+#
+# The order of the members needs no entry. `read` sorts by path as a `str`, by code point; for
+# valid UTF-8, code-point order, UTF-8 byte order and git's own full-path order coincide, and
+# `read` refuses every path that is not valid UTF-8, so no other order can be told apart from it.
+[[mutation]]
+name = "the plugin tree drops a path the runtime reads"
+file = "scripts/plugin_tree.py"
+before = """    "skills",
+    "agents",
+    "README.md","""
+after = """    "skills",
+    "README.md","""
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_members_lists_every_plugin_path_with_its_mode_and_nothing_else",
+]
+
+[[mutation]]
+name = "the plugin tree reads an object through a replace ref"
+file = "scripts/plugin_tree.py"
+before = 'GIT_OPTIONS = ("--no-replace-objects", "-c", "safe.bareRepository=all")'
+after = 'GIT_OPTIONS = ("-c", "safe.bareRepository=all")'
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_a_replace_ref_does_not_change_what_is_read",
+  "tests/scripts/test_plugin_tree.py::test_a_replaced_annotated_tag_peels_to_its_own_commit",
+  "tests/scripts/test_publish_plugin.py::test_a_replace_ref_does_not_stand_in_for_the_tags_version",
+]
+
+[[mutation]]
+name = "the plugin tree lets an explicit safe.bareRepository refuse the bare root it is named"
+file = "scripts/plugin_tree.py"
+before = 'GIT_OPTIONS = ("--no-replace-objects", "-c", "safe.bareRepository=all")'
+after = 'GIT_OPTIONS = ("--no-replace-objects",)'
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_a_bare_repository_is_read_under_an_explicit_safe_bare_repository",
+]
+
+[[mutation]]
+name = "the plugin tree takes a look-alike neighbour for a plugin path"
+file = "scripts/plugin_tree.py"
+before = '    return path == entry or path.startswith(entry + "/")'
+after = "    return path == entry or path.startswith(entry)"
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_exact_refuses_a_path_outside_the_plugin[a-file-beside]",
+  "tests/scripts/test_plugin_tree.py::test_exact_refuses_a_path_outside_the_plugin[a-directory-beside]",
+  "tests/scripts/test_plugin_tree.py::test_exact_refuses_a_path_outside_the_plugin[a-package-beside]",
+  "tests/scripts/test_plugin_tree.py::test_only_a_plugin_path_or_a_path_under_one_is_the_plugin_s",
+]
+
+[[mutation]]
+name = "the plugin tree reads its members' bytes off the disk"
+file = "scripts/plugin_tree.py"
+before = "    found = (Member(path, mode, blobs[obj]) for path, mode, obj in rows)"
+after = "    found = (Member(path, mode, (root / path).read_bytes()) for path, mode, obj in rows)"
+reddens = ["tests/scripts/test_plugin_tree.py::test_members_read_the_commit_and_not_the_disk"]
+
+[[mutation]]
+name = "the plugin tree peels no commit from the rev it is given"
+file = "scripts/plugin_tree.py"
+before = '"--end-of-options", f"{rev}^{{{kind}}}"'
+after = '"--end-of-options", rev'
+reddens = ["tests/scripts/test_plugin_tree.py::test_an_unresolvable_rev_is_refused_by_name[HEAD^{tree}]"]
+
+[[mutation]]
+name = "the plugin tree takes no 64-character object name for one"
+file = "scripts/plugin_tree.py"
+before = 'OBJECT_NAME = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")'
+after = 'OBJECT_NAME = re.compile(r"[0-9a-f]{40}")'
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_peel_names_a_sha256_repository_s_commit",
+  "tests/test_check_workflow.py::test_one_commit_id_shape_everywhere",
+]
+
+[[mutation]]
+name = "plugin_tree.py writes another manifest format than the publisher reads"
+file = "scripts/plugin_tree.py"
+before = 'FORMAT = "stayfixed-plugin-tree 1"'
+after = 'FORMAT = "stayfixed-plugin-tree 2"'
+reddens = ["tests/test_check_workflow.py::test_one_commit_id_shape_everywhere"]
+
+[[mutation]]
+name = "the plugin tree takes any answer of rev-parse for an object name"
+file = "scripts/plugin_tree.py"
+before = "    if not OBJECT_NAME.fullmatch(name):"
+after = "    if False:"
+reddens = ["tests/scripts/test_plugin_tree.py::test_peel_refuses_an_answer_that_is_not_an_object_name"]
+
+# The CLI resolves its rev once, in `read`: a second resolution of a ref that moved in between
+# would count, render or attest one commit and report another.
+[[mutation]]
+name = "the plugin manifest resolves its rev before reading"
+file = "scripts/plugin_tree.py"
+before = "    tree = read(Path(args.root), args.rev, exact=args.exact)"
+after = """    peel(Path(args.root), args.rev, "commit")
+    tree = read(Path(args.root), args.rev, exact=args.exact)"""
+reddens = ["tests/scripts/test_plugin_tree.py::test_read_resolves_the_rev_once"]
+
+[[mutation]]
+name = "the plugin tree lists a path holding a control character"
+file = "scripts/plugin_tree.py"
+before = "        if _control(path):"
+after = "        if False:"
+reddens = ["tests/scripts/test_plugin_tree.py::test_a_path_with_a_control_character_is_refused"]
+
+# A C1 control and a Unicode line separator are valid UTF-8, so the UTF-8 rule passes both, and a
+# terminal or an editor reading the manifest breaks its line at them.
+[[mutation]]
+name = "the plugin tree lists a path holding a C1 control"
+file = "scripts/plugin_tree.py"
+before = "        ord(char) < 0x20 or 0x7F <= ord(char) <= 0x9F or char in _LINE_SEPARATORS for char in path"
+after = "        ord(char) < 0x20 or ord(char) == 0x7F or char in _LINE_SEPARATORS for char in path"
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_a_c1_or_line_separator_in_a_path_is_refused[next-line]",
+  "tests/scripts/test_plugin_tree.py::test_a_c1_or_line_separator_in_a_path_is_refused[control-sequence-introducer]",
+]
+
+[[mutation]]
+name = "the plugin tree lists a path holding a Unicode line separator"
+file = "scripts/plugin_tree.py"
+before = "        ord(char) < 0x20 or 0x7F <= ord(char) <= 0x9F or char in _LINE_SEPARATORS for char in path"
+after = "        ord(char) < 0x20 or 0x7F <= ord(char) <= 0x9F for char in path"
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_a_c1_or_line_separator_in_a_path_is_refused[line-separator]",
+  "tests/scripts/test_plugin_tree.py::test_a_c1_or_line_separator_in_a_path_is_refused[paragraph-separator]",
+]
+
+[[mutation]]
+name = "the plugin tree reads a path that is not UTF-8 without refusing it"
+file = "scripts/plugin_tree.py"
+before = "        if not fsops.utf_8_name(raw):"
+after = "        if False:"
+reddens = ["tests/scripts/test_plugin_tree.py::test_a_path_that_is_not_utf_8_is_refused"]
+
+[[mutation]]
+name = "the plugin tree lists a symlink or a submodule as a member"
+file = "scripts/plugin_tree.py"
+before = "        if mode not in REGULAR_MODES:"
+after = "        if False:"
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_a_symlink_or_submodule_among_the_members_is_refused[symlink]",
+  "tests/scripts/test_plugin_tree.py::test_a_symlink_or_submodule_among_the_members_is_refused[submodule]",
+]
+
+[[mutation]]
+name = "the plugin tree ignores exact and lists only the plugin's paths"
+file = "scripts/plugin_tree.py"
+before = '    pathspec = () if exact else ("--", *PLUGIN_PATHS)'
+after = '    pathspec = ("--", *PLUGIN_PATHS)'
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_exact_refuses_a_path_outside_the_plugin[mcp-json]",
+  "tests/scripts/test_plugin_tree.py::test_exact_refuses_a_path_outside_the_plugin[a-script-beside]",
+]
+
+[[mutation]]
+name = "the plugin tree lists a tree missing one of its paths"
+file = "scripts/plugin_tree.py"
+before = "        if not any(_under(path, entry) for path, _, _ in rows):"
+after = "        if False:"
+reddens = ["tests/scripts/test_plugin_tree.py::test_a_missing_plugin_path_is_refused_by_name"]
+
+# The manifest is the one comparison a publish makes, so each half of a line must move it.
+[[mutation]]
+name = "the plugin manifest drops the mode from a line"
+file = "scripts/plugin_tree.py"
+before = '        lines.append(f"{member.mode} {hashlib.sha256(member.content).hexdigest()} {member.path}")'
+after = '        lines.append(f"{hashlib.sha256(member.content).hexdigest()} {member.path}")'
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_the_manifest_changes_with_one_byte_and_with_one_mode[one-mode]",
+]
+
+[[mutation]]
+name = "the plugin manifest hashes the path instead of the content"
+file = "scripts/plugin_tree.py"
+before = '        lines.append(f"{member.mode} {hashlib.sha256(member.content).hexdigest()} {member.path}")'
+after = '        lines.append(f"{member.mode} {hashlib.sha256(member.path.encode()).hexdigest()} {member.path}")'
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_the_manifest_changes_with_one_byte_and_with_one_mode[one-byte]",
+]
+
+# A render is the tree byte for byte with each file's mode exactly: a text write loses a byte that
+# is not UTF-8, and without the `fchmod` the umask decides the permissions.
+[[mutation]]
+name = "the plugin render writes members as text"
+file = "scripts/plugin_tree.py"
+before = "                    handle.write(member.content)"
+after = '                    handle.write(member.content.decode(errors="replace").encode())'
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_render_writes_bytes_and_the_executable_bit[umask-022]",
+  "tests/scripts/test_plugin_tree.py::test_render_writes_bytes_and_the_executable_bit[umask-077]",
+]
+
+[[mutation]]
+name = "the plugin render lets the umask decide a file's permissions"
+file = "scripts/plugin_tree.py"
+before = "                    os.fchmod(handle.fileno(), permissions)"
+after = "                    pass"
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_render_writes_bytes_and_the_executable_bit[umask-077]",
+]
+
+[[mutation]]
+name = "the plugin render writes into a destination that is not empty"
+file = "scripts/plugin_tree.py"
+before = "    if not _empty_or_absent(out):"
+after = "    if False:"
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_render_refuses_a_destination_that_is_not_empty[a-file-inside]",
+]
+
+[[mutation]]
+name = "the plugin render writes its manifest file before the tree"
+file = "scripts/plugin_tree.py"
+before = "    render(tree.members, out)\n    # Last, after every member: a manifest on disk says its tree was written whole.\n    if written is not None:\n        _write_manifest(written, manifest(tree.members))"
+after = "    if written is not None:\n        _write_manifest(written, manifest(tree.members))\n    render(tree.members, out)"
+reddens = ["tests/scripts/test_plugin_tree.py::test_a_render_that_fails_part_way_leaves_no_manifest_file"]
+
+[[mutation]]
+name = "the plugin render lets a write the disk refuses escape as an internal error"
+file = "scripts/plugin_tree.py"
+before = """        except OSError as exc:
+            # A full disk, a quota, a permission: said as the refusal it is, with the path it
+            # stopped at, rather than escaping as an internal error.
+            raise Refusal(
+                f"{quoted(member.path)} could not be written into {out}: {exc.strerror or exc}"
+            ) from None
+"""
+after = ""
+reddens = ["tests/scripts/test_plugin_tree.py::test_a_member_the_disk_will_not_take_is_refused_by_its_path"]
+
+[[mutation]]
+name = "the plugin render lets a destination it cannot make escape as an internal error"
+file = "scripts/plugin_tree.py"
+before = """    try:
+        out.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise Refusal(f"{out} cannot be made: {exc.strerror or exc}") from None
+"""
+after = """    out.mkdir(parents=True, exist_ok=True)
+"""
+reddens = ["tests/scripts/test_plugin_tree.py::test_a_destination_that_cannot_be_made_is_refused"]
+
+[[mutation]]
+name = "the plugin tree lets a cat-file answer cut inside a header escape as an internal error"
+file = "scripts/plugin_tree.py"
+before = '        header_end = out.find(b"\n", at)'
+after = '        header_end = out.index(b"\n", at)'
+reddens = ["tests/scripts/test_plugin_tree.py::test_a_cat_file_answer_cut_short_is_refused[inside-a-header]"]
+
+[[mutation]]
+name = "the plugin tree reads a blob cut short as the shorter bytes"
+file = "scripts/plugin_tree.py"
+before = "        if len(content) != size:"
+after = "        if False:"
+reddens = ["tests/scripts/test_plugin_tree.py::test_a_cat_file_answer_cut_short_is_refused[inside-a-blob]"]
+
+[[mutation]]
+name = "the plugin render writes its manifest file inside the tree"
+file = "scripts/plugin_tree.py"
+before = "    if written is not None and written.resolve().is_relative_to(out.resolve()):"
+after = "    if False:"
+reddens = ["tests/scripts/test_plugin_tree.py::test_the_cli_refuses_a_manifest_file_inside_the_tree"]
+
+# The CLI reads the commit `--rev` names and reports that commit: asked of `HEAD`, it would render
+# and count one tree while `Result.data` named another.
+[[mutation]]
+name = "the plugin render reads HEAD instead of the rev it is given"
+file = "scripts/plugin_tree.py"
+before = "    tree = read(root, args.rev)\n    render(tree.members, out)"
+after = "    tree = read(root, \"HEAD\")\n    render(tree.members, out)"
+reddens = ["tests/scripts/test_plugin_tree.py::test_the_cli_reads_the_rev_it_is_given"]
+
+[[mutation]]
+name = "the plugin manifest reads HEAD instead of the rev it is given"
+file = "scripts/plugin_tree.py"
+before = "    tree = read(Path(args.root), args.rev, exact=args.exact)\n    if args.manifest_file"
+after = "    tree = read(Path(args.root), \"HEAD\", exact=args.exact)\n    if args.manifest_file"
+reddens = ["tests/scripts/test_plugin_tree.py::test_the_cli_reads_the_rev_it_is_given"]
+
+[[mutation]]
+name = "the plugin manifest command drops --exact"
+file = "scripts/plugin_tree.py"
+before = "    tree = read(Path(args.root), args.rev, exact=args.exact)\n    if args.manifest_file"
+after = "    tree = read(Path(args.root), args.rev)\n    if args.manifest_file"
+reddens = ["tests/scripts/test_plugin_tree.py::test_the_cli_manifest_writes_its_file_and_honours_exact"]
+
+[[mutation]]
+name = "the plugin render command writes no manifest file"
+file = "scripts/plugin_tree.py"
+before = "        _write_manifest(written, manifest(tree.members))"
+after = "        pass"
+reddens = ["tests/scripts/test_plugin_tree.py::test_the_cli_writes_the_manifest_file_and_renders"]
+
+[[mutation]]
+name = "the plugin tree lists HEAD instead of the commit it resolved"
+file = "scripts/plugin_tree.py"
+before = "    for mode, obj, raw in _listing(root, sha, exact=exact):"
+after = "    for mode, obj, raw in _listing(root, \"HEAD\", exact=exact):"
+reddens = ["tests/scripts/test_plugin_tree.py::test_members_at_an_older_commit_are_that_commits"]
+
+[[mutation]]
+name = "the plugin tree refuses every path under exact"
+file = "scripts/plugin_tree.py"
+before = "        if not is_plugin_path(path):"
+after = "        if exact or not is_plugin_path(path):"
+reddens = ["tests/scripts/test_plugin_tree.py::test_exact_lists_a_tree_that_is_only_the_plugin"]
+
+[[mutation]]
+name = "the plugin render refuses an empty directory"
+file = "scripts/plugin_tree.py"
+before = "    return fsops.is_dir(out) and not fsops.is_symlink(out) and not any(out.iterdir())"
+after = "    return False"
+reddens = ["tests/scripts/test_plugin_tree.py::test_render_writes_into_an_empty_directory"]
+
+# The plugin repository's commit is a function of the source commit alone, so the release commit
+# can pin it and anyone can compute it again: its text is fixed byte for byte, its parent is read
+# from the first parent's pin, and nothing of the owner's configuration reaches its git dir.
+#
+# No entry holds `test_the_owner_s_line_endings_do_not_change_the_blobs` or
+# `test_members_differing_only_in_case_are_both_written`: `fast-import` applies no filter and
+# writes no file, so no line of the script converts a line ending or folds a name. Both guard a
+# return to hashing a render.
+[[mutation]]
+name = "the plugin commit is dated a second after the epoch"
+file = "scripts/plugin_tree.py"
+before = 'IDENTITY = "stayfixed <release@stayfixed.invalid> 0 +0000"'
+after = 'IDENTITY = "stayfixed <release@stayfixed.invalid> 1 +0000"'
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_commit_text_is_exactly_the_documented_bytes",
+  "tests/scripts/test_plugin_tree.py::test_the_plugin_commit_is_what_git_computes",
+]
+
+# The executable bit is the member's mode, which the tree is written with: the wrapper and the
+# launcher run only with it. The publisher builds with the tag's copy of this script, so its pushed
+# commit stops being the pin as well.
+[[mutation]]
+name = "the plugin commit builds every file without its executable bit"
+file = "scripts/plugin_tree.py"
+before = 'directories.setdefault(directory, []).append((member.mode, "blob", blob, name))'
+after = 'directories.setdefault(directory, []).append(("100644", "blob", blob, name))'
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_the_plugin_commit_is_what_git_computes",
+  "tests/scripts/test_publish_plugin.py::test_the_commit_pushed_is_the_pinned_one",
+]
+
+[[mutation]]
+name = "the plugin commit takes its parent from the source commit's own pin"
+file = "scripts/plugin_tree.py"
+before = "    parent = None if first is None else pinned_sha(root, first)"
+after = "    parent = None if first is None else pinned_sha(root, tree.commit)"
+reddens = ["tests/scripts/test_plugin_tree.py::test_the_parent_is_the_sha_the_first_parent_pins"]
+
+[[mutation]]
+name = "the plugin commit reads a parent under root_commit"
+file = "scripts/plugin_tree.py"
+before = "    first = None if root_commit else _first_parent(root, tree.commit)"
+after = "    first = _first_parent(root, tree.commit)"
+reddens = ["tests/scripts/test_plugin_tree.py::test_no_parent_ignores_the_history"]
+
+[[mutation]]
+name = "the plugin commit command drops --no-parent"
+file = "scripts/plugin_tree.py"
+before = "        Path(args.root), args.rev, Path(args.git_dir), root_commit=args.no_parent"
+after = "        Path(args.root), args.rev, Path(args.git_dir), root_commit=False"
+reddens = ["tests/scripts/test_plugin_tree.py::test_no_parent_ignores_the_history"]
+
+# A shallow clone, which CI checks out by default, does not hold the first parent: read as none,
+# the commit is built without the parent the release pinned, and is another commit.
+[[mutation]]
+name = "the plugin commit reads a first parent the clone lacks as none"
+file = "scripts/plugin_tree.py"
+before = """    if code != 0:
+        raise Refusal(
+            f"the commit before {sha} is not in this clone"""
+after = """    if code != 0:
+        return None
+    if False:
+        raise Refusal(
+            f"the commit before {sha} is not in this clone"""
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_a_source_whose_first_parent_is_not_in_the_clone_is_refused",
+]
+
+[[mutation]]
+name = "the plugin commit reads a pin that is no SHA-1 commit id"
+file = "scripts/plugin_tree.py"
+before = "    if not isinstance(pin, str) or SHA1.fullmatch(pin) is None:"
+after = "    if not isinstance(pin, str):"
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_a_malformed_pinned_sha_is_refused[upper-case]",
+  "tests/scripts/test_plugin_tree.py::test_a_malformed_pinned_sha_is_refused[39-characters]",
+  "tests/scripts/test_plugin_tree.py::test_a_malformed_pinned_sha_is_refused[64-characters]",
+]
+
+# The pin is read from the entry `scripts/release.py` reads, refused where it refuses: the first of
+# two entries is no more the one than the second, and an entry that is no object is not skipped
+# over to the one behind it, which is how the reader once found a pin the release check refused.
+[[mutation]]
+name = "the plugin commit reads the pin from the first of several entries"
+file = "scripts/plugin_tree.py"
+before = "    if len(named) != 1:"
+after = "    if not named:"
+reddens = ["tests/scripts/test_plugin_tree.py::test_a_malformed_pinned_sha_is_refused[two-entries]"]
+
+[[mutation]]
+name = "the plugin commit reads a pin from a source that is no object"
+file = "scripts/plugin_tree.py"
+before = "    if not isinstance(source, dict):"
+after = "    if False:"
+reddens = ["tests/scripts/test_plugin_tree.py::test_a_malformed_pinned_sha_is_refused[a-string-source]"]
+
+[[mutation]]
+name = "the plugin commit skips plugins entries that are no object"
+file = "scripts/plugin_tree.py"
+before = "    if not isinstance(plugins, list) or not all(isinstance(entry, dict) for entry in plugins):"
+after = "    plugins = [e for e in plugins if isinstance(e, dict)] if isinstance(plugins, list) else plugins\n    if not isinstance(plugins, list):"
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_a_malformed_pinned_sha_is_refused[an-entry-that-is-no-object]",
+]
+
+[[mutation]]
+name = "the plugin commit's git dir takes the owner's object format"
+file = "scripts/plugin_tree.py"
+before = '"--template=", "--object-format=sha1"'
+after = '"--template="'
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_the_owner_s_object_format_does_not_reach_the_git_dir",
+  "tests/scripts/test_plugin_tree.py::test_the_plugin_commit_is_the_same_under_an_inherited_git_environment_and_configuration",
+]
+
+[[mutation]]
+name = "the plugin commit's git dir is made from the owner's init template"
+file = "scripts/plugin_tree.py"
+before = '"--template=", "--object-format=sha1"'
+after = '"--object-format=sha1"'
+reddens = ["tests/scripts/test_plugin_tree.py::test_the_owners_init_template_does_not_reach_the_git_dir"]
+
+[[mutation]]
+name = "the plugin commit runs the owner's hooks in its git dir"
+file = "scripts/plugin_tree.py"
+before = 'NO_HOOKS = ("-c", "core.hooksPath=/dev/null")'
+after = "NO_HOOKS = ()"
+reddens = ["tests/scripts/test_plugin_tree.py::test_the_owners_hooks_do_not_run_in_the_git_dir"]
+
+[[mutation]]
+name = "the plugin commit finds its git dir rather than naming it"
+file = "scripts/plugin_tree.py"
+before = """        f"--git-dir={git_dir}",
+        *NO_HOOKS,"""
+after = """        *NO_HOOKS,"""
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_an_explicit_safe_bare_repository_does_not_refuse_the_git_dir",
+]
+
+[[mutation]]
+name = "the plugin commit says a git that gave no answer exited"
+file = "scripts/plugin_tree.py"
+before = "    if code == -1:"
+after = "    if False:"
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_a_commit_that_gave_no_answer_is_refused_in_no_answer_s_words",
+]
+
+[[mutation]]
+name = "the plugin commit writes into a git dir of another object format"
+file = "scripts/plugin_tree.py"
+before = '    if code != 0 or answer.split() != ["true", "sha1"]:'
+after = '    if code != 0 or answer.split()[:1] != ["true"]:'
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_a_half_made_git_dir_is_refused_and_an_empty_one_is_made[a-sha256-repository]",
+]
+
+[[mutation]]
+name = "the plugin commit command holds the pin to the parent"
+file = "scripts/plugin_tree.py"
+before = "    if args.require_pin and found.pinned != found.commit:"
+after = "    if args.require_pin and found.pinned != found.parent:"
+reddens = ["tests/scripts/test_plugin_tree.py::test_require_pin_exits_1_when_the_pin_is_another_commit"]
+
+[[mutation]]
+name = "the plugin commit names a parent it does not have"
+file = "scripts/plugin_tree.py"
+before = '    lineage = f"parent {parent}\n" if parent is not None else ""'
+after = '    lineage = f"parent {parent}\n"'
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_commit_text_is_exactly_the_documented_bytes",
+  "tests/scripts/test_plugin_tree.py::test_the_plugin_commit_is_what_git_computes",
+]
+
+[[mutation]]
+name = "the plugin commit reads a pin at the first parent of a parentless commit"
+file = "scripts/plugin_tree.py"
+before = "    parent = None if first is None else pinned_sha(root, first)"
+after = "    parent = pinned_sha(root, first)"
+reddens = ["tests/scripts/test_plugin_tree.py::test_the_plugin_commit_is_what_git_computes"]
+
+[[mutation]]
+name = "the plugin commit makes its git dir again over one that exists"
+file = "scripts/plugin_tree.py"
+before = "    if _empty_or_absent(git_dir):"
+after = "    if True:"
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_a_half_made_git_dir_is_refused_and_an_empty_one_is_made[a-file-inside]",
+  "tests/scripts/test_plugin_tree.py::test_a_half_made_git_dir_is_refused_and_an_empty_one_is_made[a-sha256-repository]",
+]
+
+# The trees are written deepest first, each directory's into the one above it, and the root's last.
+[[mutation]]
+name = "the plugin commit writes the root's tree into itself"
+file = "scripts/plugin_tree.py"
+before = "        if directory:"
+after = "        if True:"
+reddens = ["tests/scripts/test_plugin_tree.py::test_the_plugin_commit_is_what_git_computes"]
+
+[[mutation]]
+name = "the plugin commit makes no tree for a directory that holds only directories"
+file = "scripts/plugin_tree.py"
+before = "        while directory:"
+after = "        while False:"
+reddens = ["tests/scripts/test_plugin_tree.py::test_the_plugin_commit_is_what_git_computes"]
+
+[[mutation]]
+name = "the plugin commit command writes a manifest file it was not given"
+file = "scripts/plugin_tree.py"
+before = "    if args.manifest_file is not None:\n        # Last, after every object"
+after = "    if True:\n        # Last, after every object"
+reddens = ["tests/scripts/test_plugin_tree.py::test_no_parent_ignores_the_history"]
+
+# What the marketplace at a commit can be, each read as `scripts/release.py` reads it or refused in
+# its own words: absent, or pinning no `sha`, is no pin; a symlink, no entry, a pin that is no
+# string, a `plugins` that is no list, text that is not JSON or not UTF-8 is a refusal. A tree or a
+# submodule at the marketplace's path has a mode no regular file has, so the mode refuses it before
+# the kind is asked, and no test reddens on the `kind != "blob"` half alone.
+[[mutation]]
+name = "the plugin commit reads a commit holding no marketplace as one holding an empty one"
+file = "scripts/plugin_tree.py"
+before = "    if not record:\n        return None"
+after = "    if False:\n        return None"
+reddens = ["tests/scripts/test_plugin_tree.py::test_the_plugin_commit_is_what_git_computes"]
+
+[[mutation]]
+name = "the plugin commit reads a pin from a marketplace that is no regular file"
+file = "scripts/plugin_tree.py"
+before = '    if kind != "blob" or mode not in REGULAR_MODES:'
+after = '    if kind != "blob":'
+reddens = ["tests/scripts/test_plugin_tree.py::test_a_marketplace_that_is_a_symlink_is_refused"]
+
+[[mutation]]
+name = "the plugin commit reads the pin from an entry that is not there"
+file = "scripts/plugin_tree.py"
+before = "    if len(named) != 1:"
+after = "    if len(named) > 1:"
+reddens = ["tests/scripts/test_plugin_tree.py::test_a_malformed_pinned_sha_is_refused[no-entry]"]
+
+[[mutation]]
+name = "the plugin commit reads an entry pinning no sha as one pinning a sha"
+file = "scripts/plugin_tree.py"
+before = "    if \"sha\" not in source:\n        return None"
+after = "    if False:\n        return None"
+reddens = ["tests/scripts/test_plugin_tree.py::test_a_first_release_has_no_parent"]
+
+[[mutation]]
+name = "the plugin commit reads a pin that is no string as a string"
+file = "scripts/plugin_tree.py"
+before = "    if not isinstance(pin, str) or SHA1.fullmatch(pin) is None:"
+after = "    if SHA1.fullmatch(pin) is None:"
+reddens = ["tests/scripts/test_plugin_tree.py::test_a_malformed_pinned_sha_is_refused[a-number]"]
+
+[[mutation]]
+name = "the plugin commit prints a pin that is no string as its value"
+file = "scripts/plugin_tree.py"
+before = '        shown = clipped(pin) if isinstance(pin, str) else f"a {type(pin).__name__}"'
+after = "        shown = clipped(str(pin))"
+reddens = ["tests/scripts/test_plugin_tree.py::test_a_malformed_pinned_sha_is_refused[a-number]"]
+
+[[mutation]]
+name = "the plugin commit reads a plugins that is no list"
+file = "scripts/plugin_tree.py"
+before = "    if not isinstance(plugins, list) or not all(isinstance(entry, dict) for entry in plugins):"
+after = "    if isinstance(plugins, list) and not all(isinstance(entry, dict) for entry in plugins):"
+reddens = ["tests/scripts/test_plugin_tree.py::test_a_malformed_pinned_sha_is_refused[plugins-a-string]"]
+
+[[mutation]]
+name = "the plugin commit fails a marketplace that is not JSON rather than refusing it"
+file = "scripts/plugin_tree.py"
+before = "    return json_object(text, said, error=Refusal)"
+after = "    return json_object(text, said, error=Failure)"
+reddens = ["tests/scripts/test_plugin_tree.py::test_a_malformed_pinned_sha_is_refused[not-json]"]
+
+[[mutation]]
+name = "the plugin commit reads a marketplace that is not UTF-8 as replaced text"
+file = "scripts/plugin_tree.py"
+before = '        text = content.decode("utf-8")'
+after = '        text = content.decode("utf-8", "replace")'
+reddens = ["tests/scripts/test_plugin_tree.py::test_a_malformed_pinned_sha_is_refused[not-utf-8]"]
+
+[[mutation]]
+name = "the plugin commit reads a parentless source commit as having a first parent"
+file = "scripts/plugin_tree.py"
+before = "    if not parents:\n        return None"
+after = "    if False:\n        return None"
+reddens = ["tests/scripts/test_plugin_tree.py::test_the_plugin_commit_is_what_git_computes"]
+
+[[mutation]]
+name = "the plugin commit reads a version from a plugin.json that is not there"
+file = "scripts/plugin_tree.py"
+before = "    if not found:\n        raise Refusal(f\"{PLUGIN_MANIFEST}"
+after = "    if False:\n        raise Refusal(f\"{PLUGIN_MANIFEST}"
+reddens = ["tests/scripts/test_plugin_tree.py::test_a_plugin_json_naming_no_version_is_refused[no-file]"]
+
+[[mutation]]
+name = "the plugin commit names a version that is no string"
+file = "scripts/plugin_tree.py"
+before = "    if not isinstance(version, str):"
+after = "    if False:"
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_a_plugin_json_naming_no_version_is_refused[no-version]",
+  "tests/scripts/test_plugin_tree.py::test_a_plugin_json_naming_no_version_is_refused[a-number]",
+]
+
+# The version is the one input to the commit text that is not an object name, so it is held to
+# `X.Y.Z` in ASCII digits: anything else reaches `hash-object` as bytes the pipe's codec chooses,
+# or adds lines to the message.
+[[mutation]]
+name = "the plugin commit names a version spelled with digits that are not ASCII"
+file = "scripts/plugin_tree.py"
+before = 'VERSION = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+")'
+after = 'VERSION = re.compile(r"\d+\.\d+\.\d+")'
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_a_plugin_json_version_that_is_not_x_y_z_in_ascii_digits_is_refused[digits-that-are-not-ascii]",
+]
+
+[[mutation]]
+name = "the plugin commit names a version followed by a line break"
+file = "scripts/plugin_tree.py"
+before = "    if not VERSION.fullmatch(version):"
+after = "    if not VERSION.match(version):"
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_a_plugin_json_version_that_is_not_x_y_z_in_ascii_digits_is_refused[a-line-break]",
+]
+
+[[mutation]]
+name = "the plugin commit names any version string"
+file = "scripts/plugin_tree.py"
+before = "    if not VERSION.fullmatch(version):"
+after = "    if False:"
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_a_plugin_json_version_that_is_not_x_y_z_in_ascii_digits_is_refused[two-parts]",
+  "tests/scripts/test_plugin_tree.py::test_a_plugin_json_version_that_is_not_x_y_z_in_ascii_digits_is_refused[a-tag]",
+]
+
+# Run by an interpreter without this repository's `stayfixed`, `scripts/release.py` fails on its
+# first import, before the CLI frame exists; a traceback would exit `1`, `check`'s findings.
+[[mutation]]
+name = "release.py exits 1 when its package cannot be imported"
+file = "scripts/release.py"
+before = "    sys.exit(2)"
+after = "    sys.exit(1)"
+reddens = [
+  "tests/scripts/test_release.py::test_run_without_its_package_it_refuses_with_exit_2_and_says_to_use_uv",
+]
+
+# `tomllib` came with Python 3.11, so an older `python3` fails on it as one without `stayfixed`
+# does, and the same guard says so.
+[[mutation]]
+name = "release.py imports tomllib outside its guarded imports"
+file = "scripts/release.py"
+before = "try:\n    import tomllib\n\n    from stayfixed import fsops"
+after = "import tomllib\n\ntry:\n    from stayfixed import fsops"
+reddens = [
+  "tests/scripts/test_release.py::test_run_on_a_python_without_tomllib_it_refuses_with_exit_2",
+]
+
+[[mutation]]
+name = "release.py refuses a missing package without saying to run it through uv"
+file = "scripts/release.py"
+before = 'f"scripts/release.py: refused: {exc}; run it with `uv run python scripts/release.py`, "'
+after = 'f"scripts/release.py: refused: {exc}; run it with `python3 scripts/release.py`, "'
+reddens = [
+  "tests/scripts/test_release.py::test_run_without_its_package_it_refuses_with_exit_2_and_says_to_use_uv",
+]
+
+# Run by an interpreter without this repository's `stayfixed`, the script fails on its first
+# import, before the CLI frame exists; a traceback would exit `1`, `commit --require-pin`'s finding.
+[[mutation]]
+name = "plugin_tree.py exits 1 when its package cannot be imported"
+file = "scripts/plugin_tree.py"
+before = "    sys.exit(2)"
+after = "    sys.exit(1)"
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_run_without_its_package_it_refuses_with_exit_2_and_says_to_use_uv",
+]
+
+[[mutation]]
+name = "plugin_tree.py refuses a missing package without saying to run it through uv"
+file = "scripts/plugin_tree.py"
+before = 'f"scripts/plugin_tree.py: refused: {exc}; run it with `uv run python "'
+after = 'f"scripts/plugin_tree.py: refused: {exc}; run it with `python3 "'
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_run_without_its_package_it_refuses_with_exit_2_and_says_to_use_uv",
+]
+
+[[mutation]]
+name = "the plugin commit lets a git dir it cannot make out as an internal error"
+file = "scripts/plugin_tree.py"
+before = "        except OSError as exc:\n            raise Refusal(f\"{git_dir} cannot be made"
+after = "        except ValueError as exc:\n            raise Refusal(f\"{git_dir} cannot be made"
+reddens = ["tests/scripts/test_plugin_tree.py::test_a_git_dir_that_cannot_be_made_is_refused"]
+
+# Every git the commit runs that fails, or answers nothing usable, is refused in its own words, and
+# never handed on: an empty answer read as no pin, no parent or an id makes another commit, which
+# `--require-pin` exits 1 on, and the publisher reads that as a release to reject. The exit half of
+# `mktree`'s and `hash-object`'s checks is never alone, since a git that fails prints no id, which
+# the id half refuses as well; nor is `rev-parse`'s in `_prepared`, which prints nothing when it
+# fails (`test_a_half_made_git_dir_is_refused_and_an_empty_one_is_made`).
+[[mutation]]
+name = "the plugin commit reads a marketplace git could not list as none"
+file = "scripts/plugin_tree.py"
+before = "MARKETPLACE)\n    if code != 0:"
+after = "MARKETPLACE)\n    if False:"
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_a_git_that_fails_in_the_commit_is_refused_in_its_own_words[ls-tree-of-the-marketplace]",
+]
+
+[[mutation]]
+name = "the plugin commit reads a source commit git could not print as parentless"
+file = "scripts/plugin_tree.py"
+before = "    code, answer = _git(root, \"cat-file\", \"commit\", sha)\n    if code != 0:"
+after = "    code, answer = _git(root, \"cat-file\", \"commit\", sha)\n    if False:"
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_a_git_that_fails_in_the_commit_is_refused_in_its_own_words[cat-file-of-the-commit]",
+]
+
+[[mutation]]
+name = "the plugin commit writes into a git dir git could not make"
+file = "scripts/plugin_tree.py"
+before = "        if code != 0:\n            raise Refusal(f\"git init --bare exited"
+after = "        if False:\n            raise Refusal(f\"git init --bare exited"
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_a_git_that_fails_in_the_commit_is_refused_in_its_own_words[init]",
+]
+
+[[mutation]]
+name = "the plugin commit goes on past a fast-import that failed"
+file = "scripts/plugin_tree.py"
+before = "        if code != 0:\n            raise Refusal(f\"git fast-import exited"
+after = "        if False:\n            raise Refusal(f\"git fast-import exited"
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_a_git_that_fails_in_the_commit_is_refused_in_its_own_words[fast-import-exits]",
+]
+
+[[mutation]]
+name = "the plugin commit lets marks it cannot read out as an internal error"
+file = "scripts/plugin_tree.py"
+before = "        except (OSError, UnicodeDecodeError) as exc:"
+after = "        except UnicodeDecodeError as exc:"
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_a_git_that_fails_in_the_commit_is_refused_in_its_own_words[fast-import-writes-no-marks]",
+]
+
+[[mutation]]
+name = "the plugin commit writes a tree of members fast-import named no blob for"
+file = "scripts/plugin_tree.py"
+before = "    if not all(SHA1.fullmatch(blob) for blob in blobs):"
+after = "    if False:"
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_a_git_that_fails_in_the_commit_is_refused_in_its_own_words[fast-import-names-no-blob]",
+]
+
+[[mutation]]
+name = "the plugin commit names a tree mktree did not make"
+file = "scripts/plugin_tree.py"
+before = "    if code != 0 or not SHA1.fullmatch(tree):"
+after = "    if False:"
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_a_git_that_fails_in_the_commit_is_refused_in_its_own_words[mktree]",
+]
+
+[[mutation]]
+name = "the plugin commit names a commit hash-object did not write"
+file = "scripts/plugin_tree.py"
+before = "    if code != 0 or not SHA1.fullmatch(made):"
+after = "    if False:"
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_a_git_that_fails_in_the_commit_is_refused_in_its_own_words[hash-object]",
+]
+
+[[mutation]]
+name = "release check passes a marketplace with no one plugin entry"
+file = "scripts/release.py"
+before = "    if entry is None:\n        return ["
+after = "    if entry is None:\n        return []\n    if False:\n        return ["
+reddens = [
+  "tests/scripts/test_release.py::test_a_marketplace_without_the_plugin_entry_is_named[none]",
+  "tests/scripts/test_release.py::test_a_marketplace_without_the_plugin_entry_is_named[two]",
+]
+
+# A git that gave no answer, in every read of the source repository: said in `NO_ANSWER`'s words,
+# by the one wrapper every read goes through, rather than as "exited -1".
+[[mutation]]
+name = "the plugin tree's reads say a git that gave no answer exited"
+file = "scripts/plugin_tree.py"
+before = '    _answered(code, f"git {args[0]} in {root}")'
+after = "    pass"
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_a_commit_that_gave_no_answer_is_refused_in_no_answer_s_words[rev-parse]",
+  "tests/scripts/test_plugin_tree.py::test_a_commit_that_gave_no_answer_is_refused_in_no_answer_s_words[ls-tree]",
+  "tests/scripts/test_plugin_tree.py::test_a_commit_that_gave_no_answer_is_refused_in_no_answer_s_words[cat-file-batch]",
+]
+
+[[mutation]]
+name = "the plugin commit command writes a manifest short of its tree"
+file = "scripts/plugin_tree.py"
+before = """        # Last, after every object: a manifest on disk says its commit was written whole.
+        _write_manifest(Path(args.manifest_file), manifest(tree.members))"""
+after = """        # Last, after every object: a manifest on disk says its commit was written whole.
+        _write_manifest(Path(args.manifest_file), manifest(tree.members[:-1]))"""
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_require_pin_exits_1_when_the_pin_is_another_commit",
+]
+
+# `scripts/release.py`: the release check reports a malformed entry once, and `pin` names every
+# case its refusal answers and writes the marketplace's other text as it found it.
+[[mutation]]
+name = "release check computes the pin from an entry it found malformed"
+file = "scripts/release.py"
+before = "    if tag is not None and not entry_problems:"
+after = "    if tag is not None:"
+reddens = [
+  "tests/scripts/test_release.py::test_a_tag_whose_entry_is_malformed_reports_it_once",
+]
+
+[[mutation]]
+name = "pin's refusal stops naming the stopped release the restore commit answers"
+file = "scripts/release.py"
+before = """            "at the release before; or a release that stopped after its plugin was pushed left "
+            "main at a commit nothing here pins, which the restore commit puts back (RELEASING.md, "
+            "section 5)""""
+after = """            "at the release before (RELEASING.md, section 5)""""
+reddens = [
+  "tests/scripts/test_release.py::test_pin_refuses_when_the_plugin_main_is_not_the_parent",
+]
+
+[[mutation]]
+name = "pin escapes text outside ASCII"
+file = "scripts/release.py"
+before = '    return json.dumps(document, indent=2, ensure_ascii=False) + "\n"'
+after = '    return json.dumps(document, indent=2) + "\n"'
+reddens = [
+  "tests/scripts/test_release.py::test_pin_writes_text_outside_ascii_as_it_is",
+]
+
+# The release jobs that can write or sign: the one that signs installs nothing, by an allowlist of
+# its steps, and no such job leaves its token in a checkout.
+[[mutation]]
+name = "the attest job sets up another interpreter"
+file = ".github/workflows/release.yml"
+before = "      - name: The plugin commit of the commit this run builds\n"
+after = "      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0\n      - name: The plugin commit of the commit this run builds\n"
+reddens = [
+  "tests/test_check_workflow.py::test_only_the_attest_job_can_attest",
+]
+
+[[mutation]]
+name = "the Release job keeps a token in its checkout"
+file = ".github/workflows/release.yml"
+before = """        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: dist
+          path: dist/"""
+after = """      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: dist
+          path: dist/"""
+reddens = [
+  "tests/test_check_workflow.py::test_no_checkout_in_the_release_keeps_its_token",
+]
+
+[[mutation]]
+name = "the plugin tree compiles the commit id's shape to ignore case"
+file = "scripts/plugin_tree.py"
+before = 'SHA1 = re.compile(r"[0-9a-f]{40}")'
+after = 'SHA1 = re.compile(r"[0-9a-f]{40}", re.IGNORECASE)'
+reddens = [
+  "tests/test_check_workflow.py::test_one_commit_id_shape_everywhere",
+]
+
+[[mutation]]
+name = "the plugin tree runs a git outside its wrappers"
+file = "scripts/plugin_tree.py"
+before = '    code, answer = _git(root, "rev-parse", "--verify", "--end-of-options", f"{rev}^{{{kind}}}")'
+after = '    code, answer = git_run(root, *GIT_OPTIONS, "rev-parse", "--verify", "--end-of-options", f"{rev}^{{{kind}}}")'
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_only_the_two_wrappers_run_git",
+]
+
+[[mutation]]
+name = "the release build keeps a token in its checkout"
+file = ".github/workflows/release.yml"
+before = "          fetch-depth: 2\n          persist-credentials: false\n      - uses: astral-sh/setup-uv"
+after = "          fetch-depth: 2\n      - uses: astral-sh/setup-uv"
+reddens = [
+  "tests/test_check_workflow.py::test_no_checkout_in_the_release_keeps_its_token",
+]
+
+# No script imports another, but the one exemption the rule names: `release.py` taking a sibling
+# is the offence the walk exists for, and the exempt import's removal is what leaves an exemption
+# excusing nothing, so the walk must say it no longer sees it.
+[[mutation]]
+name = "the release script imports the plugin tree script"
+file = "scripts/release.py"
+before = "import json\nimport re\n"
+after = "import json\nimport plugin_tree  # noqa: F401\nimport re\n"
+reddens = [
+  "tests/scripts/test_script_imports.py::test_no_script_imports_another_but_the_named_exemption",
+]
+
+[[mutation]]
+name = "the exfiltration smoke stops importing the hooks smoke"
+file = "scripts/smoke_exfiltration.py"
+before = "from smoke_hooks import developer_free_env, fixture_repository, with_owner_home\n"
+after = ""
+reddens = [
+  "tests/scripts/test_script_imports.py::test_every_exemption_is_still_used",
+]
+
+# The same offence spelled through the directory's name: a walk that read only the scripts' stems
+# saw `from scripts import plugin_tree` as an import of nothing it knew.
+[[mutation]]
+name = "the release script imports the plugin tree script through the directory's name"
+file = "scripts/release.py"
+before = "import json\nimport re\n"
+after = "import json\nfrom scripts import plugin_tree  # noqa: F401\nimport re\n"
+reddens = [
+  "tests/scripts/test_script_imports.py::test_no_script_imports_another_but_the_named_exemption",
+]
+
+# The hook smoke asks a `PostToolUseFailure` entry for the red-run note by the words the note opens
+# with, copied from the guard rather than imported, and a test holds the two equal.
+[[mutation]]
+name = "the hook smoke asks for a red-run note the guard does not open with"
+file = "scripts/smoke_hooks.py"
+before = 'RED_RUN_NOTE = "Before calling this red a flake, pre-existing, or caused by the branch:"'
+after = 'RED_RUN_NOTE = "Before calling this red a flake:"'
+reddens = [
+  "tests/scripts/test_smoke_scripts.py::test_the_hook_smoke_asks_for_the_red_run_note_in_the_words_the_note_opens_with",
+]

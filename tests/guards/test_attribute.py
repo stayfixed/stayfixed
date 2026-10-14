@@ -33,13 +33,21 @@ needs_git = pytest.mark.skipif(shutil.which("git") is None, reason="git is not i
 
 @dataclass
 class _Coded:
-    """A runner that answers by the directory it is run in: the tree decides the exit code."""
+    """A runner that answers by the directory it is run in: the tree decides the exit code.
+
+    Not `tests.runners.Recorder`, because it answers a different question. That one answers by
+    the argv, and every run here launches the same argv: what tells the three runs apart is the
+    tree each one is launched in (the working tree, HEAD's extraction, the merge base's), so the
+    exit code is keyed on `cwd.name`. And it snapshots that tree at the moment of the call,
+    because `attribute` removes its scratch extractions before it returns and the snapshot is
+    the only evidence of what each run actually ran over.
+    """
 
     codes: dict[str, int]
     calls: list[tuple[list[str], Path]] = field(default_factory=list)
     trees: dict[str, dict[str, str]] = field(default_factory=dict)
 
-    def run(self, argv: list[str], cwd: Path) -> Completed:
+    def launch(self, argv: list[str], cwd: Path) -> Completed:
         self.calls.append((argv, cwd))
         self.trees[cwd.name] = {
             str(p.relative_to(cwd)): p.read_text(encoding="utf-8")
@@ -295,7 +303,7 @@ def test_a_git_that_could_not_be_launched_is_not_reported_as_an_exit_code(
     # not on the exception type. The first question asked is whether the clone is shallow, so
     # the cause surfaces there; the merge-base's own arm has the test below.
     root = _repo(tmp_path)
-    monkeypatch.setenv("PATH", str(tmp_path / "empty"))
+    gitfixture.no_git(monkeypatch, tmp_path / "empty")
     with pytest.raises(Failure, match="git could not be run"):
         attribute(root, command="true", base="main", runner=_Coded({}))
 
@@ -517,7 +525,8 @@ def test_many_merge_bases_are_counted_and_named_at_most_to_the_listed_limit(
 ) -> None:
     # The merge bases are the history's, bounded in number by nothing: the refusal counts every
     # one and names the first `LISTED_LIMIT`. Git is not asked, since only the message is under
-    # test. Mutation (oracle): "the attribution names every merge base" -> this reddens.
+    # test. Mutation (oracle): `mutations/`'s "the attribution names every merge base" -> this
+    # reddens.
     forks = [f"{n:040x}" for n in range(LISTED_LIMIT + 3)]
     monkeypatch.setattr("stayfixed.guards.attribute.fork_points", lambda *_: forks)
     runner = _Coded({})

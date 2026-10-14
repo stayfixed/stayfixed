@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import time
 from pathlib import Path
 
@@ -14,6 +15,7 @@ from stayfixed.docs.hygiene import (
     check_budgets,
     check_links,
     local_markdown_targets,
+    read_document,
     roadmap_prose,
 )
 from stayfixed.errors import Failure
@@ -61,6 +63,51 @@ def rules(findings: list[Finding]) -> list[str]:
 def test_a_compliant_project_has_no_findings(tmp_path: Path) -> None:
     root, config = project(tmp_path)
     assert check_budgets(root, config) == [] and check_links(root, config) == []
+
+
+def test_a_link_through_a_symlink_out_of_the_tree_is_not_asked_of_the_filesystem(
+    tmp_path: Path,
+) -> None:
+    # The link check is lexical before it asks `exists()`, which follows symlinks: a committed
+    # `docs/l` pointing out of the tree made it an existence oracle for the machine, a present
+    # file passing and an absent one reported. A symlink that stays inside the tree is still
+    # followed. Oracle: `mutations/`'s "the AGENTS.md link check follows a symlink out of the
+    # tree", "a path claim is followed through a symlink out of the tree".
+    agents = AGENTS + "- [a](docs/l/secret.md)\n- [b](docs/l/absent.md)\n- [c](docs/in/gone.md)\n"
+    root, config = project(tmp_path, agents=agents)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "secret.md").write_text("", encoding="utf-8")
+    (root / "docs" / "l").symlink_to(outside)
+    (root / "docs" / "in").symlink_to(".")
+    assert [(f.rule, f.detail) for f in check_links(root, config)] == [
+        ("missing-link", "docs/in/gone.md")
+    ]
+
+
+def test_a_link_the_filesystem_cannot_name_is_missing_rather_than_a_crash(tmp_path: Path) -> None:
+    # A name `exists()` raised on up to Python 3.13 and answered on 3.14; `fsops.exists` answers
+    # it on every interpreter, unforced. No entry of its own, for the reason
+    # `tests/docs/test_plans.py`'s case of it gives.
+    long = "docs/" + "a" * 5000 + ".md"
+    root, config = project(tmp_path, agents=AGENTS + f"- [x]({long})\n")
+    assert [(f.rule, f.detail) for f in check_links(root, config)] == [("missing-link", long)]
+
+
+def test_a_link_below_a_directory_that_cannot_be_searched_is_missing_rather_than_a_crash(
+    tmp_path: Path,
+) -> None:
+    # Oracle: `mutations/`'s "a path the filesystem cannot answer for crashes the reference checks".
+    if os.geteuid() == 0:
+        pytest.skip("root searches every directory")
+    root, config = project(tmp_path, agents=AGENTS + "- [x](docs/locked/child/x.md)\n")
+    (root / "docs" / "locked" / "child").mkdir(parents=True)
+    (root / "docs" / "locked").chmod(0o600)
+    try:
+        found = [(f.rule, f.detail) for f in check_links(root, config)]
+    finally:
+        (root / "docs" / "locked").chmod(0o700)
+    assert found == [("missing-link", "docs/locked/child/x.md")]
 
 
 def test_a_missing_agents_file_is_a_finding(tmp_path: Path) -> None:
@@ -115,7 +162,7 @@ def test_a_missing_local_link_target_is_a_finding_and_external_links_are_not(
 
 
 def test_a_link_inside_a_fence_is_an_example_not_a_claim(tmp_path: Path) -> None:
-    # The other readers in this area (`docs.graph`, `docs.plans`) blank fences; this one must too.
+    # The other prose readers (`docs.plans`, `memory.graph`) blank fences; this one must too.
     # Mutation: scan the raw text instead of the blanked one — this reddens.
     root, config = project(tmp_path, agents=AGENTS + "```\n[x](docs/example.md)\n```\n")
     assert check_links(root, config) == []
@@ -224,3 +271,13 @@ def test_a_text_of_unclosed_links_is_read_in_linear_time() -> None:
 
     benign = cpu("[a](b)" * (size // 6))
     assert cpu("[a](" * (size // 4)) < 20 * max(benign, 0.001)
+
+
+def test_a_document_linked_to_a_device_is_a_failure_naming_it(tmp_path: Path) -> None:
+    # `plan check` outside a git repository globs `docs/plans/` and reads each match, and a link
+    # there to `/dev/stdin` hung it. Only a regular file is read; `/dev/null` is the case that
+    # cannot hang and still tells the guard apart, since unguarded it reads as an empty plan.
+    # Mutation (declared): `read_document` reads with `read_text` again -> this reddens.
+    (tmp_path / "plan.md").symlink_to("/dev/null")
+    with pytest.raises(Failure, match="could not be read \\(not a regular file\\)"):
+        read_document(tmp_path / "plan.md", "docs/plans/plan.md")

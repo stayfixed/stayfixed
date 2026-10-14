@@ -1,0 +1,97 @@
+"""Which overlay root this machine records: `None` for "not recorded", and a failure for a file
+that cannot be read, never the one mistaken for the other."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+from stayfixed.config.loader import MachineConfigError
+from stayfixed.config.overlay import overlay_root
+from tests.ownerhome import as_owner_home
+
+
+def test_a_recorded_root_is_answered_and_an_empty_machine_file_records_none(
+    tmp_path: Path,
+) -> None:
+    # The recorded root anchors where the note store may resolve, so it is answered as recorded;
+    # an empty file is valid TOML that records nothing, so it is "not recorded" and never a broken
+    # file or a root nobody wrote. Measured by hand: with the last line answering `None` whatever
+    # `root` holds, the first assertion reddens. The absent file is held below.
+    overlay = tmp_path / "o"
+    overlay.mkdir()
+    machine = tmp_path / "machine.toml"
+    machine.write_text(f'[overlay]\nroot = "{overlay}"\n', encoding="utf-8")
+    assert overlay_root(machine) == overlay
+    machine.write_text("", encoding="utf-8")
+    assert overlay_root(machine) is None
+
+
+def test_a_machine_file_that_is_not_valid_toml_is_not_an_unrecorded_overlay(
+    tmp_path: Path,
+) -> None:
+    # `config.loader._personal` raises `ConfigError` for this very file and this very syntax
+    # error. This reader answered `None`, which the store renders as "no overlay root is
+    # recorded … run `stayfixed setup`" — wrong advice for a file that is already there. The
+    # loader's class, so the one file has one failure whichever reader meets it first.
+    broken = tmp_path / "machine.toml"
+    broken.write_text("[overlay\nroot = 'x'\n", encoding="utf-8")
+    with pytest.raises(MachineConfigError, match=r"is not valid TOML \(at line 1"):
+        overlay_root(broken)
+
+
+def test_a_machine_file_recording_no_overlay_still_answers_none(tmp_path: Path) -> None:
+    blank = tmp_path / "machine.toml"
+    blank.write_text("[personal]\n", encoding="utf-8")
+    assert overlay_root(blank) is None
+    assert overlay_root(tmp_path / "absent.toml") is None
+
+
+# Machine files that are valid TOML and record no usable overlay root: an `[overlay]` that is not a
+# table, and a `root` that is empty or not text.
+NO_USABLE_ROOT = {
+    "overlay-not-a-table": "overlay = 5\n",
+    "root-empty": '[overlay]\nroot = ""\n',
+    "root-not-text": "[overlay]\nroot = 5\n",
+}
+
+
+@pytest.mark.parametrize("case", sorted(NO_USABLE_ROOT))
+def test_a_machine_file_with_no_usable_overlay_root_records_none(tmp_path: Path, case: str) -> None:
+    # Each is a file that parses and records no overlay, so the answer is "not recorded", never an
+    # exception past every caller's catch and never a root nobody recorded. Measured by hand:
+    # without the `isinstance(section, dict)` arm, `overlay-not-a-table` raises `AttributeError`;
+    # without `and value`, `root-empty` answers the working directory, `Path(".")`; without
+    # `isinstance(value, str)`, `root-not-text` answers `Path("5")`.
+    machine = tmp_path / "machine.toml"
+    machine.write_text(NO_USABLE_ROOT[case], encoding="utf-8")
+    assert overlay_root(machine) is None
+
+
+def test_a_root_under_tilde_is_the_owners_home_and_never_home(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Every command reads this file under the password database's home, so a `~` in it is the
+    # home the file lives under: the database's. A direnv, mise or devcontainer setup can set
+    # `HOME` from a file the clone commits, and relative, it is a directory inside the clone a
+    # hook runs in.
+    owner = tmp_path / "owner"
+    as_owner_home(monkeypatch, owner)
+    monkeypatch.setenv("HOME", "fakehome")
+    machine = tmp_path / "machine.toml"
+    machine.write_text('[overlay]\nroot = "~/stayfixed-private"\n', encoding="utf-8")
+    assert overlay_root(machine) == owner / "stayfixed-private"
+    machine.write_text('[overlay]\nroot = "~"\n', encoding="utf-8")
+    assert overlay_root(machine) == owner
+
+
+def test_a_root_under_tilde_is_not_recorded_where_the_database_lists_no_home(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Never a `~` left in place, which every later path would read as a directory named `~`
+    # inside the current one.
+    as_owner_home(monkeypatch, None)
+    machine = tmp_path / "machine.toml"
+    machine.write_text('[overlay]\nroot = "~/stayfixed-private"\n', encoding="utf-8")
+    assert overlay_root(machine) is None

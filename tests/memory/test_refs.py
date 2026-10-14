@@ -3,16 +3,19 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
 
+from stayfixed import fsops
 from stayfixed.cli import build_parser, discover_registrars, run
 from stayfixed.config.loader import load
 from stayfixed.config.schema import Config
 from stayfixed.errors import Failure
 from stayfixed.findings import LISTED_LIMIT
-from stayfixed.memory.api import resolve, walk
+from stayfixed.memory.api import DELIMITER, resolve
+from stayfixed.memory.notes import walk
 from stayfixed.memory.refs import (
     _ignored,
     audience_violations,
@@ -23,6 +26,7 @@ from stayfixed.memory.refs import (
 from stayfixed.printed import CLIPPED_CHARS, clipped
 from tests.crafted import CRAFTED, CRAFTED_TOML, assert_never_raw
 from tests.gitfixture import git
+from tests.snapshot import assert_snapshot_unchanged, snapshot
 
 CONFIG = """
 [stayfixed]
@@ -82,6 +86,25 @@ def test_a_reference_to_a_deleted_file_is_reported_and_a_live_one_is_not(tmp_pat
     root, config = project(tmp_path)
     note(root, "developer", "a", "see `src/widget/boot.py`\n\nand `src/gone.py`\n")
     assert findings(root, config) == [("developer/a.md", 10, "src/gone.py", "dead-reference")]
+
+
+def test_a_note_that_grew_past_the_read_cap_after_the_walk_is_a_failure_naming_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The walk reads each note to the read cap, and the line reader reads it again for its line
+    # numbers: to the same cap, so a note that is past it by then is a failure naming the note,
+    # never one read to its end. The cap is lowered between the two reads, which is how a note
+    # that grew in between reaches the second one. Mutation (oracle): `mutations/`'s "the
+    # reference check reads a note again with no bound" -> nothing is refused.
+    root, config = project(tmp_path)
+    path = note(root, "developer", "a", "see `src/gone.py`\n")
+    store = resolve(root, config, machine=root.parent / "m.toml")
+    assert store is not None
+    walked = walk(store.path, config.memory.groups)
+    monkeypatch.setattr(fsops, "REGULAR_READ_LIMIT", len(path.read_bytes()) - 1)
+    with pytest.raises(Failure) as refused:
+        unresolved(root, config, store, walked)
+    assert str(refused.value) == "a.md cannot be read (larger than this reader reads)"
 
 
 def test_shorthand_under_a_source_root_resolves(tmp_path: Path) -> None:
@@ -144,6 +167,79 @@ def test_a_reference_into_the_store_is_settled_against_the_filesystem_not_the_ig
     assert findings(root, config) == [
         ("developer/a.md", 8, "notes/developer/gone.md", "dead-reference")
     ]
+
+
+def test_a_reference_through_a_symlink_loop_is_a_finding_and_never_an_internal_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A note's backticked path and a symlink loop are both bytes a clone can commit. Asking
+    # whether the path lies inside the store resolves it, and Python 3.11 and 3.12 raise
+    # `RuntimeError` resolving a path through a loop where 3.13 answers one, so on the two older
+    # interpreters `memory refs` ended in an internal error. The loop is real; the older
+    # interpreters' answer to it is stood in for, so the case holds on every interpreter. A path
+    # that does not resolve is not inside the store, and names no file: a finding.
+    #
+    # Mutation (oracle): `mutations/`'s "refs lets a path it cannot resolve raise" -> the
+    # `RuntimeError` escapes.
+    root, config = project(tmp_path)
+    (root / "loop").symlink_to("loop")
+    note(root, "developer", "a", "see `loop/x.py`\n")
+    resolve = Path.resolve
+
+    def resolve_as_older_pythons_do(self: Path, strict: bool = False) -> Path:
+        if "loop" in self.parts:
+            raise RuntimeError(f"Symlink loop from {str(self)!r}")
+        return resolve(self, strict)
+
+    monkeypatch.setattr(Path, "resolve", resolve_as_older_pythons_do)
+    assert findings(root, config) == [("developer/a.md", 8, "loop/x.py", "dead-reference")]
+
+
+def test_a_reference_through_a_symlink_out_of_the_tree_is_not_asked_of_the_filesystem(
+    tmp_path: Path,
+) -> None:
+    # A note's path and a symlink out of the tree are both bytes a clone can commit, and
+    # `exists()` follows the symlink: `memory refs` answered, one bit per path, whether a file
+    # exists anywhere on the machine. A symlink that stays inside the tree is still followed.
+    # Oracle: `mutations/`'s "memory refs follows a symlink out of the tree", "a path claim is
+    # followed through a symlink out of the tree".
+    root, config = project(tmp_path)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "secret.py").write_text("", encoding="utf-8")
+    (root / "src" / "l").symlink_to(outside)
+    (root / "src" / "in").symlink_to("widget")
+    note(root, "developer", "a", "`src/l/secret.py` `src/l/absent.py` `src/in/gone.py`\n")
+    assert findings(root, config) == [("developer/a.md", 8, "src/in/gone.py", "dead-reference")]
+
+
+def test_a_reference_the_filesystem_cannot_name_is_a_finding_rather_than_a_crash(
+    tmp_path: Path,
+) -> None:
+    # A name `exists()` raised on up to Python 3.13 and answered on 3.14; `fsops.exists` answers
+    # it on every interpreter, unforced. No entry of its own, for the reason
+    # `tests/docs/test_plans.py`'s case of it gives.
+    root, config = project(tmp_path)
+    long = "src/" + "a" * 5000 + ".py"
+    note(root, "developer", "a", f"`{long}`\n")
+    assert findings(root, config) == [("developer/a.md", 8, long, "dead-reference")]
+
+
+def test_a_reference_below_a_directory_that_cannot_be_searched_is_a_finding_rather_than_a_crash(
+    tmp_path: Path,
+) -> None:
+    # Oracle: `mutations/`'s "a path the filesystem cannot answer for crashes the reference checks".
+    if os.geteuid() == 0:
+        pytest.skip("root searches every directory")
+    root, config = project(tmp_path)
+    (root / "src" / "locked" / "child").mkdir(parents=True)
+    note(root, "developer", "a", "`src/locked/child/x.py`\n")
+    (root / "src" / "locked").chmod(0o600)
+    try:
+        found = findings(root, config)
+    finally:
+        (root / "src" / "locked").chmod(0o700)
+    assert found == [("developer/a.md", 8, "src/locked/child/x.py", "dead-reference")]
 
 
 def test_a_path_the_repository_ignores_outside_the_store_is_not_reported(tmp_path: Path) -> None:
@@ -241,6 +337,72 @@ def test_the_command_says_the_store_resolves_and_names_a_stale_reference_on_one_
     data = json.loads(capsys.readouterr().out)
     assert data["summary"] == "1 stale reference(s): developer/a.md:8 [dead-reference]"
     assert data["findings"][0]["detail"] == "src/gone.py"
+
+
+def test_a_second_run_answers_as_the_first_and_neither_writes_anything(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The lifecycle's "re-run, nothing changed": `memory refs` only reads, so a second run over
+    # the same store gives the first one's exit and line, a stale path and a graph notice
+    # included, and leaves the tree as it was. No mutation: the command has no write for one to
+    # take away, so this holds a property of the whole run rather than one line.
+    root, _config = project(tmp_path)
+    note(root, "developer", "a", "see `src/gone.py` and [[gone]]\n")
+    before = snapshot(root)
+    runs = [(invoke(["memory", "refs", *flags(root)]), capsys.readouterr().out) for _ in "ab"]
+    assert runs[0] == runs[1] and runs[0][0] == 1
+    assert_snapshot_unchanged(root, before)
+
+
+def test_a_stale_path_fails_beside_a_graph_notice_and_the_line_counts_both(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Advice neither gates nor excuses: a graph notice beside a stale path must not turn the
+    # finding's exit 1 into a pass, and the failing line still counts the notices, as the passing
+    # line does. Every other case had one or the other, so both mutations survived:
+    # `mutations/`'s "an advisory memory-graph notice clears a stale path's failure" and "the
+    # failing memory refs line stops counting the graph's notices".
+    root, _config = project(tmp_path)
+    note(root, "developer", "a", "see `src/gone.py` and [[gone]]\n")
+    assert invoke(["memory", "refs", *flags(root)]) == 1
+    assert capsys.readouterr().out == (
+        "1 stale reference(s): developer/a.md:8 [dead-reference]; "
+        "1 advisory link-graph notice(s), which do not gate\n"
+    )
+    assert invoke(["memory", "refs", "--json", *flags(root)]) == 1
+    data = json.loads(capsys.readouterr().out)
+    assert data["summary"] == (
+        "1 stale reference(s): developer/a.md:8 [dead-reference]; "
+        "1 advisory link-graph notice(s), which do not gate"
+    )
+    assert [(f["rule"], f["detail"]) for f in data["findings"]] == [
+        ("dead-reference", "src/gone.py")
+    ]
+    assert [(n["rule"], n["path"], n["detail"]) for n in data["notices"]] == [
+        ("dead-wiki-link", "developer/a.md", "gone")
+    ]
+
+
+def test_a_missing_store_directory_is_said_in_the_resolvers_own_words(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A store with no directory is the commonest reason there is nothing to walk, and it had no
+    # sentence of its own: the line fell back to a pointer that named no reason at all. The
+    # reason is stayfixed's text and prints; the store's path is the repository's and stays inside
+    # the data region. Mutations (declared): `mutations/`'s "a missing store directory is reported
+    # with no reason of its own", and "a store refusal prints its repository-authored detail
+    # before the data region", which reddens the split below.
+    root, _config = project(tmp_path)
+    (root / "stayfixed.toml").write_text(
+        CONFIG.replace('mode = "in-repo"', 'mode = "local-only"'), encoding="utf-8"
+    )
+    assert invoke(["memory", "refs", *flags(root)]) == 1
+    lead, opened, region = capsys.readouterr().err.partition(DELIMITER)
+    assert "the memory store's directory does not exist" in lead
+    # The path is kept, because a person needs it, and it is never printed ahead of the marker
+    # that says it is data.
+    assert opened and ".stayfixed" in region
+    assert ".stayfixed" not in lead
 
 
 def test_a_group_the_resolver_could_not_provide_refuses_rather_than_reporting_a_clean_walk(
@@ -373,7 +535,8 @@ def test_a_store_with_no_group_resolved_names_the_first_groups_in_sorted_order(
 ) -> None:
     # "The first eight" means one thing whichever order `memory.groups` declares them in: the
     # sorted order, which the data region for the same failure and the trail's stale keys use.
-    # Mutation (oracle): "the unresolved groups are named in declared order" -> this reddens.
+    # Mutation (oracle): `mutations/`'s "the unresolved groups are named in declared order" -> this
+    # reddens.
     root, _config = project(tmp_path)
     names = [f"g{number:02d}" for number in range(LISTED_LIMIT + 3)]
     (root / "stayfixed.toml").write_text(
@@ -393,8 +556,8 @@ def test_a_long_group_is_named_clipped_on_the_unresolved_groups_line(
 ) -> None:
     # A group is the repository's and bounded in length by nothing, the same class as a trail
     # key, so the refusal names it by `printed.clipped`: its start and its length, in the line's
-    # own naming and in the resolver's reason alike. Mutation (oracle): "an unresolved group is
-    # named unclipped" -> this reddens.
+    # own naming and in the resolver's reason alike. Mutation (oracle): `mutations/`'s "an
+    # unresolved group is named unclipped" -> this reddens.
     root, _config = project(tmp_path)
     group = "g" * (CLIPPED_CHARS + 30)
     (root / "stayfixed.toml").write_text(

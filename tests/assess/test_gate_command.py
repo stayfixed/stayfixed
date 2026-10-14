@@ -28,6 +28,7 @@ from stayfixed.config.loader import CONFIG_FILE
 from tests.assess.baserepo import AGENTS, clone, commit
 from tests.cli import cli, custom_gate
 from tests.gitfixture import git, needs_git
+from tests.parserlimits import LONG_HEX, LONG_NUMBER, PAST_FLOAT
 
 pytestmark = needs_git
 
@@ -518,6 +519,38 @@ def test_a_stayfixed_toml_nested_past_the_parser_does_not_load_naming_the_side(
     assert ("the base's stayfixed.toml" in err) is (side == "base")
 
 
+@pytest.mark.parametrize("side", ["tree", "base"])
+def test_a_stayfixed_toml_holding_a_number_past_the_parser_does_not_load_naming_the_side(
+    tmp_path: Path, side: str
+) -> None:
+    # An integer longer than the interpreter converts is valid TOML that `tomllib` answers with a
+    # plain `ValueError`: the gate ended in `internal error: ValueError`, exit 2, instead of
+    # failing closed on the configuration's own error. Mutation (declared): `ValueError` dropped
+    # from `UNPARSEABLE`.
+    long = BASE + f"\n[gates]\nx = {LONG_NUMBER}\n"
+    project = clone(tmp_path, long if side == "base" else BASE)
+    _change(project, long if side == "tree" else BASE)
+    code, out, err = cli(project, tmp_path, "gate", "--builtin")
+    assert (code, out) == (1, ""), err
+    assert "internal error" not in err
+    assert "not valid TOML (holds a number longer than the parser converts)" in err
+    assert ("the base's stayfixed.toml" in err) is (side == "base")
+
+
+def test_a_trail_toml_holding_a_number_past_the_parser_is_one_gate_that_could_not_run(
+    tmp_path: Path,
+) -> None:
+    # A `ValueError` out of `read_trail` ended the whole run, as a `RecursionError` once did: one
+    # advisory gate's input ended every gate. Mutation (declared): `ValueError` dropped from
+    # `UNPARSEABLE`.
+    project = clone(tmp_path, BASE, also={"docs/roadmap.md": "# Roadmap\n"})
+    (project / "docs" / "trail.toml").write_text(f"x = {LONG_NUMBER}\n", encoding="utf-8")
+    commit(project, "docs: a trail holding a number past the parser")
+    code, out, err = cli(project, tmp_path, "gate", "--builtin")
+    assert code == 0, err
+    assert "trail: advisory, could not run" in out.splitlines()
+
+
 def test_a_tree_without_stayfixed_toml_fails_and_names_the_file(tmp_path: Path) -> None:
     # `stayfixed uninstall` in a pull request: nothing says which gates run. Mutation (advice):
     # drop the `tree_text is None` check -> `loads(None)` is an internal error, exit 2, and the
@@ -569,9 +602,9 @@ def test_a_failing_run_ends_by_saying_where_the_findings_are(tmp_path: Path) -> 
     # The printed lines are counts, and a first-time user had no pointer to the findings behind
     # them. One fixed line, and only on a run with a failing gate; under `--builtin` it names
     # `assess --builtin --json`, so the command it hands on runs no custom gate either. Mutation
-    # (by hand): the line dropped -> the last line is the gate's. Mutation (oracle): "gate
-    # --builtin hands on a command that runs the custom gates" -> the `--builtin` run ends with
-    # the plain line and this reddens.
+    # (by hand): the line dropped -> the last line is the gate's. Mutation (oracle): `mutations/`'s
+    # "gate --builtin hands on a command that runs the custom gates" -> the `--builtin` run ends
+    # with the plain line and this reddens.
     project = clone(tmp_path, BASE)
     _change(project, BASE, agents=OVER_BUDGET)
     code, out, _ = cli(project, tmp_path, "gate", "--only", "docs")
@@ -720,10 +753,10 @@ def test_deleting_the_ledger_does_not_switch_an_enforced_bugs_gate_off(tmp_path:
     assert (bugs["name"], bugs["count"]) == ("bugs", 3)
 
 
-def _ledgered(tmp_path: Path, mention: str) -> Path:
-    """A clone whose base enforces `bugs`, carries entry BR-001 and its index, and holds
-    `mention` in `src/a.py`."""
-    enforced = BASE.replace('["docs"]', '["bugs"]')
+def _ledgered(tmp_path: Path, mention: str, *, base: str = "") -> Path:
+    """A clone whose base enforces `bugs` (or is `base`), carries entry BR-001 and its index,
+    and holds `mention` in `src/a.py`."""
+    enforced = base or BASE.replace('["docs"]', '["bugs"]')
     project = clone(tmp_path, enforced, also={"src/a.py": mention})
     upstream = tmp_path / "upstream"
     bugs = upstream / "docs" / "bugs"
@@ -754,8 +787,8 @@ def test_deleting_the_ledger_and_its_index_fails_an_enforced_bugs_gate(
     # A change that deletes the ledger: a bare `BR-001` in code and the whole ledger deleted —
     # directory and index — answered "nothing to check" and passed. So did deleting the
     # mentions with it. The base's ledger is one finding, and a mention left behind is another.
-    # Mutations (oracle): "the uninitialised arm ignores the base's ledger" reddens both cases;
-    # "with no ledger a bare mention is not a finding" reddens `mentioned`.
+    # Mutations (oracle): `mutations/`'s "the uninitialised arm ignores the base's ledger" -> both
+    # cases redden; "with no ledger a bare mention is not a finding" -> `mentioned` reddens.
     project = _ledgered(tmp_path, mention)
     code, out, _ = cli(project, tmp_path, "gate", "--builtin", "--only", "bugs")
     assert (code, out.splitlines()[1]) == (0, "bugs: enforcing, 0 finding(s)"), out
@@ -830,6 +863,75 @@ def test_a_branch_behind_its_base_is_not_blamed_for_an_entry_the_base_filed_sinc
         1,
         "FAIL: 1 ledger problem(s): docs/bugs/BR-001.md [entry-removed]",
     )
+
+
+def test_a_ledger_moved_by_paths_takes_no_entry_past_the_run_that_enforces_bugs(
+    tmp_path: Path,
+) -> None:
+    # A base that enforces nothing refuses no `[paths]` change, so a change can move the ledger,
+    # delete an entry on the way and enforce `bugs` itself. The base's entries were listed at the
+    # change's paths, where the base had none: `bugs: enforcing, 0 finding(s)` and exit 0. They
+    # are read where the base's own `stayfixed.toml` kept them. Mutation: `mutations/`'s "the
+    # base's entries are listed at the tree's paths again".
+    project = _ledgered(tmp_path, "", base=LOOSENED)
+    moved = BASE.replace('["docs"]', '["bugs"]')
+    _change(project, moved + '\n[paths]\nbugs = "ledger"\nbug_index = "ledger-index.md"\n')
+    git(project, "rm", "-rq", "docs/bugs", "docs/bug-reports.md")
+    (project / "ledger").mkdir()
+    (project / "ledger" / ".gitkeep").write_text("", encoding="utf-8")
+    parser = build_parser(discover_registrars())
+    common = ["--root", str(project), "--machine", str(tmp_path / "absent.toml")]
+    with redirect_stdout(io.StringIO()):
+        assert run(["bugs", "index", *common], parser=parser) == 0
+    commit(project, "chore: move the ledger, and lose an entry on the way")
+    code, out, _ = cli(project, tmp_path, "gate", "--builtin", "--only", "bugs")
+    assert (code, out.splitlines()[1]) == (1, "bugs: enforcing, 1 finding(s)"), out
+    code, out, _ = cli(project, tmp_path, "bugs", "check", "--base", "refs/remotes/origin/main")
+    assert (code, out.strip()) == (
+        1,
+        "FAIL: 1 ledger problem(s): ledger/BR-001.md [entry-removed]",
+    )
+
+
+def test_a_project_root_a_change_made_a_symlink_is_refused_by_the_gate_and_by_bugs_check(
+    tmp_path: Path,
+) -> None:
+    # A change that turns the project's directory into a link to a copy without an entry: read
+    # where git puts the root, the base's `stayfixed.toml` is looked for at the copy, where the
+    # base has none, and `bugs check --base` passed the deletion as the bootstrap. Both readers
+    # find the copy the one way now (`committed.committed_document`), and a root reached through
+    # a symlink is refused by `stayfixed gate` and `bugs check --base` alike. Mutation:
+    # `mutations/`'s "a project root reached through a symlink reads the base at a path it never
+    # had".
+    enforced = BASE.replace('["docs"]', '["bugs"]')
+    project = clone(tmp_path, enforced, under="proj")
+    entry = (
+        "---\nid: BR-00{n}\ntitle: t\nstatus: open\nseverity: low\narea: a\n"
+        "found: 2026-01-01\nsource:\nfixed_in:\nrelated:\n---\n\nbody\n"
+    )
+    bugs = project / "proj" / "docs" / "bugs"
+    bugs.mkdir(parents=True)
+    for n in (1, 2):
+        (bugs / f"BR-00{n}.md").write_text(entry.format(n=n), encoding="utf-8")
+    parser = build_parser(discover_registrars())
+    machine = ["--machine", str(tmp_path / "absent.toml")]
+    with redirect_stdout(io.StringIO()):
+        assert run(["bugs", "index", "--root", str(project / "proj"), *machine], parser=parser) == 0
+    commit(project, "chore: a ledger")
+    base = git(project, "rev-parse", "HEAD").strip()
+    git(project, "mv", "proj", "other")
+    (project / "other" / "docs" / "bugs" / "BR-002.md").unlink()
+    (project / "other" / "docs" / "bug-reports.md").unlink()
+    with redirect_stdout(io.StringIO()):
+        assert (
+            run(["bugs", "index", "--root", str(project / "other"), *machine], parser=parser) == 0
+        )
+    (project / "proj").symlink_to("other", target_is_directory=True)
+    commit(project, "chore: the project as a link to a copy without BR-002")
+    code, out, err = cli(project / "proj", tmp_path, "gate", "--builtin", "--base", base)
+    assert code == 2 and "symlink" in err, (out, err)
+    code, out, err = cli(project / "proj", tmp_path, "bugs", "check", "--base", base)
+    assert code == 2 and "symlink" in err, (out, err)
 
 
 def test_a_base_branch_outside_its_grammar_is_named_and_never_blamed_on_base(
@@ -965,3 +1067,22 @@ def test_a_local_run_without_the_workflow_sha_refuses_a_moved_pin(
     code, out, _ = cli(project, tmp_path, "gate", "--only", "config")
     assert code == 1
     assert "ci.ref" in out
+
+
+@pytest.mark.parametrize("shape", ["hex", "decimal"])
+def test_a_timeout_too_large_for_its_reader_fails_the_gate_with_the_configurations_error(
+    tmp_path: Path, shape: str
+) -> None:
+    # A hex literal of any length converts, and a decimal of 401 digits is inside the parser's
+    # limit, so each reached the custom gate and ended `gate` in an internal error. The loader
+    # refuses it, so the gate fails closed on the configuration's own error. Mutation (declared):
+    # the bound on a schema integer dropped -> exit 2.
+    large = LONG_HEX if shape == "hex" else PAST_FLOAT
+    config = BASE + f"\n[gates]\ncustom_timeout_seconds = {large}\n" + MARKER
+    # On both sides, so the configuration the gate runs under holds it whichever side it judges.
+    project = clone(tmp_path, config)
+    _change(project, config, agents="# Agents\n")
+    code, out, err = cli(project, tmp_path, "gate", "--custom")
+    assert code == 1, err
+    assert "gates.custom_timeout_seconds must be a positive integer below" in out + err
+    assert "internal error" not in out + err

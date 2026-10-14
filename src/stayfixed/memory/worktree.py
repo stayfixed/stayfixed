@@ -31,8 +31,8 @@ inside this project's own share of the recorded overlay (`permitted_roots`), and
 mode refused outright, exactly as an ungoverned group symlink would be.
 
 That rule lives in `index.index_source`, not here, because linking is not its only reader:
-`bundles._index` reads the same file and injects it into the model, which is the channel that
-matters more. Two copies of one boundary rule is one copy too many.
+`memory index` writes through the same file and its `--check` compares against it, and the
+harvest reads it. Two copies of one boundary rule is one copy too many.
 
 One of the two gaps is not like the other. The links inside the worktree are read by this
 area's own bundles, which gate on `trust.may_inject` and wrap what they emit; the harness
@@ -54,14 +54,18 @@ is a symlink pointing at this store, never a real directory and never somebody e
 from __future__ import annotations
 
 import contextlib
+import errno
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 
 from stayfixed import fsops
-from stayfixed.config.paths import PathEscape, contained
-from stayfixed.config.schema import Config
+from stayfixed.config.machine import anchor_home, home_is_empty, override_is_honoured
+from stayfixed.config.overlay import overlay_root
+from stayfixed.config.paths import PathEscape, PathUnasked, contained
+from stayfixed.config.schema import OVERLAY_MODE, Config
 from stayfixed.errors import Failure, Refusal
+from stayfixed.harnesses import CLAUDE
 from stayfixed.memory import trust
 from stayfixed.memory.index import (
     INDEX_NAME,
@@ -75,12 +79,9 @@ from stayfixed.memory.store import (
     in_repository,
     main_checkout,
     overlay_group_target,
-    overlay_root,
     permitted_roots,
     resolve,
 )
-
-OVERLAY_MODE = "overlay"
 
 
 class PartialLink(OSError):
@@ -108,6 +109,39 @@ def linked_names(config: Config) -> tuple[str, ...]:
     return (INDEX_NAME, *config.memory.groups)
 
 
+def link_sources(overlay: Path, config: Config) -> tuple[Path, ...]:
+    """Every path in the overlay an overlay-mode link tree points at, in `linked_names` order.
+
+    `_link_source`'s rule, the one `attach_main` builds the tree by and `detach_main` reads it
+    back by, applied to every name the tree holds. `attach` asks each of these paths, above its
+    first write, whether a path that long can exist on this machine
+    (`attach.binding.refuse_unless_share_can_exist`): the index's is where `_render_missing_index`
+    writes the first index and every group's but the common one is a directory `attach` creates,
+    so a project's share that fits while one of these does not ended the run in a `PartialLink`
+    after every write before it. One list, so the check and the tree cannot come to disagree
+    about which paths they are.
+    """
+    return tuple(_link_source(overlay, config.project.name, name) for name in linked_names(config))
+
+
+def _link_source(overlay: Path, project: str, name: str) -> Path:
+    """Where the link tree's entry `name` points in the overlay: the index inside this project's
+    own store, and a group where `overlay_group_target` routes it. `attach_main` links the index
+    at the `--store` it was handed, which it has just held to that same store (`permitted_roots`).
+    """
+    if name == INDEX_NAME:
+        return permitted_roots(overlay, project)[1] / INDEX_NAME
+    return overlay_group_target(overlay, project, name)
+
+
+# At a terminal `HOME` is the home the harness link goes under, and an empty one names none
+# (`config.machine.owner_home`), where Python would read it as the root directory.
+_EMPTY_HOME_NO_LINK = (
+    "HOME is empty, so it names no home directory and there is nowhere to put the harness memory "
+    "link; set HOME to your home directory and run this again"
+)
+
+
 def harness_link_parts(worktree: Path, home: Path | None = None) -> tuple[Path, str]:
     """The root the harness link is written under, and the link's path inside it.
 
@@ -121,18 +155,35 @@ def harness_link_parts(worktree: Path, home: Path | None = None) -> tuple[Path, 
     reason for existing.
 
     **Where the root comes from, because a containment rule that cannot say is not one.**
-    `home` is the machine owner's own home directory — `Path.home()` on every production
-    path, and a `--home` value only a person typing a command can supply. It is never read
-    from `stayfixed.toml`, from a note, from a committed settings file or from anything else
-    the repository authored, and the repository is the party being contained here: what it
-    controls is `memory.groups` and `paths.memory`, which appear only in the *relative* half
-    the walk refuses to follow out. The home directory itself is found and never created:
-    `open_within` applies `O_NOFOLLOW` to every component below the root and never to the
-    root, so an anchor stayfixed made up would be an anchor the walk cannot vouch for.
+    `home` is the machine owner's own home directory: `config.machine.anchor_home`, which is
+    `HOME` from a terminal and, everywhere else, the password database's entry, resolved once so
+    that a home which is itself a symlink can be opened as a root, or a `--home` value only a
+    person typing a command can supply. `HOME` alone was not that: direnv, mise or a
+    devcontainer can set it from a file the clone commits, in a session no person is watching
+    (Claude Code's `env` block cannot), and relative, it names a directory inside the clone. So
+    the hook path never reads it. It is never read from `stayfixed.toml`, from a note, from a
+    committed settings file or from anything else the repository authored, and the repository is
+    the party being contained here:
+    what it controls is `memory.groups` and `paths.memory`, which appear only in the *relative*
+    half the walk refuses to follow out. The home directory itself is found and never created:
+    `open_within` opens the root, and every component below it, without following a link, so
+    the database's answer is resolved once before the walk while a `HOME` or `--home` that is
+    itself a link fails at it; an anchor stayfixed made up would be an anchor the walk cannot
+    vouch for — and a user the password database lists no home for has no anchor off a
+    terminal, nor at one where `HOME` is unset, which is a refusal here. Nor is there one at a
+    terminal whose `HOME` is empty, which names no home, and the refusal says that it is `HOME`.
     """
-    base = Path.home() if home is None else home
-    slug = str(worktree.resolve()).replace("/", "-").replace(".", "-")
-    return base, f".claude/projects/{slug}/memory"
+    base = anchor_home() if home is None else home
+    if base is None:
+        if override_is_honoured() and home_is_empty():
+            raise Refusal(_EMPTY_HOME_NO_LINK)
+        raise Refusal(
+            "the password database lists no home directory for this user, so there is nowhere "
+            "to put the harness memory link; at a terminal, set HOME to name one"
+        )
+    # Read off the harness registry (`harnesses.CLAUDE.memory_dir`): the one harness whose memory
+    # the store is linked into, whichever harnesses a project lists.
+    return base, CLAUDE.memory_dir(str(worktree.resolve()))
 
 
 def harness_memory_path(worktree: Path, home: Path | None = None) -> Path:
@@ -162,13 +213,16 @@ def harness_anchor(where: Path, home: Path | None) -> tuple[Path, str]:
       reading as success is the worse half: it is the one case where the caller would act on
       the answer.
 
-    `is_dir()` and not `exists()`: a home directory that is a symlink to a real directory is
-    the ordinary dotfiles case and is fine, because `open_within` never applies `O_NOFOLLOW`
-    to the root itself. It is every component *below* it — `.claude` included — that the walk
-    refuses to follow, which is the same rule `setup` applies to `~/.claude/settings.json`.
+    `is_dir()` and not `exists()`: a home whose *parent* is a symlink (`/home` linking to a
+    volume) is the ordinary case and is fine, since the walk opens the root by its whole path. The
+    root itself is opened with `O_NOFOLLOW` like every component below it — `.claude` included —
+    so a home that is *itself* a symlink fails at the walk. That is why the password database's
+    answer is resolved before it is used as a root (`config.machine.anchor_home`); a `--home`, or
+    `HOME` at a terminal, that names a symlink fails there as it did in the release before. The
+    rule below the root is the one `setup` applies to `~/.claude/settings.json`.
     """
     root, relative = harness_link_parts(where, home)
-    if not root.is_dir():
+    if not fsops.is_dir(root):
         raise Refusal(
             f"{root} is not a directory, so there is nowhere to put the harness memory link; "
             f"stayfixed writes inside the home directory and never creates the home directory "
@@ -176,6 +230,11 @@ def harness_anchor(where: Path, home: Path | None) -> tuple[Path, str]:
         )
     try:
         contained(root, relative, allow_final_symlink=True)
+    except PathUnasked as exc:
+        raise Refusal(
+            f"the harness memory link cannot be reached: {exc}; run again once that directory "
+            f"can be read"
+        ) from exc
     except PathEscape as exc:
         # `allow_final_symlink=True`, because the final component is the link this module
         # makes and removes; `open_within` applies `O_NOFOLLOW` to every component *above* it
@@ -273,6 +332,31 @@ class Links:
 
     created: list[Path] = field(default_factory=list)
     revoked: list[Path] = field(default_factory=list)
+    # The harness link this store is approved for, not made because the caller said not to make
+    # one (`Withhold`): a third thing to say, since the harness cannot see the store.
+    withheld: bool = False
+
+
+@dataclass(frozen=True)
+class MakeUnder:
+    """`link` makes the harness link under `home`, the machine owner's home directory, or
+    `config.machine.anchor_home`'s answer where it is `None` (`harness_link_parts` says why)."""
+
+    home: Path | None = None
+
+
+@dataclass(frozen=True)
+class Withhold:
+    """`link` makes no harness link, for a caller whose only trusted home is not the one the
+    harness reads (`memory.hooks`): a link made there is a link nothing sees. A link under `under`
+    that points at a store whose approval has lapsed is still withdrawn, where the caller names a
+    home (`_withdraw_lapsed`)."""
+
+    under: Path | None = None
+
+
+# `link`'s default: the harness link made under the machine owner's home.
+_OWNER_HOME = MakeUnder()
 
 
 def _tree_base(worktree: Path, store: Store) -> str | None:
@@ -327,6 +411,28 @@ def harness_link_needed(store: Store, config: Config) -> bool:
     return trust.may_inject(store, config, repository_data=in_repository(store, store.path))
 
 
+# `harness_gate`'s three answers. Not statuses and not sentences: each caller says its own.
+GATE_OPEN = "open"
+GATE_LAPSED = "lapsed"
+GATE_UNAPPROVED = "unapproved"
+
+
+def harness_gate(store: Store, config: Config) -> str:
+    """`harness_link_needed`'s answer, and where it is no, why: `GATE_OPEN` where the harness link
+    may point at this store; `GATE_LAPSED` where the machine records an approval for it and the
+    store, or its `memory.index_extra`, has changed since (`trust.changed`); `GATE_UNAPPROVED`
+    where none is recorded, which is a store never approved.
+
+    Asked by `attach` and by its `doctor.py` to say which of the two closed gates it is, since
+    both close the gate and only the second withdraws links a run before made: one line appended
+    to one note is enough. One question and not two: the store is digested once, by the gate.
+    A closed gate with a record behind it is a record the digest no longer matches, so whether
+    one is recorded is the whole of the rest, and no second digest is taken to tell."""
+    if harness_link_needed(store, config):
+        return GATE_OPEN
+    return GATE_LAPSED if trust.approval_recorded(store.path, store.machine) else GATE_UNAPPROVED
+
+
 def _apply_harness_link(
     where: Path, store: Store, config: Config, home: Path | None
 ) -> tuple[list[Path], list[Path]]:
@@ -356,7 +462,13 @@ def _apply_harness_link(
     return created, revoked
 
 
-def link(worktree: Path, store: Store, config: Config, *, home: Path | None = None) -> Links:
+def link(
+    worktree: Path,
+    store: Store,
+    config: Config,
+    *,
+    harness: MakeUnder | Withhold = _OWNER_HOME,
+) -> Links:
     """Create what is missing, withdraw what is no longer authorised, and report both.
 
     A no-op for the main checkout itself: it already holds the real store, not a link to it,
@@ -388,21 +500,24 @@ def link(worktree: Path, store: Store, config: Config, *, home: Path | None = No
     directory *inside the repository*. So a clone shipping a committed index at the configured
     memory path got the harness link created for it on no trust record at all, and the harness's
     own **native** memory reader then injected the file with no delimiter, no nonce and no gate.
-    `bundles.blocks` correctly returned `[]` for the same store in the same session: this area
-    refused to inject the file through the channel it controls, and created the link to the
-    channel it does not.
+    This area's own injection channel refused the file in the same session while `link` created
+    the harness symlink: it would not inject the file through the channel it controls, and
+    created the link to the channel it does not.
 
-    `bundles.blocks` already knew to ask the wider question and passes
-    `repository_data=in_repository(store, source)`. The difference here is only *what* is being
-    exposed: a link to a directory exposes every file under it, so the question is whether the
-    **directory** is repository data, not whether the notes are.
+    A link to a directory exposes every file under it, so the question here is whether the
+    **directory** is repository data, not whether the notes or the index are. `memory index
+    --check` and `memory fit` warn by this same question, so a store whose link waits is a store
+    they warn about.
 
     Nothing narrower than `may_inject` will do. It is already the predicate that means "these
     bytes may reach the model at all": it short-circuits to True when neither
-    `inside_project(store)` nor `repository_data` holds, so the machine owner's own overlay
-    notes keep their link with no record at all, and otherwise it demands a digest that matches
-    what the owner approved. Gating on `inside_project` alone would ask the wrong question (it
-    would refuse a trusted store for ever); gating on the mode would ask the clone.
+    `inside_project(store)` nor `repository_data` holds — here, only a store whose directory is
+    outside the repository — and otherwise it demands a digest that matches what the owner
+    approved. So in overlay mode, where the store's directory is inside the repository, the
+    link waits for `stayfixed memory trust --in-repo-memory` even when every note behind it is
+    the machine owner's own; the bundles deliver those notes with no record, and the link does
+    not. Gating on `inside_project` alone would ask the wrong question (it would refuse a
+    trusted store for ever); gating on the mode would ask the clone.
 
     **The same gate runs in the other direction, in the same call.** Creation was gated and
     removal was not, so the link outlived the record that authorised it: `record`, then a
@@ -425,6 +540,11 @@ def link(worktree: Path, store: Store, config: Config, *, home: Path | None = No
     `SessionStart` touched. `symlink_within` creates a target's parents through the same
     `O_NOFOLLOW` walk that creates the link, so when `linked_names(config)` yields no source
     the base is not created at all.
+
+    `harness` says what becomes of the harness link: made under a home (`MakeUnder`), or not made
+    (`Withhold`), when the tree's links are made and `withheld` reports whether the store is
+    approved for one, and a lapsed link under the home `Withhold` names is withdrawn, which
+    `revoked` reports.
     """
     if main_checkout(worktree).resolve() == worktree.resolve():
         return Links()
@@ -441,7 +561,8 @@ def link(worktree: Path, store: Store, config: Config, *, home: Path | None = No
     # the refusal in front of. `_apply_harness_link` asks the same question again as its first
     # statement, above its own gate, which is what keeps it correct when `attach_main` calls
     # it on its own; asked twice, it is the same answer.
-    harness_anchor(worktree, home)
+    if isinstance(harness, MakeUnder):
+        harness_anchor(worktree, harness.home)
     created: list[Path] = []
     revoked: list[Path] = []
     try:
@@ -460,12 +581,51 @@ def link(worktree: Path, store: Store, config: Config, *, home: Path | None = No
                 target = contained(worktree / base, name, allow_final_symlink=True)
                 if _link(worktree, f"{base}/{name}", source.resolve()):
                     created.append(target)
-        made, withdrawn = _apply_harness_link(worktree, store, config, home)
-        created += made
-        revoked += withdrawn
+        half = _harness_half(worktree, store, config, harness)
+        created += half.created
+        revoked += half.revoked
     except OSError as exc:
         raise PartialLink(created, exc) from exc
-    return Links(created, revoked)
+    return Links(created, revoked, withheld=half.withheld)
+
+
+def _harness_half(
+    where: Path, store: Store, config: Config, harness: MakeUnder | Withhold
+) -> Links:
+    """The harness link for one checkout, as `harness` says: made or withdrawn under a home by the
+    gate (`MakeUnder`), or not made (`Withhold`), with `withheld` saying whether the store is
+    approved for one and a lapsed link under the home `Withhold` names withdrawn. One answer for
+    `link` and `attach_main` both, so a caller that withholds the link withholds it in every
+    checkout alike."""
+    if isinstance(harness, Withhold):
+        approved = harness_link_needed(store, config)
+        revoked: list[Path] = []
+        if not approved and harness.under is not None:
+            revoked = _withdraw_lapsed(where, store.path.resolve(), harness.under)
+        return Links([], revoked, withheld=approved)
+    made, withdrawn = _apply_harness_link(where, store, config, harness.home)
+    return Links(made, withdrawn)
+
+
+def _withdraw_lapsed(where: Path, source: Path, home: Path) -> list[Path]:
+    """Remove the harness link under `home` that points at `source`, the store's directory, for a
+    store not approved, or for `detach_main` under the home it does not withdraw from first.
+
+    `home` is one this module makes nothing under, so the narrowest withdrawal there is: only a
+    symlink whose own target is this store goes (`_unlink`), a link to anything else is left
+    standing, a relative `home` is ignored, and an anchor `harness_anchor` refuses is passed over
+    rather than refused, because a hook never costs a session for a home it does not trust. So is
+    one the walk cannot open — a `home` that is itself a symlink, which the walk never follows,
+    or one it may not search — rather than reported as a link that could not be made.
+    """
+    if not home.is_absolute():
+        return []
+    try:
+        root, relative = harness_anchor(where, home)
+        removed = _unlink(root, relative, source)
+    except (Refusal, OSError):
+        return []
+    return [root / relative] if removed else []
 
 
 def attach_main(
@@ -475,6 +635,7 @@ def attach_main(
     *,
     machine: Path | None = None,
     home: Path | None = None,
+    withhold: Withhold | None = None,
 ) -> Links:
     """Build the link tree in the checkout that owns the store, in overlay mode.
 
@@ -497,6 +658,10 @@ def attach_main(
     Raises `PathEscape` rather than skipping when a group name leaves the tree, for the reason
     `link` gives: `memory.groups` is repository-controlled and skipping one escaping name leaves
     the next free to try the same thing.
+
+    `withhold`, where given, keeps the harness link from being made, as `link` keeps it for a
+    caller whose only trusted home is not the one the harness reads (`Withhold`); `home` is then
+    asked about nothing.
     """
     if config.memory.mode != OVERLAY_MODE:
         raise Refusal(
@@ -545,12 +710,12 @@ def attach_main(
                 "`stayfixed memory index --check` reports why"
             )
         _render_missing_index(store, config)
-        made, withdrawn = _apply_harness_link(root, store, config, home)
-        created += made
-        revoked += withdrawn
+        half = _harness_half(root, store, config, MakeUnder(home) if withhold is None else withhold)
+        created += half.created
+        revoked += half.revoked
     except OSError as exc:
         raise PartialLink(created, exc) from exc
-    return Links(created, revoked)
+    return Links(created, revoked, withheld=half.withheld)
 
 
 def _render_missing_index(store: Store, config: Config) -> None:
@@ -589,13 +754,77 @@ def _detach_source(config: Config, machine: Path | None, name: str) -> Path | No
     overlay = overlay_root(machine)
     if overlay is None:
         return None
-    if name == INDEX_NAME:
-        return permitted_roots(overlay, config.project.name)[1] / INDEX_NAME
-    return overlay_group_target(overlay, config.project.name, name)
+    return _link_source(overlay, config.project.name, name)
+
+
+def harness_targets(root: Path, owner: Path, config: Config) -> tuple[Path, ...]:
+    """Every directory a harness memory link of `root`'s may point at and be stayfixed's: the
+    owning checkout's `paths.memory`, resolved, and `root`'s own, once each.
+
+    Two writers make that link and they do not agree. `attach` points every checkout's link at
+    the owning checkout's tree (`attach.write._link_everywhere` hands `link` the owner's store),
+    and the `SessionStart` re-link may point a worktree's at the worktree's own. So a reader that
+    compared a link with `root`'s own tree alone never recognised the one `attach` made in a
+    linked worktree: `detach` left it standing, dangling once the owner's tree went, and
+    `doctor` called a normally attached worktree red. `detach_main` and `doctor`'s `attached` row
+    both read through this one function, so the two cannot come to recognise different links.
+
+    Both paths come from `paths.memory` under a checkout git named, never from a ledger: a
+    ledger is a path a clone can commit, and a committed value must not steer a removal. Which
+    of the two the writers should converge on is not decided here.
+
+    **Every way the question fails is one refusal, a `PathEscape`, naming the checkout.** The
+    owning checkout's `paths.memory` is one `root`'s own configuration never walked, so it is the
+    one a directory that became a link reaches first; and `.resolve()` on a `paths.memory` that is
+    a symlink loop raises `RuntimeError` up to Python 3.12 (3.13 reads the loop as the path it
+    names). Each caller used to translate whichever of `PathEscape`, `PathUnasked`, `OSError` and
+    `RuntimeError` it had met in its own words, or none: `doctor` called a loop "this check could
+    not run", red, and `detach` an internal error. A final symlink at `paths.memory` is still
+    followed, as `contained(..., allow_final_symlink=True)` allows everywhere a tree is read: the
+    link tree is a directory of links, and a `paths.memory` that is itself a link to one is a
+    layout the resolver reads too, so refusing it here alone would make `detach` refuse a checkout
+    it attached.
+
+    A checkout is the owner when the two resolve alike, as `doctor` compares them: `git` names the
+    owner by its resolved path, and `--root` may spell the same checkout through a link.
+    """
+    found: list[Path] = []
+    for checkout in (owner, root):
+        target = _harness_target(checkout, config, owner=checkout.resolve() == owner.resolve())
+        if target not in found:
+            found.append(target)
+    return tuple(found)
+
+
+def _harness_target(checkout: Path, config: Config, *, owner: bool) -> Path:
+    """`checkout`'s `paths.memory`, resolved, or the one `PathEscape` `harness_targets` promises.
+
+    The checkout is named by its place — the main checkout, or a linked worktree — and never by
+    its path, which says where this machine keeps it. `paths.memory` itself is printed: the loader
+    holds it to `PATH_VALUE`, the grammar a value must match before a report may print it."""
+    whose = "the main checkout's" if owner else "the linked worktree's"
+    asked = f"where a harness memory link may point cannot be asked of {whose} paths.memory"
+    value = config.paths.memory
+    try:
+        return fsops.resolved(contained(checkout, value, allow_final_symlink=True))
+    except PathEscape as exc:
+        raise PathEscape(f"{asked}: {exc}") from exc
+    except OSError as exc:
+        # A loop is `fsops.resolved`'s `ELOOP` on every interpreter, and said as what it is.
+        if exc.errno == errno.ELOOP:
+            raise PathEscape(f"{asked}: {value!r} is a symlink loop") from exc
+        raise PathEscape(f"{asked}: {value!r} cannot be resolved ({fsops.said(exc)})") from exc
 
 
 def detach_main(
-    root: Path, config: Config, *, machine: Path | None = None, home: Path | None = None
+    root: Path,
+    config: Config,
+    *,
+    machine: Path | None = None,
+    home: Path | None = None,
+    elsewhere: Path | None = None,
+    targets: tuple[Path, ...],
+    keep_tree: bool = False,
 ) -> Links:
     """Withdraw the link tree a checkout holds, and the harness link with it.
 
@@ -620,7 +849,19 @@ def detach_main(
     the bytes behind it.
 
     The harness link goes first, because it is the one hop that leaves this area's gate, and it
-    is compared against the store directory rather than against what it happens to point at.
+    is compared against `targets`, the directories `harness_targets` names — the owning
+    checkout's tree, where `attach` points it, and `root`'s own — rather than against what it
+    happens to point at. The caller asks `harness_targets` and passes its answer, because asking
+    it walks the owning checkout's `paths.memory`, which is not `root`'s, and a walk that refuses
+    must refuse before the first withdrawal, not here (`attach.write.detach`). `elsewhere` is a
+    second home a harness may read it under, where the caller found one: the link there goes
+    too, only where it points at one of those (`_withdraw_lapsed`), and a home the walk refuses
+    is passed over, since a refusal after the first withdrawal strands a half-detached checkout.
+    Its `<slug>` directory is removed only when the link in it was.
+
+    `keep_tree` withdraws the harness link and leaves the link tree: the caller's answer for the
+    owning checkout while another checkout's ledger still stands, since that checkout's harness
+    link points at this tree (`attach.write.detach`).
 
     Takes a `Config` and not a `Store`: by the time a repository is detached its store may no
     longer resolve — that is half of what detaching means — so the tree is found where the
@@ -651,16 +892,25 @@ def detach_main(
     revoked: list[Path] = []
     home_root, harness_relative = harness_anchor(root, home)
     harness = home_root / harness_relative
-    if _unlink(home_root, harness_relative, base.resolve()):
+    if any(_unlink(home_root, harness_relative, target) for target in targets):
         revoked.append(harness)
     # The `<slug>` directory the link sat in, a name this run computed, when nothing else is in
     # it: the harness keeps its own transcripts there, and `rmdir` leaves a directory that holds
     # one. `OSError` covers "not empty", "not there" and a component the walk refuses.
     with contextlib.suppress(OSError):
         fsops.rmdir_within(home_root, str(PurePosixPath(harness_relative).parent))
+    if elsewhere is not None:
+        # One link stands at that name, so at most one target matches it and `gone` holds it once.
+        gone = [path for target in targets for path in _withdraw_lapsed(root, target, elsewhere)]
+        revoked += gone
+        if gone:
+            with contextlib.suppress(OSError):
+                fsops.rmdir_within(elsewhere, str(PurePosixPath(harness_relative).parent))
+    if keep_tree:
+        return Links([], revoked)
     for name in linked_names(config):
         target = contained(base, name, allow_final_symlink=True)
-        if not target.is_symlink():
+        if not fsops.is_symlink(target):
             continue
         source = _detach_source(config, machine, name)
         if source is None:
@@ -672,7 +922,15 @@ def detach_main(
         pointed = target.readlink()
         if not pointed.is_absolute():
             pointed = target.parent / pointed
-        if pointed.resolve() != source.resolve():
+        try:
+            reached = fsops.resolved(pointed)
+        except OSError:
+            # A symlink loop at one of these names, which `fsops.resolved` answers as `ELOOP` on
+            # every interpreter: a link that cannot be followed is not one this function can
+            # claim, so it stays, as any other link to elsewhere does. Raised, it ended `detach` in
+            # an internal error after the settings were withdrawn.
+            continue
+        if reached != source.resolve():
             continue
         # Through the `O_NOFOLLOW` walk, so a component that became a symlink after
         # `contained()` passed cannot redirect the removal out of the checkout.

@@ -10,6 +10,8 @@ import os
 import pty
 from pathlib import Path
 
+import pytest
+
 from stayfixed.runner import (
     _ENV_DROP,
     _ENV_FORCE,
@@ -45,7 +47,7 @@ def test_a_launched_command_gets_no_stdin_and_no_credential_prompt(tmp_path: Pat
     saved = os.dup(0)
     try:
         os.dup2(slave, 0)
-        done = _SubprocessRunner().run(PROBE, tmp_path)
+        done = _SubprocessRunner().launch(PROBE, tmp_path)
     finally:
         os.dup2(saved, 0)
         for descriptor in (master, slave, saved):
@@ -62,7 +64,7 @@ def test_the_variables_that_redirect_git_are_dropped(tmp_path: Path) -> None:
     for name in ("GIT_DIR", "GIT_INDEX_FILE"):
         os.environ[name] = str(tmp_path / name)
     try:
-        done = _SubprocessRunner().run(PROBE, tmp_path)
+        done = _SubprocessRunner().launch(PROBE, tmp_path)
     finally:
         for name in ("GIT_DIR", "GIT_INDEX_FILE"):
             del os.environ[name]
@@ -70,6 +72,20 @@ def test_the_variables_that_redirect_git_are_dropped(tmp_path: Path) -> None:
     assert "index=unset" in done.stdout
     assert set(_ENV_DROP) >= {"GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"}
     assert _ENV_FORCE["GIT_TERMINAL_PROMPT"] == "0"
+
+
+def test_the_variables_that_make_gh_write_for_a_terminal_are_dropped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Either variable makes a captured `gh` colour its JSON, and every caller that parses it, the
+    # publisher's `gh api` and `overlay create`'s `gh repo view --json isTemplate` among them,
+    # then read no answer. Mutations (declared): `mutations/`'s "the runner hands gh
+    # GH_FORCE_TTY" and "the runner hands gh CLICOLOR_FORCE" -> each reaches the child.
+    monkeypatch.setenv("GH_FORCE_TTY", "1")
+    monkeypatch.setenv("CLICOLOR_FORCE", "1")
+    probe = ["sh", "-c", 'echo "tty=${GH_FORCE_TTY-unset} colour=${CLICOLOR_FORCE-unset}"']
+    done = _SubprocessRunner().launch(probe, tmp_path)
+    assert done.stdout.split() == ["tty=unset", "colour=unset"], done.stdout
 
 
 def test_a_command_that_hangs_is_not_reported_as_one_that_is_missing(tmp_path: Path) -> None:
@@ -81,13 +97,13 @@ def test_a_command_that_hangs_is_not_reported_as_one_that_is_missing(tmp_path: P
     before = runner.NETWORK_TIMEOUT_SECONDS
     runner.NETWORK_TIMEOUT_SECONDS = 1
     try:
-        hung = _SubprocessRunner().run(["sh", "-c", "sleep 5"], tmp_path)
+        hung = _SubprocessRunner().launch(["sh", "-c", "sleep 5"], tmp_path)
     finally:
         runner.NETWORK_TIMEOUT_SECONDS = before
     assert hung.code == TIMED_OUT
     # Non-vacuous: a binary that really is missing still answers NOT_FOUND, which is the mapping
     # an optional binary needs — a missing one is a finding, never a traceback.
-    assert _SubprocessRunner().run(["stayfixed-no-such-binary"], tmp_path).code == NOT_FOUND
+    assert _SubprocessRunner().launch(["stayfixed-no-such-binary"], tmp_path).code == NOT_FOUND
 
 
 def test_a_caller_that_asks_for_a_narrower_bound_gets_it(tmp_path: Path) -> None:
@@ -108,7 +124,7 @@ def test_a_caller_that_asks_for_a_narrower_bound_gets_it(tmp_path: Path) -> None
     rests on `subprocess.run(timeout=)`, which kills `sh` before it reaches `: > finished`; the
     `sleep` it started outlives the test by about four seconds, writing nothing.
 
-    Mutation (oracle entry "the runner ignores the bound its caller asked for"): `timeout=bound`
+    Mutation (`mutations/`'s "the runner ignores the bound its caller asked for"): `timeout=bound`
     back to `timeout=NETWORK_TIMEOUT_SECONDS`. Measured: the command runs to completion and the
     runner answers `Completed(code=0)`, so the code assertion is what reddens and the marker is
     the floor under it — a bound of five minutes cannot cut a five-second sleep.
@@ -116,7 +132,7 @@ def test_a_caller_that_asks_for_a_narrower_bound_gets_it(tmp_path: Path) -> None
     # The sleep's own output goes to /dev/null, so once the shell is killed nothing holds the
     # runner's pipes open for the rest of it.
     marker = tmp_path / "finished"
-    hung = subprocess_runner(timeout=1).run(
+    hung = subprocess_runner(timeout=1).launch(
         ["sh", "-c", "sleep 5 >/dev/null 2>&1; : > finished"], tmp_path
     )
     assert hung.code == TIMED_OUT
@@ -137,5 +153,7 @@ def test_output_that_is_not_text_is_read_with_replacement_characters_not_raised(
     # quoted a latin-1 filename, measured. A byte the codec cannot read is U+FFFD instead, which
     # every stream and every UTF-8 file stayfixed writes can hold. Mutation (declared): decode
     # strictly again -> this reddens.
-    done = subprocess_runner().run(["sh", "-c", "printf 'caf\\351'; printf 'x\\351' >&2"], tmp_path)
+    done = subprocess_runner().launch(
+        ["sh", "-c", "printf 'caf\\351'; printf 'x\\351' >&2"], tmp_path
+    )
     assert done == Completed(0, "caf\ufffd", "x\ufffd")

@@ -15,26 +15,28 @@ runs where the disk cannot hold such a name (APFS refuses one).
 from __future__ import annotations
 
 import os
+import re
+import subprocess
 from pathlib import Path
 
 import pytest
 
 from stayfixed.attach.write import _worktrees, attach
 from stayfixed.errors import Refusal
+from stayfixed.gitenv import GitUnavailable, Unasked, _git_toplevel, origin_remote
 from stayfixed.guards.commit import commits_in
 from stayfixed.guards.githooks import hooks_dir
-from stayfixed.guards.hygiene import inspect
-from stayfixed.hooks.dispatch import _git_toplevel
+from stayfixed.guards.hygiene import dirty_count
 from stayfixed.ledger.scan import TOP_LEVEL, _committed_files
-from stayfixed.memory.store import origin_remote
 from stayfixed.overlay.sync import overlay_sync
 from stayfixed.project.detect import NOT_DERIVABLE, detect
 from stayfixed.setup.run import _repository
-from tests.attach.test_write import RULE, FakeRunner, _attachable
+from tests.attach.test_write import RULE, _attachable
 from tests.cli import cli
-from tests.gitfixture import git, needs_git, plant_path
-from tests.guards.test_hygiene import config, repo
+from tests.gitfixture import git, needs_git, plant_path, stand_in_git
+from tests.guards.test_hygiene import repo
 from tests.project.repos import repository
+from tests.runners import Recorder
 from tests.snapshot import assert_snapshot_unchanged, snapshot
 
 # An `origin` URL whose last byte is latin-1, and the `str` the filesystem's codec spells it as.
@@ -48,20 +50,19 @@ def _append(path: Path, raw: bytes) -> None:
 
 
 def _stand_in_git(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, printed: bytes) -> None:
-    """A `git` first on `PATH` that prints `printed` for any question; `scrubbed_env` keeps
-    `PATH`, so it is the one `git_run` launches."""
+    """A `git` the product runs (`stand_in_git`) that prints `printed` for any question."""
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     octal = "".join(f"\\{byte:03o}" for byte in printed)
     (bin_dir / "git").write_text(f"#!/bin/sh\nprintf '{octal}'\n", encoding="utf-8")
     (bin_dir / "git").chmod(0o755)
-    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")
+    stand_in_git(monkeypatch, bin_dir / "git")
 
 
 def test_the_hook_path_reads_a_checkout_path_that_is_not_utf_8_as_that_path(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # `project_root()` feeds every hook decision, and its git fallback decoded strictly: on
+    # `checkout_root` feeds every hook decision, and its git fallback decoded strictly: on
     # Linux a checkout under a latin-1 directory made every hook an internal error, which
     # PreToolUse turns into a refusal of every tool call (reproduced in a Linux container with
     # a payload that names no `cwd`). The answer is the path on disk, byte for byte — a trailing
@@ -92,6 +93,30 @@ def test_an_origin_url_that_is_not_utf_8_is_answered_as_itself(tmp_path: Path) -
     with pytest.raises(Refusal) as refused:
         detect(root)
     assert "caf" not in str(refused.value)
+
+
+@needs_git
+def test_a_git_that_fails_everything_is_not_a_repository_without_an_origin(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Both answers off one checkout with no `origin`: git that runs says "no such remote" with a
+    # non-zero exit, which is `None`, and a git that exits non-zero for everything — the Xcode
+    # shim with an unaccepted licence — must not read the same way, or the user is sent to
+    # `stayfixed attach` about their own `git`. And its remedy is to check that `git` runs, never
+    # to run the command again, which would repeat for ever. Mutations (declared): `mutations/`'s
+    # "a broken git reads as a repository that answered" and "a broken git is told to run the
+    # command again".
+    root = tmp_path / "project"
+    root.mkdir()
+    git(root, "init", "-q")
+    assert origin_remote(root) is None
+
+    def broken(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[bytes]:
+        return subprocess.CompletedProcess(args, 69, b"", b"You have not agreed to the licence\n")
+
+    monkeypatch.setattr("stayfixed.gitenv.subprocess.run", broken)
+    with pytest.raises(GitUnavailable, match=re.escape(Unasked.BROKEN.value)):
+        origin_remote(root)
 
 
 @needs_git
@@ -129,7 +154,7 @@ def test_a_dirty_name_that_is_not_utf_8_is_counted_and_not_raised(tmp_path: Path
     root = repo(tmp_path)
     git(root, "config", "core.quotePath", "false")
     plant_path(root, b"caf\xe9.py")
-    assert inspect(root, config(root)).dirty == 1
+    assert dirty_count(root) == 1
 
 
 @needs_git
@@ -195,7 +220,7 @@ def test_attach_refuses_an_origin_it_cannot_record_before_writing_anything(tmp_p
             machine=machine,
             confirmed=True,
             trust_remote=True,
-            runner=FakeRunner(),
+            runner=Recorder(),
             home=tmp_path / "home",
         )
     assert "caf" not in str(refused.value)
@@ -212,7 +237,7 @@ def test_a_dirty_name_holding_a_line_separator_is_one_entry(tmp_path: Path) -> N
     root = repo(tmp_path)
     git(root, "config", "core.quotePath", "false")
     plant_path(root, "a\u2028b.py".encode())
-    assert inspect(root, config(root)).dirty == 1
+    assert dirty_count(root) == 1
     assert overlay_sync(root).dirty == 1
 
 

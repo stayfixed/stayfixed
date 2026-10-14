@@ -6,34 +6,39 @@ the platform lets them, and an adoption state machine that runs each gate adviso
 repository has earned it. One plugin for Claude Code and Codex, one Python package with
 **no runtime dependencies**.
 
-> **Pre-1.0.** What ships: the memory store and its trust gate; the scaffolding engine that
-> writes files into a repository; the guards over a shell call, a commit message and a test
-> run; the bug ledger; the documentation and plan lints; `stayfixed setup`, which configures a
-> machine from a preset; the private overlay — `overlay create`, `overlay init`,
-> `overlay upgrade`, `overlay publish-template` — and `attach`/`detach`, which bind a
-> repository to it and unbind it
-> again; `stayfixed init`, which writes a repository's footprint from the shipped project
-> templates, `stayfixed upgrade`, which refreshes it, and `stayfixed uninstall`, which takes it
-> back; `stayfixed doctor`, which reports on the result; `stayfixed assess`, which inventories
-> what stands between a repository and enforcement; `stayfixed gate`, which judges a change
-> against what its base branch enforces; `stayfixed adopt`, which enforces a repository's gates
-> as each one passes; and the first stack profile, `python`, whose rules every agent is handed
-> and whose checks `stayfixed assess` runs. The hooks file that wires all
-> of it into a session ships too, so installing the plugin is enough to make the guards fire
-> and the memory bundles arrive. The first skills ship with them, and so do two command groups
-> meant for a machine rather than for you — `hook`, which dispatches one harness event, and
-> `release`, whose three commands (`check`, `notes`, `hashes`) are this repository's own
-> discipline. **Not yet:** the memory MCP server, a hold-the-line baseline, the `uvx` form
-> of the gate, and adapters for Cursor or Hermes — each leaves this list in the change that
-> ships it. The [Quickstart](#quickstart) shows the three keys that are enough to start a
-> project by hand, which `init` reads as your answers — a run that writes the file itself writes
-> `[stayfixed] version`, `state` and `agents`, and `profile` when the repository carries a
-> shipped profile's markers or `--profile` names one, beside `[project] name`, `base_branch`
-> and `release_branch`, a `[ci]` table only when it has a released commit to pin or `--no-ci`
-> asks for none, a `[memory]` table only when `--memory-mode` answers it, and an `[artifacts]`
-> table only when `--local` does.
-> [docs/cli.md](docs/cli.md) is the reference; the command list below is held to the parser
-> by a test, so it is complete for what ships.
+> **Pre-1.0.** What ships is a core and three delivery areas. The **core** is what stayfixed does
+> without its private layer: the methodology's gates, the records they check, and a machine's setup.
+> It holds the bug ledger; the documentation and plan lints; the guards over a shell call, a commit
+> message and a test run; the scaffolding engine that writes files into a repository;
+> `stayfixed init`, which writes a repository's footprint from the shipped project templates,
+> `stayfixed upgrade`, which refreshes it, and `stayfixed uninstall`, which takes it back;
+> `stayfixed assess`, which inventories what stands between a repository and enforcement;
+> `stayfixed gate`, which judges a change against what its base branch enforces; `stayfixed adopt`,
+> which enforces a repository's gates as each one passes; `stayfixed setup`, which configures a
+> machine from a preset; and `stayfixed doctor`, which reports on the result. The **delivery** areas
+> are the private layer: `memory`, the note store and its trust gate; `overlay`, the private overlay
+> — `overlay create`, `overlay init`, `overlay upgrade`, `overlay publish-template`; and `attach`,
+> whose `attach` binds a repository to the overlay and whose `detach` takes back what `attach`
+> wrote, keeping the overlay's record of the binding ([CONTRIBUTING.md](https://github.com/stayfixed/stayfixed/blob/main/CONTRIBUTING.md#areas) says
+> where the line between the two runs). The core is language-neutral, and a stack is a **profile**:
+> one stack's test runner, build artifacts and package manager belong to its profile — data, and
+> optionally the advice to give after that stack's test runner fails — so a repository in several
+> languages gets each stack's advice with no configuration. The first profile, `python`, ships:
+> every agent is handed its rules, `stayfixed assess` runs its checks, and the stale-bytecode line
+> of the note after a failing pytest run is its own. The hooks file that wires all of it into a
+> session ships too, so on Claude Code installing the plugin is enough to make the guards fire and
+> the memory bundles arrive ([what each agent enforces](#what-each-agent-enforces)). The first
+> skills ship with them, and so does one command meant for a machine rather than for you — `hook`,
+> which dispatches one harness event. **Not yet:** the memory MCP server, a hold-the-line baseline,
+> the `uvx` form of the gate, and adapters for Cursor or Hermes — each leaves this list in the
+> change that ships it. The [Quickstart](#quickstart) shows the three keys that are enough to start
+> a project by hand, which `init` reads as your answers — a run that writes the file itself writes
+> `[stayfixed] version`, `state` and `agents`, and `profile` when the repository carries a shipped
+> profile's markers or `--profile` names one, beside `[project] name`, `base_branch` and
+> `release_branch`, a `[ci]` table only when it has a released commit to pin or `--no-ci` asks for
+> none, a `[memory]` table only when `--memory-mode` answers it, and an `[artifacts]` table only
+> when `--local` does. [docs/cli.md](https://github.com/stayfixed/stayfixed/blob/main/docs/cli.md) is the reference; the command list below is held
+> to the parser by a test, so it is complete for what ships.
 
 ## What this is, and what it is not
 
@@ -45,7 +50,7 @@ them.
 
 This project looked through the community plugin marketplace on 2026-09-05 and counted about
 2,300 plugins listed that day. That is one project's dated count rather than a survey with a
-method — no row in [sources.md](docs/methodology/sources.md) backs it, and it says what that
+method — no row in [sources.md](https://github.com/stayfixed/stayfixed/blob/main/docs/methodology/sources.md) backs it, and it says what that
 look found, not what exists. What it did not find anywhere else is the three things stayfixed
 adds:
 
@@ -65,7 +70,7 @@ adds:
 Two more practices ride along and are named as such: every assertion ships with the
 mutation that reddens it, and working memory is a routing table of hand-written lines, not
 a summary. The principles behind all of it, with dated sources and an honest note where the
-backing is thin, are in [docs/methodology/README.md](docs/methodology/README.md).
+backing is thin, are in [docs/methodology/README.md](https://github.com/stayfixed/stayfixed/blob/main/docs/methodology/README.md).
 
 **This is not a replacement for superpowers.** `stayfixed setup --preset recommended` installs
 it, and [context7](https://github.com/upstash/context7), on Claude Code — both ship in
@@ -78,10 +83,47 @@ marketplace name (nothing is vendored on a guess). The adoption skill will deleg
 superpowers where it is present. The adoption skill that walks a plan with the agent ships in a
 later package.
 
+## What each agent enforces
+
+stayfixed reaches an agent in four ways, and they do not hold alike on every agent. The
+**session guards** refuse a command before it runs (the `bg-cleanup` handler, which
+`stayfixed hook PreToolUse` runs on every shell call); the **session notices** add context and
+refuse nothing (the test-hygiene note, the standing rules, the volatile notes); the **repository
+gates** — the bug, documentation, plan, commit and trail checks — run in CI through the reusable
+workflow; and the **methodology** is the skills and the `AGENTS.md` region. Each column is an
+agent under the name `[stayfixed] agents` lists it by: `claude` is Claude Code and `codex` is
+Codex.
+
+| Surface | `claude` | `codex` |
+|---|---|---|
+| session guards | blocks in the session | not verified |
+| session notices | context only | not verified |
+| repository gates | CI only | CI only |
+| methodology | instructions only | instructions only |
+
+One session guard blocks, `bg-cleanup`, and it judges only a command the agent runs in the
+background: one that leaves an `&` job behind with no `trap … EXIT` to stop it, or that begins with
+`sleep` (directly, or behind `env` or `uv run` and uv's options), is refused before it starts, and
+the refusal names the remedy. Other wrappers, such as `nohup`, `timeout` or `bash -c`, are not
+read through ([`docs/cli.md`](https://github.com/stayfixed/stayfixed/blob/main/docs/cli.md#stayfixed-guard-bg-cleanup) lists them). The same
+command run in the foreground passes. stayfixed has no switch that turns a guard off, in
+configuration or on the command line, so a false block is a defect: report it in
+[an issue](https://github.com/stayfixed/stayfixed/issues) with the command it refused.
+
+On Claude Code a guard's refusal stopped the command before it ran when this was measured
+(Claude Code 2.1.261). Where a surface does not reach an agent in the session, the repository gates
+still hold in CI, which every agent's changes pass through. What was measured of Codex
+(Codex CLI 0.162.0-alpha.17.2) is its side: it runs a plugin's hooks once they are trusted in
+`/hooks`, skips untrusted ones without a message and runs them anyway under
+`--dangerously-bypass-hook-trust`, and a blocking `PreToolUse` hook's reason reaches the model.
+Codex delivers a failed command on `PostToolUse` with no exit code, so the note after a failing
+test run does not speak on Codex. `stayfixed doctor` says what holds on Codex in its `codex-trust`
+row whenever `[stayfixed] agents` lists `codex`.
+
 ## Install
 
-**Released as 0.2.0.** Both commands below install that release. The plugin form takes the
-tag, and `uv tool install stayfixed` resolves from PyPI:
+**Released as 0.2.0.** The plugin form below takes that release's tag. `uv tool install
+stayfixed` names no version, so it installs the newest release on PyPI:
 
 As a Claude Code plugin:
 
@@ -90,6 +132,11 @@ As a Claude Code plugin:
 /plugin install stayfixed@stayfixed-marketplace
 ```
 
+The marketplace in `stayfixed/stayfixed` fetches the plugin from
+[`stayfixed/stayfixed-plugin`](https://github.com/stayfixed/stayfixed-plugin) at the release's
+tag: a repository holding only what the plugin runs, generated from `stayfixed/stayfixed` at each
+release.
+
 As a command-line tool:
 
 ```bash
@@ -97,7 +144,7 @@ uv tool install stayfixed
 ```
 
 In CI, a project calls the reusable workflow at a commit SHA;
-[docs/cli.md](docs/cli.md#the-reusable-workflow) shows the caller `stayfixed init` writes.
+[docs/cli.md](https://github.com/stayfixed/stayfixed/blob/main/docs/cli.md#the-reusable-workflow) shows the caller `stayfixed init` writes.
 
 **Requirements: Python 3.11 or newer, and a POSIX system.** Linux and macOS are supported and
 tested; Windows is not. The containment this project is built on uses `openat` with
@@ -106,7 +153,7 @@ tested; Windows is not. The containment this project is built on uses `openat` w
 ## Quickstart
 
 Three keys in a `stayfixed.toml` at the root of a repository start a project; every other key
-takes the `recommended` preset's default, and [docs/cli.md](docs/cli.md#configuration) lists all
+takes the `recommended` preset's default, and [docs/cli.md](https://github.com/stayfixed/stayfixed/blob/main/docs/cli.md#configuration) lists all
 of them, annotated.
 
 ```toml
@@ -140,7 +187,7 @@ mkdir -p .stayfixed/local/memory/developer
 printf -- '---\nname: first-note\ndescription: "When to open this note"\n---\n\nThe note.\n' \
   > .stayfixed/local/memory/developer/first-note.md
 stayfixed memory index      # renders .stayfixed/local/memory/MEMORY.md from the notes
-stayfixed doctor            # sixteen checks over this installation, one line; --json has the remedies
+stayfixed doctor            # seventeen checks over this installation, one line; --json has the remedies
 ```
 
 `memory index` will tell you the notes reach no session until you say
@@ -152,7 +199,7 @@ The other commands in [Commands](#commands) expect more of a repository than tho
 create: `docs check` wants an `AGENTS.md`, `docs trail` a `docs/roadmap.md`, `bugs check` a
 ledger entry. `stayfixed init --yes` writes all of those, which is what it is for; in a
 repository you would rather grow by hand, add each path as you start using the command that
-reads it — [docs/cli.md](docs/cli.md#configuration) lists every default.
+reads it — [docs/cli.md](https://github.com/stayfixed/stayfixed/blob/main/docs/cli.md#configuration) lists every default.
 
 ## What it writes, and where
 
@@ -174,8 +221,8 @@ stayfixed writes files. Being specific about which is the point of this section.
 | `.stayfixed/manifest.json` | The ledger of every scaffolded artifact | the scaffold engine |
 | `.stayfixed/local/artifacts/` | The artifacts `[artifacts] local` keeps out of git, at the path each would have in the repository — git-ignored, never recorded in the manifest | `stayfixed init` and `stayfixed upgrade`, when `[artifacts] local` lists them; `stayfixed uninstall` takes them back |
 | `.stayfixed/local/artifacts.json` | The record of the bytes stayfixed last wrote under `.stayfixed/local/artifacts/`, so an unedited copy is refreshed or retired and an edited one is left. Git-ignored and never committed. Deleted, later runs judge a copy at its artifact's own place by what they render, and no longer find a copy left at an earlier place at all | the scaffold engine; `stayfixed uninstall` removes it |
-| `~/.config/stayfixed/config.toml` | Machine-level settings: `[personal]`, `[overlay]`, `[machine]` | you, or `stayfixed setup` |
-| `~/.config/stayfixed/trust.json` | Which repositories' committed notes you have approved | `stayfixed memory trust` |
+| `~/.config/stayfixed/config.toml` | Machine-level settings: `[personal]`, `[overlay]`, `[machine]`. `~` is your home as the password database records it, never `HOME`, which direnv, mise or a devcontainer can set from a file the repository commits ([docs/cli.md](https://github.com/stayfixed/stayfixed/blob/main/docs/cli.md#configuration)) | you, or `stayfixed setup` |
+| `~/.config/stayfixed/trust.json` | Which repositories' committed notes you have approved, under the same home | `stayfixed memory trust` |
 | `hooks/hooks.json` and `hooks/run-hook.sh` | The zero-config wiring both harnesses read, and the wrapper they execute. **Shipped in the plugin; never written into a project** | nothing — they are part of the plugin |
 | `${CLAUDE_PLUGIN_DATA}/stayfixed/` | Once-per-session markers and the hook diagnostics log. Deleted with the plugin | the hook dispatcher |
 | `.gitignore`, the `stayfixed:ignore` region | The block that keeps `.stayfixed/local/` and `.stayfixed/assessment.json` out of git. Recorded in the manifest when `init` writes it, and `detach` then leaves it | `stayfixed init`, or `attach` on a repository `init` has not set up |
@@ -187,6 +234,117 @@ and refuses to leave the project root, and replaces files atomically, keeping th
 file it replaced. Nothing is written by `--check`, `bugs check`, `plan check` or `memory
 refs`, and the scaffold engine's `plan` phase performs no writes at all.
 
+## What stayfixed sends where
+
+stayfixed makes no network request of its own and sends no telemetry: none of its modules imports
+one of Python's network modules. The table has two kinds of row. Most are programs stayfixed
+starts, each only when a command its row's **Run by** names runs, and as your user; stayfixed
+installs none of them. The last three are files stayfixed writes that GitHub runs; stayfixed runs
+none of them. stayfixed's skills and its agent start nothing themselves: what your coding agent
+runs on their advice — through `stayfixed test attribute --command`, a `[gates.custom]` command or
+its own shell — is a command it chose, and reaches what that command reaches. The
+`uv sync --locked && uv run --locked pytest …` the `attribute-failure` skill suggests, for one,
+can reach the package index in each of the three trees `test attribute` runs it in.
+
+`tests/test_outbound.py` walks the Python package and holds the **Program** column, in both
+directions, to the package's launches that can reach a network and the files its templates write
+under `.github/`. The walk reads syntax, so a launch decided by data flow it does not follow —
+dynamic dispatch, aliasing, a value computed at run time, a connection the standard library makes
+on the package's behalf — is beyond it; the docstring of
+[`tests/outbound/walk.py`](https://github.com/stayfixed/stayfixed/blob/main/tests/outbound/walk.py) says what it sees and names each such case.
+The **Run by**, **Talks to** and **When** columns are kept by hand. The hook wrapper,
+`hooks/run-hook.sh`, is not Python and is not walked: it starts `env`, `dirname`, `python3` and
+`git`, the last to find the project root and its worktrees, and reaches no network.
+
+| Program | Run by | Talks to | When |
+|---|---|---|---|
+| `git fetch` | `stayfixed bugs new` | the project's `origin` (note 1) | unless `--no-fetch` |
+| `git ls-remote` | `stayfixed init`, `stayfixed upgrade`, `stayfixed doctor`, `stayfixed gate` | `https://github.com/stayfixed/stayfixed`, for its release tags | note 2 |
+| `gh` | `stayfixed overlay create --template`, `stayfixed setup --overlay create:<owner>/<name> --yes`, `stayfixed overlay publish-template` | GitHub's API, as the account `gh` acts for, and the clones it makes over git (note 3) | note 3 |
+| `git clone` | `stayfixed overlay create --template`, `stayfixed setup --overlay create:<owner>/<name> --yes` | `git@github.com:<owner>/<name>.git`, the overlay just created | when the clone `gh repo create --clone` made came down empty |
+| `git push` | `stayfixed overlay publish-template --yes` | the template repository on GitHub, through the remote `gh repo clone` set up | when the rendered template differs from what the repository carries |
+| `claude plugin` | `stayfixed setup` (`--preset NAME`; `recommended` when omitted) | the marketplace the preset names for Claude Code, and its plugins' sources (note 4) | when the preset's agents include `claude` and it names a marketplace for it |
+| `codex plugin` | `stayfixed setup` (`--preset NAME`; `recommended` when omitted) | the marketplace the preset names for Codex (note 4) | when the preset's agents include `codex` and it names a marketplace for it |
+| `pre-commit install` | `stayfixed overlay init`, `stayfixed setup --overlay create:<owner>/<name> --yes`, `stayfixed attach` | nothing as it installs; GitHub and Go's servers on the first commit after it (note 5) | `attach` only when the overlay carries a `.pre-commit-config.yaml` and no `pre-commit` hook yet |
+| `sh -c` | `stayfixed test attribute --command CMD` | wherever `CMD` reaches; stayfixed does not choose | every run: `CMD` in the working tree, then in extracts of `HEAD` and of the merge base |
+| the commands `[gates.custom]` names | `stayfixed assess`, `stayfixed gate`, `stayfixed adopt promote` | wherever those commands reach; stayfixed does not choose | when `[gates.custom]` names one, unless `--builtin` is passed |
+| `.github/workflows/stayfixed.yml` | your CI, from the workflow `stayfixed init` writes in `reusable` mode | GitHub, through stayfixed's reusable workflow (note 6) | on the events the workflow names |
+| `.github/workflows/scan.yml` | the overlay's CI on GitHub (note 7) | GitHub, through `gitleaks/gitleaks-action` (note 7) | on every push, pull request and manual run, unless the repository is marked a template |
+| `.github/dependabot.yml` | GitHub's Dependabot, from the file the same commands write into the overlay | GitHub: it looks up new releases of the scan workflow's two pinned actions and opens one grouped pull request in the overlay to move them | monthly, once the file is on GitHub |
+
+1. **`git fetch`** asks the project's own `origin` for identifiers filed on branches this checkout
+   has not fetched, with `--no-recurse-submodules`, so a submodule's remote is not asked. stayfixed
+   passes git only `PATH`, `HOME`, `LANG`, `LC_ALL` and `SYSTEMROOT` from your environment, and
+   what it drops changes how the fetch connects. ssh finds no agent through
+   `SSH_AUTH_SOCK`, though it still uses its key files under `~/.ssh` and any `IdentityFile` or
+   `IdentityAgent` your `~/.ssh/config` names, and `GIT_SSH_COMMAND` is not used. Without
+   `HTTPS_PROXY`, `ALL_PROXY` and `NO_PROXY`, in either case, a fetch over HTTPS goes direct unless
+   your git configuration sets `http.proxy` or the remote's `remote.<name>.proxy`. Without
+   `XDG_CONFIG_HOME` and `GIT_CONFIG_GLOBAL`, git reads your global configuration from
+   `~/.gitconfig` and `~/.config/git/config` alone: a global configuration either variable points
+   elsewhere, and the credential helpers it names, are not read, while the helpers the configuration
+   git does read names are used.
+2. **`git ls-remote`** runs in `init` and `upgrade` in `reusable` mode, to pin the CI workflow they
+   write to a release's commit; in `doctor` when `[ci] ref` is recorded; and in `gate` when a
+   change moves `[ci] ref` to the commit `--workflow-sha` names.
+3. **`gh`**: `overlay create` and `setup` look up the template, create the private overlay from it
+   with its clone, and ask whether it exists when that clone came down empty; `publish-template`
+   looks up the template repository, and with `--yes` creates it public, marks it a template and
+   clones it. `gh repo create --clone` and `gh repo clone` make their clones with git, over git's
+   own transport, from github.com or the host `GH_HOST` names. stayfixed passes `gh` your
+   environment, so a `GH_TOKEN` or `GITHUB_TOKEN` there is the account it acts as, over the one `gh`
+   is signed in to, and `GH_HOST` can point it at a GitHub Enterprise host — while the clone
+   `overlay create` falls back to is always `git@github.com:`.
+4. **`claude plugin`** registers the marketplace the preset names for Claude Code
+   (`anthropics/claude-plugins-official` in `recommended`), reads its list of plugins, and
+   downloads each of the preset's plugins from the source its entry there names, which can be
+   another repository. **`codex plugin`** registers the marketplace the preset names for Codex and
+   adds the preset's plugins from it; `recommended` names none, so it does not run. Once
+   installed, a plugin runs in every session of its harness and reaches what it reaches.
+5. **`pre-commit install`** reaches nothing as it installs. On the first commit after it,
+   pre-commit clones `https://github.com/gitleaks/gitleaks` at the commit the overlay's
+   `.pre-commit-config.yaml` pins, gitleaks 8.30.1, whose hook is written in Go: pre-commit builds
+   it, fetching Go modules through Go's module proxy and checking them against Go's checksum
+   database, `sum.golang.org`, and may first download a Go toolchain from Go's own download
+   service where none is installed. Go honours `GOPROXY` and `GOSUMDB` from your environment,
+   which pre-commit passes on, so those can send each request elsewhere; it honours your
+   `GOTOOLCHAIN` only when Go was already installed, since pre-commit sets it to `local` for a Go
+   it downloaded.
+6. **`stayfixed.yml`** calls stayfixed's reusable workflow at the commit it pins, which checks out
+   your repository and stayfixed, may download a Python, on a pull request that moves `[ci] ref`
+   lists stayfixed's release tags, and, once the configuration and built-in gates pass, runs the
+   commands `[gates.custom]` names (that row above).
+7. **`scan.yml`** is written by `stayfixed overlay create --local`, `stayfixed overlay upgrade`
+   and `stayfixed overlay publish-template`; an overlay made with `--template` gets it from the
+   template repository. It checks out the overlay's whole history and runs
+   `gitleaks/gitleaks-action` at the commit it pins, v3.0.0. The action looks up the repository's
+   owner through GitHub's API and, for an organisation, stops unless a `GITLEAKS_LICENSE` secret is
+   set; in this release it checks only that the secret is present, its call to validate the
+   licence being commented out, so it contacts no licensing server. It downloads gitleaks
+   8.30.1 from `https://github.com/zricethezav/gitleaks/releases/download/…`, stores its report as
+   an artifact of the run and, on a pull request, lists the pull request's commits and, when it
+   finds a leak, its review comments, all through GitHub's API with the job's read-only token. It
+   also tries to post a review comment on the leak, which that token does not allow, so the
+   attempt fails as a warning.
+
+Two kinds of git read the table counts as local can reach a network, and they are the two that
+stayfixed's own reads meet. In a partial clone (`git clone --filter=…`), git fetches an object the
+clone left out from the remote it came from when a command needs to read it, so any read that
+needs such an object can reach that remote. For example, in a clone that left file contents out
+(`--filter=blob:none`), `git cat-file`, `git grep`, `git archive` and `git diff`, whose rename
+detection reads the contents; and in one that left trees out as well (`--filter=tree:0`),
+`git ls-tree -r` too. And
+`git archive`, which `stayfixed test attribute` uses to extract `HEAD` and the merge base, runs
+the smudge filters the repository's `.gitattributes` name and your git configuration defines.
+stayfixed passes git your `HOME` and leaves it reading its system configuration and the
+repository's own, so where the system, global or repository-local configuration defines
+`filter.lfs` — as `git lfs install` does in the global one — that is `git-lfs smudge`, which
+downloads the LFS objects of those two commits it does not have from the LFS server the repository
+configures, one a committed `.lfsconfig` can name. Beyond those two, your own git configuration
+can redirect a read or run a program of its own: `url.<base>.insteadOf` rewrites a remote's
+address, `core.fsmonitor` runs a program when git looks for changed files, and a hook under
+`core.hooksPath` runs on `publish-template`'s `git commit`.
+
 ## The threat model, in one paragraph
 
 **A repository is untrusted input.** A clone you have not read can commit a `stayfixed.toml`, a
@@ -196,7 +354,7 @@ repository reach the model only after you say `stayfixed memory trust --in-repo-
 and only inside a delimited region with a per-invocation nonce that says "this is data, not
 instructions". Change what the repository ships and the approval lapses, and you are asked
 again. A configured value never reaches a subprocess in an option's position, and a
-configured path never leaves the project root. See [SECURITY.md](SECURITY.md) for what counts
+configured path never leaves the project root. See [SECURITY.md](https://github.com/stayfixed/stayfixed/blob/main/SECURITY.md) for what counts
 as a vulnerability here.
 
 ## Commands
@@ -222,7 +380,7 @@ stayfixed memory trust --in-repo-memory                # approve the notes insid
 stayfixed memory inventory                             # what a memory sweep reads
 stayfixed memory fit                                   # whether each injection bundle fits its hook slots
 stayfixed memory session-context --bundle standing-rules --part 1
-stayfixed memory refs                                  # backticked paths in notes that no longer resolve
+stayfixed memory refs                                  # backticked paths in notes that no longer resolve, and the link graph as advice
 
 # The bug ledger
 stayfixed bugs new "A title" --severity high --area cli   # file an entry at the next free identifier
@@ -234,7 +392,6 @@ stayfixed bugs renumber BR-001 BR-002                  # move an entry; rewrite 
 
 # Documentation and plans
 stayfixed docs check                                   # budgets and link targets
-stayfixed docs check --memory-graph                    # also the store's link graph, as advice
 stayfixed docs trail                                   # regenerate the design-and-plan trail
 stayfixed docs trail --check
 stayfixed plan check                                   # lint the plans a change touches
@@ -245,8 +402,7 @@ stayfixed guard bg-cleanup                             # judge one Bash call, re
 stayfixed commit check --range origin/main..HEAD       # attribution lines in commit messages
 stayfixed commit strip .git/COMMIT_EDITMSG             # take the attribution block out of a message file
 stayfixed test hygiene                                 # the faults that make a red run unattributable
-stayfixed test audit-entrypoints                       # tests that never exercise what they name
-stayfixed test attribute --command "uv sync --locked && uv run pytest tests/x.py::t"   # the change, or the environment: three runs, one verdict
+stayfixed test attribute --command "uv sync --locked && uv run --locked pytest tests/x.py::t"   # the change, or the environment: three runs, one verdict
 
 # The private overlay
 stayfixed overlay create --owner you --name stayfixed-private --local   # render one here, no network call at all
@@ -275,44 +431,34 @@ stayfixed assess                                       # every gate and probe; t
 stayfixed assess --builtin                             # the same, running none of the repository's own gate commands
 stayfixed gate                                         # judge stayfixed.toml against the base, then run every configured gate
 stayfixed gate --only docs --only config               # a few of them; config is the configuration check
-stayfixed adopt begin docs/plans/2026-09-23-stayfixed-adoption.md   # check the adoption plan; the project is adopting
 stayfixed adopt promote docs                           # enforce one gate, if it passes now
 stayfixed adopt promote                                # enforce every gate that passes now; name the rest
 stayfixed adopt promote --builtin                      # the same, running none of the repository's own gate commands
 
 # Diagnosing an installation
-stayfixed doctor                                       # sixteen checks over this installation, one line
+stayfixed doctor                                       # seventeen checks over this installation, one line
 stayfixed doctor --json                                # every check with its status, detail and remedy
 
-# Internal and release
+# Internal
 stayfixed hook SessionStart                            # dispatch one harness hook event (internal)
-stayfixed release check                                # one version everywhere (this repository's own)
-stayfixed release check --tag v1.2.3                   # and the tag agrees, with nothing left in changelog.d
-stayfixed release notes --version 1.2.3 --draft        # render the section towncrier would write
-stayfixed release notes --version 1.2.3                # assemble CHANGELOG.md from changelog.d
-stayfixed release hashes --check                       # the shipped files still match the release record
 ```
 
-Every `memory`, `bugs`, `docs` and `plan` command, and `assess`, `gate` and `adopt`, takes
-`--root` (default: the current directory) and `--machine` (read a machine configuration file
-other than the default); `memory` commands and `docs check` take `--store` as well.
-`stayfixed overlay` is the exception: its `--root` names the directory an overlay is created in
-or the overlay itself, not a project root, and it reads no `stayfixed.toml`. `--json` is accepted
-anywhere and prints one machine-readable object instead of one line.
-The commands that report a list of
-findings — `bugs check`, `docs check`, `memory refs`, `plan check`, `test audit-entrypoints` —
-all spell it `findings`, whatever their summary line calls them; every other command's keys
-are its own and are listed with it in [docs/cli.md](docs/cli.md).
+Commands that read a project take `--root` (default: the current directory) and `--machine` (read
+a machine configuration file other than the default); `memory` commands and `attach` take
+`--store` as well. The commands that take neither, and the ones that mean something else by
+either, are listed in [Shared flags](https://github.com/stayfixed/stayfixed/blob/main/docs/cli.md#shared-flags). `--json` is accepted anywhere and
+prints one machine-readable object instead of one line. The commands that report a list of
+findings — `bugs check`, `docs check`, `memory refs`, `plan check` — all spell it `findings`,
+whatever their summary line calls them; every other command's keys are its own and are listed
+with it in [docs/cli.md](https://github.com/stayfixed/stayfixed/blob/main/docs/cli.md).
 
 Exit codes are the same everywhere: **0** success, **1** findings, **2** a refusal or an
-internal error. A caller must never read 2 as permission. Two commands are deliberately
-outside that rule. `stayfixed test audit-entrypoints` exits **0** even when it has findings,
-and lists them under `--json`, because its candidates are for triage and gating on them
-is not shipped yet. And `stayfixed hook` refuses with **2** on an internal
+internal error. A caller must never read 2 as permission. One command is deliberately
+outside that rule: `stayfixed hook` refuses with **2** on an internal
 error only for `PreToolUse`, the one event a harness blocks on; everywhere else it degrades
 open with **0**, because on `UserPromptSubmit` an exit 2 erases what you typed and a bug in
 stayfixed must not cost you that. A handler's own deny is a decision, not a breakage, and
-refuses on every event. [docs/cli.md](docs/cli.md) states it per event.
+refuses on every event. [docs/cli.md](https://github.com/stayfixed/stayfixed/blob/main/docs/cli.md) states it per event.
 
 ### `stayfixed memory trust`
 
@@ -323,8 +469,12 @@ rendered into it — against the store's absolute path, in `~/.config/stayfixed/
 You are saying: *I have read what this repository committed under its memory directory, and it
 may reach the model as data.* Any later change to any of those files makes the hash disagree
 and the approval lapse until you look again and re-run it. A store whose notes are yours —
-`overlay` mode, where the notes live in your own machine-level overlay — needs no approval, and
-recording one for it is inert.
+`overlay` mode, where the notes live in your own machine-level overlay — needs no approval for
+its notes to reach a session: the standing-rules and volatile-notes bundles deliver them without
+one. The record still matters there. The store's directory of links sits inside the repository,
+and the record is what lets `stayfixed attach` create the harness memory link to it; until one
+exists, `stayfixed memory index` and `memory fit` say the link waits for it, and `attach` says
+so instead of making the link.
 
 ## Memory, in one page
 
@@ -358,7 +508,8 @@ note's `index:` line. A second writer appending entries to `MEMORY.md` is expect
 `memory.mode` decides where the store is. `local-only` (the default — `.stayfixed/local/memory`,
 git-ignored) and `in-repo` (committed) both put the notes **inside the repository**, so both are
 behind the trust gate; `overlay` (a directory of links into a machine-level overlay shared across
-your projects) puts them outside it, and notes that are yours need no approval. The gate keys on
+your projects) puts them outside it, and notes that are yours need no approval, though the harness
+memory link to that directory of links waits for one (see `stayfixed memory trust` above). The gate keys on
 where a note actually sits, never on what the repository's own `stayfixed.toml` declares — a clone
 that wrote `mode = "local-only"` would otherwise gate itself.
 
@@ -386,9 +537,9 @@ that test until the command ships; none is today.
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) — it states the three rules a change here has to satisfy,
+See [CONTRIBUTING.md](https://github.com/stayfixed/stayfixed/blob/main/CONTRIBUTING.md) — it states the three rules a change here has to satisfy,
 which are not obvious from the code. Security reports go through
-[SECURITY.md](SECURITY.md), never a public issue.
+[SECURITY.md](https://github.com/stayfixed/stayfixed/blob/main/SECURITY.md), never a public issue.
 
 ## License
 

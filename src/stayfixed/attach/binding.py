@@ -1,10 +1,9 @@
 """Which overlay this repository is bound to, and whether the binding is really this one's.
 
-**Three rules keep the overlay trusted, and two of them live here.** The overlay is trusted
-*by construction*, and the construction is that
-`config.machine.machine_config_path(interactive=False)` makes the machine file unselectable by
-a repository — that module spends twenty lines on why gating one of a pair of equivalent
-variables "is not a partial defence, it is a redirect with a longer name". So:
+**Three rules keep the overlay trusted, and two of them live here.** The overlay is trusted *by
+construction*, and the construction is that `config.machine.machine_config_path` makes the machine
+file unselectable by a repository — that module spends twenty lines on why gating one of a pair of
+equivalent variables "is not a partial defence, it is a redirect with a longer name". So:
 
 1. the overlay root comes from `overlay_root(machine)` and never from `--store`. Deriving it
    from the store's own parent would make the source of every allow rule and every hook entry
@@ -25,30 +24,32 @@ them — one of `memory.store.binding_state`'s four labels — is stayfixed's ow
 
 from __future__ import annotations
 
-import tomllib
+import errno
+import stat
 from dataclasses import dataclass
 from pathlib import Path
 
+from stayfixed import fsops
 from stayfixed.config.loader import UNPARSEABLE, load, toml_position
-from stayfixed.config.paths import PathEscape, contained
-from stayfixed.config.schema import Config
+from stayfixed.config.overlay import overlay_root
+from stayfixed.config.paths import PathEscape, PathUnasked, contained
+from stayfixed.config.schema import OVERLAY_MODE, Config
 from stayfixed.errors import Failure, Refusal
+from stayfixed.fsops import said
+from stayfixed.gitenv import origin_remote
 from stayfixed.memory.api import (
     PROJECT_RECORD,
     PROJECTS,
+    STORE_DIR,
     binding_state,
-    origin_remote,
-    overlay_root,
+    link_sources,
     permitted_roots,
+    read_binding_record,
 )
 
 # The binding's states are `memory.store`'s (`BINDING_STATES`), and so is the one classifier that
 # decides between them (`binding_state`): this module answered the same question with a copy of
 # its own that called a checkout with no `origin` a mismatch.
-# The one directory under `projects/<name>/` that holds notes. `permitted_roots` is what names
-# it; this spelling exists so the `--store` refusal below can state the shape of the path it
-# wants without printing the project name it would otherwise embed.
-STORE_DIR = "memory"
 # One sentence, said by both `binding_for` and `read_binding`: neither reads an overlay root
 # that was not recorded through `stayfixed setup`.
 NO_OVERLAY = (
@@ -77,9 +78,15 @@ MEMORY_GROUP_ESCAPES = (
     "a memory.groups entry does not name a subdirectory of this project's paths.memory, or "
     "paths.memory is itself a symlink, so the entry is refused rather than counted"
 )
+# Said instead when no symlink is on the way and a directory on it cannot be asked whether it is
+# one: the sentence above would name a cause the entry does not have. `{fault}` is the system's
+# words for what stopped the question, never a path.
+MEMORY_GROUP_UNASKED = (
+    "a memory.groups entry's place under this project's paths.memory cannot be checked for a "
+    "symlink ({fault}), so the entry is refused rather than counted"
+)
 
 
-OVERLAY_MODE = "overlay"
 # The first refusal `attach` owes, and `--check` with it. `worktree.attach_main` asks the same
 # question as the floor under this one, but it runs after every write `attach` makes: refused
 # there, a `local-only` project had `.gitignore`'s region, `.codex/rules/`, the settings merge,
@@ -88,8 +95,189 @@ OVERLAY_MODE = "overlay"
 # prints.
 NOT_OVERLAY = (
     "memory.mode is {mode!r}, so this repository keeps its own note store and there is nothing "
-    "in an overlay to bind it to; only a repository whose memory.mode is 'overlay' is attached"
+    f"in an overlay to bind it to; only a repository whose memory.mode is {OVERLAY_MODE!r} is "
+    "attached"
 )
+
+
+# The refusal for a `project.name` no directory under the overlay can carry. The overlay root is
+# the owner's and prints; the name is the repository's (see `_recorded`), so it is the shape.
+SHARE_CANNOT_EXIST = (
+    "{projects}/<this project's name> cannot be a directory on this machine -- a file already "
+    "holds that name, or the name is longer than the filesystem allows -- so there is nowhere to "
+    "record this binding or keep this project's notes; choose another `name` under [project] in "
+    "stayfixed.toml"
+)
+# The refusal for a `project.name` whose directory fits under the longest path while a path
+# `attach` creates or links inside it does not. The shape again and never the name, for the reason
+# above, and never a group either: `memory.groups` is the repository's too, and a long entry is
+# the other way to reach it.
+PATH_CANNOT_EXIST = (
+    "{projects}/<this project's name>/ would hold a path, or a name in one, longer than this "
+    "machine allows -- the binding record " + PROJECT_RECORD + ", the notes index or a memory "
+    "group's directory -- so attach could not record the binding or link the notes there; "
+    "choose a shorter `name` under [project] in stayfixed.toml, or shorter memory.groups entries"
+)
+
+
+# The refusal for an overlay whose root, or whose `projects/`, is there and is not a directory.
+# That is the owner's overlay in a broken state and never a name the repository chose, so it names
+# the path — the owner's, from the machine file, holding no project's name — and asks for the
+# overlay to be repaired, never for another `name`.
+# The way out of a damaged overlay, one sentence for `attach`'s refusal and `doctor`'s row.
+OVERLAY_REPAIR = (
+    "repair the overlay so that {path} is a directory again (or clone the overlay afresh), then "
+    "run {command} again"
+)
+OVERLAY_DAMAGED = (
+    "{path} is not a directory, so the overlay this machine records is damaged: no project's "
+    "binding record or notes can be kept under it; "
+    + OVERLAY_REPAIR.replace("{command}", "the command")
+)
+
+
+def damaged_overlay(overlay: Path) -> Path | None:
+    """The overlay root, or its `projects/`, when it is there and is not a directory; else `None`.
+
+    Asked of the owner's own paths and never of anything `project.name` spells, so it answers
+    the same for every project: an overlay in this state holds no project's binding, and a
+    reader that took its `NotADirectoryError` for a name no directory can carry blamed the
+    repository's name and sent a bound project's owner to choose another one. A path that is
+    not there, or cannot be asked about, is not this answer: an overlay with no `projects/` yet
+    is a fresh one, and the callers have their own answers for the rest.
+
+    Asked with `lstat` first: a symbolic link there is followed, as a link to a directory is the
+    owner's to make, but one that names nothing is damage, not absence. Asked with `stat` alone,
+    it answered "no such file", so `--check` read a fresh overlay and `attach` blamed a
+    `memory.groups` entry.
+    """
+    for path in (overlay, overlay / PROJECTS):
+        try:
+            mode = path.lstat().st_mode
+        except OSError:
+            return None
+        if stat.S_ISLNK(mode):
+            try:
+                mode = path.stat().st_mode
+            except OSError:
+                return path
+        if not stat.S_ISDIR(mode):
+            return path
+    return None
+
+
+def cannot_exist(exc: OSError) -> bool:
+    """Whether `exc` says its path cannot exist on this filesystem, whatever the overlay holds.
+
+    Two answers, both about the path's spelling and neither about the health of what it names:
+    a component that is there and is not a directory, and a component longer than a file name
+    may be. Under the overlay's `projects/` the spelling's one free part is `project.name`, which
+    the repository writes (principle 5) and the loader bounds by charset and not by length, so
+    each is a choice a clone makes: `projects/README.md` ships in every overlay, and a filesystem
+    that folds case finds it under `readme.md`. A path this answers for is one the overlay has
+    no file at -- the same answer `FileNotFoundError` gives -- and never one it failed to read.
+    """
+    return isinstance(exc, NotADirectoryError) or exc.errno == errno.ENAMETOOLONG
+
+
+def refuse_unless_share_can_exist(binding: Binding, config: Config) -> None:
+    """Refuse a `project.name` no directory under the overlay's `projects/` can carry.
+
+    `attach` writes the binding record and the group directories under `projects/<name>/`, and
+    `cannot_exist` is the reason the sources read under it answer "none" rather than refusing,
+    so nothing below this asks: the first to find out would be the record's write, after the
+    ignore region, the rule copies, the settings merge and the ledger. Above every write, then,
+    and in `--check` as well. A share that is absent is fine: `attach` creates it.
+
+    **Nor a name whose directory fits under the longest path while a path `attach` makes inside it
+    does not** -- the binding record, and every path the link tree points at there
+    (`link_sources`: the index, which the first attach writes, and each group's directory, which
+    it creates). Each is written or created through descriptors, which no path length bounds, so
+    the write succeeds; but every reader names it by its whole path. `_recorded` answers a record
+    past the longest one with "no record", so the binding would be written and then read as
+    unbound for ever; and the system refuses a link whose target is that long, so building the
+    link tree ended in an internal error (`PartialLink`, "File name too long") after the ignore
+    region, the settings merge, the ledger and the record -- with `--check` answering 0 before it,
+    because the overlay's sources it reads are shorter than a long group's directory. The paths
+    are the ones the tree is built from, and not suffix lengths counted here, so a group added to
+    the tree is asked about without a second list to keep. Each is asked with `lstat`, whether or
+    not the share is there yet: the system refuses a path past the longest one before it looks
+    anything up, so the answer is about the spelling and never about what the overlay holds.
+    `common/memory` is outside the share and its length is not the name's, so it is not asked.
+    """
+    share = binding.overlay / PROJECTS / binding.project
+    where = f"{binding.overlay / PROJECTS}/<this project's name>"
+    # The overlay's own shape first: a root or a `projects/` that is a file is the owner's to
+    # repair, whatever the name, and every question below would blame the name for it.
+    damaged = damaged_overlay(binding.overlay)
+    if damaged is not None:
+        raise Refusal(OVERLAY_DAMAGED.format(path=damaged))
+    # A name, or a group, longer than a file name may be is asked of the nearest directory that is
+    # there and not of the path it will have: an overlay with no `projects/` yet answers every path
+    # under it with "no such file", the over-long name included, so a 300-character name read as a
+    # first attach and the run failed at the record's write, after the ignore region and the
+    # ledger, printing the name.
+    there = _nearest_directory(binding.overlay / PROJECTS)
+    if _name_too_long(there, binding.project):
+        raise Refusal(SHARE_CANNOT_EXIST.format(projects=binding.overlay / PROJECTS))
+    try:
+        mode: int | None = share.stat().st_mode
+    except FileNotFoundError:
+        mode = None
+    except OSError as exc:
+        if not cannot_exist(exc):
+            raise Failure(f"{where} cannot be read ({said(exc)})") from exc
+        mode = 0
+    if mode is not None and not stat.S_ISDIR(mode):
+        raise Refusal(SHARE_CANNOT_EXIST.format(projects=binding.overlay / PROJECTS))
+    made = (share / PROJECT_RECORD, *link_sources(binding.overlay, config))
+    for path in (path for path in made if path.is_relative_to(share)):
+        if any(_name_too_long(there, part) for part in path.relative_to(share).parts):
+            raise Refusal(PATH_CANNOT_EXIST.format(projects=binding.overlay / PROJECTS))
+        # The whole path too: only its length decides here, since an absent path is a first
+        # attach, and a record that is there and cannot be read was already refused by
+        # `_recorded` on the way to `binding`.
+        if _too_long(path):
+            raise Refusal(PATH_CANNOT_EXIST.format(projects=binding.overlay / PROJECTS))
+
+
+def _nearest_directory(path: Path) -> Path | None:
+    """`path` or the nearest of its ancestors that is a directory, or `None` when none is."""
+    for there in (path, *path.parents):
+        try:
+            if stat.S_ISDIR(there.stat().st_mode):
+                return there
+        except OSError:
+            continue
+    return None
+
+
+def _name_too_long(directory: Path | None, component: str) -> bool:
+    """Whether the filesystem holding `directory` refuses `component` as a name too long to be one.
+
+    Asked of the kernel with an `lstat` of the name directly under `directory`, which is there, and
+    never counted here: Linux filesystems limit a name to 255 bytes and macOS APFS to 255
+    characters, so 200 x "é" (400 bytes) is a name on one and not the other, and `PC_NAME_MAX`
+    says 255 on both. A lookup that answers anything but `ENAMETOOLONG` -- the usual "no such
+    file", or a name that is there -- says the name fits.
+    """
+    if directory is None:
+        return False
+    return _too_long(directory / component)
+
+
+def _too_long(path: Path) -> bool:
+    """Whether the kernel refuses `path` as too long -- a name in it, or the whole path -- asked
+    with an `lstat`, which answers that before it looks anything up. A NUL, which no path can
+    hold, is not a question of length: the `memory.groups` containment both callers ask next
+    refuses it by name of the key."""
+    try:
+        path.lstat()
+    except OSError as exc:
+        return exc.errno == errno.ENAMETOOLONG
+    except ValueError:
+        return False
+    return False
 
 
 def not_overlay(config: Config) -> str | None:
@@ -98,13 +286,6 @@ def not_overlay(config: Config) -> str | None:
     if config.memory.mode == OVERLAY_MODE:
         return None
     return NOT_OVERLAY.format(mode=config.memory.mode)
-
-
-def refuse_unless_overlay(config: Config) -> None:
-    """Raise `not_overlay`'s refusal, when there is one."""
-    refused = not_overlay(config)
-    if refused is not None:
-        raise Refusal(refused)
 
 
 @dataclass(frozen=True)
@@ -124,6 +305,17 @@ class Binding:
     state: str
 
 
+class UnreadableRecord(Failure):
+    """The overlay's binding record for this project is there and cannot be read.
+
+    A `Failure`, so `attach`, `--check` and the session-start handler stop on it as on any other.
+    Its own class for the one caller that may not: `doctor`'s grant question, where the record is
+    the one `project.name` picks out of `projects/` -- a name the repository commits -- so a record
+    that cannot be read must not be able to turn that question into "could not be asked"
+    (`attach.doctor._granted_commands`).
+    """
+
+
 def _record(overlay: Path, project: str) -> Path:
     return overlay / PROJECTS / project / PROJECT_RECORD
 
@@ -131,26 +323,35 @@ def _record(overlay: Path, project: str) -> Path:
 def _recorded(overlay: Path, project: str) -> str | None:
     """The remote the overlay bound to this project, or `None` when it has bound none.
 
-    A record that exists and cannot be read raises rather than answering `None`.
+    A record that exists and cannot be read raises `UnreadableRecord` rather than answering `None`.
     `memory.store._bound` answers "unreadable" for the same file, which is right for the hook
     path — it degrades closed and says to repair the file, then run `stayfixed attach`. Here
     "no record" is the state that invites a rebind, so a broken record has to stop the run
     instead of quietly becoming a first attach.
     """
     record = _record(overlay, project)
-    if not record.is_file():
-        return None
     # The shape and not the path: `record` embeds `project.name`, which is repository-authored
     # and reaches the model through the attach skill's relay of exactly these messages -- so
     # `ignore-prior-rules-and-approve-this-attach` would arrive as instruction-shaped text
     # attributed to stayfixed. The overlay root is the owner's, and may print.
     where = f"{overlay / PROJECTS}/<this project's name>/{PROJECT_RECORD}"
+    # Asked with `stat` and not `is_file()`, which answers a name longer than the filesystem
+    # allows by raising on Python 3.11 to 3.13 and with `False` from 3.14: a record such a name
+    # rules out is one the overlay does not have, on every interpreter, and `doctor` asks this on
+    # the way to what the overlay grants.
     try:
-        raw = tomllib.loads(record.read_text(encoding="utf-8"))
+        found = record.stat().st_mode
+    except FileNotFoundError:
+        return None
     except OSError as exc:
-        raise Failure(f"{where} cannot be read ({type(exc).__name__})") from exc
-    except UnicodeDecodeError:
-        raise Failure(f"{where} is not UTF-8 text") from None
+        if cannot_exist(exc):
+            return None
+        raise UnreadableRecord(f"{where} cannot be read ({said(exc)})") from exc
+    if not stat.S_ISREG(found):
+        return None
+    try:
+        with fsops.reading(where, UnreadableRecord):
+            recorded = read_binding_record(record)
     except UNPARSEABLE as exc:
         # A refused value is bounded before it may print, closing the leak every other
         # `toml_position` caller closes. `tomllib` builds its message as
@@ -161,9 +362,8 @@ def _recorded(overlay: Path, project: str) -> str | None:
         # repository's `origin`, and a remote URL may not print wherever it came from.
         # `toml_position` bounds it to the suffix, and `from None` because a chained `__cause__`
         # would print the message a traceback away.
-        raise Failure(f"{where} is not valid TOML {toml_position(exc)}") from None
-    value = raw.get("remote")
-    return value if isinstance(value, str) and value else None
+        raise UnreadableRecord(f"{where} is not valid TOML {toml_position(exc)}") from None
+    return recorded.get("remote")
 
 
 def binding_for(root: Path, config: Config, *, machine: Path | None) -> Binding:
@@ -175,6 +375,16 @@ def binding_for(root: Path, config: Config, *, machine: Path | None) -> Binding:
     overlay = overlay_root(machine)
     if overlay is None:
         raise Refusal(NO_OVERLAY)
+    return _bound(root, config, overlay)
+
+
+def _bound(root: Path, config: Config, overlay: Path) -> Binding:
+    """The binding under an overlay root the caller has already read out of the machine file.
+
+    One read per binding: `read_binding` checks `--store` against the root it read and binds under
+    that same root, rather than handing `binding_for` the machine file to read a second time, which
+    could answer another root if the file changed in between.
+    """
     project = config.project.name
     store = permitted_roots(overlay, project)[1]
     recorded = _recorded(overlay, project)
@@ -191,18 +401,27 @@ def read_binding(
     that loader is what holds it to one path segment (`../common` is the value path containment
     protects against here, and the name becomes a directory under the overlay's `projects/`).
 
-    `config` is loaded here only when the caller does not already hold one. `permissions.check`
+    `config` is loaded here only when the caller does not already hold one. `attach.check`
     does -- it needs the same `Config` for `unlinked_groups` -- and a second load would read
     `stayfixed.toml` and the machine file twice per `--check`, with the two halves free to
     disagree if the file changed in between. `binding_for` is the seam for a caller that has a
-    `Config` and no `--store` to check; this is the seam for one that has both.
+    `Config` and no `--store` to check; this is the seam for one that has both. For the same
+    reason the overlay root is read once, and `--store` is checked against the root the binding
+    is then made under (`_bound`).
     """
     config = load(root, machine=machine) if config is None else config
     overlay = overlay_root(machine)
     if overlay is None:
         raise Refusal(NO_OVERLAY)
     expected = permitted_roots(overlay, config.project.name)[1]
-    if store.resolve() != expected.resolve():
+    try:
+        resolved: Path | None = fsops.resolved(store)
+    except OSError:
+        # A store through a symlink loop, which `fsops.resolved` answers as an `OSError` on every
+        # interpreter. `doctor` hands this the store a ledger names, and a clone can commit
+        # both, so it is refused here as any store that is not this one is.
+        resolved = None
+    if resolved != expected.resolve():
         # The shape and never `expected`, which embeds `project.name` (see `_recorded`).
         raise Refusal(
             f"--store must name this project's own directory inside the overlay this machine "
@@ -210,7 +429,7 @@ def read_binding(
             f"{store} is not it. The overlay root comes from the machine configuration and never "
             f"from an argument"
         )
-    return binding_for(root, config, machine=machine)
+    return _bound(root, config, overlay)
 
 
 def unlinked_groups(root: Path, config: Config) -> tuple[str, ...]:
@@ -236,10 +455,14 @@ def unlinked_groups(root: Path, config: Config) -> tuple[str, ...]:
                 allow_final_symlink=True,
                 resolved_root=resolved,
             )
+        except PathUnasked as exc:
+            raise PathUnasked(
+                MEMORY_GROUP_UNASKED.format(fault=exc.fault), fault=exc.fault
+            ) from exc
         except PathEscape as exc:
             # `group` and `config.paths.memory` are repository-authored, so the combined path
             # `contained` refuses is refused again, fixed text and never quoted back.
             raise PathEscape(MEMORY_GROUP_ESCAPES) from exc
-        if target.is_dir() and not target.is_symlink():
+        if fsops.is_dir(target) and not fsops.is_symlink(target):
             found.append(group)
     return tuple(found)

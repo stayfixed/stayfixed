@@ -7,11 +7,13 @@ import json
 import os
 import sys
 
+from stayfixed import fsops
 from stayfixed.areas import SubParsers
 from stayfixed.config.loader import CONFIG_FILE, ConfigError, MachineConfigError, load
-from stayfixed.config.paths import PathEscape
+from stayfixed.config.paths import PathEscape, PathUnasked
 from stayfixed.config.schema import Config
-from stayfixed.hooks.dispatch import dispatch, parse_event
+from stayfixed.harnesses import detect
+from stayfixed.hooks.dispatch import dispatch, read_event
 from stayfixed.hooks.policy import refuses_on_internal_error
 from stayfixed.hooks.registry import discover
 from stayfixed.hooks.sink import sink_for
@@ -62,6 +64,7 @@ UNLOADABLE = (
 # value it refuses, so the words are true of all three.
 REFUSED_VALUE = "a file or value the loader refuses"
 ESCAPING_PATH = "a path that leaves the project or passes through a symlink"
+UNASKED_PATH = "a path on which a directory cannot be checked for a symlink"
 
 
 def _unloadable(event_name: str, cause: str) -> int:
@@ -88,24 +91,25 @@ def run_hook(args: argparse.Namespace) -> int:
             raise ValueError("hook payload is not a JSON object")
         # argv is authoritative: the wrapper controls it, while stdin is the untrusted side.
         payload["hook_event_name"] = event_name
-        event = parse_event(payload, env=os.environ)
+        harness = detect(os.environ, payload)
+        event = read_event(payload, os.environ)
         config = None
         root = event.project_root
         document = None if root is None else root / CONFIG_FILE
-        if document is not None and document.is_symlink():
+        if document is not None and fsops.is_symlink(document):
             return _linked(event_name)
-        if root is not None and document is not None and document.is_file():
-            # `interactive=False`, said rather than sniffed. A hook's stdin is a pipe, so
-            # the terminal check happens to answer the same thing — but the gate on
-            # `STAYFIXED_CONFIG` and `XDG_CONFIG_HOME` is the one that decides which
-            # overlay root and which `trust.json` this process reads, and it should not
-            # rest on a property of how the harness happens to invoke us.
+        if root is not None and document is not None and fsops.is_file(document):
+            # The machine file is the one no variable moves (`config.machine`), so which overlay
+            # root and which `trust.json` this process reads rests on no property of how the
+            # harness happens to invoke us.
             try:
-                config = load(root, interactive=False)
+                config = load(root)
             except MachineConfigError:
                 # The machine file's fault, not `stayfixed.toml`'s: this line would name the
                 # wrong file, so it keeps the generic verdict below.
                 raise
+            except PathUnasked:
+                return _unloadable(event_name, UNASKED_PATH)
             except PathEscape:
                 return _unloadable(event_name, ESCAPING_PATH)
             except ConfigError:
@@ -117,7 +121,12 @@ def run_hook(args: argparse.Namespace) -> int:
         # directory — outside a harness, or on a read-only one — because a hook runs on every
         # tool call and a sink failure must cost a marker, never the call.
         outcome = dispatch(
-            event, discover(), config, sink=sink_for(event.session_id, os.environ), cap=cap
+            event,
+            discover(),
+            config,
+            harness=harness,
+            sink=sink_for(event.session_id, os.environ),
+            cap=cap,
         )
     except BaseException as exc:  # an internal error must never read as permission
         reason = f"stayfixed: internal error: {type(exc).__name__}: {exc}"

@@ -54,7 +54,7 @@ def test_every_value_a_toml_document_can_hold_round_trips() -> None:
     # dict inside a list becomes an inline table, the one spelling that survives being nested.
     #
     # Mutation: drop any one arm of `_scalar` (the float, the date/time) or the `children`
-    # branch of `_emit`, and this reddens on that value. No `mutations.toml` entry: value
+    # branch of `_emit`, and this reddens on that value. No entry in `mutations/`: value
     # coverage in a serialiser is not a guard something downstream reads as permission.
     document: dict[str, dict[str, object]] = {
         "personal": {
@@ -77,7 +77,7 @@ def test_a_table_nested_inside_an_array_of_tables_round_trips_too() -> None:
     # `tomllib` can parse" has to mean at any depth or it means very little.
     #
     # Mutation: `_inline` calls `_value` instead of `_element` for its values and this reddens
-    # with the refusal. No `mutations.toml` entry, for the reason the test above gives.
+    # with the refusal. No entry in `mutations/`, for the reason the test above gives.
     document: dict[str, dict[str, object]] = {
         "trust": {"rows": [{"host": "a", "opts": {"deep": True, "tags": ["x"]}}]},
         "personal": {"editor": {"options": {"deep": {"deeper": 1}}}},
@@ -150,3 +150,22 @@ def test_a_time_with_an_offset_and_a_sub_minute_offset_are_refused_rather_than_w
         }
     }
     assert tomllib.loads(dumps(fine)) == fine
+
+
+def test_an_integer_past_the_conversion_limit_round_trips_in_hexadecimal() -> None:
+    # `tomllib` converts a hex, octal or binary literal of any length, and `str()` of the result
+    # past 4,300 digits raises `ValueError`: `setup`'s rewrite of the owner's machine file and
+    # `init`'s re-render of an adopted `stayfixed.toml` ended in an internal error on one such
+    # line. Written as the hexadecimal TOML reads back, which no digit limit bounds. Mutation
+    # (declared): the integer spelled with `str` alone again -> `ValueError`.
+    large = int("f" * 5_000, 16)
+    assert tomllib.loads(dumps({"t": {"n": large}})) == {"t": {"n": large}}
+    # A decimal one: the usual spelling, unchanged.
+    assert dumps({"t": {"n": 600}}) == "[t]\nn = 600\n"
+
+
+def test_a_negative_integer_no_toml_spelling_holds_is_refused() -> None:
+    # A negative integer past the decimal limit has no TOML spelling (a hex literal has no sign),
+    # and no TOML document could have held it: a caller's bug, refused rather than written.
+    with pytest.raises(Refusal, match=r"t\.n holds an integer"):
+        dumps({"t": {"n": -int("f" * 5_000, 16)}})

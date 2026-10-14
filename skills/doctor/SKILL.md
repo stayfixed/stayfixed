@@ -5,12 +5,12 @@ description: Diagnose a stayfixed installation — hooks, memory store, budgets,
 
 # Diagnosing an installation
 
-1. Run `stayfixed doctor --json` and read the report: sixteen checks, each with a status, a
+1. Run `stayfixed doctor --json` and read the report: seventeen checks, each with a status, a
    detail and a remedy. Between them they answer whether the repository is initialised, whether
    the hook wrapper can reach stayfixed at all, whether this checkout is attached and what shape
    its memory path has, every hook entry with its provenance, each budget the preset clamps, a
-   bundle that does not fit its slots, the last reasons a hook failed, and an environment
-   variable that is set and ignored.
+   bundle that does not fit its slots, the last reasons a hook failed, an environment variable
+   that is set and ignored, and whether a hook can make the harness memory link.
 2. Relay each finding with the remedy the report names, verbatim. Do not change settings or
    hook entries on the user's behalf — name the command that would.
 3. A `skip` is not a fault, and it is not always harmless either. One check cannot be

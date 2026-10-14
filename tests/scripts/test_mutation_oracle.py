@@ -9,52 +9,53 @@ named tests do not exist read as *caught*, and a `git status` that could not ans
 
 from __future__ import annotations
 
-import importlib.util
 import os
-import shutil
 import signal
 import subprocess
 import sys
 import tempfile
 import threading
 import time
+import tomllib
 from pathlib import Path
 from types import ModuleType
 
 import pytest
 
 from tests import gitfixture
+from tests.declarations import (
+    ANCHOR,
+    SCRIPT,
+    cited_names,
+    declared,
+    empty_anchors,
+    unread_citations,
+    unread_names,
+)
 from tests.gitfixture import git as _git
+from tests.gitfixture import needs_git
+from tests.scriptload import load
 
-SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "mutation_oracle.py"
-needs_git = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
+REPOSITORY = Path(__file__).resolve().parents[2]
 
 
 def oracle(root: Path | None = None) -> ModuleType:
-    """The script, loaded by path because `scripts/` is not an importable package.
-
-    Registered in `sys.modules` before it is executed: `@dataclass` resolves a field's
-    annotations through `sys.modules[cls.__module__]`, and a module absent from there makes
-    the decorator raise on `Mutation` itself.
+    """A fresh copy of the script, loaded by path through `tests.scriptload.load`.
 
     `root` redirects the module's `ROOT`, which is where it runs pytest and asks `git` about
-    the tree. Every test below points it at a throwaway directory, so nothing here mutates a
-    file in this checkout or reads its git state.
+    the tree, and `DECLARATIONS`, the `mutations/` directory beneath it. Every test below points
+    it at a throwaway directory, so nothing here mutates a file in this checkout or reads its git
+    state.
     """
-    name = "mutation_oracle_under_test"
-    spec = importlib.util.spec_from_file_location(name, SCRIPT)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[name] = module
-    try:
-        spec.loader.exec_module(module)
-    except BaseException:
-        del sys.modules[name]
-        raise
+    module = load(SCRIPT, "mutation_oracle_under_test")
     if root is not None:
         # Through `__dict__`, not an attribute assignment: `ModuleType` types reads as
         # `Any` and writes as an error, and this one is deliberate.
         module.__dict__["ROOT"] = root
+        # And the declarations under it, here rather than in each fixture: a fixture that forgot
+        # would set `ROOT` alone, and `declared()` would read this checkout's real set against a
+        # throwaway tree.
+        module.__dict__["DECLARATIONS"] = root / "mutations"
         # And `TEMPDIR` beside it, for every test in this module rather than for the ones that
         # remember. `main` sweeps `TEMPDIR` for leaked scratch checkouts and deletes what it
         # finds, so with the real temporary directory in place each test that calls `main`
@@ -339,7 +340,7 @@ def test_a_mutation_nothing_notices_is_reported_as_surviving(tmp_path: Path) -> 
 # The guard exists because this script writes source files and restores them from memory; its
 # own comment says "refuse rather than risk it". It read any non-zero `git` exit as a clean
 # tree — and `git status` exits 128 outside a repository, which is exactly what an unpacked
-# sdist is (`scripts/**` and `mutations.toml` ship in it) and what a broken `git` produces.
+# sdist is (`scripts/**` and `mutations/` ship in it) and what a broken `git` produces.
 
 
 @needs_git
@@ -413,7 +414,8 @@ def _repo_with_guard(root: Path) -> None:
         "    assert GUARD\n",
         encoding="utf-8",
     )
-    (root / "mutations.toml").write_text(
+    (root / "mutations").mkdir()
+    (root / "mutations" / "repository.toml").write_text(
         "[[mutation]]\n"
         'name = "the guard is disarmed"\n'
         'file = "src/pkg/guard.py"\n'
@@ -443,7 +445,6 @@ def test_the_working_tree_is_never_written_and_pytest_runs_in_the_scratch_checko
     root.mkdir()
     _repo_with_guard(root)
     module = oracle(root=root)
-    module.__dict__["DECLARATION"] = root / "mutations.toml"
     probe = tmp_path / "probe.txt"
     monkeypatch.setenv("ORACLE_PROBE", str(probe))
     before = {path: path.read_bytes() for path in root.rglob("*.py")}
@@ -470,7 +471,6 @@ def test_the_scratch_copy_wins_over_a_main_checkout_already_on_the_path(
     root.mkdir()
     _repo_with_guard(root)
     module = oracle(root=root)
-    module.__dict__["DECLARATION"] = root / "mutations.toml"
     monkeypatch.setenv("ORACLE_PROBE", str(tmp_path / "probe.txt"))
     monkeypatch.setenv("PYTHONPATH", str(root / "src"))
     assert module.main([]) == 0
@@ -502,7 +502,7 @@ def test_a_warm_bytecode_cache_never_stands_in_for_a_mutated_source(
     _recommit(
         root,
         {
-            "mutations.toml": "[[mutation]]\n"
+            "mutations/repository.toml": "[[mutation]]\n"
             'name = "the guard is disarmed, byte for byte as long"\n'
             'file = "src/pkg/guard.py"\n'
             'before = "GUARD = True"\n'
@@ -511,7 +511,6 @@ def test_a_warm_bytecode_cache_never_stands_in_for_a_mutated_source(
         },
     )
     module = oracle(root=root)
-    module.__dict__["DECLARATION"] = root / "mutations.toml"
     monkeypatch.setenv("ORACLE_PROBE", str(tmp_path / "probe.txt"))
     assert module.main([]) == 0
 
@@ -584,13 +583,12 @@ def test_every_job_proves_its_entries_in_a_scratch_checkout_of_its_own(
             "        probe.write(__file__ + '\\n')\n"
             "    time.sleep(1)\n"
             "    assert GUARD\n",
-            "mutations.toml": entry.format(name="disarmed", after="GUARD = False")
+            "mutations/repository.toml": entry.format(name="disarmed", after="GUARD = False")
             + "\n"
             + entry.format(name="emptied", after="GUARD = 0"),
         },
     )
     module = oracle(root=root)
-    module.__dict__["DECLARATION"] = root / "mutations.toml"
     probe = tmp_path / "probe.txt"
     monkeypatch.setenv("ORACLE_PROBE", str(probe))
     assert module.main(["--jobs", "2"]) == 0
@@ -752,7 +750,6 @@ def test_a_terminate_mid_run_ends_the_pytest_in_flight_and_leaves_no_checkout(
         },
     )
     module = oracle(root=root)
-    module.__dict__["DECLARATION"] = root / "mutations.toml"
     monkeypatch.setenv("ORACLE_PROBE", str(tmp_path / "probe.txt"))
     holding, release, finished = _held_run_markers(tmp_path, monkeypatch)
 
@@ -798,7 +795,6 @@ def test_a_scratch_checkout_that_cannot_be_created_is_a_refusal_not_an_in_place_
     root.mkdir()
     _repo_with_guard(root)
     module = oracle(root=root)
-    module.__dict__["DECLARATION"] = root / "mutations.toml"
     monkeypatch.setenv("ORACLE_PROBE", str(tmp_path / "probe.txt"))
     real_run = module.subprocess.run
 
@@ -829,7 +825,6 @@ def test_an_uncommitted_reddens_test_file_is_refused_like_an_uncommitted_source_
     root.mkdir()
     _repo_with_guard(root)
     module = oracle(root=root)
-    module.__dict__["DECLARATION"] = root / "mutations.toml"
     (root / "tests" / "test_guard.py").write_text(
         "def test_the_guard_holds() -> None:\n    pass\n", encoding="utf-8"
     )
@@ -868,7 +863,6 @@ def test_a_second_oracle_refuses_rather_than_sweeping_the_first_ones_checkout(
     root.mkdir()
     _repo_with_guard(root)
     module = oracle(root=root)
-    module.__dict__["DECLARATION"] = root / "mutations.toml"
     monkeypatch.setenv("ORACLE_PROBE", str(tmp_path / "probe.txt"))
     scratch = Path(module.TEMPDIR)
     lock = scratch / module.LOCK_NAME
@@ -900,7 +894,6 @@ def test_a_lock_left_by_a_dead_process_is_taken_over_rather_than_obeyed(
     root.mkdir()
     _repo_with_guard(root)
     module = oracle(root=root)
-    module.__dict__["DECLARATION"] = root / "mutations.toml"
     monkeypatch.setenv("ORACLE_PROBE", str(tmp_path / "probe.txt"))
     lock = Path(module.TEMPDIR) / module.LOCK_NAME
     lock.write_text(f"{_a_reaped_pid()} a run that is gone", encoding="utf-8")
@@ -1013,7 +1006,7 @@ def test_a_mutation_declared_twice_is_a_finding(tmp_path: Path) -> None:
 
 
 def test_every_declared_entry_is_sound_before_any_run() -> None:
-    """`static_findings` over the real `mutations.toml` finds nothing.
+    """`static_findings` over the real `mutations/` finds nothing.
 
     No entry names this case, and none may: every mutation removes its own `before` line, so
     this case would redden under all of them and prove nothing about any. Its guard is the
@@ -1026,3 +1019,236 @@ def test_every_declared_entry_is_sound_before_any_run() -> None:
     # reason that is not about drift.
     assert len(declared) > 400, len(declared)
     assert module.static_findings(declared) == []
+
+
+def test_an_entry_name_declared_twice_is_a_finding(tmp_path: Path) -> None:
+    # A comment cites an entry by its name alone, so a second entry under one name makes every
+    # citation of it ambiguous. Mutation (declared): the name rule dropped -> the list below comes
+    # out empty.
+    subject = tmp_path / "guard.py"
+    subject.write_text("GUARD = True\nOTHER = True\n", encoding="utf-8")
+    module = oracle(root=tmp_path)
+    first = a_mutation(module, subject, ())
+    second = module.Mutation(
+        name="probe", file=subject, before="OTHER = True", after="OTHER = False", reddens=()
+    )
+    assert module.static_findings([first, second]) == [
+        "probe: another entry is declared under this name"
+    ]
+
+
+# --- citations: a comment names an entry, and the name must reach one ----------------------------
+#
+# CONTRIBUTING makes the entry's quoted name the one way a comment anywhere in the tree cites it,
+# so that a regroup of `mutations/` leaves every comment true. That holds only while every cited
+# name is declared: a renamed entry otherwise leaves its citations pointing at nothing, and the
+# release runbook was found pointing at such a name with the whole suite green.
+
+
+def test_a_citation_is_read_across_comment_lines_and_through_a_list() -> None:
+    # Mutations (declared): `_WRAP` matches nothing -> the wrapped name keeps its `#` and this
+    # reddens; `_FURTHER` is never tried -> the second name of the list is lost and this reddens;
+    # `_GAP` reads whitespace alone -> the name after a line-ending anchor is lost.
+    text = (
+        f'# as {ANCHOR} "the first\n'
+        '#   wrapped one" and "the second", and also\n'
+        f'   {ANCHOR} "a third" in a document, beside "a quote that is no citation".\n'
+        f"# and, wrapped after the set, {ANCHOR}\n"
+        '# "a fourth".\n'
+    )
+    assert cited_names(text) == ["the first wrapped one", "the second", "a third", "a fourth"]
+
+
+def test_a_citation_reads_every_name_of_an_arrow_list_and_no_quote_past_its_lines() -> None:
+    # The tree's commonest citation says what each mutation does: `"a" -> x; "b" -> y`. Only the
+    # first name was read, so a later one could be renamed away with every test green, and one
+    # was: a comment went on citing an entry a refactor had removed. What an arrow says ends at
+    # the citation's own lines, so a quote in the code under a comment, or past a blank line in a
+    # document, is never read as a name. Mutations (declared): `mutations/`'s "the citation parser
+    # loses the names an arrow list carries after the first" -> only the first name of each list
+    # is read; "the citation parser reads an arrow past the citation's own lines" -> `"remote"`
+    # and `"x"` are read as names.
+    text = (
+        f'    # Mutations: {ANCHOR} "the first" -> the `a`\n'
+        '    # case; "the second" -> `b`, and "the third" -> `c`, "the fourth"\n'
+        '    # and "the fifth" -> the rest.\n'
+        f'    # And {ANCHOR} "a sixth" -> the case\n'
+        '    run_git(root, "remote", "add")\n'
+        f'{ANCHOR} "a seventh" -> nothing more\n\nsaid, "x" here.\n'
+    )
+    assert cited_names(text) == [
+        "the first",
+        "the second",
+        "the third",
+        "the fourth",
+        "the fifth",
+        "a sixth",
+        "a seventh",
+    ]
+
+
+@needs_git
+@pytest.mark.skipif(not (REPOSITORY / ".git").exists(), reason="no git checkout to ask")
+def test_every_cited_entry_name_is_declared() -> None:
+    """Every citation of an entry in a tracked file outside `docs/plans/` names a declared entry.
+
+    `docs/plans/` is left out because the delivered plans are a record (CONTRIBUTING.md, "Plans"):
+    each cites the entries as they were named when it was written. Mutation (declared): an entry a
+    comment cites is renamed -> its citations name nothing and this reddens.
+    """
+    names = {" ".join(mutation.name.split()) for mutation in declared()}
+    cited: list[tuple[str, str]] = []
+    for path in _git(REPOSITORY, "ls-files", "-z").split("\0"):
+        source = REPOSITORY / path
+        if not path or path.startswith("docs/plans/") or not source.is_file():
+            continue
+        try:
+            text = source.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            continue
+        cited.extend((path, name) for name in cited_names(text))
+    # A walk-based assertion states its walk is non-empty: a parser that read nothing passes.
+    assert len(cited) > 100, len(cited)
+    assert [(path, name) for path, name in cited if name not in names] == []
+
+
+def test_a_citation_spelled_another_way_is_told_apart_from_the_one_the_reader_reads() -> None:
+    # A citation through a comma rather than `'s` read as one to a person and as nothing to
+    # `cited_names`, and four of the tree's 138 named no entry: three shortened with an ellipsis,
+    # one renamed away; a quote straight after a lead, singular or plural, names no set. Mutations
+    # (declared): `mutations/`'s "the citation spelling rule lets a comma or a colon through" -> no
+    # line is told; "the citation spelling rule reads no further than the set's own line" -> the
+    # third is not; "the citation spelling rule misses a quote straight after a plural lead" -> the
+    # last is not.
+    set_name = ANCHOR.removesuffix("'s")
+    quote = '"'  # so that no line of this file is the shape the rule refuses
+    text = (
+        f'# Mutation: {set_name}, "one".\n'
+        f'# Mutation ({set_name}: "two").\n'
+        f"# Mutations: {set_name},\n"
+        '#   "three".\n'
+        f'# Mutation: {ANCHOR} "four"; {set_name} holds the rest.\n'
+        f"# Mutation (oracle): {quote}five{quote}, and (by hand) the lead alone.\n"
+        f"# Mutations (oracle): {quote}six{quote} and {quote}seven{quote}.\n"
+    )
+    assert unread_citations(text) == [1, 2, 3, 6, 7]
+
+
+def test_a_quoted_entry_name_the_citation_reader_does_not_read_is_told() -> None:
+    # The reader read the first name of each of these and stopped, or read none, so a later name
+    # could be renamed away with every test green; 292 quoted names in 71 files were read by
+    # nothing. Every quote of a declared name must be one the reader reads. Mutations (declared):
+    # `mutations/`'s "a quoted entry name the citation reader skips is never told" -> every case
+    # but the read one reddens; "a quoted entry name that wraps is never told" -> the wrapped one
+    # is not told; "the citation walk reads an entry's own name line as a citation" -> the
+    # declaration is told too.
+    names = {"a", "b", "c", "a wrapped one"}
+    plants = {
+        "a quote after an arrow": f'# {ANCHOR} "a" -> "x"; "b" -> y.\n',
+        "prose between names": f'# {ANCHOR} "a" for the first, and "b" for the rest.\n',
+        "a bulleted list": f'# {ANCHOR}\n# - "a"\n# - "b"\n',
+        "an arrow joined by a bare and": f'# {ANCHOR} "a" -> drops x and "b" -> drops y.\n',
+        "a name in parentheses": f'# {ANCHOR} "a" -> x; and dropping it ("b", "c") passes.\n',
+        "no anchor": '# held by "a" and "a wrapped\n# one".\n',
+        "read": f'# {ANCHOR} "a" -> x; "b" -> y, and "a wrapped\n# one" or "c".\n',
+        "a declaration": 'name = "a"\n# but "b" is cited.\n',
+    }
+    assert {case: unread_names(text, names) for case, text in plants.items()} == {
+        "a quote after an arrow": [(1, "b")],
+        "prose between names": [(1, "b")],
+        "a bulleted list": [(2, "a"), (3, "b")],
+        "an arrow joined by a bare and": [(1, "b")],
+        "a name in parentheses": [(1, "b"), (1, "c")],
+        "no anchor": [(1, "a"), (1, "a wrapped one")],
+        "read": [],
+        "a declaration": [(2, "b")],
+    }
+
+
+def test_an_anchor_that_reads_no_name_is_told() -> None:
+    # A list set out under the anchor, or prose after it, reads no name at all, so the anchor
+    # vouches for nothing. Mutation (declared): `mutations/`'s "an anchor that reads no name is
+    # never told" -> this reddens.
+    text = f'# {ANCHOR}\n# - "a"\n# {ANCHOR} "b".\n# and {ANCHOR} the rest, in prose.\n'
+    assert empty_anchors(text) == [1, 4]
+
+
+@needs_git
+@pytest.mark.skipif(not (REPOSITORY / ".git").exists(), reason="no git checkout to ask")
+def test_every_citation_is_spelled_the_way_the_citation_reader_reads() -> None:
+    # The walk `test_every_cited_entry_name_is_declared` makes, asking the other question: a
+    # citation it cannot read is one whose name nothing checks. That is a citation spelled another
+    # way, a quote of a declared name the reader does not read, and an anchor that reads no name.
+    names = {" ".join(mutation.name.split()) for mutation in declared()}
+    unread: list[tuple[str, int]] = []
+    unread_quotes: list[tuple[str, int, str]] = []
+    empty: list[tuple[str, int]] = []
+    walked = 0
+    for path in _git(REPOSITORY, "ls-files", "-z").split("\0"):
+        source = REPOSITORY / path
+        if not path or path.startswith("docs/plans/") or not source.is_file():
+            continue
+        try:
+            text = source.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            continue
+        walked += 1
+        unread.extend((path, line) for line in unread_citations(text))
+        unread_quotes.extend((path, line, name) for line, name in unread_names(text, names))
+        empty.extend((path, line) for line in empty_anchors(text))
+    assert walked > 300, walked  # a walk-based assertion states its walk is non-empty
+    assert unread == []
+    assert unread_quotes == []
+    assert empty == []
+
+
+# --- the declarations directory, one file per group ------------------------------------------
+#
+# `mutations/` holds the set as one file per group of the tree, because a single file outgrew the
+# plugin directory's per-file limit. Two properties keep the split honest: the oracle reads every
+# file, and every entry sits in the file its `file` routes to. No size cap holds a group file: the
+# plugin's tree (`scripts/plugin_tree.py`) no longer holds `mutations/`, so neither of the limits
+# the groups were sized for reaches them (CONTRIBUTING.md, "Tests").
+
+
+def test_the_oracle_reads_every_group_file() -> None:
+    # Mutation (declared): `declared()` reads only the first group file (`[:1]` on the sorted
+    # glob) -> the count comes out at the first file's entries and the second assertion reddens.
+    module = oracle()
+    files = module.group_files()
+    expected = sum(len(tomllib.loads(f.read_text("utf-8"))["mutation"]) for f in files)
+    assert {f.stem for f in files} == {group for _, group in module.GROUP_OF}
+    assert len(module.declared()) == expected
+
+
+def test_every_entry_lives_in_its_group_file() -> None:
+    # Mutation (declared): `GROUP_OF` loses its `src/stayfixed/doctor/` row -> every `doctor`
+    # entry routes to the package's catch-all group instead, and the first of them, still in the
+    # file its old row named, reddens this.
+    module = oracle()
+    files = module.group_files()
+    assert files  # a walk-based assertion states its walk is non-empty
+    for path in files:
+        for entry in tomllib.loads(path.read_text("utf-8"))["mutation"]:
+            assert module.group_for(entry["file"]) == path.stem, (path.name, entry["name"])
+
+
+def test_a_row_routes_its_files_wherever_it_stands_in_the_table() -> None:
+    # `GROUP_OF` once took the first prefix that matched, so a row appended after
+    # `src/stayfixed/` was dead without a sound: its files went on routing to `core`. Mutation
+    # (declared): `group_for` takes the first match again -> the appended row routes nothing and
+    # this reddens.
+    module = oracle()
+    module.__dict__["GROUP_OF"] = (*module.GROUP_OF, ("src/stayfixed/newarea/", "newarea"))
+    assert module.group_for("src/stayfixed/newarea/x.py") == "newarea"
+    assert module.group_for("src/stayfixed/fsops.py") == "core"
+    assert module.group_for("README.md") == "repository"
+    assert module.group_for(".github/workflows/ci.yml") == "tooling"
+
+
+def test_no_prefix_is_routed_twice() -> None:
+    # Longest-prefix matching makes the order meaningless only while each prefix has one row: a
+    # repeated prefix would route to whichever `max` met first. Mutation: none of the code's; the
+    # subject is the table, watched red by appending a second `("src/stayfixed/", "records")` row.
+    prefixes = [prefix for prefix, _ in oracle().GROUP_OF]
+    assert len(prefixes) == len(set(prefixes)), prefixes

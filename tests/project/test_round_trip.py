@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import json
 import subprocess
-import sys
 from dataclasses import replace
 from pathlib import Path
 
@@ -17,6 +16,7 @@ import stayfixed
 from stayfixed.scaffold import Manifest, digest
 from tests.floor import developer_free_environ
 from tests.gitfixture import git, needs_git
+from tests.ownerhome import stayfixed_argv
 from tests.project.repos import tree
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -27,7 +27,7 @@ def _stayfixed(root: Path, home: Path, *argv: str) -> subprocess.CompletedProces
     env = developer_free_environ()
     env["HOME"] = str(home)
     return subprocess.run(
-        [sys.executable, str(ROOT / "scripts" / "stayfixed"), *argv, "--root", str(root)],
+        [*stayfixed_argv(home), *argv, "--root", str(root)],
         cwd=root,
         stdin=subprocess.DEVNULL,
         capture_output=True,

@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
-from stayfixed.overlay.api import later, requires_of, satisfies
+from stayfixed.overlay.api import requires_of, satisfies
 from stayfixed.overlay.layout import PLUGIN_MANIFEST
 from stayfixed.overlay.template import template_root
+from tests.parserlimits import LONG_NUMBER, NESTED
 
 
 def overlay_with(root: Path, requires: object) -> Path:
@@ -47,8 +51,8 @@ def test_a_manifest_whose_top_level_is_not_an_object_is_nothing_declared(tmp_pat
     Uncovered before this case, measured with `--cov-report=term-missing` over `tests/doctor
     tests/overlay tests/release`.
 
-    Mutation (oracle): `if not isinstance(raw, dict):` -> `if False:` -> each shape below raises
-    instead of answering.
+    Mutation (oracle): `mutations/`'s "the requires reader raises for a manifest that is not an
+    object" -> each shape below raises instead of answering.
     """
     root = tmp_path / "overlay"
     (root / ".claude-plugin").mkdir(parents=True)
@@ -57,16 +61,158 @@ def test_a_manifest_whose_top_level_is_not_an_object_is_nothing_declared(tmp_pat
         assert requires_of(root) is None, body
 
 
+def test_a_manifest_past_the_parsers_reach_is_nothing_declared(tmp_path: Path) -> None:
+    # Valid JSON nested past what `json.loads` follows raises `RecursionError`, which the reader's
+    # `ValueError` arm does not catch, so it escaped a function whose docstring promises `None` for
+    # anything it cannot read, and the session handler's backstop swallowed every other line of
+    # the same result with it. An integer longer than the interpreter converts is a `ValueError`
+    # and was already `None`; it is here so both limits stay answered. Mutation (oracle):
+    # `mutations/`'s "the JSON object reader lets a document nested past the parser raise" ->
+    # the nested case raises and this reddens.
+    root = tmp_path / "overlay"
+    (root / ".claude-plugin").mkdir(parents=True)
+    for body in (NESTED, '{"n": ' + LONG_NUMBER + "}"):
+        (root / PLUGIN_MANIFEST).write_text(body, encoding="utf-8")
+        assert requires_of(root) is None, body[:8]
+
+
+def test_a_fifo_at_the_plugin_manifest_is_unreadable_to_its_readers_without_waiting(
+    tmp_path: Path,
+) -> None:
+    # Two readers of the overlay's plugin manifest read it with `read_text`, which waits on a FIFO
+    # for a writer that never comes: `requires_of`, which the SessionStart hook asks, and
+    # `owner_of`, which `overlay upgrade` asks. Both read it through `naming.manifest` now, a
+    # regular file only, so a FIFO is nothing declared and no owner, and the reader itself refuses
+    # it unread. `overlay_fault` reads it through `naming.manifest` too, but its answer for a FIFO
+    # comes from the `is_file` gate above that read, so it holds the probe's verdict and not the
+    # reader's. In a child under a timeout, so a regression fails this case rather than hanging.
+    # Mutation (oracle): `mutations/`'s "an overlay manifest is read without asking what it is" ->
+    # the child waits and this times out.
+    root = overlay_with(tmp_path / "overlay", ">=0.1.0")
+    (root / PLUGIN_MANIFEST).unlink()
+    os.mkfifo(root / PLUGIN_MANIFEST)
+    probe = (
+        "import sys\n"
+        "from pathlib import Path\n"
+        "from stayfixed.overlay.api import requires_of\n"
+        "from stayfixed.overlay.identity import overlay_fault\n"
+        "from stayfixed.fsops import NotRegularFile\n"
+        "from stayfixed.overlay.naming import manifest, owner_of\n"
+        "root = Path(sys.argv[1])\n"
+        "try:\n"
+        "    manifest(root, '.claude-plugin/plugin.json')\n"
+        "except NotRegularFile:\n"
+        "    print('refused', end=' ')\n"
+        "print(requires_of(root), owner_of(root), overlay_fault(root) is not None)\n"
+    )
+    try:
+        done = subprocess.run(
+            [sys.executable, "-c", probe, str(root)],
+            capture_output=True,
+            text=True,
+            timeout=20,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        pytest.fail("a reader of the overlay's plugin manifest waited on a FIFO")
+    assert done.stdout == "refused None None True\n", done.stderr
+
+
 def test_the_floor_is_compared_as_numbers_not_as_text() -> None:
     # Mutation (comment): compare `running.groups() >= floor.groups()` as strings -> the first
     # line reddens on `>=9.0.0` against `10.0.0`.
     #
     # And the boundary itself, which is the classic off-by-one site: a floor a running version
-    # meets exactly is met. Mutation: `mutations.toml`'s "the declared floor stops being met by
+    # meets exactly is met. Mutation: `mutations/`'s "the declared floor stops being met by
     # the version that equals it".
     assert satisfies(">=9.0.0", "10.0.0") is True
     assert satisfies(">=0.1.0", "0.1.0") is True
     assert satisfies(">=0.1.0", "0.0.9") is False
+
+
+@pytest.mark.parametrize(
+    "version",
+    ["1.0.0rc1", "1.0.0.dev0", "1.0.0-rc.1", "1.0.0a1", "1.0.0rc1.post2", "1.0.0.dev3+g1234abc"],
+)
+def test_a_pre_release_of_the_floor_does_not_meet_it(version: str) -> None:
+    # `semver.later` orders a release after its own pre-release, and the floor compared the
+    # leading triple alone, so a `1.0.0rc1` build met an overlay's `>=1.0.0` that `later` says
+    # it comes before: the session line and the `overlay-requires` row read it as met. A
+    # compound suffix carrying a pre-release segment does not meet it either. Mutations:
+    # `mutations/`'s "the declared floor is met by a pre-release of it" and "a pre-release
+    # segment no longer makes a pre-release".
+    assert satisfies(">=1.0.0", version) is False
+    assert satisfies(">=0.9.9", version) is True
+
+
+# What the floor `>=1.0.0` answers, one row a shape: met by a later triple whatever follows it, by
+# its own triple unless a pre-release of it follows, never by an earlier one. `satisfies` was a
+# chain of `semver.later`, `semver.pre_release` and a tuple comparison, and these are the chain's
+# answers, kept by the one comparison that replaced it; a differential over ten million floors and
+# versions found no other difference. `1.0.0rcdev` and `1.0.0adev1` are a pre-release word run into
+# its `dev`, which a reading of each segment as a word of its own met the floor with. Mutations
+# (oracle): `mutations/`'s "the declared floor is met by a pre-release of it", "the declared floor
+# stops being met by the version that equals it" and "the declared floor is not met by the version
+# equal to it" -> the rows of the floor's own triple. The segments PEP 440 lets run together with no
+# separator are read as it reads them: `1.0.0.post1dev2` is `1.0.0.post1.dev2`, which met the floor
+# at 0.2.0 and then stopped meeting it under a search for each segment as a word of its own, and
+# `1.0.0rc1post2` is a pre-release that search met the floor with. A further release component other
+# than zero is a later release, `1.0.0.1rc1` among them. Mutations (oracle): `mutations/`'s
+# "segments run together are no suffix PEP 440 allows", "a further release component is read as no
+# later release", "a local label is no part of the suffix grammar", "a pre-release segment no longer
+# makes a pre-release", "a development release of a post-release reads as a pre-release" and "a
+# suffix outside PEP 440 reads as a pre-release". The answers agree with `packaging`'s ordering over
+# every combination of segment, spelling and separator, 5,055 versions, checked offline.
+FLOOR_ANSWERS = [
+    ("1.0.0", True),
+    ("1.0.1", True),
+    ("1.0.1rc1", True),
+    ("2.0.0.dev1", True),
+    ("0.9.9", False),
+    ("0.9.9.post1", False),
+    ("1.0.0rc1", False),
+    ("1.0.0-rc.1", False),
+    ("1.0.0.dev0", False),
+    ("1.0.0rcdev", False),
+    ("1.0.0adev1", False),
+    ("1.0.0rc1.post2", False),
+    ("1.0.0rc1+local", False),
+    ("1.0.0.dev3+g1234abc", False),
+    ("1.0.0.post1", True),
+    ("1.0.0-1", True),
+    ("1.0.0+local", True),
+    ("1.0.0+local.rc1", True),
+    ("1.0.0.post1.dev2", True),
+    ("1.0.0.post1dev2", True),
+    ("1.0.0post1dev2", True),
+    ("1.0.0rc1post2", False),
+    ("1.0.0a1r1dev", False),
+    ("1.0.0.1rc1", True),
+    ("1.0.0.0rc1", False),
+    ("1.0.0x", True),
+    ("v1.0.0", None),
+]
+
+
+@pytest.mark.parametrize(("version", "met"), FLOOR_ANSWERS)
+def test_the_floor_is_met_by_a_later_triple_or_its_own_and_never_a_pre_release_of_it(
+    version: str, met: bool | None
+) -> None:
+    assert satisfies(">=1.0.0", version) is met
+
+
+def test_a_suffix_later_leaves_unordered_still_meets_the_floor_by_its_triple() -> None:
+    # The legitimate user: `.post1` and `+local` builds, which `later` declines to order against
+    # the bare version, keep the answer the triple gives, a floor equal to it met. Mutation:
+    # `mutations/`'s "the declared floor stops being met by the version that equals it".
+    assert satisfies(">=1.0.0", "1.0.0.post1") is True
+    assert satisfies(">=1.0.0", "1.0.0+local") is True
+    # A local label is no segment of the version's own, whatever it spells, and a development
+    # release of a post-release comes after the release. Mutation: `mutations/`'s "a development
+    # release of a post-release reads as a pre-release".
+    assert satisfies(">=1.0.0", "1.0.0+local.rc1") is True
+    assert satisfies(">=1.0.0", "1.0.0.post1.dev2") is True
+    assert satisfies(">=1.0.1", "1.0.0.post1") is False
 
 
 def test_any_other_form_is_unreadable_never_satisfied() -> None:
@@ -84,7 +230,7 @@ def test_a_component_too_long_to_convert_is_unreadable_and_not_an_exception() ->
     backstop that then dropped `NOT_ATTACHED` and every other line of the same result. The
     value is asserted rather than the crash, because the crash is the thing being removed.
 
-    Mutation: `mutations.toml`'s "the version grammar stops bounding its components".
+    Mutation: `mutations/`'s "the version grammar stops bounding its components".
     """
     long = "9" * 5000
     assert satisfies(f">={long}.0.0", "0.1.0") is None
@@ -107,48 +253,3 @@ def test_only_ascii_digits_are_a_version(tmp_path: Path) -> None:
     # Non-vacuous: the manifest really does hand this string back, which is why the verdict
     # above is what keeps it out of a line a model reads.
     assert requires_of(overlay_with(tmp_path / "eastern", eastern)) == eastern
-
-
-def test_later_reads_each_version_s_leading_triple_and_answers_none_without_one() -> None:
-    # A suffix does not hide a newer release, and a shape with no leading `X.Y.Z` is unknown
-    # rather than older: `upgrade` moved `1.0.0-rc1` and `v1.0.0` down to the running `0.1.0`
-    # while this answered through `satisfies`, which needs an exact floor.
-    assert later("1.0.0-rc1", "0.1.0") is True
-    assert later("0.10.0", "0.9.9") is True
-    assert later("0.1.0", "0.1.0") is False
-    assert later("0.0.9", "0.1.0") is False
-    for unreadable in ("v1.0.0", "", "one"):
-        assert later(unreadable, "0.1.0") is None, unreadable
-
-
-@pytest.mark.parametrize(
-    ("version", "than", "answer"),
-    [
-        # A release is later than its own pre-release, whichever side each is on and however the
-        # pre-release is spelled; read by the triple alone both of the first two were `False`, and
-        # a pre-release build moved a project recording the release down to itself.
-        ("1.0.0", "1.0.0rc1", True),
-        ("0.2.0", "0.2.0.dev0", True),
-        ("1.0.0", "1.0.0-rc.1", True),
-        ("1.0.0", "1.0.0a1.dev2", True),
-        ("1.0.0rc1", "1.0.0", False),
-        ("0.2.0.dev0", "0.2.0", False),
-        ("1.0.0rc1", "1.0.0rc1", False),
-        # Two pre-releases, or a suffix that is not one, are not ordered: `.post1` is later than
-        # the bare version, so reading every suffix as a pre-release would move it backward.
-        ("1.0.0rc1", "1.0.0rc2", None),
-        ("1.0.0.dev0", "1.0.0rc1", None),
-        ("1.0.0.post1", "1.0.0", None),
-        ("1.0.0", "1.0.0.post1", None),
-        ("1.0.0+local", "1.0.0", None),
-        # The triple still decides whenever it differs, whatever follows it.
-        ("1.0.1rc1", "1.0.0", True),
-        ("0.9.9", "1.0.0rc1", False),
-    ],
-)
-def test_equal_triples_order_a_release_after_its_pre_release_and_nothing_else(
-    version: str, than: str, answer: bool | None
-) -> None:
-    # Mutation (oracle): "a release reads as older than its own pre-release" -> the rows whose
-    # answer is `True` with a bare `version` redden.
-    assert later(version, than) is answer

@@ -16,16 +16,15 @@ pass it.
 from __future__ import annotations
 
 import argparse
-import os
 from pathlib import Path
 
 from stayfixed.areas import SubParsers
 from stayfixed.command import CHECK_HELP, common_flags
 from stayfixed.config.loader import load
+from stayfixed.config.machine import homes_agree
 from stayfixed.config.schema import Config
 from stayfixed.errors import Failure, Refusal
 from stayfixed.findings import labels, listed
-from stayfixed.hooks.api import detect_harness
 from stayfixed.memory import trust
 from stayfixed.memory.bundles import Bundle, fit, render
 from stayfixed.memory.index import (
@@ -40,6 +39,7 @@ from stayfixed.memory.index import (
 )
 from stayfixed.memory.inventory import inventory, totals
 from stayfixed.memory.store import Store, Unresolved, in_repository, resolved
+from stayfixed.memory.worktree import harness_link_needed
 from stayfixed.printed import printable, quoted
 from stayfixed.result import Result
 
@@ -90,13 +90,28 @@ def _store(args: argparse.Namespace) -> tuple[Store, Config]:
     return found[0], config
 
 
-# What `bundles.blocks` returns `[]` for, said where a person will read it. The failure this
-# closes was silent in both directions: `memory index` rewrites every note and `MEMORY.md`, so
-# it used to revoke the very record it depends on, and nothing in any summary said why the
+# What the trust gate withholds until there is a record, said where a person will read it:
+# `bundles.blocks` returns `[]` for repository-data notes, and `worktree.harness_link_needed`
+# withholds the harness memory link from a store whose directory is inside the repository.
+# `harness_link_needed` decides when one of these is said — the link's question, which is the
+# wider one: whenever the notes or a committed index are withheld, so is the link — and
+# `_holds_repository_data` which. The failure
+# this closes was silent in both directions: `memory index` rewrites every note and `MEMORY.md`,
+# so it used to revoke the very record it depends on, and nothing in any summary said why the
 # model had stopped receiving standing rules.
 _UNTRUSTED = (
-    "this store's notes are repository data with no trust record, so the standing-rules, "
-    "volatile-notes and index bundles are empty — run `stayfixed memory trust --in-repo-memory`"
+    "this store holds repository data with no trust record, so none of it reaches a session — "
+    "not through the standing-rules and volatile-notes bundles, nor through the harness memory "
+    "link — run `stayfixed memory trust --in-repo-memory`"
+)
+# The overlay store whose notes are all the machine owner's: the bundles deliver them with no
+# record, and only the link to the store's directory, which is inside the repository, waits.
+# Said in its own words because `_UNTRUSTED`'s "none of it reaches a session" is false here.
+_LINK_WAITS = (
+    "the harness memory link to this store waits for a trust record, because the store's "
+    "directory is inside the repository; its notes still reach a session through the "
+    "standing-rules and volatile-notes bundles — run `stayfixed memory trust --in-repo-memory` "
+    "to link it"
 )
 # The narrow case where a stayfixed-authored write cannot carry trust forward: the store changed
 # under it, so re-recording would bless bytes the owner has never looked at. `refresh_if_trusted`
@@ -105,6 +120,10 @@ _DROPPED = (
     "the store changed while this command ran, so its trust record was not carried over — "
     "review the change and re-run `stayfixed memory trust --in-repo-memory`"
 )
+# What the write path put into notes that nobody curated: an `index:` line taken from a note's
+# `metadata.index` or, failing that, its description. Said on the line and not only in `--json`'s
+# `provisional`, because the run rewrote those notes and a person running it is who curates them.
+_PROVISIONAL = "wrote a provisional index line into {count} note(s): {names}"
 # `index._harvestable` refused to persist repository-authored titles into notes that are not
 # themselves repository data. Said out loud because the alternative is a silent drop: the notes
 # keep their own descriptions and nothing else in the output would differ.
@@ -130,37 +149,32 @@ _EXTRA_NOT_PUBLISHED = (
 )
 
 
-def _trusted(store: Store, config: Config) -> bool:
-    """The same question `bundles.blocks` asks, asked the same way.
+def _holds_repository_data(store: Store, config: Config) -> bool:
+    """Whether the notes or a committed index are repository data, which the bundles withhold
+    too, rather than only the directory the harness link exposes.
 
-    `may_inject(store, config)` alone answers about the store's *notes*, through
-    `inside_project`. In overlay mode that is False by design — every group resolves out into
-    the overlay — while `store.path` is a real directory inside the repository, so a committed
-    `MEMORY.md` there makes `blocks(Bundle.INDEX, …)` return `[]` while this reported
-    `"trusted": true` and `_gate` said nothing. `_UNTRUSTED` exists precisely to stop that
-    silence — its own comment says "nothing in any summary said why the model had stopped
-    receiving standing rules" — and it was never appended.
-
-    `bundles.blocks` builds the same disjunction from `is_repository_data` and the index's own
-    `in_repository`; it is rebuilt here rather than exported because the two callers want
-    different halves of it, and one of them has to answer for a bundle it is not rendering.
+    `trust.is_repository_data` answers about the store's *notes*, through `inside_project`,
+    which in overlay mode is False by design — every group resolves out into the overlay —
+    while `store.path` is a real directory inside the repository, so a committed `MEMORY.md`
+    there is repository data that answer cannot see. So the index is asked about by file,
+    through its own `in_repository`, beside the notes.
     """
     index = index_source(store, config)
-    repository_data = trust.is_repository_data(store) or (
-        index is not None and in_repository(store, index)
-    )
-    return trust.may_inject(store, config, repository_data=repository_data)
+    return trust.is_repository_data(store) or (index is not None and in_repository(store, index))
 
 
-def _gate(store: Store, config: Config) -> str | None:
-    """Whether the trust gate is what a person should be told about, after a command ran.
+def _gate(store: Store, config: Config, trusted: bool) -> str | None:
+    """Whether the trust gate is what a person should be told about, after a command ran;
+    `trusted` is the caller's own answer to `harness_link_needed`, asked once per command.
 
     Deliberately not wired into `session-context`: that command's `Result.summary` *is* the
     text the `SessionStart` entry emits, so a diagnostic there would be injected into the model
     rather than read by anyone. Nor into the handler, which stays `Policy.OPEN` and quiet. The
     commands a person runs by hand are where this belongs.
     """
-    return None if _trusted(store, config) else _UNTRUSTED
+    if trusted:
+        return None
+    return _UNTRUSTED if _holds_repository_data(store, config) else _LINK_WAITS
 
 
 def _with(summary: str, note: str | None) -> str:
@@ -174,6 +188,14 @@ def _printed(names: list[str]) -> str:
     by the hundred: the line says how many it left off, and `--json` carries every name,
     whole."""
     return listed([printable(name) for name in names])
+
+
+def _provisional(reconciled: Reconciliation) -> str | None:
+    """The notes this run wrote a provisional `index:` line into, named through `_printed`."""
+    if not reconciled.provisional:
+        return None
+    names = _printed(reconciled.provisional)
+    return _PROVISIONAL.format(count=len(reconciled.provisional), names=names)
 
 
 def _harvest(reconciled: Reconciliation, store: Store) -> str | None:
@@ -254,8 +276,9 @@ def run_index(args: argparse.Namespace) -> Result:
             else f"index is current: {report.words} words, {report.lines} lines"
         )
         summary = _with(_with(summary, _harvest(reconciled, store)), _publish(reconciled, store))
+        trusted = harness_link_needed(store, config)
         return Result(
-            _with(summary, _gate(store, config)),
+            _with(summary, _gate(store, config, trusted)),
             {
                 "drifted": report.drifted,
                 "words": report.words,
@@ -268,7 +291,7 @@ def run_index(args: argparse.Namespace) -> Result:
                 "refused_publish": reconciled.refused_publish,
                 "refused_extra": reconciled.refused_extra,
                 "unreadable": report.unreadable,
-                "trusted": _trusted(store, config),
+                "trusted": trusted,
             },
             # The same list the summary is built from, so the two can no longer disagree.
             exit_code=1 if findings else 0,
@@ -276,12 +299,15 @@ def run_index(args: argparse.Namespace) -> Result:
     text = render_index(reconciled, config, store)
     path = write_index(store, config, text)
     carried = trust.refresh_if_trusted(store, config, before, [*reconciled.written, path])
-    note = _DROPPED if before.trusted and not carried else _gate(store, config)
+    # Asked after the write and its refresh, which is the state the next session meets.
+    trusted = harness_link_needed(store, config)
+    note = _DROPPED if before.trusted and not carried else _gate(store, config, trusted)
     # Exit 0: the write succeeded, and `--check` is the mode that fails a build. The findings
     # are still said, because a person running this by hand is who can act on them.
     wrote = "; ".join(
         [f"wrote {path} ({report.words} words, {len(reconciled.notes)} notes)", *findings]
     )
+    wrote = _with(wrote, _provisional(reconciled))
     wrote = _with(_with(wrote, _harvest(reconciled, store)), _publish(reconciled, store))
     return Result(
         _with(wrote, note),
@@ -297,7 +323,7 @@ def run_index(args: argparse.Namespace) -> Result:
             "unreadable": report.unreadable,
             "over_budget": report.over_budget,
             "over_caps": report.over_caps,
-            "trusted": _trusted(store, config),
+            "trusted": trusted,
         },
     )
 
@@ -309,32 +335,6 @@ def run_session_context(args: argparse.Namespace) -> Result:
         known = ", ".join(b.value for b in Bundle)
         raise Refusal(f"unknown bundle {args.bundle!r}; known: {known}") from exc
     store, config = _store(args)
-    # On Codex the index bundle is injected too, because Codex has no native auto-memory to load the
-    # index itself. Here rather than in `bundles.render`, which is a library function with no
-    # environment to read; `detect_harness` is the hook area's own answer to the same question.
-    #
-    # **No payload is passed, so only the environment half of that answer is in play here.**
-    # `detect_harness` reads a stdin pair (`model`/`permission_mode`) *when it is handed one*, which
-    # the dispatcher does and this call site does not: there is no stdin payload at a command
-    # invocation. What decides it here is `PLUGIN_ROOT` alone — Codex sets it and, as the spike
-    # record (`docs/plans/2026-09-05-agent-harness-p0-spikes.md`) measured in its *Codex plugin
-    # hooks* trial, also sets `CLAUDE_PLUGIN_ROOT`, so the `CLAUDE_*` names identify nothing and
-    # neither "claude" nor "unknown" reaches the render.
-    #
-    # **This is the one shipped command whose output depends on the ambient environment**, and
-    # it is deliberate rather than incidental: the bundle exists for the harness that has no
-    # native auto-memory, and the only thing that knows which harness this is, is the process's
-    # own environment. The cost is that a test asserting this bundle is empty proves nothing
-    # about the gate it was written for unless it names the harness first — see
-    # `tests/memory/test_commands.py::_under_codex`, which every such case now goes through.
-    #
-    # After `_store` and not before it, so every refusal this command already makes — a store
-    # that will not resolve, a `--store` outside the overlay — is still made for this bundle on
-    # both harnesses. What the branch skips is the render, which is what it is about.
-    if bundle is Bundle.INDEX and detect_harness(os.environ) != "codex":
-        return Result(
-            summary="", data={"bundle": bundle.value, "part": args.part, "skipped": "harness"}
-        )
     text = render(bundle, store, config, part=args.part)
     return Result(text if text is not None else "")
 
@@ -343,8 +343,17 @@ def run_trust(args: argparse.Namespace) -> Result:
     store, config = _store(args)
     before = trust.state(store, config)
     after = trust.record(store, config)
+    summary = f"recorded the store hash for {store.path}"
+    written = trust.record_path(store.machine)
+    if store.machine is None and written is not None and not homes_agree():
+        # Said where `HOME` is not the database's home, because a person who looks under `HOME`
+        # for the record finds an older one or none (`config.machine`'s docstring says why).
+        summary = (
+            f"{summary}, in {written}: under the home the password database records for this "
+            f"user, not under HOME, because that is where a hook reads it"
+        )
     return Result(
-        f"recorded the store hash for {store.path}",
+        summary,
         {"was_trusted": before.trusted, "trusted": after.trusted, "digest": after.current},
     )
 
@@ -376,9 +385,9 @@ def run_doctor_bundles(args: argparse.Namespace) -> Result:
     bad = [name for name, row in report.items() if row["overflow"] or row["oversized"]]
     summary = "every bundle fits its slots" if not bad else f"does not fit: {', '.join(bad)}"
     # A bundle that fits because it is empty is not a bundle that fits. `doctor` reads this.
-    trusted = _trusted(store, config)
+    trusted = harness_link_needed(store, config)
     return Result(
-        _with(summary, _gate(store, config)),
+        _with(summary, _gate(store, config, trusted)),
         {"bundles": report, "trusted": trusted},
         exit_code=1 if bad else 0,
     )
@@ -429,15 +438,24 @@ def run_refs(args: argparse.Namespace) -> Result:
     data = {
         "findings": [asdict(f) for f in report.findings],
         "unreadable": [str(path.relative_to(store.path)) for path, _ in report.unreadable],
+        "notices": [asdict(n) for n in report.notices],
     }
+    # The link graph is advice: counted on the line and listed in `--json`, never in the exit
+    # code, because the store is shared by every session on the machine and a sibling's
+    # half-finished sweep is not this tree's fault to fail on.
+    advice = (
+        [f"{len(report.notices)} advisory link-graph notice(s), which do not gate"]
+        if report.notices
+        else []
+    )
     parts: list[str] = []
     if report.findings:
         parts.append(f"{len(report.findings)} stale reference(s): {labels(report.findings)}")
     if report.unreadable:
         parts.append(f"{len(report.unreadable)} note(s) could not be parsed and were not read")
     if not parts:
-        return Result("every backticked path in the store resolves", data)
-    return Result("; ".join(parts), data, exit_code=1)
+        return Result("; ".join(["every backticked path in the store resolves", *advice]), data)
+    return Result("; ".join([*parts, *advice]), data, exit_code=1)
 
 
 def register(groups: SubParsers) -> None:
@@ -488,6 +506,10 @@ def register(groups: SubParsers) -> None:
     fitting.set_defaults(func=run_doctor_bundles)
 
     refs = common_flags(
-        sub.add_parser("refs", help="backticked paths in notes that no longer resolve"), store=True
+        sub.add_parser(
+            "refs",
+            help="backticked paths in notes that no longer resolve, and the link graph as advice",
+        ),
+        store=True,
     )
     refs.set_defaults(func=run_refs)
