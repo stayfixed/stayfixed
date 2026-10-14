@@ -95,6 +95,8 @@ from stayfixed.jsonobject import NESTED, json_object
 from stayfixed.memory.api import (
     COMMON_GROUP,
     DIFFERENT_REMOTE,
+    GATE_LAPSED,
+    GATE_OPEN,
     MISMATCH,
     NO_ORIGIN,
     NO_REMOTE,
@@ -110,8 +112,10 @@ from stayfixed.memory.api import (
     attach_main,
     detach_main,
     harness_anchor,
+    harness_gate,
     harness_link_needed,
     harness_memory_path,
+    harness_targets,
     link,
     linked_names,
     main_checkout,
@@ -120,7 +124,7 @@ from stayfixed.memory.api import (
     resolve,
 )
 from stayfixed.overlay.api import PRE_COMMIT_CONFIG, PRE_COMMIT_HOOK
-from stayfixed.printed import answered
+from stayfixed.printed import answered, quoted
 from stayfixed.runner import Runner
 from stayfixed.scaffold import (
     Manifest,
@@ -534,16 +538,17 @@ def _codex_rule_texts(binding: Binding) -> tuple[tuple[str, str], ...]:
     """
     texts: list[tuple[str, str]] = []
     for target, source in codex_rules(binding):
-        # The overlay is the owner's, so its path may print.
-        try:
+        # The overlay is the owner's, so its path may print, and through `quoted`, as the
+        # directory holding it is printed when it cannot be listed (`permissions.codex_rules`): the
+        # project's `codex/` carries `project.name`, which the repository chooses.
+        with fsops.reading(quoted(str(source)), _nothing_written):
             texts.append((target, source.read_text(encoding="utf-8")))
-        except UnicodeDecodeError:
-            raise Failure(f"{source} is not UTF-8 text, so nothing was written") from None
-        except OSError as exc:
-            raise Failure(
-                f"{source} cannot be read ({fsops.said(exc)}), so nothing was written"
-            ) from exc
     return tuple(texts)
+
+
+def _nothing_written(sentence: str) -> Failure:
+    """`fsops.reading`'s sentence about an overlay rule file, as the failure it ends a run in."""
+    return Failure(f"{sentence}, so nothing was written")
 
 
 def _record_binding(binding: Binding) -> bool:
@@ -1111,12 +1116,37 @@ HARNESS_WAITS = (
 )
 
 
-def _harness_waits(owner: Path, config: Config, *, machine: Path | None) -> bool:
-    """Whether the gate kept the harness link from being made: `harness_link_needed`, asked
-    exactly as `_apply_harness_link` asks it, of the store the run just linked, which is the
-    owning checkout's (`_fallback_store`)."""
+# Why an approval no longer holds, and what to do about it: said by `attach` (`HARNESS_LAPSED`)
+# and by `doctor`'s `attached` row, which reads the same state after the run, so the two say it
+# alike. Nothing in either is repository-authored, so both print.
+APPROVAL_LAPSED = (
+    "the store or its memory.index_extra changed since its approval was recorded, so that "
+    "approval no longer holds"
+)
+REAPPROVE = (
+    "read what changed, run `stayfixed memory trust --in-repo-memory`, then `stayfixed attach` "
+    "again"
+)
+# Said instead of `HARNESS_WAITS` where the machine records an approval and the store changed
+# since, which closes the gate as surely as no approval and also withdraws the links an earlier run
+# made: one line appended to one note is enough.
+HARNESS_LAPSED = f"the harness memory link was not created, because {APPROVAL_LAPSED}; {REAPPROVE}"
+# Said whenever the run withdrew harness memory links, which only the gate does, so the line
+# never leaves a withdrawal unsaid; the count is the one `--json` gives as `links_revoked`.
+HARNESS_WITHDREW = "withdrew {count} harness memory link(s)"
+
+
+def _harness_waits(owner: Path, config: Config, *, machine: Path | None) -> str | None:
+    """Why the gate kept the harness link from being made, or `None` where it did not:
+    `harness_link_needed`, asked exactly as `_apply_harness_link` asks it, of the store the run
+    just linked, which is the owning checkout's (`_fallback_store`). `HARNESS_LAPSED` where an
+    approval is recorded and the store changed since it (`harness_gate`), and `HARNESS_WAITS`
+    where none is."""
     store = _fallback_store(owner, config, machine=machine)
-    return store is not None and not harness_link_needed(store, config)
+    gate = GATE_OPEN if store is None else harness_gate(store, config)
+    if gate == GATE_OPEN:
+        return None
+    return HARNESS_LAPSED if gate == GATE_LAPSED else HARNESS_WAITS
 
 
 @dataclass(frozen=True)
@@ -1579,6 +1609,8 @@ def _carry_out(
     if keys != carried:
         _write_ledger(root, planned, keys)
         written = True
+    if links.revoked:
+        notes.append(HARNESS_WITHDREW.format(count=len(links.revoked)))
     if keys and links.withheld:
         # Left as an earlier run recorded it, and said so: "was recorded" would read as this run's
         # act, beside a note that this run makes no link at all.
@@ -1593,8 +1625,10 @@ def _carry_out(
         )
     elif unavailable:
         notes.append(FALLBACK_UNAVAILABLE)
-    elif _harness_waits(owner, config, machine=machine):
-        notes.append(HARNESS_WAITS)
+    # Asked only here, where its answer is said: it reads the store's trust record and digests
+    # its notes, and a run that says something else above has no use for that.
+    elif (waits := _harness_waits(owner, config, machine=machine)) is not None:
+        notes.append(waits)
     if planned.unread is not None:
         notes.append(planned.unread.note)
     return Attached(written, rules, recorded, tuple(notes), links)
@@ -1617,6 +1651,9 @@ class Detached:
     exclude_block_kept: bool = False
     # Fixed sentences about what was left, for the command's line.
     notes: tuple[str, ...] = ()
+    # This checkout's link tree was left in place because it owns the store and another checkout
+    # of this repository still holds a ledger: that checkout's harness memory link points at it.
+    link_tree_kept: bool = False
 
 
 def _emptied(raw: dict[str, Any]) -> dict[str, Any]:
@@ -1842,11 +1879,13 @@ def _rmdir_if_empty(base: Path, name: str) -> bool:
 
 
 def _withdraw_memory_directories(
-    root: Path, checkouts: list[Path], config: Config, recorded: AttachLedger
+    root: Path, trees: list[Path], config: Config, recorded: AttachLedger
 ) -> tuple[str, ...]:
     """The empty `paths.memory` directory, then the directories above it that the ledger records
     the attach as having created, in `root` alone; and the empty `paths.memory` in every other
-    checkout.
+    checkout this run withdrew a tree from. `trees` is `_reach`'s second answer, so a checkout
+    whose tree was kept keeps its directories too, `root` among them: its `paths.memory` still
+    stands inside every parent the ledger names, so `rmdir` takes none of them.
 
     In `root`, `paths.memory` goes only when the ledger says the attach created it — an empty
     one the owner made before is theirs — and the directories above it only when the ledger says
@@ -1860,7 +1899,7 @@ def _withdraw_memory_directories(
     """
     removed: list[str] = []
     own = root.resolve()
-    for tree in checkouts:
+    for tree in trees:
         if tree.resolve() == own:
             if recorded.memory_created and _rmdir_if_empty(tree, config.paths.memory):
                 removed.append(config.paths.memory)
@@ -1911,13 +1950,14 @@ def _walked(root: Path, relative: str, *, what: str, where: str) -> None:
 def _refuse_unwithdrawable(
     root: Path,
     recorded: AttachLedger,
-    checkouts: list[Path],
+    trees: list[Path],
     config: Config,
     settings: SettingsWithdrawal,
 ) -> None:
     """Walk to every path the withdrawal writes or removes, before the first withdrawal: the
-    settings file when it is rewritten, each recorded rule copy, each name of every checkout's
-    link tree that is a link, and the ledger.
+    settings file when it is rewritten, each recorded rule copy, each name that is a link in the
+    link tree of every checkout in `trees` — `_reach`'s answer, the checkouts whose tree this run
+    withdraws, and no other — and the ledger.
 
     The writes and removals are `fsops` walks that refuse a symlinked component, and asked first
     by them, the question would come after the settings file was already withdrawn. `contained`
@@ -1935,7 +1975,7 @@ def _refuse_unwithdrawable(
             what="a `.codex/rules/` copy this checkout's attach recorded",
             where="`.codex` or `.codex/rules`",
         )
-    for tree in checkouts:
+    for tree in trees:
         base = contained(tree, config.paths.memory, allow_final_symlink=True)
         for name in linked_names(config):
             try:
@@ -1981,6 +2021,24 @@ def _another_attached(root: Path, checkouts: list[Path]) -> bool:
             continue
         return True
     return False
+
+
+def _reach(root: Path, checkouts: list[Path], *, kept: bool) -> tuple[list[Path], list[Path]]:
+    """The checkouts whose harness memory link this detach withdraws, and those whose link tree
+    it withdraws.
+
+    With no other checkout attached, every checkout's of both, as `attach` made them. While
+    another checkout still holds a ledger (`kept`, `_another_attached`), only `--root`'s harness
+    link, and `--root`'s tree unless `--root` owns the store: every checkout's harness link points
+    at the owning checkout's tree (`_link_everywhere`), so taking that tree, or another
+    checkout's, left a checkout whose ledger still stands half attached and its harness link
+    dangling. A later `attach` anywhere builds the owner's tree first, so keeping it loses
+    nothing. `checkouts` is `_checkouts`' answer, owner first and resolved.
+    """
+    if not kept:
+        return checkouts, checkouts
+    own = root.resolve()
+    return [own], [] if own == checkouts[0] else [own]
 
 
 # Said where the other home's anchor refuses, so `detach` withdrew nothing under it.
@@ -2046,8 +2104,10 @@ def detach(root: Path, *, machine: Path | None, home: Path | None) -> Detached:
     carry the ledger of the checkout an attach was run from and `detach --root <that worktree>`
     answers "no ledger". Without one there is nothing to reverse — guessing which allow rules
     were stayfixed's from their content is the heuristic the ledger exists to replace. So the
-    reach this function has *once it starts* is every checkout (`_worktrees` below), and the
-    place it may be started from is the one that holds the record.
+    place it may be started from is the one that holds the record, and the reach it has *once it
+    starts* is `_reach`'s: every checkout (`_worktrees` below) when no other holds a ledger, and
+    `--root` alone while one does, keeping the owning checkout's tree that other checkout's
+    harness link points at.
     """
     recorded = ledger(root)
     config = load(root, machine=machine)
@@ -2087,8 +2147,18 @@ def detach(root: Path, *, machine: Path | None, home: Path | None) -> Detached:
     # would show that checkout's settings file and rule copies in its `git status`.
     kept = _another_attached(root, checkouts)
     hidden = None if kept else exclude.withdrawn_block(root)
+    harnessed, trees = _reach(root, checkouts, kept=kept)
     settings = _planned_settings(root, recorded)
-    _refuse_unwithdrawable(root, recorded, checkouts, config, settings)
+    # Where each checkout's harness link may point and be ours, asked here because it walks the
+    # owning checkout's `paths.memory` as well as the checkout's own, and while another ledger
+    # stands `_refuse_unwithdrawable` walks no tree but `--root`'s. Asked from inside the
+    # withdrawal, a main checkout whose `paths.memory` came to be reached through a symlink
+    # refused after the rule copies were gone. And asked before `_refuse_unwithdrawable`, which
+    # walks only checkouts asked here: it resolves each tree's `paths.memory` with no answer for
+    # a symlink loop, where `.resolve()` raises `RuntimeError` up to Python 3.12, and this
+    # question's one refusal names the loop.
+    targets = {tree: harness_targets(tree, checkouts[0], config) for tree in harnessed}
+    _refuse_unwithdrawable(root, recorded, trees, config, settings)
     allow_removed = _withdraw_settings(root, settings)
     rules_removed: list[str] = []
     for rule in recorded.rules:
@@ -2099,16 +2169,23 @@ def detach(root: Path, *, machine: Path | None, home: Path | None) -> Detached:
     # to `--root` and the loop then skipped the owning checkout unconditionally, so a detach run
     # from a linked worktree withdrew that worktree's tree twice and left the main checkout's
     # link tree — and its harness link — in place. `_checkouts` is the one spelling of "every
-    # checkout, owner first, each exactly once" that both halves now read.
+    # checkout, owner first, each exactly once" that both halves now read, and `_reach` says
+    # which of them this run withdraws from.
     revoked: list[Path] = []
-    for tree in checkouts:
+    for tree in harnessed:
         revoked += detach_main(
-            tree, config, machine=machine, home=home, elsewhere=elsewhere
+            tree,
+            config,
+            machine=machine,
+            home=home,
+            elsewhere=elsewhere,
+            targets=targets[tree],
+            keep_tree=tree not in trees,
         ).revoked
     region = _withdraw_ignore_region(root, ignore_remainder)
     if hidden is not None:
         exclude.write(hidden)
-    memory = _withdraw_memory_directories(root, checkouts, config, recorded)
+    memory = _withdraw_memory_directories(root, trees, config, recorded)
     fsops.remove_within(root, ATTACH_LEDGER)
     # Last, because the ledger lives in one of them.
     directories = _withdraw_directories(root, recorded)
@@ -2123,4 +2200,5 @@ def detach(root: Path, *, machine: Path | None, home: Path | None) -> Detached:
         hidden is not None,
         kept,
         notes,
+        root.resolve() not in trees,
     )

@@ -39,11 +39,13 @@ from stayfixed.errors import Failure, Refusal
 from stayfixed.gitenv import Unasked
 from stayfixed.memory.api import PROJECT_RECORD, link_sources
 from stayfixed.overlay.api import COMMON_CLAUDE, COMMON_CODEX
+from stayfixed.printed import quoted
 from stayfixed.scaffold import EntriesError, Style, drop, extract, owned_ids
 
 # The fixture the binding tests already build, reused rather than copied: one spelling of the
 # overlay layout keeps the two modules from drifting apart about what `--store` names.
 from tests.attach.test_binding import CONFIG, DEFAULT_MEMORY, _machine, _project_and_store
+from tests.cli import cli
 from tests.gitfixture import git as _git
 from tests.gitfixture import run_git
 from tests.parserlimits import LONG_NUMBER, NESTED
@@ -766,6 +768,82 @@ def test_codex_rules_land_under_the_directory_codex_reads(tmp_path: Path) -> Non
     assert landed.read_text(encoding="utf-8") == "# standing rule\n"
     assert ".codex/rules/common.rules" in attached.rules_written
     assert ledger(root).rules == (".codex/rules/common.rules",)
+
+
+@ROOT_SEARCHES_EVERYTHING
+@pytest.mark.parametrize("mode", [0o000, 0o444], ids=["unlistable", "unsearchable"])
+@pytest.mark.parametrize("where", ["common", "project"])
+def test_an_unlistable_codex_directory_fails_and_writes_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, where: str, mode: int
+) -> None:
+    # An overlay `codex/` directory this user cannot list ended `attach --check` and `attach` in
+    # `internal error: PermissionError`, while an unreadable rule file inside it is a failure that
+    # names the file. One fault class, one classification: both are the overlay holding something
+    # this user cannot read. At 0o444 the listing succeeds and asking whether an entry is a file
+    # does not, so the guard covers both. The project's directory carries `project.name`, so its
+    # path prints through `printed.quoted`. Mutation (oracle): `mutations/`'s "an overlay codex
+    # directory that cannot be listed is an internal error".
+    monkeypatch.setattr(Path, "home", lambda: tmp_path / "home")
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    root, store, machine = _attachable(tmp_path, allow=(RULE,), codex="# a standing rule\n")
+    overlay = store.parents[2]
+    directory = overlay / COMMON_CODEX if where == "common" else store.parent / "codex"
+    directory.mkdir(exist_ok=True)
+    (directory / "project.rules").write_text("# a project rule\n", encoding="utf-8")
+    flags = ("--store", str(store))
+    before = snapshot(root)
+    directory.chmod(mode)
+    try:
+        checked = cli(root, tmp_path, "attach", "--check", *flags, machine=machine)
+        attached = cli(root, tmp_path, "attach", "--yes", *flags, machine=machine)
+    finally:
+        directory.chmod(0o755)
+    line = (
+        f"stayfixed: failed: {quoted(str(directory))} cannot be listed (Permission denied), "
+        "so nothing was written\n"
+    )
+    assert (checked[0], checked[2]) == (attached[0], attached[2]) == (1, line)
+    assert "internal error" not in checked[2] + attached[2]
+    # A guard and not the fix's proof: the listing happens while the run is planned, so nothing
+    # was written before this change either.
+    assert_snapshot_unchanged(root, before)
+
+
+@pytest.mark.parametrize("fault", ["not-utf8", "unreadable"])
+@pytest.mark.parametrize("where", ["common", "project"])
+def test_an_overlay_rule_file_that_cannot_be_read_fails_naming_it_as_its_directory_is_named(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, where: str, fault: str
+) -> None:
+    # The sibling of the unlistable `codex/` directory above, one fault class: a rule file inside
+    # it this user cannot read, or that is not UTF-8. Its directory is printed through
+    # `printed.quoted` and the file was printed raw, though the project's path carries
+    # `project.name`, which the repository chooses. Mutation (oracle): `mutations/`'s "an overlay
+    # rule file that cannot be read is printed raw" -> the path loses its quotes.
+    if fault == "unreadable" and os.geteuid() == 0:
+        pytest.skip("root reads every file")
+    monkeypatch.setattr(Path, "home", lambda: tmp_path / "home")
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    root, store, machine = _attachable(tmp_path, allow=(RULE,), codex="# a standing rule\n")
+    overlay = store.parents[2]
+    directory = overlay / COMMON_CODEX if where == "common" else store.parent / "codex"
+    directory.mkdir(exist_ok=True)
+    rule = directory / "z.rules"
+    if fault == "not-utf8":
+        rule.write_bytes(b"\xff\xfe not text\n")
+    else:
+        rule.write_text("# a rule\n", encoding="utf-8")
+        rule.chmod(0o000)
+    flags = ("--store", str(store))
+    before = snapshot(root)
+    try:
+        checked = cli(root, tmp_path, "attach", "--check", *flags, machine=machine)
+        attached = cli(root, tmp_path, "attach", "--yes", *flags, machine=machine)
+    finally:
+        rule.chmod(0o644)
+    why = "is not UTF-8 text" if fault == "not-utf8" else "cannot be read (Permission denied)"
+    line = f"stayfixed: failed: {quoted(str(rule))} {why}, so nothing was written\n"
+    assert (checked[0], checked[2]) == (attached[0], attached[2]) == (1, line)
+    assert_snapshot_unchanged(root, before)
 
 
 def test_a_rule_the_overlay_never_granted_is_left_alone(tmp_path: Path) -> None:

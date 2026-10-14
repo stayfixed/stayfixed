@@ -1260,7 +1260,7 @@ reddens = ["tests/attach/test_binding.py::test_a_different_remote_is_a_mismatch_
 [[mutation]]
 name = "the main checkout's withdrawal stops checking what it removes points at"
 file = "src/stayfixed/memory/worktree.py"
-before = '''        if pointed.resolve() != source.resolve():
+before = '''        if reached != source.resolve():
             continue'''
 after = '''        if False:
             continue'''
@@ -3174,8 +3174,8 @@ reddens = [
 [[mutation]]
 name = "detach leaves the directory the other home's harness link sat in"
 file = "src/stayfixed/memory/worktree.py"
-before = "        with contextlib.suppress(OSError):\n            fsops.rmdir_within(elsewhere, str(PurePosixPath(harness_relative).parent))"
-after = "        pass"
+before = "            with contextlib.suppress(OSError):\n                fsops.rmdir_within(elsewhere, str(PurePosixPath(harness_relative).parent))"
+after = "            pass"
 reddens = [
   "tests/attach/test_commands.py::test_detach_withdraws_the_harness_link_under_both_homes_where_home_is_not_the_databases[off-a-terminal-under-home]",
 ]
@@ -3190,4 +3190,154 @@ after = """        "`git` could not answer which checkout this belongs to, so st
 reddens = [
   "tests/attach/test_write.py::test_a_worktree_whose_question_runs_out_of_time_is_named_and_not_called_a_broken_git",
   "tests/memory/test_store.py::test_a_worktree_removed_before_it_is_asked_about_is_gone_not_a_broken_git",
+]
+
+# A note may carry its short index line under `metadata:`; `memory index` passed it over and wrote
+# the description, or the description the native writer appended to `MEMORY.md`, as its `index:`.
+[[mutation]]
+name = "memory index passes over a note's metadata index line"
+file = "src/stayfixed/memory/index.py"
+before = "        own = _metadata_index(note)\n"
+after = "        own = None\n"
+reddens = [
+  "tests/memory/test_index.py::test_metadata_index_is_the_provisional_line_before_the_description",
+  "tests/memory/test_index.py::test_metadata_index_wins_over_a_line_harvested_from_memory_md",
+]
+
+# A `metadata.index` that is only spaces is no line: the note falls through to its description
+# rather than taking an index line of blanks.
+[[mutation]]
+name = "a metadata index of only spaces becomes the note's index line"
+file = "src/stayfixed/memory/index.py"
+before = '    line = note.metadata.get("index", "").strip()'
+after = '    line = note.metadata.get("index", "")'
+reddens = [
+  "tests/memory/test_index.py::test_a_metadata_index_of_nothing_falls_through_to_the_description[only-spaces]",
+]
+
+# What `memory index` wrote into notes as a provisional line is said on its line, not only in
+# `--json`, so the owner knows which notes to curate.
+[[mutation]]
+name = "memory index does not name the notes it gave a provisional line"
+file = "src/stayfixed/memory/commands.py"
+before = "    wrote = _with(wrote, _provisional(reconciled))\n"
+after = "    wrote = _with(wrote, None)\n"
+reddens = [
+  "tests/memory/test_index.py::test_the_summary_names_the_provisional_lines",
+]
+
+# Asking where a harness memory link may point resolves a `paths.memory` a checkout chose, and up to
+# Python 3.12 a symlink loop there raises `RuntimeError` out of `.resolve()`: `detach` ended in an
+# internal error and `doctor` in "this check could not run". Every fault is one `PathEscape`.
+[[mutation]]
+name = "harness_targets lets a symlink loop out as RuntimeError"
+file = "src/stayfixed/memory/worktree.py"
+before = """    except RuntimeError as exc:
+        raise PathEscape(f"{asked}: {value!r} is a symlink loop") from exc
+"""
+after = ""
+reddens = [
+  "tests/memory/test_worktree.py::test_every_fault_of_asking_where_a_harness_link_may_point_is_one_refusal_naming_the_checkout[main-loop]",
+  "tests/memory/test_worktree.py::test_every_fault_of_asking_where_a_harness_link_may_point_is_one_refusal_naming_the_checkout[worktree-loop]",
+]
+
+[[mutation]]
+name = "harness_targets lets an OSError out of resolving a target"
+file = "src/stayfixed/memory/worktree.py"
+before = """    except OSError as exc:
+        raise PathEscape(f"{asked}: {value!r} cannot be resolved ({fsops.said(exc)})") from exc
+"""
+after = ""
+reddens = [
+  "tests/memory/test_worktree.py::test_every_fault_of_asking_where_a_harness_link_may_point_is_one_refusal_naming_the_checkout[main-os-error]",
+  "tests/memory/test_worktree.py::test_every_fault_of_asking_where_a_harness_link_may_point_is_one_refusal_naming_the_checkout[worktree-os-error]",
+]
+
+# The refusal names whose `paths.memory` it could not ask: from a linked worktree, the raw
+# `PathEscape` about the main checkout's read as the worktree's own.
+[[mutation]]
+name = "harness_targets names no checkout in its refusal"
+file = "src/stayfixed/memory/worktree.py"
+before = '        raise PathEscape(f"{asked}: {exc}") from exc'
+after = "        raise PathEscape(str(exc)) from exc"
+reddens = [
+  "tests/attach/test_detach.py::test_a_main_checkout_tree_reached_through_a_symlink_refuses_before_anything_is_withdrawn[worktree]",
+]
+
+# A harness link is stayfixed's when it points at the owning checkout's `paths.memory`, where
+# `attach` points it, or at the checkout's own, where the `SessionStart` re-link points a
+# worktree's. Without the second, `detach` left a re-linked worktree's link dangling and `doctor`
+# called it red.
+[[mutation]]
+name = "harness_targets names the owning checkout's tree alone"
+file = "src/stayfixed/memory/worktree.py"
+before = "    for checkout in (owner, root):\n"
+after = "    for checkout in (owner,):\n"
+reddens = [
+  "tests/attach/test_detach.py::test_detach_withdraws_a_worktree_harness_link_the_session_start_relink_made",
+  "tests/attach/test_doctor.py::test_a_worktree_harness_link_the_session_start_relink_made_is_ok",
+]
+
+# A clone can commit a symlink loop under `paths.memory`, and `.resolve()` of one raises
+# `RuntimeError` on Python 3.11 and 3.12: `detach` ended in an internal error after its first
+# withdrawal, and `memory index` before it wrote anything.
+[[mutation]]
+name = "the main checkout's withdrawal lets a symlink loop at a group name out"
+file = "src/stayfixed/memory/worktree.py"
+before = """        try:
+            reached = pointed.resolve()
+        except (OSError, RuntimeError):
+"""
+after = """        reached = pointed.resolve()
+        if False:
+"""
+reddens = [
+  "tests/memory/test_worktree.py::test_a_withdrawal_leaves_a_group_link_that_is_a_symlink_loop",
+]
+
+[[mutation]]
+name = "the index link rule lets a symlink loop out"
+file = "src/stayfixed/memory/index.py"
+before = """    try:
+        resolved = target.resolve()
+    except (OSError, RuntimeError):
+"""
+after = """    resolved = target.resolve()
+    if False:
+"""
+reddens = [
+  "tests/memory/test_index.py::test_an_index_link_that_is_a_symlink_loop_is_refused_and_sources_nothing",
+]
+
+# `attach` and `doctor`'s `attached` row both tell a lapsed approval from one never given, since
+# only the first withdraws links an earlier run made.
+[[mutation]]
+name = "the harness gate reads a lapsed approval as one never given"
+file = "src/stayfixed/memory/worktree.py"
+before = "    return GATE_LAPSED if trust.approval_recorded(store.path, store.machine) else GATE_UNAPPROVED"
+after = "    return GATE_UNAPPROVED"
+reddens = [
+  "tests/memory/test_worktree.py::test_the_harness_gate_tells_an_approval_that_lapsed_from_one_never_given",
+]
+
+# The two used to be two questions, each digesting every note in the store; a closed gate with a
+# record behind it is a lapse, so the second digest told nothing the first had not.
+[[mutation]]
+name = "the harness gate digests the store a second time to tell a lapse"
+file = "src/stayfixed/memory/worktree.py"
+before = "    return GATE_LAPSED if trust.approval_recorded(store.path, store.machine) else GATE_UNAPPROVED"
+after = "    return GATE_LAPSED if trust.changed(trust.state(store, config)) else GATE_UNAPPROVED"
+reddens = [
+  "tests/memory/test_worktree.py::test_the_harness_gate_tells_an_approval_that_lapsed_from_one_never_given",
+]
+
+# A worktree's harness link is stayfixed's when it points at the main checkout's tree or at the
+# worktree's own, under a second home a harness may read as under the first.
+[[mutation]]
+name = "the withdrawal under a second home compares with the first target alone"
+file = "src/stayfixed/memory/worktree.py"
+before = "        gone = [path for target in targets for path in _withdraw_lapsed(root, target, elsewhere)]\n"
+after = "        gone = [path for target in targets[:1] for path in _withdraw_lapsed(root, target, elsewhere)]\n"
+reddens = [
+  "tests/memory/test_worktree.py::test_a_link_under_a_second_home_to_either_target_is_withdrawn",
 ]

@@ -140,7 +140,13 @@ def _resolved_if_permitted(store: Store, config: Config, target: Path) -> Path |
     if overlay is None:
         return None
     allowed = permitted_roots(overlay, config.project.name)
-    resolved = target.resolve()
+    try:
+        resolved = target.resolve()
+    except (OSError, RuntimeError):
+        # A link the repository can commit, and a symlink loop meets `RuntimeError` up to Python
+        # 3.12 (3.13 answers the path it names): a link that cannot be followed to a place is no
+        # link to a permitted one, so it is refused like any other, never an internal error.
+        return None
     if not any(resolved.is_relative_to(root.resolve()) for root in allowed):
         return None
     return resolved
@@ -271,8 +277,23 @@ def _relative(note: Note) -> str:
     return f"{note.group_name}/{note.path.name}"
 
 
+def _metadata_index(note: Note) -> str | None:
+    """The short index line the note carries under `metadata:`, when it holds more than
+    whitespace, else `None`: the owner's own line, which `reconcile` takes before a harvested one
+    and writes as provisional (its docstring says why)."""
+    line = note.metadata.get("index", "").strip()
+    return line or None
+
+
 def reconcile(store: Store, config: Config, *, write: bool) -> Reconciliation:
     """Give every note an `index:` line, harvesting the second writer's before inventing one.
+
+    The line, in order: a top-level `index:` (curated, left alone); `metadata.index`
+    (provisional, `_metadata_index`); a line harvested from `MEMORY.md` (native); the
+    description (provisional). `metadata.index` outranks the harvest because it is the owner's own
+    line, where the harvested one is what the native writer appended. It is provisional because
+    this run writes it into the note, and once written it shadows a later edit to
+    `metadata.index`, as the description's line does an edit to the description.
 
     `config` rather than a bare group list: the groups came from it at every call site anyway,
     and the index's target rule needs `project.name` and the recorded overlay, which a
@@ -296,11 +317,15 @@ def reconcile(store: Store, config: Config, *, write: bool) -> Reconciliation:
                 refused_publish.append(note.name)
             notes.append(note)
             continue
-        line = appended.get(_relative(note))
+        own = _metadata_index(note)
+        line = None if own else appended.get(_relative(note))
         if line and not _harvestable(store, source, note):
             refused.append(note.name)
             line = None
-        if line:
+        if own:
+            note = with_index(note, own, Provenance.PROVISIONAL)
+            provisional.append(note.name)
+        elif line:
             note = with_index(note, line, Provenance.NATIVE)
             harvested.append(note.name)
         else:

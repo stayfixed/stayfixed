@@ -120,6 +120,10 @@ _DROPPED = (
     "the store changed while this command ran, so its trust record was not carried over — "
     "review the change and re-run `stayfixed memory trust --in-repo-memory`"
 )
+# What the write path put into notes that nobody curated: an `index:` line taken from a note's
+# `metadata.index` or, failing that, its description. Said on the line and not only in `--json`'s
+# `provisional`, because the run rewrote those notes and a person running it is who curates them.
+_PROVISIONAL = "wrote a provisional index line into {count} note(s): {names}"
 # `index._harvestable` refused to persist repository-authored titles into notes that are not
 # themselves repository data. Said out loud because the alternative is a silent drop: the notes
 # keep their own descriptions and nothing else in the output would differ.
@@ -184,6 +188,14 @@ def _printed(names: list[str]) -> str:
     by the hundred: the line says how many it left off, and `--json` carries every name,
     whole."""
     return listed([printable(name) for name in names])
+
+
+def _provisional(reconciled: Reconciliation) -> str | None:
+    """The notes this run wrote a provisional `index:` line into, named through `_printed`."""
+    if not reconciled.provisional:
+        return None
+    names = _printed(reconciled.provisional)
+    return _PROVISIONAL.format(count=len(reconciled.provisional), names=names)
 
 
 def _harvest(reconciled: Reconciliation, store: Store) -> str | None:
@@ -295,6 +307,7 @@ def run_index(args: argparse.Namespace) -> Result:
     wrote = "; ".join(
         [f"wrote {path} ({report.words} words, {len(reconciled.notes)} notes)", *findings]
     )
+    wrote = _with(wrote, _provisional(reconciled))
     wrote = _with(_with(wrote, _harvest(reconciled, store)), _publish(reconciled, store))
     return Result(
         _with(wrote, note),

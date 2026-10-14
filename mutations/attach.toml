@@ -301,10 +301,89 @@ reddens = [
 [[mutation]]
 name = "detach applies the owning-checkout withdrawal to --root"
 file = "src/stayfixed/attach/write.py"
-before = "    for tree in checkouts:\n        revoked += detach_main(\n            tree, config, machine=machine, home=home, elsewhere=elsewhere\n        ).revoked"
-after = "    for tree in [root]:\n        revoked += detach_main(\n            tree, config, machine=machine, home=home, elsewhere=elsewhere\n        ).revoked"
+before = "    for tree in harnessed:\n        revoked += detach_main("
+after = "    for tree in [root]:\n        revoked += detach_main("
 reddens = [
   "tests/attach/test_links.py::test_detaching_from_a_linked_worktree_withdraws_the_main_checkouts_tree_too",
+]
+
+# While another checkout still holds a ledger, `detach` takes only `--root`'s harness link and,
+# unless `--root` owns the store, its tree: every checkout's harness link points at the owner's
+# tree, and taking every checkout's left the other one half attached with its link dangling.
+[[mutation]]
+name = "detach withdraws every checkout's tree while another ledger still serves one"
+file = "src/stayfixed/attach/write.py"
+before = "    if not kept:\n        return checkouts, checkouts"
+after = "    if True:\n        return checkouts, checkouts"
+reddens = [
+  "tests/attach/test_detach.py::test_detach_in_a_worktree_leaves_the_attached_main_checkout_whole",
+]
+
+# While another ledger stands, the owning checkout keeps its tree even when `detach` is run
+# there, because every other checkout's harness link points at it.
+[[mutation]]
+name = "detach takes the owning checkout's tree while another ledger still serves it"
+file = "src/stayfixed/attach/write.py"
+before = "    return [own], [] if own == checkouts[0] else [own]"
+after = "    return [own], [own]"
+reddens = [
+  "tests/attach/test_detach.py::test_detach_in_the_main_checkout_leaves_an_attached_worktree_whole",
+]
+
+# `attach` points every checkout's harness link at the owning checkout's tree; compared with the
+# checkout's own tree alone, a linked worktree's link never matched and outlived `detach` dangling.
+[[mutation]]
+name = "detach compares a checkout's harness link with that checkout's own tree"
+file = "src/stayfixed/attach/write.py"
+before = "    targets = {tree: harness_targets(tree, checkouts[0], config) for tree in harnessed}"
+after = "    targets = {tree: harness_targets(tree, tree, config) for tree in harnessed}"
+reddens = [
+  "tests/attach/test_links.py::test_detaching_from_a_linked_worktree_withdraws_the_main_checkouts_tree_too",
+]
+
+# Where a harness link may point is asked of the owning checkout's `paths.memory`, which the walk
+# before the first withdrawal does not reach while another ledger stands. Asked from inside the
+# withdrawal, a main checkout whose `paths.memory` is reached through a symlink refused a detach in
+# the worktree after its rule copies were gone.
+[[mutation]]
+name = "detach asks where a harness link may point only once it has begun withdrawing"
+file = "src/stayfixed/attach/write.py"
+before = """    targets = {tree: harness_targets(tree, checkouts[0], config) for tree in harnessed}
+    _refuse_unwithdrawable(root, recorded, trees, config, settings)
+    allow_removed = _withdraw_settings(root, settings)
+    rules_removed: list[str] = []
+    for rule in recorded.rules:
+        if fsops.is_file(root / rule):
+            fsops.remove_within(root, rule)
+            rules_removed.append(rule)"""
+after = """    _refuse_unwithdrawable(root, recorded, trees, config, settings)
+    allow_removed = _withdraw_settings(root, settings)
+    rules_removed: list[str] = []
+    for rule in recorded.rules:
+        if fsops.is_file(root / rule):
+            fsops.remove_within(root, rule)
+            rules_removed.append(rule)
+    targets = {tree: harness_targets(tree, checkouts[0], config) for tree in harnessed}"""
+reddens = [
+  "tests/attach/test_detach.py::test_a_main_checkout_tree_reached_through_a_symlink_refuses_before_anything_is_withdrawn[worktree]",
+]
+
+# The walk to every path the withdrawal removes resolves each tree's `paths.memory`, and up to
+# Python 3.12 `.resolve()` of a symlink loop raises `RuntimeError`, which that walk does not
+# answer: asked first, a checkout's own looping `paths.memory` ended `detach` in an internal error
+# where asking where a harness link may point refuses, naming the loop.
+[[mutation]]
+name = "detach walks the trees it withdraws before asking where a harness link may point"
+file = "src/stayfixed/attach/write.py"
+before = """    targets = {tree: harness_targets(tree, checkouts[0], config) for tree in harnessed}
+    _refuse_unwithdrawable(root, recorded, trees, config, settings)
+"""
+after = """    _refuse_unwithdrawable(root, recorded, trees, config, settings)
+    targets = {tree: harness_targets(tree, checkouts[0], config) for tree in harnessed}
+"""
+reddens = [
+  "tests/attach/test_detach.py::test_a_checkouts_own_paths_memory_that_is_a_symlink_loop_refuses_before_anything_is_withdrawn[lone-main-stood-in]",
+  "tests/attach/test_detach.py::test_a_checkouts_own_paths_memory_that_is_a_symlink_loop_refuses_before_anything_is_withdrawn[worktree-stood-in]",
 ]
 
 # `permissions.check` reduces `already_present` to a count because that list "comes out of the
@@ -360,8 +439,8 @@ file = "src/stayfixed/attach/write.py"
 # The block this moves runs from the anchor loop through the manifest's answer to the region read.
 # What it proves: `git` is asked before the first withdrawal, and a `git` that cannot run must not
 # strand a half-detached repository.
-before = "    checkouts = _checkouts(root)\n    for tree in checkouts:\n        harness_anchor(tree, home)\n    # The other home a harness may read a link under, asked here too, and best-effort: a home its\n    # anchor refuses is passed over with a note rather than refused, since `detach` is the one\n    # command that takes back what `attach` made under either.\n    other = _other_harness_home() if home is None else None\n    elsewhere: Path | None = None\n    notes: tuple[str, ...] = ()\n    if other is not None:\n        elsewhere, where = other\n        try:\n            for tree in checkouts:\n                harness_anchor(tree, elsewhere)\n        except Refusal:\n            elsewhere, notes = None, (_LEFT_UNDER.format(where=where),)\n    ignore_remainder = None if _footprint_owns_region(root) else _ignore_region_remainder(root)\n    # The `info/exclude` block is found above the first withdrawal for the same reason: `git`\n    # names the file and a region opened twice refuses, and both are knowable now. It is shared\n    # by every checkout while the ledger, the settings file and the `.codex/rules/` copies are\n    # each checkout's own, so it stays while another checkout still holds a ledger: taking it\n    # would show that checkout's settings file and rule copies in its `git status`.\n    kept = _another_attached(root, checkouts)\n    hidden = None if kept else exclude.withdrawn_block(root)\n    settings = _planned_settings(root, recorded)\n    _refuse_unwithdrawable(root, recorded, checkouts, config, settings)\n    allow_removed = _withdraw_settings(root, settings)"
-after = "    ignore_remainder = None if _footprint_owns_region(root) else _ignore_region_remainder(root)\n    settings = _planned_settings(root, recorded)\n    allow_removed = _withdraw_settings(root, settings)\n    checkouts = _checkouts(root)\n    for tree in checkouts:\n        harness_anchor(tree, home)\n    # The other home a harness may read a link under, asked here too, and best-effort: a home its\n    # anchor refuses is passed over with a note rather than refused, since `detach` is the one\n    # command that takes back what `attach` made under either.\n    other = _other_harness_home() if home is None else None\n    elsewhere: Path | None = None\n    notes: tuple[str, ...] = ()\n    if other is not None:\n        elsewhere, where = other\n        try:\n            for tree in checkouts:\n                harness_anchor(tree, elsewhere)\n        except Refusal:\n            elsewhere, notes = None, (_LEFT_UNDER.format(where=where),)\n    kept = _another_attached(root, checkouts)\n    hidden = None if kept else exclude.withdrawn_block(root)\n    _refuse_unwithdrawable(root, recorded, checkouts, config, settings)"
+before = "    checkouts = _checkouts(root)\n    for tree in checkouts:\n        harness_anchor(tree, home)\n    # The other home a harness may read a link under, asked here too, and best-effort: a home its\n    # anchor refuses is passed over with a note rather than refused, since `detach` is the one\n    # command that takes back what `attach` made under either.\n    other = _other_harness_home() if home is None else None\n    elsewhere: Path | None = None\n    notes: tuple[str, ...] = ()\n    if other is not None:\n        elsewhere, where = other\n        try:\n            for tree in checkouts:\n                harness_anchor(tree, elsewhere)\n        except Refusal:\n            elsewhere, notes = None, (_LEFT_UNDER.format(where=where),)\n    ignore_remainder = None if _footprint_owns_region(root) else _ignore_region_remainder(root)\n    # The `info/exclude` block is found above the first withdrawal for the same reason: `git`\n    # names the file and a region opened twice refuses, and both are knowable now. It is shared\n    # by every checkout while the ledger, the settings file and the `.codex/rules/` copies are\n    # each checkout's own, so it stays while another checkout still holds a ledger: taking it\n    # would show that checkout's settings file and rule copies in its `git status`.\n    kept = _another_attached(root, checkouts)\n    hidden = None if kept else exclude.withdrawn_block(root)\n    harnessed, trees = _reach(root, checkouts, kept=kept)\n    settings = _planned_settings(root, recorded)\n    # Where each checkout's harness link may point and be ours, asked here because it walks the\n    # owning checkout's `paths.memory` as well as the checkout's own, and while another ledger\n    # stands `_refuse_unwithdrawable` walks no tree but `--root`'s. Asked from inside the\n    # withdrawal, a main checkout whose `paths.memory` came to be reached through a symlink\n    # refused after the rule copies were gone. And asked before `_refuse_unwithdrawable`, which\n    # walks only checkouts asked here: it resolves each tree's `paths.memory` with no answer for\n    # a symlink loop, where `.resolve()` raises `RuntimeError` up to Python 3.12, and this\n    # question's one refusal names the loop.\n    targets = {tree: harness_targets(tree, checkouts[0], config) for tree in harnessed}\n    _refuse_unwithdrawable(root, recorded, trees, config, settings)\n    allow_removed = _withdraw_settings(root, settings)"
+after = "    ignore_remainder = None if _footprint_owns_region(root) else _ignore_region_remainder(root)\n    settings = _planned_settings(root, recorded)\n    allow_removed = _withdraw_settings(root, settings)\n    checkouts = _checkouts(root)\n    for tree in checkouts:\n        harness_anchor(tree, home)\n    # The other home a harness may read a link under, asked here too, and best-effort: a home its\n    # anchor refuses is passed over with a note rather than refused, since `detach` is the one\n    # command that takes back what `attach` made under either.\n    other = _other_harness_home() if home is None else None\n    elsewhere: Path | None = None\n    notes: tuple[str, ...] = ()\n    if other is not None:\n        elsewhere, where = other\n        try:\n            for tree in checkouts:\n                harness_anchor(tree, elsewhere)\n        except Refusal:\n            elsewhere, notes = None, (_LEFT_UNDER.format(where=where),)\n    kept = _another_attached(root, checkouts)\n    hidden = None if kept else exclude.withdrawn_block(root)\n    harnessed, trees = _reach(root, checkouts, kept=kept)\n    # Where each checkout's harness link may point and be ours, asked here because it walks the\n    # owning checkout's `paths.memory` as well as the checkout's own, and while another ledger\n    # stands `_refuse_unwithdrawable` walks no tree but `--root`'s. Asked from inside the\n    # withdrawal, a main checkout whose `paths.memory` came to be reached through a symlink\n    # refused after the rule copies were gone. And asked before `_refuse_unwithdrawable`, which\n    # walks only checkouts asked here: it resolves each tree's `paths.memory` with no answer for\n    # a symlink loop, where `.resolve()` raises `RuntimeError` up to Python 3.12, and this\n    # question's one refusal names the loop.\n    targets = {tree: harness_targets(tree, checkouts[0], config) for tree in harnessed}\n    _refuse_unwithdrawable(root, recorded, trees, config, settings)"
 reddens = [
   "tests/attach/test_detach.py::test_a_git_that_cannot_run_is_answered_before_anything_is_withdrawn",
 ]
@@ -1030,6 +1109,17 @@ reddens = [
   "tests/attach/test_write.py::test_the_block_keeps_what_an_earlier_attach_hid_when_the_grant_changes",
 ]
 
+# Detaching the main checkout while a worktree is attached keeps its link tree, which the
+# worktree's harness link points at; the line named the kept exclude block and not the tree.
+[[mutation]]
+name = "detach's line says nothing of the link tree it kept"
+file = "src/stayfixed/attach/commands.py"
+before = "        if removed.link_tree_kept\n"
+after = "        if False\n"
+reddens = [
+  "tests/attach/test_commands.py::test_detachs_line_names_the_link_tree_it_kept_for_another_checkout[main]",
+]
+
 # The exclude block is shared by every checkout, while each ledger, settings file and set of rule
 # copies is one checkout's. Detaching the main checkout took the block while a worktree was still
 # attached, and that worktree's settings file and rule copy showed in its `git status`.
@@ -1125,10 +1215,22 @@ reddens = [
 [[mutation]]
 name = "attach copies past an overlay rule that is not UTF-8"
 file = "src/stayfixed/attach/write.py"
-before = '            raise Failure(f"{source} is not UTF-8 text, so nothing was written") from None'
-after = "            continue"
+before = '            texts.append((target, source.read_text(encoding="utf-8")))'
+after = '            texts.append((target, source.read_text(encoding="utf-8", errors="replace")))'
 reddens = [
   "tests/attach/test_write.py::test_an_overlay_rule_that_is_not_utf8_stops_attach_before_it_writes",
+]
+
+# The rule file was printed raw beside its directory, which is printed through `quoted` when it
+# cannot be listed: one fault class, and the project's `codex/` carries `project.name`.
+[[mutation]]
+name = "an overlay rule file that cannot be read is printed raw"
+file = "src/stayfixed/attach/write.py"
+before = "        with fsops.reading(quoted(str(source)), _nothing_written):\n"
+after = "        with fsops.reading(source, _nothing_written):\n"
+reddens = [
+  "tests/attach/test_write.py::test_an_overlay_rule_file_that_cannot_be_read_fails_naming_it_as_its_directory_is_named[common-not-utf8]",
+  "tests/attach/test_write.py::test_an_overlay_rule_file_that_cannot_be_read_fails_naming_it_as_its_directory_is_named[project-unreadable]",
 ]
 
 # The trust record was first read by the index render and the harness link, after the settings,
@@ -1147,10 +1249,22 @@ reddens = [
 [[mutation]]
 name = "attach finds out the exclude file cannot be written by writing it"
 file = "src/stayfixed/attach/exclude.py"
-before = "    if not _writable(path):"
-after = "    if False:"
+before = "    if not _writable(path):\n        raise Refusal(UNWRITABLE.format(path=quoted(str(path))))\n    return ExcludeWrite(path, updated)"
+after = "    if False:\n        raise Refusal(UNWRITABLE.format(path=quoted(str(path))))\n    return ExcludeWrite(path, updated)"
 reddens = [
   "tests/attach/test_write.py::test_an_exclude_file_that_cannot_be_written_is_refused_by_name_before_the_first_write",
+]
+
+# `detach` withdraws the block by replacing or removing the exclude file in its directory, and a
+# `.git/info` this user cannot write was found out by doing it: after the settings file, the rule
+# copies and the link tree were withdrawn, with the ledger and the block left in place.
+[[mutation]]
+name = "detach finds out the exclude file cannot be written by writing it"
+file = "src/stayfixed/attach/exclude.py"
+before = "    if not _writable(path):\n        raise Refusal(UNWRITABLE.format(path=quoted(str(path))))\n    records = _lines(body)"
+after = "    if False:\n        raise Refusal(UNWRITABLE.format(path=quoted(str(path))))\n    records = _lines(body)"
+reddens = [
+  "tests/attach/test_detach.py::test_an_exclude_file_detach_cannot_write_is_refused_before_anything_is_withdrawn",
 ]
 
 [[mutation]]
@@ -1196,7 +1310,7 @@ reddens = [
 [[mutation]]
 name = "detach finds an escaping group by withdrawing the tree"
 file = "src/stayfixed/attach/write.py"
-before = """    for tree in checkouts:
+before = """    for tree in trees:
         base = contained(tree, config.paths.memory, allow_final_symlink=True)"""
 after = """    for tree in []:
         base = contained(tree, config.paths.memory, allow_final_symlink=True)"""
@@ -1236,11 +1350,31 @@ reddens = [
 name = "detach finds the exclude block after it has withdrawn the settings"
 file = "src/stayfixed/attach/write.py"
 before = """    hidden = None if kept else exclude.withdrawn_block(root)
+    harnessed, trees = _reach(root, checkouts, kept=kept)
     settings = _planned_settings(root, recorded)
-    _refuse_unwithdrawable(root, recorded, checkouts, config, settings)
+    # Where each checkout's harness link may point and be ours, asked here because it walks the
+    # owning checkout's `paths.memory` as well as the checkout's own, and while another ledger
+    # stands `_refuse_unwithdrawable` walks no tree but `--root`'s. Asked from inside the
+    # withdrawal, a main checkout whose `paths.memory` came to be reached through a symlink
+    # refused after the rule copies were gone. And asked before `_refuse_unwithdrawable`, which
+    # walks only checkouts asked here: it resolves each tree's `paths.memory` with no answer for
+    # a symlink loop, where `.resolve()` raises `RuntimeError` up to Python 3.12, and this
+    # question's one refusal names the loop.
+    targets = {tree: harness_targets(tree, checkouts[0], config) for tree in harnessed}
+    _refuse_unwithdrawable(root, recorded, trees, config, settings)
     allow_removed = _withdraw_settings(root, settings)"""
-after = """    settings = _planned_settings(root, recorded)
-    _refuse_unwithdrawable(root, recorded, checkouts, config, settings)
+after = """    harnessed, trees = _reach(root, checkouts, kept=kept)
+    settings = _planned_settings(root, recorded)
+    # Where each checkout's harness link may point and be ours, asked here because it walks the
+    # owning checkout's `paths.memory` as well as the checkout's own, and while another ledger
+    # stands `_refuse_unwithdrawable` walks no tree but `--root`'s. Asked from inside the
+    # withdrawal, a main checkout whose `paths.memory` came to be reached through a symlink
+    # refused after the rule copies were gone. And asked before `_refuse_unwithdrawable`, which
+    # walks only checkouts asked here: it resolves each tree's `paths.memory` with no answer for
+    # a symlink loop, where `.resolve()` raises `RuntimeError` up to Python 3.12, and this
+    # question's one refusal names the loop.
+    targets = {tree: harness_targets(tree, checkouts[0], config) for tree in harnessed}
+    _refuse_unwithdrawable(root, recorded, trees, config, settings)
     allow_removed = _withdraw_settings(root, settings)
     hidden = None if kept else exclude.withdrawn_block(root)"""
 reddens = [
@@ -1491,8 +1625,8 @@ reddens = [
 [[mutation]]
 name = "doctor stops telling a real directory from a link at the harness memory path"
 file = "src/stayfixed/attach/doctor.py"
-before = "    if fsops.is_dir(harness) and not fsops.is_symlink(harness):"
-after = "    if fsops.is_dir(harness) and not fsops.exists(harness):"
+before = "    if fsops.is_dir(harness):\n        return _REAL_DIRECTORY\n"
+after = "    if fsops.is_dir(harness):\n        return _ABSENT\n"
 reddens = [
   "tests/attach/test_doctor.py::test_a_memory_path_that_is_a_real_directory_is_red_rather_than_ok",
 ]
@@ -1504,11 +1638,68 @@ reddens = [
 [[mutation]]
 name = "doctor stops asking what the harness memory path points at"
 file = "src/stayfixed/attach/doctor.py"
-before = '        if harness.resolve() == store.path.resolve():'
-after = '        if True:'
+before = "    if reached is not None and reached not in targets:  # links-elsewhere"
+after = "    if False:  # links-elsewhere"
 reddens = [
   "tests/attach/test_doctor.py::test_a_harness_link_pointing_at_an_unrelated_directory_is_never_green",
-  "tests/attach/test_doctor.py::test_a_dangling_harness_link_is_never_green",
+]
+
+# `attach` points every checkout's harness link at the owning checkout's tree, and the row compared
+# a linked worktree's with the worktree's own, so a worktree attached the ordinary way read red.
+[[mutation]]
+name = "doctor compares a worktree's harness link with that worktree's own tree"
+file = "src/stayfixed/attach/doctor.py"
+before = "        targets = harness_targets(context.root, owner, context.config)"
+after = "        targets = harness_targets(context.root, context.root, context.config)"
+reddens = [
+  "tests/attach/test_doctor.py::test_a_normally_attached_linked_worktree_is_ok",
+]
+
+# Where a harness link may point is asked of the owning checkout's `paths.memory` too, and a
+# directory on the way to it that became a symlink makes that question a refusal. Caught as a `git`
+# `Failure` alone, it left the row as "this check could not run", red, remedy "report this".
+[[mutation]]
+name = "doctor lets a refusal out of asking where a harness link may point"
+file = "src/stayfixed/attach/doctor.py"
+before = "    except Refusal as refused:  # targets-unaskable"
+after = "    except OSError as refused:  # targets-unaskable"
+reddens = [
+  "tests/attach/test_doctor.py::test_a_linked_worktree_whose_main_checkout_tree_is_reached_through_a_symlink_warns",
+  "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[targets-unaskable]",
+]
+
+# A dangling link resolves to the path it names, and once the owning checkout's tree is gone that
+# path is one the row recognises: compared before it is asked whether it reaches anything, a
+# worktree whose link reads nothing was green.
+[[mutation]]
+name = "doctor compares a dangling harness link before asking whether it reaches anything"
+file = "src/stayfixed/attach/doctor.py"
+before = "        return _LINK if fsops.exists(harness) else _DANGLING"
+after = "        return _LINK"
+reddens = [
+  "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[tree-gone-links-dangle]",
+]
+
+# Where a real directory sits at the harness memory path, `attach` takes the settings-file fallback,
+# and the harness reads the store through it; the row looked at the directory alone and was red,
+# telling the owner to remove it.
+[[mutation]]
+name = "doctor reads the real directory at the harness memory path without the settings fallback"
+file = "src/stayfixed/attach/doctor.py"
+before = "        fallback = _settings_fallback(context.root)\n"
+after = "        fallback = _Fallback()\n"
+reddens = [
+  "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[fallback-approved]",
+]
+
+# That directory can hold notes the harness wrote on its own; `attach` says to move it aside.
+[[mutation]]
+name = "doctor tells the owner to remove a real directory at the harness memory path"
+file = "src/stayfixed/attach/doctor.py"
+before = "        f\"move {harness} aside, then run `{ATTACH_STORE}` again\","
+after = "        f\"remove {harness} and run `{ATTACH_STORE}`\","
+reddens = [
+  "tests/attach/test_doctor.py::test_a_real_directory_at_the_harness_path_is_never_told_to_be_removed",
 ]
 
 # A repository could force a red row and exit 1 by committing an unreadable ledger: `ledger()`
@@ -1704,12 +1895,58 @@ reddens = [
 [[mutation]]
 name = "doctor calls a harness link it could not check green"
 file = "src/stayfixed/attach/doctor.py"
-before = """                WARN,
-                "a link, and the note store does not resolve, so what it points at could not \""""
-after = """                OK,
-                "a link, and the note store does not resolve, so what it points at could not \""""
+before = "    return _Verdict(  # tree-there-not-resolving\n        WARN,\n        f\"{words}, and the note store does not resolve, so {unchecked} could not be checked\","
+after = "    return _Verdict(  # tree-there-not-resolving\n        \"ok\",\n        f\"{words}, and the note store does not resolve, so {unchecked} could not be checked\","
 reddens = [
-  "tests/attach/test_doctor.py::test_a_harness_link_beside_a_store_that_does_not_resolve_warns_and_says_nothing_was_checked",
+  "tests/attach/test_doctor.py::test_a_harness_link_beside_a_store_that_does_not_resolve_is_never_green_and_names_the_cause[tree-symlinked]",
+  "tests/attach/test_doctor.py::test_a_harness_link_beside_a_store_that_does_not_resolve_is_never_green_and_names_the_cause[groups-gone]",
+  "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[tree-there-not-resolving]",
+]
+
+# With no store there is no trust record to ask, and the row fell through to "not in place, which
+# is what this store's trust record asks for", green, beside a ledger whose tree was gone.
+[[mutation]]
+name = "doctor reads a store that does not resolve as one whose trust record asks for no link"
+file = "src/stayfixed/attach/doctor.py"
+before = "    if store is None:  # tree-gone, tree-there-not-resolving\n        return _unresolved(context, checkout, shape, words, relink)"
+after = "    if store is None:  # tree-gone, tree-there-not-resolving\n        return _Verdict(OK, \"not in place, which is what this store's trust record asks for\", \"\")"
+reddens = [
+  "tests/attach/test_doctor.py::test_a_ledger_whose_link_tree_is_gone_warns_and_names_attach",
+  "tests/attach/test_doctor.py::test_no_harness_link_beside_a_tree_that_does_not_resolve_is_never_green[groups-gone]",
+]
+
+# Every harness fact a module spells outside the registry is pardoned, counted, by the item of the
+# registry's docstring that lists it: the local settings file put back as a literal is one more.
+[[mutation]]
+name = "doctor spells the local settings file again"
+file = "src/stayfixed/attach/doctor.py"
+before = "    points = f\"{plain}, and {FALLBACK_KEY} in {fallback.where} points the harness\""
+after = "    points = f\"{plain}, and {FALLBACK_KEY} in .claude/settings.local.json points the harness\""
+reddens = [
+  "tests/test_harnesses.py::test_every_harness_fact_outside_the_registry_is_listed_where_the_registry_says",
+]
+
+# Beside a note store that does not resolve, anything at the harness memory path that was not a
+# link was "a real directory beside the autoMemoryDirectory fallback", a file included.
+[[mutation]]
+name = "doctor calls anything at the harness memory path that is no link a real directory"
+file = "src/stayfixed/attach/doctor.py"
+before = "    if fsops.is_dir(harness):\n        return _REAL_DIRECTORY\n"
+after = "    if fsops.exists(harness):\n        return _REAL_DIRECTORY\n"
+reddens = [
+  "tests/attach/test_doctor.py::test_a_file_at_the_harness_path_beside_a_store_that_does_not_resolve_is_no_directory",
+]
+
+# A tree that is gone is one `attach` rebuilds; the row sent the reader to `memory index --check`,
+# which only says the store is missing.
+[[mutation]]
+name = "doctor sends a reader whose link tree is gone to memory index --check"
+file = "src/stayfixed/attach/doctor.py"
+before = "    if gone:  # tree-gone\n"
+after = "    if False:  # tree-gone\n"
+reddens = [
+  "tests/attach/test_doctor.py::test_a_ledger_whose_link_tree_is_gone_warns_and_names_attach",
+  "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[tree-gone-no-links]",
 ]
 
 # `read_binding` refuses for two different reasons and `origin_remote` raises for a third, and all
@@ -2409,9 +2646,42 @@ reddens = ["tests/attach/test_links.py::test_attaching_from_a_linked_worktree_ta
 [[mutation]]
 name = "attach says the harness link waits by a worktree's own store"
 file = "src/stayfixed/attach/write.py"
-before = "    elif _harness_waits(owner, config, machine=machine):"
-after = "    elif _harness_waits(root, config, machine=machine):"
+before = "    elif (waits := _harness_waits(owner, config, machine=machine)) is not None:"
+after = "    elif (waits := _harness_waits(root, config, machine=machine)) is not None:"
 reddens = ["tests/attach/test_links.py::test_attaching_from_a_linked_worktree_says_the_link_waits_only_when_it_does"]
+
+# Why the gate kept the harness link back reads the store's trust record and digests its notes; it
+# was asked on every attach and thrown away wherever a fallback line was said instead.
+[[mutation]]
+name = "attach asks why the harness link waits on every run"
+file = "src/stayfixed/attach/write.py"
+before = "    if links.revoked:\n        notes.append(HARNESS_WITHDREW.format(count=len(links.revoked)))\n"
+after = "    _harness_waits(owner, config, machine=machine)\n    if links.revoked:\n        notes.append(HARNESS_WITHDREW.format(count=len(links.revoked)))\n"
+reddens = [
+  "tests/attach/test_links.py::test_an_attach_that_records_the_fallback_never_asks_why_the_link_waits",
+]
+
+# Both close the gate, and only a lapsed approval withdraws the links an earlier run made: one line
+# appended to one note withdrew every checkout's harness link under a sentence that read as a store
+# nobody had approved.
+[[mutation]]
+name = "attach says a lapsed approval was never given"
+file = "src/stayfixed/attach/write.py"
+before = "    return HARNESS_LAPSED if gate == GATE_LAPSED else HARNESS_WAITS"
+after = "    return HARNESS_WAITS"
+reddens = [
+  "tests/attach/test_commands.py::test_a_changed_store_says_the_approval_lapsed_and_counts_the_withdrawn_links",
+]
+
+# The harness links a run withdrew were counted in `--json` and said nowhere in its line.
+[[mutation]]
+name = "attach withdraws harness links without saying so"
+file = "src/stayfixed/attach/write.py"
+before = "    if links.revoked:\n        notes.append(HARNESS_WITHDREW.format(count=len(links.revoked)))"
+after = "    if False:\n        notes.append(HARNESS_WITHDREW.format(count=len(links.revoked)))"
+reddens = [
+  "tests/attach/test_commands.py::test_a_changed_store_says_the_approval_lapsed_and_counts_the_withdrawn_links",
+]
 
 [[mutation]]
 name = "the unavailable fallback is asked of a worktree's own store"
@@ -2879,4 +3149,251 @@ before = "            if unasked.cause is not Unasked.GONE:"
 after = "            if True:"
 reddens = [
   "tests/attach/test_write.py::test_a_worktree_removed_while_attach_walks_is_skipped_and_the_rest_is_linked",
+]
+
+# An overlay `codex/` directory this user cannot list, or whose entries cannot be asked about, is
+# the overlay holding something this user cannot read, as an unreadable rule file inside it is: a
+# failure naming the directory, never an internal error. The exit code alone would not tell the
+# two apart; the test's `failed:` line does.
+[[mutation]]
+name = "an overlay codex directory that cannot be listed is an internal error"
+file = "src/stayfixed/attach/permissions.py"
+before = '''        except OSError as exc:
+            raise Failure(
+                f"{quoted(str(source))} cannot be listed'''
+after = '''        except ValueError as exc:
+            raise Failure(
+                f"{quoted(str(source))} cannot be listed'''
+reddens = [
+  "tests/attach/test_write.py::test_an_unlistable_codex_directory_fails_and_writes_nothing[common-unlistable]",
+  "tests/attach/test_write.py::test_an_unlistable_codex_directory_fails_and_writes_nothing[common-unsearchable]",
+  "tests/attach/test_write.py::test_an_unlistable_codex_directory_fails_and_writes_nothing[project-unlistable]",
+  "tests/attach/test_write.py::test_an_unlistable_codex_directory_fails_and_writes_nothing[project-unsearchable]",
+]
+
+# With the owning checkout's tree gone every checkout's harness link dangles, and the row asked
+# whether the store resolves first: the main checkout warned while a linked worktree said red, and
+# `doctor` exits non-zero only on red. A link that reaches nothing is red from every checkout.
+[[mutation]]
+name = "doctor asks whether the store resolves before whether the harness link dangles"
+file = "src/stayfixed/attach/doctor.py"
+before = "    shape = _shape_of(harness)\n    if shape == _DANGLING:  # dangling\n"
+after = "    shape = _shape_of(harness)\n    if shape == _DANGLING and _store_of(context, answers, _owner(context)) is None:\n        return _unresolved(context, _owner(context), _LINK, \"a link\", relink)\n    if shape == _DANGLING:  # dangling\n"
+reddens = [
+  "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[tree-gone-links-dangle]",
+]
+
+# `autoMemoryDirectory` in `.claude/settings.local.json` points the harness at the store, and the
+# file is one a clone can commit: read as in place without asking the gate, a store whose approval
+# lapsed, or one nobody approved, was read by the harness while the row said ok. `attach` withdraws
+# the key in exactly that state.
+[[mutation]]
+name = "doctor reads the settings fallback as in place without asking the gate"
+file = "src/stayfixed/attach/doctor.py"
+before = "    if fallback.held and gate != GATE_OPEN:  # fallback-unapproved\n"
+after = "    if False:  # fallback-unapproved\n"
+reddens = [
+  "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[written-fallback-beside-nothing-never-approved]",
+  "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[fallback-lapsed]",
+  "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[fallback-never-approved]",
+]
+
+# The fallback's value is the repository's, so it is compared as written with the one value
+# `attach` writes: resolved, a committed value naming a committed link to the store read as the store.
+[[mutation]]
+name = "doctor resolves the directory the settings fallback names"
+file = "src/stayfixed/attach/doctor.py"
+before = "    if fallback.held and fallback.value != written:\n"
+after = "    if fallback.held and __import__(\"os\").path.realpath(str(fallback.value)) != written:\n"
+reddens = [
+  "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[fallback-through-an-alias]",
+]
+
+# A fallback naming anything but the store `attach` writes there is no fallback: the real directory
+# keeps its red.
+[[mutation]]
+name = "doctor reads a fallback naming another directory as the store"
+file = "src/stayfixed/attach/doctor.py"
+before = "    if fallback.held and fallback.value != written:\n"
+after = "    if False:\n"
+reddens = [
+  "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[fallback-elsewhere-beside-a-link]",
+  "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[fallback-through-an-alias]",
+]
+
+# `attach` writes one value into the fallback, the owning checkout's store, resolved. Compared with
+# every directory a harness link may point at instead, a checkout's own `paths.memory` followed
+# through a link is one of them, so a branch committing that link and a key naming where it leads
+# read ok for a directory nobody approved.
+[[mutation]]
+name = "doctor compares the settings fallback with every directory a harness link may point at"
+file = "src/stayfixed/attach/doctor.py"
+before = "    if fallback.held and fallback.value != written:\n"
+after = "    if fallback.held and fallback.value not in {str(target) for target in targets}:\n"
+reddens = [
+  "tests/attach/test_doctor.py::test_a_fallback_naming_a_directory_a_branch_chose_is_never_ok[a-link-to-it]",
+]
+
+# An approval that lapsed closes the gate, and `attach` withdraws every link: the row read that as
+# "what this store's trust record asks for", green, and no row said the approval lapsed.
+[[mutation]]
+name = "doctor reads a lapsed approval as one the trust record asks for"
+file = "src/stayfixed/attach/doctor.py"
+before = "    if gate == GATE_LAPSED:  # lapsed-links-withdrawn\n"
+after = "    if False:  # lapsed-links-withdrawn\n"
+reddens = [
+  "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[lapsed-links-withdrawn]",
+]
+
+# A link to the store reads notes nobody approved once the approval lapses, or where none was
+# given, as surely as the settings fallback does, and the row read the link green while it warned
+# for the fallback.
+[[mutation]]
+name = "doctor reads a link to the store as ok without asking the gate"
+file = "src/stayfixed/attach/doctor.py"
+before = "        if gate == GATE_OPEN:  # attached\n"
+after = "        if True:  # attached\n"
+reddens = [
+  "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[link-lapsed]",
+  "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[link-never-approved]",
+]
+
+# A worktree's harness link the `SessionStart` re-link points at the worktree's own tree reads that
+# tree's store: judged at the main checkout's, a worktree reading its own tree was told the harness
+# read nothing once the main checkout's tree went.
+[[mutation]]
+name = "doctor judges a worktree's link to its own tree by the main checkout's store"
+file = "src/stayfixed/attach/doctor.py"
+before = "    checkout = context.root if own else owner\n"
+after = "    checkout = owner\n"
+reddens = [
+  "tests/attach/test_doctor.py::test_a_worktree_reading_its_own_tree_is_not_told_it_reads_nothing_when_the_main_tree_goes",
+]
+
+# A linked worktree whose own tree does not resolve resolves through the main checkout, and that
+# store is not the one the harness reads through a link to the worktree's emptied tree: taken for
+# it, the row read green while the harness read nothing.
+[[mutation]]
+name = "doctor takes the main checkout's store for a worktree's own tree that does not resolve"
+file = "src/stayfixed/attach/doctor.py"
+before = "    if store is not None and reached is not None and store.path.resolve() != reached:\n"
+after = "    if False:\n"
+reddens = [
+  "tests/attach/test_doctor.py::test_a_worktree_harness_link_to_its_own_emptied_tree_is_never_green",
+]
+
+# The harness reads the directory `autoMemoryDirectory` names whatever stands at the harness memory
+# path, and `.claude/settings.local.json` is a file a branch can commit: read beside a real
+# directory alone, a committed key naming any directory read green beside a link or beside nothing.
+[[mutation]]
+name = "doctor reads the settings fallback beside a real directory alone"
+file = "src/stayfixed/attach/doctor.py"
+before = "        fallback = _settings_fallback(context.root)\n"
+after = "        fallback = _settings_fallback(context.root) if _shape_of(harness) == _REAL_DIRECTORY else _Fallback()\n"
+reddens = [
+  "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[fallback-elsewhere-beside-a-link]",
+  "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[fallback-elsewhere-beside-nothing]",
+]
+
+# A fallback naming another directory is red whether or not the store resolves: asked only once the
+# store had resolved, a gone link tree answered first, with a warning that the harness reads
+# nothing, while it read the directory the key named.
+[[mutation]]
+name = "doctor lets a gone link tree answer before a fallback naming another directory"
+file = "src/stayfixed/attach/doctor.py"
+before = "    if fallback.held and fallback.value != written:\n"
+after = "    if fallback.held and fallback.value != written and _store_of(context, answers, owner) is not None:\n"
+reddens = [
+  "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[fallback-elsewhere-tree-gone]",
+]
+
+# `attach` withdraws a harness link only where it points at the main checkout's tree, so a remedy
+# sending a worktree whose link reaches its own tree to `attach` left the link standing.
+[[mutation]]
+name = "doctor leaves a worktree's link to its own tree to attach"
+file = "src/stayfixed/attach/doctor.py"
+before = "            if own\n"
+after = "            if False\n"
+reddens = [
+  "tests/attach/test_doctor.py::test_a_worktree_link_to_its_own_tree_nobody_approved_is_to_be_removed_and_not_left_to_attach",
+]
+
+# The harness reads `autoMemoryDirectory` from the shared `.claude/settings.json` too, under the
+# local file; read from the local file alone, a key a branch committed there read green.
+[[mutation]]
+name = "doctor reads the settings fallback from the local settings file alone"
+file = "src/stayfixed/attach/doctor.py"
+before = "    for relative in (*CLAUDE.local_settings, *CLAUDE.settings):\n"
+after = "    for relative in CLAUDE.local_settings:\n"
+reddens = [
+  "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[shared-fallback-beside-a-link]",
+  "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[shared-fallback-beside-nothing]",
+]
+
+# The harness expands a leading `~/`, so a value that is not an absolute path still names a
+# directory; read as no key, it was green beside a link or nothing.
+[[mutation]]
+name = "doctor reads a settings fallback that is no absolute path as no key"
+file = "src/stayfixed/attach/doctor.py"
+before = "    return document.get(FALLBACK_KEY, _NO_KEY)"
+after = "    return document.get(FALLBACK_KEY, _NO_KEY) if str(document.get(FALLBACK_KEY, \"/\")).startswith(\"/\") else _NO_KEY"
+reddens = [
+  "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[tilde-fallback-beside-a-link]",
+]
+
+# The harness reads more than strict JSON, so a settings file this cannot parse may still point it
+# elsewhere: read as no key, it was green.
+[[mutation]]
+name = "doctor reads a settings file it cannot parse as one with no fallback"
+file = "src/stayfixed/attach/doctor.py"
+before = "    except (ValueError, RecursionError):\n        return _CANNOT_TELL\n"
+after = "    except (ValueError, RecursionError):\n        return _NO_KEY\n"
+reddens = [
+  "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[settings-unparseable-beside-a-link]",
+]
+
+# A green answer beside a settings file that cannot be read as settings is one nobody checked.
+[[mutation]]
+name = "doctor reads green beside a settings file it could not read"
+file = "src/stayfixed/attach/doctor.py"
+before = "    if verdict.status != OK or not fallback.unread:\n"
+after = "    if True:\n"
+reddens = [
+  "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[settings-unparseable-beside-a-link]",
+  "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[shared-settings-not-an-object-beside-nothing]",
+]
+
+# With the written fallback in place and nothing at the harness memory path, the harness reads the
+# store through the key: "the harness sees no memory here" was false there.
+[[mutation]]
+name = "doctor says the harness sees no memory beside the fallback attach writes"
+file = "src/stayfixed/attach/doctor.py"
+before = "    if fallback.held:  # fallback-instead-of-a-link\n"
+after = "    if False:  # fallback-instead-of-a-link\n"
+reddens = [
+  "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[written-fallback-beside-nothing-approved]",
+]
+
+# The gate is asked of the store `attach` asks it of, the owning checkout's: asked of a linked
+# worktree's own, which nothing approves, a worktree read green where the main checkout warned.
+[[mutation]]
+name = "doctor asks the gate of a worktree's own store"
+file = "src/stayfixed/attach/doctor.py"
+before = "    if checkout.resolve() == context.root.resolve():\n        return answers.store(context)\n"
+after = "    if True:\n        return answers.store(context)\n"
+reddens = [
+  "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[no-links-approved]",
+  "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[tree-gone-no-links]",
+]
+
+# A trust record that cannot be read is a refusal of the gate's, and let out of the row it was
+# "this check could not run", red, "report this".
+[[mutation]]
+name = "doctor lets an unreadable trust record out of the attached row"
+file = "src/stayfixed/attach/doctor.py"
+before = "    except Refusal:  # trust-record-unreadable\n"
+after = "    except OSError:  # trust-record-unreadable\n"
+reddens = [
+  "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[trust-record-unreadable]",
+  "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[link-trust-record-unreadable]",
 ]

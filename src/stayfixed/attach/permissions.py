@@ -38,6 +38,7 @@ from stayfixed.harnesses import CLAUDE
 from stayfixed.jsonobject import WRITTEN_PAST
 from stayfixed.memory.api import PROJECTS
 from stayfixed.overlay.api import COMMON_CLAUDE, COMMON_CODEX
+from stayfixed.printed import quoted
 from stayfixed.scaffold import (
     EntriesError,
     ParserLimitError,
@@ -226,17 +227,33 @@ def codex_rules(binding: Binding) -> tuple[tuple[str, Path], ...]:
     This project's own `codex/` is read second, so a file it shares a name with in `common/` is
     the one that lands; the pair is returned rather than two lists so the caller cannot pair
     them up differently from the way the write does.
+
+    A directory this user cannot list, or one whose entries cannot be asked about (`0o444`: the
+    listing works and `stat` of an entry does not), fails as a rule file that cannot be read
+    does in `write._codex_rule_texts`: one fault class, the overlay holding something this user
+    cannot read, and one classification. The project's directory carries `project.name`, so the
+    path prints through `quoted`.
     """
     found: dict[str, Path] = {}
     for source in (
         binding.overlay / COMMON_CODEX,
         binding.overlay / PROJECTS / binding.project / PROJECT_CODEX,
     ):
-        if not fsops.is_dir(source):
-            continue
-        for rule in sorted(source.iterdir()):
-            if fsops.is_file(rule) and not rule.name.startswith("."):
-                found[f"{CODEX_RULES}/{rule.name}"] = rule
+        try:
+            if not fsops.is_dir(source):
+                continue
+            rules = [
+                rule
+                for rule in sorted(source.iterdir())
+                if fsops.is_file(rule) and not rule.name.startswith(".")
+            ]
+        except OSError as exc:
+            raise Failure(
+                f"{quoted(str(source))} cannot be listed ({fsops.said(exc)}), "
+                "so nothing was written"
+            ) from exc
+        for rule in rules:
+            found[f"{CODEX_RULES}/{rule.name}"] = rule
     return tuple(found.items())
 
 

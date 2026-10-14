@@ -8,6 +8,7 @@ the owner wrote by hand — which is worse than removing none.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 from collections.abc import Callable
 from pathlib import Path, PurePosixPath
@@ -22,18 +23,29 @@ from stayfixed.config.layout import IGNORE_BODY, IGNORE_REGION
 from stayfixed.errors import Failure, Refusal
 from stayfixed.memory.api import harness_memory_path, resolve
 from stayfixed.memory.trust import record
+from stayfixed.printed import quoted
 from stayfixed.project.init import init
 from stayfixed.project.uninstall import uninstall
 from stayfixed.scaffold import MANIFEST_PATH, Kind, Location, Manifest, Record, digest
 from stayfixed.scaffold.regions import RegionError, Style, extract, markers, upsert
 from tests.attach.test_binding import DEFAULT_MEMORY
-from tests.attach.test_links import _attach, _bound, _config
+from tests.attach.test_links import _attach, _bound, _config, _trusted
 from tests.attach.test_write import SETTINGS
 from tests.gitfixture import git
 from tests.parserlimits import LONG_NUMBER, NESTED, PAST_ENCODING, overflowing_indent
-from tests.pathfaults import ROOT_SEARCHES_EVERYTHING, unsearchable
+from tests.pathfaults import (
+    LOOPS_RAISE_ONLY_BEFORE_3_13,
+    ROOT_SEARCHES_EVERYTHING,
+    symlink_loop_at,
+    unsearchable,
+)
 from tests.runners import LsRemote, git_that_cannot_run
-from tests.snapshot import assert_snapshot_changed, assert_snapshot_unchanged, snapshot
+from tests.snapshot import (
+    assert_snapshot_changed,
+    assert_snapshot_unchanged,
+    snapshot,
+    tree_entries,
+)
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
@@ -181,6 +193,253 @@ def test_detach_withdraws_the_link_tree_from_every_worktree(tmp_path: Path) -> N
     assert (side / "docs" / "memory" / "developer").is_symlink()
     _detach(root, machine, home)
     assert not (side / "docs" / "memory" / "developer").is_symlink()
+
+
+# --- a checkout another ledger still serves stays attached -----------------------------------
+
+
+def _both_attached(tmp_path: Path) -> tuple[Path, Path, Path, Path, Path]:
+    """The main checkout attached, its store approved, and a linked worktree attached after it,
+    each with its harness memory link made by `attach` itself: the main checkout's to its own
+    `paths.memory`, the worktree's to the main checkout's, which is where `attach` points every
+    checkout's link. Asserted here, so no case below asserts about links that were never made.
+    Returns `(root, side, store, machine, home)`."""
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2])
+    side = tmp_path / "side"
+    git(root, "worktree", "add", "-q", str(side), "-b", "side")
+    home = tmp_path / "home"
+    _attach(root, store, machine, home)
+    _trusted(root, machine)
+    _attach(root, store, machine, home)
+    _attach(side, store, machine, home)
+    assert (root / LEDGER).is_file() and (side / LEDGER).is_file()
+    for checkout in (root, side):
+        harness = harness_memory_path(checkout, home)
+        assert harness.is_symlink() and harness.exists(), checkout
+        assert harness.resolve() == (root / DEFAULT_MEMORY).resolve()
+        assert (checkout / DEFAULT_MEMORY / "developer").is_symlink()
+    return root, side, store, machine, home
+
+
+def _dangling_under(home: Path) -> list[Path]:
+    """Every link under the home's `.claude/projects/` that resolves to nothing."""
+    found: list[Path] = []
+    for dirpath, dirnames, filenames in os.walk(home / ".claude" / "projects"):
+        for name in (*dirnames, *filenames):
+            path = Path(dirpath) / name
+            if path.is_symlink() and not path.exists():
+                found.append(path)
+    return found
+
+
+def test_detach_in_a_worktree_leaves_the_attached_main_checkout_whole(tmp_path: Path) -> None:
+    # The main checkout attached, a worktree attached after it, and `detach` run in the worktree:
+    # the main checkout still holds its ledger, and `detach` took its link tree and its harness
+    # link anyway, leaving it half attached; and the worktree's own harness link, which points at
+    # the main checkout's tree, was compared with the worktree's tree, never matched, and stayed
+    # behind dangling. Mutation (oracle): `mutations/`'s "detach withdraws every checkout's tree
+    # while another ledger still serves one" -> the main checkout's tree goes.
+    root, side, _, machine, home = _both_attached(tmp_path)
+    _detach(side, machine, home)
+    assert (root / DEFAULT_MEMORY / "developer").is_symlink()
+    assert harness_memory_path(root, home).exists()
+    assert (root / LEDGER).is_file()
+    assert not os.path.lexists(harness_memory_path(side, home))
+    assert not (side / LEDGER).exists()
+    assert not (side / DEFAULT_MEMORY / "developer").is_symlink()
+    assert _dangling_under(home) == []
+
+
+def test_detach_in_the_main_checkout_leaves_an_attached_worktree_whole(tmp_path: Path) -> None:
+    # The other direction. The main checkout's tree is what the worktree's harness link points
+    # at, so while the worktree's ledger stands it stays; only the main checkout's own harness
+    # link, ledger, settings and rule copies go. A later `attach` anywhere rebuilds that tree
+    # first, so keeping it loses nothing. Mutation (oracle): `mutations/`'s "detach takes the
+    # owning checkout's tree while another ledger still serves it" -> the main checkout's tree
+    # goes.
+    root, side, _, machine, home = _both_attached(tmp_path)
+    _detach(root, machine, home)
+    assert (root / DEFAULT_MEMORY / "developer").is_symlink()
+    assert not os.path.lexists(harness_memory_path(root, home))
+    assert not (root / LEDGER).exists()
+    assert (side / DEFAULT_MEMORY / "developer").is_symlink()
+    assert harness_memory_path(side, home).exists()
+    assert (side / LEDGER).is_file()
+    assert _dangling_under(home) == []
+
+
+def _relinked_to_its_own_tree(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
+    """`_both_attached`, with the worktree's harness memory link then made the way the
+    `SessionStart` re-link makes it: `memory.worktree.link` handed the worktree's own store, which
+    points the link at the worktree's own `paths.memory` rather than at the main checkout's. The
+    gate that link asks is the worktree's own store's, so that store is approved first. Returns
+    `(root, side, machine, home)`."""
+    from stayfixed.memory.api import MakeUnder, link
+
+    root, side, _, machine, home = _both_attached(tmp_path)
+    config = _config(side, machine)
+    own = resolve(side, config, machine=machine)
+    assert own is not None
+    record(own, config)
+    link(side, own, config, harness=MakeUnder(home))
+    harness = harness_memory_path(side, home)
+    # Non-vacuous: the link is the worktree's own tree now, the second directory a harness link
+    # may point at and be stayfixed's.
+    assert harness.is_symlink() and harness.exists()
+    assert harness.resolve() == (side / DEFAULT_MEMORY).resolve()
+    assert harness.resolve() != (root / DEFAULT_MEMORY).resolve()
+    return root, side, machine, home
+
+
+def test_detach_withdraws_a_worktree_harness_link_the_session_start_relink_made(
+    tmp_path: Path,
+) -> None:
+    # A worktree's harness link is `attach`'s when it points at the main checkout's tree or at the
+    # worktree's own, which is where the `SessionStart` re-link points it. Compared with the main
+    # checkout's alone, the re-linked one was left standing and, once the worktree's tree went,
+    # dangling. Mutation (oracle): `mutations/`'s "harness_targets names the owning checkout's
+    # tree alone" -> the link stays and dangles.
+    root, side, machine, home = _relinked_to_its_own_tree(tmp_path)
+    _detach(side, machine, home)
+    assert not os.path.lexists(harness_memory_path(side, home))
+    assert _dangling_under(home) == []
+    assert harness_memory_path(root, home).exists()
+
+
+@pytest.mark.parametrize("run_in", ["main", "worktree", "lone"])
+def test_a_second_detach_exits_one_and_writes_nothing(tmp_path: Path, run_in: str) -> None:
+    # Run twice in one checkout: the first takes that checkout's ledger, so the second has nothing
+    # to reverse and fails (exit 1) naming the missing ledger, with every checkout and every
+    # harness link exactly as the first left them. From the main checkout and from the worktree
+    # while the other is attached, and from a lone checkout, where the first takes everything.
+    if run_in == "lone":
+        root, store, machine = _bound(tmp_path)
+        _grant(store.parents[2])
+        home = tmp_path / "home"
+        _attach(root, store, machine, home)
+        _trusted(root, machine)
+        _attach(root, store, machine, home)
+        assert harness_memory_path(root, home).exists()
+        checkouts: tuple[Path, ...] = (root,)
+        target = root
+    else:
+        root, side, _, machine, home = _both_attached(tmp_path)
+        checkouts = (root, side)
+        target = root if run_in == "main" else side
+    _detach(target, machine, home)
+    before = tree_entries(*checkouts, home)
+    # Non-vacuous: the walk sees what the first left — the other checkout's tree and harness
+    # link, and its own tree's directory where it was the main checkout's.
+    if run_in != "lone":
+        other = side if run_in == "main" else root
+        assert str(harness_memory_path(other, home)) in before
+        assert any(path.endswith("developer") for path in before)
+    else:
+        assert str(root / "stayfixed.toml") in before
+        assert not os.path.lexists(harness_memory_path(root, home))
+    with pytest.raises(Failure) as failed:
+        _detach(target, machine, home)
+    assert LEDGER in str(failed.value)
+    assert tree_entries(*checkouts, home) == before
+
+
+@pytest.mark.parametrize("detached", ["worktree", "main"])
+def test_a_main_checkout_tree_reached_through_a_symlink_refuses_before_anything_is_withdrawn(
+    tmp_path: Path, detached: str
+) -> None:
+    # While another checkout's ledger stands, `detach` withdraws no tree but `--root`'s, so the
+    # walk before the first withdrawal no longer reaches the main checkout's; but each harness
+    # link is still compared with the main checkout's `paths.memory`, and that question was asked
+    # from inside the withdrawal. With the main checkout's `docs` moved away and linked back, it
+    # refused there, after the rule copies were gone: a refused `detach` that had removed some of
+    # what it promises to remove all of or none of. Both directions: run in the worktree, and in
+    # the main checkout, which keeps its own tree and whose configuration already refuses the
+    # link when it is loaded, the twin that holds the refusal's place. From the worktree the
+    # refusal names whose `paths.memory` it could not ask, which the raw `PathEscape` did not: it
+    # read as the worktree's own. Mutation (oracle): `mutations/`'s "detach asks where a harness
+    # link may point only once it has begun withdrawing".
+    root, side, _, machine, home = _both_attached(tmp_path)
+    moved = tmp_path / "moved-docs"
+    shutil.move(root / "docs", moved)
+    (root / "docs").symlink_to(moved, target_is_directory=True)
+    run_in = side if detached == "worktree" else root
+    # Non-vacuous: there is a rule copy to withdraw before the harness links are reached.
+    assert (run_in / ".codex" / "rules").is_dir()
+    assert any((run_in / ".codex" / "rules").iterdir())
+    before = tree_entries(root, side, home)
+    with pytest.raises(Refusal) as refused:
+        _detach(run_in, machine, home)
+    assert "symlink" in str(refused.value)
+    if detached == "worktree":
+        assert "the main checkout's paths.memory" in str(refused.value)
+    assert str(tmp_path) not in str(refused.value)
+    assert tree_entries(root, side, home) == before
+
+
+@LOOPS_RAISE_ONLY_BEFORE_3_13
+def test_a_main_checkout_tree_that_is_a_symlink_loop_refuses_before_anything_is_withdrawn(
+    tmp_path: Path,
+) -> None:
+    # Up to Python 3.12 `.resolve()` raises `RuntimeError` on a loop, and asking where the
+    # worktree's harness link may point resolves the main checkout's `paths.memory`: `detach` from
+    # the worktree ended in an internal error. It is the refusal above now, before the first
+    # withdrawal.
+    root, side, _, machine, home = _both_attached(tmp_path)
+    shutil.rmtree(root / DEFAULT_MEMORY)
+    (root / DEFAULT_MEMORY).symlink_to(PurePosixPath(DEFAULT_MEMORY).name)
+    before = tree_entries(root, side, home)
+    with pytest.raises(Refusal) as refused:
+        _detach(side, machine, home)
+    assert "the main checkout's paths.memory" in str(refused.value)
+    assert "symlink loop" in str(refused.value)
+    assert tree_entries(root, side, home) == before
+
+
+@pytest.mark.parametrize(
+    "loop", [pytest.param("real", marks=LOOPS_RAISE_ONLY_BEFORE_3_13), "stood-in"]
+)
+@pytest.mark.parametrize("checkout", ["lone-main", "worktree"])
+def test_a_checkouts_own_paths_memory_that_is_a_symlink_loop_refuses_before_anything_is_withdrawn(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, checkout: str, loop: str
+) -> None:
+    # The checkout `detach` runs in, with its own `paths.memory` a symlink loop: a lone main
+    # checkout, and a linked worktree detached while the main checkout stays attached. The walk to
+    # every path the withdrawal removes resolved that loop before anything asked where a harness
+    # link may point, and up to Python 3.12 `.resolve()` raises `RuntimeError` there: `internal
+    # error`, where the refusal that names the loop was documented. Nothing was removed, but the
+    # run ended in a traceback. `stood-in` makes `.resolve()` of the loop raise as 3.11 does, so
+    # every interpreter meets it. Mutation (oracle): `mutations/`'s "detach walks the trees it
+    # withdraws before asking where a harness link may point" -> RuntimeError.
+    if checkout == "lone-main":
+        root, store, machine = _bound(tmp_path)
+        _grant(store.parents[2])
+        home = tmp_path / "home"
+        _attach(root, store, machine, home)
+        _trusted(root, machine)
+        _attach(root, store, machine, home)
+        checkouts: tuple[Path, ...] = (root,)
+        run_in, whose = root, "the main checkout's"
+    else:
+        root, side, _, machine, home = _both_attached(tmp_path)
+        checkouts = (root, side)
+        run_in, whose = side, "the linked worktree's"
+    shutil.rmtree(run_in / DEFAULT_MEMORY)
+    if loop == "real":
+        (run_in / DEFAULT_MEMORY).symlink_to(PurePosixPath(DEFAULT_MEMORY).name)
+    else:
+        symlink_loop_at(monkeypatch, run_in / DEFAULT_MEMORY)
+    # Non-vacuous: there is a rule copy and a harness link to withdraw.
+    assert any((run_in / ".codex" / "rules").iterdir())
+    assert os.path.lexists(harness_memory_path(run_in, home))
+    before = tree_entries(*checkouts, home)
+    with pytest.raises(Refusal) as refused:
+        _detach(run_in, machine, home)
+    assert str(refused.value) == (
+        f"where a harness memory link may point cannot be asked of {whose} paths.memory: "
+        f"{DEFAULT_MEMORY!r} is a symlink loop"
+    )
+    assert tree_entries(*checkouts, home) == before
 
 
 def test_detach_withdraws_the_settings_fallback_it_recorded(tmp_path: Path) -> None:
@@ -1251,6 +1510,36 @@ def test_a_doubled_exclude_block_refuses_detach_naming_the_exclude_file(tmp_path
         _detach(root, machine, home)
     assert "info/exclude" in str(refused.value)
     assert_snapshot_unchanged(root, before)
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root writes into a directory it cannot write")
+def test_an_exclude_file_detach_cannot_write_is_refused_before_anything_is_withdrawn(
+    tmp_path: Path,
+) -> None:
+    # A `.git/info` this user cannot write: `detach` found out by writing the exclude file, after
+    # the settings file, the rule copies and the link tree were withdrawn, and stopped there with
+    # the ledger and the block still in place, half detached. It is asked while nothing has been
+    # withdrawn now, as `attach` asks it, and refused naming the file. Mutation (oracle):
+    # `mutations/`'s "detach finds out the exclude file cannot be written by writing it" -> the
+    # settings file and the rule copies go.
+    root, _store, machine, home = _withdrawable(tmp_path)
+    info = _exclude_file(root).parent
+    # Non-vacuous: there is a block to take out, and a settings file and rule copies before it.
+    assert "stayfixed:attach:begin" in _exclude_file(root).read_text(encoding="utf-8")
+    assert (root / SETTINGS).is_file()
+    assert any((root / ".codex" / "rules").iterdir())
+    before = tree_entries(root, home)
+    info.chmod(0o555)
+    try:
+        with pytest.raises(Refusal) as refused:
+            _detach(root, machine, home)
+    finally:
+        info.chmod(0o755)
+    assert str(refused.value) == (
+        f"{quoted(str(_exclude_file(root)))} cannot be written, because this user cannot write "
+        "the directory that holds it, so nothing was written"
+    )
+    assert tree_entries(root, home) == before
 
 
 def test_detach_writes_nothing_through_an_exclude_file_that_became_a_symlink(

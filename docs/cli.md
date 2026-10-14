@@ -92,14 +92,22 @@ wrote (see below). Under `--check`, nothing.
 
 What it does, in order:
 
-1. **Harvests.** A second writer — you, another session — may have appended
-   `- [trigger → answer](group/note.md)` lines to `MEMORY.md`. Those are read back into each
-   note's `index:` frontmatter first, so nothing a session wrote is lost by regenerating.
-2. **Invents what is missing.** A note with no `index:` gets a provisional one from its
-   `description`. Provisional lines are reported so you can curate them.
-3. **Renders.** One section per configured group, a note's `group:` value as a sub-heading
+1. **Takes the note's own short line.** A note with no top-level `index:` that carries one under
+   `metadata:` (`metadata.index`, more than whitespace) gets it as its `index:`, marked
+   `index_provenance: provisional`. A later edit to `metadata.index` does not reach the index until
+   that `index:` line is changed or removed, as for a line made from the description.
+2. **Harvests.** A second writer — you, another session — may have appended
+   `- [trigger → answer](group/note.md)` lines to `MEMORY.md`. For a note with neither key, those
+   are read back into its `index:` frontmatter, so nothing a session wrote is lost by
+   regenerating.
+3. **Invents what is missing.** A note with none of these gets a provisional `index:` from its
+   `description`.
+4. **Renders.** One section per configured group, a note's `group:` value as a sub-heading
    inside it, ordered by `startup` rank first, then by `group_order`, then by name — so a
    note ranked for the session leads its section whatever its position within a sub-heading.
+
+The command's line names the notes this run wrote a provisional line into, in step 1 or step 3, up
+to eight and then how many more, so you can curate them; `--json`'s `provisional` lists them all.
 
 `--check` exits `1` when the index has drifted, when it is over its word budget, when it is past
 the harness's line or byte caps, or when a file in the store cannot be parsed as a note — one
@@ -2271,10 +2279,14 @@ store's trust record lapses — that key is withdrawn in the same run. If it was
 `.claude/settings.local.json` held, the file goes with it, because `{}` is not what that file
 looked like before `attach` created it.
 
-**When the harness memory link waits for approval, `attach` says so.** The link exposes the
-link tree, which sits inside the repository, so it is made only once the store is approved; until
-then the run's line ends with a note to run `stayfixed memory trust --in-repo-memory`, then
-`stayfixed attach` again.
+**When the harness memory link waits for approval, `attach` says so, and says why.** The link
+exposes the link tree, which sits inside the repository, so it is made only once the store is
+approved; until then the run's line ends with a note to run `stayfixed memory trust
+--in-repo-memory`, then `stayfixed attach` again. The note says whether the store has no approval
+yet or had one and then changed — a note, or `memory.index_extra`, that changed since the approval
+was recorded lapses it, and a pull that appends one line to one note is enough. A lapsed approval
+also withdraws the harness memory link from every checkout that held one, and whenever the run
+withdrew any, its line says how many (`links_revoked` in `--json`).
 
 **At a terminal the harness memory link goes under `HOME`**, and an empty one, which names no home,
 is refused (`2`). Elsewhere it goes under the home the password database records, and only while
@@ -2312,7 +2324,8 @@ answer, in the order the run meets them:
   read or is not UTF-8.
 - An existing `.stayfixed/local/attach.json` cannot be read, is not UTF-8, is not valid JSON or is
   not a JSON object.
-- A Codex rule file in the overlay cannot be read or is not UTF-8.
+- A Codex rule file in the overlay cannot be read or is not UTF-8, or the overlay's `common/codex/`
+  or `projects/<name>/codex/` directory holding it cannot be listed.
 - `git worktree list` fails.
 
 For `stayfixed.toml`, the overlay's record of this project, its `permissions.json` and
@@ -2396,18 +2409,33 @@ deleted your whole `permissions` block, deny rules included.
 **Run it from the checkout you attached from.** `.stayfixed/local/` is untracked and per-checkout,
 so a sibling worktree does not carry the ledger of the checkout the attach was run from and
 `detach --root <that worktree>` answers "no ledger". Once it starts it reaches every checkout of
-the repository, including the one that owns the store; only the *starting* point has to hold the
-record.
+the repository, including the one that owns the store, when no other checkout holds a ledger; only
+the *starting* point has to hold the record.
+
+**A checkout another ledger still serves is left attached.** While another checkout of the
+repository still holds a ledger, `detach` withdraws only this checkout's harness memory link,
+settings, rule copies and ledger, and this checkout's link tree unless this is the main checkout:
+every checkout's harness memory link points at the main checkout's tree, so that tree stays until
+the last attached checkout detaches. A later `attach` in any checkout rebuilds it first, so keeping
+it loses nothing. The line says the tree was kept, and `--json` reports `link_tree_kept: true`. A
+harness memory link counts as `attach`'s when it points at the main checkout's `paths.memory`, where
+`attach` points it, or at the checkout's own, and at nothing else; the target is never read from the
+ledger. Two consequences follow while another checkout is attached. The tree kept in a detached main
+checkout still resolves as its note store, so that checkout's own `SessionStart` bundles keep
+delivering its notes. And a detached linked worktree is linked again by its next `SessionStart`,
+which builds a worktree's tree from the main checkout's store whenever that store resolves, ledger
+or none.
 
 **Writes**: it takes the recorded allow rules and the fallback key back out of
 `.claude/settings.local.json`, drops the hook entries marked `# stayfixed:…` there (a group that
 mixes one of those with your own entry is split, never replaced), and leaves the file unwritten when
 none of those is in it, removes the `.codex/rules/` files it wrote, withdraws the link tree from
-this checkout and every worktree together with the harness memory link (under both homes where
-`HOME` is not the database's, only a link to this store), removes the
-`stayfixed:ignore` region and the `stayfixed:attach` block in the repository's exclude file, and
-deletes the ledger, `.stayfixed/local/attach.json`. A file left holding nothing is removed rather
-than left empty — for the exclude file, only when `attach` created it, which the block records, so
+this checkout and every worktree together with each one's harness memory link (under both homes
+where `HOME` is not the database's, only a link to this store) — while another checkout is
+attached, only this checkout's link, and its tree unless it is the main checkout, as above —
+removes the `stayfixed:ignore` region and the `stayfixed:attach` block in the repository's exclude
+file, and deletes the ledger, `.stayfixed/local/attach.json`. A file left holding nothing is
+removed rather than left empty — for the exclude file, only when `attach` created it, which the block records, so
 an exclude file you had, empty or not, stays, and the `info/` directory it sat in goes with it only
 when `attach` created that too and it is empty; the line ending `attach` added to your exclude
 file's last line before its block is taken back too, when nothing follows the block. The exclude
@@ -2421,15 +2449,22 @@ attach wrote counts: one git does not track (a clone that committed the file has
 worktree) and that reads as a ledger. A `git` that cannot say whether the file is tracked counts
 it, and the block stays.
 
-Then it removes, each only when empty: the `paths.memory` directory in this checkout when the
-ledger records `attach` as having created it, and in every other checkout it withdrew a tree from
-(no ledger of this run's records what was there, and that tree was built by `attach` or by the
-worktree-link handler); the directories above it in this checkout that the ledger records
-`attach` as having created (`docs/`, for the preset's place); and the `~/.claude/projects/<slug>/`
-directory each harness memory link sat in. Last,
-each directory the ledger records `attach` as having created — of `.stayfixed/local/`,
-`.stayfixed/`, `.codex/rules/`, `.codex/` and `.claude/`, in that order — is removed when it is
-empty, and left standing otherwise.
+Then it removes, each only when empty: the `paths.memory` directory in this checkout when it
+withdrew this checkout's tree and the ledger records `attach` as having created it, and in every
+other checkout it withdrew a tree from (no ledger of this run's records what was there, and that
+tree was built by `attach` or by the worktree-link handler); the directories above it in this
+checkout that the ledger records `attach` as having created (`docs/`, for the preset's place); and
+the `~/.claude/projects/<slug>/` directory each harness memory link sat in. Last, each directory
+the ledger records `attach` as having created — of `.stayfixed/local/`, `.stayfixed/`,
+`.codex/rules/`, `.codex/` and `.claude/`, in that order — is removed when it is empty, and left
+standing otherwise.
+
+**Detaching the checkouts one at a time can leave empty directories**, which git does not show and
+a later `attach` reuses: the directory above `paths.memory` (`docs/`, for the preset's place) in
+the checkout that detached first, since the ledger that recorded `attach` creating it went with
+that detach; and, where the main checkout detached first, a linked worktree's `paths.memory`,
+which the worktree's own ledger records as already there, because the main checkout's `attach` or
+the worktree-link handler made it.
 
 **The `stayfixed:ignore` region in `.gitignore` goes only if the manifest does not record it.**
 On a repository `stayfixed init` set up, that block is the footprint's — recorded in
@@ -2490,15 +2525,21 @@ It exits `2` on a refusal, in the order the run meets them:
 - A `stayfixed:ignore` region in `.gitignore` opened or closed twice, or otherwise with markers
   that no longer say where it ends (the refusal names the file).
 - A `git rev-parse --git-path info/exclude` that names no exclude file, an exclude file that cannot
-  be read, or a `stayfixed:attach` block in it opened or closed twice (the refusal names the
-  file).
+  be read, a `stayfixed:attach` block in it opened or closed twice, or one to take out of a file in
+  a directory you cannot write (the refusal names the file).
+- A `paths.memory` a harness link is compared with that cannot be asked where it leads: the main
+  checkout's, whenever a harness link is withdrawn, or the checkout's own — reached through a
+  symlink, a symlink loop, or one the system cannot resolve. The refusal says whether it is the
+  main checkout's or a linked worktree's, and why.
 - A path the withdrawal writes or removes reached through a directory that became a symlink after
   the attach: `.claude` when the settings file is to be rewritten, `.codex` or `.codex/rules` for
-  a recorded rule copy, `paths.memory` or a directory above it in any checkout, `.stayfixed` or
-  `.stayfixed/local` for the ledger. The refusal says which. A rule copy that is itself a link is
-  not one of these: it is unlinked, and what it points at stays.
+  a recorded rule copy, `paths.memory` or a directory above it in any checkout whose tree it
+  withdraws, `.stayfixed` or `.stayfixed/local` for the ledger. The refusal names the path and
+  the symlink. A rule copy that is itself a link is not one of these: it is unlinked, and what it
+  points at stays.
 - A `memory.groups` entry added since the attach that does not name a subdirectory of
-  `paths.memory`, in any checkout of the repository. The refusal counts it and does not print it.
+  `paths.memory`, in any checkout whose tree it withdraws. The refusal counts it and does not print
+  it.
 - A `.claude/settings.local.json` whose `permissions` is not an object, or whose
   `permissions.allow` is not a list of strings.
 
@@ -2506,8 +2547,8 @@ Every one of those is answered before the first withdrawal, so a refused `detach
 nothing. What is left can only happen once withdrawing has begun, and leaves the ledger in place
 with part of the attach already undone:
 
-- An exclude file that cannot be written, which is refused, naming it, once the settings, the rule
-  copies, the link trees and the `.gitignore` region are withdrawn.
+- An exclude file whose write fails for any other reason, which is refused, naming it, once the
+  settings, the rule copies, the link trees and the `.gitignore` region are withdrawn.
 - Any other write or removal that fails, which ends as `internal error` with the error the system
   gave.
 
@@ -2682,19 +2723,20 @@ position.
 `hooks/run-hook.sh` with `--version`; `git ls-remote --exit-code` against the public
 repository's tags, to judge `[ci] ref`, only when one is set; and the `git` queries the other
 rows need — where the overlay keeps its hooks, what its `origin` is, where the note store
-resolves to, which the binding's row and the note store's rows each ask for themselves, and, for
+resolves to, which the binding's row and the note store's rows each ask for themselves, which
+checkout owns this one, which the binding's row asks to judge the harness memory path, and, for
 `hook-entries`, which files below the root a nested `.claude/skills` holds (`git ls-files`), asked
-a second time through each submodule's index where a `.gitmodules` sits at or above the root. Six
-of those are measured on a green attached installation with no submodules — the wrapper probe and
-five `git` questions — and seven where a `.gitmodules` is present; not one of them leaves this
-machine. The `ci-ref` row's `git ls-remote` is one more on a repository that records a `[ci] ref`
-at all, and it is the only one that does leave: it goes through the `Runner` seam, which is what
-lets the case that pins the six answer it in process instead of launching it. That one is bounded
-at **30 seconds**, not at the seam's own five minutes (the bound for `gh repo create --clone`), so a
-peer that does not answer cannot turn a one-line diagnostic into a five-minute block. Each `git ls-files` question has `gitenv`'s thirty
-seconds of its own for a query over a whole tree, so the two together may take up to a minute; the
-other `git` questions are `gitenv`'s five seconds, and the wrapper probe is this area's own
-thirty.
+a second time through each submodule's index where a `.gitmodules` sits at or above the root.
+Seven of those are measured on a green attached installation with no submodules — the wrapper
+probe and six `git` questions — and eight where a `.gitmodules` is present; not one of them leaves
+this machine. The `ci-ref` row's `git ls-remote` is one more on a repository that records a
+`[ci] ref` at all, and it is the only one that does leave: it goes through the `Runner` seam,
+which is what lets the case that pins the seven answer it in process instead of launching it.
+That one is bounded at **30 seconds**, not at the seam's own five minutes (the bound for
+`gh repo create --clone`), so a peer that does not answer cannot turn a one-line diagnostic into a
+five-minute block. Each `git ls-files` question has `gitenv`'s thirty seconds of its own for a
+query over a whole tree, so the two together may take up to a minute; the other `git` questions
+are `gitenv`'s five seconds, and the wrapper probe is this area's own thirty.
 
 **The rendered workflow is read as a regular file, and to a bound.** That path is the
 repository's: a clone chooses what sits at `.github/workflows/stayfixed.yml`. Anything there that
@@ -2723,12 +2765,57 @@ check with `name`, `status`, `detail` and `remedy`, so every remedy is there.
 | `ci-ref` | whether `[ci] ref` is the commit of a released stayfixed tag (or the `v1` alias: a warning, as mutable, once a `1.x` release creates it, and red until then), and whether the rendered workflow pins the same ref — under `[ci] mode = "reusable"`, a workflow that is not there at all is a warning and never a green row, and so are a path that is there and is not a regular file and a file past the 256 KiB bound on the read | `git ls-remote --exit-code` over the public repository's tags, bounded at 30 seconds; *.github/workflows/stayfixed.yml*, read as a regular file and to a bound |
 | `diagnostics` | how many reasons the hook sink recorded — a count, never a line of the file | `${CLAUDE_PLUGIN_DATA}/stayfixed/diagnostics.jsonl` |
 | `ignored-env` | `STAYFIXED_CONFIG` or `XDG_CONFIG_HOME` set and not honoured, and a `HOME` that is not the home the password database records for this user, with the directory stayfixed's machine files are under instead, or that it records none; from a terminal, the remedy says to move files of your own there first | the environment, the password database |
-| `attached` | the overlay binding, and the harness memory path's shape, judged off a terminal only where `HOME` is the database's home | `.stayfixed/local/attach.json`, `~/.claude/projects/<slug>/memory` |
+| `attached` | the overlay binding, and the harness memory path's shape, judged off a terminal only where `HOME` is the database's home and read alike from every checkout (the states are below the table) | `.stayfixed/local/attach.json`, `~/.claude/projects/<slug>/memory`, `.claude/settings.local.json`, the link tree |
 | `bundles` | a bundle that does not fit its slots, and one whose part reaches the cap | the note store |
 | `store-debris` | files in the note store that are not notes (at most 500,000 entries) | the note store |
 | `harness-link` | whether a hook can make the harness memory link, which it cannot while `HOME` is not the database's home, said as the session is told it, with what makes the link instead | the environment, the password database |
 | `pre-commit` | whether the overlay's commit-time secret scan is installed on this machine | the overlay |
 | `overlay-requires` | whether the overlay this machine records requires a stayfixed the running one satisfies — red when this project keeps its notes in that overlay, a warning when it does not | the overlay's `.claude-plugin/plugin.json`, `stayfixed.toml` |
+
+**How `attached` reads the harness memory path.** The row reads `~/.claude/projects/<slug>/memory`,
+and `autoMemoryDirectory` in the two settings files the repository controls beside whatever stands
+there, in one order, and the first state that matches answers. Two states answer before the ledger
+and the overlay's binding are read, since the harness reads what they name whatever the ledger says:
+`real-directory-no-fallback` and `fallback-elsewhere`, each the row's whole detail. Every other
+state answers only once the overlay confirms the binding. The store and the approval it asks about
+are the main checkout's, as `attach` asks them, so one machine state reads the same from every
+checkout; the one exception is a link that reaches this checkout's own `paths.memory`, where a
+linked worktree's session-start re-link points it, which is judged by the store at that tree. A
+file, or anything else that is no link and no directory, reads as nothing in place. Each remedy
+below is shortened; the row spells the command in full.
+
+**The settings fallback is a whitelist, not a reading of the harness's settings.** The two files are
+`.claude/settings.local.json` and the shared `.claude/settings.json`, the local file's key in effect
+over the shared one's. Each is no file, or one JSON object, read strictly, with no
+`autoMemoryDirectory`; or it holds the key; or it cannot be read as settings: unreadable, not a
+regular file, not UTF-8, a byte-order mark, a comment, a trailing comma, `NaN`, a key given twice,
+or anything but one object. One value is admitted, the main checkout's store exactly as `attach`
+writes it; any other value in effect, of any type, `~/…`, relative, empty or another spelling of the
+store, is `fallback-elsewhere`. A file that cannot be read as settings is never read as having no
+key: beside it, every state that would read `ok` warns that what the harness makes of the file is
+unknown (`settings-unreadable`). The value is never printed. Your own `~/.claude/settings.json`,
+policy settings and `--settings` are yours, not the repository's, and this row does not read them.
+
+| State | What stands there | Status | Remedy |
+|---|---|---|---|
+| `dangling` | a link that reaches nothing | `red` | `attach` |
+| `real-directory-no-fallback` | a real directory, with no `autoMemoryDirectory` recorded in `.claude/settings.local.json` | `red` | move it aside, then `attach` |
+| `targets-unaskable` | anything else, where the main checkout's or this checkout's `paths.memory` cannot be asked where it leads (a symlink, a symlink loop, a fault the system names); the row says whose and why | `warn` | replace the symlink, or make the directory readable, then `doctor` |
+| `fallback-elsewhere` | anything else, with `autoMemoryDirectory` in effect and set to anything but the main checkout's store exactly as `attach` writes it; whether or not the store resolves; the row names the file | `red` | remove the key from that file, then `attach` |
+| `links-elsewhere` | a link to anything but the main checkout's `paths.memory` or this checkout's own | `red` | `attach` |
+| `tree-gone` | anything else, where the store does not resolve because its link tree at `paths.memory` is gone | `warn` | `attach` |
+| `tree-there-not-resolving` | anything else, where the store does not resolve and its link tree is there | `warn` | `memory index --check`, then `doctor` |
+| `trust-record-unreadable` | anything else, where this machine's trust record cannot be read | `warn` | `memory trust --in-repo-memory`, which says why, then `doctor` |
+| `attached` | a link to the store, its approval holding | `ok` | — |
+| `link-lapsed` | a link to the store, its approval lapsed | `warn` | read what changed, `memory trust --in-repo-memory`, then `attach` |
+| `link-never-approved` | a link to the store, no approval recorded | `warn` | `attach`, which withdraws a link to the main checkout's tree; a link to this checkout's own tree, which it does not withdraw, is named to be removed |
+| `fallback-unapproved` | anything but a link, with the fallback naming the store, its approval lapsed or never given; the row says which | `warn` | `attach`, which withdraws the key |
+| `fallback-approved` | a real directory, with the fallback naming the store, its approval holding | `ok` | — |
+| `fallback-instead-of-a-link` | nothing, with the fallback naming the store, its approval holding | `warn` | `attach`, which makes the link |
+| `no-links-approved` | nothing, the store's approval holding | `warn` | `attach` |
+| `lapsed-links-withdrawn` | nothing, its approval lapsed | `warn` | read what changed, `memory trust --in-repo-memory`, then `attach` |
+| `never-approved` | nothing, no approval recorded | `ok` | — |
+| `settings-unreadable` | any state above that reads `ok`, beside a settings file that cannot be read as settings; the row names the file | `warn` | make the file one JSON object, then `doctor` |
 
 **Ten of the seventeen have a `skip` arm — sixteen arms between them: one no build can answer,
 and fifteen on a state of this machine or this repository.** A `skip` is **not** a finding and

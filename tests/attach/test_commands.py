@@ -20,6 +20,7 @@ from stayfixed import fsops
 from stayfixed.cli import build_parser, discover_registrars, run
 from stayfixed.config.schema import Config
 from stayfixed.overlay.layout import COMMON_MEMORY
+from stayfixed.printed import quoted
 from tests.attach.test_binding import DEFAULT_MEMORY, _machine, _project_and_store
 from tests.attach.test_write import ENTRY, LEDGER, RULE, SETTINGS, _overlay_grants, _wide
 from tests.cli import cli
@@ -770,7 +771,7 @@ def test_check_ends_on_an_overlay_rule_that_is_not_utf8_with_the_runs_code_and_l
     rule.write_bytes(b"\xff\xfe not text\n")
     before = snapshot(tmp_path)
     checked, attached = _check_then_attach(_flags(root, store, machine), capsys)
-    line = f"stayfixed: failed: {rule} is not UTF-8 text, so nothing was written\n"
+    line = f"stayfixed: failed: {quoted(str(rule))} is not UTF-8 text, so nothing was written\n"
     assert checked == attached == (1, line)
     assert_snapshot_unchanged(tmp_path, before)
 
@@ -1124,6 +1125,81 @@ def test_a_harness_link_that_waits_for_approval_is_said_with_the_way_out(tmp_pat
     assert harness_memory_path(root, tmp_path / "home").is_symlink()
 
 
+def _linked_in_two_checkouts(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
+    """The main checkout and a linked worktree, attached with the store approved, so each holds a
+    harness memory link `attach` made. Returns `(root, side, store, machine)`."""
+    from stayfixed.memory.api import harness_memory_path
+    from tests.attach.test_links import _attach, _bound, _trusted
+
+    root, store, machine = _bound(tmp_path)
+    side = tmp_path / "side"
+    run_git(root, "worktree", "add", "-q", str(side), "-b", "side")
+    home = tmp_path / "home"
+    _attach(root, store, machine, home)
+    _trusted(root, machine)
+    _attach(root, store, machine, home)
+    # Non-vacuous: both links are there to be withdrawn.
+    for checkout in (root, side):
+        assert harness_memory_path(checkout, home).is_symlink(), checkout
+    return root, side, store, machine
+
+
+def _attach_json(
+    root: Path, store: Path, machine: Path, capsys: pytest.CaptureFixture[str]
+) -> tuple[str, dict[str, object]]:
+    """One `attach --yes --json` run: the line it prints without `--json`, and the document."""
+    capsys.readouterr()
+    assert invoke(["attach", *_flags(root, store, machine), "--yes", "--json"]) == 0
+    data = json.loads(capsys.readouterr().out)
+    return str(data["summary"]), data
+
+
+def test_a_changed_store_says_the_approval_lapsed_and_counts_the_withdrawn_links(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # One line appended to one note lapses the approval, and the run withdrew every checkout's
+    # harness link and said only that the link "has no approval yet", which reads as a store
+    # nobody approved, and nothing of what it removed. Mutation (oracle): `mutations/`'s "attach
+    # says a lapsed approval was never given" -> "no approval yet" again.
+    root, _, store, machine = _linked_in_two_checkouts(tmp_path)
+    # `developer` is the overlay's shared group, and its note is one the digest covers.
+    with (store.parents[2] / COMMON_MEMORY / "shared.md").open("a", encoding="utf-8") as note:
+        note.write("A line a pull added.\n")
+    summary, data = _attach_json(root, store, machine, capsys)
+    assert "withdrew 2 harness memory link(s)" in summary
+    assert "the store or its memory.index_extra changed since" in summary
+    assert "no approval yet" not in summary
+    # The count is still in `--json`, under the key a reader of it already reads.
+    assert data["links_revoked"] == 2
+
+
+def test_a_store_never_approved_still_says_no_approval_yet(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The vacuity guard for the case above: with no record at all the sentence is still the one
+    # that asks for a first approval, and nothing was withdrawn, so no count is said.
+    from tests.attach.test_links import _bound
+
+    root, store, machine = _bound(tmp_path)
+    summary, data = _attach_json(root, store, machine, capsys)
+    assert "no approval yet" in summary
+    assert "changed since" not in summary
+    assert "withdrew" not in summary
+    assert data["links_revoked"] == 0
+
+
+def test_a_second_attach_on_an_unchanged_store_withdraws_nothing(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The other guard: an approved store attached again keeps every link, so the run withdraws
+    # nothing and says neither sentence.
+    root, _, store, machine = _linked_in_two_checkouts(tmp_path)
+    summary, data = _attach_json(root, store, machine, capsys)
+    assert data["links_revoked"] == 0
+    assert "withdrew" not in summary
+    assert "approval" not in summary
+
+
 def test_attach_at_a_terminal_with_no_home_at_all_refuses_in_words(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1207,6 +1283,12 @@ _WAITS = (
     "the harness memory link was not created, because the link tree it would expose sits inside "
     "this repository and has no approval yet; run `stayfixed memory trust --in-repo-memory`, then "
     "`stayfixed attach` again"
+)
+# Said instead where the approval is recorded and the store changed since.
+_LAPSED = (
+    "the harness memory link was not created, because the store or its memory.index_extra changed "
+    "since its approval was recorded, so that approval no longer holds; read what changed, run "
+    "`stayfixed memory trust --in-repo-memory`, then `stayfixed attach` again"
 )
 
 
@@ -1407,10 +1489,13 @@ def test_attach_off_a_terminal_withdraws_what_a_lapsed_store_was_given_though_it
     monkeypatch.setenv("HOME", str(elsewhere))
     capsys.readouterr()
     settings = "settings merged" if channel == "key" else "settings unchanged"
+    # The link's withdrawal is counted, and the approval is said to have lapsed rather than never
+    # to have been given; the key's withdrawal is the settings merge.
+    withdrew = "" if channel == "key" else "withdrew 1 harness memory link(s); "
     assert (invoke(argv), *capsys.readouterr()) == (
         0,
         f"attached: 0 link(s), 0 Codex rule file(s); {settings}; binding already recorded; "
-        f"{_WAITS}; {_UNREAD['elsewhere']}\n",
+        f"{withdrew}{_LAPSED}; {_UNREAD['elsewhere']}\n",
         "",
     )
     assert not os.path.lexists(root / SETTINGS)
@@ -1611,11 +1696,50 @@ def test_detachs_line_says_when_it_kept_the_block_another_checkout_needs(
     assert invoke(["attach", *_flags(side, store, machine), "--yes"]) == 0
     capsys.readouterr()
     assert invoke(["detach", "--root", str(root), "--machine", str(machine)]) == 0
-    assert "the exclude block was kept" in capsys.readouterr().out
+    assert "the exclude block and this checkout's link tree were kept" in capsys.readouterr().out
     assert invoke(["detach", "--root", str(side), "--machine", str(machine), "--json"]) == 0
     data = json.loads(capsys.readouterr().out)
     assert data["exclude_block_kept"] is False
     assert data["exclude_block_removed"] is True
+
+
+@pytest.mark.parametrize("first", ["main", "worktree"])
+def test_detachs_line_names_the_link_tree_it_kept_for_another_checkout(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], first: str
+) -> None:
+    # Detaching the main checkout while a linked worktree is attached keeps the main checkout's
+    # link tree too, since the worktree's harness memory link points at it, and the line named only
+    # the kept exclude block, so the owner found a tree a detach had seemingly forgotten. Both are
+    # named now, and `--json` says it as `link_tree_kept`; a worktree detached first keeps no tree
+    # of its own and says nothing of one. Mutation (oracle): `mutations/`'s "detach's line says
+    # nothing of the link tree it kept" -> the main case's line names the block alone.
+    root, store = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
+    _overlay_grants(store, allow=(RULE,))
+    machine = _machine(tmp_path, overlay=store.parents[2])
+    side = tmp_path / "side"
+    run_git(root, "add", "-A")
+    run_git(root, "commit", "-qm", "the project, committed so the worktree has it too")
+    run_git(root, "worktree", "add", "-q", str(side), "-b", "side")
+    assert invoke(["attach", *_flags(root, store, machine), "--yes"]) == 0
+    assert invoke(["attach", *_flags(side, store, machine), "--yes"]) == 0
+    capsys.readouterr()
+    detached = root if first == "main" else side
+    assert invoke(["detach", "--root", str(detached), "--machine", str(machine), "--json"]) == 0
+    data = json.loads(capsys.readouterr().out)
+    assert (data["exclude_block_kept"], data["link_tree_kept"]) == (True, first == "main")
+    # Attached again, so the same detach can be read as a line too.
+    assert invoke(["attach", *_flags(detached, store, machine), "--yes"]) == 0
+    capsys.readouterr()
+    assert invoke(["detach", "--root", str(detached), "--machine", str(machine)]) == 0
+    kept = (
+        "the exclude block and this checkout's link tree were kept, because another checkout of "
+        "this repository is still attached"
+        if first == "main"
+        else "the exclude block was kept, because another checkout of this repository is still "
+        "attached"
+    )
+    line = capsys.readouterr().out
+    assert line.rstrip("\n").endswith(f"the binding record was left in place; {kept}"), line
 
 
 def test_a_name_longer_than_a_file_name_under_an_overlay_with_no_projects_is_refused_by_both(

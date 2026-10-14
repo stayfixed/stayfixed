@@ -410,6 +410,28 @@ def harness_link_needed(store: Store, config: Config) -> bool:
     return trust.may_inject(store, config, repository_data=in_repository(store, store.path))
 
 
+# `harness_gate`'s three answers. Not statuses and not sentences: each caller says its own.
+GATE_OPEN = "open"
+GATE_LAPSED = "lapsed"
+GATE_UNAPPROVED = "unapproved"
+
+
+def harness_gate(store: Store, config: Config) -> str:
+    """`harness_link_needed`'s answer, and where it is no, why: `GATE_OPEN` where the harness link
+    may point at this store; `GATE_LAPSED` where the machine records an approval for it and the
+    store, or its `memory.index_extra`, has changed since (`trust.changed`); `GATE_UNAPPROVED`
+    where none is recorded, which is a store never approved.
+
+    Asked by `attach` and by its `doctor.py` to say which of the two closed gates it is, since
+    both close the gate and only the second withdraws links a run before made: one line appended
+    to one note is enough. One question and not two: the store is digested once, by the gate.
+    A closed gate with a record behind it is a record the digest no longer matches, so whether
+    one is recorded is the whole of the rest, and no second digest is taken to tell."""
+    if harness_link_needed(store, config):
+        return GATE_OPEN
+    return GATE_LAPSED if trust.approval_recorded(store.path, store.machine) else GATE_UNAPPROVED
+
+
 def _apply_harness_link(
     where: Path, store: Store, config: Config, home: Path | None
 ) -> tuple[list[Path], list[Path]]:
@@ -734,6 +756,64 @@ def _detach_source(config: Config, machine: Path | None, name: str) -> Path | No
     return _link_source(overlay, config.project.name, name)
 
 
+def harness_targets(root: Path, owner: Path, config: Config) -> tuple[Path, ...]:
+    """Every directory a harness memory link of `root`'s may point at and be stayfixed's: the
+    owning checkout's `paths.memory`, resolved, and `root`'s own, once each.
+
+    Two writers make that link and they do not agree. `attach` points every checkout's link at
+    the owning checkout's tree (`attach.write._link_everywhere` hands `link` the owner's store),
+    and the `SessionStart` re-link may point a worktree's at the worktree's own. So a reader that
+    compared a link with `root`'s own tree alone never recognised the one `attach` made in a
+    linked worktree: `detach` left it standing, dangling once the owner's tree went, and
+    `doctor` called a normally attached worktree red. `detach_main` and `doctor`'s `attached` row
+    both read through this one function, so the two cannot come to recognise different links.
+
+    Both paths come from `paths.memory` under a checkout git named, never from a ledger: a
+    ledger is a path a clone can commit, and a committed value must not steer a removal. Which
+    of the two the writers should converge on is not decided here.
+
+    **Every way the question fails is one refusal, a `PathEscape`, naming the checkout.** The
+    owning checkout's `paths.memory` is one `root`'s own configuration never walked, so it is the
+    one a directory that became a link reaches first; and `.resolve()` on a `paths.memory` that is
+    a symlink loop raises `RuntimeError` up to Python 3.12 (3.13 reads the loop as the path it
+    names). Each caller used to translate whichever of `PathEscape`, `PathUnasked`, `OSError` and
+    `RuntimeError` it had met in its own words, or none: `doctor` called a loop "this check could
+    not run", red, and `detach` an internal error. A final symlink at `paths.memory` is still
+    followed, as `contained(..., allow_final_symlink=True)` allows everywhere a tree is read: the
+    link tree is a directory of links, and a `paths.memory` that is itself a link to one is a
+    layout the resolver reads too, so refusing it here alone would make `detach` refuse a checkout
+    it attached.
+
+    A checkout is the owner when the two resolve alike, as `doctor` compares them: `git` names the
+    owner by its resolved path, and `--root` may spell the same checkout through a link.
+    """
+    found: list[Path] = []
+    for checkout in (owner, root):
+        target = _harness_target(checkout, config, owner=checkout.resolve() == owner.resolve())
+        if target not in found:
+            found.append(target)
+    return tuple(found)
+
+
+def _harness_target(checkout: Path, config: Config, *, owner: bool) -> Path:
+    """`checkout`'s `paths.memory`, resolved, or the one `PathEscape` `harness_targets` promises.
+
+    The checkout is named by its place — the main checkout, or a linked worktree — and never by
+    its path, which says where this machine keeps it. `paths.memory` itself is printed: the loader
+    holds it to `PATH_VALUE`, the grammar a value must match before a report may print it."""
+    whose = "the main checkout's" if owner else "the linked worktree's"
+    asked = f"where a harness memory link may point cannot be asked of {whose} paths.memory"
+    value = config.paths.memory
+    try:
+        return contained(checkout, value, allow_final_symlink=True).resolve()
+    except PathEscape as exc:
+        raise PathEscape(f"{asked}: {exc}") from exc
+    except RuntimeError as exc:
+        raise PathEscape(f"{asked}: {value!r} is a symlink loop") from exc
+    except OSError as exc:
+        raise PathEscape(f"{asked}: {value!r} cannot be resolved ({fsops.said(exc)})") from exc
+
+
 def detach_main(
     root: Path,
     config: Config,
@@ -741,6 +821,8 @@ def detach_main(
     machine: Path | None = None,
     home: Path | None = None,
     elsewhere: Path | None = None,
+    targets: tuple[Path, ...],
+    keep_tree: bool = False,
 ) -> Links:
     """Withdraw the link tree a checkout holds, and the harness link with it.
 
@@ -765,11 +847,19 @@ def detach_main(
     the bytes behind it.
 
     The harness link goes first, because it is the one hop that leaves this area's gate, and it
-    is compared against the store directory rather than against what it happens to point at.
-    `elsewhere` is a second home a harness may read it under, where the caller found one: the link
-    there goes too, only where it points at the store (`_withdraw_lapsed`), and a home the walk
-    refuses is passed over, since a refusal after the first withdrawal strands a half-detached
-    checkout. Its `<slug>` directory is removed only when the link in it was.
+    is compared against `targets`, the directories `harness_targets` names — the owning
+    checkout's tree, where `attach` points it, and `root`'s own — rather than against what it
+    happens to point at. The caller asks `harness_targets` and passes its answer, because asking
+    it walks the owning checkout's `paths.memory`, which is not `root`'s, and a walk that refuses
+    must refuse before the first withdrawal, not here (`attach.write.detach`). `elsewhere` is a
+    second home a harness may read it under, where the caller found one: the link there goes
+    too, only where it points at one of those (`_withdraw_lapsed`), and a home the walk refuses
+    is passed over, since a refusal after the first withdrawal strands a half-detached checkout.
+    Its `<slug>` directory is removed only when the link in it was.
+
+    `keep_tree` withdraws the harness link and leaves the link tree: the caller's answer for the
+    owning checkout while another checkout's ledger still stands, since that checkout's harness
+    link points at this tree (`attach.write.detach`).
 
     Takes a `Config` and not a `Store`: by the time a repository is detached its store may no
     longer resolve — that is half of what detaching means — so the tree is found where the
@@ -800,17 +890,22 @@ def detach_main(
     revoked: list[Path] = []
     home_root, harness_relative = harness_anchor(root, home)
     harness = home_root / harness_relative
-    if _unlink(home_root, harness_relative, base.resolve()):
+    if any(_unlink(home_root, harness_relative, target) for target in targets):
         revoked.append(harness)
     # The `<slug>` directory the link sat in, a name this run computed, when nothing else is in
     # it: the harness keeps its own transcripts there, and `rmdir` leaves a directory that holds
     # one. `OSError` covers "not empty", "not there" and a component the walk refuses.
     with contextlib.suppress(OSError):
         fsops.rmdir_within(home_root, str(PurePosixPath(harness_relative).parent))
-    if elsewhere is not None and (gone := _withdraw_lapsed(root, base.resolve(), elsewhere)):
+    if elsewhere is not None:
+        # One link stands at that name, so at most one target matches it and `gone` holds it once.
+        gone = [path for target in targets for path in _withdraw_lapsed(root, target, elsewhere)]
         revoked += gone
-        with contextlib.suppress(OSError):
-            fsops.rmdir_within(elsewhere, str(PurePosixPath(harness_relative).parent))
+        if gone:
+            with contextlib.suppress(OSError):
+                fsops.rmdir_within(elsewhere, str(PurePosixPath(harness_relative).parent))
+    if keep_tree:
+        return Links([], revoked)
     for name in linked_names(config):
         target = contained(base, name, allow_final_symlink=True)
         if not fsops.is_symlink(target):
@@ -825,7 +920,15 @@ def detach_main(
         pointed = target.readlink()
         if not pointed.is_absolute():
             pointed = target.parent / pointed
-        if pointed.resolve() != source.resolve():
+        try:
+            reached = pointed.resolve()
+        except (OSError, RuntimeError):
+            # A symlink loop at one of these names, which Python 3.11 and 3.12 meet with
+            # `RuntimeError` (3.13 answers the path it names): a link that cannot be followed is
+            # not one this function can claim, so it stays, as any other link to elsewhere does.
+            # Raised, it ended `detach` in an internal error after the settings were withdrawn.
+            continue
+        if reached != source.resolve():
             continue
         # Through the `O_NOFOLLOW` walk, so a component that became a symlink after
         # `contained()` passed cannot redirect the removal out of the checkout.

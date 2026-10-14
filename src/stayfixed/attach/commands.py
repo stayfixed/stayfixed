@@ -142,10 +142,17 @@ def run_detach(args: argparse.Namespace) -> Result:
         "exclude_block_removed": removed.exclude_block_removed,
         # A boolean this command computed, so it prints.
         "exclude_block_kept": removed.exclude_block_kept,
+        # A boolean this command computed, so it prints.
+        "link_tree_kept": removed.link_tree_kept,
     }
+    # The link tree is kept only while another checkout is attached, which keeps the block too.
+    what = (
+        "the exclude block and this checkout's link tree were"
+        if removed.link_tree_kept
+        else "the exclude block was"
+    )
     kept = (
-        "; the exclude block was kept, because another checkout of this repository is still "
-        "attached"
+        f"; {what} kept, because another checkout of this repository is still attached"
         if removed.exclude_block_kept
         else ""
     )
