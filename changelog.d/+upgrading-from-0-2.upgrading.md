@@ -155,14 +155,15 @@ detail:
     `HOME` (Fixed, "When the hook wrapper launches it, as it does for every hook, stayfixed now
     runs `git` only from fixed absolute paths").
   - `stayfixed doctor`'s `attached` row is red, and the report exits `1`, where 0.2.0 read ok or
-    warned: for `autoMemoryDirectory` in `.claude/settings.local.json` naming anything but the store
-    `attach` writes there beside a harness memory link or beside nothing, and, from the main
-    checkout, for a link that reaches nothing because the main checkout's link tree is gone. It
-    warns where 0.2.0 read ok for a link to the store whose approval lapsed or was never given, or
-    whose trust record cannot be read; for nothing in place after an approval lapsed, or beside a
-    note store that does not resolve; and, from a linked worktree, wherever the main checkout's
-    store warns (Fixed, "`stayfixed doctor`'s `attached` row now reads a checkout's harness memory
-    link").
+    warned: for `autoMemoryDirectory` in `.claude/settings.local.json` or `.claude/settings.json`
+    set to anything but the store `attach` writes there, beside a harness memory link or beside
+    nothing, and, from the main checkout, for a link that reaches nothing because the main
+    checkout's link tree is gone. It warns where 0.2.0 read ok for a link to the store whose
+    approval lapsed or was never given, or whose trust record cannot be read; for nothing in place
+    after an approval lapsed, or beside a note store that does not resolve; for any answer that
+    would be ok beside a settings file that cannot be read as one JSON object; and, from a linked
+    worktree, wherever the main checkout's store warns (Fixed, "`stayfixed doctor`'s `attached` row
+    now reads a checkout's harness memory link").
   - `stayfixed attach` and `attach --check` fail (exit `1`) on an overlay `codex/` directory that
     cannot be listed, where each ended in `internal error` with exit `2` (Fixed, "`stayfixed
     attach` and `attach --check` now fail (exit `1`) when the overlay's `common/codex/`").
