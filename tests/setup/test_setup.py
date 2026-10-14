@@ -1141,8 +1141,8 @@ def test_a_created_overlays_destination_that_is_a_dangling_link_is_refused_befor
     # exempt from the comparison and `gh repo create` cloned through the link to wherever it
     # pointed; compared at its target, a target outside `--root` still passed and `gh` created a
     # repository before the clone failed on the link. It is refused where the overlay's place is
-    # asked, before anything is written or run. Mutation (`mutations/`'s "setup plans a created overlay
-    # through a link that leads nowhere") -> `gh` runs and each reddens.
+    # asked, before anything is written or run. Mutation (`mutations/`'s "setup plans a created
+    # overlay through a link that leads nowhere") -> `gh` runs and each reddens.
     home = tmp_path / "home"
     home.mkdir()
     target = home / "later" / "ov" if leads == "inside-the-root" else tmp_path / "later" / "ov"
