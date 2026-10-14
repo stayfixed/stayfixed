@@ -492,6 +492,32 @@ def _check_home_usable(
         # would be a cause it does not have.
         if fsops.is_dir(directory) and not fsops.creatable(path):
             raise Refusal(f"--home {home} cannot be used: {directory} is not writable")
+    if settings is None:
+        unread = _unreadable_on_the_walk(home, USER_SETTINGS)
+        if unread is not None:
+            raise Refusal(f"--home {home} cannot be used: {unread} {_OPENED_TO_READ}")
+
+
+# What the settings write needs of each directory its walk opens besides being able to make a
+# name in the last one: `fsops.open_within` opens the root and every directory below it on the
+# way `O_RDONLY`, and a directory at mode 300 takes a new name and refuses that open.
+_OPENED_TO_READ = "is not readable, and the settings write opens it to read"
+
+
+def _unreadable_on_the_walk(root: Path, relative: str) -> Path | None:
+    """The first directory the settings write's walk to `root/relative` opens to read and this
+    user may not, or `None`. A directory not there yet is made by the write itself, readable, so
+    the walk stops at the first one missing. `os.access` says yes to root, for whom the write's
+    own refusal stays the floor."""
+    walked = [root]
+    for part in Path(relative).parts[:-1]:
+        walked.append(walked[-1] / part)
+    for directory in walked:
+        if not fsops.is_dir(directory):
+            return None
+        if not os.access(directory, os.R_OK):
+            return directory
+    return None
 
 
 def _check_settings_parent(settings: Path) -> None:
@@ -557,6 +583,8 @@ def _check_settings_parent(settings: Path) -> None:
     # whom the write's own refusal stays the floor.
     if not fsops.creatable(settings):
         raise Refusal(f"{settings} cannot be written: {parent} is not writable")
+    if _unreadable_on_the_walk(parent, settings.name) is not None:
+        raise Refusal(f"{settings} cannot be written: {parent} {_OPENED_TO_READ}")
 
 
 # `git` reads any directory holding `HEAD`, `objects/` and `refs/` as a bare repository of its

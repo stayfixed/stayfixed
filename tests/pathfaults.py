@@ -167,3 +167,15 @@ def read_only(directory: Path) -> Iterator[None]:
         yield
     finally:
         directory.chmod(0o755)
+
+
+@contextlib.contextmanager
+def write_only(directory: Path) -> Iterator[None]:
+    """`directory` at mode 300 for the block — a new name can be made in it, and it cannot be
+    opened to read — and 755 again after it. Root reads every directory: a test that needs the
+    refusal skips there."""
+    directory.chmod(0o300)
+    try:
+        yield
+    finally:
+        directory.chmod(0o755)

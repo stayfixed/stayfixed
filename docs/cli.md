@@ -2662,7 +2662,9 @@ you cannot write into, asked only where a write lands: the one the settings file
 neither is); with `--settings`, which sends that file elsewhere, the one `<home>` is made in, and
 only while it is not there yet; and for `create:`, the one the clone is made in while it is not
 there yet, or, while it is there, whether it can be searched, since `create:` looks inside it
-first. A `<home>` you cannot write into is not refused for that alone: with a writable `.claude`
+first. Each directory the settings write opens on its way to the file — `<home>` and
+`<home>/.claude`, or the `--settings` directory — has to be readable too, since the write opens it
+to read. A `<home>` you cannot write into is not refused for that alone: with a writable `.claude`
 already in it, and no overlay to create, nothing this check asks about is made in it. The machine
 file's directory is not asked about here: a write there that fails ends the run `1`. Otherwise it
 says that `<home>` could not be created. Any other path this command cannot ask about before its

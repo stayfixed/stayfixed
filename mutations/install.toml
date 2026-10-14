@@ -1883,3 +1883,29 @@ after = "        real = settings.resolve()"
 reddens = [
   "tests/setup/test_setup.py::test_a_symlink_loop_at_any_path_setup_is_given_is_a_refusal_naming_it[settings]",
 ]
+
+# The settings write's walk opens the root and each directory on the way to the file `O_RDONLY`
+# (`fsops.open_within`), and a directory at mode 300 takes a new name and refuses that open: the
+# question whether a name can be made there passed it, the machine file was written, and the write
+# then refused in words about a symlink. Each directory the walk opens is asked whether it can be
+# read, above the first write.
+[[mutation]]
+name = "setup stops asking whether the settings walk can read --home's directories"
+file = "src/stayfixed/setup/run.py"
+before = """    if settings is None:
+        unread = _unreadable_on_the_walk(home, USER_SETTINGS)"""
+after = """    if False:
+        unread = _unreadable_on_the_walk(home, USER_SETTINGS)"""
+reddens = [
+  "tests/setup/test_setup.py::test_a_directory_the_settings_write_opens_to_read_and_cannot_is_refused_before_any_write[home]",
+  "tests/setup/test_setup.py::test_a_directory_the_settings_write_opens_to_read_and_cannot_is_refused_before_any_write[claude]",
+]
+
+[[mutation]]
+name = "setup stops asking whether the settings walk can read the --settings directory"
+file = "src/stayfixed/setup/run.py"
+before = "    if _unreadable_on_the_walk(parent, settings.name) is not None:"
+after = "    if False:"
+reddens = [
+  "tests/setup/test_setup.py::test_a_directory_the_settings_write_opens_to_read_and_cannot_is_refused_before_any_write[settings]",
+]

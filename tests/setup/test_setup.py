@@ -27,7 +27,7 @@ from tests import parserlimits
 from tests.gitfixture import git as _git
 from tests.gitfixture import needs_git, stand_in_git
 from tests.parserlimits import overflowing
-from tests.pathfaults import ROOT_SEARCHES_EVERYTHING, read_only, unsearchable
+from tests.pathfaults import ROOT_SEARCHES_EVERYTHING, read_only, unsearchable, write_only
 from tests.runners import Recorder
 
 # The minimal `stayfixed.toml` `attach.read_binding` needs (a project name and nothing else),
@@ -2071,6 +2071,42 @@ def test_a_home_that_cannot_take_the_write_is_refused_before_any_write(
     assert "symlink" not in out
     assert not machine.exists()
     assert runner.calls == []
+
+
+@_ROOT_WRITES_EVERYWHERE
+@pytest.mark.parametrize("locked", ["home", "claude", "settings"])
+def test_a_directory_the_settings_write_opens_to_read_and_cannot_is_refused_before_any_write(
+    tmp_path: Path, locked: str
+) -> None:
+    # The settings write walks to its file opening each directory `O_RDONLY`, and a directory at
+    # mode 300 takes a new name and refuses that open: the question whether a name can be made
+    # there passed it, the machine file was written, and the settings write then refused in words
+    # about a symlink. Each directory the walk opens is asked whether it can be read, too.
+    # Mutations (`mutations/`'s "setup stops asking whether the settings walk can read --home's
+    # directories" -> `home` and `claude`; "setup stops asking whether the settings walk can read
+    # the --settings directory" -> `settings`).
+    home, machine = tmp_path / "home", tmp_path / "config.toml"
+    (home / ".claude").mkdir(parents=True)
+    settings = tmp_path / "dotfiles" / "settings.json" if locked == "settings" else None
+    directory = {"home": home, "claude": home / ".claude", "settings": tmp_path / "dotfiles"}[
+        locked
+    ]
+    directory.mkdir(exist_ok=True)
+    runner = Recorder()
+    with write_only(directory), pytest.raises(Refusal) as refused:
+        setup(
+            "recommended",
+            home=home,
+            machine=machine,
+            runner=runner,
+            yes=False,
+            overlay=None,
+            project_root=tmp_path / "project",
+            settings=settings,
+        )
+    said = str(refused.value)
+    assert f"{directory} is not readable, and the settings write opens it to read" in said, said
+    assert not machine.exists() and runner.calls == []
 
 
 @ROOT_SEARCHES_EVERYTHING
