@@ -3468,6 +3468,16 @@ set `[ci] gate_branch = "main"` to keep the old one — and `ref` is written by 
 `[artifacts] local` by the scaffold engine, and `[gates]` and `[stayfixed] enforced` by
 `stayfixed assess`, `stayfixed gate` and the reusable workflow.
 
+**Commands refuse; a session reads what it can.** Every command that loads `stayfixed.toml`, but
+`doctor` and `memory session-context`, refuses it whole over an unknown section or key, a value it
+cannot use or a `[paths]` value that leaves the root, naming the key and never the value. Those
+two read it the way a session does: an unknown section or key is ignored, a value that cannot be
+used is put back to the preset's, one key at a time, a custom gate that cannot run is left out,
+and each says so in a note naming the key, so a file a newer stayfixed wrote keeps every setting
+this one understands. A repository's `[personal]`, `[guards]` or `[setup]` is the machine owner's
+to set and is ignored the same way, with a note. Neither reading gets past a file that is not
+TOML, nor one missing a key that has no default (`[stayfixed] version`, `[project] name`).
+
 Every value above is what a key you leave out takes, from the `recommended` preset — with three
 exceptions, and one line that is an example rather than a default. `[stayfixed] version` and
 `[project] name` have no default at all and are yours to write: a file without `version` does

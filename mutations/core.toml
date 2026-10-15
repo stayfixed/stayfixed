@@ -1526,8 +1526,8 @@ reddens = [
 [[mutation]]
 name = "an unknown key in a known table is echoed back raw"
 file = "src/stayfixed/config/loader.py"
-before = '''        raise ConfigError(f"[{name}] has unknown key(s): {_named(unknown, 'key')}")'''
-after = '''        raise ConfigError(f"[{name}] has unknown key(s): {', '.join(unknown)}")'''
+before = '''            f"[{name}] has unknown key(s): {_named(unknown, 'key')}", key=f"{name}.{unknown[0]}"'''
+after = '''            f"[{name}] has unknown key(s): {', '.join(unknown)}", key=f"{name}.{unknown[0]}"'''
 reddens = [
   "tests/config/test_loader.py::test_unknown_keys_name_the_typo_and_count_the_rest_never_quoting_them",
 ]
@@ -1538,8 +1538,8 @@ reddens = [
 [[mutation]]
 name = "an unknown budget key is echoed back raw"
 file = "src/stayfixed/config/loader.py"
-before = '''        raise ConfigError(f"[budgets] has unknown key(s): {_named(unknown, 'key')}")'''
-after = '''        raise ConfigError(f"[budgets] has unknown key(s): {', '.join(unknown)}")'''
+before = '''            f"[budgets] has unknown key(s): {_named(unknown, 'key')}", key=f"budgets.{unknown[0]}"'''
+after = '''            f"[budgets] has unknown key(s): {', '.join(unknown)}", key=f"budgets.{unknown[0]}"'''
 reddens = [
   "tests/config/test_loader.py::test_unknown_keys_name_the_typo_and_count_the_rest_never_quoting_them",
 ]
@@ -1552,8 +1552,8 @@ reddens = [
 [[mutation]]
 name = "a configuration enum quotes the value back again"
 file = "src/stayfixed/config/loader.py"
-before = '''        raise ConfigError(f"{section}.{key} must be one of {', '.join(allowed)}")'''
-after = '''        raise ConfigError(f"{section}.{key} must be one of {', '.join(allowed)}; got {value!r}")'''
+before = '''            f"{section}.{key} must be one of {', '.join(allowed)}", key=f"{section}.{key}"'''
+after = '''            f"{section}.{key} must be one of {', '.join(allowed)}; got {value!r}", key=f"{section}.{key}"'''
 reddens = [
   "tests/config/test_loader.py::test_an_enumerated_value_is_refused_without_being_quoted",
 ]
@@ -1946,13 +1946,13 @@ reddens = [
 name = "stayfixed.toml nested past the parser is an internal error"
 file = "src/stayfixed/config/loader.py"
 before = """
-        raw = tomllib.loads(text)
+        return tomllib.loads(text)
     except UNPARSEABLE as exc:
-"""
+        raise ConfigError("""
 after = """
-        raw = tomllib.loads(text)
+        return tomllib.loads(text)
     except tomllib.TOMLDecodeError as exc:
-"""
+        raise ConfigError("""
 reddens = [
   "tests/config/test_deep_toml.py::test_a_reader_answers_a_document_nested_past_the_parser_as_one_that_does_not_parse[loads]",
   "tests/assess/test_gate_command.py::test_a_stayfixed_toml_nested_past_the_parser_does_not_load_naming_the_side[tree]",
@@ -2061,8 +2061,8 @@ reddens = [
 [[mutation]]
 name = "a custom gate's name refusal prints the pattern"
 file = "src/stayfixed/config/loader.py"
-before = "        raise ConfigError(GATES_CUSTOM_NAME.format(count=len(unusable), rule=NAME_RULE))"
-after = "        raise ConfigError(GATES_CUSTOM_NAME.format(count=len(unusable), rule=PROJECT_NAME.pattern))"
+before = "        raise ConfigError(GATES_CUSTOM_NAME.format(count=len(unusable), rule=NAME_RULE), key=first)"
+after = "        raise ConfigError(GATES_CUSTOM_NAME.format(count=len(unusable), rule=PROJECT_NAME.pattern), key=first)"
 reddens = [
   "tests/config/test_loader.py::test_every_name_refusal_words_the_rule_and_never_prints_the_pattern",
 ]
@@ -3788,4 +3788,90 @@ after = """        if False:
             raise MachineConfigError(f"{machine}: {sentence}")"""
 reddens = [
   "tests/config/test_owner.py::test_refuse_raises_for_what_note_notes[unknown-key]",
+]
+
+# The NOTE loader (`loader.loads_noting`): an unknown name is ignored and an invalid value costs
+# only its own key, so a session keeps every other setting the project made.
+[[mutation]]
+name = "the NOTE path drops the whole document on a keyed refusal"
+file = "src/stayfixed/config/loader.py"
+before = "            if exc.key is None or attempts == 0 or not _removed(document, exc.key):"
+after = "            if exc.key is None or attempts == 0 or document.clear() is not None:"
+reddens = ["tests/config/test_loader_note.py::test_an_invalid_value_resets_only_its_key"]
+
+[[mutation]]
+name = "the NOTE path catches ConfigError but not PathEscape"
+file = "src/stayfixed/config/loader.py"
+before = "        except (ConfigError, PathEscape) as exc:"
+after = "        except ConfigError as exc:"
+reddens = ["tests/config/test_loader_note.py::test_an_escaping_path_resets_only_that_path"]
+
+[[mutation]]
+name = "the NOTE retry takes a key the document does not hold for removed"
+file = "src/stayfixed/config/loader.py"
+before = "    return any(\n        isinstance(value, dict)"
+after = "    return True or any(\n        isinstance(value, dict)"
+reddens = [
+  "tests/config/test_loader_note.py::test_a_validator_that_keeps_refusing_spends_the_document_and_stops",
+]
+
+[[mutation]]
+name = "an unknown name's note prints it raw"
+file = "src/stayfixed/config/loader.py"
+before = '            notes.append(UNKNOWN_NOTE.format(name=clipped(f"{dotted}.{key}")))'
+after = '            notes.append(UNKNOWN_NOTE.format(name=f"{dotted}.{key}"))'
+reddens = ["tests/config/test_loader_note.py::test_an_unknown_name_is_never_printed_raw"]
+
+[[mutation]]
+name = "the NOTE path removes a repository's machine-only table without a note"
+file = "src/stayfixed/config/loader.py"
+before = "    notes.extend(resolve([Layer(LayerName.REPOSITORY, machine_only)]).notes)"
+after = "    pass"
+reddens = ["tests/config/test_loader_note.py::test_a_repository_guards_section_is_refused_by_resolve"]
+
+[[mutation]]
+name = "the document's budget wins over the owner's session budget"
+file = "src/stayfixed/config/loader.py"
+before = "configured={**configured, **session})"
+after = "configured={**session, **configured})"
+reddens = ["tests/config/test_loader_note.py::test_the_owners_session_budgets_win_over_the_repositorys"]
+
+# Under REFUSE nothing changes: an unknown key is still the command's refusal.
+[[mutation]]
+name = "_build drops an unknown key under REFUSE"
+file = "src/stayfixed/config/loader.py"
+before = """    unknown = sorted(set(values) - set(known))
+    if unknown:"""
+after = """    values = {key: value for key, value in values.items() if key in known}
+    unknown = sorted(set(values) - set(known))
+    if unknown:"""
+reddens = ["tests/config/test_loader_note.py::test_refuse_still_refuses_each_of_them[key]"]
+
+# The preset loader's refusal carries no key, so the name is held to the shipped presets first.
+[[mutation]]
+name = "the preset name is read before its membership check"
+file = "src/stayfixed/config/loader.py"
+before = "    if name not in shipped_presets():"
+after = "    load_preset(name)\n    if name not in shipped_presets():"
+reddens = ["tests/config/test_loader_note.py::test_an_unknown_preset_resets_to_recommended"]
+
+# `contained()` names no key; `validate_paths` knows which `[paths]` key it was asked about.
+[[mutation]]
+name = "validate_paths stops naming the key of a contained() refusal"
+file = "src/stayfixed/config/paths.py"
+before = '            exc.key = f"paths.{name}"'
+after = "            exc.key = None"
+reddens = [
+  "tests/config/test_loader_note.py::test_a_path_through_a_symlink_resets_only_that_path",
+]
+
+# A custom gate's name may hold a dot, so the retry asks each level for the whole remaining name
+# before it splits it.
+[[mutation]]
+name = "the NOTE retry cannot remove a key whose name holds a dot"
+file = "src/stayfixed/config/loader.py"
+before = "    if dotted in table:\n        del table[dotted]"
+after = "    if dotted in table and \".\" not in dotted:\n        del table[dotted]"
+reddens = [
+  "tests/config/test_loader_note.py::test_a_custom_gate_whose_name_holds_a_dot_is_dropped_by_its_whole_name",
 ]

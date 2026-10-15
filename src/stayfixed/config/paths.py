@@ -46,7 +46,15 @@ from stayfixed.grammar import PATH_VALUE
 
 class PathEscape(Refusal):
     """A configured path that leaves the project root or passes through a symlink, or one
-    `contained()` cannot say either of (`PathUnasked`)."""
+    `contained()` cannot say either of (`PathUnasked`).
+
+    `key` is the `[paths]` key `validate_paths` refused, `paths.<name>`, which the loader's NOTE
+    path removes so the preset's value applies; `None` from any other caller of `contained()`.
+    """
+
+    def __init__(self, message: str, *, key: str | None = None) -> None:
+        super().__init__(message)
+        self.key = key
 
 
 class PathUnasked(PathEscape):
@@ -173,13 +181,17 @@ PATH_RULE = (
 
 
 def validate_paths(config: Config, root: Path) -> dict[str, Path]:
+    """Every `[paths]` value contained in `root`, or a `PathEscape` keyed to the first that is
+    not, so the loader's NOTE path can put that one key back to the preset's value."""
     resolved_root = root.resolve()
     for name, relative in config.paths.as_dict().items():
         if not PATH_VALUE.match(relative):
             # Named and never quoted: this is the value a report would otherwise print.
             # The rule in words, not `PATH_VALUE.pattern`: the lookahead that closes `.` and `..`
             # as segments is correct and is no sentence a person can act on.
-            raise PathEscape(f"paths.{name} is not a plain relative path: {PATH_RULE}")
+            raise PathEscape(
+                f"paths.{name} is not a plain relative path: {PATH_RULE}", key=f"paths.{name}"
+            )
         if names_control_directory(relative):
             # Named and never quoted, for the same reason. Nothing reserved git's control
             # directory: the grammar admits a leading dot, and `contained()` refused an
@@ -194,7 +206,8 @@ def validate_paths(config: Config, root: Path) -> dict[str, Path]:
             # `.github/workflows/` is stayfixed's own footprint.
             raise PathEscape(
                 f"paths.{name} names git's control directory, which is git's and not "
-                "stayfixed's to write into"
+                "stayfixed's to write into",
+                key=f"paths.{name}",
             )
         if names_stayfixed_directory(relative):
             # Named and never quoted. `.stayfixed/` is where stayfixed keeps its manifest and, under
@@ -210,14 +223,20 @@ def validate_paths(config: Config, root: Path) -> dict[str, Path]:
             # keeps in it is found by a constant, never through `[paths]`.
             raise PathEscape(
                 f"paths.{name} names stayfixed's own directory {STAYFIXED_DIRECTORY}, which holds "
-                "its manifest and state git never sees and is not a place for a configured path"
+                "its manifest and state git never sees and is not a place for a configured path",
+                key=f"paths.{name}",
             )
-    return {
-        name: contained(
-            root,
-            relative,
-            allow_final_symlink=(name == "memory"),
-            resolved_root=resolved_root,
-        )
-        for name, relative in config.paths.as_dict().items()
-    }
+    found: dict[str, Path] = {}
+    for name, relative in config.paths.as_dict().items():
+        try:
+            found[name] = contained(
+                root,
+                relative,
+                allow_final_symlink=(name == "memory"),
+                resolved_root=resolved_root,
+            )
+        except PathEscape as exc:
+            # `contained()` is every caller's and names no key; this caller knows which one.
+            exc.key = f"paths.{name}"
+            raise
+    return found
