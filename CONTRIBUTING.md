@@ -116,6 +116,19 @@ that tree holds nothing but the local artifacts the same run just removed. Both 
 as every removal in a project root does. A temporary directory a command creates for itself and removes whole when
 it finishes is outside the rule: nothing but that command ever wrote into it.
 
+## Configuration
+
+Every key a configuration layer can hold — the preset, a repository's `stayfixed.toml`, the
+overlay's files, the machine file — has one class in `src/stayfixed/config/classes.py`, and the
+class names the layers that may set it: the machine owner's alone (`personal.*`, `guards.*`,
+`setup.*`), a preference, a session's parameter, a gate's parameter, the repository's alone, or
+the plugin's. `classes.resolve` is the one place a stack of layers becomes values, and a layer a
+key's class does not admit contributes nothing to it. So a field added to a section of
+`src/stayfixed/config/schema.py` needs its row in `CLASSES` in the same change:
+`tests/config/test_classes.py` derives every key from the schema's dataclasses and reddens on one
+with no class. Choose the narrowest class that is true of the key: a gate's input is never a
+preference, or a pull request would choose what it is judged by.
+
 ## Areas
 
 An area is a subpackage of `src/stayfixed/` that the CLI frame, the hook registry and `doctor`'s

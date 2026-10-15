@@ -3699,3 +3699,57 @@ reddens = [
   "tests/config/test_paths.py::test_a_root_through_a_symlink_loop_is_an_oserror_naming_it[as-3-11]",
   "tests/setup/test_setup.py::test_a_symlink_loop_at_any_path_setup_is_given_is_a_refusal_naming_it[home]",
 ]
+
+# Every configuration key has one class, and the class decides which layers may set it
+# (`src/stayfixed/config/classes.py`). A gate's input is the base branch's to set, so moving one
+# to the repository-only class would change nothing a test of the layers sees and the table must.
+[[mutation]]
+name = "ledger.code_roots is classed as the repository's alone"
+file = "src/stayfixed/config/classes.py"
+before = '        "ledger.code_roots": KeyClass.GATE_PARAMETER,'
+after = '        "ledger.code_roots": KeyClass.REPOSITORY_ONLY,'
+reddens = ["tests/config/test_classes.py::test_the_table[ledger.code_roots-gate-parameter]"]
+
+# The repository never sets a machine-only key: a clone's `[guards] bg_cleanup = false` would
+# switch the owner's guard off.
+[[mutation]]
+name = "the repository may set a machine-only key"
+file = "src/stayfixed/config/classes.py"
+before = "        KeyClass.MACHINE_ONLY: frozenset(ORDER) - {LayerName.REPOSITORY},"
+after = "        KeyClass.MACHINE_ONLY: frozenset(ORDER),"
+reddens = ["tests/config/test_classes.py::test_the_repository_cannot_set_a_machine_only_key"]
+
+# The layers are ranked by `ORDER`, not by where the caller put them, and the highest wins.
+[[mutation]]
+name = "resolve keeps the lowest layer's value"
+file = "src/stayfixed/config/classes.py"
+before = "    for layer in sorted(stack, key=lambda layer: _RANK[layer.name]):"
+after = "    for layer in sorted(stack, key=lambda layer: _RANK[layer.name], reverse=True):"
+reddens = ["tests/config/test_classes.py::test_a_higher_layer_wins_and_says_which"]
+
+[[mutation]]
+name = "a merged key folds highest first"
+file = "src/stayfixed/config/classes.py"
+before = "                values[key] = folds[key](values[key], value)"
+after = "                values[key] = folds[key](value, values[key])"
+reddens = ["tests/config/test_classes.py::test_merge_folds_lowest_first"]
+
+# A bare section name is not a key: answered by its wildcard, a caller that forgot to dot a key
+# would be told the section's class rather than that it asked about no key.
+[[mutation]]
+name = "class_of answers a bare section by its wildcard"
+file = "src/stayfixed/config/classes.py"
+before = "    if not dot or wildcard not in CLASSES:"
+after = "    if wildcard not in CLASSES:"
+reddens = ["tests/config/test_classes.py::test_a_key_with_no_class_is_a_key_error[guards]"]
+
+# A key under a wildcard is any quoted TOML text the layer chose, so the note prints it through
+# `printed.clipped`.
+[[mutation]]
+name = "a refused layer's note prints its key raw"
+file = "src/stayfixed/config/classes.py"
+before = "                notes.append(REFUSED_LAYER_NOTE.format(key=clipped(key), layer=layer.name))"
+after = "                notes.append(REFUSED_LAYER_NOTE.format(key=key, layer=layer.name))"
+reddens = [
+  "tests/config/test_classes.py::test_a_refused_layer_note_carries_neither_its_value_nor_a_raw_key",
+]
