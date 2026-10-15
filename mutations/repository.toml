@@ -3261,13 +3261,22 @@ before = '"ref": "v'
 after = '"ref": "v0.0.1-'
 reddens = ["tests/test_manifests.py::test_marketplace_has_a_description_and_an_unversioned_entry"]
 
-# A release commit pins the plugin commit by `sha` beside the `ref`, and the suite it runs holds the
-# `sha` to a commit id's shape; `dev` pins none, so the mutation adds one.
+# Every tree pins the plugin commit by `sha` beside the `ref` (a release commit its own, `dev` the
+# last release's), and the suite holds the `sha` to a commit id's shape and to being there. The
+# first mutation prefixes the pinned value, 41 characters with an uppercase one; the second moves
+# the `sha` out of the source into a key of the entry nothing reads, so the source pins none.
 [[mutation]]
 name = "the marketplace pins a sha that is no commit id"
 file = ".claude-plugin/marketplace.json"
-before = '"ref": "v'
-after = '"sha": "C", "ref": "v'
+before = '"sha": "'
+after = '"sha": "C'
+reddens = ["tests/test_manifests.py::test_marketplace_has_a_description_and_an_unversioned_entry"]
+
+[[mutation]]
+name = "the marketplace entry pins no sha"
+file = ".claude-plugin/marketplace.json"
+before = ",\n        \"sha\": "
+after = "\n      },\n      \"unread\": {\n        \"sha\": "
 reddens = ["tests/test_manifests.py::test_marketplace_has_a_description_and_an_unversioned_entry"]
 
 # `RELEASING.md` names the plugin repository in the three commands the owner copies to create it,

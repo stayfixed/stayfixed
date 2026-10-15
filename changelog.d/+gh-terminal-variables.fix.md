@@ -1,1 +1,0 @@
-`stayfixed overlay create` no longer fails with "answered something other than the `isTemplate` object it was asked for" when `GH_FORCE_TTY` or `CLICOLOR_FORCE` is set in your environment: either one made `gh` colour its JSON output, which stayfixed could not read. Commands that run `gh` now leave both variables out of its environment.
