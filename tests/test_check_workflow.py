@@ -1152,7 +1152,7 @@ def test_the_release_attests_the_plugin_tree_it_rendered_from_the_commit() -> No
     # manifest of its tree beside it, and attests that manifest at the same pinned action as
     # `dist/*`; `github-release` attaches it, so anyone can compare the plugin repository's tag
     # with the file this run attested. Mutation (oracle): `mutations/`'s "the release stops
-    # attesting the plugin tree" drops that attestation step.
+    # attesting the plugin tree" points that attestation step at `dist/*`.
     #
     # `--rev "$GITHUB_SHA"` is a text pin with no behavioural mutation: on a tag push `HEAD` is
     # that commit, so a commit of `HEAD` is the same commit and no run can tell them apart. It is

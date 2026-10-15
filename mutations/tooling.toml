@@ -344,13 +344,14 @@ reddens = [
 [[mutation]]
 name = "the release stops attesting the plugin tree"
 file = ".github/workflows/release.yml"
-before = '''      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
-        # The plugin tree's manifest, attested on its own: one line per file, its mode, its
-        # sha256 and its path, the tree of the commit handed on above.
+before = '''        # sha256 and its path, the tree of the commit handed on above.
         with:
           subject-path: ${{ runner.temp }}/plugin-tree.txt
 '''
-after = ''
+after = '''        # sha256 and its path, the tree of the commit handed on above.
+        with:
+          subject-path: ${{ runner.temp }}/dist/*
+'''
 reddens = [
   "tests/test_check_workflow.py::test_the_release_attests_the_plugin_tree_it_rendered_from_the_commit",
 ]
@@ -1187,6 +1188,15 @@ before = '        if key in seen:'
 after = '        if False:'
 reddens = [
   "tests/scripts/test_mutation_oracle.py::test_a_mutation_declared_twice_is_a_finding",
+]
+
+[[mutation]]
+name = "a workflow anchor on an action pin passes the static check"
+file = "scripts/mutation_oracle.py"
+before = '_ACTION_PIN = re.compile(r"@[0-9a-f]{40}\b")'
+after = '_ACTION_PIN = re.compile(r"@[0-9a-f]{41}\b")'
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_an_entry_anchored_on_a_rewritten_action_pin_is_a_finding",
 ]
 
 # The oracle's runs share a bytecode cache warmed from HEAD, and a `.pyc` is trusted on
@@ -3424,14 +3434,8 @@ name = "the Release job keeps a token in its checkout"
 file = ".github/workflows/release.yml"
 before = """        with:
           persist-credentials: false
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: dist
-          path: dist/"""
-after = """      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: dist
-          path: dist/"""
+      - uses: actions/download-artifact@"""
+after = """      - uses: actions/download-artifact@"""
 reddens = [
   "tests/test_check_workflow.py::test_no_checkout_in_the_release_keeps_its_token",
 ]
