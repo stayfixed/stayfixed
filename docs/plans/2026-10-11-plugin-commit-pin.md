@@ -1015,7 +1015,7 @@ Recorded in this file's Findings, quoting only persisted logs under the scratchp
 - [x] **Step 3: An empty repository's answer.** If `stayfixed/stayfixed-plugin` exists and is
   still empty when this runs, `gh api repos/stayfixed/stayfixed-plugin/git/ref/heads/main` answers
   `409` or `404`, as Task 4 step 8 reads it; otherwise a follow-up for the first release.
-- [ ] **Step 4: After the merge,** amend the private design's §5.9 (a URL source pinned to the tag
+- [x] **Step 4: After the merge,** amend the private design's §5.9 (a URL source pinned to the tag
   and to its commit, the commit computed from the release commit) and §15.7 (the 2026-10-11
   decisions), in that repository.
 
@@ -1223,3 +1223,6 @@ session's scratchpad.
   changelog differ between the two sources; `publish_plugin.py --tag v0.3.0` planned "would push
   218 files … commit d34a4f0 … main and v0.3.0" and `--yes` pushed them; GitHub's API read
   `main` and `v0.3.0` back at `d34a4f0`.
+- **Step 4, the private design.** Nothing left to amend: its §5.9 already describes the URL
+  source pinned by `ref` to the tag and by `sha` to the plugin commit, computed from the release
+  commit, and its §15.7 records the 2026-10-11 decisions.

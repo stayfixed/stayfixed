@@ -36,20 +36,22 @@ def test_claude_manifest_names_the_plugin_its_version_and_titled_user_config() -
 
 def test_marketplace_has_a_description_and_an_unversioned_entry() -> None:
     # The entry fetches the plugin from its own repository, pinned to this release's tag by `ref`
-    # and, on a release commit after `scripts/release.py pin`, to the plugin commit by `sha`: `dev`
-    # pins none before the first release that carries one, and a release commit runs this suite
-    # with one. Whether the `sha` is the plugin commit is the release check's, at the tag.
+    # and to the plugin commit by `sha`: a release commit pins its own after `scripts/release.py
+    # pin`, and `dev` carries the last release's back. Every tree carries one since `0.3.0`; an
+    # entry without it (a merge that resolved the file to an older copy) would build the next
+    # plugin commit with no parent, which `pin` refuses only when the release is cut. Whether the
+    # `sha` is the plugin commit is the release check's, at the tag.
     # Mutations (declared): the `ref` made `v0.0.1-<version>`, which is no tag of this release ->
-    # this reddens; `mutations/`'s "the marketplace pins a sha that is no commit id" -> this
-    # reddens.
+    # this reddens; `mutations/`'s "the marketplace pins a sha that is no commit id" and "the
+    # marketplace entry pins no sha" -> this reddens.
     marketplace = json.loads((ROOT / ".claude-plugin" / "marketplace.json").read_text())
     assert marketplace["name"] == "stayfixed-marketplace"
     assert marketplace["description"]
     (entry,) = marketplace["plugins"]
     assert entry["name"] == "stayfixed"
     source = dict(entry["source"])
-    sha = source.pop("sha", None)
-    assert sha is None or re.fullmatch(r"[0-9a-f]{40}", sha), sha
+    assert "sha" in source, source
+    assert re.fullmatch(r"[0-9a-f]{40}", source.pop("sha")), entry["source"]
     assert source == {
         "source": "url",
         "url": PLUGIN_URL,
