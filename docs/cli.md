@@ -147,8 +147,8 @@ the region that carries the repository's: this checkout has no `origin` remote (
 `stayfixed attach`), which is asked first and is said the same way by `attach`, `attach --check`,
 `doctor` and the session-start line; the overlay records no remote for this project (run
 `stayfixed attach`); a record that cannot be read (the file is named inside the region); or a
-record naming a different remote URL — the same repository under another URL form, https or ssh,
-counts too, as URLs are compared exactly — the one case whose way out is
+record naming a different remote URL — an ssh and an https URL of one repository are the same
+remote, as `attach` describes — the one case whose way out is
 `stayfixed attach --trust-remote`, and only if this checkout should be bound.
 
 **Trust interacts with this command**, and the interaction is the non-obvious part: `memory
@@ -2218,14 +2218,18 @@ only enforcement is a step in a procedure is no gate at all. An overlay that gra
 no flag, because the gate is on the capability and not on the command.
 
 **A mismatch needs `--trust-remote`.** The overlay records the remote URL it bound under this
-project name; if this repository's `origin` is a different URL, `attach` refuses (`2`) unless you
-say otherwise. URLs are compared exactly, so the same repository under another URL form — cloned
-over https where the overlay recorded ssh, say — is a mismatch too, and the refusal says so. A
-clone chooses its own `project.name`; it does not choose what the overlay recorded under that
-name. A checkout with no `origin` is not a mismatch, whatever the overlay records: there is
-nothing to compare, so `--trust-remote` does not apply, and `attach` refuses it, as `--check`,
-`doctor` and the memory commands report it, with one sentence: add the `origin`, then run
-`stayfixed attach`.
+project name; if this repository's `origin` names a different repository, `attach` refuses (`2`)
+unless you say otherwise. One repository is one remote whichever of git's three spellings names
+it: `git@host:owner/repo`, `ssh://git@host/owner/repo` and `https://host/owner/repo`, each with or
+without `.git`, bind one another when the host and the path agree, the host in any case and, on
+github.com alone, the path too. So a clone made over https binds a record made over ssh, and the
+record keeps the form it was written in. Nothing else is normalised: a different owner,
+repository, host, port or user is a different remote, and a URL in no such form binds only the
+record that names it byte for byte. A clone chooses its own `project.name`; it does not choose
+what the overlay recorded under that name. A checkout with no `origin` is not a mismatch, whatever
+the overlay records: there is nothing to compare, so `--trust-remote` does not apply, and `attach`
+refuses it, as `--check`, `doctor` and the memory commands report it, with one sentence: add the
+`origin`, then run `stayfixed attach`.
 
 **A group that never moved is refused.** `attach` **links**; it never moves a note. So a
 `memory.groups` entry that is still a real directory under `paths.memory` would be linked over,
