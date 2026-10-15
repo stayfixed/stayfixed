@@ -1643,13 +1643,14 @@ reddens = [
   "tests/test_documents.py::test_the_readme_says_the_guards_have_no_off_switch_and_how_to_pass_one",
 ]
 
-# The one a user relies on most: no configuration key or flag turns a guard off, so a block is
-# either right or a bug. A README that offered a switch would invite the workaround.
+# The one a user relies on most: only the machine owner turns a guard off, in the machine file,
+# and no repository key or flag does, so a block in a clone is either right or a bug. A README
+# that offered a repository the switch would invite the workaround.
 [[mutation]]
-name = "the README gives the guards a switch that turns them off"
+name = "the README lets a repository switch a guard off"
 file = "README.md"
-before = "stayfixed has no switch that turns a guard off"
-after = "stayfixed has a setting that turns a guard off"
+before = "a repository never can, in its configuration"
+after = "a repository can too, in its configuration"
 reddens = [
   "tests/test_documents.py::test_the_readme_says_the_guards_have_no_off_switch_and_how_to_pass_one",
 ]

@@ -106,8 +106,10 @@ background: one that leaves an `&` job behind with no `trap … EXIT` to stop it
 `sleep` (directly, or behind `env` or `uv run` and uv's options), is refused before it starts, and
 the refusal names the remedy. Other wrappers, such as `nohup`, `timeout` or `bash -c`, are not
 read through ([`docs/cli.md`](https://github.com/stayfixed/stayfixed/blob/main/docs/cli.md#stayfixed-guard-bg-cleanup) lists them). The same
-command run in the foreground passes. stayfixed has no switch that turns a guard off, in
-configuration or on the command line, so a false block is a defect: report it in
+command run in the foreground passes. The machine owner may switch a session guard off in the
+machine file; a repository never can, in its configuration or on the command line
+([`docs/cli.md`](https://github.com/stayfixed/stayfixed/blob/main/docs/cli.md#configuration) names
+the key), so a false block is a defect: report it in
 [an issue](https://github.com/stayfixed/stayfixed/issues) with the command it refused.
 
 On Claude Code a guard's refusal stopped the command before it ran when this was measured

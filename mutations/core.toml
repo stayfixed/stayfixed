@@ -3753,3 +3753,39 @@ after = "                notes.append(REFUSED_LAYER_NOTE.format(key=key, layer=l
 reddens = [
   "tests/config/test_classes.py::test_a_refused_layer_note_carries_neither_its_value_nor_a_raw_key",
 ]
+
+# The owner's layer (`src/stayfixed/config/owner.py`): a session goes on through a machine file
+# that does not load, on the preset's personal values and guards, and says so; a command refuses.
+[[mutation]]
+name = "a broken machine file raises under NOTE"
+file = "src/stayfixed/config/owner.py"
+before = """    except MachineConfigError as exc:
+        if unknown is Unknown.REFUSE:
+            raise"""
+after = """    except MachineConfigError as exc:
+        if True:
+            raise"""
+reddens = [
+  "tests/config/test_owner.py::test_a_broken_machine_file_is_the_preset_and_names_the_file",
+]
+
+# A gate's budget is the repository's: the owner's layer leaves it out before `resolve`, whose
+# own refusal would otherwise be the only thing between the machine file and a gate's bound.
+[[mutation]]
+name = "the owner's layer admits a gate budget"
+file = "src/stayfixed/config/owner.py"
+before = '            elif table == "budgets" and key in GATE_BUDGETS:'
+after = "            elif False:"
+reddens = ["tests/config/test_owner.py::test_a_gate_budget_in_the_machine_file_is_a_note"]
+
+# Under REFUSE every problem a session would note is the command's refusal, naming the file.
+[[mutation]]
+name = "the owner's layer notes instead of refusing under REFUSE"
+file = "src/stayfixed/config/owner.py"
+before = """        if unknown is Unknown.REFUSE:
+            raise MachineConfigError(f"{machine}: {sentence}")"""
+after = """        if False:
+            raise MachineConfigError(f"{machine}: {sentence}")"""
+reddens = [
+  "tests/config/test_owner.py::test_refuse_raises_for_what_note_notes[unknown-key]",
+]

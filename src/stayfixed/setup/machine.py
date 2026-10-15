@@ -1,10 +1,13 @@
 """Write the machine configuration file, the one both existing readers already read.
 
-**This module invents no schema.** `config.loader._personal` reads `[personal]` and
-`config.overlay.overlay_root` reads `[overlay] root`, both from the file no variable moves, and
-neither changes here. This writer adds `[machine]` beside them — what `setup` installed, so `doctor`
-can check it later — and nothing else. A caller that wants a fourth table is asking for a third
-reader of this file, which the same rule keeps out.
+**This module invents no schema.** `config.loader._personal` reads `[personal]`,
+`config.owner.resolve_owner` reads `[personal]`, `[guards]` and the session budgets of
+`[budgets]`, and `config.overlay.overlay_root` reads `[overlay] root`, all from the file no
+variable moves, and none of them changes here. This writer adds `[machine]` beside them — what
+`setup` installed, so `doctor` can check it later — and nothing else. `[guards]`, `[budgets]` and
+`[setup]` are the owner's to write by hand, and a rewrite carries them through untouched, as it
+carries every table it does not own (below). A caller that wants another table is asking for
+another reader of this file, which belongs beside those readers, in `config`.
 
 **A rewrite merges, table by table, key by key — including the tables this writer knows
 nothing about.** `setup` runs again on a machine that already has a file, and the common case is

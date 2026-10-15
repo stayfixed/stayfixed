@@ -3568,7 +3568,26 @@ preset = "recommended"   # the preset `setup` applies
 
 [overlay]
 root = "~/stayfixed-overlay"   # only read in overlay mode
+
+[guards]
+bg_cleanup = true        # false switches the bg-cleanup session guard off on this machine
+
+[budgets]                # the session's budgets only, which win over a project's
+memory_index_words = 1200
+startup_rules_words = 1600
+volatile_notes_words = 2500
+volatile_ttl_days = 30
 ```
+
+`[guards]` is the one place a session guard is switched off, and it is yours: a repository's
+`stayfixed.toml` cannot carry the table. `[budgets]` here holds only the four budgets that bound
+what a session loads; the five a gate judges a pull request by (`agents_md_lines`,
+`agents_md_words`, `status_lines`, `roadmap_prose_lines`, `roadmap_prose_words`) are the
+repository's alone, and one written here is ignored with a note. Every key you leave out is the
+preset's. A command that reads this file refuses a key it does not know or a value it cannot use,
+naming the file and the key; a session reads what it can instead, ignores an unknown key, puts the
+preset's value back for an unusable one, and says so, and a file that does not load at all leaves
+a session on the preset's personal values and guards.
 
 `reply_language` and `artifact_language` are kept for you and read by nothing in this release:
 they meant something only through the `recommended` preset's standing rule about which language
