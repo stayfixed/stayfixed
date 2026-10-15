@@ -1013,7 +1013,7 @@ def test_an_entry_anchored_on_a_rewritten_action_pin_is_a_finding(tmp_path: Path
     # Mutation (declared): the pin rule dropped -> the list below comes out empty.
     workflows = tmp_path / ".github" / "workflows"
     workflows.mkdir(parents=True)
-    pinned = "      - uses: actions/checkout@" + "3d3c42e5" * 5 + " # v7\n"
+    pinned = "      - uses: actions/checkout@" + "a" * 40 + " # v7\n"
     (workflows / "ci.yml").write_text(pinned + "        with:\n", encoding="utf-8")
     elsewhere = tmp_path / "scan.yml"
     elsewhere.write_text(pinned, encoding="utf-8")
