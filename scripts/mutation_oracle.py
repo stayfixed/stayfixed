@@ -39,6 +39,7 @@ import contextlib
 import itertools
 import os
 import queue
+import re
 import shutil
 import signal
 import subprocess
@@ -652,17 +653,24 @@ def undefined_tests(
     return missing
 
 
+# An action pinned by its full commit id, as `.github/dependabot.yml` keeps every `uses:` under
+# `.github/workflows/` and rewrites on each bump.
+_ACTION_PIN = re.compile(r"@[0-9a-f]{40}\b")
+
+
 def static_findings(mutations: list[Mutation]) -> list[str]:
     """What is wrong with `mutations` that no pytest run is needed to see.
 
     A file that does not exist, a `before` that does not occur exactly once, a `reddens` id that
     names no test, an entry repeating another's `(file, before, after)` — which proves nothing
-    the first did not, since an entry is caught when any of its ids reddens — and a `name` another
-    entry also carries. A name is how every comment cites an entry (CONTRIBUTING.md, "Tests"), so
-    two entries under one name make each such citation point at two guards, and the suite's
-    citation test resolves a name to an entry only while there is one. Over the entries this is
-    handed: an unfiltered run, and the suite, see every group file at once. One read and one parse
-    per file, and one collection for every parametrized id.
+    the first did not, since an entry is caught when any of its ids reddens — a `name` another
+    entry also carries, and a `before` in a workflow that quotes an action pin. A name is how
+    every comment cites an entry (CONTRIBUTING.md, "Tests"), so two entries under one name make
+    each such citation point at two guards, and the suite's citation test resolves a name to an
+    entry only while there is one. A quoted pin stops occurring at Dependabot's next bump, and
+    the entry then turns that pull request red on a change it did not make. Over the entries this
+    is handed: an unfiltered run, and the suite, see every group file at once. One read and one
+    parse per file, and one collection for every parametrized id.
     """
     findings: list[str] = []
     texts: dict[Path, str | None] = {}
@@ -681,6 +689,13 @@ def static_findings(mutations: list[Mutation]) -> list[str]:
         )
         if anchor is not None:
             findings.append(f"{mutation.name}: {anchor}")
+        if mutation.file.is_relative_to(ROOT / ".github" / "workflows") and _ACTION_PIN.search(
+            mutation.before
+        ):
+            findings.append(
+                f"{mutation.name}: its `before` quotes an action pin Dependabot rewrites; anchor "
+                "it on the step's other lines"
+            )
         key = (mutation.file, mutation.before, mutation.after)
         if key in seen:
             findings.append(f"{mutation.name}: repeats the mutation of {seen[key]!r}")
