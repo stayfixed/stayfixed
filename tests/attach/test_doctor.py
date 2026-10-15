@@ -2980,16 +2980,18 @@ def test_an_owners_binding_record_holding_a_number_past_the_parser_reads_as_one_
         attach_check(root, store=store, machine=machine, home=tmp_path / "home")
 
 
-# The owner's own checkout after `origin` moved from ssh to https: the overlay's record binds this
-# project to the ssh remote, so the binding is a mismatch.
-HTTPS_ORIGIN = "https://github.com/owner/p.git"
+# The owner's own checkout after `origin` moved to a fork: the overlay's record binds this project
+# to the repository it was attached from, so the binding is a mismatch.
+FORK_ORIGIN = "https://github.com/fork/p.git"
+# The same repository the record binds, cloned over https where the record names ssh.
+HTTPS_ORIGIN = "https://github.com/owner/p"
 
 
 def test_an_owners_checkout_the_record_no_longer_binds_is_told_the_binding_is_wrong(
     tmp_path: Path,
 ) -> None:
-    # An owner switches `origin` from ssh to https, so the overlay's record no longer binds this
-    # checkout and its per-project entry is red. The row said "the overlay does not grant them",
+    # An owner points `origin` at a fork, so the overlay's record no longer binds this checkout
+    # and its per-project entry is red. The row said "the overlay does not grant them",
     # which is false — the overlay grants that entry to the checkout its record binds — and its
     # remedy, `attach --store …`, is one `attach` refuses on a mismatch without `--trust-remote`.
     # The binding is what is wrong, so the row says so and hands on the `attached` row's remedy;
@@ -2997,16 +2999,32 @@ def test_an_owners_checkout_the_record_no_longer_binds_is_told_the_binding_is_wr
     # `mutations/`'s "attach tells a checkout its record does not bind that the overlay refused its
     # entries" -> the old sentence and remedy.
     root = _granting_project(tmp_path, OWN_NAME)
-    _git(root, "remote", "set-url", "origin", HTTPS_ORIGIN)
+    _git(root, "remote", "set-url", "origin", FORK_ORIGIN)
     rows = _checks(tmp_path, root, machine=_machine(tmp_path))
     assert _by_name(rows, "hook-entries") == MISMATCHED
     assert _by_name(rows, "attached") == Check(
         "attached",
         "red",
-        "the overlay records a different remote URL under this project's name (the same "
-        "repository under another URL form, https or ssh, counts as different too)",
+        "the overlay records a different remote URL under this project's name (an ssh and an "
+        "https URL of one repository are the same remote)",
         "run `stayfixed attach --check`, and `--trust-remote` only if it should be",
     )
+
+
+def test_an_owners_checkout_cloned_over_https_is_bound_by_a_record_made_over_ssh(
+    tmp_path: Path,
+) -> None:
+    # The record names the repository over ssh and this checkout cloned it over https, as a second
+    # machine does. Compared exactly, the two were a mismatch: the `attached` row went red and the
+    # entry the overlay grants this project lost its grant. They name one repository, so the
+    # binding holds and the project's grant still vouches for its entry. Mutation (oracle):
+    # `mutations/`'s "a remote binds only the URL the overlay recorded byte for byte".
+    root = _granting_project(tmp_path, OWN_NAME)
+    _git(root, "remote", "set-url", "origin", HTTPS_ORIGIN)
+    rows = _checks(tmp_path, root, machine=_machine(tmp_path))
+    assert _by_name(rows, "hook-entries").status == OK
+    attached = _by_name(rows, "attached")
+    assert attached.detail.endswith("; the binding is bound")
 
 
 # A committed `.claude/settings.json` whose `hooks` section is partly malformed, beside the forged

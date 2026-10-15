@@ -17,8 +17,9 @@ checked, and each closes a hole the other three leave open:
    containment in the overlay root alone lets an honestly-named, honestly-bound project point
    one directory sideways at another client's notes.
 4. **The binding.** The overlay's `projects/<name>/project.toml` must record this
-   repository's own `origin`. `git` runs with a scrubbed environment, because an inherited
-   `GIT_DIR` would otherwise answer for a different repository altogether.
+   repository's own `origin`, in any of the transports `binding_state` holds equal. `git` runs
+   with a scrubbed environment, because an inherited `GIT_DIR` would otherwise answer for a
+   different repository altogether.
 
 **What the environment can and cannot choose.** The store's *location* is never named by a variable
 this process reads: `resolve` takes an `env` mapping and ignores it by contract, and
@@ -231,8 +232,8 @@ NO_ORIGIN_WAY_OUT = (
 )
 NO_REMOTE = f"{NO_ORIGIN_CAUSE}; {NO_ORIGIN_WAY_OUT}"
 DIFFERENT_REMOTE = (
-    "the overlay records a different remote URL under this project's name (the same repository "
-    "under another URL form, https or ssh, counts as different too)"
+    "the overlay records a different remote URL under this project's name (an ssh and an https "
+    "URL of one repository are the same remote)"
 )
 REMOTE_MISMATCH = (
     f"{DIFFERENT_REMOTE}; run `stayfixed attach --trust-remote` only if this checkout should be "
@@ -258,21 +259,77 @@ STORE_MISSING = "the memory store's directory does not exist"
 BUILT_BY_ATTACH = "; run `stayfixed attach` to build it"
 
 
+# The three spellings of one repository that `_repository` reads, each up to the host: the scp form
+# git hands out for ssh, its `ssh://` URL and https. Each names the forge's own `git` user or no
+# user at all, so a URL naming any other account is none of them.
+_SCP = "git@"
+_SSH = "ssh://git@"
+_HTTPS = "https://"
+# A host and a path segment are compared only when spelled in these, which every forge's owner and
+# repository names are: no userinfo, no port, no percent-escape, no `~`, nothing outside ASCII.
+_NAMED = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-")
+# The hosts whose paths name an owner and a repository whatever their case. github.com resolves
+# `Owner/Repo` and `owner/repo` to one repository; elsewhere a path's case is the server's to
+# judge, and stayfixed does not guess it.
+_CASELESS_PATHS = frozenset({"github.com"})
+
+
+def _repository(url: str) -> tuple[str, str] | None:
+    """The host and the path `url` names, when it is one of the three spellings of a repository
+    `binding_state` holds equal, else `None`.
+
+    `git@host:owner/repo`, `ssh://git@host/owner/repo` and `https://host/owner/repo` each answer
+    `(host, "owner/repo")`, with one `.git` taken off the path, the host in lower case and, on
+    github.com alone, the path too. Nothing else is normalised: a path is compared as written, so
+    no `..` is resolved and no `/` collapsed, and a segment made of dots alone, an empty one or a
+    host with a port or a user in it is not read at all.
+    """
+    for prefix, separator in ((_SCP, ":"), (_SSH, "/"), (_HTTPS, "/")):
+        if url.startswith(prefix):
+            host, found, path = url[len(prefix) :].partition(separator)
+            break
+    else:
+        return None
+    segments = path.removesuffix(".git").split("/")
+    if not (found and _named(host) and all(_named(part) for part in segments)):
+        return None
+    host = host.lower()
+    path = "/".join(segments)
+    return host, path.lower() if host in _CASELESS_PATHS else path
+
+
+def _named(part: str) -> bool:
+    """Whether `part` is a host or a path segment `_repository` compares: spelled in `_NAMED`, and
+    not empty and not dots alone, which a server may resolve rather than read."""
+    return part.strip(".") != "" and set(part) <= _NAMED
+
+
 def binding_state(recorded: str | None, origin: str | None) -> str:
     """`no-origin`, `unbound`, `mismatch` or `bound`, for the remote the overlay records for this
     project and this checkout's `origin` — and never `bound` because nobody looked.
 
     A missing `origin` is answered first, whatever the record says: with nothing to compare, a
     record is neither a mismatch nor a binding, and the way out is the same with a record or
-    without one. URLs are compared exactly: normalising `git@…` against `https://…` is a binding
-    rule, and a hostile clone is caught by this comparison, since it chooses `project.name` and not
-    which remote the overlay recorded under it.
+    without one.
+
+    The record binds the `origin` it names byte for byte, and the `origin` that names the same
+    repository in another of the three spellings `_repository` reads: `git@host:owner/repo`,
+    `ssh://git@host/owner/repo` and `https://host/owner/repo`, with or without `.git`. Without
+    that, a repository bound over ssh never bound a clone of it made over https, on a second
+    machine or anyone else's. A hostile clone is still caught here, because it chooses
+    `project.name` and not which remote the overlay recorded under it: the rule holds equal only
+    spellings that agree on the host and the path, so its `origin` binds only when it names the
+    repository the owner bound. Two URLs `_repository` cannot read bind only when equal, never
+    because neither was read.
     """
     if origin is None:
         return NO_ORIGIN
     if recorded is None:
         return UNBOUND
-    return BOUND if recorded == origin else MISMATCH
+    if recorded == origin:
+        return BOUND
+    named = _repository(recorded)
+    return BOUND if named is not None and named == _repository(origin) else MISMATCH
 
 
 def read_binding_record(record: Path) -> dict[str, str]:
