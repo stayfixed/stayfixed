@@ -147,8 +147,9 @@ the region that carries the repository's: this checkout has no `origin` remote (
 `stayfixed attach`), which is asked first and is said the same way by `attach`, `attach --check`,
 `doctor` and the session-start line; the overlay records no remote for this project (run
 `stayfixed attach`); a record that cannot be read (the file is named inside the region); or a
-record naming a different remote URL — an ssh and an https URL of one repository are the same
-remote, as `attach` describes — the one case whose way out is
+record naming a different remote URL — only the three spellings `attach` describes bind across
+ssh and https, the sentence names them, and any other is compared exactly — the one case whose way
+out is
 `stayfixed attach --trust-remote`, and only if this checkout should be bound.
 
 **Trust interacts with this command**, and the interaction is the non-obvious part: `memory

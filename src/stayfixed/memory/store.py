@@ -232,8 +232,10 @@ NO_ORIGIN_WAY_OUT = (
 )
 NO_REMOTE = f"{NO_ORIGIN_CAUSE}; {NO_ORIGIN_WAY_OUT}"
 DIFFERENT_REMOTE = (
-    "the overlay records a different remote URL under this project's name (an ssh and an https "
-    "URL of one repository are the same remote)"
+    "the overlay records a different remote URL under this project's name (one repository's ssh "
+    "and https URLs bind only as `git@host:owner/repo`, `ssh://git@host/owner/repo` or "
+    "`https://host/owner/repo`, with or without `.git`; any other spelling, one with a port or "
+    "another user among them, is compared exactly)"
 )
 REMOTE_MISMATCH = (
     f"{DIFFERENT_REMOTE}; run `stayfixed attach --trust-remote` only if this checkout should be "
@@ -283,15 +285,23 @@ def _repository(url: str) -> tuple[str, str] | None:
     github.com alone, the path too. Nothing else is normalised: a path is compared as written, so
     no `..` is resolved and no `/` collapsed, and a segment made of dots alone, an empty one or a
     host with a port or a user in it is not read at all.
+
+    The scp form's path is git's relative to the `git` user's home, and the other two forms' is
+    absolute, so on a plain ssh server `git@host:a/b` and `ssh://git@host/a/b` can be two
+    directories. Every forge serves both as one repository, which is the case this rule is for;
+    telling the two apart would need the server's layout, which no URL carries. Placing a
+    repository at the other of the two paths takes write access to the very server the record
+    names, so the gap is not one a clone can reach.
     """
     for prefix, separator in ((_SCP, ":"), (_SSH, "/"), (_HTTPS, "/")):
         if url.startswith(prefix):
-            host, found, path = url[len(prefix) :].partition(separator)
+            host, _, path = url[len(prefix) :].partition(separator)
             break
     else:
         return None
+    # A URL with no separator after its host leaves the path empty, which `_named` refuses.
     segments = path.removesuffix(".git").split("/")
-    if not (found and _named(host) and all(_named(part) for part in segments)):
+    if not (_named(host) and all(_named(part) for part in segments)):
         return None
     host = host.lower()
     path = "/".join(segments)
@@ -319,7 +329,8 @@ def binding_state(recorded: str | None, origin: str | None) -> str:
     machine or anyone else's. A hostile clone is still caught here, because it chooses
     `project.name` and not which remote the overlay recorded under it: the rule holds equal only
     spellings that agree on the host and the path, so its `origin` binds only when it names the
-    repository the owner bound. Two URLs `_repository` cannot read bind only when equal, never
+    repository the owner bound (on a plain ssh server, up to the scp form's home-relative path,
+    which `_repository` states). Two URLs `_repository` cannot read bind only when equal, never
     because neither was read.
     """
     if origin is None:

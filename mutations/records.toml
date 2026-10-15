@@ -3438,3 +3438,14 @@ after = '    return part != "" and set(part) <= _NAMED'
 reddens = [
   "tests/memory/test_remote_binding.py::test_a_different_repository_is_still_a_mismatch[dot-segments]",
 ]
+
+# In the block led by `mutations/`'s "a remote binds only the URL the overlay recorded byte for
+# byte": the exact comparison stays underneath the transport rule.
+[[mutation]]
+name = "a remote outside the three spellings stops binding the record that names it exactly"
+file = "src/stayfixed/memory/store.py"
+before = "    if recorded == origin:\n        return BOUND\n"
+after = ""
+reddens = [
+  "tests/memory/test_remote_binding.py::test_a_url_still_binds_itself_whatever_its_shape[unread-path]",
+]
