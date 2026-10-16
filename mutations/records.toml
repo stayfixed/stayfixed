@@ -1278,9 +1278,12 @@ reddens = [
 [[mutation]]
 name = "attach stops comparing the recorded remote"
 file = "src/stayfixed/memory/store.py"
-before = "    return BOUND if recorded == origin else MISMATCH"
+before = "    return BOUND if named is not None and named == _repository(origin) else MISMATCH"
 after = "    return BOUND"
-reddens = ["tests/attach/test_binding.py::test_a_different_remote_is_a_mismatch_and_never_a_bind"]
+reddens = [
+  "tests/attach/test_binding.py::test_a_different_remote_is_a_mismatch_and_never_a_bind",
+  "tests/memory/test_store.py::test_a_clone_named_after_the_project_binds_only_as_the_recorded_repository[https://example.com/acme/other-False]",
+]
 
 # `detach_main`'s own docstring: "only a symlink whose own target is this store is removed,
 # because a real directory at one of these names is unmerged work or a store the harness made,
@@ -3385,4 +3388,64 @@ before = "        gone = [path for target in targets for path in _withdraw_lapse
 after = "        gone = [path for target in targets[:1] for path in _withdraw_lapsed(root, target, elsewhere)]\n"
 reddens = [
   "tests/memory/test_worktree.py::test_a_link_under_a_second_home_to_either_target_is_withdrawn",
+]
+
+# The binding classifier holds the three transport spellings of one repository equal, and holds
+# nothing else equal: a record made over ssh binds a clone made over https, and a different owner,
+# repository, host or case off github.com is still a different remote.
+[[mutation]]
+name = "a remote binds only the URL the overlay recorded byte for byte"
+file = "src/stayfixed/memory/store.py"
+before = "    return BOUND if named is not None and named == _repository(origin) else MISMATCH"
+after = "    return MISMATCH"
+reddens = [
+  "tests/attach/test_write.py::test_the_same_repository_under_another_url_form_attaches_and_keeps_its_record",
+  "tests/attach/test_doctor.py::test_an_owners_checkout_cloned_over_https_is_bound_by_a_record_made_over_ssh",
+]
+
+[[mutation]]
+name = "a remote binds any other remote neither side's shape is read in"
+file = "src/stayfixed/memory/store.py"
+before = "    return BOUND if named is not None and named == _repository(origin) else MISMATCH"
+after = "    return BOUND if named == _repository(origin) else MISMATCH"
+reddens = [
+  "tests/memory/test_remote_binding.py::test_a_different_repository_is_still_a_mismatch[unread-paths]",
+]
+
+[[mutation]]
+name = "a remote's path is compared without its case on every host"
+file = "src/stayfixed/memory/store.py"
+before = "    return host, path.lower() if host in _CASELESS_PATHS else path"
+after = "    return host, path.lower()"
+reddens = [
+  "tests/memory/test_remote_binding.py::test_a_different_repository_is_still_a_mismatch[path-case-off-github]",
+]
+
+[[mutation]]
+name = "a remote's host is compared with its case"
+file = "src/stayfixed/memory/store.py"
+before = "    host = host.lower()\n"
+after = ""
+reddens = [
+  "tests/memory/test_remote_binding.py::test_case_folds_where_the_server_ignores_it[host-case]",
+]
+
+[[mutation]]
+name = "a remote's dot segments are compared across transports"
+file = "src/stayfixed/memory/store.py"
+before = '    return part.strip(".") != "" and set(part) <= _NAMED'
+after = '    return part != "" and set(part) <= _NAMED'
+reddens = [
+  "tests/memory/test_remote_binding.py::test_a_different_repository_is_still_a_mismatch[dot-segments]",
+]
+
+# In the block led by `mutations/`'s "a remote binds only the URL the overlay recorded byte for
+# byte": the exact comparison stays underneath the transport rule.
+[[mutation]]
+name = "a remote outside the three spellings stops binding the record that names it exactly"
+file = "src/stayfixed/memory/store.py"
+before = "    if recorded == origin:\n        return BOUND\n"
+after = ""
+reddens = [
+  "tests/memory/test_remote_binding.py::test_a_url_still_binds_itself_whatever_its_shape[unread-path]",
 ]

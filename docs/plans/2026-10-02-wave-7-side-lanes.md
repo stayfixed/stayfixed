@@ -746,11 +746,11 @@ reddens = ["tests/test_documents.py::test_no_module_imports_a_network_module"]
 
 - [ ] **Step 1 (free):** run `claude plugin validate --strict .` at the branch tip and record its
   output in the directory-prep Findings.
-- [ ] **Step 2 (owner, at the portal):** with the branch pushed and the repository public, the
+- [x] **Step 2 (owner, at the portal):** with the branch pushed and the repository public, the
   owner opens the directory's publish page, enters the repository, no plugin path, and the
   branch `wp/directory-prep` as the ref, and presses **Validate** (not Submit). The controller
   records every finding the portal lists, with its level (Block, Hold, Warning) and its text.
-- [ ] **Step 3:** each Block is either fixed on this branch under Scope (a) or (b), or recorded
+- [x] **Step 3:** each Block is either fixed on this branch under Scope (a) or (b), or recorded
   as directory-prep part 2's input with its reason; each Hold and Warning is recorded with the
   same choice. Commit the Findings — `docs(plans): record the directory's checks on the payload`.
 
@@ -1299,7 +1299,7 @@ Validating plugin manifest: <tree>/.claude-plugin/plugin.json
   folder submitted from a clone is the tracked tree, so the warning does not reach the
   directory; it does reach anyone who keeps a local `CLAUDE.md` at the root and validates there.
 - Step 2, the portal's Validate run, needs the owner at the portal with this branch pushed; it
-  had not run when this was written.
+  had not run when this was written; it ran on 2026-10-15 ("The portal's Validate run", below).
 
 **Shipped differently from the task text (review round).** Each task's `**Interfaces:**` block
 above was brought current; its steps and code blocks stayed as planned. Where they differed from
@@ -1359,6 +1359,38 @@ what shipped:
   the template names the reusable workflow; every template file under `.github/` became a row.
 - Task 4: the test held only the section's Program column to the launches; the Run by, Talks to
   and When columns are kept by hand.
+
+### The portal's Validate run (2026-10-15)
+
+Task 5 Step 2, run after the release as the wave 7-8 closure's Task 19 has it: by the controller in
+the owner's signed-in developer portal (claude.ai, "Submit a plugin", step 1 "Source"), repository
+`stayfixed/stayfixed-plugin`, no plugin path, tag `v0.3.0`; Validate pressed, Next and Submit not.
+The portal read `v0.3.0 @ d34a4f0 · 7 checks` and answered "Validation passed: 3 warnings, 5
+policy holds". No Block.
+
+- Passed: the repository fetched; "276 files, 2.2MB, within the size limits"; "14 skills · 1 agent ·
+  10 hooks"; "No MCP servers"; name and publisher checks.
+- **Policy hold, "Uses a credential from the user's machine" (`MCP_FORWARDS_CREDENTIAL_ENV`), four
+  findings**, each a text pattern rather than code that sends anything: `README.md` (a remote
+  host beside the word `env`); `src/stayfixed/guards/bgcleanup.py` (a comment's example URL
+  `https://h/p` beside a `$PWD` in another comment); `src/stayfixed/guards/commit.py` (the
+  `claude.com` link in the comment on the canonical attribution footer); and the plugin as a whole,
+  joining the `attribute-failure` skill's "pass `--base`" (read as a credential) with
+  `hooks/run-hook.sh`'s run-time command. The portal leaves each to a reviewer.
+- **Policy hold, "Scripts the validator couldn't follow" (`COMMAND_SCRIPT_NOT_FOLLOWED`):**
+  `hooks/run-hook.sh`, which every hook entry runs. It launches no package manager; what the
+  validator did not follow is its `eval` and its run-time `"$git_bin"` and launcher commands.
+  "Leaving the scripts as they are and waiting for the review is also fine."
+- **Warning, "No icon":** `.claude-plugin/plugin.json` names no icon. The portal takes an icon as
+  the listing's only once, "the first time the plugin is saved or submitted", so it has to ship
+  before the first save.
+- **Warning, "Contains a download-and-run command" (`RUNTIME_FETCH_EXEC`), two findings:**
+  `hooks/run-hook.sh` and `src/stayfixed/config/loader.py`. Neither downloads anything at `v0.3.0`;
+  which text in `loader.py` matched was not located.
+
+Step 3: with no Block, nothing is fixed under `0.3.0`. The icon, and whether to restate what the
+holds point at so fewer reach a reviewer, are directory-prep part 2's input (wave 10), with the
+submission itself.
 
 ## Findings — benchmark
 

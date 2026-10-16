@@ -321,6 +321,34 @@ def test_overlay_mode_refuses_when_the_remote_does_not_match(tmp_path: Path) -> 
     assert "remote" in (refusal_reason(root, config, machine=machine) or "")
 
 
+@pytest.mark.parametrize(
+    ("origin", "binds"),
+    [
+        ("https://example.com/acme/widget", True),
+        ("ssh://git@example.com/acme/widget.git", True),
+        ("https://example.com/acme/other", False),
+        ("https://example.com/other/widget", False),
+        ("https://example.org/acme/widget", False),
+    ],
+)
+def test_a_clone_named_after_the_project_binds_only_as_the_recorded_repository(
+    tmp_path: Path, origin: str, binds: bool
+) -> None:
+    # A hostile clone chooses `project.name` and not which remote the overlay recorded under it,
+    # so naming itself `widget` gets it this project's notes only when its `origin` names the
+    # repository the record names. Comparing remotes by transport keeps that: an https or
+    # ssh:// spelling of the recorded `git@` remote binds, and any other repository, under any
+    # transport, is refused.
+    root = tmp_path / "project"
+    a_repo(root, remote=origin)
+    overlay = an_overlay(tmp_path)
+    a_tree(root, overlay)
+    config = a_config(root, "overlay")
+    machine = a_machine_file(tmp_path, overlay)
+    assert (resolve(root, config, machine=machine) is not None) == binds
+    assert (refusal_reason(root, config, machine=machine) is None) == binds
+
+
 def test_overlay_mode_refuses_without_a_recorded_overlay_root(tmp_path: Path) -> None:
     root = tmp_path / "project"
     a_repo(root)

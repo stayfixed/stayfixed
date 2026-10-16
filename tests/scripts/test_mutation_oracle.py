@@ -1005,6 +1005,35 @@ def test_a_mutation_declared_twice_is_a_finding(tmp_path: Path) -> None:
     assert module.static_findings([first, second]) == ["again: repeats the mutation of 'probe'"]
 
 
+def test_an_entry_anchored_on_a_rewritten_action_pin_is_a_finding(tmp_path: Path) -> None:
+    # Dependabot rewrites every action pin under `.github/workflows/` (`.github/dependabot.yml`),
+    # so an entry whose `before` quotes one stops occurring at the next bump and turns that pull
+    # request's every leg red, whatever the bump changed. The same pin quoted in a file Dependabot
+    # does not read, or a `before` naming the action without its revision, is no finding.
+    # Mutation (declared): the pin rule dropped -> the list below comes out empty.
+    workflows = tmp_path / ".github" / "workflows"
+    workflows.mkdir(parents=True)
+    pinned = "      - uses: actions/checkout@" + "a" * 40 + " # v7\n"
+    (workflows / "ci.yml").write_text(pinned + "        with:\n", encoding="utf-8")
+    elsewhere = tmp_path / "scan.yml"
+    elsewhere.write_text(pinned, encoding="utf-8")
+    module = oracle(root=tmp_path)
+
+    def entry(name: str, file: Path, before: str) -> object:
+        return module.Mutation(name=name, file=file, before=before, after="", reddens=())
+
+    assert module.static_findings(
+        [
+            entry("quotes the pin", workflows / "ci.yml", pinned),
+            entry("names the action", workflows / "ci.yml", "        with:\n"),
+            entry("outside the workflows", elsewhere, pinned),
+        ]
+    ) == [
+        "quotes the pin: its `before` quotes an action pin Dependabot rewrites; anchor it on the "
+        "step's other lines"
+    ]
+
+
 def test_every_declared_entry_is_sound_before_any_run() -> None:
     """`static_findings` over the real `mutations/` finds nothing.
 
