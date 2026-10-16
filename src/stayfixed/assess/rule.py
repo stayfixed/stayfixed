@@ -348,8 +348,9 @@ def judge(
     except Failure as exc:
         # Never the bootstrap: read as "no copy", the change would decide its own configuration.
         # The machine file is not the base's: both sides read it, and the tree's load above has
-        # already answered for it. `Failure` and not `ConfigError` alone: a preset this stayfixed
-        # does not ship is the preset loader's plain `Failure`, and still the base's copy.
+        # already answered for it. A preset this stayfixed does not ship is the loader's keyed
+        # `ConfigError` (`loader._preset`); `Failure` and not `ConfigError` alone, so a plain
+        # refusal any load may raise is still named as the base's copy.
         raise Failure(BASE_DOES_NOT_LOAD.format(reason=exc)) from None
     except Refusal as exc:
         # A symlink the change planted on a path only the base's `[paths]` names: the run fails

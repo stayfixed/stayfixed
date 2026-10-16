@@ -837,14 +837,15 @@ before = "    skipped = tuple(name for name in config.gate_names if builtin and 
 after = "    skipped = tuple(name for name in config.gate_names if False and name in custom)"
 reddens = ["tests/assess/test_command.py::test_builtin_runs_no_custom_gate_and_says_which_it_left_out"]
 
-# A base naming a preset this stayfixed does not ship fails in the preset loader, with a plain
-# `Failure` the base-arm wrapper let through: the run failed, but the message never said the
-# fault was the base's copy, which only a direct push to the base branch can fix.
+# A base naming a preset this stayfixed does not ship is refused by the loader (`loader._preset`
+# keys the preset loader's refusal as a `ConfigError`); without the base arm the run fails, but
+# the message never says the fault is the base's copy, which only a direct push to the base
+# branch can fix.
 [[mutation]]
 name = "a base naming an unshipped preset fails without saying it is the base's copy"
 file = "src/stayfixed/assess/rule.py"
 before = "    except Failure as exc:"
-after = "    except tuple(Failure.__subclasses__()) as exc:"
+after = "    except ZeroDivisionError as exc:"
 reddens = [
   "tests/assess/test_gate_command.py::test_a_base_that_does_not_load_fails_the_run_and_names_the_base_s_copy[unshipped-preset]",
 ]
