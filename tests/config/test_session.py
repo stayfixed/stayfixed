@@ -13,12 +13,14 @@ from pathlib import Path
 import pytest
 
 from stayfixed import __version__
+from stayfixed.config.loader import NOTE_REMOVAL_LIMIT
 from stayfixed.config.owner import resolve_owner
 from stayfixed.config.session import (
     FALLBACK_WARNING,
     MACHINE_FILE_WARNING,
     NEWER_RELEASE_WARNING,
     NOTED_WARNING,
+    TOO_MANY_WARNING,
     UNUSABLE_WARNING,
     session_config,
 )
@@ -200,6 +202,17 @@ UNUSABLE = [
     pytest.param(_docs_symlink, "paths.architecture", id="docs-symlink"),
     pytest.param(lambda root: "project = 1\n" + HEAD, "project", id="project-not-a-table"),
 ]
+
+
+def test_more_unusable_keys_than_the_note_path_reads_drop_the_project(tmp_path: Path) -> None:
+    # One past `NOTE_REMOVAL_LIMIT`: the floor, with a warning in stayfixed's own words, and the
+    # owner's layer still read. Mutation (`mutations/`'s "the NOTE path removes every key it cannot
+    # use, however many"): the project loads with 65 notes.
+    gates = "".join(f"g{n} = {{ run = [] }}\n" for n in range(NOTE_REMOVAL_LIMIT + 1))
+    write(tmp_path, MINIMAL + "[gates.custom]\n" + gates)
+    got = session_config(tmp_path, machine=none(tmp_path))
+    assert got.config is None and got.warnings == (TOO_MANY_WARNING,)
+    assert got.project_warnings == (TOO_MANY_WARNING,) and got.machine_warnings == ()
 
 
 @pytest.mark.parametrize(("make", "key"), UNUSABLE)

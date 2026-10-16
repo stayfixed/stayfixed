@@ -103,7 +103,7 @@ from stayfixed.doctor.model import OK, RED, SKIP, WARN, Context, Row, Status
 from stayfixed.errors import Failure
 from stayfixed.harnesses import CLAUDE
 from stayfixed.jsonobject import json_object
-from stayfixed.presets import load_preset
+from stayfixed.presets import DEFAULT_PRESET, load_preset
 from stayfixed.printed import quoted
 from stayfixed.trust.api import (
     CONFIG_DIR_VARIABLE,
@@ -544,7 +544,7 @@ def _carries_settings(root: Path) -> bool:
 def _lists_claude(context: Context) -> bool:
     if context.config is not None:
         return CLAUDE.name in context.config.stayfixed.agents
-    agents = load_preset("recommended").get("defaults", {}).get("stayfixed", {}).get("agents", [])
+    agents = load_preset(DEFAULT_PRESET).get("defaults", {}).get("stayfixed", {}).get("agents", [])
     return CLAUDE.name in agents
 
 

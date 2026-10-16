@@ -1,9 +1,9 @@
-"""Write the machine configuration file, the one both existing readers already read.
+"""Write the machine configuration file, the one its readers in `config` already read.
 
-**This module invents no schema.** `config.loader._personal` reads `[personal]`,
-`config.owner.resolve_owner` reads `[personal]`, `[guards]` and the session budgets of
-`[budgets]`, and `config.overlay.overlay_root` reads `[overlay] root`, all from the file no
-variable moves, and none of them changes here. This writer adds `[machine]` beside them — what
+**This module invents no schema.** `config.owner.resolve_owner` reads `[personal]`, `[guards]`
+and the session budgets of `[budgets]`, for every command's load and every session, and
+`config.overlay.overlay_root` reads `[overlay] root`, all from the file no variable moves, and
+none of them changes here. This writer adds `[machine]` beside them — what
 `setup` installed, so `doctor` can check it later — and `[setup] added_rules`, its record of the
 rules it added to the settings file, which `setup.run` alone reads. `[guards]`, `[budgets]` and
 `[setup] ask_rules` are the owner's to write by hand, and a rewrite carries them through untouched,
@@ -94,13 +94,13 @@ class Written:
 def read_machine(path: Path) -> dict[str, Any]:
     """The machine file as a raw `dict`, exactly as `tomllib` parses it, and `{}` where no file is.
 
-    Read through `config.loader.read_machine_toml`, the one reader every reader of this file
-    shares, so a file that cannot be read, is not UTF-8 or is not TOML is the loader's
+    Read through `config.reading.read_machine_toml`, the one reader every reader of this file
+    shares, so a file that cannot be read, is not UTF-8 or is not TOML is the one
     `MachineConfigError` here as everywhere: one failure in one set of words, naming the error's
     class or the parser's position and never the parser's message. `setup` reports it as the
     failure it is, rather than as an internal error with the operating system's own message.
     """
-    from stayfixed.config.loader import read_machine_toml
+    from stayfixed.config.reading import read_machine_toml
 
     return read_machine_toml(path) or {}
 

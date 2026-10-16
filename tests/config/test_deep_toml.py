@@ -17,9 +17,10 @@ from pathlib import Path
 import pytest
 
 from stayfixed.attach import binding, write
-from stayfixed.config.loader import TOO_DEEP, TOO_LONG, ConfigError, MachineConfigError, loads
+from stayfixed.config.loader import loads
 from stayfixed.config.overlay import overlay_root
 from stayfixed.config.owned import UnparsedDocument, rewrite
+from stayfixed.config.reading import TOO_DEEP, TOO_LONG, ConfigError, MachineConfigError
 from stayfixed.docs.trail import read_trail
 from stayfixed.errors import Failure
 from stayfixed.memory import store

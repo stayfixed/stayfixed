@@ -18,18 +18,20 @@ from stayfixed.config import loader
 from stayfixed.config.classes import REFUSED_LAYER_NOTE
 from stayfixed.config.loader import (
     CONFIG_FILE,
+    NOTE_REMOVAL_LIMIT,
     RESET_NOTE,
+    TOO_MANY_RESETS,
     UNKNOWN_NOTE,
     UNUSABLE_PRESET,
     UNUSABLE_REQUIRED,
-    ConfigError,
+    TooManyResets,
     UnusableKey,
     loads,
     loads_noting,
-    toml_position,
 )
 from stayfixed.config.owner import resolve_owner
 from stayfixed.config.paths import PathEscape, contained
+from stayfixed.config.reading import ConfigError, toml_position
 from stayfixed.errors import Failure, Refusal
 from stayfixed.presets import load_preset
 from stayfixed.printed import clipped
@@ -161,6 +163,41 @@ def test_a_custom_gate_that_cannot_run_is_dropped(tmp_path: Path) -> None:
     got = loads_noting(text, tmp_path, owner=OWNER)
     assert sorted(got.config.gates.custom) == ["good"]
     assert got.notes == (reset("gates.custom.bad", text, tmp_path),)
+
+
+def _unusable_gates(count: int) -> str:
+    return MINIMAL + "[gates.custom]\n" + "".join(f"g{n} = {{ run = [] }}\n" for n in range(count))
+
+
+def test_the_note_path_reads_up_to_its_limit_of_unusable_keys_one_by_one(tmp_path: Path) -> None:
+    # A file a newer release left with keys this one cannot use keeps everything else, however
+    # many of them there are up to the cap: each is left out with its own note.
+    got = loads_noting(_unusable_gates(NOTE_REMOVAL_LIMIT), tmp_path, owner=OWNER)
+    assert got.config.gates.custom == {}
+    assert len(got.notes) == NOTE_REMOVAL_LIMIT
+    assert got.keys == tuple(sorted(f"gates.custom.g{n}" for n in range(NOTE_REMOVAL_LIMIT)))
+
+
+def test_one_unusable_key_past_the_limit_refuses_the_whole_document(tmp_path: Path) -> None:
+    # Each removal is a whole build, so a document of thousands cost a hook more than its timeout;
+    # past the cap the document is refused whole, which a session answers with the floor. Mutation
+    # (`mutations/`'s "the NOTE path removes every key it cannot use, however many"): the document
+    # loads with 65 notes.
+    with pytest.raises(TooManyResets) as refused:
+        loads_noting(_unusable_gates(NOTE_REMOVAL_LIMIT + 1), tmp_path, owner=OWNER)
+    path = tmp_path / CONFIG_FILE
+    assert str(refused.value) == TOO_MANY_RESETS.format(path=path, limit=NOTE_REMOVAL_LIMIT)
+    assert refused.value.key is None
+
+
+def test_a_document_parsed_once_is_read_as_its_text_is(tmp_path: Path) -> None:
+    # `parsed` stands for the text, parsed by the caller already (`config.session`), and is not
+    # parsed again: a text that would not parse reads as the document handed in. No mutation:
+    # parsing the text a second time changes no answer but its cost, and the bound on that cost is
+    # `test_a_file_of_thousands_of_unusable_keys_never_outlasts_the_hook`'s.
+    parsed = tomllib.loads(MINIMAL)
+    got = loads_noting("[[[", tmp_path, owner=OWNER, parsed=parsed)
+    assert got.config.project.name == "sample"
 
 
 def test_a_repository_guards_section_is_refused_by_resolve(tmp_path: Path) -> None:

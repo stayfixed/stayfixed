@@ -42,9 +42,9 @@ MACHINE_FILE_KEYS = frozenset({"guards.bg_cleanup", "setup.ask_rules", "setup.ad
 
 PRESET = LayerName.PRESET
 REPOSITORY = LayerName.REPOSITORY
-COMMON = LayerName.COMMON
-PROJECT = LayerName.PROJECT
-MACHINE_SCOPE = LayerName.MACHINE_SCOPE
+OVERLAY_COMMON = LayerName.OVERLAY_COMMON
+OVERLAY_PROJECT = LayerName.OVERLAY_PROJECT
+OVERLAY_MACHINE = LayerName.OVERLAY_MACHINE
 MACHINE_FILE = LayerName.MACHINE_FILE
 
 
@@ -169,7 +169,14 @@ def test_a_key_with_no_class_is_a_key_error(key: str) -> None:
 def test_the_layers_run_lowest_first() -> None:
     # Which layer wins is decided by this order alone. Mutation (`mutations/`'s "the overlay's
     # common and project layers swap places"): the project's file would lose to the common one.
-    assert ORDER == (PRESET, REPOSITORY, COMMON, PROJECT, MACHINE_SCOPE, MACHINE_FILE)
+    assert ORDER == (
+        PRESET,
+        REPOSITORY,
+        OVERLAY_COMMON,
+        OVERLAY_PROJECT,
+        OVERLAY_MACHINE,
+        MACHINE_FILE,
+    )
 
 
 def test_which_layers_may_set_each_class() -> None:
@@ -259,7 +266,7 @@ def test_merge_folds_lowest_first() -> None:
         [
             Layer(MACHINE_FILE, {"memory.groups": ("m",)}),
             Layer(PRESET, {"memory.groups": ("p",)}),
-            Layer(COMMON, {"memory.groups": ("c",)}),
+            Layer(OVERLAY_COMMON, {"memory.groups": ("c",)}),
         ],
         merge={"memory.groups": joined},
     )
@@ -285,8 +292,8 @@ def test_a_layer_reads_as_its_name() -> None:
     assert _names(ORDER) == [
         "preset",
         "repository",
-        "common",
-        "project",
-        "machine scope",
+        "overlay common",
+        "overlay project",
+        "overlay machine",
         "machine file",
     ]

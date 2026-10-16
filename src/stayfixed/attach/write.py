@@ -77,7 +77,7 @@ from stayfixed.config.layout import (
     IGNORE_REGION,
     LOCAL_STATE_PATHS,
 )
-from stayfixed.config.loader import UNPARSEABLE, load
+from stayfixed.config.loader import load
 from stayfixed.config.machine import (
     anchor_home,
     home_is_empty,
@@ -86,6 +86,7 @@ from stayfixed.config.machine import (
     passwd_home,
 )
 from stayfixed.config.paths import PathEscape, PathUnasked, contained
+from stayfixed.config.reading import UNPARSEABLE
 from stayfixed.config.schema import Config
 from stayfixed.errors import Failure, Refusal
 from stayfixed.fsops import UnsafePath

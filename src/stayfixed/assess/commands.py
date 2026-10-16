@@ -149,7 +149,8 @@ def run_gate(args: argparse.Namespace) -> Result:
     )
     from stayfixed.committed import repository_prefix
     from stayfixed.config.layout import local_base
-    from stayfixed.config.loader import ConfigError, loads, read_document
+    from stayfixed.config.loader import loads, read_document
+    from stayfixed.config.reading import ConfigError
     from stayfixed.config.schema import CONFIG_CHECK
     from stayfixed.errors import Refusal
     from stayfixed.release.api import is_released

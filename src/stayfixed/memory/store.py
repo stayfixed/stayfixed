@@ -56,9 +56,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from stayfixed import fsops
-from stayfixed.config.loader import UNPARSEABLE
 from stayfixed.config.overlay import overlay_root
 from stayfixed.config.paths import PathEscape, PathUnasked, contained
+from stayfixed.config.reading import UNPARSEABLE, MachineConfigError
 from stayfixed.config.schema import LOCAL_ONLY_MODE, OVERLAY_MODE, Config
 from stayfixed.findings import listed
 from stayfixed.fsops import read_regular_text
@@ -480,11 +480,26 @@ def _names_own_share(override: str | None, config: Config, overlay: Path | None)
 Resolution = tuple[Store, None] | tuple[None, Unresolved]
 
 
+def _recorded_overlay(machine: Path | None) -> Path | None:
+    """The overlay root the machine file records, or `None` where it records none or cannot be
+    read.
+
+    A command never meets a machine file it cannot read here: its load refuses that file first
+    (`config.loader`). A session does, since it reads the configuration that file leaves it
+    (`config.session`), and its `SessionStart` warning already names the file
+    (`MACHINE_FILE_WARNING`), so the store resolves as one with no overlay recorded, and the
+    session's standing rules and volatile notes still arrive where they are not the overlay's."""
+    try:
+        return overlay_root(machine)
+    except MachineConfigError:
+        return None
+
+
 def _resolve_at(
     root: Path, config: Config, override: str | None, machine: Path | None
 ) -> Resolution:
     mode = config.memory.mode
-    overlay = overlay_root(machine)
+    overlay = _recorded_overlay(machine)
     if _names_own_share(override, config, overlay):
         override = None
     if override is not None:

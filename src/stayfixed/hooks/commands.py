@@ -16,7 +16,7 @@ from stayfixed.hooks.dispatch import NOTICE_EVENT, dispatch, read_event
 from stayfixed.hooks.policy import refuses_on_internal_error
 from stayfixed.hooks.registry import discover
 from stayfixed.hooks.sink import sink_for
-from stayfixed.presets import load_preset
+from stayfixed.presets import DEFAULT_PRESET, load_preset
 
 # What the sink records, once per session, for a session whose configuration did not load whole,
 # on an event that does not show the notice: the marker key and the record's `error`. Fixed text
@@ -28,7 +28,7 @@ def _output_cap(config: Config | None) -> int:
     """The platform cap is a shipped constant; a repository without a config still gets it."""
     if config is not None:
         return config.native_caps.hook_output_chars
-    return int(load_preset("recommended")["native_caps"]["hook_output_chars"])
+    return int(load_preset(DEFAULT_PRESET)["native_caps"]["hook_output_chars"])
 
 
 def _log_fallback(event_name: str, sink: Sink) -> None:
@@ -73,7 +73,6 @@ def run_hook(args: argparse.Namespace) -> int:
             harness=harness,
             sink=sink,
             cap=_output_cap(session.config),
-            notice=session.warnings,
         )
     except BaseException as exc:  # an internal error must never read as permission
         reason = f"stayfixed: internal error: {type(exc).__name__}: {exc}"

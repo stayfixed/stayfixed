@@ -104,7 +104,7 @@ from stayfixed.hooks.api import (
     MARKERS,
     data_root,
 )
-from stayfixed.presets import load_preset
+from stayfixed.presets import DEFAULT_PRESET, load_preset
 from stayfixed.printed import clipped
 from stayfixed.release.api import (
     HASHED_FILES,
@@ -688,7 +688,9 @@ def _preferences(context: Context) -> Row:
     with no `stayfixed.toml` too, where every preference is the preset's.
     """
     config = context.config
-    defaults = load_preset(config.stayfixed.preset if config else "recommended").get("defaults", {})
+    defaults = load_preset(config.stayfixed.preset if config else DEFAULT_PRESET).get(
+        "defaults", {}
+    )
     preset: dict[str, object] = {}
     for key in PREFERENCES:
         section, _, name = key.partition(".")

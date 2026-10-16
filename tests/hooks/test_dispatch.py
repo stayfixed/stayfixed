@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import dataclasses
 import errno
 import io
 import json
@@ -346,14 +347,9 @@ def test_the_notice_counts_inside_the_cap_and_is_never_cut() -> None:
     # Mutation (`mutations/`'s "the clamp cuts the notice from its answer"): the clamped answer
     # carries no `systemMessage`.
     handlers = [handler("a", Policy.OPEN, HookResult(context="y" * 500), event_name="SessionStart")]
+    session = dataclasses.replace(NO_CONFIG, project_warnings=("a notice",))
     outcome = dispatch(
-        event("SessionStart"),
-        handlers,
-        NO_CONFIG,
-        harness=CLAUDE,
-        sink=Recorder(),
-        cap=300,
-        notice=("a notice",),
+        event("SessionStart"), handlers, session, harness=CLAUDE, sink=Recorder(), cap=300
     )
     assert len(outcome.stdout) <= 300
     payload = json.loads(outcome.stdout)

@@ -8,25 +8,25 @@ from pathlib import Path
 import pytest
 
 from stayfixed.config.classes import LayerName
-from stayfixed.config.loader import (
-    NOT_A_PRESET_NAME,
-    ConfigError,
-    MachineConfigError,
-    Unknown,
-    read_machine_toml,
-)
 from stayfixed.config.owner import (
     GATE_BUDGET,
     IGNORED_NOTE,
     MACHINE_FILE_NOTE,
+    MACHINE_RESET_NOTE,
     NOT_A_SWITCH,
     NOT_A_TABLE,
-    RESET_NOTE,
     UNKNOWN_KEY,
     UNKNOWN_PRESET_NOTE,
     UNREADABLE_PRESET_NOTE,
     Guards,
     resolve_owner,
+)
+from stayfixed.config.reading import (
+    NOT_A_PRESET_NAME,
+    ConfigError,
+    MachineConfigError,
+    Unknown,
+    read_machine_toml,
 )
 from stayfixed.config.schema import Personal
 from stayfixed.errors import Failure
@@ -58,7 +58,7 @@ def test_no_machine_file_is_the_preset(tmp_path: Path) -> None:
 
 def test_a_machine_with_no_home_is_the_preset() -> None:
     # `None` is what `machine_config_path` answers for a user the password database lists no
-    # home for: read as no file, as `loader._personal` reads it. Mutation (`mutations/`'s "a
+    # home for: read as no file, as an absent file is. Mutation (`mutations/`'s "a
     # machine with no home is read as a path"): `None` reaches the reader and the call fails.
     got = resolve_owner(None)
     assert got.personal == preset_personal() and got.notes == ()
@@ -159,7 +159,9 @@ def test_a_table_that_is_not_a_table_is_a_note(tmp_path: Path) -> None:
     path = machine_file(tmp_path, "guards = 1\n")
     got = resolve_owner(path)
     assert got.guards == Guards()
-    assert got.notes == (RESET_NOTE.format(path=path, problem=NOT_A_TABLE.format(table="guards")),)
+    assert got.notes == (
+        MACHINE_RESET_NOTE.format(path=path, problem=NOT_A_TABLE.format(table="guards")),
+    )
 
 
 def test_a_broken_machine_file_is_the_preset_and_names_the_file(tmp_path: Path) -> None:

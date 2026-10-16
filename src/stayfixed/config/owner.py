@@ -7,7 +7,8 @@ file's `[personal]`, `[guards]` and `[budgets]`, resolved through `classes.resol
 off; a repository's `[guards]` is a layer `classes.ALLOWED` does not admit.
 
 Two readers ask, and they want different answers to a file that is wrong. A command the owner
-runs refuses it (`Unknown.REFUSE`), as `loader._personal` always has, naming the file and the key.
+runs refuses it (`Unknown.REFUSE`, which `config.loader` asks for every load of a command), naming
+the file and the key.
 A session must go on (`Unknown.NOTE`): a file that does not load gives the preset's values and
 `MACHINE_FILE_NOTE`, and an unknown key, a gate's budget or an unusable value costs that key alone,
 with a note. Every sentence names the file and the key — the key through `printed.clipped`, since
@@ -23,17 +24,17 @@ from types import MappingProxyType
 from typing import Any, cast
 
 from stayfixed.config.classes import GATE_BUDGETS, Layer, LayerName, resolve
-from stayfixed.config.loader import (
+from stayfixed.config.reading import (
     NOT_A_PRESET_NAME,
     ConfigError,
     MachineConfigError,
     Unknown,
-    _positive,
-    _schema_types,
+    positive,
     read_machine_toml,
+    schema_types,
 )
 from stayfixed.config.schema import Budgets, Personal
-from stayfixed.presets import available, load_preset, shipped_presets
+from stayfixed.presets import DEFAULT_PRESET, available, load_preset, shipped_presets
 from stayfixed.printed import clipped
 
 
@@ -73,28 +74,26 @@ NOT_A_TABLE = "[{table}] must be a table"
 NOT_A_STRING = "{key} must be a string"
 NOT_A_SWITCH = "{key} must be true or false"
 IGNORED_NOTE = "{path}: {problem}; it is ignored"
-RESET_NOTE = "{path}: {problem}; the preset's value applies"
-# The preset a session falls back to when the name it was handed is not one this build ships.
-FALLBACK_PRESET = "recommended"
+MACHINE_RESET_NOTE = "{path}: {problem}; the preset's value applies"
 # A preset name this build does not ship, under `NOTE`. The name is the repository's, so it is
 # printed through `printed.clipped`; `REFUSE` raises the preset loader's refusal, which never
 # prints it.
 UNKNOWN_PRESET_NOTE = (
     "{name} is not a preset this stayfixed ships, so the owner's layer stands on the "
-    f"{FALLBACK_PRESET} preset's personal values"
+    f"{DEFAULT_PRESET} preset's personal values"
 )
 # A preset value that is not a string at all, which no name of a preset can be: there is nothing
 # to print, and a `TOML` value of another type is none of `printed`'s to bound.
 UNREADABLE_PRESET_NOTE = (
     "stayfixed.preset is not a string, so the owner's layer stands on the "
-    f"{FALLBACK_PRESET} preset's personal values"
+    f"{DEFAULT_PRESET} preset's personal values"
 )
 
 
 def resolve_owner(
     machine: Path | None,
     *,
-    preset: object = "recommended",
+    preset: object = DEFAULT_PRESET,
     unknown: Unknown = Unknown.NOTE,
 ) -> Owner:
     """The owner's layer over the preset named `preset`.
@@ -102,7 +101,7 @@ def resolve_owner(
     `preset` is the repository's preset value as the document wrote it, else `recommended`. A
     name this build does not ship is refused under `REFUSE`, as the preset loader refuses it, and
     so is a value that is not a string; under `NOTE` the owner's layer stands on
-    `FALLBACK_PRESET` with `UNKNOWN_PRESET_NOTE` or `UNREADABLE_PRESET_NOTE`, since a session
+    `DEFAULT_PRESET` with `UNKNOWN_PRESET_NOTE` or `UNREADABLE_PRESET_NOTE`, since a session
     reads the value from a `stayfixed.toml` before anything has held it to the shipped presets.
     `machine` is the machine file; `None`, a machine with no home to hold one
     (`machine_config_path`), is read as no file, as an absent file is.
@@ -112,10 +111,10 @@ def resolve_owner(
         if unknown is Unknown.REFUSE:
             raise ConfigError(NOT_A_PRESET_NAME.format(available=available()))
         notes.append(UNREADABLE_PRESET_NOTE)
-        preset = FALLBACK_PRESET
+        preset = DEFAULT_PRESET
     elif unknown is Unknown.NOTE and preset not in shipped_presets():
         notes.append(UNKNOWN_PRESET_NOTE.format(name=clipped(preset)))
-        preset = FALLBACK_PRESET
+        preset = DEFAULT_PRESET
     shipped = load_preset(preset)
     lower: dict[str, object] = {
         f"personal.{key}": value
@@ -174,7 +173,7 @@ def _machine_values(
     def problem(sentence: str, *, ignored: bool) -> None:
         if unknown is Unknown.REFUSE:
             raise MachineConfigError(f"{machine}: {sentence}")
-        template = IGNORED_NOTE if ignored else RESET_NOTE
+        template = IGNORED_NOTE if ignored else MACHINE_RESET_NOTE
         notes.append(template.format(path=machine, problem=sentence))
 
     found: dict[str, object] = {}
@@ -202,7 +201,7 @@ def _machine_values(
 def _keys(table: str) -> Collection[str]:
     if table == "budgets":
         return Budgets.NAMES
-    return _schema_types(Personal if table == "personal" else Guards).keys()
+    return schema_types(Personal if table == "personal" else Guards).keys()
 
 
 def _invalid(table: str, key: str, value: object) -> str | None:
@@ -210,7 +209,7 @@ def _invalid(table: str, key: str, value: object) -> str | None:
     dotted = f"{table}.{key}"
     if table == "budgets":
         try:
-            _positive(dotted, value)
+            positive(dotted, value)
         except ConfigError as exc:
             return str(exc)
         return None

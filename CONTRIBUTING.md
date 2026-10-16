@@ -123,8 +123,11 @@ Every key a configuration layer can hold — the preset, a repository's `stayfix
 overlay's files, the machine file — has one class in `src/stayfixed/config/classes.py`, and the
 class names the layers that may set it: the machine owner's alone (`personal.*`, `guards.*`,
 `setup.*`), a preference, a session's parameter, a gate's parameter, the repository's alone, or
-the plugin's. `classes.resolve` is the one place a stack of layers becomes values, and a layer a
-key's class does not admit contributes nothing to it. So a field added to a section of
+the plugin's. `classes.resolve` applies the classes over a stack of layers — a layer a key's class
+does not admit contributes nothing to it — and so decides who may set a key and gives `doctor` the
+layer each value came from; it builds the owner's layer from the preset and the machine file, but
+the project's `Config` is still built by `config.loader`, which merges `stayfixed.toml` over the
+preset and folds the owner's layer in. So a field added to a section of
 `src/stayfixed/config/schema.py` needs its row in `CLASSES` in the same change:
 `tests/config/test_classes.py` derives every key from the schema's dataclasses and reddens on one
 with no class. Choose the narrowest class that is true of the key: a gate's input is never a

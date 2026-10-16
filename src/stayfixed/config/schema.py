@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from typing import ClassVar
 
 # The future import above is load-bearing for the loader: it turns every annotation here into
-# a string, which `config.loader._schema_types` resolves with `typing.get_type_hints` to decide
+# a string, which `config.reading.schema_types` resolves with `typing.get_type_hints` to decide
 # how to coerce a value. Every name an annotation uses must stay resolvable from this module's
 # globals at runtime, so a type imported only under `TYPE_CHECKING` would break the loader.
 

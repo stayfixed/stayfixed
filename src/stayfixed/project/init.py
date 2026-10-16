@@ -48,15 +48,10 @@ from pathlib import Path
 
 import stayfixed
 from stayfixed import fsops
-from stayfixed.config.loader import (
-    CONFIG_FILE,
-    UNPARSEABLE,
-    loads,
-    read_document,
-    toml_position,
-)
+from stayfixed.config.loader import CONFIG_FILE, loads, read_document
 from stayfixed.config.owned import rewrite
 from stayfixed.config.paths import contained
+from stayfixed.config.reading import UNPARSEABLE, toml_position
 from stayfixed.errors import Failure, Refusal
 from stayfixed.project.detect import CURRENT_BRANCH, DEFAULT_BRANCH, Detected, detect
 from stayfixed.project.footprint import prepare
@@ -205,7 +200,7 @@ def _existing(root: Path) -> tuple[str, dict[str, object]] | None:
     stopped at, and nothing else the parser had to say. `tomllib`'s own message embeds the
     source for several of its faults — a duplicate table or inline-table key is reported with
     the key in it, and a TOML key is arbitrary quoted text — so the exception is bounded by
-    `config.loader.toml_position` before any of it prints. The file is `stayfixed.toml`, which
+    `config.reading.toml_position` before any of it prints. The file is `stayfixed.toml`, which
     on adoption is the repository's own document, read as its answers rather than replaced, and
     this refusal is one the `init` skill is instructed to relay and stop on.
     """

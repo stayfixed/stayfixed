@@ -1270,7 +1270,7 @@ reddens = [
 # because the loader builds that text out of the file's own keys and values.
 [[mutation]]
 name = "a broken machine file is blamed on stayfixed.toml again"
-file = "src/stayfixed/config/loader.py"
+file = "src/stayfixed/config/reading.py"
 before = '        raise MachineConfigError(f"{path} is not valid TOML {toml_position(exc)}") from None'
 after = '        raise ConfigError(f"{path} is not valid TOML {toml_position(exc)}") from None'
 reddens = [
@@ -1331,7 +1331,7 @@ reddens = [
 # this completes it, and one extractor serves all three call sites.
 [[mutation]]
 name = "a tomllib message is quoted back whole, so a hostile key reaches a refusal"
-file = "src/stayfixed/config/loader.py"
+file = "src/stayfixed/config/reading.py"
 before = "    return found.group(0) if found is not None else NO_POSITION"
 after = "    return str(exc)"
 reddens = [
@@ -1585,7 +1585,7 @@ reddens = [
 
 [[mutation]]
 name = "a machine file that cannot be read is said by its error's class name"
-file = "src/stayfixed/config/loader.py"
+file = "src/stayfixed/config/reading.py"
 before = "raise MachineConfigError(UNREADABLE.format(path=path, error=said(exc))) from None"
 after = "raise MachineConfigError(UNREADABLE.format(path=path, error=type(exc).__name__)) from None"
 reddens = [
@@ -1796,7 +1796,7 @@ reddens = [
 
 [[mutation]]
 name = "a machine file that is not UTF-8 crashes every command that loads the configuration"
-file = "src/stayfixed/config/loader.py"
+file = "src/stayfixed/config/reading.py"
 before = """    except UnicodeDecodeError:
         raise MachineConfigError(NOT_UTF8.format(path=path)) from None"""
 after = """    except KeyError:
@@ -1903,7 +1903,7 @@ reddens = [
 # document somebody else wrote answers it as one that does not parse.
 [[mutation]]
 name = "the TOML readers answer a document nested past the parser as an internal error"
-file = "src/stayfixed/config/loader.py"
+file = "src/stayfixed/config/reading.py"
 before = "UNPARSEABLE = (tomllib.TOMLDecodeError, RecursionError, ValueError)"
 after = "UNPARSEABLE = (tomllib.TOMLDecodeError, ValueError)"
 reddens = [
@@ -1917,7 +1917,7 @@ reddens = [
 # red "could not run" on an overlay record holding one. Every reader shares the one tuple.
 [[mutation]]
 name = "the TOML readers answer a number past the parser as an internal error"
-file = "src/stayfixed/config/loader.py"
+file = "src/stayfixed/config/reading.py"
 before = "UNPARSEABLE = (tomllib.TOMLDecodeError, RecursionError, ValueError)"
 after = "UNPARSEABLE = (tomllib.TOMLDecodeError, RecursionError)"
 reddens = [
@@ -1937,7 +1937,7 @@ reddens = [
 # raise a process-wide limit, which is no remedy for a file somebody else wrote.
 [[mutation]]
 name = "a TOML number past the parser is refused with no reason given"
-file = "src/stayfixed/config/loader.py"
+file = "src/stayfixed/config/reading.py"
 before = """
     if not isinstance(exc, tomllib.TOMLDecodeError):
         return TOO_LONG
@@ -1971,7 +1971,7 @@ reddens = [
 
 [[mutation]]
 name = "a machine file nested past the parser is an internal error"
-file = "src/stayfixed/config/loader.py"
+file = "src/stayfixed/config/reading.py"
 before = """
     except UNPARSEABLE as exc:
         raise MachineConfigError(f"{path} is not valid TOML {toml_position(exc)}") from None
@@ -2034,7 +2034,7 @@ reddens = [
 # custom gate "could not run" without a word about why.
 [[mutation]]
 name = "an integer setting at or below zero loads"
-file = "src/stayfixed/config/loader.py"
+file = "src/stayfixed/config/reading.py"
 before = "    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:"
 after = "    if isinstance(value, bool) or not isinstance(value, int):"
 reddens = [
@@ -2044,7 +2044,7 @@ reddens = [
 
 [[mutation]]
 name = "a bool loads as an integer setting"
-file = "src/stayfixed/config/loader.py"
+file = "src/stayfixed/config/reading.py"
 before = "    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:"
 after = "    if not isinstance(value, int) or value <= 0:"
 reddens = [
@@ -2746,12 +2746,12 @@ reddens = [
   "tests/memory/test_store.py::test_a_git_that_exits_non_zero_for_everything_cannot_name_the_main_checkout",
 ]
 
-# A machine file the overlay root's reader cannot open is the loader's `MachineConfigError`, in the
-# loader's words, so it reaches every caller as the `Failure` they catch rather than as a bare
-# `PermissionError`. The reader is the loader's own, which `[personal]` is read through too.
+# A machine file the overlay root's reader cannot open is `config.reading`'s `MachineConfigError`, in
+# its words, so it reaches every caller as the `Failure` they catch rather than as a bare
+# `PermissionError`. The reader is the one the owner's layer reads `[personal]` through too.
 [[mutation]]
 name = "the overlay root's reader lets a machine file it cannot read raise past its callers"
-file = "src/stayfixed/config/loader.py"
+file = "src/stayfixed/config/reading.py"
 before = "    except OSError as exc:\n        raise MachineConfigError(UNREADABLE.format("
 after = "    except FileNotFoundError as exc:\n        raise MachineConfigError(UNREADABLE.format("
 reddens = [
@@ -3030,7 +3030,7 @@ reddens = [
 # internal error. Every integer key is bounded by `INTEGER_LIMIT`.
 [[mutation]]
 name = "a configuration integer is bounded only below"
-file = "src/stayfixed/config/loader.py"
+file = "src/stayfixed/config/reading.py"
 before = "    if value >= INTEGER_LIMIT:"
 after = "    if False:"
 reddens = [
@@ -3042,7 +3042,7 @@ reddens = [
 [[mutation]]
 name = "the schema's integer keys are taken unchecked"
 file = "src/stayfixed/config/loader.py"
-before = '            coerced[key] = _positive(f"{name}.{key}", value)'
+before = '            coerced[key] = positive(f"{name}.{key}", value)'
 after = "            coerced[key] = value"
 reddens = [
   "tests/config/test_loader.py::test_an_integer_key_at_or_past_its_bound_is_refused_without_printing_it[octal]",
@@ -3051,7 +3051,7 @@ reddens = [
 [[mutation]]
 name = "a `[budgets]` value is taken unchecked"
 file = "src/stayfixed/config/loader.py"
-before = '        _positive(f"budgets.{key}", value)'
+before = '        positive(f"budgets.{key}", value)'
 after = "        pass"
 reddens = [
   "tests/config/test_loader.py::test_an_integer_key_at_or_past_its_bound_is_refused_without_printing_it[budget]",
@@ -3169,7 +3169,7 @@ reddens = [
 # The bound is the first integer refused, not one under it: the largest value it admits loads.
 [[mutation]]
 name = "a configuration integer one under the bound is refused"
-file = "src/stayfixed/config/loader.py"
+file = "src/stayfixed/config/reading.py"
 before = "    if value >= INTEGER_LIMIT:"
 after = "    if value > INTEGER_LIMIT - 2:"
 reddens = [
@@ -3745,8 +3745,8 @@ reddens = ["tests/config/test_classes.py::test_the_budget_split_is_total_and_dis
 [[mutation]]
 name = "the overlay's common and project layers swap places"
 file = "src/stayfixed/config/classes.py"
-before = "    LayerName.COMMON,\n    LayerName.PROJECT,"
-after = "    LayerName.PROJECT,\n    LayerName.COMMON,"
+before = "    LayerName.OVERLAY_COMMON,\n    LayerName.OVERLAY_PROJECT,"
+after = "    LayerName.OVERLAY_PROJECT,\n    LayerName.OVERLAY_COMMON,"
 reddens = ["tests/config/test_classes.py::test_the_layers_run_lowest_first"]
 
 # A limit of the platform is the shipped preset's alone: a repository raising it would raise what
@@ -4215,15 +4215,15 @@ reddens = [
 [[mutation]]
 name = "session_config answers no configuration for a file that loads with notes"
 file = "src/stayfixed/config/session.py"
-before = "        noted.config, owner, warnings + _owners(owner, path), noted.keys, noted.document"
-after = "        None, owner, warnings + _owners(owner, path), noted.keys, noted.document"
+before = "        noted.config, owner, warnings, _owners(owner, path), noted.keys, noted.document"
+after = "        None, owner, warnings, _owners(owner, path), noted.keys, noted.document"
 reddens = ["tests/config/test_session.py::test_a_newer_release_keeps_every_other_setting"]
 
 [[mutation]]
 name = "a session lists no key it noted"
 file = "src/stayfixed/config/session.py"
-before = "        noted.config, owner, warnings + _owners(owner, path), noted.keys, noted.document"
-after = "        noted.config, owner, warnings + _owners(owner, path), (), noted.document"
+before = "        noted.config, owner, warnings, _owners(owner, path), noted.keys, noted.document"
+after = "        noted.config, owner, warnings, _owners(owner, path), (), noted.document"
 reddens = ["tests/config/test_session.py::test_a_newer_release_keeps_every_other_setting"]
 
 # `doctor` tells which preferences the repository set from the document the session's own load
@@ -4231,8 +4231,8 @@ reddens = ["tests/config/test_session.py::test_a_newer_release_keeps_every_other
 [[mutation]]
 name = "a session hands doctor no document"
 file = "src/stayfixed/config/session.py"
-before = "        noted.config, owner, warnings + _owners(owner, path), noted.keys, noted.document"
-after = "        noted.config, owner, warnings + _owners(owner, path), noted.keys"
+before = "        noted.config, owner, warnings, _owners(owner, path), noted.keys, noted.document"
+after = "        noted.config, owner, warnings, _owners(owner, path), noted.keys"
 reddens = [
   "tests/doctor/test_floor_report.py::test_preferences_names_the_layer_and_hides_free_text",
   "tests/doctor/test_floor_report.py::test_a_preference_the_session_put_back_is_the_presets",
@@ -4290,22 +4290,22 @@ reddens = [
 [[mutation]]
 name = "the project's warnings include the machine file's"
 file = "src/stayfixed/config/session.py"
-before = "        return self.warnings[:-1] if self.owner.notes else self.warnings"
-after = "        return self.warnings"
+before = "    return SessionConfig(None, owner, (warning,), _owners(owner, machine))"
+after = "    return SessionConfig(None, owner, (warning, *_owners(owner, machine)))"
 reddens = ["tests/config/test_session.py::test_both_broken"]
 
 [[mutation]]
 name = "a session with no project root reads no machine file"
 file = "src/stayfixed/config/session.py"
-before = "        owner = resolve_owner(path)\n        return SessionConfig(None, owner, _owners(owner, path))"
-after = "        owner = resolve_owner(None)\n        return SessionConfig(None, owner, _owners(owner, path))"
+before = "        owner = resolve_owner(path)\n        return SessionConfig(None, owner, machine_warnings=_owners(owner, path))"
+after = "        owner = resolve_owner(None)\n        return SessionConfig(None, owner, machine_warnings=_owners(owner, path))"
 reddens = ["tests/config/test_session.py::test_no_project_root_still_has_the_owners_layer"]
 
 [[mutation]]
 name = "a session with no project configuration says nothing of a machine file it could not use"
 file = "src/stayfixed/config/session.py"
-before = "        return SessionConfig(None, owner, _owners(owner, path))"
-after = "        return SessionConfig(None, owner, ())"
+before = "        return SessionConfig(None, owner, machine_warnings=_owners(owner, path))"
+after = "        return SessionConfig(None, owner)"
 reddens = [
   "tests/config/test_session.py::test_a_broken_machine_file_is_named_with_no_project_configuration[no-file]",
   "tests/config/test_session.py::test_a_broken_machine_file_is_named_with_no_project_configuration[no-root]",
@@ -4335,7 +4335,7 @@ reddens = [
 [[mutation]]
 name = "the owner's layer is handed a preset the loader resets"
 file = "src/stayfixed/config/session.py"
-before = "    return named if isinstance(named, str) and named in shipped_presets() else FALLBACK_PRESET"
+before = "    return named if isinstance(named, str) and named in shipped_presets() else DEFAULT_PRESET"
 after = "    return named"
 reddens = [
   "tests/config/test_session.py::test_a_preset_this_build_cannot_use_is_one_note[unshipped]",
@@ -4347,8 +4347,8 @@ reddens = [
 [[mutation]]
 name = "dispatch renders the notice on every event"
 file = "src/stayfixed/hooks/dispatch.py"
-before = "    shown = notice if event.name == NOTICE_EVENT else ()"
-after = "    shown = notice"
+before = "    shown = session.warnings if event.name == NOTICE_EVENT else ()"
+after = "    shown = session.warnings"
 reddens = [
   "tests/hooks/test_floor.py::test_pre_tool_use_prints_no_warning_and_logs_it_once",
   "tests/hooks/test_hook_command.py::test_a_config_that_does_not_load_whole_never_refuses_a_tool_call[unparseable]",
@@ -4885,4 +4885,41 @@ before = "    \"person must run this command in their own terminal, outside the 
 after = "    \"person must run this command in their own terminal, outside the agent's sandbox\""
 reddens = [
   "tests/trust/test_record.py::test_the_sandbox_sentence_says_what_a_person_in_their_own_terminal_meets",
+]
+
+# One reader of the machine file for every load (`loader._built`): a command folds the owner's layer
+# a session folds, read under `Unknown.REFUSE`, so `memory fit`, `memory index` and `doctor` measure
+# one set of session budgets, and a command refuses a machine file whose tables it cannot use.
+[[mutation]]
+name = "a command's load reads no machine file for the owner's layer"
+file = "src/stayfixed/config/loader.py"
+before = "                machine or machine_config_path(), preset=preset_name, unknown=Unknown.REFUSE"
+after = "                None, preset=preset_name, unknown=Unknown.REFUSE"
+reddens = [
+  "tests/memory/test_owner_budgets.py::test_a_command_loads_the_session_budgets_the_session_runs_on",
+  "tests/memory/test_owner_budgets.py::test_memory_index_judges_by_the_owners_budget[owner-budget]",
+  "tests/memory/test_owner_budgets.py::test_memory_fit_and_doctor_answer_alike_under_the_owners_budget[owner-raised-budget]",
+]
+
+[[mutation]]
+name = "a command's load reads the owner's layer as a session does"
+file = "src/stayfixed/config/loader.py"
+before = "                machine or machine_config_path(), preset=preset_name, unknown=Unknown.REFUSE"
+after = "                machine or machine_config_path(), preset=preset_name, unknown=Unknown.NOTE"
+reddens = [
+  "tests/memory/test_owner_budgets.py::test_a_command_refuses_a_machine_file_the_owners_layer_cannot_use[guard-not-a-switch]",
+  "tests/memory/test_owner_budgets.py::test_a_command_refuses_a_machine_file_the_owners_layer_cannot_use[gate-budget]",
+]
+
+# The NOTE retry's bound (`loader.NOTE_REMOVAL_LIMIT`): each removal is a whole build, so a document
+# of thousands of unusable keys cost a hook more than its timeout, which lets the call through.
+[[mutation]]
+name = "the NOTE path removes every key it cannot use, however many"
+file = "src/stayfixed/config/loader.py"
+before = "            if removed == NOTE_REMOVAL_LIMIT:"
+after = "            if False:"
+reddens = [
+  "tests/config/test_loader_note.py::test_one_unusable_key_past_the_limit_refuses_the_whole_document",
+  "tests/config/test_session.py::test_more_unusable_keys_than_the_note_path_reads_drop_the_project",
+  "tests/hooks/test_floor.py::test_a_file_of_thousands_of_unusable_keys_never_outlasts_the_hook",
 ]

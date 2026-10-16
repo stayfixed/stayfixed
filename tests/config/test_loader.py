@@ -7,16 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from stayfixed.config.loader import (
-    CONFIG_FILE,
-    INTEGER_LIMIT,
-    ConfigError,
-    MachineConfigError,
-    _build,
-    load,
-    loads,
-)
+from stayfixed.config.loader import CONFIG_FILE, _build, load, loads
 from stayfixed.config.paths import PathEscape
+from stayfixed.config.reading import INTEGER_LIMIT, ConfigError, MachineConfigError
 from stayfixed.config.schema import (
     BUILTIN_GATES,
     CI_MODES,
@@ -371,7 +364,7 @@ def test_a_parse_failure_with_no_position_says_so_rather_than_quoting_the_messag
     # Skipping `__init__` gives the exact type with the exact text on both.
     import tomllib
 
-    from stayfixed.config.loader import NO_POSITION, toml_position
+    from stayfixed.config.reading import NO_POSITION, toml_position
 
     def carrying(text: str) -> tomllib.TOMLDecodeError:
         return tomllib.TOMLDecodeError.__new__(tomllib.TOMLDecodeError, text)

@@ -3569,3 +3569,14 @@ after = "    except SandboxedWrite:\n        return False"
 reddens = [
   "tests/attach/test_write.py::test_an_approval_attach_could_not_carry_is_said_as_what_happened[sandboxed]",
 ]
+
+# A session reads past a machine file it cannot use (`config.session`), so the store's own read of
+# `[overlay] root` takes such a file for no overlay recorded rather than ending the session's notes.
+[[mutation]]
+name = "the store's overlay read lets a machine file it cannot read end a session's notes"
+file = "src/stayfixed/memory/store.py"
+before = "    except MachineConfigError:\n        return None"
+after = "    except FileNotFoundError:\n        return None"
+reddens = [
+  "tests/hooks/test_floor.py::test_memory_session_context_reads_past_a_broken_machine_file",
+]

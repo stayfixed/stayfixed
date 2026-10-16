@@ -62,7 +62,8 @@ from stayfixed.committed import (
     repository_prefix,
 )
 from stayfixed.config.classes import KeyClass, class_of
-from stayfixed.config.loader import CONFIG_FILE, NOT_UTF8, loads
+from stayfixed.config.loader import CONFIG_FILE, loads
+from stayfixed.config.reading import NOT_UTF8
 from stayfixed.config.schema import STATES, Budgets, Config, CustomGate
 from stayfixed.errors import Failure, Refusal
 from stayfixed.gitenv import git_run

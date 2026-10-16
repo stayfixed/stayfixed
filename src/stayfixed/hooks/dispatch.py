@@ -162,7 +162,6 @@ def dispatch(
     harness: Harness,
     sink: Sink,
     cap: int | None = None,
-    notice: tuple[str, ...] = (),
 ) -> Outcome:
     """One deny travels on one channel — the exit code — so every failure here is judged.
 
@@ -173,7 +172,7 @@ def dispatch(
     must say so with `NullSink()` and inherit its forgetfulness, and one that has not asked which
     harness it runs under must say which it means, rather than acquire either by omission.
 
-    `session` is what every handler is handed. `notice` is what the session's configuration
+    `session` is what every handler is handed, and its notice is what the session's configuration
     could not give it (`SessionConfig.warnings`), rendered on `NOTICE_EVENT` alone, through both
     of the harness's channels: the person's (`systemMessage`) and, ahead of every handler's
     context, the model's. It counts inside `cap` like the context. On every other event it is
@@ -260,7 +259,7 @@ def dispatch(
     if refuse:
         return Outcome(2, "", "stayfixed: refused: " + "; ".join(reasons) + "\n", "deny")
     stderr = ("stayfixed: " + "; ".join(reasons) + "\n") if reasons else ""
-    shown = notice if event.name == NOTICE_EVENT else ()
+    shown = session.warnings if event.name == NOTICE_EVENT else ()
     context = "\n\n".join((*shown, *contexts))
     message = "\n".join(shown)
     stdout = harness.render(event.name, context, message)

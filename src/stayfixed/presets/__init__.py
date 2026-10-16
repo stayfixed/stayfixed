@@ -14,6 +14,10 @@ from stayfixed.errors import Failure
 # which no shipped name uses and the sentence below did not say.
 NAME = re.compile(r"\A[A-Za-z0-9_-]+\Z")
 NAME_RULE = "ASCII letters, digits, `-` and `_`"
+# The preset everything builds on that names none, or names one this build does not ship: a
+# document leaving `[stayfixed] preset` out, a session whose preset will not load, a repository with
+# no `stayfixed.toml`, and `setup` with no `--preset`.
+DEFAULT_PRESET = "recommended"
 
 
 def shipped_presets() -> list[str]:

@@ -11,8 +11,9 @@ import pytest
 
 import stayfixed
 from stayfixed.config.layout import IGNORE_REGION
-from stayfixed.config.loader import CONFIG_FILE, ConfigError, load
+from stayfixed.config.loader import CONFIG_FILE, load
 from stayfixed.config.owned import OWNED, OwnedKeyError
+from stayfixed.config.reading import ConfigError
 from stayfixed.errors import Failure, Refusal
 from stayfixed.project.footprint import LOCAL_ROOT_ONLY
 from stayfixed.project.init import HEADER, InitReport, init

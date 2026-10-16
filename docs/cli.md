@@ -340,12 +340,17 @@ configuration to use, which is so when there is no file, and when the file is a 
 nothing can stand in for: a required key with no default (`[stayfixed] version`, `[project]
 name`) that is missing or cannot be used, or whose section is not a table, or a key whose preset
 value does not hold in this repository either, such as a `[paths]` default under a committed
-symlink.
+symlink. Nor is a file read key by key past 64 settings it cannot use: each one costs the session
+a whole rebuild of the configuration, so a file of thousands — ten thousand custom gates that
+cannot run, a couple of hundred kilobytes — would keep a hook past its timeout, and Claude Code
+lets a tool call through when its hook times out. Such a file is dropped whole, and the guards run
+on the preset and the owner's layer.
 
 What the session could not use is said once, on `SessionStart`, in one warning about each file, to
 the person (`systemMessage`) and at the head of the model's context (`additionalContext`), both
 counted inside the hook's output cap: that `stayfixed.toml` does not load, that one of its keys
-cannot be used and nothing can stand in for it (naming the key), that it loaded with some
+cannot be used and nothing can stand in for it (naming the key), that it holds more than 64
+settings this stayfixed cannot use, that it loaded with some
 settings ignored or put back to the preset's (counting them, and saying when a newer stayfixed
 wrote it), or that the machine file, named by the path that was read, could not be used whole.
 Each points at `stayfixed doctor`, and none carries the loader's own message, which carries the
@@ -2691,7 +2696,7 @@ with part of the attach already undone:
 ## `stayfixed setup [--preset NAME] [--yes] [--approval-boundary] [--home PATH] [--settings PATH] [--machine PATH] [--overlay VALUE] [--root PATH]`
 
 Configures this machine from a preset, `recommended` unless `--preset` names another: the
-machine configuration file's `[personal]` and `[machine]` tables, the deny rules, the `ask` rules
+machine configuration file's `[personal]`, `[machine]` and `[setup]` tables, the deny rules, the `ask` rules
 for approvals and the personal values in Claude Code's user settings file, and the preset's
 plugins, one install per plugin per configured harness.
 
@@ -2741,9 +2746,10 @@ one that writes the machine configuration file and the user settings file. `--ro
 was run from; the only thing it is used for is refusing an `--overlay` any checkout of it could
 reach (below).
 
-`setup` is the only writer of the machine configuration file, and the two existing readers do
-not change: `[personal]` is `config.loader`'s, `[overlay] root` is `memory.store`'s, and both
-still resolve the file `--machine` names or the default one. A second run merges rather than
+`setup` is the only writer of the machine configuration file, and its readers do not change to
+suit it: `[personal]`, `[guards]` and the session `[budgets]` are `config.owner`'s, which every
+command's load and every session read; `[overlay] root` is `config.overlay`'s; `[setup]` is
+`setup`'s own record; and each resolves the file `--machine` names or the default one. A second run merges rather than
 replaces, key by key: a personal value already recorded — by an earlier `setup` or by your own
 hand — is never overwritten by the preset's own default, and an overlay root a previous run
 recorded survives a run that only changes something else. A table `setup` knows nothing about is
@@ -3809,9 +3815,11 @@ volatile_ttl_days = 30
 what a session loads; the five a gate judges a pull request by (`agents_md_lines`,
 `agents_md_words`, `status_lines`, `roadmap_prose_lines`, `roadmap_prose_words`) are the
 repository's alone, and one written here is ignored with a note. Every key you leave out is the
-preset's. A command that loads `stayfixed.toml` reads this file's `[personal]` too, and refuses a
-key there it does not know or a value it cannot use, naming the file and the key, as it refuses a
-file that does not load; a session reads what it can instead, ignores an unknown key, puts the
+preset's. A command that loads `stayfixed.toml` reads this file's `[personal]`, `[guards]` and
+`[budgets]` too, as a session reads them, so `memory fit`, `memory index` and `memory inventory`
+measure the session budgets a session runs on; and it refuses a key in those three tables it does
+not know, a value it cannot use, a gate's budget, or a table that is not one, naming the file and
+the key, as it refuses a file that does not load. A session reads what it can instead, ignores an unknown key, puts the
 preset's value back for an unusable one, and says so, and a file that does not load at all leaves
 a session on the preset's personal values and guards, with one warning naming this file when the
 session starts. With no `stayfixed.toml` in the repository a session still reads this file:

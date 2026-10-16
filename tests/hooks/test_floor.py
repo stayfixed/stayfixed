@@ -9,6 +9,7 @@ which no variable moves, and none of these reads the developer's."""
 from __future__ import annotations
 
 import json
+import time
 from collections.abc import Callable
 from pathlib import Path
 
@@ -98,6 +99,31 @@ def test_the_background_guard_judges_whatever_the_configuration(
     allowed = hook("PreToolUse", json.dumps(TOOL_CALL), root, home=home)
     # The control: never refused for its configuration.
     assert (allowed.returncode, allowed.stderr) == (0, "")
+
+
+# Ten thousand custom gates that cannot run: about 200 KB of committed `stayfixed.toml`. Read key by
+# key, each gate cost the NOTE load a whole build, and the hook ran past its ten-second timeout,
+# which Claude Code answers by letting the call through.
+MANY_UNUSABLE_GATES = (
+    CONFIG + "\n[gates.custom]\n" + "".join(f"g{n} = {{ run = [] }}\n" for n in range(10_000))
+)
+# Well above what the hook takes with the file refused whole, and well below the ten-second
+# timeout `hooks/hooks.json` gives the `PreToolUse` entry.
+HOOK_BOUND_SECONDS = 5
+
+
+def test_a_file_of_thousands_of_unusable_keys_never_outlasts_the_hook(tmp_path: Path) -> None:
+    # The guard's own verdict, in time: the file is refused whole past `NOTE_REMOVAL_LIMIT`
+    # removals, so the hook answers on the preset and the owner's layer long before the harness
+    # would give up on it. Mutation (`mutations/`'s "the NOTE path removes every key it cannot use,
+    # however many"): the hook takes about fifteen seconds.
+    root, home = _setup(tmp_path, no_file)
+    (root / "stayfixed.toml").write_text(MANY_UNUSABLE_GATES, encoding="utf-8")
+    started = time.monotonic()
+    refused = hook("PreToolUse", json.dumps(BACKGROUND_SLEEP), root, home=home)
+    elapsed = time.monotonic() - started
+    assert refused.returncode == 2 and SLEEP_REASON in refused.stderr
+    assert elapsed < HOOK_BOUND_SECONDS, elapsed
 
 
 def test_the_owner_switches_the_guard_off_with_no_stayfixed_toml(tmp_path: Path) -> None:
@@ -249,6 +275,32 @@ def test_memory_session_context_reads_a_newer_key_with_a_note(
     assert invoke(["trust", "approve", "memory", *common]) == 0
     with (root / "stayfixed.toml").open("a", encoding="utf-8") as document:
         document.write("\n[newer]\nx = 1\n")
+    capsys.readouterr()
+    argv = ["memory", "session-context", "--bundle", "standing-rules", *common]
+    assert invoke(argv) == 0
+    assert "Body." in capsys.readouterr().out
+
+
+def test_memory_session_context_reads_past_a_broken_machine_file(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A machine file that does not load ended `memory session-context` with exit 1 in every memory
+    # mode, so a session lost its standing rules while its `SessionStart` notice said the preset's
+    # values stood in. The store now reads such a file as no overlay recorded, and the notes still
+    # arrive. Mutation (`mutations/`'s "the store's overlay read lets a machine file it cannot read
+    # end a session's notes"): exit 1 and nothing printed.
+    root = tmp_path / "project"
+    notes = root / ".stayfixed" / "local" / "memory" / "developer"
+    notes.mkdir(parents=True)
+    meta = "metadata:\n  type: project\n  startup: 1\n"
+    (notes / "a.md").write_text(NOTE.format(name="a", meta=meta, body="Body."), encoding="utf-8")
+    (root / "stayfixed.toml").write_text(MEMORY_CONFIG, encoding="utf-8")
+    machine = tmp_path / "machine.toml"
+    machine.write_text("", encoding="utf-8")
+    common = ["--root", str(root), "--machine", str(machine)]
+    monkeypatch.setattr(kinds, "interactive", lambda: True)
+    assert invoke(["trust", "approve", "memory", *common]) == 0
+    machine.write_text("[overlay\n", encoding="utf-8")
     capsys.readouterr()
     argv = ["memory", "session-context", "--bundle", "standing-rules", *common]
     assert invoke(argv) == 0

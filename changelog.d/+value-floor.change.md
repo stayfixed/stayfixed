@@ -6,7 +6,11 @@ agent made; now a tool call is refused only when a guard refuses it. A session r
 `stayfixed.toml` it can: a section or key from a newer stayfixed is ignored and a value it cannot
 use is put back to the preset's, so the project's other settings still apply. It drops the file
 whole only when it cannot read it as TOML, or when a key has nothing to stand in for it, such as
-an unusable `[project] name`, and then it names that key instead of calling it missing. What the
+an unusable `[project] name`, and then it names that key instead of calling it missing, or when
+it holds more than 64 settings it cannot use, which read one by one would keep a hook past its
+timeout and so let the tool call through. What the
 session could not use is said once, when it starts, to you and to the agent, with
 `stayfixed doctor` named for the detail; a tool call says nothing of it. `memory session-context`
-reads the file the same way, so a key a newer release added no longer empties a session's notes.
+reads the file the same way, so a key a newer release added no longer empties a session's notes,
+and a machine file that does not load no longer ends it: the notes not kept in the overlay still
+arrive.

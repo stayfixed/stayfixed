@@ -29,6 +29,7 @@ from stayfixed import fsops
 from stayfixed.areas import SubParsers
 from stayfixed.command import HOME_HELP, SETUP_MACHINE_HELP, SETUP_ROOT_HELP
 from stayfixed.errors import Failure, Refusal
+from stayfixed.presets import DEFAULT_PRESET
 from stayfixed.printed import quoted
 from stayfixed.result import Result
 from stayfixed.runner import subprocess_runner
@@ -187,7 +188,7 @@ def run_setup(args: argparse.Namespace) -> Result:
     project_root = _root(args.root)
     also, said = _also(found.chosen, project_root, named=named)
     report = setup(
-        args.preset or "recommended",
+        args.preset or DEFAULT_PRESET,
         home=home,
         machine=machine,
         runner=subprocess_runner(),

@@ -10,6 +10,8 @@ could not use in one warning, which `SessionStart` shows (`hooks.dispatch`):
 - no `stayfixed.toml`: no project configuration, and nothing to say;
 - one that is a symbolic link, is not UTF-8, cannot be read or is not TOML: no project
   configuration, and `FALLBACK_WARNING`;
+- one holding more settings it cannot use than the NOTE load removes (`loader.NOTE_REMOVAL_LIMIT`):
+  no project configuration, and `TOO_MANY_WARNING`;
 - one whose key cannot be used and has nothing to stand in for it — a required key, or a section
   holding one, that the document got wrong or never wrote, or a preset value that does not hold in
   this repository — no project configuration, and `UNUSABLE_WARNING` naming the key;
@@ -33,18 +35,19 @@ from typing import Any
 
 from stayfixed import __version__
 from stayfixed.config.loader import (
-    UNPARSEABLE,
-    ConfigError,
+    NOTE_REMOVAL_LIMIT,
     MissingKeys,
+    TooManyResets,
     UnusableKey,
     loads_noting,
     read_document,
 )
 from stayfixed.config.machine import machine_config_path
-from stayfixed.config.owner import FALLBACK_PRESET, Owner, resolve_owner
+from stayfixed.config.owner import Owner, resolve_owner
 from stayfixed.config.paths import PathEscape
+from stayfixed.config.reading import UNPARSEABLE, ConfigError
 from stayfixed.config.schema import Config
-from stayfixed.presets import shipped_presets
+from stayfixed.presets import DEFAULT_PRESET, shipped_presets
 from stayfixed.printed import printable
 from stayfixed.semver import later
 
@@ -61,6 +64,14 @@ UNUSABLE_WARNING = (
     f"{PREFIX}in stayfixed.toml, {{key}} cannot be used and nothing can stand in for it, so this "
     "session runs the guards on the preset and the machine owner's layer, without the project's "
     f"settings{DOCTOR_DETAIL}"
+)
+# A file holding more settings this stayfixed cannot use than the NOTE load reads past one by one:
+# read key by key, it would cost a hook more than its timeout, which Claude Code answers by letting
+# the call through.
+TOO_MANY_WARNING = (
+    f"{PREFIX}stayfixed.toml holds more than {NOTE_REMOVAL_LIMIT} settings this stayfixed cannot "
+    "use, so this session runs the guards on the preset and the machine owner's layer, without the "
+    f"project's settings{DOCTOR_DETAIL}"
 )
 # What `UNUSABLE_WARNING` says for a key `printable` withholds, or for a refusal that named none.
 UNNAMED_KEY = "a setting"
@@ -87,7 +98,8 @@ MACHINE_FILE_WARNING = (
 @dataclass(frozen=True)
 class SessionConfig:
     """The project's configuration, or `None` where there is none to use; the owner's layer, which
-    there always is; and the warnings `SessionStart` shows, at most one about each file.
+    there always is; and the warnings `SessionStart` shows, at most one about each file: the
+    project file's (`project_warnings`) and the machine file's (`machine_warnings`).
 
     `noted` is the dotted key of every setting the project's file had ignored or reset, in the
     order of its notes, for `doctor` to list by key alone: a key is text the document chose.
@@ -96,15 +108,15 @@ class SessionConfig:
 
     config: Config | None
     owner: Owner
-    warnings: tuple[str, ...]
+    project_warnings: tuple[str, ...] = ()
+    machine_warnings: tuple[str, ...] = ()
     noted: tuple[str, ...] = ()
     document: Mapping[str, Any] = field(default_factory=dict)
 
     @property
-    def project_warnings(self) -> tuple[str, ...]:
-        """Every warning but the machine file's, which comes last when the owner's layer has
-        notes (`_owners`)."""
-        return self.warnings[:-1] if self.owner.notes else self.warnings
+    def warnings(self) -> tuple[str, ...]:
+        """Every warning `SessionStart` shows: the project file's, then the machine file's."""
+        return (*self.project_warnings, *self.machine_warnings)
 
 
 def session_config(root: Path | None, *, machine: Path | None = None) -> SessionConfig:
@@ -126,18 +138,21 @@ def session_config(root: Path | None, *, machine: Path | None = None) -> Session
         # Nothing of the project's to read, and the machine file is read all the same: a broken one
         # is named here as beside any project file.
         owner = resolve_owner(path)
-        return SessionConfig(None, owner, _owners(owner, path))
+        return SessionConfig(None, owner, machine_warnings=_owners(owner, path))
     try:
         raw = tomllib.loads(text)
     except UNPARSEABLE:
         return _fallback(path, FALLBACK_WARNING)
     owner = resolve_owner(path, preset=_preset(raw))
     try:
-        noted = loads_noting(text, root, owner=owner)
+        # Parsed once, above: the NOTE load reads the same document rather than parsing it again.
+        noted = loads_noting(text, root, owner=owner, parsed=raw)
     except UnusableKey as exc:
         return _with_owner(owner, path, _unusable(exc.key))
     except MissingKeys as exc:
         return _with_owner(owner, path, _unusable(exc.missing[0]))
+    except TooManyResets:
+        return _with_owner(owner, path, TOO_MANY_WARNING)
     except (ConfigError, PathEscape) as exc:
         # Every refusal `loads_noting` raises past the two above names a key or is the document
         # not parsing, which `tomllib` already answered; this arm is for one it has not, so that a
@@ -149,7 +164,7 @@ def session_config(root: Path | None, *, machine: Path | None = None) -> Session
         template = NEWER_RELEASE_WARNING if newer else NOTED_WARNING
         warnings = (template.format(count=len(noted.notes)),)
     return SessionConfig(
-        noted.config, owner, warnings + _owners(owner, path), noted.keys, noted.document
+        noted.config, owner, warnings, _owners(owner, path), noted.keys, noted.document
     )
 
 
@@ -161,12 +176,12 @@ def cause(warning: str) -> str:
 
 def _preset(raw: dict[str, object]) -> str:
     """The preset the owner's layer stands on: the document's, when it names one this build ships,
-    and `FALLBACK_PRESET` otherwise, which is what the NOTE load resets an unshipped one to. So an
+    and `DEFAULT_PRESET` otherwise, which is what the NOTE load resets an unshipped one to. So an
     unshipped name is one note, the loader's, and not the owner's `UNKNOWN_PRESET_NOTE` too.
     """
     head = raw.get("stayfixed")
-    named = head.get("preset", FALLBACK_PRESET) if isinstance(head, dict) else FALLBACK_PRESET
-    return named if isinstance(named, str) and named in shipped_presets() else FALLBACK_PRESET
+    named = head.get("preset", DEFAULT_PRESET) if isinstance(head, dict) else DEFAULT_PRESET
+    return named if isinstance(named, str) and named in shipped_presets() else DEFAULT_PRESET
 
 
 def _unusable(key: str | None) -> str:
@@ -179,7 +194,7 @@ def _owners(owner: Owner, machine: Path | None) -> tuple[str, ...]:
 
 
 def _with_owner(owner: Owner, machine: Path | None, warning: str) -> SessionConfig:
-    return SessionConfig(None, owner, (warning, *_owners(owner, machine)))
+    return SessionConfig(None, owner, (warning,), _owners(owner, machine))
 
 
 def _fallback(machine: Path | None, warning: str) -> SessionConfig:

@@ -557,7 +557,7 @@ def test_a_trail_file_that_will_not_parse_never_quotes_its_own_keys(tmp_path: Pa
     So every repository `init` touches has one that `read_trail` parses, and `tomllib`'s own
     message embeds the source for several of its faults — a duplicate table is reported with the
     table's name in it, and a TOML key is arbitrary quoted text. Only the position prints,
-    through `config.loader.toml_position`.
+    through `config.reading.toml_position`.
 
     Mutation: the shared one, "a tomllib message is quoted back whole" — that entry names this
     test beside the three in `tests/config` and `tests/project`, because breaking `toml_position`

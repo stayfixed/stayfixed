@@ -1,12 +1,19 @@
 """One class per configuration key, the layers that may set each class, and `resolve`.
 
 A value reaches a session from one of several layers — the preset, the repository's
-`stayfixed.toml`, the overlay's common and per-project files, the machine scope and the machine
-file — and whether a layer may set a key is a property of the key, not of the layer that happens
-to write it. So every key has one class (`CLASSES`), every class names the layers it admits
-(`ALLOWED`), and `resolve` is the one place a stack of layers becomes values: a layer the class
-does not admit contributes nothing and says so, and of the rest the highest in `ORDER` wins, or a
-`merge` the caller names folds them lowest first.
+`stayfixed.toml`, the overlay's common, per-project and per-machine files, and the machine file
+— and whether a layer may set a key is a property of the key, not of the layer that happens
+to write it. So every key has one class (`CLASSES`), and every class names the layers it admits
+(`ALLOWED`). `resolve` applies that over a stack of layers: a layer the class does not admit
+contributes nothing and says so, and of the rest the highest in `ORDER` wins, or a `merge` the
+caller names folds them lowest first, with the layer each value came from.
+
+What `resolve` decides today is who may set a key, and where a value came from; it is not yet
+what builds a session's values. It builds the owner's layer (`config.owner`, from the preset and
+the machine file), refuses a repository's machine-only keys for the NOTE load
+(`config.loader`), and gives `doctor`'s `preferences` row each value's layer; the project's
+`Config` is still built by `config.loader`, which merges the repository's file over the preset
+and folds the owner's layer in.
 
 The keys are dotted, `section.key`, and a section wildcard `section.*` covers every key of its
 section; `tests/config/test_classes.py` holds every field of `Config`'s sections to a row, so a
@@ -42,13 +49,17 @@ class KeyClass(StrEnum):
 
 
 class LayerName(StrEnum):
-    """Where a value came from. The value is the word a note names the layer by."""
+    """Where a value came from. The value is the word a note names the layer by.
+
+    The overlay's three scopes are named for the overlay, `OVERLAY_COMMON`, `OVERLAY_PROJECT` and
+    `OVERLAY_MACHINE`, since "project" means the repository everywhere else a person reads it (its
+    `stayfixed.toml`, Claude Code's project settings), and "machine" the machine file."""
 
     PRESET = "preset"
     REPOSITORY = "repository"
-    COMMON = "common"
-    PROJECT = "project"
-    MACHINE_SCOPE = "machine scope"
+    OVERLAY_COMMON = "overlay common"
+    OVERLAY_PROJECT = "overlay project"
+    OVERLAY_MACHINE = "overlay machine"
     MACHINE_FILE = "machine file"
 
 
@@ -56,9 +67,9 @@ class LayerName(StrEnum):
 ORDER: tuple[LayerName, ...] = (
     LayerName.PRESET,
     LayerName.REPOSITORY,
-    LayerName.COMMON,
-    LayerName.PROJECT,
-    LayerName.MACHINE_SCOPE,
+    LayerName.OVERLAY_COMMON,
+    LayerName.OVERLAY_PROJECT,
+    LayerName.OVERLAY_MACHINE,
     LayerName.MACHINE_FILE,
 )
 _RANK = {name: rank for rank, name in enumerate(ORDER)}

@@ -65,8 +65,10 @@ def _verdicts(verdict: ConfigVerdict) -> dict[str, Verdict]:
 
 
 def _second_preset(monkeypatch: pytest.MonkeyPatch, edit: Callable[[dict[str, Any]], None]) -> None:
-    """Every preset name but `recommended` loads as `recommended` with `edit` applied."""
+    """Every preset name but `recommended` loads as `recommended` with `edit` applied, in both
+    readers of a preset a load asks: the project loader's and the owner's layer's."""
     import stayfixed.config.loader as loader
+    import stayfixed.config.owner as owner
     from stayfixed import presets
 
     real = presets.load_preset
@@ -78,6 +80,7 @@ def _second_preset(monkeypatch: pytest.MonkeyPatch, edit: Callable[[dict[str, An
         return preset
 
     monkeypatch.setattr(loader, "load_preset", load)
+    monkeypatch.setattr(owner, "load_preset", load)
 
 
 def _with(document: str, line: str) -> str:
