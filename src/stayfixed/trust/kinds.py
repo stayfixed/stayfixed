@@ -40,21 +40,29 @@ class Subject:
 @dataclass(frozen=True)
 class KindContext:
     """What a kind describes its subjects from: the checkout, the machine file, and the kind's own
-    flags as they were given (`--store` for `memory`), by flag."""
+    flags as they were given (`--store` for `memory`), by flag.
+
+    `noting` is how the kind reads the checkout's configuration: as a session reads it
+    (`config.session`), for `trust list` and `trust revoke`, so what they describe is what a session
+    would use and a file a session reads past cannot keep a live approval from being seen or
+    withdrawn; or, `False`, as a command reads it, refusing what it cannot use, for `trust approve`,
+    so nothing is granted against a file this release reads only in part."""
 
     root: Path
     machine: Path | None
     options: Mapping[str, str] = field(default_factory=dict)
+    noting: bool = False
 
 
 @dataclass(frozen=True)
 class ApprovalKind:
     """A kind: its name, how it finds this checkout's subjects (one checkout may have several), and
-    the flags of its own `trust approve` takes for it."""
+    the flags of its own `trust approve` takes for it, each with what `--help` says of it, so a new
+    kind's flag is declared with the kind and edits nothing in the core."""
 
     name: str
     describe: Callable[[KindContext], tuple[Subject, ...]]
-    flags: tuple[str, ...] = ()
+    flags: Mapping[str, str] = field(default_factory=dict)
 
 
 def kinds() -> dict[str, ApprovalKind]:

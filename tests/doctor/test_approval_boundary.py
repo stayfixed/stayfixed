@@ -21,14 +21,16 @@ from typing import Any
 import pytest
 
 import stayfixed
+from stayfixed import fsops
 from stayfixed.config.loader import CONFIG_FILE
 from stayfixed.doctor import boundary
 from stayfixed.doctor.api import OK, RED, SKIP, WARN, Check
 from stayfixed.doctor.checks import run_checks
 from stayfixed.harnesses import CLAUDE
-from stayfixed.printed import quoted
+from stayfixed.printed import clipped
 from stayfixed.trust import boundary as trust_boundary
 from stayfixed.trust.api import approve, managed_settings
+from tests.gitfixture import git
 from tests.runners import Recorder
 
 T0 = datetime(2026, 10, 16, 9, 30, tzinfo=UTC)
@@ -368,7 +370,7 @@ def test_a_claude_config_dir_alone_is_judged_and_never_above_a_warning(
     # row better than a warning, while a gap in it is red as any gap is. Mutation (`mutations/`'s
     # "the boundary row lets the variable's directory alone make the row green"): `guarded` is ok.
     (m.home / ".claude").rmdir()
-    config = m.tmp / "config-dir"
+    config = m.home / "config-dir"
     deny = _deny(_rule(m.record_directory)) if holds == "everything" else {}
     _write(config / "settings.json", _merged(ADMIN_REQUIRED, deny))
     m.env["CLAUDE_CONFIG_DIR"] = str(config)
@@ -385,7 +387,7 @@ def test_a_claude_config_dir_alone_is_judged_and_never_above_a_warning(
         (
             boundary.HELD.format(count=1),
             answer,
-            boundary.CHOSEN_ALONE.format(path=quoted(str(config))),
+            boundary.CHOSEN_ALONE.format(path=clipped(str(config))),
         )
     )
 
@@ -400,7 +402,7 @@ def test_the_home_s_directory_is_the_subject_and_claude_config_dir_only_worsens_
     # Mutations (`mutations/`'s "the boundary row takes the variable's directory for the home's"
     # -> `home` reads ok; "the boundary row passes the variable's directory's gaps over" ->
     # `chosen` reads ok; "the user settings directory ignores CLAUDE_CONFIG_DIR" -> the same).
-    config = m.tmp / "config-dir"
+    config = m.home / "config-dir"
     good = _merged(ADMIN_REQUIRED, _deny(_rule(m.record_directory)))
     m.user(ADMIN_REQUIRED if lacking == "home" else good)
     _write(config / "settings.json", good if lacking == "home" else ADMIN_REQUIRED)
@@ -436,7 +438,7 @@ def test_a_claude_config_dir_inside_the_project_is_never_judged(
     m.env["CLAUDE_CONFIG_DIR"] = str(planted)
     m.managed(ENFORCED)
     m.approvals(1)
-    ignored = boundary.CONFIG_DIR_IN_PROJECT.format(path=quoted(str(planted)))
+    ignored = boundary.CONFIG_DIR_IN_PROJECT.format(path=clipped(str(planted)))
     if home_has_one:
         m.user(_merged(ADMIN_REQUIRED, _deny(_rule(m.record_directory))))
     else:
@@ -458,7 +460,7 @@ def test_a_claude_config_dir_that_leads_into_the_project_is_inside_it(
     # planted settings are judged and the row is ok.
     planted = m.root / ".claude-config"
     _write(planted / "settings.json", _merged(ADMIN_REQUIRED, _deny(_rule(m.record_directory))))
-    link = tmp_path / "outside-link"
+    link = m.home / "outside-link"
     link.symlink_to(planted)
     (m.home / ".claude").rmdir()
     m.env["CLAUDE_CONFIG_DIR"] = str(link)
@@ -468,7 +470,10 @@ def test_a_claude_config_dir_that_leads_into_the_project_is_inside_it(
     assert (row.status, row.detail) == (
         WARN,
         "; ".join(
-            (boundary.NO_CLAUDE_CODE, boundary.CONFIG_DIR_IN_PROJECT.format(path=quoted(str(link))))
+            (
+                boundary.NO_CLAUDE_CODE,
+                boundary.CONFIG_DIR_IN_PROJECT.format(path=clipped(str(link))),
+            )
         ),
     )
 
@@ -479,7 +484,7 @@ def test_a_claude_config_dir_whose_links_loop_is_taken_to_be_inside_the_project(
     # Where the variable's links cannot be followed, where it leads cannot be shown to lie outside
     # the project, so it is treated as inside: named, never judged, and the row a warning. Mutation
     # (`mutations/`'s "a directory whose links loop is read as outside the project"): the row skips.
-    loop = tmp_path / "loop"
+    loop = m.home / "loop"
     loop.symlink_to(loop)
     (m.home / ".claude").rmdir()
     m.env["CLAUDE_CONFIG_DIR"] = str(loop)
@@ -488,7 +493,10 @@ def test_a_claude_config_dir_whose_links_loop_is_taken_to_be_inside_the_project(
     assert (row.status, row.detail) == (
         WARN,
         "; ".join(
-            (boundary.NO_CLAUDE_CODE, boundary.CONFIG_DIR_IN_PROJECT.format(path=quoted(str(loop))))
+            (
+                boundary.NO_CLAUDE_CODE,
+                boundary.CONFIG_DIR_IN_PROJECT.format(path=clipped(str(loop))),
+            )
         ),
     )
 
@@ -578,9 +586,9 @@ def test_a_linked_record_directory_is_covered_only_by_both_rules_setup_writes(
     # the harness compares a write against the path it resolves, and a tool call may carry the path
     # as named. The row counts the directory covered only while both stand, and names the one
     # missing. `both` is the positive control, without which a row that never saw a rule at all
-    # would pass the other two. Mutations (`mutations/`'s "the boundary row takes a rule over the
-    # directory as named for one over where it leads" -> `named-only` is ok; "the boundary row
-    # counts the rule over where the directory leads alone" -> `resolved-only` is ok).
+    # would pass the other two. Mutations (`mutations/`'s "the approval boundary covers only the
+    # directory as named" -> `named-only` is ok; "the boundary row counts the rule over where the
+    # directory leads alone" -> `resolved-only` is ok).
     real = tmp_path / "real-machine"
     real.mkdir()
     linked = tmp_path / "linked-machine"
@@ -1467,6 +1475,287 @@ def test_a_case_variant_of_the_project_is_inside_it(
     assert (row.status, row.detail) == (
         WARN,
         "; ".join(
-            (boundary.NO_CLAUDE_CODE, boundary.CONFIG_DIR_IN_PROJECT.format(path=quoted(variant)))
+            (boundary.NO_CLAUDE_CODE, boundary.CONFIG_DIR_IN_PROJECT.format(path=clipped(variant)))
         ),
     )
+
+
+# --- what the row cannot read is not read as absent ---------------------------------------------
+
+BOM = "﻿"
+
+
+@pytest.mark.parametrize("mark", ["", BOM], ids=["plain", "byte-order-mark"])
+def test_a_project_file_opening_with_a_byte_order_mark_is_read_as_claude_code_reads_it(
+    m: Machine, mark: str
+) -> None:
+    # Claude Code reads past a leading byte-order mark (`harnesses.LENIENT_SETTINGS`); the row read
+    # such a file as absent, so a committed one turning the sandbox off moved red to a warning.
+    # Mutation (`mutations/`'s "the boundary row reads a settings file opening with a byte-order
+    # mark as absent"): `byte-order-mark` warns and names the file unread.
+    _sandbox_and_deny(m)
+    m.project(mark + json.dumps(SANDBOX_OFF))
+    m.approvals(1)
+    row = m.row()
+    assert row.status == RED, row
+    assert boundary.TURNED_OFF.format(label=boundary.PROJECT_SETTINGS) in row.detail.split("; ")
+    assert boundary.NOT_READ.format(label=boundary.PROJECT_SETTINGS) not in row.detail
+
+
+def test_a_user_file_opening_with_a_byte_order_mark_still_guards(m: Machine) -> None:
+    # The owner's own file with the mark judges as it would without one: the legitimate user the
+    # reading must not refuse. Mutation: `mutations/`'s "the boundary row reads a settings file
+    # opening with a byte-order mark as absent" -- the row warns that the file could not be read.
+    m.user(BOM + json.dumps(_deny(_rule(m.record_directory))))
+    m.managed(ENFORCED)
+    m.approvals(1)
+    assert m.row().status == OK
+
+
+@pytest.mark.parametrize(
+    ("document", "key"),
+    [
+        pytest.param(
+            {"sandbox": {"filesystem": {"allowWrite": "~/.config"}}},
+            boundary.WIDENING_KEYS[0],
+            id="allowWrite-a-string",
+        ),
+        pytest.param(
+            {"sandbox": {"filesystem": {"allowWrite": ["/tmp/build", 3]}}},
+            boundary.WIDENING_KEYS[0],
+            id="allowWrite-holding-a-number",
+        ),
+        pytest.param(
+            {"permissions": {"additionalDirectories": "~/.config"}},
+            boundary.WIDENING_KEYS[2],
+            id="additionalDirectories-a-string",
+        ),
+        pytest.param(
+            {"permissions": {"allow": "Edit(~/.config/**)"}},
+            boundary.WIDENING_KEYS[1],
+            id="allow-a-string",
+        ),
+        pytest.param(
+            {"sandbox": {"excludedCommands": "docker *"}},
+            boundary.EXCLUDED_KEY,
+            id="excludedCommands-a-string",
+        ),
+    ],
+)
+def test_a_widening_key_that_is_not_a_list_of_entries_is_a_gap(
+    m: Machine, document: dict[str, Any], key: str
+) -> None:
+    # A value of the wrong shape shows nothing safe, so it is a gap, named with its key and file;
+    # read as no entries it turned the row green. How Claude Code reads one was not measured.
+    # Mutation (`mutations/`'s "the boundary row reads a widening key that is not a list as
+    # empty"): each case is ok.
+    rule = _deny(_rule(m.record_directory))
+    merged = {**rule, **document}
+    if "permissions" in document:
+        merged["permissions"] = {**rule["permissions"], **document["permissions"]}
+    m.user(merged)
+    m.managed(ENFORCED)
+    m.approvals(1)
+    row = m.row()
+    assert row.status == RED, row
+    gap = boundary.NOT_ENTRIES.format(label=boundary.USER_LABEL, key=key)
+    assert gap in row.detail.split("; ")
+    assert boundary.SPELL_THE_SETTINGS in row.remedy.split("; ")
+
+
+def test_a_managed_excluded_commands_that_is_not_a_list_keeps_the_row_from_green(
+    m: Machine,
+) -> None:
+    # An administrator's `excludedCommands` keeps the row at a warning; one that cannot be read
+    # as a list was read as none, and the row was green. Mutation (`mutations/`'s "the boundary row
+    # reads a managed excludedCommands that is not a list as none"): ok.
+    m.user(_deny(_rule(m.record_directory)))
+    m.managed({"sandbox": {**ENFORCED["sandbox"], "excludedCommands": "docker *"}})
+    m.approvals(1)
+    row = m.row()
+    managed = str(managed_settings())
+    assert row.status == WARN, row
+    assert boundary.MANAGED_EXCLUDED.format(managed=managed) in row.detail
+
+
+def _with_sandbox(m: Machine, sandbox: object) -> dict[str, Any]:
+    return {**_deny(_rule(m.record_directory)), "sandbox": sandbox}
+
+
+@pytest.mark.parametrize(
+    ("write", "gap"),
+    [
+        pytest.param(
+            lambda m: m.project({"sandbox": {"enabled": "false"}}),
+            boundary.NOT_A_SWITCH.format(label=boundary.PROJECT_SETTINGS, key="sandbox.enabled"),
+            id="project-enabled-a-string",
+        ),
+        pytest.param(
+            lambda m: m.user(_with_sandbox(m, {"enabled": 1})),
+            boundary.NOT_A_SWITCH.format(label=boundary.USER_LABEL, key="sandbox.enabled"),
+            id="user-enabled-a-number",
+        ),
+        pytest.param(
+            lambda m: m.managed({"sandbox": {**ENFORCED["sandbox"], "failIfUnavailable": "true"}}),
+            "{managed}'s sandbox.failIfUnavailable is not true or false",
+            id="managed-fail-if-unavailable-a-string",
+        ),
+        pytest.param(
+            lambda m: m.managed(
+                {"sandbox": {**ENFORCED["sandbox"], "allowUnsandboxedCommands": "false"}}
+            ),
+            "{managed}'s sandbox.allowUnsandboxedCommands is not true or false",
+            id="managed-unsandboxed-a-string",
+        ),
+        pytest.param(
+            lambda m: m.project({"sandbox": "off"}),
+            boundary.NOT_AN_OBJECT.format(label=boundary.PROJECT_SETTINGS, key="sandbox"),
+            id="project-sandbox-not-an-object",
+        ),
+        pytest.param(
+            lambda m: m.user(_with_sandbox(m, {"filesystem": True})),
+            boundary.NOT_AN_OBJECT.format(label=boundary.USER_LABEL, key="sandbox.filesystem"),
+            id="user-filesystem-not-an-object",
+        ),
+    ],
+)
+def test_a_boundary_key_of_the_wrong_shape_is_a_gap(m: Machine, write: Any, gap: str) -> None:
+    # Every other setting holds the row green; the one key of the wrong shape is a gap, named, red
+    # with an approval held. Read as absent, each left the row as good as its other files.
+    # Mutations (`mutations/`'s "the boundary row reads a sandbox switch that is not true or false
+    # as absent" -> each switch case is ok, or a warning; "the boundary row reads a settings table
+    # that is not an object as absent" -> each `not-an-object` case is ok).
+    m.user(_deny(_rule(m.record_directory)))
+    m.managed(ENFORCED)
+    write(m)
+    m.approvals(1)
+    row = m.row()
+    expected = gap.format(managed=str(managed_settings()))
+    assert row.status == RED, row
+    assert any(part.startswith(expected) for part in row.detail.split("; ")), row.detail
+    assert boundary.SPELL_THE_SETTINGS in row.remedy.split("; ")
+
+
+def test_a_boundary_key_of_the_wrong_shape_is_a_warning_with_no_approval(m: Machine) -> None:
+    # Red only once the machine holds an approval: with none, the same gap warns. No mutation of
+    # its own: the status split is `mutations/`'s "the boundary row is red with no approval".
+    m.user(_deny(_rule(m.record_directory)))
+    m.managed(ENFORCED)
+    m.project({"sandbox": {"enabled": "false"}})
+    assert m.row().status == WARN
+
+
+# --- CLAUDE_CONFIG_DIR: bounded in print, never asked about elsewhere, every checkout inside -----
+
+LONG = 40_000
+
+
+@pytest.mark.parametrize("where", ["inside-the-project", "elsewhere"])
+def test_a_claude_config_dir_of_any_length_prints_bounded(m: Machine, where: str) -> None:
+    # A committed `env` block can set the variable to anything, and the `doctor` skill relays the
+    # row to a model, so the value prints through `printed.clipped`: its first characters and its
+    # length, whether it names a place inside the project or one the row never asks the filesystem
+    # about. Mutations (`mutations/`'s "the boundary row prints a CLAUDE_CONFIG_DIR inside the
+    # project whole" -> `inside-the-project` carries all of it;
+    # "the boundary row prints a CLAUDE_CONFIG_DIR elsewhere whole" -> `elsewhere` does).
+    base = m.root if where == "inside-the-project" else m.tmp / "elsewhere"
+    value = str(base / ("a" * LONG))
+    m.env["CLAUDE_CONFIG_DIR"] = value
+    m.approvals(1)
+    row = m.row()
+    said = (
+        boundary.CONFIG_DIR_IN_PROJECT
+        if where == "inside-the-project"
+        else boundary.CONFIG_DIR_ELSEWHERE
+    )
+    assert said.format(path=clipped(value)) in row.detail.split("; "), row.detail
+    assert len(row.detail) < 2_000
+
+
+def test_a_claude_config_dir_judged_alone_prints_bounded(m: Machine) -> None:
+    # The directory the home's absence leaves judged alone exists, so `PATH_MAX` bounds its name;
+    # it prints through `printed.clipped` all the same, one rule for every site. Mutation
+    # (`mutations/`'s "the boundary row prints a CLAUDE_CONFIG_DIR judged alone whole"): the whole
+    # name reaches the row.
+    (m.home / ".claude").rmdir()
+    config = m.home / ("c" * 100) / ("d" * 100)
+    _write(config / "settings.json", _merged(ADMIN_REQUIRED, _deny(_rule(m.record_directory))))
+    m.env["CLAUDE_CONFIG_DIR"] = str(config)
+    m.managed(ENFORCED)
+    m.approvals(1)
+    row = m.row()
+    assert boundary.CHOSEN_ALONE.format(path=clipped(str(config))) in row.detail.split("; ")
+    assert str(config) not in row.detail
+
+
+def test_a_claude_config_dir_under_neither_the_home_nor_the_project_is_never_asked_about(
+    m: Machine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A path a committed `env` block chose may lie under an automount root, where one stat stalls
+    # `doctor` until the network answers; so a directory under neither the home nor the project is
+    # named, never asked of the filesystem, and the row is at best a warning. Mutation
+    # (`mutations/`'s "a CLAUDE_CONFIG_DIR under neither the home nor the project is asked of the
+    # filesystem"): the directory is resolved and judged, and the row reads ok.
+    elsewhere = m.tmp / "elsewhere"
+    _write(elsewhere / "settings.json", _merged(ADMIN_REQUIRED, _deny(_rule(m.record_directory))))
+    m.user(_deny(_rule(m.record_directory)))
+    m.managed(ENFORCED)
+    m.env["CLAUDE_CONFIG_DIR"] = str(elsewhere)
+    m.approvals(1)
+    asked: list[str] = []
+    for name in ("resolved", "is_dir", "names_regular_file"):
+        real = getattr(fsops, name)
+
+        def recording(path: Path, *args: Any, _real: Any = real, **kwargs: Any) -> Any:
+            if str(path).startswith(str(elsewhere)):
+                asked.append(str(path))
+            return _real(path, *args, **kwargs)
+
+        monkeypatch.setattr(fsops, name, recording)
+    row = m.row()
+    assert row.status == WARN, row
+    assert boundary.CONFIG_DIR_ELSEWHERE.format(path=clipped(str(elsewhere))) in row.detail
+    assert asked == []
+
+
+def test_a_claude_config_dir_in_another_checkout_of_the_repository_is_inside_it(
+    m: Machine,
+) -> None:
+    # What a repository commits reaches every one of its checkouts, so a directory in a sibling
+    # worktree is the repository's to fill as one in the project is: named, never judged. Mutation
+    # (`mutations/`'s "a CLAUDE_CONFIG_DIR in another checkout of the repository is outside it"):
+    # the sibling's planted settings are judged alone.
+    git(m.root, "init", "-q", "-b", "main")
+    git(m.root, "commit", "-q", "--allow-empty", "-m", "chore: seed")
+    sibling = m.tmp / "sibling"
+    git(m.root, "worktree", "add", "-q", "-b", "side", str(sibling))
+    planted = sibling / ".claude-config"
+    _write(planted / "settings.json", _merged(ADMIN_REQUIRED, _deny(_rule(m.record_directory))))
+    (m.home / ".claude").rmdir()
+    m.env["CLAUDE_CONFIG_DIR"] = str(planted)
+    m.managed(ENFORCED)
+    m.approvals(1)
+    row = m.row()
+    said = boundary.CONFIG_DIR_IN_PROJECT.format(path=clipped(str(planted)))
+    assert (row.status, row.detail) == (WARN, "; ".join((boundary.NO_CLAUDE_CODE, said)))
+
+
+def test_a_repository_whose_checkouts_git_cannot_list_holds_the_directory(
+    m: Machine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Where a `.git` is and git gives no answer, which checkouts the repository has is not known,
+    # so the variable's directory is taken to be in one, as a link that cannot be followed is.
+    # Mutation (`mutations/`'s "a repository whose checkouts git cannot list is read as having
+    # none"): the directory under the home is judged.
+    (m.root / ".git").mkdir()
+    monkeypatch.setattr(trust_boundary, "git_run", lambda root, *args, **kwargs: (-1, ""))
+    config = m.home / "config-dir"
+    _write(config / "settings.json", _merged(ADMIN_REQUIRED, _deny(_rule(m.record_directory))))
+    m.user(_deny(_rule(m.record_directory)))
+    m.managed(ENFORCED)
+    m.env["CLAUDE_CONFIG_DIR"] = str(config)
+    m.approvals(1)
+    row = m.row()
+    said = boundary.CONFIG_DIR_IN_PROJECT.format(path=clipped(str(config)))
+    assert row.status == WARN, row
+    assert said in row.detail.split("; ")

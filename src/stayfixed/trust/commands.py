@@ -10,81 +10,37 @@ why). `revoke` needs no terminal: withdrawing an approval is the direction that 
 from __future__ import annotations
 
 import argparse
-import shlex
-from collections.abc import Sequence
-from datetime import UTC, datetime
 from pathlib import Path
 
 from stayfixed.areas import SubParsers
-from stayfixed.command import STORE_HELP, common_flags
-from stayfixed.config.machine import homes_agree, passwd_home
+from stayfixed.command import common_flags
+from stayfixed.config.machine import passwd_home
 from stayfixed.errors import Failure, Refusal
 from stayfixed.printed import clipped, printable
 from stayfixed.result import Result
 from stayfixed.trust import kinds as discovered
 from stayfixed.trust import record
-from stayfixed.trust.kinds import ApprovalKind, KindContext
+from stayfixed.trust.approving import (
+    PERSON_RUNS,
+    approve_kind,
+    command_for,
+    kind_context,
+    kind_flags,
+    known_kind,
+)
+from stayfixed.trust.kinds import ApprovalKind
 
-# How every sentence that names an approval command tells its reader to have it run, here and in
-# the areas that name one (`memory`, `attach`): any of them may be read by an agent's shell tool or
-# reach the model, so each speaks of the person at the machine and tells an agent to stop, in these
-# words, rather than telling its reader to run the command "in a terminal", which an agent able to
-# open a pseudo-terminal reads as an instruction. `command` is the exact command.
-PERSON_RUNS = (
-    "ask the person at this machine to run `{command}` in their own terminal — an agent must not "
-    "run it for them"
-)
-# The refusal of an approval asked with no terminal on standard input. `command` is the exact
-# command for a person to run, built by `_command` from the flags as they were given. Its likely
-# reader is an agent's shell tool, so it speaks of the person rather than to its reader, tells an
-# agent to stop, and says nothing of how a terminal could be had: what the check does not
-# guarantee is stated in `kinds`' docstring, `docs/cli.md` and `SECURITY.md`, not at the moment an
-# agent decides what to do next.
-NOT_A_TERMINAL = (
-    "an approval is a person's decision, and standard input is not a terminal, so nothing was "
-    "approved; " + PERSON_RUNS
-)
-# A kind no area contributes. The name typed is not repeated: it is whatever was typed.
-UNKNOWN_KIND = "there is no approval kind of that name; the kinds are: {known}"
 # A revoke that matched nothing: exit 1, and what the kind has recorded.
 NOTHING_TO_REVOKE = "nothing recorded for {kind} matches, so nothing was revoked"
-# What a flag a kind takes says in `--help`: the shared sentence where the frame has one.
-FLAG_HELP = {"--store": STORE_HELP}
-OTHER_FLAG_HELP = "passed to the approval kind that takes it"
-# Said after an approval where `HOME` is not the database's home, because a person who looks under
-# `HOME` for the record finds an older one or none (`config.machine`'s docstring says why).
-ELSEWHERE = (
-    "in {path}: under the home the password database records for this user, not under HOME, "
-    "because that is where a hook reads it"
+# A revoke whose kind could not describe this checkout's subjects: exit 1, the kind's reason, and
+# the spelling that revokes a recorded subject by its key, which needs no description. The reason
+# is the kind's refusal, a sentence built for the frame to print, any name the repository chose in
+# it already bounded, as `trust list` prints it.
+UNDESCRIBED = (
+    "{kind} cannot be described in this checkout ({reason}), so nothing was revoked; to revoke a "
+    "recorded approval by its key, run `stayfixed trust revoke {kind} --subject KEY` with a "
+    "subject `stayfixed trust list --all --json` prints"
 )
-
-
-def approve_kind(name: str, context: KindContext, given: Sequence[str]) -> Result:
-    """The approve path both spellings run: the terminal check, then every subject of the kind
-    `name` describes for this checkout, each recorded at its digest now.
-
-    `given` is the flags as they were typed after the kind, for the command `NOT_A_TERMINAL`
-    names."""
-    kind = _kind(name)
-    # Through the module, so the one seam a test replaces is the one asked here.
-    if not discovered.interactive():
-        raise Refusal(NOT_A_TERMINAL.format(command=_command(name, given)))
-    subjects = kind.describe(context)
-    now = datetime.now(UTC)
-    lines: list[str] = []
-    approved: list[dict[str, str]] = []
-    for subject in subjects:
-        was = record.state(context.machine, name, subject.key, subject.digest)
-        record.approve(context.machine, name, subject.key, subject.digest, now=now)
-        lines.append(f"approved {name} {printable(subject.label)} at digest {subject.digest}")
-        approved.append(
-            {"subject": subject.key, "label": subject.label, "digest": subject.digest, "was": was}
-        )
-    written = record.record_path(context.machine)
-    summary = "\n".join(lines) or f"{name} has nothing to approve in this checkout"
-    if approved and context.machine is None and written is not None and not homes_agree():
-        summary = f"{summary}\n{ELSEWHERE.format(path=written)}"
-    return Result(summary, {"kind": name, "approved": approved})
 
 
 def run_approve(args: argparse.Namespace) -> Result:
@@ -93,7 +49,9 @@ def run_approve(args: argparse.Namespace) -> Result:
 
 
 def run_list(args: argparse.Namespace) -> Result:
-    context, _ = kind_context(args)
+    # Described as a session reads the checkout (`KindContext.noting`): what is approved is what a
+    # session would use, and a file only a session reads past cannot hide a live approval.
+    context, _ = kind_context(args, noting=True)
     if args.all:
         return _everything(context.machine)
     lines: list[str] = []
@@ -113,7 +71,7 @@ def run_list(args: argparse.Namespace) -> Result:
             state = record.state(context.machine, name, subject.key, subject.digest)
             line = f"{name} {printable(subject.label)}: {state}"
             if state is not record.State.APPROVED:
-                command = _command(name, _given(args, kind))
+                command = command_for(name, _given(args, kind))
                 line = f"{line} — to approve it, {PERSON_RUNS.format(command=command)}"
             lines.append(line)
             rows.append({"kind": name, "subject": subject.key, "state": str(state)})
@@ -121,24 +79,35 @@ def run_list(args: argparse.Namespace) -> Result:
 
 
 def run_revoke(args: argparse.Namespace) -> Result:
-    context, _ = kind_context(args)
-    kind = _kind(args.kind)
+    # Described as a session reads the checkout (`KindContext.noting`), as `trust list` describes
+    # it: the fail-safe direction withdraws what a session would use, whatever a command would
+    # refuse in the file.
+    context, _ = kind_context(args, noting=True)
+    kind = known_kind(args.kind)
     if args.subject is not None:
         keys = [args.subject]
     else:
-        keys = [subject.key for subject in kind.describe(context)]
+        try:
+            keys = [subject.key for subject in kind.describe(context)]
+        except (Failure, Refusal) as refused:
+            return _not_revoked(
+                kind, context.machine, UNDESCRIBED.format(kind=kind.name, reason=refused)
+            )
     revoked = [key for key in keys if record.revoke(context.machine, kind.name, key)]
     if revoked:
         return Result(
             f"revoked {len(revoked)} {kind.name} approval(s)",
             {"kind": kind.name, "revoked": revoked},
         )
-    recorded = sorted(
-        subject for (name, subject) in record.recorded(context.machine) if name == kind.name
-    )
+    return _not_revoked(kind, context.machine, NOTHING_TO_REVOKE.format(kind=kind.name))
+
+
+def _not_revoked(kind: ApprovalKind, machine: Path | None, said: str) -> Result:
+    """A revoke that withdrew nothing: `said`, what the kind has recorded, and exit 1."""
+    recorded = sorted(subject for (name, subject) in record.recorded(machine) if name == kind.name)
     shown = ", ".join(_shown(subject) for subject in recorded) or "none"
     return Result(
-        f"{NOTHING_TO_REVOKE.format(kind=kind.name)}; recorded: {shown}",
+        f"{said}; recorded: {shown}",
         {"kind": kind.name, "revoked": [], "recorded": recorded},
         exit_code=1,
     )
@@ -181,40 +150,6 @@ def _shown(subject: str) -> str:
     return clipped(subject)
 
 
-def _kind(name: str) -> ApprovalKind:
-    found = discovered.kinds()
-    if name not in found:
-        raise Refusal(UNKNOWN_KIND.format(known=", ".join(sorted(found))))
-    return found[name]
-
-
-def _flags() -> list[str]:
-    """Every flag a kind takes, once each, in the order the kinds name them."""
-    return list(dict.fromkeys(flag for kind in discovered.kinds().values() for flag in kind.flags))
-
-
-def _dest(flag: str) -> str:
-    return flag.removeprefix("--").replace("-", "_")
-
-
-def kind_context(args: argparse.Namespace) -> tuple[KindContext, list[str]]:
-    """The checkout, the machine file and the kind flags given, and the flags as typed: what
-    `approve_kind` takes, read off any parsed command line that carries `--root`, `--machine`
-    and the kinds' flags (`memory trust`'s among them)."""
-    options = {
-        flag: value for flag in _flags() if (value := getattr(args, _dest(flag), None)) is not None
-    }
-    given: list[str] = []
-    if args.root != ".":
-        given += ["--root", args.root]
-    if args.machine is not None:
-        given += ["--machine", args.machine]
-    for flag, value in options.items():
-        given += [flag, value]
-    machine = Path(args.machine) if args.machine else None
-    return KindContext(Path(args.root).resolve(), machine, options), given
-
-
 def _given(args: argparse.Namespace, kind: ApprovalKind) -> list[str]:
     """The flags as given, keeping only the kind's own beside `--root` and `--machine`."""
     _, given = kind_context(args)
@@ -225,39 +160,28 @@ def _given(args: argparse.Namespace, kind: ApprovalKind) -> list[str]:
     return kept
 
 
-def _command(name: str, given: Sequence[str]) -> str:
-    """`stayfixed trust approve <name>` with the flags as given, each value quoted for a shell.
-
-    A value holding a character that is not printable — a line break, an escape — would drive the
-    terminal that shows the refusal, so its flag is left out and the command still names the kind.
-    """
-    words = ["stayfixed", "trust", "approve", name]
-    for flag, value in zip(given[::2], given[1::2], strict=True):
-        if value.isprintable():
-            words += [flag, value]
-    return shlex.join(words)
-
-
 def register(groups: SubParsers) -> None:
     group = groups.add_parser("trust", help="every approval on this machine")
     sub = group.add_subparsers(dest="command", metavar="<command>")
-    flags = _flags()
+    # Each kind's flags with the words its kind gives them (`ApprovalKind.flags`), so a kind's new
+    # flag edits that kind's `approvals.py` and nothing here.
+    flags = kind_flags()
 
     listing = common_flags(sub.add_parser("list", help="each kind's state in this checkout"))
     listing.add_argument("--all", action="store_true", help="every approval on this machine")
-    for flag in flags:
-        listing.add_argument(flag, default=None, help=FLAG_HELP.get(flag, OTHER_FLAG_HELP))
+    for flag, help_text in flags.items():
+        listing.add_argument(flag, default=None, help=help_text)
     listing.set_defaults(func=run_list)
 
     approving = common_flags(sub.add_parser("approve", help="approve a kind, at a terminal"))
     approving.add_argument("kind", help="the kind to approve, as `trust list` names it")
-    for flag in flags:
-        approving.add_argument(flag, default=None, help=FLAG_HELP.get(flag, OTHER_FLAG_HELP))
+    for flag, help_text in flags.items():
+        approving.add_argument(flag, default=None, help=help_text)
     approving.set_defaults(func=run_approve)
 
     revoking = common_flags(sub.add_parser("revoke", help="withdraw a kind's approval"))
     revoking.add_argument("kind", help="the kind to revoke, as `trust list` names it")
     revoking.add_argument("--subject", default=None, help="the recorded subject to revoke")
-    for flag in flags:
-        revoking.add_argument(flag, default=None, help=FLAG_HELP.get(flag, OTHER_FLAG_HELP))
+    for flag, help_text in flags.items():
+        revoking.add_argument(flag, default=None, help=help_text)
     revoking.set_defaults(func=run_revoke)

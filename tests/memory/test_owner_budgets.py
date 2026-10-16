@@ -79,8 +79,8 @@ def test_memory_index_judges_by_the_owners_budget(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], machine: str, code: int
 ) -> None:
     # `memory_index_words` from the machine file is what `memory index` enforces, as the session
-    # and `doctor` read it. Mutation: "a command's load reads no machine file for the owner's
-    # layer" -- the preset's 1200 words pass the one-word budget's index.
+    # and `doctor` read it. Mutation (`mutations/`'s "a command's load reads no machine file for
+    # the owner's layer"): the preset's 1200 words pass the one-word budget's index.
     root, path = _project(tmp_path, machine)
     common = ["--root", str(root), "--machine", str(path)]
     invoke(["memory", "index", *common])
@@ -100,9 +100,9 @@ def test_memory_fit_and_doctor_answer_alike_under_the_owners_budget(
 ) -> None:
     # Twelve long volatile notes fit their slots under the preset's budget, and need a fourth part,
     # which no hook slot holds, once the machine file raises it. `memory fit` is the command a
-    # person runs to ask exactly what `doctor`'s `bundles` row answers, so the two agree. Mutation:
-    # "a command's load reads no machine file for the owner's layer" -- `memory fit` passes the
-    # raised budget's bundle while the row is red.
+    # person runs to ask exactly what `doctor`'s `bundles` row answers, so the two agree. Mutation
+    # (`mutations/`'s "a command's load reads no machine file for the owner's layer"): `memory fit`
+    # passes the raised budget's bundle while the row is red.
     root, path = _project(tmp_path, machine, volatile=12)
     common = ["--root", str(root), "--machine", str(path)]
     # Approved, so the bundles carry the notes: a store of repository data with no record renders

@@ -4468,7 +4468,7 @@ reddens = [
 
 [[mutation]]
 name = "memory trust keeps quiet about where it wrote while the homes differ"
-file = "src/stayfixed/trust/commands.py"
+file = "src/stayfixed/trust/approving.py"
 before = "    if approved and context.machine is None and written is not None and not homes_agree():"
 after = "    if False:"
 reddens = [
@@ -4638,7 +4638,7 @@ reddens = ["tests/trust/test_record.py::test_the_record_ignores_xdg_and_home"]
 # terminal on standard input it refuses and writes nothing.
 [[mutation]]
 name = "trust approve asks no terminal"
-file = "src/stayfixed/trust/commands.py"
+file = "src/stayfixed/trust/approving.py"
 before = "    if not discovered.interactive():\n        raise Refusal("
 after = "    if False:\n        raise Refusal("
 reddens = [
@@ -4650,7 +4650,7 @@ reddens = [
 # an agent, to run the approval itself.
 [[mutation]]
 name = "the terminal refusal tells its reader to run the approval itself"
-file = "src/stayfixed/trust/commands.py"
+file = "src/stayfixed/trust/approving.py"
 before = '    "ask the person at this machine to run `{command}` in their own terminal — an agent must not "'
 after = '    "run `{command}` yourself, in a terminal — an agent must not "'
 reddens = [
@@ -4922,4 +4922,134 @@ reddens = [
   "tests/config/test_loader_note.py::test_one_unusable_key_past_the_limit_refuses_the_whole_document",
   "tests/config/test_session.py::test_more_unusable_keys_than_the_note_path_reads_drop_the_project",
   "tests/hooks/test_floor.py::test_a_file_of_thousands_of_unusable_keys_never_outlasts_the_hook",
+]
+
+# The trust record's directory's deny rules are one computation (`trust.boundary.record_deny_rules`)
+# that `setup --approval-boundary` writes and `doctor`'s approval-boundary row asks for: over the
+# directory as named, and over where it leads, since the harness compares a write against the path
+# it resolves.
+[[mutation]]
+name = "the approval boundary covers only the directory as named"
+file = "src/stayfixed/trust/boundary.py"
+before = "    return deny_rules(record.parent, fsops.resolved(record.parent))"
+after = "    return deny_rules(record.parent, record.parent)"
+reddens = [
+  "tests/setup/test_ask_rules.py::test_a_linked_machine_directory_gets_a_rule_for_each_spelling",
+  "tests/doctor/test_approval_boundary.py::test_a_linked_record_directory_is_covered_only_by_both_rules_setup_writes[named-only]",
+]
+
+[[mutation]]
+name = "the boundary row counts the rule over where the directory leads alone"
+file = "src/stayfixed/trust/boundary.py"
+before = "    return deny_rules(record.parent, fsops.resolved(record.parent))"
+after = "    return deny_rules(fsops.resolved(record.parent), fsops.resolved(record.parent))"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_a_linked_record_directory_is_covered_only_by_both_rules_setup_writes[resolved-only]",
+]
+
+# Where a directory `CLAUDE_CONFIG_DIR` names lies (`trust.boundary.placement`), which `doctor` and
+# `setup` both ask: one inside the project, or where its links lead into it, is never judged or
+# written.
+[[mutation]]
+name = "the boundary row judges a CLAUDE_CONFIG_DIR inside the project"
+file = "src/stayfixed/trust/boundary.py"
+before = "    return Placement.INSIDE if in_project(directory, root, known) else Placement.OUTSIDE"
+after = "    return Placement.OUTSIDE"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_a_claude_config_dir_inside_the_project_is_never_judged[home-guarded]",
+  "tests/doctor/test_approval_boundary.py::test_a_claude_config_dir_inside_the_project_is_never_judged[home-has-none]",
+  "tests/doctor/test_approval_boundary.py::test_a_claude_config_dir_that_leads_into_the_project_is_inside_it",
+  "tests/setup/test_commands.py::test_setup_writes_the_home_s_settings_and_a_claude_config_dir_outside_the_project[config-dir-in-project]",
+  "tests/setup/test_commands.py::test_taking_the_rules_back_leaves_a_recorded_directory_now_inside_the_project",
+]
+
+# Where a directory `CLAUDE_CONFIG_DIR` names lies (`trust.boundary.placement`): one under neither a
+# home nor the project is never asked of the filesystem, every checkout of the repository is
+# inside it, and a repository whose checkouts git cannot list is taken to hold the directory.
+[[mutation]]
+name = "a CLAUDE_CONFIG_DIR under neither the home nor the project is asked of the filesystem"
+file = "src/stayfixed/trust/boundary.py"
+before = "        return Placement.UNJUDGED\n"
+after = "        pass\n"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_a_claude_config_dir_under_neither_the_home_nor_the_project_is_never_asked_about",
+  "tests/setup/test_commands.py::test_a_claude_config_dir_under_neither_the_home_nor_the_project_is_left_alone",
+]
+
+[[mutation]]
+name = "a CLAUDE_CONFIG_DIR in another checkout of the repository is outside it"
+file = "src/stayfixed/trust/boundary.py"
+before = "    return Placement.INSIDE if in_project(directory, root, known) else Placement.OUTSIDE"
+after = "    return Placement.INSIDE if in_project(directory, root) else Placement.OUTSIDE"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_a_claude_config_dir_in_another_checkout_of_the_repository_is_inside_it",
+  "tests/setup/test_commands.py::test_a_claude_config_dir_in_another_checkout_of_the_repository_is_left_alone",
+]
+
+[[mutation]]
+name = "a repository whose checkouts git cannot list is read as having none"
+file = "src/stayfixed/trust/boundary.py"
+before = "    return None if in_work_tree(root) else ()"
+after = "    return ()"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_a_repository_whose_checkouts_git_cannot_list_holds_the_directory",
+]
+
+# `trust list` and `trust revoke` describe a checkout as a session reads it, so a file a session
+# reads past cannot hide or keep a live approval; a revoke whose kind cannot describe the
+# checkout names the spelling that revokes by key.
+[[mutation]]
+name = "trust list describes a checkout as a command reads it"
+file = "src/stayfixed/trust/commands.py"
+before = "    context, _ = kind_context(args, noting=True)\n    if args.all:"
+after = "    context, _ = kind_context(args)\n    if args.all:"
+reddens = [
+  "tests/trust/test_commands.py::test_list_reports_an_approval_a_session_uses_past_a_newer_section",
+]
+
+[[mutation]]
+name = "trust revoke describes a checkout as a command reads it"
+file = "src/stayfixed/trust/commands.py"
+before = "    context, _ = kind_context(args, noting=True)\n    kind = known_kind(args.kind)"
+after = "    context, _ = kind_context(args)\n    kind = known_kind(args.kind)"
+reddens = [
+  "tests/trust/test_commands.py::test_revoke_withdraws_an_approval_a_session_uses_past_a_newer_section",
+]
+
+[[mutation]]
+name = "trust revoke lets a kind that cannot describe the checkout refuse"
+file = "src/stayfixed/trust/commands.py"
+before = "        except (Failure, Refusal) as refused:\n            return _not_revoked("
+after = "        except ZeroDivisionError as refused:\n            return _not_revoked("
+reddens = [
+  "tests/trust/test_commands.py::test_revoke_that_cannot_describe_the_checkout_names_the_spelling_that_can",
+]
+
+# `approve_kind` records every subject of a kind in one write of the record (`record.approve_all`).
+[[mutation]]
+name = "approving a kind writes the record once per subject"
+file = "src/stayfixed/trust/record.py"
+before = "        approvals[(kind, subject)] = Approval(kind, subject, digest, when)\n    _write(machine, approvals)"
+after = "        approvals[(kind, subject)] = Approval(kind, subject, digest, when)\n        _write(machine, approvals)"
+reddens = [
+  "tests/trust/test_record.py::test_every_subject_of_a_kind_is_approved_in_one_write",
+]
+
+[[mutation]]
+name = "approving no subject writes the record"
+file = "src/stayfixed/trust/record.py"
+before = "    if not digests:\n        return was"
+after = "    if False:\n        return was"
+reddens = [
+  "tests/trust/test_record.py::test_approving_no_subject_writes_nothing",
+]
+
+# The record's surface loads no command module: the hook path reaches it through `memory`.
+[[mutation]]
+name = "the trust surface takes the approve path from the command module"
+file = "src/stayfixed/trust/api.py"
+before = "from stayfixed.trust.approving import PERSON_RUNS, approve_kind, kind_context"
+after = "from stayfixed.trust.commands import PERSON_RUNS, approve_kind, kind_context"
+reddens = [
+  "tests/trust/test_commands.py::test_the_records_surface_loads_no_command_module",
 ]

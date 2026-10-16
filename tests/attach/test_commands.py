@@ -1105,7 +1105,7 @@ def test_a_harness_link_that_waits_for_approval_is_said_with_the_way_out(tmp_pat
     from stayfixed.attach.write import HARNESS_WAITS
     from stayfixed.config.loader import load
     from stayfixed.memory.api import harness_memory_path, resolve
-    from stayfixed.memory.trust import record
+    from tests.approved import record
 
     root, store = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
     _overlay_grants(store)
@@ -1212,7 +1212,7 @@ def test_attach_at_a_terminal_with_no_home_at_all_refuses_in_words(
     # `HOME`; the refusal's words are the assertions' own.
     from stayfixed.config.loader import load
     from stayfixed.memory.api import resolve
-    from stayfixed.memory.trust import record
+    from tests.approved import record
     from tests.ownerhome import as_owner_home
 
     root, store = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
@@ -1321,7 +1321,7 @@ def _approve(root: Path) -> None:
     """`stayfixed memory trust --in-repo-memory`, recorded under the database's home."""
     from stayfixed.config.loader import load
     from stayfixed.memory.api import resolve
-    from stayfixed.memory.trust import record
+    from tests.approved import record
 
     config = load(root, machine=None)
     resolved = resolve(root, config, machine=None)

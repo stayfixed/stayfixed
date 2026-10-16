@@ -2218,7 +2218,7 @@ def test_a_trusted_store_keeps_its_approval_when_attach_renders_its_missing_inde
     # Mutation: `mutations/`'s "attach's index render drops the store's approval".
     from stayfixed.config.loader import load
     from stayfixed.memory.api import harness_memory_path, resolve
-    from stayfixed.memory.trust import record
+    from tests.approved import record
 
     root, store, machine = _attachable(tmp_path, allow=(RULE,))
     home = tmp_path / "home"
@@ -2253,6 +2253,7 @@ def test_an_approval_attach_could_not_carry_is_said_as_what_happened(
     from stayfixed.memory import trust as memory_trust
     from stayfixed.memory.api import harness_memory_path, resolve
     from stayfixed.trust.api import recorded, revoke
+    from tests.approved import record as approved
 
     root, store, machine = _attachable(tmp_path, allow=(RULE,))
     home = tmp_path / "home"
@@ -2261,7 +2262,7 @@ def test_an_approval_attach_could_not_carry_is_said_as_what_happened(
     config = load(root, machine=machine)
     resolved = resolve(root, config, machine=machine)
     assert resolved is not None
-    assert memory_trust.record(resolved, config).trusted
+    assert approved(resolved, config).trusted
     (approval,) = recorded(machine).values()
     real = memory_trust.refresh_if_trusted
 

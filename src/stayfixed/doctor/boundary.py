@@ -64,17 +64,31 @@ warning, so a default install is never red here. With every setting in force the
 until managed settings make the sandbox admin-required and set `sandbox.failIfUnavailable = true`,
 the sandboxing reference's own recipe for enforcing it — without the second, Claude Code runs
 commands outside a sandbox that cannot start — and is green only then. A trust record that cannot
-be read is taken to hold approvals, since it holds every project's on the machine. A settings file
-that cannot be read as one JSON object (unreadable, not UTF-8, or not JSON) is read as absent for
-its layer and named; the row is never red for that alone, and never green beside it, since what
-the harness makes of the file is not known here.
+be read is taken to hold approvals, since it holds every project's on the machine.
+
+**What the row cannot read is not read as absent.** The project's two files and the user's are read
+as Claude Code reads them, past a leading byte-order mark (`harnesses.lenient_settings`); managed
+settings, whose reading was not measured, are read strictly. A key of the boundary's own that is
+there with a value of the wrong shape is a gap, named with its file and key: a sandbox switch
+(`sandbox.enabled` in any layer, `allowUnsandboxedCommands` and `failIfUnavailable` in managed
+settings) that is not true or false, a `sandbox` or `sandbox.filesystem` that is not an object, a
+`permissions` that is not an object where the row reads its allow rules, and any widening key that
+is not a list of strings, `excludedCommands` among them (in managed settings, one that is not such
+a list keeps the row from green as a non-empty one does). Read as absent, each made the answer
+better than the bytes allow; how Claude Code reads such a value was not measured. A settings file
+that cannot be read as one JSON object at all (unreadable, not UTF-8, or not JSON) is read as
+absent for its layer and named; the row is never red for that alone, and never green beside it,
+since what the harness makes of the file is not known here.
 
 **`CLAUDE_CONFIG_DIR` may only make the answer worse**, since nothing tells whether a person or a
 repository set it (`trust.boundary.user_settings`). Where it names a directory not spelled byte for
 byte as the home's `.claude`, that directory is judged too, and its gaps are added, said with its
 file, raising the status and never lowering it. Where the home has no `.claude`, the variable's
 directory is judged alone and the row is at best a warning, naming it. A directory inside the
-project is never judged: it is named, and the row is at best a warning for it.
+project or another checkout of its repository is never judged, and nor is one under neither a
+home nor the project, which the row never asks the filesystem about (`trust.boundary.placement`):
+each is named, and the row is at best a warning for it. The value is printed through
+`printed.clipped`, since a repository may have chosen it and a model reads the row.
 
 **Skipped** on a machine with no Claude Code user settings directory, and for a project whose
 `[stayfixed] agents` does not list `claude` and which carries neither `.claude/settings.json` nor
@@ -101,22 +115,26 @@ from stayfixed import fsops
 from stayfixed.config.machine import passwd_home
 from stayfixed.doctor.model import OK, RED, SKIP, WARN, Context, Row, Status
 from stayfixed.errors import Failure
-from stayfixed.harnesses import CLAUDE
+from stayfixed.harnesses import CLAUDE, lenient_settings
 from stayfixed.jsonobject import json_object
 from stayfixed.presets import DEFAULT_PRESET, load_preset
-from stayfixed.printed import quoted
+from stayfixed.printed import clipped
 from stayfixed.trust.api import (
     CONFIG_DIR_VARIABLE,
     ENABLED,
+    ENFORCING_SETTINGS,
     FAIL_IF_UNAVAILABLE,
     MANAGED_DROP_INS,
+    NO_MANAGED_PATH,
     SANDBOX,
     UNSANDBOXED_ALLOWED,
+    Placement,
     UnreadableTrust,
-    deny_rules,
     folded,
-    in_project,
+    managed_named,
     managed_settings,
+    placement,
+    record_deny_rules,
     record_path,
     recorded,
     user_settings,
@@ -170,6 +188,20 @@ NESTED = (
     "{label}'s {key} holds an entry inside another widening entry, so an agent's shell may put a "
     "link to the trust record's directory in its place before a later session reads it"
 )
+# A key of the boundary's own whose value has the wrong shape (the module docstring): read as
+# absent, each answered better than its bytes allow. `label` names the file and `key` the setting.
+NOT_A_SWITCH = (
+    "{label}'s {key} is not true or false, so whether it keeps an agent out of the trust record "
+    "cannot be read"
+)
+NOT_AN_OBJECT = (
+    "{label}'s {key} is not an object, so the settings it holds, and whether they keep an agent "
+    "out of the trust record, cannot be read"
+)
+NOT_ENTRIES = (
+    "{label}'s {key} is not a list of entries, so what it opens cannot be read, and none of it is "
+    "shown to stay clear of the trust record's directory"
+)
 # Managed settings' `excludedCommands`: an administrator's choice, named, and never green beside.
 MANAGED_EXCLUDED = (
     "{managed}, or a drop-in beside it, sets sandbox.excludedCommands, so the commands it names "
@@ -206,8 +238,8 @@ NOT_READ = (
 )
 # Where `CLAUDE_CONFIG_DIR` names a user settings directory besides the home's, that one may only
 # make the answer worse (`trust.boundary.user_settings` says why): its gaps are added, said with its
-# file. `path` is the variable's value, which a repository may have chosen, so it is printed
-# through `printed.quoted`.
+# file. `path` is the variable's value, which a repository may have chosen and no bound limits in
+# length, so it is printed through `printed.clipped`.
 JUDGED_WITH = "judged with {label}: {detail}"
 USER_LABEL = f"~/{PROJECT_SETTINGS}"
 CHOSEN_LABEL = f"${CONFIG_DIR_VARIABLE}/{USER_FILE}"
@@ -217,8 +249,14 @@ CHOSEN_ALONE = (
     f"so the row is at best a warning"
 )
 CONFIG_DIR_IN_PROJECT = (
-    f"{CONFIG_DIR_VARIABLE} names {{path}}, inside the project, whose contents the repository "
-    f"chooses, so it was not read and the row is at best a warning"
+    f"{CONFIG_DIR_VARIABLE} names {{path}}, inside the project or another checkout of its "
+    f"repository, whose contents the repository chooses, so it was not read and the row is at "
+    f"best a warning"
+)
+CONFIG_DIR_ELSEWHERE = (
+    f"{CONFIG_DIR_VARIABLE} names {{path}}, under neither the home nor the project, which the row "
+    f"does not ask the filesystem about, since such a path may lie under a network mount, so it "
+    f"was not read and the row is at best a warning"
 )
 # How bad each answer is, for letting the variable's directory make one worse and never better.
 SEVERITY = {SKIP: 0, OK: 1, WARN: 2, RED: 3}
@@ -228,10 +266,9 @@ ADD_THE_BOUNDARY = (
     "settings to set"
 )
 MAKE_IT_ADMIN = (
-    "set sandbox.enabled = true, sandbox.failIfUnavailable = true and "
-    "sandbox.allowUnsandboxedCommands = false in {managed}, a file only an administrator writes: "
-    "then no repository's settings turn the sandbox off, no command runs outside it, and Claude "
-    "Code does not start where it cannot"
+    f"set {ENFORCING_SETTINGS} in {{managed}}, a file only an administrator writes: then no "
+    f"repository's settings turn the sandbox off, no command runs outside it, and Claude Code does "
+    f"not start where it cannot"
 )
 MAKE_IT_JSON = (
     "make each file the detail names a readable UTF-8 file holding one JSON object, then run "
@@ -247,11 +284,15 @@ NARROW_THE_SETTINGS = (
     "letters, digits, `.`, `_`, `-` and `/`: `/…` or `~/…` in a sandbox path list and "
     "permissions.additionalDirectories, `//…` or `~/…` in an Edit rule, none of them inside another"
 )
+SPELL_THE_SETTINGS = (
+    "spell each setting the detail names as Claude Code's settings reference gives it: true or "
+    "false for a sandbox switch, an object for sandbox, sandbox.filesystem and permissions, and a "
+    "list of strings for a list of entries"
+)
 UNEXCLUDE_MANAGED = (
     "take sandbox.excludedCommands out of {managed} and the drop-ins beside it where an "
     "administrator agrees, since no row can show a command it names keeps clear of the trust record"
 )
-NO_MANAGED_PATH = "the managed settings file"
 # The rule's place in a sentence on a machine with no home for a trust record: the password
 # database lists none for this user, and `--machine` was not given.
 NO_RECORD_RULE = "Edit(//<the trust record's directory>/**)"
@@ -267,15 +308,19 @@ class _Layer:
     unread: bool = False
 
 
-def _read(path: Path, label: str) -> _Layer:
+def _read(path: Path, label: str, *, lenient: bool = True) -> _Layer:
     """The settings file at `path` as one JSON object, absent when it names no regular file, and
-    unreadable when it is there and is not one."""
+    unreadable when it is there and is not one. `lenient` reads it as Claude Code reads its
+    project, local and user files, past a leading byte-order mark (`harnesses.lenient_settings`);
+    managed settings are read strictly, since their reading was not measured."""
     try:
         if not fsops.names_regular_file(path):
             return _Layer(label, None)
         text = fsops.read_regular_bytes(path).decode("utf-8")
     except (OSError, UnicodeDecodeError):
         return _Layer(label, None, unread=True)
+    if lenient:
+        text = lenient_settings(text)
     if not text.strip():
         return _Layer(label, {})
     try:
@@ -304,7 +349,7 @@ def _managed() -> tuple[_Layer, list[_Layer]]:
     path = managed_settings()
     if path is None:
         return _Layer(NO_MANAGED_PATH, None), []
-    base = _read(path, str(path))
+    base = _read(path, str(path), lenient=False)
     unread = [base] if base.unread else []
     document: dict[str, Any] | None = None if base.document is None else dict(base.document)
     drop_ins = path.parent / MANAGED_DROP_INS
@@ -315,7 +360,7 @@ def _managed() -> tuple[_Layer, list[_Layer]]:
             if entry.name.endswith(".json") and not entry.name.startswith(".")
         )
         for name in names:
-            layer = _read(drop_ins / name, str(drop_ins / name))
+            layer = _read(drop_ins / name, str(drop_ins / name), lenient=False)
             if layer.unread:
                 unread.append(layer)
             elif layer.document is not None:
@@ -335,12 +380,11 @@ def _filesystem_off(layer: _Layer) -> bool:
 
 
 def _deny_rules(layers: Sequence[_Layer]) -> set[str]:
+    """The deny rules `layers` hold. Read leniently, and safely so: a rule the row cannot read is
+    a rule it does not count, and a missing rule is a gap."""
     found: set[str] = set()
     for layer in layers:
-        permissions = (layer.document or {}).get("permissions")
-        rules = permissions.get("deny") if isinstance(permissions, dict) else None
-        if isinstance(rules, list):
-            found.update(rule for rule in rules if isinstance(rule, str))
+        found.update(_strings(_table(layer.document, PERMISSIONS, "deny")))
     return found
 
 
@@ -359,10 +403,12 @@ ALLOW_WRITE = "allowWrite"
 # `sandbox.filesystem.disabled`, which turns the filesystem confinement off (the module docstring).
 DISABLED = "disabled"
 ADDITIONAL_DIRECTORIES = "additionalDirectories"
+PERMISSIONS = "permissions"
+EXCLUDED_KEY = f"{SANDBOX}.{EXCLUDED_COMMANDS}"
 WIDENING_KEYS = (
     f"{SANDBOX}.{FILESYSTEM}.{ALLOW_WRITE}",
-    "permissions.allow",
-    f"permissions.{ADDITIONAL_DIRECTORIES}",
+    f"{PERMISSIONS}.allow",
+    f"{PERMISSIONS}.{ADDITIONAL_DIRECTORIES}",
 )
 # The only characters a safe entry may hold. Anything else -- a pattern character, a backslash, a
 # NUL, a space, a letter outside ASCII -- makes the entry a gap: the row reads an entry as text and
@@ -398,7 +444,75 @@ def _table(document: Mapping[str, Any] | None, *keys: str) -> object:
 
 
 def _strings(value: object) -> list[str]:
+    """The strings of a list, and nothing for anything else: for `permissions.deny` alone, where
+    reading too little fails closed (`_deny_rules`)."""
     return [item for item in value if isinstance(item, str)] if isinstance(value, list) else []
+
+
+class _Unread:
+    """A value `_value` could not reach: a table on the way to it is there and is not an object."""
+
+
+UNREAD = _Unread()
+
+
+def _value(document: Mapping[str, Any] | None, *keys: str) -> object:
+    """The value at `keys` in `document`; `None` where it is absent; `UNREAD` where a table on the
+    way to it is there and is not an object, so whether it is there cannot be read."""
+    value: object = document or {}
+    for key in keys:
+        if not isinstance(value, dict):
+            return UNREAD
+        value = value.get(key)
+        if value is None:
+            return None
+    return value
+
+
+def _listed(document: Mapping[str, Any] | None, *keys: str) -> list[str] | None:
+    """The entries of the widening key at `keys`: none where it is absent, its strings where it is
+    a list of strings, and `None` -- could not be read -- for any other value that is there,
+    including one whose table on the way is not an object. Every widening key is read through
+    this, never `_strings`, which would read such a value as empty and so as safe."""
+    value = _value(document, *keys)
+    if value is None:
+        return []
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        return None
+    return list(value)
+
+
+def _there(value: object) -> bool:
+    """Whether `_value` found something there: neither absent nor behind a table it could not
+    read, which is a gap of its own."""
+    return value is not None and value is not UNREAD
+
+
+# The tables of the boundary's keys whose shape the row reads: `sandbox`, `sandbox.filesystem` and
+# `permissions`, each an object or nothing.
+_TABLES: tuple[tuple[str, ...], ...] = ((SANDBOX,), (SANDBOX, FILESYSTEM), (PERMISSIONS,))
+
+
+def _misshapen(
+    layer: _Layer, switches: Sequence[str], tables: Sequence[tuple[str, ...]]
+) -> list[str]:
+    """The gaps of `layer`'s boundary keys whose value has the wrong shape: each of `tables` that
+    is there and is not an object, and each of the sandbox `switches` that is there and is not true
+    or false (the module docstring)."""
+    found = [(keys, _value(layer.document, *keys)) for keys in tables]
+    switched = [(key, _value(layer.document, SANDBOX, key)) for key in switches]
+    return [
+        *(
+            NOT_AN_OBJECT.format(label=layer.label, key=".".join(keys))
+            for keys, value in found
+            if _there(value) and not isinstance(value, dict)
+        ),
+        *(
+            NOT_A_SWITCH.format(label=layer.label, key=f"{SANDBOX}.{key}")
+            for key, value in switched
+            if _there(value) and not isinstance(value, bool)
+        ),
+    ]
 
 
 def _related(place: str, held: str) -> bool:
@@ -471,31 +585,39 @@ def _safe(
     return all(_clear(folded(place), project, record) for place in places)
 
 
-def _entries(layer: _Layer) -> dict[str, list[str | None]]:
+def _entries(layer: _Layer) -> dict[str, list[str | None] | None]:
     """`layer`'s entries of each widening key, an `Edit` rule's by its path and a bare `Edit` as
-    `None`."""
-    allowed = _strings(_table(layer.document, "permissions", "allow"))
-    return {
-        WIDENING_KEYS[0]: [*_strings(_table(layer.document, SANDBOX, FILESYSTEM, ALLOW_WRITE))],
-        WIDENING_KEYS[1]: [
+    `None`; `None` for a key whose value could not be read as a list of entries (`_listed`)."""
+    allowed = _listed(layer.document, PERMISSIONS, "allow")
+    edits: list[str | None] | None = (
+        None
+        if allowed is None
+        else [
             None if entry == EDIT else entry[len(EDIT) + 1 : -1]
             for entry in allowed
             if entry == EDIT or (entry.startswith(f"{EDIT}(") and entry.endswith(")"))
-        ],
-        WIDENING_KEYS[2]: [
-            *_strings(_table(layer.document, "permissions", ADDITIONAL_DIRECTORIES))
-        ],
+        ]
+    )
+    written = _listed(layer.document, SANDBOX, FILESYSTEM, ALLOW_WRITE)
+    added = _listed(layer.document, PERMISSIONS, ADDITIONAL_DIRECTORIES)
+    return {
+        WIDENING_KEYS[0]: None if written is None else [*written],
+        WIDENING_KEYS[1]: edits,
+        WIDENING_KEYS[2]: None if added is None else [*added],
     }
 
 
 def _widened(
     layer: _Layer, homes: Sequence[Path | None], project: Sequence[str], record: Sequence[str]
 ) -> list[str]:
-    """The gaps `layer`'s widening keys open: one for each key holding an entry not shown safe."""
+    """The gaps `layer`'s widening keys open: one for each key holding an entry not shown safe,
+    and one for each key whose value is not a list of entries, which shows nothing safe."""
     return [
-        WIDENED.format(label=layer.label, key=key)
+        NOT_ENTRIES.format(label=layer.label, key=key)
+        if listed is None
+        else WIDENED.format(label=layer.label, key=key)
         for key, listed in _entries(layer).items()
-        if not all(_safe(entry, key, homes, project, record) for entry in listed)
+        if listed is None or not all(_safe(entry, key, homes, project, record) for entry in listed)
     ]
 
 
@@ -512,7 +634,7 @@ def _nested(
     placed: list[tuple[str | None, list[str]]] = []
     for layer, said in [*((layer, True) for layer in layers), *((layer, False) for layer in outer)]:
         for key, listed in _entries(layer).items():
-            for entry in listed:
+            for entry in listed or ():
                 places = None if entry is None else _anchored(entry, key, homes)
                 if places is not None:
                     gap = NESTED.format(label=layer.label, key=key) if said else None
@@ -562,11 +684,18 @@ def approval_boundary(context: Context) -> Row:
         return Row(SKIP, NOT_LISTED)
     found = user_settings(context.env, context.home)
     chosen = found.chosen
-    inside = chosen is not None and in_project(chosen, context.root)
-    ignored = (CONFIG_DIR_IN_PROJECT.format(path=quoted(str(chosen))),) if inside else ()
+    homes = [home for home in (passwd_home(), context.home) if home is not None]
+    where = None if chosen is None else placement(chosen, context.root, homes)
+    ignored = (
+        (CONFIG_DIR_IN_PROJECT.format(path=clipped(str(chosen))),)
+        if where is Placement.INSIDE
+        else (CONFIG_DIR_ELSEWHERE.format(path=clipped(str(chosen))),)
+        if where is Placement.UNJUDGED
+        else ()
+    )
     other = (
         _judged(context, chosen, CHOSEN_LABEL, approvals)
-        if chosen is not None and not inside and fsops.is_dir(chosen)
+        if chosen is not None and where is Placement.OUTSIDE and fsops.is_dir(chosen)
         else None
     )
     if found.directory is not None and fsops.is_dir(found.directory):
@@ -579,8 +708,8 @@ def approval_boundary(context: Context) -> Row:
                 other.remedy,
             )
     elif other is not None and chosen is not None:
-        row = _worsened(other, WARN, CHOSEN_ALONE.format(path=quoted(str(chosen))), "")
-    elif inside:
+        row = _worsened(other, WARN, CHOSEN_ALONE.format(path=clipped(str(chosen))), "")
+    elif ignored:
         return Row(WARN, "; ".join((NO_CLAUDE_CODE, *ignored)))
     else:
         return Row(SKIP, NO_CLAUDE_CODE)
@@ -620,7 +749,7 @@ def _judged(context: Context, directory: Path, user_label: str, approvals: tuple
     # Where the directory leads is what the harness compares a write against, and the spelling as
     # named is what a tool call may carry, so `setup` writes a rule over each and only those count.
     real = fsops.resolved(path.parent) if path is not None else None
-    wanted = deny_rules(path.parent, real) if path is not None and real is not None else ()
+    wanted = record_deny_rules(path)
     rules = _deny_rules((managed, local, project, user))
     missing = [rule for rule in wanted if rule not in rules] if wanted else [NO_RECORD_RULE]
     homes = _homes(context)
@@ -646,18 +775,34 @@ def _judged(context: Context, directory: Path, user_label: str, approvals: tuple
         for layer in (managed, *repository, user)
         if _filesystem_off(layer)
     ]
+    # A key of the boundary's own with a value of the wrong shape, in each layer the row reads it
+    # in (the module docstring): never read as absent.
+    misshapen = [
+        *_misshapen(managed, (ENABLED, UNSANDBOXED_ALLOWED, FAIL_IF_UNAVAILABLE), _TABLES),
+        *(
+            gap
+            for layer in (local, project)
+            for gap in _misshapen(layer, (ENABLED,), _TABLES if not admin else ((SANDBOX,),))
+        ),
+        *_misshapen(user, (ENABLED,), _TABLES),
+    ]
     # A repository's file and the user's widen alike; managed settings' entries only hold others,
     # and their excluded commands only keep the row from green (the module docstring).
     widened: list[str] = []
     for layer in (*repository, user):
-        if _strings(_sandbox(layer, EXCLUDED_COMMANDS)):
+        excluded = _listed(layer.document, SANDBOX, EXCLUDED_COMMANDS)
+        if excluded is None:
+            widened.append(NOT_ENTRIES.format(label=layer.label, key=EXCLUDED_KEY))
+        elif excluded:
             widened.append(EXCLUDED.format(label=layer.label))
         widened.extend(_widened(layer, homes, project_root, record))
     widened.extend(_nested((*repository, user), (managed,), homes))
-    managed_path = managed_settings() or NO_MANAGED_PATH
+    managed_path = managed_named()
+    # One that cannot be read as a list keeps the row from green as a non-empty one does.
+    managed_listed = _listed(managed.document, SANDBOX, EXCLUDED_COMMANDS)
     managed_excluded = (
         [MANAGED_EXCLUDED.format(managed=managed_path)]
-        if _strings(_sandbox(managed, EXCLUDED_COMMANDS))
+        if managed_listed is None or managed_listed
         else []
     )
     unexclude = [UNEXCLUDE_MANAGED.format(managed=managed_path)] if managed_excluded else []
@@ -668,15 +813,26 @@ def _judged(context: Context, directory: Path, user_label: str, approvals: tuple
         if layer.unread
     ]
 
-    if gaps or off or widened:
+    unspelled = bool(misshapen) or any(
+        listed is None
+        for layer in (*repository, user)
+        for listed in (
+            *_entries(layer).values(),
+            _listed(layer.document, SANDBOX, EXCLUDED_COMMANDS),
+        )
+    )
+    if gaps or off or widened or misshapen:
         status: Status = RED if held else WARN
         remedies = [
             *([ADD_THE_BOUNDARY] if gaps or resting else []),
             *([KEEP_THE_FILESYSTEM] if off else []),
             *([NARROW_THE_SETTINGS] if widened else []),
+            *([SPELL_THE_SETTINGS] if unspelled else []),
             *unexclude,
         ]
-        detail = "; ".join((lead, *gaps, *off, *widened, *resting, *managed_excluded, *unread))
+        detail = "; ".join(
+            (lead, *gaps, *misshapen, *off, *widened, *resting, *managed_excluded, *unread)
+        )
         return Row(status, detail, "; ".join(remedies))
     enforced = _sandbox(managed, FAIL_IF_UNAVAILABLE) is True
     short = [

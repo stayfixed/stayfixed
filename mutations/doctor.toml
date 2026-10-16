@@ -3068,8 +3068,8 @@ reddens = [
 [[mutation]]
 name = "the boundary row names no gap"
 file = "src/stayfixed/doctor/boundary.py"
-before = "        detail = \"; \".join((lead, *gaps, *off, *widened, *resting, *managed_excluded, *unread))"
-after = "        detail = lead"
+before = "            (lead, *gaps, *misshapen, *off, *widened, *resting, *managed_excluded, *unread)"
+after = "            (lead,)"
 reddens = [
   "tests/doctor/test_approval_boundary.py::test_a_gap_names_the_missing_setting_and_what_it_stops",
   "tests/doctor/test_approval_boundary.py::test_a_project_that_turns_the_sandbox_off_is_named",
@@ -3146,8 +3146,8 @@ reddens = [
 [[mutation]]
 name = "the boundary row reads no excludedCommands"
 file = "src/stayfixed/doctor/boundary.py"
-before = "        if _strings(_sandbox(layer, EXCLUDED_COMMANDS)):"
-after = "        if False:"
+before = "        elif excluded:\n            widened.append(EXCLUDED.format(label=layer.label))"
+after = "        elif False:\n            widened.append(EXCLUDED.format(label=layer.label))"
 reddens = [
   "tests/doctor/test_approval_boundary.py::test_a_setting_that_widens_confinement_is_a_gap_unless_shown_safe[excluded-commands]",
   "tests/doctor/test_approval_boundary.py::test_a_setting_that_widens_confinement_is_a_gap_unless_shown_safe[user-excluded-commands]",
@@ -3158,8 +3158,8 @@ reddens = [
 [[mutation]]
 name = "the boundary row reads no user excludedCommands"
 file = "src/stayfixed/doctor/boundary.py"
-before = "        if _strings(_sandbox(layer, EXCLUDED_COMMANDS)):"
-after = "        if layer is not user and _strings(_sandbox(layer, EXCLUDED_COMMANDS)):"
+before = "        elif excluded:"
+after = "        elif excluded and layer is not user:"
 reddens = [
   "tests/doctor/test_approval_boundary.py::test_a_setting_that_widens_confinement_is_a_gap_unless_shown_safe[user-excluded-commands]",
   "tests/doctor/test_approval_boundary.py::test_a_setting_that_widens_confinement_is_a_gap_unless_shown_safe[user-excluded-commands-under-admin]",
@@ -3169,8 +3169,8 @@ reddens = [
 [[mutation]]
 name = "the boundary row takes an empty excludedCommands for a gap"
 file = "src/stayfixed/doctor/boundary.py"
-before = "        if _strings(_sandbox(layer, EXCLUDED_COMMANDS)):"
-after = "        if _sandbox(layer, EXCLUDED_COMMANDS) is not None:"
+before = "        elif excluded:"
+after = "        elif excluded is not None:"
 reddens = [
   "tests/doctor/test_approval_boundary.py::test_a_setting_that_widens_confinement_is_a_gap_unless_shown_safe[user-excludes-none]",
 ]
@@ -3178,7 +3178,7 @@ reddens = [
 [[mutation]]
 name = "the boundary row reads no managed excludedCommands"
 file = "src/stayfixed/doctor/boundary.py"
-before = "        if _strings(_sandbox(managed, EXCLUDED_COMMANDS))"
+before = "        if managed_listed is None or managed_listed"
 after = "        if False"
 reddens = [
   "tests/doctor/test_approval_boundary.py::test_managed_settings_excluded_commands_keep_the_row_from_green[managed-file]",
@@ -3198,8 +3198,8 @@ reddens = [
 [[mutation]]
 name = "the boundary row reads widening repository entries while admin-required"
 file = "src/stayfixed/doctor/boundary.py"
-before = "    for layer in (*repository, user):\n        if _strings"
-after = "    for layer in (local, project, user):\n        if _strings"
+before = "    for layer in (*repository, user):\n        excluded = _listed"
+after = "    for layer in (local, project, user):\n        excluded = _listed"
 reddens = [
   "tests/doctor/test_approval_boundary.py::test_a_setting_that_widens_confinement_is_a_gap_unless_shown_safe[excluded-commands-under-admin]",
   "tests/doctor/test_approval_boundary.py::test_a_setting_that_widens_confinement_is_a_gap_unless_shown_safe[local-allow-write-under-admin]",
@@ -3240,24 +3240,6 @@ reddens = [
   "tests/doctor/test_approval_boundary.py::test_a_deny_rule_in_any_spelling_but_setup_s_is_not_counted[doubled-slash]",
   "tests/doctor/test_approval_boundary.py::test_a_deny_rule_in_any_spelling_but_setup_s_is_not_counted[parent-component]",
   "tests/doctor/test_approval_boundary.py::test_a_deny_rule_in_any_spelling_but_setup_s_is_not_counted[case-variant]",
-]
-
-[[mutation]]
-name = "the boundary row takes a rule over the directory as named for one over where it leads"
-file = "src/stayfixed/doctor/boundary.py"
-before = "    wanted = deny_rules(path.parent, real) if path is not None and real is not None else ()"
-after = "    wanted = deny_rules(path.parent, path.parent) if path is not None and real is not None else ()"
-reddens = [
-  "tests/doctor/test_approval_boundary.py::test_a_linked_record_directory_is_covered_only_by_both_rules_setup_writes[named-only]",
-]
-
-[[mutation]]
-name = "the boundary row counts the rule over where the directory leads alone"
-file = "src/stayfixed/doctor/boundary.py"
-before = "    wanted = deny_rules(path.parent, real) if path is not None and real is not None else ()"
-after = "    wanted = deny_rules(real, real) if path is not None and real is not None else ()"
-reddens = [
-  "tests/doctor/test_approval_boundary.py::test_a_linked_record_directory_is_covered_only_by_both_rules_setup_writes[resolved-only]",
 ]
 
 # A widening entry is read as text alone, with no filesystem call and no regular expression, and is
@@ -3391,8 +3373,8 @@ reddens = [
 [[mutation]]
 name = "the boundary row judges a key by one entry"
 file = "src/stayfixed/doctor/boundary.py"
-before = "        if not all(_safe(entry, key, homes, project, record) for entry in listed)"
-after = "        if listed and not any(_safe(entry, key, homes, project, record) for entry in listed)"
+before = "        if listed is None or not all(_safe(entry, key, homes, project, record) for entry in listed)"
+after = "        if listed is None or (listed and not any(_safe(entry, key, homes, project, record) for entry in listed))"
 reddens = [
   "tests/doctor/test_approval_boundary.py::test_a_setting_that_widens_confinement_is_a_gap_unless_shown_safe[one-safe-one-not]",
 ]
@@ -3458,8 +3440,8 @@ reddens = [
 [[mutation]]
 name = "the boundary row lets the variable's directory alone make the row green"
 file = "src/stayfixed/doctor/boundary.py"
-before = "        row = _worsened(other, WARN, CHOSEN_ALONE.format(path=quoted(str(chosen))), \"\")"
-after = "        row = _worsened(other, OK, CHOSEN_ALONE.format(path=quoted(str(chosen))), \"\")"
+before = "        row = _worsened(other, WARN, CHOSEN_ALONE.format(path=clipped(str(chosen))), \"\")"
+after = "        row = _worsened(other, OK, CHOSEN_ALONE.format(path=clipped(str(chosen))), \"\")"
 reddens = [
   "tests/doctor/test_approval_boundary.py::test_a_claude_config_dir_alone_is_judged_and_never_above_a_warning[guarded]",
 ]
@@ -3480,17 +3462,6 @@ before = "        if other is not None and other.status != OK and other.detail !
 after = "        if False:"
 reddens = [
   "tests/doctor/test_approval_boundary.py::test_the_home_s_directory_is_the_subject_and_claude_config_dir_only_worsens_it[chosen]",
-]
-
-[[mutation]]
-name = "the boundary row judges a CLAUDE_CONFIG_DIR inside the project"
-file = "src/stayfixed/doctor/boundary.py"
-before = "    inside = chosen is not None and in_project(chosen, context.root)"
-after = "    inside = False"
-reddens = [
-  "tests/doctor/test_approval_boundary.py::test_a_claude_config_dir_inside_the_project_is_never_judged[home-guarded]",
-  "tests/doctor/test_approval_boundary.py::test_a_claude_config_dir_inside_the_project_is_never_judged[home-has-none]",
-  "tests/doctor/test_approval_boundary.py::test_a_claude_config_dir_that_leads_into_the_project_is_inside_it",
 ]
 
 [[mutation]]
@@ -3682,4 +3653,88 @@ before = "    name = folded(part)"
 after = "    name = part"
 reddens = [
   "tests/doctor/test_approval_boundary.py::test_a_case_variant_of_the_sandbox_s_temporary_directory_is_it_where_names_fold",
+]
+
+# What the approval-boundary row cannot read is never read as absent: a settings file opening
+# with a byte-order mark is read as Claude Code reads it, and a key of the boundary's own with
+# a value of the wrong shape is a gap. `CLAUDE_CONFIG_DIR` prints through `printed.clipped`.
+[[mutation]]
+name = "the boundary row reads a settings file opening with a byte-order mark as absent"
+file = "src/stayfixed/doctor/boundary.py"
+before = "    if lenient:\n        text = lenient_settings(text)"
+after = "    if False:\n        text = lenient_settings(text)"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_a_project_file_opening_with_a_byte_order_mark_is_read_as_claude_code_reads_it[byte-order-mark]",
+  "tests/doctor/test_approval_boundary.py::test_a_user_file_opening_with_a_byte_order_mark_still_guards",
+]
+
+[[mutation]]
+name = "the boundary row reads a widening key that is not a list as empty"
+file = "src/stayfixed/doctor/boundary.py"
+before = "    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):\n        return None"
+after = "    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):\n        return []"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_a_widening_key_that_is_not_a_list_of_entries_is_a_gap[allowWrite-a-string]",
+  "tests/doctor/test_approval_boundary.py::test_a_widening_key_that_is_not_a_list_of_entries_is_a_gap[allowWrite-holding-a-number]",
+  "tests/doctor/test_approval_boundary.py::test_a_widening_key_that_is_not_a_list_of_entries_is_a_gap[additionalDirectories-a-string]",
+  "tests/doctor/test_approval_boundary.py::test_a_widening_key_that_is_not_a_list_of_entries_is_a_gap[allow-a-string]",
+  "tests/doctor/test_approval_boundary.py::test_a_widening_key_that_is_not_a_list_of_entries_is_a_gap[excludedCommands-a-string]",
+]
+
+[[mutation]]
+name = "the boundary row reads a managed excludedCommands that is not a list as none"
+file = "src/stayfixed/doctor/boundary.py"
+before = "        if managed_listed is None or managed_listed"
+after = "        if managed_listed"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_a_managed_excluded_commands_that_is_not_a_list_keeps_the_row_from_green",
+]
+
+[[mutation]]
+name = "the boundary row reads a sandbox switch that is not true or false as absent"
+file = "src/stayfixed/doctor/boundary.py"
+before = "            if _there(value) and not isinstance(value, bool)"
+after = "            if False"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_a_boundary_key_of_the_wrong_shape_is_a_gap[project-enabled-a-string]",
+  "tests/doctor/test_approval_boundary.py::test_a_boundary_key_of_the_wrong_shape_is_a_gap[user-enabled-a-number]",
+  "tests/doctor/test_approval_boundary.py::test_a_boundary_key_of_the_wrong_shape_is_a_gap[managed-fail-if-unavailable-a-string]",
+  "tests/doctor/test_approval_boundary.py::test_a_boundary_key_of_the_wrong_shape_is_a_gap[managed-unsandboxed-a-string]",
+]
+
+[[mutation]]
+name = "the boundary row reads a settings table that is not an object as absent"
+file = "src/stayfixed/doctor/boundary.py"
+before = "            if _there(value) and not isinstance(value, dict)"
+after = "            if False"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_a_boundary_key_of_the_wrong_shape_is_a_gap[project-sandbox-not-an-object]",
+  "tests/doctor/test_approval_boundary.py::test_a_boundary_key_of_the_wrong_shape_is_a_gap[user-filesystem-not-an-object]",
+]
+
+[[mutation]]
+name = "the boundary row prints a CLAUDE_CONFIG_DIR inside the project whole"
+file = "src/stayfixed/doctor/boundary.py"
+before = "        (CONFIG_DIR_IN_PROJECT.format(path=clipped(str(chosen))),)"
+after = "        (CONFIG_DIR_IN_PROJECT.format(path=str(chosen)),)"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_a_claude_config_dir_of_any_length_prints_bounded[inside-the-project]",
+]
+
+[[mutation]]
+name = "the boundary row prints a CLAUDE_CONFIG_DIR elsewhere whole"
+file = "src/stayfixed/doctor/boundary.py"
+before = "        else (CONFIG_DIR_ELSEWHERE.format(path=clipped(str(chosen))),)"
+after = "        else (CONFIG_DIR_ELSEWHERE.format(path=str(chosen)),)"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_a_claude_config_dir_of_any_length_prints_bounded[elsewhere]",
+]
+
+[[mutation]]
+name = "the boundary row prints a CLAUDE_CONFIG_DIR judged alone whole"
+file = "src/stayfixed/doctor/boundary.py"
+before = "        row = _worsened(other, WARN, CHOSEN_ALONE.format(path=clipped(str(chosen))), \"\")"
+after = "        row = _worsened(other, WARN, CHOSEN_ALONE.format(path=str(chosen)), \"\")"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_a_claude_config_dir_judged_alone_prints_bounded",
 ]

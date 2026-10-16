@@ -20,7 +20,6 @@ import json
 import secrets
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from pathlib import Path
 
 from stayfixed import fsops
@@ -28,8 +27,7 @@ from stayfixed.config.schema import Config
 from stayfixed.errors import Refusal
 from stayfixed.memory.index import INDEX_NAME
 from stayfixed.memory.store import Store, inside_project
-from stayfixed.trust.api import UnreadableTrust, approve, recorded, refresh
-from stayfixed.trust.api import record_path as _record_path
+from stayfixed.trust.api import UnreadableTrust, recorded, refresh
 
 DELIMITER = "<<<stayfixed:repository-data"
 _LEAD = (
@@ -79,16 +77,6 @@ def wrap(text: str, nonce: str) -> str:
 # subject the store's resolved path (`_path_key`). `0.3.0`'s flat record reads as this kind, so it
 # is the one spelling every approval made before the record was versioned answers to.
 MEMORY = "memory"
-
-
-def record_path(machine: Path | None) -> Path | None:
-    """Where this machine's trust record is, for a command that says where it wrote: beside the
-    machine file, under the home the password database records (`trust.record.record_path`)."""
-    return _record_path(machine)
-
-
-def _approve(store: Store, digest: str) -> None:
-    approve(store.machine, MEMORY, store_key(store), digest, now=datetime.now(UTC))
 
 
 @dataclass(frozen=True)
@@ -300,11 +288,6 @@ def state(store: Store, config: Config) -> TrustState:
     current = store_digest(store, config)
     recorded = _recorded(store.machine).get(store_key(store))
     return TrustState(trusted=recorded == current, recorded=recorded, current=current)
-
-
-def record(store: Store, config: Config) -> TrustState:
-    _approve(store, store_digest(store, config))
-    return state(store, config)
 
 
 @dataclass(frozen=True)

@@ -10,20 +10,24 @@ create or record the private overlay.
 
 **The `ask` rules, and the record that makes them stayfixed's.** `ASK_RULES` puts every spelling an
 agent's shell reaches `stayfixed trust approve` and its old spelling by into the user's
-`permissions.ask`, with one more pair for the absolute path of the `stayfixed` this run runs as
-(`running_command`), so Claude Code asks the person before any of them runs; `revoke` is never among
+`permissions.ask`, with one more pair for the absolute path of the `stayfixed` on `PATH`
+(`path_command`), so Claude Code asks the person before any of them runs; `revoke` is never among
 them, since withdrawing fails safe. Each rule this run adds is recorded in the machine file's
 `[setup] added_rules`, and a rule the settings file already held is the owner's and never recorded.
-`[setup] ask_rules = false` takes back exactly the recorded ones, so an identical rule the owner
-typed first stays. `--approval-boundary`'s deny rules (`trust.boundary`), over the record's
+A recorded rule this run no longer wants -- an absolute-path pair for a `stayfixed` no longer on
+`PATH`, or a spelling a later release dropped -- is taken back, and `[setup] ask_rules = false`
+takes back every recorded one, so an identical rule the owner typed first stays either way.
+`--approval-boundary`'s deny rules (`trust.boundary.record_deny_rules`), over the record's
 directory as named and where it leads, are recorded the same way, under `deny`, and no run removes
-them. A directory `CLAUDE_CONFIG_DIR` names besides the home's `.claude`, where it exists outside
-the project and neither `--home` nor `--settings` named the destination (`setup.commands` asks),
-takes the same rules in its `settings.json`, recorded under that directory in
-`[setup] added_rules_in`, and `ask_rules = false` takes them back there too: in a recorded directory
-no flag or variable names this run, that pass takes back the recorded `ask` rules and nothing else
--- no deny rule and no personal value is added there -- and only while the directory still lies
-outside the project, asked again before the first write.
+them. A directory `CLAUDE_CONFIG_DIR` names besides the home's `.claude`, where it exists under the
+home and outside the project and every checkout of its repository, and neither `--home` nor
+`--settings` named the destination (`setup.commands` asks), takes the same rules in its
+`settings.json`, recorded under that directory, made absolute, in `[setup] added_rules_in`, and
+`ask_rules = false` takes them back there too: in a recorded directory no flag or variable names
+this run, that pass takes back the recorded `ask` rules and nothing else -- no deny rule and no
+personal value is added there -- and only while the directory still lies under the home and
+outside the project and its checkouts, asked again before the first write
+(`trust.boundary.placement`).
 **The record is written before a rule is added and after one is taken away**, so it always
 covers every rule stayfixed put in the file: a run that stops part-way leaves rules recorded and not
 yet written, which the next run writes, or recorded and already taken away, which the next run
@@ -132,21 +136,22 @@ import datetime
 import os
 import shutil
 import stat
-import sys
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
 from stayfixed import REPOSITORY_URL, __version__, fsops
+from stayfixed.config.machine import passwd_home
 from stayfixed.config.overlay import overlay_root
 from stayfixed.config.paths import PathEscape, PathUnasked, contained
 from stayfixed.errors import Failure, Refusal
 from stayfixed.fsops import UnsafePath, utf_8_name
 from stayfixed.gitenv import NO_ANSWER, answer_lines, git_run, in_work_tree
+from stayfixed.harnesses import BYTE_ORDER_MARK, lenient_settings
 from stayfixed.jsonobject import json_object, json_text
 from stayfixed.presets import load_preset
-from stayfixed.printed import answered, quoted
+from stayfixed.printed import answered, clipped, quoted
 from stayfixed.runner import Runner
 from stayfixed.setup.machine import (
     SANDBOXED,
@@ -156,9 +161,11 @@ from stayfixed.setup.machine import (
     write_machine,
 )
 from stayfixed.trust.api import (
-    deny_rules,
-    in_project,
-    managed_settings,
+    ENFORCING_SETTINGS,
+    Placement,
+    managed_named,
+    placement,
+    record_deny_rules,
     record_path,
     sandbox_refused,
 )
@@ -221,17 +228,16 @@ ASK_RULES: tuple[str, ...] = tuple(
 )
 # Said by `--approval-boundary`: the rule stands only while the sandbox is on, which this command
 # never sets, and what the person sets for a sandbox no repository can turn off -- the managed keys
-# of Claude Code's sandboxing reference's recipe for enforcing it, which `doctor`'s
-# `approval-boundary` row asks for before it is green.
+# of Claude Code's sandboxing reference's recipe for enforcing it (`trust.boundary`'s
+# `ENFORCING_SETTINGS`), which `doctor`'s `approval-boundary` row asks for before it is green.
+# `{managed}` is the managed settings file, or what a sentence names in its place
+# (`trust.boundary.managed_named`).
 SANDBOX_ADVICE = (
     "the deny rule(s) {rule} in {settings} hold only while the sandbox is on, which setup never "
     "sets: set sandbox.enabled = true there; for a sandbox no repository's settings can turn "
-    "off, no command can leave, and without which Claude Code does not start, set "
-    "sandbox.enabled = true, sandbox.failIfUnavailable = true and "
-    "sandbox.allowUnsandboxedCommands = false in {managed}, a file only an administrator writes"
+    f"off, no command can leave, and without which Claude Code does not start, set "
+    f"{ENFORCING_SETTINGS} in {{managed}}, a file only an administrator writes"
 )
-# `{managed}` where no managed-settings file was measured for this platform.
-NO_MANAGED_PATH = "the harness's managed settings file"
 # A command path no rule can hold: the rule would read as protection and match no command line.
 UNRULABLE_PATH = (
     "no ask rule was written for {path}, the stayfixed this run runs as: a rule cannot hold a path "
@@ -255,12 +261,18 @@ ADDED_RULES_IN_UNREADABLE = (
     "from yours; remove it, which leaves every rule in those files yours, and run setup again"
 )
 # A recorded directory `[setup] ask_rules = false` would take rules back from, which now lies
-# inside the project: its contents are the repository's to choose, so nothing is written there, and
-# its rules stay recorded for a later run to take back. `path` is the recorded spelling, which a
-# repository may once have chosen, so it is printed through `printed.quoted`.
+# inside the project or another checkout of its repository: its contents are the repository's to
+# choose, so nothing is written there, and its rules stay recorded for a later run to take back. Or
+# one under neither the home nor the project, which setup does not ask the filesystem about
+# (`trust.boundary.placement`). `path` is the recorded spelling, which a repository may once have
+# chosen, so it is printed through `printed.clipped`.
 RECORDED_IN_PROJECT = (
     "{path}, a directory setup recorded adding ask rules to, now lies inside the project, whose "
     "contents the repository chooses, so setup took nothing back there and keeps them recorded"
+)
+RECORDED_ELSEWHERE = (
+    "{path}, a directory setup recorded adding ask rules to, lies under neither the home nor the "
+    "project, so setup did not look there, took nothing back and keeps them recorded"
 )
 # The record's two lists, and the key naming the directory of an `added_rules_in` entry.
 _RECORDED_KINDS = ("ask", "deny")
@@ -319,17 +331,15 @@ def _kinds(raw: Mapping[str, Any], refused: str) -> dict[str, tuple[str, ...]]:
     return added
 
 
-def running_command() -> Path | None:
-    """The absolute path of the `stayfixed` this process runs as, or `None` for none.
+def path_command() -> Path | None:
+    """The absolute path of the `stayfixed` `PATH` names, or `None` for none.
 
-    The script the interpreter was started on when it is named `stayfixed` (a console script, or
-    the plugin's launcher), and otherwise the one `PATH` names, which is what an agent typing the
-    absolute path most likely types. Run as `python -m stayfixed`, `sys.argv[0]` is the package's
-    `__main__.py`, which no command line names.
+    That one and not the script this process was started on: run through the plugin's launcher,
+    that is a path under the plugin cache with the version in it, so every update left the last
+    version's pair recorded and the new one unasked until `setup` ran again. The one on `PATH` is
+    what an agent typing an absolute path most likely types, and is stable across updates. Made
+    absolute and never resolved, since a rule matches the spelling a command line carries.
     """
-    started = sys.argv[0] if sys.argv else ""
-    if Path(started).name == "stayfixed":
-        return Path(os.path.abspath(started))
     found = shutil.which("stayfixed")
     return Path(os.path.abspath(found)) if found is not None else None
 
@@ -398,18 +408,21 @@ def _plan(
 
     A rule the file holds that the record does not name is the owner's: never added again and
     never recorded. A recorded rule the file lacks is stayfixed's, from a run that stopped
-    part-way or one the owner deleted by hand, and is written again."""
+    part-way or one the owner deleted by hand, and is written again while it is wanted. A recorded
+    rule this run does not want -- every one, with the switch off -- is taken back, and forgotten
+    once it is gone."""
     document, _ = _read_document(path)
     asked, deny = _rules(document, "ask"), _rules(document, "deny")
+    wanted = wanted if ask_rules else ()
     ask_add = [rule for rule in wanted if rule not in asked]
-    ask_remove = [] if ask_rules else [r for r in held_record["ask"] if r in asked]
+    ask_remove = [rule for rule in held_record["ask"] if rule not in wanted and rule in asked]
     deny_add = [rule for rule in boundary if rule not in deny]
     held = {kind: list(rules) for kind, rules in held_record.items()}
     before = {
         "ask": [*held["ask"], *(r for r in ask_add if r not in held["ask"])],
         "deny": [*held["deny"], *(r for r in deny_add if r not in held["deny"])],
     }
-    after = {**before, "ask": before["ask"] if ask_rules else []}
+    after = {**before, "ask": [rule for rule in before["ask"] if rule in wanted]}
     return _Plan(path, ask_add, ask_remove, deny_add, held, before, after)
 
 
@@ -508,17 +521,21 @@ def _install_plugins(
 
 
 def _read_document(path: Path) -> tuple[dict[str, Any], str]:
+    """The user settings file at `path` as one JSON object, and its text as it is on disk.
+
+    Read as Claude Code reads it (`harnesses.lenient_settings`), past a leading byte-order mark,
+    so an owner's file the harness reads is merged into rather than refused."""
     with fsops.reading(path, Failure):
         try:
             text = path.read_text(encoding="utf-8")
         except FileNotFoundError:
             return {}, ""
-    if not text.strip():
+    if not lenient_settings(text).strip():
         return {}, text
     # The file is the owner's and this run rewrites it, so valid JSON past the parser's reach is
     # refused as a `Failure` naming it rather than read, and rather than ending setup in an
     # internal error.
-    return json_object(text, str(path), error=Failure), text
+    return json_object(lenient_settings(text), str(path), error=Failure), text
 
 
 def _write_user_settings(
@@ -539,7 +556,9 @@ def _write_user_settings(
     writes `permissions.allow`, and never a `sandbox` key — and `pluginConfigs` gets the same
     treatment, key by key inside its own `options`, so a value this run did not set survives a
     second one same as `write_machine`'s. `ask_add` is appended where missing; `ask_remove` is
-    taken out, and only ever names rules the machine file records as stayfixed's.
+    taken out, and only ever names rules the machine file records as stayfixed's. Answers whether
+    a deny rule was added, which is what the run reports as "deny rules merged": a run that only
+    adds or takes back `ask` rules rewrites the file and merges none.
 
     `settings` names the file itself, for the layout no `--home` can express: `stow` folds
     a package as far as it can, so with `~/.claude` already there it links
@@ -556,8 +575,9 @@ def _write_user_settings(
     existing_deny = (
         [r for r in raw_deny if isinstance(r, str)] if isinstance(raw_deny, list) else []
     )
+    added_deny = [r for r in deny_rules if r not in existing_deny] if merge else []
     if merge:
-        permissions["deny"] = existing_deny + [r for r in deny_rules if r not in existing_deny]
+        permissions["deny"] = existing_deny + added_deny
     if ask_add or ask_remove:
         asked = [r for r in _rules({"permissions": permissions}, "ask") if r not in ask_remove]
         permissions["ask"] = asked + [r for r in ask_add if r not in asked]
@@ -577,9 +597,11 @@ def _write_user_settings(
 
     # Written back through `json_text`, which answers a document the parser read and the
     # indenting encoder cannot follow (Python 3.12) as the reader answers one nested too deep.
-    new_text = json_text(document, str(path), error=Failure, indent=2, sort_keys=True) + "\n"
+    # A byte-order mark the file opened with is kept, so a run that changes nothing writes nothing.
+    mark = BYTE_ORDER_MARK if text.startswith(BYTE_ORDER_MARK) else ""
+    new_text = mark + json_text(document, str(path), error=Failure, indent=2, sort_keys=True) + "\n"
     if new_text == text:
-        return False
+        return bool(added_deny)
     root, relative = (
         (settings.parent, settings.name) if settings is not None else (home, USER_SETTINGS)
     )
@@ -615,7 +637,7 @@ def _write_user_settings(
             f"{path} cannot be written ({type(exc).__name__}: {exc}); its directory has to "
             f"exist and be a real directory, because {_SYMLINKED_SETTINGS}"
         ) from exc
-    return True
+    return bool(added_deny)
 
 
 def _settings_symlink(home: Path) -> Path | None:
@@ -1564,13 +1586,18 @@ def _take_back(recorded: _Recorded, *, also: Path | None, project_root: Path) ->
         return _TakeBack()
     directories: list[tuple[str, Path]] = []
     notes: list[str] = []
+    homes = [home] if (home := passwd_home()) is not None else []
     for directory in recorded.added_in:
         place = Path(directory)
-        if (also is not None and directory == str(also)) or not fsops.is_dir(place):
+        if also is not None and directory == str(also):
             continue
-        if in_project(place, project_root):
-            notes.append(RECORDED_IN_PROJECT.format(path=quoted(directory)))
-        else:
+        where = placement(place, project_root, homes)
+        if where is Placement.INSIDE:
+            if fsops.is_dir(place):
+                notes.append(RECORDED_IN_PROJECT.format(path=clipped(directory)))
+        elif where is Placement.UNJUDGED:
+            notes.append(RECORDED_ELSEWHERE.format(path=clipped(directory)))
+        elif fsops.is_dir(place):
             directories.append((directory, place))
     return _TakeBack(tuple(directories), tuple(notes))
 
@@ -1641,8 +1668,8 @@ def setup(
 
     deny_rules = [r for r in data.get("deny", {}).get("global", []) if isinstance(r, str)]
     path = settings if settings is not None else home / USER_SETTINGS
-    wanted, ask_notes = _ask_rules(running_command()) if recorded.ask_rules else ((), ())
-    rules = _boundary_rules(machine) if boundary else ()
+    wanted, ask_notes = _ask_rules(path_command()) if recorded.ask_rules else ((), ())
+    rules = record_deny_rules(record_path(machine)) if boundary else ()
 
     def planned(target: Path, held: Mapping[str, Sequence[str]]) -> _Plan:
         return _plan(target, held, ask_rules=recorded.ask_rules, wanted=wanted, boundary=rules)
@@ -1685,7 +1712,7 @@ def setup(
     # overwritten by the machine file on the next `setup`, because one file has to win and the
     # machine file is the one every stayfixed reader reads.
     personal_values = read_personal(machine)
-    deny_written = _write_user_settings(
+    deny_merged = _write_user_settings(
         home,
         [*deny_rules, *plan.deny_add],
         personal_values,
@@ -1710,16 +1737,11 @@ def setup(
     if table("after") != table("before"):
         write_machine(machine, personal={}, overlay_root=None, machine={}, setup=table("after"))
     ask_add, ask_remove = plan.ask_add, plan.ask_remove
-    managed = managed_settings()
     boundary_notes = (
         ()
         if not rules
         else (
-            SANDBOX_ADVICE.format(
-                rule=" and ".join(rules),
-                settings=path,
-                managed=managed if managed else NO_MANAGED_PATH,
-            ),
+            SANDBOX_ADVICE.format(rule=" and ".join(rules), settings=path, managed=managed_named()),
         )
     )
 
@@ -1744,7 +1766,7 @@ def setup(
     return SetupReport(
         machine_written=True,
         plugins_installed=installed,
-        deny_written=deny_written,
+        deny_written=deny_merged,
         cli_on_path=cli_on_path,
         overlay=overlay_root,
         notes=tuple(notes),
@@ -1752,13 +1774,3 @@ def setup(
         ask_removed=tuple(ask_remove),
         boundary=rules,
     )
-
-
-def _boundary_rules(machine: Path) -> tuple[str, ...]:
-    """The deny rules over the directory the trust record is kept in beside `machine` — the machine
-    file's own, so they keep an agent out of that file too: one over the directory as named, and
-    one over where it leads when a symbolic link makes the two differ, since the harness compares
-    a write against the path it resolves and `doctor` asks for that one."""
-    path = record_path(machine)
-    directory = machine.parent if path is None else path.parent
-    return deny_rules(directory, fsops.resolved(directory))

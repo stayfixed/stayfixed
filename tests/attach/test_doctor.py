@@ -30,8 +30,8 @@ from stayfixed.doctor import checks as doctor_checks
 from stayfixed.doctor.api import OK, SKIP, WARN, Check
 from stayfixed.errors import Failure
 from stayfixed.memory.api import PROJECT_RECORD, PROJECTS, resolve
-from stayfixed.memory.trust import record
 from stayfixed.overlay.api import COMMON_CLAUDE
+from tests.approved import record
 from tests.attach.test_binding import DEFAULT_MEMORY
 from tests.doctor.test_checks import (
     LOCAL_ONLY,
@@ -659,7 +659,7 @@ def _change_a_note(case: _Machine) -> None:
 
 
 def _forget_the_approval(case: _Machine) -> None:
-    from stayfixed.memory.trust import record_path
+    from stayfixed.trust.record import record_path
 
     recorded = record_path(case.machine)
     assert recorded is not None and recorded.is_file()
@@ -761,7 +761,7 @@ def _trust_record_unreadable(case: _Machine) -> None:
 
 
 def _trust_record_broken(case: _Machine) -> None:
-    from stayfixed.memory.trust import record_path
+    from stayfixed.trust.record import record_path
 
     recorded = record_path(case.machine)
     assert recorded is not None

@@ -62,13 +62,15 @@ import errno
 import os
 import sys
 import unicodedata
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
 from types import MappingProxyType
 
 from stayfixed import fsops
 from stayfixed.config.machine import passwd_home
+from stayfixed.gitenv import answer_lines, git_run, in_work_tree
 from stayfixed.harnesses import CLAUDE_DIR
 
 # Claude Code's managed settings, by `sys.platform`: the file only an administrator writes, whose
@@ -93,6 +95,16 @@ UNSANDBOXED_ALLOWED = "allowUnsandboxedCommands"
 # sandbox sets it in managed settings beside `enabled` and `allowUnsandboxedCommands`; not measured
 # here.
 FAIL_IF_UNAVAILABLE = "failIfUnavailable"
+# The managed keys of Claude Code's sandboxing reference's recipe for enforcing the sandbox, as a
+# person sets them: `setup --approval-boundary` prints them, and `doctor`'s approval-boundary row
+# asks for each before it is green and names them in its remedy. One spelling, from the key names
+# above, so the advice and the row cannot drift apart.
+ENFORCING_SETTINGS = (
+    f"{SANDBOX}.{ENABLED} = true, {SANDBOX}.{FAIL_IF_UNAVAILABLE} = true and "
+    f"{SANDBOX}.{UNSANDBOXED_ALLOWED} = false"
+)
+# What a sentence names in managed settings' place on a platform where none was measured.
+NO_MANAGED_PATH = "the managed settings file"
 # The deny rule over a directory, measured on Claude Code 2.1.296: `Edit(/` and the absolute path,
 # whose own leading slash makes the two the measurement needs.
 DENY_RULE = "Edit(/{directory}/**)"
@@ -109,6 +121,16 @@ def deny_rules(named: Path, resolved: Path) -> tuple[str, ...]:
     a symbolic link makes it differ, `resolved`: the only spellings `doctor` counts, byte for byte.
     """
     return tuple(dict.fromkeys((deny_rule(named), deny_rule(resolved))))
+
+
+def record_deny_rules(record: Path | None) -> tuple[str, ...]:
+    """The deny rules over the directory the trust record at `record` is kept in (`deny_rules`):
+    over it as named, and over where it leads, since the harness compares a write against the path
+    it resolves. None for no record, a machine with no home to hold one. The one computation
+    `setup --approval-boundary` writes and `doctor`'s approval-boundary row asks for."""
+    if record is None:
+        return ()
+    return deny_rules(record.parent, fsops.resolved(record.parent))
 
 
 @dataclass(frozen=True)
@@ -146,19 +168,73 @@ def folded(text: str) -> str:
     return unicodedata.normalize("NFC", text).casefold() if CASE_FOLDS else text
 
 
-def in_project(directory: Path, root: Path) -> bool:
-    """Whether `directory` is the project `root` or lies inside it, spelled as given (made absolute
-    against the working directory, as Claude Code would read a relative one) or where its links
-    lead, each compared `folded`; a directory whose links cannot be followed is taken to be inside,
-    since what the repository commits there is the repository's to choose."""
+def in_project(directory: Path, root: Path, checkouts: Sequence[Path] = ()) -> bool:
+    """Whether `directory` is the project `root`, one of the repository's other `checkouts`, or
+    lies inside one, spelled as given (made absolute against the working directory, as Claude Code
+    would read a relative one) or where its links lead, each compared `folded`; a directory whose
+    links cannot be followed is taken to be inside, since what the repository commits there is the
+    repository's to choose."""
     try:
         spellings = {folded(os.path.abspath(directory)), folded(str(fsops.resolved(directory)))}
     except OSError:
         return True
-    roots = {folded(str(root)), folded(str(fsops.resolved(root)))}
-    return any(
-        place == held or place.startswith(held + "/") for place in spellings for held in roots
+    roots = {folded(str(place)) for place in (root, fsops.resolved(root), *checkouts)}
+    return any(_within(place, held) for place in spellings for held in roots)
+
+
+def _within(place: str, held: str) -> bool:
+    return place == held or place.startswith(held.rstrip("/") + "/")
+
+
+class Placement(StrEnum):
+    """Where a directory an environment variable names lies, as `placement` answers."""
+
+    # Outside the project and every checkout of its repository, under a home or the project
+    # stayfixed may ask the filesystem about: judged, and written.
+    OUTSIDE = "outside"
+    # The project, a checkout of its repository, or inside one, or where links cannot be followed:
+    # its contents are the repository's to choose, so it is named and never judged or written.
+    INSIDE = "inside"
+    # Under neither a home nor the project: never asked of the filesystem, since a path a committed
+    # `env` block chose may lie under an automount root (`/net/<host>/...` on macOS), where one stat
+    # stalls until the network answers; named, and never judged or written.
+    UNJUDGED = "unjudged"
+
+
+# How `git worktree list --porcelain` opens the line naming a checkout.
+_WORKTREE = "worktree "
+
+
+def checkouts(root: Path) -> tuple[Path, ...] | None:
+    """Every checkout of the repository `root` lies in, as `git worktree list` names them; `()`
+    with no `.git` at or above `root`, where there is no repository; `None` where there is one and
+    git gives no answer, so which checkouts it has is not known."""
+    code, out = git_run(root, "worktree", "list", "--porcelain")
+    listed = tuple(
+        Path(line[len(_WORKTREE) :]) for line in answer_lines(out) if line.startswith(_WORKTREE)
     )
+    if code == 0 and listed:
+        return listed
+    return None if in_work_tree(root) else ()
+
+
+def placement(directory: Path, root: Path, homes: Sequence[Path]) -> Placement:
+    """Where `directory`, a directory `CLAUDE_CONFIG_DIR` names, lies against the project `root`.
+
+    Read as text first, made absolute against the working directory and compared `folded`: only a
+    directory under one of `homes` (the password database's home, and one the person typed), under
+    the project or under one of its checkouts is asked of the filesystem at all; any other is
+    `UNJUDGED`. Then `in_project`, against the project and every checkout `checkouts` names, since
+    what a repository commits reaches each of its checkouts; a repository whose checkouts git
+    cannot list is taken to hold this one, as a link that cannot be followed is."""
+    known = checkouts(root)
+    if known is None:
+        return Placement.INSIDE
+    text = folded(os.path.abspath(directory))
+    bases = [folded(str(base)) for base in (*homes, root, *known)]
+    if not any(_within(text, base) for base in bases):
+        return Placement.UNJUDGED
+    return Placement.INSIDE if in_project(directory, root, known) else Placement.OUTSIDE
 
 
 # The errors a sandboxed write fails with (the module docstring cites where each is given).
@@ -181,3 +257,10 @@ def sandbox_refused(exc: OSError) -> bool:
 def managed_settings(platform: str | None = None) -> Path | None:
     """This platform's managed-settings file, or `None` where none was measured."""
     return MANAGED_SETTINGS.get(sys.platform if platform is None else platform)
+
+
+def managed_named() -> str:
+    """This platform's managed-settings file as a sentence names it: its path, or
+    `NO_MANAGED_PATH` where none was measured."""
+    managed = managed_settings()
+    return NO_MANAGED_PATH if managed is None else str(managed)

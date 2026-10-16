@@ -30,7 +30,7 @@ from stayfixed.areas import SubParsers
 from stayfixed.command import HOME_HELP, SETUP_MACHINE_HELP, SETUP_ROOT_HELP
 from stayfixed.errors import Failure, Refusal
 from stayfixed.presets import DEFAULT_PRESET
-from stayfixed.printed import quoted
+from stayfixed.printed import clipped, quoted
 from stayfixed.result import Result
 from stayfixed.runner import subprocess_runner
 
@@ -123,9 +123,10 @@ EMPTY_HOME = (
     "to your home directory, or pass --home PATH"
 )
 # What becomes of the directory `CLAUDE_CONFIG_DIR` names where it is not the home's `.claude`
-# (`trust.boundary.user_settings`): written too where it exists outside the project and the person
-# named no destination, and otherwise named and left alone. `path` is the variable's value, which a
-# repository may have chosen, so it is printed through `printed.quoted`.
+# (`trust.boundary.user_settings`): written too where it exists outside the project and every
+# checkout of its repository, under the home, and the person named no destination; otherwise named
+# and left alone. `path` is the variable's value, which a repository may have chosen and no bound
+# limits in length, so it is printed through `printed.clipped`.
 CONFIG_DIR_WRITTEN = (
     "CLAUDE_CONFIG_DIR names another user settings directory, {path}, and its settings.json took "
     "the same rules, recorded under that directory in the machine configuration's "
@@ -135,8 +136,14 @@ CONFIG_DIR_MISSING = (
     "CLAUDE_CONFIG_DIR names {path}, which is not a directory, so setup wrote nothing there"
 )
 CONFIG_DIR_IN_PROJECT = (
-    "CLAUDE_CONFIG_DIR names {path}, inside the project, whose contents the repository chooses, so "
-    "setup wrote nothing there"
+    "CLAUDE_CONFIG_DIR names {path}, inside the project or another checkout of its repository, "
+    "whose contents the repository chooses, so setup wrote nothing there"
+)
+# Under neither the home nor the project: never asked of the filesystem, since a path a committed
+# `env` block chose may lie under a network mount (`trust.boundary.placement`).
+CONFIG_DIR_ELSEWHERE = (
+    "CLAUDE_CONFIG_DIR names {path}, under neither the home nor the project, so setup did not look "
+    "there and wrote nothing there"
 )
 # `--home` or `--settings` names where this run writes, which may be a scratch destination: a real
 # settings directory written beside it would hold rules whose record is in the scratch machine file,
@@ -239,21 +246,29 @@ def run_setup(args: argparse.Namespace) -> Result:
 def _also(
     chosen: Path | None, project_root: Path, *, named: bool
 ) -> tuple[Path | None, tuple[str, ...]]:
-    """The directory `CLAUDE_CONFIG_DIR` names, where this run writes it too, and what the line
-    says of it: written where the person `named` no destination with `--home` or `--settings` and
-    it exists outside the project, named and left alone otherwise."""
-    from stayfixed.trust.api import in_project
+    """The directory `CLAUDE_CONFIG_DIR` names, made absolute, where this run writes it too, and
+    what the line says of it: written where the person `named` no destination with `--home` or
+    `--settings` and it exists outside the project and every checkout of its repository, under the
+    home the password database records (`trust.boundary.placement`); named and left alone
+    otherwise. Absolute, since it is recorded by its spelling, and a relative one would name
+    another directory from the next run's working directory."""
+    from stayfixed.config.machine import passwd_home
+    from stayfixed.trust.api import Placement, placement
 
     if chosen is None:
         return None, ()
-    spelled = quoted(str(chosen))
+    spelled = clipped(str(chosen))
     if named:
         return None, (CONFIG_DIR_NOT_NAMED.format(path=spelled),)
-    if in_project(chosen, project_root):
+    homes = [home] if (home := passwd_home()) is not None else []
+    where = placement(chosen, project_root, homes)
+    if where is Placement.INSIDE:
         return None, (CONFIG_DIR_IN_PROJECT.format(path=spelled),)
+    if where is Placement.UNJUDGED:
+        return None, (CONFIG_DIR_ELSEWHERE.format(path=spelled),)
     if not fsops.is_dir(chosen):
         return None, (CONFIG_DIR_MISSING.format(path=spelled),)
-    return chosen, (CONFIG_DIR_WRITTEN.format(path=spelled),)
+    return Path(os.path.abspath(chosen)), (CONFIG_DIR_WRITTEN.format(path=spelled),)
 
 
 def _claude_settings(found: UserSettings, home: Path) -> Path | None:

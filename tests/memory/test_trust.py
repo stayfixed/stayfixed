@@ -28,7 +28,6 @@ from stayfixed.memory.trust import (
     markers,
     may_inject,
     new_nonce,
-    record,
     refresh_if_trusted,
     snapshot,
     state,
@@ -36,6 +35,7 @@ from stayfixed.memory.trust import (
     wrap,
 )
 from stayfixed.trust.record import Approval, approve, recorded, revoke
+from tests.approved import record
 from tests.gitfixture import git
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")

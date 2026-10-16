@@ -20,7 +20,8 @@ from stayfixed.memory.bundles import (
     split,
 )
 from stayfixed.memory.store import Store, resolve
-from stayfixed.memory.trust import DELIMITER, record
+from stayfixed.memory.trust import DELIMITER
+from tests.approved import record
 from tests.gitfixture import git
 
 CONFIG = """

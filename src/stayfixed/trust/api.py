@@ -1,52 +1,57 @@
 """The trust package's import surface: the machine's one record of approvals.
 
 The `memory` area keeps its store approvals in the record under kind `memory`, and reads `recorded`,
-`approve`, `record_path` and `UnreadableTrust`; `refresh` is how it carries an approval across a
-write stayfixed itself made without undoing a revoke made before its final re-read of the record.
-`Approval` is what `recorded` and `approve` return, which a consumer holding the value has to be
-able to declare. `state` and `revoke`, with the `State` the first answers in, complete the record's
-answers: a consumer handed half of it could approve and could not withdraw, or could read an
-approval and not tell one that lapsed from one never given. `ApprovalKind`, `KindContext` and
-`Subject` are what an area's `approvals.py` builds its `KINDS` from (`memory.approvals`), and
-`approve_kind` is the approve path the `memory trust` alias runs, terminal check included, on what
-`kind_context` reads off its command line, so the old spelling cannot read its flags another way
-than the new one. `PERSON_RUNS` is the sentence `memory` and `attach` tell their reader in to have
-an approval made: the person at the machine runs it, and an agent does not, in the words `trust
-approve`'s own refusal uses.
+`record_path` and `UnreadableTrust`; `refresh` is how it carries an approval across a write
+stayfixed itself made without undoing a revoke made before its final re-read of the record.
+`approve`, `revoke` and `state`, with `Approval` and the `State` the last answers in, complete the
+record's answers for the kinds the next areas bring (an overlay's parts, a checkout's regressions):
+a consumer handed half of them could approve and could not withdraw, or could read an approval and
+not tell one that lapsed from one never given. `ApprovalKind`, `KindContext` and `Subject` are what
+an area's `approvals.py` builds its `KINDS` from (`memory.approvals`), and `approve_kind` is the
+approve path the `memory trust` alias runs, terminal check included, on what `kind_context` reads
+off its command line, so the old spelling cannot read its flags another way than the new one; both
+come from `approving`, not from the command module, so importing the record loads no CLI.
+`PERSON_RUNS` is the sentence `memory` and `attach` tell their reader in to have an approval made:
+the person at the machine runs it, and an agent does not, in the words `trust approve`'s own refusal
+uses.
 
 The approval boundary's spellings (`boundary`) are read by two consumers that must not drift apart:
-`setup`, which writes `deny_rules` over the record's directory, writes the user settings in the
-home's directory `user_settings` finds and names the one `CONFIG_DIR_VARIABLE` chose, and names
-`managed_settings` in what it prints, and `doctor`'s `approval-boundary` row, which reads the
-settings layers through `managed_settings`, `MANAGED_DROP_INS` and each directory `user_settings`
-(`UserSettings`) finds, judges the sandbox by `SANDBOX`, `ENABLED`, `UNSANDBOXED_ALLOWED` and
-`FAIL_IF_UNAVAILABLE`, and counts those same `deny_rules`; `folded` is how both compare two paths,
-the row an entry with the record's directory and `in_project` a directory with the project root, so
-the two cannot fold case differently. `sandbox_refused` is how `setup` and `memory` tell a write an
-agent's sandbox refused, `SandboxedWrite` is the record's own refusal of one, and `OWN_TERMINAL_TOO`
-ends `setup`'s sentence for it as it ends the record's.
+`setup`, which writes `record_deny_rules` over the record's directory, writes the user settings in
+the home's directory `user_settings` finds, asks `placement` where the one `CLAUDE_CONFIG_DIR` chose
+lies before it writes there, and prints `ENFORCING_SETTINGS` for `managed_named`'s file; and
+`doctor`'s `approval-boundary` row, which reads the settings layers through `managed_settings`,
+`MANAGED_DROP_INS` (`NO_MANAGED_PATH` where none was measured) and each directory `user_settings`
+(`UserSettings`) finds, asks `placement` (`Placement`) before it reads the variable's, judges the
+sandbox by `SANDBOX`, `ENABLED`, `UNSANDBOXED_ALLOWED` and `FAIL_IF_UNAVAILABLE`, names
+`ENFORCING_SETTINGS` in its remedy, and counts those same `record_deny_rules`; `folded` is how both
+compare two paths, so the two cannot fold case differently. `sandbox_refused` is how `setup` and
+`memory` tell a write an agent's sandbox refused, `SandboxedWrite` is the record's own refusal of
+one, and `OWN_TERMINAL_TOO` ends `setup`'s sentence for it as it ends the record's.
 """
 
 from __future__ import annotations
 
+from stayfixed.trust.approving import PERSON_RUNS, approve_kind, kind_context
 from stayfixed.trust.boundary import (
     CONFIG_DIR_VARIABLE,
     ENABLED,
+    ENFORCING_SETTINGS,
     FAIL_IF_UNAVAILABLE,
     MANAGED_DROP_INS,
+    NO_MANAGED_PATH,
     OWN_TERMINAL_TOO,
     SANDBOX,
     UNSANDBOXED_ALLOWED,
+    Placement,
     UserSettings,
-    deny_rule,
-    deny_rules,
     folded,
-    in_project,
+    managed_named,
     managed_settings,
+    placement,
+    record_deny_rules,
     sandbox_refused,
     user_settings,
 )
-from stayfixed.trust.commands import PERSON_RUNS, approve_kind, kind_context
 from stayfixed.trust.kinds import ApprovalKind, KindContext, Subject
 from stayfixed.trust.record import (
     Approval,
@@ -64,8 +69,10 @@ from stayfixed.trust.record import (
 __all__ = [
     "CONFIG_DIR_VARIABLE",
     "ENABLED",
+    "ENFORCING_SETTINGS",
     "FAIL_IF_UNAVAILABLE",
     "MANAGED_DROP_INS",
+    "NO_MANAGED_PATH",
     "OWN_TERMINAL_TOO",
     "PERSON_RUNS",
     "SANDBOX",
@@ -73,6 +80,7 @@ __all__ = [
     "Approval",
     "ApprovalKind",
     "KindContext",
+    "Placement",
     "SandboxedWrite",
     "State",
     "Subject",
@@ -80,12 +88,12 @@ __all__ = [
     "UserSettings",
     "approve",
     "approve_kind",
-    "deny_rule",
-    "deny_rules",
     "folded",
-    "in_project",
     "kind_context",
+    "managed_named",
     "managed_settings",
+    "placement",
+    "record_deny_rules",
     "record_path",
     "recorded",
     "refresh",

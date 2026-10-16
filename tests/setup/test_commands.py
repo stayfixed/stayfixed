@@ -9,6 +9,7 @@ invocation exits 0.
 from __future__ import annotations
 
 import json
+import os
 import tomllib
 from pathlib import Path
 
@@ -17,9 +18,10 @@ import pytest
 from stayfixed import fsops
 from stayfixed.cli import build_parser, discover_registrars, run
 from stayfixed.overlay.api import MARKETPLACE_MANIFEST, PLUGIN_MANIFEST
-from stayfixed.printed import quoted
+from stayfixed.printed import clipped, quoted
 from stayfixed.setup.api import SetupReport
 from stayfixed.setup.commands import (
+    CONFIG_DIR_ELSEWHERE,
     CONFIG_DIR_IN_PROJECT,
     CONFIG_DIR_MISSING,
     CONFIG_DIR_NOT_NAMED,
@@ -31,6 +33,7 @@ from stayfixed.setup.run import (
     ADDED_RULES_IN_UNREADABLE,
     RECORDED_IN_PROJECT,
 )
+from tests.gitfixture import git
 from tests.ownerhome import as_owner_home
 from tests.parserlimits import LONG_NUMBER, NESTED
 from tests.runners import Recorder
@@ -375,9 +378,12 @@ def test_setup_whose_named_machine_file_cannot_be_written_says_nothing_of_runnin
 
 
 def _settings_places(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Path]:
-    """An owner home with a `.claude`, a different `HOME`, a directory outside every project, and
-    a project with a `.claude-config` of its own; the plugin installs answered by a recorder."""
-    places = {name: tmp_path / name for name in ("owner", "chosen", "cfg", "project")}
+    """An owner home with a `.claude`, a different `HOME`, a directory under the owner's home and
+    outside every project (the one place setup asks the filesystem about a `CLAUDE_CONFIG_DIR`
+    besides the project), and a project with a `.claude-config` of its own; the plugin installs
+    answered by a recorder."""
+    places = {name: tmp_path / name for name in ("owner", "chosen", "owner/cfg", "project")}
+    places["cfg"] = places.pop("owner/cfg")
     for place in places.values():
         place.mkdir()
     (places["owner"] / ".claude").mkdir()
@@ -391,8 +397,8 @@ def _settings_places(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[st
 @pytest.mark.parametrize(
     ("variable", "written", "said"),
     [
-        pytest.param("cfg", {"owner", "cfg"}, CONFIG_DIR_WRITTEN, id="config-dir-elsewhere"),
-        pytest.param("absent", {"owner"}, CONFIG_DIR_MISSING, id="config-dir-missing"),
+        pytest.param("owner/cfg", {"owner", "cfg"}, CONFIG_DIR_WRITTEN, id="config-dir-elsewhere"),
+        pytest.param("owner/absent", {"owner"}, CONFIG_DIR_MISSING, id="config-dir-missing"),
         pytest.param(
             "project/.claude-config", {"owner"}, CONFIG_DIR_IN_PROJECT, id="config-dir-in-project"
         ),
@@ -435,7 +441,7 @@ def test_setup_writes_the_home_s_settings_and_a_claude_config_dir_outside_the_pr
     if said is None or variable is None:
         assert "CLAUDE_CONFIG_DIR" not in out, out
     else:
-        assert said.format(path=quoted(str(tmp_path / variable))) in out, out
+        assert said.format(path=clipped(str(tmp_path / variable))) in out, out
     machine = places["owner"] / ".config" / "stayfixed" / "config.toml"
     recorded = tomllib.loads(machine.read_text(encoding="utf-8"))["setup"]
     if "cfg" in written:
@@ -567,7 +573,7 @@ def test_a_run_that_names_its_destination_leaves_claude_config_dir_alone(
     assert not (places["owner"] / ".claude" / "settings.json").exists()
     assert "added_rules_in" not in tomllib.loads(machine.read_text(encoding="utf-8"))["setup"]
     out = capsys.readouterr().out
-    assert CONFIG_DIR_NOT_NAMED.format(path=quoted(str(places["cfg"]))) in out, out
+    assert CONFIG_DIR_NOT_NAMED.format(path=clipped(str(places["cfg"]))) in out, out
 
 
 def _recorded_in(
@@ -619,7 +625,7 @@ def test_taking_the_rules_back_writes_nothing_else_where_no_one_named_the_direct
     # a recorded directory up by its path" -> each spelling but `as-setup-records-it` is an
     # internal error; "taking the rules back keys the record by the path" -> each spelling but
     # `as-setup-records-it` stays recorded).
-    places = _recorded_in(tmp_path, monkeypatch, "cfg", spelled)
+    places = _recorded_in(tmp_path, monkeypatch, "owner/cfg", spelled)
     argv = ["setup", "--preset", "recommended", "--yes", "--root", str(places["project"])]
     assert invoke([*argv, "--approval-boundary"]) == 0
     settings = places["place"] / "settings.json"
@@ -645,7 +651,7 @@ def test_taking_the_rules_back_leaves_a_recorded_directory_now_inside_the_projec
     assert settings.read_bytes() == before
     recorded = tomllib.loads(places["machine"].read_text(encoding="utf-8"))["setup"]
     assert recorded["added_rules_in"] == [{"directory": str(places["place"]), "ask": [_RECORDED]}]
-    said = RECORDED_IN_PROJECT.format(path=quoted(str(places["place"])))
+    said = RECORDED_IN_PROJECT.format(path=clipped(str(places["place"])))
     assert said in capsys.readouterr().out
 
 
@@ -657,7 +663,7 @@ def test_taking_the_rules_back_refuses_a_linked_settings_file_before_any_write(
     # write, and a link there is refused as `--settings`' is. Mutation (`mutations/`'s "taking the
     # rules back asks nothing of a recorded directory before the first write"): the link is replaced
     # by a regular file and the run exits 0.
-    places = _recorded_in(tmp_path, monkeypatch, "cfg")
+    places = _recorded_in(tmp_path, monkeypatch, "owner/cfg")
     settings = places["place"] / "settings.json"
     real = tmp_path / "dotfiles-settings.json"
     settings.rename(real)
@@ -684,3 +690,82 @@ def test_setup_s_sandbox_sentence_says_what_a_person_in_their_own_terminal_meets
     from stayfixed.trust.api import OWN_TERMINAL_TOO
 
     assert SANDBOXED.endswith(OWN_TERMINAL_TOO)
+
+
+@pytest.mark.parametrize("where", ["inside-the-project", "elsewhere"])
+def test_a_claude_config_dir_of_any_length_prints_bounded(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    where: str,
+) -> None:
+    # A committed `env` block can set the variable to anything, and setup's lines reach a model
+    # when an agent runs it, so the value prints through `printed.clipped`: its first characters
+    # and its length. Mutation (`mutations/`'s "setup prints CLAUDE_CONFIG_DIR whole"): the whole
+    # value reaches the line.
+    places = _settings_places(tmp_path, monkeypatch)
+    base = places["project"] if where == "inside-the-project" else tmp_path / "elsewhere"
+    value = str(base / ("a" * 40_000))
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", value)
+    argv = ["setup", "--preset", "recommended", "--yes", "--root", str(places["project"])]
+    assert invoke(argv) == 0
+    out = capsys.readouterr().out
+    said = CONFIG_DIR_IN_PROJECT if where == "inside-the-project" else CONFIG_DIR_ELSEWHERE
+    assert said.format(path=clipped(value)) in out, out
+    assert len(out) < 4_000
+
+
+def test_a_claude_config_dir_under_neither_the_home_nor_the_project_is_left_alone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A path a repository's `env` block, direnv or mise chose may lie under an automount root, so
+    # setup asks the filesystem about none under neither the home nor the project: it is named, and
+    # nothing is written there. Mutation (`mutations/`'s "a CLAUDE_CONFIG_DIR under neither the home
+    # nor the project is asked of the filesystem"): the directory takes the rules.
+    places = _settings_places(tmp_path, monkeypatch)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(elsewhere))
+    argv = ["setup", "--preset", "recommended", "--yes", "--root", str(places["project"])]
+    assert invoke(argv) == 0
+    assert list(elsewhere.iterdir()) == []
+    assert CONFIG_DIR_ELSEWHERE.format(path=clipped(str(elsewhere))) in capsys.readouterr().out
+
+
+def test_a_claude_config_dir_in_another_checkout_of_the_repository_is_left_alone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Run from a linked worktree, a directory in the main checkout or a sibling is the
+    # repository's to fill as one in the project is, so nothing is written there. Mutation
+    # (`mutations/`'s "a CLAUDE_CONFIG_DIR in another checkout of the repository is outside it"):
+    # the sibling's directory takes the rules.
+    places = _settings_places(tmp_path, monkeypatch)
+    main = places["owner"] / "main"
+    main.mkdir()
+    git(main, "init", "-q", "-b", "main")
+    git(main, "commit", "-q", "--allow-empty", "-m", "chore: seed")
+    git(main, "worktree", "add", "-q", "-b", "side", str(places["project"] / "wt"))
+    planted = main / ".claude-config"
+    planted.mkdir()
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(planted))
+    argv = ["setup", "--preset", "recommended", "--yes", "--root", str(places["project"] / "wt")]
+    assert invoke(argv) == 0
+    assert list(planted.iterdir()) == []
+    assert CONFIG_DIR_IN_PROJECT.format(path=clipped(str(planted))) in capsys.readouterr().out
+
+
+def test_a_relative_claude_config_dir_is_recorded_by_its_absolute_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The record keys a directory by its spelling, and a later run takes rules back from that
+    # spelling: a relative one would name another directory from the next run's working
+    # directory. Mutation (`mutations/`'s "setup records a relative CLAUDE_CONFIG_DIR as spelled"):
+    # the record holds `cfg`.
+    places = _settings_places(tmp_path, monkeypatch)
+    monkeypatch.chdir(places["owner"])
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", "cfg")
+    argv = ["setup", "--preset", "recommended", "--yes", "--root", str(places["project"])]
+    assert invoke(argv) == 0
+    machine = places["owner"] / ".config" / "stayfixed" / "config.toml"
+    (entry,) = tomllib.loads(machine.read_text(encoding="utf-8"))["setup"]["added_rules_in"]
+    assert entry["directory"] == os.path.abspath(places["cfg"])

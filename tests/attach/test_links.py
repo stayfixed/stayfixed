@@ -145,7 +145,7 @@ def test_the_harness_fallback_is_recorded_so_it_can_be_withdrawn(tmp_path: Path)
 
     from stayfixed.attach.api import ledger
     from stayfixed.memory.api import resolve
-    from stayfixed.memory.trust import record
+    from tests.approved import record
 
     root, store, machine = _bound(tmp_path)
     home = tmp_path / "home"
@@ -173,7 +173,7 @@ def _settings(root: Path) -> dict[str, object]:
 
 def _trusted(root: Path, machine: Path) -> None:
     from stayfixed.memory.api import resolve
-    from stayfixed.memory.trust import record
+    from tests.approved import record
 
     config = _config(root, machine)
     store = resolve(root, config, machine=machine)

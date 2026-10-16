@@ -30,6 +30,7 @@ and the last writer wins it.
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass, fields, replace
 from datetime import datetime
 from enum import StrEnum
@@ -49,11 +50,14 @@ NO_HOME = (
     "to write; pass --machine PATH to keep one beside that file, which no hook reads"
 )
 # The close of every refusal of a record that is there and cannot be read.
-_KEPT = (
-    "it holds every project's approval on this machine, so nothing here will overwrite it — "
-    "repair or delete it"
+_HOLDS = "it holds every project's approval on this machine, so nothing here will overwrite it"
+_KEPT = f"{_HOLDS} — repair or delete it"
+# A record a later stayfixed wrote is met after a downgrade, where deleting it would destroy the
+# later release's approvals: the remedy is the later release.
+LATER_VERSION = (
+    "{path} is a trust record of a version this stayfixed does not read, which a later stayfixed "
+    f"wrote; {_HOLDS} — update stayfixed to read it"
 )
-LATER_VERSION = "{path} is a trust record of a version this stayfixed does not read; " + _KEPT
 NOT_A_RECORD = "{path} is neither a trust record nor the flat map 0.3.0 wrote; " + _KEPT
 # A write to the record that was refused the way an agent's sandbox refuses one (`boundary`'s
 # docstring): run from an agent's shell, nothing it asks of the record can be written. Constant,
@@ -174,7 +178,13 @@ def _approvals(raw: dict[str, Any], path: Path) -> dict[tuple[str, str], Approva
 
 def state(machine: Path | None, kind: str, subject: str, current: str) -> State:
     """Whether `subject` of `kind` is approved at the digest `current`."""
-    approval = recorded(machine).get((kind, subject))
+    return _state(recorded(machine), kind, subject, current)
+
+
+def _state(
+    approvals: Mapping[tuple[str, str], Approval], kind: str, subject: str, current: str
+) -> State:
+    approval = approvals.get((kind, subject))
     if approval is None:
         return State.MISSING
     return State.APPROVED if approval.digest == current else State.LAPSED
@@ -189,6 +199,25 @@ def approve(
     approvals[(kind, subject)] = approval
     _write(machine, approvals)
     return approval
+
+
+def approve_all(
+    machine: Path | None, kind: str, digests: Mapping[str, str], *, now: datetime
+) -> dict[str, State]:
+    """Record every subject of `kind` in `digests` as approved at its digest, replacing any
+    approval each had, in one write of the record; and answer what the record said of each before.
+
+    One write, so a kind with several subjects is approved whole or not at all: a write that fails
+    leaves the record as it was. Nothing is written for no subject."""
+    approvals = recorded(machine)
+    was = {subject: _state(approvals, kind, subject, digest) for subject, digest in digests.items()}
+    if not digests:
+        return was
+    when = now.isoformat(timespec="seconds")
+    for subject, digest in digests.items():
+        approvals[(kind, subject)] = Approval(kind, subject, digest, when)
+    _write(machine, approvals)
+    return was
 
 
 def refresh(machine: Path | None, kind: str, subject: str, *, expected: str, digest: str) -> bool:

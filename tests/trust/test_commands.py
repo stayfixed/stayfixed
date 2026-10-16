@@ -11,23 +11,26 @@ import functools
 import json
 import shlex
 import subprocess
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
 import pytest
 
-from stayfixed.config.loader import NOT_THERE
+from stayfixed.memory.approvals import NO_CONFIGURATION
 from stayfixed.printed import CLIPPED_CHARS
 from stayfixed.trust import kinds
-from stayfixed.trust.commands import NOT_A_TERMINAL, NOTHING_TO_REVOKE, UNKNOWN_KIND
+from stayfixed.trust.approving import NOT_A_TERMINAL, UNKNOWN_KIND
+from stayfixed.trust.commands import NOTHING_TO_REVOKE, UNDESCRIBED
 from stayfixed.trust.kinds import DUPLICATE_KIND, ApprovalKind
 from stayfixed.trust.record import RECORD, State, approve, record_path, recorded, state
+from tests.boundaries.test_delivery import IMPORT_EACH
 from tests.crafted import CRAFTED, assert_never_raw
 from tests.floor import developer_free_environ
 from tests.memory.test_commands import common, invoke
 from tests.memory.test_commands import project as project
-from tests.ownerhome import as_owner_home, stayfixed_argv
+from tests.ownerhome import ROOT, as_owner_home, stayfixed_argv
 from tests.sandboxed import refuse_writes_under
 from tests.scriptload import SCRIPTS, load
 
@@ -316,11 +319,12 @@ def test_list_says_why_a_kind_has_nothing_to_approve(
     # The line used to send its reader to `trust approve` for the reason, which refuses with no
     # terminal before it asks the kind anything, and left out `--root` and `--machine`. It says
     # the kind's own reason instead. Mutation (`mutations/`'s "trust list sends its reader to the
-    # approve command for the reason"): the line names `trust approve` and no reason.
+    # approve command for the reason"): the line names `trust approve` and no reason. The reason is
+    # the one a session would have: the kind is described as a session reads the checkout.
     root = tmp_path / "uninitialised"
     root.mkdir()
     machine = tmp_path / "machine.toml"
-    reason = NOT_THERE.format(path=root.resolve() / "stayfixed.toml")
+    reason = NO_CONFIGURATION
     argv = ["trust", "list", "--root", str(root), "--machine", str(machine)]
     assert invoke(argv) == 0
     assert capsys.readouterr().out == f"memory: nothing to approve in this checkout: {reason}\n"
@@ -411,4 +415,74 @@ def test_the_areas_contribute_the_memory_kind() -> None:
     # Discovery reads `stayfixed.memory.approvals` and no core module names it. No mutation of its
     # own: an empty discovery reddens every approve case above.
     assert list(kinds.kinds()) == ["memory"]
-    assert kinds.kinds()["memory"].flags == ("--store",)
+    assert list(kinds.kinds()["memory"].flags) == ["--store"]
+
+
+# --- list and revoke describe a checkout as the session reads it ---------------------------------
+
+
+def _newer(project: Path) -> None:
+    """A section a newer stayfixed added: a session reads past it, a command refuses the file."""
+    with (project / "stayfixed.toml").open("a", encoding="utf-8") as document:
+        document.write("\n[newer]\nx = 1\n")
+
+
+def test_list_reports_an_approval_a_session_uses_past_a_newer_section(
+    project: Path, capsys: pytest.CaptureFixture[str], at_a_terminal: None
+) -> None:
+    # A session keeps reading a `stayfixed.toml` a newer release added a section to, so it keeps
+    # using the store's approval; `trust list` said there was nothing to approve. Mutation
+    # (`mutations/`'s "trust list describes a checkout as a command reads it"): the line says the
+    # kind has nothing to approve.
+    assert invoke(["trust", "approve", "memory", *common(project)]) == 0
+    _newer(project)
+    capsys.readouterr()
+    assert invoke(["trust", "list", "--json", *common(project)]) == 0
+    (row,) = json.loads(capsys.readouterr().out)["subjects"]
+    assert (row["kind"], row["state"]) == ("memory", "approved")
+
+
+def test_revoke_withdraws_an_approval_a_session_uses_past_a_newer_section(
+    project: Path, capsys: pytest.CaptureFixture[str], at_a_terminal: None
+) -> None:
+    # The fail-safe direction withdraws what a session would use, whatever a command would refuse
+    # in the file: the documented spelling refused here while the session went on injecting.
+    # Mutation (`mutations/`'s "trust revoke describes a checkout as a command reads it"): exit 1
+    # and the approval stays.
+    assert invoke(["trust", "approve", "memory", *common(project)]) == 0
+    _newer(project)
+    assert invoke(["trust", "revoke", "memory", *common(project)]) == 0
+    assert not _approved(project)
+
+
+def test_revoke_that_cannot_describe_the_checkout_names_the_spelling_that_can(
+    project: Path, capsys: pytest.CaptureFixture[str], at_a_terminal: None
+) -> None:
+    # Once `stayfixed.toml` is gone the kind cannot describe the store, so a bare revoke cannot
+    # find its key; it says why, names `--subject` and `trust list --all`, lists what is recorded,
+    # and exits 1, rather than refusing with the loader's message. Mutation (`mutations/`'s "trust
+    # revoke lets a kind that cannot describe the checkout refuse"): exit 2 and the kind's reason.
+    assert invoke(["trust", "approve", "memory", *common(project)]) == 0
+    (project / "stayfixed.toml").unlink()
+    capsys.readouterr()
+    assert invoke(["trust", "revoke", "memory", *common(project)]) == 1
+    said = UNDESCRIBED.format(kind="memory", reason=NO_CONFIGURATION)
+    out = capsys.readouterr().out
+    assert out.startswith(f"{said}; recorded: "), out
+    assert _approved(project)
+
+
+def test_the_records_surface_loads_no_command_module() -> None:
+    # `memory` imports `trust.api` on the hook path, so the surface the record is reached through
+    # loads no command module and no CLI frame: the approve path both spellings run lives in
+    # `trust.approving`. Mutation (`mutations/`'s "the trust surface takes the approve path from the
+    # command module"): `stayfixed.trust.commands` and `stayfixed.command` load with it.
+    loaded = subprocess.run(
+        [sys.executable, "-I", "-c", IMPORT_EACH, "stayfixed.trust.api"],
+        capture_output=True,
+        text=True,
+        check=True,
+        env={**developer_free_environ(), "PYTHONPATH": str(ROOT / "src")},
+    ).stdout.split()
+    assert "stayfixed.trust.api" in loaded
+    assert not {"stayfixed.trust.commands", "stayfixed.command"} & set(loaded)

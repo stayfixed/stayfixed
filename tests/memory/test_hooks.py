@@ -350,8 +350,8 @@ def test_a_database_home_that_is_itself_a_symlink_gets_the_harness_link_from_the
     # Mutation: `mutations/`'s "the worktree-link hook anchors the harness link on the database's
     # home unresolved".
     from stayfixed.memory.store import resolve
-    from stayfixed.memory.trust import record
     from stayfixed.memory.worktree import harness_memory_path
+    from tests.approved import record
     from tests.memory.test_worktree import a_checkout, a_worktree
 
     real = tmp_path / "real-home"

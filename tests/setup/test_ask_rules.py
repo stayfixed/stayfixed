@@ -24,7 +24,8 @@ from stayfixed.printed import quoted
 from stayfixed.setup import run
 from stayfixed.setup.api import USER_SETTINGS, SetupReport, setup
 from stayfixed.setup.machine import read_machine, write_machine
-from stayfixed.trust.api import deny_rule, managed_settings
+from stayfixed.trust.api import managed_named
+from stayfixed.trust.boundary import deny_rule
 from tests.runners import Recorder
 
 # Every spelling an agent's shell reaches stayfixed by that the bare rule does not cover, for the
@@ -55,7 +56,7 @@ def _setup(
     own: Path | None = None,
     machine: Path | None = None,
 ) -> SetupReport:
-    monkeypatch.setattr(run, "running_command", lambda: own)
+    monkeypatch.setattr(run, "path_command", lambda: own)
     return setup(
         "recommended",
         home=tmp_path / "home",
@@ -235,7 +236,7 @@ def test_setup_never_writes_a_sandbox_key(tmp_path: Path, monkeypatch: pytest.Mo
     assert _added(tmp_path)["deny"] == [rule]
     assert report.boundary == (rule,)
     assert run.SANDBOX_ADVICE.format(
-        rule=rule, settings=tmp_path / "home" / USER_SETTINGS, managed=managed_settings()
+        rule=rule, settings=tmp_path / "home" / USER_SETTINGS, managed=managed_named()
     ) in (report.notes)
     # Without the flag a second run leaves the rule where it is and adds nothing.
     again = _setup(tmp_path, monkeypatch)
@@ -273,7 +274,7 @@ def test_the_flag_reaches_setup_through_the_cli(
     # (`mutations/`'s "setup's command line drops --approval-boundary"): no rule is added.
     stub = Recorder()
     monkeypatch.setattr("stayfixed.setup.commands.subprocess_runner", lambda: stub)
-    monkeypatch.setattr(run, "running_command", lambda: None)
+    monkeypatch.setattr(run, "path_command", lambda: None)
     machine = tmp_path / "config.toml"
     argv = ["setup", "--home", str(tmp_path / "home"), "--machine", str(machine), "--json"]
     assert cli_run([*argv, "--approval-boundary"], parser=build_parser(discover_registrars())) == 0
@@ -332,3 +333,77 @@ def test_a_setup_table_setup_cannot_read_refuses_before_any_write(
         _setup(tmp_path, monkeypatch)
     assert str(caught.value) == getattr(run, refusal).format(path=machine)
     assert not (tmp_path / "home" / USER_SETTINGS).exists()
+
+
+def test_a_run_that_only_takes_ask_rules_back_reports_no_deny_merge(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # "deny rules merged" is what a run says when it added a deny rule, and nothing else: a run
+    # that only took the `ask` rules back rewrote the file and reported a merge it never made.
+    # Mutation (`mutations/`'s "setup reports deny rules merged for any rewrite of the file"): the
+    # second run reports a merge.
+    first = _setup(tmp_path, monkeypatch)
+    assert first.deny_written
+    _switch_off(tmp_path)
+    second = _setup(tmp_path, monkeypatch)
+    assert second.ask_removed == MEASURED_ASK
+    assert second.deny_written is False
+
+
+def test_a_recorded_ask_rule_no_longer_wanted_is_taken_back_while_the_switch_is_on(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The absolute-path pair follows the `stayfixed` on `PATH`; when that moves, the old pair is a
+    # recorded rule this run does not want, and it is taken back and forgotten rather than left in
+    # the file for good, while an identical rule the owner typed first stays. Mutations
+    # (`mutations/`'s "setup takes back a recorded rule only with the switch off" -> the old pair
+    # stays in the file; "setup forgets only with the switch off" -> the old pair stays recorded).
+    old, new = _own(tmp_path / "old"), _own(tmp_path / "new")
+    old_pair = [f"Bash({old} trust approve:*)", f"Bash({old} memory trust:*)"]
+    new_pair = [f"Bash({new} trust approve:*)", f"Bash({new} memory trust:*)"]
+    _seed_settings(tmp_path, {"permissions": {"ask": [OWNERS_OWN]}})
+    _setup(tmp_path, monkeypatch, own=old)
+    assert _ask(tmp_path) == [OWNERS_OWN, *MEASURED_ASK, *old_pair]
+    report = _setup(tmp_path, monkeypatch, own=new)
+    assert report.ask_removed == tuple(old_pair)
+    assert _ask(tmp_path) == [OWNERS_OWN, *MEASURED_ASK, *new_pair]
+    assert _added(tmp_path)["ask"] == [*MEASURED_ASK, *new_pair]
+
+
+def test_the_absolute_path_rule_names_the_stayfixed_on_path_as_spelled(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The pair is for the `stayfixed` on `PATH`, spelled as `PATH` gives it, and never for the
+    # script this run started on: through the plugin's launcher that is a path under the plugin
+    # cache with the version in it, so each update piled a pair up. Unresolved, since a rule
+    # matches the spelling a command line carries. Mutation (`mutations/`'s "setup's absolute-path
+    # rule follows where the stayfixed on PATH leads"): the link's target is named.
+    real = tmp_path / "cache" / "0.4.0" / "scripts" / "stayfixed"
+    real.parent.mkdir(parents=True)
+    real.write_text("", encoding="utf-8")
+    linked = tmp_path / "bin" / "stayfixed"
+    linked.parent.mkdir()
+    linked.symlink_to(real)
+    monkeypatch.setattr("sys.argv", [str(real)])
+    monkeypatch.setattr("shutil.which", lambda name: str(linked))
+    assert run.path_command() == linked
+
+
+def test_an_owners_settings_file_opening_with_a_byte_order_mark_is_merged_and_keeps_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Claude Code reads past a leading byte-order mark in the user's settings file, so setup does
+    # too, rather than refusing a file the harness reads; and it keeps the mark, so a second run
+    # rewrites nothing. Mutations (`mutations/`'s "setup refuses a user settings file opening with
+    # a byte-order mark" -> the run refuses; "setup drops the byte-order mark the owner's file
+    # opened with" -> the file loses it).
+    path = tmp_path / "home" / USER_SETTINGS
+    path.parent.mkdir(parents=True)
+    path.write_text("﻿" + json.dumps({"permissions": {"ask": [OWNERS_OWN]}}), "utf-8")
+    _setup(tmp_path, monkeypatch)
+    text = path.read_text(encoding="utf-8")
+    assert text.startswith("﻿")
+    assert json.loads(text.removeprefix("﻿"))["permissions"]["ask"][0] == OWNERS_OWN
+    before = path.read_bytes()
+    _setup(tmp_path, monkeypatch)
+    assert path.read_bytes() == before

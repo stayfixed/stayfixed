@@ -123,8 +123,8 @@ reddens = [
 [[mutation]]
 name = "setup's settings merge writes the deny rules under allow instead"
 file = "src/stayfixed/setup/run.py"
-before = 'permissions["deny"] = existing_deny + [r for r in deny_rules if r not in existing_deny]'
-after = 'permissions["allow"] = existing_deny + [r for r in deny_rules if r not in existing_deny]'
+before = '        permissions["deny"] = existing_deny + added_deny'
+after = '        permissions["allow"] = existing_deny + added_deny'
 reddens = ["tests/setup/test_setup.py::test_setup_writes_the_machine_file_and_the_deny_rules"]
 
 # The creation gate, restated in code: `overlay create` runs `gh repo create ... --private` on
@@ -1703,8 +1703,8 @@ reddens = [
 [[mutation]]
 name = "setup encodes the owner's merged settings with a bare json.dumps"
 file = "src/stayfixed/setup/run.py"
-before = '    new_text = json_text(document, str(path), error=Failure, indent=2, sort_keys=True) + "\n"'
-after = '    new_text = __import__("json").dumps(document, indent=2, sort_keys=True) + "\n"'
+before = '    new_text = mark + json_text(document, str(path), error=Failure, indent=2, sort_keys=True) + "\n"'
+after = '    new_text = mark + __import__("json").dumps(document, indent=2, sort_keys=True) + "\n"'
 reddens = [
   "tests/setup/test_setup.py::test_a_user_settings_file_the_encoder_cannot_write_back_is_a_failure_naming_it",
 ]
@@ -2237,8 +2237,8 @@ reddens = [
 [[mutation]]
 name = "switching the ask rules off takes every ask rule"
 file = "src/stayfixed/setup/run.py"
-before = "    ask_remove = [] if ask_rules else [r for r in held_record[\"ask\"] if r in asked]"
-after = "    ask_remove = [] if ask_rules else list(asked)"
+before = "    ask_remove = [rule for rule in held_record[\"ask\"] if rule not in wanted and rule in asked]"
+after = "    ask_remove = list(asked)"
 reddens = [
   "tests/setup/test_ask_rules.py::test_switching_off_removes_only_recorded_rules",
 ]
@@ -2246,8 +2246,8 @@ reddens = [
 [[mutation]]
 name = "setup writes the ask rules before it records them"
 file = "src/stayfixed/setup/run.py"
-before = "    if table(\"before\") != held_table:\n        write_machine(machine, personal={}, overlay_root=None, machine={}, setup=table(\"before\"))\n    # **The `pluginConfigs` mirror is recomputed from the machine file, not from this run's own\n    # new keys.** `personal` above is empty on every run after the first, so the mirror was\n    # write-once: an owner who edited `reply_language` in the machine file — the documented way,\n    # `README.md`'s own \"Written by: you, or `stayfixed setup`\" — kept `\"\"` in\n    # `~/.claude/settings.json` for ever. The other answer the review offered was to stop\n    # writing the mirror at all; it is rejected because `pluginConfigs` is where Claude Code\n    # itself reads a plugin's `userConfig` answers, and this plugin's own manifest declares\n    # them, so dropping it would leave the harness reading nothing. The cost of this direction\n    # is stated where a reader will meet it: a value set in Claude Code's plugin-config UI is\n    # overwritten by the machine file on the next `setup`, because one file has to win and the\n    # machine file is the one every stayfixed reader reads.\n    personal_values = read_personal(machine)\n    deny_written = _write_user_settings(\n        home,\n        [*deny_rules, *plan.deny_add],\n        personal_values,\n        settings=settings,\n        ask_add=plan.ask_add,\n        ask_remove=plan.ask_remove,\n    )\n    for other in others.values():\n        _write_user_settings(\n            home,\n            [*deny_rules, *other.deny_add],\n            personal_values,\n            settings=other.path,\n            ask_add=other.ask_add,\n            ask_remove=other.ask_remove,\n        )\n"
-after = "    # **The `pluginConfigs` mirror is recomputed from the machine file, not from this run's own\n    # new keys.** `personal` above is empty on every run after the first, so the mirror was\n    # write-once: an owner who edited `reply_language` in the machine file — the documented way,\n    # `README.md`'s own \"Written by: you, or `stayfixed setup`\" — kept `\"\"` in\n    # `~/.claude/settings.json` for ever. The other answer the review offered was to stop\n    # writing the mirror at all; it is rejected because `pluginConfigs` is where Claude Code\n    # itself reads a plugin's `userConfig` answers, and this plugin's own manifest declares\n    # them, so dropping it would leave the harness reading nothing. The cost of this direction\n    # is stated where a reader will meet it: a value set in Claude Code's plugin-config UI is\n    # overwritten by the machine file on the next `setup`, because one file has to win and the\n    # machine file is the one every stayfixed reader reads.\n    personal_values = read_personal(machine)\n    deny_written = _write_user_settings(\n        home,\n        [*deny_rules, *plan.deny_add],\n        personal_values,\n        settings=settings,\n        ask_add=plan.ask_add,\n        ask_remove=plan.ask_remove,\n    )\n    for other in others.values():\n        _write_user_settings(\n            home,\n            [*deny_rules, *other.deny_add],\n            personal_values,\n            settings=other.path,\n            ask_add=other.ask_add,\n            ask_remove=other.ask_remove,\n        )\n    if table(\"before\") != held_table:\n        write_machine(machine, personal={}, overlay_root=None, machine={}, setup=table(\"before\"))\n"
+before = "    if table(\"before\") != held_table:\n        write_machine(machine, personal={}, overlay_root=None, machine={}, setup=table(\"before\"))\n    # **The `pluginConfigs` mirror is recomputed from the machine file, not from this run's own\n    # new keys.** `personal` above is empty on every run after the first, so the mirror was\n    # write-once: an owner who edited `reply_language` in the machine file — the documented way,\n    # `README.md`'s own \"Written by: you, or `stayfixed setup`\" — kept `\"\"` in\n    # `~/.claude/settings.json` for ever. The other answer the review offered was to stop\n    # writing the mirror at all; it is rejected because `pluginConfigs` is where Claude Code\n    # itself reads a plugin's `userConfig` answers, and this plugin's own manifest declares\n    # them, so dropping it would leave the harness reading nothing. The cost of this direction\n    # is stated where a reader will meet it: a value set in Claude Code's plugin-config UI is\n    # overwritten by the machine file on the next `setup`, because one file has to win and the\n    # machine file is the one every stayfixed reader reads.\n    personal_values = read_personal(machine)\n    deny_merged = _write_user_settings(\n        home,\n        [*deny_rules, *plan.deny_add],\n        personal_values,\n        settings=settings,\n        ask_add=plan.ask_add,\n        ask_remove=plan.ask_remove,\n    )\n    for other in others.values():\n        _write_user_settings(\n            home,\n            [*deny_rules, *other.deny_add],\n            personal_values,\n            settings=other.path,\n            ask_add=other.ask_add,\n            ask_remove=other.ask_remove,\n        )\n"
+after = "    # **The `pluginConfigs` mirror is recomputed from the machine file, not from this run's own\n    # new keys.** `personal` above is empty on every run after the first, so the mirror was\n    # write-once: an owner who edited `reply_language` in the machine file — the documented way,\n    # `README.md`'s own \"Written by: you, or `stayfixed setup`\" — kept `\"\"` in\n    # `~/.claude/settings.json` for ever. The other answer the review offered was to stop\n    # writing the mirror at all; it is rejected because `pluginConfigs` is where Claude Code\n    # itself reads a plugin's `userConfig` answers, and this plugin's own manifest declares\n    # them, so dropping it would leave the harness reading nothing. The cost of this direction\n    # is stated where a reader will meet it: a value set in Claude Code's plugin-config UI is\n    # overwritten by the machine file on the next `setup`, because one file has to win and the\n    # machine file is the one every stayfixed reader reads.\n    personal_values = read_personal(machine)\n    deny_merged = _write_user_settings(\n        home,\n        [*deny_rules, *plan.deny_add],\n        personal_values,\n        settings=settings,\n        ask_add=plan.ask_add,\n        ask_remove=plan.ask_remove,\n    )\n    for other in others.values():\n        _write_user_settings(\n            home,\n            [*deny_rules, *other.deny_add],\n            personal_values,\n            settings=other.path,\n            ask_add=other.ask_add,\n            ask_remove=other.ask_remove,\n        )\n    if table(\"before\") != held_table:\n        write_machine(machine, personal={}, overlay_root=None, machine={}, setup=table(\"before\"))\n"
 reddens = [
   "tests/setup/test_ask_rules.py::test_a_run_stopped_at_the_record_converges_on_the_next",
 ]
@@ -2255,8 +2255,8 @@ reddens = [
 [[mutation]]
 name = "switching the ask rules off forgets them before it removes them"
 file = "src/stayfixed/setup/run.py"
-before = "    # **The `pluginConfigs` mirror is recomputed from the machine file, not from this run's own\n    # new keys.** `personal` above is empty on every run after the first, so the mirror was\n    # write-once: an owner who edited `reply_language` in the machine file — the documented way,\n    # `README.md`'s own \"Written by: you, or `stayfixed setup`\" — kept `\"\"` in\n    # `~/.claude/settings.json` for ever. The other answer the review offered was to stop\n    # writing the mirror at all; it is rejected because `pluginConfigs` is where Claude Code\n    # itself reads a plugin's `userConfig` answers, and this plugin's own manifest declares\n    # them, so dropping it would leave the harness reading nothing. The cost of this direction\n    # is stated where a reader will meet it: a value set in Claude Code's plugin-config UI is\n    # overwritten by the machine file on the next `setup`, because one file has to win and the\n    # machine file is the one every stayfixed reader reads.\n    personal_values = read_personal(machine)\n    deny_written = _write_user_settings(\n        home,\n        [*deny_rules, *plan.deny_add],\n        personal_values,\n        settings=settings,\n        ask_add=plan.ask_add,\n        ask_remove=plan.ask_remove,\n    )\n    for other in others.values():\n        _write_user_settings(\n            home,\n            [*deny_rules, *other.deny_add],\n            personal_values,\n            settings=other.path,\n            ask_add=other.ask_add,\n            ask_remove=other.ask_remove,\n        )\n    for other in back.values():\n        if other.ask_remove:\n            _write_user_settings(\n                home, (), {}, settings=other.path, ask_remove=other.ask_remove, merge=False\n            )\n    if table(\"after\") != table(\"before\"):\n        write_machine(machine, personal={}, overlay_root=None, machine={}, setup=table(\"after\"))\n"
-after = "    if table(\"after\") != table(\"before\"):\n        write_machine(machine, personal={}, overlay_root=None, machine={}, setup=table(\"after\"))\n    # **The `pluginConfigs` mirror is recomputed from the machine file, not from this run's own\n    # new keys.** `personal` above is empty on every run after the first, so the mirror was\n    # write-once: an owner who edited `reply_language` in the machine file — the documented way,\n    # `README.md`'s own \"Written by: you, or `stayfixed setup`\" — kept `\"\"` in\n    # `~/.claude/settings.json` for ever. The other answer the review offered was to stop\n    # writing the mirror at all; it is rejected because `pluginConfigs` is where Claude Code\n    # itself reads a plugin's `userConfig` answers, and this plugin's own manifest declares\n    # them, so dropping it would leave the harness reading nothing. The cost of this direction\n    # is stated where a reader will meet it: a value set in Claude Code's plugin-config UI is\n    # overwritten by the machine file on the next `setup`, because one file has to win and the\n    # machine file is the one every stayfixed reader reads.\n    personal_values = read_personal(machine)\n    deny_written = _write_user_settings(\n        home,\n        [*deny_rules, *plan.deny_add],\n        personal_values,\n        settings=settings,\n        ask_add=plan.ask_add,\n        ask_remove=plan.ask_remove,\n    )\n    for other in others.values():\n        _write_user_settings(\n            home,\n            [*deny_rules, *other.deny_add],\n            personal_values,\n            settings=other.path,\n            ask_add=other.ask_add,\n            ask_remove=other.ask_remove,\n        )\n    for other in back.values():\n        if other.ask_remove:\n            _write_user_settings(\n                home, (), {}, settings=other.path, ask_remove=other.ask_remove, merge=False\n            )\n"
+before = "    # **The `pluginConfigs` mirror is recomputed from the machine file, not from this run's own\n    # new keys.** `personal` above is empty on every run after the first, so the mirror was\n    # write-once: an owner who edited `reply_language` in the machine file — the documented way,\n    # `README.md`'s own \"Written by: you, or `stayfixed setup`\" — kept `\"\"` in\n    # `~/.claude/settings.json` for ever. The other answer the review offered was to stop\n    # writing the mirror at all; it is rejected because `pluginConfigs` is where Claude Code\n    # itself reads a plugin's `userConfig` answers, and this plugin's own manifest declares\n    # them, so dropping it would leave the harness reading nothing. The cost of this direction\n    # is stated where a reader will meet it: a value set in Claude Code's plugin-config UI is\n    # overwritten by the machine file on the next `setup`, because one file has to win and the\n    # machine file is the one every stayfixed reader reads.\n    personal_values = read_personal(machine)\n    deny_merged = _write_user_settings(\n        home,\n        [*deny_rules, *plan.deny_add],\n        personal_values,\n        settings=settings,\n        ask_add=plan.ask_add,\n        ask_remove=plan.ask_remove,\n    )\n    for other in others.values():\n        _write_user_settings(\n            home,\n            [*deny_rules, *other.deny_add],\n            personal_values,\n            settings=other.path,\n            ask_add=other.ask_add,\n            ask_remove=other.ask_remove,\n        )\n    for other in back.values():\n        if other.ask_remove:\n            _write_user_settings(\n                home, (), {}, settings=other.path, ask_remove=other.ask_remove, merge=False\n            )\n    if table(\"after\") != table(\"before\"):\n        write_machine(machine, personal={}, overlay_root=None, machine={}, setup=table(\"after\"))\n"
+after = "    if table(\"after\") != table(\"before\"):\n        write_machine(machine, personal={}, overlay_root=None, machine={}, setup=table(\"after\"))\n    # **The `pluginConfigs` mirror is recomputed from the machine file, not from this run's own\n    # new keys.** `personal` above is empty on every run after the first, so the mirror was\n    # write-once: an owner who edited `reply_language` in the machine file — the documented way,\n    # `README.md`'s own \"Written by: you, or `stayfixed setup`\" — kept `\"\"` in\n    # `~/.claude/settings.json` for ever. The other answer the review offered was to stop\n    # writing the mirror at all; it is rejected because `pluginConfigs` is where Claude Code\n    # itself reads a plugin's `userConfig` answers, and this plugin's own manifest declares\n    # them, so dropping it would leave the harness reading nothing. The cost of this direction\n    # is stated where a reader will meet it: a value set in Claude Code's plugin-config UI is\n    # overwritten by the machine file on the next `setup`, because one file has to win and the\n    # machine file is the one every stayfixed reader reads.\n    personal_values = read_personal(machine)\n    deny_merged = _write_user_settings(\n        home,\n        [*deny_rules, *plan.deny_add],\n        personal_values,\n        settings=settings,\n        ask_add=plan.ask_add,\n        ask_remove=plan.ask_remove,\n    )\n    for other in others.values():\n        _write_user_settings(\n            home,\n            [*deny_rules, *other.deny_add],\n            personal_values,\n            settings=other.path,\n            ask_add=other.ask_add,\n            ask_remove=other.ask_remove,\n        )\n    for other in back.values():\n        if other.ask_remove:\n            _write_user_settings(\n                home, (), {}, settings=other.path, ask_remove=other.ask_remove, merge=False\n            )\n"
 reddens = [
   "tests/setup/test_ask_rules.py::test_a_switch_off_stopped_at_the_settings_file_converges_on_the_next",
 ]
@@ -2264,7 +2264,7 @@ reddens = [
 [[mutation]]
 name = "the approval boundary is never added"
 file = "src/stayfixed/setup/run.py"
-before = "    rules = _boundary_rules(machine) if boundary else ()"
+before = "    rules = record_deny_rules(record_path(machine)) if boundary else ()"
 after = "    rules = ()"
 reddens = [
   "tests/setup/test_ask_rules.py::test_setup_never_writes_a_sandbox_key",
@@ -2324,15 +2324,6 @@ reddens = [
   "tests/setup/test_ask_rules.py::test_the_flag_reaches_setup_through_the_cli",
 ]
 
-[[mutation]]
-name = "the approval boundary covers only the directory as named"
-file = "src/stayfixed/setup/run.py"
-before = "    return deny_rules(directory, fsops.resolved(directory))"
-after = "    return deny_rules(directory, directory)"
-reddens = [
-  "tests/setup/test_ask_rules.py::test_a_linked_machine_directory_gets_a_rule_for_each_spelling",
-]
-
 # `setup` run from an agent's sandboxed shell: each write the sandbox refuses, and the question
 # asked of the settings directory before the first write, end in the one constant sentence.
 
@@ -2390,8 +2381,8 @@ reddens = [
 [[mutation]]
 name = "setup writes a CLAUDE_CONFIG_DIR inside the project"
 file = "src/stayfixed/setup/commands.py"
-before = "    if in_project(chosen, project_root):"
-after = "    if False:"
+before = "    if where is Placement.INSIDE:\n        return None, (CONFIG_DIR_IN_PROJECT"
+after = "    if False:\n        return None, (CONFIG_DIR_IN_PROJECT"
 reddens = [
   "tests/setup/test_commands.py::test_setup_writes_the_home_s_settings_and_a_claude_config_dir_outside_the_project[config-dir-in-project]",
 ]
@@ -2509,8 +2500,8 @@ reddens = [
 [[mutation]]
 name = "taking the rules back writes a recorded directory inside the project"
 file = "src/stayfixed/setup/run.py"
-before = "        if in_project(place, project_root):"
-after = "        if False:"
+before = "        if where is Placement.INSIDE:\n            if fsops.is_dir(place):"
+after = "        if False:\n            if fsops.is_dir(place):"
 reddens = [
   "tests/setup/test_commands.py::test_taking_the_rules_back_leaves_a_recorded_directory_now_inside_the_project",
 ]
@@ -2522,4 +2513,81 @@ before = "        for _, place in take_back.directories:\n            _check_set
 after = "        for _, place in take_back.directories:\n            pass"
 reddens = [
   "tests/setup/test_commands.py::test_taking_the_rules_back_refuses_a_linked_settings_file_before_any_write",
+]
+
+# `setup`'s settings merge reads the owner's file past a leading byte-order mark and keeps it;
+# says "deny rules merged" only for a deny rule it added; takes back a recorded `ask` rule it no
+# longer wants; and names the `stayfixed` on `PATH` as spelled. `CLAUDE_CONFIG_DIR` prints through
+# `printed.clipped` and is recorded by its absolute path.
+[[mutation]]
+name = "setup refuses a user settings file opening with a byte-order mark"
+file = "src/stayfixed/setup/run.py"
+before = "    return json_object(lenient_settings(text), str(path), error=Failure), text"
+after = "    return json_object(text, str(path), error=Failure), text"
+reddens = [
+  "tests/setup/test_ask_rules.py::test_an_owners_settings_file_opening_with_a_byte_order_mark_is_merged_and_keeps_it",
+]
+
+[[mutation]]
+name = "setup drops the byte-order mark the owner's file opened with"
+file = "src/stayfixed/setup/run.py"
+before = "    mark = BYTE_ORDER_MARK if text.startswith(BYTE_ORDER_MARK) else \"\""
+after = "    mark = \"\""
+reddens = [
+  "tests/setup/test_ask_rules.py::test_an_owners_settings_file_opening_with_a_byte_order_mark_is_merged_and_keeps_it",
+]
+
+[[mutation]]
+name = "setup reports deny rules merged for any rewrite of the file"
+file = "src/stayfixed/setup/run.py"
+before = "        ) from exc\n    return bool(added_deny)"
+after = "        ) from exc\n    return True"
+reddens = [
+  "tests/setup/test_ask_rules.py::test_a_run_that_only_takes_ask_rules_back_reports_no_deny_merge",
+]
+
+[[mutation]]
+name = "setup takes back a recorded rule only with the switch off"
+file = "src/stayfixed/setup/run.py"
+before = "    ask_remove = [rule for rule in held_record[\"ask\"] if rule not in wanted and rule in asked]"
+after = "    ask_remove = [rule for rule in held_record[\"ask\"] if not ask_rules and rule in asked]"
+reddens = [
+  "tests/setup/test_ask_rules.py::test_a_recorded_ask_rule_no_longer_wanted_is_taken_back_while_the_switch_is_on",
+]
+
+[[mutation]]
+name = "setup forgets only with the switch off"
+file = "src/stayfixed/setup/run.py"
+before = "    after = {**before, \"ask\": [rule for rule in before[\"ask\"] if rule in wanted]}"
+after = "    after = {**before, \"ask\": before[\"ask\"] if ask_rules else []}"
+reddens = [
+  "tests/setup/test_ask_rules.py::test_a_recorded_ask_rule_no_longer_wanted_is_taken_back_while_the_switch_is_on",
+]
+
+[[mutation]]
+name = "setup's absolute-path rule follows where the stayfixed on PATH leads"
+file = "src/stayfixed/setup/run.py"
+before = "    return Path(os.path.abspath(found)) if found is not None else None"
+after = "    return Path(os.path.realpath(found)) if found is not None else None"
+reddens = [
+  "tests/setup/test_ask_rules.py::test_the_absolute_path_rule_names_the_stayfixed_on_path_as_spelled",
+]
+
+[[mutation]]
+name = "setup prints CLAUDE_CONFIG_DIR whole"
+file = "src/stayfixed/setup/commands.py"
+before = "    spelled = clipped(str(chosen))"
+after = "    spelled = str(chosen)"
+reddens = [
+  "tests/setup/test_commands.py::test_a_claude_config_dir_of_any_length_prints_bounded[inside-the-project]",
+  "tests/setup/test_commands.py::test_a_claude_config_dir_of_any_length_prints_bounded[elsewhere]",
+]
+
+[[mutation]]
+name = "setup records a relative CLAUDE_CONFIG_DIR as spelled"
+file = "src/stayfixed/setup/commands.py"
+before = "    return Path(os.path.abspath(chosen)), (CONFIG_DIR_WRITTEN.format(path=spelled),)"
+after = "    return chosen, (CONFIG_DIR_WRITTEN.format(path=spelled),)"
+reddens = [
+  "tests/setup/test_commands.py::test_a_relative_claude_config_dir_is_recorded_by_its_absolute_path",
 ]

@@ -26,6 +26,7 @@ from stayfixed.trust.record import (
     State,
     UnreadableTrust,
     approve,
+    approve_all,
     record_path,
     recorded,
     refresh,
@@ -317,3 +318,45 @@ def test_the_sandbox_sentence_says_what_a_person_in_their_own_terminal_meets() -
     from stayfixed.trust.record import SANDBOXED
 
     assert SANDBOXED.endswith(OWN_TERMINAL_TOO)
+
+
+def test_every_subject_of_a_kind_is_approved_in_one_write(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A kind with several subjects is approved whole or not at all: one replacement of the record,
+    # so a write that fails part-way leaves it as it was. And it answers what the record said of
+    # each before. Mutation (`mutations/`'s "approving a kind writes the record once per subject"):
+    # two writes.
+    machine = tmp_path / "config.toml"
+    approve(machine, "memory", "/a", "old", now=T0)
+    writes: list[Path] = []
+    real = fsops.write_atomically
+
+    def counting(path: Path, text: str) -> None:
+        writes.append(path)
+        real(path, text)
+
+    monkeypatch.setattr(fsops, "write_atomically", counting)
+    was = approve_all(machine, "memory", {"/a": "new", "/b": "d"}, now=T0)
+    assert writes == [tmp_path / RECORD]
+    assert was == {"/a": State.LAPSED, "/b": State.MISSING}
+    assert state(machine, "memory", "/a", "new") is State.APPROVED
+    assert state(machine, "memory", "/b", "d") is State.APPROVED
+
+
+def test_approving_no_subject_writes_nothing(tmp_path: Path) -> None:
+    # A kind with nothing to approve in this checkout leaves the record where it is, absent
+    # included. Mutation (`mutations/`'s "approving no subject writes the record"): an empty
+    # version-1 record appears.
+    machine = tmp_path / "config.toml"
+    assert approve_all(machine, "memory", {}, now=T0) == {}
+    assert not (tmp_path / RECORD).exists()
+
+
+def test_a_later_records_refusal_sends_its_reader_to_a_later_stayfixed() -> None:
+    # A record a later stayfixed wrote is met after a downgrade, where deleting it would destroy
+    # that release's approvals: the remedy is updating stayfixed, never deleting the file. No
+    # mutation of its own: the refusal is a constant, asserted whole by the unreadable-record cases
+    # above.
+    assert LATER_VERSION.endswith("update stayfixed to read it")
+    assert "delete" not in LATER_VERSION

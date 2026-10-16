@@ -378,6 +378,21 @@ HARNESSES: tuple[Harness, ...] = (CLAUDE, CODEX)
 # measurement covers -- is read as strictly as the merge that rewrites it. A path relative to the
 # file's root, so `~/.claude/settings.json` is the first of these under the home directory.
 LENIENT_SETTINGS: frozenset[str] = frozenset((*CLAUDE.settings, *CLAUDE.local_settings))
+# The leading UTF-8 byte-order mark Claude Code reads past in a file of `LENIENT_SETTINGS`.
+BYTE_ORDER_MARK = "\ufeff"
+
+
+def lenient_settings(text: str) -> str:
+    """The text of a Claude Code settings file of `LENIENT_SETTINGS` as Claude Code reads it: past a
+    leading UTF-8 byte-order mark.
+
+    The one reading of that mark for every reader of such a file: the hook entries' walk
+    (`scaffold.judged_entries`), `doctor`'s approval-boundary row and `setup`'s merge into the user
+    settings file, the last two from the file's bytes as UTF-8. Read as absent, a project file
+    holding the mark and `sandbox.enabled = false` turned the row's red into a warning; refused, it
+    stopped `setup` on an owner's own file the harness reads.
+    """
+    return text.removeprefix(BYTE_ORDER_MARK)
 
 
 def project_root_variables() -> tuple[str, ...]:

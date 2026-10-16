@@ -775,7 +775,7 @@ reddens = [
 [[mutation]]
 name = "hook-entries is blind to a settings file opening with a byte-order mark"
 file = "src/stayfixed/scaffold/entries.py"
-before = 'return live_entries(document.removeprefix("\ufeff"))'
+before = 'return live_entries(lenient_settings(document))'
 after = 'return live_entries(document)'
 reddens = [
   "tests/attach/test_doctor.py::test_a_byte_that_is_not_utf8_changes_no_entrys_verdict[byte-order-mark]",
