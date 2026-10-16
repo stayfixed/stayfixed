@@ -63,7 +63,7 @@ def test_file_values_override_preset_values(tmp_path: Path) -> None:
     config = load(tmp_path, machine=tmp_path / "no-machine.toml")
     assert config.paths.specs == "design/specs"
     assert config.budgets.effective("agents_md_lines") == 250
-    assert config.budgets.overrides == {"agents_md_lines": 250}
+    assert config.budgets.configured == {"agents_md_lines": 250}
 
 
 def test_machine_config_sits_between_file_and_preset(tmp_path: Path) -> None:

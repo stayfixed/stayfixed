@@ -154,10 +154,6 @@ class Budgets:
             return self.configured[name]
         return self.preset[name]
 
-    @property
-    def overrides(self) -> dict[str, int]:
-        return {k: v for k, v in self.configured.items() if v != self.preset.get(k)}
-
 
 @dataclass(frozen=True)
 class NativeCaps:

@@ -22,7 +22,6 @@ def test_effective_budget_is_the_configured_value_else_the_presets() -> None:
     assert budgets.effective("agents_md_lines") == 250
     assert budgets.effective("memory_index_words") == 5000
     assert budgets.effective("status_lines") == 50
-    assert budgets.overrides == {"agents_md_lines": 250, "memory_index_words": 5000}
 
 
 def test_unknown_budget_name_is_a_key_error() -> None:

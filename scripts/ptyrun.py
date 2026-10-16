@@ -38,6 +38,10 @@ def run_in_pty(
             cwd=cwd,
             start_new_session=True,
         )
+    except BaseException:
+        # No child will close its end and nothing below will read this one, so it is closed here.
+        os.close(controller)
+        raise
     finally:
         os.close(terminal)
     chunks: list[bytes] = []

@@ -2,8 +2,9 @@
 of notes committed to the repository, found as `memory trust` always found it and hashed by
 `trust.store_digest`.
 
-Every import sits inside `_describe`: `stayfixed trust` reads `KINDS` when it builds its parser, and
-a store is resolved only when a command asks about one.
+Every import of this area's own modules and of the loader sits inside `_describe`: `stayfixed trust`
+reads `KINDS` when it builds its parser, and a store is resolved only when a command asks about one.
+`stayfixed.trust.api`, which `KINDS` is built from, is the one import at module level.
 """
 
 from __future__ import annotations

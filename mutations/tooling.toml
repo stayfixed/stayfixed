@@ -3509,3 +3509,12 @@ after = 'RED_RUN_NOTE = "Before calling this red a flake:"'
 reddens = [
   "tests/scripts/test_smoke_scripts.py::test_the_hook_smoke_asks_for_the_red_run_note_in_the_words_the_note_opens_with",
 ]
+
+# A pseudo-terminal whose command cannot start closes both its ends, not only the one the child
+# would have held.
+[[mutation]]
+name = "a pseudo-terminal whose command cannot start keeps its controller open"
+file = "scripts/ptyrun.py"
+before = "    except BaseException:\n        # No child will close its end"
+after = "    except ZeroDivisionError:\n        # No child will close its end"
+reddens = ["tests/scripts/test_ptyrun.py::test_a_command_that_cannot_start_leaves_no_descriptor_open"]
