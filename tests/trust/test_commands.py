@@ -475,14 +475,21 @@ def test_revoke_that_cannot_describe_the_checkout_names_the_spelling_that_can(
 def test_the_records_surface_loads_no_command_module() -> None:
     # `memory` imports `trust.api` on the hook path, so the surface the record is reached through
     # loads no command module and no CLI frame: the approve path both spellings run lives in
-    # `trust.approving`. Mutation (`mutations/`'s "the trust surface takes the approve path from the
-    # command module"): `stayfixed.trust.commands` and `stayfixed.command` load with it.
-    loaded = subprocess.run(
-        [sys.executable, "-I", "-c", IMPORT_EACH, "stayfixed.trust.api"],
+    # `trust.approving`. Imported from this checkout's own `src/`, and not under `-I`, which would
+    # ignore `PYTHONPATH` and import whichever stayfixed the environment installed. Mutation
+    # (`mutations/`'s "the trust surface takes the approve path from the command module"):
+    # `stayfixed.trust.commands` and `stayfixed.command` load with it.
+    source = ROOT / "src"
+    probe = IMPORT_EACH + "print(sys.modules['stayfixed'].__file__)\n"
+    completed = subprocess.run(
+        [sys.executable, "-c", probe, "stayfixed.trust.api"],
         capture_output=True,
         text=True,
         check=True,
-        env={**developer_free_environ(), "PYTHONPATH": str(ROOT / "src")},
-    ).stdout.split()
+        env={"PATH": "/usr/bin:/bin", "PYTHONPATH": str(source)},
+    )
+    *lines, origin = completed.stdout.splitlines()
+    loaded = " ".join(lines).split()
+    assert Path(origin).is_relative_to(source), origin
     assert "stayfixed.trust.api" in loaded
     assert not {"stayfixed.trust.commands", "stayfixed.command"} & set(loaded)
