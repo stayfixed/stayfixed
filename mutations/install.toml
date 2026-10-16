@@ -2278,8 +2278,8 @@ reddens = [
 [[mutation]]
 name = "the approval boundary is never added"
 file = "src/stayfixed/setup/run.py"
-before = "    rule = deny_rule(_trust_directory(machine)) if boundary else None"
-after = "    rule = None"
+before = "    rules = _boundary_rules(machine) if boundary else ()"
+after = "    rules = ()"
 reddens = [
   "tests/setup/test_ask_rules.py::test_setup_never_writes_a_sandbox_key",
 ]
@@ -2336,4 +2336,13 @@ before = "        boundary=args.approval_boundary,"
 after = "        boundary=False,"
 reddens = [
   "tests/setup/test_ask_rules.py::test_the_flag_reaches_setup_through_the_cli",
+]
+
+[[mutation]]
+name = "the approval boundary covers only the directory as named"
+file = "src/stayfixed/setup/run.py"
+before = "    return tuple(dict.fromkeys((deny_rule(directory), deny_rule(fsops.resolved(directory)))))"
+after = "    return (deny_rule(directory),)"
+reddens = [
+  "tests/setup/test_ask_rules.py::test_a_linked_machine_directory_gets_a_rule_for_each_spelling",
 ]

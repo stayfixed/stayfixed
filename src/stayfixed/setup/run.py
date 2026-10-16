@@ -11,16 +11,17 @@ create or record the private overlay.
 **The `ask` rules, and the record that makes them stayfixed's.** `ASK_RULES` puts every spelling an
 agent's shell reaches `stayfixed trust approve` and its old spelling by into the user's
 `permissions.ask`, with one more pair for the absolute path of the `stayfixed` this run runs as
-(`running_command`), so Claude Code asks the person before any of them runs; `revoke` is never
-among them, since withdrawing fails safe. Each rule this run adds is recorded in the machine
-file's `[setup] added_rules`, and a rule the settings file already held is the owner's and never
-recorded. `[setup] ask_rules = false` takes back exactly the recorded ones, so an identical rule
-the owner typed first stays. `--approval-boundary`'s deny rule (`trust.boundary`) is recorded the
-same way, under `deny`, and no run removes it. **The record is written before a rule is added and
-after one is taken away**, so it always covers every rule stayfixed put in the file: a run that
-stops part-way leaves rules recorded and not yet written, which the next run writes, or recorded
-and already taken away, which the next run forgets. The other order leaves a rule in the file that
-no record names, which the next run reads as the owner's and never takes back.
+(`running_command`), so Claude Code asks the person before any of them runs; `revoke` is never among
+them, since withdrawing fails safe. Each rule this run adds is recorded in the machine file's
+`[setup] added_rules`, and a rule the settings file already held is the owner's and never recorded.
+`[setup] ask_rules = false` takes back exactly the recorded ones, so an identical rule the owner
+typed first stays. `--approval-boundary`'s deny rules (`trust.boundary`), over the record's
+directory as named and where it leads, are recorded the same way, under `deny`, and no run removes
+them. **The record is written before a rule is added and after one is taken away**, so it always
+covers every rule stayfixed put in the file: a run that stops part-way leaves rules recorded and not
+yet written, which the next run writes, or recorded and already taken away, which the next run
+forgets. The other order leaves a rule in the file that no record names, which the next run reads as
+the owner's and never takes back.
 
 **A preset default never overwrites a value already recorded.** The first draft of this module
 rebuilt `[personal]` from the preset's own defaults on every run, which meant a second
@@ -201,8 +202,8 @@ ASK_RULES: tuple[str, ...] = tuple(
 # Said by `--approval-boundary`: the rule stands only while the sandbox is on, which this command
 # never sets, and what the person sets for a sandbox no repository can turn off.
 SANDBOX_ADVICE = (
-    "the deny rule {rule} is in {settings}, and it holds only while the sandbox is on, which setup "
-    "never sets: set sandbox.enabled = true there; for a sandbox no repository's settings can turn "
+    "the deny rule(s) {rule} in {settings} hold only while the sandbox is on, which setup never "
+    "sets: set sandbox.enabled = true there; for a sandbox no repository's settings can turn "
     "off and no command can leave, set sandbox.enabled = true and "
     "sandbox.allowUnsandboxedCommands = false in {managed}, a file only an administrator writes"
 )
@@ -310,11 +311,12 @@ class SetupReport:
     cli_on_path: bool
     overlay: Path | None
     notes: tuple[str, ...]
-    # The `ask` rules this run added and took back, and the approval boundary's deny rule when
-    # `--approval-boundary` asked for it.
+    # The `ask` rules this run added and took back, and the approval boundary's deny rules when
+    # `--approval-boundary` asked for them: one over the record's directory as named and one over
+    # where it leads, once each.
     ask_added: tuple[str, ...] = ()
     ask_removed: tuple[str, ...] = ()
-    boundary: str | None = None
+    boundary: tuple[str, ...] = ()
 
 
 def _personal_defaults(preset: dict[str, Any]) -> dict[str, Any]:
@@ -1455,8 +1457,8 @@ def setup(
     # part-way or one the owner deleted by hand, and is written again.
     ask_add = [rule for rule in wanted if rule not in asked]
     ask_remove = [] if recorded.ask_rules else [r for r in recorded.added["ask"] if r in asked]
-    rule = deny_rule(_trust_directory(machine)) if boundary else None
-    deny_add = [rule] if rule is not None and rule not in deny else []
+    rules = _boundary_rules(machine) if boundary else ()
+    deny_add = [rule for rule in rules if rule not in deny]
     held = {kind: list(rules) for kind, rules in recorded.added.items()}
     before = {
         "ask": [*held["ask"], *(r for r in ask_add if r not in held["ask"])],
@@ -1495,10 +1497,12 @@ def setup(
     managed = managed_settings()
     boundary_notes = (
         ()
-        if rule is None
+        if not rules
         else (
             SANDBOX_ADVICE.format(
-                rule=rule, settings=path, managed=managed if managed else NO_MANAGED_PATH
+                rule=" and ".join(rules),
+                settings=path,
+                managed=managed if managed else NO_MANAGED_PATH,
             ),
         )
     )
@@ -1530,12 +1534,15 @@ def setup(
         notes=tuple(notes),
         ask_added=tuple(ask_add),
         ask_removed=tuple(ask_remove),
-        boundary=rule,
+        boundary=rules,
     )
 
 
-def _trust_directory(machine: Path) -> Path:
-    """The directory the trust record is kept in beside `machine`, which the boundary's deny rule
-    covers: the machine file's own, so the rule keeps an agent out of that file too."""
+def _boundary_rules(machine: Path) -> tuple[str, ...]:
+    """The deny rules over the directory the trust record is kept in beside `machine` — the machine
+    file's own, so they keep an agent out of that file too: one over the directory as named, and
+    one over where it leads when a symbolic link makes the two differ, since the harness compares
+    a write against the path it resolves and `doctor` asks for that one."""
     path = record_path(machine)
-    return machine.parent if path is None else path.parent
+    directory = machine.parent if path is None else path.parent
+    return tuple(dict.fromkeys((deny_rule(directory), deny_rule(fsops.resolved(directory)))))

@@ -53,12 +53,13 @@ def _setup(
     *,
     boundary: bool = False,
     own: Path | None = None,
+    machine: Path | None = None,
 ) -> SetupReport:
     monkeypatch.setattr(run, "running_command", lambda: own)
     return setup(
         "recommended",
         home=tmp_path / "home",
-        machine=tmp_path / "config.toml",
+        machine=tmp_path / "config.toml" if machine is None else machine,
         runner=Recorder(),
         yes=False,
         overlay=None,
@@ -115,10 +116,10 @@ def test_setup_adds_the_ask_rules_once_and_records_them(
 ) -> None:
     # The measured spellings, and the one this run's own `stayfixed` is reached by, for both the
     # approval and its old spelling; recorded in the machine file as stayfixed's, and added once
-    # however often `setup` runs. Mutations (`mutations/`'s "setup adds the ask rules it already
-    # wrote again" -> the second run doubles them; "setup records none of the ask rules it adds"
-    # -> the record is empty; "setup asks nothing for the absolute path it runs as" -> the two
-    # path rules are missing).
+    # however often `setup` runs. Mutations (`mutations/`'s "setup counts an ask rule the file
+    # already holds as one it adds" -> the second run reports every rule added again; "setup records
+    # none of the ask rules it adds" -> the record is empty; "setup asks nothing for the absolute
+    # path it runs as" -> the two path rules are missing).
     own = _own(tmp_path)
     expected = [
         *MEASURED_ASK,
@@ -139,8 +140,8 @@ def test_an_ask_rule_the_owner_typed_first_is_never_recorded(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # A rule already in the owner's file is theirs: `setup` neither adds it again nor records it,
-    # so switching the rules off later leaves it. Mutation (`mutations/`'s "setup records an ask
-    # rule the owner wrote"): the owner's rule lands in the record.
+    # so switching the rules off later leaves it. Mutation (`mutations/`'s "setup counts an ask
+    # rule the file already holds as one it adds"): the owner's rule lands in the record.
     _seed_settings(tmp_path, {"permissions": {"ask": [MEASURED_ASK[0]]}})
     _setup(tmp_path, monkeypatch)
     assert _ask(tmp_path) == list(MEASURED_ASK)
@@ -232,14 +233,36 @@ def test_setup_never_writes_a_sandbox_key(tmp_path: Path, monkeypatch: pytest.Mo
     assert rule.startswith("Edit(//")
     assert rule in settings["permissions"]["deny"]
     assert _added(tmp_path)["deny"] == [rule]
-    assert report.boundary == rule
+    assert report.boundary == (rule,)
     assert run.SANDBOX_ADVICE.format(
         rule=rule, settings=tmp_path / "home" / USER_SETTINGS, managed=managed_settings()
     ) in (report.notes)
     # Without the flag a second run leaves the rule where it is and adds nothing.
     again = _setup(tmp_path, monkeypatch)
     assert rule in _settings(tmp_path)["permissions"]["deny"]
-    assert again.boundary is None
+    assert again.boundary == ()
+
+
+def test_a_linked_machine_directory_gets_a_rule_for_each_spelling(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The machine file's directory reached through a symbolic link: the harness compares a write
+    # against the path it resolves, so a rule over the link's spelling alone denies nothing, and
+    # `doctor` asks for the resolved one. Both are written and both recorded. Mutation
+    # (`mutations/`'s "the approval boundary covers only the directory as named"): the resolved
+    # rule is missing.
+    real = tmp_path / "real"
+    real.mkdir()
+    linked = tmp_path / "linked"
+    linked.symlink_to(real)
+    report = _setup(tmp_path, monkeypatch, boundary=True, machine=linked / "config.toml")
+    rules = (deny_rule(linked), deny_rule(real.resolve()))
+    assert rules[0] != rules[1]
+    deny = _settings(tmp_path)["permissions"]["deny"]
+    assert [rule for rule in deny if rule in rules] == list(rules)
+    table = read_machine(linked / "config.toml")["setup"]["added_rules"]
+    assert table["deny"] == list(rules)
+    assert report.boundary == rules
 
 
 def test_the_flag_reaches_setup_through_the_cli(
@@ -255,7 +278,7 @@ def test_the_flag_reaches_setup_through_the_cli(
     argv = ["setup", "--home", str(tmp_path / "home"), "--machine", str(machine), "--json"]
     assert cli_run([*argv, "--approval-boundary"], parser=build_parser(discover_registrars())) == 0
     data = json.loads(capsys.readouterr().out)
-    assert data["boundary"] == deny_rule(tmp_path)
+    assert data["boundary"] == [deny_rule(tmp_path)]
     assert data["ask_added"] == list(MEASURED_ASK)
     assert data["ask_removed"] == []
     hooks = ["setup", "--git-hooks", "--approval-boundary", "--root", str(tmp_path)]

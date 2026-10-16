@@ -3015,7 +3015,7 @@ reddens = ["tests/doctor/test_checks.py::test_a_budget_the_project_lowered_is_re
 [[mutation]]
 name = "the boundary row passes without the deny rule"
 file = "src/stayfixed/doctor/boundary.py"
-before = "    covered = bool(rules & _deny_rules((managed, local, project, user)))"
+before = "    covered = real is not None and deny_rule(real) in _deny_rules((managed, local, project, user))"
 after = "    covered = True"
 reddens = [
   "tests/doctor/test_approval_boundary.py::test_the_boundary_row[sandbox-only]",
@@ -3038,7 +3038,7 @@ reddens = [
 [[mutation]]
 name = "the boundary row lets a repository's false win over managed settings"
 file = "src/stayfixed/doctor/boundary.py"
-before = "        if value is False and admin and repository:"
+before = "        if value is False and admin and repository and owners_true:"
 after = "        if False:"
 reddens = [
   "tests/doctor/test_approval_boundary.py::test_the_boundary_row[project-disables-under-admin]",
@@ -3122,7 +3122,7 @@ reddens = [
 [[mutation]]
 name = "the boundary row asks a project that lists no claude"
 file = "src/stayfixed/doctor/boundary.py"
-before = "    if not _lists_claude(context):"
+before = "    if not _lists_claude(context) and not _carries_settings(context.root):"
 after = "    if False:"
 reddens = [
   "tests/doctor/test_approval_boundary.py::test_the_row_skips_when_the_project_lists_no_claude",
@@ -3137,11 +3137,96 @@ reddens = [
   "tests/doctor/test_approval_boundary.py::test_an_unreadable_trust_record_is_taken_to_hold_approvals",
 ]
 
+# Security review of the boundary row: a repository's `false` while admin-required gives way only
+# to an owner's `true`; settings that widen confinement are gaps; the agents list does not skip a
+# project that ships Claude Code settings; and only a rule over the resolved directory covers it.
+
 [[mutation]]
-name = "the boundary row reads a deny rule only over the directory as named"
+name = "while admin-required a repository's false gives way to nothing at all"
 file = "src/stayfixed/doctor/boundary.py"
-before = "        {deny_rule(path.parent), deny_rule(path.parent.resolve())} if path is not None else set()"
-after = "        {deny_rule(path.parent)} if path is not None else set()"
+before = "        if value is False and admin and repository and owners_true:"
+after = "        if value is False and admin and repository:"
 reddens = [
-  "tests/doctor/test_approval_boundary.py::test_a_deny_rule_over_the_resolved_directory_counts",
+  "tests/doctor/test_approval_boundary.py::test_while_admin_required_a_repository_false_gives_way_only_to_an_owners_true[owner-silent]",
+]
+
+[[mutation]]
+name = "the boundary row takes a rule over the directory as named for one over where it leads"
+file = "src/stayfixed/doctor/boundary.py"
+before = "    covered = real is not None and deny_rule(real) in _deny_rules((managed, local, project, user))"
+after = "    covered = real is not None and bool({deny_rule(real), deny_rule(path.parent)} & _deny_rules((managed, local, project, user)))"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_a_deny_rule_over_the_directory_as_named_is_not_enough",
+]
+
+[[mutation]]
+name = "the boundary row reads no excludedCommands"
+file = "src/stayfixed/doctor/boundary.py"
+before = "            if _strings(_sandbox(layer, EXCLUDED_COMMANDS)):"
+after = "            if False:"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_a_setting_that_widens_confinement_is_a_gap[excluded-commands]",
+  "tests/doctor/test_approval_boundary.py::test_a_setting_that_widens_confinement_is_a_gap[excluded-commands-no-approval]",
+]
+
+[[mutation]]
+name = "the boundary row reads no repository entry that widens"
+file = "src/stayfixed/doctor/boundary.py"
+before = "            gaps.extend(_widened(layer, context.root, home, targets))"
+after = "            pass"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_a_setting_that_widens_confinement_is_a_gap[local-allow-write]",
+  "tests/doctor/test_approval_boundary.py::test_a_setting_that_widens_confinement_is_a_gap[project-edit-allow]",
+  "tests/doctor/test_approval_boundary.py::test_a_setting_that_widens_confinement_is_a_gap[project-additional-directory-above]",
+]
+
+[[mutation]]
+name = "the boundary row reads no user entry that widens"
+file = "src/stayfixed/doctor/boundary.py"
+before = "    gaps.extend(_widened(user, context.root, home, targets))"
+after = "    pass"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_a_setting_that_widens_confinement_is_a_gap[user-allow-write-under-admin]",
+  "tests/doctor/test_approval_boundary.py::test_a_setting_that_widens_confinement_is_a_gap[user-bare-edit]",
+  "tests/doctor/test_approval_boundary.py::test_a_setting_that_widens_confinement_is_a_gap[user-edit-glob]",
+  "tests/doctor/test_approval_boundary.py::test_a_setting_that_widens_confinement_is_a_gap[user-additional-directory]",
+]
+
+[[mutation]]
+name = "the boundary row reads widening repository entries while admin-required"
+file = "src/stayfixed/doctor/boundary.py"
+before = "    if not admin:\n        for layer in (local, project):"
+after = "    if True:\n        for layer in (local, project):"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_a_setting_that_widens_confinement_is_a_gap[excluded-commands-under-admin]",
+  "tests/doctor/test_approval_boundary.py::test_a_setting_that_widens_confinement_is_a_gap[local-allow-write-under-admin]",
+]
+
+[[mutation]]
+name = "the boundary row takes an entry it cannot judge for one that reaches nothing"
+file = "src/stayfixed/doctor/boundary.py"
+before = "        elif any(answer is None for answer in answers):"
+after = "        elif False:"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_a_setting_that_widens_confinement_is_a_gap[could-not-tell]",
+]
+
+[[mutation]]
+name = "the boundary row takes every entry for one that reaches the record"
+file = "src/stayfixed/doctor/boundary.py"
+before = "    return any(_matches(pattern, targets) for pattern in patterns)"
+after = "    return True"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_a_setting_that_widens_confinement_is_a_gap[allow-write-elsewhere]",
+  "tests/doctor/test_approval_boundary.py::test_a_setting_that_widens_confinement_is_a_gap[edit-allow-in-the-project]",
+]
+
+[[mutation]]
+name = "the boundary row skips a project that ships Claude Code settings for the agents it lists"
+file = "src/stayfixed/doctor/boundary.py"
+before = "    if not _lists_claude(context) and not _carries_settings(context.root):"
+after = "    if not _lists_claude(context):"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_a_project_carrying_claude_code_settings_is_read_whatever_it_lists[project]",
+  "tests/doctor/test_approval_boundary.py::test_a_project_carrying_claude_code_settings_is_read_whatever_it_lists[local]",
 ]

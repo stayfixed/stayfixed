@@ -6,12 +6,26 @@ itself it holds only while the harness stops that write (`trust.boundary` says w
 how that was measured). So the row reads this project's effective Claude Code settings, in the
 harness's own precedence — managed settings with their drop-ins, then the project's
 `.claude/settings.local.json`, then its `.claude/settings.json`, then the user's file under
-`CLAUDE_CONFIG_DIR` or `~/.claude` — and answers two questions: is the sandbox on for this project,
-and does a `permissions.deny` rule in the measured spelling cover the record's directory. A deny
-rule from any layer counts, as the harness adds them up. Whether the sandbox is on is the highest
-layer's `sandbox.enabled`, except that a repository's `false` is passed over while the sandbox is
-admin-required, which only managed settings make it (`sandbox.allowUnsandboxedCommands = false`
-there; a user's own does not stop a repository turning the sandbox off).
+`CLAUDE_CONFIG_DIR` or `~/.claude` — and answers three questions: is the sandbox on for this
+project; does a `permissions.deny` rule in the measured spelling cover the record's directory where
+it leads, its symbolic links resolved (a rule over the directory as named is accepted beside it and
+is not enough alone); and does any setting widen what those two confine to reach the record.
+
+- **Whether the sandbox is on** is the highest layer's `sandbox.enabled`. While the sandbox is
+  admin-required, which only managed settings make it (`sandbox.allowUnsandboxedCommands = false`
+  there; a user's own does not stop a repository turning the sandbox off), a repository's `false` is
+  passed over when managed settings or the user's file set `true`, as Claude Code's sandboxing
+  reference says, and stands otherwise.
+- **A deny rule** from any layer counts, as the harness adds them up.
+- **What widens them**, by the key names the sandboxing reference gives, which were not measured
+  here: a repository's non-empty `sandbox.excludedCommands`, which runs commands outside the
+  sandbox, and a `sandbox.filesystem.allowWrite` entry, an `Edit(...)` rule in `permissions.allow`
+  or a `permissions.additionalDirectories` entry that reaches the record's directory, in the
+  project's or the local file while the sandbox is not admin-required (the reference says Claude
+  Code ignores them while it is), and in the user's file always, since there one undoes the deny
+  rule. An entry this row cannot judge — a pattern holding anything but `*` and `**` — is taken to
+  reach it, and said so. A path entry's leading `/` is read both as absolute and as the project's,
+  since the reference was not measured on it; an `Edit` rule's is the project's, as measured.
 
 **Red only once the machine holds an approval.** With one, a gap is red; with none, it is a
 warning, so a default install is never red here. With both settings in force the row still warns
@@ -21,7 +35,9 @@ JSON is read as absent for its layer and named; the row is never red for that al
 beside it, since what the harness makes of the file is not known here.
 
 **Skipped** on a machine with no Claude Code user settings directory, and for a project whose
-`[stayfixed] agents` does not list `claude`; with no `stayfixed.toml`, the preset's agents apply.
+`[stayfixed] agents` does not list `claude` and which carries neither `.claude/settings.json` nor
+`.claude/settings.local.json`: the agents list is the repository's to write, so a project that ships
+Claude Code settings is read whatever it lists. With no `stayfixed.toml`, the preset's agents apply.
 
 Nothing a repository wrote is printed: the files are named by the labels a reader types, the deny
 rule and the managed path are stayfixed's own and the machine's, and no value is quoted.
@@ -30,6 +46,7 @@ rule and the managed path are stayfixed's own and the machine's, and no value is
 from __future__ import annotations
 
 import os
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -65,8 +82,8 @@ NO_CLAUDE_CODE = (
     "to read"
 )
 NOT_LISTED = (
-    "[stayfixed] agents does not list claude, so no session of this project runs where the sandbox "
-    "and the deny rule apply"
+    "[stayfixed] agents does not list claude and the project carries no Claude Code settings file, "
+    "so no session of this project runs where the sandbox and the deny rule apply"
 )
 # The approvals the row is judged against, the first part of every answered detail.
 HELD = "{count} approval(s) recorded on this machine"
@@ -84,6 +101,20 @@ TURNED_OFF = (
 NO_DENY = (
     "no permissions.deny rule {rule} covers the trust record's directory, so the shell and the "
     "file tools may write the approvals in it"
+)
+# A setting that widens what the sandbox or the deny rule confines. `label` names the file and
+# `key` the setting; the entry itself is not printed, since a repository wrote it.
+EXCLUDED = (
+    "{label} sets sandbox.excludedCommands, so the commands it names run outside the sandbox, "
+    "where nothing stops one writing the trust record"
+)
+WIDENED = (
+    "{label}'s {key} reaches the trust record's directory, so the shell or the file tools may "
+    "write the approvals in it past the deny rule"
+)
+UNJUDGED = (
+    "{label}'s {key} holds an entry this row could not tell about (a pattern holding more than * "
+    "and **), so it is taken to reach the trust record's directory"
 )
 # Both in force, and not admin-required: what a repository can still do.
 NOT_ADMIN = (
@@ -110,6 +141,8 @@ NO_MANAGED_PATH = "the managed settings file"
 # The rule's place in a sentence on a machine with no home for a trust record: the password
 # database lists none for this user, and `--machine` was not given.
 NO_RECORD_RULE = "Edit(//<the trust record's directory>/**)"
+# The machine file's name beside the record, which the deny rule covers too.
+_MACHINE_FILE = "config.toml"
 
 
 @dataclass(frozen=True)
@@ -193,6 +226,120 @@ def _deny_rules(layers: Sequence[_Layer]) -> set[str]:
     return found
 
 
+# The keys that widen confinement, as Claude Code's sandboxing reference names them.
+EXCLUDED_COMMANDS = "excludedCommands"
+FILESYSTEM = "filesystem"
+ALLOW_WRITE = "allowWrite"
+ADDITIONAL_DIRECTORIES = "additionalDirectories"
+WIDENING_KEYS = (
+    f"{SANDBOX}.{FILESYSTEM}.{ALLOW_WRITE}",
+    "permissions.allow",
+    f"permissions.{ADDITIONAL_DIRECTORIES}",
+)
+# A pattern character this row does not evaluate: anything but `*` and `**` is "could not tell".
+_UNJUDGEABLE = re.compile(r"[?\[\]{}!\\]")
+# An `Edit` rule, bare (every edit) or with its path in parentheses.
+_EDIT_RULE = re.compile(r"\AEdit(?:\((.*)\))?\Z", re.DOTALL)
+
+
+def _table(document: Mapping[str, Any] | None, *keys: str) -> object:
+    value: object = document or {}
+    for key in keys:
+        value = value.get(key) if isinstance(value, dict) else None
+    return value
+
+
+def _strings(value: object) -> list[str]:
+    return [item for item in value if isinstance(item, str)] if isinstance(value, list) else []
+
+
+def _glob(pattern: str) -> re.Pattern[str]:
+    """`pattern`, an absolute path that may hold `*` and `**`, as a regular expression."""
+    parts = re.split(r"(\*\*|\*)", pattern)
+    body = "".join(
+        ".*" if part == "**" else "[^/]*" if part == "*" else re.escape(part) for part in parts
+    )
+    return re.compile(body)
+
+
+def _matches(pattern: str, targets: Sequence[Path]) -> bool:
+    """Whether the absolute `pattern` names one of `targets` or a directory above one, which is
+    every path under it."""
+    compiled = _glob(pattern.rstrip("/") or "/")
+    return any(
+        compiled.fullmatch(str(candidate))
+        for target in targets
+        for candidate in (target, *target.parents)
+    )
+
+
+def _anchored(entry: str, root: Path, home: Path | None, *, rule: bool) -> list[str] | None:
+    """Every absolute pattern `entry` may stand for, or `None` for one with no home to read `~` by.
+
+    `//x` is absolute and `~/x` under the home; a rule's `/x` is the project's, as measured, and a
+    path entry's is read both ways; anything else is the project's."""
+    if entry.startswith("//"):
+        return [entry[1:]]
+    if entry == "~" or entry.startswith("~/"):
+        return None if home is None else [f"{home}/{entry[2:]}"]
+    if entry.startswith("/"):
+        project = f"{root}{entry}"
+        return [project] if rule else [entry, project]
+    return [f"{root}/{entry.removeprefix('./')}"]
+
+
+def _reaches(
+    entry: str, root: Path, home: Path | None, targets: Sequence[Path], *, rule: bool
+) -> bool | None:
+    """Whether `entry` reaches one of `targets`; `None` when this row cannot tell."""
+    if _UNJUDGEABLE.search(entry):
+        return None
+    patterns = _anchored(entry, root, home, rule=rule)
+    if patterns is None:
+        return None
+    return any(_matches(pattern, targets) for pattern in patterns)
+
+
+def _widened(layer: _Layer, root: Path, home: Path | None, targets: Sequence[Path]) -> list[str]:
+    """The gaps `layer` opens towards `targets`: each widening key that reaches one, or that holds
+    an entry this row cannot judge."""
+    found: list[str] = []
+    entries = {
+        WIDENING_KEYS[0]: [
+            (entry, False)
+            for entry in _strings(_table(layer.document, SANDBOX, FILESYSTEM, ALLOW_WRITE))
+        ],
+        WIDENING_KEYS[1]: [
+            (match.group(1), True)
+            for entry in _strings(_table(layer.document, "permissions", "allow"))
+            if (match := _EDIT_RULE.match(entry))
+        ],
+        WIDENING_KEYS[2]: [
+            (entry, False)
+            for entry in _strings(_table(layer.document, "permissions", ADDITIONAL_DIRECTORIES))
+        ],
+    }
+    for key, listed in entries.items():
+        # A bare `Edit` allows every edit, and reaches everything.
+        answers = [
+            True if path is None else _reaches(path, root, home, targets, rule=rule)
+            for path, rule in listed
+        ]
+        if any(answer is True for answer in answers):
+            found.append(WIDENED.format(label=layer.label, key=key))
+        elif any(answer is None for answer in answers):
+            found.append(UNJUDGED.format(label=layer.label, key=key))
+    return found
+
+
+def _carries_settings(root: Path) -> bool:
+    """Whether the project carries a Claude Code settings file, a link to one included."""
+    return any(
+        fsops.exists(root / relative) or fsops.is_symlink(root / relative)
+        for relative in (PROJECT_SETTINGS, LOCAL_SETTINGS)
+    )
+
+
 def _user_directory(context: Context) -> tuple[Path | None, str]:
     """Where the user's settings live, and how the row names the file, or `None` for no home."""
     chosen = context.env.get(CONFIG_DIR_VARIABLE)
@@ -213,7 +360,7 @@ def _lists_claude(context: Context) -> bool:
 
 def approval_boundary(context: Context) -> Row:
     """The row (the module docstring says what it reads and how it answers)."""
-    if not _lists_claude(context):
+    if not _lists_claude(context) and not _carries_settings(context.root):
         return Row(SKIP, NOT_LISTED)
     directory, user_label = _user_directory(context)
     if directory is None or not fsops.is_dir(directory):
@@ -223,6 +370,9 @@ def approval_boundary(context: Context) -> Row:
     project = _read(context.root / PROJECT_SETTINGS, PROJECT_SETTINGS)
     user = _read(directory / USER_FILE, user_label)
     admin = _sandbox(managed, UNSANDBOXED_ALLOWED) is False
+    # While admin-required, a repository's `false` gives way to an owner's `true` and to nothing
+    # else (Claude Code's sandboxing reference).
+    owners_true = _sandbox(managed, ENABLED) is True or _sandbox(user, ENABLED) is True
 
     enabled: object = None
     source: _Layer | None = None
@@ -231,8 +381,7 @@ def approval_boundary(context: Context) -> Row:
         value = _sandbox(layer, ENABLED)
         if not isinstance(value, bool):
             continue
-        if value is False and admin and repository:
-            # Admin-required: a repository's `false` is ignored (measured).
+        if value is False and admin and repository and owners_true:
             continue
         enabled, source = value, layer
         break
@@ -244,12 +393,19 @@ def approval_boundary(context: Context) -> Row:
         held, lead = 1, RECORD_UNREAD
 
     path = record_path(context.machine)
-    # The directory as the record's path names it, and where it leads: a rule over either covers it.
-    rules = (
-        {deny_rule(path.parent), deny_rule(path.parent.resolve())} if path is not None else set()
+    # Where the directory leads is what the harness compares a write against, so only a rule over
+    # that covers it; a rule over the directory as named may stand beside it.
+    real = fsops.resolved(path.parent) if path is not None else None
+    rule = deny_rule(real) if real is not None else NO_RECORD_RULE
+    covered = real is not None and deny_rule(real) in _deny_rules((managed, local, project, user))
+    # The record and the machine file beside it, in both spellings, for what widens.
+    machine_name = context.machine.name if context.machine is not None else _MACHINE_FILE
+    targets = (
+        [where / name for where in {path.parent, real} for name in (path.name, machine_name)]
+        if path is not None and real is not None
+        else []
     )
-    rule = deny_rule(path.parent) if path is not None else NO_RECORD_RULE
-    covered = bool(rules & _deny_rules((managed, local, project, user)))
+    home = context.home if context.home is not None else passwd_home()
 
     gaps: list[str] = []
     if enabled is not True:
@@ -260,6 +416,12 @@ def approval_boundary(context: Context) -> Row:
         )
     if not covered:
         gaps.append(NO_DENY.format(rule=rule))
+    if not admin:
+        for layer in (local, project):
+            if _strings(_sandbox(layer, EXCLUDED_COMMANDS)):
+                gaps.append(EXCLUDED.format(label=layer.label))
+            gaps.extend(_widened(layer, context.root, home, targets))
+    gaps.extend(_widened(user, context.root, home, targets))
     unread = [
         NOT_READ.format(label=layer.label)
         for layer in (*managed_unread, local, project, user)

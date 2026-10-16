@@ -165,7 +165,7 @@ def run_setup(args: argparse.Namespace) -> Result:
         "overlay": str(report.overlay) if report.overlay is not None else None,
         "ask_added": list(report.ask_added),
         "ask_removed": list(report.ask_removed),
-        "boundary": report.boundary,
+        "boundary": list(report.boundary),
         "notes": list(report.notes),
     }
     # Where `HOME` is not the database's home, the file is not where the person may look for it,

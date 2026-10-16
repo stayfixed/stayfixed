@@ -261,8 +261,8 @@ def test_a_settings_file_that_is_not_json_is_read_as_absent_and_named(m: Machine
     # Never a crash, and never red because of it alone: the file is read as absent for its layer,
     # named in the detail, and the row cannot be green beside it, since what Claude Code makes of
     # the file is not known here. Mutations (`mutations/`'s "a settings file that is not JSON ends
-    # the boundary row" -> "this check could not run", red; "the boundary row is green beside a
-    # settings file it could not read" -> ok).
+    # the boundary row" -> the row is red, its check unable to run; "the boundary row is green
+    # beside a settings file it could not read" -> ok).
     _admin_required(m)
     m.project("{ not json")
     m.approvals(1)
@@ -328,9 +328,9 @@ def test_an_unreadable_trust_record_is_taken_to_hold_approvals(m: Machine) -> No
 
 
 def test_a_deny_rule_over_the_resolved_directory_counts(m: Machine, tmp_path: Path) -> None:
-    # The record's directory reached through a link: a rule spelled over where it leads covers it
-    # as surely. Mutation (`mutations/`'s "the boundary row reads a deny rule only over the
-    # directory as named"): the rule over the real directory is not seen, and the row is red.
+    # The record's directory reached through a link: a rule spelled over where it leads covers it.
+    # No mutation of its own: it is the positive control for the case below, without which a row
+    # that never saw a rule at all would pass that one.
     real = tmp_path / "real-machine"
     real.mkdir()
     linked = tmp_path / "linked-machine"
@@ -340,3 +340,252 @@ def test_a_deny_rule_over_the_resolved_directory_counts(m: Machine, tmp_path: Pa
     m.managed(ADMIN_REQUIRED)
     m.approvals(1)
     assert m.row().status == OK
+
+
+def test_a_deny_rule_over_the_directory_as_named_is_not_enough(m: Machine, tmp_path: Path) -> None:
+    # The harness compares a write against the path it resolves, so a rule over the link's
+    # spelling alone denies nothing there; the gap names the rule over where it leads. Mutation
+    # (`mutations/`'s "the boundary row takes a rule over the directory as named for one over where
+    # it leads"): the row reads ok.
+    real = tmp_path / "real-machine"
+    real.mkdir()
+    linked = tmp_path / "linked-machine"
+    linked.symlink_to(real)
+    m.machine = linked / "config.toml"
+    m.user(_deny(_rule(linked)))
+    m.managed(ADMIN_REQUIRED)
+    m.approvals(1)
+    row = m.row()
+    assert row.status == RED, row
+    assert row.detail == "; ".join(
+        (boundary.HELD.format(count=1), boundary.NO_DENY.format(rule=_rule(real.resolve())))
+    )
+
+
+@pytest.mark.parametrize(
+    ("managed", "user_turns_it_on", "expected"),
+    [
+        pytest.param(MANAGED_NO_RETRY, True, OK, id="owner-true"),
+        pytest.param(MANAGED_NO_RETRY, False, RED, id="owner-silent"),
+        pytest.param(ADMIN_REQUIRED, False, OK, id="managed-true"),
+    ],
+)
+def test_while_admin_required_a_repository_false_gives_way_only_to_an_owners_true(
+    m: Machine, managed: dict[str, Any], user_turns_it_on: bool, expected: str
+) -> None:
+    # Admin-required, a repository's `sandbox.enabled = false` is ignored where managed settings
+    # or the user's file set `true` (Claude Code's sandboxing reference); with no `true` from
+    # either, it stands, and is named. Mutation (`mutations/`'s "while admin-required a
+    # repository's false gives way to nothing at all"): `owner-silent` says no file turns the
+    # sandbox on, instead of naming the project's `false`.
+    m.managed(managed)
+    m.user(_merged(SANDBOX_ON if user_turns_it_on else {}, _deny(_rule(m.record_directory))))
+    m.project(SANDBOX_OFF)
+    m.approvals(1)
+    row = m.row()
+    assert row.status == expected, row
+    if expected == RED:
+        (project,) = CLAUDE.settings
+        assert row.detail == "; ".join(
+            (boundary.HELD.format(count=1), boundary.TURNED_OFF.format(label=project))
+        )
+
+
+def _directory(m: Machine) -> str:
+    return str(m.record_directory)
+
+
+# What widens confinement: (the file, its document given the machine, whether managed settings make
+# the sandbox admin-required, the approvals, the status, and the gap said or `None`). The keys are
+# the sandboxing reference's.
+(_PROJECT,) = CLAUDE.settings
+(_LOCAL,) = CLAUDE.local_settings
+_USER = f"~/{_PROJECT}"
+WIDENING = [
+    pytest.param(
+        "project",
+        lambda m: {"sandbox": {"excludedCommands": ["docker"]}},
+        False,
+        1,
+        RED,
+        boundary.EXCLUDED.format(label=_PROJECT),
+        id="excluded-commands",
+    ),
+    pytest.param(
+        "project",
+        lambda m: {"sandbox": {"excludedCommands": ["docker"]}},
+        False,
+        0,
+        WARN,
+        boundary.EXCLUDED.format(label=_PROJECT),
+        id="excluded-commands-no-approval",
+    ),
+    pytest.param(
+        "project",
+        lambda m: {"sandbox": {"excludedCommands": ["docker"]}},
+        True,
+        1,
+        OK,
+        None,
+        id="excluded-commands-under-admin",
+    ),
+    pytest.param(
+        "local",
+        lambda m: {"sandbox": {"filesystem": {"allowWrite": [_directory(m)]}}},
+        False,
+        1,
+        RED,
+        boundary.WIDENED.format(label=_LOCAL, key="sandbox.filesystem.allowWrite"),
+        id="local-allow-write",
+    ),
+    pytest.param(
+        "local",
+        lambda m: {"sandbox": {"filesystem": {"allowWrite": [_directory(m)]}}},
+        True,
+        1,
+        OK,
+        None,
+        id="local-allow-write-under-admin",
+    ),
+    pytest.param(
+        "project",
+        lambda m: {"permissions": {"allow": [f"Edit(/{_directory(m)}/**)"]}},
+        False,
+        1,
+        RED,
+        boundary.WIDENED.format(label=_PROJECT, key="permissions.allow"),
+        id="project-edit-allow",
+    ),
+    pytest.param(
+        "project",
+        lambda m: {"permissions": {"additionalDirectories": [str(m.tmp)]}},
+        False,
+        1,
+        RED,
+        boundary.WIDENED.format(label=_PROJECT, key="permissions.additionalDirectories"),
+        id="project-additional-directory-above",
+    ),
+    pytest.param(
+        "user",
+        lambda m: {"sandbox": {"filesystem": {"allowWrite": [_directory(m)]}}},
+        True,
+        1,
+        RED,
+        boundary.WIDENED.format(label=_USER, key="sandbox.filesystem.allowWrite"),
+        id="user-allow-write-under-admin",
+    ),
+    pytest.param(
+        "user",
+        lambda m: {"permissions": {"allow": ["Edit"]}},
+        True,
+        1,
+        RED,
+        boundary.WIDENED.format(label=_USER, key="permissions.allow"),
+        id="user-bare-edit",
+    ),
+    pytest.param(
+        "user",
+        lambda m: {"permissions": {"allow": [f"Edit(/{m.tmp}/**)"]}},
+        True,
+        1,
+        RED,
+        boundary.WIDENED.format(label=_USER, key="permissions.allow"),
+        id="user-edit-glob",
+    ),
+    pytest.param(
+        "user",
+        lambda m: {"permissions": {"additionalDirectories": [_directory(m)]}},
+        True,
+        1,
+        RED,
+        boundary.WIDENED.format(label=_USER, key="permissions.additionalDirectories"),
+        id="user-additional-directory",
+    ),
+    pytest.param(
+        "project",
+        lambda m: {"sandbox": {"filesystem": {"allowWrite": ["/elsewhere/**"]}}},
+        False,
+        1,
+        WARN,
+        None,
+        id="allow-write-elsewhere",
+    ),
+    pytest.param(
+        "project",
+        lambda m: {"permissions": {"allow": ["Edit(src/**)"]}},
+        False,
+        1,
+        WARN,
+        None,
+        id="edit-allow-in-the-project",
+    ),
+    pytest.param(
+        "project",
+        lambda m: {"sandbox": {"filesystem": {"allowWrite": ["/x/[ab]"]}}},
+        False,
+        1,
+        RED,
+        boundary.UNJUDGED.format(label=_PROJECT, key="sandbox.filesystem.allowWrite"),
+        id="could-not-tell",
+    ),
+]
+
+
+@pytest.mark.parametrize(("where", "document", "admin", "approvals", "expected", "said"), WIDENING)
+def test_a_setting_that_widens_confinement_is_a_gap(
+    m: Machine,
+    where: str,
+    document: Any,
+    admin: bool,
+    approvals: int,
+    expected: str,
+    said: str | None,
+) -> None:
+    # The sandbox on and the deny rule in place, and one setting that widens them: a repository's
+    # `excludedCommands`, or an entry that reaches the record's directory, counts while the sandbox
+    # is not admin-required (Claude Code ignores those repository entries while it is), and the
+    # user's counts always, since it undoes the deny rule. An entry this row cannot judge is a gap
+    # said as such. Mutations (`mutations/`'s "the boundary row reads no excludedCommands" ->
+    # the two `excluded-commands` gaps go; "the boundary row reads no repository entry that widens"
+    # -> `local-allow-write`, `project-edit-allow` and `project-additional-directory-above` go; "the
+    # boundary row reads no user entry that widens" -> the four `user-` cases go; "the boundary row
+    # reads widening repository entries while admin-required" -> the two `-under-admin` cases are
+    # red; "the boundary row takes an entry it cannot judge for one that reaches nothing" ->
+    # `could-not-tell` warns; "the boundary row takes every entry for one that reaches the record"
+    # -> `allow-write-elsewhere` and `edit-allow-in-the-project` are red).
+    base = _merged(SANDBOX_ON, _deny(_rule(m.record_directory)))
+    if admin:
+        m.managed(ADMIN_REQUIRED)
+    written = document(m)
+    if where == "user":
+        m.user(_merged(base, written))
+    else:
+        m.user(base)
+        getattr(m, where)(written)
+    m.approvals(approvals)
+    row = m.row()
+    assert row.status == expected, row
+    if said is not None:
+        assert said in row.detail.split("; "), row.detail
+    else:
+        assert not any(
+            part.startswith((_PROJECT, _LOCAL, _USER)) for part in row.detail.split("; ")
+        ), row.detail
+
+
+@pytest.mark.parametrize("carried", ["project", "local"])
+def test_a_project_carrying_claude_code_settings_is_read_whatever_it_lists(
+    m: Machine, carried: str
+) -> None:
+    # `[stayfixed] agents` is the repository's to write, so a project that lists no `claude` and
+    # ships a Claude Code settings file is read all the same: listing `codex` alone must not be a
+    # way to silence the row. Mutation (`mutations/`'s "the boundary row skips a project that ships
+    # Claude Code settings for the agents it lists"): the row skips.
+    (m.root / CONFIG_FILE).write_text(
+        f'[stayfixed]\nversion = "{stayfixed.__version__}"\nstate = "installed"\n'
+        'agents = ["codex"]\n\n[project]\nname = "p"\n',
+        encoding="utf-8",
+    )
+    getattr(m, carried)({})
+    m.approvals(1)
+    assert m.row().status == RED
