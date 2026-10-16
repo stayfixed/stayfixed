@@ -3754,6 +3754,73 @@ reddens = [
   "tests/config/test_classes.py::test_a_refused_layer_note_carries_neither_its_value_nor_a_raw_key",
 ]
 
+# `class_of` asks the exact row first, so an exact row of another class under a wildcard makes one
+# key of the section settable by layers its siblings refuse.
+[[mutation]]
+name = "an exact row contradicts its section's wildcard"
+file = "src/stayfixed/config/classes.py"
+before = '        "paths.*": KeyClass.REPOSITORY_ONLY,'
+after = '''        "paths.*": KeyClass.REPOSITORY_ONLY,
+        "paths.bugs": KeyClass.GATE_PARAMETER,'''
+reddens = ["tests/config/test_classes.py::test_no_exact_key_contradicts_its_wildcard"]
+
+# Every budget is a gate's or a session's, never both: the owner sets only a session's.
+[[mutation]]
+name = "a budget is both a gate's and a session's"
+file = "src/stayfixed/config/classes.py"
+before = '''        "agents_md_lines",
+        "agents_md_words",'''
+after = '''        "agents_md_lines",
+        "memory_index_words",
+        "agents_md_words",'''
+reddens = ["tests/config/test_classes.py::test_the_budget_split_is_total_and_disjoint"]
+
+# `ORDER` alone decides which layer wins.
+[[mutation]]
+name = "the overlay's common and project layers swap places"
+file = "src/stayfixed/config/classes.py"
+before = "    LayerName.COMMON,\n    LayerName.PROJECT,"
+after = "    LayerName.PROJECT,\n    LayerName.COMMON,"
+reddens = ["tests/config/test_classes.py::test_the_layers_run_lowest_first"]
+
+# A limit of the platform is the shipped preset's alone: a repository raising it would raise what
+# a hook may print.
+[[mutation]]
+name = "the repository may set a key the plugin owns"
+file = "src/stayfixed/config/classes.py"
+before = "        KeyClass.PLUGIN_OWNED: frozenset({LayerName.PRESET}),"
+after = "        KeyClass.PLUGIN_OWNED: _REPOSITORY_SIDE,"
+reddens = ["tests/config/test_classes.py::test_which_layers_may_set_each_class"]
+
+# A refused layer contributes nothing even where no layer beneath it sets the key: its value
+# standing in for a missing one would be the refused value applied.
+[[mutation]]
+name = "a refused layer's value stands where nothing beneath it is set"
+file = "src/stayfixed/config/classes.py"
+before = """                notes.append(REFUSED_LAYER_NOTE.format(key=clipped(key), layer=layer.name))
+                continue"""
+after = """                notes.append(REFUSED_LAYER_NOTE.format(key=clipped(key), layer=layer.name))
+                if key in values:
+                    continue"""
+reddens = ["tests/config/test_classes.py::test_a_key_only_a_refused_layer_sets_has_no_value"]
+
+# A key with no class reaching `resolve` is its caller's defect, and is raised rather than
+# passed off as a refused layer.
+[[mutation]]
+name = "resolve notes an unknown key instead of raising"
+file = "src/stayfixed/config/classes.py"
+before = "            if layer.name not in ALLOWED[class_of(key)]:"
+after = "            if layer.name not in ALLOWED.get(CLASSES.get(key) or CLASSES.get(key.split('.')[0] + '.*'), frozenset()):"
+reddens = ["tests/config/test_classes.py::test_an_unknown_key_in_a_layer_is_a_key_error"]
+
+# A note names a layer by its value, which is the word a person reads.
+[[mutation]]
+name = "a layer's name reads as its identifier"
+file = "src/stayfixed/config/classes.py"
+before = '    MACHINE_FILE = "machine file"'
+after = '    MACHINE_FILE = "machine_file"'
+reddens = ["tests/config/test_classes.py::test_a_layer_reads_as_its_name"]
+
 # The owner's layer (`src/stayfixed/config/owner.py`): a session goes on through a machine file
 # that does not load, on the preset's personal values and guards, and says so; a command refuses.
 [[mutation]]

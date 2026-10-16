@@ -70,7 +70,7 @@ def exact_keys(table: Mapping[str, KeyClass]) -> set[str]:
     return {key for key in table if not key.endswith(".*")}
 
 
-# One row per key the plan's table names; a wildcard row is asked through a key it covers.
+# One row per key the class table names; a wildcard row is asked through a key it covers.
 TABLE_ROWS = [
     ("personal.reply_language", KeyClass.MACHINE_ONLY),
     ("personal.artifact_language", KeyClass.MACHINE_ONLY),
@@ -118,8 +118,9 @@ def _every_layer_but(*left_out: LayerName) -> frozenset[LayerName]:
 
 def test_every_schema_key_has_one_class() -> None:
     # A field added to a section is a key, and has a class before anything may set it.
-    # Proven by hand: a scratch `extra: str` on `Memory` reddens this with `KeyError:
-    # 'memory.extra'` (the report of the change that added the test pastes the run).
+    # No mutation: the defect is a field that does not exist yet, which no `before` line can
+    # name. Proven by hand instead: an `extra: str` field added to `Memory` reddens this with
+    # `KeyError: 'memory.extra'`, raised by `class_of`.
     for key in schema_keys():
         class_of(key)
     assert exact_keys(CLASSES) <= set(schema_keys()) | MACHINE_FILE_KEYS
@@ -128,6 +129,8 @@ def test_every_schema_key_has_one_class() -> None:
 def test_no_exact_key_contradicts_its_wildcard() -> None:
     # `class_of` asks the exact key first, so an exact row under a wildcard of another class
     # would make one field of a section settable where the rest are not, with nothing saying so.
+    # Mutation (`mutations/`'s "an exact row contradicts its section's wildcard"): a
+    # `paths.bugs` row of the gate class under `paths.*` reddens this.
     for key in exact_keys(CLASSES):
         wildcard = key.split(".")[0] + ".*"
         assert wildcard not in CLASSES or CLASSES[wildcard] is CLASSES[key]
@@ -136,6 +139,8 @@ def test_no_exact_key_contradicts_its_wildcard() -> None:
 def test_the_budget_split_is_total_and_disjoint() -> None:
     # Every budget is either a gate's, which the repository sets, or the session's, which the
     # owner may set too; one in neither would have no class, one in both two.
+    # Mutation (`mutations/`'s "a budget is both a gate's and a session's"): `memory_index_words`
+    # joins the gate budgets and the split is no longer disjoint.
     assert frozenset(Budgets.NAMES) == GATE_BUDGETS | SESSION_BUDGETS
     assert not GATE_BUDGETS & SESSION_BUDGETS
     for name in GATE_BUDGETS:
@@ -162,13 +167,16 @@ def test_a_key_with_no_class_is_a_key_error(key: str) -> None:
 
 
 def test_the_layers_run_lowest_first() -> None:
+    # Which layer wins is decided by this order alone. Mutation (`mutations/`'s "the overlay's
+    # common and project layers swap places"): the project's file would lose to the common one.
     assert ORDER == (PRESET, REPOSITORY, COMMON, PROJECT, MACHINE_SCOPE, MACHINE_FILE)
 
 
 def test_which_layers_may_set_each_class() -> None:
-    # The plan's ALLOWED, spelled out: the repository never sets a machine-only key, only the
-    # preset and the repository set a gate's or a repository's key, and only the preset sets a
-    # key the plugin owns.
+    # `ALLOWED`, spelled out: the repository never sets a machine-only key, only the preset and
+    # the repository set a gate's or a repository's key, and only the preset sets a key the
+    # plugin owns. Mutation (`mutations/`'s "the repository may set a key the plugin owns"): the
+    # plugin's class admits the repository too.
     assert dict(ALLOWED) == {
         KeyClass.MACHINE_ONLY: _every_layer_but(REPOSITORY),
         KeyClass.PREFERENCE: frozenset(ORDER),
@@ -212,6 +220,8 @@ def test_the_repository_cannot_set_a_machine_only_key() -> None:
 def test_a_key_only_a_refused_layer_sets_has_no_value() -> None:
     # Nothing beneath it: the key is absent from the resolution, so the caller's own default
     # applies, rather than the refused layer's value standing in for a missing one.
+    # Mutation (`mutations/`'s "a refused layer's value stands where nothing beneath it is set"):
+    # the repository's `1` comes back.
     got = resolve([Layer(REPOSITORY, {"native_caps.hook_output_chars": 1})])
     assert got.values == {} and got.provenance == {}
     assert got.notes == (
@@ -258,6 +268,9 @@ def test_merge_folds_lowest_first() -> None:
 
 
 def test_an_unknown_key_in_a_layer_is_a_key_error() -> None:
+    # The loader removes an unknown key, with a note of its own, before it resolves; one that
+    # reaches `resolve` is the caller's defect and must not pass as a refused layer. Mutation
+    # (`mutations/`'s "resolve notes an unknown key instead of raising"): no `KeyError`.
     with pytest.raises(KeyError):
         resolve([Layer(PRESET, {"memory.future": 1})])
 
@@ -267,7 +280,8 @@ def _names(layers: Iterable[LayerName]) -> list[str]:
 
 
 def test_a_layer_reads_as_its_name() -> None:
-    # The note names a layer by its value, so the value is the word a person reads.
+    # The note names a layer by its value, so the value is the word a person reads. Mutation
+    # (`mutations/`'s "a layer's name reads as its identifier"): `machine_file` reaches the note.
     assert _names(ORDER) == [
         "preset",
         "repository",
