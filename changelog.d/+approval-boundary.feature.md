@@ -12,5 +12,6 @@ not there byte for byte, or a setting widens them (a repository's `sandbox.exclu
 any `allowWrite`, `Edit` allow or `additionalDirectories` entry not shown, as text, to be a literal
 path outside the project and the record's directory), a warning before that, a warning while a
 repository's settings could still turn the sandbox off, and green only when managed settings make
-it admin-required. It reads `CLAUDE_CONFIG_DIR` only when run at a terminal, and says when it
-passed one over.
+it admin-required. A `~/` entry counts as safe only under every home it may mean, `HOME`
+included, and where `CLAUDE_CONFIG_DIR` names a user settings directory besides `~/.claude`,
+both are judged and the worse answer is reported, each with its file.

@@ -121,12 +121,14 @@ EMPTY_HOME = (
     "HOME is empty, so it names no home directory and there is no default for --home; set HOME "
     "to your home directory, or pass --home PATH"
 )
-# `CLAUDE_CONFIG_DIR` set where it is not read (`trust.boundary.user_settings`). `path` is the file
-# written, under the home the password database records: the machine's, not the repository's.
-CONFIG_DIR_PASSED_OVER = (
-    "CLAUDE_CONFIG_DIR is set and was not read, since standard input is not a terminal and a "
-    "repository's env block can set it for an agent's shell; the user settings were written to "
-    "{path}"
+# Where `CLAUDE_CONFIG_DIR` names a user settings directory besides the one this run wrote
+# (`trust.boundary.user_settings`). `path` is the variable's directory, which a repository may have
+# chosen, so it is printed through `printed.quoted`; nothing is written there.
+CONFIG_DIR_ELSEWHERE = (
+    "CLAUDE_CONFIG_DIR names another user settings directory, {path}, which setup does not write: "
+    "a repository's env block, direnv or mise can set that variable, and it may name another "
+    "program's settings.json; if your Claude Code sessions read that directory, copy the rules "
+    "this run added to {written} into its settings.json yourself"
 )
 
 
@@ -160,11 +162,12 @@ def run_setup(args: argparse.Namespace) -> Result:
         # user has none there; a file put under `HOME` instead would be one no hook reads.
         raise Failure(NO_MACHINE_HOME)
     # The user settings go where Claude Code reads them as `doctor` finds them: a file `--settings`
-    # names, `.claude` under a `--home` the person named, and otherwise the directory
-    # `user_settings` finds, `CLAUDE_CONFIG_DIR` only from a terminal.
+    # names, `.claude` under a `--home` the person named, and otherwise `.claude` under the home the
+    # password database records; a `CLAUDE_CONFIG_DIR` naming another directory is said, and never
+    # written (`trust.boundary.user_settings` says why).
     settings = Path(args.settings).expanduser() if args.settings else None
-    found = user_settings(os.environ) if settings is None and args.home is None else None
-    if found is not None:
+    found = user_settings(os.environ, None if args.home is None else home)
+    if settings is None and args.home is None:
         settings = _claude_settings(found, home)
     report = setup(
         args.preset or "recommended",
@@ -210,8 +213,8 @@ def run_setup(args: argparse.Namespace) -> Result:
             else "no overlay recorded",
             *report.notes,
             *(
-                [CONFIG_DIR_PASSED_OVER.format(path=written_to)]
-                if found is not None and found.ignored
+                [CONFIG_DIR_ELSEWHERE.format(path=quoted(str(found.chosen)), written=written_to)]
+                if found.chosen is not None
                 else []
             ),
         )

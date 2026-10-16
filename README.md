@@ -502,8 +502,10 @@ make the sandbox admin-required (`sandbox.allowUnsandboxedCommands = false` ther
 from Claude Code 2.1.285, a repository's widening settings are ignored); **green** only then. An
 entry of `sandbox.filesystem.allowWrite`, `permissions.additionalDirectories` or an `Edit` allow
 rule is safe only as a literal path outside the project and that directory — `~/.kube` and
-`/tmp/build` are; `**`, `~/.config` and `./build` are not — and every other entry is a gap the row
-names. With the sandbox on, an agent's shell cannot write the machine directory at all, so `setup`,
+`/tmp/build` are; `**`, `~/.config` and `./build` are not, and a `~/` entry must be clear under
+every home it may mean, `HOME` included — and every other entry is a gap the row names. Where
+`CLAUDE_CONFIG_DIR` names a user settings directory besides `~/.claude`, the row judges both and
+reports the worse, and `setup` writes only `~/.claude` and names the other for you. With the sandbox on, an agent's shell cannot write the machine directory at all, so `setup`,
 `trust revoke` and `memory index`'s refresh of an approval, run there, say a person must run them
 in their own terminal. `stayfixed uninstall` leaves these machine-wide rules:
 `[setup] ask_rules = false` takes the `ask` rules back, and the deny rule is yours to remove by

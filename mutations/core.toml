@@ -4757,39 +4757,39 @@ reddens = [
   "tests/setup/test_ask_rules.py::test_setup_never_writes_a_sandbox_key",
 ]
 
-# Claude Code's user settings directory as stayfixed reads it: `CLAUDE_CONFIG_DIR` only from a
-# terminal, since a repository's committed `env` block can set it for an agent's shell, and the
-# password database's home otherwise, never `HOME`.
+# Claude Code's user settings directories as stayfixed reads them: `.claude` under the password
+# database's home, never `HOME`'s, and the one `CLAUDE_CONFIG_DIR` names where it differs.
 
 [[mutation]]
 name = "the user settings directory ignores CLAUDE_CONFIG_DIR"
 file = "src/stayfixed/trust/boundary.py"
-before = "    if chosen and kinds.interactive():"
+before = "    chosen = Path(named) if named else None"
+after = "    chosen = None"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_a_claude_config_dir_alone_is_judged_where_the_home_has_none",
+  "tests/doctor/test_approval_boundary.py::test_with_claude_config_dir_both_directories_are_judged_and_the_worse_is_said[home]",
+  "tests/setup/test_commands.py::test_setup_writes_the_user_settings_under_the_database_home_and_names_another_directory[config-dir-elsewhere]",
+]
+
+[[mutation]]
+name = "the user settings directory takes CLAUDE_CONFIG_DIR spelling the home's own for another"
+file = "src/stayfixed/trust/boundary.py"
+before = "    if chosen is not None and directory is not None and _spelled(chosen) == _spelled(directory):"
 after = "    if False:"
 reddens = [
-  "tests/doctor/test_approval_boundary.py::test_the_user_settings_directory_follows_claude_config_dir_from_a_terminal",
-  "tests/setup/test_commands.py::test_setup_writes_the_user_settings_where_doctor_reads_them[config-dir-from-a-terminal]",
+  "tests/doctor/test_approval_boundary.py::test_a_claude_config_dir_naming_the_home_s_own_is_judged_once",
+  "tests/setup/test_commands.py::test_setup_writes_the_user_settings_under_the_database_home_and_names_another_directory[config-dir-is-the-home-s]",
 ]
 
 [[mutation]]
-name = "the user settings directory follows CLAUDE_CONFIG_DIR off a terminal"
-file = "src/stayfixed/trust/boundary.py"
-before = "    if chosen and kinds.interactive():"
-after = "    if chosen:"
-reddens = [
-  "tests/doctor/test_approval_boundary.py::test_off_a_terminal_claude_config_dir_is_not_read_and_is_named[home-settings]",
-  "tests/doctor/test_approval_boundary.py::test_off_a_terminal_claude_config_dir_is_not_read_and_is_named[no-home-settings]",
-  "tests/setup/test_commands.py::test_setup_writes_the_user_settings_where_doctor_reads_them[config-dir-off-a-terminal]",
-]
-
-[[mutation]]
-name = "the user settings directory is HOME's off CLAUDE_CONFIG_DIR"
+name = "the user settings directory is HOME's"
 file = "src/stayfixed/trust/boundary.py"
 before = "    base = home if home is not None else passwd_home()"
 after = "    base = home if home is not None else Path.home()"
 reddens = [
-  "tests/setup/test_commands.py::test_setup_writes_the_user_settings_where_doctor_reads_them[config-dir-off-a-terminal]",
-  "tests/setup/test_commands.py::test_setup_writes_the_user_settings_where_doctor_reads_them[homes-differ]",
+  "tests/setup/test_commands.py::test_setup_writes_the_user_settings_under_the_database_home_and_names_another_directory[config-dir-elsewhere]",
+  "tests/setup/test_commands.py::test_setup_writes_the_user_settings_under_the_database_home_and_names_another_directory[homes-differ]",
+  "tests/setup/test_commands.py::test_setup_writes_the_user_settings_under_the_database_home_and_names_another_directory[config-dir-is-the-home-s]",
 ]
 
 # A write the sandbox refuses: `EPERM`, as macOS's sandbox answers, and `EROFS`, a read-only

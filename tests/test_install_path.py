@@ -189,12 +189,11 @@ def _cli(walk: Walkthrough, *argv: str, tty: bool = False) -> subprocess.Complet
     env["PATH"] = f"{walk.bin}{os.pathsep}{env.get('PATH', '')}"
     env["CLAUDE_PLUGIN_ROOT"] = str(ROOT)
     env["CLAUDE_PLUGIN_DATA"] = str(walk.data)
-    # A user settings directory that is not there, so `doctor`'s `approval-boundary` row skips
-    # before it reads Claude Code's managed settings, which sit at a fixed system path no patch in
-    # this process reaches in the child; the row is held in
-    # `tests/doctor/test_approval_boundary.py`. The row reads the variable only from a terminal,
-    # which is why `_doctor` runs on a pseudo-terminal.
-    env["CLAUDE_CONFIG_DIR"] = str(walk.home / "no-claude-config-dir")
+    # `doctor`'s `approval-boundary` row in the child reads Claude Code's managed settings at their
+    # fixed system path, which no patch in this process reaches, and only reads it: no approval is
+    # recorded on this walk's machine, so whatever that file says the row is a warning or ok, never
+    # red. It judges every user settings directory there is, so no variable makes it skip; the row
+    # itself is held in `tests/doctor/test_approval_boundary.py`.
     # The launcher's own lines, with the password database answering the scratch home as `HOME`
     # does: off a terminal, that is where the machine owner's home is read (`tests/ownerhome.py`).
     command = [*stayfixed_argv(walk.home), *argv]
@@ -226,8 +225,7 @@ def _cli(walk: Walkthrough, *argv: str, tty: bool = False) -> subprocess.Complet
 
 def _doctor(walk: Walkthrough, *, root: Path | None = None) -> list[dict[str, str]]:
     """The nineteen rows, read back out of what `doctor --json` printed on the launcher's
-    stdout. Run on a pseudo-terminal, where `CLAUDE_CONFIG_DIR` is read (`_cli` says why it is
-    set)."""
+    stdout."""
     done = _cli(
         walk,
         "doctor",
@@ -238,7 +236,6 @@ def _doctor(walk: Walkthrough, *, root: Path | None = None) -> list[dict[str, st
         str(walk.home),
         "--machine",
         str(walk.machine),
-        tty=True,
     )
     assert done.stdout, done.stderr
     rows: list[dict[str, str]] = json.loads(done.stdout)["checks"]
@@ -662,16 +659,13 @@ def test_doctor_is_green_on_the_attached_fixture(tmp_path: Path) -> None:
     # against the checkout, so the row compares the three shipped files against the record
     # committed beside them and is green. A `files` back in this list means the
     # record went stale — `uv run python scripts/release.py hashes` is what refreshes it.
-    # `approval-boundary` skips because the walk names a user settings directory that is not there
-    # (`_cli` says why), which is that row's own skip arm, not one of this installation's.
+    # `approval-boundary` is judged against this walk's settings and warns, since no approval is
+    # recorded (`_cli` says what it reads).
     walk = _install_path(tmp_path)
     rows = _doctor(walk)
     assert [row["name"] for row in rows if row["status"] == RED] == []
-    assert [row["name"] for row in rows if row["status"] == SKIP] == [
-        "codex-hooks",
-        "ci-ref",
-        "approval-boundary",
-    ]
+    assert [row["name"] for row in rows if row["status"] == SKIP] == ["codex-hooks", "ci-ref"]
+    assert next(row for row in rows if row["name"] == "approval-boundary")["status"] == WARN
     assert next(row for row in rows if row["name"] == "files")["status"] == OK
 
 

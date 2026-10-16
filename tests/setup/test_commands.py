@@ -18,9 +18,8 @@ from stayfixed.cli import build_parser, discover_registrars, run
 from stayfixed.overlay.api import MARKETPLACE_MANIFEST, PLUGIN_MANIFEST
 from stayfixed.printed import quoted
 from stayfixed.setup.api import SetupReport
-from stayfixed.setup.commands import CONFIG_DIR_PASSED_OVER
+from stayfixed.setup.commands import CONFIG_DIR_ELSEWHERE
 from stayfixed.setup.machine import SANDBOXED
-from stayfixed.trust import kinds
 from tests.ownerhome import as_owner_home
 from tests.parserlimits import LONG_NUMBER, NESTED
 from tests.runners import Recorder
@@ -365,54 +364,47 @@ def test_setup_whose_named_machine_file_cannot_be_written_says_nothing_of_runnin
 
 
 @pytest.mark.parametrize(
-    ("terminal", "variable", "written", "passed_over"),
+    "variable",
     [
-        pytest.param(True, True, "cfg", False, id="config-dir-from-a-terminal"),
-        pytest.param(False, True, "owner", True, id="config-dir-off-a-terminal"),
-        pytest.param(False, False, "owner", False, id="homes-differ"),
+        pytest.param("cfg", id="config-dir-elsewhere"),
+        pytest.param(None, id="homes-differ"),
+        pytest.param("owner/.claude", id="config-dir-is-the-home-s"),
     ],
 )
-def test_setup_writes_the_user_settings_where_doctor_reads_them(
+def test_setup_writes_the_user_settings_under_the_database_home_and_names_another_directory(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
-    terminal: bool,
-    variable: bool,
-    written: str,
-    passed_over: bool,
+    variable: str | None,
 ) -> None:
-    # With neither `--home` nor `--settings`, the user settings go into the directory
-    # `trust.boundary.user_settings` finds, the one `doctor`'s approval-boundary row reads:
-    # `CLAUDE_CONFIG_DIR` from a terminal, and otherwise `.claude` under the home the password
-    # database records, never under `HOME` or a `CLAUDE_CONFIG_DIR` a repository's `env` block may
-    # have set for an agent's shell, which the line then names. Mutations (`mutations/`'s "setup
-    # writes the user settings under HOME whatever CLAUDE_CONFIG_DIR says" -> every case writes
-    # under `HOME`; "the user settings directory ignores CLAUDE_CONFIG_DIR" ->
-    # `config-dir-from-a-terminal` writes under the owner's home; "the user settings directory
-    # follows CLAUDE_CONFIG_DIR off a terminal" -> `config-dir-off-a-terminal` writes into it;
-    # "the user settings directory is HOME's off CLAUDE_CONFIG_DIR" -> the two off-terminal cases
-    # write under `HOME`; "setup does not say it passed CLAUDE_CONFIG_DIR over" ->
-    # `config-dir-off-a-terminal` says nothing of it).
+    # With neither `--home` nor `--settings`, the user settings go into `.claude` under the home
+    # the password database records, which `doctor`'s approval-boundary row always judges, never
+    # under `HOME`. A `CLAUDE_CONFIG_DIR` naming another directory is not written -- a repository's
+    # `env` block, direnv or mise may have set it, at another program's `settings.json` -- and the
+    # line names it, through `printed.quoted`, for the person to handle. Mutations (`mutations/`'s
+    # "setup writes the user settings under HOME" -> every case writes under `HOME`; "the user
+    # settings directory is HOME's" -> the same; "setup does not name the directory
+    # CLAUDE_CONFIG_DIR chose" -> `config-dir-elsewhere` says nothing of it; "the user settings
+    # directory takes CLAUDE_CONFIG_DIR spelling the home's own for another" ->
+    # `config-dir-is-the-home-s` names the home's own directory).
     places = {name: tmp_path / name for name in ("owner", "chosen", "cfg")}
     for place in places.values():
         place.mkdir()
     (places["owner"] / ".claude").mkdir()
     as_owner_home(monkeypatch, places["owner"])
     monkeypatch.setenv("HOME", str(places["chosen"]))
-    if variable:
-        monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(places["cfg"]))
-    monkeypatch.setattr(kinds, "interactive", lambda: terminal)
+    if variable is not None:
+        monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / variable))
     monkeypatch.setattr("stayfixed.setup.commands.subprocess_runner", lambda: Recorder())
     assert invoke(["setup", "--preset", "recommended", "--yes"]) == 0
-    files = {
-        "owner": places["owner"] / ".claude" / "settings.json",
-        "cfg": places["cfg"] / "settings.json",
-        "chosen": places["chosen"] / ".claude" / "settings.json",
-    }
-    assert {name for name, path in files.items() if path.exists()} == {written}
+    written = places["owner"] / ".claude" / "settings.json"
+    assert written.is_file()
+    assert not (places["cfg"] / "settings.json").exists()
+    assert not (places["chosen"] / ".claude").exists()
     said = capsys.readouterr().out
-    named = CONFIG_DIR_PASSED_OVER.format(path=files[written])
-    assert (named in said) is passed_over, said
+    named = CONFIG_DIR_ELSEWHERE.format(path=quoted(str(places["cfg"])), written=written)
+    assert (named in said) is (variable == "cfg"), said
+    assert ("CLAUDE_CONFIG_DIR" in said) is (variable == "cfg"), said
 
 
 @pytest.mark.parametrize("refused", ["machine-file", "settings-file", "settings-directory"])

@@ -3067,7 +3067,7 @@ reddens = [
 [[mutation]]
 name = "the boundary row names no gap"
 file = "src/stayfixed/doctor/boundary.py"
-before = "        detail = \"; \".join((lead, *gaps, *widened, *unread, *of_the_variable))"
+before = "        detail = \"; \".join((lead, *gaps, *widened, *unread))"
 after = "        detail = lead"
 reddens = [
   "tests/doctor/test_approval_boundary.py::test_a_gap_names_the_missing_setting_and_what_it_stops",
@@ -3095,21 +3095,10 @@ reddens = [
 [[mutation]]
 name = "the boundary row asks a machine with no Claude Code"
 file = "src/stayfixed/doctor/boundary.py"
-before = "    if directory is None or not fsops.is_dir(directory):"
-after = "    if directory is None:"
+before = "        if directory is not None and fsops.is_dir(directory)"
+after = "        if directory is not None"
 reddens = [
   "tests/doctor/test_approval_boundary.py::test_the_row_skips_without_claude_code",
-  "tests/doctor/test_approval_boundary.py::test_off_a_terminal_claude_config_dir_is_not_read_and_is_named[no-home-settings]",
-]
-
-[[mutation]]
-name = "the boundary row does not say it passed CLAUDE_CONFIG_DIR over"
-file = "src/stayfixed/doctor/boundary.py"
-before = "    of_the_variable = (IGNORED_CONFIG_DIR,) if ignored else ()"
-after = "    of_the_variable = ()"
-reddens = [
-  "tests/doctor/test_approval_boundary.py::test_off_a_terminal_claude_config_dir_is_not_read_and_is_named[home-settings]",
-  "tests/doctor/test_approval_boundary.py::test_off_a_terminal_claude_config_dir_is_not_read_and_is_named[no-home-settings]",
 ]
 
 [[mutation]]
@@ -3223,7 +3212,7 @@ reddens = [
 [[mutation]]
 name = "the boundary row reads no repository entry that widens"
 file = "src/stayfixed/doctor/boundary.py"
-before = "            widened.extend(_widened(layer, home, project_root, record))"
+before = "            widened.extend(_widened(layer, homes, project_root, record))"
 after = "            pass"
 reddens = [
   "tests/doctor/test_approval_boundary.py::test_a_setting_that_widens_confinement_is_a_gap_unless_shown_safe[the-record-directory]",
@@ -3236,7 +3225,7 @@ reddens = [
 [[mutation]]
 name = "the boundary row reads no user entry that widens"
 file = "src/stayfixed/doctor/boundary.py"
-before = "    widened.extend(_widened(user, home, project_root, record))"
+before = "    widened.extend(_widened(user, homes, project_root, record))"
 after = "    pass"
 reddens = [
   "tests/doctor/test_approval_boundary.py::test_a_setting_that_widens_confinement_is_a_gap_unless_shown_safe[user-relative]",
@@ -3248,8 +3237,8 @@ reddens = [
 [[mutation]]
 name = "the boundary row takes every entry for a gap"
 file = "src/stayfixed/doctor/boundary.py"
-before = "    folded = _folded(place)\n    return not any("
-after = "    folded = _folded(place)\n    return False and not any("
+before = "    return not any(_related(place, held) for held in (*project, *record))"
+after = "    return False"
 reddens = [
   "tests/doctor/test_approval_boundary.py::test_a_setting_that_widens_confinement_is_a_gap_unless_shown_safe[home-kube]",
   "tests/doctor/test_approval_boundary.py::test_a_setting_that_widens_confinement_is_a_gap_unless_shown_safe[tmp-build]",
@@ -3305,7 +3294,7 @@ reddens = [
 name = "the boundary row reads a relative entry as absolute"
 file = "src/stayfixed/doctor/boundary.py"
 before = "    else:\n        return None\n    if any(part in NOT_A_NAME"
-after = "    else:\n        base, rest = \"\", entry.removeprefix(\"./\")\n    if any(part in NOT_A_NAME"
+after = "    else:\n        bases, rest = [\"\"], entry.removeprefix(\"./\")\n    if any(part in NOT_A_NAME"
 reddens = [
   "tests/doctor/test_approval_boundary.py::test_a_setting_that_widens_confinement_is_a_gap_unless_shown_safe[relative]",
   "tests/doctor/test_approval_boundary.py::test_a_setting_that_widens_confinement_is_a_gap_unless_shown_safe[dot-relative]",
@@ -3317,8 +3306,8 @@ reddens = [
 [[mutation]]
 name = "the boundary row takes an entry in the project for one outside it"
 file = "src/stayfixed/doctor/boundary.py"
-before = "    return not any(_related(folded, held) for held in (*project, *record))"
-after = "    return not any(_related(folded, held) for held in record)"
+before = "    return not any(_related(place, held) for held in (*project, *record))"
+after = "    return not any(_related(place, held) for held in record)"
 reddens = [
   "tests/doctor/test_approval_boundary.py::test_a_setting_that_widens_confinement_is_a_gap_unless_shown_safe[inside-the-project]",
   "tests/doctor/test_approval_boundary.py::test_a_setting_that_widens_confinement_is_a_gap_unless_shown_safe[above-the-project]",
@@ -3348,8 +3337,8 @@ reddens = [
 [[mutation]]
 name = "the boundary row judges a key by one entry"
 file = "src/stayfixed/doctor/boundary.py"
-before = "        if not all(_safe(entry, key, home, project, record) for entry in listed)"
-after = "        if listed and not any(_safe(entry, key, home, project, record) for entry in listed)"
+before = "        if not all(_safe(entry, key, homes, project, record) for entry in listed)"
+after = "        if listed and not any(_safe(entry, key, homes, project, record) for entry in listed)"
 reddens = [
   "tests/doctor/test_approval_boundary.py::test_a_setting_that_widens_confinement_is_a_gap_unless_shown_safe[one-safe-one-not]",
 ]
@@ -3375,8 +3364,8 @@ reddens = [
 [[mutation]]
 name = "the boundary row asks the filesystem about an entry"
 file = "src/stayfixed/doctor/boundary.py"
-before = "    return f\"{base}/{rest}\""
-after = "    return str(fsops.resolved(Path(f\"{base}/{rest}\")))"
+before = "    return [f\"{base}/{rest}\" for base in bases]"
+after = "    return [str(fsops.resolved(Path(f\"{base}/{rest}\"))) for base in bases]"
 reddens = [
   "tests/doctor/test_approval_boundary.py::test_an_entry_is_read_without_asking_the_filesystem",
 ]
@@ -3406,4 +3395,47 @@ before = "import os\nimport posixpath\n"
 after = "import os\nimport posixpath\nimport re\n"
 reddens = [
   "tests/doctor/test_approval_boundary.py::test_the_row_runs_no_regular_expression_on_what_a_settings_file_holds",
+]
+
+# A `~/` entry is safe only under every home it may mean, and where `CLAUDE_CONFIG_DIR` names a
+# user settings directory besides the home's, both are judged and the worse is said.
+
+[[mutation]]
+name = "the boundary row reads a ~/ entry under the password database's home alone"
+file = "src/stayfixed/doctor/boundary.py"
+before = "    if named is not None:\n        homes.append("
+after = "    if False:\n        homes.append("
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_a_setting_that_widens_confinement_is_a_gap_unless_shown_safe[home-elsewhere]",
+  "tests/doctor/test_approval_boundary.py::test_a_setting_that_widens_confinement_is_a_gap_unless_shown_safe[home-empty]",
+]
+
+[[mutation]]
+name = "the boundary row places a ~/ entry under a HOME that names no directory"
+file = "src/stayfixed/doctor/boundary.py"
+before = "        homes.append(Path(named) if os.path.isabs(named) else None)"
+after = "        homes.append(Path(named))"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_a_setting_that_widens_confinement_is_a_gap_unless_shown_safe[home-empty]",
+]
+
+[[mutation]]
+name = "the boundary row judges one user settings directory alone"
+file = "src/stayfixed/doctor/boundary.py"
+before = "    if found.chosen is not None:\n        directories.append((found.chosen, CHOSEN_LABEL))"
+after = "    if False:\n        directories.append((found.chosen, CHOSEN_LABEL))"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_a_claude_config_dir_alone_is_judged_where_the_home_has_none",
+  "tests/doctor/test_approval_boundary.py::test_with_claude_config_dir_both_directories_are_judged_and_the_worse_is_said[home]",
+  "tests/doctor/test_approval_boundary.py::test_with_claude_config_dir_both_directories_are_judged_and_the_worse_is_said[chosen]",
+]
+
+[[mutation]]
+name = "the boundary row reports the better of two answers"
+file = "src/stayfixed/doctor/boundary.py"
+before = "    worst = max(SEVERITY[row.status] for row, _ in judged)"
+after = "    worst = min(SEVERITY[row.status] for row, _ in judged)"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_with_claude_config_dir_both_directories_are_judged_and_the_worse_is_said[home]",
+  "tests/doctor/test_approval_boundary.py::test_with_claude_config_dir_both_directories_are_judged_and_the_worse_is_said[chosen]",
 ]

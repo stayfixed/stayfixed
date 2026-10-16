@@ -45,10 +45,13 @@ description: Configure the machine for stayfixed — the preset, the personal pa
    for the same before any approval, and a warning while all holds until managed settings make the
    sandbox admin-required (`sandbox.allowUnsandboxedCommands = false` there; from Claude Code
    2.1.285 a repository's widening settings are then ignored); green only then. An entry of
-   `sandbox.filesystem.allowWrite`, `permissions.additionalDirectories` or an `Edit` allow rule is
-   safe only as a literal path outside the project and the trust record's directory, `/…` or `~/…`
-   (`//…` or `~/…` in an `Edit` rule), of letters, digits, `.`, `_`, `-` and `/`; every other entry
-   is a gap the row names by key and file.
+   `sandbox.filesystem.allowWrite`, `permissions.additionalDirectories` or a file-edit allow rule
+   is safe only as a literal path outside the project and the trust record's directory, `/…` or
+   `~/…` (`//…` or `~/…` in a file-edit rule; a `~/` one only where it stays clear under every home
+   it may mean, `HOME` included), of letters, digits, `.`, `_`, `-` and `/`; every other entry is a
+   gap the row names by key and file. Where `CLAUDE_CONFIG_DIR` names a user settings directory
+   besides `~/.claude`, the row judges both and reports the worse, and `setup` writes only
+   `~/.claude` and names the other for the user to handle.
    With the sandbox on, the agent's shell cannot write the machine directory at all: when `setup`,
    `trust revoke` or `memory index` says a person must run it in their own terminal, outside the
    agent's sandbox, relay that sentence and stop — never retry it outside the sandbox yourself.

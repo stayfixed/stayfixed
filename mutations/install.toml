@@ -2390,25 +2390,26 @@ reddens = [
   "tests/setup/test_setup.py::test_a_settings_directory_that_cannot_be_written_is_refused_before_the_machine_file",
 ]
 
-# The user settings go where `doctor` reads them: `trust.boundary.user_settings`' directory when
-# neither `--home` nor `--settings` names one.
+# The user settings go where `doctor` always reads them, `.claude` under the password database's
+# home, when neither `--home` nor `--settings` names one; another directory
+# `CLAUDE_CONFIG_DIR` names is said and not written.
 
 [[mutation]]
-name = "setup writes the user settings under HOME whatever CLAUDE_CONFIG_DIR says"
+name = "setup writes the user settings under HOME"
 file = "src/stayfixed/setup/commands.py"
-before = "    if found is not None:\n        settings = _claude_settings(found, home)"
+before = "    if settings is None and args.home is None:\n        settings = _claude_settings(found, home)"
 after = "    if False:\n        settings = _claude_settings(found, home)"
 reddens = [
-  "tests/setup/test_commands.py::test_setup_writes_the_user_settings_where_doctor_reads_them[config-dir-from-a-terminal]",
-  "tests/setup/test_commands.py::test_setup_writes_the_user_settings_where_doctor_reads_them[config-dir-off-a-terminal]",
-  "tests/setup/test_commands.py::test_setup_writes_the_user_settings_where_doctor_reads_them[homes-differ]",
+  "tests/setup/test_commands.py::test_setup_writes_the_user_settings_under_the_database_home_and_names_another_directory[config-dir-elsewhere]",
+  "tests/setup/test_commands.py::test_setup_writes_the_user_settings_under_the_database_home_and_names_another_directory[homes-differ]",
+  "tests/setup/test_commands.py::test_setup_writes_the_user_settings_under_the_database_home_and_names_another_directory[config-dir-is-the-home-s]",
 ]
 
 [[mutation]]
-name = "setup does not say it passed CLAUDE_CONFIG_DIR over"
+name = "setup does not name the directory CLAUDE_CONFIG_DIR chose"
 file = "src/stayfixed/setup/commands.py"
-before = "                if found is not None and found.ignored"
+before = "                if found.chosen is not None"
 after = "                if False"
 reddens = [
-  "tests/setup/test_commands.py::test_setup_writes_the_user_settings_where_doctor_reads_them[config-dir-off-a-terminal]",
+  "tests/setup/test_commands.py::test_setup_writes_the_user_settings_under_the_database_home_and_names_another_directory[config-dir-elsewhere]",
 ]

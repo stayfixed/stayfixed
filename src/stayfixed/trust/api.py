@@ -16,12 +16,12 @@ approve`'s own refusal uses.
 
 The approval boundary's spellings (`boundary`) are read by two consumers that must not drift apart:
 `setup`, which writes `deny_rules` over the record's directory, writes the user settings in the
-directory `user_settings` finds, and names `managed_settings` in what it prints, and `doctor`'s
-`approval-boundary` row, which reads the settings layers through `managed_settings`,
-`MANAGED_DROP_INS` and `user_settings` (whose `UserSettings` names `CONFIG_DIR_VARIABLE` when it
-was passed over), judges the sandbox by `SANDBOX`, `ENABLED` and `UNSANDBOXED_ALLOWED`, and counts
-those same `deny_rules`. `sandbox_refused` is how `setup` and `memory` tell a write an agent's
-sandbox refused, and `SandboxedWrite` is the record's own refusal of one.
+home's directory `user_settings` finds and names the one `CONFIG_DIR_VARIABLE` chose, and names
+`managed_settings` in what it prints, and `doctor`'s `approval-boundary` row, which reads the
+settings layers through `managed_settings`, `MANAGED_DROP_INS` and each directory `user_settings`
+(`UserSettings`) finds, judges the sandbox by `SANDBOX`, `ENABLED` and `UNSANDBOXED_ALLOWED`, and
+counts those same `deny_rules`. `sandbox_refused` is how `setup` and `memory` tell a write an
+agent's sandbox refused, and `SandboxedWrite` is the record's own refusal of one.
 """
 
 from __future__ import annotations

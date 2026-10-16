@@ -322,6 +322,13 @@ PROSE = {
     ("src/stayfixed/doctor/entries.py", "claude"): 2,
     # The refusal for a home directory whose `.claude` the link walk cannot follow.
     ("src/stayfixed/memory/worktree.py", "claude"): 1,
+    # The sentences said where Claude Code's sandbox refused a write to the machine directory or
+    # the user settings, and `setup`'s naming of the directory `CLAUDE_CONFIG_DIR` chose: each
+    # names the harness to a person, and none is a fact the code acts on.
+    ("src/stayfixed/memory/commands.py", "claude"): 1,
+    ("src/stayfixed/setup/commands.py", "claude"): 1,
+    ("src/stayfixed/setup/machine.py", "claude"): 1,
+    ("src/stayfixed/trust/record.py", "claude"): 1,
     # The commit-trailer guard's names of tools that sign commits as authors: the agent as an
     # author of a commit, not as a harness stayfixed runs under.
     ("src/stayfixed/guards/commit.py", "claude"): 2,

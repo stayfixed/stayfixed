@@ -5,11 +5,12 @@ An approval holds against what a repository commits; against an agent that write
 itself it holds only while the harness stops that write (`trust.boundary` says what stops it, and
 how that was measured). So the row reads this project's effective Claude Code settings, in the
 harness's own precedence — managed settings with their drop-ins, then the project's
-`.claude/settings.local.json`, then its `.claude/settings.json`, then the user's file in the
-directory `trust.boundary.user_settings` finds (`CLAUDE_CONFIG_DIR` only from a terminal, since a
-committed `env` block can set it for an agent's shell) — and answers three questions: is the sandbox
-on for this project; do the `permissions.deny` rules `setup` writes over the record's directory
-stand, byte for byte; and does any setting widen what those two confine.
+`.claude/settings.local.json`, then its `.claude/settings.json`, then the user's file — and
+answers, once for each user settings directory `trust.boundary.user_settings` finds (`.claude`
+under the home, and the one `CLAUDE_CONFIG_DIR` names where it differs, since nothing tells which a
+person chose), reporting the worse answer and saying each with its file, three questions: is the
+sandbox on for this project; do the `permissions.deny` rules `setup` writes over the record's
+directory stand, byte for byte; and does any setting widen what those two confine.
 
 - **Whether the sandbox is on** is the highest layer's `sandbox.enabled`. While the sandbox is
   admin-required, which only managed settings make it (`sandbox.allowUnsandboxedCommands = false`
@@ -30,8 +31,10 @@ stand, byte for byte; and does any setting widen what those two confine.
   condition `_safe` asks holds: a literal path of letters, digits, `.`, `_`, `-`, `~` and `/` with
   no `.`, `..` or empty component; anchored outside the working directory as the documentation
   anchors it for its key (a sandbox path list's or `additionalDirectories`' `/x` is absolute, an
-  `Edit` rule's `//x` is, and `~/x` is under the home for both, while an `Edit` rule's `/x` is the
-  project's and a relative path is the working directory's for both); outside the project, its
+  `Edit` rule's `//x` is, and `~/x` is under the home for both — under every home it may mean:
+  the password database's, the `--home` given, and `HOME`, which Claude Code expands `~` from —
+  while an `Edit` rule's `/x` is the project's and a relative path is the working directory's for
+  both); outside the project, its
   root neither held nor holding it; and neither either spelling of the record's directory (as
   named, and resolved by stayfixed from its own machine path), nor above it, nor inside it —
   compared in NFC and case-folded on macOS. Every other entry is a gap: there is no class of entry
@@ -136,13 +139,14 @@ GUARDED = (
     "the sandbox is on and admin-required, and {rule} denies writes to the trust record's directory"
 )
 NOT_READ = "{label} is not JSON and was read as absent"
-# `CLAUDE_CONFIG_DIR` set where it is not read: off a terminal, where a repository's committed `env`
-# block may have set it for an agent's shell (`trust.boundary.user_settings`).
-IGNORED_CONFIG_DIR = (
-    f"{CONFIG_DIR_VARIABLE} is set and was not read, since standard input is not a terminal and a "
-    f"repository's env block can set it for an agent's shell; the user settings read are "
-    f"~/{PROJECT_SETTINGS} under the home the password database records"
-)
+# Where `CLAUDE_CONFIG_DIR` names a user settings directory besides the home's, each is judged
+# (`trust.boundary.user_settings` says why), and each answer is said as judged with its file.
+JUDGED_WITH = "judged with {label}: {detail}"
+USER_LABEL = f"~/{PROJECT_SETTINGS}"
+CHOSEN_LABEL = f"${CONFIG_DIR_VARIABLE}/{USER_FILE}"
+# How bad each answer is, for reporting the worse of two: a directory skipped as absent is the
+# least, so the one that was judged speaks.
+SEVERITY = {SKIP: 0, OK: 1, WARN: 2, RED: 3}
 # The remedies.
 ADD_THE_BOUNDARY = (
     "run `stayfixed setup --approval-boundary`, which adds the deny rule and prints the sandbox "
@@ -302,44 +306,62 @@ def _related(place: str, held: str) -> bool:
     return place == held or place.startswith(held + "/") or held.startswith(place + "/")
 
 
-def _anchored(entry: str, key: str, home: Path | None) -> str | None:
-    """The absolute path `entry` names under `key`'s anchoring, as text, when it is a literal
-    anchored outside the working directory; `None` for every other entry. No filesystem call."""
+def _homes(context: Context) -> list[Path | None]:
+    """Every home a `~/` entry may be read under: the password database's, the `--home` given, and
+    `HOME`, which Claude Code expands `~` from, where it is set; `None` stands for a `HOME` that
+    names no absolute directory, under which no `~/` entry can be placed."""
+    homes: list[Path | None] = [home for home in (passwd_home(), context.home) if home is not None]
+    named = context.env.get("HOME")
+    if named is not None:
+        homes.append(Path(named) if os.path.isabs(named) else None)
+    return list(dict.fromkeys(homes)) or [None]
+
+
+def _anchored(entry: str, key: str, homes: Sequence[Path | None]) -> list[str] | None:
+    """Every absolute path `entry` may name under `key`'s anchoring, as text — one, or one per home
+    for a `~/` entry — when it is a literal anchored outside the working directory; `None` for
+    every other entry. No filesystem call."""
     if not set(entry) <= ALLOWED:
         return None
     if entry.startswith(ABSOLUTE[key]):
-        base, rest = "", entry[len(ABSOLUTE[key]) :]
-    elif entry.startswith(HOME) and home is not None:
-        base, rest = home.as_posix().rstrip("/"), entry[len(HOME) :]
+        bases, rest = [""], entry[len(ABSOLUTE[key]) :]
+    elif entry.startswith(HOME) and None not in homes:
+        bases = [home.as_posix().rstrip("/") for home in homes if home is not None]
+        rest = entry[len(HOME) :]
     else:
         return None
     if any(part in NOT_A_NAME for part in rest.split("/")):
         return None
-    return f"{base}/{rest}"
+    return [f"{base}/{rest}" for base in bases]
+
+
+def _clear(place: str, project: Sequence[str], record: Sequence[str]) -> bool:
+    """Whether `place`, folded, is related to none of the project root's spellings and none of the
+    record directory's."""
+    return not any(_related(place, held) for held in (*project, *record))
 
 
 def _safe(
     entry: str | None,
     key: str,
-    home: Path | None,
+    homes: Sequence[Path | None],
     project: Sequence[str],
     record: Sequence[str],
 ) -> bool:
     """Whether `entry` of `key` is shown, as text, to lie outside the project and clear of the
-    record's directory: a literal anchored outside the working directory, related to none of the
-    project root's spellings and none of the record directory's (each folded). A bare `Edit`
-    (`None`) allows every edit and never is, and with no record directory to compare nothing is."""
+    record's directory: a literal anchored outside the working directory, clear under every home
+    a `~/` may mean. A bare `Edit` (`None`) allows every edit and never is, and with no record
+    directory to compare nothing is."""
     if entry is None or not record:
         return False
-    place = _anchored(entry, key, home)
-    if place is None:
+    places = _anchored(entry, key, homes)
+    if places is None:
         return False
-    folded = _folded(place)
-    return not any(_related(folded, held) for held in (*project, *record))
+    return all(_clear(_folded(place), project, record) for place in places)
 
 
 def _widened(
-    layer: _Layer, home: Path | None, project: Sequence[str], record: Sequence[str]
+    layer: _Layer, homes: Sequence[Path | None], project: Sequence[str], record: Sequence[str]
 ) -> list[str]:
     """The gaps `layer`'s widening keys open: one for each key holding an entry not shown safe."""
     allowed = _strings(_table(layer.document, "permissions", "allow"))
@@ -357,7 +379,7 @@ def _widened(
     return [
         WIDENED.format(label=layer.label, key=key)
         for key, listed in entries.items()
-        if not all(_safe(entry, key, home, project, record) for entry in listed)
+        if not all(_safe(entry, key, homes, project, record) for entry in listed)
     ]
 
 
@@ -367,15 +389,6 @@ def _carries_settings(root: Path) -> bool:
         fsops.exists(root / relative) or fsops.is_symlink(root / relative)
         for relative in (PROJECT_SETTINGS, LOCAL_SETTINGS)
     )
-
-
-def _user_directory(context: Context) -> tuple[Path | None, str, bool]:
-    """Where the user's settings live (`None` for no home), how the row names the file, and
-    whether a `CLAUDE_CONFIG_DIR` was passed over."""
-    found = user_settings(context.env, context.home)
-    if found.from_variable:
-        return found.directory, f"${CONFIG_DIR_VARIABLE}/{USER_FILE}", False
-    return found.directory, f"~/{PROJECT_SETTINGS}", found.ignored
 
 
 def _lists_claude(context: Context) -> bool:
@@ -391,13 +404,33 @@ def _spellings(*paths: Path) -> list[str]:
 
 
 def approval_boundary(context: Context) -> Row:
-    """The row (the module docstring says what it reads and how it answers)."""
+    """The row (the module docstring says what it reads and how it answers): each user settings
+    directory `trust.boundary.user_settings` finds judged, and the worse answer reported, each
+    answer said with the file it was judged with where there are two."""
     if not _lists_claude(context) and not _carries_settings(context.root):
         return Row(SKIP, NOT_LISTED)
-    directory, user_label, ignored = _user_directory(context)
-    of_the_variable = (IGNORED_CONFIG_DIR,) if ignored else ()
-    if directory is None or not fsops.is_dir(directory):
-        return Row(SKIP, "; ".join((NO_CLAUDE_CODE, *of_the_variable)))
+    found = user_settings(context.env, context.home)
+    directories = [(found.directory, USER_LABEL)]
+    if found.chosen is not None:
+        directories.append((found.chosen, CHOSEN_LABEL))
+    judged = [
+        (_judged(context, directory, label), label)
+        for directory, label in directories
+        if directory is not None and fsops.is_dir(directory)
+    ]
+    if not judged:
+        return Row(SKIP, NO_CLAUDE_CODE)
+    if len(judged) == 1:
+        return judged[0][0]
+    worst = max(SEVERITY[row.status] for row, _ in judged)
+    status = next(row.status for row, _ in judged if SEVERITY[row.status] == worst)
+    detail = "; ".join(JUDGED_WITH.format(label=label, detail=row.detail) for row, label in judged)
+    remedy = "; ".join(dict.fromkeys(row.remedy for row, _ in judged if row.remedy))
+    return Row(status, detail, remedy)
+
+
+def _judged(context: Context, directory: Path, user_label: str) -> Row:
+    """The row's answer with the user's settings read from `directory`, named `user_label`."""
     managed, managed_unread = _managed()
     local = _read(context.root / LOCAL_SETTINGS, LOCAL_SETTINGS)
     project = _read(context.root / PROJECT_SETTINGS, PROJECT_SETTINGS)
@@ -432,7 +465,7 @@ def approval_boundary(context: Context) -> Row:
     wanted = deny_rules(path.parent, real) if path is not None and real is not None else ()
     rules = _deny_rules((managed, local, project, user))
     missing = [rule for rule in wanted if rule not in rules] if wanted else [NO_RECORD_RULE]
-    home = context.home if context.home is not None else passwd_home()
+    homes = _homes(context)
     # Both spellings of the record's directory and of the project root, each computed from
     # stayfixed's own paths, never from an entry.
     record = _spellings(path.parent, real) if path is not None and real is not None else []
@@ -452,8 +485,8 @@ def approval_boundary(context: Context) -> Row:
         for layer in (local, project):
             if _strings(_sandbox(layer, EXCLUDED_COMMANDS)):
                 widened.append(EXCLUDED.format(label=layer.label))
-            widened.extend(_widened(layer, home, project_root, record))
-    widened.extend(_widened(user, home, project_root, record))
+            widened.extend(_widened(layer, homes, project_root, record))
+    widened.extend(_widened(user, homes, project_root, record))
     unread = [
         NOT_READ.format(label=layer.label)
         for layer in (*managed_unread, local, project, user)
@@ -467,11 +500,11 @@ def approval_boundary(context: Context) -> Row:
             *([ADD_THE_BOUNDARY] if gaps else []),
             *([NARROW_THE_SETTINGS] if widened else []),
         ]
-        detail = "; ".join((lead, *gaps, *widened, *unread, *of_the_variable))
+        detail = "; ".join((lead, *gaps, *widened, *unread))
         return Row(status, detail, "; ".join(remedies))
     if not admin:
         remedy = MAKE_IT_ADMIN.format(managed=managed_path or NO_MANAGED_PATH)
-        return Row(WARN, "; ".join((lead, NOT_ADMIN, *unread, *of_the_variable)), remedy)
+        return Row(WARN, "; ".join((lead, NOT_ADMIN, *unread)), remedy)
     rule = " and ".join(wanted)
-    detail = "; ".join((lead, GUARDED.format(rule=rule), *unread, *of_the_variable))
+    detail = "; ".join((lead, GUARDED.format(rule=rule), *unread))
     return Row(WARN, detail, MAKE_IT_JSON) if unread else Row(OK, detail)

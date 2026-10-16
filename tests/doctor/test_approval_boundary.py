@@ -26,7 +26,6 @@ from stayfixed.doctor import boundary
 from stayfixed.doctor.api import OK, RED, SKIP, WARN, Check
 from stayfixed.doctor.checks import run_checks
 from stayfixed.harnesses import CLAUDE
-from stayfixed.trust import kinds
 from stayfixed.trust.api import approve, managed_settings
 from tests.runners import Recorder
 
@@ -289,13 +288,11 @@ def test_the_row_skips_without_claude_code(m: Machine) -> None:
     assert (row.status, row.detail, row.remedy) == (SKIP, boundary.NO_CLAUDE_CODE, "")
 
 
-def test_the_user_settings_directory_follows_claude_config_dir_from_a_terminal(
-    m: Machine, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # Claude Code reads the user's settings from `CLAUDE_CONFIG_DIR` when it is set, and so does
-    # the row for a person at a terminal: a home with no `.claude` is not skipped then. Mutation
-    # (`mutations/`'s "the user settings directory ignores CLAUDE_CONFIG_DIR"): the row skips.
-    monkeypatch.setattr(kinds, "interactive", lambda: True)
+def test_a_claude_config_dir_alone_is_judged_where_the_home_has_none(m: Machine) -> None:
+    # Claude Code reads the user's settings from `CLAUDE_CONFIG_DIR` when it is set, so a home with
+    # no `.claude` is not skipped then: the variable's directory is judged, alone, and said as
+    # nothing else. Mutation (`mutations/`'s "the user settings directory ignores
+    # CLAUDE_CONFIG_DIR"): the row skips.
     (m.home / ".claude").rmdir()
     config = m.tmp / "config-dir"
     _write(config / "settings.json", _merged(ADMIN_REQUIRED, _deny(_rule(m.record_directory))))
@@ -304,44 +301,64 @@ def test_the_user_settings_directory_follows_claude_config_dir_from_a_terminal(
     m.approvals(1)
     row = m.row()
     assert row.status == OK, row
-    assert boundary.IGNORED_CONFIG_DIR not in row.detail
+    assert row.detail == "; ".join(
+        (boundary.HELD.format(count=1), boundary.GUARDED.format(rule=_rule(m.record_directory)))
+    )
 
 
-@pytest.mark.parametrize(
-    "claude_code_here", [True, False], ids=["home-settings", "no-home-settings"]
-)
-def test_off_a_terminal_claude_config_dir_is_not_read_and_is_named(
-    m: Machine, monkeypatch: pytest.MonkeyPatch, claude_code_here: bool
+@pytest.mark.parametrize("lacking", ["home", "chosen"])
+def test_with_claude_config_dir_both_directories_are_judged_and_the_worse_is_said(
+    m: Machine, lacking: str
 ) -> None:
-    # A repository's committed `env` block can set `CLAUDE_CONFIG_DIR` for an agent's shell, so off
-    # a terminal a decoy directory holding every setting is not read: the row reads the home's
-    # `.claude`, and says the variable was passed over. Mutations (`mutations/`'s "the user
-    # settings directory follows CLAUDE_CONFIG_DIR off a terminal" -> the decoy is read and the
-    # row is green; "the boundary row does not say it passed CLAUDE_CONFIG_DIR over" -> both
-    # details lack the sentence).
-    monkeypatch.setattr(kinds, "interactive", lambda: False)
-    decoy = m.tmp / "decoy"
-    _write(decoy / "settings.json", _merged(ADMIN_REQUIRED, _deny(_rule(m.record_directory))))
-    m.env["CLAUDE_CONFIG_DIR"] = str(decoy)
+    # Nothing tells whether a person chose `CLAUDE_CONFIG_DIR` or a repository did, through an
+    # agent's `env` block or direnv in a person's own terminal, so where it names a directory
+    # besides the home's both are judged: a decoy holding every setting does not make the row green
+    # while the home's lacks the deny rule (`home`), nor does the home's while the variable's lacks
+    # it (`chosen`). The detail says each answer with the file it was judged with. Mutations
+    # (`mutations/`'s "the boundary row judges one user settings directory alone" -> `chosen` reads
+    # ok and `home` names no file; "the user settings directory ignores CLAUDE_CONFIG_DIR" -> the
+    # same for `home`; "the boundary row reports the better of two answers" -> both read ok).
+    config = m.tmp / "config-dir"
+    good = _merged(ADMIN_REQUIRED, _deny(_rule(m.record_directory)))
+    lacks = ADMIN_REQUIRED
+    m.user(lacks if lacking == "home" else good)
+    _write(config / "settings.json", good if lacking == "home" else lacks)
+    m.env["CLAUDE_CONFIG_DIR"] = str(config)
     m.managed(ADMIN_REQUIRED)
     m.approvals(1)
-    if not claude_code_here:
-        (m.home / ".claude").rmdir()
     row = m.row()
-    if claude_code_here:
-        assert row.status == RED, row
-        assert row.detail == "; ".join(
-            (
-                boundary.HELD.format(count=1),
-                boundary.NO_DENY.format(rule=_rule(m.record_directory)),
-                boundary.IGNORED_CONFIG_DIR,
-            )
+    guarded = "; ".join(
+        (boundary.HELD.format(count=1), boundary.GUARDED.format(rule=_rule(m.record_directory)))
+    )
+    gap = "; ".join(
+        (
+            boundary.HELD.format(count=1),
+            boundary.NO_DENY.format(rule=_rule(m.record_directory)),
         )
-    else:
-        assert (row.status, row.detail) == (
-            SKIP,
-            "; ".join((boundary.NO_CLAUDE_CODE, boundary.IGNORED_CONFIG_DIR)),
-        )
+    )
+    said = {
+        boundary.USER_LABEL: gap if lacking == "home" else guarded,
+        boundary.CHOSEN_LABEL: guarded if lacking == "home" else gap,
+    }
+    assert row.status == RED, row
+    assert row.detail == "; ".join(
+        boundary.JUDGED_WITH.format(label=label, detail=detail) for label, detail in said.items()
+    )
+    assert row.remedy == boundary.ADD_THE_BOUNDARY
+
+
+def test_a_claude_config_dir_naming_the_home_s_own_is_judged_once(m: Machine) -> None:
+    # The variable spelling the home's `.claude` (here with a trailing slash) is one directory,
+    # judged once and said plainly. Mutation (`mutations/`'s "the user settings directory takes
+    # CLAUDE_CONFIG_DIR spelling the home's own for another"): it is judged twice, each answer said
+    # with its file.
+    m.user(_merged(ADMIN_REQUIRED, _deny(_rule(m.record_directory))))
+    m.env["CLAUDE_CONFIG_DIR"] = str(m.home / ".claude") + "/"
+    m.managed(ADMIN_REQUIRED)
+    m.approvals(1)
+    row = m.row()
+    assert row.status == OK, row
+    assert not row.detail.startswith("judged with")
 
 
 def test_the_row_skips_when_the_project_lists_no_claude(m: Machine) -> None:
@@ -498,6 +515,13 @@ def _under_config(m: Machine, document: dict[str, Any]) -> dict[str, Any]:
     return document
 
 
+def _home_is(m: Machine, home: str, document: dict[str, Any]) -> dict[str, Any]:
+    """`document`, with `HOME` in the session's environment set to `home`: Claude Code expands `~`
+    from it, while the password database's home and `--home` stay as they were."""
+    m.env["HOME"] = home
+    return document
+
+
 def _project_in_a_work_tree(m: Machine) -> Path:
     """Move the project one directory down, so a directory holds it and not the record; the
     project's new root."""
@@ -520,6 +544,9 @@ SAFE = [
     pytest.param("user", lambda m: _directories("/tmp/build"), True, OK, None, id="user-tmp-dir"),
     pytest.param("project", lambda m: _edit("//tmp/build"), False, WARN, None, id="edit-absolute"),
     pytest.param("project", lambda m: _edit("~/.kube"), False, WARN, None, id="edit-home"),
+    pytest.param(
+        "project", lambda m: _allow_write("~/machine"), False, WARN, None, id="home-machine"
+    ),
 ]
 
 
@@ -537,6 +564,14 @@ GAPS = [
     pytest.param(*_gap("project", lambda m: _allow_write("/"), _WRITE), id="root"),
     pytest.param(*_gap("project", lambda m: _allow_write("~"), _WRITE), id="bare-home"),
     pytest.param(*_gap("project", lambda m: _allow_write("~/"), _WRITE), id="home-slash"),
+    pytest.param(
+        *_gap("project", lambda m: _home_is(m, str(m.tmp), _allow_write("~/machine")), _WRITE),
+        id="home-elsewhere",
+    ),
+    pytest.param(
+        *_gap("project", lambda m: _home_is(m, "", _allow_write("~/.kube")), _WRITE),
+        id="home-empty",
+    ),
     pytest.param(
         *_gap("project", lambda m: _under_config(m, _allow_write("~/.config")), _WRITE),
         id="home-config",
@@ -667,7 +702,9 @@ def test_a_setting_that_widens_confinement_is_a_gap_unless_shown_safe(
     # `above-the-directory` and `above-the-project` go; "the boundary row takes an entry inside
     # the record for one that misses it" -> `inside-the-directory` and `inside-the-project` go;
     # "the boundary row judges a key by one entry" -> `one-safe-one-not` goes; "the boundary row
-    # passes a bare Edit" -> `user-bare-edit` goes).
+    # passes a bare Edit" -> `user-bare-edit` goes; "the boundary row reads a ~/ entry under the
+    # password database's home alone" -> `home-elsewhere` goes; "the boundary row places a ~/ entry
+    # under a HOME that names no directory" -> `home-empty` goes).
     written = document(m)
     base = _merged(SANDBOX_ON, _deny(_rule(m.record_directory)))
     if admin:

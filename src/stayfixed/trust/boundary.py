@@ -24,12 +24,14 @@ findings at the end of the 2026-10-15 floor, layers and trust plan in `docs/plan
 - **Where an administrator's settings live:** `MANAGED_SETTINGS`, each with an optional directory
   of drop-in files beside it.
 
-**Which user settings directory is Claude Code's** (`user_settings`): `CLAUDE_CONFIG_DIR` when it is
-set and standard input is a terminal, and `.claude` under the home the password database records
-otherwise. A repository's committed `env` block can set `CLAUDE_CONFIG_DIR` for an agent's shell,
-and a directory it chose would let `doctor` judge a decoy and `setup` write rules where no session
-reads them; a person at a terminal set the one they have. The terminal check is `kinds.interactive`,
-the seam `trust approve` asks.
+**Which user settings directory is Claude Code's** (`user_settings`): `.claude` under the home the
+password database records, and the directory `CLAUDE_CONFIG_DIR` names where it is set and differs
+from that one. Nothing tells which of the two a person chose: a repository's committed `env` block
+can set the variable for an agent's shell, and direnv or mise can set it from a file the repository
+commits in a person's own terminal, so a terminal on standard input proves nothing either. So
+`doctor` judges both and reports the worse, and `setup` writes only `.claude` under the home and
+names the other directory for the person, since a variable a repository set can point it at any
+JSON file named `settings.json` the person can write, another program's included.
 
 **A write the sandbox refuses** (`sandbox_refused`): with Claude Code's sandbox on, an agent's shell
 writes only the working directory and the temporary directory, so stayfixed's own writes to the
@@ -46,6 +48,7 @@ naming the directory.
 from __future__ import annotations
 
 import errno
+import posixpath
 import sys
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -54,7 +57,6 @@ from types import MappingProxyType
 
 from stayfixed.config.machine import passwd_home
 from stayfixed.harnesses import CLAUDE_DIR
-from stayfixed.trust import kinds
 
 # Claude Code's managed settings, by `sys.platform`: the file only an administrator writes, whose
 # `sandbox` keys a repository's settings cannot override. Measured on Claude Code 2.1.296 (the
@@ -93,26 +95,30 @@ def deny_rules(named: Path, resolved: Path) -> tuple[str, ...]:
 
 @dataclass(frozen=True)
 class UserSettings:
-    """Claude Code's user settings directory as stayfixed reads it: the directory (`None` for no
-    home), whether `CLAUDE_CONFIG_DIR` named it, and whether one was set and passed over."""
+    """Claude Code's user settings directories as stayfixed reads them: `directory`, `.claude`
+    under the home (`None` for no home), and `chosen`, the one `CLAUDE_CONFIG_DIR` names where it
+    is set and is not `directory`."""
 
     directory: Path | None
-    from_variable: bool
-    ignored: bool
+    chosen: Path | None
 
 
 def user_settings(env: Mapping[str, str], home: Path | None = None) -> UserSettings:
-    """The user settings directory (the module docstring says which): `CLAUDE_CONFIG_DIR` only when
-    standard input is a terminal, and otherwise `.claude` under `home`, a home the person named on
-    the command line, or under the password database's home."""
-    chosen = env.get(CONFIG_DIR_VARIABLE)
-    # Through the module, so the one seam a test replaces is the one asked here.
-    if chosen and kinds.interactive():
-        return UserSettings(Path(chosen), from_variable=True, ignored=False)
+    """The user settings directories (the module docstring says which): `.claude` under `home`, a
+    home the person named on the command line, or under the password database's home; and the
+    directory `CLAUDE_CONFIG_DIR` names, where it is set and differs from that one."""
     base = home if home is not None else passwd_home()
-    return UserSettings(
-        None if base is None else base / CLAUDE_DIR, from_variable=False, ignored=bool(chosen)
-    )
+    directory = None if base is None else base / CLAUDE_DIR
+    named = env.get(CONFIG_DIR_VARIABLE)
+    chosen = Path(named) if named else None
+    if chosen is not None and directory is not None and _spelled(chosen) == _spelled(directory):
+        chosen = None
+    return UserSettings(directory, chosen)
+
+
+def _spelled(path: Path) -> str:
+    """`path` as text, normalised, for telling two spellings of one directory apart."""
+    return posixpath.normpath(path.as_posix())
 
 
 # The errors a sandboxed write fails with (the module docstring says which were measured).
