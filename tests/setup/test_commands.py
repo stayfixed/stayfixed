@@ -732,6 +732,30 @@ def test_a_claude_config_dir_under_neither_the_home_nor_the_project_is_left_alon
     assert CONFIG_DIR_ELSEWHERE.format(path=clipped(str(elsewhere))) in capsys.readouterr().out
 
 
+def test_the_line_for_a_claude_config_dir_elsewhere_names_the_flag_that_writes_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A person whose own settings directory lies under neither the home nor the project (on
+    # another volume, say) is told how to write it, and the way holds: the same run with
+    # `--settings` naming its file writes the rules there. Mutations (`mutations/`'s "setup's line
+    # for a CLAUDE_CONFIG_DIR elsewhere names no way to write it" -> the line names no flag;
+    # "setup writes the home's settings whatever --settings names" -> that file is never written).
+    places = _settings_places(tmp_path, monkeypatch)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(elsewhere))
+    argv = ["setup", "--preset", "recommended", "--yes", "--root", str(places["project"])]
+    assert invoke(argv) == 0
+    out = capsys.readouterr().out
+    assert "`stayfixed setup --settings <that directory>/settings.json`" in out, out
+    settings = elsewhere / "settings.json"
+    assert invoke([*argv, "--settings", str(settings)]) == 0
+    home = json.loads((places["owner"] / ".claude" / "settings.json").read_text(encoding="utf-8"))
+    there = json.loads(settings.read_text(encoding="utf-8"))
+    assert home["permissions"]["deny"]
+    assert there["permissions"]["deny"] == home["permissions"]["deny"]
+
+
 def test_a_claude_config_dir_in_another_checkout_of_the_repository_is_left_alone(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

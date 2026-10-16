@@ -256,7 +256,9 @@ CONFIG_DIR_IN_PROJECT = (
 CONFIG_DIR_ELSEWHERE = (
     f"{CONFIG_DIR_VARIABLE} names {{path}}, under neither the home nor the project, which the row "
     f"does not ask the filesystem about, since such a path may lie under a network mount, so it "
-    f"was not read and the row is at best a warning"
+    f"was not read and the row is at best a warning, even once "
+    f"`stayfixed setup --approval-boundary --settings <that directory>/settings.json` writes the "
+    f"rules there"
 )
 # How bad each answer is, for letting the variable's directory make one worse and never better.
 SEVERITY = {SKIP: 0, OK: 1, WARN: 2, RED: 3}

@@ -478,6 +478,37 @@ def test_a_claude_config_dir_that_leads_into_the_project_is_inside_it(
     )
 
 
+def test_a_claude_config_dir_spelled_inside_the_project_is_never_followed(
+    m: Machine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A link the repository commits inside the project may lead under an automount root, where one
+    # stat stalls `doctor` until the network answers; spelled inside, the directory is inside
+    # wherever it leads, so its links are never followed. Mutation (`mutations/`'s "a directory
+    # spelled inside the project is followed"): `fsops.resolved` is asked for the link, which
+    # leads to settings under the home, and the row judges them.
+    real = m.home / "real-config"
+    _write(real / "settings.json", _merged(ADMIN_REQUIRED, _deny(_rule(m.record_directory))))
+    link = m.root / "committed-link"
+    link.symlink_to(real)
+    (m.home / ".claude").rmdir()
+    m.env["CLAUDE_CONFIG_DIR"] = str(link)
+    m.managed(ENFORCED)
+    m.approvals(1)
+    asked: list[str] = []
+    real_resolved = fsops.resolved
+
+    def recording(path: Path) -> Path:
+        if str(path).startswith(str(link)):
+            asked.append(str(path))
+        return real_resolved(path)
+
+    monkeypatch.setattr(fsops, "resolved", recording)
+    row = m.row()
+    said = boundary.CONFIG_DIR_IN_PROJECT.format(path=clipped(str(link)))
+    assert (row.status, row.detail) == (WARN, "; ".join((boundary.NO_CLAUDE_CODE, said)))
+    assert asked == []
+
+
 def test_a_claude_config_dir_whose_links_loop_is_taken_to_be_inside_the_project(
     m: Machine, tmp_path: Path
 ) -> None:
@@ -1693,9 +1724,11 @@ def test_a_claude_config_dir_under_neither_the_home_nor_the_project_is_never_ask
 ) -> None:
     # A path a committed `env` block chose may lie under an automount root, where one stat stalls
     # `doctor` until the network answers; so a directory under neither the home nor the project is
-    # named, never asked of the filesystem, and the row is at best a warning. Mutation
-    # (`mutations/`'s "a CLAUDE_CONFIG_DIR under neither the home nor the project is asked of the
-    # filesystem"): the directory is resolved and judged, and the row reads ok.
+    # named, never asked of the filesystem, and the row is at best a warning; the detail says how a
+    # person whose own directory lies there writes the rules into it. Mutations (`mutations/`'s "a
+    # CLAUDE_CONFIG_DIR under neither the home nor the project is asked of the filesystem" -> the
+    # directory is resolved and judged, and the row reads ok; "the boundary row names no way to
+    # write a CLAUDE_CONFIG_DIR elsewhere" -> the detail names no command).
     elsewhere = m.tmp / "elsewhere"
     _write(elsewhere / "settings.json", _merged(ADMIN_REQUIRED, _deny(_rule(m.record_directory))))
     m.user(_deny(_rule(m.record_directory)))
@@ -1715,6 +1748,9 @@ def test_a_claude_config_dir_under_neither_the_home_nor_the_project_is_never_ask
     row = m.row()
     assert row.status == WARN, row
     assert boundary.CONFIG_DIR_ELSEWHERE.format(path=clipped(str(elsewhere))) in row.detail
+    assert "`stayfixed setup --approval-boundary --settings <that directory>/settings.json`" in (
+        row.detail
+    )
     assert asked == []
 
 

@@ -4802,10 +4802,19 @@ reddens = [
 [[mutation]]
 name = "a directory is judged inside the project by its spelling alone"
 file = "src/stayfixed/trust/boundary.py"
-before = "        spellings = {folded(os.path.abspath(directory)), folded(str(fsops.resolved(directory)))}"
-after = "        spellings = {folded(os.path.abspath(directory))}"
+before = "        led = fsops.resolved(directory)"
+after = "        led = Path(os.path.abspath(directory))"
 reddens = [
   "tests/doctor/test_approval_boundary.py::test_a_claude_config_dir_that_leads_into_the_project_is_inside_it",
+]
+
+[[mutation]]
+name = "a directory spelled inside the project is followed"
+file = "src/stayfixed/trust/boundary.py"
+before = "    if _inside(os.path.abspath(directory), roots):\n        return True"
+after = "    if False:\n        return True"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_a_claude_config_dir_spelled_inside_the_project_is_never_followed",
 ]
 
 [[mutation]]
@@ -4872,8 +4881,8 @@ reddens = [
 [[mutation]]
 name = "a directory is judged inside the project by its case"
 file = "src/stayfixed/trust/boundary.py"
-before = "        spellings = {folded(os.path.abspath(directory)), folded(str(fsops.resolved(directory)))}"
-after = "        spellings = {os.path.abspath(directory), str(fsops.resolved(directory))}"
+before = "    return any(_within(folded(spelling), held) for held in roots)"
+after = "    return any(_within(spelling, held) for held in roots)"
 reddens = [
   "tests/doctor/test_approval_boundary.py::test_a_case_variant_of_the_project_is_inside_it",
 ]

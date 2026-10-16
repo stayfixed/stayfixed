@@ -2584,6 +2584,24 @@ reddens = [
 ]
 
 [[mutation]]
+name = "setup's line for a CLAUDE_CONFIG_DIR elsewhere names no way to write it"
+file = "src/stayfixed/setup/commands.py"
+before = "    \"there and wrote nothing there, though \"\n    \"`stayfixed setup --settings <that directory>/settings.json`, with this run's other flags, \"\n    \"writes the rules there\"\n"
+after = "    \"there and wrote nothing there\"\n"
+reddens = [
+  "tests/setup/test_commands.py::test_the_line_for_a_claude_config_dir_elsewhere_names_the_flag_that_writes_it",
+]
+
+[[mutation]]
+name = "setup writes the home's settings whatever --settings names"
+file = "src/stayfixed/setup/commands.py"
+before = "    settings = Path(args.settings).expanduser() if args.settings else None"
+after = "    settings = None"
+reddens = [
+  "tests/setup/test_commands.py::test_the_line_for_a_claude_config_dir_elsewhere_names_the_flag_that_writes_it",
+]
+
+[[mutation]]
 name = "setup records a relative CLAUDE_CONFIG_DIR as spelled"
 file = "src/stayfixed/setup/commands.py"
 before = "    return Path(os.path.abspath(chosen)), (CONFIG_DIR_WRITTEN.format(path=spelled),)"

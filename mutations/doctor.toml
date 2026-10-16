@@ -3731,6 +3731,15 @@ reddens = [
 ]
 
 [[mutation]]
+name = "the boundary row names no way to write a CLAUDE_CONFIG_DIR elsewhere"
+file = "src/stayfixed/doctor/boundary.py"
+before = "    f\"was not read and the row is at best a warning, even once \"\n    f\"`stayfixed setup --approval-boundary --settings <that directory>/settings.json` writes the \"\n    f\"rules there\"\n"
+after = "    f\"was not read and the row is at best a warning\"\n"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_a_claude_config_dir_under_neither_the_home_nor_the_project_is_never_asked_about",
+]
+
+[[mutation]]
 name = "the boundary row prints a CLAUDE_CONFIG_DIR judged alone whole"
 file = "src/stayfixed/doctor/boundary.py"
 before = "        row = _worsened(other, WARN, CHOSEN_ALONE.format(path=clipped(str(chosen))), \"\")"

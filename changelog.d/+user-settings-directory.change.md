@@ -7,4 +7,4 @@ the same rules too, recorded under that directory, by its absolute path, in
 `[setup] added_rules_in` so that `[setup] ask_rules = false` takes them back there as well, and
 takes back nothing but those; any other such directory, and any at all on a run given `--home` or
 `--settings`, is named and left alone, and one under neither the home nor the project is not even
-looked at. The report says "deny rules merged" only when it added a deny rule.
+looked at, the report saying that `--settings` naming its `settings.json` writes the rules there. The report says "deny rules merged" only when it added a deny rule.

@@ -63,7 +63,7 @@ import errno
 import os
 import sys
 import unicodedata
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping, Sequence, Set
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -171,16 +171,26 @@ def folded(text: str) -> str:
 
 def in_project(directory: Path, root: Path, checkouts: Sequence[Path] = ()) -> bool:
     """Whether `directory` is the project `root`, one of the repository's other `checkouts`, or
-    lies inside one, spelled as given (made absolute against the working directory, as Claude Code
-    would read a relative one) or where its links lead, each compared `folded`; a directory whose
-    links cannot be followed is taken to be inside, since what the repository commits there is the
-    repository's to choose."""
+    lies inside one, each compared `folded`: spelled as given (made absolute against the working
+    directory, as Claude Code would read a relative one), and only where that spelling is not
+    already inside, where its links lead. A directory whose links cannot be followed is taken to be
+    inside, since what the repository commits there is the repository's to choose.
+
+    A spelling inside is never followed: a link the repository commits there may lead under an
+    automount root (`/net/<host>/...` on macOS), where one stat stalls until the network answers,
+    and the answer is "inside" wherever it leads."""
+    roots = {folded(str(place)) for place in (root, fsops.resolved(root), *checkouts)}
+    if _inside(os.path.abspath(directory), roots):
+        return True
     try:
-        spellings = {folded(os.path.abspath(directory)), folded(str(fsops.resolved(directory)))}
+        led = fsops.resolved(directory)
     except OSError:
         return True
-    roots = {folded(str(place)) for place in (root, fsops.resolved(root), *checkouts)}
-    return any(_within(place, held) for place in spellings for held in roots)
+    return _inside(str(led), roots)
+
+
+def _inside(spelling: str, roots: Set[str]) -> bool:
+    return any(_within(folded(spelling), held) for held in roots)
 
 
 def _within(place: str, held: str) -> bool:

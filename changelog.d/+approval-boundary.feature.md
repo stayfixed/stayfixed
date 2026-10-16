@@ -24,7 +24,8 @@ counts as safe only under every home it may mean, `HOME` included, and a user se
 `CLAUDE_CONFIG_DIR` names besides `~/.claude` may only make the answer worse: alone it is never
 better than a warning, inside the project or another checkout of its repository, case-folded on
 macOS, it is never read, and under neither the home nor the project it is never looked at, since
-it may lie under a network mount; its value is printed cut to its first 120 characters and its
+it may lie under a network mount, the row naming the `setup --approval-boundary --settings` run
+that writes the rules there; its value is printed cut to its first 120 characters and its
 length. The project's and your settings files are read past a leading byte-order mark, as Claude
 Code reads them, and a setting of the wrong shape — a sandbox switch that is not `true` or
 `false`, a `sandbox` that is not an object, a widening key that is not a list of strings — is a

@@ -140,10 +140,13 @@ CONFIG_DIR_IN_PROJECT = (
     "whose contents the repository chooses, so setup wrote nothing there"
 )
 # Under neither the home nor the project: never asked of the filesystem, since a path a committed
-# `env` block chose may lie under a network mount (`trust.boundary.placement`).
+# `env` block chose may lie under a network mount (`trust.boundary.placement`). A person whose own
+# settings directory lies there names its file with `--settings`, which this run's rules then take.
 CONFIG_DIR_ELSEWHERE = (
     "CLAUDE_CONFIG_DIR names {path}, under neither the home nor the project, so setup did not look "
-    "there and wrote nothing there"
+    "there and wrote nothing there, though "
+    "`stayfixed setup --settings <that directory>/settings.json`, with this run's other flags, "
+    "writes the rules there"
 )
 # `--home` or `--settings` names where this run writes, which may be a scratch destination: a real
 # settings directory written beside it would hold rules whose record is in the scratch machine file,
