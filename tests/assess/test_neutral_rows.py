@@ -1,11 +1,13 @@
 """No gate reads a key the tighten-only rule calls `neutral`.
 
-The rule lets a pull request change `stayfixed.preset`, `stayfixed.profile`, `stayfixed.agents`,
-`project.name`, `memory.mode` and a session's budget whatever the base enforces, on the ground that
-no gate reads them. That ground is
-a fact about the gates, so it is executed rather than asserted: every built-in gate runs over a
-clone once under the loaded configuration and once per neutral key moved, and must answer the
-same. The unchanged run has a finding, so "the same" is not two empty answers.
+The rule lets a pull request change every key of a class no gate judges by — a preference, a
+session's parameter, the machine owner's keys and the plugin's — and the repository's own
+`stayfixed.preset`, `stayfixed.agents` and `project.name`, whatever the base enforces, on the
+ground that no gate reads them. That ground is a fact about the gates, so it is executed rather
+than asserted: every built-in gate runs over a clone once under the loaded configuration and once
+per neutral key moved, and must answer the same. The unchanged run has a finding, so "the same" is
+not two empty answers. The keys are derived from the class table and the rule's own rows, so a key
+reclassified as neutral tomorrow is run here the day it is.
 
 No mutation of the rule reaches this, because the rule is not what it checks: the gates are. To
 watch it fail, make `stayfixed.docs.hygiene.docs_gate` return `[]` when
@@ -20,10 +22,13 @@ from pathlib import Path
 import pytest
 
 import stayfixed
+from stayfixed.assess import rule
 from stayfixed.assess.gates import GateContext, run_gates
+from stayfixed.config.classes import class_of
 from stayfixed.config.loader import load
 from stayfixed.config.schema import BUILTIN_GATES, Config
 from tests.assess.baserepo import AGENTS, clone, commit
+from tests.config.test_classes import schema_keys
 from tests.gitfixture import git, needs_git
 
 pytestmark = needs_git
@@ -39,33 +44,60 @@ name = "widget"
 [budgets]
 agents_md_lines = 3
 """
-# The keys `tests/assess/test_rule.py` and `tests/assess/test_rule_classes.py` hold to `neutral`
-# whatever the base enforces.
-NEUTRAL = (
-    "stayfixed.preset",
-    "stayfixed.profile",
-    "stayfixed.agents",
-    "project.name",
-    "memory.mode",
-    "budgets.memory_index_words",
+# Every key the rule holds to `neutral` whatever the base enforces: each schema key of a class no
+# gate judges by, and each key the rule's own table rows `neutral`.
+NEUTRAL = tuple(
+    sorted(
+        {key for key in schema_keys() if class_of(key) in rule._NEUTRAL_CLASSES}
+        | {key for key, row in rule.ROWS.items() if row is rule._neutral}
+    )
 )
+# A value a gate could tell from the loaded one, where any other would not do: an enumerated
+# string moved to another of its values. Every other key is moved by its type.
+MOVED_TO: dict[str, object] = {
+    "stayfixed.preset": "other",
+    "stayfixed.profile": "python",
+    "stayfixed.agents": ("codex",),
+    "memory.mode": "in-repo",
+    "personal.preset": "other",
+    "project.name": "gadget",
+}
 
 
 def _moved(config: Config, key: str) -> Config:
-    if key == "stayfixed.preset":
-        return replace(config, stayfixed=replace(config.stayfixed, preset="other"))
-    if key == "stayfixed.profile":
-        return replace(config, stayfixed=replace(config.stayfixed, profile="python"))
-    if key == "stayfixed.agents":
-        return replace(config, stayfixed=replace(config.stayfixed, agents=("codex",)))
-    if key == "memory.mode":
-        return replace(config, memory=replace(config.memory, mode="in-repo"))
-    if key == "budgets.memory_index_words":
-        budgets = config.budgets
-        configured = {**budgets.configured, "memory_index_words": 1}
-        return replace(config, budgets=replace(budgets, configured=configured))
-    assert key == "project.name"
-    return replace(config, project=replace(config.project, name="gadget"))
+    """`config` with `key` alone holding another value."""
+    section, name = key.split(".", 1)
+    table = getattr(config, section)
+    if section == "budgets":
+        configured = {**table.configured, name: table.effective(name) + 1}
+        return replace(config, budgets=replace(table, configured=configured))
+    value = getattr(table, name)
+    if key in MOVED_TO:
+        other = MOVED_TO[key]
+    elif isinstance(value, bool):
+        other = not value
+    elif isinstance(value, int):
+        other = value + 1
+    elif isinstance(value, str):
+        other = f"{value}-moved"
+    else:
+        other = (*value, "moved")
+    return replace(config, **{section: replace(table, **{name: other})})
+
+
+def test_the_neutral_keys_are_derived_whole() -> None:
+    # A floor against a derivation that finds nothing, and the gap this file had: it ran six keys
+    # by hand while the rule made every preference, session budget, machine key and plugin cap
+    # neutral. No mutation of the source reaches it: it holds this file's own derivation.
+    assert {
+        "memory.groups",
+        "memory.index_extra",
+        "budgets.volatile_ttl_days",
+        "native_caps.hook_output_chars",
+        "personal.reply_language",
+        "stayfixed.preset",
+        "project.name",
+    } <= set(NEUTRAL)
 
 
 @pytest.mark.parametrize("key", NEUTRAL)
@@ -75,9 +107,14 @@ def test_no_gate_reads_a_key_the_rule_calls_neutral(key: str, tmp_path: Path) ->
     commit(project, "docs: say what changed")
     base = git(project, "rev-parse", "refs/remotes/origin/main").strip()
     config = load(project, machine=tmp_path / "absent.toml")
+    moved_config = _moved(config, key)
+    # The key moved, and nothing else did: a move that changed nothing would make the comparison
+    # below hold for any gate.
+    before, after = rule._values(config), rule._values(moved_config)
+    assert {name for name in before if before[name] != after[name]} == {key}
 
     unchanged = run_gates(GateContext(project, config, base), BUILTIN_GATES)
-    moved = run_gates(GateContext(project, _moved(config, key), base), BUILTIN_GATES)
+    moved = run_gates(GateContext(project, moved_config, base), BUILTIN_GATES)
 
     assert any(result.findings for result in unchanged)
     assert moved == unchanged
