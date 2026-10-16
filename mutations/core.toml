@@ -3979,6 +3979,7 @@ before = "    return any(\n        isinstance(value, dict)"
 after = "    return True or any(\n        isinstance(value, dict)"
 reddens = [
   "tests/config/test_loader_note.py::test_a_validator_that_keeps_refusing_spends_the_document_and_stops",
+  "tests/config/test_loader_note.py::test_a_key_the_document_does_not_hold_propagates",
 ]
 
 [[mutation]]
@@ -4013,13 +4014,22 @@ after = """    values = {key: value for key, value in values.items() if key in k
     if unknown:"""
 reddens = ["tests/config/test_loader_note.py::test_refuse_still_refuses_each_of_them[key]"]
 
-# The preset loader's refusal carries no key, so the name is held to the shipped presets first.
+# The preset loader's refusal carries no key, so `_preset` re-raises it keyed to
+# `stayfixed.preset`; a call outside that `try` lets the keyless one escape.
 [[mutation]]
-name = "the preset name is read before its membership check"
+name = "the preset loader's refusal escapes without its key"
 file = "src/stayfixed/config/loader.py"
-before = "    if name not in shipped_presets():"
-after = "    load_preset(name)\n    if name not in shipped_presets():"
+before = "    try:\n        return load_preset(name)\n    except Failure as exc:"
+after = "    load_preset(name)\n    try:\n        return load_preset(name)\n    except Failure as exc:"
 reddens = ["tests/config/test_loader_note.py::test_an_unknown_preset_resets_to_recommended"]
+
+# A command refuses a preset this build does not ship, rather than reading it as `recommended`.
+[[mutation]]
+name = "an unknown preset name is quietly read as recommended"
+file = "src/stayfixed/config/loader.py"
+before = "        raise ConfigError(str(exc), key=PRESET_KEY) from None"
+after = "        return load_preset(\"recommended\")"
+reddens = ["tests/config/test_loader_note.py::test_refuse_still_refuses_an_unknown_preset"]
 
 # `contained()` names no key; `validate_paths` knows which `[paths]` key it was asked about.
 [[mutation]]
@@ -4040,4 +4050,69 @@ before = "    if dotted in table:\n        del table[dotted]"
 after = "    if dotted in table and \".\" not in dotted:\n        del table[dotted]"
 reddens = [
   "tests/config/test_loader_note.py::test_a_custom_gate_whose_name_holds_a_dot_is_dropped_by_its_whole_name",
+]
+
+# An unknown name is ignored with a note of its own: nothing stands in for it, and nothing beside
+# it is lost.
+[[mutation]]
+name = "an unknown section is dropped without a note"
+file = "src/stayfixed/config/loader.py"
+before = "            notes.append(UNKNOWN_NOTE.format(name=clipped(name)))"
+after = "            pass"
+reddens = ["tests/config/test_loader_note.py::test_an_unknown_name_is_ignored_with_a_note[newer]"]
+
+[[mutation]]
+name = "the NOTE path resets an unknown key instead of ignoring it"
+file = "src/stayfixed/config/loader.py"
+before = "        if key not in known:\n            notes.append(UNKNOWN_NOTE"
+after = "        if False:\n            notes.append(UNKNOWN_NOTE"
+reddens = [
+  "tests/config/test_loader_note.py::test_an_unknown_name_is_ignored_with_a_note[memory.future]",
+  "tests/config/test_loader_note.py::test_an_unknown_name_is_ignored_with_a_note[budgets.future]",
+  "tests/config/test_loader_note.py::test_an_unknown_name_is_ignored_with_a_note[gates.custom.g.future]",
+]
+
+[[mutation]]
+name = "an unknown key costs the NOTE path its whole section"
+file = "src/stayfixed/config/loader.py"
+before = '            notes.append(UNKNOWN_NOTE.format(name=clipped(f"{dotted}.{key}")))'
+after = '''            notes.append(UNKNOWN_NOTE.format(name=clipped(f"{dotted}.{key}")))
+            return {}'''
+reddens = ["tests/config/test_loader_note.py::test_the_rest_of_a_newer_file_survives"]
+
+# A custom gate has no preset value, so a refusal of one is keyed to that gate alone.
+[[mutation]]
+name = "a custom gate that cannot run costs every custom gate"
+file = "src/stayfixed/config/loader.py"
+before = "            raise ConfigError(GATES_CUSTOM_EMPTY.format(name=name), key=gate_key)"
+after = '            raise ConfigError(GATES_CUSTOM_EMPTY.format(name=name), key="gates.custom")'
+reddens = ["tests/config/test_loader_note.py::test_a_custom_gate_that_cannot_run_is_dropped"]
+
+# A refusal with no key is the whole document's, and the NOTE path propagates it; a missing
+# required key has no preset value to reset to, so it stays the document's.
+[[mutation]]
+name = "a missing required key is keyed as one value"
+file = "src/stayfixed/config/loader.py"
+before = """        raise ConfigError(f"[{name}] is missing required key(s): {', '.join(missing)}")"""
+after = """        raise ConfigError(f"[{name}] is missing required key(s): {', '.join(missing)}", key=f"{name}.{missing[0]}")"""
+reddens = ["tests/config/test_loader_note.py::test_a_document_level_refusal_propagates[no-version]"]
+
+# A section that is not a table is keyed to the section, which the NOTE path puts back to the
+# preset's; unkeyed, it would cost the session the whole file.
+[[mutation]]
+name = "a section that is not a table is refused with no key"
+file = "src/stayfixed/config/loader.py"
+before = """        raise ConfigError(f"[{name}] must be a table", key=name)"""
+after = """        raise ConfigError(f"[{name}] must be a table")"""
+reddens = ["tests/config/test_loader_note.py::test_a_section_that_is_not_a_table_is_the_presets"]
+
+# A repository's `[guards]` that is not even a table is still the repository trying to set a
+# machine-only key, and says so.
+[[mutation]]
+name = "a repository's machine-only value that is not a table is dropped without a note"
+file = "src/stayfixed/config/loader.py"
+before = "                notes.append(REFUSED_LAYER_NOTE.format(key=name, layer=LayerName.REPOSITORY))"
+after = "                pass"
+reddens = [
+  "tests/config/test_loader_note.py::test_a_repository_guards_value_that_is_not_a_table_is_refused_too",
 ]

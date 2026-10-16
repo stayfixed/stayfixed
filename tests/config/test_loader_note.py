@@ -9,6 +9,7 @@ reads what it can and says what it could not (`src/stayfixed/config/loader.py`);
 from __future__ import annotations
 
 import os
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -16,11 +17,13 @@ import pytest
 from stayfixed.config import loader
 from stayfixed.config.classes import REFUSED_LAYER_NOTE
 from stayfixed.config.loader import (
+    CONFIG_FILE,
     RESET_NOTE,
     UNKNOWN_NOTE,
     ConfigError,
     loads,
     loads_noting,
+    toml_position,
 )
 from stayfixed.config.owner import resolve_owner
 from stayfixed.config.paths import PathEscape
@@ -60,6 +63,10 @@ UNKNOWN_NAMES = [
 
 @pytest.mark.parametrize(("extra", "named"), UNKNOWN_NAMES, ids=[n for _, n in UNKNOWN_NAMES])
 def test_an_unknown_name_is_ignored_with_a_note(tmp_path: Path, extra: str, named: str) -> None:
+    # Ignored, not reset: the name is no value of this release, so nothing stands in for it.
+    # Mutations (`mutations/`'s "an unknown section is dropped without a note" -> the `newer`
+    # case has no note; "the NOTE path resets an unknown key instead of ignoring it" -> each key
+    # case gets a reset note from the refusal `loads` raises).
     got = loads_noting(MINIMAL + extra, tmp_path, owner=OWNER)
     assert got.notes == (UNKNOWN_NOTE.format(name=named),)
     assert_never_raw(*got.notes)
@@ -76,18 +83,26 @@ def test_an_unknown_name_is_never_printed_raw(tmp_path: Path) -> None:
 
 
 def test_the_rest_of_a_newer_file_survives(tmp_path: Path) -> None:
-    # Review focus: an unknown section, an unknown key and an unknown enum value together, and
-    # the project's other settings — a lowered budget, a `[paths]` value — still stand.
+    # A file a newer stayfixed wrote: an unknown section, an unknown key and an unknown enum
+    # value together, and the project's other settings — a raised budget beside the unknown key,
+    # a `[paths]` value — still stand. Mutation (`mutations/`'s "an unknown key costs the NOTE
+    # path its whole section"): the budget goes with the unknown key beside it.
     text = (
         MINIMAL
-        + '[newer]\nx = 1\n[memory]\nmode = "harness"\nfuture = 1\n'
-        + '[budgets]\nagents_md_lines = 250\n[paths]\nspecs = "design/specs"\n'
+        + '[newer]\nx = 1\n[memory]\nmode = "harness"\n'
+        + '[budgets]\nagents_md_lines = 900\nfuture = 1\n[paths]\nspecs = "design/specs"\n'
     )
+    assert load_preset("recommended")["budgets"]["agents_md_lines"] < 900  # raised, not lowered
     got = loads_noting(text, tmp_path, owner=OWNER)
     assert got.config.memory.mode == preset_defaults("memory")["mode"]
-    assert got.config.budgets.effective("agents_md_lines") == 250
+    assert got.config.budgets.configured["agents_md_lines"] == 900
     assert got.config.paths.specs == "design/specs"
-    assert len(got.notes) == 3
+    held = MINIMAL + '[memory]\nmode = "harness"\n'
+    assert got.notes == (
+        UNKNOWN_NOTE.format(name="newer"),
+        UNKNOWN_NOTE.format(name="budgets.future"),
+        reset("memory.mode", held, tmp_path),
+    )
 
 
 def test_an_invalid_value_resets_only_its_key(tmp_path: Path) -> None:
@@ -127,7 +142,7 @@ def test_a_path_through_a_symlink_resets_only_that_path(tmp_path: Path) -> None:
 
 
 def test_an_unknown_preset_resets_to_recommended(tmp_path: Path) -> None:
-    # Mutation (`mutations/`'s "the preset name is read before its membership check"): the preset
+    # Mutation (`mutations/`'s "the preset loader's refusal escapes without its key"): the preset
     # loader's own refusal, which carries no key, propagates.
     text = MINIMAL.replace('preset = "recommended"', 'preset = "future"')
     got = loads_noting(text, tmp_path, owner=OWNER)
@@ -137,7 +152,8 @@ def test_an_unknown_preset_resets_to_recommended(tmp_path: Path) -> None:
 
 def test_a_custom_gate_that_cannot_run_is_dropped(tmp_path: Path) -> None:
     # A custom gate has no preset value to fall back to: the gate is left out, and the gates the
-    # project's other tables name still run.
+    # project's other tables name still run. Mutation (`mutations/`'s "a custom gate that cannot
+    # run costs every custom gate"): the refusal is keyed to `gates.custom` and `good` goes too.
     text = MINIMAL + '[gates.custom.bad]\nrun = []\n[gates.custom.good]\nrun = ["true"]\n'
     got = loads_noting(text, tmp_path, owner=OWNER)
     assert sorted(got.config.gates.custom) == ["good"]
@@ -203,32 +219,58 @@ def test_refuse_still_refuses_each_of_them(tmp_path: Path, extra: str, message: 
 
 
 def test_refuse_still_refuses_an_unknown_preset(tmp_path: Path) -> None:
+    # Mutation (`mutations/`'s "an unknown preset name is quietly read as recommended"): the
+    # command loads on `recommended` instead of refusing.
     text = MINIMAL.replace('preset = "recommended"', 'preset = "future"')
     with pytest.raises(ConfigError, match=r"^\[stayfixed\] preset names a preset this version"):
         loads(text, tmp_path, machine=tmp_path / "none.toml")
 
 
+def _decoder_position(text: str) -> str:
+    with pytest.raises(tomllib.TOMLDecodeError) as raised:
+        tomllib.loads(text)
+    return toml_position(raised.value)
+
+
 @pytest.mark.parametrize(
-    "text",
-    [pytest.param("[[[", id="not-toml"), pytest.param('[project]\nname = "x"\n', id="no-version")],
+    ("text", "refused"),
+    [
+        pytest.param("[[[", "{path} is not valid TOML {position}", id="not-toml"),
+        pytest.param(
+            '[project]\nname = "x"\n',
+            "[stayfixed] is missing required key(s): version",
+            id="no-version",
+        ),
+    ],
 )
-def test_a_document_level_refusal_propagates(tmp_path: Path, text: str) -> None:
-    # A refusal with no key is about the whole document: there is nothing to reset.
+def test_a_document_level_refusal_propagates(tmp_path: Path, text: str, refused: str) -> None:
+    # A refusal with no key is about the whole document: there is nothing to reset. Mutation
+    # (`mutations/`'s "a missing required key is keyed as one value"): the `no-version` refusal
+    # carries `stayfixed.version`.
     with pytest.raises(ConfigError) as raised:
         loads_noting(text, tmp_path, owner=OWNER)
+    position = _decoder_position(text) if "{position}" in refused else ""
+    assert str(raised.value) == refused.format(path=tmp_path / CONFIG_FILE, position=position)
     assert raised.value.key is None
 
 
 def test_a_key_the_document_does_not_hold_propagates(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # The retry removes a key the document holds; a validator naming any other cannot loop.
+    # The retry removes a key the document holds; a validator naming any other is asked once and
+    # its refusal propagates. Mutation (`mutations/`'s "the NOTE retry takes a key the document
+    # does not hold for removed"): only the bound on attempts stops the loop, and the validator
+    # is asked once per key the document holds, plus one.
+    calls: list[object] = []
+
     def refuses(config: object) -> object:
+        calls.append(config)
         raise ConfigError("held", key="paths.nowhere")
 
     monkeypatch.setattr(loader, "_enforcement", refuses)
     with pytest.raises(ConfigError, match=r"^held$"):
         loads_noting(MINIMAL, tmp_path, owner=OWNER)
+    assert len(calls) == 1
 
 
 def test_a_validator_that_keeps_refusing_spends_the_document_and_stops(
@@ -262,6 +304,8 @@ def test_a_custom_gate_whose_name_holds_a_dot_is_dropped_by_its_whole_name(tmp_p
 
 
 def test_a_section_that_is_not_a_table_is_the_presets(tmp_path: Path) -> None:
+    # Mutation (`mutations/`'s "a section that is not a table is refused with no key"): the
+    # refusal is the whole document's and the session loses every setting.
     text = "memory = 1\n" + MINIMAL  # before any header, so a top-level key
     got = loads_noting(text, tmp_path, owner=OWNER)
     assert got.config.memory.mode == preset_defaults("memory")["mode"]
@@ -269,5 +313,7 @@ def test_a_section_that_is_not_a_table_is_the_presets(tmp_path: Path) -> None:
 
 
 def test_a_repository_guards_value_that_is_not_a_table_is_refused_too(tmp_path: Path) -> None:
+    # Mutation (`mutations/`'s "a repository's machine-only value that is not a table is dropped
+    # without a note"): the value goes and nothing says the repository tried.
     got = loads_noting("guards = false\n" + MINIMAL, tmp_path, owner=OWNER)
     assert got.notes == (REFUSED_LAYER_NOTE.format(key="guards", layer="repository"),)

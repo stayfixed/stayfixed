@@ -49,7 +49,7 @@ from stayfixed.config.schema import (
 from stayfixed.errors import Failure
 from stayfixed.findings import LISTED_LIMIT, listed
 from stayfixed.fsops import read_regular_text, said
-from stayfixed.presets import available, load_preset, shipped_presets
+from stayfixed.presets import available, load_preset
 from stayfixed.printed import clipped
 
 if TYPE_CHECKING:
@@ -101,8 +101,10 @@ SECTIONS = (
 MACHINE_ONLY_SECTIONS = ("personal", "guards", "setup")
 PRESET_KEY = "stayfixed.preset"
 # What the NOTE path says. A name is printed through `printed.clipped`, since a TOML key is any
-# quoted text; `reason` is the refusal `loads` would have raised, which names its key and never
-# quotes a value the document wrote.
+# quoted text; `reason` is the refusal `loads` would have raised, which names its key. The one
+# such refusal that quotes a value the document wrote is `contained()`'s, through `repr`, for a
+# `[paths]` value `validate_paths` has already held to `grammar.PATH_VALUE`: ASCII letters,
+# digits, `.`, `_` and `-` in `/`-separated segments.
 UNKNOWN_NOTE = "{name} is not a setting this stayfixed reads; it is ignored"
 RESET_NOTE = "{key} is left out ({reason}); the preset's value applies"
 # Every refusal below names its key and quotes no value from the document. A state is a member
@@ -628,19 +630,18 @@ def _parsed(text: str, path: Path | str) -> dict[str, Any]:
 def _preset(name: object) -> dict[str, Any]:
     """The preset `[stayfixed] preset` names, or a refusal keyed to `stayfixed.preset`.
 
-    Membership in `shipped_presets()` is asked before `load_preset` runs: the preset loader's
-    refusal is a plain `Failure` carrying no key, which the NOTE path could only propagate, so a
+    `load_preset` holds the name to `shipped_presets()` before it reads anything, and refuses
+    with a plain `Failure` carrying no key, which the NOTE path could only propagate: a
     `stayfixed.toml` naming a preset a later release ships would cost a session the whole file.
-    The words are still the preset loader's, which never quote the name.
+    So its refusal, and nothing it read, is re-raised keyed. The words are still the preset
+    loader's, which never quote the name.
     """
     if not isinstance(name, str):
         raise ConfigError(f"stayfixed.preset must be a string; {available()}", key=PRESET_KEY)
-    if name not in shipped_presets():
-        try:
-            load_preset(name)
-        except Failure as exc:
-            raise ConfigError(str(exc), key=PRESET_KEY) from None
-    return load_preset(name)
+    try:
+        return load_preset(name)
+    except Failure as exc:
+        raise ConfigError(str(exc), key=PRESET_KEY) from None
 
 
 def _built(
