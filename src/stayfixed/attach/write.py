@@ -1111,7 +1111,7 @@ def _harness_fallback(
 # Nothing in it is repository-authored, so it prints.
 HARNESS_WAITS = (
     "the harness memory link was not created, because the link tree it would expose sits inside "
-    "this repository and has no approval yet; run `stayfixed memory trust --in-repo-memory`, "
+    "this repository and has no approval yet; run `stayfixed trust approve memory` in a terminal, "
     "then `stayfixed attach` again"
 )
 
@@ -1124,8 +1124,8 @@ APPROVAL_LAPSED = (
     "approval no longer holds"
 )
 REAPPROVE = (
-    "read what changed, run `stayfixed memory trust --in-repo-memory`, then `stayfixed attach` "
-    "again"
+    "read what changed, run `stayfixed trust approve memory` in a terminal, then `stayfixed "
+    "attach` again"
 )
 # Said instead of `HARNESS_WAITS` where the machine records an approval and the store changed
 # since, which closes the gate as surely as no approval and also withdraws the links an earlier run

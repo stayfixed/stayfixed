@@ -34,7 +34,9 @@ Three things hold everywhere:
 ## Contents
 
 - [`stayfixed memory index`](#stayfixed-memory-index)
-- [`stayfixed memory trust --in-repo-memory`](#stayfixed-memory-trust---in-repo-memory)
+- [`stayfixed trust list [--all] [--store PATH]`](#stayfixed-trust-list---all---store-path)
+- [`stayfixed trust approve KIND [--store PATH]`](#stayfixed-trust-approve-kind---store-path)
+- [`stayfixed trust revoke KIND [--subject KEY] [--store PATH]`](#stayfixed-trust-revoke-kind---subject-key---store-path)
 - [`stayfixed memory session-context --bundle <name> [--part N]`](#stayfixed-memory-session-context---bundle-name---part-n)
 - [`stayfixed memory inventory`](#stayfixed-memory-inventory)
 - [`stayfixed memory fit`](#stayfixed-memory-fit)
@@ -125,8 +127,8 @@ project's own share of the recorded overlay is honoured).
 
 **When the trust gate is shut, the line says so**, on `--check` and on the write path alike, and
 `--json`'s `trusted` is `false`. The question is the one the harness memory link asks: is a note,
-or the store's own directory, inside the repository with no record from `stayfixed memory trust
---in-repo-memory` matching it? In overlay mode, where the store's directory is a real directory in
+or the store's own directory, inside the repository with no record from `stayfixed trust approve
+memory` matching it? In overlay mode, where the store's directory is a real directory in
 the repository, that is every store until the record is made. When the notes or a committed
 `MEMORY.md` are themselves repository data, the line says none of it reaches a session. When only
 the directory is — an overlay store whose notes all live in the overlay — it says the link waits
@@ -159,25 +161,47 @@ on. It does not — it re-records the hash across exactly the files it itself wr
 other file's approved digest forward unchanged. If something else changed the store while the
 command ran, it refuses to carry trust and says so.
 
-## `stayfixed memory trust --in-repo-memory`
+## `stayfixed trust list [--all] [--store PATH]`
 
-Record that the notes sitting inside this repository may reach the model.
+Every kind of approval the areas contribute, and its state in this checkout: one line per subject
+— `approved`, `lapsed` (approved once, at a digest that no longer matches) or `missing` — and on
+every line not approved, the exact command that approves it, to run yourself in a terminal. Today
+the one kind is `memory`, a store of notes inside the repository, and `--store` is its flag. A
+kind with nothing to describe here (no `stayfixed.toml`, or no store) says so and names
+`stayfixed trust approve` for the reason. `--all` lists every approval recorded on the machine
+instead, whichever checkout it was given in. A subject outside the path grammar prints withheld;
+`--json` carries it.
 
-The flag is required and never read: it is a confirmation gesture, not a switch, and it is what
-stops this from being a bare, trivially scripted command.
+**Reads** the machine's trust record, and every file each kind hashes.
 
-**Reads** every file the store yields.
+**Writes** nothing.
+
+## `stayfixed trust approve KIND [--store PATH]`
+
+Record that a person approved every subject of `KIND` in this checkout at its digest now; for
+`memory`, that the notes sitting inside this repository may reach the model. Each subject's label
+and digest are printed before the run ends.
+
+**It is asked of a person.** When standard input is not a terminal it refuses with exit `2`,
+writes nothing, and names the exact command for a person to run in a terminal. An agent's shell
+tool runs a command with no terminal on standard input (measured on Claude Code 2.1.296, in a
+terminal session and on the desktop app's Code tab alike), so a bare call from one is refused; an
+agent able to open a pseudo-terminal passes the check, which is a speed bump and no guarantee.
+Against such an agent the harness's own write restriction is the boundary ([SECURITY.md](../SECURITY.md)).
+No flag skips the check, and nothing takes `--yes`.
+
+**Reads** every file the kind hashes — for `memory`, every file the store yields.
 
 **Writes** `~/.config/stayfixed/trust.json` (or the file beside `--machine`).
 
-The hash covers every note, `MEMORY.md`, and the repository-controlled configuration rendered
-into it, keyed by the store's absolute path. Change any of it and the approval lapses — you are
-asked again rather than silently kept. Notes that are *yours* (an overlay store) need no
-approval to reach a session: the standing-rules and volatile-notes bundles deliver them without
-one. A record for an overlay store is not inert, though. The store's directory of links sits
-inside the repository, and the record is what lets `stayfixed attach` create the harness memory
-link to it: until one exists, `memory index` and `memory fit` say the link waits for it and
-`attach` names this command instead of making the link.
+For `memory`, the hash covers every note, `MEMORY.md`, and the repository-controlled
+configuration rendered into it, keyed by the store's absolute path. Change any of it and the
+approval lapses — you are asked again rather than silently kept. Notes that are *yours* (an
+overlay store) need no approval to reach a session: the standing-rules and volatile-notes bundles
+deliver them without one. A record for an overlay store is not inert, though. The store's
+directory of links sits inside the repository, and the record is what lets `stayfixed attach`
+create the harness memory link to it: until one exists, `memory index` and `memory fit` say the
+link waits for it and `attach` names this command instead of making the link.
 
 The record is the machine's one record of approvals, of every kind, and this command keeps the
 store's as kind `memory`, its subject the store's absolute path. It is versioned: a JSON object
@@ -190,7 +214,23 @@ whole, the last one wins, and neither leaves it torn.
 
 Exits `2` if `trust.json` exists and is neither a record this stayfixed reads nor `0.3.0`'s flat
 map — not JSON, not UTF-8, or a later version. It holds every project's approval on the machine,
-so nothing will overwrite a file it could not read — repair or delete it.
+so nothing will overwrite a file it could not read — repair or delete it. An unknown `KIND` exits
+`2` naming the kinds there are.
+
+`stayfixed memory trust --in-repo-memory` is the old spelling of `stayfixed trust approve memory`:
+it runs this command, terminal check included, says so after it ran, and is removed in `0.5.0`.
+
+## `stayfixed trust revoke KIND [--subject KEY] [--store PATH]`
+
+Withdraw the approval of every subject of `KIND` in this checkout, or of the one recorded subject
+`--subject` names, as `trust list --all --json` spells it. It needs no terminal: withdrawing is the
+direction that fails safe. A revoke that matches nothing exits `1`, writes nothing, and lists what
+the kind has recorded.
+
+**Reads** the machine's trust record, and, with no `--subject`, every file the kind hashes.
+
+**Writes** `~/.config/stayfixed/trust.json` (or the file beside `--machine`), only when an
+approval was withdrawn.
 
 ## `stayfixed memory session-context --bundle <name> [--part N]`
 
@@ -2336,8 +2376,8 @@ looked like before `attach` created it.
 
 **When the harness memory link waits for approval, `attach` says so, and says why.** The link
 exposes the link tree, which sits inside the repository, so it is made only once the store is
-approved; until then the run's line ends with a note to run `stayfixed memory trust
---in-repo-memory`, then `stayfixed attach` again. The note says whether the store has no approval
+approved; until then the run's line ends with a note to run `stayfixed trust approve memory` in
+a terminal, then `stayfixed attach` again. The note says whether the store has no approval
 yet or had one and then changed — a note, or `memory.index_extra`, that changed since the approval
 was recorded lapses it, and a pull that appends one line to one note is enough. A lapsed approval
 also withdraws the harness memory link from every checkout that held one, and whenever the run
@@ -2639,7 +2679,7 @@ else: the machine configuration file is still `--machine`'s, and the harness mem
 under `--home`.
 
 `setup` is not the only command that writes outside a repository, and two others say so in their
-own sections: `stayfixed memory trust` records approval in `~/.config/stayfixed/trust.json`, and
+own sections: `stayfixed trust approve` records approval in `~/.config/stayfixed/trust.json`, and
 `stayfixed attach` places the harness memory link under `<home>/.claude/projects/`. It is the only
 one that writes the machine configuration file and `<home>/.claude/settings.json`. `--root` (default `.`) is the project this invocation
 was run from; the only thing it is used for is refusing an `--overlay` any checkout of it could
@@ -2888,7 +2928,7 @@ check with `name`, `status`, `detail` and `remedy`, so every remedy is there.
 | `files` | the hook wrapper's executable bit, and the three shipped files against the hashes the release recorded beside them | `hooks/run-hook.sh`, `hooks/hooks.json`, `scripts/stayfixed`, `hooks/hashes.json` |
 | `wrapper` | whether the wrapper can actually reach stayfixed on this machine | one `run-hook.sh open --version`, and only under the plugin root this stayfixed is part of |
 | `hook-entries` | every hook entry, counted by provenance, with any that claims the stayfixed marker and is in no ledger named by position; and, as a warning, every skill, command or agent file whose frontmatter declares hooks, which it does not judge | `.claude/settings.json`, `.claude/settings.local.json`, `.codex/hooks.json`, and `~/.claude/settings.json`; every `SKILL.md` below a `.claude/skills` anywhere in the tree that git does not ignore, a checked-out submodule's committed files included, and every `*.md` below `.claude/commands` and `.claude/agents` |
-| `codex-trust` | whether any stayfixed hook is untrusted on Codex, and, when `[stayfixed] agents` lists `codex`, which surfaces are not verified there and which hold in CI | `stayfixed.toml`, the harness registry |
+| `codex-hooks` | whether any stayfixed hook is untrusted on Codex, and, when `[stayfixed] agents` lists `codex`, which surfaces are not verified there and which hold in CI | `stayfixed.toml`, the harness registry |
 | `budgets` | every budget set above the preset, named raised, and every one set below it, named lowered | `stayfixed.toml`, the machine file, the preset |
 | `preferences` | each machine-owner key and each preference, with the layer its value came from — the preset, the repository or the machine file — and the value only where it is a boolean, a number or one of stayfixed's own words; a warning naming the machine file when it could not be used whole | `stayfixed.toml`, the preset, the machine file |
 | `cli-path` | whether `stayfixed` resolves on `PATH` | `PATH` |
@@ -2935,15 +2975,15 @@ policy settings and `--settings` are yours, not the repository's, and this row d
 | `links-elsewhere` | a link to anything but the main checkout's `paths.memory` or this checkout's own | `red` | `attach` |
 | `tree-gone` | anything else, where the store does not resolve because its link tree at `paths.memory` is gone | `warn` | `attach` |
 | `tree-there-not-resolving` | anything else, where the store does not resolve and its link tree is there | `warn` | `memory index --check`, then `doctor` |
-| `trust-record-unreadable` | anything else, where this machine's trust record cannot be read | `warn` | `memory trust --in-repo-memory`, which says why, then `doctor` |
+| `trust-record-unreadable` | anything else, where this machine's trust record cannot be read | `warn` | `trust approve memory` in a terminal, which says why, then `doctor` |
 | `attached` | a link to the store, its approval holding | `ok` | — |
-| `link-lapsed` | a link to the store, its approval lapsed | `warn` | read what changed, `memory trust --in-repo-memory`, then `attach` |
+| `link-lapsed` | a link to the store, its approval lapsed | `warn` | read what changed, `trust approve memory` in a terminal, then `attach` |
 | `link-never-approved` | a link to the store, no approval recorded | `warn` | `attach`, which withdraws a link to the main checkout's tree; a link to this checkout's own tree, which it does not withdraw, is named to be removed |
 | `fallback-unapproved` | anything but a link, with the fallback naming the store, its approval lapsed or never given; the row says which | `warn` | `attach`, which withdraws the key |
 | `fallback-approved` | a real directory, with the fallback naming the store, its approval holding | `ok` | — |
 | `fallback-instead-of-a-link` | nothing, with the fallback naming the store, its approval holding | `warn` | `attach`, which makes the link |
 | `no-links-approved` | nothing, the store's approval holding | `warn` | `attach` |
-| `lapsed-links-withdrawn` | nothing, its approval lapsed | `warn` | read what changed, `memory trust --in-repo-memory`, then `attach` |
+| `lapsed-links-withdrawn` | nothing, its approval lapsed | `warn` | read what changed, `trust approve memory` in a terminal, then `attach` |
 | `never-approved` | nothing, no approval recorded | `ok` | — |
 | `settings-unreadable` | any state above that reads `ok`, beside a settings file that cannot be read as settings; the row names the file | `warn` | make the file one JSON object, then `doctor` |
 
@@ -2951,7 +2991,7 @@ policy settings and `--settings` are yours, not the repository's, and this row d
 answer, and twenty-one on a state of this machine or this repository.** A `skip` is **not** a finding and
 never reaches the exit code, so read the detail — each one says which measurement it is missing.
 
-The one no build can answer is `codex-trust`: it needs the hash Codex keys hook trust on, which
+The one no build can answer is `codex-hooks`: it needs the hash Codex keys hook trust on, which
 no spike measured. When `[stayfixed] agents` lists `codex`, its detail also says what stayfixed
 claims there: the session guards and session notices are not verified on Codex, and the
 repository gates hold in CI.
@@ -3675,19 +3715,19 @@ rather than one an environment chose, and honoured by every reader of it.
 **`~` here is your home directory as the password database records it, not `HOME`.** A direnv,
 mise or devcontainer setup can set `HOME`, and a hook runs in the project, so `HOME=fakehome`
 would name a directory the clone ships, with a `trust.json` in it. Every command reads and writes
-this file and `trust.json` under the database's home, `setup` and `memory trust` included, so the
+this file and `trust.json` under the database's home, `setup` and `trust approve` included, so the
 file you write is the one a hook reads; a `~` in `[overlay] root` means that home too. `HOME`
 still decides `--home`'s default and where `attach` at a terminal puts the harness memory link;
 empty, it names none, so `setup`, `attach` and `detach` stop there and `doctor` says so.
 
 A container or home-manager setup whose `HOME` is not its database entry is not refused:
 
-- Its files live under the entry's home. `memory trust` and `setup` say which directory they
+- Its files live under the entry's home. `trust approve` and `setup` say which directory they
   wrote under, and `doctor`'s `ignored-env` row names it.
 - A hook gives no sign that a file under `HOME` is no longer read: approved notes stop arriving
   and `[personal]` falls back to the preset. If you kept a `config.toml` or `trust.json` of your
   own under `HOME`'s `.config/stayfixed` before this release, check that they are yours and move
-  them to the entry's home **before** running `setup` or `memory trust`, which write there, or
+  them to the entry's home **before** running `setup` or `trust approve`, which write there, or
   merge them afterwards. Move only files you put there yourself: a clone's `.envrc` can point
   `HOME` at a directory it ships.
 - A hook makes no harness memory link while the two homes differ, because the harness finds its
@@ -3697,7 +3737,7 @@ A container or home-manager setup whose `HOME` is not its database entry is not 
   A link an earlier release made under `HOME` is still withdrawn when the store's approval lapses.
 
 A user the database lists no home for has no such file off `--machine`: nothing is read,
-`memory trust` and `setup` fail and say so, and a hook makes no harness memory link. A home the
+`trust approve` and `setup` fail and say so, and a hook makes no harness memory link. A home the
 database records that cannot be written fails the same two commands naming the directory; no
 other place is one a hook reads.
 

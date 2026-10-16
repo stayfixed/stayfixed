@@ -4456,7 +4456,7 @@ after = '    if not fsops.is_file(path):'
 reddens = ["tests/memory/test_commands.py::test_trust_with_no_home_in_the_database_fails_and_writes_nothing"]
 
 # A trust record that cannot be written under the database's home is a failure naming the
-# directory, never an internal error.
+# directory, never an internal error; and where the homes differ the command says where it wrote.
 [[mutation]]
 name = "an unwritable trust record directory ends as an internal error"
 file = "src/stayfixed/trust/record.py"
@@ -4464,6 +4464,15 @@ before = "    except OSError as exc:\n        where = ("
 after = "    except LookupError as exc:\n        where = ("
 reddens = [
   "tests/memory/test_commands.py::test_trust_where_the_database_home_cannot_be_written_fails_naming_the_directory",
+]
+
+[[mutation]]
+name = "memory trust keeps quiet about where it wrote while the homes differ"
+file = "src/stayfixed/trust/commands.py"
+before = "    if approved and context.machine is None and written is not None and not homes_agree():"
+after = "    if False:"
+reddens = [
+  "tests/memory/test_commands.py::test_an_owner_whose_home_differs_from_the_database_trusts_from_a_terminal_unrefused",
 ]
 
 # The machine's trust record that cannot be read is named once with the reason in words: the
@@ -4546,3 +4555,46 @@ file = "src/stayfixed/trust/record.py"
 before = "    base = machine_config_path() if machine is None else machine"
 after = '    base = Path.home() / ".config" / "stayfixed" / "config.toml" if machine is None else machine'
 reddens = ["tests/trust/test_record.py::test_the_record_ignores_xdg_and_home"]
+
+# `stayfixed trust` (`src/stayfixed/trust/commands.py`). An approval is asked of a person: with no
+# terminal on standard input it refuses and writes nothing.
+[[mutation]]
+name = "trust approve asks no terminal"
+file = "src/stayfixed/trust/commands.py"
+before = "    if not discovered.interactive():\n        raise Refusal("
+after = "    if False:\n        raise Refusal("
+reddens = [
+  "tests/trust/test_commands.py::test_no_terminal_no_approval[trust-approve]",
+  "tests/trust/test_commands.py::test_no_terminal_no_approval[memory-trust]",
+]
+
+# Withdrawing needs no terminal, and a revoke that matches nothing says so with exit 1.
+[[mutation]]
+name = "trust revoke revokes nothing"
+file = "src/stayfixed/trust/commands.py"
+before = "    revoked = [key for key in keys if record.revoke(context.machine, kind.name, key)]"
+after = "    revoked = [key for key in keys if False]"
+reddens = ["tests/trust/test_commands.py::test_revoke_needs_no_terminal"]
+
+[[mutation]]
+name = "a revoke of nothing exits 0"
+file = "src/stayfixed/trust/commands.py"
+before = "        exit_code=1,\n    )"
+after = "        exit_code=0,\n    )"
+reddens = ["tests/trust/test_commands.py::test_revoke_of_nothing_lists_what_is_recorded"]
+
+# Every line `trust list` prints that is not approved names the command that approves it.
+[[mutation]]
+name = "trust list names no command on an unapproved line"
+file = "src/stayfixed/trust/commands.py"
+before = '                line = f"{line} — run `{command}` in a terminal to approve it"'
+after = "                line = line"
+reddens = ["tests/trust/test_commands.py::test_list_names_the_command_on_every_unapproved_line"]
+
+# Two areas contributing a kind of one name refuse, rather than the second answering for the first.
+[[mutation]]
+name = "approval kind discovery accepts a duplicate name"
+file = "src/stayfixed/trust/kinds.py"
+before = "            if kind.name in found:"
+after = "            if False:"
+reddens = ["tests/trust/test_commands.py::test_kind_discovery_refuses_a_duplicate_name"]

@@ -31,6 +31,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from ptyrun import run_in_pty
 from smoke_hooks import developer_free_env, fixture_repository, with_owner_home
 
 CANARY = "CANARY-IN-REPO-RULE"
@@ -182,6 +183,15 @@ def stayfixed(
     return _run([sys.executable, str(plugin_root / "scripts" / "stayfixed"), *args], env, cwd)
 
 
+def approve(plugin_root: Path, clone: Path, env: dict[str, str]) -> int:
+    """The owner's approval of the clone's store, at a terminal: `trust approve` asks it of a
+    person, so it alone runs under a pseudo-terminal (`ptyrun`), and every other command here
+    reads its stdin from a pipe (`_run`). Its exit code."""
+    argv = [sys.executable, str(plugin_root / "scripts" / "stayfixed"), "trust", "approve"]
+    code, _ = run_in_pty([*argv, "memory", "--root", str(clone)], env=env, cwd=clone)
+    return code
+
+
 def through_wrapper(
     wrapper: Path, args: list[str], env: dict[str, str], cwd: Path
 ) -> subprocess.CompletedProcess[str]:
@@ -209,20 +219,15 @@ def main(argv: list[str]) -> int:
     bundle = ["open", "memory", "session-context", "--bundle", "standing-rules", "--part", "1"]
 
     # --- the positive control, first: the pipeline can emit the note when it is trusted ------
-    recorded = stayfixed(
-        plugin_root,
-        ["memory", "trust", "--in-repo-memory", "--root", str(planted.clone)],
-        env,
-        planted.clone,
-    )
+    recorded = approve(plugin_root, planted.clone, env)
     emitted = through_wrapper(wrapper, bundle, env, planted.clone)
     report.row(
-        recorded.returncode == 0
+        recorded == 0
         and emitted.returncode == 0
         and CANARY in emitted.stdout
         and DELIMITER in emitted.stdout,
         "the owner's own trust record lets the note through, inside a delimited region",
-        f"trust rc={recorded.returncode}, bundle rc={emitted.returncode}, "
+        f"trust rc={recorded}, bundle rc={emitted.returncode}, "
         f"canary={CANARY in emitted.stdout}, delimited={DELIMITER in emitted.stdout}",
     )
 
@@ -274,25 +279,20 @@ def main(argv: list[str]) -> int:
     # the re-trusted store is shown to emit — this row's own positive control, because "the
     # canary did not arrive" is also what a store that was never re-trusted prints.
     note.write_text(committed, encoding="utf-8")
-    again = stayfixed(
-        plugin_root,
-        ["memory", "trust", "--in-repo-memory", "--root", str(planted.clone)],
-        env,
-        planted.clone,
-    )
+    again = approve(plugin_root, planted.clone, env)
     restored = through_wrapper(wrapper, bundle, env, planted.clone)
     had_record = trust_record(planted).exists()
     trust_record(planted).unlink(missing_ok=True)
     without = through_wrapper(wrapper, bundle, env, planted.clone)
     report.row(
-        again.returncode == 0
+        again == 0
         and had_record
         and not trust_record(planted).exists()
         and CANARY in restored.stdout
         and without.returncode == 0
         and CANARY not in without.stdout,
         "with no record at all the note is never injected",
-        f"re-trusted rc={again.returncode}, record before={had_record}, "
+        f"re-trusted rc={again}, record before={had_record}, "
         f"after={trust_record(planted).exists()}, canary while recorded="
         f"{CANARY in restored.stdout}, rc={without.returncode}, "
         f"canary={CANARY in without.stdout}",
@@ -305,12 +305,7 @@ def main(argv: list[str]) -> int:
     # owner's own record there, moved out of the owner's home: the digest is one a clone computes
     # from its own content. Relative and absolute, the note stays out; moved back, the same record
     # lets it through under the same `HOME`, so the absence is the home's doing.
-    retrusted = stayfixed(
-        plugin_root,
-        ["memory", "trust", "--in-repo-memory", "--root", str(planted.clone)],
-        env,
-        planted.clone,
-    )
+    retrusted = approve(plugin_root, planted.clone, env)
     planted_record = planted.clone / "fakehome" / ".config" / "stayfixed" / "trust.json"
     planted_record.parent.mkdir(parents=True, exist_ok=True)
     trust_record(planted).replace(planted_record)
@@ -323,7 +318,7 @@ def main(argv: list[str]) -> int:
     planted_record.replace(trust_record(planted))
     owners = through_wrapper(wrapper, bundle, {**env, "HOME": "fakehome"}, planted.clone)
     report.row(
-        retrusted.returncode == 0
+        retrusted == 0
         and all(done.returncode == 0 and CANARY not in done.stdout for done in spelled.values())
         and CANARY in owners.stdout,
         "a trust record under a HOME the clone names is never read",

@@ -47,7 +47,7 @@ In scope, and treated as security rather than as an ordinary bug:
   root or outside the machine owner's own store — through `..`, an absolute path, a symlink at
   any component, a TOCTOU window, or a configured value that reaches no guard.
 - **The trust gate.** Any way repository-authored text reaches the model without
-  `stayfixed memory trust` having been given, or reaches it outside `trust.wrap`'s delimited
+  `stayfixed trust approve memory` having been given, or reaches it outside `trust.wrap`'s delimited
   region — including through a channel stayfixed hands to the harness, such as a symlink into
   the harness's own project-memory directory.
 - **Marker forgery.** Any note, index entry or configuration value that can close or forge the
@@ -101,7 +101,9 @@ Out of scope:
   holds against a repository's bytes and a `git pull`: a clone cannot write the record, and a
   changed note lapses it. An agent that can run any command as you can also write any file you
   can, the record included, and against it the harness's own write restriction is the boundary —
-  keep the machine file's directory out of what the agent may write.
+  keep the machine file's directory out of what the agent may write. `stayfixed trust approve`
+  refuses when standard input is not a terminal, which an agent's shell tool never gives it; that
+  slows a bare call and guarantees nothing against an agent that can open a pseudo-terminal.
 - A repository being able to make stayfixed **refuse** — suppressing memory, failing a hook
   closed. Undesirable, and an ordinary bug, but not a vulnerability: the whole design fails
   closed on purpose.

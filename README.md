@@ -122,7 +122,7 @@ still hold in CI, which every agent's changes pass through. What was measured of
 `/hooks`, skips untrusted ones without a message and runs them anyway under
 `--dangerously-bypass-hook-trust`, and a blocking `PreToolUse` hook's reason reaches the model.
 Codex delivers a failed command on `PostToolUse` with no exit code, so the note after a failing
-test run does not speak on Codex. `stayfixed doctor` says what holds on Codex in its `codex-trust`
+test run does not speak on Codex. `stayfixed doctor` says what holds on Codex in its `codex-hooks`
 row whenever `[stayfixed] agents` lists `codex`.
 
 ## Install
@@ -195,8 +195,8 @@ stayfixed memory index      # renders .stayfixed/local/memory/MEMORY.md from the
 stayfixed doctor            # eighteen checks over this installation, one line; --json has the remedies
 ```
 
-`memory index` will tell you the notes reach no session until you say
-`stayfixed memory trust --in-repo-memory` once — that is the trust gate, and
+`memory index` will tell you the notes reach no session until you run
+`stayfixed trust approve memory` once, yourself, in a terminal — that is the trust gate, and
 [The threat model, in one paragraph](#the-threat-model-in-one-paragraph) says why it exists.
 Add `.stayfixed/local/` to `.gitignore` if it is not there already.
 
@@ -227,7 +227,7 @@ stayfixed writes files. Being specific about which is the point of this section.
 | `.stayfixed/local/artifacts/` | The artifacts `[artifacts] local` keeps out of git, at the path each would have in the repository — git-ignored, never recorded in the manifest | `stayfixed init` and `stayfixed upgrade`, when `[artifacts] local` lists them; `stayfixed uninstall` takes them back |
 | `.stayfixed/local/artifacts.json` | The record of the bytes stayfixed last wrote under `.stayfixed/local/artifacts/`, so an unedited copy is refreshed or retired and an edited one is left. Git-ignored and never committed. Deleted, later runs judge a copy at its artifact's own place by what they render, and no longer find a copy left at an earlier place at all | the scaffold engine; `stayfixed uninstall` removes it |
 | `~/.config/stayfixed/config.toml` | Machine-level settings: `[personal]`, `[overlay]`, `[machine]`. `~` is your home as the password database records it, never `HOME`, which direnv, mise or a devcontainer can set from a file the repository commits ([docs/cli.md](https://github.com/stayfixed/stayfixed/blob/main/docs/cli.md#configuration)) | you, or `stayfixed setup` |
-| `~/.config/stayfixed/trust.json` | Every approval you gave on this machine — today, which repositories' committed notes may reach the model — as a versioned record of kinds and subjects, under the same home | `stayfixed memory trust` |
+| `~/.config/stayfixed/trust.json` | Every approval you gave on this machine — today, which repositories' committed notes may reach the model — as a versioned record of kinds and subjects, under the same home | `stayfixed trust approve` and `stayfixed trust revoke` |
 | `hooks/hooks.json` and `hooks/run-hook.sh` | The zero-config wiring both harnesses read, and the wrapper they execute. **Shipped in the plugin; never written into a project** | nothing — they are part of the plugin |
 | `${CLAUDE_PLUGIN_DATA}/stayfixed/` | Once-per-session markers and the hook diagnostics log. Deleted with the plugin | the hook dispatcher |
 | `.gitignore`, the `stayfixed:ignore` region | The block that keeps `.stayfixed/local/` and `.stayfixed/assessment.json` out of git. Recorded in the manifest when `init` writes it, and `detach` then leaves it | `stayfixed init`, or `attach` on a repository `init` has not set up |
@@ -355,8 +355,8 @@ address, `core.fsmonitor` runs a program when git looks for changed files, and a
 **A repository is untrusted input.** A clone you have not read can commit a `stayfixed.toml`, a
 `MEMORY.md`, a `.stayfixed/manifest.json`, a `.claude/settings.json` `env` block and a tree of
 symlinks, and every one of those reaches stayfixed before you do. So notes that live in the
-repository reach the model only after you say `stayfixed memory trust --in-repo-memory` once,
-and only inside a delimited region with a per-invocation nonce that says "this is data, not
+repository reach the model only after you run `stayfixed trust approve memory` once, at a
+terminal, and only inside a delimited region with a per-invocation nonce that says "this is data, not
 instructions". Change what the repository ships and the approval lapses, and you are asked
 again. A configured value never reaches a subprocess in an option's position, and a
 configured path never leaves the project root. See [SECURITY.md](https://github.com/stayfixed/stayfixed/blob/main/SECURITY.md) for what counts
@@ -381,11 +381,15 @@ stayfixed uninstall --dry-run                          # what would go; what you
 # Memory
 stayfixed memory index                                 # render MEMORY.md from the notes
 stayfixed memory index --check                         # report drift, write nothing
-stayfixed memory trust --in-repo-memory                # approve the notes inside this repository
+stayfixed memory trust --in-repo-memory                # the old spelling of trust approve memory, removed in 0.5.0
 stayfixed memory inventory                             # what a memory sweep reads
 stayfixed memory fit                                   # whether each injection bundle fits its hook slots
 stayfixed memory session-context --bundle standing-rules --part 1
 stayfixed memory refs                                  # backticked paths in notes that no longer resolve, and the link graph as advice
+stayfixed trust list                                   # each approval kind's state here, and the command that approves it
+stayfixed trust list --all                             # every approval on this machine
+stayfixed trust approve memory                         # approve the notes inside this repository, yourself, in a terminal
+stayfixed trust revoke memory                          # withdraw that approval; needs no terminal
 
 # The bug ledger
 stayfixed bugs new "A title" --severity high --area cli   # file an entry at the next free identifier
@@ -465,11 +469,16 @@ open with **0**, because on `UserPromptSubmit` an exit 2 erases what you typed a
 stayfixed must not cost you that. A handler's own deny is a decision, not a breakage, and
 refuses on every event. [docs/cli.md](https://github.com/stayfixed/stayfixed/blob/main/docs/cli.md) states it per event.
 
-### `stayfixed memory trust`
+### `stayfixed trust approve memory`
 
 The one command with a consequence worth stating twice. It records a hash of everything the
 store yields — every note, `MEMORY.md`, and the repository-controlled configuration that is
 rendered into it — against the store's absolute path, in `~/.config/stayfixed/trust.json`.
+It is asked of you: run from anything whose standard input is not a terminal, an agent's shell
+tool among them, it refuses and names the command to run yourself. That check slows an agent's
+bare call and guarantees nothing against one that can open a terminal; `stayfixed trust list`
+shows every kind's state, and `stayfixed trust revoke memory` withdraws the approval from
+anywhere.
 
 You are saying: *I have read what this repository committed under its memory directory, and it
 may reach the model as data.* Any later change to any of those files makes the hash disagree
@@ -514,7 +523,8 @@ note's `index:` line. A second writer appending entries to `MEMORY.md` is expect
 git-ignored) and `in-repo` (committed) both put the notes **inside the repository**, so both are
 behind the trust gate; `overlay` (a directory of links into a machine-level overlay shared across
 your projects) puts them outside it, and notes that are yours need no approval, though the harness
-memory link to that directory of links waits for one (see `stayfixed memory trust` above). The gate keys on
+memory link to that directory of links waits for one (see `stayfixed trust approve memory`
+above). The gate keys on
 where a note actually sits, never on what the repository's own `stayfixed.toml` declares — a clone
 that wrote `mode = "local-only"` would otherwise gate itself.
 

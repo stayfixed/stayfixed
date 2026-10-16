@@ -100,11 +100,12 @@ def test_no_module_reaches_into_another_packages_private_module() -> None:
     # `_boundary_offences` over the same two globs in an interpreter: 144 files, 11 areas and
     # one further package with an `api.py`, 5 scripts and 242 crossings, with a walk narrowed to
     # `commands.py` alone counting 9 under `src/` and 24 with the scripts — which is what the
-    # crossings floor of 60 has to be below.
-    assert len(areas) == 11, areas
+    # crossings floor of 60 has to be below. `trust` became the twelfth area since, with its
+    # `commands.py`.
+    assert len(areas) == 12, areas
     # The packages held to a surface without being discovered, pinned by name for the reason
     # `tests/test_surfaces.py` pins its list: gaining or losing one is a decision.
-    assert sorted(set(ruled) - set(areas)) == ["release", "trust"], ruled
+    assert sorted(set(ruled) - set(areas)) == ["release"], ruled
     assert len(files) >= 70, len(files)
     # The script walk's own floor: without it a `glob` that stopped matching would take the
     # `scripts/` half of this guard back to the state that hid the violation, and the crossing

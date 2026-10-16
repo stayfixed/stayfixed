@@ -10,6 +10,7 @@ from stayfixed.cli import build_parser, discover_registrars, run
 from stayfixed.findings import LISTED_LIMIT
 from stayfixed.jsonobject import LONG_NUMBER, NESTED
 from stayfixed.printed import UNPRINTABLE
+from stayfixed.trust import kinds
 from stayfixed.trust.record import NO_HOME, recorded
 from tests import parserlimits
 from tests.crafted import CRAFTED, CRAFTED_TOML, assert_never_raw
@@ -43,6 +44,14 @@ NOTE = (
 
 def invoke(argv: list[str]) -> int:
     return run(argv, parser=build_parser(discover_registrars()))
+
+
+@pytest.fixture(autouse=True)
+def _at_a_terminal(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`memory trust --in-repo-memory` is asked of a person at a terminal (`trust.kinds`); these
+    cases run it in-process, where the seam stands in for one. `tests/trust/test_commands.py`
+    holds the refusal without a terminal, through a real subprocess."""
+    monkeypatch.setattr(kinds, "interactive", lambda: True)
 
 
 @pytest.fixture
@@ -382,18 +391,18 @@ def test_index_says_so_when_the_trust_gate_is_what_empties_the_bundles(
     # running the command by hand is where that belongs.
     assert invoke(["memory", "index", *common(project)]) == 0
     out = capsys.readouterr().out
-    assert "stayfixed memory trust" in out
+    assert "stayfixed trust approve memory" in out
     assert invoke(["memory", "trust", "--in-repo-memory", *common(project)]) == 0
     capsys.readouterr()
     assert invoke(["memory", "index", "--check", *common(project)]) == 0
-    assert "stayfixed memory trust" not in capsys.readouterr().out
+    assert "stayfixed trust approve memory" not in capsys.readouterr().out
 
 
 def test_fit_says_so_when_the_trust_gate_is_what_empties_the_bundles(
     project: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     assert invoke(["memory", "fit", *common(project)]) == 0
-    assert "stayfixed memory trust" in capsys.readouterr().out
+    assert "stayfixed trust approve memory" in capsys.readouterr().out
 
 
 # --- the index seam: the file that is written, checked, harvested and injected ---------------
@@ -716,7 +725,7 @@ def test_editing_index_extra_alone_cannot_slip_a_pointer_past_the_trust_record(
     assert invoke(["--json", "memory", "index", "--check", *common(project)]) == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["trusted"] is False
-    assert "stayfixed memory trust" in payload["summary"]
+    assert "stayfixed trust approve memory" in payload["summary"]
 
 
 # --- what `memory index` says, and what it exits with, are one answer ------------------------
@@ -970,14 +979,14 @@ def test_a_committed_index_is_reported_untrusted(
     assert invoke(["--json", "memory", "index", "--check", *common(overlay_project)]) == 1
     payload = json.loads(capsys.readouterr().out)
     assert payload["trusted"] is False
-    assert "stayfixed memory trust" in payload["summary"]
+    assert "stayfixed trust approve memory" in payload["summary"]
     # The committed index is repository data the bundles withhold too, so the words are the
     # whole gate's and not the link's alone. Mutation: `mutations/`'s "a committed index is told
     # only the harness link waits".
     assert "none of it reaches a session" in payload["summary"]
 
     assert invoke(["--json", "memory", "fit", *common(overlay_project)]) == 0
-    assert "stayfixed memory trust" in json.loads(capsys.readouterr().out)["summary"]
+    assert "stayfixed trust approve memory" in json.loads(capsys.readouterr().out)["summary"]
 
 
 @needs_git
@@ -1019,7 +1028,7 @@ def test_an_overlay_store_with_no_record_says_its_link_waits_while_its_notes_sti
     assert invoke(["--json", "memory", "fit", *common(overlay_project)]) == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["trusted"] is True
-    assert "stayfixed memory trust" not in payload["summary"]
+    assert "stayfixed trust approve memory" not in payload["summary"]
 
 
 # --- `memory refs` refuses a partial resolution with the reasons, not a pointer ------------

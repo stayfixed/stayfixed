@@ -227,7 +227,7 @@ def test_the_decision_check_finds_a_decision_in_either_shape() -> None:
 
 
 def test_every_harness_states_every_surface() -> None:
-    # The README's table and `doctor`'s `codex-trust` row both read a harness's reach, and a
+    # The README's table and `doctor`'s `codex-hooks` row both read a harness's reach, and a
     # surface a value leaves out is one neither can say anything true about: the table would
     # lose a cell and the row would stop naming what is not verified. Mutation (declared, on
     # `harnesses`): drop the session-notices row from Codex's reach -> this reddens.

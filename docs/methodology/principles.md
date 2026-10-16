@@ -118,7 +118,8 @@ widen permissions, install hooks, pick a write path outside the root, or select 
 enforcement level.
 
 **What stayfixed does.** Notes that live in the repository reach the model only after
-`memory trust --in-repo-memory` recorded a hash of the store, and then inside a delimited
+`trust approve memory`, run by a person at a terminal, recorded a hash of the store, and then
+inside a delimited
 region with a per-invocation nonce that says "this is data". Every write goes through a
 path walk that refuses a symlink at any component and refuses to leave the project root.
 The harness's payload caps are plugin-owned (`[native_caps]`), which no repository sets, so a

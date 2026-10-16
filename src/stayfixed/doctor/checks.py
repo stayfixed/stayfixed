@@ -564,7 +564,7 @@ def _joined(words: Sequence[str]) -> str:
     return " and ".join(filter(None, (", ".join(words[:-1]), *words[-1:])))
 
 
-def _codex_trust(context: Context) -> Row:
+def _codex_hooks(context: Context) -> Row:
     # Red is owed while any stayfixed hook is untrusted on Codex, and the hash Codex keys hook
     # trust on is one no spike has measured. A check that returned green because it could not
     # look would be strictly worse than one that admits it cannot.
@@ -1136,7 +1136,7 @@ CHECKS: tuple[tuple[str, Callable[[Context], Row]], ...] = (
     ("files", _files),
     ("wrapper", _wrapper),
     ("hook-entries", hook_entries),
-    ("codex-trust", _codex_trust),
+    ("codex-hooks", _codex_hooks),
     ("budgets", _budgets),
     ("preferences", _preferences),
     ("cli-path", _cli_path),

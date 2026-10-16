@@ -82,6 +82,7 @@ DERIVED: dict[tuple[str, str], str] = {
     ("scripts/smoke_hooks.py", "trust_the_store"): "handed the root `main` derives",
     ("scripts/smoke_exfiltration.py", "plant"): "handed the root `main` derives",
     ("scripts/smoke_exfiltration.py", "stayfixed"): "handed the root `main` derives",
+    ("scripts/smoke_exfiltration.py", "approve"): "handed the root `main` derives",
     ("scripts/smoke_exfiltration.py", "through_wrapper"): "handed the wrapper of the root `main` "
     "derives",
 }

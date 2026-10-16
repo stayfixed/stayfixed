@@ -27,6 +27,7 @@ from stayfixed.guards.hooks import register as guards_handlers
 from stayfixed.hooks.api import DIAGNOSTICS, DIRECTORY, Handler, HookEvent, HookResult
 from stayfixed.hooks.commands import CONFIG_FALLBACK
 from stayfixed.memory.hooks import register as memory_handlers
+from stayfixed.trust import kinds
 from tests.gitfixture import git
 from tests.hooks.test_hook_command import BACKGROUND_SLEEP, CONFIG, TOOL_CALL, hook, notice_texts
 from tests.memory.test_commands import CONFIG as MEMORY_CONFIG
@@ -227,7 +228,7 @@ def test_project_handlers_speak_on_a_file_and_stay_silent_without_one(
 
 
 def test_memory_session_context_reads_a_newer_key_with_a_note(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # `memory session-context` refused a file a newer stayfixed wrote, so every bundle a session
     # starts with came back empty. It reads the file the way a session does now. Mutation
@@ -241,7 +242,9 @@ def test_memory_session_context_reads_a_newer_key_with_a_note(
     machine = tmp_path / "machine.toml"
     machine.write_text("", encoding="utf-8")
     common = ["--root", str(root), "--machine", str(machine)]
-    assert invoke(["memory", "trust", "--in-repo-memory", *common]) == 0
+    # The approval is asked of a person at a terminal; in-process, the seam stands in for one.
+    monkeypatch.setattr(kinds, "interactive", lambda: True)
+    assert invoke(["trust", "approve", "memory", *common]) == 0
     with (root / "stayfixed.toml").open("a", encoding="utf-8") as document:
         document.write("\n[newer]\nx = 1\n")
     capsys.readouterr()

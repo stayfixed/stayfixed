@@ -17,7 +17,7 @@ A value also states its reach: for each enforcement surface stayfixed has (`Surf
 which that surface holds under this harness (`Tier`), or `None` where no tier is claimed there, and
 the evidence each rests on: what was observed, on which version, and where its record is. The
 README's table of what each agent enforces is held equal to these values by a test, and `doctor`'s
-`codex-trust` row reads them, so a measurement that moves a tier is one edit here.
+`codex-hooks` row reads them, so a measurement that moves a tier is one edit here.
 
 A new harness is a value with a positive `detects`, its project-root and plugin-root variables,
 its `render`, its settings files, the places it reads hooks out of a Markdown frontmatter, its
@@ -43,7 +43,7 @@ package that names a harness is pardoned there, each pardon by one of these item
   harness is in use, with every variable under Claude Code's and Codex's prefixes taken out of its
   environment first; names `CLAUDE_PLUGIN_ROOT` in the remedy of the rows that find no plugin
   root and `${CLAUDE_PLUGIN_DATA}` in the `diagnostics` row's; and reads `CODEX` by name in its
-  `codex-trust` row.
+  `codex-hooks` row.
 - `setup` installs the plugin through each harness's own command-line verbs,
   `_MARKETPLACE_ADD` and `_PLUGIN_INSTALL` in `setup/run.py`, keyed by harness name, so another
   harness is another entry in each.
@@ -128,7 +128,7 @@ class Reach:
     """One surface under one harness."""
 
     # `None`: no tier is claimed for the surface under this harness, which the README's table and
-    # `doctor`'s `codex-trust` row print as "not verified".
+    # `doctor`'s `codex-hooks` row print as "not verified".
     tier: Tier | None
     # The observation the tier rests on and where its record is: a public record, named, or, for a
     # measurement whose record is not in this repository, the date it was made and that it is not

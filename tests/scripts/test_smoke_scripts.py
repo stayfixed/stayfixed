@@ -53,7 +53,7 @@ def _copy_hooks(hooks: Path, planted: Path) -> None:
 FAULTY = f"""
 import runpy, sys
 
-if sys.argv[1:3] == ["memory", "trust"]:
+if sys.argv[1:3] == ["trust", "approve"]:
     runpy.run_path({str(ROOT / "scripts" / "stayfixed")!r}, run_name="__main__")
 sys.stderr.write("boom\\n")
 sys.exit(1)

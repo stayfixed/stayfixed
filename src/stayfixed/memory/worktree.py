@@ -490,7 +490,7 @@ def link(
     native memory reader instead: whatever sits behind it reaches the model with no gate, no
     delimiter and no trust record. In `local-only` — the preset default — and in `in-repo` the
     store is content the clone shipped, so creating that link before the owner has said
-    `stayfixed memory trust --in-repo-memory` hands repository-authored text to the model
+    `stayfixed trust approve memory` hands repository-authored text to the model
     through a channel this area does not control.
 
     The condition is `trust.may_inject`, and it must be asked **about the directory this link
@@ -514,7 +514,7 @@ def link(
     `inside_project(store)` nor `repository_data` holds — here, only a store whose directory is
     outside the repository — and otherwise it demands a digest that matches what the owner
     approved. So in overlay mode, where the store's directory is inside the repository, the
-    link waits for `stayfixed memory trust --in-repo-memory` even when every note behind it is
+    link waits for `stayfixed trust approve memory` even when every note behind it is
     the machine owner's own; the bundles deliver those notes with no record, and the link does
     not. Gating on `inside_project` alone would ask the wrong question (it would refuse a
     trusted store for ever); gating on the mode would ask the clone.

@@ -95,9 +95,9 @@ def test_0_3_0s_reader_sees_no_approval_in_a_version_1_record(tmp_path: Path) ->
 def test_an_unreadable_record_refuses_and_is_never_overwritten(
     tmp_path: Path, document: str, sentence: str | None
 ) -> None:
-    # Mutation (`mutations/`'s "a trust record of a later version is read as empty"): version 2
-    # reads as no approval and the write replaces it; "an approval over an unreadable trust
-    # record writes the record anyway": the write replaces every case.
+    # Mutations (`mutations/`'s "a trust record of a later version is read as empty" -> version 2
+    # reads as no approval and the write replaces it; "an approval over an unreadable trust record
+    # writes the record anyway" -> the write replaces every case).
     path = tmp_path / RECORD
     path.write_text(document, encoding="utf-8")
     with pytest.raises(UnreadableTrust) as caught:

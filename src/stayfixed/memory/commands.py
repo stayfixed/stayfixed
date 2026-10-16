@@ -22,7 +22,6 @@ from pathlib import Path
 from stayfixed.areas import SubParsers
 from stayfixed.command import CHECK_HELP, common_flags
 from stayfixed.config.loader import load
-from stayfixed.config.machine import homes_agree
 from stayfixed.config.schema import Config
 from stayfixed.config.session import session_config
 from stayfixed.errors import Failure, Refusal
@@ -44,6 +43,7 @@ from stayfixed.memory.store import Store, Unresolved, in_repository, resolved
 from stayfixed.memory.worktree import harness_link_needed
 from stayfixed.printed import printable, quoted
 from stayfixed.result import Result
+from stayfixed.trust.api import KindContext, approve_kind
 
 
 def _machine(args: argparse.Namespace) -> Path | None:
@@ -87,11 +87,17 @@ def _store(args: argparse.Namespace) -> tuple[Store, Config]:
 
 def _store_of(args: argparse.Namespace, root: Path, config: Config, machine: Path | None) -> Store:
     """The store `config` names in `root`, or the refusal that says why there is none."""
+    return store_at(root, config, machine, args.store)
+
+
+def store_at(root: Path, config: Config, machine: Path | None, override: str | None) -> Store:
+    """`_store_of` for a caller holding `--store`'s value rather than the parsed arguments: the
+    `memory` approval kind (`memory.approvals`) resolves the store as `memory trust` did."""
     # `resolved` and not `resolve` + `refusal_reason`: the pair walked the whole resolution
     # twice, four `git` queries with a five-second timeout apiece each time, so a hanging `git`
     # cost a refused `memory session-context` up to forty seconds — once per `SessionStart`
     # bundle entry.
-    found = resolved(root, config, override=args.store, machine=machine)
+    found = resolved(root, config, override=override, machine=machine)
     if found[0] is None:
         raise _no_store(found[1])
     return found[0]
@@ -109,7 +115,7 @@ def _store_of(args: argparse.Namespace, root: Path, config: Config, machine: Pat
 _UNTRUSTED = (
     "this store holds repository data with no trust record, so none of it reaches a session — "
     "not through the standing-rules and volatile-notes bundles, nor through the harness memory "
-    "link — run `stayfixed memory trust --in-repo-memory`"
+    "link — run `stayfixed trust approve memory` in a terminal"
 )
 # The overlay store whose notes are all the machine owner's: the bundles deliver them with no
 # record, and only the link to the store's directory, which is inside the repository, waits.
@@ -117,15 +123,15 @@ _UNTRUSTED = (
 _LINK_WAITS = (
     "the harness memory link to this store waits for a trust record, because the store's "
     "directory is inside the repository; its notes still reach a session through the "
-    "standing-rules and volatile-notes bundles — run `stayfixed memory trust --in-repo-memory` "
-    "to link it"
+    "standing-rules and volatile-notes bundles — run `stayfixed trust approve memory` in a "
+    "terminal to link it"
 )
 # The narrow case where a stayfixed-authored write cannot carry trust forward: the store changed
 # under it, so re-recording would bless bytes the owner has never looked at. `refresh_if_trusted`
 # refuses rather than guess, which is right, and the human has to be told which it was.
 _DROPPED = (
     "the store changed while this command ran, so its trust record was not carried over — "
-    "review the change and re-run `stayfixed memory trust --in-repo-memory`"
+    "review the change and re-run `stayfixed trust approve memory` in a terminal"
 )
 # What the write path put into notes that nobody curated: an `index:` line taken from a note's
 # `metadata.index` or, failing that, its description. Said on the line and not only in `--json`'s
@@ -354,23 +360,23 @@ def run_session_context(args: argparse.Namespace) -> Result:
     return Result(text if text is not None else "")
 
 
+# What the old spelling says after it ran, so a person learns the new one before it goes.
+ALIAS_NOTE = (
+    "`stayfixed memory trust --in-repo-memory` is now `stayfixed trust approve memory`; the old "
+    "spelling is removed in 0.5.0"
+)
+
+
 def run_trust(args: argparse.Namespace) -> Result:
-    store, config = _store(args)
-    before = trust.state(store, config)
-    after = trust.record(store, config)
-    summary = f"recorded the store hash for {store.path}"
-    written = trust.record_path(store.machine)
-    if store.machine is None and written is not None and not homes_agree():
-        # Said where `HOME` is not the database's home, because a person who looks under `HOME`
-        # for the record finds an older one or none (`config.machine`'s docstring says why).
-        summary = (
-            f"{summary}, in {written}: under the home the password database records for this "
-            f"user, not under HOME, because that is where a hook reads it"
-        )
-    return Result(
-        summary,
-        {"was_trusted": before.trusted, "trusted": after.trusted, "digest": after.current},
-    )
+    """The old spelling of `stayfixed trust approve memory`: the same approve path, the terminal
+    check included."""
+    root = Path(args.root).resolve()
+    options = {} if args.store is None else {"--store": args.store}
+    given = [*(["--root", args.root] if args.root != "." else [])]
+    given += [*(["--machine", args.machine] if args.machine is not None else [])]
+    given += [*(["--store", args.store] if args.store is not None else [])]
+    approved = approve_kind("memory", KindContext(root, _machine(args), options), given)
+    return Result(f"{approved.summary}\n{ALIAS_NOTE}", approved.data, approved.exit_code)
 
 
 def run_inventory(args: argparse.Namespace) -> Result:

@@ -29,7 +29,7 @@ can set it for a checkout, and `run-hook.sh` enters the project root before Pyth
 `HOME=fakehome` names a directory inside the clone: a `trust.json` committed there approved the
 clone's own notes with no word from the owner. So off a terminal the home directory is the password
 database's entry for this process's user (`owner_home`), which no variable moves, and this file is
-under that entry's directory for every reader and writer, `setup` and `memory trust` included. A
+under that entry's directory for every reader and writer, `setup` and `trust approve` included. A
 container or home-manager setup whose `HOME` differs from that entry therefore keeps this file and
 `trust.json` under the entry's directory, and `stayfixed doctor`'s `ignored-env` row says so. A
 user the database does not list has no such file: none is read, rather than one `HOME` chose.

@@ -918,22 +918,22 @@ reddens = [
 ]
 
 # The owner's own act, without which the injection rows are back to proving nothing: the store
-# is repository data and emits only once somebody has said so. `inventory` is a command that
-# does not take the store flags, so the run reports the failure instead of proceeding — which
+# is repository data and emits only once somebody has said so. `revoke` records nothing, and
+# with nothing recorded it exits 1, so the run reports the failure instead of proceeding — which
 # is the behaviour under test, because a smoke run that could not trust the fixture must say so
 # rather than print ten green rows over empty output.
 [[mutation]]
 name = "the hook smoke stops recording the owner's trust"
 file = "scripts/smoke_hooks.py"
 before = """
-            "memory",
             "trust",
-            "--in-repo-memory",
+            "approve",
+            "memory",
 """
 after = """
+            "trust",
+            "revoke",
             "memory",
-            "inventory",
-            "--in-repo-memory",
 """
 reddens = [
   "tests/scripts/test_smoke_scripts.py::test_every_hook_entry_answers_its_sample_event_through_the_checkout",

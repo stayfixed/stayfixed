@@ -1124,10 +1124,10 @@ reddens = [
   "tests/attach/test_doctor.py::test_a_byte_that_is_not_utf8_changes_no_entrys_verdict[latin-1-beside-no-marked-entry]",
 ]
 
-# The `codex-trust` row names the surfaces the registry claims no tier for on Codex, which is what a
+# The `codex-hooks` row names the surfaces the registry claims no tier for on Codex, which is what a
 # Codex user needs when they look.
 [[mutation]]
-name = "the codex-trust row lists no surface that is not verified on Codex"
+name = "the codex-hooks row lists no surface that is not verified on Codex"
 file = "src/stayfixed/doctor/checks.py"
 before = "        absent = [str(surface) for surface, reach in CODEX.reach.items() if reach.tier is None]"
 after = "        absent: list[str] = []"
@@ -1139,7 +1139,7 @@ reddens = [
 # verified either would be false, which a test deriving its expectation as the row does cannot
 # see.
 [[mutation]]
-name = "the codex-trust row says no surface runs on Codex"
+name = "the codex-hooks row says no surface runs on Codex"
 file = "src/stayfixed/doctor/checks.py"
 before = "        absent = [str(surface) for surface, reach in CODEX.reach.items() if reach.tier is None]"
 after = "        absent = [str(surface) for surface, reach in CODEX.reach.items()]"

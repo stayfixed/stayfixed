@@ -1,7 +1,7 @@
 """What `doctor` answers about an installation, and what it refuses to guess.
 
 One of the eighteen checks cannot be answered by this build and says so rather than guessing:
-`codex-trust`, a platform question no measurement has answered yet, and a check that
+`codex-hooks`, a platform question no measurement has answered yet, and a check that
 returned green because it could not look would be strictly worse than one that admits it.
 `ci-ref` used to be counted beside it; `init` writes `[ci] ref`, so its skip reports a state of
 the repository and not a limit of this build.
@@ -361,7 +361,7 @@ REPORT = (
     "files",
     "wrapper",
     "hook-entries",
-    "codex-trust",
+    "codex-hooks",
     "budgets",
     "preferences",
     "cli-path",
@@ -613,7 +613,7 @@ def test_an_unmeasured_platform_question_reports_skip_and_names_why(tmp_path: Pa
     # be strictly worse than one that admits it cannot.
     check = _by_name(
         _checks(tmp_path, _initialised(tmp_path)),
-        "codex-trust",
+        "codex-hooks",
     )
     assert check.status == "skip"
     assert "unmeasured" in check.detail
@@ -633,7 +633,7 @@ def test_the_codex_row_names_what_is_not_verified_on_codex(tmp_path: Path) -> No
             'state = "installed"', 'state = "installed"\nagents = ["claude", "codex"]'
         ),
     )
-    on_codex = _by_name(_checks(tmp_path / "codex", listed), "codex-trust")
+    on_codex = _by_name(_checks(tmp_path / "codex", listed), "codex-hooks")
     assert on_codex.status == "skip" and on_codex.remedy == ""
     unlisted = _initialised(
         tmp_path / "claude",
@@ -641,7 +641,7 @@ def test_the_codex_row_names_what_is_not_verified_on_codex(tmp_path: Path) -> No
             'state = "installed"', 'state = "installed"\nagents = ["claude"]'
         ),
     )
-    elsewhere = _by_name(_checks(tmp_path / "claude", unlisted), "codex-trust")
+    elsewhere = _by_name(_checks(tmp_path / "claude", unlisted), "codex-hooks")
     assert elsewhere.status == "skip"
     assert "unmeasured" in elsewhere.detail
     assert on_codex.detail == elsewhere.detail + (

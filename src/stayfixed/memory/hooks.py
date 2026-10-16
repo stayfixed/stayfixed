@@ -54,7 +54,7 @@ NOT_LINKED = "stayfixed: a memory path was refused for this worktree and was not
 # `LINKED.format(count=0)` — or not at all — it would look like "nothing to do".
 REVOKED = (
     "stayfixed: this store is no longer trusted, so the harness memory link was removed — "
-    "run `stayfixed memory trust --in-repo-memory` after reviewing what changed"
+    "run `stayfixed trust approve memory` in a terminal after reviewing what changed"
 )
 # `git` could not be run, or the machine configuration file is broken. Neither is "there is
 # no store", which is why `gitenv.git_answer` tells "could not ask" from "the answer is

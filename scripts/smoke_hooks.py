@@ -20,6 +20,10 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from ptyrun import run_in_pty
+
 PLACEHOLDER = "${CLAUDE_PLUGIN_ROOT}"
 # The wrapper's own fault tokens all begin with this, and every one of them is a report about
 # the launcher rather than an answer from the dispatcher. A refusal that carries one is not a
@@ -257,29 +261,26 @@ def trust_the_store(plugin_root: Path, project: Path, env: dict[str, str]) -> st
     from the outside of it. The owner's own act is performed here, once, the way
     `smoke_exfiltration.py`'s positive control performs it, and the rows below then assert
     what came through. A failure here is a failure of the run, not a row: the six injection
-    rows after it would go green on empty output.
+    rows after it would go green on empty output. The owner approves at a terminal, which
+    `trust approve` asks for, so it runs under a pseudo-terminal (`ptyrun`).
     """
-    done = subprocess.run(  # noqa: S603
+    code, said = run_in_pty(
         [
             sys.executable,
             str(plugin_root / "scripts" / "stayfixed"),
-            "memory",
             "trust",
-            "--in-repo-memory",
+            "approve",
+            "memory",
             "--root",
             str(project),
         ],
-        input="",
-        capture_output=True,
-        text=True,
-        check=False,
-        cwd=project,
         env=env,
+        cwd=project,
     )
-    if done.returncode != 0:
+    if code != 0:
         return (
             f"could not record trust for the fixture's store, so the injection rows would "
-            f"prove nothing: rc={done.returncode}, stderr={done.stderr.strip()[:200]}"
+            f"prove nothing: rc={code}, output={said.strip()[:200]}"
         )
     return None
 

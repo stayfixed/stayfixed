@@ -3394,3 +3394,12 @@ file = "docs/cli.md"
 before = "Eighteen checks over one installation."
 after = "Seventeen checks over one installation."
 reddens = ["tests/test_documents.py::test_every_document_counts_the_rows_the_report_has"]
+
+# The shipped documents name `stayfixed memory trust` only as the old spelling of `trust approve
+# memory`.
+[[mutation]]
+name = "the README tells a reader to run memory trust again"
+file = "README.md"
+before = "repository reach the model only after you run `stayfixed trust approve memory` once, at a"
+after = "repository reach the model only after you run `stayfixed memory trust` once, at a"
+reddens = ["tests/test_documents.py::test_no_shipped_document_names_memory_trust_outside_its_alias_note"]

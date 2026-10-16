@@ -83,7 +83,7 @@ def record_path(machine: Path | None) -> Path | None:
 
 
 def _approve(store: Store, digest: str) -> None:
-    approve(store.machine, MEMORY, _key(store), digest, now=datetime.now(UTC))
+    approve(store.machine, MEMORY, store_key(store), digest, now=datetime.now(UTC))
 
 
 @dataclass(frozen=True)
@@ -118,7 +118,7 @@ def _content_digest(path: Path) -> str:
     `notes.walk` deliberately quarantines this class of file rather than letting one of them
     cost the whole store. An unguarded `read_bytes` here takes `store_digest`, `may_inject` and
     `record` down together, so one committed dangling `gone.md` symlink turns every
-    trust-dependent command into exit 2 — `memory trust`, the command that would recover the
+    trust-dependent command into exit 2 — `trust approve memory`, the command that would recover the
     state, included.
     """
     try:
@@ -174,12 +174,12 @@ def _config_digest(config: Config) -> str:
     `refresh_if_trusted` because stayfixed itself authored that write. The rule that a changed
     hash re-prompts has to mean the hash covers what actually reaches the file.
 
-    Only this field, not the whole file. Folding `stayfixed.toml` in wholesale would revoke
-    memory trust on every unrelated edit — a budget, a branch name — and a prompt that fires
+    Only this field, not the whole file. Folding `stayfixed.toml` in wholesale would lapse
+    a store's approval on every unrelated edit — a budget, a branch name — and a prompt that fires
     for everything trains the owner to answer it without looking, which is worse than the hole
     it closes. Every other repository-controlled input to what the store yields already lands
     in the digest by another route: `memory.groups` and `paths.memory` decide which files
-    `_files` walks and what `_key` names.
+    `_files` walks and what `store_key` names.
 
     JSON for the framing, so the list `["a/b", "c"]` cannot collide with `["a/b\0c"]`, and a
     fixed-width hex digest out, so `_entry`'s 128-byte-per-entry parse still holds.
@@ -237,7 +237,8 @@ def store_digest(store: Store, config: Config) -> str:
     return _digest_of(_read(store, config))
 
 
-def _key(store: Store) -> str:
+def store_key(store: Store) -> str:
+    """The store's subject in the machine's trust record, under kind `MEMORY`."""
     return _path_key(store.path)
 
 
@@ -260,7 +261,7 @@ def _recorded(machine: Path | None) -> dict[str, str]:
 
     **Absent and unreadable are not the same answer**, and the machine's record
     (`stayfixed.trust`) keeps them apart: one stray byte read as `{}` once collapsed every
-    project's approval on the next `memory trust`. An absent file still answers `{}`.
+    project's approval on the next approval. An absent file still answers `{}`.
     """
     return {
         subject: approval.digest
@@ -292,7 +293,7 @@ def require_readable_record(machine: Path | None) -> None:
 
 def state(store: Store, config: Config) -> TrustState:
     current = store_digest(store, config)
-    recorded = _recorded(store.machine).get(_key(store))
+    recorded = _recorded(store.machine).get(store_key(store))
     return TrustState(trusted=recorded == current, recorded=recorded, current=current)
 
 
@@ -317,7 +318,7 @@ class Snapshot:
 
 def snapshot(store: Store, config: Config) -> Snapshot:
     read = _read(store, config)
-    recorded = _recorded(store.machine).get(_key(store))
+    recorded = _recorded(store.machine).get(store_key(store))
     return Snapshot(trusted=recorded == _digest_of(read), entries=dict(read))
 
 
@@ -338,9 +339,9 @@ def refresh_if_trusted(
     So the digest written here is not a fresh read of the disk. It is built entry by entry:
     a file this command wrote contributes the bytes now on disk, and every other file
     contributes the digest `before` captured — the bytes the owner approved. Anything that
-    arrived on disk between the owner's `memory trust` and this command therefore does **not**
-    ride along: either `before.trusted` is already False and nothing is recorded at all, or the
-    recorded digest simply will not match the next `state()` read and the owner is re-prompted.
+    arrived on disk between the owner's `trust approve memory` and this command therefore does
+    **not** ride along: either `before.trusted` is already False and nothing is recorded at all, or
+    the recorded digest simply will not match the next `state()` read and the owner is re-prompted.
     Fail-closed in both directions, and a file that appeared or vanished without stayfixed
     touching it stops the refresh outright.
 

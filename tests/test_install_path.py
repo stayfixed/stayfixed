@@ -568,7 +568,8 @@ def test_a_wrapped_bundle_arrives_with_both_of_its_region_markers(tmp_path: Path
     bin_dir = tmp_path / "bin"
     _fake_binaries(bin_dir)
     walk = Walkthrough(root, root, machine, tmp_path / "home", tmp_path / "data", notes, bin_dir)
-    trusted = _cli(walk, "memory", "trust", "--in-repo-memory", "--machine", str(machine))
+    # The approval is a person's, at a terminal.
+    trusted = _cli(walk, "trust", "approve", "memory", "--machine", str(machine), tty=True)
     assert trusted.returncode == 0, trusted.stderr
     done = _bundle(walk, "standing-rules")
     assert done.returncode == 0, done.stderr
@@ -657,7 +658,7 @@ def test_doctor_is_green_on_the_attached_fixture(tmp_path: Path) -> None:
     rows = _doctor(walk)
     assert [row["name"] for row in rows if row["status"] == RED] == []
     assert [row["name"] for row in rows if row["status"] == SKIP] == [
-        "codex-trust",
+        "codex-hooks",
         "ci-ref",
     ]
     assert next(row for row in rows if row["name"] == "files")["status"] == OK

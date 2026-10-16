@@ -1,5 +1,5 @@
-"""Discovery: one loop for the three readers of an area, which imports only the areas that carry
-the submodule asked for, is asked only for those three submodules and only by their readers, and
+"""Discovery: one loop for the four readers of an area, which imports only the areas that carry
+the submodule asked for, is asked only for those four submodules and only by their readers, and
 loads an area's `doctor.py` at no cost before the report asks it anything."""
 
 from __future__ import annotations
@@ -26,15 +26,15 @@ LIST_IMPORTS = (
     "print(' '.join(sorted(m for m in sys.modules if m.startswith('stayfixed'))))\n"
 )
 
-# The submodules discovery imports by name, one per reader: the CLI frame, the hook registry and
-# the doctor report.
-DISCOVERED_SUBMODULES = ("commands.py", "hooks.py", "doctor.py")
+# The submodules discovery imports by name, one per reader: the CLI frame, the hook registry, the
+# doctor report and the trust package's kinds.
+DISCOVERED_SUBMODULES = ("commands.py", "hooks.py", "doctor.py", "approvals.py")
 
 
 def area_names(source: Path) -> list[str]:
     """CONTRIBUTING's definition, read off the tree: a subpackage carrying `commands.py`,
-    `hooks.py` or `doctor.py`. Derived rather than listed, so a new area is covered the day it
-    arrives."""
+    `hooks.py`, `doctor.py` or `approvals.py`. Derived rather than listed, so a new area is
+    covered the day it arrives."""
     return sorted(
         path.name
         for path in source.iterdir()
@@ -202,7 +202,8 @@ DISCOVERY_FUNCTIONS = frozenset({"area_modules", "area_imports"})
 # Who asks discovery for what, one row per call: the file relative to `src/stayfixed/` and the
 # submodule its call names. Held as a multiset and by equality in both directions, as
 # `tests/boundaries/test_delivery.py`'s `DYNAMIC_IMPORTERS` is. Each submodule has its one reader,
-# the CLI frame, the hook registry and the doctor report, and no other module asks: any module that
+# the CLI frame, the hook registry, the doctor report and the trust package's kinds, and no other
+# module asks: any module that
 # could ask for `commands` could pick one area's module out of the answer by its name and call into
 # the private layer through the door the delivery rule leaves open, though every call named a
 # submodule discovery is for.
@@ -210,6 +211,7 @@ DISCOVERY_CALLERS = (
     ("cli.py", "commands"),
     ("doctor/registry.py", "doctor"),
     ("hooks/registry.py", "hooks"),
+    ("trust/kinds.py", "approvals"),
 )
 
 
@@ -269,7 +271,7 @@ def test_discovery_is_asked_only_for_the_submodules_it_names() -> None:
     # `area_modules` and `area_imports` import `stayfixed.<area>.<submodule>` for every area that
     # has one, so a core caller asking for `"api"` loads every area's surface, the private layer's
     # included, through the one door the delivery rule leaves open. Every call under
-    # `src/stayfixed/` names one of the three submodules discovery is for, as a literal, and is
+    # `src/stayfixed/` names one of the four submodules discovery is for, as a literal, and is
     # made by that submodule's reader alone (`DISCOVERY_CALLERS`). No module but its own refers to a
     # reader's seam that hands discovery's answer on (`DISCOVERY_SEAMS`).
     #

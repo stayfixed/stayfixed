@@ -2925,17 +2925,6 @@ reddens = [
   "tests/memory/test_worktree.py::test_a_link_without_the_harness_half_makes_the_tree_and_says_what_it_withheld",
 ]
 
-# In the block led by `mutations/`'s "an unwritable trust record directory ends as an internal
-# error": where the homes differ, the command says where it wrote.
-[[mutation]]
-name = "memory trust keeps quiet about where it wrote while the homes differ"
-file = "src/stayfixed/memory/commands.py"
-before = '    if store.machine is None and written is not None and not homes_agree():'
-after = '    if False:'
-reddens = [
-  "tests/memory/test_commands.py::test_an_owner_whose_home_differs_from_the_database_trusts_from_a_terminal_unrefused",
-]
-
 # The line for a withheld harness link names `attach` only where `attach` makes the link: an
 # overlay store. It refuses every other mode, and for those the hook is the only maker.
 [[mutation]]
@@ -3431,3 +3420,12 @@ file = "src/stayfixed/memory/trust.py"
 before = 'MEMORY = "memory"'
 after = 'MEMORY = "store"'
 reddens = ["tests/memory/test_trust.py::test_a_store_0_3_0_approved_is_still_approved"]
+
+# The old spelling runs the same approve path, terminal check included, and never records on its
+# own.
+[[mutation]]
+name = "the memory trust alias asks no terminal"
+file = "src/stayfixed/memory/commands.py"
+before = '    approved = approve_kind("memory", KindContext(root, _machine(args), options), given)'
+after = '    trust.record(*_store(args))\n    approved = Result("recorded", {"approved": []})'
+reddens = ["tests/trust/test_commands.py::test_no_terminal_no_approval[memory-trust]"]

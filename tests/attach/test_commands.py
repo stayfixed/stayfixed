@@ -1111,7 +1111,7 @@ def test_a_harness_link_that_waits_for_approval_is_said_with_the_way_out(tmp_pat
     machine = _machine(tmp_path, overlay=store.parents[2])
     code, out, _ = cli(root, tmp_path, "attach", "--store", str(store), machine=machine)
     assert code == 0
-    assert "stayfixed memory trust --in-repo-memory" in out
+    assert "stayfixed trust approve memory" in out
     assert "then `stayfixed attach` again" in out
     # The other direction, so the sentence is about the gate and not about every attach: once
     # the store is approved the link is made and nothing asks for the approval again.
@@ -1281,14 +1281,14 @@ _UNREAD = {
 }
 _WAITS = (
     "the harness memory link was not created, because the link tree it would expose sits inside "
-    "this repository and has no approval yet; run `stayfixed memory trust --in-repo-memory`, then "
-    "`stayfixed attach` again"
+    "this repository and has no approval yet; run `stayfixed trust approve memory` in a terminal, "
+    "then `stayfixed attach` again"
 )
 # Said instead where the approval is recorded and the store changed since.
 _LAPSED = (
     "the harness memory link was not created, because the store or its memory.index_extra changed "
     "since its approval was recorded, so that approval no longer holds; read what changed, run "
-    "`stayfixed memory trust --in-repo-memory`, then `stayfixed attach` again"
+    "`stayfixed trust approve memory` in a terminal, then `stayfixed attach` again"
 )
 
 
