@@ -504,8 +504,9 @@ entry of `sandbox.filesystem.allowWrite`, `permissions.additionalDirectories` or
 rule is safe only as a literal path outside the project and that directory — `~/.kube` and
 `/tmp/build` are; `**`, `~/.config` and `./build` are not, and a `~/` entry must be clear under
 every home it may mean, `HOME` included — and every other entry is a gap the row names. Where
-`CLAUDE_CONFIG_DIR` names a user settings directory besides `~/.claude`, the row judges both and
-reports the worse, and `setup` writes only `~/.claude` and names the other for you. With the sandbox on, an agent's shell cannot write the machine directory at all, so `setup`,
+`CLAUDE_CONFIG_DIR` names a user settings directory besides `~/.claude`, that directory may only
+make the row worse — never better than a warning when it is the only one, and never read at all
+inside the project — and `setup` writes it too only where it exists outside the project. With the sandbox on, an agent's shell cannot write the machine directory at all, so `setup`,
 `trust revoke` and `memory index`'s refresh of an approval, run there, say a person must run them
 in their own terminal. `stayfixed uninstall` leaves these machine-wide rules:
 `[setup] ask_rules = false` takes the `ask` rules back, and the deny rule is yours to remove by

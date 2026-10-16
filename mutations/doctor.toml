@@ -3095,8 +3095,8 @@ reddens = [
 [[mutation]]
 name = "the boundary row asks a machine with no Claude Code"
 file = "src/stayfixed/doctor/boundary.py"
-before = "        if directory is not None and fsops.is_dir(directory)"
-after = "        if directory is not None"
+before = "    if found.directory is not None and fsops.is_dir(found.directory):"
+after = "    if found.directory is not None:"
 reddens = [
   "tests/doctor/test_approval_boundary.py::test_the_row_skips_without_claude_code",
 ]
@@ -3420,22 +3420,49 @@ reddens = [
 ]
 
 [[mutation]]
-name = "the boundary row judges one user settings directory alone"
+name = "the boundary row lets the variable's directory alone make the row green"
 file = "src/stayfixed/doctor/boundary.py"
-before = "    if found.chosen is not None:\n        directories.append((found.chosen, CHOSEN_LABEL))"
-after = "    if False:\n        directories.append((found.chosen, CHOSEN_LABEL))"
+before = "        row = _worsened(other, WARN, CHOSEN_ALONE.format(path=quoted(str(chosen))), \"\")"
+after = "        row = _worsened(other, OK, CHOSEN_ALONE.format(path=quoted(str(chosen))), \"\")"
 reddens = [
-  "tests/doctor/test_approval_boundary.py::test_a_claude_config_dir_alone_is_judged_where_the_home_has_none",
-  "tests/doctor/test_approval_boundary.py::test_with_claude_config_dir_both_directories_are_judged_and_the_worse_is_said[home]",
-  "tests/doctor/test_approval_boundary.py::test_with_claude_config_dir_both_directories_are_judged_and_the_worse_is_said[chosen]",
+  "tests/doctor/test_approval_boundary.py::test_a_claude_config_dir_alone_is_judged_and_never_above_a_warning[guarded]",
 ]
 
 [[mutation]]
-name = "the boundary row reports the better of two answers"
+name = "the boundary row takes the variable's directory for the home's"
 file = "src/stayfixed/doctor/boundary.py"
-before = "    worst = max(SEVERITY[row.status] for row, _ in judged)"
-after = "    worst = min(SEVERITY[row.status] for row, _ in judged)"
+before = "        row = _judged(context, found.directory, USER_LABEL)"
+after = "        row = other or _judged(context, found.directory, USER_LABEL)"
 reddens = [
-  "tests/doctor/test_approval_boundary.py::test_with_claude_config_dir_both_directories_are_judged_and_the_worse_is_said[home]",
-  "tests/doctor/test_approval_boundary.py::test_with_claude_config_dir_both_directories_are_judged_and_the_worse_is_said[chosen]",
+  "tests/doctor/test_approval_boundary.py::test_the_home_s_directory_is_the_subject_and_claude_config_dir_only_worsens_it[home]",
 ]
+
+[[mutation]]
+name = "the boundary row passes the variable's directory's gaps over"
+file = "src/stayfixed/doctor/boundary.py"
+before = "        if other is not None and other.status != OK and other.detail != row.detail:"
+after = "        if False:"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_the_home_s_directory_is_the_subject_and_claude_config_dir_only_worsens_it[chosen]",
+]
+
+[[mutation]]
+name = "the boundary row judges a CLAUDE_CONFIG_DIR inside the project"
+file = "src/stayfixed/doctor/boundary.py"
+before = "    inside = chosen is not None and in_project(chosen, context.root)"
+after = "    inside = False"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_a_claude_config_dir_inside_the_project_is_never_judged[home-guarded]",
+  "tests/doctor/test_approval_boundary.py::test_a_claude_config_dir_inside_the_project_is_never_judged[home-has-none]",
+  "tests/doctor/test_approval_boundary.py::test_a_claude_config_dir_that_leads_into_the_project_is_inside_it",
+]
+
+[[mutation]]
+name = "the boundary row is green beside a CLAUDE_CONFIG_DIR inside the project"
+file = "src/stayfixed/doctor/boundary.py"
+before = "    return _worsened(row, WARN, *ignored, \"\") if ignored else row"
+after = "    return row"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_a_claude_config_dir_inside_the_project_is_never_judged[home-guarded]",
+]
+

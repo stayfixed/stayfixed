@@ -13,5 +13,6 @@ any `allowWrite`, `Edit` allow or `additionalDirectories` entry not shown, as te
 path outside the project and the record's directory), a warning before that, a warning while a
 repository's settings could still turn the sandbox off, and green only when managed settings make
 it admin-required. A `~/` entry counts as safe only under every home it may mean, `HOME`
-included, and where `CLAUDE_CONFIG_DIR` names a user settings directory besides `~/.claude`,
-both are judged and the worse answer is reported, each with its file.
+included, and a user settings directory `CLAUDE_CONFIG_DIR` names besides `~/.claude` may only
+make the answer worse: alone it is never better than a warning, and inside the project it is
+never read.

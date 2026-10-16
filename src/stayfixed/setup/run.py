@@ -17,7 +17,10 @@ them, since withdrawing fails safe. Each rule this run adds is recorded in the m
 `[setup] ask_rules = false` takes back exactly the recorded ones, so an identical rule the owner
 typed first stays. `--approval-boundary`'s deny rules (`trust.boundary`), over the record's
 directory as named and where it leads, are recorded the same way, under `deny`, and no run removes
-them. **The record is written before a rule is added and after one is taken away**, so it always
+them. A directory `CLAUDE_CONFIG_DIR` names besides the home's `.claude`, where it exists outside
+the project (`setup.commands` asks), takes the same rules in its `settings.json`, recorded under
+that directory in `[setup] added_rules_in`, and `ask_rules = false` takes them back there too.
+**The record is written before a rule is added and after one is taken away**, so it always
 covers every rule stayfixed put in the file: a run that stops part-way leaves rules recorded and not
 yet written, which the next run writes, or recorded and already taken away, which the next run
 forgets. The other order leaves a rule in the file that no record names, which the next run reads as
@@ -127,7 +130,7 @@ import shutil
 import stat
 import sys
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -232,17 +235,27 @@ ADDED_RULES_UNREADABLE = (
     "and it is not lists of rules under ask and deny, so setup cannot tell its rules from yours; "
     "remove it, which leaves every rule in the settings file yours, and run setup again"
 )
-# The record's two lists.
+ADDED_RULES_IN_UNREADABLE = (
+    "{path}: [setup] added_rules_in is setup's record of the rules it added to the settings file "
+    "of each other user settings directory it wrote, and it is not a list of tables each naming "
+    "one directory once with lists of rules under ask and deny, so setup cannot tell its rules "
+    "from yours; remove it, which leaves every rule in those files yours, and run setup again"
+)
+# The record's two lists, and the key naming the directory of an `added_rules_in` entry.
 _RECORDED_KINDS = ("ask", "deny")
+_DIRECTORY = "directory"
+_NOTHING: Mapping[str, tuple[str, ...]] = {kind: () for kind in _RECORDED_KINDS}
 
 
 @dataclass(frozen=True)
 class _Recorded:
-    """The machine file's `[setup]`: whether the `ask` rules are wanted, and the rules setup
-    recorded adding, by kind."""
+    """The machine file's `[setup]`: whether the `ask` rules are wanted, the rules setup recorded
+    adding to the home's settings file, by kind, and those it recorded adding to the settings file
+    of another directory `CLAUDE_CONFIG_DIR` named, by that directory as given, then by kind."""
 
     ask_rules: bool
     added: Mapping[str, tuple[str, ...]]
+    added_in: Mapping[str, Mapping[str, tuple[str, ...]]] = field(default_factory=dict)
 
 
 def _setup_table(machine: Path) -> _Recorded:
@@ -255,13 +268,34 @@ def _setup_table(machine: Path) -> _Recorded:
     raw = table.get("added_rules", {})
     if not isinstance(raw, dict) or not set(raw) <= set(_RECORDED_KINDS):
         raise Refusal(ADDED_RULES_UNREADABLE.format(path=machine))
+    added = _kinds(raw, ADDED_RULES_UNREADABLE.format(path=machine))
+    elsewhere = table.get("added_rules_in", [])
+    refused = ADDED_RULES_IN_UNREADABLE.format(path=machine)
+    if not isinstance(elsewhere, list):
+        raise Refusal(refused)
+    added_in: dict[str, Mapping[str, tuple[str, ...]]] = {}
+    for entry in elsewhere:
+        if (
+            not isinstance(entry, dict)
+            or not set(entry) <= {_DIRECTORY, *_RECORDED_KINDS}
+            or not isinstance(entry.get(_DIRECTORY), str)
+            or not entry[_DIRECTORY]
+            or entry[_DIRECTORY] in added_in
+        ):
+            raise Refusal(refused)
+        added_in[entry[_DIRECTORY]] = _kinds(entry, refused)
+    return _Recorded(wanted, added, added_in)
+
+
+def _kinds(raw: Mapping[str, Any], refused: str) -> dict[str, tuple[str, ...]]:
+    """The rules a record holds by kind, or `refused` for a list that is not one of rules."""
     added: dict[str, tuple[str, ...]] = {}
     for kind in _RECORDED_KINDS:
         rules = raw.get(kind, [])
         if not isinstance(rules, list) or not all(isinstance(rule, str) for rule in rules):
-            raise Refusal(ADDED_RULES_UNREADABLE.format(path=machine))
+            raise Refusal(refused)
         added[kind] = tuple(rules)
-    return _Recorded(wanted, added)
+    return added
 
 
 def running_command() -> Path | None:
@@ -302,10 +336,60 @@ def _rules(document: Mapping[str, Any], kind: str) -> list[str]:
     return [rule for rule in listed if isinstance(rule, str)] if isinstance(listed, list) else []
 
 
-def _recorded_table(added: Mapping[str, Sequence[str]]) -> dict[str, object | None]:
-    """`[setup] added_rules` for `added`, or its removal when it records nothing."""
+def _recorded_table(
+    added: Mapping[str, Sequence[str]],
+    added_in: Mapping[str, Mapping[str, Sequence[str]]],
+) -> dict[str, object | None]:
+    """`[setup] added_rules` for `added` and `added_rules_in` for `added_in`, each removed when it
+    records nothing."""
     kept = {kind: list(rules) for kind, rules in added.items() if rules}
-    return {"added_rules": kept or None}
+    elsewhere = [
+        {_DIRECTORY: directory, **{kind: list(rules) for kind, rules in by_kind.items() if rules}}
+        for directory, by_kind in added_in.items()
+        if any(by_kind.values())
+    ]
+    return {"added_rules": kept or None, "added_rules_in": elsewhere or None}
+
+
+@dataclass(frozen=True)
+class _Plan:
+    """What this run does to one settings file: the file, the rules it adds and takes back, and
+    the record of that file's rules as it was, before anything is added, and after."""
+
+    path: Path
+    ask_add: list[str]
+    ask_remove: list[str]
+    deny_add: list[str]
+    held: dict[str, list[str]]
+    before: dict[str, list[str]]
+    after: dict[str, list[str]]
+
+
+def _plan(
+    path: Path,
+    held_record: Mapping[str, Sequence[str]],
+    *,
+    ask_rules: bool,
+    wanted: Sequence[str],
+    boundary: Sequence[str],
+) -> _Plan:
+    """The plan for the settings file at `path`, whose recorded rules are `held_record`.
+
+    A rule the file holds that the record does not name is the owner's: never added again and
+    never recorded. A recorded rule the file lacks is stayfixed's, from a run that stopped
+    part-way or one the owner deleted by hand, and is written again."""
+    document, _ = _read_document(path)
+    asked, deny = _rules(document, "ask"), _rules(document, "deny")
+    ask_add = [rule for rule in wanted if rule not in asked]
+    ask_remove = [] if ask_rules else [r for r in held_record["ask"] if r in asked]
+    deny_add = [rule for rule in boundary if rule not in deny]
+    held = {kind: list(rules) for kind, rules in held_record.items()}
+    before = {
+        "ask": [*held["ask"], *(r for r in ask_add if r not in held["ask"])],
+        "deny": [*held["deny"], *(r for r in deny_add if r not in held["deny"])],
+    }
+    after = {**before, "ask": before["ask"] if ask_rules else []}
+    return _Plan(path, ask_add, ask_remove, deny_add, held, before, after)
 
 
 @dataclass(frozen=True)
@@ -1348,6 +1432,7 @@ def _before_the_first_write(
     overlay: str | None,
     yes: bool,
     settings: Path | None,
+    also: Path | None = None,
 ) -> tuple[dict[str, Any], _Overlay | None, Path, _Recorded]:
     """Every question `setup` asks before its first write, in one order, under one floor; and
     `home` resolved, which every write under it uses.
@@ -1405,6 +1490,8 @@ def _before_the_first_write(
             _check_settings_path(home)
         else:
             _check_settings_parent(settings)
+        if also is not None:
+            _check_settings_parent(also / Path(USER_SETTINGS).name)
         _check_home_usable(home, settings=settings, created=created)
         if planned is not None:
             planned = replace(planned, exempt=_exemption(planned, machine=machine))
@@ -1433,8 +1520,15 @@ def setup(
     project_root: Path,
     settings: Path | None = None,
     boundary: bool = False,
+    also: Path | None = None,
 ) -> SetupReport:
     """Configure this machine from `preset`.
+
+    `also` is the directory `CLAUDE_CONFIG_DIR` names, where it differs from the home's `.claude`,
+    exists and lies outside the project (the caller asks those): its `settings.json` takes the same
+    rules as the home's file, and its rules are recorded under that directory in
+    `[setup] added_rules_in`. With `[setup] ask_rules = false`, every directory recorded there that
+    is still a directory has its recorded `ask` rules taken back too.
 
     `project_root` is the repository this invocation was run from (the CLI's `--root`, default
     `.`), and it exists for exactly one reason: `_outside_the_project` refuses an `--overlay`
@@ -1457,6 +1551,7 @@ def setup(
         overlay=overlay,
         yes=yes,
         settings=settings,
+        also=also,
     )
 
     # `home` is the root every write in this function lands under **except the one `--settings`
@@ -1479,28 +1574,36 @@ def setup(
 
     deny_rules = [r for r in data.get("deny", {}).get("global", []) if isinstance(r, str)]
     path = settings if settings is not None else home / USER_SETTINGS
-    document, _ = _read_document(path)
-    asked, deny = _rules(document, "ask"), _rules(document, "deny")
     wanted, ask_notes = _ask_rules(running_command()) if recorded.ask_rules else ((), ())
-    # A rule the file holds that the record does not name is the owner's: never added again and
-    # never recorded. A recorded rule the file lacks is stayfixed's, from a run that stopped
-    # part-way or one the owner deleted by hand, and is written again.
-    ask_add = [rule for rule in wanted if rule not in asked]
-    ask_remove = [] if recorded.ask_rules else [r for r in recorded.added["ask"] if r in asked]
     rules = _boundary_rules(machine) if boundary else ()
-    deny_add = [rule for rule in rules if rule not in deny]
-    held = {kind: list(rules) for kind, rules in recorded.added.items()}
-    before = {
-        "ask": [*held["ask"], *(r for r in ask_add if r not in held["ask"])],
-        "deny": [*held["deny"], *(r for r in deny_add if r not in held["deny"])],
-    }
-    after = {**before, "ask": before["ask"] if recorded.ask_rules else []}
+
+    def planned(target: Path, held: Mapping[str, Sequence[str]]) -> _Plan:
+        return _plan(target, held, ask_rules=recorded.ask_rules, wanted=wanted, boundary=rules)
+
+    plan = planned(path, recorded.added)
+    name = Path(USER_SETTINGS).name
+    # Every other directory this run writes: the one `also` names, and, while the `ask` rules are
+    # switched off, each recorded one that is still a directory, to take its rules back.
+    others: dict[str, _Plan] = {}
+    if also is not None:
+        others[str(also)] = planned(also / name, recorded.added_in.get(str(also), _NOTHING))
+    if not recorded.ask_rules:
+        for directory, held in recorded.added_in.items():
+            if directory not in others and fsops.is_dir(Path(directory)):
+                others[directory] = planned(Path(directory) / name, held)
+    held_table = _recorded_table(recorded.added, recorded.added_in)
+
+    def table(stage: str) -> dict[str, object | None]:
+        added_in = {
+            **recorded.added_in,
+            **{directory: getattr(other, stage) for directory, other in others.items()},
+        }
+        return _recorded_table(getattr(plan, stage), added_in)
+
     # Recorded before anything is added, forgotten only after it is taken away (the module
     # docstring says why the order is what makes a part-way run converge).
-    if before != held:
-        write_machine(
-            machine, personal={}, overlay_root=None, machine={}, setup=_recorded_table(before)
-        )
+    if table("before") != held_table:
+        write_machine(machine, personal={}, overlay_root=None, machine={}, setup=table("before"))
     # **The `pluginConfigs` mirror is recomputed from the machine file, not from this run's own
     # new keys.** `personal` above is empty on every run after the first, so the mirror was
     # write-once: an owner who edited `reply_language` in the machine file — the documented way,
@@ -1512,18 +1615,27 @@ def setup(
     # is stated where a reader will meet it: a value set in Claude Code's plugin-config UI is
     # overwritten by the machine file on the next `setup`, because one file has to win and the
     # machine file is the one every stayfixed reader reads.
+    personal_values = read_personal(machine)
     deny_written = _write_user_settings(
         home,
-        [*deny_rules, *deny_add],
-        read_personal(machine),
+        [*deny_rules, *plan.deny_add],
+        personal_values,
         settings=settings,
-        ask_add=ask_add,
-        ask_remove=ask_remove,
+        ask_add=plan.ask_add,
+        ask_remove=plan.ask_remove,
     )
-    if after != before:
-        write_machine(
-            machine, personal={}, overlay_root=None, machine={}, setup=_recorded_table(after)
+    for other in others.values():
+        _write_user_settings(
+            home,
+            [*deny_rules, *other.deny_add],
+            personal_values,
+            settings=other.path,
+            ask_add=other.ask_add,
+            ask_remove=other.ask_remove,
         )
+    if table("after") != table("before"):
+        write_machine(machine, personal={}, overlay_root=None, machine={}, setup=table("after"))
+    ask_add, ask_remove = plan.ask_add, plan.ask_remove
     managed = managed_settings()
     boundary_notes = (
         ()

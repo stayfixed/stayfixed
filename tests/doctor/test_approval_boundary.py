@@ -26,6 +26,7 @@ from stayfixed.doctor import boundary
 from stayfixed.doctor.api import OK, RED, SKIP, WARN, Check
 from stayfixed.doctor.checks import run_checks
 from stayfixed.harnesses import CLAUDE
+from stayfixed.printed import quoted
 from stayfixed.trust.api import approve, managed_settings
 from tests.runners import Recorder
 
@@ -288,77 +289,144 @@ def test_the_row_skips_without_claude_code(m: Machine) -> None:
     assert (row.status, row.detail, row.remedy) == (SKIP, boundary.NO_CLAUDE_CODE, "")
 
 
-def test_a_claude_config_dir_alone_is_judged_where_the_home_has_none(m: Machine) -> None:
-    # Claude Code reads the user's settings from `CLAUDE_CONFIG_DIR` when it is set, so a home with
-    # no `.claude` is not skipped then: the variable's directory is judged, alone, and said as
-    # nothing else. Mutation (`mutations/`'s "the user settings directory ignores
-    # CLAUDE_CONFIG_DIR"): the row skips.
+@pytest.mark.parametrize(
+    ("holds", "expected"),
+    [pytest.param("everything", WARN, id="guarded"), pytest.param("no-deny", RED, id="gap")],
+)
+def test_a_claude_config_dir_alone_is_judged_and_never_above_a_warning(
+    m: Machine, holds: str, expected: str
+) -> None:
+    # With no `.claude` under the home, the directory `CLAUDE_CONFIG_DIR` names is judged alone,
+    # and named through `printed.quoted`; since a repository may have chosen it, it never makes the
+    # row better than a warning, while a gap in it is red as any gap is. Mutation (`mutations/`'s
+    # "the boundary row lets the variable's directory alone make the row green"): `guarded` is ok.
     (m.home / ".claude").rmdir()
     config = m.tmp / "config-dir"
-    _write(config / "settings.json", _merged(ADMIN_REQUIRED, _deny(_rule(m.record_directory))))
+    deny = _deny(_rule(m.record_directory)) if holds == "everything" else {}
+    _write(config / "settings.json", _merged(ADMIN_REQUIRED, deny))
     m.env["CLAUDE_CONFIG_DIR"] = str(config)
     m.managed(ADMIN_REQUIRED)
     m.approvals(1)
     row = m.row()
-    assert row.status == OK, row
+    answer = (
+        boundary.GUARDED.format(rule=_rule(m.record_directory))
+        if holds == "everything"
+        else boundary.NO_DENY.format(rule=_rule(m.record_directory))
+    )
+    assert row.status == expected, row
     assert row.detail == "; ".join(
-        (boundary.HELD.format(count=1), boundary.GUARDED.format(rule=_rule(m.record_directory)))
+        (
+            boundary.HELD.format(count=1),
+            answer,
+            boundary.CHOSEN_ALONE.format(path=quoted(str(config))),
+        )
     )
 
 
 @pytest.mark.parametrize("lacking", ["home", "chosen"])
-def test_with_claude_config_dir_both_directories_are_judged_and_the_worse_is_said(
+def test_the_home_s_directory_is_the_subject_and_claude_config_dir_only_worsens_it(
     m: Machine, lacking: str
 ) -> None:
-    # Nothing tells whether a person chose `CLAUDE_CONFIG_DIR` or a repository did, through an
-    # agent's `env` block or direnv in a person's own terminal, so where it names a directory
-    # besides the home's both are judged: a decoy holding every setting does not make the row green
-    # while the home's lacks the deny rule (`home`), nor does the home's while the variable's lacks
-    # it (`chosen`). The detail says each answer with the file it was judged with. Mutations
-    # (`mutations/`'s "the boundary row judges one user settings directory alone" -> `chosen` reads
-    # ok and `home` names no file; "the user settings directory ignores CLAUDE_CONFIG_DIR" -> the
-    # same for `home`; "the boundary row reports the better of two answers" -> both read ok).
+    # The home's `.claude` is always judged and is the row's subject; the variable's directory may
+    # only add its gaps. A decoy holding every setting does not lift the home's gap (`home`), and
+    # the variable's gap is added to a home that holds everything (`chosen`), said with its file.
+    # Mutations (`mutations/`'s "the boundary row takes the variable's directory for the home's"
+    # -> `home` reads ok; "the boundary row passes the variable's directory's gaps over" ->
+    # `chosen` reads ok; "the user settings directory ignores CLAUDE_CONFIG_DIR" -> the same).
     config = m.tmp / "config-dir"
     good = _merged(ADMIN_REQUIRED, _deny(_rule(m.record_directory)))
-    lacks = ADMIN_REQUIRED
-    m.user(lacks if lacking == "home" else good)
-    _write(config / "settings.json", good if lacking == "home" else lacks)
+    m.user(ADMIN_REQUIRED if lacking == "home" else good)
+    _write(config / "settings.json", good if lacking == "home" else ADMIN_REQUIRED)
     m.env["CLAUDE_CONFIG_DIR"] = str(config)
     m.managed(ADMIN_REQUIRED)
     m.approvals(1)
     row = m.row()
-    guarded = "; ".join(
-        (boundary.HELD.format(count=1), boundary.GUARDED.format(rule=_rule(m.record_directory)))
-    )
-    gap = "; ".join(
-        (
-            boundary.HELD.format(count=1),
-            boundary.NO_DENY.format(rule=_rule(m.record_directory)),
-        )
-    )
-    said = {
-        boundary.USER_LABEL: gap if lacking == "home" else guarded,
-        boundary.CHOSEN_LABEL: guarded if lacking == "home" else gap,
-    }
+    held = boundary.HELD.format(count=1)
+    gap = "; ".join((held, boundary.NO_DENY.format(rule=_rule(m.record_directory))))
+    guarded = "; ".join((held, boundary.GUARDED.format(rule=_rule(m.record_directory))))
     assert row.status == RED, row
-    assert row.detail == "; ".join(
-        boundary.JUDGED_WITH.format(label=label, detail=detail) for label, detail in said.items()
-    )
+    if lacking == "home":
+        assert row.detail == gap
+    else:
+        assert row.detail == "; ".join(
+            (guarded, boundary.JUDGED_WITH.format(label=boundary.CHOSEN_LABEL, detail=gap))
+        )
     assert row.remedy == boundary.ADD_THE_BOUNDARY
 
 
-def test_a_claude_config_dir_naming_the_home_s_own_is_judged_once(m: Machine) -> None:
-    # The variable spelling the home's `.claude` (here with a trailing slash) is one directory,
-    # judged once and said plainly. Mutation (`mutations/`'s "the user settings directory takes
-    # CLAUDE_CONFIG_DIR spelling the home's own for another"): it is judged twice, each answer said
-    # with its file.
-    m.user(_merged(ADMIN_REQUIRED, _deny(_rule(m.record_directory))))
-    m.env["CLAUDE_CONFIG_DIR"] = str(m.home / ".claude") + "/"
+@pytest.mark.parametrize("home_has_one", [True, False], ids=["home-guarded", "home-has-none"])
+def test_a_claude_config_dir_inside_the_project_is_never_judged(
+    m: Machine, home_has_one: bool
+) -> None:
+    # A directory inside the project holds what the repository commits, so it is never judged,
+    # only named, and the row is at best a warning for it: a guarded home warns, and a home with no
+    # `.claude` warns rather than skipping. Mutations (`mutations/`'s "the boundary row judges a
+    # CLAUDE_CONFIG_DIR inside the project" -> `home-guarded` is ok and `home-has-none` reads the
+    # repository's settings; "the boundary row is green beside a CLAUDE_CONFIG_DIR inside the
+    # project" -> `home-guarded` is ok).
+    planted = m.root / ".claude-config"
+    _write(planted / "settings.json", _merged(ADMIN_REQUIRED, _deny(_rule(m.record_directory))))
+    m.env["CLAUDE_CONFIG_DIR"] = str(planted)
+    m.managed(ADMIN_REQUIRED)
+    m.approvals(1)
+    ignored = boundary.CONFIG_DIR_IN_PROJECT.format(path=quoted(str(planted)))
+    if home_has_one:
+        m.user(_merged(ADMIN_REQUIRED, _deny(_rule(m.record_directory))))
+    else:
+        (m.home / ".claude").rmdir()
+    row = m.row()
+    assert row.status == WARN, row
+    if home_has_one:
+        guarded = boundary.GUARDED.format(rule=_rule(m.record_directory))
+        assert row.detail == "; ".join((boundary.HELD.format(count=1), guarded, ignored))
+    else:
+        assert row.detail == "; ".join((boundary.NO_CLAUDE_CODE, ignored))
+
+
+def test_a_claude_config_dir_that_leads_into_the_project_is_inside_it(
+    m: Machine, tmp_path: Path
+) -> None:
+    # A link outside the project leading into it names a directory the repository fills. Mutation
+    # (`mutations/`'s "a directory is judged inside the project by its spelling alone"): the
+    # planted settings are judged and the row is ok.
+    planted = m.root / ".claude-config"
+    _write(planted / "settings.json", _merged(ADMIN_REQUIRED, _deny(_rule(m.record_directory))))
+    link = tmp_path / "outside-link"
+    link.symlink_to(planted)
+    (m.home / ".claude").rmdir()
+    m.env["CLAUDE_CONFIG_DIR"] = str(link)
     m.managed(ADMIN_REQUIRED)
     m.approvals(1)
     row = m.row()
-    assert row.status == OK, row
-    assert not row.detail.startswith("judged with")
+    assert (row.status, row.detail) == (
+        WARN,
+        "; ".join(
+            (boundary.NO_CLAUDE_CODE, boundary.CONFIG_DIR_IN_PROJECT.format(path=quoted(str(link))))
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    ("suffix", "twice"),
+    [pytest.param("", False, id="byte-for-byte"), pytest.param("/", True, id="trailing-slash")],
+)
+def test_claude_config_dir_is_the_home_s_own_only_when_spelled_alike_to_the_byte(
+    m: Machine, suffix: str, twice: bool
+) -> None:
+    # The same directory only when the variable is the home's `.claude` spelled alike to the byte;
+    # any other spelling, a trailing slash included, is judged on its own. A home settings file
+    # that is not JSON shows which: it is named once with each label it was judged under.
+    # Mutations (`mutations/`'s "the user settings directory takes CLAUDE_CONFIG_DIR spelling the
+    # home's own for another" -> `byte-for-byte` is judged twice; "the user settings directory
+    # normalises CLAUDE_CONFIG_DIR" -> `trailing-slash` is judged once).
+    m.user("{ not json")
+    m.local(_deny(_rule(m.record_directory)))
+    m.managed(ADMIN_REQUIRED)
+    m.env["CLAUDE_CONFIG_DIR"] = str(m.home / ".claude") + suffix
+    m.approvals(1)
+    row = m.row()
+    assert row.status == WARN, row
+    assert (boundary.CHOSEN_LABEL in row.detail) is twice, row.detail
 
 
 def test_the_row_skips_when_the_project_lists_no_claude(m: Machine) -> None:

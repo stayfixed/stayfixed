@@ -4763,22 +4763,40 @@ reddens = [
 [[mutation]]
 name = "the user settings directory ignores CLAUDE_CONFIG_DIR"
 file = "src/stayfixed/trust/boundary.py"
-before = "    chosen = Path(named) if named else None"
-after = "    chosen = None"
+before = "    return UserSettings(directory, Path(named) if named and not same else None)"
+after = "    return UserSettings(directory, None)"
 reddens = [
-  "tests/doctor/test_approval_boundary.py::test_a_claude_config_dir_alone_is_judged_where_the_home_has_none",
-  "tests/doctor/test_approval_boundary.py::test_with_claude_config_dir_both_directories_are_judged_and_the_worse_is_said[home]",
-  "tests/setup/test_commands.py::test_setup_writes_the_user_settings_under_the_database_home_and_names_another_directory[config-dir-elsewhere]",
+  "tests/doctor/test_approval_boundary.py::test_a_claude_config_dir_alone_is_judged_and_never_above_a_warning[guarded]",
+  "tests/doctor/test_approval_boundary.py::test_the_home_s_directory_is_the_subject_and_claude_config_dir_only_worsens_it[chosen]",
+  "tests/setup/test_commands.py::test_setup_writes_the_home_s_settings_and_a_claude_config_dir_outside_the_project[config-dir-elsewhere]",
 ]
 
 [[mutation]]
 name = "the user settings directory takes CLAUDE_CONFIG_DIR spelling the home's own for another"
 file = "src/stayfixed/trust/boundary.py"
-before = "    if chosen is not None and directory is not None and _spelled(chosen) == _spelled(directory):"
-after = "    if False:"
+before = "    same = directory is not None and named == str(directory)"
+after = "    same = False"
 reddens = [
-  "tests/doctor/test_approval_boundary.py::test_a_claude_config_dir_naming_the_home_s_own_is_judged_once",
-  "tests/setup/test_commands.py::test_setup_writes_the_user_settings_under_the_database_home_and_names_another_directory[config-dir-is-the-home-s]",
+  "tests/doctor/test_approval_boundary.py::test_claude_config_dir_is_the_home_s_own_only_when_spelled_alike_to_the_byte[byte-for-byte]",
+  "tests/setup/test_commands.py::test_setup_writes_the_home_s_settings_and_a_claude_config_dir_outside_the_project[config-dir-is-the-home-s]",
+]
+
+[[mutation]]
+name = "the user settings directory normalises CLAUDE_CONFIG_DIR"
+file = "src/stayfixed/trust/boundary.py"
+before = "    same = directory is not None and named == str(directory)"
+after = "    same = directory is not None and named is not None and os.path.normpath(named) == os.path.normpath(str(directory))"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_claude_config_dir_is_the_home_s_own_only_when_spelled_alike_to_the_byte[trailing-slash]",
+]
+
+[[mutation]]
+name = "a directory is judged inside the project by its spelling alone"
+file = "src/stayfixed/trust/boundary.py"
+before = "        spellings = {os.path.abspath(directory), str(fsops.resolved(directory))}"
+after = "        spellings = {os.path.abspath(directory)}"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_a_claude_config_dir_that_leads_into_the_project_is_inside_it",
 ]
 
 [[mutation]]
@@ -4787,9 +4805,8 @@ file = "src/stayfixed/trust/boundary.py"
 before = "    base = home if home is not None else passwd_home()"
 after = "    base = home if home is not None else Path.home()"
 reddens = [
-  "tests/setup/test_commands.py::test_setup_writes_the_user_settings_under_the_database_home_and_names_another_directory[config-dir-elsewhere]",
-  "tests/setup/test_commands.py::test_setup_writes_the_user_settings_under_the_database_home_and_names_another_directory[homes-differ]",
-  "tests/setup/test_commands.py::test_setup_writes_the_user_settings_under_the_database_home_and_names_another_directory[config-dir-is-the-home-s]",
+  "tests/setup/test_commands.py::test_setup_writes_the_home_s_settings_and_a_claude_config_dir_outside_the_project[homes-differ]",
+  "tests/setup/test_commands.py::test_setup_writes_the_home_s_settings_and_a_claude_config_dir_outside_the_project[config-dir-missing]",
 ]
 
 # A write the sandbox refuses: `EPERM`, as macOS's sandbox answers, and `EROFS`, a read-only

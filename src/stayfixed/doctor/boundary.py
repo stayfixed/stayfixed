@@ -5,12 +5,10 @@ An approval holds against what a repository commits; against an agent that write
 itself it holds only while the harness stops that write (`trust.boundary` says what stops it, and
 how that was measured). So the row reads this project's effective Claude Code settings, in the
 harness's own precedence — managed settings with their drop-ins, then the project's
-`.claude/settings.local.json`, then its `.claude/settings.json`, then the user's file — and
-answers, once for each user settings directory `trust.boundary.user_settings` finds (`.claude`
-under the home, and the one `CLAUDE_CONFIG_DIR` names where it differs, since nothing tells which a
-person chose), reporting the worse answer and saying each with its file, three questions: is the
-sandbox on for this project; do the `permissions.deny` rules `setup` writes over the record's
-directory stand, byte for byte; and does any setting widen what those two confine.
+`.claude/settings.local.json`, then its `.claude/settings.json`, then the user's file in `.claude`
+under the home — and answers three questions: is the sandbox on for this project; do the
+`permissions.deny` rules `setup` writes over the record's directory stand, byte for byte; and does
+any setting widen what those two confine.
 
 - **Whether the sandbox is on** is the highest layer's `sandbox.enabled`. While the sandbox is
   admin-required, which only managed settings make it (`sandbox.allowUnsandboxedCommands = false`
@@ -47,6 +45,13 @@ taken to hold approvals, since it holds every project's on the machine. A settin
 JSON is read as absent for its layer and named; the row is never red for that alone, and never green
 beside it, since what the harness makes of the file is not known here.
 
+**`CLAUDE_CONFIG_DIR` may only make the answer worse**, since nothing tells whether a person or a
+repository set it (`trust.boundary.user_settings`). Where it names a directory not spelled byte for
+byte as the home's `.claude`, that directory is judged too, and its gaps are added, said with its
+file, raising the status and never lowering it. Where the home has no `.claude`, the variable's
+directory is judged alone and the row is at best a warning, naming it. A directory inside the
+project is never judged: it is named, and the row is at best a warning for it.
+
 **Skipped** on a machine with no Claude Code user settings directory, and for a project whose
 `[stayfixed] agents` does not list `claude` and which carries neither `.claude/settings.json` nor
 `.claude/settings.local.json`: the agents list is the repository's to write, so a project that ships
@@ -75,6 +80,7 @@ from stayfixed.errors import Failure
 from stayfixed.harnesses import CLAUDE
 from stayfixed.jsonobject import json_object
 from stayfixed.presets import load_preset
+from stayfixed.printed import quoted
 from stayfixed.trust.api import (
     CONFIG_DIR_VARIABLE,
     ENABLED,
@@ -83,6 +89,7 @@ from stayfixed.trust.api import (
     UNSANDBOXED_ALLOWED,
     UnreadableTrust,
     deny_rules,
+    in_project,
     managed_settings,
     record_path,
     recorded,
@@ -139,13 +146,23 @@ GUARDED = (
     "the sandbox is on and admin-required, and {rule} denies writes to the trust record's directory"
 )
 NOT_READ = "{label} is not JSON and was read as absent"
-# Where `CLAUDE_CONFIG_DIR` names a user settings directory besides the home's, each is judged
-# (`trust.boundary.user_settings` says why), and each answer is said as judged with its file.
+# Where `CLAUDE_CONFIG_DIR` names a user settings directory besides the home's, that one may only
+# make the answer worse (`trust.boundary.user_settings` says why): its gaps are added, said with its
+# file. `path` is the variable's value, which a repository may have chosen, so it is printed
+# through `printed.quoted`.
 JUDGED_WITH = "judged with {label}: {detail}"
 USER_LABEL = f"~/{PROJECT_SETTINGS}"
 CHOSEN_LABEL = f"${CONFIG_DIR_VARIABLE}/{USER_FILE}"
-# How bad each answer is, for reporting the worse of two: a directory skipped as absent is the
-# least, so the one that was judged speaks.
+CHOSEN_ALONE = (
+    f"the home has no .claude, so the user settings were read from {{path}}, the directory "
+    f"{CONFIG_DIR_VARIABLE} names, which a repository's env block, direnv or mise may have chosen, "
+    f"so the row is at best a warning"
+)
+CONFIG_DIR_IN_PROJECT = (
+    f"{CONFIG_DIR_VARIABLE} names {{path}}, inside the project, whose contents the repository "
+    f"chooses, so it was not read and the row is at best a warning"
+)
+# How bad each answer is, for letting the variable's directory make one worse and never better.
 SEVERITY = {SKIP: 0, OK: 1, WARN: 2, RED: 3}
 # The remedies.
 ADD_THE_BOUNDARY = (
@@ -404,29 +421,44 @@ def _spellings(*paths: Path) -> list[str]:
 
 
 def approval_boundary(context: Context) -> Row:
-    """The row (the module docstring says what it reads and how it answers): each user settings
-    directory `trust.boundary.user_settings` finds judged, and the worse answer reported, each
-    answer said with the file it was judged with where there are two."""
+    """The row (the module docstring says what it reads and how it answers). The home's user
+    settings directory is the subject; the one `CLAUDE_CONFIG_DIR` names may only make the answer
+    worse (`trust.boundary.user_settings` says why)."""
     if not _lists_claude(context) and not _carries_settings(context.root):
         return Row(SKIP, NOT_LISTED)
     found = user_settings(context.env, context.home)
-    directories = [(found.directory, USER_LABEL)]
-    if found.chosen is not None:
-        directories.append((found.chosen, CHOSEN_LABEL))
-    judged = [
-        (_judged(context, directory, label), label)
-        for directory, label in directories
-        if directory is not None and fsops.is_dir(directory)
-    ]
-    if not judged:
+    chosen = found.chosen
+    inside = chosen is not None and in_project(chosen, context.root)
+    ignored = (CONFIG_DIR_IN_PROJECT.format(path=quoted(str(chosen))),) if inside else ()
+    other = (
+        _judged(context, chosen, CHOSEN_LABEL)
+        if chosen is not None and not inside and fsops.is_dir(chosen)
+        else None
+    )
+    if found.directory is not None and fsops.is_dir(found.directory):
+        row = _judged(context, found.directory, USER_LABEL)
+        if other is not None and other.status != OK and other.detail != row.detail:
+            row = _worsened(
+                row,
+                other.status,
+                JUDGED_WITH.format(label=CHOSEN_LABEL, detail=other.detail),
+                other.remedy,
+            )
+    elif other is not None and chosen is not None:
+        row = _worsened(other, WARN, CHOSEN_ALONE.format(path=quoted(str(chosen))), "")
+    elif inside:
+        return Row(WARN, "; ".join((NO_CLAUDE_CODE, *ignored)))
+    else:
         return Row(SKIP, NO_CLAUDE_CODE)
-    if len(judged) == 1:
-        return judged[0][0]
-    worst = max(SEVERITY[row.status] for row, _ in judged)
-    status = next(row.status for row, _ in judged if SEVERITY[row.status] == worst)
-    detail = "; ".join(JUDGED_WITH.format(label=label, detail=row.detail) for row, label in judged)
-    remedy = "; ".join(dict.fromkeys(row.remedy for row, _ in judged if row.remedy))
-    return Row(status, detail, remedy)
+    return _worsened(row, WARN, *ignored, "") if ignored else row
+
+
+def _worsened(row: Row, status: Status, said: str, remedy: str) -> Row:
+    """`row`, its status made `status` where that is worse and never better, with `said` added to
+    its detail and `remedy` to its remedies."""
+    worse = status if SEVERITY[status] > SEVERITY[row.status] else row.status
+    remedies = "; ".join(dict.fromkeys(part for part in (row.remedy, remedy) if part))
+    return Row(worse, "; ".join((row.detail, said)), remedies)
 
 
 def _judged(context: Context, directory: Path, user_label: str) -> Row:

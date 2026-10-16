@@ -121,14 +121,21 @@ EMPTY_HOME = (
     "HOME is empty, so it names no home directory and there is no default for --home; set HOME "
     "to your home directory, or pass --home PATH"
 )
-# Where `CLAUDE_CONFIG_DIR` names a user settings directory besides the one this run wrote
-# (`trust.boundary.user_settings`). `path` is the variable's directory, which a repository may have
-# chosen, so it is printed through `printed.quoted`; nothing is written there.
-CONFIG_DIR_ELSEWHERE = (
-    "CLAUDE_CONFIG_DIR names another user settings directory, {path}, which setup does not write: "
-    "a repository's env block, direnv or mise can set that variable, and it may name another "
-    "program's settings.json; if your Claude Code sessions read that directory, copy the rules "
-    "this run added to {written} into its settings.json yourself"
+# What becomes of the directory `CLAUDE_CONFIG_DIR` names where it is not the home's `.claude`
+# (`trust.boundary.user_settings`): written too where it exists outside the project, and otherwise
+# named and left alone. `path` is the variable's value, which a repository may have chosen, so it is
+# printed through `printed.quoted`.
+CONFIG_DIR_WRITTEN = (
+    "CLAUDE_CONFIG_DIR names another user settings directory, {path}, and its settings.json took "
+    "the same rules, recorded under that directory in the machine configuration's "
+    "[setup] added_rules_in"
+)
+CONFIG_DIR_MISSING = (
+    "CLAUDE_CONFIG_DIR names {path}, which is not a directory, so setup wrote nothing there"
+)
+CONFIG_DIR_IN_PROJECT = (
+    "CLAUDE_CONFIG_DIR names {path}, inside the project, whose contents the repository chooses, so "
+    "setup wrote nothing there"
 )
 
 
@@ -139,7 +146,6 @@ def run_setup(args: argparse.Namespace) -> Result:
         return run_git_hooks(args)
 
     from stayfixed.config.machine import home_is_empty, homes_agree, machine_config_path
-    from stayfixed.setup.machine import USER_SETTINGS
     from stayfixed.setup.run import setup
     from stayfixed.trust.api import user_settings
 
@@ -163,12 +169,15 @@ def run_setup(args: argparse.Namespace) -> Result:
         raise Failure(NO_MACHINE_HOME)
     # The user settings go where Claude Code reads them as `doctor` finds them: a file `--settings`
     # names, `.claude` under a `--home` the person named, and otherwise `.claude` under the home the
-    # password database records; a `CLAUDE_CONFIG_DIR` naming another directory is said, and never
-    # written (`trust.boundary.user_settings` says why).
+    # password database records; a `CLAUDE_CONFIG_DIR` naming another directory takes the same
+    # rules only where that directory exists outside the project (`trust.boundary.user_settings`
+    # says why).
     settings = Path(args.settings).expanduser() if args.settings else None
     found = user_settings(os.environ, None if args.home is None else home)
     if settings is None and args.home is None:
         settings = _claude_settings(found, home)
+    project_root = _root(args.root)
+    also, said = _also(found.chosen, project_root)
     report = setup(
         args.preset or "recommended",
         home=home,
@@ -176,11 +185,11 @@ def run_setup(args: argparse.Namespace) -> Result:
         runner=subprocess_runner(),
         yes=args.yes,
         overlay=args.overlay,
-        project_root=_root(args.root),
+        project_root=project_root,
         settings=settings,
         boundary=args.approval_boundary,
+        also=also,
     )
-    written_to = settings if settings is not None else home / USER_SETTINGS
     data = {
         "machine_written": report.machine_written,
         "plugins_installed": list(report.plugins_installed),
@@ -212,14 +221,25 @@ def run_setup(args: argparse.Namespace) -> Result:
             if report.overlay
             else "no overlay recorded",
             *report.notes,
-            *(
-                [CONFIG_DIR_ELSEWHERE.format(path=quoted(str(found.chosen)), written=written_to)]
-                if found.chosen is not None
-                else []
-            ),
+            *said,
         )
     )
     return Result(summary, data)
+
+
+def _also(chosen: Path | None, project_root: Path) -> tuple[Path | None, tuple[str, ...]]:
+    """The directory `CLAUDE_CONFIG_DIR` names, where this run writes it too, and what the line
+    says of it: written where it exists outside the project, named and left alone otherwise."""
+    from stayfixed.trust.api import in_project
+
+    if chosen is None:
+        return None, ()
+    named = quoted(str(chosen))
+    if in_project(chosen, project_root):
+        return None, (CONFIG_DIR_IN_PROJECT.format(path=named),)
+    if not fsops.is_dir(chosen):
+        return None, (CONFIG_DIR_MISSING.format(path=named),)
+    return chosen, (CONFIG_DIR_WRITTEN.format(path=named),)
 
 
 def _claude_settings(found: UserSettings, home: Path) -> Path | None:
