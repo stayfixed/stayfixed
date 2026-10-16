@@ -24,6 +24,7 @@ from typing import Any, cast
 
 from stayfixed.config.classes import GATE_BUDGETS, Layer, LayerName, resolve
 from stayfixed.config.loader import (
+    NOT_A_PRESET_NAME,
     ConfigError,
     MachineConfigError,
     Unknown,
@@ -88,8 +89,6 @@ UNREADABLE_PRESET_NOTE = (
     "stayfixed.preset is not a string, so the owner's layer stands on the "
     f"{FALLBACK_PRESET} preset's personal values"
 )
-# The same value under `REFUSE`, in the loader's words for it.
-NOT_A_PRESET_NAME = "stayfixed.preset must be a string; {available}"
 
 
 def resolve_owner(

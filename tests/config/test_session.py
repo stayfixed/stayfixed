@@ -163,6 +163,7 @@ UNUSABLE = [
         id="version",
     ),
     pytest.param(_docs_symlink, "paths.architecture", id="docs-symlink"),
+    pytest.param(lambda root: "project = 1\n" + HEAD, "project", id="project-not-a-table"),
 ]
 
 
@@ -170,10 +171,10 @@ UNUSABLE = [
 def test_a_key_nothing_can_stand_in_for_drops_the_project_and_names_it(
     tmp_path: Path, make: Callable[[Path], str], key: str
 ) -> None:
-    # The owner's ruling on the NOTE retry's seam: the session falls back to the floor whole,
-    # and the warning names the key the document got wrong. The owner's layer still stands, so
-    # the guards run. Mutation (`mutations/`'s "a session names no key it could not use"): the
-    # warning says "a setting".
+    # A key nothing can stand in for drops the project configuration whole, and the warning
+    # names the key the document got wrong, never one it calls missing. The owner's layer still
+    # stands, so the guards run. Mutation (`mutations/`'s "a session names no key it could not
+    # use"): the warning says "a setting".
     root = tmp_path / "root"
     root.mkdir()
     write(root, make(root))

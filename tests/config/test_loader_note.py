@@ -29,7 +29,7 @@ from stayfixed.config.loader import (
     toml_position,
 )
 from stayfixed.config.owner import resolve_owner
-from stayfixed.config.paths import PathEscape
+from stayfixed.config.paths import PathEscape, contained
 from stayfixed.errors import Failure, Refusal
 from stayfixed.presets import load_preset
 from stayfixed.printed import clipped
@@ -262,10 +262,10 @@ def test_a_key_the_document_does_not_hold_is_unusable(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # The retry removes a key the document holds; a validator naming any other refuses a value
-    # the preset gave, so nothing can stand in for it, and the validator is asked once. Mutation
-    # (`mutations/`'s "the NOTE retry takes a key the document does not hold for removed"): only
-    # the bound on attempts stops the loop, and the validator is asked once per key the document
-    # holds, plus one.
+    # the preset gave, so nothing can stand in for it, and the validator is asked once.
+    # Mutations (`mutations/`'s "the NOTE retry takes a key the document does not hold for
+    # removed" -> the load looks for a key that is not there; "the NOTE path relays the refusal
+    # of a key it cannot remove" -> the validator's own refusal propagates).
     calls: list[object] = []
 
     def refuses(config: object) -> object:
@@ -283,9 +283,9 @@ def test_a_validator_that_keeps_refusing_spends_the_document_and_stops(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # Each retry removes the one key it was handed; once that key is gone the next refusal of
-    # it propagates, so the attempts are the keys removed plus one, never a loop. Mutation
-    # (`mutations/`'s "the NOTE retry takes a key the document does not hold for removed"): the
-    # validator is asked a fourth time and the test reddens.
+    # it is a value the preset gave, so the attempts are the keys removed plus one, never a loop.
+    # Mutation (`mutations/`'s "the NOTE retry takes a key the document does not hold for
+    # removed"): the third refusal looks for a key that is not there.
     handed = ["stayfixed.preset", "paths.specs", "paths.specs"]
     calls: list[str] = []
 
@@ -297,8 +297,7 @@ def test_a_validator_that_keeps_refusing_spends_the_document_and_stops(
     with pytest.raises(UnusableKey) as raised:
         loads_noting(MINIMAL + '[paths]\nspecs = "design/specs"\n', tmp_path, owner=OWNER)
     assert calls == handed
-    # The reset note of the key it then could not use is not carried: no preset value applied.
-    assert raised.value.notes == (RESET_NOTE.format(key="stayfixed.preset", reason="held"),)
+    assert str(raised.value) == UNUSABLE_PRESET.format(key="paths.specs", reason="held")
 
 
 def test_a_custom_gate_whose_name_holds_a_dot_is_dropped_by_its_whole_name(tmp_path: Path) -> None:
@@ -334,6 +333,12 @@ REQUIRED_UNUSABLE = [
     pytest.param(
         MINIMAL.replace('version = "0.1.0"', "version = 1"), "stayfixed.version", id="version"
     ),
+    # A section that is not a table, holding a key with no default: before any header, so a
+    # top-level key.
+    pytest.param("project = 1\n" + HEAD, "project", id="project-not-a-table"),
+    pytest.param(
+        'stayfixed = 1\n[project]\nname = "sample"\n', "stayfixed", id="stayfixed-not-a-table"
+    ),
 ]
 
 
@@ -341,50 +346,92 @@ REQUIRED_UNUSABLE = [
 def test_a_required_key_it_cannot_use_is_named_and_never_called_missing(
     tmp_path: Path, text: str, key: str
 ) -> None:
-    # The retry removed the key, and the next attempt refused the document for missing it:
-    # `[project] is missing required key(s): name` of a document whose name is right there. Now
-    # the load names the key the document got wrong, with the refusal it got, and drops its reset
-    # note: no preset value applied. Mutations (`mutations/`'s "the NOTE retry relays a missing
-    # key it removed itself" -> the misattributed refusal comes back; "an unusable key carries
-    # the reset note of the key it could not use" -> the notes are not empty).
+    # A key with no default, or a section holding one, is never removed: removed, the next
+    # attempt would refuse the document for missing a key it holds, `[project] is missing
+    # required key(s): name` of a document whose name is right there. The load names the key the
+    # document got wrong, with the refusal it got. Mutations (`mutations/`'s "a key with no
+    # fallback is removed and retried" -> every case's misattributed refusal comes back; "a
+    # section with no fallback resets" -> the two sections' does).
     with pytest.raises(UnusableKey) as raised:
         loads_noting(text, tmp_path, owner=OWNER)
     assert str(raised.value) == UNUSABLE_REQUIRED.format(key=key, reason=refusal(text, tmp_path))
     assert raised.value.key == key
-    assert raised.value.notes == ()
     # The controls, which no mutation of the retry reddens and none needs to: the same document
     # with a usable value loads, and `loads` still refuses the value rather than a missing key.
     assert loads_noting(MINIMAL, tmp_path, owner=OWNER).notes == ()
     assert "missing" not in str(refusal(text, tmp_path))
 
 
-@pytest.mark.parametrize("held", [False, True], ids=["preset-value", "reset-then-preset"])
-def test_a_preset_value_a_committed_symlink_breaks_is_named(tmp_path: Path, held: bool) -> None:
-    # A committed `docs` symlink and no `[paths]`: the preset's own `paths.architecture` passes
-    # through it, and the document holds no value to remove, so the refusal propagated whole and
-    # read as the preset's fault. With the document's own value removed first, the preset's
-    # fails in its turn, and the reset note is not carried. Mutations (`mutations/`'s "the NOTE
-    # path relays the refusal of a key it cannot remove" -> the `PathEscape` propagates; "an
-    # unusable key carries the reset note of the key it could not use" -> `reset-then-preset`
-    # carries a note). The control below is the one no mutation reddens: it shows the link is the
-    # fault.
+def _symlinked_docs(tmp_path: Path) -> Path:
     outside = tmp_path / "outside"
     outside.mkdir()
     root = tmp_path / "root"
     root.mkdir()
     os.symlink(outside, root / "docs")
-    text = MINIMAL + ('[paths]\narchitecture = "../x"\n' if held else "")
+    return root
+
+
+@pytest.mark.parametrize(
+    ("paths", "key"),
+    [
+        pytest.param("", "paths.architecture", id="preset-value"),
+        pytest.param('architecture = "../x"\n', "paths.architecture", id="reset-then-preset"),
+        pytest.param('bugs = "../x"\n', "paths.bugs", id="reset-before-the-first-preset"),
+    ],
+)
+def test_a_preset_value_a_committed_symlink_breaks_is_named(
+    tmp_path: Path, paths: str, key: str
+) -> None:
+    # A committed `docs` symlink. With no `[paths]`, the preset's own `paths.architecture`
+    # passes through it and the document holds no value to remove, so nothing stands in for it.
+    # With the document's own value refused, its preset value is asked before anything is
+    # removed, and it fails too: the key named is the one the document wrote, never a preset
+    # value it did not touch. Mutations (`mutations/`'s "the NOTE path relays the refusal of a key
+    # it cannot remove" -> `preset-value`'s `PathEscape` propagates; "a preset value that fails
+    # containment is reset to anyway" -> `reset-before-the-first-preset` names
+    # `paths.architecture`). The control below is the one no mutation reddens: it shows the link
+    # is the fault.
+    root = _symlinked_docs(tmp_path)
+    text = MINIMAL + (f"[paths]\n{paths}" if paths else "")
+    preset_value = str(preset_defaults("paths")[key.removeprefix("paths.")])
     with pytest.raises(UnusableKey) as raised:
         loads_noting(text, root, owner=OWNER)
-    reason = refusal(MINIMAL, root)
-    assert str(raised.value) == UNUSABLE_PRESET.format(key="paths.architecture", reason=reason)
-    assert raised.value.key == "paths.architecture"
-    assert raised.value.notes == ()
-    # The control: a real `docs` directory, and the same document loads.
+    with pytest.raises(PathEscape) as preset_refusal:
+        contained(root, preset_value)
+    assert str(raised.value) == UNUSABLE_PRESET.format(key=key, reason=preset_refusal.value)
+    assert raised.value.key == key
+    # The control: a real `docs` directory, and the same document loads on the preset's value.
     (root / "docs").unlink()
     (root / "docs").mkdir()
-    got = loads_noting(text, root, owner=OWNER).config.paths.architecture
-    assert got == preset_defaults("paths")["architecture"]
+    got = loads_noting(text, root, owner=OWNER).config.paths.as_dict()
+    assert got[key.removeprefix("paths.")] == preset_value
+
+
+FALLBACKS = [
+    # A value the loader fills itself: `[ci] gate_branch` is `[project] base_branch`.
+    pytest.param("[ci]\ngate_branch = 1\n", "ci.gate_branch", id="filled-by-the-loader"),
+    # A schema default: `Gates.custom` is empty unless the document adds a gate.
+    pytest.param("[gates]\ncustom = 1\n", "gates.custom", id="schema-default"),
+    # An entry that may simply be absent: a budget is then the preset's.
+    pytest.param("[budgets]\nagents_md_lines = 0\n", "budgets.agents_md_lines", id="absent-entry"),
+]
+
+
+@pytest.mark.parametrize(("extra", "key"), FALLBACKS)
+def test_a_key_with_a_value_to_fall_back_to_resets_with_its_note(
+    tmp_path: Path, extra: str, key: str
+) -> None:
+    # Each kind of value a key falls back to besides a preset value (`memory.mode` and
+    # `stayfixed.preset` above): the key is removed with its note and the load goes on.
+    # Mutations (`mutations/`'s "a value the loader fills is called unusable" ->
+    # `filled-by-the-loader` raises; "a schema default is called unusable" -> `schema-default`
+    # does; "a budget or a custom gate is called unusable" -> `absent-entry` does).
+    text = MINIMAL + extra
+    got = loads_noting(text, tmp_path, owner=OWNER)
+    assert got.notes == (reset(key, text, tmp_path),)
+    assert got.config.ci.gate_branch == got.config.project.base_branch
+    assert got.config.gates.custom == {}
+    assert "agents_md_lines" not in got.config.budgets.configured
 
 
 def test_each_note_names_the_key_it_is_about(tmp_path: Path) -> None:

@@ -8,12 +8,17 @@ from pathlib import Path
 import pytest
 
 from stayfixed.config.classes import LayerName
-from stayfixed.config.loader import ConfigError, MachineConfigError, Unknown, read_machine_toml
+from stayfixed.config.loader import (
+    NOT_A_PRESET_NAME,
+    ConfigError,
+    MachineConfigError,
+    Unknown,
+    read_machine_toml,
+)
 from stayfixed.config.owner import (
     GATE_BUDGET,
     IGNORED_NOTE,
     MACHINE_FILE_NOTE,
-    NOT_A_PRESET_NAME,
     NOT_A_SWITCH,
     NOT_A_TABLE,
     RESET_NOTE,

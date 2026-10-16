@@ -10,9 +10,9 @@ could not use in one warning, which `SessionStart` shows (`hooks.dispatch`):
 - no `stayfixed.toml`: no project configuration, and nothing to say;
 - one that is a symbolic link, is not UTF-8, cannot be read or is not TOML: no project
   configuration, and `FALLBACK_WARNING`;
-- one whose key cannot be used and has nothing to stand in for it — a required key the NOTE load
-  removed or the document never wrote, or a preset value that does not hold in this repository —
-  no project configuration, and `UNUSABLE_WARNING` naming the key;
+- one whose key cannot be used and has nothing to stand in for it — a required key, or a section
+  holding one, that the document got wrong or never wrote, or a preset value that does not hold in
+  this repository — no project configuration, and `UNUSABLE_WARNING` naming the key;
 - one that loads with notes (`loader.loads_noting`): the configuration, and `NEWER_RELEASE_WARNING`
   when its `[stayfixed] version` is later than the running one, `NOTED_WARNING` otherwise.
 

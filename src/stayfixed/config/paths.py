@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import os
 import stat
+from collections.abc import Mapping
 from pathlib import Path
 
 from stayfixed.config.schema import Config
@@ -183,8 +184,15 @@ PATH_RULE = (
 def validate_paths(config: Config, root: Path) -> dict[str, Path]:
     """Every `[paths]` value contained in `root`, or a `PathEscape` keyed to the first that is
     not, so the loader's NOTE path can put that one key back to the preset's value."""
+    return validate_path_values(config.paths.as_dict(), root)
+
+
+def validate_path_values(values: Mapping[str, str], root: Path) -> dict[str, Path]:
+    """`validate_paths` for `values`, `[paths]` values by their key's name: the loader's NOTE
+    path asks it of a preset's value before it puts a key back to that value, so a value that
+    does not hold in this repository either is named rather than reset to."""
     resolved_root = root.resolve()
-    for name, relative in config.paths.as_dict().items():
+    for name, relative in values.items():
         if not PATH_VALUE.match(relative):
             # Named and never quoted: this is the value a report would otherwise print.
             # The rule in words, not `PATH_VALUE.pattern`: the lookahead that closes `.` and `..`
@@ -227,7 +235,7 @@ def validate_paths(config: Config, root: Path) -> dict[str, Path]:
                 key=f"paths.{name}",
             )
     found: dict[str, Path] = {}
-    for name, relative in config.paths.as_dict().items():
+    for name, relative in values.items():
         try:
             found[name] = contained(
                 root,

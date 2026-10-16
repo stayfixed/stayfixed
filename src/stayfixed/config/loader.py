@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 import tomllib
 from collections.abc import Collection
-from dataclasses import MISSING, dataclass, fields, replace
+from dataclasses import MISSING, Field, dataclass, fields, replace
 from enum import StrEnum
 from functools import cache
 from pathlib import Path
@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING, Any, TypeVar, cast, get_origin, get_type_hints
 from stayfixed import __version__, fsops
 from stayfixed.config.classes import REFUSED_LAYER_NOTE, Layer, LayerName, resolve
 from stayfixed.config.machine import machine_config_path
-from stayfixed.config.paths import PathEscape, contained, validate_paths
+from stayfixed.config.paths import PathEscape, contained, validate_path_values, validate_paths
 from stayfixed.config.schema import (
     BRANCH_NAME,
     BRANCH_RULE,
@@ -100,6 +100,11 @@ SECTIONS = (
 # by `loads` as unknown sections, and refused key by key by `classes.resolve` under NOTE.
 MACHINE_ONLY_SECTIONS = ("personal", "guards", "setup")
 PRESET_KEY = "stayfixed.preset"
+# The preset a document that names none builds on.
+DEFAULT_PRESET = "recommended"
+# A preset value that is not a string, which no name of a preset can be. `config.owner` refuses
+# the same value in these words under `Unknown.REFUSE`.
+NOT_A_PRESET_NAME = "stayfixed.preset must be a string; {available}"
 # What the NOTE path says. A name is printed through `printed.clipped`, since a TOML key is any
 # quoted text; `reason` is the refusal `loads` would have raised, which names its key. The one
 # such refusal that quotes a value the document wrote is `contained()`'s, through `repr`, for a
@@ -107,10 +112,10 @@ PRESET_KEY = "stayfixed.preset"
 # digits, `.`, `_` and `-` in `/`-separated segments.
 UNKNOWN_NOTE = "{name} is not a setting this stayfixed reads; it is ignored"
 RESET_NOTE = "{key} is left out ({reason}); the preset's value applies"
-# `UnusableKey`'s two sentences, in the same words as the notes: a key removed that has no
-# default, and a key whose preset value fails too. `reason` is again the refusal `loads` would
-# have raised for that key.
-UNUSABLE_REQUIRED = "{key} is left out ({reason}), and it has no default to fall back to"
+# `UnusableKey`'s two sentences, in the same words as the notes: a key, or a section holding one,
+# that has no default, and a key whose preset value fails too. `reason` is again the refusal
+# `loads` would have raised for that key, or, for a preset value, the one that value got.
+UNUSABLE_REQUIRED = "{key} cannot be used ({reason}), and it has no default to fall back to"
 UNUSABLE_PRESET = (
     "{key} falls back to the preset's value, which does not hold in this repository either "
     "({reason})"
@@ -177,9 +182,9 @@ class ConfigError(Failure):
 
     `key` is the dotted key a refusal of one key is about — `memory.mode`, `paths.bugs`, a
     section's name for a section that is not a table, `gates.custom.<name>` for a custom gate
-    that cannot run — and `None` for a refusal of the whole document. It is what the NOTE path
-    removes before it tries again (`loads_noting`); it is never printed, so it may be any text
-    the document chose.
+    that cannot run — and `None` for a refusal of the whole document. It is the key the NOTE path
+    decides about, removing it or naming it (`loads_noting`); it is never printed, so it may be
+    any text the document chose.
     """
 
     def __init__(self, message: str, *, key: str | None = None) -> None:
@@ -189,8 +194,9 @@ class ConfigError(Failure):
 
 class MissingKeys(ConfigError):
     """A section without a key that has no default: a refusal of the whole document, so `key`
-    is `None`. `missing` is every such key, dotted, for the NOTE path to tell a key the document
-    never wrote from one it removed itself (`loads_noting`); never printed."""
+    is `None`. `missing` is every such key, dotted, for a reader that must go on to name the one
+    the document never wrote (`config.session`); never printed. The NOTE path never removes such
+    a key, so a document it raises for never wrote one."""
 
     def __init__(self, message: str, *, missing: tuple[str, ...]) -> None:
         super().__init__(message)
@@ -198,19 +204,20 @@ class MissingKeys(ConfigError):
 
 
 class UnusableKey(ConfigError):
-    """A key the NOTE path could not stand anything in for: a required key it removed, which has
-    no default, or a key whose preset value does not hold in this repository either.
+    """A key the NOTE path cannot stand anything in for: one the document holds that has no
+    default, or a section holding such a key; or a key whose preset value does not hold in this
+    repository either.
 
     A reader that must go on cannot keep the project's configuration without it, so it drops the
-    configuration whole, naming `key`, rather than relaying the refusal the next attempt would
-    have raised: that one said a key the document holds was missing, or named the preset's value
-    as the fault. `notes` are what the load had noted before it stopped. Raised only by
-    `loads_noting`; `loads` refuses as it always has.
+    configuration whole, naming `key`, rather than removing the key and relaying the refusal the
+    next attempt would raise: that one would say a key the document holds was missing, or name
+    the preset's value as the fault. Raised only by `loads_noting`; `loads` refuses as it always
+    has. It carries no notes: the load stopped before reading the rest of the document, so the
+    notes made by then are not the file's list, and the reader names the one key that stopped it.
     """
 
-    def __init__(self, message: str, *, key: str, notes: tuple[str, ...]) -> None:
+    def __init__(self, message: str, *, key: str) -> None:
         super().__init__(message, key=key)
-        self.notes = notes
 
 
 # Fixed text and a path stayfixed chose or the owner typed. Not the decoder's message: it is only
@@ -674,7 +681,7 @@ def _preset(name: object) -> dict[str, Any]:
     loader's, which never quote the name.
     """
     if not isinstance(name, str):
-        raise ConfigError(f"stayfixed.preset must be a string; {available()}", key=PRESET_KEY)
+        raise ConfigError(NOT_A_PRESET_NAME.format(available=available()), key=PRESET_KEY)
     try:
         return load_preset(name)
     except Failure as exc:
@@ -693,7 +700,7 @@ def _built(
     head = _table(raw, "stayfixed")
     # Asked before anything spells it: a hex literal of any length converts, and its `str`
     # raises past 4,300 digits.
-    preset_name = head.get("preset", "recommended")
+    preset_name = head.get("preset", DEFAULT_PRESET)
     preset = _preset(preset_name)
     defaults = dict(preset.get("defaults", {}))
     defaults["stayfixed"] = {**defaults.get("stayfixed", {}), "preset": preset_name}
@@ -765,54 +772,115 @@ def loads_noting(text: str, root: Path, *, owner: Owner, label: str | None = Non
     section or key is removed with `UNKNOWN_NOTE`; the repository's `[personal]`, `[guards]` and
     `[setup]` go through `classes.resolve`, which refuses the repository layer for every key in
     them, and are removed with its note. Then the document is built as `loads` builds it, and a
-    refusal carrying a `key` — a `ConfigError`, or `validate_paths`' `PathEscape` — removes that
-    key, so the preset's value applies, with `RESET_NOTE`, and the build is tried again. Each
-    retry removes one key the document holds, so the attempts are bounded by the keys it holds.
+    refusal carrying a `key` — a `ConfigError`, or `validate_paths`' `PathEscape` — is decided
+    before anything is removed, from the document and the preset alone:
 
-    A refusal with no key is the whole document's and propagates, as a document that is not TOML
-    does, except where nothing can stand in for a key: a required key the retry removed, which
-    has no default, or a key whose value now comes from the preset and is refused all the same —
-    the preset's own `[paths]` value through a symlink the repository committed. Then the load
-    raises `UnusableKey`, naming that key and carrying the notes so far, never the refusal the
-    attempt raised, which said a key the document holds was missing or blamed the preset. The
-    owner's layer is folded in as `loads` folds it.
+    - a key the document holds that has a value to fall back to (`_stands_in`) — a preset value
+      that holds in this repository, a schema default, a value the loader fills, or an entry that
+      may simply be absent — is removed with `RESET_NOTE`, and the build is tried again;
+    - a key the document does not hold, whose value was therefore the preset's, raises
+      `UnusableKey` with `UNUSABLE_PRESET`;
+    - a key the document holds with nothing to fall back to — a required key, a section holding
+      one, a preset value that does not hold here either — raises `UnusableKey` at once.
+
+    Nothing is removed that would leave the next attempt a required key to call missing, so no
+    refusal is ever read against an earlier removal. Each retry removes one key the document
+    holds, so the attempts are bounded by the keys it holds. A refusal with no key is the whole
+    document's and propagates, as a document that is not TOML does; a required key the document
+    never wrote is one (`MissingKeys`). The owner's layer is folded in as `loads` folds it.
     """
     raw = _parsed(text, label or root / CONFIG_FILE)
     notes: list[str] = []
     keys: list[str] = []
     document = _known_only(raw, notes, keys)
-    attempts = _held(document)
-    # Why each removed key was removed, the reason `UnusableKey` gives for one that is needed,
-    # and its reset note, which `UnusableKey` leaves out: no preset value applied after all.
-    removed: dict[str, tuple[str, str]] = {}
-
-    def unusable(message: str, key: str) -> UnusableKey:
-        dropped = removed[key][1] if key in removed else None
-        return UnusableKey(message, key=key, notes=tuple(n for n in notes if n != dropped))
-
     while True:
         try:
             config = _built(document, root, machine=None, personal=None, owner=owner)
-        except MissingKeys as exc:
-            lost = [key for key in exc.missing if key in removed]
-            if not lost:
-                raise
-            reason = removed[lost[0]][0]
-            message = UNUSABLE_REQUIRED.format(key=clipped(lost[0]), reason=reason)
-            raise unusable(message, lost[0]) from None
         except (ConfigError, PathEscape) as exc:
-            if exc.key is None or attempts == 0:
+            if exc.key is None:
                 raise
-            if not _removed(document, exc.key):
+            held = _holding(document, exc.key)
+            if held is None:
                 message = UNUSABLE_PRESET.format(key=clipped(exc.key), reason=exc)
-                raise unusable(message, exc.key) from None
-            attempts -= 1
-            note = RESET_NOTE.format(key=clipped(exc.key), reason=exc)
-            removed[exc.key] = (str(exc), note)
-            notes.append(note)
+                raise UnusableKey(message, key=exc.key) from None
+            unusable = _without_fallback(exc.key, exc, document, root)
+            if unusable is not None:
+                raise UnusableKey(unusable, key=exc.key) from None
+            table, name = held
+            del table[name]
+            notes.append(RESET_NOTE.format(key=clipped(exc.key), reason=exc))
             keys.append(exc.key)
             continue
         return Noted(config, tuple(notes), tuple(keys))
+
+
+def _without_fallback(
+    key: str, refused: Exception, document: dict[str, Any], root: Path
+) -> str | None:
+    """Why nothing can stand in for `key`, which the document holds and `refused` refused; `None`
+    when leaving it out leaves a value to build with. Asked before the key is removed."""
+    defaults = _defaults_of(document)
+    if not _stands_in(key, defaults):
+        return UNUSABLE_REQUIRED.format(key=clipped(key), reason=refused)
+    section, _, name = key.partition(".")
+    if section == "paths" and name:
+        # The preset's value is a path in this repository, which a committed symlink can break as
+        # it breaks the document's own: asked here, so a reset never lands on a value that fails.
+        try:
+            validate_path_values({name: defaults["paths"][name]}, root)
+        except PathEscape as fault:
+            return UNUSABLE_PRESET.format(key=clipped(key), reason=fault)
+    return None
+
+
+def _defaults_of(document: dict[str, Any]) -> dict[str, Any]:
+    """The `[defaults]` of the preset `document` builds on: the one it names, or
+    `DEFAULT_PRESET`'s where it names none this build ships, which is what leaving
+    `stayfixed.preset` out builds on."""
+    head = document.get("stayfixed")
+    named = head.get("preset", DEFAULT_PRESET) if isinstance(head, dict) else DEFAULT_PRESET
+    try:
+        preset = _preset(named)
+    except ConfigError:
+        preset = _preset(DEFAULT_PRESET)
+    return dict(preset.get("defaults", {}))
+
+
+# The keys the loader fills itself when the document leaves them out, where the preset's
+# `[defaults]` holds no value: the preset's own name (`DEFAULT_PRESET`), and `[ci] gate_branch`,
+# which is `[project] base_branch` (`_gate_branch`).
+_FILLED = frozenset({PRESET_KEY, "ci.gate_branch"})
+
+
+def _stands_in(dotted: str, defaults: dict[str, Any]) -> bool:
+    """Whether a document without the key `dotted` names still builds a value for it.
+
+    A budget and a custom gate may simply be absent. A key of a schema section has a value when
+    it has a schema default, a preset value in `defaults` (the preset's `[defaults]`), or one the
+    loader fills (`_FILLED`); a section that is not a table has one when every key it holds does.
+    A name no schema declares is answered no: `_known_only` removed every such name the document
+    wrote before the first build, so one here is a name nothing has vouched for.
+    """
+    section, _, name = dotted.partition(".")
+    if section == "budgets" or dotted.startswith("gates.custom."):
+        return True
+    schema = _SCHEMA_OF.get(section)
+    if schema is None:
+        return False
+    if not name:
+        return all(_defaulted(section, field, defaults) for field in fields(schema))
+    declared = {field.name: field for field in fields(schema)}
+    return name in declared and _defaulted(section, declared[name], defaults)
+
+
+def _defaulted(section: str, field: Field[Any], defaults: dict[str, Any]) -> bool:
+    """Whether `section`'s `field` has a value when the document gives it none."""
+    return (
+        field.default is not MISSING
+        or field.default_factory is not MISSING
+        or field.name in defaults.get(section, {})
+        or f"{section}.{field.name}" in _FILLED
+    )
 
 
 _SCHEMA_OF: dict[str, type[Any]] = {
@@ -882,29 +950,24 @@ def _known_keys(
     return kept
 
 
-def _held(table: dict[str, Any]) -> int:
-    """How many keys `table` holds, at every depth: the most a NOTE load can remove."""
-    return sum(1 + (_held(value) if isinstance(value, dict) else 0) for value in table.values())
-
-
-def _removed(table: dict[str, Any], dotted: str) -> bool:
-    """Remove the key `dotted` names from `table`; `False` when `table` holds no such key.
+def _holding(table: dict[str, Any], dotted: str) -> tuple[dict[str, Any], str] | None:
+    """The table that holds the key `dotted` names, at any depth, and the key's name in it;
+    `None` when `table` holds no such key.
 
     A name may itself hold a dot (a custom gate's name may), so each level is asked for the
     whole remaining name first and then for every table whose name prefixes it.
     """
     if dotted in table:
-        del table[dotted]
-        return True
-    return any(
-        isinstance(value, dict)
-        and dotted.startswith(f"{name}.")
-        and _removed(value, dotted[len(name) + 1 :])
-        for name, value in table.items()
-    )
+        return table, dotted
+    for name, value in table.items():
+        if isinstance(value, dict) and dotted.startswith(f"{name}."):
+            found = _holding(value, dotted[len(name) + 1 :])
+            if found is not None:
+                return found
+    return None
 
 
-def preset_defaults(project: str, *, preset: str = "recommended") -> Config:
+def preset_defaults(project: str, *, preset: str = DEFAULT_PRESET) -> Config:
     """A `Config` built from a preset's `[defaults.*]` alone, for a directory that has no
     `stayfixed.toml` and never will.
 

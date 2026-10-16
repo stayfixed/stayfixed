@@ -249,8 +249,9 @@ worktree link, the overlay status, the red-run note — say nothing when there i
 configuration to use, which is so when there is no file, and when the file is a symbolic link
 (never read, whatever it points at), is not UTF-8, cannot be read or is not TOML, or holds a key
 nothing can stand in for: a required key with no default (`[stayfixed] version`, `[project]
-name`) that is missing or cannot be used, or a key whose preset value does not hold in this
-repository either, such as a `[paths]` default under a committed symlink.
+name`) that is missing or cannot be used, or whose section is not a table, or a key whose preset
+value does not hold in this repository either, such as a `[paths]` default under a committed
+symlink.
 
 What the session could not use is said once, on `SessionStart`, in one warning about each file, to
 the person (`systemMessage`) and at the head of the model's context (`additionalContext`), both
@@ -3504,9 +3505,9 @@ this one understands. A repository's `[personal]`, `[guards]` or `[setup]` is th
 to set and is ignored the same way, with a note. A session drops the project configuration whole
 only for a file it cannot read as TOML — a symbolic link, one that is not UTF-8, one it cannot
 read, or one that is not TOML — and for a key nothing can stand in for: a key that has no default
-(`[stayfixed] version`, `[project] name`) and is missing or cannot be used, or a key whose preset
-value does not hold in this repository either, such as a `[paths]` default under a committed
-symbolic link. It then names that key rather than calling a key the file holds missing, and runs
+(`[stayfixed] version`, `[project] name`) and is missing or cannot be used, or whose section is not
+a table, or a key whose preset value does not hold in this repository either, such as a `[paths]`
+default under a committed symbolic link. It then names that key rather than calling a key the file holds missing, and runs
 the guards on the preset and the machine owner's layer ([`stayfixed hook
 <event>`](#stayfixed-hook-event)).
 
