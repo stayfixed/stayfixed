@@ -26,6 +26,10 @@ edited stays where it is and is listed.
    relay the new reports before anything is removed.
 6. Run `stayfixed uninstall` with the same flags, and relay both reports and the count of files
    left in place.
+7. Tell the user what stays on the machine: the store's approval in the trust record, which
+   `stayfixed trust revoke memory` withdraws (after the uninstall, with the `--subject` that
+   `stayfixed trust list --all --json` prints), and setup's rules in the user settings file, which
+   `[setup] ask_rules = false` and the next `stayfixed setup` take back, the deny rule by hand.
 
 ## Rules
 

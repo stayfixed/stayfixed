@@ -6,7 +6,7 @@ project's configuration say there is none. `doctor` reads `stayfixed.toml` the w
 so a file a newer stayfixed wrote is a warning naming the first few of the settings that were
 ignored or put back to the preset's, by key, and counting the rest, and only a file the session
 cannot use at all is red. A broken machine
-file no longer hides the report: the new `preferences` row names it and its problems. The report
-now has eighteen rows: `preferences`, after `budgets`, names the layer each preference and each of
-the machine owner's settings came from (the preset, the repository or the machine file), with its
+file no longer hides the report: the new `preferences` row names it and its problems. That row,
+after `budgets`, names the layer each preference and each of the machine owner's settings came
+from (the preset, the repository or the machine file), with its
 value only where it is a boolean, a number or one of stayfixed's own words.

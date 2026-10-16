@@ -226,8 +226,8 @@ stayfixed writes files. Being specific about which is the point of this section.
 | `.stayfixed/manifest.json` | The ledger of every scaffolded artifact | the scaffold engine |
 | `.stayfixed/local/artifacts/` | The artifacts `[artifacts] local` keeps out of git, at the path each would have in the repository — git-ignored, never recorded in the manifest | `stayfixed init` and `stayfixed upgrade`, when `[artifacts] local` lists them; `stayfixed uninstall` takes them back |
 | `.stayfixed/local/artifacts.json` | The record of the bytes stayfixed last wrote under `.stayfixed/local/artifacts/`, so an unedited copy is refreshed or retired and an edited one is left. Git-ignored and never committed. Deleted, later runs judge a copy at its artifact's own place by what they render, and no longer find a copy left at an earlier place at all | the scaffold engine; `stayfixed uninstall` removes it |
-| `~/.config/stayfixed/config.toml` | Machine-level settings: `[personal]`, `[overlay]`, `[machine]`, and `[setup]`, whose `added_rules` records the rules `setup` added to `~/.claude/settings.json` and whose `ask_rules = false` takes its `ask` rules back. `~` is your home as the password database records it, never `HOME`, which direnv, mise or a devcontainer can set from a file the repository commits ([docs/cli.md](https://github.com/stayfixed/stayfixed/blob/main/docs/cli.md#configuration)) | you, or `stayfixed setup` |
-| `~/.config/stayfixed/trust.json` | Every approval you gave on this machine — today, which repositories' committed notes may reach the model — as a versioned record of kinds and subjects, under the same home | `stayfixed trust approve` and `stayfixed trust revoke` |
+| `~/.config/stayfixed/config.toml` | Machine-level settings: `[personal]`; `[guards]`, where `bg_cleanup = false` switches the background guard off on this machine; `[budgets]`, the four budgets that bound what a session loads; `[overlay]`; `[machine]`; and `[setup]`, whose `added_rules` records the rules `setup` added to `~/.claude/settings.json` and whose `ask_rules = false` takes its `ask` rules back. `~` is your home as the password database records it, never `HOME`, which direnv, mise or a devcontainer can set from a file the repository commits ([docs/cli.md](https://github.com/stayfixed/stayfixed/blob/main/docs/cli.md#configuration)) | you, or `stayfixed setup` |
+| `~/.config/stayfixed/trust.json` | Every approval you gave on this machine — today, which repositories' committed notes may reach the model — as a versioned record of kinds and subjects, under the same home | `stayfixed trust approve`, under either of its spellings, and `stayfixed trust revoke`; and `stayfixed memory index` and `stayfixed attach`, which carry an approval across a write of their own to the store and never give one |
 | `hooks/hooks.json` and `hooks/run-hook.sh` | The zero-config wiring both harnesses read, and the wrapper they execute. **Shipped in the plugin; never written into a project** | nothing — they are part of the plugin |
 | `${CLAUDE_PLUGIN_DATA}/stayfixed/` | Once-per-session markers and the hook diagnostics log. Deleted with the plugin | the hook dispatcher |
 | `.gitignore`, the `stayfixed:ignore` region | The block that keeps `.stayfixed/local/` and `.stayfixed/assessment.json` out of git. Recorded in the manifest when `init` writes it, and `detach` then leaves it | `stayfixed init`, or `attach` on a repository `init` has not set up |
@@ -518,9 +518,13 @@ directory), and strictly inside no other such entry, managed settings' included 
 `./build`, `/tmp/claude-501/build` and `~/a/b` beside `~/a` are not, and a `~/` entry must be clear
 under every home it may mean, `HOME` included — and every other entry is a gap the row names. Where
 `CLAUDE_CONFIG_DIR` names a user settings directory besides `~/.claude`, that directory may only
-make the row worse — never better than a warning when it is the only one, and never read at all
-inside the project — and `setup` writes it too only where it exists outside the project and
-neither `--home` nor `--settings` names the destination. With the sandbox on, an agent's shell
+make the row worse — never better than a warning when it is the only one, never read at all
+inside the project or another checkout of its repository, and never looked at under neither the
+home nor the project — and `setup` writes it too only where it exists under the home and outside
+the project and its checkouts, and neither `--home` nor `--settings` names the destination. A
+setting of the wrong shape — a sandbox switch that is not `true` or `false`, a widening key that
+is not a list of strings — is a gap, and the settings files are read past a leading byte-order
+mark, as Claude Code reads them. With the sandbox on, an agent's shell
 cannot write the machine directory at all, so `setup`, `trust revoke` and `memory index`'s refresh
 of an approval, run there, say a person must run them in their own terminal. `stayfixed uninstall` leaves these machine-wide rules:
 `[setup] ask_rules = false` takes the `ask` rules back, and the deny rule is yours to remove by

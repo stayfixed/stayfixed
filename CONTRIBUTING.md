@@ -277,7 +277,8 @@ too, since Python runs each package's `__init__.py` first.
   every import sits inside a function body; `tests/boundaries/test_discovery.py` holds that one.
 - `approvals.py` with a `KINDS` tuple of `stayfixed.trust.api.ApprovalKind` gives it kinds of
   approval: what a person approves, how this checkout's subjects of it are found and hashed, and
-  the flags `stayfixed trust approve` takes for it. `memory` contributes `memory`, its store. The
+  the flags `stayfixed trust approve` takes for it, each with the words `--help` gives it, so a
+  kind's new flag edits its own `approvals.py` and nothing in the core. `memory` contributes `memory`, its store. The
   `trust` area reads every one through discovery (`trust/kinds.py`), so a kind a delivery area owns
   reaches the core without the core importing it, and two kinds of one name refuse. `KINDS` is read
   when the CLI's parser is built, so every other import sits inside the kind's functions.

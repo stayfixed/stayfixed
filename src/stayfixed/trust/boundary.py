@@ -32,8 +32,9 @@ from a file the repository commits in a person's own terminal, so a terminal on 
 proves nothing either. So the home's directory is always the primary subject, and the variable's
 may only make an answer worse: `doctor` judges the home's and lets the variable's worsen it, judges
 the variable's alone only where the home has none and then never above a warning, and never judges
-one inside the project; `setup` always writes the home's, and the variable's as well only where
-that directory exists outside the project.
+one inside the project or another checkout of its repository; `setup` always writes the home's,
+and the variable's as well only where that directory exists outside them. Neither asks the
+filesystem about a variable's directory under neither a home nor the project (`placement`).
 
 **A write the sandbox refuses** (`sandbox_refused`): with Claude Code's sandbox on, an agent's shell
 writes only the working directory and the temporary directory, so stayfixed's own writes to the

@@ -1,8 +1,11 @@
 `stayfixed setup` now asks Claude Code to ask you before an agent's shell runs `stayfixed trust
 approve` or its old spelling, by any of the ways it reaches stayfixed — bare, `python -m`,
-`python3 -m`, `uvx`, or the absolute path setup runs as — adding those `ask` rules to your user
-settings and recording in the machine configuration file's `[setup] added_rules` which ones it
-added; `[setup] ask_rules = false` takes back exactly those and never a rule you wrote. Note that
+`python3 -m`, `uvx`, or the absolute path of the `stayfixed` on `PATH` — adding those `ask` rules
+to your user settings and recording in the machine configuration file's `[setup] added_rules`
+which ones it added; a recorded rule it no longer wants, such as the pair for a `stayfixed` no
+longer on `PATH`, is taken back, and `[setup] ask_rules = false` takes back every recorded one and
+never a rule you wrote. A rule you delete by hand comes back on the next `setup`; the switch is
+the way to drop them. Note that
 `claude -p` treats an `ask` rule as a refusal. `stayfixed setup --approval-boundary` also denies
 writes to the trust record's directory (`Edit(//<that directory>/**)`) and prints the sandbox
 settings that rule needs; it never sets them. `stayfixed doctor` has a nineteenth row,
@@ -19,6 +22,12 @@ commands from the sandbox, or while managed settings do not make the sandbox adm
 refuse to start without it (`sandbox.failIfUnavailable = true`), and green only then. A `~/` entry
 counts as safe only under every home it may mean, `HOME` included, and a user settings directory
 `CLAUDE_CONFIG_DIR` names besides `~/.claude` may only make the answer worse: alone it is never
-better than a warning, and inside the project, case-folded on macOS, it is never read. A project
+better than a warning, inside the project or another checkout of its repository, case-folded on
+macOS, it is never read, and under neither the home nor the project it is never looked at, since
+it may lie under a network mount; its value is printed cut to its first 120 characters and its
+length. The project's and your settings files are read past a leading byte-order mark, as Claude
+Code reads them, and a setting of the wrong shape — a sandbox switch that is not `true` or
+`false`, a `sandbox` that is not an object, a widening key that is not a list of strings — is a
+gap named by its file and key, never read as absent. A project
 whose `[stayfixed] agents` does not list `claude` and which carries no Claude Code settings file is
 skipped only while the trust record holds no approval.

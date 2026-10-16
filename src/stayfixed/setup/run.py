@@ -240,7 +240,7 @@ SANDBOX_ADVICE = (
 )
 # A command path no rule can hold: the rule would read as protection and match no command line.
 UNRULABLE_PATH = (
-    "no ask rule was written for {path}, the stayfixed this run runs as: a rule cannot hold a path "
+    "no ask rule was written for {path}, the stayfixed on PATH: a rule cannot hold a path "
     "with a space, a parenthesis or a character that does not print, so an agent that runs it by "
     "that path is not asked"
 )

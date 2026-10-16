@@ -177,8 +177,10 @@ Every kind of approval the areas contribute, and its state in this checkout: one
 every line not approved, the exact command that approves it, for the person at the machine to run
 in their own terminal; the line says an agent must not run it for them.
 Today the one kind is `memory`, a store of notes inside the repository, and `--store` is its flag.
-A kind with nothing to describe here (no `stayfixed.toml`, or no store) says so, and says why in the
-kind's own words. `--all` lists every approval recorded on the machine instead, whichever checkout
+The checkout is read as a session reads it ([Configuration](#configuration)): a `stayfixed.toml`
+a newer release added a section or key to still describes its store, so what this lists as
+approved is what a session uses. A kind with nothing to describe here (no `stayfixed.toml` a
+session can read, or no store) says so, and says why in the kind's own words. `--all` lists every approval recorded on the machine instead, whichever checkout
 it was given in, each with when it was approved. It names each subject — for `memory`, the store's
 absolute path — escaped where it leaves the path grammar and, past 120 characters, by its start
 and its length; a subject under the home the password database records is named from `~/`.
@@ -229,7 +231,10 @@ store's as kind `memory`, its subject the store's absolute path. It is versioned
 holding `version` (`1`) and `approvals`, each with its `kind`, `subject`, `digest` and
 `approved_at`. The flat map `0.3.0` wrote, a store's path to its digest, is read as approvals of
 kind `memory`, so an upgrade keeps every one, and the first write upgrades the file in place; a
-`0.3.0` reading a version-1 record finds no approval in it and asks again. Every write replaces the
+`0.3.0` reading a version-1 record finds no approval in it and asks again — and an approval made
+there, after a downgrade, rewrites the record as its flat map holding that one approval, so every
+other approval the version-1 record held is gone and is asked for again after the upgrade back.
+Every write replaces the
 whole file in one atomic step, and no lock is taken: two commands writing at once each replace it
 whole, the last one wins, and neither leaves it torn. The one write a person did not ask for, the
 refresh `memory index` makes over its own files, is the exception: it writes only while the record,
@@ -240,7 +245,10 @@ Exits `2` if `trust.json` exists and is neither a record this stayfixed reads no
 map — not JSON, not UTF-8, a later version, or a version-1 record that is not whole: a key besides
 `version` and `approvals`, an approval that is not an object of four text fields, or one approval
 named twice. It holds every project's approval on the machine, so nothing will overwrite a file
-it could not read — repair or delete it. An unknown `KIND` exits `2` naming the kinds there are.
+it could not read — repair or delete it; for a record of a later version, which a later stayfixed
+wrote and is met after a downgrade, update stayfixed instead, since deleting it would destroy that
+release's approvals. An unknown `KIND` exits `2` naming the kinds there are. Every subject is
+recorded in one write of the record, so a write that fails leaves it as it was.
 A write to the record refused as an agent's sandbox refuses one (`EPERM` on macOS and `EROFS` on
 Linux and WSL2, as Claude Code's sandboxing reference gives them) exits `2`, writes nothing, and
 says that a person must run the command in their own terminal, outside the agent's sandbox, and
@@ -258,8 +266,13 @@ read off this run: `was_trusted`, whether the store was approved at its digest b
 
 Withdraw the approval of every subject of `KIND` in this checkout, or of the one recorded subject
 `--subject` names, as `trust list --all --json` spells it. It needs no terminal: withdrawing is the
-direction that fails safe. A revoke that matches nothing exits `1`, writes nothing, and lists what
-the kind has recorded, each subject named as `trust list --all` names it.
+direction that fails safe. The checkout is described as a session reads it, as `trust list`
+describes it, so an approval a session uses is withdrawn by this spelling whatever a command would
+refuse in `stayfixed.toml`. A revoke that matches nothing exits `1`, writes nothing, and lists what
+the kind has recorded, each subject named as `trust list --all` names it. So does one whose kind
+cannot describe the checkout — no `stayfixed.toml` a session can read, as after `stayfixed
+uninstall` — which says why and names `stayfixed trust revoke KIND --subject KEY` with a subject
+`stayfixed trust list --all --json` prints.
 
 `--json` keys: `kind`, and `revoked`, the subjects withdrawn; a revoke that matched nothing adds
 `recorded`, every subject the kind has recorded, whole.
@@ -294,7 +307,10 @@ entry.
 When the store's notes are repository data with no trust record, both bundles are empty, and
 this command says nothing rather than explaining why — its output *is* what reaches the model.
 `stayfixed memory index` and `stayfixed memory fit` are where the explanation is printed,
-because those are the commands a person runs.
+because those are the commands a person runs. It reads the configuration as the session does
+([Configuration](#configuration)), and a machine file that does not load is read as recording no
+overlay, so the notes not kept in an overlay still arrive; the session's own warning names that
+file.
 
 **Writes** nothing: the bundle goes to standard output and nowhere else.
 
@@ -1952,6 +1968,16 @@ under an ignored `build/`, say): creating it was allowed because nothing was the
 finishes the run. A `CLAUDE.md` or `AGENTS.md` your own excludes ignore is taken back like any
 other. Run it on a checkout you trust.
 
+**What stays on the machine.** `uninstall` takes back one repository's footprint, and what is the
+machine's stays: the `ask` and deny rules `stayfixed setup` added to the user settings file, and
+every approval in `~/.config/stayfixed/trust.json`, this repository's store among them. An approval
+left there keeps `doctor`'s `approval-boundary` row red in every repository until the sandbox and
+the deny rule stand. Run `stayfixed trust revoke memory` before uninstalling to withdraw this
+repository's approval; afterwards, with no `stayfixed.toml` to describe the store, `trust revoke`
+says so and names `stayfixed trust revoke memory --subject KEY`, with a key `stayfixed trust list
+--all --json` prints. `[setup] ask_rules = false` in the machine file takes the `ask` rules back
+on the next `setup`; the deny rule is yours to remove by hand.
+
 **Reads** `stayfixed.toml`, `.stayfixed/manifest.json`, `.stayfixed/local/artifacts.json`, every file
 an artifact targets, `git check-ignore` for each existing file a removal targets at a place a
 `[paths]` value chose, and what is under `.stayfixed/local/`.
@@ -2705,17 +2731,21 @@ plugins, one install per plugin per configured harness.
 `.claude/settings.json` under the home the password database records, never under `HOME`. Where
 `CLAUDE_CONFIG_DIR` names another directory — not spelled byte for byte as that `.claude` — its
 `settings.json` takes the same rules only where neither `--home` nor `--settings` names the
-destination and the directory exists and lies outside the project (spelled as given or where its
-links lead, compared case-folded on macOS), and the rules added there are recorded under that
-directory in the machine configuration's `[setup] added_rules_in`; otherwise the report names it
-and nothing is written there. A repository's committed `env` block, or direnv or mise in your own
-terminal, can set that variable, which is why a directory inside the project is never written, and
-a run pointed at a scratch destination never writes a real directory beside it whose record would
-sit in the scratch machine file. `[setup] ask_rules = false` takes the recorded `ask` rules back in
-each recorded directory that is still there and still outside the project, asked again before the
-first write, and writes nothing else into one no flag or variable names this run — no deny rule, no
-personal value; one that now lies inside the project is named, left alone, and keeps its rules
-recorded. `--home` and `--machine` default to the home directory and to
+destination and the directory exists under the home the password database records and outside the
+project and every other checkout of its repository (spelled as given or where its links lead,
+compared case-folded on macOS), and the rules added there are recorded under that directory, made
+absolute, in the machine configuration's `[setup] added_rules_in`; otherwise the report names it,
+its first 120 characters and its length, and nothing is written there. A repository's committed
+`env` block, or direnv or mise in your own terminal, can set that variable, which is why a
+directory inside the project or another checkout is never written, why one under neither the home
+nor the project is never even looked at (it may lie under a network mount), and why a run pointed
+at a scratch destination never writes a real directory beside it whose record would sit in the
+scratch machine file. `[setup] ask_rules = false` takes the recorded `ask` rules back in each
+recorded directory that is still there and still under the home and outside the project and its
+checkouts, asked again before the first write, and writes nothing else into one no flag or variable
+names this run — no deny rule, no personal value; one that now lies inside the project is named,
+left alone, and keeps its rules recorded, and so is one under neither the home nor the project.
+The report says "deny rules merged" only for a run that added a deny rule to the home's file. `--home` and `--machine` default to the home directory and to
 `~/.config/stayfixed/config.toml` — the file every reader reads, and not whatever
 `XDG_CONFIG_HOME` or `STAYFIXED_CONFIG` names, because a machine file half the installation
 cannot find is not a machine file. Both flags exist so this command can be pointed at a
@@ -2765,8 +2795,10 @@ is the one everything in stayfixed reads.
 **The `ask` rules.** Every run adds to the user's `permissions.ask` a rule for each way an agent's
 shell reaches an approval: `Bash(stayfixed trust approve:*)`, the same for `python -m stayfixed`,
 `python3 -m stayfixed` and `uvx stayfixed`, each of the four again for the approval's old
-spelling, and one pair for the absolute path of the `stayfixed` this run runs as — none for a path
-holding a space, a parenthesis or a character that does not print, which the report says. Claude Code then asks the
+spelling, and one pair for the absolute path of the `stayfixed` on `PATH`, spelled as `PATH` gives
+it and never the plugin cache's versioned path the plugin's launcher runs from, so updating the
+plugin piles no pairs up — none for a path holding a space, a parenthesis or a character that does
+not print, which the report says. Claude Code then asks the
 person before any of them runs. `trust revoke` gets none: withdrawing needs no person. Measured on
 Claude Code 2.1.296: a rule matches its own prefix and the `script -q /dev/null` wrapper around it,
 and every other spelling needs one of its own; `-p`, which asks nobody, treats an `ask` rule as a
@@ -2774,9 +2806,11 @@ deny and refuses the command; and a project's `permissions.allow` or `permission
 not lift a user's `ask`. Like the terminal check, the rules slow an agent and guarantee nothing: an
 agent can still reach the record by a spelling no rule names, and the approval boundary below is
 what stops the write. A rule already in the file is yours and is left alone; each rule `setup` adds
-is recorded in the machine configuration file's `[setup] added_rules`. Set `[setup] ask_rules =
-false` there and the next run takes back exactly the recorded rules — an identical rule you typed
-first stays — and adds none. The record is written before a rule is added and after one is taken
+is recorded in the machine configuration file's `[setup] added_rules`. A recorded rule a run no
+longer wants — the pair for a `stayfixed` no longer on `PATH`, or a spelling a later release
+dropped — is taken back from the file and forgotten. Deleting a recorded rule by hand does not
+stick: the next run writes it again. Set `[setup] ask_rules = false` there instead, and the next run
+takes back exactly the recorded rules — an identical rule you typed first stays — and adds none. The record is written before a rule is added and after one is taken
 back, so it always names every rule `setup` put in the file, and a run that stops part-way is
 finished by the next one. `stayfixed uninstall` takes back one repository's footprint and leaves
 these rules, which are the machine's: `[setup] ask_rules = false` takes the `ask` rules back, and
@@ -3055,7 +3089,7 @@ check with `name`, `status`, `detail` and `remedy`, so every remedy is there.
 | `ci-ref` | whether `[ci] ref` is the commit of a released stayfixed tag (or the `v1` alias: a warning, as mutable, once a `1.x` release creates it, and red until then), and whether the rendered workflow pins the same ref — under `[ci] mode = "reusable"`, a workflow that is not there at all is a warning and never a green row, and so are a path that is there and is not a regular file and a file past the 256 KiB bound on the read | `git ls-remote --exit-code` over the public repository's tags, bounded at 30 seconds; *.github/workflows/stayfixed.yml*, read as a regular file and to a bound |
 | `diagnostics` | how many reasons the hook sink recorded — a count, never a line of the file | `${CLAUDE_PLUGIN_DATA}/stayfixed/diagnostics.jsonl` |
 | `ignored-env` | `STAYFIXED_CONFIG` or `XDG_CONFIG_HOME` set and not honoured, and a `HOME` that is not the home the password database records for this user, with the directory stayfixed's machine files are under instead, or that it records none; from a terminal, the remedy says to move files of your own there first | the environment, the password database |
-| `approval-boundary` | whether a session of this project keeps an agent out of the trust record: the sandbox on for this project and confining the filesystem, the `permissions.deny` rules `setup --approval-boundary` writes over that directory, no setting that widens them, and none of it resting on a repository's file alone. Read in Claude Code's precedence, a repository's `sandbox.enabled = false` winning over the user's unless managed settings make the sandbox admin-required (`sandbox.allowUnsandboxedCommands = false`) and managed settings or the user's file set `sandbox.enabled = true`. A `sandbox.filesystem.disabled` set to anything but `false`, which turns the sandbox's filesystem confinement off, is a gap as the sandbox being off is: in managed settings or the user's file always, and in a project or local file while the sandbox is not admin-required. The deny rules count from any file, and only as `setup` spells them, byte for byte: `Edit(//<the trust record's directory>/**)` over the directory where it leads and, where a symbolic link makes the two differ, over the directory as named too; another spelling of the same directory does not count. What widens: a non-empty `sandbox.excludedCommands`, whose commands run outside the sandbox with no filesystem restriction, and an entry of `sandbox.filesystem.allowWrite`, an `Edit` rule in `permissions.allow` or an entry of `permissions.additionalDirectories` that is not shown safe — in a project or local file while the sandbox is not admin-required, and in the user's file always, since the user's file applies while it is. A non-empty `sandbox.excludedCommands` in managed settings or a drop-in beside them is an administrator's choice: it is named, with the remedy of taking it out, and the row is at best a warning beside it. While the sandbox is admin-required the repository's are not read: from Claude Code 2.1.285 on, Claude Code then ignores every `excludedCommands` entry there and the write access each such entry gives sandboxed commands, while its file tools still follow a repository's `Edit` allow rules and additional directories, which the deny rule outranks, since a deny rule wins over any allow for them. The row reads each entry as text alone, with no filesystem call and no pattern engine, and an entry is safe only when all of this holds: it is a literal path of letters, digits, `.`, `_`, `-`, `~` and `/` with no `.`, `..` or empty component; it is anchored outside the working directory as the documentation anchors its key (`/x` is absolute and `~/x` under the home in a sandbox path list and in `additionalDirectories`; `//x` is absolute and `~/x` under the home in an `Edit` rule, whose `/x` is the project's; a relative path is the working directory's in both), and a `~/x` entry must hold all of what follows under every home it may mean: the password database's, `--home` when given, and `HOME`, which Claude Code expands `~` from, a `HOME` that names no absolute directory making it a gap; it lies outside the project, neither holding its root nor held by it; it is neither the record's directory, as named or as resolved, nor above it, nor inside it, compared in NFC and case-folded on macOS; it lies below no `claude-<digits>` component, the sandbox's own per-user temporary directory, which sandboxed commands write, whatever base `CLAUDE_CODE_TMPDIR` gives it; and it lies strictly inside no other widening entry the row reads nor any of managed settings', since an agent's shell writes in the outer one and may put a link to the record's directory where the inner one names before a later session resolves it (whether a deny rule holds inside a wider entry was not measured). The same place named twice, such as `allowWrite` `/tmp/build` beside `Edit(//tmp/build)`, is not inside itself. So `~/.kube` and `/tmp/build` are safe, and `**`, `/`, `~`, `~/.config` (above the record), `./build`, `Edit(/tmp/build)`, `/tmp/claude-501/build` and `~/a/b` beside `~/a` are not. Every entry not shown safe is a gap, named by its key and its file. The sandbox's `true` and the deny rules decide red from every file, and count toward ok only from managed settings and the user's file: where the only `true`, or the only copy of a rule, is in `.claude/settings.json` or `.claude/settings.local.json`, the row is at best a warning naming that file, since a later commit can remove it. Red where any of this is missing or widened once the machine holds an approval, or the trust record cannot be read; a warning for the same before one; a warning while all holds and managed settings exclude commands, or the sandbox is not admin-required, or managed settings do not set `sandbox.failIfUnavailable = true`, without which Claude Code runs commands outside a sandbox that cannot start, naming the managed settings file and the three keys of the sandboxing reference's recipe to set there; ok only then. A settings file that cannot be read as one JSON object — unreadable, not UTF-8, or not JSON — is read as absent and named, and keeps the row from ok. The user's file is `.claude/settings.json` under `--home` or the home the password database records, always the row's subject. Nothing tells whether a person set `CLAUDE_CONFIG_DIR` or a repository did, through an agent's `env` block or direnv or mise in a person's own terminal, so the directory it names may only make the answer worse: where it is not spelled byte for byte as the home's `.claude`, it is judged too and its gaps are added, said with its file; where the home has no `.claude`, it is judged alone, named, and the row is at best a warning; and one inside the project, or leading there, is never judged, only named, the row at best a warning for it. The skip applies only when neither directory is there. Skips with no Claude Code user settings directory, or where `[stayfixed] agents` lists no `claude`, the project carries no `.claude/settings.json` or `.claude/settings.local.json`, and the trust record can be read and holds no approval: the agents list is the repository's, so once the machine holds an approval a later commit cannot turn the row into a skip | the managed settings file and its `managed-settings.d/`, `.claude/settings.local.json`, `.claude/settings.json`, `~/.claude/settings.json` and `$CLAUDE_CONFIG_DIR/settings.json`, the trust record, `stayfixed.toml` |
+| `approval-boundary` | whether a session of this project keeps an agent out of the trust record: the sandbox on for this project and confining the filesystem, the `permissions.deny` rules `setup --approval-boundary` writes over that directory, no setting that widens them, and none of it resting on a repository's file alone. Read in Claude Code's precedence, a repository's `sandbox.enabled = false` winning over the user's unless managed settings make the sandbox admin-required (`sandbox.allowUnsandboxedCommands = false`) and managed settings or the user's file set `sandbox.enabled = true`. A `sandbox.filesystem.disabled` set to anything but `false`, which turns the sandbox's filesystem confinement off, is a gap as the sandbox being off is: in managed settings or the user's file always, and in a project or local file while the sandbox is not admin-required. The deny rules count from any file, and only as `setup` spells them, byte for byte: `Edit(//<the trust record's directory>/**)` over the directory where it leads and, where a symbolic link makes the two differ, over the directory as named too; another spelling of the same directory does not count. What widens: a non-empty `sandbox.excludedCommands`, whose commands run outside the sandbox with no filesystem restriction, and an entry of `sandbox.filesystem.allowWrite`, an `Edit` rule in `permissions.allow` or an entry of `permissions.additionalDirectories` that is not shown safe — in a project or local file while the sandbox is not admin-required, and in the user's file always, since the user's file applies while it is. A non-empty `sandbox.excludedCommands` in managed settings or a drop-in beside them is an administrator's choice: it is named, with the remedy of taking it out, and the row is at best a warning beside it. While the sandbox is admin-required the repository's are not read: from Claude Code 2.1.285 on, Claude Code then ignores every `excludedCommands` entry there and the write access each such entry gives sandboxed commands, while its file tools still follow a repository's `Edit` allow rules and additional directories, which the deny rule outranks, since a deny rule wins over any allow for them. The row reads each entry as text alone, with no filesystem call and no pattern engine, and an entry is safe only when all of this holds: it is a literal path of letters, digits, `.`, `_`, `-`, `~` and `/` with no `.`, `..` or empty component; it is anchored outside the working directory as the documentation anchors its key (`/x` is absolute and `~/x` under the home in a sandbox path list and in `additionalDirectories`; `//x` is absolute and `~/x` under the home in an `Edit` rule, whose `/x` is the project's; a relative path is the working directory's in both), and a `~/x` entry must hold all of what follows under every home it may mean: the password database's, `--home` when given, and `HOME`, which Claude Code expands `~` from, a `HOME` that names no absolute directory making it a gap; it lies outside the project, neither holding its root nor held by it; it is neither the record's directory, as named or as resolved, nor above it, nor inside it, compared in NFC and case-folded on macOS; it lies below no `claude-<digits>` component, the sandbox's own per-user temporary directory, which sandboxed commands write, whatever base `CLAUDE_CODE_TMPDIR` gives it; and it lies strictly inside no other widening entry the row reads nor any of managed settings', since an agent's shell writes in the outer one and may put a link to the record's directory where the inner one names before a later session resolves it (whether a deny rule holds inside a wider entry was not measured). The same place named twice, such as `allowWrite` `/tmp/build` beside `Edit(//tmp/build)`, is not inside itself. So `~/.kube` and `/tmp/build` are safe, and `**`, `/`, `~`, `~/.config` (above the record), `./build`, `Edit(/tmp/build)`, `/tmp/claude-501/build` and `~/a/b` beside `~/a` are not. Every entry not shown safe is a gap, named by its key and its file. The sandbox's `true` and the deny rules decide red from every file, and count toward ok only from managed settings and the user's file: where the only `true`, or the only copy of a rule, is in `.claude/settings.json` or `.claude/settings.local.json`, the row is at best a warning naming that file, since a later commit can remove it. Red where any of this is missing or widened once the machine holds an approval, or the trust record cannot be read; a warning for the same before one; a warning while all holds and managed settings exclude commands, or the sandbox is not admin-required, or managed settings do not set `sandbox.failIfUnavailable = true`, without which Claude Code runs commands outside a sandbox that cannot start, naming the managed settings file and the three keys of the sandboxing reference's recipe to set there; ok only then. What the row cannot read is never read as absent. The project's two files and the user's are read as Claude Code reads them, past a leading byte-order mark; managed settings, whose reading was not measured, strictly. A key of the boundary's own there with a value of the wrong shape is a gap, named with its file and key, red once the machine holds an approval: a sandbox switch that is not `true` or `false` (`sandbox.enabled` in any file, `allowUnsandboxedCommands` and `failIfUnavailable` in managed settings), a `sandbox`, `sandbox.filesystem` or `permissions` that is not an object where the row reads it, and any widening key — `excludedCommands` among them — that is not a list of strings; in managed settings, an `excludedCommands` that is not such a list keeps the row from ok as a non-empty one does. A settings file that cannot be read as one JSON object at all — unreadable, not UTF-8, or not JSON — is read as absent and named, and keeps the row from ok. The user's file is `.claude/settings.json` under `--home` or the home the password database records, always the row's subject. Nothing tells whether a person set `CLAUDE_CONFIG_DIR` or a repository did, through an agent's `env` block or direnv or mise in a person's own terminal, so the directory it names may only make the answer worse: where it is not spelled byte for byte as the home's `.claude`, it is judged too and its gaps are added, said with its file; where the home has no `.claude`, it is judged alone, named, and the row is at best a warning; one inside the project or another checkout of its repository, or leading there, is never judged, only named, the row at best a warning for it; and one under neither a home nor the project is never asked of the filesystem at all, since a path a committed `env` block chose may lie under a network mount where one look stalls the report: it is named, and the row is at best a warning for it. The value is printed through `printed.clipped`, its first 120 characters and its length, since a repository may have chosen it. The skip applies only when neither directory is there. Skips with no Claude Code user settings directory, or where `[stayfixed] agents` lists no `claude`, the project carries no `.claude/settings.json` or `.claude/settings.local.json`, and the trust record can be read and holds no approval: the agents list is the repository's, so once the machine holds an approval a later commit cannot turn the row into a skip | the managed settings file and its `managed-settings.d/`, `.claude/settings.local.json`, `.claude/settings.json`, `~/.claude/settings.json` and `$CLAUDE_CONFIG_DIR/settings.json`, the trust record, `stayfixed.toml` |
 | `attached` | the overlay binding, and the harness memory path's shape, judged off a terminal only where `HOME` is the database's home and read alike from every checkout (the states are below the table) | `.stayfixed/local/attach.json`, `~/.claude/projects/<slug>/memory`, `.claude/settings.local.json`, the link tree |
 | `bundles` | a bundle that does not fit its slots, and one whose part reaches the cap | the note store |
 | `store-debris` | files in the note store that are not notes (at most 500,000 entries) | the note store |

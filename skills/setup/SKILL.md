@@ -56,8 +56,9 @@ description: Configure the machine for stayfixed — the preset, the personal pa
    every home it may mean, `HOME` included), of letters, digits, `.`, `_`, `-` and `/`; every other
    entry is a gap the row names by key and file. Where `CLAUDE_CONFIG_DIR`
    names a user settings directory besides `~/.claude`, that directory may only make the row
-   worse, and `setup` writes it too only where it exists outside the project and neither `--home`
-   nor `--settings` was given; relay the line that names it.
+   worse, and `setup` writes it too only where it exists under the home and outside the project
+   and its other checkouts, and neither `--home` nor `--settings` was given; relay the line that
+   names it.
    With the sandbox on, the agent's shell cannot write the machine directory at all: when `setup`,
    `trust revoke` or `memory index` says a person must run it in their own terminal, outside the
    agent's sandbox, relay that sentence and stop — never retry it outside the sandbox yourself.
