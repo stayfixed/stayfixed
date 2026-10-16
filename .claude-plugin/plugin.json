@@ -1,6 +1,6 @@
 {
   "name": "stayfixed",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "A methodology harness for coding agents: bug ledger, curated working memory behind a trust gate, and fail-closed guards.",
   "author": { "name": "Nezhinskiy" },
   "repository": "https://github.com/stayfixed/stayfixed",
