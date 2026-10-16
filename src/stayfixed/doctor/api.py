@@ -27,6 +27,9 @@ one nobody can tell from a leftover:
 - `Status` is the type `Row.status` declares, for a check that decides its status before it
   builds its row, as an area's own check may: an annotation it could not import would be a type
   it could hold and not declare.
+- `NO_CONFIG_SKIP` is the skip of a row that reads the project configuration in a repository with
+  none: the areas' `attached`, `bundles`, `store-debris` and `harness-link` give it as the core's
+  rows do, so one sentence says one state.
 
 `plugin_root` is not here: nothing outside this area imports it, and the one test that reads it
 takes it from `stayfixed.doctor.checks`, its own area's module. Nor is `SETTINGS_FILES`, the
@@ -37,6 +40,7 @@ needs nothing from this list.
 
 from stayfixed.doctor.checks import run_checks
 from stayfixed.doctor.model import (
+    NO_CONFIG_SKIP,
     OK,
     RED,
     SKIP,
@@ -52,6 +56,7 @@ from stayfixed.doctor.model import (
 )
 
 __all__ = [
+    "NO_CONFIG_SKIP",
     "OK",
     "RED",
     "SKIP",

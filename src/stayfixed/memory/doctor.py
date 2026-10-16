@@ -40,24 +40,25 @@ def _bundles(context: Context, answers: Answers) -> Row:
     and never repaired. A part already close to the platform cap is the warning before that:
     one more sentence in one note and the bundle needs a slot that does not exist.
     """
-    from stayfixed.doctor.api import OK, RED, SKIP, WARN, Row
+    from stayfixed.doctor.api import NO_CONFIG_SKIP, OK, RED, SKIP, WARN, Row
     from stayfixed.findings import listed
     from stayfixed.memory.bundles import SLOTS, fit, render
 
+    config = context.config
+    if config is None:
+        return Row(SKIP, NO_CONFIG_SKIP)
     store = answers.store(context)
     if store is None:
         return Row(SKIP, "the note store does not resolve, so no bundle can be built")
-    ceiling = context.config.native_caps.hook_output_chars * NEARLY_FULL
+    ceiling = config.native_caps.hook_output_chars * NEARLY_FULL
     over: list[str] = []
     full: list[str] = []
     for bundle in SLOTS:
-        measured = fit(bundle, store, context.config)
+        measured = fit(bundle, store, config)
         if not measured.fits:
             over.append(bundle.value)
             continue
-        emitted = [
-            render(bundle, store, context.config, part=n) for n in range(1, measured.parts + 1)
-        ]
+        emitted = [render(bundle, store, config, part=n) for n in range(1, measured.parts + 1)]
         if any(text is not None and len(text) >= ceiling for text in emitted):
             full.append(bundle.value)
     if over:
@@ -85,8 +86,10 @@ def _store_debris(context: Context, answers: Answers) -> Row:
     walk with a "could not tell" answer reads, and past it says it could not tell.
     """
     from stayfixed import fsops
-    from stayfixed.doctor.api import OK, SKIP, WARN, Row
+    from stayfixed.doctor.api import NO_CONFIG_SKIP, OK, SKIP, WARN, Row
 
+    if context.config is None:
+        return Row(SKIP, NO_CONFIG_SKIP)
     store = answers.store(context)
     if store is None:
         return Row(SKIP, "the note store does not resolve", "")
@@ -124,7 +127,7 @@ def _harness_link(context: Context) -> Row:
     this store.
     """
     from stayfixed.config.machine import homes_agree
-    from stayfixed.doctor.api import OK, WARN, Row
+    from stayfixed.doctor.api import NO_CONFIG_SKIP, OK, SKIP, WARN, Row
     from stayfixed.memory.hooks import no_harness_link
 
     if homes_agree(context.env):
@@ -141,6 +144,9 @@ def _harness_link(context: Context) -> Row:
             "HOME is unset, so a hook can make the harness memory link under this user's home "
             "in the password database",
         )
+    if context.config is None:
+        # What makes the link depends on the store's mode, which only the project's file says.
+        return Row(SKIP, NO_CONFIG_SKIP)
     withheld = no_harness_link(context.config, context.env)
     return Row(WARN, withheld.cause, withheld.remedy)
 

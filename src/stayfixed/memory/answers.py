@@ -47,9 +47,13 @@ class Answers:
         and gates the exit code for something the repository did not do wrong.
         """
         if self._store is None:
+            config = context.config
+            # With no project configuration there is no store to resolve.
             self._store = (
-                resolved_or_none(
-                    lambda: resolve(context.root, context.config, machine=context.machine)
+                None
+                if config is None
+                else resolved_or_none(
+                    lambda: resolve(context.root, config, machine=context.machine)
                 ),
             )
         return self._store[0]

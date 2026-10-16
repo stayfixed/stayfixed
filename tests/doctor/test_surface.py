@@ -43,5 +43,8 @@ def test_the_surface_carries_what_every_consumer_reaches_for() -> None:
         # the type `Row.status` declares, which a contributed check that decides its status
         # before building its row annotates
         "Status",
+        # the skip of a row that reads the project configuration in a repository with none, which
+        # the areas' rows give in the core's words
+        "NO_CONFIG_SKIP",
     }
     assert required == set(doctor.__all__)

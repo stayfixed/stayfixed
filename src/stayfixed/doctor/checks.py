@@ -63,21 +63,26 @@ import os
 import re
 import shutil
 import subprocess
+import tomllib
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 
 import stayfixed
 from stayfixed import REPOSITORY_URL, fsops
-from stayfixed.config.loader import CONFIG_FILE, MachineConfigError, load
+from stayfixed.config.classes import CLASSES, KeyClass, Layer, LayerName, resolve
+from stayfixed.config.loader import CONFIG_FILE, UNPARSEABLE, read_document
 from stayfixed.config.machine import (
     homes_agree,
     machine_config_path,
     override_is_honoured,
     passwd_home,
 )
-from stayfixed.config.schema import Config
+from stayfixed.config.paths import PathEscape
+from stayfixed.config.schema import MEMORY_MODES
+from stayfixed.config.session import MACHINE_FILE_WARNING, SessionConfig, cause, session_config
 from stayfixed.doctor.entries import hook_entries
 from stayfixed.doctor.model import (
+    NO_CONFIG_SKIP,
     OK,
     RED,
     REPORT_THIS,
@@ -88,8 +93,8 @@ from stayfixed.doctor.model import (
     Contribution,
     Row,
 )
-from stayfixed.doctor.registry import Unregistered, contributions
-from stayfixed.errors import Failure, Refusal
+from stayfixed.doctor.registry import contributions
+from stayfixed.errors import Failure
 from stayfixed.findings import listed
 from stayfixed.harnesses import CANONICAL, CLAUDE, CODEX, HARNESSES, Tier
 from stayfixed.hooks.api import (
@@ -99,6 +104,8 @@ from stayfixed.hooks.api import (
     MARKERS,
     data_root,
 )
+from stayfixed.presets import load_preset
+from stayfixed.printed import printable
 from stayfixed.release.api import (
     HASHED_FILES,
     UnreadableRecord,
@@ -230,9 +237,45 @@ def plugin_root(env: Mapping[str, str]) -> Path | None:
     return _own_root() or _named_root(env)
 
 
+# A repository with no `stayfixed.toml`: what works there, and what adds the rest. A warning and
+# never red, because it is the state of every repository the plugin is installed beside before
+# anyone runs `init`, and the guards and this report work in it.
+NOT_INITIALISED = (
+    f"there is no {CONFIG_FILE} here; the session guards and `stayfixed doctor` work without one, "
+    "and `stayfixed init` adds the rest"
+)
+NOT_INITIALISED_REMEDY = "run `stayfixed init --yes`"
+# A `stayfixed.toml` that loads with keys ignored or put back to the preset's. Key names only: a
+# note's sentence carries the loader's refusal, and a key is printed through `printed.printable`.
+NOTED = "{file} loads with {count} setting(s) ignored or put back to the preset's: {keys}"
+NOTED_REMEDY = (
+    f"`stayfixed docs check` refuses the file and prints why each one was; fix or remove them in "
+    f"{CONFIG_FILE}"
+)
+# What `printable` prints for a key outside the path grammar on this row.
+UNPRINTABLE_KEY = "<a key that is not a plain name>"
+FALLBACK_REMEDY = (
+    f"`stayfixed docs check` prints why; run `stayfixed doctor` again after fixing {CONFIG_FILE}"
+)
+
+
 def _not_initialised(context: Context) -> Row:
-    # Reached only when the configuration loaded, so this row is the green one; the red one is
-    # built by `run_checks` before a context exists at all.
+    """Whether there is a `stayfixed.toml`, and how much of it the session can use.
+
+    Read the way a session reads it (`config.session`): none at all is a warning, a file that
+    loads with notes is a warning listing their keys, and only a file the session drops whole is
+    red, in the session's own words. The machine file's warning is the `preferences` row's.
+    """
+    session = context.session
+    dropped = [w for w in session.warnings if w != MACHINE_FILE_WARNING]
+    if context.config is None:
+        if dropped:
+            return Row(RED, cause(dropped[0]), FALLBACK_REMEDY)
+        return Row(WARN, NOT_INITIALISED, NOT_INITIALISED_REMEDY)
+    if session.noted:
+        keys = listed([printable(key, UNPRINTABLE_KEY) for key in session.noted])
+        detail = NOTED.format(file=CONFIG_FILE, count=len(session.noted), keys=keys)
+        return Row(WARN, detail, NOTED_REMEDY)
     return Row(OK, f"{CONFIG_FILE} loads", "")
 
 
@@ -255,6 +298,9 @@ VERSION_UNORDERED = (
 
 def _versions(context: Context) -> Row:
     running = stayfixed.__version__
+    if context.config is None:
+        # The installation's half of the question still has an answer: which stayfixed runs.
+        return Row(OK, f"stayfixed {running} is running; no project records a version to match")
     recorded = context.config.stayfixed.version
     if recorded == running:
         return Row(OK, f"the project and this stayfixed are both {running}", "")
@@ -508,7 +554,7 @@ def _codex_trust(context: Context) -> Row:
     # skip, since nothing measured of Codex makes this row red. Codex's reach has surfaces in both
     # lists, and the row's text is pinned by its test, so a measurement that empties one is an
     # edit here.
-    if CODEX.name in context.config.stayfixed.agents:
+    if context.config is not None and CODEX.name in context.config.stayfixed.agents:
         absent = [str(surface) for surface, reach in CODEX.reach.items() if reach.tier is None]
         in_ci = [str(surface) for surface, reach in CODEX.reach.items() if reach.tier is Tier.CI]
         detail += (
@@ -525,6 +571,8 @@ def _budgets(context: Context) -> Row:
     force. Budget keys are `Budgets.NAMES` and the loader refuses any other, so these are
     stayfixed's own names rather than a repository's strings.
     """
+    if context.config is None:
+        return Row(SKIP, NO_CONFIG_SKIP, "")
     budgets = context.config.budgets
     clamped = sorted(
         name
@@ -542,6 +590,104 @@ def _budgets(context: Context) -> Row:
     if overrides:
         return Row(OK, f"{len(overrides)} budget(s) lowered: {listed(overrides)}")
     return Row(OK, "every budget is the preset's")
+
+
+# The ways of working a repository, the overlay or the owner may choose (`classes.CLASSES`): the
+# `preferences` row names the layer each came from.
+PREFERENCES: tuple[str, ...] = tuple(
+    sorted(key for key, kind in CLASSES.items() if kind is KeyClass.PREFERENCE)
+)
+# The keys whose value is one of stayfixed's own words, which the loader holds to this vocabulary,
+# and so may be printed. Every other text value is the repository's or the owner's to write, and
+# is not.
+ENUMERATED: Mapping[str, tuple[str, ...]] = {"memory.mode": MEMORY_MODES}
+PREFERENCES_REMEDY = "fix the machine file the detail names, then run `stayfixed doctor` again"
+
+
+def _shown(key: str, value: object) -> str | None:
+    """`value` as the row may print it, or `None` where it is text somebody else wrote."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, int):
+        return str(value)
+    vocabulary = ENUMERATED.get(key, ())
+    return value if isinstance(value, str) and value in vocabulary else None
+
+
+def _named(key: str, value: object, layer: str) -> str:
+    shown = _shown(key, value)
+    return f"{key} ({layer})" if shown is None else f"{key} = {shown} ({layer})"
+
+
+def _owner_keys(session: SessionConfig) -> list[str]:
+    """Every key the owner's layer resolved, with the layer `classes.resolve` credited it to."""
+    owner = session.owner
+    named: list[str] = []
+    for key, layer in sorted(owner.provenance.items()):
+        section, _, name = key.partition(".")
+        # The owner's three tables: `personal` and `guards` are dataclasses, and the session
+        # budgets, the third, a mapping by name.
+        tables: dict[str, object] = {"personal": owner.personal, "guards": owner.guards}
+        value = (
+            getattr(tables[section], name, None)
+            if section in tables
+            else owner.session_budgets.get(name)
+        )
+        named.append(_named(key, value, str(layer)))
+    return named
+
+
+def _held(context: Context) -> dict[str, object]:
+    """The preferences the repository's `stayfixed.toml` holds after the NOTE load: written there,
+    and neither the key nor its section ignored or put back to the preset's."""
+    try:
+        text = read_document(context.root)
+        raw = tomllib.loads(text) if text is not None else {}
+    except (Failure, PathEscape, *UNPARSEABLE):
+        return {}
+    noted = set(context.session.noted)
+    held: dict[str, object] = {}
+    for key in PREFERENCES:
+        section, _, name = key.partition(".")
+        table = raw.get(section)
+        if isinstance(table, dict) and name in table and not {key, section} & noted:
+            held[key] = table[name]
+    return held
+
+
+def _preferences(context: Context) -> Row:
+    """Each owner key and each preference, and the layer its value came from.
+
+    A preference's layer is `classes.resolve`'s answer over the preset and what the repository's
+    file holds after the NOTE load; an owner key's is the owner's layer's own provenance. No
+    preference is read from the machine file. The value is printed only where it is a boolean, a
+    number or one of stayfixed's own words (`ENUMERATED`): a name list, a profile or a personal
+    value is text a repository or an owner wrote, and stays out of a row a model may read. Runs
+    with no `stayfixed.toml` too, where every preference is the preset's.
+    """
+    config = context.config
+    defaults = load_preset(config.stayfixed.preset if config else "recommended").get("defaults", {})
+    preset: dict[str, object] = {}
+    for key in PREFERENCES:
+        section, _, name = key.partition(".")
+        if isinstance(defaults.get(section), dict) and name in defaults[section]:
+            preset[key] = defaults[section][name]
+    held = _held(context) if config is not None else {}
+    layers = resolve([Layer(LayerName.PRESET, preset), Layer(LayerName.REPOSITORY, held)])
+    named = _owner_keys(context.session)
+    for key in PREFERENCES:
+        section, _, name = key.partition(".")
+        value = getattr(getattr(config, section), name) if config else preset.get(key)
+        named.append(_named(key, value, str(layers.provenance.get(key, LayerName.PRESET))))
+    detail = "; ".join(named)
+    notes = context.session.owner.notes
+    if notes:
+        return Row(
+            WARN,
+            f"{detail}. The machine file could not be used whole: {'; '.join(notes)}",
+            PREFERENCES_REMEDY,
+        )
+    return Row(OK, detail)
 
 
 def _cli_path(context: Context) -> Row:
@@ -698,6 +844,8 @@ def _ci_ref(context: Context) -> Row:
     The value is repository-authored and is never printed -- not in the detail, not in the
     remedy, and not in an argument list.
     """
+    if context.config is None:
+        return Row(SKIP, NO_CONFIG_SKIP, "")
     ref = context.config.ci.ref
     if not ref:
         return Row(SKIP, "no [ci] ref is recorded, so there is nothing to resolve", "")
@@ -967,6 +1115,7 @@ CHECKS: tuple[tuple[str, Callable[[Context], Row]], ...] = (
     ("hook-entries", hook_entries),
     ("codex-trust", _codex_trust),
     ("budgets", _budgets),
+    ("preferences", _preferences),
     ("cli-path", _cli_path),
     ("ci-ref", _ci_ref),
     ("diagnostics", _diagnostics),
@@ -1014,16 +1163,6 @@ def _report_checks(
     return CHECKS + tuple(check for contribution in contributed for check in contribution.checks)
 
 
-def _early(name: str, check: Callable[[Context], Row], reason: str) -> Check:
-    """A row of the report that is built before any check can be asked: a skip giving `reason`,
-    because every check would be asked with no configuration to read — except the row of an area
-    that could not contribute, which is about stayfixed's own code, which no configuration
-    changes, and so is red here as everywhere."""
-    if isinstance(check, Unregistered):
-        return Check(name, RED, check.detail, REPORT_THIS)
-    return Check(name, SKIP, reason, "")
-
-
 def _context(
     root: Path,
     *,
@@ -1031,7 +1170,7 @@ def _context(
     machine: Path | None,
     runner: Runner,
     env: Mapping[str, str],
-    config: Config,
+    session: SessionConfig,
     contributed: Sequence[Contribution],
 ) -> Context:
     """The report's `Context`, whole: both plugin roots, and every area's claims for
@@ -1044,10 +1183,11 @@ def _context(
         machine,
         runner,
         env,
-        config,
+        session.config,
         own_root=_own_root(),
         plugin_root=plugin_root(env),
         claims=tuple(contribution.claims for contribution in contributed if contribution.claims),
+        session=session,
     )
 
 
@@ -1071,91 +1211,22 @@ def run_checks(
     `ignored-env` reads it, and `diagnostics` finds the harness data root in it.
     """
     env = os.environ if env is None else env
-    # Discovered before anything is read, so the early reports below have a row for every check
-    # an area contributes too, and for every area that could not contribute.
-    contributed = contributions(CHECKS)
-    report_checks = _report_checks(contributed)
-    # The list of checks is the only place a name is spelled, and these two rows are built before
-    # a check function runs, so they read the first key out of it rather than repeating the word:
-    # a row that disagreed with its key would be a typo nothing could see.
-    first, *rest = [name for name, _ in report_checks]
-    asked = dict(report_checks)
-    # Asked of the name before `is_file`, which follows a link: a symlinked `stayfixed.toml` goes
-    # on to `load`, which refuses it, and is reported as one that does not load whatever it
-    # points at, rather than as no file at all when it points at `/dev/zero`.
-    document = root / CONFIG_FILE
-    if not (fsops.is_symlink(document) or fsops.is_file(document)):
-        return [
-            Check(
-                first,
-                RED,
-                f"there is no {CONFIG_FILE} here, so the plugin's hooks are silent in this "
-                f"repository",
-                "run `stayfixed init --yes`",
-            ),
-            *(
-                _early(name, asked[name], f"there is no {CONFIG_FILE} to check against")
-                for name in rest
-            ),
-        ]
-    # The machine file, resolved once and handed to `load`, so the file the row below names when
-    # it does not load is the file that was read: the one no variable moves. Named through the
-    # terminal check instead, it once told an owner at a terminal with `STAYFIXED_CONFIG` set to
-    # fix the file the variable names, which nothing had read.
+    # Every check is asked whatever the repository holds: the configuration is read the way a
+    # session reads it (`config.session`), which never raises for anything the repository or the
+    # machine file holds, so a repository with no `stayfixed.toml`, or one that does not load, has
+    # every row the installation can answer, and a row that reads the project configuration skips
+    # without one (`NO_CONFIG_SKIP`). The machine file is resolved once, the one no variable
+    # moves, so every row that names it names the file that was read.
     read = machine_config_path() if machine is None else machine
-    try:
-        config = load(root, machine=read)
-    except MachineConfigError:
-        # **Not `stayfixed.toml`'s fault, and the row says whose it is.** `load` reads two files,
-        # and blaming the first for either would tell an owner whose
-        # `~/.config/stayfixed/config.toml` has a stray bracket in it to fix a repository file
-        # with nothing wrong with it, and mark the fault as the repository's when it is this
-        # machine's. Told apart by the exception's type and never by its text, because the
-        # loader builds that text out of the file's own keys and values.
-        #
-        # The machine file's path is the machine owner's own and may be printed: it is not
-        # repository-authored, and `stayfixed setup --machine`'s own help spells the default.
-        blamed = "the machine configuration file"
-        return [
-            Check(
-                first,
-                RED,
-                f"{blamed} does not load, so nothing here can be checked against a "
-                f"configuration — {CONFIG_FILE} itself was not the problem",
-                f"run `stayfixed doctor` again after fixing {read}",
-            ),
-            *(_early(name, asked[name], f"{blamed} does not load") for name in rest),
-        ]
-    except (Failure, Refusal):
-        # The message is not quoted: the loader builds it out of the file's own keys and values.
-        # Nor is the class it raised, which is stayfixed's vocabulary and not a reason: the row
-        # says the rule in words, and names a command that prints the loader's own message.
-        if fsops.is_symlink(document):
-            detail = (
-                f"{CONFIG_FILE} is a symbolic link, which no command follows, so nothing else "
-                f"can be checked against it"
-            )
-            remedy = "replace the link with the real file, then run `stayfixed doctor` again"
-        else:
-            detail = (
-                f"{CONFIG_FILE} is here and does not load, so nothing else can be checked "
-                f"against it"
-            )
-            remedy = (
-                f"`stayfixed docs check` prints why; run `stayfixed doctor` again after fixing "
-                f"{CONFIG_FILE}"
-            )
-        return [
-            Check(first, RED, detail, remedy),
-            *(_early(name, asked[name], f"{CONFIG_FILE} does not load") for name in rest),
-        ]
+    session = session_config(root, machine=read)
+    contributed = contributions(CHECKS)
     context = _context(
         root,
         home=home,
         machine=machine,
         runner=runner,
         env=env,
-        config=config,
+        session=session,
         contributed=contributed,
     )
-    return [_guarded(name, check, context) for name, check in report_checks]
+    return [_guarded(name, check, context) for name, check in _report_checks(contributed)]

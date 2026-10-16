@@ -1649,8 +1649,8 @@ reddens = [
 [[mutation]]
 name = "doctor compares a worktree's harness link with that worktree's own tree"
 file = "src/stayfixed/attach/doctor.py"
-before = "        targets = harness_targets(context.root, owner, context.config)"
-after = "        targets = harness_targets(context.root, context.root, context.config)"
+before = "        targets = harness_targets(context.root, owner, _project(context))"
+after = "        targets = harness_targets(context.root, context.root, _project(context))"
 reddens = [
   "tests/attach/test_doctor.py::test_a_normally_attached_linked_worktree_is_ok",
 ]
@@ -1765,16 +1765,8 @@ reddens = [
 [[mutation]]
 name = "attach asks the overlay about the store the ledger names"
 file = "src/stayfixed/attach/doctor.py"
-before = '''            binding: Binding | None = binding_for(
-                context.root, context.config, machine=context.machine
-            )'''
-after = '''            from pathlib import Path
-
-            from stayfixed.attach.binding import read_binding
-            from stayfixed.attach.write import ledger
-
-            store = Path(ledger(context.root).store)
-            binding = read_binding(context.root, store=store, machine=context.machine)'''
+before = "                else binding_for(context.root, context.config, machine=context.machine)"
+after = '                else __import__("stayfixed.attach.binding", fromlist=["read_binding"]).read_binding(context.root, store=__import__("pathlib").Path(__import__("stayfixed.attach.write", fromlist=["ledger"]).ledger(context.root).store), machine=context.machine)'
 reddens = [
   "tests/attach/test_doctor.py::test_only_this_machines_state_turns_an_entry_the_ledger_records_into_a_warning[forged-foreign-store]",
   "tests/attach/test_doctor.py::test_only_this_machines_state_turns_an_entry_the_ledger_records_into_a_warning[owner-moved-store]",
@@ -3406,4 +3398,24 @@ before = "    if config is None or event.project_root is None or config.memory.m
 after = "    if event.project_root is None or config.memory.mode != OVERLAY_MODE:"
 reddens = [
   "tests/hooks/test_floor.py::test_project_handlers_speak_on_a_file_and_stay_silent_without_one[overlay_status]",
+]
+
+# With no project configuration the `attached` row skips in the core's words, and the claims
+# `hook-entries` asks answer what `common/` grants, since a binding needs the project's name.
+[[mutation]]
+name = "the attached row reads a configuration that is not there"
+file = "src/stayfixed/attach/doctor.py"
+before = "    if config is None:\n        # Which store, which tree"
+after = "    if False:\n        # Which store, which tree"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_repository_without_a_configuration_skips_only_the_rows_that_read_one",
+]
+
+[[mutation]]
+name = "the attach claims ask a binding of no project configuration"
+file = "src/stayfixed/attach/doctor.py"
+before = "                None\n                if context.config is None\n                else binding_for("
+after = "                None\n                if False\n                else binding_for("
+reddens = [
+  "tests/doctor/test_floor_report.py::test_a_machine_with_an_overlay_and_no_stayfixed_toml_is_red_about_nothing",
 ]

@@ -139,7 +139,7 @@ def _attached(context: Context, answers: Answers, ledger: _Ledger) -> Row:
     from stayfixed.config.layout import ATTACH_LEDGER
     from stayfixed.config.machine import home_is_empty, override_is_honoured
     from stayfixed.config.schema import OVERLAY_MODE
-    from stayfixed.doctor.api import OK, RED, WARN, Row
+    from stayfixed.doctor.api import NO_CONFIG_SKIP, OK, RED, SKIP, WARN, Row
     from stayfixed.errors import Refusal
     from stayfixed.memory.api import (
         DIFFERENT_REMOTE,
@@ -152,6 +152,10 @@ def _attached(context: Context, answers: Answers, ledger: _Ledger) -> Row:
     )
 
     config = context.config
+    if config is None:
+        # Which store, which tree and whether the overlay is consulted at all are the project's
+        # file's to say.
+        return Row(SKIP, NO_CONFIG_SKIP)
     if config.memory.mode != OVERLAY_MODE:
         # `memory.mode` is repository-authored and is safe to print for one reason only: the
         # loader holds it to a fixed set of three words, so what reaches this line is one of
@@ -270,6 +274,15 @@ UNASKABLE: Final = "unaskable"
 # standing in. Told with the other two, the row would blame `git` or an unreadable record and send
 # the reader to run `stayfixed doctor` where `git` runs, which cannot fix it, and its `skip` never
 # reaches the exit code, so a repository's own committed, malformed ledger would go unreported.
+
+
+def _project(context: Context) -> Config:
+    """The project configuration, for a helper of the `attached` row: the row skips before it asks
+    any of them when there is none, so `None` here is a defect in this module, and `_guarded`
+    makes it the red row such a defect earns."""
+    if context.config is None:
+        raise LookupError("the attached row asked a helper without a project configuration")
+    return context.config
 
 
 def _re_attach() -> str:
@@ -498,7 +511,7 @@ def _store_of(context: Context, answers: Answers, checkout: Path) -> Store | Non
 
     if checkout.resolve() == context.root.resolve():
         return answers.store(context)
-    return resolved_or_none(lambda: resolve(checkout, context.config, machine=context.machine))
+    return resolved_or_none(lambda: resolve(checkout, _project(context), machine=context.machine))
 
 
 def _harness_verdict(
@@ -622,7 +635,7 @@ def _read_harness(
     }[shape]
     owner = _owner(context)
     try:
-        targets = harness_targets(context.root, owner, context.config)
+        targets = harness_targets(context.root, owner, _project(context))
     except Refusal as refused:  # targets-unaskable
         unchecked = {
             _LINK: "what the link points at",
@@ -641,7 +654,7 @@ def _read_harness(
         _OTHER: "something other than a link",
         _ABSENT: "not in place",
     }[shape]
-    written = str(_written_fallback(owner, context.config))
+    written = str(_written_fallback(owner, _project(context)))
     if fallback.held and fallback.value != written:
         return _fallback_elsewhere(plain, fallback.where)  # fallback-elsewhere
     reached = harness.resolve() if shape == _LINK else None
@@ -665,7 +678,7 @@ def _read_harness(
     if store is None:  # tree-gone, tree-there-not-resolving
         return _unresolved(context, checkout, shape, words, relink)
     try:
-        gate = harness_gate(store, context.config)
+        gate = harness_gate(store, _project(context))
     except Refusal:  # trust-record-unreadable
         return _Verdict(
             WARN,
@@ -800,7 +813,7 @@ def _unresolved(context: Context, checkout: Path, shape: str, words: str, relink
     from stayfixed import fsops
     from stayfixed.doctor.api import WARN
 
-    tree = checkout / context.config.paths.memory
+    tree = checkout / _project(context).paths.memory
     try:
         gone = not fsops.is_symlink(tree) and not fsops.exists(tree)
     except OSError:
@@ -947,8 +960,10 @@ def _granted_commands(context: Context) -> tuple[set[Placed] | None, str | None]
     narrowed: str | None = None
     try:
         try:
-            binding: Binding | None = binding_for(
-                context.root, context.config, machine=context.machine
+            binding: Binding | None = (
+                None
+                if context.config is None
+                else binding_for(context.root, context.config, machine=context.machine)
             )
         except UnreadableRecord:
             binding, narrowed = None, UNREADABLE_RECORD

@@ -1,6 +1,6 @@
 """What `doctor` answers about an installation, and what it refuses to guess.
 
-One of the seventeen checks cannot be answered by this build and says so rather than guessing:
+One of the eighteen checks cannot be answered by this build and says so rather than guessing:
 `codex-trust`, a platform question no measurement has answered yet, and a check that
 returned green because it could not look would be strictly worse than one that admits it.
 `ci-ref` used to be counted beside it; `init` writes `[ci] ref`, so its skip reports a state of
@@ -36,8 +36,19 @@ from stayfixed.config.layout import ATTACH_LEDGER as LEDGER
 from stayfixed.config.loader import CONFIG_FILE, load
 from stayfixed.config.overlay import overlay_root
 from stayfixed.config.schema import Config
+from stayfixed.config.session import FALLBACK_WARNING, cause
 from stayfixed.doctor import checks, entries, hooked, registry
-from stayfixed.doctor.api import OK, RED, SKIP, WARN, Check, Context, Row, run_checks
+from stayfixed.doctor.api import (
+    NO_CONFIG_SKIP,
+    OK,
+    RED,
+    SKIP,
+    WARN,
+    Check,
+    Context,
+    Row,
+    run_checks,
+)
 from stayfixed.doctor.checks import (
     VERSION_AHEAD,
     VERSION_BEHIND,
@@ -61,6 +72,7 @@ from tests.ownerhome import as_owner_home, pin_git_home
 from tests.parserlimits import LONG_NUMBER, NESTED
 from tests.release.test_hashes import recorded
 from tests.runners import LsRemote, Recorder
+from tests.sessions import session_of
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
@@ -100,7 +112,7 @@ groups = ["developer"]
 def _context(root: Path, config: Config) -> Context:
     """A `Context` for a case that calls one check directly rather than `run_checks`: no home,
     no machine file, an empty environment, and a runner that answers success to anything."""
-    return Context(root, None, None, Recorder(), {}, config)
+    return Context(root, None, None, Recorder(), {}, config, session=session_of(config))
 
 
 def _checks(
@@ -274,15 +286,23 @@ def _attached(tmp_path: Path) -> Path:
     return root
 
 
-def test_a_repository_without_a_configuration_reports_one_line_and_skips_the_rest(
+def test_a_repository_without_a_configuration_skips_only_the_rows_that_read_one(
     tmp_path: Path,
 ) -> None:
-    # A repository with no stayfixed.toml gets one red `not-initialised` row from doctor and a skip
-    # for every other check. Seventeen red checks for a repository that never heard of stayfixed is
-    # noise, not a diagnosis.
+    # A repository with no stayfixed.toml got one red row and a skip for every other check, so a
+    # default install was red and the installation went unexamined. Every row is asked now, and
+    # the ones that read the project configuration skip for want of one, in one sentence.
+    # Mutation (`mutations/`'s "doctor skips every row without a stayfixed.toml"): every row
+    # skips.
     checks = _checks(tmp_path, tmp_path)
-    assert _by_name(checks, "not-initialised").status == "red"
-    assert {c.status for c in checks if c.name != "not-initialised"} == {"skip"}
+    assert _by_name(checks, "not-initialised").status == WARN
+    assert [check.name for check in checks if check.detail == NO_CONFIG_SKIP] == [
+        "budgets",
+        "ci-ref",
+        "attached",
+        "bundles",
+        "store-debris",
+    ]
 
 
 @pytest.mark.parametrize("target", ["regular-file", "/dev/zero"])
@@ -291,8 +311,9 @@ def test_a_symlinked_configuration_is_one_that_does_not_load_whatever_it_points_
 ) -> None:
     # The presence check asked `is_file()`, which follows the link: a link to a regular file
     # reached `load` and its refusal, one to `/dev/zero` was reported as no stayfixed.toml at all,
-    # with `stayfixed init --yes` as the remedy. Mutation (declared): the bare `is_file()` again
-    # -> the `/dev/zero` case reads as not initialised.
+    # with `stayfixed init --yes` as the remedy. Both are the session's whole fallback now, red in
+    # its words. Mutation (`mutations/`'s "a session lets a symlinked stayfixed.toml raise"): the
+    # report ends in the refusal.
     root = tmp_path / "project"
     root.mkdir()
     if target == "regular-file":
@@ -301,28 +322,20 @@ def test_a_symlinked_configuration_is_one_that_does_not_load_whatever_it_points_
     else:
         (root / "stayfixed.toml").symlink_to(target)
     row = _by_name(_checks(tmp_path, root), "not-initialised")
-    assert row.status == "red"
-    # Said in words, never as the class the loader raised: "(PathEscape)" named stayfixed's own
-    # exception and not the rule. Mutation (oracle): `mutations/`'s "doctor gives a symlinked
-    # stayfixed.toml the row for a file that does not load" -> the generic line comes back and this
-    # reddens.
-    assert row.detail.startswith("stayfixed.toml is a symbolic link, which no command follows")
+    assert (row.status, row.detail) == (RED, cause(FALLBACK_WARNING))
     assert "PathEscape" not in row.detail + row.remedy
-    assert "real file" in row.remedy
 
 
 def test_a_configuration_that_does_not_load_is_described_in_words(tmp_path: Path) -> None:
     # The loader's message is built from the file's own keys and values and is not quoted, and
     # the class it raised is stayfixed's vocabulary, not a reason: the row says the file does not
-    # load and names a command that prints why.
+    # load, in the session's words, and names a command that prints why. Mutation (`mutations/`'s
+    # "a whole fallback reads as a repository with no stayfixed.toml"): the row is the warning.
     root = tmp_path / "project"
     root.mkdir()
     (root / "stayfixed.toml").write_text("[stayfixed\n", encoding="utf-8")
     row = _by_name(_checks(tmp_path, root), "not-initialised")
-    assert row.status == "red"
-    assert row.detail == (
-        "stayfixed.toml is here and does not load, so nothing else can be checked against it"
-    )
+    assert (row.status, row.detail) == (RED, cause(FALLBACK_WARNING))
     assert "stayfixed docs check" in row.remedy
     assert "Error" not in row.detail + row.remedy
 
@@ -336,13 +349,10 @@ def test_a_configuration_holding_a_number_past_the_parser_does_not_load(tmp_path
     root.mkdir()
     (root / "stayfixed.toml").write_text(f"[stayfixed]\nx = {LONG_NUMBER}\n", encoding="utf-8")
     row = _by_name(_checks(tmp_path, root), "not-initialised")
-    assert (row.status, row.detail) == (
-        "red",
-        "stayfixed.toml is here and does not load, so nothing else can be checked against it",
-    )
+    assert (row.status, row.detail) == (RED, cause(FALLBACK_WARNING))
 
 
-# The report's seventeen names in the report's order, written out rather than read back from the
+# The report's eighteen names in the report's order, written out rather than read back from the
 # registry: the core's own checks, then each delivery area's in area-name order — `attach`,
 # `memory`, `overlay`. `docs/cli.md`'s table is held to the same order.
 REPORT = (
@@ -353,6 +363,7 @@ REPORT = (
     "hook-entries",
     "codex-trust",
     "budgets",
+    "preferences",
     "cli-path",
     "ci-ref",
     "diagnostics",
@@ -368,7 +379,7 @@ REPORT = (
 
 def test_every_check_has_one_row_in_one_report(tmp_path: Path) -> None:
     # Moving a check into its area must not cost it its row, nor give it a second one: the
-    # seventeen are the same seventeen, once each. A literal tuple and not the registry read back,
+    # eighteen are the same eighteen, once each. A literal tuple and not the registry read back,
     # so a check that dropped out of both the core and the areas reddens here. Mutation (oracle):
     # `mutations/`'s "doctor drops the checks an area contributes" -> the six delivery rows are
     # missing. The fixture is an initialised project with nothing else to look at -- no overlay,
@@ -2918,7 +2929,7 @@ def test_every_registry_name_is_spelled_exactly_once_in_the_module() -> None:
     # times, and the registry spelled the name an eighth time. A row that disagreed with its
     # key was one typo away and nothing would have said so. Now a check
     # returns a `Row` and `_guarded` stamps the registry's name, so each name is a string
-    # literal exactly once in the modules that hold it: the core's eleven in `CHECKS`, counted
+    # literal exactly once in the modules that hold it: the core's twelve in `CHECKS`, counted
     # over every module that defines one of `CHECKS`' checks, and each area's in its own
     # `doctor.py`, in the `Contribution` its `register()` returns. The core's modules are read off
     # where the checks are defined rather than listed, so a check split into a module of its own
@@ -2945,7 +2956,7 @@ def test_every_registry_name_is_spelled_exactly_once_in_the_module() -> None:
         return {name: literals.count(name) for name in names}
 
     names = [name for name, _ in module.CHECKS]
-    assert len(names) == 11
+    assert len(names) == 12
     core = [module, *{sys.modules[check.__module__] for _, check in module.CHECKS} - {module}]
     # `hook-entries` is defined outside `checks.py`, so the walk reads more than the registry.
     assert "stayfixed.doctor.entries" in [each.__name__ for each in core]
@@ -3164,47 +3175,37 @@ def test_a_shipped_file_that_is_absent_is_named_as_absent_and_not_as_a_mismatch(
 
 
 def test_a_machine_file_that_does_not_load_is_not_blamed_on_stayfixed_toml(tmp_path: Path) -> None:
-    # `load` reads two files and this arm blamed the first for either, so an owner whose
-    # `~/.config/stayfixed/config.toml` had a stray bracket in it was told to fix a repository
-    # file with nothing wrong with it — and the fault was marked as the repository's.
-    # Told apart by `MachineConfigError`'s type and never by the loader's text, which `doctor`
-    # does not quote because the loader builds it out of the file's own keys and values.
-    #
-    # Mutation (declared): `_personal` raises the base `ConfigError` again -> `doctor` takes
-    # the `stayfixed.toml` arm and every assertion below reddens.
+    # The run once blamed `stayfixed.toml` for either file, so an owner whose
+    # `~/.config/stayfixed/config.toml` had a stray bracket in it was told to fix a repository file
+    # with nothing wrong with it; then it said whose file it was and skipped every other row. The
+    # report reads the configuration the way a session does now: the project's file loads and its
+    # row is green, every row is asked, and the `preferences` row warns of the machine file, by
+    # its path, with the owner's layer standing on the preset. Mutation (`mutations/`'s "the
+    # preferences row says nothing of the machine file's notes"): green.
     root = _initialised(tmp_path)
     machine = tmp_path / "machine.toml"
     machine.write_text("[personal\n", encoding="utf-8")
     rows = _checks(tmp_path, root, machine=machine)
-    first = rows[0]
-
-    assert first.status == RED
-    assert "the machine configuration file does not load" in first.detail
-    assert f"{CONFIG_FILE} itself was not the problem" in first.detail
-    assert str(machine) in first.remedy
-    # And every other row skips rather than being checked against a configuration that is not
-    # there — the same shape the `stayfixed.toml` arm beside it has. Asserted non-empty first.
-    assert len(rows) > 1
-    assert all(row.status == SKIP for row in rows[1:]), [
-        (row.name, row.status) for row in rows[1:] if row.status != SKIP
-    ]
+    assert _by_name(rows, "not-initialised").status == OK
+    preferences = _by_name(rows, "preferences")
+    assert preferences.status == WARN
+    assert str(machine) in preferences.detail
+    assert CONFIG_FILE not in preferences.detail
 
 
 def test_a_machine_file_that_does_not_load_is_named_as_the_file_that_was_read(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # `load` reads the machine file no variable moves, which honours neither `STAYFIXED_CONFIG` nor
-    # `XDG_CONFIG_HOME`, and the row once named the file through the terminal check instead. So an
-    # owner at a terminal with `STAYFIXED_CONFIG` set, whose `~/.config/stayfixed/config.toml` has a
-    # stray bracket in it, was told to fix the file the variable names — which is fine, and was
-    # never read.
+    # The report reads the machine file no variable moves, which honours neither
+    # `STAYFIXED_CONFIG` nor `XDG_CONFIG_HOME`, and a row once named the file through the terminal
+    # check instead. So an owner at a terminal with `STAYFIXED_CONFIG` set, whose
+    # `~/.config/stayfixed/config.toml` has a stray bracket in it, was told to fix the file the
+    # variable names — which is fine, and was never read.
     #
     # `run_checks` directly and not `_checks`, whose hermetic default names a file: the case is
-    # the one where no `--machine` was given. `HOME` is this test's, so the file `load` reads is
-    # under it, and the variable names a well-formed file beside it.
-    #
-    # The file is resolved once for both, through the one path no variable moves, so no mutation
-    # of `run_checks` can make them differ again.
+    # the one where no `--machine` was given. `HOME` is this test's, so the file read is under it,
+    # and the variable names a well-formed file beside it. No mutation: the file is resolved once,
+    # through the one path no variable moves, so no edit of `run_checks` makes the two differ.
     root = _initialised(tmp_path)
     home = tmp_path / "owner-home"
     read = home / ".config" / "stayfixed" / "config.toml"
@@ -3218,11 +3219,10 @@ def test_a_machine_file_that_does_not_load_is_named_as_the_file_that_was_read(
     rows = run_checks(
         root, home=tmp_path / "home", machine=None, runner=Recorder(), env=_env(tmp_path)
     )
-    first = rows[0]
-
-    assert "the machine configuration file does not load" in first.detail
-    assert str(read) in first.remedy
-    assert str(elsewhere) not in first.remedy
+    preferences = _by_name(rows, "preferences")
+    assert preferences.status == WARN
+    assert str(read) in preferences.detail
+    assert str(elsewhere) not in preferences.detail
 
 
 def test_no_case_here_can_read_the_developers_own_machine_configuration(

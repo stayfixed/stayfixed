@@ -3386,3 +3386,11 @@ after = """   git switch -C main origin/main
 reddens = [
   "tests/test_fixtures.py::test_the_release_is_cut_on_origin_main_whatever_the_local_main_holds",
 ]
+
+# Every document that counts `doctor`'s rows is held to the report's count.
+[[mutation]]
+name = "the reference counts the doctor rows it had before preferences"
+file = "docs/cli.md"
+before = "Eighteen checks over one installation."
+after = "Seventeen checks over one installation."
+reddens = ["tests/test_documents.py::test_every_document_counts_the_rows_the_report_has"]

@@ -2057,6 +2057,8 @@ reddens = [
   "tests/config/test_session.py::test_a_file_that_cannot_be_read_as_toml_falls_back_whole[symlink_to_dev_zero]",
   "tests/hooks/test_hook_command.py::test_a_symlinked_config_gets_one_verdict_whatever_it_points_at[regular-file]",
   "tests/hooks/test_hook_command.py::test_a_symlinked_config_gets_one_verdict_whatever_it_points_at[/dev/zero]",
+  "tests/doctor/test_checks.py::test_a_symlinked_configuration_is_one_that_does_not_load_whatever_it_points_at[regular-file]",
+  "tests/doctor/test_checks.py::test_a_symlinked_configuration_is_one_that_does_not_load_whatever_it_points_at[/dev/zero]",
 ]
 
 # In the block led by `mutations/`'s "the --name refusal prints the pattern": a name refusal words

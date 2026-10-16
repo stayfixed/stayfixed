@@ -20,6 +20,7 @@ from typing import Final, Literal
 
 from stayfixed.config.overlay import overlay_root as recorded_overlay_root
 from stayfixed.config.schema import Config
+from stayfixed.config.session import SessionConfig
 from stayfixed.errors import resolved_or_none
 from stayfixed.runner import Runner
 from stayfixed.scaffold import Placed
@@ -33,6 +34,9 @@ STATUSES: tuple[Status, ...] = (OK, WARN, RED, SKIP)
 # The remedy of a row that is red because stayfixed's own code broke: nothing the reader did can
 # clear it, and the command they ran is what a fix starts from.
 REPORT_THIS = "report this, with the command you ran"
+# The skip of a row that reads the project configuration, in a repository with none to read: no
+# remedy of its own, since `not-initialised` says why there is none and what to do.
+NO_CONFIG_SKIP = "there is no project configuration to check this against"
 
 
 @dataclass(frozen=True)
@@ -76,9 +80,10 @@ class Context:
     """Everything a check may read for one report, built whole by `checks.run_checks` and never
     changed after.
 
-    Built only once the configuration has loaded, so `config` is never `None` here: a repository
-    whose configuration does not load has nothing else worth asking about, and the first check
-    says so and the rest skip.
+    `session` is the configuration read the way a session reads it (`config.session`), and
+    `config` is its project configuration, `None` for a repository with no `stayfixed.toml` or one
+    that does not load: every check runs all the same, and one that reads `config` skips with
+    `NO_CONFIG_SKIP` when there is none, while the first check says why there is none.
 
     **What the core answers for, and what every area reads alike.** The fields are the core's:
     the run's inputs, the configuration, the two plugin roots, and the `claims` the areas
@@ -94,7 +99,7 @@ class Context:
     machine: Path | None
     runner: Runner
     env: Mapping[str, str]
-    config: Config
+    config: Config | None
     plugin_root: Path | None = None
     # The plugin root this process can vouch for, which is the only one anything here executes.
     # `plugin_root` may be a root the environment named; this is `None` unless self-derivation
@@ -105,6 +110,9 @@ class Context:
     # answered: `hook-entries` asks each under its own guard, so claims that raise cost that row,
     # red, as `Contribution.claims` promises, and never the report.
     claims: tuple[Callable[[Context], Claims], ...] = ()
+    # Keyword-only and required: a report built without the session would have no owner's layer
+    # to name and no way to tell a repository with no `stayfixed.toml` from one that fell back.
+    session: SessionConfig = field(kw_only=True)
 
     @cached_property
     def overlay_root(self) -> Path | None:

@@ -23,7 +23,6 @@ from stayfixed.doctor import checks, registry
 from stayfixed.doctor.api import (
     OK,
     RED,
-    SKIP,
     WARN,
     Check,
     Claims,
@@ -210,11 +209,11 @@ def test_an_area_whose_doctor_module_fails_to_import_costs_one_row_named_after_i
 def test_an_area_that_could_not_contribute_is_red_even_with_nothing_else_to_check(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str
 ) -> None:
-    # With no `stayfixed.toml` every check after the first skips, because each would be asked
-    # with no configuration. An area that could not contribute is not that: its row is about
-    # stayfixed's own code, which no configuration changes, so it is red in the early report too,
-    # however the area failed. Mutation (oracle): `mutations/`'s "the early report skips an area
-    # that could not register" -> the row is a skip.
+    # With no `stayfixed.toml` the rows that read the project configuration skip. An area that
+    # could not contribute is not that: its row is about stayfixed's own code, which no
+    # configuration changes, so it is red with no `stayfixed.toml` too, however the area failed.
+    # Mutation (oracle): `mutations/`'s "the row of an area that could not register is a skip"
+    # -> the row is a skip.
     if failure == "register":
         _contribute(monkeypatch, _registering(_raises))
         detail = "stayfixed.alpha.doctor could not contribute its rows: RuntimeError"
@@ -336,17 +335,22 @@ def test_an_area_turned_away_for_a_repeated_name_leaves_its_other_names_free(
     assert rows[-1] == Check("shared", OK, "answered", "")
 
 
-def test_a_contributed_check_skips_with_the_core_when_there_is_nothing_to_check(
+def test_a_contributed_check_is_asked_when_there_is_nothing_configured(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # The report has one row per check whatever state the repository is in, so with no
-    # `stayfixed.toml` a contributed check gets the skip every core check after the first gets,
-    # and is never asked: it would be asked with no configuration to read. Mutation (oracle):
-    # `mutations/`'s "the early report names the core's checks alone" -> the row is missing.
-    def unreachable(context: Context) -> Row:
-        raise AssertionError("asked with no configuration")
+    # The report has one row per check whatever state the repository is in. With no
+    # `stayfixed.toml` a contributed check was never asked and got the skip every core check after
+    # the first got; it is asked now, with the session's `Context`, whose `config` is `None`, and
+    # answers for itself. Mutation (`mutations/`'s "doctor skips every row without a
+    # stayfixed.toml"): the row is the skip and the check is never asked.
+    seen: list[object] = []
 
-    _contribute(monkeypatch, _area("alpha", Contribution(checks=(("alpha-row", unreachable),))))
+    def answers(context: Context) -> Row:
+        seen.append(context.config)
+        return Row(OK, "asked")
+
+    _contribute(monkeypatch, _area("alpha", Contribution(checks=(("alpha-row", answers),))))
     rows = _checks(tmp_path, tmp_path)
     assert [row.name for row in rows] == [*CORE, "alpha-row"]
-    assert rows[-1].status == SKIP
+    assert rows[-1] == Check("alpha-row", OK, "asked", "")
+    assert seen == [None]

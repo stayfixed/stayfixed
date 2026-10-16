@@ -157,7 +157,8 @@ def _overlay_requires(context: Context) -> Row:
         # gates the exit code. The machine owner is still told, at the level `pre-commit` uses
         # in its analogous machine-scoped state. `memory.mode` is compared and never printed,
         # exactly as the `attached` row compares it.
-        unmet: Status = RED if context.config.memory.mode == OVERLAY_MODE else WARN
+        consults = context.config is not None and context.config.memory.mode == OVERLAY_MODE
+        unmet: Status = RED if consults else WARN
         return Row(
             unmet,
             f"the overlay requires stayfixed {spec} and {running} does not satisfy it",

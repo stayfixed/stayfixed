@@ -46,15 +46,19 @@ from stayfixed.presets import shipped_presets
 from stayfixed.printed import printable
 from stayfixed.semver import later
 
+# How every warning opens, and how the two that drop the project configuration close: `doctor`
+# shows the words between (`cause`), since it is where that pointer leads.
+PREFIX = "stayfixed: "
+DOCTOR_DETAIL = "; run `stayfixed doctor` for the detail"
 FALLBACK_WARNING = (
-    "stayfixed: stayfixed.toml does not load — it is a symbolic link, is not UTF-8 text, cannot "
+    f"{PREFIX}stayfixed.toml does not load — it is a symbolic link, is not UTF-8 text, cannot "
     "be read or is not TOML — so this session runs the guards on the preset and the machine "
-    "owner's layer, without the project's settings; run `stayfixed doctor` for the detail"
+    f"owner's layer, without the project's settings{DOCTOR_DETAIL}"
 )
 UNUSABLE_WARNING = (
-    "stayfixed: in stayfixed.toml, {key} cannot be used and nothing can stand in for it, so this "
+    f"{PREFIX}in stayfixed.toml, {{key}} cannot be used and nothing can stand in for it, so this "
     "session runs the guards on the preset and the machine owner's layer, without the project's "
-    "settings; run `stayfixed doctor` for the detail"
+    f"settings{DOCTOR_DETAIL}"
 )
 # What `UNUSABLE_WARNING` says for a key `printable` withholds, or for a refusal that named none.
 UNNAMED_KEY = "a setting"
@@ -129,6 +133,12 @@ def session_config(root: Path | None, *, machine: Path | None = None) -> Session
         template = NEWER_RELEASE_WARNING if newer else NOTED_WARNING
         warnings = (template.format(count=len(noted.notes)),)
     return SessionConfig(noted.config, owner, warnings + _owners(owner), noted.keys)
+
+
+def cause(warning: str) -> str:
+    """`warning` without its opening and without the pointer at `doctor`: what `doctor` says of
+    the same state, where pointing at itself would say nothing."""
+    return warning.removeprefix(PREFIX).removesuffix(DOCTOR_DETAIL)
 
 
 def _preset(raw: dict[str, object]) -> str:

@@ -3469,3 +3469,32 @@ file = "src/stayfixed/memory/commands.py"
 before = "    config = session_config(root, machine=machine).config"
 after = "    config = load(root, machine=machine)"
 reddens = ["tests/hooks/test_floor.py::test_memory_session_context_reads_a_newer_key_with_a_note"]
+
+# The note store's rows skip in the core's words with no project configuration: the store, its
+# bundles and the harness link's remedy are the project's file's to say.
+[[mutation]]
+name = "the bundles row reads a configuration that is not there"
+file = "src/stayfixed/memory/doctor.py"
+before = "    config = context.config\n    if config is None:\n        return Row(SKIP, NO_CONFIG_SKIP)\n    store = answers.store(context)"
+after = "    config = context.config\n    store = answers.store(context)"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_repository_without_a_configuration_skips_only_the_rows_that_read_one",
+]
+
+[[mutation]]
+name = "the store-debris row reads a configuration that is not there"
+file = "src/stayfixed/memory/doctor.py"
+before = "    if context.config is None:\n        return Row(SKIP, NO_CONFIG_SKIP)\n    store = answers.store(context)\n    if store is None:\n        return Row(SKIP, \"the note store does not resolve\", \"\")"
+after = "    store = answers.store(context)\n    if store is None:\n        return Row(SKIP, \"the note store does not resolve\", \"\")"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_repository_without_a_configuration_skips_only_the_rows_that_read_one",
+]
+
+[[mutation]]
+name = "the harness-link row reads a configuration that is not there"
+file = "src/stayfixed/memory/doctor.py"
+before = "    if context.config is None:\n        # What makes the link depends"
+after = "    if False:\n        # What makes the link depends"
+reddens = [
+  "tests/doctor/test_floor_report.py::test_harness_link_skips_without_a_configuration_when_the_homes_differ",
+]

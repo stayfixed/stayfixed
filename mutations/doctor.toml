@@ -160,8 +160,8 @@ reddens = [
 [[mutation]]
 name = "doctor asks its checks without the guard"
 file = "src/stayfixed/doctor/checks.py"
-before = "    return [_guarded(name, check, context) for name, check in report_checks]"
-after = "    return [Check(name, **vars(check(context))) for name, check in report_checks]"
+before = "    return [_guarded(name, check, context) for name, check in _report_checks(contributed)]"
+after = "    return [Check(name, **vars(check(context))) for name, check in _report_checks(contributed)]"
 reddens = [
   "tests/doctor/test_registry.py::test_a_contribution_that_raises_costs_one_row",
   "tests/doctor/test_entries.py::test_claims_that_raise_cost_the_hook_entries_row_alone",
@@ -680,29 +680,33 @@ reddens = [
   "tests/doctor/test_registry.py::test_an_area_whose_doctor_module_fails_to_import_costs_one_row_named_after_it",
 ]
 
-# The row for an area that could not register is about stayfixed's own code, so it is red in the
-# early report too, where every other check after the first skips for want of a configuration.
+# The row for an area that could not register is about stayfixed's own code, so it is red in
+# every report, one for a repository with no `stayfixed.toml` included.
 [[mutation]]
-name = "the early report skips an area that could not register"
-file = "src/stayfixed/doctor/checks.py"
-before = "    if isinstance(check, Unregistered):"
-after = "    if False:"
+name = "the row of an area that could not register is a skip"
+file = "src/stayfixed/doctor/registry.py"
+before = "        return Row(RED, self.detail, REPORT_THIS)"
+after = "        return Row(\"skip\", self.detail, REPORT_THIS)"
 reddens = [
   "tests/doctor/test_registry.py::test_an_area_that_could_not_contribute_is_red_even_with_nothing_else_to_check[register]",
   "tests/doctor/test_registry.py::test_an_area_that_could_not_contribute_is_red_even_with_nothing_else_to_check[import]",
   "tests/doctor/test_registry.py::test_an_area_that_could_not_contribute_is_red_even_with_nothing_else_to_check[repeat]",
 ]
 
-# The report has one row per check whatever the repository holds, so with no `stayfixed.toml` an
-# area's contributed check gets the skip every core check after the first gets. Naming the early
-# report's rows from the core's registry alone drops every contributed row from it.
+# Every check is asked whatever the repository holds: a repository with no `stayfixed.toml` has
+# every row the installation can answer, a contributed check's included, and only a row that reads
+# the project configuration skips for want of one. Skipping every row, as the early report did,
+# leaves the installation unexamined on every default install.
 [[mutation]]
-name = "the early report names the core's checks alone"
+name = "doctor skips every row without a stayfixed.toml"
 file = "src/stayfixed/doctor/checks.py"
-before = "    first, *rest = [name for name, _ in report_checks]"
-after = "    first, *rest = [name for name, _ in CHECKS]"
+before = "    return [_guarded(name, check, context) for name, check in _report_checks(contributed)]"
+after = "    return [Check(name, \"skip\", NO_CONFIG_SKIP) if context.config is None and name != \"not-initialised\" else _guarded(name, check, context) for name, check in _report_checks(contributed)]"
 reddens = [
-  "tests/doctor/test_registry.py::test_a_contributed_check_skips_with_the_core_when_there_is_nothing_to_check",
+  "tests/doctor/test_registry.py::test_a_contributed_check_is_asked_when_there_is_nothing_configured",
+  "tests/doctor/test_checks.py::test_a_repository_without_a_configuration_skips_only_the_rows_that_read_one",
+  "tests/doctor/test_floor_report.py::test_rows_that_need_no_configuration_run_without_one[versions]",
+  "tests/doctor/test_floor_report.py::test_rows_that_need_no_configuration_run_without_one[preferences]",
 ]
 
 # Defence in depth, and the only guard in its commit with no entry in `mutations/` -- which is how
@@ -1042,27 +1046,6 @@ before = "        runner=subprocess_runner(timeout=CI_REF_TIMEOUT_SECONDS),"
 after = "        runner=subprocess_runner(),"
 reddens = [
   "tests/doctor/test_command.py::test_the_runner_this_command_builds_is_bounded_for_a_diagnostic",
-]
-
-# In the block led by `mutations/`'s "a session lets a symlinked stayfixed.toml raise": a
-# symlinked `stayfixed.toml` is asked about by its own name first.
-[[mutation]]
-name = "doctor reads a stayfixed.toml linked to /dev/zero as no stayfixed.toml"
-file = "src/stayfixed/doctor/checks.py"
-before = "    if not (fsops.is_symlink(document) or fsops.is_file(document)):"
-after = "    if not fsops.is_file(document):"
-reddens = ["tests/doctor/test_checks.py::test_a_symlinked_configuration_is_one_that_does_not_load_whatever_it_points_at[/dev/zero]"]
-
-# A symlinked `stayfixed.toml` is refused by every command, and `doctor` says it is a link. Without
-# the arm it gets the row for a file that does not load, whose remedy is `docs check` and a fix
-# to the file, never replacing the link with the real file.
-[[mutation]]
-name = "doctor gives a symlinked stayfixed.toml the row for a file that does not load"
-file = "src/stayfixed/doctor/checks.py"
-before = "        if fsops.is_symlink(document):"
-after = "        if False:"
-reddens = [
-  "tests/doctor/test_checks.py::test_a_symlinked_configuration_is_one_that_does_not_load_whatever_it_points_at[regular-file]",
 ]
 
 # `${CLAUDE_PLUGIN_DATA}` is a variable a committed `env` block can set, so the hook sink's log is a
@@ -2897,4 +2880,76 @@ before = '''_SINGLE_QUOTED = r"'[^']*+(?:''[^']*+)*+'"'''
 after = '''_SINGLE_QUOTED = r"'[^']*+(?:''[^']*+)*+'|'[\s\S]*'(?=')"'''
 reddens = [
   "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[an-explicit-key-whose-quotes-never-pair]",
+]
+
+# `doctor` on a repository with nothing configured warns and is red about nothing; it reads the
+# configuration the way a session does, so only a file the session drops whole is red.
+[[mutation]]
+name = "not-initialised is red with no stayfixed.toml"
+file = "src/stayfixed/doctor/checks.py"
+before = "        return Row(WARN, NOT_INITIALISED, NOT_INITIALISED_REMEDY)"
+after = "        return Row(RED, NOT_INITIALISED, NOT_INITIALISED_REMEDY)"
+reddens = [
+  "tests/doctor/test_floor_report.py::test_no_stayfixed_toml_is_a_warning_and_no_row_is_red",
+  "tests/doctor/test_checks.py::test_a_repository_without_a_configuration_skips_only_the_rows_that_read_one",
+]
+
+[[mutation]]
+name = "not-initialised is green over a file that loaded with notes"
+file = "src/stayfixed/doctor/checks.py"
+before = "    if session.noted:\n        keys = listed("
+after = "    if False:\n        keys = listed("
+reddens = ["tests/doctor/test_floor_report.py::test_notes_are_listed_by_key"]
+
+[[mutation]]
+name = "a whole fallback reads as a repository with no stayfixed.toml"
+file = "src/stayfixed/doctor/checks.py"
+before = "        if dropped:\n            return Row(RED, cause(dropped[0]), FALLBACK_REMEDY)"
+after = "        if False:\n            return Row(RED, cause(dropped[0]), FALLBACK_REMEDY)"
+reddens = [
+  "tests/doctor/test_floor_report.py::test_a_whole_fallback_is_red",
+  "tests/doctor/test_checks.py::test_a_configuration_that_does_not_load_is_described_in_words",
+]
+
+[[mutation]]
+name = "the budgets row reads a configuration that is not there"
+file = "src/stayfixed/doctor/checks.py"
+before = "    if context.config is None:\n        return Row(SKIP, NO_CONFIG_SKIP, \"\")\n    budgets = context.config.budgets"
+after = "    budgets = context.config.budgets"
+reddens = ["tests/doctor/test_floor_report.py::test_rows_that_read_the_configuration_skip_without_one[budgets]"]
+
+[[mutation]]
+name = "the ci-ref row reads a configuration that is not there"
+file = "src/stayfixed/doctor/checks.py"
+before = "    if context.config is None:\n        return Row(SKIP, NO_CONFIG_SKIP, \"\")\n    ref = context.config.ci.ref"
+after = "    ref = context.config.ci.ref"
+reddens = ["tests/doctor/test_floor_report.py::test_rows_that_read_the_configuration_skip_without_one[ci-ref]"]
+
+# The `preferences` row names each owner key and preference with its layer, and prints a value
+# only where it is a boolean, a number or one of stayfixed's own words.
+[[mutation]]
+name = "the preferences row prints a free text value"
+file = "src/stayfixed/doctor/checks.py"
+before = "    return value if isinstance(value, str) and value in vocabulary else None"
+after = "    return value if isinstance(value, str) else None"
+reddens = ["tests/doctor/test_floor_report.py::test_preferences_names_the_layer_and_hides_free_text"]
+
+[[mutation]]
+name = "the preferences row credits the repository with the preset's values"
+file = "src/stayfixed/doctor/checks.py"
+before = "    held = _held(context) if config is not None else {}"
+after = "    held = dict(preset)"
+reddens = [
+  "tests/doctor/test_floor_report.py::test_preferences_with_no_stayfixed_toml_are_the_presets",
+  "tests/doctor/test_floor_report.py::test_preferences_names_the_layer_and_hides_free_text",
+]
+
+[[mutation]]
+name = "the preferences row says nothing of the machine file's notes"
+file = "src/stayfixed/doctor/checks.py"
+before = "    if notes:\n        return Row(\n            WARN,"
+after = "    if False:\n        return Row(\n            WARN,"
+reddens = [
+  "tests/doctor/test_floor_report.py::test_preferences_warn_of_a_machine_file_that_could_not_be_used",
+  "tests/doctor/test_checks.py::test_a_machine_file_that_does_not_load_is_not_blamed_on_stayfixed_toml",
 ]

@@ -17,10 +17,11 @@ Three things hold everywhere:
   treats `1` as "proceed anyway" must still never treat `2` that way — a refusal is a boundary,
   not a low-confidence result. Every command that reads `stayfixed.toml` refuses one that is a
   symbolic link, whatever it points at, before reading anything through it: a link to
-  `/dev/zero` would otherwise be read until memory ran out. The refusal exits `2`, except in two
-  commands whose exits mean something else: `stayfixed hook` refuses only on `PreToolUse` and
-  continues on every other event (see [its section](#stayfixed-hook-event)), and `stayfixed doctor`
-  reports it as a `stayfixed.toml` that does not load, a red row, exit `1`.
+  `/dev/zero` would otherwise be read until memory ran out. The refusal exits `2`, except in three
+  commands that read the file the way a session does: `stayfixed hook` runs on with no project
+  configuration and warns once when the session starts (see [its section](#stayfixed-hook-event)),
+  `stayfixed memory session-context` prints nothing, and `stayfixed doctor` reports it as a
+  `stayfixed.toml` that does not load, a red row, exit `1`.
 - **Every `memory` command takes the same three options**, described once here rather than six
   times below. `--root` and `--machine` are not memory's alone: [Shared flags](#shared-flags) says
   which commands take them, and in which sense.
@@ -2826,10 +2827,10 @@ also given, the hook cannot be read, or a hook names `prepare-commit-msg.local`.
 
 ## `stayfixed doctor [--json] [--root PATH] [--home PATH] [--machine PATH]`
 
-Seventeen checks over one installation. It **reports and never repairs**: every finding
+Eighteen checks over one installation. It **reports and never repairs**: every finding
 carries the command that would fix it, and not one of them is run for you. Nothing is written.
 
-The rows come in a fixed order: the installation's own eleven first, then the six about the
+The rows come in a fixed order: the installation's own twelve first, then the six about the
 private layer — the binding's (`attached`), the note store's (`bundles`, `store-debris`,
 `harness-link`) and the private overlay's (`pre-commit`, `overlay-requires`). Match a row by its `name`, never by its
 position.
@@ -2869,13 +2870,14 @@ check with `name`, `status`, `detail` and `remedy`, so every remedy is there.
 
 | Check | What it answers | What it reads |
 |---|---|---|
-| `not-initialised` | whether there is a `stayfixed.toml` here, and whether it loads | `stayfixed.toml` |
-| `versions` | whether the project's `[stayfixed] version` is the stayfixed running | `stayfixed.toml`, the package |
+| `not-initialised` | whether there is a `stayfixed.toml` here, and how much of it a session can use: with none, a warning that the session guards and `doctor` work without one and `stayfixed init` adds the rest; with one that loaded with settings ignored or put back to the preset's, a warning listing their keys and never their values; red only for one a session drops whole, in the words of the session's warning | `stayfixed.toml` |
+| `versions` | whether the project's `[stayfixed] version` is the stayfixed running; with no project configuration, which stayfixed runs | `stayfixed.toml`, the package |
 | `files` | the hook wrapper's executable bit, and the three shipped files against the hashes the release recorded beside them | `hooks/run-hook.sh`, `hooks/hooks.json`, `scripts/stayfixed`, `hooks/hashes.json` |
 | `wrapper` | whether the wrapper can actually reach stayfixed on this machine | one `run-hook.sh open --version`, and only under the plugin root this stayfixed is part of |
 | `hook-entries` | every hook entry, counted by provenance, with any that claims the stayfixed marker and is in no ledger named by position; and, as a warning, every skill, command or agent file whose frontmatter declares hooks, which it does not judge | `.claude/settings.json`, `.claude/settings.local.json`, `.codex/hooks.json`, and `~/.claude/settings.json`; every `SKILL.md` below a `.claude/skills` anywhere in the tree that git does not ignore, a checked-out submodule's committed files included, and every `*.md` below `.claude/commands` and `.claude/agents` |
 | `codex-trust` | whether any stayfixed hook is untrusted on Codex, and, when `[stayfixed] agents` lists `codex`, which surfaces are not verified there and which hold in CI | `stayfixed.toml`, the harness registry |
 | `budgets` | every budget that overrides the preset, and every one the ceiling clamps | `stayfixed.toml`, the preset |
+| `preferences` | each machine-owner key and each preference, with the layer its value came from — the preset, the repository or the machine file — and the value only where it is a boolean, a number or one of stayfixed's own words; a warning naming the machine file when it could not be used whole | `stayfixed.toml`, the preset, the machine file |
 | `cli-path` | whether `stayfixed` resolves on `PATH` | `PATH` |
 | `ci-ref` | whether `[ci] ref` is the commit of a released stayfixed tag (or the `v1` alias: a warning, as mutable, once a `1.x` release creates it, and red until then), and whether the rendered workflow pins the same ref — under `[ci] mode = "reusable"`, a workflow that is not there at all is a warning and never a green row, and so are a path that is there and is not a regular file and a file past the 256 KiB bound on the read | `git ls-remote --exit-code` over the public repository's tags, bounded at 30 seconds; *.github/workflows/stayfixed.yml*, read as a regular file and to a bound |
 | `diagnostics` | how many reasons the hook sink recorded — a count, never a line of the file | `${CLAUDE_PLUGIN_DATA}/stayfixed/diagnostics.jsonl` |
@@ -2932,8 +2934,8 @@ policy settings and `--settings` are yours, not the repository's, and this row d
 | `never-approved` | nothing, no approval recorded | `ok` | — |
 | `settings-unreadable` | any state above that reads `ok`, beside a settings file that cannot be read as settings; the row names the file | `warn` | make the file one JSON object, then `doctor` |
 
-**Ten of the seventeen have a `skip` arm — sixteen arms between them: one no build can answer,
-and fifteen on a state of this machine or this repository.** A `skip` is **not** a finding and
+**Twelve of the eighteen have a `skip` arm — twenty-two arms between them: one no build can
+answer, and twenty-one on a state of this machine or this repository.** A `skip` is **not** a finding and
 never reaches the exit code, so read the detail — each one says which measurement it is missing.
 
 The one no build can answer is `codex-trust`: it needs the hash Codex keys hook trust on, which
@@ -2948,7 +2950,7 @@ repository `init` set up carries a ref and the row answers. `files` compares the
 plugin against the hashes the release recorded beside it, and skips only on a build carrying no
 such record.
 
-The nine that skip on a state are `files` and `wrapper`, when there is no plugin root this
+The eleven that skip on a state are `files` and `wrapper`, when there is no plugin root this
 process can vouch for; `attached`, when this machine records no overlay to check the ledger
 against, or the overlay could not be asked at all; `pre-commit` and `overlay-requires`, when
 no overlay root is recorded on this machine **or** when the root it records is not a directory
@@ -2959,21 +2961,26 @@ not resolve; `diagnostics`, when no harness data root is set in the environment,
 `stayfixed doctor` run from a terminal rather than from a hook; and `ci-ref`, when no `[ci] ref`
 is recorded. `files` has a second state arm of its own — a plugin built
 before the release record existed carries none, and it says so rather than comparing anything.
+And six rows read the project configuration and skip, in one sentence, when there is none to
+read — no `stayfixed.toml`, or one a session drops whole: `budgets`, `ci-ref`, `attached`,
+`bundles`, `store-debris`, and `harness-link` where `HOME` is not the database's home, since what
+makes the link then depends on the store's mode.
 
-**A `skip` does not mean there is nothing to do.** Seven of the sixteen arms carry a remedy:
+**A `skip` does not mean there is nothing to do.** Seven of the twenty-two arms carry a remedy:
 the two plugin-root skips, `wrapper`'s named-root skip, both of `attached`'s, and the
 moved-overlay arm of `pre-commit` and of `overlay-requires`. The dividing line is not "always"
 versus "on a state" — every other arm skips on a state and carries nothing: `bundles`,
 `store-debris`, `diagnostics` and `ci-ref`, the *no overlay recorded* arms of the two overlay
-rows, `overlay-requires`' no-requirement arm, and `files` on a build with no release record. Nor
+rows, `overlay-requires`' no-requirement arm, `files` on a build with no release record, and the
+six with no project configuration, whose remedy is `not-initialised`'s. Nor
 is it whether another row names a command that changes the state: `pre-commit`'s arm carries
 nothing though `attached` names `stayfixed setup --overlay` there. It is whether the skip is
 itself worth acting on. Those seven report something wrong that no other
 row will tell you: a plugin root nothing can find, a root that will be read and never executed,
 a recorded attach the overlay could not confirm, an overlay root recorded and not there. The
-other nine report a measurement that is simply unavailable — no store, no overlay, no overlay
+other fifteen report a measurement that is simply unavailable — no store, no overlay, no overlay
 requirement, no harness data root, no `[ci] ref`, no release record in this build, no way to ask
-Codex — and no command in that row's gift changes it.
+Codex, no project configuration — and no command in that row's gift changes it.
 
 **The one to read first is the plugin root**, because it is the quietest and the worst. When
 this process can find no plugin root at all, `files` and `wrapper` both skip — two rows, no red,
@@ -2982,11 +2989,15 @@ plugin's own launcher, so its root answers for itself, or set `CLAUDE_PLUGIN_ROO
 plugin is installed, which lets `files` read the wrapper even though `wrapper` still will not
 run it.
 
-One more case is not a skip but produces sixteen of them: with no `stayfixed.toml` in `--root`,
-or one that does not load, `not-initialised` goes **red** and every other check skips against it.
-The red row is the one to act on. A `stayfixed.toml` that is a symbolic link is one that does not
-load, whatever it points at, and the row says it is a link; for any other, the row names
-`stayfixed docs check`, which prints the loader's own message.
+**Nothing configured is not broken.** `doctor` reads the configuration the way a session does
+([`stayfixed hook <event>`](#stayfixed-hook-event)), so every row is asked whatever `--root`
+holds. With no `stayfixed.toml`, `not-initialised` **warns**, the six rows above that read the
+project configuration skip, and no row is red for it: a default install, where the guards and
+this report already work, exits `0`. A `stayfixed.toml` that loads with settings ignored or put
+back to the preset's warns, naming their keys. Only one a session drops whole is **red**: a
+symbolic link, whatever it points at, a file that is not UTF-8, cannot be read or is not TOML, or
+one holding a key nothing can stand in for; the row says which in the session's own words and
+names `stayfixed docs check`, which prints the loader's own message.
 
 **What is printed, and what is not. There is no exception.** Counts, statuses, file paths this
 project chose and stayfixed's own vocabulary print freely; a repository-authored string does not.
