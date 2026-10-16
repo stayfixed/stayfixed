@@ -2897,9 +2897,31 @@ reddens = [
 [[mutation]]
 name = "not-initialised is green over a file that loaded with notes"
 file = "src/stayfixed/doctor/checks.py"
-before = "    if session.noted:\n        keys = listed("
-after = "    if False:\n        keys = listed("
+before = "    if session.noted:\n        keys = _noted_keys("
+after = "    if False:\n        keys = _noted_keys("
 reddens = ["tests/doctor/test_floor_report.py::test_notes_are_listed_by_key"]
+
+# A noted key is repository-authored text on a line a model reads: a few names, each bounded.
+[[mutation]]
+name = "not-initialised names every noted key"
+file = "src/stayfixed/doctor/checks.py"
+before = '    return _counted(shown[:NAMES_SHOWN], len(keys) - NAMES_SHOWN, ", ")'
+after = '    return _counted(shown, 0, ", ")'
+reddens = ["tests/doctor/test_floor_report.py::test_noted_keys_are_bounded_in_number_and_in_length"]
+
+[[mutation]]
+name = "not-initialised prints a noted key whole"
+file = "src/stayfixed/doctor/checks.py"
+before = "    shown = [clipped(key) if PATH_VALUE.match(key) else UNPRINTABLE_KEY for key in keys]"
+after = "    shown = [key if PATH_VALUE.match(key) else UNPRINTABLE_KEY for key in keys]"
+reddens = ["tests/doctor/test_floor_report.py::test_noted_keys_are_bounded_in_number_and_in_length"]
+
+[[mutation]]
+name = "not-initialised prints a noted key outside the grammar"
+file = "src/stayfixed/doctor/checks.py"
+before = "    shown = [clipped(key) if PATH_VALUE.match(key) else UNPRINTABLE_KEY for key in keys]"
+after = "    shown = [clipped(key) for key in keys]"
+reddens = ["tests/doctor/test_floor_report.py::test_noted_keys_are_bounded_in_number_and_in_length"]
 
 [[mutation]]
 name = "a whole fallback reads as a repository with no stayfixed.toml"
@@ -2942,6 +2964,15 @@ after = "    held = dict(preset)"
 reddens = [
   "tests/doctor/test_floor_report.py::test_preferences_with_no_stayfixed_toml_are_the_presets",
   "tests/doctor/test_floor_report.py::test_preferences_names_the_layer_and_hides_free_text",
+]
+
+[[mutation]]
+name = "the preferences row quotes every note of the machine file"
+file = "src/stayfixed/doctor/checks.py"
+before = "_counted(list(notes[:NAMES_SHOWN]),"
+after = "_counted(list(notes),"
+reddens = [
+  "tests/doctor/test_floor_report.py::test_preferences_quote_at_most_a_few_of_the_machine_files_notes",
 ]
 
 [[mutation]]

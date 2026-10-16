@@ -3,8 +3,9 @@ one red row, "the plugin's hooks are silent in this repository", and skip everyt
 `not-initialised` row is now a warning that the session guards and `doctor` work without one and
 that `stayfixed init` adds the rest, every other row is still checked, and the rows that need the
 project's configuration say there is none. `doctor` reads `stayfixed.toml` the way a session does,
-so a file a newer stayfixed wrote is a warning listing the settings that were ignored or put back
-to the preset's, by key, and only a file the session cannot use at all is red. A broken machine
+so a file a newer stayfixed wrote is a warning naming up to three of the settings that were
+ignored or put back to the preset's, by key, and counting the rest, and only a file the session
+cannot use at all is red. A broken machine
 file no longer hides the report: the new `preferences` row names it and its problems. The report
 now has eighteen rows: `preferences`, after `budgets`, names the layer each preference and each of
 the machine owner's settings came from (the preset, the repository or the machine file), with its

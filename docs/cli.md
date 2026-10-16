@@ -2871,7 +2871,7 @@ check with `name`, `status`, `detail` and `remedy`, so every remedy is there.
 
 | Check | What it answers | What it reads |
 |---|---|---|
-| `not-initialised` | whether there is a `stayfixed.toml` here, and how much of it a session can use: with none, a warning that the session guards and `doctor` work without one and `stayfixed init` adds the rest; with one that loaded with settings ignored or put back to the preset's, a warning listing their keys and never their values; red only for one a session drops whole, in the words of the session's warning | `stayfixed.toml` |
+| `not-initialised` | whether there is a `stayfixed.toml` here, and how much of it a session can use: with none, a warning that the session guards and `doctor` work without one and `stayfixed init` adds the rest; with one that loaded with settings ignored or put back to the preset's, a warning naming at most three of their keys and counting the rest, never their values; red only for one a session drops whole, in the words of the session's warning | `stayfixed.toml` |
 | `versions` | whether the project's `[stayfixed] version` is the stayfixed running; with no project configuration, which stayfixed runs | `stayfixed.toml`, the package |
 | `files` | the hook wrapper's executable bit, and the three shipped files against the hashes the release recorded beside them | `hooks/run-hook.sh`, `hooks/hooks.json`, `scripts/stayfixed`, `hooks/hashes.json` |
 | `wrapper` | whether the wrapper can actually reach stayfixed on this machine | one `run-hook.sh open --version`, and only under the plugin root this stayfixed is part of |
@@ -3000,13 +3000,17 @@ symbolic link, whatever it points at, a file that is not UTF-8, cannot be read o
 one holding a key nothing can stand in for; the row says which in the session's own words and
 names `stayfixed docs check`, which prints the loader's own message.
 
-**What is printed, and what is not. There is no exception.** Counts, statuses, file paths this
-project chose and stayfixed's own vocabulary print freely; a repository-authored string does not.
-`[stayfixed] version`, `[ci] ref`, a note's filename, a hook's command text, the marker id an
-entry claims, every field of the hook sink's diagnostics log and the reason the store would not
-resolve are all read and none is quoted back — `stayfixed doctor --json` is relayed to a model
-verbatim by the `doctor` skill, so a byte a repository wrote reaching this report is a byte
-reaching the model outside `trust.wrap`.
+**What is printed, and what is not. There is one exception, and it is bounded.** Counts,
+statuses, file paths this project chose and stayfixed's own vocabulary print freely; a
+repository-authored string does not. `[stayfixed] version`, `[ci] ref`, a note's filename, a hook's
+command text, the marker id an entry claims, every field of the hook sink's diagnostics log and the
+reason the store would not resolve are all read and none is quoted back — `stayfixed doctor
+--json` is relayed to a model verbatim by the `doctor` skill, so a byte a repository wrote reaching
+this report is a byte reaching the model outside `trust.wrap`. The exception is the name of a
+`stayfixed.toml` key that `not-initialised` says was ignored or put back to the preset's, which is
+what the owner needs to find it: at most three names, one outside the path grammar withheld and
+one inside it clipped at 120 characters, then a count of the rest, so the row stays short however
+many keys the file holds and however long their names are.
 
 `hook-entries` is where that bites, because its job is to list every entry with its provenance.
 It identifies an entry **by position** — `.claude/settings.local.json entry 3 of 5` — which is

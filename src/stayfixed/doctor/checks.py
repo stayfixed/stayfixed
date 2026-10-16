@@ -96,6 +96,7 @@ from stayfixed.doctor.model import (
 from stayfixed.doctor.registry import contributions
 from stayfixed.errors import Failure
 from stayfixed.findings import listed
+from stayfixed.grammar import PATH_VALUE
 from stayfixed.harnesses import CANONICAL, CLAUDE, CODEX, HARNESSES, Tier
 from stayfixed.hooks.api import (
     DIAGNOSTICS,
@@ -105,7 +106,7 @@ from stayfixed.hooks.api import (
     data_root,
 )
 from stayfixed.presets import load_preset
-from stayfixed.printed import printable
+from stayfixed.printed import clipped
 from stayfixed.release.api import (
     HASHED_FILES,
     UnreadableRecord,
@@ -246,8 +247,14 @@ NOT_INITIALISED = (
 )
 NOT_INITIALISED_REMEDY = "run `stayfixed init --yes`"
 # A `stayfixed.toml` that loads with keys ignored or put back to the preset's. Key names only: a
-# note's sentence carries the loader's refusal, and a key is printed through `printed.printable`.
+# note's sentence carries the loader's refusal. A key is repository-authored text, so it is
+# printed bounded (`_noted_keys`).
 NOTED = "{file} loads with {count} setting(s) ignored or put back to the preset's: {keys}"
+# How many noted names a row prints before it counts the rest: `not-initialised`'s keys, and the
+# machine file's notes on `preferences`. A named cap. A repository chooses how many keys its
+# `stayfixed.toml` holds, the `doctor` skill relays this report to a model verbatim, and three say
+# where to start; `stayfixed docs check` lists every one. No shipped file states the number.
+NAMES_SHOWN = 3
 NOTED_REMEDY = (
     f"`stayfixed docs check` refuses the file and prints why each one was; fix or remove them in "
     f"{CONFIG_FILE}"
@@ -273,10 +280,26 @@ def _not_initialised(context: Context) -> Row:
             return Row(RED, cause(dropped[0]), FALLBACK_REMEDY)
         return Row(WARN, NOT_INITIALISED, NOT_INITIALISED_REMEDY)
     if session.noted:
-        keys = listed([printable(key, UNPRINTABLE_KEY) for key in session.noted])
+        keys = _noted_keys(session.noted)
         detail = NOTED.format(file=CONFIG_FILE, count=len(session.noted), keys=keys)
         return Row(WARN, detail, NOTED_REMEDY)
     return Row(OK, f"{CONFIG_FILE} loads", "")
+
+
+def _noted_keys(keys: Sequence[str]) -> str:
+    """The first `NAMES_SHOWN` of `keys`, then how many more.
+
+    A key is any text the repository chose, bounded in length by nothing. One outside the path
+    grammar is withheld, as `printed.printable` withholds it from a line a model reads; one
+    inside it prints through `printed.clipped`, so the row is as long as the cap allows, however
+    long a name the file holds."""
+    shown = [clipped(key) if PATH_VALUE.match(key) else UNPRINTABLE_KEY for key in keys]
+    return _counted(shown[:NAMES_SHOWN], len(keys) - NAMES_SHOWN, ", ")
+
+
+def _counted(shown: list[str], more: int, separator: str) -> str:
+    """`shown` joined by `separator`, and how many more were left out when `more` is positive."""
+    return separator.join(shown) + (f"{separator}and {more} more" if more > 0 else "")
 
 
 VERSION_BEHIND = "run `stayfixed upgrade`, which moves it and refreshes the footprint with it"
@@ -684,7 +707,8 @@ def _preferences(context: Context) -> Row:
     if notes:
         return Row(
             WARN,
-            f"{detail}. The machine file could not be used whole: {'; '.join(notes)}",
+            f"{detail}. The machine file could not be used whole: "
+            f"{_counted(list(notes[:NAMES_SHOWN]), len(notes) - NAMES_SHOWN, '; ')}",
             PREFERENCES_REMEDY,
         )
     return Row(OK, detail)
