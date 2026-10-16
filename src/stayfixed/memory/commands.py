@@ -82,6 +82,11 @@ def _store(args: argparse.Namespace) -> tuple[Store, Config]:
     root = Path(args.root).resolve()
     machine = _machine(args)
     config = load(root, machine=machine)
+    return _store_of(args, root, config, machine), config
+
+
+def _store_of(args: argparse.Namespace, root: Path, config: Config, machine: Path | None) -> Store:
+    """The store `config` names in `root`, or the refusal that says why there is none."""
     # `resolved` and not `resolve` + `refusal_reason`: the pair walked the whole resolution
     # twice, four `git` queries with a five-second timeout apiece each time, so a hanging `git`
     # cost a refused `memory session-context` up to forty seconds — once per `SessionStart`
@@ -89,7 +94,7 @@ def _store(args: argparse.Namespace) -> tuple[Store, Config]:
     found = resolved(root, config, override=args.store, machine=machine)
     if found[0] is None:
         raise _no_store(found[1])
-    return found[0], config
+    return found[0]
 
 
 # What the trust gate withholds until there is a record, said where a person will read it:
@@ -345,10 +350,7 @@ def run_session_context(args: argparse.Namespace) -> Result:
     config = session_config(root, machine=machine).config
     if config is None:
         return Result("")
-    found = resolved(root, config, override=args.store, machine=machine)
-    if found[0] is None:
-        raise _no_store(found[1])
-    text = render(bundle, found[0], config, part=args.part)
+    text = render(bundle, _store_of(args, root, config, machine), config, part=args.part)
     return Result(text if text is not None else "")
 
 

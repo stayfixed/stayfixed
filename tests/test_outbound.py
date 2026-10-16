@@ -503,7 +503,7 @@ def test_a_function_that_hands_its_argv_on_twice_is_no_launcher(
 
 
 def test_what_only_names_a_launcher_is_not_a_launch() -> None:
-    # `probe.run(context)`, `gate.run(root, config, base)` and `handler.run(view, config)` are the
+    # `probe.run(context)`, `gate.run(root, config, base)` and `handler.run(view, session)` are the
     # package's own in-process `.run`s, and a runner launches through `.launch`, so a `.run` handed
     # a list is not a runner's either. Mutation: every `.run` is a launch -> all four are found.
     # Nor is a name that only mentions a launcher's module: an annotation, a constant, an
@@ -512,7 +512,7 @@ def test_what_only_names_a_launcher_is_not_a_launch() -> None:
     # the last two lines' `Popen`s are found. Nor a launcher module `getattr` or `hasattr` reads a
     # literal attribute of that is no launcher, or `hasattr` only asks about. The entry in
     # `mutations/` that names this test reads such a module as handed on again.
-    source = "probe.run(context)\ngate.run(root, config, base)\nhandler.run(view, config)\n"
+    source = "probe.run(context)\ngate.run(root, config, base)\nhandler.run(view, session)\n"
     source += "step.run([view], config)\n"
     source += "import subprocess\nraise subprocess.TimeoutExpired(args, 1)\n"
     source += "def f(p: subprocess.Popen[bytes]) -> None:\n    stdin = subprocess.DEVNULL\n"

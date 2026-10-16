@@ -321,7 +321,9 @@ def _versions(context: Context) -> Row:
     running = stayfixed.__version__
     if context.config is None:
         # The installation's half of the question still has an answer: which stayfixed runs.
-        return Row(OK, f"stayfixed {running} is running; no project records a version to match")
+        return Row(
+            OK, f"stayfixed {running} is running; there is no project configuration to match"
+        )
     recorded = context.config.stayfixed.version
     if recorded == running:
         return Row(OK, f"the project and this stayfixed are both {running}", "")
