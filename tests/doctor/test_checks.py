@@ -805,7 +805,7 @@ def test_the_sink_and_doctor_find_the_data_root_by_one_rule(
     assert (data / DIRECTORY / MARKERS).is_dir()
     assert not (tmp_path / "unread").exists()
     check = _by_name(_checks(tmp_path, _initialised(tmp_path), env=env), "diagnostics")
-    assert (check.status, check.detail) == (OK, "no hook failures are recorded; 1 session(s) seen")
+    assert (check.status, check.detail) == (OK, "no hook records are logged; 1 session(s) seen")
 
 
 def test_a_diagnostics_log_the_environment_named_is_counted_and_never_quoted(
@@ -837,7 +837,7 @@ def test_a_diagnostics_log_the_environment_named_is_counted_and_never_quoted(
     assert "E" * 100 not in check.detail
     # Non-vacuous: the row still answers the question it exists for — how many failures, and
     # where to read them — and it is a count, which is `doctor`'s own answer.
-    assert "1 hook failure(s) recorded" in check.detail
+    assert "1 hook record(s) logged" in check.detail
     assert "${CLAUDE_PLUGIN_DATA}" in check.remedy
     # The path is not quoted either: `${CLAUDE_PLUGIN_DATA}` expands to a value a repository
     # chose, so naming the variable is the only spelling that reproduces nothing.
@@ -936,7 +936,7 @@ def test_a_hook_sink_log_holding_no_records_is_not_a_finding(tmp_path: Path) -> 
         "diagnostics",
     )
     assert check.status == "ok"
-    assert "no hook failures are recorded" in check.detail
+    assert "no hook records are logged" in check.detail
 
 
 def test_a_hook_sink_log_this_process_cannot_read_is_a_warning_and_never_a_red_row(
@@ -1480,7 +1480,7 @@ def test_a_hook_sink_log_line_past_the_parsers_reach_is_no_record(
         ),
         "diagnostics",
     )
-    assert check == Check("diagnostics", OK, "no hook failures are recorded; 0 session(s) seen", "")
+    assert check == Check("diagnostics", OK, "no hook records are logged; 0 session(s) seen", "")
 
 
 def _past_a_name(tmp_path: Path, path: Path) -> None:

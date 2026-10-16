@@ -3112,8 +3112,11 @@ quotes. Its three fields are stayfixed's own vocabulary *for a log stayfixed wro
 is found through `${CLAUDE_PLUGIN_DATA}` — the same environment class a committed `env` block
 reaches — so this command never establishes that. Refusing a marker id that a grammar bounds and
 a cap limits, while printing an unbounded free-text `error` from a file of unknown provenance,
-would not be a policy. The row reports how many failures are recorded and how many sessions were
-seen, and the remedy names the file by its variable; you open it yourself.
+would not be a policy. The row reports how many records are logged and how many sessions were
+seen, and the remedy names the file by its variable; you open it yourself. A record is a hook
+failure, an answer the output cap cut, or a session that ran without some of its configuration
+(`config-fallback`), and the count does not tell them apart: which one a line is lies in its
+`error` field, the very field this row does not trust.
 
 **A plugin root the environment named is read and never run.** `wrapper` launches
 `hooks/run-hook.sh` only under the root this stayfixed derived from its own module path. With a

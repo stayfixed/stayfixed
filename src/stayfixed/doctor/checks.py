@@ -177,8 +177,9 @@ UNVOUCHED_LOG = (
 # The variable, never its value: `${CLAUDE_PLUGIN_DATA}` is repository-reachable, so the path it
 # expands to is as repository-authored as the file's contents.
 DIAGNOSTICS_REMEDY = (
-    "read ${CLAUDE_PLUGIN_DATA}/stayfixed/diagnostics.jsonl yourself; each line is one hook "
-    "failure, with its event, handler and error type"
+    "read ${CLAUDE_PLUGIN_DATA}/stayfixed/diagnostics.jsonl yourself; each line is one record, "
+    "with its event, handler and error type: a hook failure, an answer the output cap cut, or a "
+    "session that ran without some of its configuration (config-fallback)"
 )
 
 
@@ -1035,12 +1036,12 @@ def _diagnostics(context: Context) -> Row:
         return Row(
             WARN,
             f"the hook sink's session markers could not be listed ({fsops.said(exc)}), so "
-            f"neither the session count nor the failure count below can be given",
+            f"neither the session count nor the record count below can be given",
             DIAGNOSTICS_REMEDY,
         )
     log = base / DIAGNOSTICS
     if not fsops.is_file(log):
-        return Row(OK, f"no hook failures are recorded; {sessions} session(s) seen")
+        return Row(OK, f"no hook records are logged; {sessions} session(s) seen")
     try:
         raw, over = fsops.read_bounded(log, DIAGNOSTICS_MAX_BYTES)
     except OSError as exc:
@@ -1051,8 +1052,10 @@ def _diagnostics(context: Context) -> Row:
         )
     count = sum(1 for line in raw.splitlines() if _is_record(line))
     if not count and not over:
-        return Row(OK, f"no hook failures are recorded; {sessions} session(s) seen")
-    counted = f"{'at least ' if over else ''}{count} hook failure(s) recorded"
+        return Row(OK, f"no hook records are logged; {sessions} session(s) seen")
+    # Records, and never told apart: which kind a line is lies in its `error` field, which is
+    # stayfixed's vocabulary only for a log stayfixed wrote (`UNVOUCHED_LOG`).
+    counted = f"{'at least ' if over else ''}{count} hook record(s) logged"
     return Row(
         WARN,
         f"{counted}; {sessions} session(s) seen. Not one line is quoted: {UNVOUCHED_LOG}",
