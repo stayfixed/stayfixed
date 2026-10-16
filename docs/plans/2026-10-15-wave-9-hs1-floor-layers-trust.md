@@ -115,9 +115,9 @@ stops and reports the mismatch.
   not TOML. A containment failure resets the value, never the session. Amended on 2026-10-16 by
   the owner's ruling on wave B's review (the NOTE retry's seam): a key whose reset leaves nothing
   usable — a required key with no default, or a preset value that itself fails containment in this
-  repository — makes the NOTE load raise one typed refusal naming that key and carrying the notes
-  so far, and the session falls back to the floor whole with a warning naming the key; the guards
-  still run on the preset and the owner's layer.
+  repository — makes the NOTE load raise one typed refusal naming that key, decided before any key
+  is removed (a key is removed only when a fallback exists), and the session falls back to the floor
+  whole with a warning naming the key; the guards still run on the preset and the owner's layer.
 - `Config` gains no field: `assess.rule` compares configurations field by field.
 - Core never imports a delivery area (`attach`, `memory`, `overlay`); `tests/boundaries/` holds it.
   A kind a delivery area owns reaches core through discovery.
