@@ -1806,6 +1806,15 @@ reddens = [
   "tests/test_undecodable.py::test_a_command_meeting_an_undecodable_file_fails_and_does_not_crash[init-machine]",
 ]
 
+[[mutation]]
+name = "a trust record that is not UTF-8 crashes instead of refusing loudly"
+file = "src/stayfixed/trust/record.py"
+before = """    except UnicodeDecodeError:
+        raise UnreadableTrust("""
+after = """    except KeyError:
+        raise UnreadableTrust("""
+reddens = ["tests/test_undecodable.py::test_an_undecodable_file_is_its_readers_own_failure[the trust record]"]
+
 # The default base is the remote-tracking ref spelled in full, so a tag named like the branch cannot
 # answer for it.
 [[mutation]]
@@ -4398,3 +4407,142 @@ reddens = [
   "tests/config/test_budgets_raise.py::test_the_owner_raises_a_session_budget",
   "tests/assess/test_rule_classes.py::test_a_pull_request_still_only_lowers_a_gate_budget",
 ]
+
+# The machine's one trust record (`stayfixed.trust`). A record that does not parse refuses and is
+# never overwritten; read as empty, it would leave every approval lapsed and be rewritten over.
+[[mutation]]
+name = "a corrupt trust record reads as an empty one again"
+file = "src/stayfixed/trust/record.py"
+before = '    raw = json_object(text, str(path), error=lambda reason: UnreadableTrust(f"{reason}; {_KEPT}"))'
+after = '''    try:
+        raw = json_object(text, str(path), error=lambda reason: UnreadableTrust(f"{reason}; {_KEPT}"))
+    except UnreadableTrust:
+        return {}'''
+reddens = [
+  "tests/memory/test_trust.py::test_a_corrupt_record_refuses_rather_than_reading_as_untrusted",
+  "tests/memory/test_trust.py::test_a_corrupt_record_is_never_overwritten",
+]
+
+# Nor does a record past the parser's reach escape as an internal error. Nested past the parser,
+# or holding an integer longer than Python converts, it is valid JSON that `json.loads` meets with
+# no `JSONDecodeError`, and the reader caught only that.
+[[mutation]]
+name = "the trust record's reader lets a document past the parser escape"
+file = "src/stayfixed/trust/record.py"
+before = '    raw = json_object(text, str(path), error=lambda reason: UnreadableTrust(f"{reason}; {_KEPT}"))'
+after = '''    try:
+        raw = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise UnreadableTrust(f"{path} is not valid JSON: {exc}; {_KEPT}") from exc'''
+reddens = [
+  "tests/memory/test_commands.py::test_a_trust_record_past_the_parser_is_refused_and_never_overwritten[nested]",
+  "tests/memory/test_commands.py::test_a_trust_record_past_the_parser_is_refused_and_never_overwritten[long-number]",
+]
+
+# No home in the password database is no trust record: none is read, and none is written beside
+# whatever directory the command happens to run in.
+[[mutation]]
+name = "a trust record with no home is written beside the working directory"
+file = "src/stayfixed/trust/record.py"
+before = '        raise Failure(NO_HOME)'
+after = '        path = Path(RECORD)'
+reddens = ["tests/memory/test_commands.py::test_trust_with_no_home_in_the_database_fails_and_writes_nothing"]
+
+[[mutation]]
+name = "a trust record with no home is read as a path"
+file = "src/stayfixed/trust/record.py"
+before = '    if path is None or not fsops.is_file(path):'
+after = '    if not fsops.is_file(path):'
+reddens = ["tests/memory/test_commands.py::test_trust_with_no_home_in_the_database_fails_and_writes_nothing"]
+
+# A trust record that cannot be written under the database's home is a failure naming the
+# directory, never an internal error.
+[[mutation]]
+name = "an unwritable trust record directory ends as an internal error"
+file = "src/stayfixed/trust/record.py"
+before = "    except OSError as exc:\n        where = ("
+after = "    except LookupError as exc:\n        where = ("
+reddens = [
+  "tests/memory/test_commands.py::test_trust_where_the_database_home_cannot_be_written_fails_naming_the_directory",
+]
+
+# The machine's trust record that cannot be read is named once with the reason in words: the
+# error's own text named the same absolute path a second time.
+[[mutation]]
+name = "a trust record that cannot be read is reported with the error's own text"
+file = "src/stayfixed/trust/record.py"
+before = '            f"{path} cannot be read ({fsops.said(exc)}); refusing to answer about trust or to "'
+after = '            f"{path} cannot be read ({exc}); refusing to answer about trust or to "'
+reddens = ["tests/memory/test_trust.py::test_a_record_that_cannot_be_read_says_why_in_words"]
+
+# The record reads `0.3.0`'s flat map as approvals of kind `memory`, and refuses, never reads as
+# empty, a version it does not know.
+[[mutation]]
+name = "the trust record no longer reads 0.3.0's flat map"
+file = "src/stayfixed/trust/record.py"
+before = "            if isinstance(digest, str)\n        }"
+after = "            if isinstance(digest, str) and False\n        }"
+reddens = [
+  "tests/trust/test_record.py::test_a_0_3_0_record_keeps_every_memory_approval",
+  "tests/trust/test_record.py::test_the_first_write_upgrades_the_file_in_place",
+]
+
+[[mutation]]
+name = "a trust record of a later version is read as empty"
+file = "src/stayfixed/trust/record.py"
+before = "    if type(version) is not int or version != VERSION:\n        raise UnreadableTrust(LATER_VERSION.format(path=path))"
+after = "    if type(version) is not int or version != VERSION:\n        return {}"
+reddens = [
+  "tests/trust/test_record.py::test_an_unreadable_record_refuses_and_is_never_overwritten[version-2]",
+  "tests/trust/test_record.py::test_an_unreadable_record_refuses_and_is_never_overwritten[bool]",
+]
+
+[[mutation]]
+name = "an approval over an unreadable trust record writes the record anyway"
+file = "src/stayfixed/trust/record.py"
+before = "    approvals = recorded(machine)\n    approval = Approval("
+after = "    try:\n        approvals = recorded(machine)\n    except UnreadableTrust:\n        approvals = {}\n    approval = Approval("
+reddens = [
+  "tests/trust/test_record.py::test_an_unreadable_record_refuses_and_is_never_overwritten[not-json]",
+  "tests/trust/test_record.py::test_an_unreadable_record_refuses_and_is_never_overwritten[version-2]",
+]
+
+# An approval holds at its digest, and the record tells a changed digest from none at all.
+[[mutation]]
+name = "the trust record ignores the digest"
+file = "src/stayfixed/trust/record.py"
+before = "    return State.APPROVED if approval.digest == current else State.LAPSED"
+after = "    return State.APPROVED"
+reddens = ["tests/trust/test_record.py::test_lapsed_missing_and_approved_are_told_apart"]
+
+[[mutation]]
+name = "a lapsed approval reads as missing"
+file = "src/stayfixed/trust/record.py"
+before = "    return State.APPROVED if approval.digest == current else State.LAPSED"
+after = "    return State.APPROVED if approval.digest == current else State.MISSING"
+reddens = ["tests/trust/test_record.py::test_lapsed_missing_and_approved_are_told_apart"]
+
+# An approval is one kind and one subject: approving another kind of the same subject replaces
+# nothing.
+[[mutation]]
+name = "the trust record keys an approval by its subject alone"
+file = "src/stayfixed/trust/record.py"
+before = "    approvals[(kind, subject)] = approval"
+after = "    approvals = {key: a for key, a in approvals.items() if key[1] != subject}\n    approvals[(kind, subject)] = approval"
+reddens = ["tests/trust/test_record.py::test_two_kinds_never_share_a_subject"]
+
+# A revoke that matches nothing writes nothing.
+[[mutation]]
+name = "a revoke of nothing rewrites the trust record"
+file = "src/stayfixed/trust/record.py"
+before = "    if approvals.pop((kind, subject), None) is None:\n        return False"
+after = "    if approvals.pop((kind, subject), None) is None:\n        _write(machine, approvals)\n        return False"
+reddens = ["tests/trust/test_record.py::test_revoke_of_nothing_says_so"]
+
+# The record is beside the machine file under the password database's home, never `HOME`'s.
+[[mutation]]
+name = "the trust record follows HOME"
+file = "src/stayfixed/trust/record.py"
+before = "    base = machine_config_path() if machine is None else machine"
+after = '    base = Path.home() / ".config" / "stayfixed" / "config.toml" if machine is None else machine'
+reddens = ["tests/trust/test_record.py::test_the_record_ignores_xdg_and_home"]

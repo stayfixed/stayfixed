@@ -97,6 +97,11 @@ Out of scope:
   says so under "Variables Claude Code ignores in `env`", and Claude Code 2.1.293 was measured
   keeping the real `HOME` and an empty `XDG_CONFIG_HOME` in project and plugin hooks.
   `XDG_CONFIG_HOME`, git's other door to that configuration, is dropped before any `git` runs.
+- An agent with an unsandboxed shell writing an approval itself. An approval in `trust.json`
+  holds against a repository's bytes and a `git pull`: a clone cannot write the record, and a
+  changed note lapses it. An agent that can run any command as you can also write any file you
+  can, the record included, and against it the harness's own write restriction is the boundary —
+  keep the machine file's directory out of what the agent may write.
 - A repository being able to make stayfixed **refuse** — suppressing memory, failing a hook
   closed. Undesirable, and an ordinary bug, but not a vulnerability: the whole design fails
   closed on purpose.

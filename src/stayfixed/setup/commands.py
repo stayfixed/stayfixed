@@ -129,7 +129,7 @@ def run_setup(args: argparse.Namespace) -> Result:
     from stayfixed.setup.run import setup
 
     # The file every *reader* of it reads (`config.loader.load`, `config.overlay.overlay_root`,
-    # `memory.trust._trust_file`), which no variable moves. This command once took the `isatty`
+    # `trust.record.record_path`), which no variable moves. This command once took the `isatty`
     # sniff there: with `XDG_CONFIG_HOME=/xdg`, an owner running `stayfixed setup` in their own
     # shell wrote `/xdg/stayfixed/config.toml`, got exit 0, and every reader then said "no overlay
     # root is recorded in the machine configuration; run `stayfixed setup`". `--machine` itself is

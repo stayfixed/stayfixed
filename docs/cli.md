@@ -179,8 +179,18 @@ inside the repository, and the record is what lets `stayfixed attach` create the
 link to it: until one exists, `memory index` and `memory fit` say the link waits for it and
 `attach` names this command instead of making the link.
 
-Exits `2` if `trust.json` exists and does not parse. It holds every project's approval on the
-machine, so nothing will overwrite a file it could not read — repair or delete it.
+The record is the machine's one record of approvals, of every kind, and this command keeps the
+store's as kind `memory`, its subject the store's absolute path. It is versioned: a JSON object
+holding `version` (`1`) and `approvals`, each with its `kind`, `subject`, `digest` and
+`approved_at`. The flat map `0.3.0` wrote, a store's path to its digest, is read as approvals of
+kind `memory`, so an upgrade keeps every one, and the first write upgrades the file in place; a
+`0.3.0` reading a version-1 record finds no approval in it and asks again. Every write replaces the
+whole file in one atomic step, and no lock is taken: two commands writing at once each replace it
+whole, the last one wins, and neither leaves it torn.
+
+Exits `2` if `trust.json` exists and is neither a record this stayfixed reads nor `0.3.0`'s flat
+map — not JSON, not UTF-8, or a later version. It holds every project's approval on the machine,
+so nothing will overwrite a file it could not read — repair or delete it.
 
 ## `stayfixed memory session-context --bundle <name> [--part N]`
 
@@ -2419,8 +2429,8 @@ It exits `2` on a refusal, in the order the run meets them:
   `git rev-parse --git-path info/exclude` that names no exclude file; an exclude file that cannot
   be read or holds a `stayfixed:attach` block opened or closed twice (the refusal names the file),
   or, when the block needs a line, that is a symlink or sits in a directory you cannot write.
-- A trust record, the machine's `trust.json`, that cannot be read or is not the record it should
-  be.
+- A trust record, the machine's `trust.json`, that cannot be read or is not a record this
+  stayfixed reads.
 
 Every refusal in that list happens before anything is written, so a refused attach leaves both the
 repository and the overlay as they were. What is left can only happen once writing has begun:

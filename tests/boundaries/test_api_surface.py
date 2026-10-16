@@ -104,7 +104,7 @@ def test_no_module_reaches_into_another_packages_private_module() -> None:
     assert len(areas) == 11, areas
     # The packages held to a surface without being discovered, pinned by name for the reason
     # `tests/test_surfaces.py` pins its list: gaining or losing one is a decision.
-    assert sorted(set(ruled) - set(areas)) == ["release"], ruled
+    assert sorted(set(ruled) - set(areas)) == ["release", "trust"], ruled
     assert len(files) >= 70, len(files)
     # The script walk's own floor: without it a `glob` that stopped matching would take the
     # `scripts/` half of this guard back to the state that hid the violation, and the crossing

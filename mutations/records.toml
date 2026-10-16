@@ -2,37 +2,6 @@
 # Which group an entry belongs in is `GROUP_OF` in `scripts/mutation_oracle.py`; what an entry is:
 # CONTRIBUTING.md, "Tests".
 
-# A trust record that does not parse refuses and is never overwritten; read as empty, it would leave
-# every note untrusted and be rewritten over.
-[[mutation]]
-name = "a corrupt trust record reads as an empty one again"
-file = "src/stayfixed/memory/trust.py"
-before = '    raw = json_object(text, str(path), error=_refused_record)'
-after = '''    try:
-        raw = json_object(text, str(path), error=_refused_record)
-    except UnreadableTrustRecord:
-        return {}'''
-reddens = [
-  "tests/memory/test_trust.py::test_a_corrupt_record_refuses_rather_than_reading_as_untrusted",
-  "tests/memory/test_trust.py::test_a_corrupt_record_is_never_overwritten",
-]
-
-# Nor does a record past the parser's reach escape as an internal error. Nested past the parser,
-# or holding an integer longer than Python converts, it is valid JSON that `json.loads` meets with
-# no `JSONDecodeError`, and the reader caught only that.
-[[mutation]]
-name = "the trust record's reader lets a document past the parser escape"
-file = "src/stayfixed/memory/trust.py"
-before = '    raw = json_object(text, str(path), error=_refused_record)'
-after = '''    try:
-        raw = json.loads(text)
-    except json.JSONDecodeError as exc:
-        raise _refused_record(f"{path} is not valid JSON: {exc}") from exc'''
-reddens = [
-  "tests/memory/test_commands.py::test_a_trust_record_past_the_parser_is_refused_and_never_overwritten[nested]",
-  "tests/memory/test_commands.py::test_a_trust_record_past_the_parser_is_refused_and_never_overwritten[long-number]",
-]
-
 # The digest framing. Removing it left all 617 tests green: what they proved was that
 # `_content_digest` is fixed-width, never the key hashing the docstring argues for. The
 # key is repository-controlled from both ends — a `memory.groups` entry may name a nested
@@ -1485,17 +1454,6 @@ before = '    return [Finding(TRAIL_STALE, config.paths.roadmap, None, "")]'
 after = "    return []"
 reddens = ["tests/assess/test_gates.py::test_a_stale_trail_is_a_failing_gate"]
 
-# In the block led by `mutations/`'s "a stayfixed.toml that is not UTF-8 crashes every command that
-# loads it": a file that is not UTF-8 is its reader's own failure, never an internal error.
-[[mutation]]
-name = "a trust record that is not UTF-8 crashes instead of refusing loudly"
-file = "src/stayfixed/memory/trust.py"
-before = """    except UnicodeDecodeError:
-        raise UnreadableTrustRecord("""
-after = """    except KeyError:
-        raise UnreadableTrustRecord("""
-reddens = ["tests/test_undecodable.py::test_an_undecodable_file_is_its_readers_own_failure[the trust record]"]
-
 # "No ledger yet" is read off the tree, which a pull request writes: with the arm answering
 # nothing, a change that deletes the ledger and its index switches an enforced `bugs` gate off
 # while code still cites entry files.
@@ -2913,22 +2871,6 @@ reddens = [
   "tests/boundaries/test_api_surface.py::test_no_module_reaches_into_another_packages_private_module",
 ]
 
-# No home in the password database is no trust record: none is read, and none is written beside
-# whatever directory the command happens to run in.
-[[mutation]]
-name = "a trust record with no home is written beside the working directory"
-file = "src/stayfixed/memory/trust.py"
-before = '        raise Failure(NO_HOME)'
-after = '        return Path("trust.json")'
-reddens = ["tests/memory/test_commands.py::test_trust_with_no_home_in_the_database_fails_and_writes_nothing"]
-
-[[mutation]]
-name = "a trust record with no home is read as a path"
-file = "src/stayfixed/memory/trust.py"
-before = '    if path is None or not fsops.is_file(path):'
-after = '    if not fsops.is_file(path):'
-reddens = ["tests/memory/test_commands.py::test_trust_with_no_home_in_the_database_fails_and_writes_nothing"]
-
 # With no `--home`, the harness link is anchored on `HOME` only from a terminal, and on the
 # password database's home everywhere else; a user the database lists no home for has no anchor.
 [[mutation]]
@@ -2983,17 +2925,8 @@ reddens = [
   "tests/memory/test_worktree.py::test_a_link_without_the_harness_half_makes_the_tree_and_says_what_it_withheld",
 ]
 
-# A trust record that cannot be written under the database's home is a failure naming the
-# directory, never an internal error; and where the homes differ the command says where it wrote.
-[[mutation]]
-name = "an unwritable trust record directory ends as an internal error"
-file = "src/stayfixed/memory/trust.py"
-before = "    except OSError as exc:\n        where = ("
-after = "    except LookupError as exc:\n        where = ("
-reddens = [
-  "tests/memory/test_commands.py::test_trust_where_the_database_home_cannot_be_written_fails_naming_the_directory",
-]
-
+# In the block led by `mutations/`'s "an unwritable trust record directory ends as an internal
+# error": where the homes differ, the command says where it wrote.
 [[mutation]]
 name = "memory trust keeps quiet about where it wrote while the homes differ"
 file = "src/stayfixed/memory/commands.py"
@@ -3150,15 +3083,6 @@ file = "src/stayfixed/memory/worktree.py"
 before = '    except (Refusal, OSError):'
 after = '    except Refusal:'
 reddens = ["tests/memory/test_worktree.py::test_a_home_the_walk_cannot_open_is_passed_over_when_withdrawing"]
-
-# The machine's trust record that cannot be read is named once with the reason in words: the
-# error's own text named the same absolute path a second time.
-[[mutation]]
-name = "a trust record that cannot be read is reported with the error's own text"
-file = "src/stayfixed/memory/trust.py"
-before = '            f"{path} cannot be read ({fsops.said(exc)}); refusing to answer about trust or to "'
-after = '            f"{path} cannot be read ({exc}); refusing to answer about trust or to "'
-reddens = ["tests/memory/test_trust.py::test_a_record_that_cannot_be_read_says_why_in_words"]
 
 # What an error says about a file is spelt once, `fsops.said`; a reader spelling it from the
 # error's own fields again is a private copy of it, and the four there were each said less.
@@ -3498,3 +3422,12 @@ after = "    if False:\n        # What makes the link depends"
 reddens = [
   "tests/doctor/test_floor_report.py::test_harness_link_skips_without_a_configuration_when_the_homes_differ",
 ]
+
+# A store's approval is kept under the kind `0.3.0`'s flat record reads as, so every store it
+# approved stays approved.
+[[mutation]]
+name = "the memory area keeps its approvals under another kind"
+file = "src/stayfixed/memory/trust.py"
+before = 'MEMORY = "memory"'
+after = 'MEMORY = "store"'
+reddens = ["tests/memory/test_trust.py::test_a_store_0_3_0_approved_is_still_approved"]

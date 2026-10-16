@@ -591,7 +591,7 @@ def load(root: Path, *, machine: Path | None = None) -> Config:
     """Read `stayfixed.toml` under the preset, and `[personal]` out of the machine file.
 
     With no `machine`, the machine file is `config.machine.machine_config_path`'s, the one file
-    the overlay root's reader and `trust._trust_file` read too, which no variable moves: an
+    the overlay root's reader and `trust.record.record_path` read too, which no variable moves: an
     interactive run with `XDG_CONFIG_HOME` set once read `[personal]` from the file it named and
     `[overlay] root` and `trust.json` from `~/.config/stayfixed/`, so an owner who wrote one file
     with both tables got `[personal]` honoured and the overlay silently unrecorded. `--machine`

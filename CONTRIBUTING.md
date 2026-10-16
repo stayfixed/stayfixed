@@ -156,10 +156,12 @@ repository as it is, judges a change's `stayfixed.toml` against what its base br
 (`stayfixed adopt promote`); and `doctor` reports on what every other area left behind and repairs
 none of it. `assess` publishes no `api.py`: nothing under `src/` or `scripts/` outside it imports
 it, and tests reach its modules directly, as they do every area's. (`config`, `presets`, `profiles`,
-`release`, `scaffold` and `templates` are subpackages and not areas, and `harnesses` is a module —
+`release`, `scaffold`, `templates` and `trust` are subpackages and not areas, and `harnesses` is a module —
 area discovery does not find them, because they carry none of `commands.py`, `hooks.py` and
 `doctor.py`. `release` still publishes an `api.py`, which holds what an installed stayfixed reads
-about its own releases: the tags it pins and the record of the files a release ships.)
+about its own releases: the tags it pins and the record of the files a release ships, and `trust`
+publishes one, the machine's one record of approvals, which the `memory` area keeps its store
+approvals in.)
 
 The rule between the two runs one way: delivery may import the core, and the core may not import
 delivery, through an `api.py` or not, at module level or inside a function, so the private layer can

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import errno
 import hashlib
+import json
 import os
 import shutil
 from pathlib import Path
@@ -429,17 +430,29 @@ def test_an_absent_record_is_still_the_ordinary_fresh_machine(tmp_path: Path) ->
 
 
 def test_a_key_this_version_cannot_read_costs_only_that_key(tmp_path: Path) -> None:
-    # A non-string value is a key this version cannot interpret, not a file it cannot read, so
-    # it is dropped rather than raised: that costs one project a re-approval instead of costing
-    # every project its record.
+    # In `0.3.0`'s flat map, a non-string value is a key that version could not interpret either,
+    # not a file it cannot read, so it is dropped rather than raised: that costs one project a
+    # re-approval instead of costing every project its record. No mutation of its own: the flat
+    # map's reader is held by `tests/trust/test_record.py`.
     store, config, machine = a_store(tmp_path, "in-repo")
-    record(store, config)
-    broken = _trust_json(machine)
-    import json as _json
+    flat = {str(store.path.resolve()): store_digest(store, config)}
+    _trust_json(machine).write_text(
+        json.dumps({**flat, "/somewhere/else": {"not": "a digest"}}), encoding="utf-8"
+    )
+    assert may_inject(store, config) is True
 
-    raw = _json.loads(broken.read_text(encoding="utf-8"))
-    raw["/somewhere/else"] = {"not": "a digest"}
-    broken.write_text(_json.dumps(raw), encoding="utf-8")
+
+def test_a_store_0_3_0_approved_is_still_approved(tmp_path: Path) -> None:
+    # Review Focus 4 through the memory area: `0.3.0`'s flat map reads as kind `memory`, so every
+    # store it approved answers approved, and the first approval after upgrades the file.
+    # Mutation (`mutations/`'s "the memory area keeps its approvals under another kind"): the
+    # store reads unapproved.
+    store, config, machine = a_store(tmp_path, "in-repo")
+    flat = {str(store.path.resolve()): store_digest(store, config)}
+    _trust_json(machine).write_text(json.dumps(flat), encoding="utf-8")
+    assert may_inject(store, config) is True
+    record(store, config)
+    assert json.loads(_trust_json(machine).read_text(encoding="utf-8"))["version"] == 1
     assert may_inject(store, config) is True
 
 

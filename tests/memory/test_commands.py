@@ -10,6 +10,7 @@ from stayfixed.cli import build_parser, discover_registrars, run
 from stayfixed.findings import LISTED_LIMIT
 from stayfixed.jsonobject import LONG_NUMBER, NESTED
 from stayfixed.printed import UNPRINTABLE
+from stayfixed.trust.record import NO_HOME, recorded
 from tests import parserlimits
 from tests.crafted import CRAFTED, CRAFTED_TOML, assert_never_raw
 from tests.gitfixture import git
@@ -124,9 +125,16 @@ def test_an_unreached_part_prints_nothing_and_succeeds(
 def test_trust_writes_to_the_machine_file_it_was_given_not_to_the_home_directory(
     project: Path,
 ) -> None:
+    # The version-1 record beside the given machine file, holding the store's approval as kind
+    # `memory`. No mutation of its own: where the record goes is `trust.record.record_path`'s, held
+    # in `tests/trust/test_record.py`.
     machine = project.parent / "machine.toml"
     assert invoke(["memory", "trust", "--in-repo-memory", *common(project)]) == 0
-    assert (machine.parent / "trust.json").is_file()
+    written = json.loads((machine.parent / "trust.json").read_text(encoding="utf-8"))
+    assert written["version"] == 1
+    assert [(a["kind"], a["subject"]) for a in written["approvals"]] == [
+        ("memory", str((project / ".stayfixed" / "local" / "memory").resolve()))
+    ]
 
 
 @pytest.mark.parametrize("spelling", ["relative", "absolute"])
@@ -222,7 +230,7 @@ def test_trust_with_no_home_in_the_database_fails_and_writes_nothing(
     as_owner_home(monkeypatch, None)
     monkeypatch.chdir(tmp_path)
     assert invoke(["memory", "trust", "--in-repo-memory", "--root", str(project)]) == 1
-    assert "lists no home directory" in capsys.readouterr().err
+    assert capsys.readouterr().err == f"stayfixed: failed: {NO_HOME}\n"
     assert list(tmp_path.rglob("trust.json")) == []
 
 
@@ -268,6 +276,7 @@ def test_trust_without_the_flag_is_refused_not_silently_granted(
         invoke(["memory", "trust", *common(project)])
     assert excinfo.value.code == 2
     assert not (machine.parent / "trust.json").is_file()
+    assert recorded(machine) == {}
 
 
 def test_inventory_reports_what_a_sweep_acts_on(
