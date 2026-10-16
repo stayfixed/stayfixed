@@ -263,6 +263,7 @@ after = "    lower = True"
 reddens = [
   "tests/assess/test_rule.py::test_each_row_of_the_table_while_a_gate_enforces[budget-raised]",
   "tests/assess/test_rule.py::test_a_preset_switch_is_judged_by_every_value_it_moves[raises-a-budget]",
+  "tests/assess/test_rule_classes.py::test_a_pull_request_still_only_lowers_a_gate_budget",
 ]
 
 [[mutation]]
@@ -1752,4 +1753,33 @@ after = """        if True:
             found.append(relative)"""
 reddens = [
   "tests/assess/test_probes.py::test_a_settings_file_with_no_hook_entry_lists_nothing",
+]
+
+# A key's class is asked before the rule's own table: a preference and a session's parameter are
+# neutral whatever the base enforces, and a gate's budget is the only one the budget row judges.
+[[mutation]]
+name = "the ratchet asks its own table before a key's class"
+file = "src/stayfixed/assess/rule.py"
+before = "    if _class(key) in _NEUTRAL_CLASSES:\n        return _neutral\n    if key in ROWS:\n        return ROWS[key]\n    return next((row for prefix, row in PREFIX_ROWS if key.startswith(prefix)), _other)"
+after = "    if key in ROWS:\n        return ROWS[key]\n    found = next((row for prefix, row in PREFIX_ROWS if key.startswith(prefix)), None)\n    if found is not None:\n        return found\n    return _neutral if _class(key) in _NEUTRAL_CLASSES else _other"
+reddens = ["tests/assess/test_rule_classes.py::test_a_pull_request_may_change_a_session_budget[raised]"]
+
+[[mutation]]
+name = "the ratchet judges no key by its class"
+file = "src/stayfixed/assess/rule.py"
+before = "    if _class(key) in _NEUTRAL_CLASSES:\n        return _neutral"
+after = "    if False:\n        return _neutral"
+reddens = ["tests/assess/test_rule_classes.py::test_a_pull_request_may_change_memory_mode"]
+
+# `[ledger] code_roots` and `evidence_boundary_required_for` only grow: a list that lost an entry
+# is no tightening, whatever it gained.
+[[mutation]]
+name = "a ledger list that lost an entry reads as grown"
+file = "src/stayfixed/assess/rule.py"
+before = "    if after > before:\n        return Verdict.TIGHTENED"
+after = "    if after != before:\n        return Verdict.TIGHTENED"
+reddens = [
+  "tests/assess/test_rule_classes.py::test_adding_a_code_root_tightens_and_removing_one_is_refused_while_enforcing[root-removed]",
+  "tests/assess/test_rule_classes.py::test_adding_a_code_root_tightens_and_removing_one_is_refused_while_enforcing[root-swapped]",
+  "tests/assess/test_rule_classes.py::test_adding_a_code_root_tightens_and_removing_one_is_refused_while_enforcing[severity-removed]",
 ]

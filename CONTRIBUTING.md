@@ -76,8 +76,9 @@ the name is defined.
 ### Named caps
 
 A bound comes from one of three places. A limit a project may tune — a document's line or word
-count, a note's time to live — is a key under `[budgets]`, which a project may lower below its
-preset and never raise. A limit the harness sets — how much of an index it loads, how many
+count, a note's time to live — is a key under `[budgets]`, which the base branch and the machine
+owner may raise above its preset or lower below it, and a pull request may only lower when a
+gate reads it. A limit the harness sets — how much of an index it loads, how many
 characters of a hook's output it keeps — is a key under `[native_caps]`. Code reads both
 through `Config` (`src/stayfixed/config/schema.py`). Every other bound — a subprocess's
 wall-clock timeout, how many bytes of a repository-authored file are read, how deep a parser

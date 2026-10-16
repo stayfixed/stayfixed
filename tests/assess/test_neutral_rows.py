@@ -1,7 +1,8 @@
 """No gate reads a key the tighten-only rule calls `neutral`.
 
-The rule lets a pull request change `stayfixed.preset`, `stayfixed.profile`, `stayfixed.agents` and
-`project.name` whatever the base enforces, on the ground that no gate reads them. That ground is
+The rule lets a pull request change `stayfixed.preset`, `stayfixed.profile`, `stayfixed.agents`,
+`project.name`, `memory.mode` and a session's budget whatever the base enforces, on the ground that
+no gate reads them. That ground is
 a fact about the gates, so it is executed rather than asserted: every built-in gate runs over a
 clone once under the loaded configuration and once per neutral key moved, and must answer the
 same. The unchanged run has a finding, so "the same" is not two empty answers.
@@ -38,8 +39,16 @@ name = "widget"
 [budgets]
 agents_md_lines = 3
 """
-# The keys `tests/assess/test_rule.py` holds to `neutral` whatever the base enforces.
-NEUTRAL = ("stayfixed.preset", "stayfixed.profile", "stayfixed.agents", "project.name")
+# The keys `tests/assess/test_rule.py` and `tests/assess/test_rule_classes.py` hold to `neutral`
+# whatever the base enforces.
+NEUTRAL = (
+    "stayfixed.preset",
+    "stayfixed.profile",
+    "stayfixed.agents",
+    "project.name",
+    "memory.mode",
+    "budgets.memory_index_words",
+)
 
 
 def _moved(config: Config, key: str) -> Config:
@@ -49,6 +58,12 @@ def _moved(config: Config, key: str) -> Config:
         return replace(config, stayfixed=replace(config.stayfixed, profile="python"))
     if key == "stayfixed.agents":
         return replace(config, stayfixed=replace(config.stayfixed, agents=("codex",)))
+    if key == "memory.mode":
+        return replace(config, memory=replace(config.memory, mode="in-repo"))
+    if key == "budgets.memory_index_words":
+        budgets = config.budgets
+        configured = {**budgets.configured, "memory_index_words": 1}
+        return replace(config, budgets=replace(budgets, configured=configured))
     assert key == "project.name"
     return replace(config, project=replace(config.project, name="gadget"))
 

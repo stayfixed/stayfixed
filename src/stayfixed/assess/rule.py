@@ -27,10 +27,14 @@ repository is the machine's (`/tmp` on macOS, a symlinked home) and is admitted.
 derives, key by dotted key: each budget by its effective value, each custom gate as one key per
 field. A comment, a key spelled out at its default, a reordered `enforced` or `[gates] builtin`
 and `installed` beside a list that says the same are therefore no change. Every changed key gets
-one verdict. The change may enforce more gates and move its state forward (`initialised`,
+one verdict, and a key's class (`config.classes`) is asked first: a preference, a session's
+parameter, the machine owner's key and the plugin's are neutral, because no gate judges a pull
+request by them. The change may enforce more gates and move its state forward (`initialised`,
 `adopting`, `installed`); add a gate, and drop or re-command one the base does not enforce; lower
-a budget. The preset's name, the profile, the harnesses and the project's name are neutral,
-because no gate reads them; every value a preset switch moves is judged by its own key. The
+a gate's budget, which the base branch may set above the preset or below it; and add to
+`[ledger] code_roots` and `evidence_boundary_required_for`. The preset's name, the harnesses and
+the project's name are neutral too, because no gate reads them; every value a preset switch moves
+is judged by its own key. The
 recorded version and the workflow pin move together as an upgrade: to exactly the running
 stayfixed, never below the base's by the reader `stayfixed upgrade` refuses by, and a moved pin
 only at the commit the platform says is running and a public release tag names. Any other key is
@@ -57,6 +61,7 @@ from stayfixed.committed import (
     committed_document,
     repository_prefix,
 )
+from stayfixed.config.classes import KeyClass, class_of
 from stayfixed.config.loader import CONFIG_FILE, NOT_UTF8, loads
 from stayfixed.config.schema import STATES, Budgets, Config, CustomGate
 from stayfixed.errors import Failure, Refusal
@@ -244,6 +249,17 @@ def _custom_gate(key: str, sides: _Sides) -> Verdict:
     return Verdict.REFUSED if name in sides.base.stayfixed.enforcing else Verdict.NEUTRAL
 
 
+def _additive(key: str, sides: _Sides) -> Verdict:
+    """A list a gate reads more of as it grows: a superset tightens, the same set in another
+    order is neutral, and anything else is a key the rule cannot tell the direction of."""
+    section, _, name = key.partition(".")
+    before = set(getattr(getattr(sides.base, section), name))
+    after = set(getattr(getattr(sides.tree, section), name))
+    if after > before:
+        return Verdict.TIGHTENED
+    return Verdict.NEUTRAL if after == before else _other(key, sides)
+
+
 def _budget(key: str, sides: _Sides) -> Verdict:
     name = key.removeprefix("budgets.")
     lower = sides.tree.budgets.effective(name) <= sides.base.budgets.effective(name)
@@ -269,19 +285,44 @@ ROWS: Mapping[str, Row] = {
     "gates.builtin": _builtin_gates,
     "stayfixed.version": _upgrade,
     "ci.ref": _upgrade,
-    # Keys no gate reads. The preset's name is one: each value it moves is judged by its own row.
+    "ledger.code_roots": _additive,
+    "ledger.evidence_boundary_required_for": _additive,
+    # The repository's own keys no gate reads. The preset's name is one: each value it moves is
+    # judged by its own row.
     "stayfixed.preset": _neutral,
-    "stayfixed.profile": _neutral,
     "stayfixed.agents": _neutral,
     "project.name": _neutral,
 }
+# A gate's budget is the only `budgets.*` key this reaches: a session's is neutral by its class.
 PREFIX_ROWS: tuple[tuple[str, Row], ...] = (
     ("budgets.", _budget),
     ("gates.custom.", _custom_gate),
 )
+# The classes no gate judges a pull request by. `personal.*` and `native_caps.*` reach a `Config`
+# from the machine file and the preset, which both sides share, so either moves only with a
+# preset switch; a preference and a session's parameter are what the repository may choose.
+_NEUTRAL_CLASSES = frozenset(
+    {
+        KeyClass.PREFERENCE,
+        KeyClass.SESSION_PARAMETER,
+        KeyClass.MACHINE_ONLY,
+        KeyClass.PLUGIN_OWNED,
+    }
+)
+
+
+def _class(key: str) -> KeyClass | None:
+    """`key`'s class, or `None` for a custom gate's field, which has no row of its own."""
+    try:
+        return class_of(key)
+    except KeyError:
+        return None
 
 
 def _row(key: str) -> Row:
+    """The class first, then this rule's own table, then the key the rule cannot read."""
+    if _class(key) in _NEUTRAL_CLASSES:
+        return _neutral
     if key in ROWS:
         return ROWS[key]
     return next((row for prefix, row in PREFIX_ROWS if key.startswith(prefix)), _other)
@@ -291,7 +332,8 @@ def _values(config: Config) -> dict[str, object]:
     """Every value the loader derived, by dotted key: each budget by its effective value, each
     custom gate as one key per field. `native_caps` (the preset's) and `personal` (the machine
     file's) are `Config` fields and not `stayfixed.toml` sections; both sides load under one
-    machine file, so either moves only with a preset switch, and is compared like any field."""
+    machine file, so either moves only with a preset switch, and is compared like any field, and
+    neutral by its class."""
     values: dict[str, object] = {}
     for section in fields(config):
         table = getattr(config, section.name)

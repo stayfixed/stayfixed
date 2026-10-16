@@ -129,17 +129,17 @@ def test_the_skeleton_states_the_budgets_this_project_will_be_held_to() -> None:
     config = preset_defaults("widget")
     body = {t.id: t for t in _prepared(config).once}["agents-skeleton"].render()
     assert "at most 300\nlines and 3,000 words" in body and "below at most 50 lines" in body
-    # A project may lower a budget and never raise it, so the rendered sentence follows the override
-    # down and ignores it upward -- `effective`'s rule, read through the file that states it.
+    # A configured budget is the one in force, lowered or raised, so the rendered sentence follows
+    # the value both ways -- `effective`'s rule, read through the file that states it.
     # `agents_md_words` is left at the preset in the same case, so a fill that took one number for
     # all three cannot pass.
-    lowered = replace(
+    moved = replace(
         config,
         budgets=replace(config.budgets, configured={"agents_md_lines": 250, "status_lines": 999}),
     )
-    body = {t.id: t for t in _prepared(lowered).once}["agents-skeleton"].render()
-    assert "at most 250\nlines and 3,000 words" in body and "below at most 50 lines" in body
-    assert "300" not in body and "999" not in body and "%%" not in body
+    body = {t.id: t for t in _prepared(moved).once}["agents-skeleton"].render()
+    assert "at most 250\nlines and 3,000 words" in body and "below at most 999 lines" in body
+    assert "300" not in body and "at most 50 " not in body and "%%" not in body
 
 
 def test_targets_follow_the_configured_paths_and_not_the_preset() -> None:

@@ -1116,18 +1116,23 @@ def test_an_empty_home_is_named_as_a_home_the_database_does_not_record(
     )
 
 
-def test_a_budget_the_project_tried_to_raise_is_named(tmp_path: Path) -> None:
-    # A project may lower a budget below the preset and never raise it. A value above the
-    # preset is ignored rather than refused, so without this check nothing ever says that the
-    # number in the file is not the number in force.
+def test_a_budget_the_base_branch_raised_is_named_as_raised(tmp_path: Path) -> None:
+    # The base branch may raise a budget above the preset, and the value set is the value in
+    # force, so the row says which budgets are raised and names no clamp: no consumer applies one.
+    # Mutation (`mutations/`'s "the budgets row reads a raised budget as lowered"): the raise is
+    # called lowered.
     root = _initialised(tmp_path)
     (root / CONFIG_FILE).write_text(
-        LOCAL_ONLY.format(version=stayfixed.__version__) + "\n[budgets]\nstatus_lines = 9999\n",
+        LOCAL_ONLY.format(version=stayfixed.__version__)
+        + "\n[budgets]\nstatus_lines = 9999\nagents_md_lines = 1\n",
         encoding="utf-8",
     )
     check = _by_name(_checks(tmp_path, root), "budgets")
-    assert check.status == "warn"
-    assert "status_lines" in check.detail
+    assert (check.status, check.remedy) == ("ok", "")
+    assert check.detail == (
+        "1 budget(s) raised above the preset: status_lines; "
+        "1 budget(s) lowered below it: agents_md_lines"
+    )
 
 
 def _bin(tmp_path: Path, *, with_cli: bool) -> str:
@@ -1221,11 +1226,11 @@ def test_an_environment_with_no_path_at_all_resolves_nothing(tmp_path: Path) -> 
 
 
 def test_a_budget_the_project_lowered_is_reported_green_and_named(tmp_path: Path) -> None:
-    # The other side of the clamp, and the arm no case reached: lowering is the one direction a
-    # project may move a budget, so it is `ok` — but it is still a number that is not the
+    # The other direction: a lowered budget is `ok`, but it is still a number that is not the
     # preset's, and a reader of this report is entitled to know which. The `every budget is the
     # preset's` arm below is what keeps this one from passing for a fixture that configured
-    # nothing.
+    # nothing. Mutation (`mutations/`'s "the budgets row names no lowered budget"): the lowered
+    # budget goes unnamed.
     root = _initialised(tmp_path)
     (root / CONFIG_FILE).write_text(
         LOCAL_ONLY.format(version=stayfixed.__version__) + "\n[budgets]\nstatus_lines = 1\n",
@@ -1233,7 +1238,7 @@ def test_a_budget_the_project_lowered_is_reported_green_and_named(tmp_path: Path
     )
     check = _by_name(_checks(tmp_path, root), "budgets")
     assert check.status == "ok"
-    assert "status_lines" in check.detail
+    assert check.detail == "1 budget(s) lowered below it: status_lines"
     assert _by_name(_checks(tmp_path, _initialised(tmp_path)), "budgets").detail == (
         "every budget is the preset's"
     )

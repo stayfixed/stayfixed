@@ -126,7 +126,10 @@ class Memory:
 
 @dataclass(frozen=True)
 class Budgets:
-    """A project may lower a budget below the preset and never raise it."""
+    """The preset's budgets and the ones a layer set (`configured`): the base branch's
+    `stayfixed.toml` sets a gate's budget and the owner's machine file a session's, either way
+    above the preset or below it. What a pull request may do to a gate's budget is
+    `assess.rule`'s to judge, against the base's effective value."""
 
     NAMES: ClassVar[tuple[str, ...]] = (
         "agents_md_lines",
@@ -144,12 +147,12 @@ class Budgets:
     configured: dict[str, int] = field(default_factory=dict)
 
     def effective(self, name: str) -> int:
+        """The configured value when a layer set one, else the preset's."""
         if name not in self.NAMES:
             raise KeyError(name)
-        value = self.preset[name]
         if name in self.configured:
-            value = min(value, self.configured[name])
-        return value
+            return self.configured[name]
+        return self.preset[name]
 
     @property
     def overrides(self) -> dict[str, int]:

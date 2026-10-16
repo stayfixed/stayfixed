@@ -799,7 +799,7 @@ finding); every relative local link in the agents file resolves to a file — re
 document's own directory, and only when it lands inside the project root, since a link that
 walks out through `..` would be settled against the machine rather than the repository (an
 absolute link is not read at all, nor is an anchor, a URL or a `mailto:`). Budgets are the
-effective ones — the preset's, lowered by `[budgets]` if the project chose to. The memory
+effective ones — the preset's, or the value `[budgets]` sets in its place. The memory
 store's link graph is `stayfixed memory refs`'s, as advice.
 
 **Writes** nothing.
@@ -1075,8 +1075,9 @@ thing are no change at all. Each changed key gets one verdict:
 | `stayfixed.state` and `stayfixed.enforced`, judged as one | this tree enforces every gate the base enforces, and `state` does not move back (`initialised`, `adopting`, `installed`) | `tightened` when either moved forward, else `neutral` | `refused` |
 | `gates.builtin` | a gate added, or one removed that the base does not enforce | `tightened` when one was added, else `neutral` | `refused` |
 | `gates.custom.<name>.run` | the gate is new, or the base does not enforce it | `tightened` when new, else `neutral` | `refused` |
-| `budgets.<name>` | the effective value is at most the base's | `tightened` | `refused` |
-| `stayfixed.preset`, `stayfixed.profile`, `stayfixed.agents`, `project.name` | always: no gate reads them | `neutral` | — |
+| `budgets.<name>` for a gate's budget (`agents_md_lines`, `agents_md_words`, `status_lines`, `roadmap_prose_lines`, `roadmap_prose_words`) | the effective value is at most the base's | `tightened` | `refused` |
+| `ledger.code_roots` and `ledger.evidence_boundary_required_for` | every entry the base lists is still listed | `tightened` when one was added, else `neutral` | as any other key |
+| `stayfixed.preset`, `stayfixed.agents`, `project.name`, and every key whose class is a preference (`stayfixed.profile`, `memory.mode`, `memory.groups`, `memory.index_extra`), a session's budget (`memory_index_words`, `startup_rules_words`, `volatile_notes_words`, `volatile_ttl_days`), the machine owner's or the plugin's | always: no gate judges a pull request by them | `neutral` | — |
 | `stayfixed.version` and `ci.ref`, judged as one upgrade | the version is exactly the running stayfixed's and not earlier than the base's, and a moved `ci.ref` is the commit `--workflow-sha` names and one of stayfixed's release tags names | `upgrade` | as any other key |
 | any other key | — | — | `refused` while the base enforces any gate, `noted` while it enforces none |
 
@@ -1090,7 +1091,7 @@ promotes a gate is held to that gate in its own run.
 
 **How a refused change lands.** While any gate enforces, a pull request cannot make a change the
 table refuses, and under `installed` that includes routine upkeep: a `[paths]` value,
-`[artifacts] local`, a `[ledger] code_roots` entry, a `[commit_messages] types` entry, a custom
+`[artifacts] local`, a `[ledger] code_roots` entry removed, a `[commit_messages] types` entry, a custom
 gate's `run`, `[gates] custom_timeout_seconds`, `[project] base_branch`. The owner makes such a
 change by pushing it directly to the base branch; every later pull request is judged against it.
 If you want that push to need you, and not an agent working with your credentials, protect the
@@ -2878,7 +2879,7 @@ check with `name`, `status`, `detail` and `remedy`, so every remedy is there.
 | `wrapper` | whether the wrapper can actually reach stayfixed on this machine | one `run-hook.sh open --version`, and only under the plugin root this stayfixed is part of |
 | `hook-entries` | every hook entry, counted by provenance, with any that claims the stayfixed marker and is in no ledger named by position; and, as a warning, every skill, command or agent file whose frontmatter declares hooks, which it does not judge | `.claude/settings.json`, `.claude/settings.local.json`, `.codex/hooks.json`, and `~/.claude/settings.json`; every `SKILL.md` below a `.claude/skills` anywhere in the tree that git does not ignore, a checked-out submodule's committed files included, and every `*.md` below `.claude/commands` and `.claude/agents` |
 | `codex-trust` | whether any stayfixed hook is untrusted on Codex, and, when `[stayfixed] agents` lists `codex`, which surfaces are not verified there and which hold in CI | `stayfixed.toml`, the harness registry |
-| `budgets` | every budget that overrides the preset, and every one the ceiling clamps | `stayfixed.toml`, the preset |
+| `budgets` | every budget set above the preset, named raised, and every one set below it, named lowered | `stayfixed.toml`, the machine file, the preset |
 | `preferences` | each machine-owner key and each preference, with the layer its value came from — the preset, the repository or the machine file — and the value only where it is a boolean, a number or one of stayfixed's own words; a warning naming the machine file when it could not be used whole | `stayfixed.toml`, the preset, the machine file |
 | `cli-path` | whether `stayfixed` resolves on `PATH` | `PATH` |
 | `ci-ref` | whether `[ci] ref` is the commit of a released stayfixed tag (or the `v1` alias: a warning, as mutable, once a `1.x` release creates it, and red until then), and whether the rendered workflow pins the same ref — under `[ci] mode = "reusable"`, a workflow that is not there at all is a warning and never a green row, and so are a path that is there and is not a regular file and a file past the 256 KiB bound on the read | `git ls-remote --exit-code` over the public repository's tags, bounded at 30 seconds; *.github/workflows/stayfixed.yml*, read as a regular file and to a bound |
@@ -3456,7 +3457,7 @@ id_prefix = "BR"         # a capital letter, then up to seven more capitals or d
 code_roots = ["src", "tests", "scripts"]
 evidence_boundary_required_for = ["high"]
 
-[budgets]                # a project may lower a preset's budget, never raise it
+[budgets]                # the base branch raises or lowers a budget; a pull request lowers a gate's
 agents_md_lines = 300
 agents_md_words = 3000
 status_lines = 50
@@ -3606,8 +3607,11 @@ status that needs neither `severity:` nor `area:`. `severity` is `bugs new`'s re
 **`[budgets]`.** The first five are the documentation budgets `docs check` enforces:
 `agents_md_lines`, `agents_md_words` and `status_lines` over the always-loaded document and its
 `## Current status` section, `roadmap_prose_lines` and `roadmap_prose_words` over the roadmap
-above its trail marker. The last four bound the memory store. A budget is only ever lowered: a
-value above the preset's is ignored rather than refused, so raising one is not an escape.
+above its trail marker. The last four bound the memory store. The base branch and the machine
+owner raise or lower a budget — the base branch's `stayfixed.toml` any of the nine, the machine
+file a session's four — and the value set is the value in force. A pull request lowers a gate's
+budget only (`stayfixed gate` refuses a raise), and may move a session's,
+which no gate reads.
 
 `~/.config/stayfixed/config.toml` is yours, not the project's:
 

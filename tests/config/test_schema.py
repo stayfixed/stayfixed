@@ -12,13 +12,16 @@ def test_recommended_preset_carries_every_budget_and_cap_the_schema_knows() -> N
     assert set(preset["native_caps"]) == set(NativeCaps.NAMES)
 
 
-def test_effective_budget_is_the_minimum_of_preset_and_override() -> None:
+def test_effective_budget_is_the_configured_value_else_the_presets() -> None:
+    # A configured value stands in either direction. Mutation (`mutations/`'s "a budget is still
+    # only ever lowered"): the raise reads 1100.
     budgets = Budgets(
-        preset={"memory_index_words": 1100, "agents_md_lines": 300},
+        preset={"memory_index_words": 1100, "agents_md_lines": 300, "status_lines": 50},
         configured={"agents_md_lines": 250, "memory_index_words": 5000},
     )
     assert budgets.effective("agents_md_lines") == 250
-    assert budgets.effective("memory_index_words") == 1100
+    assert budgets.effective("memory_index_words") == 5000
+    assert budgets.effective("status_lines") == 50
     assert budgets.overrides == {"agents_md_lines": 250, "memory_index_words": 5000}
 
 

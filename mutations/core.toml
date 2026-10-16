@@ -4385,3 +4385,16 @@ file = "src/stayfixed/hooks/commands.py"
 before = "            _log_fallback(event_name, sink)"
 after = "            pass"
 reddens = ["tests/hooks/test_floor.py::test_pre_tool_use_prints_no_warning_and_logs_it_once"]
+
+# A budget is what the layer that may set it says: the base branch raises a gate's above the
+# preset, and the owner a session's.
+[[mutation]]
+name = "a budget is still only ever lowered"
+file = "src/stayfixed/config/schema.py"
+before = "        if name in self.configured:\n            return self.configured[name]"
+after = "        if name in self.configured:\n            return min(self.preset[name], self.configured[name])"
+reddens = [
+  "tests/config/test_budgets_raise.py::test_the_base_branch_raises_a_gate_budget",
+  "tests/config/test_budgets_raise.py::test_the_owner_raises_a_session_budget",
+  "tests/assess/test_rule_classes.py::test_a_pull_request_still_only_lowers_a_gate_budget",
+]

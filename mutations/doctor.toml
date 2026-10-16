@@ -2992,3 +2992,18 @@ file = "src/stayfixed/doctor/checks.py"
 before = "NAMES_SHOWN = 3"
 after = "NAMES_SHOWN = 4"
 reddens = ["tests/test_documents.py::test_every_sentence_that_counts_the_names_doctor_shows_is_the_cap"]
+
+# A budget set above the preset is in force, so the row names it raised and never calls it lowered.
+[[mutation]]
+name = "the budgets row reads a raised budget as lowered"
+file = "src/stayfixed/doctor/checks.py"
+before = "        name for name, value in budgets.configured.items() if value > budgets.preset[name]"
+after = "        name for name, value in budgets.configured.items() if value < budgets.preset[name]"
+reddens = ["tests/doctor/test_checks.py::test_a_budget_the_base_branch_raised_is_named_as_raised"]
+
+[[mutation]]
+name = "the budgets row names no lowered budget"
+file = "src/stayfixed/doctor/checks.py"
+before = "        name for name, value in budgets.configured.items() if value < budgets.preset[name]"
+after = "        name for name, value in budgets.configured.items() if value > budgets.preset[name]"
+reddens = ["tests/doctor/test_checks.py::test_a_budget_the_project_lowered_is_reported_green_and_named"]

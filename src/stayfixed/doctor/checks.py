@@ -589,32 +589,31 @@ def _codex_trust(context: Context) -> Row:
 
 
 def _budgets(context: Context) -> Row:
-    """Every budget overriding the preset, and every one the ceiling clamps.
+    """Every budget set above the preset and every one set below it.
 
-    A value above the preset's is ignored rather than refused, which is what makes lowering the
-    only direction — and also what makes the number in the file silently not the number in
-    force. Budget keys are `Budgets.NAMES` and the loader refuses any other, so these are
-    stayfixed's own names rather than a repository's strings.
+    The base branch's `stayfixed.toml` sets a gate's budget and the owner's machine file a
+    session's, in either direction, and the value set is the value in force
+    (`Budgets.effective`); a pull request lowering a gate's budget is `stayfixed gate`'s to judge,
+    not this row's. No consumer applies a platform cap to a budget — `native_caps` are checked
+    beside the budget, never folded into it — so the row names no clamp. Budget keys are
+    `Budgets.NAMES` and the loader refuses any other, so these are stayfixed's own names rather
+    than a repository's strings.
     """
     if context.config is None:
         return Row(SKIP, NO_CONFIG_SKIP, "")
     budgets = context.config.budgets
-    clamped = sorted(
-        name
-        for name, value in budgets.configured.items()
-        if value > budgets.preset.get(name, value)
+    raised = sorted(
+        name for name, value in budgets.configured.items() if value > budgets.preset[name]
     )
-    overrides = sorted(budgets.overrides)
-    if clamped:
-        return Row(
-            WARN,
-            f"{len(clamped)} budget(s) are set above the preset and are clamped down to it: "
-            f"{listed(clamped)}",
-            f"lower these values in {CONFIG_FILE}, or delete them to take the preset's",
-        )
-    if overrides:
-        return Row(OK, f"{len(overrides)} budget(s) lowered: {listed(overrides)}")
-    return Row(OK, "every budget is the preset's")
+    lowered = sorted(
+        name for name, value in budgets.configured.items() if value < budgets.preset[name]
+    )
+    moved = [
+        f"{len(names)} budget(s) {direction}: {listed(names)}"
+        for names, direction in ((raised, "raised above the preset"), (lowered, "lowered below it"))
+        if names
+    ]
+    return Row(OK, "; ".join(moved) or "every budget is the preset's")
 
 
 # The ways of working a repository, the overlay or the owner may choose (`classes.CLASSES`): the

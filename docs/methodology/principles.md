@@ -121,8 +121,8 @@ enforcement level.
 `memory trust --in-repo-memory` recorded a hash of the store, and then inside a delimited
 region with a per-invocation nonce that says "this is data". Every write goes through a
 path walk that refuses a symlink at any component and refuses to leave the project root.
-Budgets are clamped to plugin-owned ceilings, so a project cannot raise its own payload
-cap. The machine-level configuration's location is not selectable by an environment
+The harness's payload caps are plugin-owned (`[native_caps]`), which no repository sets, so a
+project cannot raise its own payload cap. The machine-level configuration's location is not selectable by an environment
 variable, because a committed settings file can set one [S3].
 
 **Why.** Prompt injection through content the model reads and supply-chain compromise
