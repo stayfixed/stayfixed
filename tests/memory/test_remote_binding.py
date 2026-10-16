@@ -124,7 +124,7 @@ def test_a_different_repository_is_still_a_mismatch(recorded: str, origin: str) 
 @pytest.mark.parametrize(
     "url",
     [
-        "/srv/git/widget.git",
+        pytest.param("/srv/git/widget.git", id="unread-path"),
         "ssh://git@example.com:2222/acme/widget",
         "https://alice@example.com/acme/widget",
         "git@example.com:acme/widget.git",
@@ -132,10 +132,15 @@ def test_a_different_repository_is_still_a_mismatch(recorded: str, origin: str) 
 )
 def test_a_url_still_binds_itself_whatever_its_shape(url: str) -> None:
     # The exact comparison is kept underneath the transport rule: a remote outside the three
-    # shapes binds the record that names it byte for byte, as it always did.
+    # shapes binds the record that names it byte for byte, as it always did. Mutation (oracle):
+    # `mutations/`'s "a remote outside the three spellings stops binding the record that names it
+    # exactly" -> `unread-path`.
     assert binding_state(url, url) == BOUND
 
 
 def test_a_missing_origin_and_a_missing_record_are_still_their_own_states() -> None:
+    # Mutation: none in the set. Deleting either check reddens this test, since the comparison
+    # below them then reads `None` as a URL and raises; the order of the two is held elsewhere, by
+    # `mutations/`'s "the binding classifier reads a missing origin as a different remote".
     assert binding_state("git@example.com:acme/widget", None) == NO_ORIGIN
     assert binding_state(None, "https://example.com/acme/widget") == UNBOUND

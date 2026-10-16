@@ -3005,8 +3005,10 @@ def test_an_owners_checkout_the_record_no_longer_binds_is_told_the_binding_is_wr
     assert _by_name(rows, "attached") == Check(
         "attached",
         "red",
-        "the overlay records a different remote URL under this project's name (an ssh and an "
-        "https URL of one repository are the same remote)",
+        "the overlay records a different remote URL under this project's name (one repository's "
+        "ssh and https URLs bind only as `git@host:owner/repo`, `ssh://git@host/owner/repo` or "
+        "`https://host/owner/repo`, with or without `.git`; any other spelling, one with a port "
+        "or another user among them, is compared exactly)",
         "run `stayfixed attach --check`, and `--trust-remote` only if it should be",
     )
 

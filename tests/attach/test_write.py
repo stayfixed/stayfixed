@@ -187,7 +187,11 @@ def test_the_same_repository_under_another_url_form_attaches_and_keeps_its_recor
 def test_a_different_repository_under_another_url_form_is_still_refused(tmp_path: Path) -> None:
     # The other side of the transport rule: an https origin of a different owner's repository is
     # a different remote, whatever transport the record used, and the refusal says the rule, so an
-    # owner reading it knows an ssh-against-https difference is not what stopped them.
+    # owner reading it knows which spellings bind and that any other is compared exactly. The
+    # sentence must stay true of every refusal, a same-repository spelling with a port or another
+    # user included, so it names the spellings that bind rather than calling ssh and https one
+    # remote. Mutation: none; the refusal's wording is the assertion, and the old sentence
+    # reddens it.
     root, store, machine = _attachable(
         tmp_path,
         recorded="git@example.com:o/p.git",
@@ -206,7 +210,9 @@ def test_a_different_repository_under_another_url_form_is_still_refused(tmp_path
             home=tmp_path / "home",
         )
     said = str(refused.value)
-    assert "different remote URL" in said and "the same remote" in said
+    assert "different remote URL" in said and "`https://host/owner/repo`" in said
+    assert "any other spelling" in said and "is compared exactly" in said
+    assert "the same remote" not in said
     assert "--trust-remote" in said
     assert_snapshot_unchanged(root, before)
 
