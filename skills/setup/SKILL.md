@@ -41,17 +41,20 @@ description: Configure the machine for stayfixed — the preset, the personal pa
    trust record's directory. Relay the sandbox settings it prints for the user to set; never write
    a `sandbox` key yourself. `stayfixed doctor`'s `approval-boundary` row then says what is in
    force: red once the machine holds an approval and the sandbox is off, a repository file turns it
-   off, `setup`'s deny rules are not there as it spells them, or a setting widens them; a warning
-   for the same before any approval, and a warning while all holds until managed settings make the
-   sandbox admin-required (`sandbox.allowUnsandboxedCommands = false` there; from Claude Code
-   2.1.285 a repository's widening settings are then ignored); green only then. An entry of
+   off, `sandbox.filesystem.disabled` turns off what it confines, `setup`'s deny rules are not
+   there as it spells them, or a setting widens them; a warning for the same before any approval,
+   and a warning while all holds until the sandbox's `true` and the deny rules come from managed
+   settings or the user's own file (never only from a repository's, which a later commit can
+   change) and managed settings set `sandbox.enabled = true`, `sandbox.failIfUnavailable = true`
+   and `sandbox.allowUnsandboxedCommands = false`; green only then. An entry of
    `sandbox.filesystem.allowWrite`, `permissions.additionalDirectories` or a file-edit allow rule
-   is safe only as a literal path outside the project and the trust record's directory, `/…` or
-   `~/…` (`//…` or `~/…` in a file-edit rule; a `~/` one only where it stays clear under every home
-   it may mean, `HOME` included), of letters, digits, `.`, `_`, `-` and `/`; every other entry is a
-   gap the row names by key and file. Where `CLAUDE_CONFIG_DIR` names a user settings directory
-   besides `~/.claude`, that directory may only make the row worse, and `setup` writes it too only
-   where it exists outside the project; relay the line that names it.
+   is safe only as a literal path outside the project and the trust record's directory, inside no
+   other such entry, `/…` or `~/…` (`//…` or `~/…` in a file-edit rule; a `~/` one only where it
+   stays clear under every home it may mean, `HOME` included), of letters, digits, `.`, `_`, `-`
+   and `/`; every other entry is a gap the row names by key and file. Where `CLAUDE_CONFIG_DIR`
+   names a user settings directory besides `~/.claude`, that directory may only make the row
+   worse, and `setup` writes it too only where it exists outside the project and neither `--home`
+   nor `--settings` was given; relay the line that names it.
    With the sandbox on, the agent's shell cannot write the machine directory at all: when `setup`,
    `trust revoke` or `memory index` says a person must run it in their own terminal, outside the
    agent's sandbox, relay that sentence and stop — never retry it outside the sandbox yourself.

@@ -3414,3 +3414,13 @@ file = "README.md"
 before = "repository reach the model only after you run `stayfixed trust approve memory` once, at a"
 after = "repository reach the model only after you run `stayfixed memory trust` once, at a"
 reddens = ["tests/test_documents.py::test_no_shipped_document_names_memory_trust_outside_its_alias_note"]
+
+# Every stayfixed the walk starts reads the walk's own managed settings, never the system's.
+[[mutation]]
+name = "a child stayfixed of the suite reads the system's managed settings"
+file = "tests/ownerhome.py"
+before = "        f\"{moved}\"\n"
+after = "        \"\"\n"
+reddens = [
+  "tests/test_install_path.py::test_doctor_is_green_on_the_attached_fixture",
+]

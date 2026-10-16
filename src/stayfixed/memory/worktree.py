@@ -336,6 +336,9 @@ class Links:
     # The harness link this store is approved for, not made because the caller said not to make
     # one (`Withhold`): a third thing to say, since the harness cannot see the store.
     withheld: bool = False
+    # The approval this run could not carry across the index it wrote, because the trust record's
+    # directory refused the write as an agent's sandbox refuses one (`_render_missing_index`).
+    refresh_refused: bool = False
 
 
 @dataclass(frozen=True)
@@ -710,17 +713,18 @@ def attach_main(
                 "the link tree was created and the store still does not resolve; "
                 "`stayfixed memory index --check` reports why"
             )
-        _render_missing_index(store, config)
+        refused = _render_missing_index(store, config)
         half = _harness_half(root, store, config, MakeUnder(home) if withhold is None else withhold)
         created += half.created
         revoked += half.revoked
     except OSError as exc:
         raise PartialLink(created, exc) from exc
-    return Links(created, revoked, withheld=half.withheld)
+    return Links(created, revoked, withheld=half.withheld, refresh_refused=refused)
 
 
-def _render_missing_index(store: Store, config: Config) -> None:
-    """Put an index behind the link `attach_main` just made, when the store has none yet.
+def _render_missing_index(store: Store, config: Config) -> bool:
+    """Put an index behind the link `attach_main` just made, when the store has none yet; whether
+    the trust record refused the refresh as an agent's sandbox refuses a write.
 
     A first attach linked `<paths.memory>/MEMORY.md` at a file nothing had written, so every
     session read a dangling link and `memory index --check` failed until someone ran
@@ -733,15 +737,18 @@ def _render_missing_index(store: Store, config: Config) -> None:
     ever sees the index missing.
     """
     if index_source(store, config) is not None:
-        return
+        return False
     before = trust.snapshot(store, config)
     rendered = render_index(reconcile(store, config, write=False), config, store)
     written = write_index(store, config, rendered)
     # A refresh an agent's sandbox refused leaves the approval at the person's digest, which the
     # store no longer matches: the harness link's gate then reads it as lapsed and says so, so
-    # attach carries on rather than stopping with half its links made.
-    with contextlib.suppress(SandboxedWrite):
+    # attach carries on rather than stopping with half its links made, and says why it lapsed.
+    try:
         trust.refresh_if_trusted(store, config, before, [written])
+    except SandboxedWrite:
+        return True
+    return False
 
 
 def _detach_source(config: Config, machine: Path | None, name: str) -> Path | None:

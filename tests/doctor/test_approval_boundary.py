@@ -27,6 +27,7 @@ from stayfixed.doctor.api import OK, RED, SKIP, WARN, Check
 from stayfixed.doctor.checks import run_checks
 from stayfixed.harnesses import CLAUDE
 from stayfixed.printed import quoted
+from stayfixed.trust import boundary as trust_boundary
 from stayfixed.trust.api import approve, managed_settings
 from tests.runners import Recorder
 
@@ -38,6 +39,15 @@ SANDBOX_OFF: dict[str, Any] = {"sandbox": {"enabled": False}}
 ADMIN_REQUIRED: dict[str, Any] = {"sandbox": {"enabled": True, "allowUnsandboxedCommands": False}}
 USER_NO_RETRY: dict[str, Any] = {"sandbox": {"enabled": True, "allowUnsandboxedCommands": False}}
 MANAGED_NO_RETRY: dict[str, Any] = {"sandbox": {"allowUnsandboxedCommands": False}}
+# Claude Code's sandboxing reference's recipe for enforcing the sandbox from managed settings (not
+# measured here): admin-required, and refusing to start where the sandbox cannot. Only with
+# `failIfUnavailable` there may the row be green.
+ENFORCED: dict[str, Any] = {
+    "sandbox": {"enabled": True, "failIfUnavailable": True, "allowUnsandboxedCommands": False}
+}
+MANAGED_NO_RETRY_ENFORCED: dict[str, Any] = {
+    "sandbox": {"allowUnsandboxedCommands": False, "failIfUnavailable": True}
+}
 
 
 def _deny(*rules: str) -> dict[str, Any]:
@@ -139,7 +149,7 @@ def _user_forbids_retry(m: Machine) -> None:
 
 def _admin_required(m: Machine) -> None:
     m.user(_deny(_rule(m.record_directory)))
-    m.managed(ADMIN_REQUIRED)
+    m.managed(ENFORCED)
 
 
 def _project_disables(m: Machine) -> None:
@@ -156,7 +166,7 @@ def _project_disables_under_admin(m: Machine) -> None:
     # The measured case: the user turns the sandbox on, managed settings say only
     # `allowUnsandboxedCommands = false`, and the project's `false` is ignored.
     m.user(_merged(SANDBOX_ON, _deny(_rule(m.record_directory))))
-    m.managed(MANAGED_NO_RETRY)
+    m.managed(MANAGED_NO_RETRY_ENFORCED)
     m.project(SANDBOX_OFF)
 
 
@@ -164,12 +174,12 @@ def _admin_by_drop_in(m: Machine) -> None:
     m.user(_merged(SANDBOX_ON, _deny(_rule(m.record_directory))))
     path = managed_settings()
     assert path is not None
-    _write(path.parent / "managed-settings.d" / "10-sandbox.json", ADMIN_REQUIRED)
+    _write(path.parent / "managed-settings.d" / "10-sandbox.json", ENFORCED)
 
 
 def _deny_in_the_local_file(m: Machine) -> None:
     m.user(SANDBOX_ON)
-    m.managed(ADMIN_REQUIRED)
+    m.managed(ENFORCED)
     m.local(_deny(_rule(m.record_directory)))
 
 
@@ -185,7 +195,7 @@ def _deny_in_the_local_file(m: Machine) -> None:
         pytest.param(_user_forbids_retry, 1, WARN, id="user-forbids-retry"),
         pytest.param(_admin_required, 1, OK, id="admin-required"),
         pytest.param(_admin_by_drop_in, 1, OK, id="admin-by-drop-in"),
-        pytest.param(_deny_in_the_local_file, 1, OK, id="deny-in-the-local-file"),
+        pytest.param(_deny_in_the_local_file, 1, WARN, id="deny-in-the-local-file"),
         pytest.param(_project_disables, 1, RED, id="project-disables"),
         pytest.param(_project_disables, 0, WARN, id="project-disables-no-approval"),
         pytest.param(_local_disables, 1, RED, id="local-disables"),
@@ -241,34 +251,90 @@ def test_a_project_that_turns_the_sandbox_off_is_named(m: Machine) -> None:
 
 
 def test_a_boundary_that_is_not_admin_required_says_where_to_make_it_so(m: Machine) -> None:
-    # The warning names the managed-settings file and the two keys, and says what they stop.
-    # Mutation (`mutations/`'s "the boundary row takes a user's allowUnsandboxedCommands for
-    # admin-required"): the row reads ok and names nothing.
+    # The warning names the managed-settings file and the three keys of the reference's recipe,
+    # and says what they stop. Mutation (`mutations/`'s "the boundary row takes a user's
+    # allowUnsandboxedCommands for admin-required"): the row says nothing of admin-required.
     _user_forbids_retry(m)
     m.approvals(1)
     row = m.row()
     managed = managed_settings()
-    assert row.detail == "; ".join((boundary.HELD.format(count=1), boundary.NOT_ADMIN))
+    assert row.status == WARN, row
+    assert row.detail == "; ".join(
+        (
+            boundary.HELD.format(count=1),
+            boundary.NOT_ADMIN,
+            boundary.NO_FAIL_CLOSED.format(managed=managed),
+        )
+    )
     assert row.remedy == boundary.MAKE_IT_ADMIN.format(managed=managed)
     for said in (
         "sandbox.enabled = true",
+        "sandbox.failIfUnavailable = true",
         "sandbox.allowUnsandboxedCommands = false",
         str(managed),
     ):
         assert said in row.remedy
 
 
-def test_a_settings_file_that_is_not_json_is_read_as_absent_and_named(m: Machine) -> None:
-    # Never a crash, and never red because of it alone: the file is read as absent for its layer,
-    # named in the detail, and the row cannot be green beside it, since what Claude Code makes of
-    # the file is not known here. Mutations (`mutations/`'s "a settings file that is not JSON ends
-    # the boundary row" -> the row is red, its check unable to run; "the boundary row is green
-    # beside a settings file it could not read" -> ok).
-    _admin_required(m)
-    m.project("{ not json")
+@pytest.mark.parametrize(
+    ("managed", "expected"),
+    [
+        pytest.param(ADMIN_REQUIRED, WARN, id="admin-required-only"),
+        pytest.param(
+            _merged(ADMIN_REQUIRED, {"sandbox": {"failIfUnavailable": False}}),
+            WARN,
+            id="fail-if-unavailable-false",
+        ),
+        pytest.param(ENFORCED, OK, id="enforced"),
+    ],
+)
+def test_green_needs_managed_settings_to_refuse_a_sandbox_that_cannot_start(
+    m: Machine, managed: dict[str, Any], expected: str
+) -> None:
+    # Admin-required is not yet enforced: where the sandbox cannot start, Claude Code runs commands
+    # outside it unless managed settings set `sandbox.failIfUnavailable = true`, the sandboxing
+    # reference's recipe. The warning names the key and the managed file; the user's own `true`
+    # does not count. Mutations (`mutations/`'s "the boundary row is green without
+    # failIfUnavailable" -> `admin-required-only` and `fail-if-unavailable-false` are ok; "the
+    # boundary row takes the user's failIfUnavailable for the managed one" -> the same two are ok).
+    fail_closed = {"sandbox": {"enabled": True, "failIfUnavailable": True}}
+    m.user(_merged(fail_closed, _deny(_rule(m.record_directory))))
+    m.managed(managed)
     m.approvals(1)
     row = m.row()
+    assert row.status == expected, row
+    path = managed_settings()
+    if expected == WARN:
+        assert row.detail == "; ".join(
+            (boundary.HELD.format(count=1), boundary.NO_FAIL_CLOSED.format(managed=path))
+        )
+        assert row.remedy == boundary.MAKE_IT_ADMIN.format(managed=path)
+    else:
+        guarded = boundary.GUARDED.format(rule=_rule(m.record_directory))
+        assert row.detail == "; ".join((boundary.HELD.format(count=1), guarded))
+
+
+@pytest.mark.parametrize("fault", ["not-json", "not-utf-8", "unreadable"])
+def test_a_settings_file_that_is_not_json_is_read_as_absent_and_named(
+    m: Machine, fault: str
+) -> None:
+    # Never a crash, and never red because of it alone: the file is read as absent for its layer,
+    # named in the detail with each cause it may have, and the row cannot be green beside it, since
+    # what Claude Code makes of the file is not known here. Mutations (`mutations/`'s "a settings
+    # file that is not JSON ends the boundary row" -> `not-json` is red, its check unable to run;
+    # "the boundary row is green beside a settings file it could not read" -> every case is ok).
+    _admin_required(m)
     (project,) = CLAUDE.settings
+    m.project("{ not json")
+    if fault == "not-utf-8":
+        (m.root / project).write_bytes(b'{"sandbox": "\xff"}')
+    elif fault == "unreadable":
+        (m.root / project).chmod(0)
+    m.approvals(1)
+    try:
+        row = m.row()
+    finally:
+        (m.root / project).chmod(0o644)
     assert row.status == WARN, row
     assert row.detail == "; ".join(
         (
@@ -277,6 +343,7 @@ def test_a_settings_file_that_is_not_json_is_read_as_absent_and_named(m: Machine
             boundary.NOT_READ.format(label=project),
         )
     )
+    assert row.remedy == boundary.MAKE_IT_JSON
 
 
 def test_the_row_skips_without_claude_code(m: Machine) -> None:
@@ -305,7 +372,7 @@ def test_a_claude_config_dir_alone_is_judged_and_never_above_a_warning(
     deny = _deny(_rule(m.record_directory)) if holds == "everything" else {}
     _write(config / "settings.json", _merged(ADMIN_REQUIRED, deny))
     m.env["CLAUDE_CONFIG_DIR"] = str(config)
-    m.managed(ADMIN_REQUIRED)
+    m.managed(ENFORCED)
     m.approvals(1)
     row = m.row()
     answer = (
@@ -338,7 +405,7 @@ def test_the_home_s_directory_is_the_subject_and_claude_config_dir_only_worsens_
     m.user(ADMIN_REQUIRED if lacking == "home" else good)
     _write(config / "settings.json", good if lacking == "home" else ADMIN_REQUIRED)
     m.env["CLAUDE_CONFIG_DIR"] = str(config)
-    m.managed(ADMIN_REQUIRED)
+    m.managed(ENFORCED)
     m.approvals(1)
     row = m.row()
     held = boundary.HELD.format(count=1)
@@ -367,7 +434,7 @@ def test_a_claude_config_dir_inside_the_project_is_never_judged(
     planted = m.root / ".claude-config"
     _write(planted / "settings.json", _merged(ADMIN_REQUIRED, _deny(_rule(m.record_directory))))
     m.env["CLAUDE_CONFIG_DIR"] = str(planted)
-    m.managed(ADMIN_REQUIRED)
+    m.managed(ENFORCED)
     m.approvals(1)
     ignored = boundary.CONFIG_DIR_IN_PROJECT.format(path=quoted(str(planted)))
     if home_has_one:
@@ -395,7 +462,7 @@ def test_a_claude_config_dir_that_leads_into_the_project_is_inside_it(
     link.symlink_to(planted)
     (m.home / ".claude").rmdir()
     m.env["CLAUDE_CONFIG_DIR"] = str(link)
-    m.managed(ADMIN_REQUIRED)
+    m.managed(ENFORCED)
     m.approvals(1)
     row = m.row()
     assert (row.status, row.detail) == (
@@ -441,7 +508,7 @@ def test_claude_config_dir_is_the_home_s_own_only_when_spelled_alike_to_the_byte
     # normalises CLAUDE_CONFIG_DIR" -> `trailing-slash` is judged once).
     m.user("{ not json")
     m.local(_deny(_rule(m.record_directory)))
-    m.managed(ADMIN_REQUIRED)
+    m.managed(ENFORCED)
     m.env["CLAUDE_CONFIG_DIR"] = str(m.home / ".claude") + suffix
     m.approvals(1)
     row = m.row()
@@ -500,7 +567,7 @@ def test_a_linked_record_directory_is_covered_only_by_both_rules_setup_writes(
     m.machine = linked / "config.toml"
     rules = {"named": _rule(linked), "resolved": _rule(real.resolve())}
     m.user(_deny(*(rules[name] for name in spelled)))
-    m.managed(ADMIN_REQUIRED)
+    m.managed(ENFORCED)
     m.approvals(1)
     row = m.row()
     if missing is None:
@@ -531,9 +598,9 @@ def test_a_deny_rule_in_any_spelling_but_setup_s_is_not_counted(
     # widening entries on macOS, is on here too and still does not count a case variant. Mutation
     # (`mutations/`'s "the boundary row counts a deny rule by its normalised spelling"): the
     # dot, doubled-slash, parent and case spellings read ok.
-    monkeypatch.setattr(boundary, "CASE_FOLDS", True)
+    monkeypatch.setattr(trust_boundary, "CASE_FOLDS", True)
     m.user(_deny(spelling(m.record_directory)))
-    m.managed(ADMIN_REQUIRED)
+    m.managed(ENFORCED)
     m.approvals(1)
     row = m.row()
     assert row.status == RED, row
@@ -545,9 +612,9 @@ def test_a_deny_rule_in_any_spelling_but_setup_s_is_not_counted(
 @pytest.mark.parametrize(
     ("managed", "user_turns_it_on", "expected"),
     [
-        pytest.param(MANAGED_NO_RETRY, True, OK, id="owner-true"),
-        pytest.param(MANAGED_NO_RETRY, False, RED, id="owner-silent"),
-        pytest.param(ADMIN_REQUIRED, False, OK, id="managed-true"),
+        pytest.param(MANAGED_NO_RETRY_ENFORCED, True, OK, id="owner-true"),
+        pytest.param(MANAGED_NO_RETRY_ENFORCED, False, RED, id="owner-silent"),
+        pytest.param(ENFORCED, False, OK, id="managed-true"),
     ],
 )
 def test_while_admin_required_a_repository_false_gives_way_only_to_an_owners_true(
@@ -796,7 +863,7 @@ def test_a_setting_that_widens_confinement_is_a_gap_unless_shown_safe(
     written = document(m)
     base = _merged(SANDBOX_ON, _deny(_rule(m.record_directory)))
     if admin:
-        m.managed(ADMIN_REQUIRED)
+        m.managed(ENFORCED)
     if where == "user":
         m.user(_merged(base, written))
     else:
@@ -903,7 +970,7 @@ def test_a_case_variant_names_the_record_on_a_volume_that_folds_case(
     # of the record's directory reaches it. Mutation (`mutations/`'s "the boundary row compares
     # paths by their case where the volume folds it"): the entry is shown safe and the row only
     # warns.
-    monkeypatch.setattr(boundary, "CASE_FOLDS", True)
+    monkeypatch.setattr(trust_boundary, "CASE_FOLDS", True)
     m.user(_merged(SANDBOX_ON, _deny(_rule(m.record_directory))))
     m.project(_allow_write(str(m.record_directory).swapcase()))
     m.approvals(1)
@@ -918,10 +985,10 @@ def test_composed_and_decomposed_spellings_compare_alike_where_names_fold(
     # macOS hands back a name decomposed or composed, so the record's two spellings and an entry
     # compare in NFC there. Mutation (`mutations/`'s "the boundary row compares names composed
     # and decomposed as different"): the two spellings differ.
-    monkeypatch.setattr(boundary, "CASE_FOLDS", True)
-    assert boundary._folded("/Users/José") == boundary._folded("/Users/José")
-    monkeypatch.setattr(boundary, "CASE_FOLDS", False)
-    assert boundary._folded("/Users/José") != boundary._folded("/Users/José")
+    monkeypatch.setattr(trust_boundary, "CASE_FOLDS", True)
+    assert trust_boundary.folded("/Users/José") == trust_boundary.folded("/Users/José")
+    monkeypatch.setattr(trust_boundary, "CASE_FOLDS", False)
+    assert trust_boundary.folded("/Users/José") != trust_boundary.folded("/Users/José")
 
 
 def test_the_row_runs_no_regular_expression_on_what_a_settings_file_holds() -> None:
@@ -938,3 +1005,287 @@ def test_the_row_runs_no_regular_expression_on_what_a_settings_file_holds() -> N
         for alias in node.names
     } | {node.module for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)}
     assert "re" not in imported
+
+
+# Protection a repository's file alone provides: in force for this session, and gone with the next
+# commit that removes it, which a pull delivers with no person acting. It decides red as any layer
+# does, and is never green.
+def _repository_only(m: Machine) -> None:
+    # Managed settings make the sandbox admin-required and refuse to start without it,
+    # which an MDM commonly does without turning it on; the user's file holds neither the sandbox
+    # nor the rule; the repository's committed file holds both.
+    m.managed(MANAGED_NO_RETRY_ENFORCED)
+    m.project(_merged(SANDBOX_ON, _deny(_rule(m.record_directory))))
+
+
+def _sandbox_from_local(m: Machine) -> None:
+    m.managed(MANAGED_NO_RETRY_ENFORCED)
+    m.user(_deny(_rule(m.record_directory)))
+    m.local(SANDBOX_ON)
+
+
+def _local_true_over_user_false(m: Machine) -> None:
+    m.managed(MANAGED_NO_RETRY_ENFORCED)
+    m.user(_merged(SANDBOX_OFF, _deny(_rule(m.record_directory))))
+    m.local(SANDBOX_ON)
+
+
+def _deny_from_project(m: Machine) -> None:
+    m.managed(ENFORCED)
+    m.project(_deny(_rule(m.record_directory)))
+
+
+def _owner_and_repository(m: Machine) -> None:
+    m.managed(MANAGED_NO_RETRY_ENFORCED)
+    m.user(_merged(SANDBOX_ON, _deny(_rule(m.record_directory))))
+    m.project(_merged(SANDBOX_ON, _deny(_rule(m.record_directory))))
+
+
+def _repository_true_no_deny(m: Machine) -> None:
+    m.managed(MANAGED_NO_RETRY_ENFORCED)
+    m.project(SANDBOX_ON)
+
+
+@pytest.mark.parametrize(
+    ("settings", "expected", "said"),
+    [
+        pytest.param(
+            _repository_only,
+            WARN,
+            lambda m: (
+                boundary.SANDBOX_FROM_REPOSITORY.format(label=_PROJECT),
+                boundary.DENY_FROM_REPOSITORY.format(
+                    rule=_rule(m.record_directory), label=_PROJECT
+                ),
+            ),
+            id="repository-only",
+        ),
+        pytest.param(
+            _sandbox_from_local,
+            WARN,
+            lambda m: (boundary.SANDBOX_FROM_REPOSITORY.format(label=_LOCAL),),
+            id="sandbox-from-local",
+        ),
+        pytest.param(
+            _local_true_over_user_false,
+            WARN,
+            lambda m: (boundary.SANDBOX_FROM_REPOSITORY.format(label=_LOCAL),),
+            id="local-true-over-user-false",
+        ),
+        pytest.param(
+            _deny_from_project,
+            WARN,
+            lambda m: (
+                boundary.DENY_FROM_REPOSITORY.format(
+                    rule=_rule(m.record_directory), label=_PROJECT
+                ),
+            ),
+            id="deny-from-project",
+        ),
+        pytest.param(
+            _owner_and_repository,
+            OK,
+            lambda m: (boundary.GUARDED.format(rule=_rule(m.record_directory)),),
+            id="owner-and-repository",
+        ),
+        pytest.param(
+            _repository_true_no_deny,
+            RED,
+            lambda m: (
+                boundary.NO_DENY.format(rule=_rule(m.record_directory)),
+                boundary.SANDBOX_FROM_REPOSITORY.format(label=_PROJECT),
+            ),
+            id="repository-true-no-deny",
+        ),
+    ],
+)
+def test_protection_only_a_repository_s_file_provides_is_never_green(
+    m: Machine, settings: Any, expected: str, said: Any
+) -> None:
+    # The sandbox's `true` and the deny rule count toward green only from managed settings or the
+    # user's file; from a repository's file alone the row is at best a warning naming that file,
+    # with the remedy that puts them in the owner's file. Where the owner's file holds them too,
+    # the repository's copy changes nothing. Mutations (`mutations/`'s "the boundary row counts a
+    # repository's true toward green" -> `repository-only`, `sandbox-from-local` and
+    # `local-true-over-user-false` say no such thing, and the first and the last of those are ok
+    # or name the deny rule alone; "the boundary row counts a repository's deny rule toward green"
+    # -> `repository-only` and `deny-from-project` say nothing of the rule).
+    settings(m)
+    m.approvals(1)
+    row = m.row()
+    assert row.status == expected, row
+    assert row.detail == "; ".join((boundary.HELD.format(count=1), *said(m)))
+    if expected == WARN:
+        assert row.remedy == boundary.ADD_THE_BOUNDARY
+
+
+# `sandbox.filesystem.disabled`, which turns the sandbox's filesystem confinement off while
+# `enabled` stays true (the sandboxing reference). Every case below is otherwise enforced and green.
+_FILESYSTEM_OFF: dict[str, Any] = {"sandbox": {"filesystem": {"disabled": True}}}
+
+
+@pytest.mark.parametrize(
+    ("where", "value", "admin", "expected"),
+    [
+        pytest.param("managed", True, True, RED, id="managed"),
+        pytest.param("user", True, True, RED, id="user"),
+        pytest.param("user", "yes", True, RED, id="user-not-a-bool"),
+        pytest.param("project", True, False, RED, id="project"),
+        pytest.param("local", True, False, RED, id="local"),
+        pytest.param("project", True, True, OK, id="project-under-admin"),
+        pytest.param("user", False, True, OK, id="user-false"),
+    ],
+)
+def test_a_sandbox_that_confines_no_file_is_a_gap(
+    m: Machine, where: str, value: object, admin: bool, expected: str
+) -> None:
+    # With the filesystem layer off, an agent's sandboxed shell writes anywhere, the trust record
+    # included, so the key is a gap shaped as the sandbox being off: in managed settings and the
+    # user's file always, set to anything but `false`; in a repository's file while the sandbox is
+    # not admin-required (it is ignored there while it is, as every loosening repository key is).
+    # Mutations (`mutations/`'s "the boundary row reads no sandbox.filesystem.disabled" -> every
+    # red case is ok or warns; "the boundary row reads filesystem.disabled only when it is true"
+    # -> `user-not-a-bool` is ok; "the boundary row reads a repository's filesystem.disabled while
+    # admin-required" -> `project-under-admin` is red).
+    disabled = {"sandbox": {"filesystem": {"disabled": value}}}
+    owner = _merged(SANDBOX_ON, _deny(_rule(m.record_directory)))
+    managed = ENFORCED if admin else _merged(SANDBOX_ON, {"sandbox": {"failIfUnavailable": True}})
+    if where == "managed":
+        m.managed(_merged(managed, disabled))
+        m.user(owner)
+    elif where == "user":
+        m.managed(managed)
+        m.user(_merged(owner, disabled))
+    else:
+        m.managed(managed)
+        m.user(owner)
+        getattr(m, where)(disabled)
+    m.approvals(1)
+    row = m.row()
+    assert row.status == expected, row
+    if expected == RED:
+        label = {
+            "managed": str(managed_settings()),
+            "user": _USER,
+            "project": _PROJECT,
+            "local": _LOCAL,
+        }[where]
+        assert row.detail == "; ".join(
+            (boundary.HELD.format(count=1), boundary.FILESYSTEM_OFF.format(label=label))
+        )
+        assert row.remedy == boundary.KEEP_THE_FILESYSTEM
+
+
+def test_a_sandbox_that_confines_no_file_warns_with_no_approval(m: Machine) -> None:
+    # As every gap: a warning until the machine holds an approval. Mutation (`mutations/`'s "the
+    # boundary row is red with no approval"): red.
+    m.managed(ENFORCED)
+    m.user(_merged(SANDBOX_ON, _FILESYSTEM_OFF, _deny(_rule(m.record_directory))))
+    row = m.row()
+    assert (row.status, row.detail) == (
+        WARN,
+        "; ".join((boundary.NONE_HELD, boundary.FILESYSTEM_OFF.format(label=_USER))),
+    )
+
+
+# Two widening entries, one the same place as the other or inside it: an agent's shell writes in
+# the outer one, so the inner one may be a link to the record's directory by the time a session
+# resolves it. Whether a deny rule holds inside a wider write entry was not measured, so the inner
+# one is a gap; an entry beside another is not.
+def _nested_case(
+    where: dict[str, dict[str, Any]], admin: bool, expected: str, said: list[tuple[str, str]]
+) -> tuple[dict[str, dict[str, Any]], bool, str, list[tuple[str, str]]]:
+    return (where, admin, expected, said)
+
+
+NESTED_CASES = [
+    pytest.param(
+        *_nested_case({"user": _allow_write("~/a", "~/a/b")}, True, RED, [(_USER, _WRITE)]),
+        id="user-inside-user",
+    ),
+    pytest.param(
+        *_nested_case(
+            {"user": _directories("~/a"), "project": _allow_write("~/a/b")},
+            False,
+            RED,
+            [(_PROJECT, _WRITE)],
+        ),
+        id="project-inside-user",
+    ),
+    pytest.param(
+        *_nested_case(
+            {"user": _merged(_allow_write("/tmp/build"), _edit("//tmp/build"))},
+            True,
+            RED,
+            [(_USER, _WRITE), (_USER, _EDIT)],
+        ),
+        id="one-place-twice",
+    ),
+    pytest.param(
+        *_nested_case({"user": _allow_write("~/a", "~/ab")}, True, OK, []),
+        id="side-by-side",
+    ),
+    pytest.param(
+        *_nested_case({"user": _allow_write("/tmp/build", "~/.kube")}, True, OK, []),
+        id="the-reference-s-two",
+    ),
+    pytest.param(
+        *_nested_case(
+            {"user": _allow_write("~/a/b"), "project": _allow_write("~/a")}, True, OK, []
+        ),
+        id="repository-outer-under-admin",
+    ),
+]
+
+
+@pytest.mark.parametrize(("where", "admin", "expected", "said"), NESTED_CASES)
+def test_a_widening_entry_inside_another_is_a_gap(
+    m: Machine,
+    where: dict[str, dict[str, Any]],
+    admin: bool,
+    expected: str,
+    said: list[tuple[str, str]],
+) -> None:
+    # Each entry alone is a literal outside the project and the record's directory, so only the
+    # pair can make it a gap: the inner one, and both where they name one place, said by file and
+    # key. Under admin-required a repository's entries are not read, so they nest nothing.
+    # Mutations (`mutations/`'s "the boundary row lets one widening entry lie inside another" ->
+    # every red case is ok or warns; "the boundary row reads one entry inside another by its
+    # spelling's prefix" -> `side-by-side` is red; "the boundary row takes two entries naming one
+    # place for unrelated" -> `one-place-twice` is ok).
+    m.managed(ENFORCED if admin else _merged(SANDBOX_ON, {"sandbox": {"failIfUnavailable": True}}))
+    owner = _merged(SANDBOX_ON, _deny(_rule(m.record_directory)))
+    m.user(_merged(owner, where.get("user", {})))
+    if "project" in where:
+        m.project(where["project"])
+    m.approvals(1)
+    row = m.row()
+    assert row.status == expected, row
+    nested = [boundary.NESTED.format(label=label, key=key) for label, key in said]
+    parts = row.detail.split("; ")
+    assert [part for part in parts if "another widening entry" in part] == nested
+    if nested:
+        assert boundary.NARROW_THE_SETTINGS in row.remedy.split("; ")
+
+
+def test_a_case_variant_of_the_project_is_inside_it(
+    m: Machine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # On macOS's default volume a case variant of the project's path is the project, so a
+    # `CLAUDE_CONFIG_DIR` spelled so is inside it: named, never judged. Folded as the row folds an
+    # entry, on every platform here since the folding is patched on. Mutation (`mutations/`'s "a
+    # directory is judged inside the project by its case"): the variant is judged as outside.
+    monkeypatch.setattr(trust_boundary, "CASE_FOLDS", True)
+    planted = m.root / ".claude-config"
+    _write(planted / "settings.json", _merged(ENFORCED, _deny(_rule(m.record_directory))))
+    variant = str(m.root).swapcase() + "/.claude-config"
+    (m.home / ".claude").rmdir()
+    m.env["CLAUDE_CONFIG_DIR"] = variant
+    m.approvals(1)
+    row = m.row()
+    assert (row.status, row.detail) == (
+        WARN,
+        "; ".join(
+            (boundary.NO_CLAUDE_CODE, boundary.CONFIG_DIR_IN_PROJECT.format(path=quoted(variant)))
+        ),
+    )

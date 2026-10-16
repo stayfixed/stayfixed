@@ -278,7 +278,7 @@ _HARNESS_MENTION = re.compile(
 # which must be there: a fact moved onto the registry takes its pardon with it, and a new one needs
 # a new item in that list. Counted, so a new constant beside a pardoned one reddens too.
 LISTED = {
-    ("src/stayfixed/setup/run.py", "claude"): (4, "`_MARKETPLACE_ADD` and `_PLUGIN_INSTALL`"),
+    ("src/stayfixed/setup/run.py", "claude"): (5, "`_MARKETPLACE_ADD` and `_PLUGIN_INSTALL`"),
     ("src/stayfixed/setup/run.py", "codex"): (4, "`_MARKETPLACE_ADD` and `_PLUGIN_INSTALL`"),
     ("src/stayfixed/project/templates.py", "claude"): (5, "`init` renders `CLAUDE.md`"),
     ("src/stayfixed/project/layout.py", "claude"): (1, "from the template `claude.md`"),
@@ -295,7 +295,7 @@ LISTED = {
         "(`attach.permissions`, `attach.write`)",
     ),
     ("src/stayfixed/attach/permissions.py", "codex"): (2, "(`attach.permissions`, `attach.write`)"),
-    ("src/stayfixed/attach/write.py", "claude"): (3, "(`attach.permissions`, `attach.write`)"),
+    ("src/stayfixed/attach/write.py", "claude"): (4, "(`attach.permissions`, `attach.write`)"),
     ("src/stayfixed/attach/write.py", "codex"): (4, "(`attach.permissions`, `attach.write`)"),
     ("src/stayfixed/hooks/api.py", "claude"): (1, "`hooks.api.DATA_ROOT_VARIABLES`"),
     ("src/stayfixed/hooks/api.py", "plugin_data"): (2, "`hooks.api.DATA_ROOT_VARIABLES`"),
@@ -310,7 +310,7 @@ LISTED = {
     ),
     ("src/stayfixed/doctor/checks.py", "plugin_data"): (1, "`${CLAUDE_PLUGIN_DATA}` in the"),
     ("src/stayfixed/trust/boundary.py", "claude"): (2, "`trust.boundary` spells"),
-    ("src/stayfixed/doctor/boundary.py", "claude"): (3, "(`doctor.boundary`)"),
+    ("src/stayfixed/doctor/boundary.py", "claude"): (5, "(`doctor.boundary`)"),
 }
 # The mentions that are no fact the code acts on, each with how many constants make it and why.
 PROSE = {
@@ -326,7 +326,7 @@ PROSE = {
     # the user settings, and `setup`'s naming of the directory `CLAUDE_CONFIG_DIR` chose: each
     # names the harness to a person, and none is a fact the code acts on.
     ("src/stayfixed/memory/commands.py", "claude"): 1,
-    ("src/stayfixed/setup/commands.py", "claude"): 3,
+    ("src/stayfixed/setup/commands.py", "claude"): 4,
     ("src/stayfixed/setup/machine.py", "claude"): 1,
     ("src/stayfixed/trust/record.py", "claude"): 1,
     # The commit-trailer guard's names of tools that sign commits as authors: the agent as an

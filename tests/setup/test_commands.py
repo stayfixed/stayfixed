@@ -19,9 +19,18 @@ from stayfixed.cli import build_parser, discover_registrars, run
 from stayfixed.overlay.api import MARKETPLACE_MANIFEST, PLUGIN_MANIFEST
 from stayfixed.printed import quoted
 from stayfixed.setup.api import SetupReport
-from stayfixed.setup.commands import CONFIG_DIR_IN_PROJECT, CONFIG_DIR_MISSING, CONFIG_DIR_WRITTEN
+from stayfixed.setup.commands import (
+    CONFIG_DIR_IN_PROJECT,
+    CONFIG_DIR_MISSING,
+    CONFIG_DIR_NOT_NAMED,
+    CONFIG_DIR_WRITTEN,
+)
 from stayfixed.setup.machine import SANDBOXED
-from stayfixed.setup.run import ADDED_RULES_IN_UNREADABLE
+from stayfixed.setup.run import (
+    _SYMLINKED_SETTINGS,
+    ADDED_RULES_IN_UNREADABLE,
+    RECORDED_IN_PROJECT,
+)
 from tests.ownerhome import as_owner_home
 from tests.parserlimits import LONG_NUMBER, NESTED
 from tests.runners import Recorder
@@ -524,3 +533,140 @@ def test_setup_from_a_sandboxed_shell_says_a_person_must_run_it(
         }[refused]
     )
     assert not (home / ".claude" / "settings.json").exists()
+
+
+@pytest.mark.parametrize("flag", ["home", "settings"])
+def test_a_run_that_names_its_destination_leaves_claude_config_dir_alone(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    flag: str,
+) -> None:
+    # `--home` or `--settings` names where the run writes, which may be a scratch destination with
+    # a scratch `--machine`: the variable's real directory written beside it would hold rules whose
+    # record sits in the scratch machine file, which no run of the real one could take back. So it
+    # is named and left alone, and the owner's own `.claude` is not written either. Mutation
+    # (`mutations/`'s "setup writes the directory CLAUDE_CONFIG_DIR names whatever destination the
+    # run named"): the variable's directory takes the rules and the scratch record names it.
+    places = _settings_places(tmp_path, monkeypatch)
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(places["cfg"]))
+    scratch = tmp_path / "scratch"
+    machine = scratch / "config.toml"
+    argv = ["setup", "--preset", "recommended", "--yes", "--root", str(places["project"])]
+    argv += ["--machine", str(machine)]
+    if flag == "home":
+        argv += ["--home", str(scratch / "home")]
+        written = scratch / "home" / ".claude" / "settings.json"
+    else:
+        (scratch / "dotfiles").mkdir(parents=True)
+        written = scratch / "dotfiles" / "settings.json"
+        argv += ["--settings", str(written)]
+    assert invoke(argv) == 0
+    assert written.is_file()
+    assert list(places["cfg"].iterdir()) == []
+    assert not (places["owner"] / ".claude" / "settings.json").exists()
+    assert "added_rules_in" not in tomllib.loads(machine.read_text(encoding="utf-8"))["setup"]
+    out = capsys.readouterr().out
+    assert CONFIG_DIR_NOT_NAMED.format(path=quoted(str(places["cfg"]))) in out, out
+
+
+def _recorded_in(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, directory: str
+) -> dict[str, Path]:
+    """`_settings_places`, with a machine file whose `[setup]` switches the ask rules off and
+    records one rule added to `directory`'s settings file, which holds it beside one of the
+    owner's and nothing else."""
+    places = _settings_places(tmp_path, monkeypatch)
+    place = tmp_path / directory
+    place.mkdir(exist_ok=True)
+    (place / "settings.json").write_text(
+        json.dumps({"permissions": {"ask": [_RECORDED, "Bash(mine:*)"]}}), encoding="utf-8"
+    )
+    machine = places["owner"] / ".config" / "stayfixed" / "config.toml"
+    machine.parent.mkdir(parents=True)
+    machine.write_text(
+        f'[setup]\nask_rules = false\nadded_rules_in = [{{directory = "{place}", '
+        f'ask = ["{_RECORDED}"]}}]\n',
+        encoding="utf-8",
+    )
+    return {**places, "place": place, "machine": machine}
+
+
+# The one rule the record says setup added in another directory.
+_RECORDED = "Bash(stayfixed trust approve:*)"
+
+
+def test_taking_the_rules_back_writes_nothing_else_where_no_one_named_the_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A recorded directory that neither a flag nor the variable names this run has its recorded
+    # `ask` rule taken back and nothing added: not `--approval-boundary`'s deny rules, not the
+    # preset's, not `pluginConfigs`; the owner's rule stays, and the record is emptied of it.
+    # Mutations (`mutations/`'s "taking the rules back merges the preset into a directory no one
+    # named" -> the file gains deny rules and `pluginConfigs`; "taking the rules back records the
+    # approval boundary in a directory no one named" -> the record keeps a deny list there).
+    places = _recorded_in(tmp_path, monkeypatch, "cfg")
+    argv = ["setup", "--preset", "recommended", "--yes", "--root", str(places["project"])]
+    assert invoke([*argv, "--approval-boundary"]) == 0
+    settings = places["place"] / "settings.json"
+    assert json.loads(settings.read_text(encoding="utf-8")) == {
+        "permissions": {"ask": ["Bash(mine:*)"]}
+    }
+    recorded = tomllib.loads(places["machine"].read_text(encoding="utf-8"))["setup"]
+    assert "added_rules_in" not in recorded
+
+
+def test_taking_the_rules_back_leaves_a_recorded_directory_now_inside_the_project(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A recorded directory that now lies inside the project holds what the repository commits:
+    # nothing is written there, the rule stays recorded for a later run to take back, and the line
+    # names it. Mutation (`mutations/`'s "taking the rules back writes a recorded directory inside
+    # the project"): the file is rewritten and the record forgets the rule.
+    places = _recorded_in(tmp_path, monkeypatch, "project/.claude-config")
+    settings = places["place"] / "settings.json"
+    before = settings.read_bytes()
+    argv = ["setup", "--preset", "recommended", "--yes", "--root", str(places["project"])]
+    assert invoke(argv) == 0
+    assert settings.read_bytes() == before
+    recorded = tomllib.loads(places["machine"].read_text(encoding="utf-8"))["setup"]
+    assert recorded["added_rules_in"] == [{"directory": str(places["place"]), "ask": [_RECORDED]}]
+    said = RECORDED_IN_PROJECT.format(path=quoted(str(places["place"])))
+    assert said in capsys.readouterr().out
+
+
+def test_taking_the_rules_back_refuses_a_linked_settings_file_before_any_write(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The write into a recorded directory is one component deep and replaces a link at the file's
+    # name rather than following it, so the file is asked about with the others before the first
+    # write, and a link there is refused as `--settings`' is. Mutation (`mutations/`'s "taking the
+    # rules back asks nothing of a recorded directory before the first write"): the link is replaced
+    # by a regular file and the run exits 0.
+    places = _recorded_in(tmp_path, monkeypatch, "cfg")
+    settings = places["place"] / "settings.json"
+    real = tmp_path / "dotfiles-settings.json"
+    settings.rename(real)
+    settings.symlink_to(real)
+    machine_before = places["machine"].read_bytes()
+    argv = ["setup", "--preset", "recommended", "--yes", "--root", str(places["project"])]
+    assert invoke(argv) == 2
+    resolved = real.resolve()
+    refused = (
+        f"{settings} is a symlink to {resolved}; {_SYMLINKED_SETTINGS}. A dotfiles manager is the "
+        f"usual reason — run `stayfixed setup --settings {resolved}`, which writes the file this "
+        f"link leads to, or replace the link with a real file"
+    )
+    assert capsys.readouterr().err == f"stayfixed: refused: {refused}\n"
+    assert settings.is_symlink()
+    assert places["machine"].read_bytes() == machine_before
+    assert not (places["owner"] / ".claude" / "settings.json").exists()
+
+
+def test_setup_s_sandbox_sentence_says_what_a_person_in_their_own_terminal_meets() -> None:
+    # As the trust record's: the sandbox's answer is also a read-only mount's or an immutable
+    # flag's, met by a person already in their own terminal. Mutation (`mutations/`'s "setup's
+    # sandbox sentence sends a person in their own terminal there again"): it ends at the sandbox.
+    from stayfixed.trust.api import OWN_TERMINAL_TOO
+
+    assert SANDBOXED.endswith(OWN_TERMINAL_TOO)

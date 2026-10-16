@@ -40,7 +40,7 @@ from stayfixed import fsops
 from stayfixed.config.machine import machine_config_path
 from stayfixed.errors import Failure, Refusal
 from stayfixed.jsonobject import json_object
-from stayfixed.trust.boundary import sandbox_refused
+from stayfixed.trust.boundary import OWN_TERMINAL_TOO, sandbox_refused
 
 RECORD = "trust.json"
 VERSION = 1
@@ -62,6 +62,7 @@ SANDBOXED = (
     "the trust record was not written: its directory refused the write, which Claude Code's "
     "sandbox does to every write an agent's shell makes outside the working directory, so a "
     "person must run this command in their own terminal, outside the agent's sandbox"
+    f"{OWN_TERMINAL_TOO}"
 )
 
 

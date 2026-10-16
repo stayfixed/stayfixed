@@ -1006,7 +1006,7 @@ def _link_everywhere(
             continue
         created += more.created
         revoked += more.revoked
-    return Links(created, revoked, withheld=links.withheld)
+    return Links(created, revoked, withheld=links.withheld, refresh_refused=links.refresh_refused)
 
 
 def _keys_in(document: str) -> tuple[str, ...]:
@@ -1131,6 +1131,16 @@ REAPPROVE = f"read what changed, then {_APPROVE}; then run `stayfixed attach` ag
 # since, which closes the gate as surely as no approval and also withdraws the links an earlier run
 # made: one line appended to one note is enough.
 HARNESS_LAPSED = f"the harness memory link was not created, because {APPROVAL_LAPSED}; {REAPPROVE}"
+# Said where the index this run rendered for the store could not carry its approval, because the
+# trust record's directory refused the write as an agent's sandbox refuses one: the approval stays
+# at the person's digest, which the store no longer matches, so `HARNESS_LAPSED` follows it, and
+# this says why it lapsed.
+REFRESH_REFUSED = (
+    "the store's approval was not carried across the index this run wrote and was left as it was: "
+    "the trust record's directory refused the write, as Claude Code's sandbox refuses every write "
+    "an agent's shell makes outside the working directory, so only a person outside the agent's "
+    "sandbox can write it"
+)
 # Said whenever the run withdrew harness memory links, which only the gate does, so the line
 # never leaves a withdrawal unsaid; the count is the one `--json` gives as `links_revoked`.
 HARNESS_WITHDREW = "withdrew {count} harness memory link(s)"
@@ -1611,6 +1621,8 @@ def _carry_out(
         written = True
     if links.revoked:
         notes.append(HARNESS_WITHDREW.format(count=len(links.revoked)))
+    if links.refresh_refused:
+        notes.append(REFRESH_REFUSED)
     if keys and links.withheld:
         # Left as an earlier run recorded it, and said so: "was recorded" would read as this run's
         # act, beside a note that this run makes no link at all.

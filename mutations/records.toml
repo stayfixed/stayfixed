@@ -3555,8 +3555,17 @@ reddens = [
 [[mutation]]
 name = "attach stops at a refresh the sandbox refused"
 file = "src/stayfixed/memory/worktree.py"
-before = "    with contextlib.suppress(SandboxedWrite):"
-after = "    with contextlib.suppress(LookupError):"
+before = "    except SandboxedWrite:\n        return True"
+after = "    except LookupError:\n        return True"
+reddens = [
+  "tests/attach/test_write.py::test_an_approval_attach_could_not_carry_is_said_as_what_happened[sandboxed]",
+]
+
+[[mutation]]
+name = "attach's render forgets the refresh the sandbox refused"
+file = "src/stayfixed/memory/worktree.py"
+before = "    except SandboxedWrite:\n        return True"
+after = "    except SandboxedWrite:\n        return False"
 reddens = [
   "tests/attach/test_write.py::test_an_approval_attach_could_not_carry_is_said_as_what_happened[sandboxed]",
 ]

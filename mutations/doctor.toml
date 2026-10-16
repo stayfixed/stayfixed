@@ -3053,6 +3053,7 @@ reddens = [
   "tests/doctor/test_approval_boundary.py::test_the_boundary_row[nothing-no-approval]",
   "tests/doctor/test_approval_boundary.py::test_the_boundary_row[project-disables-no-approval]",
   "tests/doctor/test_approval_boundary.py::test_a_widening_gap_with_no_approval_is_a_warning",
+  "tests/doctor/test_approval_boundary.py::test_a_sandbox_that_confines_no_file_warns_with_no_approval",
 ]
 
 [[mutation]]
@@ -3067,7 +3068,7 @@ reddens = [
 [[mutation]]
 name = "the boundary row names no gap"
 file = "src/stayfixed/doctor/boundary.py"
-before = "        detail = \"; \".join((lead, *gaps, *widened, *unread))"
+before = "        detail = \"; \".join((lead, *gaps, *off, *widened, *resting, *unread))"
 after = "        detail = lead"
 reddens = [
   "tests/doctor/test_approval_boundary.py::test_a_gap_names_the_missing_setting_and_what_it_stops",
@@ -3371,24 +3372,6 @@ reddens = [
 ]
 
 [[mutation]]
-name = "the boundary row compares paths by their case where the volume folds it"
-file = "src/stayfixed/doctor/boundary.py"
-before = "    return unicodedata.normalize(\"NFC\", text).casefold() if CASE_FOLDS else text"
-after = "    return unicodedata.normalize(\"NFC\", text) if CASE_FOLDS else text"
-reddens = [
-  "tests/doctor/test_approval_boundary.py::test_a_case_variant_names_the_record_on_a_volume_that_folds_case",
-]
-
-[[mutation]]
-name = "the boundary row compares names composed and decomposed as different"
-file = "src/stayfixed/doctor/boundary.py"
-before = "    return unicodedata.normalize(\"NFC\", text).casefold() if CASE_FOLDS else text"
-after = "    return text.casefold() if CASE_FOLDS else text"
-reddens = [
-  "tests/doctor/test_approval_boundary.py::test_composed_and_decomposed_spellings_compare_alike_where_names_fold",
-]
-
-[[mutation]]
 name = "the boundary row imports re again"
 file = "src/stayfixed/doctor/boundary.py"
 before = "import os\nimport posixpath\n"
@@ -3466,3 +3449,115 @@ reddens = [
   "tests/doctor/test_approval_boundary.py::test_a_claude_config_dir_inside_the_project_is_never_judged[home-guarded]",
 ]
 
+# Protection a repository's settings file alone provides decides red and is never green:
+# the next commit can remove it.
+[[mutation]]
+name = "the boundary row counts a repository's true toward green"
+file = "src/stayfixed/doctor/boundary.py"
+before = "    if enabled is True and not owners_on and source is not None:"
+after = "    if False:"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_protection_only_a_repository_s_file_provides_is_never_green[repository-only]",
+  "tests/doctor/test_approval_boundary.py::test_protection_only_a_repository_s_file_provides_is_never_green[sandbox-from-local]",
+  "tests/doctor/test_approval_boundary.py::test_protection_only_a_repository_s_file_provides_is_never_green[local-true-over-user-false]",
+  "tests/doctor/test_approval_boundary.py::test_protection_only_a_repository_s_file_provides_is_never_green[repository-true-no-deny]",
+]
+
+[[mutation]]
+name = "the boundary row counts a repository's deny rule toward green"
+file = "src/stayfixed/doctor/boundary.py"
+before = "    held = _deny_rules(owners)"
+after = "    held = _deny_rules((*owners, *repository))"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_protection_only_a_repository_s_file_provides_is_never_green[repository-only]",
+  "tests/doctor/test_approval_boundary.py::test_protection_only_a_repository_s_file_provides_is_never_green[deny-from-project]",
+  "tests/doctor/test_approval_boundary.py::test_the_boundary_row[deny-in-the-local-file]",
+]
+
+# Green needs managed settings to refuse a sandbox that cannot start, the sandboxing
+# reference's recipe for enforcing it.
+[[mutation]]
+name = "the boundary row is green without failIfUnavailable"
+file = "src/stayfixed/doctor/boundary.py"
+before = "    enforced = _sandbox(managed, FAIL_IF_UNAVAILABLE) is True"
+after = "    enforced = True"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_green_needs_managed_settings_to_refuse_a_sandbox_that_cannot_start[admin-required-only]",
+  "tests/doctor/test_approval_boundary.py::test_green_needs_managed_settings_to_refuse_a_sandbox_that_cannot_start[fail-if-unavailable-false]",
+  "tests/doctor/test_approval_boundary.py::test_a_boundary_that_is_not_admin_required_says_where_to_make_it_so",
+]
+
+[[mutation]]
+name = "the boundary row takes the user's failIfUnavailable for the managed one"
+file = "src/stayfixed/doctor/boundary.py"
+before = "    enforced = _sandbox(managed, FAIL_IF_UNAVAILABLE) is True"
+after = "    enforced = _sandbox(managed, FAIL_IF_UNAVAILABLE) is True or _sandbox(user, FAIL_IF_UNAVAILABLE) is True"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_green_needs_managed_settings_to_refuse_a_sandbox_that_cannot_start[admin-required-only]",
+  "tests/doctor/test_approval_boundary.py::test_green_needs_managed_settings_to_refuse_a_sandbox_that_cannot_start[fail-if-unavailable-false]",
+]
+
+# `sandbox.filesystem.disabled` turns the sandbox's filesystem confinement off.
+[[mutation]]
+name = "the boundary row reads no sandbox.filesystem.disabled"
+file = "src/stayfixed/doctor/boundary.py"
+before = "    return isinstance(table, dict) and DISABLED in table and table[DISABLED] is not False"
+after = "    return False"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_a_sandbox_that_confines_no_file_is_a_gap[managed]",
+  "tests/doctor/test_approval_boundary.py::test_a_sandbox_that_confines_no_file_is_a_gap[user]",
+  "tests/doctor/test_approval_boundary.py::test_a_sandbox_that_confines_no_file_is_a_gap[user-not-a-bool]",
+  "tests/doctor/test_approval_boundary.py::test_a_sandbox_that_confines_no_file_is_a_gap[project]",
+  "tests/doctor/test_approval_boundary.py::test_a_sandbox_that_confines_no_file_is_a_gap[local]",
+  "tests/doctor/test_approval_boundary.py::test_a_sandbox_that_confines_no_file_warns_with_no_approval",
+]
+
+[[mutation]]
+name = "the boundary row reads filesystem.disabled only when it is true"
+file = "src/stayfixed/doctor/boundary.py"
+before = "    return isinstance(table, dict) and DISABLED in table and table[DISABLED] is not False"
+after = "    return isinstance(table, dict) and DISABLED in table and table[DISABLED] is True"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_a_sandbox_that_confines_no_file_is_a_gap[user-not-a-bool]",
+]
+
+[[mutation]]
+name = "the boundary row reads a repository's filesystem.disabled while admin-required"
+file = "src/stayfixed/doctor/boundary.py"
+before = "    repository = () if admin else (local, project)"
+after = "    repository = (local, project)"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_a_sandbox_that_confines_no_file_is_a_gap[project-under-admin]",
+  "tests/doctor/test_approval_boundary.py::test_a_widening_entry_inside_another_is_a_gap[repository-outer-under-admin]",
+]
+
+# A widening entry another names or lies above: the shell writes in the outer one, so the
+# inner one may be a link to the record's directory by the time a session reads it.
+[[mutation]]
+name = "the boundary row lets one widening entry lie inside another"
+file = "src/stayfixed/doctor/boundary.py"
+before = "    widened.extend(_nested((*repository, user), homes))"
+after = "    pass"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_a_widening_entry_inside_another_is_a_gap[user-inside-user]",
+  "tests/doctor/test_approval_boundary.py::test_a_widening_entry_inside_another_is_a_gap[project-inside-user]",
+  "tests/doctor/test_approval_boundary.py::test_a_widening_entry_inside_another_is_a_gap[one-place-twice]",
+]
+
+[[mutation]]
+name = "the boundary row reads one entry inside another by its spelling's prefix"
+file = "src/stayfixed/doctor/boundary.py"
+before = "                place == other or place.startswith(other + \"/\")"
+after = "                place == other or place.startswith(other)"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_a_widening_entry_inside_another_is_a_gap[side-by-side]",
+]
+
+[[mutation]]
+name = "the boundary row takes two entries naming one place for unrelated"
+file = "src/stayfixed/doctor/boundary.py"
+before = "                place == other or place.startswith(other + \"/\")"
+after = "                place.startswith(other + \"/\")"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_a_widening_entry_inside_another_is_a_gap[one-place-twice]",
+]

@@ -306,3 +306,14 @@ def test_a_write_refused_as_a_sandbox_refuses_one_is_said_so(
             "file --machine names"
         )
     assert not path.exists()
+
+
+def test_the_sandbox_sentence_says_what_a_person_in_their_own_terminal_meets() -> None:
+    # `EPERM` and `EROFS` are what the sandbox answers, and also what a read-only mount or an
+    # immutable flag answers a person already in their own terminal, whom the sentence would
+    # otherwise send there again. Mutation (`mutations/`'s "the trust record's sandbox sentence
+    # sends a person in their own terminal there again"): the sentence ends at the sandbox.
+    from stayfixed.trust.boundary import OWN_TERMINAL_TOO
+    from stayfixed.trust.record import SANDBOXED
+
+    assert SANDBOXED.endswith(OWN_TERMINAL_TOO)

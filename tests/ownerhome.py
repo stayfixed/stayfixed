@@ -17,6 +17,11 @@ for a command whose argv a test does not write. `plugin_root_with_owner_home` pu
 the launcher of a plugin root, for the wrapper, whose interpreter starts under `-I` and reads no
 `PYTHONPATH`.
 
+**Claude Code's managed settings** sit at a fixed system path an administrator writes, which
+`doctor`'s `approval-boundary` row reads, and no variable moves that path either: one that did
+would let an environment a repository shapes choose the file. `tests/conftest.py` moves it in this
+process; `stayfixed_argv`'s `managed` moves it in a child, through the same start-up lines.
+
 **In the wrapper itself,** its own two `git` calls start from `env -i` and take the home the
 shell's `~name` gives for `id -un`'s name, which no variable redirects either: under test they read
 the developer's own git configuration, where a `safe.bareRepository` or a `trace2` setting acts on
@@ -89,12 +94,26 @@ def as_owner_home(monkeypatch: pytest.MonkeyPatch, home: Path | str | None) -> N
     monkeypatch.setattr(pwd, "getpwuid", lookup)
 
 
-def stayfixed_argv(home: Path) -> list[str]:
+def stayfixed_argv(home: Path, managed: Path | None = None) -> list[str]:
     """The argv of a `stayfixed` run from this checkout with the database recording `home`, as
-    `scripts/stayfixed` runs it; the command's own arguments follow."""
+    `scripts/stayfixed` runs it, and, given `managed`, with that file read as Claude Code's
+    managed settings in place of the system's; the command's own arguments follow."""
+    moved = (
+        ""
+        if managed is None
+        else (
+            "from pathlib import Path as _Path\n"
+            "from types import MappingProxyType as _Proxy\n"
+            "import stayfixed.trust.boundary as _boundary\n"
+            "_boundary.MANAGED_SETTINGS = _Proxy(\n"
+            f"    dict.fromkeys(_boundary.MANAGED_SETTINGS, _Path({str(managed)!r}))\n"
+            ")\n"
+        )
+    )
     bootstrap = (
         f"{_smoke_hooks().owner_home_prelude(home)}"
         f"import sys\nsys.path.insert(0, {str(ROOT / 'src')!r})\n"
+        f"{moved}"
         "from stayfixed.cli import main\nraise SystemExit(main())\n"
     )
     return [sys.executable, "-c", bootstrap]

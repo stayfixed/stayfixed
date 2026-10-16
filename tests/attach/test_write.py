@@ -31,6 +31,7 @@ from stayfixed.attach.write import (
     HARNESS_LAPSED,
     HARNESS_WAITS,
     REAL_DIRECTORIES,
+    REFRESH_REFUSED,
     Attached,
     _planned_ignore_region,
     attach,
@@ -2237,17 +2238,18 @@ def test_a_trusted_store_keeps_its_approval_when_attach_renders_its_missing_inde
 def test_an_approval_attach_could_not_carry_is_said_as_what_happened(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, changed: str
 ) -> None:
-    # The render's refresh answers whether it carried the approval, and attach does not read that
-    # answer: what it says next comes from the gate, which reads the record and the store again.
-    # So each way the refresh declines is said as what happened. A revoke made while attach ran
-    # (`record`) is kept, and the link waits for an approval the store does not have; a note that
-    # arrived while it ran (`store`) leaves the approval at the digest the person gave, and the
-    # link waits because the store changed since; a record write an agent's sandbox refuses
-    # (`sandboxed`, `EPERM` from the write, as macOS's sandbox answers) leaves the approval as it
-    # was too, and attach finishes rather than stopping with half its links made. None says the
+    # What attach says of the link comes from the gate, which reads the record and the store
+    # again after the render's refresh, so each way the refresh declines is said as what happened.
+    # A revoke made while attach ran (`record`) is kept, and the link waits for an approval the
+    # store does not have; a note that arrived while it ran (`store`) leaves the approval at the
+    # digest the person gave, and the link waits because the store changed since; a record write an
+    # agent's sandbox refuses (`sandboxed`, `EPERM` from the write, as macOS's sandbox answers)
+    # leaves the approval as it was too, attach finishes rather than stopping with half its links
+    # made, and it says the refresh was refused before it says the approval lapsed. None says the
     # approval was carried. Mutations (`mutations/`'s "a refresh brings back a revoked approval"
     # -> `record` reads approved again, and the link is made; "attach stops at a refresh the
-    # sandbox refused" -> `sandboxed` ends in the record's refusal).
+    # sandbox refused" -> `sandboxed` ends in the record's refusal; "attach says nothing of a
+    # refresh the sandbox refused" -> `sandboxed` says only that the approval lapsed).
     from stayfixed.memory import trust as memory_trust
     from stayfixed.memory.api import harness_memory_path, resolve
     from stayfixed.trust.api import recorded, revoke
@@ -2285,7 +2287,8 @@ def test_an_approval_attach_could_not_carry_is_said_as_what_happened(
         assert recorded(machine) == {}
     else:
         # `store` and `sandboxed` alike: the approval stays at the person's digest.
-        assert attached.notes == (HARNESS_LAPSED,)
+        first = (REFRESH_REFUSED,) if changed == "sandboxed" else ()
+        assert attached.notes == (*first, HARNESS_LAPSED)
         assert recorded(machine) == {(approval.kind, approval.subject): approval}
 
 

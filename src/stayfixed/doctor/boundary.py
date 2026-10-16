@@ -6,15 +6,20 @@ itself it holds only while the harness stops that write (`trust.boundary` says w
 how that was measured). So the row reads this project's effective Claude Code settings, in the
 harness's own precedence — managed settings with their drop-ins, then the project's
 `.claude/settings.local.json`, then its `.claude/settings.json`, then the user's file in `.claude`
-under the home — and answers three questions: is the sandbox on for this project; do the
-`permissions.deny` rules `setup` writes over the record's directory stand, byte for byte; and does
-any setting widen what those two confine.
+under the home — and answers four questions: is the sandbox on for this project, confining the
+filesystem; do the `permissions.deny` rules `setup` writes over the record's directory stand, byte
+for byte; does any setting widen what those confine; and does any of it rest on a file the
+repository can change.
 
 - **Whether the sandbox is on** is the highest layer's `sandbox.enabled`. While the sandbox is
   admin-required, which only managed settings make it (`sandbox.allowUnsandboxedCommands = false`
   there; a user's own does not stop a repository turning the sandbox off), a repository's `false` is
   passed over when managed settings or the user's file set `true`, as Claude Code's sandboxing
-  reference says, and stands otherwise.
+  reference says, and stands otherwise. A `sandbox.filesystem.disabled` that is there and is not
+  `false` turns the sandbox's filesystem confinement off, and is a gap as the sandbox being off is:
+  in managed settings and the user's file always, and in a repository's file while the sandbox is
+  not admin-required (the reference says a repository's file cannot set it; the row does not lean
+  on that).
 - **The deny rules** from any layer count, as the harness adds them up, and only `setup`'s own
   spellings count: `Edit(//<directory>/**)` over the directory where it leads, and over the
   directory as named where a symbolic link makes the two differ (`trust.boundary.deny_rules`), each
@@ -23,27 +28,40 @@ any setting widen what those two confine.
   here: a repository's non-empty `sandbox.excludedCommands`, which runs commands outside the
   sandbox, and any entry of `sandbox.filesystem.allowWrite`, an `Edit` rule in `permissions.allow`
   or `permissions.additionalDirectories` not shown safe, in the project's or the local file while
-  the sandbox is not admin-required (the reference says Claude Code ignores them while it is), and
-  in the user's file always, since there one undoes the deny rule. **An entry is read as text and
-  nothing else**: no filesystem call and no pattern engine touches it. It is safe only when every
-  condition `_safe` asks holds: a literal path of letters, digits, `.`, `_`, `-`, `~` and `/` with
-  no `.`, `..` or empty component; anchored outside the working directory as the documentation
-  anchors it for its key (a sandbox path list's or `additionalDirectories`' `/x` is absolute, an
-  `Edit` rule's `//x` is, and `~/x` is under the home for both — under every home it may mean:
-  the password database's, the `--home` given, and `HOME`, which Claude Code expands `~` from —
-  while an `Edit` rule's `/x` is the project's and a relative path is the working directory's for
-  both); outside the project, its
+  the sandbox is not admin-required (`WIDENING_KEYS` says what Claude Code ignores while it is, and
+  why skipping those files then is still right), and in the user's file always, since there one
+  undoes the deny rule. **An entry is read as text and nothing else**: no filesystem call and no
+  pattern engine touches it. It is safe only when every condition `_safe` asks holds: a literal
+  path of letters, digits, `.`, `_`, `-`, `~` and `/` with no `.`, `..` or empty component;
+  anchored outside the working directory as the documentation anchors it for its key (a sandbox
+  path list's or `additionalDirectories`' `/x` is absolute, an `Edit` rule's `//x` is, and `~/x` is
+  under the home for both — under every home it may mean: the password database's, the `--home`
+  given, and `HOME`, which Claude Code expands `~` from — while an `Edit` rule's `/x` is the
+  project's and a relative path is the working directory's for both); outside the project, its
   root neither held nor holding it; and neither either spelling of the record's directory (as
   named, and resolved by stayfixed from its own machine path), nor above it, nor inside it —
-  compared in NFC and case-folded on macOS. Every other entry is a gap: there is no class of entry
-  the row could not tell about.
+  compared `trust.boundary.folded`. Nor may another widening entry the row reads be the same place
+  or lie above it (`_nested`): an agent's shell writes inside the other, so it can put a link to
+  the record's directory where this one names before a later session resolves it, and whether a
+  deny rule holds inside a wider entry was not measured. Every other entry is a gap: there is no
+  class of entry the row could not tell about.
+
+**Only the owner's files make it green.** Managed settings and the user's file are the owner's; a
+repository's two files change with its next commit, which a pull delivers with no person acting.
+So the sandbox's `true` and the deny rules decide red from every layer, and green only from managed
+settings and the user's file: where the only `true`, or the only copy of a rule, is a repository's,
+the row is at best a warning naming that file. A repository's bytes may make the answer worse,
+never better.
 
 **Red only once the machine holds an approval.** With one, a gap is red; with none, it is a
-warning, so a default install is never red here. With both settings in force the row still warns
-until the sandbox is admin-required, and is green only then. A trust record that cannot be read is
-taken to hold approvals, since it holds every project's on the machine. A settings file that is not
-JSON is read as absent for its layer and named; the row is never red for that alone, and never green
-beside it, since what the harness makes of the file is not known here.
+warning, so a default install is never red here. With every setting in force the row still warns
+until managed settings make the sandbox admin-required and set `sandbox.failIfUnavailable = true`,
+the sandboxing reference's own recipe for enforcing it — without the second, Claude Code runs
+commands outside a sandbox that cannot start — and is green only then. A trust record that cannot
+be read is taken to hold approvals, since it holds every project's on the machine. A settings file
+that cannot be read as one JSON object (unreadable, not UTF-8, or not JSON) is read as absent for
+its layer and named; the row is never red for that alone, and never green beside it, since what
+the harness makes of the file is not known here.
 
 **`CLAUDE_CONFIG_DIR` may only make the answer worse**, since nothing tells whether a person or a
 repository set it (`trust.boundary.user_settings`). Where it names a directory not spelled byte for
@@ -66,8 +84,6 @@ from __future__ import annotations
 import os
 import posixpath
 import string
-import sys
-import unicodedata
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -84,11 +100,13 @@ from stayfixed.printed import quoted
 from stayfixed.trust.api import (
     CONFIG_DIR_VARIABLE,
     ENABLED,
+    FAIL_IF_UNAVAILABLE,
     MANAGED_DROP_INS,
     SANDBOX,
     UNSANDBOXED_ALLOWED,
     UnreadableTrust,
     deny_rules,
+    folded,
     in_project,
     managed_settings,
     record_path,
@@ -122,6 +140,10 @@ TURNED_OFF = (
     "{label} sets sandbox.enabled = false, which turns the sandbox off for this project, so an "
     "agent's shell commands run outside it, where nothing stops one writing the trust record"
 )
+FILESYSTEM_OFF = (
+    "{label} sets sandbox.filesystem.disabled = true, which turns the sandbox's filesystem "
+    "confinement off, so an agent's shell writes anywhere, the trust record included"
+)
 NO_DENY = (
     "permissions.deny lacks {rule}, as setup writes it over the trust record's directory, so the "
     "shell and the file tools may write the approvals in it"
@@ -136,16 +158,39 @@ WIDENED = (
     "{label}'s {key} holds an entry not shown to stay clear of the trust record's directory, so "
     "the shell or the file tools may write the approvals in it past the deny rule"
 )
+NESTED = (
+    "{label}'s {key} holds an entry that another widening entry names or lies above, so an agent's "
+    "shell may put a link to the trust record's directory in its place before a later session "
+    "reads it"
+)
+# Protection that rests on a repository's file alone: in force today, and gone with the commit that
+# removes it.
+SANDBOX_FROM_REPOSITORY = (
+    "the sandbox is on only because {label} sets sandbox.enabled = true, a file in the project's "
+    "tree, so a later commit can remove it"
+)
+DENY_FROM_REPOSITORY = (
+    "{rule} stands only in {label}, in the project's tree, so a later commit can remove it"
+)
 # Both in force, and not admin-required: what a repository can still do.
 NOT_ADMIN = (
     f"the sandbox is on and the deny rule covers the trust record's directory, but managed "
     f"settings do not make the sandbox admin-required, so a repository's {PROJECT_SETTINGS} or "
     f"{LOCAL_SETTINGS} can turn it off, and an agent can retry a command outside it"
 )
-GUARDED = (
-    "the sandbox is on and admin-required, and {rule} denies writes to the trust record's directory"
+# Admin-required, and yet a machine where the sandbox cannot start runs commands outside it.
+NO_FAIL_CLOSED = (
+    "{managed} does not set sandbox.failIfUnavailable = true, nor does a drop-in beside it, so "
+    "where the sandbox cannot start, Claude Code runs an agent's shell commands outside it"
 )
-NOT_READ = "{label} is not JSON and was read as absent"
+GUARDED = (
+    "the sandbox is on, admin-required and required to start, and {rule} denies writes to the "
+    "trust record's directory"
+)
+NOT_READ = (
+    "{label} could not be read as one JSON object (it is unreadable, not UTF-8, or not JSON) and "
+    "was read as absent"
+)
 # Where `CLAUDE_CONFIG_DIR` names a user settings directory besides the home's, that one may only
 # make the answer worse (`trust.boundary.user_settings` says why): its gaps are added, said with its
 # file. `path` is the variable's value, which a repository may have chosen, so it is printed
@@ -170,16 +215,24 @@ ADD_THE_BOUNDARY = (
     "settings to set"
 )
 MAKE_IT_ADMIN = (
-    "set sandbox.enabled = true and sandbox.allowUnsandboxedCommands = false in {managed}, a file "
-    "only an administrator writes: then no repository's settings turn the sandbox off and no "
-    "command runs outside it"
+    "set sandbox.enabled = true, sandbox.failIfUnavailable = true and "
+    "sandbox.allowUnsandboxedCommands = false in {managed}, a file only an administrator writes: "
+    "then no repository's settings turn the sandbox off, no command runs outside it, and Claude "
+    "Code does not start where it cannot"
 )
-MAKE_IT_JSON = "make each file the detail names one JSON object, then run `stayfixed doctor` again"
+MAKE_IT_JSON = (
+    "make each file the detail names a readable UTF-8 file holding one JSON object, then run "
+    "`stayfixed doctor` again"
+)
+KEEP_THE_FILESYSTEM = (
+    "take sandbox.filesystem.disabled out of each file the detail names, or set it to false"
+)
 NARROW_THE_SETTINGS = (
     "take sandbox.excludedCommands out of each repository file the detail names, and take out each "
     "entry of a key it names or spell it as a literal path outside the project and the trust "
     "record's directory, of letters, digits, `.`, `_`, `-` and `/`: `/…` or `~/…` in a sandbox "
-    "path list and permissions.additionalDirectories, `//…` or `~/…` in an Edit rule"
+    "path list and permissions.additionalDirectories, `//…` or `~/…` in an Edit rule, none of them "
+    "inside another"
 )
 NO_MANAGED_PATH = "the managed settings file"
 # The rule's place in a sentence on a machine with no home for a trust record: the password
@@ -258,6 +311,12 @@ def _sandbox(layer: _Layer, key: str) -> object:
     return table.get(key) if isinstance(table, dict) else None
 
 
+def _filesystem_off(layer: _Layer) -> bool:
+    """Whether `layer` sets `sandbox.filesystem.disabled`, to anything but `false`."""
+    table = _table(layer.document, SANDBOX, FILESYSTEM)
+    return isinstance(table, dict) and DISABLED in table and table[DISABLED] is not False
+
+
 def _deny_rules(layers: Sequence[_Layer]) -> set[str]:
     found: set[str] = set()
     for layer in layers:
@@ -269,12 +328,19 @@ def _deny_rules(layers: Sequence[_Layer]) -> set[str]:
 
 
 # The keys that widen confinement, as Claude Code's sandboxing reference names them (not measured
-# here). While the sandbox is admin-required, the reference says Claude Code ignores these keys in
-# a repository's project and local files, from Claude Code 2.1.285 on, which is why the row reads
-# them in those files only while it is not; the user's file is read in every case.
+# here). While the sandbox is admin-required, the reference says that from Claude Code 2.1.285 on,
+# in a repository's project and local files, Claude Code ignores every `excludedCommands` entry and
+# the write access each of these entries gives sandboxed commands -- and only that: Claude's file
+# tools still follow a repository's `Edit(...)` allow rules and `additionalDirectories`. The row
+# reads those files only while the sandbox is not admin-required all the same, because what keeps
+# the file tools out of the record's directory is the deny rule, and a deny rule outranks every
+# allow rule for them (the reference: deny entries still apply, and an explicit deny is always
+# respected), so no repository allow entry lets them past it. The user's file is read in every case.
 EXCLUDED_COMMANDS = "excludedCommands"
 FILESYSTEM = "filesystem"
 ALLOW_WRITE = "allowWrite"
+# `sandbox.filesystem.disabled`, which turns the filesystem confinement off (the module docstring).
+DISABLED = "disabled"
 ADDITIONAL_DIRECTORIES = "additionalDirectories"
 WIDENING_KEYS = (
     f"{SANDBOX}.{FILESYSTEM}.{ALLOW_WRITE}",
@@ -288,9 +354,6 @@ WIDENING_KEYS = (
 ALLOWED = frozenset(string.ascii_letters + string.digits + "._/~-")
 # The components a safe entry may not hold: the empty one (`a//b`, a trailing `/`), `.` and `..`.
 NOT_A_NAME = frozenset({"", ".", ".."})
-# The macOS default volume folds case, and its names may arrive composed or decomposed, so a
-# spelling is compared there in NFC, case-folded.
-CASE_FOLDS = sys.platform == "darwin"
 # An `Edit` rule in `permissions.allow`: bare, which allows every edit, or with its path.
 EDIT = "Edit"
 # The prefix that makes an entry of each key absolute, as Claude Code's documentation states (not
@@ -311,11 +374,6 @@ def _table(document: Mapping[str, Any] | None, *keys: str) -> object:
 
 def _strings(value: object) -> list[str]:
     return [item for item in value if isinstance(item, str)] if isinstance(value, list) else []
-
-
-def _folded(text: str) -> str:
-    """`text` as the row compares it: as it is, or in NFC and case-folded where names fold."""
-    return unicodedata.normalize("NFC", text).casefold() if CASE_FOLDS else text
 
 
 def _related(place: str, held: str) -> bool:
@@ -374,15 +432,14 @@ def _safe(
     places = _anchored(entry, key, homes)
     if places is None:
         return False
-    return all(_clear(_folded(place), project, record) for place in places)
+    return all(_clear(folded(place), project, record) for place in places)
 
 
-def _widened(
-    layer: _Layer, homes: Sequence[Path | None], project: Sequence[str], record: Sequence[str]
-) -> list[str]:
-    """The gaps `layer`'s widening keys open: one for each key holding an entry not shown safe."""
+def _entries(layer: _Layer) -> dict[str, list[str | None]]:
+    """`layer`'s entries of each widening key, an `Edit` rule's by its path and a bare `Edit` as
+    `None`."""
     allowed = _strings(_table(layer.document, "permissions", "allow"))
-    entries: dict[str, list[str | None]] = {
+    return {
         WIDENING_KEYS[0]: [*_strings(_table(layer.document, SANDBOX, FILESYSTEM, ALLOW_WRITE))],
         WIDENING_KEYS[1]: [
             None if entry == EDIT else entry[len(EDIT) + 1 : -1]
@@ -393,11 +450,45 @@ def _widened(
             *_strings(_table(layer.document, "permissions", ADDITIONAL_DIRECTORIES))
         ],
     }
+
+
+def _widened(
+    layer: _Layer, homes: Sequence[Path | None], project: Sequence[str], record: Sequence[str]
+) -> list[str]:
+    """The gaps `layer`'s widening keys open: one for each key holding an entry not shown safe."""
     return [
         WIDENED.format(label=layer.label, key=key)
-        for key, listed in entries.items()
+        for key, listed in _entries(layer).items()
         if not all(_safe(entry, key, homes, project, record) for entry in listed)
     ]
+
+
+def _nested(layers: Sequence[_Layer], homes: Sequence[Path | None]) -> list[str]:
+    """The gaps of the entries in `layers` that another entry names or lies above, compared as
+    `_safe` compares, one for each key holding one: an agent's shell writes inside the other, so
+    what this one names may be a link to the record's directory by the time a session reads it.
+    Only entries `_anchored` places are compared; every other one is a gap of its own already."""
+    placed: list[tuple[str, list[str]]] = []
+    for layer in layers:
+        for key, listed in _entries(layer).items():
+            for entry in listed:
+                places = None if entry is None else _anchored(entry, key, homes)
+                if places is not None:
+                    said = NESTED.format(label=layer.label, key=key)
+                    placed.append((said, [folded(place) for place in places]))
+    return list(
+        dict.fromkeys(
+            said
+            for n, (said, places) in enumerate(placed)
+            if any(
+                place == other or place.startswith(other + "/")
+                for m, (_, others) in enumerate(placed)
+                if m != n
+                for other in others
+                for place in places
+            )
+        )
+    )
 
 
 def _carries_settings(root: Path) -> bool:
@@ -417,7 +508,7 @@ def _lists_claude(context: Context) -> bool:
 
 def _spellings(*paths: Path) -> list[str]:
     """Each of stayfixed's own `paths` as the row compares an entry with it."""
-    return [_folded(posixpath.normpath(str(path))) for path in paths]
+    return [folded(posixpath.normpath(str(path))) for path in paths]
 
 
 def approval_boundary(context: Context) -> Row:
@@ -468,21 +559,7 @@ def _judged(context: Context, directory: Path, user_label: str) -> Row:
     project = _read(context.root / PROJECT_SETTINGS, PROJECT_SETTINGS)
     user = _read(directory / USER_FILE, user_label)
     admin = _sandbox(managed, UNSANDBOXED_ALLOWED) is False
-    # While admin-required, a repository's `false` gives way to an owner's `true` and to nothing
-    # else (Claude Code's sandboxing reference).
-    owners_true = _sandbox(managed, ENABLED) is True or _sandbox(user, ENABLED) is True
-
-    enabled: object = None
-    source: _Layer | None = None
-    # Highest first, each with whether the repository wrote it.
-    for layer, repository in ((managed, False), (local, True), (project, True), (user, False)):
-        value = _sandbox(layer, ENABLED)
-        if not isinstance(value, bool):
-            continue
-        if value is False and admin and repository and owners_true:
-            continue
-        enabled, source = value, layer
-        break
+    enabled, source = _enabled(managed, local, project, user, admin=admin)
 
     try:
         held = len(recorded(context.machine))
@@ -512,6 +589,14 @@ def _judged(context: Context, directory: Path, user_label: str) -> Row:
         )
     if missing:
         gaps.append(NO_DENY.format(rule=" and ".join(missing)))
+    # A repository's file is read for what loosens the sandbox only while it is not admin-required
+    # (`WIDENING_KEYS` says why).
+    repository = () if admin else (local, project)
+    off = [
+        FILESYSTEM_OFF.format(label=layer.label)
+        for layer in (managed, *repository, user)
+        if _filesystem_off(layer)
+    ]
     widened: list[str] = []
     if not admin:
         for layer in (local, project):
@@ -519,24 +604,81 @@ def _judged(context: Context, directory: Path, user_label: str) -> Row:
                 widened.append(EXCLUDED.format(label=layer.label))
             widened.extend(_widened(layer, homes, project_root, record))
     widened.extend(_widened(user, homes, project_root, record))
+    widened.extend(_nested((*repository, user), homes))
+    resting = _resting(enabled, source, (managed, user), (local, project), wanted, missing)
     unread = [
         NOT_READ.format(label=layer.label)
         for layer in (*managed_unread, local, project, user)
         if layer.unread
     ]
 
-    managed_path = managed_settings()
-    if gaps or widened:
+    managed_path = managed_settings() or NO_MANAGED_PATH
+    if gaps or off or widened:
         status: Status = RED if held else WARN
         remedies = [
-            *([ADD_THE_BOUNDARY] if gaps else []),
+            *([ADD_THE_BOUNDARY] if gaps or resting else []),
+            *([KEEP_THE_FILESYSTEM] if off else []),
             *([NARROW_THE_SETTINGS] if widened else []),
         ]
-        detail = "; ".join((lead, *gaps, *widened, *unread))
+        detail = "; ".join((lead, *gaps, *off, *widened, *resting, *unread))
         return Row(status, detail, "; ".join(remedies))
-    if not admin:
-        remedy = MAKE_IT_ADMIN.format(managed=managed_path or NO_MANAGED_PATH)
-        return Row(WARN, "; ".join((lead, NOT_ADMIN, *unread)), remedy)
+    enforced = _sandbox(managed, FAIL_IF_UNAVAILABLE) is True
+    short = [
+        *resting,
+        *([] if admin else [NOT_ADMIN]),
+        *([] if enforced else [NO_FAIL_CLOSED.format(managed=managed_path)]),
+    ]
+    if short:
+        remedies = [
+            *([ADD_THE_BOUNDARY] if resting else []),
+            *([] if admin and enforced else [MAKE_IT_ADMIN.format(managed=managed_path)]),
+            *([MAKE_IT_JSON] if unread else []),
+        ]
+        return Row(WARN, "; ".join((lead, *short, *unread)), "; ".join(remedies))
     rule = " and ".join(wanted)
     detail = "; ".join((lead, GUARDED.format(rule=rule), *unread))
     return Row(WARN, detail, MAKE_IT_JSON) if unread else Row(OK, detail)
+
+
+def _enabled(
+    managed: _Layer, local: _Layer, project: _Layer, user: _Layer, *, admin: bool
+) -> tuple[object, _Layer | None]:
+    """The effective `sandbox.enabled`, and the layer it comes from: the highest layer's, where a
+    repository's `false` gives way, while admin-required, to an owner's `true` and to nothing else
+    (Claude Code's sandboxing reference)."""
+    owners_true = _sandbox(managed, ENABLED) is True or _sandbox(user, ENABLED) is True
+    # Highest first, each with whether the repository wrote it.
+    for layer, repository in ((managed, False), (local, True), (project, True), (user, False)):
+        value = _sandbox(layer, ENABLED)
+        if not isinstance(value, bool):
+            continue
+        if value is False and admin and repository and owners_true:
+            continue
+        return value, layer
+    return None, None
+
+
+def _resting(
+    enabled: object,
+    source: _Layer | None,
+    owners: Sequence[_Layer],
+    repository: Sequence[_Layer],
+    wanted: Sequence[str],
+    missing: Sequence[str],
+) -> list[str]:
+    """What is in force only through a repository's file (the module docstring says why that is
+    never green): the sandbox's `true`, where no owner's layer sets it, and each deny rule no
+    owner's layer holds, naming the files that do."""
+    resting: list[str] = []
+    owner_says = [_sandbox(layer, ENABLED) for layer in owners]
+    owners_on = next((value for value in owner_says if isinstance(value, bool)), None) is True
+    if enabled is True and not owners_on and source is not None:
+        resting.append(SANDBOX_FROM_REPOSITORY.format(label=source.label))
+    held = _deny_rules(owners)
+    lacking = [rule for rule in wanted if rule not in held]
+    if lacking and not missing:
+        holders = [layer.label for layer in repository if set(lacking) & _deny_rules((layer,))]
+        resting.append(
+            DENY_FROM_REPOSITORY.format(rule=" and ".join(lacking), label=" and ".join(holders))
+        )
+    return resting

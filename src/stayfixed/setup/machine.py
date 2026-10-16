@@ -62,7 +62,7 @@ from stayfixed import fsops, tomlout
 from stayfixed.config.machine import machine_config_path
 from stayfixed.errors import Failure, Refusal
 from stayfixed.harnesses import CLAUDE
-from stayfixed.trust.api import sandbox_refused
+from stayfixed.trust.api import OWN_TERMINAL_TOO, sandbox_refused
 
 # Said by `setup` where a directory it writes -- stayfixed's machine directory, Claude Code's user
 # settings -- refused a write as an agent's sandbox refuses one (`trust.boundary`'s docstring).
@@ -72,6 +72,7 @@ SANDBOXED = (
     "setup stopped: a directory it writes refused the write, which Claude Code's sandbox does to "
     "every write an agent's shell makes outside the working directory, so a person must run "
     "`stayfixed setup` in their own terminal, outside the agent's sandbox"
+    f"{OWN_TERMINAL_TOO}"
 )
 
 # The one machine-scope settings file `setup` writes, relative to `home`, and the one `doctor`'s

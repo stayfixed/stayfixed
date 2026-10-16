@@ -19,9 +19,12 @@ The approval boundary's spellings (`boundary`) are read by two consumers that mu
 home's directory `user_settings` finds and names the one `CONFIG_DIR_VARIABLE` chose, and names
 `managed_settings` in what it prints, and `doctor`'s `approval-boundary` row, which reads the
 settings layers through `managed_settings`, `MANAGED_DROP_INS` and each directory `user_settings`
-(`UserSettings`) finds, judges the sandbox by `SANDBOX`, `ENABLED` and `UNSANDBOXED_ALLOWED`, and
-counts those same `deny_rules`. `sandbox_refused` is how `setup` and `memory` tell a write an
-agent's sandbox refused, and `SandboxedWrite` is the record's own refusal of one.
+(`UserSettings`) finds, judges the sandbox by `SANDBOX`, `ENABLED`, `UNSANDBOXED_ALLOWED` and
+`FAIL_IF_UNAVAILABLE`, and counts those same `deny_rules`; `folded` is how both compare two paths,
+the row an entry with the record's directory and `in_project` a directory with the project root, so
+the two cannot fold case differently. `sandbox_refused` is how `setup` and `memory` tell a write an
+agent's sandbox refused, `SandboxedWrite` is the record's own refusal of one, and `OWN_TERMINAL_TOO`
+ends `setup`'s sentence for it as it ends the record's.
 """
 
 from __future__ import annotations
@@ -29,12 +32,15 @@ from __future__ import annotations
 from stayfixed.trust.boundary import (
     CONFIG_DIR_VARIABLE,
     ENABLED,
+    FAIL_IF_UNAVAILABLE,
     MANAGED_DROP_INS,
+    OWN_TERMINAL_TOO,
     SANDBOX,
     UNSANDBOXED_ALLOWED,
     UserSettings,
     deny_rule,
     deny_rules,
+    folded,
     in_project,
     managed_settings,
     sandbox_refused,
@@ -58,7 +64,9 @@ from stayfixed.trust.record import (
 __all__ = [
     "CONFIG_DIR_VARIABLE",
     "ENABLED",
+    "FAIL_IF_UNAVAILABLE",
     "MANAGED_DROP_INS",
+    "OWN_TERMINAL_TOO",
     "PERSON_RUNS",
     "SANDBOX",
     "UNSANDBOXED_ALLOWED",
@@ -74,6 +82,7 @@ __all__ = [
     "approve_kind",
     "deny_rule",
     "deny_rules",
+    "folded",
     "in_project",
     "kind_context",
     "managed_settings",

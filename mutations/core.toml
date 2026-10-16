@@ -4802,8 +4802,8 @@ reddens = [
 [[mutation]]
 name = "a directory is judged inside the project by its spelling alone"
 file = "src/stayfixed/trust/boundary.py"
-before = "        spellings = {os.path.abspath(directory), str(fsops.resolved(directory))}"
-after = "        spellings = {os.path.abspath(directory)}"
+before = "        spellings = {folded(os.path.abspath(directory)), folded(str(fsops.resolved(directory)))}"
+after = "        spellings = {folded(os.path.abspath(directory))}"
 reddens = [
   "tests/doctor/test_approval_boundary.py::test_a_claude_config_dir_that_leads_into_the_project_is_inside_it",
 ]
@@ -4848,4 +4848,41 @@ reddens = [
   "tests/trust/test_commands.py::test_a_record_write_a_sandbox_refused_says_a_person_must_run_it[revoke]",
   "tests/trust/test_commands.py::test_a_record_write_a_sandbox_refused_says_a_person_must_run_it[approve]",
   "tests/memory/test_commands.py::test_index_whose_refresh_a_sandbox_refused_leaves_the_approval_and_says_so",
+]
+
+[[mutation]]
+name = "the boundary row compares paths by their case where the volume folds it"
+file = "src/stayfixed/trust/boundary.py"
+before = "    return unicodedata.normalize(\"NFC\", text).casefold() if CASE_FOLDS else text"
+after = "    return unicodedata.normalize(\"NFC\", text) if CASE_FOLDS else text"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_a_case_variant_names_the_record_on_a_volume_that_folds_case",
+  "tests/doctor/test_approval_boundary.py::test_a_case_variant_of_the_project_is_inside_it",
+]
+
+[[mutation]]
+name = "the boundary row compares names composed and decomposed as different"
+file = "src/stayfixed/trust/boundary.py"
+before = "    return unicodedata.normalize(\"NFC\", text).casefold() if CASE_FOLDS else text"
+after = "    return text.casefold() if CASE_FOLDS else text"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_composed_and_decomposed_spellings_compare_alike_where_names_fold",
+]
+
+[[mutation]]
+name = "a directory is judged inside the project by its case"
+file = "src/stayfixed/trust/boundary.py"
+before = "        spellings = {folded(os.path.abspath(directory)), folded(str(fsops.resolved(directory)))}"
+after = "        spellings = {os.path.abspath(directory), str(fsops.resolved(directory))}"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_a_case_variant_of_the_project_is_inside_it",
+]
+
+[[mutation]]
+name = "the trust record's sandbox sentence sends a person in their own terminal there again"
+file = "src/stayfixed/trust/record.py"
+before = "    \"person must run this command in their own terminal, outside the agent's sandbox\"\n    f\"{OWN_TERMINAL_TOO}\""
+after = "    \"person must run this command in their own terminal, outside the agent's sandbox\""
+reddens = [
+  "tests/trust/test_record.py::test_the_sandbox_sentence_says_what_a_person_in_their_own_terminal_meets",
 ]

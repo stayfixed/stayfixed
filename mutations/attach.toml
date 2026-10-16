@@ -3431,3 +3431,23 @@ reddens = [
   "tests/trust/test_commands.py::test_every_sentence_that_names_the_memory_approval_asks_for_the_person",
   "tests/attach/test_commands.py::test_a_harness_link_that_waits_for_approval_is_said_with_the_way_out",
 ]
+
+# Attach says the refresh of the store's approval was refused, not only that the approval
+# lapsed.
+[[mutation]]
+name = "attach says nothing of a refresh the sandbox refused"
+file = "src/stayfixed/attach/write.py"
+before = "    if links.refresh_refused:"
+after = "    if False:"
+reddens = [
+  "tests/attach/test_write.py::test_an_approval_attach_could_not_carry_is_said_as_what_happened[sandboxed]",
+]
+
+[[mutation]]
+name = "attach drops the refresh the sandbox refused on its way out of the checkouts"
+file = "src/stayfixed/attach/write.py"
+before = "    return Links(created, revoked, withheld=links.withheld, refresh_refused=links.refresh_refused)"
+after = "    return Links(created, revoked, withheld=links.withheld, refresh_refused=False)"
+reddens = [
+  "tests/attach/test_write.py::test_an_approval_attach_could_not_carry_is_said_as_what_happened[sandboxed]",
+]

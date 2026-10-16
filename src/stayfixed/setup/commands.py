@@ -122,9 +122,9 @@ EMPTY_HOME = (
     "to your home directory, or pass --home PATH"
 )
 # What becomes of the directory `CLAUDE_CONFIG_DIR` names where it is not the home's `.claude`
-# (`trust.boundary.user_settings`): written too where it exists outside the project, and otherwise
-# named and left alone. `path` is the variable's value, which a repository may have chosen, so it is
-# printed through `printed.quoted`.
+# (`trust.boundary.user_settings`): written too where it exists outside the project and the person
+# named no destination, and otherwise named and left alone. `path` is the variable's value, which a
+# repository may have chosen, so it is printed through `printed.quoted`.
 CONFIG_DIR_WRITTEN = (
     "CLAUDE_CONFIG_DIR names another user settings directory, {path}, and its settings.json took "
     "the same rules, recorded under that directory in the machine configuration's "
@@ -135,6 +135,13 @@ CONFIG_DIR_MISSING = (
 )
 CONFIG_DIR_IN_PROJECT = (
     "CLAUDE_CONFIG_DIR names {path}, inside the project, whose contents the repository chooses, so "
+    "setup wrote nothing there"
+)
+# `--home` or `--settings` names where this run writes, which may be a scratch destination: a real
+# settings directory written beside it would hold rules whose record is in the scratch machine file,
+# which no later run of the real one could take back.
+CONFIG_DIR_NOT_NAMED = (
+    "CLAUDE_CONFIG_DIR names {path}, and --home or --settings named where this run writes, so "
     "setup wrote nothing there"
 )
 
@@ -170,14 +177,15 @@ def run_setup(args: argparse.Namespace) -> Result:
     # The user settings go where Claude Code reads them as `doctor` finds them: a file `--settings`
     # names, `.claude` under a `--home` the person named, and otherwise `.claude` under the home the
     # password database records; a `CLAUDE_CONFIG_DIR` naming another directory takes the same
-    # rules only where that directory exists outside the project (`trust.boundary.user_settings`
-    # says why).
+    # rules only where neither flag named the destination and that directory exists outside the
+    # project (`trust.boundary.user_settings` says why).
     settings = Path(args.settings).expanduser() if args.settings else None
     found = user_settings(os.environ, None if args.home is None else home)
-    if settings is None and args.home is None:
+    named = settings is not None or args.home is not None
+    if not named:
         settings = _claude_settings(found, home)
     project_root = _root(args.root)
-    also, said = _also(found.chosen, project_root)
+    also, said = _also(found.chosen, project_root, named=named)
     report = setup(
         args.preset or "recommended",
         home=home,
@@ -227,19 +235,24 @@ def run_setup(args: argparse.Namespace) -> Result:
     return Result(summary, data)
 
 
-def _also(chosen: Path | None, project_root: Path) -> tuple[Path | None, tuple[str, ...]]:
+def _also(
+    chosen: Path | None, project_root: Path, *, named: bool
+) -> tuple[Path | None, tuple[str, ...]]:
     """The directory `CLAUDE_CONFIG_DIR` names, where this run writes it too, and what the line
-    says of it: written where it exists outside the project, named and left alone otherwise."""
+    says of it: written where the person `named` no destination with `--home` or `--settings` and
+    it exists outside the project, named and left alone otherwise."""
     from stayfixed.trust.api import in_project
 
     if chosen is None:
         return None, ()
-    named = quoted(str(chosen))
+    spelled = quoted(str(chosen))
+    if named:
+        return None, (CONFIG_DIR_NOT_NAMED.format(path=spelled),)
     if in_project(chosen, project_root):
-        return None, (CONFIG_DIR_IN_PROJECT.format(path=named),)
+        return None, (CONFIG_DIR_IN_PROJECT.format(path=spelled),)
     if not fsops.is_dir(chosen):
-        return None, (CONFIG_DIR_MISSING.format(path=named),)
-    return chosen, (CONFIG_DIR_WRITTEN.format(path=named),)
+        return None, (CONFIG_DIR_MISSING.format(path=spelled),)
+    return chosen, (CONFIG_DIR_WRITTEN.format(path=spelled),)
 
 
 def _claude_settings(found: UserSettings, home: Path) -> Path | None:

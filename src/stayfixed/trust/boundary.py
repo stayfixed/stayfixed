@@ -38,13 +38,22 @@ that directory exists outside the project.
 **A write the sandbox refuses** (`sandbox_refused`): with Claude Code's sandbox on, an agent's shell
 writes only the working directory and the temporary directory, so stayfixed's own writes to the
 machine directory -- the trust record, the machine file -- and to the user settings fail there with
-a permission error, whether or not the deny rule is in place. macOS's sandbox answers `EPERM`
-(measured with `sandbox-exec` on macOS 27 on 2026-10-16: an open and a `mkdir` in a denied directory
-each raised `PermissionError` `EPERM`); a read-only mount answers `EROFS`, which Linux's sandbox was
-not measured to give. So `EPERM` and `EROFS` are read as that refusal, and each writer says so in
-its own words, naming a person outside the agent's sandbox as the one to run it. A directory whose
-mode refuses the user answers `EACCES`, which is not the sandbox, and keeps each writer's sentence
-naming the directory.
+a permission error, whether or not the deny rule is in place. Claude Code's sandboxing reference
+gives the error for such a write: `Operation not permitted` (`EPERM`) on macOS, and `Read-only file
+system` (`EROFS`) on Linux and WSL2. macOS's was also measured here (with `sandbox-exec` on macOS 27
+on 2026-10-16: an open and a `mkdir` in a denied directory each raised `PermissionError` `EPERM`);
+Linux's was not. So `EPERM` and `EROFS` are read as that refusal, and each writer says so in its own
+words, naming a person outside the agent's sandbox as the one to run it. A read-only mount and an
+immutable flag answer the same, so the sentences of the two commands a person runs, `setup` and
+the trust record's writers, end with `OWN_TERMINAL_TOO`, lest a person already in their own terminal
+be sent there again. A directory whose mode refuses the user answers `EACCES`, which is not the
+sandbox, and keeps each writer's sentence naming the directory.
+
+**Comparing two paths** (`folded`, `in_project`): the macOS default volume folds case, and hands
+names back composed or decomposed, so there a spelling is compared in NFC, case-folded; elsewhere
+as it is. `doctor` compares a settings entry with the record's directory this way, and
+`in_project` compares a directory with the project root the same way, so a case variant of the
+project's path is inside it.
 """
 
 from __future__ import annotations
@@ -52,6 +61,7 @@ from __future__ import annotations
 import errno
 import os
 import sys
+import unicodedata
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -78,6 +88,11 @@ CONFIG_DIR_VARIABLE = "CLAUDE_CONFIG_DIR"
 SANDBOX = "sandbox"
 ENABLED = "enabled"
 UNSANDBOXED_ALLOWED = "allowUnsandboxedCommands"
+# The key that makes Claude Code refuse to start where the sandbox cannot, instead of running
+# commands outside it: named by Claude Code's sandboxing reference, whose recipe for enforcing the
+# sandbox sets it in managed settings beside `enabled` and `allowUnsandboxedCommands`; not measured
+# here.
+FAIL_IF_UNAVAILABLE = "failIfUnavailable"
 # The deny rule over a directory, measured on Claude Code 2.1.296: `Edit(/` and the absolute path,
 # whose own leading slash makes the two the measurement needs.
 DENY_RULE = "Edit(/{directory}/**)"
@@ -120,23 +135,41 @@ def user_settings(env: Mapping[str, str], home: Path | None = None) -> UserSetti
     return UserSettings(directory, Path(named) if named and not same else None)
 
 
+# The macOS default volume folds case, and its names may arrive composed or decomposed, so a
+# spelling is compared there in NFC, case-folded (the module docstring).
+CASE_FOLDS = sys.platform == "darwin"
+
+
+def folded(text: str) -> str:
+    """`text`, a path, as this module and `doctor` compare it: as it is, or in NFC and
+    case-folded where names fold."""
+    return unicodedata.normalize("NFC", text).casefold() if CASE_FOLDS else text
+
+
 def in_project(directory: Path, root: Path) -> bool:
     """Whether `directory` is the project `root` or lies inside it, spelled as given (made absolute
     against the working directory, as Claude Code would read a relative one) or where its links
-    lead; a directory whose links cannot be followed is taken to be inside, since what the
-    repository commits there is the repository's to choose."""
+    lead, each compared `folded`; a directory whose links cannot be followed is taken to be inside,
+    since what the repository commits there is the repository's to choose."""
     try:
-        spellings = {os.path.abspath(directory), str(fsops.resolved(directory))}
+        spellings = {folded(os.path.abspath(directory)), folded(str(fsops.resolved(directory)))}
     except OSError:
         return True
-    roots = {str(root), str(fsops.resolved(root))}
+    roots = {folded(str(root)), folded(str(fsops.resolved(root)))}
     return any(
         place == held or place.startswith(held + "/") for place in spellings for held in roots
     )
 
 
-# The errors a sandboxed write fails with (the module docstring says which were measured).
+# The errors a sandboxed write fails with (the module docstring cites where each is given).
 SANDBOX_ERRNOS = frozenset({errno.EPERM, errno.EROFS})
+
+
+# The end of the sentence `setup` and the trust record give a refused write (the module docstring).
+OWN_TERMINAL_TOO = (
+    "; met in a person's own terminal, it is the directory itself that refuses writes, as a "
+    "read-only mount or an immutable flag does"
+)
 
 
 def sandbox_refused(exc: OSError) -> bool:
