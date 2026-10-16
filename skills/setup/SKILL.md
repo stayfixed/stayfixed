@@ -46,12 +46,15 @@ description: Configure the machine for stayfixed — the preset, the personal pa
    and a warning while all holds until the sandbox's `true` and the deny rules come from managed
    settings or the user's own file (never only from a repository's, which a later commit can
    change) and managed settings set `sandbox.enabled = true`, `sandbox.failIfUnavailable = true`
-   and `sandbox.allowUnsandboxedCommands = false`; green only then. An entry of
+   and `sandbox.allowUnsandboxedCommands = false`; green only then. A non-empty
+   `sandbox.excludedCommands` in the user's own file is a gap even while the sandbox is
+   admin-required, and in managed settings keeps the row at a warning. An entry of
    `sandbox.filesystem.allowWrite`, `permissions.additionalDirectories` or a file-edit allow rule
-   is safe only as a literal path outside the project and the trust record's directory, inside no
-   other such entry, `/…` or `~/…` (`//…` or `~/…` in a file-edit rule; a `~/` one only where it
-   stays clear under every home it may mean, `HOME` included), of letters, digits, `.`, `_`, `-`
-   and `/`; every other entry is a gap the row names by key and file. Where `CLAUDE_CONFIG_DIR`
+   is safe only as a literal path outside the project and the trust record's directory, below no
+   `claude-<digits>` component, strictly inside no other such entry (managed settings' included),
+   `/…` or `~/…` (`//…` or `~/…` in a file-edit rule; a `~/` one only where it stays clear under
+   every home it may mean, `HOME` included), of letters, digits, `.`, `_`, `-` and `/`; every other
+   entry is a gap the row names by key and file. Where `CLAUDE_CONFIG_DIR`
    names a user settings directory besides `~/.claude`, that directory may only make the row
    worse, and `setup` writes it too only where it exists outside the project and neither `--home`
    nor `--settings` was given; relay the line that names it.

@@ -62,7 +62,8 @@ package that names a harness is pardoned there, each pardon by one of these item
   every harness.
 - The approval boundary is Claude Code's alone: `trust.boundary` spells its managed-settings paths,
   the variable that moves its user settings and its deny-rule grammar, which `setup` writes and
-  `doctor`'s `approval-boundary` row reads (`doctor.boundary`), and that row says it skips a
+  `doctor`'s `approval-boundary` row reads (`doctor.boundary`), which also spells the
+  `claude-<digits>` name of its sandbox's temporary directory, and that row says it skips a
   project whose `[stayfixed] agents` lists no `claude`. Another harness's sandbox is an edit there.
 - The hook payload is read in Claude Code's schema, the canonical one (`CANONICAL`): its keys
   (`hook_event_name`, `tool_name`, `tool_input`, `session_id`, `run_in_background`), the tool

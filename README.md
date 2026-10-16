@@ -507,11 +507,16 @@ admin-required and refuse to start without it (`sandbox.enabled = true`,
 sandboxing reference's recipe); **green** only then. While the sandbox is admin-required, from
 Claude Code 2.1.285, Claude Code ignores the write access a repository's widening entries give
 sandboxed commands, and its file tools still follow a repository's `Edit` allow rules and additional
-directories, which the deny rule outranks. An entry of `sandbox.filesystem.allowWrite`,
+directories, which the deny rule outranks. A non-empty `sandbox.excludedCommands` runs its commands
+with no filesystem restriction: in `~/.claude/settings.json` it is a gap whether or not the sandbox
+is admin-required, in a repository's file while it is not, and in managed settings it is named and
+keeps the row at a warning. An entry of `sandbox.filesystem.allowWrite`,
 `permissions.additionalDirectories` or an `Edit` allow rule is safe only as a literal path outside
-the project and that directory, and inside no other such entry — `~/.kube` and `/tmp/build` are;
-`**`, `~/.config`, `./build` and `~/a/b` beside `~/a` are not, and a `~/` entry must be clear under
-every home it may mean, `HOME` included — and every other entry is a gap the row names. Where
+the project and that directory, below no `claude-<digits>` component (the sandbox's own temporary
+directory), and strictly inside no other such entry, managed settings' included — `~/.kube` and
+`/tmp/build` are, the same place in `allowWrite` and an `Edit` rule too; `**`, `~/.config`,
+`./build`, `/tmp/claude-501/build` and `~/a/b` beside `~/a` are not, and a `~/` entry must be clear
+under every home it may mean, `HOME` included — and every other entry is a gap the row names. Where
 `CLAUDE_CONFIG_DIR` names a user settings directory besides `~/.claude`, that directory may only
 make the row worse — never better than a warning when it is the only one, and never read at all
 inside the project — and `setup` writes it too only where it exists outside the project and

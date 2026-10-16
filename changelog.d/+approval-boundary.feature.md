@@ -9,12 +9,16 @@ settings that rule needs; it never sets them. `stayfixed doctor` has a nineteent
 `approval-boundary`, which reads this project's effective Claude Code settings: red once the
 machine holds an approval and the sandbox is off for the project or confines no file
 (`sandbox.filesystem.disabled`), the deny rules setup writes are not there byte for byte, or a
-setting widens them (a repository's `sandbox.excludedCommands`, or any `allowWrite`, `Edit` allow
-or `additionalDirectories` entry not shown, as text, to be a literal path outside the project and
-the record's directory and inside no other such entry), a warning before that, a warning while the
-sandbox or a deny rule is there only through a repository's settings file, which a later commit
-can remove, or while managed settings do not make the sandbox admin-required and refuse to start
-without it (`sandbox.failIfUnavailable = true`), and green only then. A `~/` entry counts as safe
-only under every home it may mean, `HOME` included, and a user settings directory
+setting widens them (a `sandbox.excludedCommands` in your own user settings, admin-required or not,
+or in a repository's, or any `allowWrite`, `Edit` allow or `additionalDirectories` entry not shown,
+as text, to be a literal path outside the project, the record's directory and the sandbox's own
+`claude-<digits>` temporary directory, and strictly inside no other such entry, managed settings'
+included), a warning before that, a warning while the sandbox or a deny rule is there only through
+a repository's settings file, which a later commit can remove, while managed settings exclude
+commands from the sandbox, or while managed settings do not make the sandbox admin-required and
+refuse to start without it (`sandbox.failIfUnavailable = true`), and green only then. A `~/` entry
+counts as safe only under every home it may mean, `HOME` included, and a user settings directory
 `CLAUDE_CONFIG_DIR` names besides `~/.claude` may only make the answer worse: alone it is never
-better than a warning, and inside the project, case-folded on macOS, it is never read.
+better than a warning, and inside the project, case-folded on macOS, it is never read. A project
+whose `[stayfixed] agents` does not list `claude` and which carries no Claude Code settings file is
+skipped only while the trust record holds no approval.

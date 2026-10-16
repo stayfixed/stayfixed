@@ -516,20 +516,41 @@ def test_claude_config_dir_is_the_home_s_own_only_when_spelled_alike_to_the_byte
     assert (boundary.CHOSEN_LABEL in row.detail) is twice, row.detail
 
 
-def test_the_row_skips_when_the_project_lists_no_claude(m: Machine) -> None:
+@pytest.mark.parametrize(
+    ("record", "lead"),
+    [
+        pytest.param("none", None, id="none"),
+        pytest.param("one", boundary.HELD.format(count=1), id="one"),
+        pytest.param("unreadable", boundary.RECORD_UNREAD, id="unreadable"),
+    ],
+)
+def test_the_row_skips_a_project_that_lists_no_claude_only_while_no_approval_is_held(
+    m: Machine, record: str, lead: str | None
+) -> None:
     # A project whose `[stayfixed] agents` does not list `claude` runs no session the sandbox
-    # guards; with no `stayfixed.toml` the preset's agents apply, which do. Mutation
-    # (`mutations/`'s "the boundary row asks a project that lists no claude"): the row is red.
+    # guards, so with no approval on the machine the row skips; with no `stayfixed.toml` the
+    # preset's agents apply, which do. The agents list is the repository's to write, so once the
+    # record holds an approval, or cannot be read, a later commit listing `codex` alone must not
+    # turn a red row into a skip: the row is judged. Mutations (`mutations/`'s "the boundary row
+    # asks a project that lists no claude" -> `none` warns; "the boundary row skips a project that
+    # lists no claude beside an approval" -> `one` and `unreadable` skip).
     (m.root / CONFIG_FILE).write_text(
         f'[stayfixed]\nversion = "{stayfixed.__version__}"\nstate = "installed"\n'
         'agents = ["codex"]\n\n[project]\nname = "p"\n',
         encoding="utf-8",
     )
-    m.approvals(1)
+    if record == "one":
+        m.approvals(1)
+    elif record == "unreadable":
+        (m.record_directory / "trust.json").write_text("{ not json", encoding="utf-8")
     row = m.row()
-    assert (row.status, row.detail, row.remedy) == (SKIP, boundary.NOT_LISTED, "")
-    (m.root / CONFIG_FILE).unlink()
-    assert m.row().status == RED
+    if lead is None:
+        assert (row.status, row.detail, row.remedy) == (SKIP, boundary.NOT_LISTED, "")
+        (m.root / CONFIG_FILE).unlink()
+        assert m.row().status == WARN
+    else:
+        assert row.status == RED, row
+        assert row.detail.startswith(lead + "; "), row.detail
 
 
 def test_an_unreadable_trust_record_is_taken_to_hold_approvals(m: Machine) -> None:
@@ -702,6 +723,18 @@ SAFE = [
     pytest.param(
         "project", lambda m: _allow_write("~/machine"), False, WARN, None, id="home-machine"
     ),
+    # The sandbox's per-user temporary directory itself, and components that only look like it:
+    # an entry is a gap only below a `claude-` component of digits. Under `/srv`, so that no
+    # temporary directory the suite runs in can hold the entry.
+    pytest.param(
+        "user", lambda m: _allow_write("/srv/claude-501"), True, OK, None, id="sandbox-temp-itself"
+    ),
+    pytest.param(
+        "user", lambda m: _allow_write("/srv/claude-code/x"), True, OK, None, id="claude-not-digits"
+    ),
+    pytest.param(
+        "user", lambda m: _allow_write("/srv/claude-/x"), True, OK, None, id="claude-dash-alone"
+    ),
 ]
 
 
@@ -805,6 +838,19 @@ GAPS = [
         *_gap("user", lambda m: _edit("/" + str(m.record_directory)), _EDIT, admin=True),
         id="user-edit-record",
     ),
+    # Below the sandbox's per-user temporary directory, which sandboxed commands write, whatever
+    # base `CLAUDE_CODE_TMPDIR` gives it.
+    pytest.param(
+        *_gap("user", lambda m: _allow_write("/tmp/claude-501/build"), _WRITE, admin=True),
+        id="sandbox-temp",
+    ),
+    pytest.param(
+        *_gap("project", lambda m: _edit("//srv/claude-0/x/y"), _EDIT), id="edit-sandbox-temp"
+    ),
+    pytest.param(
+        *_gap("user", lambda m: _directories("~/claude-501/x"), _DIRECTORIES, admin=True),
+        id="home-sandbox-temp",
+    ),
 ]
 
 REPOSITORY_SETTINGS = [
@@ -827,6 +873,33 @@ REPOSITORY_SETTINGS = [
     pytest.param(
         "local", lambda m: _allow_write("**"), True, OK, None, id="local-allow-write-under-admin"
     ),
+    # The sandboxing reference's own example puts `docker compose *` in the user's file, its
+    # commands run with no filesystem restriction, and the user's file applies while the sandbox is
+    # admin-required: a gap in either case.
+    pytest.param(
+        "user",
+        lambda m: {"sandbox": {"excludedCommands": ["docker compose *"]}},
+        False,
+        RED,
+        boundary.EXCLUDED.format(label=_USER),
+        id="user-excluded-commands",
+    ),
+    pytest.param(
+        "user",
+        lambda m: {"sandbox": {"excludedCommands": ["docker compose *"]}},
+        True,
+        RED,
+        boundary.EXCLUDED.format(label=_USER),
+        id="user-excluded-commands-under-admin",
+    ),
+    pytest.param(
+        "user",
+        lambda m: {"sandbox": {"excludedCommands": []}},
+        True,
+        OK,
+        None,
+        id="user-excludes-none",
+    ),
 ]
 
 
@@ -840,10 +913,11 @@ def test_a_setting_that_widens_confinement_is_a_gap_unless_shown_safe(
     # `glob` and `double-slash-glob` are refused by the anchor and component tests before the
     # allowlist is asked, and `bare-home` by the anchor test, so each is held by those mutations.
     # Mutations (`mutations/`'s "the boundary row reads no excludedCommands" ->
-    # `excluded-commands`; "the boundary row reads widening repository entries while
-    # admin-required" -> the two `-under-admin` cases are red; "the boundary row reads no
-    # repository entry that widens" -> the repository gaps but `excluded-commands` go; "the
-    # boundary row reads no user entry that widens" -> the `user-` gaps go; "the boundary row
+    # `excluded-commands` and `user-excluded-commands`; "the boundary row reads widening
+    # repository entries while admin-required" -> `excluded-commands-under-admin` and
+    # `local-allow-write-under-admin` are red; "the boundary row reads no repository entry that
+    # widens" -> the repository gaps but `excluded-commands` go; "the boundary row reads no user
+    # entry that widens" -> the `user-` cases of `GAPS` go; "the boundary row
     # takes every entry for a gap" -> the safe cases are red; "the boundary row reads an entry
     # outside the allowlist" -> `nul`, `bracket`, `backslash`, `space`, `composed`, `decomposed`,
     # `ten-thousand-wildcards`, `absolute-glob` and `edit-glob` go; "the boundary row lets a dot,
@@ -859,7 +933,14 @@ def test_a_setting_that_widens_confinement_is_a_gap_unless_shown_safe(
     # "the boundary row judges a key by one entry" -> `one-safe-one-not` goes; "the boundary row
     # passes a bare Edit" -> `user-bare-edit` goes; "the boundary row reads a ~/ entry under the
     # password database's home alone" -> `home-elsewhere` goes; "the boundary row places a ~/ entry
-    # under a HOME that names no directory" -> `home-empty` goes).
+    # under a HOME that names no directory" -> `home-empty` goes; "the boundary row reads no user
+    # excludedCommands" -> both `user-excluded-commands` cases go; "the boundary row takes an empty
+    # excludedCommands for a gap" -> `user-excludes-none` is red; "the boundary row passes an entry
+    # under the sandbox's temporary directory" -> `sandbox-temp`, `edit-sandbox-temp` and
+    # `home-sandbox-temp` go; "the boundary row reads the sandbox's temporary directory itself as
+    # below it" -> `sandbox-temp-itself` is red; "the boundary row takes any claude- component for
+    # the sandbox's temporary directory" -> `claude-not-digits` is red; "the boundary row takes a
+    # bare claude- component for the sandbox's temporary directory" -> `claude-dash-alone` is red).
     written = document(m)
     base = _merged(SANDBOX_ON, _deny(_rule(m.record_directory)))
     if admin:
@@ -881,17 +962,73 @@ def test_a_setting_that_widens_confinement_is_a_gap_unless_shown_safe(
         assert not any(sentence in row.detail for sentence in widened), row.detail
 
 
-def test_a_widening_gap_with_no_approval_is_a_warning(m: Machine) -> None:
-    # As every gap: a warning until the machine holds an approval. Mutation (`mutations/`'s "the
-    # boundary row is red with no approval"): red.
-    m.user(_merged(SANDBOX_ON, _deny(_rule(m.record_directory))))
-    m.project(_allow_write("**"))
+@pytest.mark.parametrize(
+    ("where", "document", "said"),
+    [
+        pytest.param(
+            "project",
+            _allow_write("**"),
+            boundary.WIDENED.format(label=_PROJECT, key=_WRITE),
+            id="project-allow-write",
+        ),
+        pytest.param(
+            "user",
+            {"sandbox": {"excludedCommands": ["docker compose *"]}},
+            boundary.EXCLUDED.format(label=_USER),
+            id="user-excluded-commands",
+        ),
+    ],
+)
+def test_a_widening_gap_with_no_approval_is_a_warning(
+    m: Machine, where: str, document: dict[str, Any], said: str
+) -> None:
+    # As every gap: a warning until the machine holds an approval. Mutations (`mutations/`'s "the
+    # boundary row is red with no approval" -> red; "the boundary row reads no user
+    # excludedCommands" -> `user-excluded-commands` names no gap).
+    owner = _merged(SANDBOX_ON, _deny(_rule(m.record_directory)))
+    if where == "user":
+        m.user(_merged(owner, document))
+    else:
+        m.user(owner)
+        m.project(document)
     row = m.row()
     assert row.status == WARN, row
-    assert row.detail == "; ".join(
-        (boundary.NONE_HELD, boundary.WIDENED.format(label=_PROJECT, key=_WRITE))
-    )
+    assert row.detail == "; ".join((boundary.NONE_HELD, said))
     assert row.remedy == boundary.NARROW_THE_SETTINGS
+
+
+@pytest.mark.parametrize("where", ["managed-file", "drop-in", "beside-a-gap"])
+def test_managed_settings_excluded_commands_keep_the_row_from_green(m: Machine, where: str) -> None:
+    # Managed settings' `excludedCommands` is an administrator's choice, and its commands still run
+    # outside the sandbox, where the deny rule does not reach the shell: named, with its remedy,
+    # and the row at best a warning, from the managed file or a drop-in beside it alike; beside a
+    # red gap it is named too. Mutations (`mutations/`'s "the boundary row reads no managed
+    # excludedCommands" -> every case loses the sentence, and `managed-file` and `drop-in` are ok;
+    # "the boundary row lets managed excludedCommands make the row green" -> `managed-file` is ok).
+    managed = managed_settings()
+    assert managed is not None
+    excluded = {"sandbox": {"excludedCommands": ["docker *"]}}
+    if where == "drop-in":
+        m.managed(ENFORCED)
+        _write(managed.parent / "managed-settings.d" / "20-docker.json", excluded)
+    else:
+        m.managed(_merged(ENFORCED, excluded))
+    gap = _allow_write("**") if where == "beside-a-gap" else {}
+    m.user(_merged(SANDBOX_ON, _deny(_rule(m.record_directory)), gap))
+    m.approvals(1)
+    row = m.row()
+    said = boundary.MANAGED_EXCLUDED.format(managed=managed)
+    remedy = boundary.UNEXCLUDE_MANAGED.format(managed=managed)
+    lead = boundary.HELD.format(count=1)
+    if where == "beside-a-gap":
+        widened = boundary.WIDENED.format(label=_USER, key=_WRITE)
+        assert (row.status, row.detail, row.remedy) == (
+            RED,
+            "; ".join((lead, widened, said)),
+            "; ".join((boundary.NARROW_THE_SETTINGS, remedy)),
+        )
+    else:
+        assert (row.status, row.detail, row.remedy) == (WARN, "; ".join((lead, said)), remedy)
 
 
 def test_with_no_trust_record_directory_no_entry_is_shown_safe(
@@ -921,16 +1058,18 @@ def test_a_project_carrying_claude_code_settings_is_read_whatever_it_lists(
 ) -> None:
     # `[stayfixed] agents` is the repository's to write, so a project that lists no `claude` and
     # ships a Claude Code settings file is read all the same: listing `codex` alone must not be a
-    # way to silence the row. Mutation (`mutations/`'s "the boundary row skips a project that ships
-    # Claude Code settings for the agents it lists"): the row skips.
+    # way to silence the row. With no approval held, since one is judged whatever the project
+    # carries. Mutation (`mutations/`'s "the boundary row skips a project that ships Claude Code
+    # settings for the agents it lists"): the row skips.
     (m.root / CONFIG_FILE).write_text(
         f'[stayfixed]\nversion = "{stayfixed.__version__}"\nstate = "installed"\n'
         'agents = ["codex"]\n\n[project]\nname = "p"\n',
         encoding="utf-8",
     )
     getattr(m, carried)({})
-    m.approvals(1)
-    assert m.row().status == RED
+    row = m.row()
+    assert row.status == WARN, row
+    assert row.detail.startswith(boundary.NONE_HELD + "; "), row.detail
 
 
 def test_an_entry_is_read_without_asking_the_filesystem(
@@ -977,6 +1116,22 @@ def test_a_case_variant_names_the_record_on_a_volume_that_folds_case(
     row = m.row()
     assert row.status == RED, row
     assert boundary.WIDENED.format(label=_PROJECT, key=_WRITE) in row.detail.split("; ")
+
+
+def test_a_case_variant_of_the_sandbox_s_temporary_directory_is_it_where_names_fold(
+    m: Machine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # On macOS's default volume `CLAUDE-501` is the sandbox's `claude-501`, so an entry below it is
+    # below the directory sandboxed commands write. Mutation (`mutations/`'s "the boundary row
+    # reads the sandbox's temporary directory by its case"): the entry is shown safe and the row is
+    # ok.
+    monkeypatch.setattr(trust_boundary, "CASE_FOLDS", True)
+    m.managed(ENFORCED)
+    m.user(_merged(SANDBOX_ON, _deny(_rule(m.record_directory)), _allow_write("/srv/CLAUDE-501/x")))
+    m.approvals(1)
+    row = m.row()
+    assert row.status == RED, row
+    assert boundary.WIDENED.format(label=_USER, key=_WRITE) in row.detail.split("; ")
 
 
 def test_composed_and_decomposed_spellings_compare_alike_where_names_fold(
@@ -1188,10 +1343,10 @@ def test_a_sandbox_that_confines_no_file_warns_with_no_approval(m: Machine) -> N
     )
 
 
-# Two widening entries, one the same place as the other or inside it: an agent's shell writes in
-# the outer one, so the inner one may be a link to the record's directory by the time a session
-# resolves it. Whether a deny rule holds inside a wider write entry was not measured, so the inner
-# one is a gap; an entry beside another is not.
+# Two widening entries, one strictly inside the other, a managed one included: an agent's shell
+# writes in the outer one, so the inner one may be a link to the record's directory by the time a
+# session resolves it. Whether a deny rule holds inside a wider write entry was not measured, so the
+# inner one is a gap; an entry beside another, or naming the same place, is not.
 def _nested_case(
     where: dict[str, dict[str, Any]], admin: bool, expected: str, said: list[tuple[str, str]]
 ) -> tuple[dict[str, dict[str, Any]], bool, str, list[tuple[str, str]]]:
@@ -1212,14 +1367,37 @@ NESTED_CASES = [
         ),
         id="project-inside-user",
     ),
+    # The mirrored pair the sandboxing reference's users write: the same place for the shell and
+    # the file tools. Replacing it needs write access to its parent, which neither entry gives.
     pytest.param(
         *_nested_case(
-            {"user": _merged(_allow_write("/tmp/build"), _edit("//tmp/build"))},
-            True,
-            RED,
-            [(_USER, _WRITE), (_USER, _EDIT)],
+            {"user": _merged(_allow_write("/tmp/build"), _edit("//tmp/build"))}, True, OK, []
         ),
         id="one-place-twice",
+    ),
+    pytest.param(
+        *_nested_case(
+            {"managed": _allow_write("/tmp/build"), "user": _allow_write("/tmp/build")},
+            True,
+            OK,
+            [],
+        ),
+        id="one-place-in-managed-and-user",
+    ),
+    # An administrator's entry holds the user's as any other would; managed settings' own entries
+    # are never said.
+    pytest.param(
+        *_nested_case(
+            {"managed": _allow_write("~/a"), "user": _directories("~/a/b")},
+            True,
+            RED,
+            [(_USER, _DIRECTORIES)],
+        ),
+        id="user-inside-managed",
+    ),
+    pytest.param(
+        *_nested_case({"managed": _allow_write("~/a", "~/a/b")}, True, OK, []),
+        id="managed-inside-managed",
     ),
     pytest.param(
         *_nested_case({"user": _allow_write("~/a", "~/ab")}, True, OK, []),
@@ -1247,13 +1425,16 @@ def test_a_widening_entry_inside_another_is_a_gap(
     said: list[tuple[str, str]],
 ) -> None:
     # Each entry alone is a literal outside the project and the record's directory, so only the
-    # pair can make it a gap: the inner one, and both where they name one place, said by file and
-    # key. Under admin-required a repository's entries are not read, so they nest nothing.
-    # Mutations (`mutations/`'s "the boundary row lets one widening entry lie inside another" ->
-    # every red case is ok or warns; "the boundary row reads one entry inside another by its
-    # spelling's prefix" -> `side-by-side` is red; "the boundary row takes two entries naming one
-    # place for unrelated" -> `one-place-twice` is ok).
-    m.managed(ENFORCED if admin else _merged(SANDBOX_ON, {"sandbox": {"failIfUnavailable": True}}))
+    # pair can make it a gap: the inner one, said by file and key. Under admin-required a
+    # repository's entries are not read, so they nest nothing. Mutations (`mutations/`'s "the
+    # boundary row lets one widening entry lie inside another" -> every red case is ok or warns;
+    # "the boundary row reads one entry inside another by its spelling's prefix" -> `side-by-side`
+    # is red; "the boundary row takes two entries naming one place for nested" -> `one-place-twice`
+    # and `one-place-in-managed-and-user` are red; "the boundary row compares no entry with managed
+    # settings' entries" -> `user-inside-managed` is ok; "the boundary row says managed settings'
+    # own nested entries" -> `managed-inside-managed` is red).
+    base = ENFORCED if admin else _merged(SANDBOX_ON, {"sandbox": {"failIfUnavailable": True}})
+    m.managed(_merged(base, where.get("managed", {})))
     owner = _merged(SANDBOX_ON, _deny(_rule(m.record_directory)))
     m.user(_merged(owner, where.get("user", {})))
     if "project" in where:

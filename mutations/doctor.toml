@@ -3068,7 +3068,7 @@ reddens = [
 [[mutation]]
 name = "the boundary row names no gap"
 file = "src/stayfixed/doctor/boundary.py"
-before = "        detail = \"; \".join((lead, *gaps, *off, *widened, *resting, *unread))"
+before = "        detail = \"; \".join((lead, *gaps, *off, *widened, *resting, *managed_excluded, *unread))"
 after = "        detail = lead"
 reddens = [
   "tests/doctor/test_approval_boundary.py::test_a_gap_names_the_missing_setting_and_what_it_stops",
@@ -3105,17 +3105,27 @@ reddens = [
 [[mutation]]
 name = "the boundary row asks a project that lists no claude"
 file = "src/stayfixed/doctor/boundary.py"
-before = "    if not _lists_claude(context) and not _carries_settings(context.root):"
+before = "    if not approvals[0] and not _lists_claude(context) and not _carries_settings(context.root):"
 after = "    if False:"
 reddens = [
-  "tests/doctor/test_approval_boundary.py::test_the_row_skips_when_the_project_lists_no_claude",
+  "tests/doctor/test_approval_boundary.py::test_the_row_skips_a_project_that_lists_no_claude_only_while_no_approval_is_held[none]",
+]
+
+[[mutation]]
+name = "the boundary row skips a project that lists no claude beside an approval"
+file = "src/stayfixed/doctor/boundary.py"
+before = "    if not approvals[0] and not _lists_claude(context) and not _carries_settings(context.root):"
+after = "    if not _lists_claude(context) and not _carries_settings(context.root):"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_the_row_skips_a_project_that_lists_no_claude_only_while_no_approval_is_held[one]",
+  "tests/doctor/test_approval_boundary.py::test_the_row_skips_a_project_that_lists_no_claude_only_while_no_approval_is_held[unreadable]",
 ]
 
 [[mutation]]
 name = "the boundary row reads an unreadable trust record as empty"
 file = "src/stayfixed/doctor/boundary.py"
-before = "        held, lead = 1, RECORD_UNREAD"
-after = "        held, lead = 0, NONE_HELD"
+before = "        return 1, RECORD_UNREAD"
+after = "        return 0, NONE_HELD"
 reddens = [
   "tests/doctor/test_approval_boundary.py::test_an_unreadable_trust_record_is_taken_to_hold_approvals",
 ]
@@ -3136,17 +3146,60 @@ reddens = [
 [[mutation]]
 name = "the boundary row reads no excludedCommands"
 file = "src/stayfixed/doctor/boundary.py"
-before = "            if _strings(_sandbox(layer, EXCLUDED_COMMANDS)):"
-after = "            if False:"
+before = "        if _strings(_sandbox(layer, EXCLUDED_COMMANDS)):"
+after = "        if False:"
 reddens = [
   "tests/doctor/test_approval_boundary.py::test_a_setting_that_widens_confinement_is_a_gap_unless_shown_safe[excluded-commands]",
+  "tests/doctor/test_approval_boundary.py::test_a_setting_that_widens_confinement_is_a_gap_unless_shown_safe[user-excluded-commands]",
+]
+
+# The user's file applies while the sandbox is admin-required, and its excluded commands run with
+# no filesystem restriction; managed settings' keep the row from green.
+[[mutation]]
+name = "the boundary row reads no user excludedCommands"
+file = "src/stayfixed/doctor/boundary.py"
+before = "        if _strings(_sandbox(layer, EXCLUDED_COMMANDS)):"
+after = "        if layer is not user and _strings(_sandbox(layer, EXCLUDED_COMMANDS)):"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_a_setting_that_widens_confinement_is_a_gap_unless_shown_safe[user-excluded-commands]",
+  "tests/doctor/test_approval_boundary.py::test_a_setting_that_widens_confinement_is_a_gap_unless_shown_safe[user-excluded-commands-under-admin]",
+  "tests/doctor/test_approval_boundary.py::test_a_widening_gap_with_no_approval_is_a_warning[user-excluded-commands]",
+]
+
+[[mutation]]
+name = "the boundary row takes an empty excludedCommands for a gap"
+file = "src/stayfixed/doctor/boundary.py"
+before = "        if _strings(_sandbox(layer, EXCLUDED_COMMANDS)):"
+after = "        if _sandbox(layer, EXCLUDED_COMMANDS) is not None:"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_a_setting_that_widens_confinement_is_a_gap_unless_shown_safe[user-excludes-none]",
+]
+
+[[mutation]]
+name = "the boundary row reads no managed excludedCommands"
+file = "src/stayfixed/doctor/boundary.py"
+before = "        if _strings(_sandbox(managed, EXCLUDED_COMMANDS))"
+after = "        if False"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_managed_settings_excluded_commands_keep_the_row_from_green[managed-file]",
+  "tests/doctor/test_approval_boundary.py::test_managed_settings_excluded_commands_keep_the_row_from_green[drop-in]",
+  "tests/doctor/test_approval_boundary.py::test_managed_settings_excluded_commands_keep_the_row_from_green[beside-a-gap]",
+]
+
+[[mutation]]
+name = "the boundary row lets managed excludedCommands make the row green"
+file = "src/stayfixed/doctor/boundary.py"
+before = "        *resting,\n        *managed_excluded,\n"
+after = "        *resting,\n"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_managed_settings_excluded_commands_keep_the_row_from_green[managed-file]",
 ]
 
 [[mutation]]
 name = "the boundary row reads widening repository entries while admin-required"
 file = "src/stayfixed/doctor/boundary.py"
-before = "    if not admin:\n        for layer in (local, project):"
-after = "    if True:\n        for layer in (local, project):"
+before = "    for layer in (*repository, user):\n        if _strings"
+after = "    for layer in (local, project, user):\n        if _strings"
 reddens = [
   "tests/doctor/test_approval_boundary.py::test_a_setting_that_widens_confinement_is_a_gap_unless_shown_safe[excluded-commands-under-admin]",
   "tests/doctor/test_approval_boundary.py::test_a_setting_that_widens_confinement_is_a_gap_unless_shown_safe[local-allow-write-under-admin]",
@@ -3155,8 +3208,8 @@ reddens = [
 [[mutation]]
 name = "the boundary row skips a project that ships Claude Code settings for the agents it lists"
 file = "src/stayfixed/doctor/boundary.py"
-before = "    if not _lists_claude(context) and not _carries_settings(context.root):"
-after = "    if not _lists_claude(context):"
+before = "    if not approvals[0] and not _lists_claude(context) and not _carries_settings(context.root):"
+after = "    if not approvals[0] and not _lists_claude(context):"
 reddens = [
   "tests/doctor/test_approval_boundary.py::test_a_project_carrying_claude_code_settings_is_read_whatever_it_lists[project]",
   "tests/doctor/test_approval_boundary.py::test_a_project_carrying_claude_code_settings_is_read_whatever_it_lists[local]",
@@ -3213,8 +3266,8 @@ reddens = [
 [[mutation]]
 name = "the boundary row reads no repository entry that widens"
 file = "src/stayfixed/doctor/boundary.py"
-before = "            widened.extend(_widened(layer, homes, project_root, record))"
-after = "            pass"
+before = "        widened.extend(_widened(layer, homes, project_root, record))"
+after = "        widened.extend(_widened(layer, homes, project_root, record) if layer is user else [])"
 reddens = [
   "tests/doctor/test_approval_boundary.py::test_a_setting_that_widens_confinement_is_a_gap_unless_shown_safe[the-record-directory]",
   "tests/doctor/test_approval_boundary.py::test_a_setting_that_widens_confinement_is_a_gap_unless_shown_safe[inside-the-directory]",
@@ -3226,8 +3279,8 @@ reddens = [
 [[mutation]]
 name = "the boundary row reads no user entry that widens"
 file = "src/stayfixed/doctor/boundary.py"
-before = "    widened.extend(_widened(user, homes, project_root, record))"
-after = "    pass"
+before = "        widened.extend(_widened(layer, homes, project_root, record))"
+after = "        widened.extend(_widened(layer, homes, project_root, record) if layer is not user else [])"
 reddens = [
   "tests/doctor/test_approval_boundary.py::test_a_setting_that_widens_confinement_is_a_gap_unless_shown_safe[user-relative]",
   "tests/doctor/test_approval_boundary.py::test_a_setting_that_widens_confinement_is_a_gap_unless_shown_safe[user-bare-edit]",
@@ -3414,8 +3467,8 @@ reddens = [
 [[mutation]]
 name = "the boundary row takes the variable's directory for the home's"
 file = "src/stayfixed/doctor/boundary.py"
-before = "        row = _judged(context, found.directory, USER_LABEL)"
-after = "        row = other or _judged(context, found.directory, USER_LABEL)"
+before = "        row = _judged(context, found.directory, USER_LABEL, approvals)"
+after = "        row = other or _judged(context, found.directory, USER_LABEL, approvals)"
 reddens = [
   "tests/doctor/test_approval_boundary.py::test_the_home_s_directory_is_the_subject_and_claude_config_dir_only_worsens_it[home]",
 ]
@@ -3531,33 +3584,102 @@ reddens = [
   "tests/doctor/test_approval_boundary.py::test_a_widening_entry_inside_another_is_a_gap[repository-outer-under-admin]",
 ]
 
-# A widening entry another names or lies above: the shell writes in the outer one, so the
-# inner one may be a link to the record's directory by the time a session reads it.
+# A widening entry strictly inside another, managed settings' included: the shell writes in the
+# outer one, so the inner one may be a link to the record's directory by the time a session reads
+# it. The same place named twice opens nothing.
 [[mutation]]
 name = "the boundary row lets one widening entry lie inside another"
 file = "src/stayfixed/doctor/boundary.py"
-before = "    widened.extend(_nested((*repository, user), homes))"
+before = "    widened.extend(_nested((*repository, user), (managed,), homes))"
 after = "    pass"
 reddens = [
   "tests/doctor/test_approval_boundary.py::test_a_widening_entry_inside_another_is_a_gap[user-inside-user]",
   "tests/doctor/test_approval_boundary.py::test_a_widening_entry_inside_another_is_a_gap[project-inside-user]",
-  "tests/doctor/test_approval_boundary.py::test_a_widening_entry_inside_another_is_a_gap[one-place-twice]",
+  "tests/doctor/test_approval_boundary.py::test_a_widening_entry_inside_another_is_a_gap[user-inside-managed]",
 ]
 
 [[mutation]]
 name = "the boundary row reads one entry inside another by its spelling's prefix"
 file = "src/stayfixed/doctor/boundary.py"
-before = "                place == other or place.startswith(other + \"/\")"
-after = "                place == other or place.startswith(other)"
+before = "                place.startswith(other + \"/\")"
+after = "                place.startswith(other)"
 reddens = [
   "tests/doctor/test_approval_boundary.py::test_a_widening_entry_inside_another_is_a_gap[side-by-side]",
 ]
 
 [[mutation]]
-name = "the boundary row takes two entries naming one place for unrelated"
+name = "the boundary row takes two entries naming one place for nested"
 file = "src/stayfixed/doctor/boundary.py"
-before = "                place == other or place.startswith(other + \"/\")"
-after = "                place.startswith(other + \"/\")"
+before = "                place.startswith(other + \"/\")"
+after = "                place == other or place.startswith(other + \"/\")"
 reddens = [
   "tests/doctor/test_approval_boundary.py::test_a_widening_entry_inside_another_is_a_gap[one-place-twice]",
+  "tests/doctor/test_approval_boundary.py::test_a_widening_entry_inside_another_is_a_gap[one-place-in-managed-and-user]",
+]
+
+[[mutation]]
+name = "the boundary row compares no entry with managed settings' entries"
+file = "src/stayfixed/doctor/boundary.py"
+before = "    widened.extend(_nested((*repository, user), (managed,), homes))"
+after = "    widened.extend(_nested((*repository, user), (), homes))"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_a_widening_entry_inside_another_is_a_gap[user-inside-managed]",
+]
+
+[[mutation]]
+name = "the boundary row says managed settings' own nested entries"
+file = "src/stayfixed/doctor/boundary.py"
+before = "                    gap = NESTED.format(label=layer.label, key=key) if said else None"
+after = "                    gap = NESTED.format(label=layer.label, key=key)"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_a_widening_entry_inside_another_is_a_gap[managed-inside-managed]",
+]
+
+# An entry below the sandbox's own per-user temporary directory, a `claude-<digits>` component:
+# sandboxed commands write there, so they can put a link where the entry names.
+[[mutation]]
+name = "the boundary row passes an entry under the sandbox's temporary directory"
+file = "src/stayfixed/doctor/boundary.py"
+before = "    if any(_sandbox_temp(part) for part in entry.split(\"/\")[:-1]):"
+after = "    if False:"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_a_setting_that_widens_confinement_is_a_gap_unless_shown_safe[sandbox-temp]",
+  "tests/doctor/test_approval_boundary.py::test_a_setting_that_widens_confinement_is_a_gap_unless_shown_safe[edit-sandbox-temp]",
+  "tests/doctor/test_approval_boundary.py::test_a_setting_that_widens_confinement_is_a_gap_unless_shown_safe[home-sandbox-temp]",
+]
+
+[[mutation]]
+name = "the boundary row reads the sandbox's temporary directory itself as below it"
+file = "src/stayfixed/doctor/boundary.py"
+before = "    if any(_sandbox_temp(part) for part in entry.split(\"/\")[:-1]):"
+after = "    if any(_sandbox_temp(part) for part in entry.split(\"/\")):"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_a_setting_that_widens_confinement_is_a_gap_unless_shown_safe[sandbox-temp-itself]",
+]
+
+[[mutation]]
+name = "the boundary row takes any claude- component for the sandbox's temporary directory"
+file = "src/stayfixed/doctor/boundary.py"
+before = "    return name.startswith(SANDBOX_TEMP) and bool(digits) and set(digits) <= DIGITS"
+after = "    return name.startswith(SANDBOX_TEMP) and bool(digits)"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_a_setting_that_widens_confinement_is_a_gap_unless_shown_safe[claude-not-digits]",
+]
+
+[[mutation]]
+name = "the boundary row takes a bare claude- component for the sandbox's temporary directory"
+file = "src/stayfixed/doctor/boundary.py"
+before = "    return name.startswith(SANDBOX_TEMP) and bool(digits) and set(digits) <= DIGITS"
+after = "    return name.startswith(SANDBOX_TEMP) and set(digits) <= DIGITS"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_a_setting_that_widens_confinement_is_a_gap_unless_shown_safe[claude-dash-alone]",
+]
+
+[[mutation]]
+name = "the boundary row reads the sandbox's temporary directory by its case"
+file = "src/stayfixed/doctor/boundary.py"
+before = "    name = folded(part)"
+after = "    name = part"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_a_case_variant_of_the_sandbox_s_temporary_directory_is_it_where_names_fold",
 ]

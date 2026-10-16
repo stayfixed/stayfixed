@@ -25,26 +25,32 @@ repository can change.
   directory as named where a symbolic link makes the two differ (`trust.boundary.deny_rules`), each
   compared byte for byte. Another spelling of the same directory is not read as covering it.
 - **What widens them**, by the key names the sandboxing reference gives, which were not measured
-  here: a repository's non-empty `sandbox.excludedCommands`, which runs commands outside the
-  sandbox, and any entry of `sandbox.filesystem.allowWrite`, an `Edit` rule in `permissions.allow`
-  or `permissions.additionalDirectories` not shown safe, in the project's or the local file while
-  the sandbox is not admin-required (`WIDENING_KEYS` says what Claude Code ignores while it is, and
-  why skipping those files then is still right), and in the user's file always, since there one
-  undoes the deny rule. **An entry is read as text and nothing else**: no filesystem call and no
-  pattern engine touches it. It is safe only when every condition `_safe` asks holds: a literal
-  path of letters, digits, `.`, `_`, `-`, `~` and `/` with no `.`, `..` or empty component;
-  anchored outside the working directory as the documentation anchors it for its key (a sandbox
-  path list's or `additionalDirectories`' `/x` is absolute, an `Edit` rule's `//x` is, and `~/x` is
-  under the home for both — under every home it may mean: the password database's, the `--home`
-  given, and `HOME`, which Claude Code expands `~` from — while an `Edit` rule's `/x` is the
-  project's and a relative path is the working directory's for both); outside the project, its
-  root neither held nor holding it; and neither either spelling of the record's directory (as
-  named, and resolved by stayfixed from its own machine path), nor above it, nor inside it —
-  compared `trust.boundary.folded`. Nor may another widening entry the row reads be the same place
-  or lie above it (`_nested`): an agent's shell writes inside the other, so it can put a link to
-  the record's directory where this one names before a later session resolves it, and whether a
-  deny rule holds inside a wider entry was not measured. Every other entry is a gap: there is no
-  class of entry the row could not tell about.
+  here: a non-empty `sandbox.excludedCommands`, whose commands the reference says run outside the
+  sandbox, with no filesystem restriction, and any entry of `sandbox.filesystem.allowWrite`, an
+  `Edit` rule in `permissions.allow` or `permissions.additionalDirectories` not shown safe — each
+  in the project's or the local file while the sandbox is not admin-required (`WIDENING_KEYS` says
+  what Claude Code ignores while it is, and why skipping those files then is still right), and in
+  the user's file always, since there one undoes the deny rule and the reference gives neither key
+  a managed-only lock. Managed settings' `excludedCommands` is an administrator's choice, and still
+  runs those commands where the deny rule does not reach the shell, so it is named and the row is
+  at best a warning beside it. **An entry is read as text and nothing else**: no filesystem call
+  and no pattern engine touches it. It is safe only when every condition `_safe` asks holds: a
+  literal path of letters, digits, `.`, `_`, `-`, `~` and `/` with no `.`, `..` or empty
+  component; anchored outside the working directory as the documentation anchors it for its key (a
+  sandbox path list's or `additionalDirectories`' `/x` is absolute, an `Edit` rule's `//x` is, and
+  `~/x` is under the home for both — under every home it may mean: the password database's, the
+  `--home` given, and `HOME`, which Claude Code expands `~` from — while an `Edit` rule's `/x` is
+  the project's and a relative path is the working directory's for both); outside the project, its
+  root neither held nor holding it; neither either spelling of the record's directory (as named,
+  and resolved by stayfixed from its own machine path), nor above it, nor inside it — compared
+  `trust.boundary.folded`; and not below a `claude-<digits>` component (`SANDBOX_TEMP`), the
+  per-user directory the reference says sandboxed commands write as their temporary directory,
+  under whatever base `CLAUDE_CODE_TMPDIR` gives it. Nor may the entry lie strictly inside another
+  widening entry the row reads, or one of managed settings' (`_nested`): an agent's shell writes
+  inside the outer one, so it can put a link to the record's directory where this one names before
+  a later session resolves it, and whether a deny rule holds inside a wider entry was not measured.
+  The same place named twice opens nothing, since replacing it needs write access to its parent.
+  Every other entry is a gap: there is no class of entry the row could not tell about.
 
 **Only the owner's files make it green.** Managed settings and the user's file are the owner's; a
 repository's two files change with its next commit, which a pull delivers with no person acting.
@@ -72,8 +78,10 @@ project is never judged: it is named, and the row is at best a warning for it.
 
 **Skipped** on a machine with no Claude Code user settings directory, and for a project whose
 `[stayfixed] agents` does not list `claude` and which carries neither `.claude/settings.json` nor
-`.claude/settings.local.json`: the agents list is the repository's to write, so a project that ships
-Claude Code settings is read whatever it lists. With no `stayfixed.toml`, the preset's agents apply.
+`.claude/settings.local.json`, while the trust record can be read and holds no approval: the agents
+list is the repository's to write, so a project that ships Claude Code settings is read whatever it
+lists, and once the machine holds an approval, or may, a later commit's agents list cannot turn a
+red row into a skip. With no `stayfixed.toml`, the preset's agents apply.
 
 Nothing a repository wrote is printed: the files are named by the labels a reader types, the deny
 rule and the managed path are stayfixed's own and the machine's, and no value is quoted.
@@ -159,9 +167,14 @@ WIDENED = (
     "the shell or the file tools may write the approvals in it past the deny rule"
 )
 NESTED = (
-    "{label}'s {key} holds an entry that another widening entry names or lies above, so an agent's "
-    "shell may put a link to the trust record's directory in its place before a later session "
-    "reads it"
+    "{label}'s {key} holds an entry inside another widening entry, so an agent's shell may put a "
+    "link to the trust record's directory in its place before a later session reads it"
+)
+# Managed settings' `excludedCommands`: an administrator's choice, named, and never green beside.
+MANAGED_EXCLUDED = (
+    "{managed}, or a drop-in beside it, sets sandbox.excludedCommands, so the commands it names "
+    "run outside the sandbox, where nothing stops one writing the trust record; an administrator "
+    "chose them, so the row is at best a warning"
 )
 # Protection that rests on a repository's file alone: in force today, and gone with the commit that
 # removes it.
@@ -228,11 +241,15 @@ KEEP_THE_FILESYSTEM = (
     "take sandbox.filesystem.disabled out of each file the detail names, or set it to false"
 )
 NARROW_THE_SETTINGS = (
-    "take sandbox.excludedCommands out of each repository file the detail names, and take out each "
-    "entry of a key it names or spell it as a literal path outside the project and the trust "
-    "record's directory, of letters, digits, `.`, `_`, `-` and `/`: `/…` or `~/…` in a sandbox "
-    "path list and permissions.additionalDirectories, `//…` or `~/…` in an Edit rule, none of them "
-    "inside another"
+    "take sandbox.excludedCommands out of each project, local or user file the detail names it in, "
+    "and take out each entry of a key it names or spell it as a literal path outside the project, "
+    "the trust record's directory and the sandbox's own claude-<digits> temporary directory, of "
+    "letters, digits, `.`, `_`, `-` and `/`: `/…` or `~/…` in a sandbox path list and "
+    "permissions.additionalDirectories, `//…` or `~/…` in an Edit rule, none of them inside another"
+)
+UNEXCLUDE_MANAGED = (
+    "take sandbox.excludedCommands out of {managed} and the drop-ins beside it where an "
+    "administrator agrees, since no row can show a command it names keeps clear of the trust record"
 )
 NO_MANAGED_PATH = "the managed settings file"
 # The rule's place in a sentence on a machine with no home for a trust record: the password
@@ -354,6 +371,14 @@ WIDENING_KEYS = (
 ALLOWED = frozenset(string.ascii_letters + string.digits + "._/~-")
 # The components a safe entry may not hold: the empty one (`a//b`, a trailing `/`), `.` and `..`.
 NOT_A_NAME = frozenset({"", ".", ".."})
+# The start of the component naming the sandbox's own per-user temporary directory: `claude-` and
+# the user's id in digits, which Claude Code's environment-variable reference says it appends to
+# the base `CLAUDE_CODE_TMPDIR` gives (`/tmp` on macOS, the system's temporary directory on Linux,
+# where the variable is not set). Sandboxed commands write there, so they can put a link where an
+# entry below it names; such an entry is a gap whatever the base, read as text, which spares the
+# row reading `CLAUDE_CODE_TMPDIR` from a shell or a settings file's `env` block.
+SANDBOX_TEMP = "claude-"
+DIGITS = frozenset(string.digits)
 # An `Edit` rule in `permissions.allow`: bare, which allows every edit, or with its path.
 EDIT = "Edit"
 # The prefix that makes an entry of each key absolute, as Claude Code's documentation states (not
@@ -410,6 +435,14 @@ def _anchored(entry: str, key: str, homes: Sequence[Path | None]) -> list[str] |
     return [f"{base}/{rest}" for base in bases]
 
 
+def _sandbox_temp(part: str) -> bool:
+    """Whether the component `part`, folded, names the sandbox's per-user temporary directory
+    (`SANDBOX_TEMP`)."""
+    name = folded(part)
+    digits = name[len(SANDBOX_TEMP) :]
+    return name.startswith(SANDBOX_TEMP) and bool(digits) and set(digits) <= DIGITS
+
+
 def _clear(place: str, project: Sequence[str], record: Sequence[str]) -> bool:
     """Whether `place`, folded, is related to none of the project root's spellings and none of the
     record directory's."""
@@ -424,10 +457,13 @@ def _safe(
     record: Sequence[str],
 ) -> bool:
     """Whether `entry` of `key` is shown, as text, to lie outside the project and clear of the
-    record's directory: a literal anchored outside the working directory, clear under every home
-    a `~/` may mean. A bare `Edit` (`None`) allows every edit and never is, and with no record
-    directory to compare nothing is."""
+    record's directory: a literal anchored outside the working directory, below no component
+    naming the sandbox's temporary directory, clear under every home a `~/` may mean. A bare
+    `Edit` (`None`) allows every edit and never is, and with no record directory to compare
+    nothing is."""
     if entry is None or not record:
+        return False
+    if any(_sandbox_temp(part) for part in entry.split("/")[:-1]):
         return False
     places = _anchored(entry, key, homes)
     if places is None:
@@ -463,25 +499,31 @@ def _widened(
     ]
 
 
-def _nested(layers: Sequence[_Layer], homes: Sequence[Path | None]) -> list[str]:
-    """The gaps of the entries in `layers` that another entry names or lies above, compared as
-    `_safe` compares, one for each key holding one: an agent's shell writes inside the other, so
-    what this one names may be a link to the record's directory by the time a session reads it.
-    Only entries `_anchored` places are compared; every other one is a gap of its own already."""
-    placed: list[tuple[str, list[str]]] = []
-    for layer in layers:
+def _nested(
+    layers: Sequence[_Layer], outer: Sequence[_Layer], homes: Sequence[Path | None]
+) -> list[str]:
+    """The gaps of the entries in `layers` that lie strictly inside another entry of `layers` or
+    of `outer`, compared as `_safe` compares, one for each key holding one: an agent's shell writes
+    inside the outer one, so what this one names may be a link to the record's directory by the
+    time a session reads it. `outer`'s entries, managed settings', are compared against and never
+    said. An entry naming the same place as another is not inside it: replacing that place needs
+    write access to its parent, which neither gives. Only entries `_anchored` places are compared;
+    every other one is a gap of its own already."""
+    placed: list[tuple[str | None, list[str]]] = []
+    for layer, said in [*((layer, True) for layer in layers), *((layer, False) for layer in outer)]:
         for key, listed in _entries(layer).items():
             for entry in listed:
                 places = None if entry is None else _anchored(entry, key, homes)
                 if places is not None:
-                    said = NESTED.format(label=layer.label, key=key)
-                    placed.append((said, [folded(place) for place in places]))
+                    gap = NESTED.format(label=layer.label, key=key) if said else None
+                    placed.append((gap, [folded(place) for place in places]))
     return list(
         dict.fromkeys(
-            said
-            for n, (said, places) in enumerate(placed)
-            if any(
-                place == other or place.startswith(other + "/")
+            gap
+            for n, (gap, places) in enumerate(placed)
+            if gap is not None
+            and any(
+                place.startswith(other + "/")
                 for m, (_, others) in enumerate(placed)
                 if m != n
                 for other in others
@@ -515,19 +557,20 @@ def approval_boundary(context: Context) -> Row:
     """The row (the module docstring says what it reads and how it answers). The home's user
     settings directory is the subject; the one `CLAUDE_CONFIG_DIR` names may only make the answer
     worse (`trust.boundary.user_settings` says why)."""
-    if not _lists_claude(context) and not _carries_settings(context.root):
+    approvals = _approvals(context.machine)
+    if not approvals[0] and not _lists_claude(context) and not _carries_settings(context.root):
         return Row(SKIP, NOT_LISTED)
     found = user_settings(context.env, context.home)
     chosen = found.chosen
     inside = chosen is not None and in_project(chosen, context.root)
     ignored = (CONFIG_DIR_IN_PROJECT.format(path=quoted(str(chosen))),) if inside else ()
     other = (
-        _judged(context, chosen, CHOSEN_LABEL)
+        _judged(context, chosen, CHOSEN_LABEL, approvals)
         if chosen is not None and not inside and fsops.is_dir(chosen)
         else None
     )
     if found.directory is not None and fsops.is_dir(found.directory):
-        row = _judged(context, found.directory, USER_LABEL)
+        row = _judged(context, found.directory, USER_LABEL, approvals)
         if other is not None and other.status != OK and other.detail != row.detail:
             row = _worsened(
                 row,
@@ -544,6 +587,16 @@ def approval_boundary(context: Context) -> Row:
     return _worsened(row, WARN, *ignored, "") if ignored else row
 
 
+def _approvals(machine: Path | None) -> tuple[int, str]:
+    """How many approvals the machine's trust record holds, and the detail's first part saying so;
+    a record that cannot be read is taken to hold one, since it holds every project's."""
+    try:
+        count = len(recorded(machine))
+    except UnreadableTrust:
+        return 1, RECORD_UNREAD
+    return count, HELD.format(count=count) if count else NONE_HELD
+
+
 def _worsened(row: Row, status: Status, said: str, remedy: str) -> Row:
     """`row`, its status made `status` where that is worse and never better, with `said` added to
     its detail and `remedy` to its remedies."""
@@ -552,8 +605,9 @@ def _worsened(row: Row, status: Status, said: str, remedy: str) -> Row:
     return Row(worse, "; ".join((row.detail, said)), remedies)
 
 
-def _judged(context: Context, directory: Path, user_label: str) -> Row:
-    """The row's answer with the user's settings read from `directory`, named `user_label`."""
+def _judged(context: Context, directory: Path, user_label: str, approvals: tuple[int, str]) -> Row:
+    """The row's answer with the user's settings read from `directory`, named `user_label`, beside
+    `approvals`, the record's count and the detail's first part (`_approvals`)."""
     managed, managed_unread = _managed()
     local = _read(context.root / LOCAL_SETTINGS, LOCAL_SETTINGS)
     project = _read(context.root / PROJECT_SETTINGS, PROJECT_SETTINGS)
@@ -561,12 +615,7 @@ def _judged(context: Context, directory: Path, user_label: str) -> Row:
     admin = _sandbox(managed, UNSANDBOXED_ALLOWED) is False
     enabled, source = _enabled(managed, local, project, user, admin=admin)
 
-    try:
-        held = len(recorded(context.machine))
-        lead = HELD.format(count=held) if held else NONE_HELD
-    except UnreadableTrust:
-        held, lead = 1, RECORD_UNREAD
-
+    held, lead = approvals
     path = record_path(context.machine)
     # Where the directory leads is what the harness compares a write against, and the spelling as
     # named is what a tool call may carry, so `setup` writes a rule over each and only those count.
@@ -597,14 +646,21 @@ def _judged(context: Context, directory: Path, user_label: str) -> Row:
         for layer in (managed, *repository, user)
         if _filesystem_off(layer)
     ]
+    # A repository's file and the user's widen alike; managed settings' entries only hold others,
+    # and their excluded commands only keep the row from green (the module docstring).
     widened: list[str] = []
-    if not admin:
-        for layer in (local, project):
-            if _strings(_sandbox(layer, EXCLUDED_COMMANDS)):
-                widened.append(EXCLUDED.format(label=layer.label))
-            widened.extend(_widened(layer, homes, project_root, record))
-    widened.extend(_widened(user, homes, project_root, record))
-    widened.extend(_nested((*repository, user), homes))
+    for layer in (*repository, user):
+        if _strings(_sandbox(layer, EXCLUDED_COMMANDS)):
+            widened.append(EXCLUDED.format(label=layer.label))
+        widened.extend(_widened(layer, homes, project_root, record))
+    widened.extend(_nested((*repository, user), (managed,), homes))
+    managed_path = managed_settings() or NO_MANAGED_PATH
+    managed_excluded = (
+        [MANAGED_EXCLUDED.format(managed=managed_path)]
+        if _strings(_sandbox(managed, EXCLUDED_COMMANDS))
+        else []
+    )
+    unexclude = [UNEXCLUDE_MANAGED.format(managed=managed_path)] if managed_excluded else []
     resting = _resting(enabled, source, (managed, user), (local, project), wanted, missing)
     unread = [
         NOT_READ.format(label=layer.label)
@@ -612,25 +668,27 @@ def _judged(context: Context, directory: Path, user_label: str) -> Row:
         if layer.unread
     ]
 
-    managed_path = managed_settings() or NO_MANAGED_PATH
     if gaps or off or widened:
         status: Status = RED if held else WARN
         remedies = [
             *([ADD_THE_BOUNDARY] if gaps or resting else []),
             *([KEEP_THE_FILESYSTEM] if off else []),
             *([NARROW_THE_SETTINGS] if widened else []),
+            *unexclude,
         ]
-        detail = "; ".join((lead, *gaps, *off, *widened, *resting, *unread))
+        detail = "; ".join((lead, *gaps, *off, *widened, *resting, *managed_excluded, *unread))
         return Row(status, detail, "; ".join(remedies))
     enforced = _sandbox(managed, FAIL_IF_UNAVAILABLE) is True
     short = [
         *resting,
+        *managed_excluded,
         *([] if admin else [NOT_ADMIN]),
         *([] if enforced else [NO_FAIL_CLOSED.format(managed=managed_path)]),
     ]
     if short:
         remedies = [
             *([ADD_THE_BOUNDARY] if resting else []),
+            *unexclude,
             *([] if admin and enforced else [MAKE_IT_ADMIN.format(managed=managed_path)]),
             *([MAKE_IT_JSON] if unread else []),
         ]
