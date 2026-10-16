@@ -22,7 +22,8 @@ root comes from the machine configuration, not from what is typed here.
    that grants nothing attaches without the flag, and that is the command's decision rather
    than a judgement to make here.
 3. If the report says `mismatch`, stop. The overlay recorded a different remote URL under this
-   project's name: another repository, or this one under another URL form. Say so, and pass
+   project's name: another repository, or this one on another host, port or user (ssh and https
+   spellings of one repository already bind). Say so, and pass
    `stayfixed attach --store PATH --trust-remote` only after the user confirms that this
    repository is the one that should be bound.
 4. `stayfixed detach` removes the merged rules, the Codex rule files, the note links and the

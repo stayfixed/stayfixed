@@ -155,21 +155,47 @@ def test_a_mismatched_remote_refuses_and_writes_nothing(tmp_path: Path) -> None:
     assert_snapshot_unchanged(root, before)
 
 
-def test_the_same_repository_under_another_url_form_is_refused_in_words_true_of_it(
+def test_the_same_repository_under_another_url_form_attaches_and_keeps_its_record(
     tmp_path: Path,
 ) -> None:
-    # URLs are compared exactly, so an owner who re-cloned over https a repository the overlay
-    # recorded over ssh is refused as a mismatch -- and was told "this is not the repository it
-    # was bound to", which is false for the same repository. The sentence now says what the check
-    # knows: a different remote URL, which the same repository in another form also is. The way
-    # out is unchanged: `--trust-remote` rebinds it.
-    #
-    # Mutation: none; the refusal's wording is the assertion, and the rebind is the existing
-    # `--trust-remote` path. The old sentence reddens it.
+    # URLs were compared exactly, so an owner who cloned over https a repository the overlay
+    # recorded over ssh was refused as a mismatch and had to pass `--trust-remote`, which then
+    # rewrote the record to the https form and made the next ssh checkout the mismatch. One
+    # repository is one binding now: `attach` needs no flag, and the record, which is the owner's
+    # consent, keeps the form it was given. Mutation (oracle): `mutations/`'s "a remote binds only
+    # the URL the overlay recorded byte for byte".
     root, store, machine = _attachable(
         tmp_path,
-        recorded="https://example.com/o/p.git",
-        origin="git@example.com:o/p.git",
+        recorded="git@example.com:o/p.git",
+        origin="https://example.com/o/p",
+    )
+    record = store.parent / "project.toml"
+    before = record.read_bytes()
+    attached = attach(
+        root,
+        store=store,
+        machine=machine,
+        confirmed=True,
+        trust_remote=False,
+        runner=Recorder(),
+        home=tmp_path / "home",
+    )
+    assert not attached.binding_recorded
+    assert record.read_bytes() == before
+
+
+def test_a_different_repository_under_another_url_form_is_still_refused(tmp_path: Path) -> None:
+    # The other side of the transport rule: an https origin of a different owner's repository is
+    # a different remote, whatever transport the record used, and the refusal says the rule, so an
+    # owner reading it knows which spellings bind and that any other is compared exactly. The
+    # sentence must stay true of every refusal, a same-repository spelling with a port or another
+    # user included, so it names the spellings that bind rather than calling ssh and https one
+    # remote. Mutation: none; the refusal's wording is the assertion, and the old sentence
+    # reddens it.
+    root, store, machine = _attachable(
+        tmp_path,
+        recorded="git@example.com:o/p.git",
+        origin="https://example.com/fork/p",
     )
     before = snapshot(root)
     assert before
@@ -184,20 +210,11 @@ def test_the_same_repository_under_another_url_form_is_refused_in_words_true_of_
             home=tmp_path / "home",
         )
     said = str(refused.value)
-    assert "not the repository" not in said
-    assert "different remote URL" in said and "another URL form" in said
+    assert "different remote URL" in said and "`https://host/owner/repo`" in said
+    assert "any other spelling" in said and "is compared exactly" in said
+    assert "the same remote" not in said
     assert "--trust-remote" in said
     assert_snapshot_unchanged(root, before)
-    attached = attach(
-        root,
-        store=store,
-        machine=machine,
-        confirmed=True,
-        trust_remote=True,
-        runner=Recorder(),
-        home=tmp_path / "home",
-    )
-    assert attached.binding_recorded
 
 
 def test_an_unconfirmed_attach_that_would_widen_a_permission_refuses(tmp_path: Path) -> None:
