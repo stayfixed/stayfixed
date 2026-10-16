@@ -159,18 +159,28 @@ out is
 index` rewrites the very files the trust hash covers, so it would revoke the approval it depends
 on. It does not — it re-records the hash across exactly the files it itself wrote, carrying every
 other file's approved digest forward unchanged. If something else changed the store while the
-command ran, it refuses to carry trust and says so.
+command ran, it refuses to carry trust and says so. So it does if the record changed: the hash is
+re-recorded only while the record, read again just before the write, still holds the digest the
+command read before writing, so a `trust revoke memory`, or a new approval, made while it ran is
+kept, and the approval keeps the time the person gave it.
 
 ## `stayfixed trust list [--all] [--store PATH]`
 
 Every kind of approval the areas contribute, and its state in this checkout: one line per subject
 — `approved`, `lapsed` (approved once, at a digest that no longer matches) or `missing` — and on
-every line not approved, the exact command that approves it, to run yourself in a terminal. Today
-the one kind is `memory`, a store of notes inside the repository, and `--store` is its flag. A
-kind with nothing to describe here (no `stayfixed.toml`, or no store) says so and names
-`stayfixed trust approve` for the reason. `--all` lists every approval recorded on the machine
-instead, whichever checkout it was given in. A subject outside the path grammar prints withheld;
-`--json` carries it.
+every line not approved, the exact command that approves it, for a person to run in a terminal.
+Today the one kind is `memory`, a store of notes inside the repository, and `--store` is its flag.
+A kind with nothing to describe here (no `stayfixed.toml`, or no store) says so, and says why in the
+kind's own words. `--all` lists every approval recorded on the machine instead, whichever checkout
+it was given in, each with when it was approved. It names each subject — for `memory`, the store's
+absolute path — from `~` when it is under the home the password database records, and through the
+bound a refusal names a path by anywhere else: escaped where it leaves the path grammar, and past
+120 characters only its start and its length. `--json` carries every subject whole.
+
+`--json` keys: `subjects`, one object per subject in this checkout with its `kind`, its `subject`
+and its `state`, and for a kind with nothing to describe, `kind`, `state` (`undescribed`) and
+`reason`; with `--all`, `approvals` instead, one object per approval with its `kind`, `subject`,
+`digest` and `approved_at` (empty for one `0.3.0` recorded).
 
 **Reads** the machine's trust record, and every file each kind hashes.
 
@@ -183,7 +193,8 @@ Record that a person approved every subject of `KIND` in this checkout at its di
 and digest are printed before the run ends.
 
 **It is asked of a person.** When standard input is not a terminal it refuses with exit `2`,
-writes nothing, and names the exact command for a person to run in a terminal. An agent's shell
+writes nothing, names the exact command for the person at the machine to run in their own
+terminal, and says that an agent must not run it for them. An agent's shell
 tool runs a command with no terminal on standard input (measured on Claude Code 2.1.296, in a
 terminal session and on the desktop app's Code tab alike), so a bare call from one is refused; an
 agent able to open a pseudo-terminal passes the check, which is a speed bump and no guarantee.
@@ -193,6 +204,9 @@ No flag skips the check, and nothing takes `--yes`.
 **Reads** every file the kind hashes — for `memory`, every file the store yields.
 
 **Writes** `~/.config/stayfixed/trust.json` (or the file beside `--machine`).
+
+`--json` keys: `kind`, and `approved`, one object per subject recorded, with its `subject`, its
+`label`, its `digest` and `was`, its state before the run (`approved`, `lapsed` or `missing`).
 
 For `memory`, the hash covers every note, `MEMORY.md`, and the repository-controlled
 configuration rendered into it, keyed by the store's absolute path. Change any of it and the
@@ -210,22 +224,32 @@ holding `version` (`1`) and `approvals`, each with its `kind`, `subject`, `diges
 kind `memory`, so an upgrade keeps every one, and the first write upgrades the file in place; a
 `0.3.0` reading a version-1 record finds no approval in it and asks again. Every write replaces the
 whole file in one atomic step, and no lock is taken: two commands writing at once each replace it
-whole, the last one wins, and neither leaves it torn.
+whole, the last one wins, and neither leaves it torn. The one write a person did not ask for, the
+refresh `memory index` makes over its own files, is the exception: it writes only while the record
+holds the digest it read, so the write it can lose to is never a revoke made while it ran.
 
 Exits `2` if `trust.json` exists and is neither a record this stayfixed reads nor `0.3.0`'s flat
-map — not JSON, not UTF-8, or a later version. It holds every project's approval on the machine,
+map — not JSON, not UTF-8, a later version, or a version-1 record that is not whole: a key besides
+`version` and `approvals`, an approval that is not an object of four text fields, or one approval
+named twice. It holds every project's approval on the machine,
 so nothing will overwrite a file it could not read — repair or delete it. An unknown `KIND` exits
 `2` naming the kinds there are.
 
 `stayfixed memory trust --in-repo-memory` is the old spelling of `stayfixed trust approve memory`:
 it runs this command, terminal check included, says so after it ran, and is removed in `0.5.0`.
+Until then its `--json` carries this command's keys and keeps the old spelling's beside them, with
+their old meanings: `was_trusted`, whether the store was approved at its digest before the run;
+`trusted`, whether the record holds that digest after it; and `digest`, the store's digest.
 
 ## `stayfixed trust revoke KIND [--subject KEY] [--store PATH]`
 
 Withdraw the approval of every subject of `KIND` in this checkout, or of the one recorded subject
 `--subject` names, as `trust list --all --json` spells it. It needs no terminal: withdrawing is the
 direction that fails safe. A revoke that matches nothing exits `1`, writes nothing, and lists what
-the kind has recorded.
+the kind has recorded, each subject named as `trust list --all` names it.
+
+`--json` keys: `kind`, and `revoked`, the subjects withdrawn; a revoke that matched nothing adds
+`recorded`, every subject the kind has recorded, whole.
 
 **Reads** the machine's trust record, and, with no `--subject`, every file the kind hashes.
 

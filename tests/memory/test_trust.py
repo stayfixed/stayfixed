@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import shutil
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -33,9 +34,12 @@ from stayfixed.memory.trust import (
     store_digest,
     wrap,
 )
+from stayfixed.trust.record import Approval, approve, recorded, revoke
 from tests.gitfixture import git
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
+
+T0 = datetime(2026, 10, 16, 9, 30, tzinfo=UTC)
 
 CONFIG = """
 [stayfixed]
@@ -335,6 +339,59 @@ def test_a_refresh_does_nothing_for_a_store_that_was_never_trusted(tmp_path: Pat
     mine.write_text(NOTE.replace("Body.", "Rewritten by stayfixed."), encoding="utf-8")
     assert refresh_if_trusted(store, config, before, [mine]) is False
     assert may_inject(store, config) is False
+
+
+def test_a_refresh_stops_when_an_approved_file_vanished(tmp_path: Path) -> None:
+    # A note the owner approved went while the command ran, and stayfixed deletes no note, so the
+    # store the record would bless is not the one approved. Mutation (`mutations/`'s "a refresh
+    # carries past an approved file that vanished"): the refresh writes and the store stays
+    # trusted.
+    store, config, _machine = a_store(tmp_path, "in-repo")
+    theirs = store.groups["developer"] / "b.md"
+    theirs.write_text(NOTE.replace("name: a", "name: b"), encoding="utf-8")
+    record(store, config)
+    before = snapshot(store, config)
+    assert before.trusted is True
+    theirs.unlink()
+    mine = store.groups["developer"] / "a.md"
+    mine.write_text(NOTE.replace("Body.", "Rewritten by stayfixed."), encoding="utf-8")
+    assert refresh_if_trusted(store, config, before, [mine]) is False
+    assert may_inject(store, config) is False
+
+
+def test_a_refresh_never_undoes_a_revoke_made_while_the_command_ran(tmp_path: Path) -> None:
+    # The owner ran `trust revoke memory` while a `memory index` was writing: the refresh decided
+    # on its snapshot, taken before the revoke, and put the approval back after the revoke had
+    # said it was gone. It writes only while the record still holds the digest the snapshot read.
+    # Mutation (`mutations/`'s "a stayfixed write approves the store again whatever the record
+    # holds now"): the approval comes back.
+    store, config, machine = a_store(tmp_path, "in-repo")
+    record(store, config)
+    before = snapshot(store, config)
+    assert before.trusted is True
+    assert revoke(machine, "memory", str(store.path.resolve())) is True
+    mine = store.groups["developer"] / "a.md"
+    mine.write_text(NOTE.replace("Body.", "Rewritten by stayfixed."), encoding="utf-8")
+    assert refresh_if_trusted(store, config, before, [mine]) is False
+    assert recorded(machine) == {}
+    assert may_inject(store, config) is False
+
+
+def test_a_refresh_keeps_when_the_person_approved(tmp_path: Path) -> None:
+    # A refresh is stayfixed's write and approves nothing, so `trust list --all` must not say the
+    # store was approved at the time of the last `memory index`. Mutations (`mutations/`'s "a
+    # stayfixed write approves the store again whatever the record holds now" and "a refresh
+    # restamps when the person approved"): `approved_at` reads the refresh's time.
+    store, config, machine = a_store(tmp_path, "in-repo")
+    key = str(store.path.resolve())
+    approve(machine, "memory", key, store_digest(store, config), now=T0)
+    before = snapshot(store, config)
+    mine = store.groups["developer"] / "a.md"
+    mine.write_text(NOTE.replace("Body.", "Rewritten by stayfixed."), encoding="utf-8")
+    assert refresh_if_trusted(store, config, before, [mine]) is True
+    assert recorded(machine)[("memory", key)] == Approval(
+        "memory", key, store_digest(store, config), T0.isoformat(timespec="seconds")
+    )
 
 
 def test_editing_only_index_extra_does_not_leave_the_store_trusted(tmp_path: Path) -> None:

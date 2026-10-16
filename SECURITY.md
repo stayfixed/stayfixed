@@ -102,8 +102,10 @@ Out of scope:
   changed note lapses it. An agent that can run any command as you can also write any file you
   can, the record included, and against it the harness's own write restriction is the boundary —
   keep the machine file's directory out of what the agent may write. `stayfixed trust approve`
-  refuses when standard input is not a terminal, which an agent's shell tool never gives it; that
-  slows a bare call and guarantees nothing against an agent that can open a pseudo-terminal.
+  refuses when standard input is not a terminal. Claude Code 2.1.296's shell tool gave a command
+  none, measured in a terminal session and on the desktop app's Code tab; no other harness, Codex
+  among them, was measured. The check slows a bare call and guarantees nothing against an agent
+  that can open a pseudo-terminal.
 - A repository being able to make stayfixed **refuse** — suppressing memory, failing a hook
   closed. Undesirable, and an ordinary bug, but not a vulnerability: the whole design fails
   closed on purpose.

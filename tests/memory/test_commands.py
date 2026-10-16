@@ -383,6 +383,36 @@ def test_a_change_stayfixed_did_not_write_is_not_blessed_by_indexing(
     assert capsys.readouterr().out.strip() == ""
 
 
+def test_index_never_undoes_a_revoke_made_while_it_ran_and_says_so(
+    project: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The owner's `trust revoke memory` lands after `memory index` took its snapshot and before it
+    # wrote: the revoke stays, and the line says the approval was not carried over. Mutations
+    # (`mutations/`'s "a stayfixed write approves the store again whatever the record holds now"
+    # -> the approval is back; "memory index says nothing when it could not carry an approval
+    # over" -> the line keeps quiet about it).
+    from stayfixed.config.schema import Config
+    from stayfixed.memory import trust
+    from stayfixed.memory.commands import _DROPPED
+    from stayfixed.memory.store import Store
+    from stayfixed.trust.record import revoke
+
+    assert invoke(["trust", "approve", "memory", *common(project)]) == 0
+    machine = project.parent / "machine.toml"
+    taken = trust.snapshot
+
+    def revoked_after(store: Store, config: Config) -> trust.Snapshot:
+        before = taken(store, config)
+        assert revoke(machine, "memory", trust.store_key(store)) is True
+        return before
+
+    monkeypatch.setattr(trust, "snapshot", revoked_after)
+    capsys.readouterr()
+    assert invoke(["memory", "index", "--json", *common(project)]) == 0
+    assert _DROPPED in json.loads(capsys.readouterr().out)["summary"]
+    assert recorded(machine) == {}
+
+
 def test_index_says_so_when_the_trust_gate_is_what_empties_the_bundles(
     project: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

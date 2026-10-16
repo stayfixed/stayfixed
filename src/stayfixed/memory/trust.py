@@ -28,7 +28,7 @@ from stayfixed.config.schema import Config
 from stayfixed.errors import Refusal
 from stayfixed.memory.index import INDEX_NAME
 from stayfixed.memory.store import Store, inside_project
-from stayfixed.trust.api import UnreadableTrust, approve, recorded
+from stayfixed.trust.api import UnreadableTrust, approve, recorded, refresh
 from stayfixed.trust.api import record_path as _record_path
 
 DELIMITER = "<<<stayfixed:repository-data"
@@ -309,17 +309,20 @@ class Snapshot:
     Taken at the top of a command, *before* it writes anything. `entries` is the per-file half
     of `store_digest` kept apart instead of folded together, so `refresh_if_trusted` can carry
     an untouched file's approved digest forward without re-reading the file — which is what
-    keeps a change stayfixed did not author out of the record it re-writes.
+    keeps a change stayfixed did not author out of the record it re-writes. `recorded` is the
+    digest the record held for the store then, which the refresh writes over only while the
+    record still holds it.
     """
 
     trusted: bool
     entries: dict[str, str]
+    recorded: str | None
 
 
 def snapshot(store: Store, config: Config) -> Snapshot:
     read = _read(store, config)
     recorded = _recorded(store.machine).get(store_key(store))
-    return Snapshot(trusted=recorded == _digest_of(read), entries=dict(read))
+    return Snapshot(trusted=recorded == _digest_of(read), entries=dict(read), recorded=recorded)
 
 
 def refresh_if_trusted(
@@ -345,9 +348,15 @@ def refresh_if_trusted(
     Fail-closed in both directions, and a file that appeared or vanished without stayfixed
     touching it stops the refresh outright.
 
+    The record is a second thing that can change while the command runs: the owner may run
+    `trust revoke memory` meanwhile, or approve the store anew. So the write is a compare-and-set
+    (`trust.record.refresh`): it moves the approval only while the record, re-read just before the
+    write, still holds the digest `before` read, and it keeps the time the person approved it,
+    since a refresh is stayfixed's write and approves nothing.
+
     Returns whether a record was written.
     """
-    if not before.trusted:
+    if not before.trusted or before.recorded is None:
         return False
     touched = {path.resolve() for path in written}
     # The configuration entry is read live rather than carried from `before`, and that is not a
@@ -364,8 +373,13 @@ def refresh_if_trusted(
             return False  # it appeared while the command ran, and stayfixed did not write it
     if not set(before.entries) <= {key for key, _ in expected}:
         return False  # an approved file is gone, and stayfixed does not delete notes
-    _approve(store, _digest_of(expected))
-    return True
+    return refresh(
+        store.machine,
+        MEMORY,
+        store_key(store),
+        expected=before.recorded,
+        digest=_digest_of(expected),
+    )
 
 
 def may_inject(store: Store, config: Config, *, repository_data: bool = False) -> bool:

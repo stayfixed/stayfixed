@@ -3421,11 +3421,81 @@ before = 'MEMORY = "memory"'
 after = 'MEMORY = "store"'
 reddens = ["tests/memory/test_trust.py::test_a_store_0_3_0_approved_is_still_approved"]
 
+# A stayfixed-authored write carries the store's approval forward only while the record still holds
+# the digest the command read before writing: a revoke made while it ran stays, and is said.
+[[mutation]]
+name = "a stayfixed write approves the store again whatever the record holds now"
+file = "src/stayfixed/memory/trust.py"
+before = "    return refresh(\n        store.machine,\n        MEMORY,"
+after = "    _approve(store, _digest_of(expected))\n    return True\n    return refresh(\n        store.machine,\n        MEMORY,"
+reddens = [
+  "tests/memory/test_trust.py::test_a_refresh_never_undoes_a_revoke_made_while_the_command_ran",
+  "tests/memory/test_trust.py::test_a_refresh_keeps_when_the_person_approved",
+  "tests/memory/test_commands.py::test_index_never_undoes_a_revoke_made_while_it_ran_and_says_so",
+]
+
+[[mutation]]
+name = "memory index says nothing when it could not carry an approval over"
+file = "src/stayfixed/memory/commands.py"
+before = "    note = _DROPPED if before.trusted and not carried else _gate(store, config, trusted)"
+after = "    note = _gate(store, config, trusted)"
+reddens = [
+  "tests/memory/test_commands.py::test_index_never_undoes_a_revoke_made_while_it_ran_and_says_so",
+]
+
+# A refresh refuses whatever it cannot vouch for: a store whose approval had already lapsed, a file
+# that appeared while the command ran, and an approved file that went.
+[[mutation]]
+name = "a refresh carries a lapsed approval forward"
+file = "src/stayfixed/memory/trust.py"
+before = "    if not before.trusted or before.recorded is None:"
+after = "    if before.recorded is None:"
+reddens = [
+  "tests/memory/test_commands.py::test_a_change_stayfixed_did_not_write_is_not_blessed_by_indexing",
+]
+
+[[mutation]]
+name = "a refresh carries past a file that appeared while the command ran"
+file = "src/stayfixed/memory/trust.py"
+before = "            return False  # it appeared while the command ran, and stayfixed did not write it"
+after = "            continue"
+reddens = ["tests/memory/test_trust.py::test_a_refresh_carries_only_the_file_stayfixed_wrote"]
+
+[[mutation]]
+name = "a refresh carries past an approved file that vanished"
+file = "src/stayfixed/memory/trust.py"
+before = "    if not set(before.entries) <= {key for key, _ in expected}:"
+after = "    if False:"
+reddens = ["tests/memory/test_trust.py::test_a_refresh_stops_when_an_approved_file_vanished"]
+
+# A note body that carries the repository-data marker is refused, never wrapped.
+[[mutation]]
+name = "a note that forges the repository-data marker is wrapped anyway"
+file = "src/stayfixed/memory/trust.py"
+before = "    if DELIMITER in text:\n        raise UnsafeNote("
+after = "    if False:\n        raise UnsafeNote("
+reddens = ["tests/memory/test_trust.py::test_a_body_that_forges_the_marker_is_refused"]
+
 # The old spelling runs the same approve path, terminal check included, and never records on its
 # own.
 [[mutation]]
 name = "the memory trust alias asks no terminal"
 file = "src/stayfixed/memory/commands.py"
-before = '    approved = approve_kind("memory", KindContext(root, _machine(args), options), given)'
-after = '    trust.record(*_store(args))\n    approved = Result("recorded", {"approved": []})'
+before = "    approved = approve_kind(trust.MEMORY, context, given)"
+after = '    trust.record(*_store(args))\n    return Result("recorded")'
 reddens = ["tests/trust/test_commands.py::test_no_terminal_no_approval[memory-trust]"]
+
+# For as long as the old spelling lives, its `--json` keeps its old keys with their old meanings.
+[[mutation]]
+name = "the memory trust alias drops its old JSON keys"
+file = "src/stayfixed/memory/commands.py"
+before = '    return Result(f"{approved.summary}\n{ALIAS_NOTE}", {**approved.data, **old}, approved.exit_code)'
+after = '    return Result(f"{approved.summary}\n{ALIAS_NOTE}", approved.data, approved.exit_code)'
+reddens = ["tests/trust/test_commands.py::test_the_alias_keeps_its_old_json_keys"]
+
+[[mutation]]
+name = "the memory trust alias says the store was trusted before it approved it"
+file = "src/stayfixed/memory/commands.py"
+before = '        "was_trusted": store["was"] == State.APPROVED,'
+after = '        "was_trusted": after is State.APPROVED,'
+reddens = ["tests/trust/test_commands.py::test_the_alias_keeps_its_old_json_keys"]

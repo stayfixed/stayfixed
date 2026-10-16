@@ -11,20 +11,26 @@ import functools
 import json
 import shlex
 import subprocess
+from datetime import UTC, datetime
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
 import pytest
 
+from stayfixed.config.loader import NOT_THERE
+from stayfixed.printed import CLIPPED_CHARS
 from stayfixed.trust import kinds
 from stayfixed.trust.commands import NOT_A_TERMINAL, NOTHING_TO_REVOKE, UNKNOWN_KIND
 from stayfixed.trust.kinds import DUPLICATE_KIND, ApprovalKind
-from stayfixed.trust.record import RECORD, State, record_path, recorded, state
+from stayfixed.trust.record import RECORD, State, approve, record_path, recorded, state
+from tests.crafted import CRAFTED, assert_never_raw
 from tests.floor import developer_free_environ
 from tests.memory.test_commands import common, invoke
 from tests.memory.test_commands import project as project
-from tests.ownerhome import stayfixed_argv
+from tests.ownerhome import as_owner_home, stayfixed_argv
 from tests.scriptload import SCRIPTS, load
+
+T0 = datetime(2026, 10, 16, 9, 30, tzinfo=UTC)
 
 SPELLINGS = [["trust", "approve", "memory"], ["memory", "trust", "--in-repo-memory"]]
 
@@ -63,10 +69,10 @@ def at_a_terminal(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.mark.parametrize("argv", SPELLINGS, ids=["trust-approve", "memory-trust"])
 def test_no_terminal_no_approval(project: Path, tmp_path: Path, argv: list[str]) -> None:
-    # Review Focus 5: an agent's shell tool runs a command with no terminal on standard input, so
-    # both spellings refuse there with exit 2, name the exact command for a person to run, and
-    # write no byte. Mutations (`mutations/`'s "trust approve asks no terminal" -> the first
-    # spelling approves; "the memory trust alias asks no terminal" -> the second does).
+    # An agent's shell tool runs a command with no terminal on standard input, so both spellings
+    # refuse there with exit 2, name the exact command for a person to run, and write no byte.
+    # Mutations (`mutations/`'s "trust approve asks no terminal" -> the first spelling approves;
+    # "the memory trust alias asks no terminal" -> the second does).
     before = _files(tmp_path)
     proc = subprocess.run(
         [*stayfixed_argv(tmp_path / "owner"), *argv, *common(project)],
@@ -84,11 +90,28 @@ def test_no_terminal_no_approval(project: Path, tmp_path: Path, argv: list[str])
     assert _files(tmp_path) == before
 
 
+def test_the_refusal_asks_for_the_person_and_tells_an_agent_to_stop() -> None:
+    # The refusal's likely reader is an agent's shell tool. It once told that reader to run the
+    # command "yourself, in a terminal" and said the check guarantees nothing against an agent that
+    # can open one, which pointed the agent at the way past it. It names the person instead, tells
+    # an agent to stop, and says nothing of how a terminal could be had. Mutation (`mutations/`'s
+    # "the terminal refusal tells its reader to run the approval itself"): the old wording reads
+    # "yourself", and names no person.
+    refusal = NOT_A_TERMINAL.format(command="stayfixed trust approve memory")
+    assert (
+        "ask the person at this machine to run `stayfixed trust approve memory` in their own "
+        "terminal" in refusal
+    )
+    assert refusal.endswith("an agent must not run it for them")
+    for said in ("yourself", "pseudo", "guarantee", "open a terminal", "pty"):
+        assert said not in refusal
+
+
 @pytest.mark.parametrize("argv", SPELLINGS, ids=["trust-approve", "memory-trust"])
 def test_a_terminal_approves(project: Path, tmp_path: Path, argv: list[str]) -> None:
-    # The other half of Review Focus 5: under a pseudo-terminal both spellings approve the store
-    # at its digest now. No mutation of its own: it is the positive control for the case above,
-    # without which a refusal for any reason would pass it.
+    # The other half of `test_no_terminal_no_approval`: under a pseudo-terminal both spellings
+    # approve the store at its digest now. No mutation of its own: it is the positive control for
+    # that case, without which a refusal for any reason would pass it.
     code, output = _ptyrun().run_in_pty(
         [*stayfixed_argv(tmp_path / "owner"), *argv, *common(project)],
         env=developer_free_environ(),
@@ -109,6 +132,32 @@ def test_the_alias_says_its_new_spelling(
     assert capsys.readouterr().out.splitlines()[-1] == ALIAS_NOTE
 
 
+def test_the_alias_keeps_its_old_json_keys(
+    project: Path, capsys: pytest.CaptureFixture[str], at_a_terminal: None
+) -> None:
+    # The old spelling lives one release, and a caller of its `--json` read `was_trusted`,
+    # `trusted` and `digest`; they stay beside the approve path's keys, with their old meanings.
+    # Mutations (`mutations/`'s "the memory trust alias drops its old JSON keys" -> no
+    # `was_trusted`; "the memory trust alias says the store was trusted before it approved it" ->
+    # the first run's `was_trusted` reads true).
+    argv = ["memory", "trust", "--in-repo-memory", "--json", *common(project)]
+    assert invoke(argv) == 0
+    first = json.loads(capsys.readouterr().out)
+    (approved,) = first["approved"]
+    assert (first["was_trusted"], first["trusted"]) == (False, True)
+    assert first["digest"] == approved["digest"]
+    assert state(_machine(project), "memory", _store_key(project), first["digest"]) is (
+        State.APPROVED
+    )
+    assert invoke(argv) == 0
+    second = json.loads(capsys.readouterr().out)
+    assert (second["was_trusted"], second["trusted"], second["digest"]) == (
+        True,
+        True,
+        first["digest"],
+    )
+
+
 def test_revoke_needs_no_terminal(project: Path, tmp_path: Path, at_a_terminal: None) -> None:
     # Withdrawing is the direction that fails safe, so it runs from an agent's shell tool too.
     # Mutation (`mutations/`'s "trust revoke revokes nothing"): the approval stays.
@@ -127,21 +176,95 @@ def test_revoke_needs_no_terminal(project: Path, tmp_path: Path, at_a_terminal: 
 
 
 def test_revoke_of_nothing_lists_what_is_recorded(
-    project: Path, capsys: pytest.CaptureFixture[str], at_a_terminal: None
+    project: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    at_a_terminal: None,
 ) -> None:
-    # Exit 1 and the kind's recorded subjects, in `--json` whole. Mutation (`mutations/`'s "a
-    # revoke of nothing exits 0"): exit 0.
+    # Exit 1 and the kind's recorded subjects, named on the line and in `--json` whole. The
+    # subject, an absolute path, used to print withheld, which named nothing. Mutations
+    # (`mutations/`'s "a revoke of nothing exits 0" -> exit 0; "a recorded subject under the home
+    # prints whole" -> the line names the whole path).
+    as_owner_home(monkeypatch, tmp_path)
     assert invoke(["trust", "approve", "memory", *common(project)]) == 0
     capsys.readouterr()
     argv = ["trust", "revoke", "memory", "--subject", "/elsewhere", "--json", *common(project)]
     assert invoke(argv) == 1
     payload = json.loads(capsys.readouterr().out)
     assert payload["recorded"] == [_store_key(project)]
-    # The subject is an absolute path, outside the grammar a printed name keeps to.
     assert payload["summary"] == (
-        f"{NOTHING_TO_REVOKE.format(kind='memory')}; recorded: <unprintable name; see --json>"
+        f"{NOTHING_TO_REVOKE.format(kind='memory')}; recorded: ~/project/.stayfixed/local/memory"
     )
     assert _approved(project)
+
+
+def test_list_all_names_each_subject_from_the_home(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A subject under the home the password database records prints from `~`, one anywhere else
+    # whole, both through `printed.clipped`. Mutation (`mutations/`'s "a recorded subject under the
+    # home prints whole"): the first line names the whole path, quoted.
+    home = tmp_path.resolve()
+    as_owner_home(monkeypatch, home)
+    machine = tmp_path / "machine.toml"
+    approve(machine, "memory", str(home / "project" / ".stayfixed" / "memory"), "d", now=T0)
+    approve(machine, "memory", "/zz/elsewhere/memory", "e", now=T0)
+    assert invoke(["trust", "list", "--all", "--machine", str(machine)]) == 0
+    # In the order of the subjects themselves, and `/zz` sorts after any temporary directory.
+    assert capsys.readouterr().out == (
+        "memory ~/project/.stayfixed/memory: approved 2026-10-16T09:30:00+00:00\n"
+        "memory '/zz/elsewhere/memory': approved 2026-10-16T09:30:00+00:00\n"
+    )
+
+
+def test_a_hostile_subject_prints_escaped_and_bounded(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A directory a clone named is a recorded subject's bytes: a line break and `::error::` start a
+    # workflow command on a runner, an escape drives the terminal, and nothing bounds its length.
+    # Both listings print it escaped and clipped. Mutations (`mutations/`'s "a recorded subject
+    # prints raw" -> both listings carry the escape; "revoke's recorded list prints a subject raw"
+    # -> the revoke line does).
+    as_owner_home(monkeypatch, tmp_path / "owner")
+    machine = tmp_path / "machine.toml"
+    hostile, long = f"/{CRAFTED}", "/" + "a" * 300
+    approve(machine, "memory", hostile, "d", now=T0)
+    approve(machine, "memory", long, "e", now=T0)
+    shown = (repr(hostile), f"{long[:CLIPPED_CHARS]!r}…({len(long)} chars)")
+    assert invoke(["trust", "list", "--all", "--machine", str(machine)]) == 0
+    listed = capsys.readouterr()
+    assert_never_raw(listed.out, listed.err)
+    assert listed.out == "".join(
+        f"memory {name}: approved 2026-10-16T09:30:00+00:00\n" for name in sorted(shown)
+    )
+    argv = ["trust", "revoke", "memory", "--subject", "/elsewhere", "--machine", str(machine)]
+    assert invoke(argv) == 1
+    revoked = capsys.readouterr()
+    assert_never_raw(revoked.out, revoked.err)
+    assert revoked.out == (
+        f"{NOTHING_TO_REVOKE.format(kind='memory')}; recorded: {', '.join(sorted(shown))}\n"
+    )
+
+
+def test_list_says_why_a_kind_has_nothing_to_approve(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The line used to send its reader to `trust approve` for the reason, which refuses with no
+    # terminal before it asks the kind anything, and left out `--root` and `--machine`. It says
+    # the kind's own reason instead. Mutation (`mutations/`'s "trust list sends its reader to the
+    # approve command for the reason"): the line names `trust approve` and no reason.
+    root = tmp_path / "uninitialised"
+    root.mkdir()
+    machine = tmp_path / "machine.toml"
+    reason = NOT_THERE.format(path=root.resolve() / "stayfixed.toml")
+    argv = ["trust", "list", "--root", str(root), "--machine", str(machine)]
+    assert invoke(argv) == 0
+    assert capsys.readouterr().out == f"memory: nothing to approve in this checkout: {reason}\n"
+    assert invoke([*argv, "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)["subjects"] == [
+        {"kind": "memory", "state": "undescribed", "reason": reason}
+    ]
 
 
 def test_list_names_the_command_on_every_unapproved_line(

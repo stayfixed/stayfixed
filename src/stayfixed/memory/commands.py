@@ -43,7 +43,7 @@ from stayfixed.memory.store import Store, Unresolved, in_repository, resolved
 from stayfixed.memory.worktree import harness_link_needed
 from stayfixed.printed import printable, quoted
 from stayfixed.result import Result
-from stayfixed.trust.api import KindContext, approve_kind
+from stayfixed.trust.api import State, approve_kind, kind_context, state
 
 
 def _machine(args: argparse.Namespace) -> Path | None:
@@ -127,11 +127,14 @@ _LINK_WAITS = (
     "terminal to link it"
 )
 # The narrow case where a stayfixed-authored write cannot carry trust forward: the store changed
-# under it, so re-recording would bless bytes the owner has never looked at. `refresh_if_trusted`
-# refuses rather than guess, which is right, and the human has to be told which it was.
+# under it, so re-recording would bless bytes the owner has never looked at, or the record did —
+# the owner revoked the approval, or gave a new one, while the command ran — so re-recording would
+# undo the owner's own word. `refresh_if_trusted` refuses rather than guess, which is right, and
+# the human has to be told which it was.
 _DROPPED = (
-    "the store changed while this command ran, so its trust record was not carried over — "
-    "review the change and re-run `stayfixed trust approve memory` in a terminal"
+    "the store or its trust record changed while this command ran, so the approval was not "
+    "carried over — review the change, and run `stayfixed trust approve memory` in a terminal "
+    "if the store should reach a session"
 )
 # What the write path put into notes that nobody curated: an `index:` line taken from a note's
 # `metadata.index` or, failing that, its description. Said on the line and not only in `--json`'s
@@ -369,14 +372,23 @@ ALIAS_NOTE = (
 
 def run_trust(args: argparse.Namespace) -> Result:
     """The old spelling of `stayfixed trust approve memory`: the same approve path, the terminal
-    check included."""
-    root = Path(args.root).resolve()
-    options = {} if args.store is None else {"--store": args.store}
-    given = [*(["--root", args.root] if args.root != "." else [])]
-    given += [*(["--machine", args.machine] if args.machine is not None else [])]
-    given += [*(["--store", args.store] if args.store is not None else [])]
-    approved = approve_kind("memory", KindContext(root, _machine(args), options), given)
-    return Result(f"{approved.summary}\n{ALIAS_NOTE}", approved.data, approved.exit_code)
+    check included.
+
+    Its `--json` keeps the old spelling's keys for as long as the spelling lives, beside the new
+    ones and with their old meanings: `was_trusted`, whether the store was approved at its digest
+    before the run; `trusted`, whether the record holds that digest after it; `digest`, the
+    store's digest."""
+    context, given = kind_context(args)
+    approved = approve_kind(trust.MEMORY, context, given)
+    # The memory kind describes one store per checkout, or refuses before anything is approved.
+    (store,) = approved.data["approved"]
+    after = state(context.machine, trust.MEMORY, store["subject"], store["digest"])
+    old = {
+        "was_trusted": store["was"] == State.APPROVED,
+        "trusted": after is State.APPROVED,
+        "digest": store["digest"],
+    }
+    return Result(f"{approved.summary}\n{ALIAS_NOTE}", {**approved.data, **old}, approved.exit_code)
 
 
 def run_inventory(args: argparse.Namespace) -> Result:
@@ -497,21 +509,25 @@ def register(groups: SubParsers) -> None:
     context.set_defaults(func=run_session_context)
 
     trusted = common_flags(
-        sub.add_parser("trust", help="trust notes committed to this repository"), store=True
+        sub.add_parser(
+            "trust",
+            help="the old spelling of `stayfixed trust approve memory`, removed in 0.5.0",
+        ),
+        store=True,
     )
     trusted.add_argument(
         "--in-repo-memory",
         action="store_true",
         required=True,
-        # Required and never read by `run_trust` — that is not a missing guard, it is the whole
-        # point. This is an explicit-confirmation gesture, not a switch between two behaviours:
-        # its presence is what stops `memory trust` from being a bare, trivially scripted
-        # command. It is not a safety check either, so there is nothing here to branch on: trust
-        # is only ever *consulted* for content that lives in the repository — the notes, when
-        # `inside_project(store)`, and `MEMORY.md` whenever it resolves inside the repository,
-        # which it does in overlay mode too, since `store.path` is a real directory there. For
-        # a store holding neither, `trust.may_inject` short-circuits to `True`, so recording a
-        # hash for it is inert rather than dangerous.
+        # Required and never read by `run_trust`: the old spelling required it, and an alias keeps
+        # its spelling whole until it is removed. What stops the command being run without a
+        # person is the terminal check on the approve path both spellings share, not this flag,
+        # and there is nothing here to branch on: trust is only ever *consulted* for content that
+        # lives in the repository — the notes, when `inside_project(store)`, and `MEMORY.md`
+        # whenever it resolves inside the repository, which it does in overlay mode too, since
+        # `store.path` is a real directory there. For a store holding neither,
+        # `trust.may_inject` short-circuits to `True`, so recording a hash for it is inert
+        # rather than dangerous.
         help="the only kind of store trust applies to",
     )
     trusted.set_defaults(func=run_trust)

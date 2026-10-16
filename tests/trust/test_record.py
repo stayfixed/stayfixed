@@ -22,12 +22,15 @@ from stayfixed.trust.record import (
     approve,
     record_path,
     recorded,
+    refresh,
     revoke,
     state,
 )
 from tests.ownerhome import as_owner_home
 
 T0 = datetime(2026, 10, 16, 9, 30, tzinfo=UTC)
+# One approval as a version-1 record spells it, every field a string.
+APPROVAL = {"kind": "memory", "subject": "/s", "digest": "d", "approved_at": ""}
 
 
 def legacy_reader(path: Path) -> dict[str, str]:
@@ -90,14 +93,45 @@ def test_0_3_0s_reader_sees_no_approval_in_a_version_1_record(tmp_path: Path) ->
             NOT_A_RECORD,
             id="approval-short-a-field",
         ),
+        pytest.param(
+            json.dumps({"version": 1, "approvals": {}}), NOT_A_RECORD, id="approvals-not-a-list"
+        ),
+        pytest.param(
+            json.dumps({"version": 1, "approvals": [], "note": "hand-added"}),
+            NOT_A_RECORD,
+            id="stray-key",
+        ),
+        pytest.param(
+            json.dumps({"version": 1, "approvals": [{**APPROVAL, "digest": 1}]}),
+            NOT_A_RECORD,
+            id="digest-not-a-string",
+        ),
+        pytest.param(
+            json.dumps({"version": 1, "approvals": [APPROVAL, {**APPROVAL, "digest": "e"}]}),
+            NOT_A_RECORD,
+            id="duplicate-pair",
+        ),
+        pytest.param(
+            json.dumps({"version": 1, "approvals": [sorted(APPROVAL)]}),
+            NOT_A_RECORD,
+            id="entry-not-an-object",
+        ),
     ],
 )
 def test_an_unreadable_record_refuses_and_is_never_overwritten(
     tmp_path: Path, document: str, sentence: str | None
 ) -> None:
-    # Mutations (`mutations/`'s "a trust record of a later version is read as empty" -> version 2
-    # reads as no approval and the write replaces it; "an approval over an unreadable trust record
-    # writes the record anyway" -> the write replaces every case).
+    # Each arm of the version-1 reader has a case of its own: every other version-1 record in the
+    # suite is one `approve` wrote, and it can write none of these. Mutations (`mutations/`'s "a
+    # trust record of a later version is read as empty" -> version 2 reads as no approval and the
+    # write replaces it; "an approval over an unreadable trust record writes the record anyway" ->
+    # the write replaces every case; "a trust record's approvals that are not a list read as none"
+    # -> `approvals-not-a-list` reads as no approval; "a trust record with a stray key is read" ->
+    # `stray-key` reads; "a trust record's digest that is not a string is read" ->
+    # `digest-not-a-string` reads as a lapsed approval; "a trust record naming one approval twice
+    # keeps the last" -> `duplicate-pair` reads, and the next write persists the survivor; "a
+    # trust record's approval that is not an object is read" -> `entry-not-an-object` raises an
+    # `AttributeError` instead of refusing).
     path = tmp_path / RECORD
     path.write_text(document, encoding="utf-8")
     with pytest.raises(UnreadableTrust) as caught:
@@ -163,3 +197,29 @@ def test_the_record_ignores_xdg_and_home(tmp_path: Path, monkeypatch: pytest.Mon
     # No home in the database: no record, and nothing to fall back on.
     as_owner_home(monkeypatch, None)
     assert record_path(None) is None
+
+
+def test_a_refresh_moves_only_the_digest_it_was_read_at(tmp_path: Path) -> None:
+    # A refresh is stayfixed's own write over an approval its caller read before writing: it keeps
+    # when the person approved, and writes nothing once the record holds another digest — a new
+    # approval given meanwhile is the person's. Mutations (`mutations/`'s "a refresh writes over an
+    # approval it did not read" -> the stale refresh moves `e` to `f`; "a refresh restamps when
+    # the person approved" -> `approved_at` reads now).
+    approve(machine(tmp_path), "memory", "/s", "d", now=T0)
+    assert refresh(machine(tmp_path), "memory", "/s", expected="d", digest="e") is True
+    assert recorded(machine(tmp_path))[("memory", "/s")] == Approval(
+        "memory", "/s", "e", "2026-10-16T09:30:00+00:00"
+    )
+    path = tmp_path / RECORD
+    before = (path.read_bytes(), path.stat().st_ino)
+    assert refresh(machine(tmp_path), "memory", "/s", expected="d", digest="f") is False
+    assert (path.read_bytes(), path.stat().st_ino) == before
+
+
+def test_a_refresh_never_brings_back_a_revoked_approval(tmp_path: Path) -> None:
+    # The revoke landed between the caller's read and its write. Mutation (`mutations/`'s "a
+    # refresh brings back a revoked approval"): the approval is recorded again.
+    approve(machine(tmp_path), "memory", "/s", "d", now=T0)
+    assert revoke(machine(tmp_path), "memory", "/s") is True
+    assert refresh(machine(tmp_path), "memory", "/s", expected="d", digest="e") is False
+    assert recorded(machine(tmp_path)) == {}

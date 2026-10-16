@@ -17,20 +17,24 @@ from pathlib import Path
 
 from stayfixed.areas import SubParsers
 from stayfixed.command import STORE_HELP, common_flags
-from stayfixed.config.machine import homes_agree
+from stayfixed.config.machine import homes_agree, passwd_home
 from stayfixed.errors import Failure, Refusal
-from stayfixed.printed import printable
+from stayfixed.printed import clipped, printable
 from stayfixed.result import Result
 from stayfixed.trust import kinds as discovered
 from stayfixed.trust import record
 from stayfixed.trust.kinds import ApprovalKind, KindContext
 
 # The refusal of an approval asked with no terminal on standard input. `command` is the exact
-# command for a person to run, built by `_command` from the flags as they were given.
+# command for a person to run, built by `_command` from the flags as they were given. Its likely
+# reader is an agent's shell tool, so it speaks of the person rather than to its reader, tells an
+# agent to stop, and says nothing of how a terminal could be had: what the check does not
+# guarantee is stated in `kinds`' docstring, `docs/cli.md` and `SECURITY.md`, not at the moment an
+# agent decides what to do next.
 NOT_A_TERMINAL = (
-    "an approval is asked of a person, and standard input is not a terminal, so nothing was "
-    "approved; run `{command}` yourself, in a terminal. This check slows an agent's bare call and "
-    "guarantees nothing against an agent that can open a terminal"
+    "an approval is a person's decision, and standard input is not a terminal, so nothing was "
+    "approved; ask the person at this machine to run `{command}` in their own terminal — an "
+    "agent must not run it for them"
 )
 # A kind no area contributes. The name typed is not repeated: it is whatever was typed.
 UNKNOWN_KIND = "there is no approval kind of that name; the kinds are: {known}"
@@ -76,12 +80,12 @@ def approve_kind(name: str, context: KindContext, given: Sequence[str]) -> Resul
 
 
 def run_approve(args: argparse.Namespace) -> Result:
-    context, given = _context(args)
+    context, given = kind_context(args)
     return approve_kind(args.kind, context, given)
 
 
 def run_list(args: argparse.Namespace) -> Result:
-    context, _ = _context(args)
+    context, _ = kind_context(args)
     if args.all:
         return _everything(context.machine)
     lines: list[str] = []
@@ -89,13 +93,13 @@ def run_list(args: argparse.Namespace) -> Result:
     for name, kind in discovered.kinds().items():
         try:
             subjects = kind.describe(context)
-        except (Failure, Refusal):
-            # The kind's own refusal can carry text the repository wrote; `approve` says it.
-            lines.append(
-                f"{name}: nothing to approve in this checkout (`stayfixed trust approve {name}` "
-                "says why)"
-            )
-            rows.append({"kind": name, "state": "undescribed"})
+        except (Failure, Refusal) as refused:
+            # Said here rather than pointed at: `trust approve` refuses with no terminal before it
+            # asks the kind anything, so from where an agent runs this it would never say why. The
+            # kind's refusal is a sentence built for the frame to print, any name the repository
+            # chose in it already bounded, so it prints here as it would there.
+            lines.append(f"{name}: nothing to approve in this checkout: {refused}")
+            rows.append({"kind": name, "state": "undescribed", "reason": str(refused)})
             continue
         for subject in subjects:
             state = record.state(context.machine, name, subject.key, subject.digest)
@@ -109,7 +113,7 @@ def run_list(args: argparse.Namespace) -> Result:
 
 
 def run_revoke(args: argparse.Namespace) -> Result:
-    context, _ = _context(args)
+    context, _ = kind_context(args)
     kind = _kind(args.kind)
     if args.subject is not None:
         keys = [args.subject]
@@ -124,7 +128,7 @@ def run_revoke(args: argparse.Namespace) -> Result:
     recorded = sorted(
         subject for (name, subject) in record.recorded(context.machine) if name == kind.name
     )
-    shown = ", ".join(printable(subject) for subject in recorded) or "none"
+    shown = ", ".join(_shown(subject) for subject in recorded) or "none"
     return Result(
         f"{NOTHING_TO_REVOKE.format(kind=kind.name)}; recorded: {shown}",
         {"kind": kind.name, "revoked": [], "recorded": recorded},
@@ -135,7 +139,7 @@ def run_revoke(args: argparse.Namespace) -> Result:
 def _everything(machine: Path | None) -> Result:
     approvals = record.recorded(machine)
     lines = [
-        f"{kind} {printable(subject)}: approved {approval.approved_at or 'before 0.4.0'}"
+        f"{kind} {_shown(subject)}: approved {approval.approved_at or 'before 0.4.0'}"
         for (kind, subject), approval in sorted(approvals.items())
     ]
     rows = [
@@ -150,6 +154,23 @@ def _everything(machine: Path | None) -> Result:
     return Result(
         "\n".join(lines) or "no approval is recorded on this machine", {"approvals": rows}
     )
+
+
+def _shown(subject: str) -> str:
+    """A recorded subject as a line prints it: under the home the password database records, as
+    `~/` and the rest; anywhere else, whole. Either way through `printed.clipped`, escaped and
+    bounded: a subject is the absolute path of something in a checkout, chosen by whoever named
+    its directories, and `printable` withheld every one of them, since the path grammar admits no
+    leading `/`, so the listing a person reads to see what they approved named nothing."""
+    home = passwd_home()
+    if home is not None:
+        try:
+            inside = Path(subject).relative_to(home.resolve())
+        except ValueError:
+            pass
+        else:
+            return "~" if inside == Path() else f"~/{clipped(inside.as_posix())}"
+    return clipped(subject)
 
 
 def _kind(name: str) -> ApprovalKind:
@@ -168,8 +189,10 @@ def _dest(flag: str) -> str:
     return flag.removeprefix("--").replace("-", "_")
 
 
-def _context(args: argparse.Namespace) -> tuple[KindContext, list[str]]:
-    """The checkout, the machine file and the kind flags given, and the flags as typed."""
+def kind_context(args: argparse.Namespace) -> tuple[KindContext, list[str]]:
+    """The checkout, the machine file and the kind flags given, and the flags as typed: what
+    `approve_kind` takes, read off any parsed command line that carries `--root`, `--machine`
+    and the kinds' flags (`memory trust`'s among them)."""
     options = {
         flag: value for flag in _flags() if (value := getattr(args, _dest(flag), None)) is not None
     }
@@ -186,7 +209,7 @@ def _context(args: argparse.Namespace) -> tuple[KindContext, list[str]]:
 
 def _given(args: argparse.Namespace, kind: ApprovalKind) -> list[str]:
     """The flags as given, keeping only the kind's own beside `--root` and `--machine`."""
-    _, given = _context(args)
+    _, given = kind_context(args)
     kept: list[str] = []
     for flag, value in zip(given[::2], given[1::2], strict=True):
         if flag in ("--root", "--machine") or flag in kind.flags:

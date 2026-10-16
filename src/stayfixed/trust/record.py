@@ -20,13 +20,15 @@ flat map â€” not JSON, not UTF-8, a later version, an approval missing a field â
 machine, and reading it as empty would let the next write persist the loss.
 
 Every write replaces the whole file through `fsops` in one atomic step. No lock is taken: two
-writers at once each replace the file whole, the last one wins, and neither leaves it torn.
+writers at once each replace the file whole, the last one wins, and neither leaves it torn. The
+one writer that is not a person's, `refresh`, writes only while the record still holds the digest
+its caller read, so a revoke made while a command ran is not undone by that command.
 """
 
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass, fields
+from dataclasses import asdict, dataclass, fields, replace
 from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
@@ -170,6 +172,25 @@ def approve(
     approvals[(kind, subject)] = approval
     _write(machine, approvals)
     return approval
+
+
+def refresh(machine: Path | None, kind: str, subject: str, *, expected: str, digest: str) -> bool:
+    """Move the approval of `subject` of `kind` from the digest `expected` to `digest`, keeping
+    when the person gave it; `False`, and nothing written, when the record read here no longer
+    holds `expected` for it.
+
+    For a write stayfixed itself authored, whose caller read the approval before it wrote: a
+    revoke, or a new approval, recorded since then is the person's, and a refresh that wrote
+    anyway would undo it. The record is re-read here, just before the write, so the window left
+    is this function's own; no lock is taken (the module docstring says so).
+    """
+    approvals = recorded(machine)
+    held = approvals.get((kind, subject))
+    if held is None or held.digest != expected:
+        return False
+    approvals[(kind, subject)] = replace(held, digest=digest)
+    _write(machine, approvals)
+    return True
 
 
 def revoke(machine: Path | None, kind: str, subject: str) -> bool:
