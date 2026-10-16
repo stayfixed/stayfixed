@@ -546,6 +546,7 @@ STANDARD_IMPORTS = frozenset(
         "tomllib",
         "types",
         "typing",
+        "unicodedata",
         "urllib.parse",
     }
 )

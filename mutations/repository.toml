@@ -1161,9 +1161,9 @@ reddens = [
 [[mutation]]
 name = "the core's import list admits a module outside the standard library"
 file = "tests/boundaries/test_delivery.py"
-before = """        "typing",
+before = """        "unicodedata",
         "urllib.parse","""
-after = """        "typing",
+after = """        "unicodedata",
         "urllib.parse",
         "yaml","""
 reddens = [

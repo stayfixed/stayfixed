@@ -23,13 +23,14 @@ is not enough alone); and does any setting widen what those two confine to reach
   or a `permissions.additionalDirectories` entry that reaches the record's directory, in the
   project's or the local file while the sandbox is not admin-required (the reference says Claude
   Code ignores them while it is), and in the user's file always, since there one undoes the deny
-  rule. **The row does not emulate the harness's pattern matching.** An entry is judged only
-  when it is a literal path — no `*`, `?`, `[` or `{`, no `..` component — anchored as the harness
-  anchors it, normalised, resolved on the part that exists, and compared case-folded on macOS: it
-  is a gap when it is the record's resolved directory, lies inside it or holds it. Every other
-  entry is a gap this row "could not tell" about. A deny rule covers the record only when it is
-  exactly the spelling `setup` writes over the resolved directory; no other deny rule is read as
-  covering it.
+  rule. **An entry is read as text and nothing else**: no filesystem call and no pattern engine
+  touches it. One holding only letters, digits, `.`, `_`, `-`, `~` and `/`, with no `..`
+  component, is anchored as the harness anchors it and normalised; it is a gap when it is either
+  spelling of the record's directory (as named, and resolved by stayfixed from its own machine
+  path), holds it, or lies inside it, compared in NFC and case-folded on macOS. Every other entry
+  is not shown either way, and the row warns that it could not tell whether it covers the record:
+  there is no class of entry proven safe. A deny rule covers the record only when it is the
+  spelling `setup` writes over the resolved directory, compared as text the same way.
 
 **Red only once the machine holds an approval.** With one, a gap is red; with none, it is a
 warning, so a default install is never red here. With both settings in force the row still warns
@@ -50,7 +51,10 @@ rule and the managed path are stayfixed's own and the machine's, and no value is
 from __future__ import annotations
 
 import os
+import posixpath
+import string
 import sys
+import unicodedata
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -116,10 +120,8 @@ WIDENED = (
     "{label}'s {key} reaches the trust record's directory, so the shell or the file tools may "
     "write the approvals in it past the deny rule"
 )
-UNJUDGED = (
-    "{label}'s {key} holds an entry this row could not tell whether it covers the trust record (a "
-    "pattern, a `..` component, or a path it cannot place), so it is taken to reach it"
-)
+# An entry the row reads only as text and cannot show to reach the record or not: a warning.
+UNKNOWN = "could not tell whether {key} in {label} covers the trust record"
 # Both in force, and not admin-required: what a repository can still do.
 NOT_ADMIN = (
     f"the sandbox is on and the deny rule covers the trust record's directory, but managed "
@@ -141,6 +143,10 @@ MAKE_IT_ADMIN = (
     "command runs outside it"
 )
 MAKE_IT_JSON = "make each file the detail names one JSON object, then run `stayfixed doctor` again"
+CHECK_THE_ENTRIES = (
+    "check that no entry of a key the detail names reaches the trust record's directory, or spell "
+    "each as a literal path of letters, digits, `.`, `_`, `-`, `~` and `/`"
+)
 NO_MANAGED_PATH = "the managed settings file"
 # The rule's place in a sentence on a machine with no home for a trust record: the password
 # database lists none for this user, and `--machine` was not given.
@@ -241,13 +247,14 @@ WIDENING_KEYS = (
     "permissions.allow",
     f"permissions.{ADDITIONAL_DIRECTORIES}",
 )
-# What makes an entry a pattern rather than a literal path. The row does not emulate the harness's
-# pattern matching at all, so a pattern is never judged to miss the record: it is "could not tell".
-# Asked by character membership, never by a regular expression built from or run on what a settings
-# file holds, which a repository can make arbitrarily long.
-PATTERN_CHARACTERS = frozenset("*?[{")
+# The only characters an entry this row judges may hold. Anything else -- a pattern character, a
+# backslash, a NUL, a space, a letter outside ASCII -- makes the entry one it could not tell about:
+# the row reads an entry as text and never asks the filesystem or a pattern engine about it, since
+# proving what someone else's matcher, or an automounted root, makes of it is not this row's to do.
+ALLOWED = frozenset(string.ascii_letters + string.digits + "._/~-")
 PARENT = ".."
-# The macOS default volume folds case, so two spellings that differ in case name one directory.
+# The macOS default volume folds case, and its names may arrive composed or decomposed, so a
+# spelling is compared there in NFC, case-folded.
 CASE_FOLDS = sys.platform == "darwin"
 # An `Edit` rule in `permissions.allow`: bare, which allows every edit, or with its path.
 EDIT = "Edit"
@@ -264,63 +271,57 @@ def _strings(value: object) -> list[str]:
     return [item for item in value if isinstance(item, str)] if isinstance(value, list) else []
 
 
-def _literal(entry: str) -> bool:
-    """Whether `entry` is a literal path: no pattern character, and no `..` component."""
-    return not (PATTERN_CHARACTERS & set(entry)) and PARENT not in Path(entry).parts
+def _folded(text: str) -> str:
+    """`text` as the row compares it: as it is, or in NFC and case-folded where names fold."""
+    return unicodedata.normalize("NFC", text).casefold() if CASE_FOLDS else text
 
 
-def _anchorings(entry: str, root: Path, home: Path | None, *, user: bool) -> list[Path] | None:
-    """Every path a literal `entry` may stand for, or `None` where this row cannot place it.
+def _normalised(entry: str, root: Path, home: Path | None) -> str | None:
+    """`entry` anchored and normalised as text, or `None` for one the row does not judge.
 
-    `//x` is absolute and `~/x` is under the home. `/x` is the session's working directory's, as a
-    rule's was measured, and is read as absolute too, since a path entry's `/` was not measured.
-    Anything else is the settings file's project root's; the user's file has none, so there it is
-    not placed."""
+    `//x` is `/x`; `~/x` is under the home; `/x` is under the session's working directory, the
+    project root; `./x` and `x` are under the project root. No filesystem call is made."""
+    if not entry or not set(entry) <= ALLOWED or PARENT in entry.split("/"):
+        return None
     if entry.startswith("//"):
-        return [Path(entry[1:])]
-    if entry == "~" or entry.startswith("~/"):
-        return None if home is None else [home / entry[2:]]
-    if entry.startswith("/"):
-        return [root / entry[1:], Path(entry)]
-    return None if user else [root / entry.removeprefix("./")]
-
-
-def _spelled(path: Path) -> str:
-    text = str(path)
-    return text.casefold() if CASE_FOLDS else text
-
-
-def _reaches(
-    entry: str, root: Path, home: Path | None, record: Path | None, *, user: bool
-) -> bool | None:
-    """Whether the literal `entry` is the record's directory, lies inside it, or holds it, once
-    normalised and resolved on the part of it that exists; `None` when this row cannot tell, which
-    is every pattern and every entry it cannot place."""
-    if record is None or not _literal(entry):
-        return None
-    places = _anchorings(entry, root, home, user=user)
-    if places is None:
-        return None
-    held = _spelled(record)
-    for place in places:
-        try:
-            real = _spelled(fsops.resolved(Path(os.path.normpath(place))))
-        except OSError:
+        anchored = entry[1:]
+    elif entry == "~" or entry.startswith("~/"):
+        if home is None:
             return None
-        if real == held or held.startswith(real.rstrip("/") + "/") or real.startswith(held + "/"):
-            return True
-    return False
+        anchored = f"{home}/{entry[2:]}"
+    elif entry.startswith("~"):
+        return None
+    elif entry.startswith("/"):
+        anchored = f"{root}{entry}"
+    else:
+        anchored = f"{root}/{entry.removeprefix('./')}"
+    return _folded(posixpath.normpath(anchored))
+
+
+def _proven(entry: str | None, root: Path, home: Path | None, spellings: Sequence[str]) -> bool:
+    """Whether `entry` is shown, as text, to be one of the record directory's `spellings`, to hold
+    it, or to lie inside it; a bare `Edit` (`None`) allows every edit and always is."""
+    if entry is None:
+        return True
+    place = _normalised(entry, root, home)
+    if place is None:
+        return False
+    above = place.rstrip("/") + "/"
+    return any(
+        place == held or held.startswith(above) or place.startswith(held + "/")
+        for held in spellings
+    )
 
 
 def _widened(
-    layer: _Layer, root: Path, home: Path | None, record: Path | None, *, user: bool
-) -> list[str]:
-    """The gaps `layer` opens towards the record's directory `record`, resolved: each widening key
-    with an entry that reaches it, or with one this row cannot judge."""
+    layer: _Layer, root: Path, home: Path | None, spellings: Sequence[str]
+) -> tuple[list[str], list[str]]:
+    """What `layer`'s widening keys do to the record directory, named by its `spellings` (folded,
+    as stayfixed computed them from its own machine path): the keys with an entry shown to reach
+    it, and the keys with an entry the row could not tell about."""
     allowed = _strings(_table(layer.document, "permissions", "allow"))
     entries: dict[str, list[str | None]] = {
         WIDENING_KEYS[0]: [*_strings(_table(layer.document, SANDBOX, FILESYSTEM, ALLOW_WRITE))],
-        # A bare `Edit` is `None`: it allows every edit, and reaches everything.
         WIDENING_KEYS[1]: [
             None if entry == EDIT else entry[len(EDIT) + 1 : -1]
             for entry in allowed
@@ -330,17 +331,27 @@ def _widened(
             *_strings(_table(layer.document, "permissions", ADDITIONAL_DIRECTORIES))
         ],
     }
-    found: list[str] = []
+    proven: list[str] = []
+    unknown: list[str] = []
     for key, listed in entries.items():
-        answers = [
-            True if path is None else _reaches(path, root, home, record, user=user)
-            for path in listed
-        ]
-        if any(answer is True for answer in answers):
-            found.append(WIDENED.format(label=layer.label, key=key))
-        elif any(answer is None for answer in answers):
-            found.append(UNJUDGED.format(label=layer.label, key=key))
-    return found
+        if any(_proven(entry, root, home, spellings) for entry in listed):
+            proven.append(WIDENED.format(label=layer.label, key=key))
+        elif listed:
+            unknown.append(UNKNOWN.format(label=layer.label, key=key))
+    return proven, unknown
+
+
+def _deny_covers(rules: set[str], resolved: str) -> bool:
+    """Whether a deny rule is the spelling `setup` writes over the resolved record directory,
+    compared as text after the same normalisation; no other rule is read as covering it."""
+    head, tail = "Edit(/", "/**)"
+    return any(
+        rule.startswith(head + "/")
+        and rule.endswith(tail)
+        and "\0" not in rule
+        and _folded(posixpath.normpath(rule[len(head) : -len(tail)])) == resolved
+        for rule in rules
+    )
 
 
 def _carries_settings(root: Path) -> bool:
@@ -408,8 +419,16 @@ def approval_boundary(context: Context) -> Row:
     # that covers it; a rule over the directory as named may stand beside it.
     real = fsops.resolved(path.parent) if path is not None else None
     rule = deny_rule(real) if real is not None else NO_RECORD_RULE
-    covered = real is not None and deny_rule(real) in _deny_rules((managed, local, project, user))
+    rules = _deny_rules((managed, local, project, user))
+    covered = real is not None and _deny_covers(rules, _folded(posixpath.normpath(str(real))))
     home = context.home if context.home is not None else passwd_home()
+    # Both spellings of the record directory, computed from stayfixed's own machine path.
+    spellings = (
+        [_folded(posixpath.normpath(str(where))) for where in (path.parent, real)]
+        if path is not None and real is not None
+        else []
+    )
+    unknown: list[str] = []
 
     gaps: list[str] = []
     if enabled is not True:
@@ -424,8 +443,12 @@ def approval_boundary(context: Context) -> Row:
         for layer in (local, project):
             if _strings(_sandbox(layer, EXCLUDED_COMMANDS)):
                 gaps.append(EXCLUDED.format(label=layer.label))
-            gaps.extend(_widened(layer, context.root, home, real, user=False))
-    gaps.extend(_widened(user, context.root, home, real, user=True))
+            shown, untold = _widened(layer, context.root, home, spellings)
+            gaps.extend(shown)
+            unknown.extend(untold)
+    shown, untold = _widened(user, context.root, home, spellings)
+    gaps.extend(shown)
+    unknown.extend(untold)
     unread = [
         NOT_READ.format(label=layer.label)
         for layer in (*managed_unread, local, project, user)
@@ -435,9 +458,10 @@ def approval_boundary(context: Context) -> Row:
     managed_path = managed_settings()
     if gaps:
         status: Status = RED if held else WARN
-        return Row(status, "; ".join((lead, *gaps, *unread)), ADD_THE_BOUNDARY)
+        return Row(status, "; ".join((lead, *gaps, *unknown, *unread)), ADD_THE_BOUNDARY)
     if not admin:
         remedy = MAKE_IT_ADMIN.format(managed=managed_path or NO_MANAGED_PATH)
-        return Row(WARN, "; ".join((lead, NOT_ADMIN, *unread)), remedy)
-    detail = "; ".join((lead, GUARDED.format(rule=rule), *unread))
-    return Row(WARN, detail, MAKE_IT_JSON) if unread else Row(OK, detail)
+        return Row(WARN, "; ".join((lead, NOT_ADMIN, *unknown, *unread)), remedy)
+    detail = "; ".join((lead, GUARDED.format(rule=rule), *unknown, *unread))
+    remedies = [*([CHECK_THE_ENTRIES] if unknown else []), *([MAKE_IT_JSON] if unread else [])]
+    return Row(WARN, detail, "; ".join(remedies)) if remedies else Row(OK, detail)
