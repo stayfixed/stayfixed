@@ -3172,7 +3172,7 @@ reddens = [
 [[mutation]]
 name = "the boundary row reads no repository entry that widens"
 file = "src/stayfixed/doctor/boundary.py"
-before = "            gaps.extend(_widened(layer, context.root, home, targets))"
+before = "            gaps.extend(_widened(layer, context.root, home, real, user=False))"
 after = "            pass"
 reddens = [
   "tests/doctor/test_approval_boundary.py::test_a_setting_that_widens_confinement_is_a_gap[local-allow-write]",
@@ -3183,7 +3183,7 @@ reddens = [
 [[mutation]]
 name = "the boundary row reads no user entry that widens"
 file = "src/stayfixed/doctor/boundary.py"
-before = "    gaps.extend(_widened(user, context.root, home, targets))"
+before = "    gaps.extend(_widened(user, context.root, home, real, user=True))"
 after = "    pass"
 reddens = [
   "tests/doctor/test_approval_boundary.py::test_a_setting_that_widens_confinement_is_a_gap[user-allow-write-under-admin]",
@@ -3211,15 +3211,6 @@ reddens = [
   "tests/doctor/test_approval_boundary.py::test_a_setting_that_widens_confinement_is_a_gap[could-not-tell]",
 ]
 
-[[mutation]]
-name = "the boundary row takes every entry for one that reaches the record"
-file = "src/stayfixed/doctor/boundary.py"
-before = "    return any(_matches(pattern, targets) for pattern in patterns)"
-after = "    return True"
-reddens = [
-  "tests/doctor/test_approval_boundary.py::test_a_setting_that_widens_confinement_is_a_gap[allow-write-elsewhere]",
-  "tests/doctor/test_approval_boundary.py::test_a_setting_that_widens_confinement_is_a_gap[edit-allow-in-the-project]",
-]
 
 [[mutation]]
 name = "the boundary row skips a project that ships Claude Code settings for the agents it lists"
@@ -3229,4 +3220,72 @@ after = "    if not _lists_claude(context):"
 reddens = [
   "tests/doctor/test_approval_boundary.py::test_a_project_carrying_claude_code_settings_is_read_whatever_it_lists[project]",
   "tests/doctor/test_approval_boundary.py::test_a_project_carrying_claude_code_settings_is_read_whatever_it_lists[local]",
+]
+
+# The boundary row judges only literal entries, normalised and resolved, and runs no regular
+# expression on what a settings file holds; every pattern is a gap it could not tell about.
+
+[[mutation]]
+name = "the boundary row takes every literal entry for one that reaches the record"
+file = "src/stayfixed/doctor/boundary.py"
+before = "        if real == held or held.startswith(real.rstrip(\"/\") + \"/\") or real.startswith(held + \"/\"):"
+after = "        if True:"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_a_setting_that_widens_confinement_is_a_gap[allow-write-elsewhere]",
+  "tests/doctor/test_approval_boundary.py::test_a_setting_that_widens_confinement_is_a_gap[edit-allow-in-the-project]",
+]
+
+[[mutation]]
+name = "the boundary row takes an entry that holds the record for one that misses it"
+file = "src/stayfixed/doctor/boundary.py"
+before = "        if real == held or held.startswith(real.rstrip(\"/\") + \"/\") or real.startswith(held + \"/\"):"
+after = "        if real == held or real.startswith(held + \"/\"):"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_a_setting_that_widens_confinement_is_a_gap[project-additional-directory-above]",
+]
+
+[[mutation]]
+name = "the boundary row reads a pattern as a literal path"
+file = "src/stayfixed/doctor/boundary.py"
+before = "    return not (PATTERN_CHARACTERS & set(entry)) and PARENT not in Path(entry).parts"
+after = "    return PARENT not in Path(entry).parts"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_a_setting_that_widens_confinement_is_a_gap[could-not-tell]",
+  "tests/doctor/test_approval_boundary.py::test_a_setting_that_widens_confinement_is_a_gap[user-edit-glob]",
+]
+
+[[mutation]]
+name = "the boundary row lets a parent component through"
+file = "src/stayfixed/doctor/boundary.py"
+before = "    return not (PATTERN_CHARACTERS & set(entry)) and PARENT not in Path(entry).parts"
+after = "    return not (PATTERN_CHARACTERS & set(entry))"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_a_parent_component_is_a_gap_it_could_not_tell_about",
+]
+
+[[mutation]]
+name = "the boundary row judges an entry by its spelling and not where it leads"
+file = "src/stayfixed/doctor/boundary.py"
+before = "            real = _spelled(fsops.resolved(Path(os.path.normpath(place))))"
+after = "            real = _spelled(Path(os.path.normpath(place)))"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_a_literal_path_through_a_link_is_judged_where_it_leads",
+]
+
+[[mutation]]
+name = "the boundary row compares paths by their case where the volume folds it"
+file = "src/stayfixed/doctor/boundary.py"
+before = "    return text.casefold() if CASE_FOLDS else text"
+after = "    return text"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_a_case_variant_names_the_record_on_a_volume_that_folds_case",
+]
+
+[[mutation]]
+name = "the boundary row imports re again"
+file = "src/stayfixed/doctor/boundary.py"
+before = "import os\nimport sys\n"
+after = "import os\nimport re\nimport sys\n"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_the_row_runs_no_regular_expression_on_what_a_settings_file_holds",
 ]

@@ -449,7 +449,7 @@ WIDENING = [
     ),
     pytest.param(
         "project",
-        lambda m: {"permissions": {"allow": [f"Edit(/{_directory(m)}/**)"]}},
+        lambda m: {"permissions": {"allow": [f"Edit(/{_directory(m)})"]}},
         False,
         1,
         RED,
@@ -489,7 +489,7 @@ WIDENING = [
         True,
         1,
         RED,
-        boundary.WIDENED.format(label=_USER, key="permissions.allow"),
+        boundary.UNJUDGED.format(label=_USER, key="permissions.allow"),
         id="user-edit-glob",
     ),
     pytest.param(
@@ -503,7 +503,7 @@ WIDENING = [
     ),
     pytest.param(
         "project",
-        lambda m: {"sandbox": {"filesystem": {"allowWrite": ["/elsewhere/**"]}}},
+        lambda m: {"sandbox": {"filesystem": {"allowWrite": ["/elsewhere"]}}},
         False,
         1,
         WARN,
@@ -512,12 +512,21 @@ WIDENING = [
     ),
     pytest.param(
         "project",
-        lambda m: {"permissions": {"allow": ["Edit(src/**)"]}},
+        lambda m: {"permissions": {"allow": ["Edit(src)"]}},
         False,
         1,
         WARN,
         None,
         id="edit-allow-in-the-project",
+    ),
+    pytest.param(
+        "project",
+        lambda m: {"sandbox": {"filesystem": {"allowWrite": ["/" + "*a" * 5000]}}},
+        False,
+        1,
+        RED,
+        boundary.UNJUDGED.format(label=_PROJECT, key="sandbox.filesystem.allowWrite"),
+        id="ten-thousand-wildcards",
     ),
     pytest.param(
         "project",
@@ -545,14 +554,18 @@ def test_a_setting_that_widens_confinement_is_a_gap(
     # `excludedCommands`, or an entry that reaches the record's directory, counts while the sandbox
     # is not admin-required (Claude Code ignores those repository entries while it is), and the
     # user's counts always, since it undoes the deny rule. An entry this row cannot judge is a gap
-    # said as such. Mutations (`mutations/`'s "the boundary row reads no excludedCommands" ->
-    # the two `excluded-commands` gaps go; "the boundary row reads no repository entry that widens"
-    # -> `local-allow-write`, `project-edit-allow` and `project-additional-directory-above` go; "the
+    # said as such. Mutations (`mutations/`'s "the boundary row reads no excludedCommands" -> the
+    # two `excluded-commands` gaps go; "the boundary row reads no repository entry that widens" ->
+    # `local-allow-write`, `project-edit-allow` and `project-additional-directory-above` go; "the
     # boundary row reads no user entry that widens" -> the four `user-` cases go; "the boundary row
     # reads widening repository entries while admin-required" -> the two `-under-admin` cases are
     # red; "the boundary row takes an entry it cannot judge for one that reaches nothing" ->
-    # `could-not-tell` warns; "the boundary row takes every entry for one that reaches the record"
-    # -> `allow-write-elsewhere` and `edit-allow-in-the-project` are red).
+    # `could-not-tell`, `ten-thousand-wildcards` and `user-edit-glob` warn or name no gap; "the
+    # boundary row reads a pattern as a literal path" -> `could-not-tell` and `user-edit-glob` name
+    # no gap; "the boundary row takes every literal entry for one that reaches the record" ->
+    # `allow-write-elsewhere` and `edit-allow-in-the-project` are red; "the boundary row takes an
+    # entry that holds the record for one that misses it" -> `project-additional-directory-above`
+    # names no gap).
     base = _merged(SANDBOX_ON, _deny(_rule(m.record_directory)))
     if admin:
         m.managed(ADMIN_REQUIRED)
@@ -589,3 +602,86 @@ def test_a_project_carrying_claude_code_settings_is_read_whatever_it_lists(
     getattr(m, carried)({})
     m.approvals(1)
     assert m.row().status == RED
+
+
+def _linked_beside(m: Machine, name: str, to: Path) -> Path:
+    """A symbolic link outside every directory above the record's, leading to `to`."""
+    other = m.tmp / "other"
+    other.mkdir(exist_ok=True)
+    link = other / name
+    link.symlink_to(to)
+    return link
+
+
+def _widening_gap(m: Machine, entry: str) -> Check:
+    m.user(_merged(SANDBOX_ON, _deny(_rule(m.record_directory))))
+    m.project({"sandbox": {"filesystem": {"allowWrite": [entry]}}})
+    m.approvals(1)
+    return m.row()
+
+
+@pytest.fixture
+def deep(tmp_path: Path) -> Machine:
+    """A machine whose record lies two directories down, so a sibling tree holds no ancestor of
+    it."""
+    machine = Machine(tmp_path)
+    machine.machine = tmp_path / "m" / "machine" / "config.toml"
+    machine.machine.parent.mkdir(parents=True)
+    return machine
+
+
+def test_a_parent_component_is_a_gap_it_could_not_tell_about(deep: Machine) -> None:
+    # `link/..` normalises, as text, to the directory the link sits in, which holds nothing of the
+    # record's; the harness, following the link first, reaches the record. So an entry with a `..`
+    # component is never judged. Mutation (`mutations/`'s "the boundary row lets a parent
+    # component through"): the entry reads as missing the record and the row names no gap.
+    inner = deep.record_directory / "inner"
+    inner.mkdir()
+    link = _linked_beside(deep, "l", inner)
+    row = _widening_gap(deep, f"{link}/..")
+    assert row.status == RED, row
+    assert boundary.UNJUDGED.format(label=_PROJECT, key="sandbox.filesystem.allowWrite") in (
+        row.detail.split("; ")
+    )
+
+
+def test_a_literal_path_through_a_link_is_judged_where_it_leads(deep: Machine) -> None:
+    # A literal entry whose prefix is a link to a directory above the record reaches it, which the
+    # entry's own spelling does not say. Mutation (`mutations/`'s "the boundary row judges an entry
+    # by its spelling and not where it leads"): the row names no gap.
+    link = _linked_beside(deep, "l2", deep.record_directory.parent)
+    row = _widening_gap(deep, str(link))
+    assert row.status == RED, row
+    assert boundary.WIDENED.format(label=_PROJECT, key="sandbox.filesystem.allowWrite") in (
+        row.detail.split("; ")
+    )
+
+
+def test_a_case_variant_names_the_record_on_a_volume_that_folds_case(
+    m: Machine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # On macOS's default volume two spellings that differ in case are one directory, so a variant
+    # of the record's directory reaches it. Mutation (`mutations/`'s "the boundary row compares
+    # paths by their case where the volume folds it"): the row names no gap.
+    monkeypatch.setattr(boundary, "CASE_FOLDS", True)
+    row = _widening_gap(m, str(m.record_directory).swapcase())
+    assert row.status == RED, row
+    assert boundary.WIDENED.format(label=_PROJECT, key="sandbox.filesystem.allowWrite") in (
+        row.detail.split("; ")
+    )
+
+
+def test_the_row_runs_no_regular_expression_on_what_a_settings_file_holds() -> None:
+    # A repository chooses what its settings files hold, and a pattern of its choosing compiled to
+    # a backtracking expression is a way to hang `doctor`; so the module imports no `re` at all.
+    # Mutation (`mutations/`'s "the boundary row imports re again"): the import is found.
+    import ast
+
+    tree = ast.parse(Path(boundary.__file__).read_text(encoding="utf-8"))
+    imported = {
+        alias.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Import)
+        for alias in node.names
+    } | {node.module for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)}
+    assert "re" not in imported
