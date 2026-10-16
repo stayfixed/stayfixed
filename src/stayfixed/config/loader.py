@@ -107,6 +107,14 @@ PRESET_KEY = "stayfixed.preset"
 # digits, `.`, `_` and `-` in `/`-separated segments.
 UNKNOWN_NOTE = "{name} is not a setting this stayfixed reads; it is ignored"
 RESET_NOTE = "{key} is left out ({reason}); the preset's value applies"
+# `UnusableKey`'s two sentences, in the same words as the notes: a key removed that has no
+# default, and a key whose preset value fails too. `reason` is again the refusal `loads` would
+# have raised for that key.
+UNUSABLE_REQUIRED = "{key} is left out ({reason}), and it has no default to fall back to"
+UNUSABLE_PRESET = (
+    "{key} falls back to the preset's value, which does not hold in this repository either "
+    "({reason})"
+)
 # Every refusal below names its key and quotes no value from the document. A state is a member
 # of `STATES`, a count is a count, and the names a refusal lists are stayfixed's own tuple or
 # configured names that have already matched `PROJECT_NAME`.
@@ -177,6 +185,32 @@ class ConfigError(Failure):
     def __init__(self, message: str, *, key: str | None = None) -> None:
         super().__init__(message)
         self.key = key
+
+
+class MissingKeys(ConfigError):
+    """A section without a key that has no default: a refusal of the whole document, so `key`
+    is `None`. `missing` is every such key, dotted, for the NOTE path to tell a key the document
+    never wrote from one it removed itself (`loads_noting`); never printed."""
+
+    def __init__(self, message: str, *, missing: tuple[str, ...]) -> None:
+        super().__init__(message)
+        self.missing = missing
+
+
+class UnusableKey(ConfigError):
+    """A key the NOTE path could not stand anything in for: a required key it removed, which has
+    no default, or a key whose preset value does not hold in this repository either.
+
+    A reader that must go on cannot keep the project's configuration without it, so it drops the
+    configuration whole, naming `key`, rather than relaying the refusal the next attempt would
+    have raised: that one said a key the document holds was missing, or named the preset's value
+    as the fault. `notes` are what the load had noted before it stopped. Raised only by
+    `loads_noting`; `loads` refuses as it always has.
+    """
+
+    def __init__(self, message: str, *, key: str, notes: tuple[str, ...]) -> None:
+        super().__init__(message, key=key)
+        self.notes = notes
 
 
 # Fixed text and a path stayfixed chose or the owner typed. Not the decoder's message: it is only
@@ -341,7 +375,10 @@ def _build(cls: type[T], name: str, values: dict[str, Any]) -> T:
     }
     missing = sorted(required - set(values))
     if missing:
-        raise ConfigError(f"[{name}] is missing required key(s): {', '.join(missing)}")
+        raise MissingKeys(
+            f"[{name}] is missing required key(s): {', '.join(missing)}",
+            missing=tuple(f"{name}.{key}" for key in missing),
+        )
     coerced: dict[str, Any] = {}
     for key, value in values.items():
         annotation = known[key]
@@ -711,10 +748,13 @@ def _built(
 
 @dataclass(frozen=True)
 class Noted:
-    """What `loads_noting` read, and a note for every name it ignored or value it reset."""
+    """What `loads_noting` read, a note for every name it ignored or value it reset, and the
+    dotted key each note is about, in the same order. A key is any text the document chose: a
+    reader prints one through `stayfixed.printed`."""
 
     config: Config
     notes: tuple[str, ...]
+    keys: tuple[str, ...] = ()
 
 
 def loads_noting(text: str, root: Path, *, owner: Owner, label: str | None = None) -> Noted:
@@ -727,24 +767,52 @@ def loads_noting(text: str, root: Path, *, owner: Owner, label: str | None = Non
     them, and are removed with its note. Then the document is built as `loads` builds it, and a
     refusal carrying a `key` — a `ConfigError`, or `validate_paths`' `PathEscape` — removes that
     key, so the preset's value applies, with `RESET_NOTE`, and the build is tried again. Each
-    retry removes one key the document holds, so the attempts are bounded by the keys it holds;
-    a refusal naming a key it does not hold, or none, propagates, as a document that is not TOML
-    does. The owner's layer is folded in as `loads` folds it.
+    retry removes one key the document holds, so the attempts are bounded by the keys it holds.
+
+    A refusal with no key is the whole document's and propagates, as a document that is not TOML
+    does, except where nothing can stand in for a key: a required key the retry removed, which
+    has no default, or a key whose value now comes from the preset and is refused all the same —
+    the preset's own `[paths]` value through a symlink the repository committed. Then the load
+    raises `UnusableKey`, naming that key and carrying the notes so far, never the refusal the
+    attempt raised, which said a key the document holds was missing or blamed the preset. The
+    owner's layer is folded in as `loads` folds it.
     """
     raw = _parsed(text, label or root / CONFIG_FILE)
     notes: list[str] = []
-    document = _known_only(raw, notes)
+    keys: list[str] = []
+    document = _known_only(raw, notes, keys)
     attempts = _held(document)
+    # Why each removed key was removed, the reason `UnusableKey` gives for one that is needed,
+    # and its reset note, which `UnusableKey` leaves out: no preset value applied after all.
+    removed: dict[str, tuple[str, str]] = {}
+
+    def unusable(message: str, key: str) -> UnusableKey:
+        dropped = removed[key][1] if key in removed else None
+        return UnusableKey(message, key=key, notes=tuple(n for n in notes if n != dropped))
+
     while True:
         try:
             config = _built(document, root, machine=None, personal=None, owner=owner)
-        except (ConfigError, PathEscape) as exc:
-            if exc.key is None or attempts == 0 or not _removed(document, exc.key):
+        except MissingKeys as exc:
+            lost = [key for key in exc.missing if key in removed]
+            if not lost:
                 raise
+            reason = removed[lost[0]][0]
+            message = UNUSABLE_REQUIRED.format(key=clipped(lost[0]), reason=reason)
+            raise unusable(message, lost[0]) from None
+        except (ConfigError, PathEscape) as exc:
+            if exc.key is None or attempts == 0:
+                raise
+            if not _removed(document, exc.key):
+                message = UNUSABLE_PRESET.format(key=clipped(exc.key), reason=exc)
+                raise unusable(message, exc.key) from None
             attempts -= 1
-            notes.append(RESET_NOTE.format(key=clipped(exc.key), reason=exc))
+            note = RESET_NOTE.format(key=clipped(exc.key), reason=exc)
+            removed[exc.key] = (str(exc), note)
+            notes.append(note)
+            keys.append(exc.key)
             continue
-        return Noted(config, tuple(notes))
+        return Noted(config, tuple(notes), tuple(keys))
 
 
 _SCHEMA_OF: dict[str, type[Any]] = {
@@ -767,8 +835,9 @@ def _keys_of(section: str) -> Collection[str]:
     return _schema_types(cast(Any, _SCHEMA_OF[section])).keys()
 
 
-def _known_only(raw: dict[str, Any], notes: list[str]) -> dict[str, Any]:
-    """`raw` without the names this stayfixed does not read, noting each one it removed."""
+def _known_only(raw: dict[str, Any], notes: list[str], keys: list[str]) -> dict[str, Any]:
+    """`raw` without the names this stayfixed does not read, noting each one it removed and
+    recording the key each note is about."""
     document: dict[str, Any] = {}
     machine_only: dict[str, object] = {}
     for name, value in raw.items():
@@ -777,28 +846,33 @@ def _known_only(raw: dict[str, Any], notes: list[str]) -> dict[str, Any]:
                 machine_only.update({f"{name}.{key}": item for key, item in value.items()})
             else:
                 notes.append(REFUSED_LAYER_NOTE.format(key=name, layer=LayerName.REPOSITORY))
+                keys.append(name)
         elif name not in SECTIONS:
             notes.append(UNKNOWN_NOTE.format(name=clipped(name)))
+            keys.append(name)
         elif isinstance(value, dict):
-            document[name] = _known_keys(name, value, _keys_of(name), notes)
+            document[name] = _known_keys(name, value, _keys_of(name), notes, keys)
         else:
             # Not a table: the section's own reader refuses it, keyed to the section.
             document[name] = value
     notes.extend(resolve([Layer(LayerName.REPOSITORY, machine_only)]).notes)
+    # One note per key above: no machine-only key's class admits the repository layer.
+    keys.extend(machine_only)
     return document
 
 
 def _known_keys(
-    dotted: str, table: dict[str, Any], known: Collection[str], notes: list[str]
+    dotted: str, table: dict[str, Any], known: Collection[str], notes: list[str], keys: list[str]
 ) -> dict[str, Any]:
     kept: dict[str, Any] = {}
     for key, value in table.items():
         if key not in known:
             notes.append(UNKNOWN_NOTE.format(name=clipped(f"{dotted}.{key}")))
+            keys.append(f"{dotted}.{key}")
         elif dotted == "gates" and key == "custom" and isinstance(value, dict):
             fields_of_gate = _schema_types(CustomGate).keys()
             kept[key] = {
-                name: _known_keys(f"gates.custom.{name}", gate, fields_of_gate, notes)
+                name: _known_keys(f"gates.custom.{name}", gate, fields_of_gate, notes, keys)
                 if isinstance(gate, dict)
                 else gate
                 for name, gate in value.items()

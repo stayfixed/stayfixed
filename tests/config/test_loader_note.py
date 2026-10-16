@@ -20,7 +20,10 @@ from stayfixed.config.loader import (
     CONFIG_FILE,
     RESET_NOTE,
     UNKNOWN_NOTE,
+    UNUSABLE_PRESET,
+    UNUSABLE_REQUIRED,
     ConfigError,
+    UnusableKey,
     loads,
     loads_noting,
     toml_position,
@@ -244,9 +247,10 @@ def _decoder_position(text: str) -> str:
     ],
 )
 def test_a_document_level_refusal_propagates(tmp_path: Path, text: str, refused: str) -> None:
-    # A refusal with no key is about the whole document: there is nothing to reset. Mutation
-    # (`mutations/`'s "a missing required key is keyed as one value"): the `no-version` refusal
-    # carries `stayfixed.version`.
+    # A refusal with no key is about the whole document: there is nothing to reset. Mutations
+    # (`mutations/`'s "a missing required key is keyed as one value" -> the `no-version` refusal
+    # carries `stayfixed.version`; "a document that is not TOML is keyed to a section" -> the
+    # `not-toml` one carries `stayfixed`).
     with pytest.raises(ConfigError) as raised:
         loads_noting(text, tmp_path, owner=OWNER)
     position = _decoder_position(text) if "{position}" in refused else ""
@@ -254,13 +258,14 @@ def test_a_document_level_refusal_propagates(tmp_path: Path, text: str, refused:
     assert raised.value.key is None
 
 
-def test_a_key_the_document_does_not_hold_propagates(
+def test_a_key_the_document_does_not_hold_is_unusable(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # The retry removes a key the document holds; a validator naming any other is asked once and
-    # its refusal propagates. Mutation (`mutations/`'s "the NOTE retry takes a key the document
-    # does not hold for removed"): only the bound on attempts stops the loop, and the validator
-    # is asked once per key the document holds, plus one.
+    # The retry removes a key the document holds; a validator naming any other refuses a value
+    # the preset gave, so nothing can stand in for it, and the validator is asked once. Mutation
+    # (`mutations/`'s "the NOTE retry takes a key the document does not hold for removed"): only
+    # the bound on attempts stops the loop, and the validator is asked once per key the document
+    # holds, plus one.
     calls: list[object] = []
 
     def refuses(config: object) -> object:
@@ -268,8 +273,9 @@ def test_a_key_the_document_does_not_hold_propagates(
         raise ConfigError("held", key="paths.nowhere")
 
     monkeypatch.setattr(loader, "_enforcement", refuses)
-    with pytest.raises(ConfigError, match=r"^held$"):
+    with pytest.raises(UnusableKey) as raised:
         loads_noting(MINIMAL, tmp_path, owner=OWNER)
+    assert str(raised.value) == UNUSABLE_PRESET.format(key="paths.nowhere", reason="held")
     assert len(calls) == 1
 
 
@@ -288,9 +294,11 @@ def test_a_validator_that_keeps_refusing_spends_the_document_and_stops(
         raise ConfigError("held", key=calls[-1])
 
     monkeypatch.setattr(loader, "_enforcement", refuses)
-    with pytest.raises(ConfigError, match=r"^held$"):
+    with pytest.raises(UnusableKey) as raised:
         loads_noting(MINIMAL + '[paths]\nspecs = "design/specs"\n', tmp_path, owner=OWNER)
     assert calls == handed
+    # The reset note of the key it then could not use is not carried: no preset value applied.
+    assert raised.value.notes == (RESET_NOTE.format(key="stayfixed.preset", reason="held"),)
 
 
 def test_a_custom_gate_whose_name_holds_a_dot_is_dropped_by_its_whole_name(tmp_path: Path) -> None:
@@ -317,3 +325,74 @@ def test_a_repository_guards_value_that_is_not_a_table_is_refused_too(tmp_path: 
     # without a note"): the value goes and nothing says the repository tried.
     got = loads_noting("guards = false\n" + MINIMAL, tmp_path, owner=OWNER)
     assert got.notes == (REFUSED_LAYER_NOTE.format(key="guards", layer="repository"),)
+
+
+REQUIRED_UNUSABLE = [
+    pytest.param(
+        MINIMAL.replace('name = "sample"', 'name = "has space"'), "project.name", id="project-name"
+    ),
+    pytest.param(
+        MINIMAL.replace('version = "0.1.0"', "version = 1"), "stayfixed.version", id="version"
+    ),
+]
+
+
+@pytest.mark.parametrize(("text", "key"), REQUIRED_UNUSABLE)
+def test_a_required_key_it_cannot_use_is_named_and_never_called_missing(
+    tmp_path: Path, text: str, key: str
+) -> None:
+    # The retry removed the key, and the next attempt refused the document for missing it:
+    # `[project] is missing required key(s): name` of a document whose name is right there. Now
+    # the load names the key the document got wrong, with the refusal it got, and drops its reset
+    # note: no preset value applied. Mutations (`mutations/`'s "the NOTE retry relays a missing
+    # key it removed itself" -> the misattributed refusal comes back; "an unusable key carries
+    # the reset note of the key it could not use" -> the notes are not empty).
+    with pytest.raises(UnusableKey) as raised:
+        loads_noting(text, tmp_path, owner=OWNER)
+    assert str(raised.value) == UNUSABLE_REQUIRED.format(key=key, reason=refusal(text, tmp_path))
+    assert raised.value.key == key
+    assert raised.value.notes == ()
+    # The controls, which no mutation of the retry reddens and none needs to: the same document
+    # with a usable value loads, and `loads` still refuses the value rather than a missing key.
+    assert loads_noting(MINIMAL, tmp_path, owner=OWNER).notes == ()
+    assert "missing" not in str(refusal(text, tmp_path))
+
+
+@pytest.mark.parametrize("held", [False, True], ids=["preset-value", "reset-then-preset"])
+def test_a_preset_value_a_committed_symlink_breaks_is_named(tmp_path: Path, held: bool) -> None:
+    # A committed `docs` symlink and no `[paths]`: the preset's own `paths.architecture` passes
+    # through it, and the document holds no value to remove, so the refusal propagated whole and
+    # read as the preset's fault. With the document's own value removed first, the preset's
+    # fails in its turn, and the reset note is not carried. Mutations (`mutations/`'s "the NOTE
+    # path relays the refusal of a key it cannot remove" -> the `PathEscape` propagates; "an
+    # unusable key carries the reset note of the key it could not use" -> `reset-then-preset`
+    # carries a note). The control below is the one no mutation reddens: it shows the link is the
+    # fault.
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    root = tmp_path / "root"
+    root.mkdir()
+    os.symlink(outside, root / "docs")
+    text = MINIMAL + ('[paths]\narchitecture = "../x"\n' if held else "")
+    with pytest.raises(UnusableKey) as raised:
+        loads_noting(text, root, owner=OWNER)
+    reason = refusal(MINIMAL, root)
+    assert str(raised.value) == UNUSABLE_PRESET.format(key="paths.architecture", reason=reason)
+    assert raised.value.key == "paths.architecture"
+    assert raised.value.notes == ()
+    # The control: a real `docs` directory, and the same document loads.
+    (root / "docs").unlink()
+    (root / "docs").mkdir()
+    got = loads_noting(text, root, owner=OWNER).config.paths.architecture
+    assert got == preset_defaults("paths")["architecture"]
+
+
+def test_each_note_names_the_key_it_is_about(tmp_path: Path) -> None:
+    # `doctor` lists a session's notes by key alone, never the sentence. Mutations
+    # (`mutations/`'s "a reset key is not recorded beside its note" -> `memory.mode` goes
+    # missing; "an unknown key is not recorded beside its note" -> `memory.future` does).
+    text = (
+        MINIMAL + '[newer]\n[memory]\nfuture = 1\nmode = "harness"\n[guards]\nbg_cleanup = false\n'
+    )
+    got = loads_noting(text, tmp_path, owner=OWNER)
+    assert got.keys == ("newer", "memory.future", "guards.bg_cleanup", "memory.mode")

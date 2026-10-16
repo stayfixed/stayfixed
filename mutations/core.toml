@@ -3932,8 +3932,8 @@ reddens = ["tests/config/test_owner.py::test_a_table_that_is_not_a_table_is_a_no
 [[mutation]]
 name = "an unknown preset name raises under NOTE"
 file = "src/stayfixed/config/owner.py"
-before = "    if unknown is Unknown.NOTE and preset not in shipped_presets():"
-after = "    if False:"
+before = "    elif unknown is Unknown.NOTE and preset not in shipped_presets():"
+after = "    elif False:"
 reddens = [
   "tests/config/test_owner.py::test_an_unknown_preset_is_the_recommended_one_with_a_note[future]",
 ]
@@ -3950,19 +3950,36 @@ reddens = [
 [[mutation]]
 name = "an unknown preset name is noted under REFUSE too"
 file = "src/stayfixed/config/owner.py"
-before = "    if unknown is Unknown.NOTE and preset not in shipped_presets():"
-after = "    if preset not in shipped_presets():"
+before = "    elif unknown is Unknown.NOTE and preset not in shipped_presets():"
+after = "    elif preset not in shipped_presets():"
 reddens = [
   "tests/config/test_owner.py::test_refuse_still_refuses_a_preset_this_build_does_not_ship",
 ]
+
+# A preset value that is not a string: a session hands the value over as the document wrote it.
+[[mutation]]
+name = "a preset value that is not a string reaches the name check"
+file = "src/stayfixed/config/owner.py"
+before = "    if not isinstance(preset, str):\n        if unknown is Unknown.REFUSE:"
+after = "    if False:\n        if unknown is Unknown.REFUSE:"
+reddens = [
+  "tests/config/test_owner.py::test_a_preset_value_that_is_not_a_string_is_the_recommended_one_with_a_note",
+]
+
+[[mutation]]
+name = "a preset value that is not a string is noted under REFUSE too"
+file = "src/stayfixed/config/owner.py"
+before = "        if unknown is Unknown.REFUSE:\n            raise ConfigError(NOT_A_PRESET_NAME"
+after = "        if False:\n            raise ConfigError(NOT_A_PRESET_NAME"
+reddens = ["tests/config/test_owner.py::test_refuse_refuses_a_preset_value_that_is_not_a_string"]
 
 # The NOTE loader (`loader.loads_noting`): an unknown name is ignored and an invalid value costs
 # only its own key, so a session keeps every other setting the project made.
 [[mutation]]
 name = "the NOTE path drops the whole document on a keyed refusal"
 file = "src/stayfixed/config/loader.py"
-before = "            if exc.key is None or attempts == 0 or not _removed(document, exc.key):"
-after = "            if exc.key is None or attempts == 0 or document.clear() is not None:"
+before = "                raise\n            if not _removed(document, exc.key):"
+after = "                raise\n            if document.clear() is not None:"
 reddens = ["tests/config/test_loader_note.py::test_an_invalid_value_resets_only_its_key"]
 
 [[mutation]]
@@ -3979,7 +3996,7 @@ before = "    return any(\n        isinstance(value, dict)"
 after = "    return True or any(\n        isinstance(value, dict)"
 reddens = [
   "tests/config/test_loader_note.py::test_a_validator_that_keeps_refusing_spends_the_document_and_stops",
-  "tests/config/test_loader_note.py::test_a_key_the_document_does_not_hold_propagates",
+  "tests/config/test_loader_note.py::test_a_key_the_document_does_not_hold_is_unusable",
 ]
 
 [[mutation]]
@@ -4093,9 +4110,65 @@ reddens = ["tests/config/test_loader_note.py::test_a_custom_gate_that_cannot_run
 [[mutation]]
 name = "a missing required key is keyed as one value"
 file = "src/stayfixed/config/loader.py"
-before = """        raise ConfigError(f"[{name}] is missing required key(s): {', '.join(missing)}")"""
-after = """        raise ConfigError(f"[{name}] is missing required key(s): {', '.join(missing)}", key=f"{name}.{missing[0]}")"""
+before = "        super().__init__(message)\n        self.missing = missing"
+after = "        super().__init__(message, key=missing[0])\n        self.missing = missing"
 reddens = ["tests/config/test_loader_note.py::test_a_document_level_refusal_propagates[no-version]"]
+
+[[mutation]]
+name = "a document that is not TOML is keyed to a section"
+file = "src/stayfixed/config/loader.py"
+before = """        raise ConfigError(f"{path} is not valid TOML {toml_position(exc)}") from None"""
+after = """        raise ConfigError(f"{path} is not valid TOML {toml_position(exc)}", key="stayfixed") from None"""
+reddens = ["tests/config/test_loader_note.py::test_a_document_level_refusal_propagates[not-toml]"]
+
+# A key the NOTE retry cannot stand anything in for — a required key it removed, or a key whose
+# preset value fails too — is named by `UnusableKey`, never by the refusal the next attempt raised.
+[[mutation]]
+name = "the NOTE retry relays a missing key it removed itself"
+file = "src/stayfixed/config/loader.py"
+before = "            lost = [key for key in exc.missing if key in removed]"
+after = "            lost = []"
+reddens = [
+  "tests/config/test_loader_note.py::test_a_required_key_it_cannot_use_is_named_and_never_called_missing[project-name]",
+  "tests/config/test_loader_note.py::test_a_required_key_it_cannot_use_is_named_and_never_called_missing[version]",
+]
+
+[[mutation]]
+name = "the NOTE path relays the refusal of a key it cannot remove"
+file = "src/stayfixed/config/loader.py"
+before = "            if not _removed(document, exc.key):\n                message = UNUSABLE_PRESET"
+after = "            if not _removed(document, exc.key):\n                raise\n                message = UNUSABLE_PRESET"
+reddens = [
+  "tests/config/test_loader_note.py::test_a_preset_value_a_committed_symlink_breaks_is_named[preset-value]",
+  "tests/config/test_loader_note.py::test_a_preset_value_a_committed_symlink_breaks_is_named[reset-then-preset]",
+  "tests/config/test_loader_note.py::test_a_key_the_document_does_not_hold_is_unusable",
+]
+
+[[mutation]]
+name = "an unusable key carries the reset note of the key it could not use"
+file = "src/stayfixed/config/loader.py"
+before = "        dropped = removed[key][1] if key in removed else None"
+after = "        dropped = None"
+reddens = [
+  "tests/config/test_loader_note.py::test_a_preset_value_a_committed_symlink_breaks_is_named[reset-then-preset]",
+  "tests/config/test_loader_note.py::test_a_required_key_it_cannot_use_is_named_and_never_called_missing[project-name]",
+  "tests/config/test_loader_note.py::test_a_validator_that_keeps_refusing_spends_the_document_and_stops",
+]
+
+# `Noted.keys` is what `doctor` lists a session's notes by.
+[[mutation]]
+name = "a reset key is not recorded beside its note"
+file = "src/stayfixed/config/loader.py"
+before = "            keys.append(exc.key)\n"
+after = ""
+reddens = ["tests/config/test_loader_note.py::test_each_note_names_the_key_it_is_about"]
+
+[[mutation]]
+name = "an unknown key is not recorded beside its note"
+file = "src/stayfixed/config/loader.py"
+before = "            keys.append(f\"{dotted}.{key}\")\n"
+after = ""
+reddens = ["tests/config/test_loader_note.py::test_each_note_names_the_key_it_is_about"]
 
 # A section that is not a table is keyed to the section, which the NOTE path puts back to the
 # preset's; unkeyed, it would cost the session the whole file.

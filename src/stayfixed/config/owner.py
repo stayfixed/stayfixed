@@ -32,7 +32,7 @@ from stayfixed.config.loader import (
     read_machine_toml,
 )
 from stayfixed.config.schema import Budgets, Personal
-from stayfixed.presets import load_preset, shipped_presets
+from stayfixed.presets import available, load_preset, shipped_presets
 from stayfixed.printed import clipped
 
 
@@ -82,25 +82,39 @@ UNKNOWN_PRESET_NOTE = (
     "{name} is not a preset this stayfixed ships, so the owner's layer stands on the "
     f"{FALLBACK_PRESET} preset's personal values"
 )
+# A preset value that is not a string at all, which no name of a preset can be: there is nothing
+# to print, and a `TOML` value of another type is none of `printed`'s to bound.
+UNREADABLE_PRESET_NOTE = (
+    "stayfixed.preset is not a string, so the owner's layer stands on the "
+    f"{FALLBACK_PRESET} preset's personal values"
+)
+# The same value under `REFUSE`, in the loader's words for it.
+NOT_A_PRESET_NAME = "stayfixed.preset must be a string; {available}"
 
 
 def resolve_owner(
     machine: Path | None,
     *,
-    preset: str = "recommended",
+    preset: object = "recommended",
     unknown: Unknown = Unknown.NOTE,
 ) -> Owner:
     """The owner's layer over the preset named `preset`.
 
-    `preset` is the repository's preset name, else `recommended`. A name this build does not
-    ship is refused under `REFUSE`, as the preset loader refuses it; under `NOTE` the owner's
-    layer stands on `FALLBACK_PRESET` with `UNKNOWN_PRESET_NOTE`, since a session reads the name
-    from a `stayfixed.toml` before anything has held it to the shipped presets. `machine` is the
-    machine file; `None`, a machine with no home to hold one (`machine_config_path`), is read as
-    no file, as an absent file is.
+    `preset` is the repository's preset value as the document wrote it, else `recommended`. A
+    name this build does not ship is refused under `REFUSE`, as the preset loader refuses it, and
+    so is a value that is not a string; under `NOTE` the owner's layer stands on
+    `FALLBACK_PRESET` with `UNKNOWN_PRESET_NOTE` or `UNREADABLE_PRESET_NOTE`, since a session
+    reads the value from a `stayfixed.toml` before anything has held it to the shipped presets.
+    `machine` is the machine file; `None`, a machine with no home to hold one
+    (`machine_config_path`), is read as no file, as an absent file is.
     """
     notes: list[str] = []
-    if unknown is Unknown.NOTE and preset not in shipped_presets():
+    if not isinstance(preset, str):
+        if unknown is Unknown.REFUSE:
+            raise ConfigError(NOT_A_PRESET_NAME.format(available=available()))
+        notes.append(UNREADABLE_PRESET_NOTE)
+        preset = FALLBACK_PRESET
+    elif unknown is Unknown.NOTE and preset not in shipped_presets():
         notes.append(UNKNOWN_PRESET_NOTE.format(name=clipped(preset)))
         preset = FALLBACK_PRESET
     shipped = load_preset(preset)

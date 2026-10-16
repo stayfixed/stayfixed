@@ -8,22 +8,24 @@ from pathlib import Path
 import pytest
 
 from stayfixed.config.classes import LayerName
-from stayfixed.config.loader import MachineConfigError, Unknown, read_machine_toml
+from stayfixed.config.loader import ConfigError, MachineConfigError, Unknown, read_machine_toml
 from stayfixed.config.owner import (
     GATE_BUDGET,
     IGNORED_NOTE,
     MACHINE_FILE_NOTE,
+    NOT_A_PRESET_NAME,
     NOT_A_SWITCH,
     NOT_A_TABLE,
     RESET_NOTE,
     UNKNOWN_KEY,
     UNKNOWN_PRESET_NOTE,
+    UNREADABLE_PRESET_NOTE,
     Guards,
     resolve_owner,
 )
 from stayfixed.config.schema import Personal
 from stayfixed.errors import Failure
-from stayfixed.presets import load_preset
+from stayfixed.presets import available, load_preset
 from stayfixed.printed import clipped
 from stayfixed.setup.machine import read_machine, write_machine
 from tests.crafted import assert_never_raw
@@ -233,3 +235,21 @@ def test_write_machine_keeps_guards_budgets_and_setup(tmp_path: Path) -> None:
     assert written["budgets"] == {"startup_rules_words": 9000}
     assert written["setup"] == {"ask_rules": ["Bash(x)"]}
     assert resolve_owner(path).guards.bg_cleanup is False
+
+
+def test_a_preset_value_that_is_not_a_string_is_the_recommended_one_with_a_note() -> None:
+    # A session hands over the value as the document wrote it, and `preset = 1` reached
+    # `printed.clipped` and the preset loader's name check, both of which raise on an integer.
+    # Mutation (`mutations/`'s "a preset value that is not a string reaches the name check"): a
+    # `TypeError` escapes.
+    got = resolve_owner(None, preset=1)
+    assert got.personal == preset_personal() and got.guards == Guards()
+    assert got.notes == (UNREADABLE_PRESET_NOTE,)
+
+
+def test_refuse_refuses_a_preset_value_that_is_not_a_string() -> None:
+    # In the loader's words for the same value. Mutation (`mutations/`'s "a preset value that is
+    # not a string is noted under REFUSE too"): nothing is raised.
+    with pytest.raises(ConfigError) as refused:
+        resolve_owner(None, preset=1, unknown=Unknown.REFUSE)
+    assert str(refused.value) == NOT_A_PRESET_NAME.format(available=available())
