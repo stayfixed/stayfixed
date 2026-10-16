@@ -3594,8 +3594,9 @@ volatile_ttl_days = 30
 what a session loads; the five a gate judges a pull request by (`agents_md_lines`,
 `agents_md_words`, `status_lines`, `roadmap_prose_lines`, `roadmap_prose_words`) are the
 repository's alone, and one written here is ignored with a note. Every key you leave out is the
-preset's. A command that reads this file refuses a key it does not know or a value it cannot use,
-naming the file and the key; a session reads what it can instead, ignores an unknown key, puts the
+preset's. A command that loads `stayfixed.toml` reads this file's `[personal]` too, and refuses a
+key there it does not know or a value it cannot use, naming the file and the key, as it refuses a
+file that does not load; a session reads what it can instead, ignores an unknown key, puts the
 preset's value back for an unusable one, and says so, and a file that does not load at all leaves
 a session on the preset's personal values and guards.
 

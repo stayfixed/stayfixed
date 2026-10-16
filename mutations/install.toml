@@ -868,7 +868,10 @@ before = """        else:
             tables[name] = dict(value)"""
 after = """        else:
             continue"""
-reddens = ["tests/setup/test_machine.py::test_a_table_this_writer_does_not_know_survives_a_rewrite"]
+reddens = [
+  "tests/setup/test_machine.py::test_a_table_this_writer_does_not_know_survives_a_rewrite",
+  "tests/config/test_owner.py::test_write_machine_keeps_guards_budgets_and_setup",
+]
 
 # `pluginConfigs` is where Claude Code reads this plugin's own options, and the mirror was
 # written from this run's *new* keys — empty on every run after the first. An owner who edited

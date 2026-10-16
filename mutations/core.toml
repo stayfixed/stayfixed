@@ -3857,6 +3857,105 @@ reddens = [
   "tests/config/test_owner.py::test_refuse_raises_for_what_note_notes[unknown-key]",
 ]
 
+# A guard is on until the owner switches it off: off by default, it would be off on every machine
+# whose owner never wrote a `[guards]` table.
+[[mutation]]
+name = "the background guard is off by default"
+file = "src/stayfixed/config/owner.py"
+before = "    bg_cleanup: bool = True"
+after = "    bg_cleanup: bool = False"
+reddens = [
+  "tests/config/test_owner.py::test_the_guards_are_on_by_default",
+  "tests/config/test_owner.py::test_no_machine_file_is_the_preset",
+]
+
+# `None` is a machine with no home, read as no file rather than handed to the reader.
+[[mutation]]
+name = "a machine with no home is read as a path"
+file = "src/stayfixed/config/owner.py"
+before = "        raw = None if machine is None else read_machine_toml(machine)"
+after = "        raw = read_machine_toml(cast(Path, machine))"
+reddens = ["tests/config/test_owner.py::test_a_machine_with_no_home_is_the_preset"]
+
+# The machine file's `[guards]` is the one place a session guard is switched off.
+[[mutation]]
+name = "the owner's layer never reads [guards]"
+file = "src/stayfixed/config/owner.py"
+before = '    for table in ("personal", "guards", "budgets"):'
+after = '    for table in ("personal", "budgets"):'
+reddens = [
+  "tests/config/test_owner.py::test_the_machine_file_switches_the_background_guard_off",
+]
+
+# The machine file is the higher layer: its values win over the preset's.
+[[mutation]]
+name = "the preset's personal values win over the machine file's"
+file = "src/stayfixed/config/owner.py"
+before = "    resolution = resolve([Layer(LayerName.PRESET, lower), Layer(LayerName.MACHINE_FILE, upper)])"
+after = "    resolution = resolve([Layer(LayerName.MACHINE_FILE, lower), Layer(LayerName.PRESET, upper)])"
+reddens = ["tests/config/test_owner.py::test_the_machine_files_personal_values_win"]
+
+# A session budget is the owner's only where the machine file set it.
+[[mutation]]
+name = "the owner's session budgets are read from the preset layer"
+file = "src/stayfixed/config/owner.py"
+before = '        if key.startswith("budgets.") and resolution.provenance[key] is LayerName.MACHINE_FILE'
+after = '        if key.startswith("budgets.") and resolution.provenance[key] is LayerName.PRESET'
+reddens = ["tests/config/test_owner.py::test_a_session_budget_is_the_owners"]
+
+# A TOML key is any quoted text, so the owner's note prints it through `printed.clipped`.
+[[mutation]]
+name = "the owner's unknown-key note prints the key raw"
+file = "src/stayfixed/config/owner.py"
+before = "                problem(UNKNOWN_KEY.format(table=table, key=clipped(key)), ignored=True)"
+after = "                problem(UNKNOWN_KEY.format(table=table, key=key), ignored=True)"
+reddens = ["tests/config/test_owner.py::test_an_unknown_key_is_a_note_and_never_printed_raw"]
+
+# An unusable value costs its own key, never the values read before it.
+[[mutation]]
+name = "an invalid value in the machine file costs every value read before it"
+file = "src/stayfixed/config/owner.py"
+before = "                problem(sentence, ignored=False)"
+after = "                problem(sentence, ignored=False)\n                found.clear()"
+reddens = ["tests/config/test_owner.py::test_an_invalid_value_resets_only_its_key[personal]"]
+
+# A table that is not one is a note, never a session's owner layer failing.
+[[mutation]]
+name = "a machine table that is not a table is read as one"
+file = "src/stayfixed/config/owner.py"
+before = "        if not isinstance(values, dict):\n            problem(NOT_A_TABLE"
+after = "        if False:\n            problem(NOT_A_TABLE"
+reddens = ["tests/config/test_owner.py::test_a_table_that_is_not_a_table_is_a_note"]
+
+# A preset name this build does not ship: a session falls back to `recommended` with a note
+# printing the name through `printed.clipped`, and a command refuses it.
+[[mutation]]
+name = "an unknown preset name raises under NOTE"
+file = "src/stayfixed/config/owner.py"
+before = "    if unknown is Unknown.NOTE and preset not in shipped_presets():"
+after = "    if False:"
+reddens = [
+  "tests/config/test_owner.py::test_an_unknown_preset_is_the_recommended_one_with_a_note[future]",
+]
+
+[[mutation]]
+name = "the unknown preset's note prints the name raw"
+file = "src/stayfixed/config/owner.py"
+before = "        notes.append(UNKNOWN_PRESET_NOTE.format(name=clipped(preset)))"
+after = "        notes.append(UNKNOWN_PRESET_NOTE.format(name=preset))"
+reddens = [
+  "tests/config/test_owner.py::test_an_unknown_preset_is_the_recommended_one_with_a_note[hostile]",
+]
+
+[[mutation]]
+name = "an unknown preset name is noted under REFUSE too"
+file = "src/stayfixed/config/owner.py"
+before = "    if unknown is Unknown.NOTE and preset not in shipped_presets():"
+after = "    if preset not in shipped_presets():"
+reddens = [
+  "tests/config/test_owner.py::test_refuse_still_refuses_a_preset_this_build_does_not_ship",
+]
+
 # The NOTE loader (`loader.loads_noting`): an unknown name is ignored and an invalid value costs
 # only its own key, so a session keeps every other setting the project made.
 [[mutation]]

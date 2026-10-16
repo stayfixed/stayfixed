@@ -32,7 +32,7 @@ from stayfixed.config.loader import (
     read_machine_toml,
 )
 from stayfixed.config.schema import Budgets, Personal
-from stayfixed.presets import load_preset
+from stayfixed.presets import load_preset, shipped_presets
 from stayfixed.printed import clipped
 
 
@@ -73,6 +73,15 @@ NOT_A_STRING = "{key} must be a string"
 NOT_A_SWITCH = "{key} must be true or false"
 IGNORED_NOTE = "{path}: {problem}; it is ignored"
 RESET_NOTE = "{path}: {problem}; the preset's value applies"
+# The preset a session falls back to when the name it was handed is not one this build ships.
+FALLBACK_PRESET = "recommended"
+# A preset name this build does not ship, under `NOTE`. The name is the repository's, so it is
+# printed through `printed.clipped`; `REFUSE` raises the preset loader's refusal, which never
+# prints it.
+UNKNOWN_PRESET_NOTE = (
+    "{name} is not a preset this stayfixed ships, so the owner's layer stands on the "
+    f"{FALLBACK_PRESET} preset's personal values"
+)
 
 
 def resolve_owner(
@@ -83,10 +92,17 @@ def resolve_owner(
 ) -> Owner:
     """The owner's layer over the preset named `preset`.
 
-    `preset` is the repository's preset name when one loaded, else `recommended`. `machine` is
-    the machine file; `None`, a machine with no home to hold one (`machine_config_path`), is read
-    as no file, as an absent file is.
+    `preset` is the repository's preset name, else `recommended`. A name this build does not
+    ship is refused under `REFUSE`, as the preset loader refuses it; under `NOTE` the owner's
+    layer stands on `FALLBACK_PRESET` with `UNKNOWN_PRESET_NOTE`, since a session reads the name
+    from a `stayfixed.toml` before anything has held it to the shipped presets. `machine` is the
+    machine file; `None`, a machine with no home to hold one (`machine_config_path`), is read as
+    no file, as an absent file is.
     """
+    notes: list[str] = []
+    if unknown is Unknown.NOTE and preset not in shipped_presets():
+        notes.append(UNKNOWN_PRESET_NOTE.format(name=clipped(preset)))
+        preset = FALLBACK_PRESET
     shipped = load_preset(preset)
     lower: dict[str, object] = {
         f"personal.{key}": value
@@ -94,7 +110,6 @@ def resolve_owner(
     }
     lower.update({f"guards.{field.name}": field.default for field in fields(Guards)})
 
-    notes: list[str] = []
     try:
         raw = None if machine is None else read_machine_toml(machine)
     except MachineConfigError as exc:

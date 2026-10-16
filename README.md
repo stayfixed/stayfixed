@@ -107,9 +107,9 @@ background: one that leaves an `&` job behind with no `trap … EXIT` to stop it
 the refusal names the remedy. Other wrappers, such as `nohup`, `timeout` or `bash -c`, are not
 read through ([`docs/cli.md`](https://github.com/stayfixed/stayfixed/blob/main/docs/cli.md#stayfixed-guard-bg-cleanup) lists them). The same
 command run in the foreground passes. The machine owner may switch a session guard off in the
-machine file; a repository never can, in its configuration or on the command line
+machine file; a repository never can, and no command-line flag does
 ([`docs/cli.md`](https://github.com/stayfixed/stayfixed/blob/main/docs/cli.md#configuration) names
-the key), so a false block is a defect: report it in
+the machine file's key), so a false block is a defect: report it in
 [an issue](https://github.com/stayfixed/stayfixed/issues) with the command it refused.
 
 On Claude Code a guard's refusal stopped the command before it ran when this was measured

@@ -621,16 +621,16 @@ def test_the_readme_states_each_agents_reach_as_the_registry_does() -> None:
     assert set(_MEASURED_AT.findall(match.group(1))) == measured
 
 
-def test_the_readme_says_the_guards_have_no_off_switch_and_how_to_pass_one() -> None:
+def test_the_readme_says_only_the_owner_switches_a_guard_off_and_how_to_pass_one() -> None:
     # A blocked agent's first question is how to get past the block, and a user's is how to turn
     # it off. The section answers both where the table says a guard blocks: the one blocking
     # guard judges only backgrounded commands, so the same command run in the foreground passes;
-    # only the machine owner switches a guard off, in the machine file, and a repository never
-    # can; and a false block is a defect to report. Each clause is one needle, read from the
-    # section alone, so a paragraph moved elsewhere in the README reddens too. Mutations
-    # (declared), one per needle: the foreground sentence deleted, the scope's "only" dropped, a
-    # repository given the switch, and the false block no longer called a defect -> each reddens
-    # this.
+    # only the machine owner switches a guard off, in the machine file, a repository never can
+    # and no command-line flag does; and a false block is a defect to report. Each clause is one
+    # needle, read from the section alone, so a paragraph moved elsewhere in the README reddens
+    # too. Mutations (declared), one per needle: the foreground sentence deleted, the scope's
+    # "only" dropped, a repository given the switch, a flag offered, and the false block no
+    # longer called a defect -> each reddens this.
     match = _REACH_SECTION.search(README.read_text(encoding="utf-8"))
     assert match, "README.md has no ## What each agent enforces section"
     section = " ".join(match.group(1).split())
@@ -640,6 +640,7 @@ def test_the_readme_says_the_guards_have_no_off_switch_and_how_to_pass_one() -> 
         "machine owner may switch a session guard off in the machine file; a repository never can"
         in section
     )
+    assert "no command-line flag does" in section
     assert "a false block is a defect" in section
 
 

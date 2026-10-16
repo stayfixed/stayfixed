@@ -1629,10 +1629,10 @@ file = "README.md"
 before = "The same\ncommand run in the foreground passes. "
 after = ""
 reddens = [
-  "tests/test_documents.py::test_the_readme_says_the_guards_have_no_off_switch_and_how_to_pass_one",
+  "tests/test_documents.py::test_the_readme_says_only_the_owner_switches_a_guard_off_and_how_to_pass_one",
 ]
 
-# The other three clauses of the same section, each a promise a user acts on. The scope: a guard
+# The other clauses of the same section, each a promise a user acts on. The scope: a guard
 # described as judging every command would send an agent looking for a way past one it never meets.
 [[mutation]]
 name = "the README stops saying the blocking guard judges only backgrounded commands"
@@ -1640,7 +1640,7 @@ file = "README.md"
 before = "it judges only a command the agent runs in the"
 after = "it judges a command the agent runs in the"
 reddens = [
-  "tests/test_documents.py::test_the_readme_says_the_guards_have_no_off_switch_and_how_to_pass_one",
+  "tests/test_documents.py::test_the_readme_says_only_the_owner_switches_a_guard_off_and_how_to_pass_one",
 ]
 
 # The one a user relies on most: only the machine owner turns a guard off, in the machine file,
@@ -1649,10 +1649,20 @@ reddens = [
 [[mutation]]
 name = "the README lets a repository switch a guard off"
 file = "README.md"
-before = "a repository never can, in its configuration"
-after = "a repository can too, in its configuration"
+before = "a repository never can, and"
+after = "a repository can too, and"
 reddens = [
-  "tests/test_documents.py::test_the_readme_says_the_guards_have_no_off_switch_and_how_to_pass_one",
+  "tests/test_documents.py::test_the_readme_says_only_the_owner_switches_a_guard_off_and_how_to_pass_one",
+]
+
+# Nor does a flag: a command line is where an agent that met a block would look for one.
+[[mutation]]
+name = "the README offers a command-line flag that turns a guard off"
+file = "README.md"
+before = "and no command-line flag does"
+after = "and a command-line flag does"
+reddens = [
+  "tests/test_documents.py::test_the_readme_says_only_the_owner_switches_a_guard_off_and_how_to_pass_one",
 ]
 
 # And where a false block goes: called a defect, it is reported rather than worked around.
@@ -1662,7 +1672,7 @@ file = "README.md"
 before = "so a false block is a defect: report it in"
 after = "so report a false block in"
 reddens = [
-  "tests/test_documents.py::test_the_readme_says_the_guards_have_no_off_switch_and_how_to_pass_one",
+  "tests/test_documents.py::test_the_readme_says_only_the_owner_switches_a_guard_off_and_how_to_pass_one",
 ]
 
 # The harness guard for the sweep. `main` deletes every `stayfixed-oracle-*` directory under
