@@ -4791,6 +4791,15 @@ reddens = [
 ]
 
 [[mutation]]
+name = "a directory whose links loop is read as outside the project"
+file = "src/stayfixed/trust/boundary.py"
+before = "    except OSError:\n        return True"
+after = "    except OSError:\n        return False"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_a_claude_config_dir_whose_links_loop_is_taken_to_be_inside_the_project",
+]
+
+[[mutation]]
 name = "a directory is judged inside the project by its spelling alone"
 file = "src/stayfixed/trust/boundary.py"
 before = "        spellings = {os.path.abspath(directory), str(fsops.resolved(directory))}"

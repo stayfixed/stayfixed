@@ -406,6 +406,26 @@ def test_a_claude_config_dir_that_leads_into_the_project_is_inside_it(
     )
 
 
+def test_a_claude_config_dir_whose_links_loop_is_taken_to_be_inside_the_project(
+    m: Machine, tmp_path: Path
+) -> None:
+    # Where the variable's links cannot be followed, where it leads cannot be shown to lie outside
+    # the project, so it is treated as inside: named, never judged, and the row a warning. Mutation
+    # (`mutations/`'s "a directory whose links loop is read as outside the project"): the row skips.
+    loop = tmp_path / "loop"
+    loop.symlink_to(loop)
+    (m.home / ".claude").rmdir()
+    m.env["CLAUDE_CONFIG_DIR"] = str(loop)
+    m.approvals(1)
+    row = m.row()
+    assert (row.status, row.detail) == (
+        WARN,
+        "; ".join(
+            (boundary.NO_CLAUDE_CODE, boundary.CONFIG_DIR_IN_PROJECT.format(path=quoted(str(loop))))
+        ),
+    )
+
+
 @pytest.mark.parametrize(
     ("suffix", "twice"),
     [pytest.param("", False, id="byte-for-byte"), pytest.param("/", True, id="trailing-slash")],
