@@ -106,7 +106,10 @@ background: one that leaves an `&` job behind with no `trap … EXIT` to stop it
 `sleep` (directly, or behind `env` or `uv run` and uv's options), is refused before it starts, and
 the refusal names the remedy. Other wrappers, such as `nohup`, `timeout` or `bash -c`, are not
 read through ([`docs/cli.md`](https://github.com/stayfixed/stayfixed/blob/main/docs/cli.md#stayfixed-guard-bg-cleanup) lists them). The same
-command run in the foreground passes. The machine owner may switch a session guard off in the
+command run in the foreground passes. The guards run in every repository, on the preset and the
+machine owner's layer, whatever its `stayfixed.toml` holds, none at all included: a file that does
+not load never refuses a command, and the session hears once, when it starts, what it could not
+use. The machine owner may switch a session guard off in the
 machine file; a repository never can, and no command-line flag does
 ([`docs/cli.md`](https://github.com/stayfixed/stayfixed/blob/main/docs/cli.md#configuration) names
 the machine file's key), so a false block is a defect: report it in

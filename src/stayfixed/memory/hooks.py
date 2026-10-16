@@ -39,6 +39,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from stayfixed.config.schema import Config
+    from stayfixed.config.session import SessionConfig
 
 # Fixed, and carrying nothing the repository chose. A plain string is not an import, so
 # these cost `discover()` nothing. `count` is the length of a list this module built, never a
@@ -120,7 +121,8 @@ NO_HARNESS_LINK_EMPTY_HOME = Withheld(
 )
 
 
-def _link_worktree(event: HookEvent, config: Config | None) -> HookResult:
+def _link_worktree(event: HookEvent, session: SessionConfig) -> HookResult:
+    config = session.config
     if config is None or event.project_root is None:
         return HookResult()
     try:

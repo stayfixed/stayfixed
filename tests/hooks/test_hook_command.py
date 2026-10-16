@@ -12,9 +12,11 @@ from typing import cast
 
 import pytest
 
+from stayfixed.config.session import FALLBACK_WARNING, MACHINE_FILE_WARNING, NOTED_WARNING
+from stayfixed.guards.bgcleanup import SLEEP_REASON
 from stayfixed.guards.hygiene import LEAD
 from stayfixed.hooks.api import Decision, Handler, HookEvent, HookResult, Policy
-from stayfixed.hooks.commands import LINKED, UNASKED_PATH, _output_cap, run_hook
+from stayfixed.hooks.commands import _output_cap, run_hook
 from tests.floor import floor_env
 from tests.gitfixture import git
 from tests.ownerhome import stayfixed_argv
@@ -88,6 +90,24 @@ def hook(
     )
 
 
+def notice_texts(payload: dict[str, object]) -> tuple[list[str], list[str]]:
+    """What a `SessionStart` answer tells the person and what it tells the model: the lines of its
+    `systemMessage`, and the blocks of its `additionalContext`, each as the dispatcher joins them.
+    Parsed, so a test counts a warning per channel rather than in the raw string."""
+    message = payload.get("systemMessage", "")
+    output = payload.get("hookSpecificOutput")
+    context = output.get("additionalContext", "") if isinstance(output, dict) else ""
+    assert isinstance(message, str) and isinstance(context, str)
+    return (message.split("\n") if message else []), (context.split("\n\n") if context else [])
+
+
+BACKGROUND_SLEEP = {
+    "hook_event_name": "PreToolUse",
+    "tool_name": "Bash",
+    "tool_input": {"command": "sleep 9", "run_in_background": True},
+}
+
+
 def test_no_handlers_means_a_clean_empty_outcome(tmp_path: Path) -> None:
     completed = hook("SessionStart", json.dumps({"hook_event_name": "SessionStart"}), tmp_path)
     assert completed.returncode == 0
@@ -106,31 +126,33 @@ def test_malformed_stdin_on_session_start_degrades_open(tmp_path: Path) -> None:
     assert "stayfixed" in completed.stderr
 
 
-def test_a_broken_repository_config_on_pre_tool_use_refuses(tmp_path: Path) -> None:
-    # Valid everywhere the loader checks before [ci], so the not-a-table shape is the defect
-    # this reaches (a top-level key must precede every table header in TOML).
+def test_a_broken_repository_config_on_pre_tool_use_is_judged_not_refused(tmp_path: Path) -> None:
+    # A `[ci]` that is not a table refused every tool call. It is one key the session puts back
+    # to the preset's, and the guard judges the call as it would in any repository: `ls` goes
+    # through, a backgrounded `sleep` is refused for what it is. Mutation (`mutations/`'s
+    # "session_config answers no configuration for a file that loads with notes" reddens the
+    # session's own test; this one holds the hook's verdict on both sides).
     (tmp_path / "stayfixed.toml").write_text(
         'ci = "not-a-table"\n\n[stayfixed]\nversion = "0.1.0"\n\n[project]\nname = "demo"\n',
         encoding="utf-8",
     )
-    completed = hook("PreToolUse", json.dumps({"hook_event_name": "PreToolUse"}), tmp_path)
-    assert completed.returncode == 2
+    completed = hook("PreToolUse", json.dumps(TOOL_CALL), tmp_path)
+    assert (completed.returncode, completed.stderr) == (0, "")
+    refused = hook("PreToolUse", json.dumps(BACKGROUND_SLEEP), tmp_path)
+    assert refused.returncode == 2 and SLEEP_REASON in refused.stderr
 
 
 @pytest.mark.parametrize("target", ["regular-file", "/dev/zero"])
-@pytest.mark.parametrize(
-    ("event", "code", "verdict"),
-    [("PreToolUse", 2, "refused"), ("SessionStart", 0, "continuing open")],
-)
-def test_a_symlinked_config_gets_one_named_verdict_whatever_it_points_at(
-    tmp_path: Path, target: str, event: str, code: int, verdict: str
+def test_a_symlinked_config_gets_one_verdict_whatever_it_points_at(
+    tmp_path: Path, target: str
 ) -> None:
     # The presence check followed the link: one to a regular file reached the loader's refusal
     # and printed `internal error: PathEscape`, one to `/dev/zero` read as no stayfixed.toml at
-    # all and ran every handler with no project configuration. Both now meet the rule by name,
-    # with the verdict a stayfixed.toml that does not load gets on that event. Mutation
-    # (declared): the link check dropped -> the regular file is an internal error again and
-    # `/dev/zero` exits 0 with the handlers' output.
+    # all and ran every handler with no project configuration. Both meet the rule before
+    # anything follows the link, and both are the same answer: no project configuration, a tool
+    # call judged by the guards alone, and the warning at `SessionStart`. Mutation (`mutations/`'s
+    # "a session lets a symlinked stayfixed.toml raise"): the refusal escapes as an internal error
+    # and refuses the tool call.
     project = tmp_path / "project"
     project.mkdir()
     if target == "regular-file":
@@ -138,10 +160,11 @@ def test_a_symlinked_config_gets_one_named_verdict_whatever_it_points_at(
         (project / "stayfixed.toml").symlink_to(tmp_path / "real.toml")
     else:
         (project / "stayfixed.toml").symlink_to(target)
-    completed = hook(event, json.dumps({"hook_event_name": event}), project)
-    assert completed.returncode == code
-    assert completed.stdout == ""
-    assert completed.stderr == f"{LINKED}; {verdict}\n"
+    completed = hook("PreToolUse", json.dumps(TOOL_CALL), project)
+    assert (completed.returncode, completed.stderr) == (0, "")
+    started = hook("SessionStart", json.dumps({"hook_event_name": "SessionStart"}), project)
+    assert started.returncode == 0
+    assert notice_texts(json.loads(started.stdout)) == ([FALLBACK_WARNING], [FALLBACK_WARNING])
 
 
 def test_argv_names_the_event_even_when_stdin_spells_it_differently(tmp_path: Path) -> None:
@@ -304,48 +327,40 @@ def _long_number_project(tmp_path: Path) -> Path:
 
 
 TOOL_CALL = {"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "ls"}}
+# Each configuration that does not load whole, and the one warning its session hears: a value the
+# loader refuses costs that key, a file that is not TOML costs the project configuration.
 UNLOADABLE_CASES = [
-    pytest.param(_escaping_project, "a path that leaves the project", id="escaping-path"),
-    pytest.param(_refused_value_project, "a file or value the loader refuses", id="refused-value"),
-    pytest.param(_unparseable_project, "a file or value the loader refuses", id="unparseable"),
-    pytest.param(_long_number_project, "a file or value the loader refuses", id="long-number"),
+    pytest.param(_escaping_project, NOTED_WARNING.format(count=1), id="escaping-path"),
+    pytest.param(_refused_value_project, NOTED_WARNING.format(count=1), id="refused-value"),
+    pytest.param(_unparseable_project, FALLBACK_WARNING, id="unparseable"),
+    pytest.param(_long_number_project, FALLBACK_WARNING, id="long-number"),
 ]
 
 
-@pytest.mark.parametrize(("build", "cause"), UNLOADABLE_CASES)
-def test_an_unloadable_config_refuses_a_tool_call_in_its_own_words(
-    tmp_path: Path, build: Callable[[Path], Path], cause: str
+@pytest.mark.parametrize(("build", "warning"), UNLOADABLE_CASES)
+def test_a_config_that_does_not_load_whole_never_refuses_a_tool_call(
+    tmp_path: Path, build: Callable[[Path], Path], warning: str
 ) -> None:
-    # The loader's refusal reached the generic handler and printed "internal error: PathEscape"
-    # with the refusal's own text, which reads as a stayfixed bug and hands the repository's
-    # words to the model: a refused `PreToolUse`'s stderr is what the model is shown. The line
-    # now names the kind of fault in stayfixed's words and the command that prints the detail,
-    # with the verdict an internal error gets on this event: refused, never permission.
-    #
-    # Mutations: `mutations/`'s "the hook reports an unloadable config as an internal error" -> the
-    # path case reddens; "the hook prints a refused value's own text as an internal error".
+    # Each refused every tool call, the first in words that read as a stayfixed bug. A tool call
+    # is now judged by the guards alone, whatever the configuration, and says nothing of it: a
+    # refused call's stderr is the model's, and repository text never reaches it. Mutation
+    # (`mutations/`'s "dispatch renders the notice on every event"): the warning reaches a tool
+    # call's answer.
     project = build(tmp_path)
     completed = hook("PreToolUse", json.dumps(TOOL_CALL), project)
-    assert completed.returncode == 2
-    assert completed.stderr == (
-        f"stayfixed: stayfixed.toml does not load ({cause}"
-        + (" or passes through a symlink" if "path" in cause else "")
-        + "); refused — run `stayfixed docs check` for the detail\n"
-    )
-    assert CHOSEN not in completed.stderr
-    assert "internal error" not in completed.stderr
+    assert (completed.returncode, completed.stderr) == (0, "")
+    assert json.loads(completed.stdout) == {"hookSpecificOutput": {"hookEventName": "PreToolUse"}}
 
 
 @ROOT_SEARCHES_EVERYTHING
-def test_a_path_that_cannot_be_checked_for_a_symlink_refuses_a_tool_call_in_those_words(
+def test_a_path_that_cannot_be_checked_for_a_symlink_never_refuses_a_tool_call(
     tmp_path: Path,
 ) -> None:
-    # A real directory on a `[paths]` value that nobody may search: no link is on the way and the
-    # value stays inside the project, so "a path that leaves the project or passes through a
-    # symlink" named two causes it did not have. Refused all the same: no path is contained until
-    # every directory on it has been asked.
-    #
-    # Mutation (oracle): `mutations/`'s "the hook words a path it cannot check as an escape".
+    # A real directory on a `[paths]` value that nobody may search: no path is contained until
+    # every directory on it has been asked, so the value is put back to the preset's, as an
+    # escaping one is, and the tool call goes through. Mutation (`mutations/`'s "validate_paths
+    # stops naming the key of a contained() refusal"): the whole configuration drops instead,
+    # which the session's own test reads; here the verdict is held.
     project = tmp_path / "project"
     (project / CHOSEN).mkdir(parents=True)
     (project / "stayfixed.toml").write_text(
@@ -353,36 +368,36 @@ def test_a_path_that_cannot_be_checked_for_a_symlink_refuses_a_tool_call_in_thos
     )
     with unsearchable(project / CHOSEN):
         completed = hook("PreToolUse", json.dumps(TOOL_CALL), project)
-    assert completed.returncode == 2
-    assert completed.stderr == (
-        f"stayfixed: stayfixed.toml does not load ({UNASKED_PATH}); refused — run "
-        "`stayfixed docs check` for the detail\n"
-    )
-    assert CHOSEN not in completed.stderr
+        started = hook("SessionStart", json.dumps({"hook_event_name": "SessionStart"}), project)
+    assert (completed.returncode, completed.stderr) == (0, "")
+    assert notice_texts(json.loads(started.stdout))[0] == [NOTED_WARNING.format(count=1)]
 
 
-@pytest.mark.parametrize(("build", "cause"), UNLOADABLE_CASES)
-def test_an_unloadable_config_leaves_a_session_open_in_its_own_words(
-    tmp_path: Path, build: Callable[[Path], Path], cause: str
+@pytest.mark.parametrize(("build", "warning"), UNLOADABLE_CASES)
+def test_a_config_that_does_not_load_whole_is_named_once_at_session_start(
+    tmp_path: Path, build: Callable[[Path], Path], warning: str
 ) -> None:
+    # In stayfixed's own words, to the person and to the model, and never the loader's message,
+    # which carries the repository's text. Mutations (`mutations/`'s "the notice never reaches the
+    # person" -> the `systemMessage` goes; "the notice never reaches the model" -> the context
+    # does). The model's channel opens with the warning; a handler's context follows it.
     project = build(tmp_path)
     completed = hook("SessionStart", json.dumps({"hook_event_name": "SessionStart"}), project)
-    assert completed.returncode == 0
-    assert f"stayfixed.toml does not load ({cause}" in completed.stderr
-    assert completed.stderr.endswith(
-        "; continuing open — run `stayfixed docs check` for the detail\n"
-    )
-    assert CHOSEN not in completed.stderr
+    assert (completed.returncode, completed.stderr) == (0, "")
+    person, model = notice_texts(json.loads(completed.stdout))
+    assert person == [warning]
+    assert model[0] == warning and model.count(warning) == 1
+    assert CHOSEN not in completed.stdout
 
 
 @pytest.mark.parametrize("build", [_escaping_project, _refused_value_project])
 def test_the_command_the_hook_points_at_prints_the_detail(
     tmp_path: Path, build: Callable[[Path], Path]
 ) -> None:
-    # The pointer is only worth printing if it leads somewhere: `docs check` loads the same file
-    # and prints the loader's refusal, repository text and all, to the owner's terminal. It is
-    # also what makes the `CHOSEN not in` assertions above non-vacuous: the refusal really does
-    # carry the repository's text, so the hook's line leaves it out by choice.
+    # A command still refuses the file whole, and prints the loader's refusal, repository text
+    # and all, to the owner's terminal. It is what makes the `CHOSEN not in` assertions above
+    # non-vacuous: the refusal really does carry the repository's text, so the session's notice
+    # leaves it out by choice. No mutation of its own: it holds a fixture, not a branch.
     from tests.cli import cli
 
     project = build(tmp_path)
@@ -392,12 +407,11 @@ def test_the_command_the_hook_points_at_prints_the_detail(
 
 
 def test_a_machine_file_that_does_not_load_is_not_blamed_on_stayfixed_toml(tmp_path: Path) -> None:
-    # The machine configuration is loaded beside `stayfixed.toml`, and its own error is a
-    # `ConfigError` too: caught with them, it was reported as "stayfixed.toml does not load" and
-    # sent the owner to `stayfixed docs check` about a file that loads. It keeps the generic
-    # verdict, which names its own class; the file is the owner's, not the repository's.
-    #
-    # Mutation: `mutations/`'s "the hook blames a broken machine file on stayfixed.toml".
+    # The machine file's error was a `ConfigError` too, and refused every tool call as an
+    # internal error. The guards now run on the preset's owner values, the tool call goes
+    # through, and the session's one warning names the machine file, not `stayfixed.toml`, which
+    # loads. Mutation (`mutations/`'s "a session says nothing of a machine file it could not
+    # use"): the session hears nothing.
     project = tmp_path / "project"
     project.mkdir()
     (project / "stayfixed.toml").write_text(CONFIG, encoding="utf-8")
@@ -405,6 +419,9 @@ def test_a_machine_file_that_does_not_load_is_not_blamed_on_stayfixed_toml(tmp_p
     (home / ".config" / "stayfixed").mkdir(parents=True)
     (home / ".config" / "stayfixed" / "config.toml").write_text("[overlay\n", encoding="utf-8")
     completed = hook("PreToolUse", json.dumps(TOOL_CALL), project, home=home)
-    assert completed.returncode == 2
-    assert "stayfixed.toml does not load" not in completed.stderr
-    assert "MachineConfigError" in completed.stderr
+    assert (completed.returncode, completed.stderr) == (0, "")
+    started = hook(
+        "SessionStart", json.dumps({"hook_event_name": "SessionStart"}), project, home=home
+    )
+    person, _ = notice_texts(json.loads(started.stdout))
+    assert person == [MACHINE_FILE_WARNING]

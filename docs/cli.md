@@ -236,27 +236,37 @@ event, and writes the harness's expected output.
 Not something to run by hand. Its exit-code policy differs from every other command: an internal
 error refuses (`2`) only on `PreToolUse`, and degrades open (`0`) everywhere else — on
 `UserPromptSubmit` an exit `2` erases what you typed, so a bug in stayfixed must not cost you
-your prompt. A `stayfixed.toml` that does not load takes the same path, and standard error names
-the kind of fault in stayfixed's own words, not an internal error's:
-`stayfixed: stayfixed.toml does not load (a file or value the loader refuses)` — a file it cannot
-read, one that is not TOML, or a value it refuses — `(a path that leaves the project or passes
-through a symlink)`, such as a symlinked `AGENTS.md`, or `(a path on which a directory cannot be
-checked for a symlink)` — then `; refused` or `; continuing open`, and a pointer
-to `stayfixed docs check` for the detail. The loader's own message is never printed here:
-it carries the repository's text, and a refused `PreToolUse` shows this stream to the model.
-`stayfixed docs check` loads the same file and prints that message in full.
+your prompt.
 
-A `stayfixed.toml` that is a symbolic link is never read, whatever it points at, and no handler
-runs. On `PreToolUse` the call is refused (`2`), and on every other event, `SessionStart`
-included, the hook continues (`0`) with nothing on standard output; either way standard error
-says `stayfixed: stayfixed.toml is a symbolic link, and no stayfixed command reads stayfixed.toml
-through one; replace the link with the file itself`, followed by `; refused` or `; continuing
-open`.
+**A session never dies of its configuration.** The guards run in every repository, on the preset
+and the machine owner's layer, whatever `stayfixed.toml` holds: none at all, one that does not
+load, and a broken machine file included. A configuration is never the reason a call is refused;
+only a guard refuses. The project's file is read the way [Configuration](#configuration) says a
+session reads it: an unknown section or key is ignored and a value that cannot be used is put back
+to the preset's, so the rest of the file still applies. The handlers about the project — the
+worktree link, the overlay status, the red-run note — say nothing when there is no project
+configuration to use, which is so when there is no file, and when the file is a symbolic link
+(never read, whatever it points at), is not UTF-8, cannot be read or is not TOML, or holds a key
+nothing can stand in for: a required key with no default (`[stayfixed] version`, `[project]
+name`) that is missing or cannot be used, or a key whose preset value does not hold in this
+repository either, such as a `[paths]` default under a committed symlink.
+
+What the session could not use is said once, on `SessionStart`, in one warning about each file, to
+the person (`systemMessage`) and at the head of the model's context (`additionalContext`), both
+counted inside the hook's output cap: that `stayfixed.toml` does not load, that one of its keys
+cannot be used and nothing can stand in for it (naming the key), that it loaded with some
+settings ignored or put back to the preset's (counting them, and saying when a newer stayfixed
+wrote it), or that the machine file could not be used whole. Each points at `stayfixed doctor`,
+and none carries the loader's own message, which carries the repository's text; a command such as
+`stayfixed docs check` still refuses the file and prints that message in full. Every other event
+prints no warning, and records once per session, in the diagnostics log below, that the session
+runs without some of its configuration (`config-fallback`).
 
 **Writes** inside `stayfixed/` under the data root the harness names — `CLAUDE_PLUGIN_DATA`, or
 Codex's `PLUGIN_DATA` — and nowhere else of its own: `.probe`, written each time it dispatches to
 learn whether the root can be written at all; under `markers/`, one empty file per `once_key`
-handler that delivered, filed under a directory per session, both names hashed to a fixed width,
+handler that delivered, and one for a `config-fallback` record, filed under a directory per
+session, both names hashed to a fixed width,
 with all but the newest fifty session directories removed; and `diagnostics.jsonl`, one JSON line
 per diagnostic record, rotated to `diagnostics.1.jsonl` once it would pass 256 KiB. With no data
 root, or a relative one, nothing is written there and a `once_key` handler is asked on every
@@ -3480,8 +3490,14 @@ two read it the way a session does: an unknown section or key is ignored, a valu
 used is put back to the preset's, one key at a time, a custom gate that cannot run is left out,
 and each says so in a note naming the key, so a file a newer stayfixed wrote keeps every setting
 this one understands. A repository's `[personal]`, `[guards]` or `[setup]` is the machine owner's
-to set and is ignored the same way, with a note. Neither reading gets past a file that is not
-TOML, nor one missing a key that has no default (`[stayfixed] version`, `[project] name`).
+to set and is ignored the same way, with a note. A session drops the project configuration whole
+only for a file it cannot read as TOML — a symbolic link, one that is not UTF-8, one it cannot
+read, or one that is not TOML — and for a key nothing can stand in for: a key that has no default
+(`[stayfixed] version`, `[project] name`) and is missing or cannot be used, or a key whose preset
+value does not hold in this repository either, such as a `[paths]` default under a committed
+symbolic link. It then names that key rather than calling a key the file holds missing, and runs
+the guards on the preset and the machine owner's layer ([`stayfixed hook
+<event>`](#stayfixed-hook-event)).
 
 Every value above is what a key you leave out takes, from the `recommended` preset — with three
 exceptions, and one line that is an example rather than a default. `[stayfixed] version` and
@@ -3603,7 +3619,9 @@ preset's. A command that loads `stayfixed.toml` reads this file's `[personal]` t
 key there it does not know or a value it cannot use, naming the file and the key, as it refuses a
 file that does not load; a session reads what it can instead, ignores an unknown key, puts the
 preset's value back for an unusable one, and says so, and a file that does not load at all leaves
-a session on the preset's personal values and guards.
+a session on the preset's personal values and guards, with one warning naming this file when the
+session starts. With no `stayfixed.toml` in the repository a session still reads this file:
+`bg_cleanup = false` turns the guard off there too.
 
 `reply_language` and `artifact_language` are kept for you and read by nothing in this release:
 they meant something only through the `recommended` preset's standing rule about which language

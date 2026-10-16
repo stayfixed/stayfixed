@@ -1716,3 +1716,34 @@ after = '_EXIT_CODE_ERROR = re.compile(r"\AExit code (\d+)")'
 reddens = [
   'tests/guards/test_hygiene.py::test_red_exit_reads_both_payload_shapes[raw8-None]',
 ]
+
+# The background guard judges with any project configuration and none, and only the machine
+# owner's `[guards] bg_cleanup = false` turns it off.
+[[mutation]]
+name = "the background guard is silent without a project configuration"
+file = "src/stayfixed/guards/hooks.py"
+before = "    if not session.owner.guards.bg_cleanup:\n        return HookResult()"
+after = "    if not session.owner.guards.bg_cleanup or session.config is None:\n        return HookResult()"
+reddens = [
+  "tests/hooks/test_floor.py::test_the_background_guard_judges_whatever_the_configuration[no_file]",
+  "tests/hooks/test_floor.py::test_the_background_guard_judges_whatever_the_configuration[unparseable]",
+  "tests/guards/test_hooks.py::test_no_config_silences_the_hygiene_note_and_never_the_guard",
+]
+
+[[mutation]]
+name = "the owner's switch never turns the background guard off"
+file = "src/stayfixed/guards/hooks.py"
+before = "    if not session.owner.guards.bg_cleanup:\n        return HookResult()"
+after = "    if False:\n        return HookResult()"
+reddens = ["tests/hooks/test_floor.py::test_the_owner_switches_the_guard_off_with_no_stayfixed_toml"]
+
+# The red-run note is about the project, and silent without its configuration.
+[[mutation]]
+name = "the hygiene note judges with no project configuration"
+file = "src/stayfixed/guards/hooks.py"
+before = "    config = session.config\n    if config is None or event.project_root is None:"
+after = "    config = session.config\n    if event.project_root is None:"
+reddens = [
+  "tests/hooks/test_floor.py::test_project_handlers_speak_on_a_file_and_stay_silent_without_one[test_hygiene]",
+  "tests/guards/test_hooks.py::test_no_config_silences_the_hygiene_note_and_never_the_guard",
+]

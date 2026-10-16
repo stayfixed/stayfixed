@@ -1044,8 +1044,8 @@ reddens = [
   "tests/doctor/test_command.py::test_the_runner_this_command_builds_is_bounded_for_a_diagnostic",
 ]
 
-# In the block led by `mutations/`'s "the hook takes a symlinked stayfixed.toml by what it points
-# at": a symlinked `stayfixed.toml` is asked about by its own name first.
+# In the block led by `mutations/`'s "a session lets a symlinked stayfixed.toml raise": a
+# symlinked `stayfixed.toml` is asked about by its own name first.
 [[mutation]]
 name = "doctor reads a stayfixed.toml linked to /dev/zero as no stayfixed.toml"
 file = "src/stayfixed/doctor/checks.py"

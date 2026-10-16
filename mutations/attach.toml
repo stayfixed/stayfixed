@@ -3397,3 +3397,13 @@ reddens = [
   "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[trust-record-unreadable]",
   "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[link-trust-record-unreadable]",
 ]
+
+# The overlay status is about the project, and silent without its configuration.
+[[mutation]]
+name = "the overlay status judges with no project configuration"
+file = "src/stayfixed/attach/hooks.py"
+before = "    if config is None or event.project_root is None or config.memory.mode != OVERLAY_MODE:"
+after = "    if event.project_root is None or config.memory.mode != OVERLAY_MODE:"
+reddens = [
+  "tests/hooks/test_floor.py::test_project_handlers_speak_on_a_file_and_stay_silent_without_one[overlay_status]",
+]

@@ -68,7 +68,7 @@ from stayfixed.attach import ATTACH_STORE
 from stayfixed.hooks.api import Handler, HookEvent, HookResult, Policy
 
 if TYPE_CHECKING:
-    from stayfixed.config.schema import Config
+    from stayfixed.config.session import SessionConfig
 
 # `SessionStart.source` values that are one context asking again, and the only thing this module
 # reads the payload for.
@@ -167,9 +167,10 @@ def _asked_before(event: HookEvent) -> bool:
     return isinstance(source, str) and source in CONTINUED
 
 
-def _overlay_status(event: HookEvent, config: Config | None) -> HookResult:
+def _overlay_status(event: HookEvent, session: SessionConfig) -> HookResult:
     from stayfixed.config.schema import OVERLAY_MODE
 
+    config = session.config
     if config is None or event.project_root is None or config.memory.mode != OVERLAY_MODE:
         return HookResult()
     try:

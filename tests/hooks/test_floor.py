@@ -1,0 +1,248 @@
+"""The floor: a session's guards run whatever its configuration, and a configuration that does not
+load whole is said once, at `SessionStart`, and never refuses a tool call
+(`src/stayfixed/config/session.py`, `src/stayfixed/hooks/commands.py`).
+
+Every hook here is a real `stayfixed hook` process (`tests/hooks/test_hook_command.py`'s `hook`),
+under a home of its own: the machine file a hook reads is `<home>/.config/stayfixed/config.toml`,
+which no variable moves, and none of these reads the developer's."""
+
+from __future__ import annotations
+
+import json
+from collections.abc import Callable
+from pathlib import Path
+
+import pytest
+
+from stayfixed.attach.hooks import register as attach_handlers
+from stayfixed.config.session import (
+    FALLBACK_WARNING,
+    MACHINE_FILE_WARNING,
+    NEWER_RELEASE_WARNING,
+    SessionConfig,
+    session_config,
+)
+from stayfixed.guards.bgcleanup import SLEEP_REASON
+from stayfixed.guards.hooks import register as guards_handlers
+from stayfixed.hooks.api import DIAGNOSTICS, DIRECTORY, Handler, HookEvent, HookResult
+from stayfixed.hooks.commands import CONFIG_FALLBACK
+from stayfixed.memory.hooks import register as memory_handlers
+from tests.gitfixture import git
+from tests.hooks.test_hook_command import BACKGROUND_SLEEP, CONFIG, TOOL_CALL, hook, notice_texts
+from tests.memory.test_commands import CONFIG as MEMORY_CONFIG
+from tests.memory.test_commands import NOTE, invoke
+from tests.sessions import NO_CONFIG
+
+SESSION_START = {"hook_event_name": "SessionStart", "session_id": "floor"}
+LATER = CONFIG.replace('version = "0.1.0"', 'version = "999.0.0"')
+
+
+def machine_with(home: Path, text: str) -> None:
+    """The machine file of the hook's home."""
+    directory = home / ".config" / "stayfixed"
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "config.toml").write_text(text, encoding="utf-8")
+
+
+def no_file(root: Path, home: Path) -> None:
+    return None
+
+
+def unparseable(root: Path, home: Path) -> None:
+    (root / "stayfixed.toml").write_text("[[[", encoding="utf-8")
+
+
+def newer_release(root: Path, home: Path) -> None:
+    # Review Focus 1: an unknown section, an unknown key and an unknown enum value together.
+    text = LATER + '\n[newer]\nx = 1\n[memory]\nmode = "harness"\nfuture = 1\n'
+    (root / "stayfixed.toml").write_text(text, encoding="utf-8")
+
+
+def broken_machine_file(root: Path, home: Path) -> None:
+    (root / "stayfixed.toml").write_text(CONFIG, encoding="utf-8")
+    machine_with(home, "[guards\n")
+
+
+def both_broken(root: Path, home: Path) -> None:
+    unparseable(root, home)
+    machine_with(home, "[guards\n")
+
+
+def _setup(tmp_path: Path, project: Callable[[Path, Path], None]) -> tuple[Path, Path]:
+    root = tmp_path / "project"
+    root.mkdir()
+    home = tmp_path / "home"
+    home.mkdir()
+    project(root, home)
+    return root, home
+
+
+@pytest.mark.parametrize(
+    "project",
+    [no_file, unparseable, newer_release, broken_machine_file, both_broken],
+    ids=lambda f: f.__name__,
+)
+def test_the_background_guard_judges_whatever_the_configuration(
+    tmp_path: Path, project: Callable[[Path, Path], None]
+) -> None:
+    # With no stayfixed.toml the guard said nothing; with one that did not load, or a broken
+    # machine file, every tool call was refused. Now the guard judges in each, on the preset and
+    # the owner's layer. Mutations (`mutations/`'s "the background guard is silent without a
+    # project configuration" -> `no_file`, `unparseable` and `both_broken` let the sleep through;
+    # "a session lets a file that is not TOML raise" -> `unparseable` refuses `ls` too).
+    root, home = _setup(tmp_path, project)
+    refused = hook("PreToolUse", json.dumps(BACKGROUND_SLEEP), root, home=home)
+    assert refused.returncode == 2 and SLEEP_REASON in refused.stderr
+    allowed = hook("PreToolUse", json.dumps(TOOL_CALL), root, home=home)
+    # The control: never refused for its configuration.
+    assert (allowed.returncode, allowed.stderr) == (0, "")
+
+
+def test_the_owner_switches_the_guard_off_with_no_stayfixed_toml(tmp_path: Path) -> None:
+    # Review Focus 3. The machine file is the one place a session guard is switched off.
+    # Mutation (`mutations/`'s "the owner's switch never turns the background guard off"): the
+    # sleep is refused with the switch off.
+    root, home = _setup(tmp_path, no_file)
+    machine_with(home, "[guards]\nbg_cleanup = false\n")
+    assert hook("PreToolUse", json.dumps(BACKGROUND_SLEEP), root, home=home).returncode == 0
+    machine_with(home, "")  # the control
+    assert hook("PreToolUse", json.dumps(BACKGROUND_SLEEP), root, home=home).returncode == 2
+
+
+def test_a_repository_never_switches_the_guard_off(tmp_path: Path) -> None:
+    # The same switch in `stayfixed.toml` is a layer the key's class does not admit: noted, and
+    # the guard judges. No mutation of its own: `classes.resolve` refusing the layer is held by
+    # `mutations/`'s "the NOTE path removes a repository's machine-only table without a note".
+    root, home = _setup(tmp_path, no_file)
+    (root / "stayfixed.toml").write_text(CONFIG + "\n[guards]\nbg_cleanup = false\n", "utf-8")
+    assert hook("PreToolUse", json.dumps(BACKGROUND_SLEEP), root, home=home).returncode == 2
+
+
+@pytest.mark.parametrize(
+    ("project", "warnings"),
+    [
+        (unparseable, [FALLBACK_WARNING]),
+        (newer_release, [NEWER_RELEASE_WARNING.format(count=3)]),
+        (broken_machine_file, [MACHINE_FILE_WARNING]),
+        (both_broken, [FALLBACK_WARNING, MACHINE_FILE_WARNING]),
+    ],
+    ids=["unparseable", "newer-release", "broken-machine-file", "both-broken"],
+)
+def test_session_start_carries_each_warning_once(
+    tmp_path: Path, project: Callable[[Path, Path], None], warnings: list[str]
+) -> None:
+    # Parsed, never a raw-string count: once to the person, once to the model, ahead of any
+    # handler's context. Mutations (`mutations/`'s "the notice never reaches the person" -> the
+    # `systemMessage` is empty; "the notice never reaches the model" -> the context lacks it).
+    root, home = _setup(tmp_path, project)
+    started = hook("SessionStart", json.dumps(SESSION_START), root, home=home)
+    assert (started.returncode, started.stderr) == (0, "")
+    person, model = notice_texts(json.loads(started.stdout))
+    assert person == warnings
+    assert model[: len(warnings)] == warnings
+    assert all(model.count(warning) == 1 for warning in warnings)
+
+
+def test_pre_tool_use_prints_no_warning_and_logs_it_once(tmp_path: Path) -> None:
+    # A notice on every tool call would repeat itself, and a refused call's stderr is the
+    # model's: the tool call's answer is the bare envelope, and the sink records the fallback
+    # once for the session. Mutations (`mutations/`'s "dispatch renders the notice on every
+    # event" -> stdout carries it; "the hook logs a configuration fallback on every call" -> two
+    # records; "the hook never logs a configuration fallback" -> none).
+    root, home = _setup(tmp_path, unparseable)
+    data = tmp_path / "data"
+    data.mkdir()
+    call = {**TOOL_CALL, "session_id": "floor"}
+    for _ in range(2):
+        completed = hook("PreToolUse", json.dumps(call), root, data=data, home=home)
+        assert (completed.returncode, completed.stderr) == (0, "")
+        assert json.loads(completed.stdout) == {
+            "hookSpecificOutput": {"hookEventName": "PreToolUse"}
+        }
+    log = (data / DIRECTORY / DIAGNOSTICS).read_text(encoding="utf-8").splitlines()
+    records = [json.loads(line) for line in log]
+    assert [record.get("error") for record in records] == [CONFIG_FALLBACK]
+
+
+# A real file under which each handler about the project speaks, and the handler.
+def _worktree_link(root: Path) -> tuple[Handler, HookEvent]:
+    (root / "stayfixed.toml").write_text(CONFIG, encoding="utf-8")
+    handler = next(h for h in memory_handlers() if h.name == "worktree-link")
+    return handler, _event("SessionStart", root)
+
+
+def _overlay_status(root: Path) -> tuple[Handler, HookEvent]:
+    text = CONFIG + '\n[memory]\nmode = "overlay"\n'
+    (root / "stayfixed.toml").write_text(text, encoding="utf-8")
+    handler = next(h for h in attach_handlers() if h.name == "overlay-status")
+    return handler, _event("SessionStart", root)
+
+
+def _test_hygiene(root: Path) -> tuple[Handler, HookEvent]:
+    (root / "stayfixed.toml").write_text(CONFIG, encoding="utf-8")
+    git(root, "init", "-q")
+    handler = next(h for h in guards_handlers() if h.event == "PostToolUseFailure")
+    event = _event("PostToolUseFailure", root, {"command": "uv run pytest -q"})
+    event.raw["error"] = "Exit code 1"
+    return handler, event
+
+
+def _event(name: str, root: Path, tool_input: dict[str, object] | None = None) -> HookEvent:
+    given = tool_input or {}
+    return HookEvent(
+        name=name,
+        session_id="floor",
+        agent_id=None,
+        tool_name="Bash" if tool_input else None,
+        tool_input=given,
+        cwd=root,
+        project_root=root,
+        raw={"tool_name": "Bash", "tool_input": given} if tool_input else {},
+    )
+
+
+def run_handler(handler: Handler, event: HookEvent, session: SessionConfig) -> HookResult:
+    return handler.run(event, session)
+
+
+@pytest.mark.parametrize(
+    "speaks", [_worktree_link, _overlay_status, _test_hygiene], ids=lambda f: f.__name__[1:]
+)
+def test_project_handlers_speak_on_a_file_and_stay_silent_without_one(
+    tmp_path: Path, speaks: Callable[[Path], tuple[Handler, HookEvent]]
+) -> None:
+    # A handler about the project answers nothing without its configuration, and something with
+    # it: the first half alone would pass for a handler that never speaks. Mutations
+    # (`mutations/`'s "the worktree link speaks only without a project configuration" ->
+    # `worktree_link` is silent on the file; "the overlay status judges with no project
+    # configuration" -> `overlay_status` raises on `None`; "the hygiene note judges with no
+    # project configuration" -> `test_hygiene` raises on `None`).
+    root = tmp_path / "project"
+    root.mkdir()
+    handler, event = speaks(root)
+    assert run_handler(handler, event, session_config(root, machine=tmp_path / "none.toml")).context
+    assert not run_handler(handler, event, NO_CONFIG).context
+
+
+def test_memory_session_context_reads_a_newer_key_with_a_note(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # `memory session-context` refused a file a newer stayfixed wrote, so every bundle a session
+    # starts with came back empty. It reads the file the way a session does now. Mutation
+    # (`mutations/`'s "memory session-context refuses what a session reads"): nothing is printed.
+    root = tmp_path / "project"
+    notes = root / ".stayfixed" / "local" / "memory" / "developer"
+    notes.mkdir(parents=True)
+    meta = "metadata:\n  type: project\n  startup: 1\n"
+    (notes / "a.md").write_text(NOTE.format(name="a", meta=meta, body="Body."), encoding="utf-8")
+    (root / "stayfixed.toml").write_text(MEMORY_CONFIG, encoding="utf-8")
+    machine = tmp_path / "machine.toml"
+    machine.write_text("", encoding="utf-8")
+    common = ["--root", str(root), "--machine", str(machine)]
+    assert invoke(["memory", "trust", "--in-repo-memory", *common]) == 0
+    with (root / "stayfixed.toml").open("a", encoding="utf-8") as document:
+        document.write("\n[newer]\nx = 1\n")
+    capsys.readouterr()
+    argv = ["memory", "session-context", "--bundle", "standing-rules", *common]
+    assert invoke(argv) == 0
+    assert "Body." in capsys.readouterr().out

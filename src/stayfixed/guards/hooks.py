@@ -17,9 +17,11 @@ the command's own text — model- or user-authored, never repository bytes — a
 notice carries counts and fixed sentences, its own and those a shipped profile's hint renders
 from its counts, never a path from `stayfixed.toml`.
 
-Both handlers are silent without a configuration: with no `stayfixed.toml`, no hook handler says
-anything. For the guard that is a design decision, not a degradation: a repository that has not run
-`stayfixed init` is not guarded.
+The guard judges with any configuration and none: a repository with no `stayfixed.toml`, or one
+that does not load, is guarded as one that loads, because the guard reads nothing of it, and a
+configuration that could not be read is no reason to let a call through. Only the machine owner
+switches it off, in the machine file (`config.owner`); a repository never can. The hygiene note is
+about the project and is silent without its configuration.
 """
 
 from __future__ import annotations
@@ -29,7 +31,7 @@ from typing import TYPE_CHECKING
 from stayfixed.hooks.api import Decision, Handler, HookEvent, HookResult, Policy
 
 if TYPE_CHECKING:
-    from stayfixed.config.schema import Config
+    from stayfixed.config.session import SessionConfig
 
 # The matcher both handlers share. Codex reports every shell-routed action as `Bash` too, as the
 # spike record (`docs/plans/2026-09-05-agent-harness-p0-spikes.md`) measured in its *Codex plugin
@@ -60,8 +62,10 @@ def bash_command(event: HookEvent) -> str | None:
     return command if isinstance(command, str) else None
 
 
-def _bg_cleanup(event: HookEvent, config: Config | None) -> HookResult:
-    if config is None:
+def _bg_cleanup(event: HookEvent, session: SessionConfig) -> HookResult:
+    """Judge a Bash call whatever the project's configuration, and none at all included: the guard
+    reads nothing of it. The machine owner alone switches it off (`config.owner`)."""
+    if not session.owner.guards.bg_cleanup:
         return HookResult()
     command = bash_command(event)
     if command is None:
@@ -75,10 +79,11 @@ def _bg_cleanup(event: HookEvent, config: Config | None) -> HookResult:
     return HookResult(context=verdict.hint)
 
 
-def _test_hygiene(event: HookEvent, config: Config | None) -> HookResult:
+def _test_hygiene(event: HookEvent, session: SessionConfig) -> HookResult:
     """Name what could have falsified a red test run, in the words of the profile whose runner
     failed. Never a decision: the tool has already run, and `Policy.OPEN` means a failure here
-    costs the note and not the call."""
+    costs the note and not the call. About the project, so silent without its configuration."""
+    config = session.config
     if config is None or event.project_root is None:
         return HookResult()
     command = bash_command(event)

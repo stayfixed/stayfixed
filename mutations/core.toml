@@ -997,8 +997,8 @@ reddens = [
 [[mutation]]
 name = "the clamp drops the truncation mark"
 file = "src/stayfixed/hooks/dispatch.py"
-before = "        stdout = render(event_name, context[:keep] + TRUNCATION_MARK)"
-after = "        stdout = render(event_name, context[:keep])"
+before = "        stdout = render(event_name, context[:keep] + TRUNCATION_MARK, notice)"
+after = "        stdout = render(event_name, context[:keep], notice)"
 reddens = [
   "tests/hooks/test_dispatch.py::test_json_escaping_is_charged_to_the_same_budget",
 ]
@@ -1009,8 +1009,8 @@ reddens = [
 [[mutation]]
 name = "the dispatcher renders every answer in Claude Code's shape"
 file = "src/stayfixed/hooks/dispatch.py"
-before = "    stdout = harness.render(event.name, context)"
-after = '    stdout = __import__("stayfixed.harnesses", fromlist=["CANONICAL"]).CANONICAL.render(event.name, context)'
+before = "    stdout = harness.render(event.name, context, message)"
+after = '    stdout = __import__("stayfixed.harnesses", fromlist=["CANONICAL"]).CANONICAL.render(event.name, context, message)'
 reddens = [
   "tests/hooks/test_dispatch.py::test_a_detected_harness_renders_its_own_answer",
 ]
@@ -1018,8 +1018,8 @@ reddens = [
 [[mutation]]
 name = "the clamp measures Claude Code's envelope whatever the harness"
 file = "src/stayfixed/hooks/dispatch.py"
-before = "        stdout = _clamp(harness.render, event.name, context, cap)"
-after = '        stdout = _clamp(__import__("stayfixed.harnesses", fromlist=["CANONICAL"]).CANONICAL.render, event.name, context, cap)'
+before = "        stdout = _clamp(harness.render, event.name, context, message, cap)"
+after = '        stdout = _clamp(__import__("stayfixed.harnesses", fromlist=["CANONICAL"]).CANONICAL.render, event.name, context, message, cap)'
 reddens = [
   "tests/hooks/test_dispatch.py::test_a_clamped_answer_is_the_detected_harnesss_envelope",
 ]
@@ -1904,7 +1904,7 @@ reddens = [
 
 # An integer literal longer than the interpreter converts is valid TOML that `tomllib` answers
 # with a plain `ValueError`, not a `TOMLDecodeError`: `doctor` and `gate` ended in an internal
-# error, a hook said "internal error" where it says "does not load", and three `doctor` rows went
+# error, a hook refused a tool call as an internal error, and three `doctor` rows went
 # red "could not run" on an overlay record holding one. Every reader shares the one tuple.
 [[mutation]]
 name = "the TOML readers answer a number past the parser as an internal error"
@@ -1919,8 +1919,8 @@ reddens = [
   "tests/assess/test_gate_command.py::test_a_stayfixed_toml_holding_a_number_past_the_parser_does_not_load_naming_the_side[base]",
   "tests/assess/test_gate_command.py::test_a_trail_toml_holding_a_number_past_the_parser_is_one_gate_that_could_not_run",
   "tests/doctor/test_checks.py::test_a_configuration_holding_a_number_past_the_parser_does_not_load",
-  "tests/hooks/test_hook_command.py::test_an_unloadable_config_refuses_a_tool_call_in_its_own_words[long-number]",
-  "tests/hooks/test_hook_command.py::test_an_unloadable_config_leaves_a_session_open_in_its_own_words[long-number]",
+  "tests/hooks/test_hook_command.py::test_a_config_that_does_not_load_whole_never_refuses_a_tool_call[long-number]",
+  "tests/hooks/test_hook_command.py::test_a_config_that_does_not_load_whole_is_named_once_at_session_start[long-number]",
   "tests/attach/test_doctor.py::test_an_owners_binding_record_holding_a_number_past_the_parser_reads_as_one_that_will_not_parse",
 ]
 
@@ -2044,16 +2044,19 @@ reddens = [
 
 # `stayfixed hook` asked `is_file()` of stayfixed.toml, which follows a link: one to a regular file
 # reached the loader's refusal as an internal error, one to `/dev/zero` read as no file and ran
-# every handler without the project's configuration. The name itself is asked first now.
+# every handler without the project's configuration. A session reads it through `read_document`,
+# which refuses the link before it follows it, and falls back whole; let through, the refusal
+# escapes as an internal error and refuses every tool call.
 [[mutation]]
-name = "the hook takes a symlinked stayfixed.toml by what it points at"
-file = "src/stayfixed/hooks/commands.py"
-before = "        if document is not None and fsops.is_symlink(document):"
-after = "        if False:"
+name = "a session lets a symlinked stayfixed.toml raise"
+file = "src/stayfixed/config/session.py"
+before = "    except (ConfigError, PathEscape):\n        # `read_document` refuses"
+after = "    except ConfigError:\n        # `read_document` refuses"
 reddens = [
-  "tests/hooks/test_hook_command.py::test_a_symlinked_config_gets_one_named_verdict_whatever_it_points_at[PreToolUse-2-refused-regular-file]",
-  "tests/hooks/test_hook_command.py::test_a_symlinked_config_gets_one_named_verdict_whatever_it_points_at[PreToolUse-2-refused-/dev/zero]",
-  "tests/hooks/test_hook_command.py::test_a_symlinked_config_gets_one_named_verdict_whatever_it_points_at[SessionStart-0-continuing open-/dev/zero]",
+  "tests/config/test_session.py::test_a_file_that_cannot_be_read_as_toml_falls_back_whole[symlink_to_loadable]",
+  "tests/config/test_session.py::test_a_file_that_cannot_be_read_as_toml_falls_back_whole[symlink_to_dev_zero]",
+  "tests/hooks/test_hook_command.py::test_a_symlinked_config_gets_one_verdict_whatever_it_points_at[regular-file]",
+  "tests/hooks/test_hook_command.py::test_a_symlinked_config_gets_one_verdict_whatever_it_points_at[/dev/zero]",
 ]
 
 # In the block led by `mutations/`'s "the --name refusal prints the pattern": a name refusal words
@@ -2252,17 +2255,6 @@ reddens = [
   "tests/config/test_paths.py::test_each_fault_an_ancestor_meets_has_one_answer_on_every_interpreter[through-a-link-into-a-directory-that-cannot-be-searched]",
 ]
 
-# A path on which a directory cannot be asked whether it is a link neither leaves the project nor
-# passes through a symlink, so the hook's line says what it is.
-[[mutation]]
-name = "the hook words a path it cannot check as an escape"
-file = "src/stayfixed/hooks/commands.py"
-before = "            except PathUnasked:\n                return _unloadable(event_name, UNASKED_PATH)"
-after = "            except PathUnasked:\n                return _unloadable(event_name, ESCAPING_PATH)"
-reddens = [
-  "tests/hooks/test_hook_command.py::test_a_path_that_cannot_be_checked_for_a_symlink_refuses_a_tool_call_in_those_words",
-]
-
 # The fork points, asked once for `plan`, `bugs` and `test attribute`. A history the change shapes
 # itself can have several merge bases, and the one git picks alone, the newest by date, can already
 # hold what the change puts back or deletes.
@@ -2358,43 +2350,6 @@ after = """        if code == -1:
 reddens = [
   "tests/test_fork_points.py::test_a_shallow_check_git_does_not_answer_is_not_known[signalled]",
   "tests/test_fork_points.py::test_a_merge_base_git_does_not_give_is_not_known[signalled]",
-]
-
-# A `stayfixed.toml` that does not load reached the generic handler and printed `internal error`
-# with the loader's message, which reads as a stayfixed bug and carries the repository's text to
-# the model on a refused `PreToolUse`. The two named branches are the guard; their exit code
-# matches the generic one's, so only the words can tell them apart.
-[[mutation]]
-name = "the hook reports an unloadable config as an internal error"
-file = "src/stayfixed/hooks/commands.py"
-before = "            except PathEscape:"
-after = "            except OSError:"
-reddens = [
-  "tests/hooks/test_hook_command.py::test_an_unloadable_config_refuses_a_tool_call_in_its_own_words[escaping-path]",
-]
-
-[[mutation]]
-name = "the hook prints a refused value's own text as an internal error"
-file = "src/stayfixed/hooks/commands.py"
-before = "            except ConfigError:"
-after = "            except OSError:"
-reddens = [
-  "tests/hooks/test_hook_command.py::test_an_unloadable_config_refuses_a_tool_call_in_its_own_words[refused-value]",
-]
-
-# A broken machine file raises a `ConfigError` too; caught with the others, the hook blamed it on
-# `stayfixed.toml` and pointed at `stayfixed docs check` about a file that loads.
-[[mutation]]
-name = "the hook blames a broken machine file on stayfixed.toml"
-file = "src/stayfixed/hooks/commands.py"
-before = """            except MachineConfigError:
-                # The machine file's fault, not `stayfixed.toml`'s: this line would name the
-                # wrong file, so it keeps the generic verdict below.
-                raise
-"""
-after = ""
-reddens = [
-  "tests/hooks/test_hook_command.py::test_a_machine_file_that_does_not_load_is_not_blamed_on_stayfixed_toml",
 ]
 
 # What `gh`, `git clone`, `git init` and `pre-commit` print reached a terminal and a CI log raw: a
@@ -4189,3 +4144,137 @@ after = "                pass"
 reddens = [
   "tests/config/test_loader_note.py::test_a_repository_guards_value_that_is_not_a_table_is_refused_too",
 ]
+
+# A session never dies of its configuration (`config.session`): it reads what loads, falls back
+# whole only when nothing can stand in, and says so in one warning about each file.
+[[mutation]]
+name = "session_config answers no configuration for a file that loads with notes"
+file = "src/stayfixed/config/session.py"
+before = "    return SessionConfig(noted.config, owner, warnings + _owners(owner), noted.keys)"
+after = "    return SessionConfig(None, owner, warnings + _owners(owner), noted.keys)"
+reddens = ["tests/config/test_session.py::test_a_newer_release_keeps_every_other_setting"]
+
+[[mutation]]
+name = "a session lists no key it noted"
+file = "src/stayfixed/config/session.py"
+before = "    return SessionConfig(noted.config, owner, warnings + _owners(owner), noted.keys)"
+after = "    return SessionConfig(noted.config, owner, warnings + _owners(owner))"
+reddens = ["tests/config/test_session.py::test_a_newer_release_keeps_every_other_setting"]
+
+[[mutation]]
+name = "the session warns of a newer release for every file with notes"
+file = "src/stayfixed/config/session.py"
+before = "        newer = later(noted.config.stayfixed.version, __version__) is True"
+after = "        newer = True"
+reddens = ["tests/config/test_session.py::test_a_file_from_this_release_with_notes_is_not_called_newer"]
+
+[[mutation]]
+name = "a session lets a file that is not TOML raise"
+file = "src/stayfixed/config/session.py"
+before = "    except UNPARSEABLE:\n        return _fallback(path, FALLBACK_WARNING)"
+after = "    except UNPARSEABLE:\n        raise"
+reddens = [
+  "tests/config/test_session.py::test_a_file_that_cannot_be_read_as_toml_falls_back_whole[unparseable]",
+  "tests/hooks/test_floor.py::test_the_background_guard_judges_whatever_the_configuration[unparseable]",
+]
+
+[[mutation]]
+name = "a session says nothing of a machine file it could not use"
+file = "src/stayfixed/config/session.py"
+before = "    return (MACHINE_FILE_WARNING,) if owner.notes else ()"
+after = "    return ()"
+reddens = [
+  "tests/config/test_session.py::test_a_broken_machine_file_keeps_the_project",
+  "tests/config/test_session.py::test_both_broken",
+  "tests/hooks/test_hook_command.py::test_a_machine_file_that_does_not_load_is_not_blamed_on_stayfixed_toml",
+]
+
+[[mutation]]
+name = "a session with no project root reads no machine file"
+file = "src/stayfixed/config/session.py"
+before = "        return SessionConfig(None, resolve_owner(path), ())"
+after = "        return SessionConfig(None, resolve_owner(None), ())"
+reddens = ["tests/config/test_session.py::test_no_project_root_still_has_the_owners_layer"]
+
+[[mutation]]
+name = "a session names no key it could not use"
+file = "src/stayfixed/config/session.py"
+before = "    except UnusableKey as exc:\n        return _with_owner(owner, _unusable(exc.key))"
+after = "    except UnusableKey as exc:\n        return _with_owner(owner, _unusable(None))"
+reddens = [
+  "tests/config/test_session.py::test_a_key_nothing_can_stand_in_for_drops_the_project_and_names_it[project-name]",
+  "tests/config/test_session.py::test_a_key_nothing_can_stand_in_for_drops_the_project_and_names_it[version]",
+  "tests/config/test_session.py::test_a_key_nothing_can_stand_in_for_drops_the_project_and_names_it[docs-symlink]",
+]
+
+[[mutation]]
+name = "a session names no key a document is missing"
+file = "src/stayfixed/config/session.py"
+before = "        return _with_owner(owner, _unusable(exc.missing[0]))"
+after = "        return _with_owner(owner, _unusable(None))"
+reddens = [
+  "tests/config/test_session.py::test_a_required_key_the_document_never_wrote_drops_the_project_and_names_it",
+]
+
+[[mutation]]
+name = "the owner's layer is handed a preset the loader resets"
+file = "src/stayfixed/config/session.py"
+before = "    return named if isinstance(named, str) and named in shipped_presets() else FALLBACK_PRESET"
+after = "    return named"
+reddens = [
+  "tests/config/test_session.py::test_a_preset_this_build_cannot_use_is_one_note[unshipped]",
+  "tests/config/test_session.py::test_a_preset_this_build_cannot_use_is_one_note[not-a-string]",
+]
+
+# The notice is rendered on `SessionStart` alone, through both channels, inside the cap; every
+# other event leaves one record of it in the sink for the session.
+[[mutation]]
+name = "dispatch renders the notice on every event"
+file = "src/stayfixed/hooks/dispatch.py"
+before = "    shown = notice if event.name == NOTICE_EVENT else ()"
+after = "    shown = notice"
+reddens = [
+  "tests/hooks/test_floor.py::test_pre_tool_use_prints_no_warning_and_logs_it_once",
+  "tests/hooks/test_hook_command.py::test_a_config_that_does_not_load_whole_never_refuses_a_tool_call[unparseable]",
+]
+
+[[mutation]]
+name = "the notice never reaches the person"
+file = "src/stayfixed/harnesses.py"
+before = "    if notice:\n        payload[\"systemMessage\"] = notice"
+after = "    if False:\n        payload[\"systemMessage\"] = notice"
+reddens = [
+  "tests/hooks/test_floor.py::test_session_start_carries_each_warning_once[unparseable]",
+  "tests/hooks/test_hook_command.py::test_a_config_that_does_not_load_whole_is_named_once_at_session_start[unparseable]",
+]
+
+[[mutation]]
+name = "the notice never reaches the model"
+file = "src/stayfixed/hooks/dispatch.py"
+before = "    context = \"\\n\\n\".join((*shown, *contexts))"
+after = "    context = \"\\n\\n\".join(contexts)"
+reddens = [
+  "tests/hooks/test_floor.py::test_session_start_carries_each_warning_once[unparseable]",
+  "tests/hooks/test_hook_command.py::test_a_config_that_does_not_load_whole_is_named_once_at_session_start[unparseable]",
+]
+
+[[mutation]]
+name = "the clamp cuts the notice from its answer"
+file = "src/stayfixed/hooks/dispatch.py"
+before = "        stdout = render(event_name, context[:keep] + TRUNCATION_MARK, notice)"
+after = "        stdout = render(event_name, context[:keep] + TRUNCATION_MARK, \"\")"
+reddens = ["tests/hooks/test_dispatch.py::test_the_notice_counts_inside_the_cap_and_is_never_cut"]
+
+[[mutation]]
+name = "the hook logs a configuration fallback on every call"
+file = "src/stayfixed/hooks/commands.py"
+before = "    if sink.seen(CONFIG_FALLBACK):\n        return\n"
+after = ""
+reddens = ["tests/hooks/test_floor.py::test_pre_tool_use_prints_no_warning_and_logs_it_once"]
+
+[[mutation]]
+name = "the hook never logs a configuration fallback"
+file = "src/stayfixed/hooks/commands.py"
+before = "            _log_fallback(event_name, sink)"
+after = "            pass"
+reddens = ["tests/hooks/test_floor.py::test_pre_tool_use_prints_no_warning_and_logs_it_once"]

@@ -3449,3 +3449,23 @@ after = ""
 reddens = [
   "tests/memory/test_remote_binding.py::test_a_url_still_binds_itself_whatever_its_shape[unread-path]",
 ]
+
+# The worktree link is about the project. Its broad backstop answers nothing for an exception, so a
+# check dropped for `None` stays silent all the same; what a test can catch is the check turned
+# round, which silences the link on a real file.
+[[mutation]]
+name = "the worktree link speaks only without a project configuration"
+file = "src/stayfixed/memory/hooks.py"
+before = "    config = session.config\n    if config is None or event.project_root is None:"
+after = "    config = session.config\n    if config is not None or event.project_root is None:"
+reddens = [
+  "tests/hooks/test_floor.py::test_project_handlers_speak_on_a_file_and_stay_silent_without_one[worktree_link]",
+]
+
+# `memory session-context` reads `stayfixed.toml` the way the session it feeds does.
+[[mutation]]
+name = "memory session-context refuses what a session reads"
+file = "src/stayfixed/memory/commands.py"
+before = "    config = session_config(root, machine=machine).config"
+after = "    config = load(root, machine=machine)"
+reddens = ["tests/hooks/test_floor.py::test_memory_session_context_reads_a_newer_key_with_a_note"]

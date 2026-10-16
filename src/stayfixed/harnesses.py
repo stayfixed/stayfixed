@@ -162,9 +162,10 @@ class Harness:
     # The variable this harness names the project root in, if any. Every registered value's is
     # asked, in `project_root_variables`' order, whichever harness was detected (`detect`).
     project_dir_env: str | None
-    # How the hook's stdout is shaped: (event name, joined context) -> stdout. Context only:
-    # no rendering carries a decision, because a deny travels on the exit code.
-    render: Callable[[str, str], str]
+    # How the hook's stdout is shaped: (event name, joined context, notice) -> stdout, where the
+    # notice is what the person is shown and the context what the model reads. Never a decision:
+    # a deny travels on the exit code.
+    render: Callable[[str, str, str], str]
     # Every `Surface`, each with the tier it holds at under this harness. Compared, and left out
     # of the hash: a mapping has none, and the other fields already tell two harnesses apart.
     reach: Mapping[Surface, Reach] = field(hash=False)
@@ -192,12 +193,19 @@ class MemoryHarness(Harness):
     memory_dir: Callable[[str], str]
 
 
-def hook_specific_output(event_name: str, context: str) -> str:
+def hook_specific_output(event_name: str, context: str, notice: str) -> str:
     """Claude Code's hook answer: the whole string a hook writes to stdout, which the harness
-    caps, rather than the field inside it."""
+    caps, rather than the field inside it.
+
+    `notice` is for the person, and goes out as `systemMessage`, which Claude Code shows a person
+    in a terminal on `SessionStart` and never hands the model (`hooks.dispatch.NOTICE_EVENT` says
+    where that was measured); the model's copy is the caller's to put into `context`. An empty one
+    adds no key."""
     payload: dict[str, Any] = {"hookSpecificOutput": {"hookEventName": event_name}}
     if context:
         payload["hookSpecificOutput"]["additionalContext"] = context
+    if notice:
+        payload["systemMessage"] = notice
     return json.dumps(payload)
 
 

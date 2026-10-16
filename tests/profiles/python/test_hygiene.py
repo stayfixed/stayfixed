@@ -24,6 +24,7 @@ from stayfixed.profiles.python.hygiene import HINT
 from tests.gitfixture import git, needs_git
 from tests.profiles.python.bytecode import compile_module, make_stale
 from tests.profiles.redrun import DIRTY_ONE, LEAD, hygiene, red_event
+from tests.sessions import session_of
 
 CONFIG = """
 [stayfixed]
@@ -574,7 +575,7 @@ def test_a_red_pytest_run_gets_the_python_profiles_note(tmp_path: Path) -> None:
     # words the notice carried before the move. Reddened by replacing `context_for`'s
     # `hints = shipped_hints()` with `hints = ()`, so no profile speaks; measured.
     root = faulty_python_tree(tmp_path)
-    result = hygiene().run(red_event(root, "uv run pytest -q"), config(root))
+    result = hygiene().run(red_event(root, "uv run pytest -q"), session_of(config(root)))
     assert result.decision is None
     assert result.context == f"{LEAD}\n- {DIRTY_ONE}\n- {STALE_ONE}"
 
@@ -588,7 +589,7 @@ def test_a_red_pytest_run_behind_uvs_options_gets_the_same_note(tmp_path: Path) 
     # Oracle: `mutations/`'s "uv's options stop being read past `run`".
     root = faulty_python_tree(tmp_path)
     command = "uv sync --locked && uv run --locked pytest tests/x.py::t"
-    result = hygiene().run(red_event(root, command), config(root))
+    result = hygiene().run(red_event(root, command), session_of(config(root)))
     assert result.context == f"{LEAD}\n- {DIRTY_ONE}\n- {STALE_ONE}"
 
 
@@ -602,7 +603,7 @@ def test_a_red_pytest_run_over_a_walk_cut_short_is_told_it_could_not_tell(
     # disabling the cap check, which puts the stale line here; measured.
     root = faulty_python_tree(tmp_path)
     monkeypatch.setattr(fsops, "WALK_ENTRIES", 2)
-    result = hygiene().run(red_event(root, "uv run pytest -q"), config(root))
+    result = hygiene().run(red_event(root, "uv run pytest -q"), session_of(config(root)))
     assert (
         result.context == f"{LEAD}\n- {DIRTY_ONE}\n- {UNTOLD.format(entries=2, files=READ_FILES)}"
     )
@@ -619,8 +620,8 @@ def test_no_recognising_profile_means_no_notice(tmp_path: Path) -> None:
     # command".
     root = faulty_python_tree(tmp_path)
     settings = config(root)
-    assert hygiene().run(red_event(root, "cargo test"), settings).context is None
-    assert hygiene().run(red_event(root, "pytest"), settings).context is not None
+    assert hygiene().run(red_event(root, "cargo test"), session_of(settings)).context is None
+    assert hygiene().run(red_event(root, "pytest"), session_of(settings)).context is not None
 
 
 def test_the_note_is_a_function_of_the_report() -> None:

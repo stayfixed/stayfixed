@@ -31,6 +31,7 @@ from types import ModuleType
 import pytest
 
 from stayfixed.config.schema import Config
+from stayfixed.config.session import SessionConfig
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "src" / "stayfixed"
@@ -50,11 +51,17 @@ AREAS = sorted(path.parent.name for path in SOURCE.glob("*/api.py"))
 DEFINES_ITS_OWN = frozenset({"hooks"})
 
 # The names an area's modules import only under `if TYPE_CHECKING:`, so that an annotation
-# naming one can still be resolved here. Supplied rather than tolerated: a third such name
+# naming one can still be resolved here. Supplied rather than tolerated: a further such name
 # fails the check below by name, which is a decision to record and not a hint to drop. Without
 # this the check errored with a bare `NameError` on four of the ten areas — accidental redness,
 # which reads as coverage and is the shape this suite exists to refuse.
-TYPE_CHECKING_NAMES: dict[str, object] = {"Config": Config, "Path": Path}
+TYPE_CHECKING_NAMES: dict[str, object] = {
+    "Config": Config,
+    "Path": Path,
+    # `HandlerFn`'s second argument: the hooks surface names the session it hands a handler, and
+    # imports it only for annotations, since discovery must not load the configuration layer.
+    "SessionConfig": SessionConfig,
+}
 
 
 def _hints(thing: object) -> dict[str, object]:
@@ -127,7 +134,8 @@ def test_the_export_list_is_exactly_what_the_module_imports_from_its_area(area: 
         # `api.py` with none of the crossings `tests/boundaries/test_api_surface.py` counts. Scoped
         # to the other areas and not to every `stayfixed.` name, for that walk's own reason — the
         # configuration layer and the leaves are not areas, and `stayfixed.hooks.api` names
-        # `stayfixed.config.schema.Config` in `HandlerFn` because that is the handler signature.
+        # `stayfixed.config.session.SessionConfig` in `HandlerFn` because that is the handler
+        # signature.
         parts = node.module.split(".")
         elsewhere = parts[0] == "stayfixed" and parts[1:2] and parts[1] in set(AREAS) - {area}
         assert not elsewhere, node.module

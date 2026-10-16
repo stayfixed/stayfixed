@@ -26,6 +26,7 @@ from stayfixed.memory.hooks import (
 )
 from stayfixed.memory.worktree import Links, MakeUnder, PartialLink, Withhold
 from tests.ownerhome import as_owner_home
+from tests.sessions import NO_CONFIG, session_of
 
 ROOT = Path(__file__).resolve().parents[2]
 CONFIG = """
@@ -94,7 +95,7 @@ def test_no_session_start_context_handler_is_registered() -> None:
 
 def test_no_config_is_silence_not_an_exception(tmp_path: Path) -> None:
     for handler in register():
-        result = handler.run(an_event(tmp_path), None)
+        result = handler.run(an_event(tmp_path), NO_CONFIG)
         assert result.context is None
         assert result.decision is None
 
@@ -106,7 +107,7 @@ def test_a_broken_store_is_silence_not_an_exception(tmp_path: Path) -> None:
     )
     config = load(root, machine=tmp_path / "absent.toml")
     for handler in register():
-        assert handler.run(an_event(root), config).decision is None
+        assert handler.run(an_event(root), session_of(config)).decision is None
 
 
 def _raise(*_args: object, **_kwargs: object) -> list[Path]:
@@ -127,7 +128,7 @@ def test_a_link_failure_is_silence_not_an_exception(
     root = a_project(tmp_path)
     config = load(root, machine=tmp_path / "absent.toml")
     for handler in register():
-        result = handler.run(an_event(root), config)
+        result = handler.run(an_event(root), session_of(config))
         assert result.decision is None
         assert result.context is None
 
@@ -136,7 +137,7 @@ def test_no_handler_in_this_area_ever_denies(tmp_path: Path) -> None:
     root = a_project(tmp_path)
     config = load(root, machine=tmp_path / "absent.toml")
     for handler in register():
-        result = handler.run(an_event(root, handler.event), config)
+        result = handler.run(an_event(root, handler.event), session_of(config))
         assert result.decision is not Decision.DENY
 
 
@@ -192,7 +193,7 @@ def test_a_repository_controlled_group_name_never_reaches_the_handlers_context(
     config = load(root, machine=tmp_path / "absent.toml")
     assert HOSTILE_GROUP in config.memory.groups
     for handler in register():
-        context = handler.run(an_event(root), config).context or ""
+        context = handler.run(an_event(root), session_of(config)).context or ""
         assert "\n" not in context
         for fragment in HOSTILE_GROUP.splitlines():
             if fragment.strip():
@@ -218,7 +219,7 @@ def test_a_half_built_tree_still_reports_what_was_made(
     root = a_project(tmp_path)
     config = load(root, machine=tmp_path / "absent.toml")
     for handler in register():
-        result = handler.run(an_event(root), config)
+        result = handler.run(an_event(root), session_of(config))
         assert result.decision is None
         assert result.context == PARTIAL.format(count=2)
 
@@ -238,7 +239,7 @@ def test_a_withdrawn_harness_link_is_a_different_event_from_a_quiet_session(
     root = a_project(tmp_path)
     config = load(root, machine=tmp_path / "absent.toml")
     for handler in register():
-        result = handler.run(an_event(root), config)
+        result = handler.run(an_event(root), session_of(config))
         assert result.decision is None
         assert result.context == REVOKED
 
@@ -254,7 +255,7 @@ def test_a_containment_refusal_is_a_different_event_from_a_disk_error(
     root = a_project(tmp_path)
     config = load(root, machine=tmp_path / "absent.toml")
     for handler in register():
-        result = handler.run(an_event(root), config)
+        result = handler.run(an_event(root), session_of(config))
         assert result.decision is None
         assert result.context == NOT_LINKED
         for fragment in HOSTILE_GROUP.splitlines():
@@ -283,7 +284,7 @@ def test_the_harness_link_goes_under_the_owners_home_where_home_agrees(
     monkeypatch.setattr(worktree_module, "link", _recording(seen, withheld=True))
     root = a_project(tmp_path)
     config = load(root, machine=tmp_path / "absent.toml")
-    contexts = [handler.run(an_event(root), config).context for handler in register()]
+    contexts = [handler.run(an_event(root), session_of(config)).context for handler in register()]
     assert seen == [MakeUnder(owner)]
     assert contexts == [None]
 
@@ -307,7 +308,7 @@ def test_no_harness_link_is_made_where_home_is_not_the_databases(
     monkeypatch.setattr(worktree_module, "link", _recording(seen, withheld=True))
     root = a_project(tmp_path)
     config = load(root, machine=tmp_path / "absent.toml")
-    contexts = [handler.run(an_event(root), config).context for handler in register()]
+    contexts = [handler.run(an_event(root), session_of(config)).context for handler in register()]
     assert seen == [Withhold()]
     assert contexts == [line.line]
 
@@ -331,7 +332,7 @@ def test_an_empty_home_gets_no_harness_link_even_in_the_databases_home(
     monkeypatch.setattr(worktree_module, "link", _recording(seen, withheld=True))
     root = a_project(tmp_path)
     config = load(root, machine=tmp_path / "absent.toml")
-    contexts = [handler.run(an_event(root), config).context for handler in register()]
+    contexts = [handler.run(an_event(root), session_of(config)).context for handler in register()]
     assert seen == [Withhold()]
     assert contexts == [
         "stayfixed: HOME is empty, so it names no home directory and a hook makes no harness "
@@ -366,7 +367,7 @@ def test_a_database_home_that_is_itself_a_symlink_gets_the_harness_link_from_the
     store = resolve(tree, config)
     assert store is not None
     record(store, config)
-    contexts = [handler.run(an_event(tree), config).context for handler in register()]
+    contexts = [handler.run(an_event(tree), session_of(config)).context for handler in register()]
     harness = harness_memory_path(tree, real)
     assert harness.is_symlink()
     assert harness.resolve() == store.path.resolve()
@@ -386,7 +387,7 @@ def test_a_lapsed_link_is_looked_for_under_an_absolute_home_that_differs(
     root = a_project(tmp_path)
     config = load(root, machine=tmp_path / "absent.toml")
     for handler in register():
-        handler.run(an_event(root), config)
+        handler.run(an_event(root), session_of(config))
     assert seen == [Withhold(elsewhere)]
 
 
@@ -438,4 +439,6 @@ def test_a_store_not_approved_for_a_harness_link_says_nothing_of_the_one_withhel
     monkeypatch.setattr(worktree_module, "link", _recording(seen))
     root = a_project(tmp_path)
     config = load(root, machine=tmp_path / "absent.toml")
-    assert [handler.run(an_event(root), config).context for handler in register()] == [None]
+    assert [handler.run(an_event(root), session_of(config)).context for handler in register()] == [
+        None
+    ]

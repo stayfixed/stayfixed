@@ -162,7 +162,7 @@ TEXT = Harness(
     settings=(),
     local_settings=(),
     project_dir_env=None,
-    render=lambda event, context: f"[{event}] {context}",
+    render=lambda event, context, notice: f"{notice}[{event}] {context}",
     reach=CLAUDE.reach,
     plugin_root_env="TEXT_PLUGIN_ROOT",
 )
@@ -176,11 +176,11 @@ TEXT = Harness(
     ids=["empty", "plain", "deny-shaped"],
 )
 def test_no_harness_renders_a_decision(harness: Harness, event: str, context: str) -> None:
-    # A rendering is context in an envelope, and a context shaped like a decision is still a
-    # string inside it, never a key of the envelope. Mutation (declared, on `harnesses`): the
-    # canonical render adds `"permissionDecision": "allow"` beside `hookEventName` -> every
+    # A rendering is context in an envelope, and a context or a notice shaped like a decision is
+    # still a string inside it, never a key of the envelope. Mutation (declared, on `harnesses`):
+    # the canonical render adds `"permissionDecision": "allow"` beside `hookEventName` -> every
     # Claude Code and Codex case reddens, since both render through the same function.
-    assert not _decisions(harness.render(event, context), context)
+    assert not _decisions(harness.render(event, context, context), context)
 
 
 def test_every_harness_renders_through_the_canonical_render() -> None:
@@ -223,7 +223,7 @@ def test_the_decision_check_finds_a_decision_in_either_shape() -> None:
     assert _decisions(json.dumps({"hookSpecificOutput": {"decision": "block"}}), "") == {"decision"}
     assert _decisions(json.dumps(["permissionDecision"]), "") == {"permissionDecision"}
     assert _decisions("continue: false\n[PreToolUse] a note", "a note") == {"continue"}
-    assert _decisions(TEXT.render("PreToolUse", deny), deny) == set()
+    assert _decisions(TEXT.render("PreToolUse", deny, ""), deny) == set()
 
 
 def test_every_harness_states_every_surface() -> None:
