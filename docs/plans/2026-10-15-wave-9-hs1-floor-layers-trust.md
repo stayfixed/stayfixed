@@ -112,7 +112,12 @@ stops and reports the mismatch.
   a configuration file, the machine file or a preset name did not load.
 - An invalid value resets that one key to the preset, with a note; the whole project
   configuration is dropped only when the file is a symlink, is not UTF-8, cannot be read, or is
-  not TOML. A containment failure resets the value, never the session.
+  not TOML. A containment failure resets the value, never the session. Amended on 2026-10-16 by
+  the owner's ruling on wave B's review (the NOTE retry's seam): a key whose reset leaves nothing
+  usable — a required key with no default, or a preset value that itself fails containment in this
+  repository — makes the NOTE load raise one typed refusal naming that key and carrying the notes
+  so far, and the session falls back to the floor whole with a warning naming the key; the guards
+  still run on the preset and the owner's layer.
 - `Config` gains no field: `assess.rule` compares configurations field by field.
 - Core never imports a delivery area (`attach`, `memory`, `overlay`); `tests/boundaries/` holds it.
   A kind a delivery area owns reaches core through discovery.
@@ -1054,3 +1059,14 @@ model, asked to quote its context, did not see a `systemMessage`, and did see a
   the `stayfixed` that `setup` runs as) for `trust approve` and the alias; its reference says `-p`
   treats `ask` as deny. The `approval-boundary` row reads a repository's project and local files as
   able to turn the sandbox off unless managed settings make it admin-required.
+
+### Wave B — Tasks 2–4
+
+- Implementer: 359,623 tokens, three commits; one fix round, by a fresh implementer (263,771 tokens)
+  since the first was past 300k, on the review's two Important findings (a committed comment citing
+  a report; 24 tests with no declared mutation) and seven Minor ones; the scoped re-review found all
+  addressed. Reviewer 212,967 tokens, re-reviewer 156,676.
+- Two Minor findings pointed at the same seam — the NOTE retry when a removed key has no usable
+  fallback (`[project] name = "has space"` surfaced as "missing required key(s): name"; a committed
+  `docs` symlink failed the preset's `paths.architecture`). Put to the owner, who chose a typed
+  refusal and a whole fallback at the session (Global Constraints, amended); Task 5 builds it.
