@@ -2996,7 +2996,7 @@ run it.
 holds. With no `stayfixed.toml`, `not-initialised` **warns**, the six rows above that read the
 project configuration skip, and no row is red for it: a default install, where the guards and
 this report already work, exits `0`. A `stayfixed.toml` that loads with settings ignored or put
-back to the preset's warns, naming their keys. Only one a session drops whole is **red**: a
+back to the preset's warns, naming at most three of their keys and counting the rest. Only one a session drops whole is **red**: a
 symbolic link, whatever it points at, a file that is not UTF-8, cannot be read or is not TOML, or
 one holding a key nothing can stand in for; the row says which in the session's own words and
 names `stayfixed docs check`, which prints the loader's own message.

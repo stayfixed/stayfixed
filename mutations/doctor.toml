@@ -2984,3 +2984,11 @@ reddens = [
   "tests/doctor/test_floor_report.py::test_preferences_warn_of_a_machine_file_that_could_not_be_used",
   "tests/doctor/test_checks.py::test_a_machine_file_that_does_not_load_is_not_blamed_on_stayfixed_toml",
 ]
+
+# The reference states the cap in words, so the cap and every sentence that states it move together.
+[[mutation]]
+name = "doctor shows four noted names"
+file = "src/stayfixed/doctor/checks.py"
+before = "NAMES_SHOWN = 3"
+after = "NAMES_SHOWN = 4"
+reddens = ["tests/test_documents.py::test_every_sentence_that_counts_the_names_doctor_shows_is_the_cap"]

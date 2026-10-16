@@ -251,13 +251,15 @@ NOTED = "{file} loads with {count} setting(s) ignored or put back to the preset'
 # How many noted names a row prints before it counts the rest: `not-initialised`'s keys, and the
 # machine file's notes on `preferences`. A named cap. A repository chooses how many keys its
 # `stayfixed.toml` holds, the `doctor` skill relays this report to a model verbatim, and three say
-# where to start; `stayfixed docs check` lists every one. No shipped file states the number.
+# where to start; `stayfixed docs check` lists every one. `docs/cli.md` states the number in
+# words, and `tests/test_documents.py` holds every sentence that does to this value.
 NAMES_SHOWN = 3
 NOTED_REMEDY = (
     f"`stayfixed docs check` refuses the file and prints why each one was; fix or remove them in "
     f"{CONFIG_FILE}"
 )
-# What `printable` prints for a key outside the path grammar on this row.
+# What this row prints in a key's place when the key is outside the path grammar: `_noted_keys`
+# withholds it there, as `printed.printable` withholds such a key from a line a model reads.
 UNPRINTABLE_KEY = "<a key that is not a plain name>"
 FALLBACK_REMEDY = (
     f"`stayfixed docs check` prints why; run `stayfixed doctor` again after fixing {CONFIG_FILE}"

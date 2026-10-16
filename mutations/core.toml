@@ -4288,9 +4288,19 @@ reddens = ["tests/config/test_session.py::test_both_broken"]
 [[mutation]]
 name = "a session with no project root reads no machine file"
 file = "src/stayfixed/config/session.py"
-before = "        return SessionConfig(None, resolve_owner(path), ())"
-after = "        return SessionConfig(None, resolve_owner(None), ())"
+before = "        owner = resolve_owner(path)\n        return SessionConfig(None, owner, _owners(owner, path))"
+after = "        owner = resolve_owner(None)\n        return SessionConfig(None, owner, _owners(owner, path))"
 reddens = ["tests/config/test_session.py::test_no_project_root_still_has_the_owners_layer"]
+
+[[mutation]]
+name = "a session with no project configuration says nothing of a machine file it could not use"
+file = "src/stayfixed/config/session.py"
+before = "        return SessionConfig(None, owner, _owners(owner, path))"
+after = "        return SessionConfig(None, owner, ())"
+reddens = [
+  "tests/config/test_session.py::test_a_broken_machine_file_is_named_with_no_project_configuration[no-file]",
+  "tests/config/test_session.py::test_a_broken_machine_file_is_named_with_no_project_configuration[no-root]",
+]
 
 [[mutation]]
 name = "a session names no key it could not use"

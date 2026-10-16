@@ -974,6 +974,27 @@ def test_every_document_counts_the_rows_the_report_has() -> None:
         assert counted == [expected] * len(found), (name, found, expected)
 
 
+# Every sentence in `docs/cli.md` that says how many noted key names `doctor` prints before it
+# counts the rest: the `not-initialised` row, the paragraph under the table, and the exception in
+# "What is printed".
+_NAMES_SHOWN_SENTENCES = (
+    re.compile(r"naming at most (\w+) of their keys and counting the rest"),
+    re.compile(r"at most (\w+) names, one outside the path grammar withheld"),
+)
+
+
+def test_every_sentence_that_counts_the_names_doctor_shows_is_the_cap() -> None:
+    # The cap was stated in words in the reference and held by nothing, while a comment beside it
+    # said no shipped file stated it. Mutation (`mutations/`'s "doctor shows four noted names"):
+    # the cap is four and the reference still says three.
+    from stayfixed.doctor.checks import NAMES_SHOWN
+
+    text = (ROOT / "docs" / "cli.md").read_text(encoding="utf-8")
+    found = [word for pattern in _NAMES_SHOWN_SENTENCES for word in pattern.findall(text)]
+    assert len(found) == 3, found
+    assert [_NUMBER_WORDS[word] for word in found] == [NAMES_SHOWN] * 3
+
+
 # The five verdict sentences are `VERDICTS` in `stayfixed.guards.attribute` and are reproduced by
 # hand in `docs/cli.md`'s table; every test that had them read the expectation back out of
 # `VERDICTS`, which is shape 9 of the `sweep-defect-class` skill's own reference — both sides move

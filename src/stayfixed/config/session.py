@@ -123,7 +123,10 @@ def session_config(root: Path | None, *, machine: Path | None = None) -> Session
         # to a loadable file and one to `/dev/zero` meet the same rule.
         return _fallback(path, FALLBACK_WARNING)
     if root is None or text is None:
-        return SessionConfig(None, resolve_owner(path), ())
+        # Nothing of the project's to read, and the machine file is read all the same: a broken one
+        # is named here as beside any project file.
+        owner = resolve_owner(path)
+        return SessionConfig(None, owner, _owners(owner, path))
     try:
         raw = tomllib.loads(text)
     except UNPARSEABLE:

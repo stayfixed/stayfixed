@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 
 from stayfixed import __version__
+from stayfixed.config.owner import resolve_owner
 from stayfixed.config.session import (
     FALLBACK_WARNING,
     MACHINE_FILE_WARNING,
@@ -135,6 +136,36 @@ def test_a_broken_machine_file_keeps_the_project(tmp_path: Path) -> None:
     got = session_config(tmp_path, machine=machine)
     assert got.config is not None
     assert got.warnings == (MACHINE_FILE_WARNING.format(path=machine),)
+
+
+@pytest.mark.parametrize("root", ["no-file", "no-root"])
+def test_a_broken_machine_file_is_named_with_no_project_configuration(
+    tmp_path: Path, root: str
+) -> None:
+    # Review Focus 2 with nothing of the project's to read: no `stayfixed.toml`, or a hook with no
+    # project root. The guards still run on the preset's owner values, and the warning still names
+    # the machine file. Mutation (`mutations/`'s "a session with no project configuration says
+    # nothing of a machine file it could not use"): the warning goes.
+    machine = broken_machine(tmp_path)
+    got = session_config(tmp_path if root == "no-file" else None, machine=machine)
+    assert got.config is None
+    assert got.owner.guards.bg_cleanup is True
+    assert got.owner.personal == resolve_owner(None).personal
+    assert got.warnings == (MACHINE_FILE_WARNING.format(path=machine),)
+    assert got.project_warnings == ()
+
+
+@pytest.mark.parametrize("root", ["no-file", "no-root"])
+def test_a_usable_machine_file_with_no_project_configuration_says_nothing(
+    tmp_path: Path, root: str
+) -> None:
+    # The control for the case above: a machine file that loads whole is no warning. No mutation
+    # of its own: the warning appearing here would be the case above's arm firing on every file.
+    machine = tmp_path / "machine.toml"
+    machine.write_text('[personal]\nreply_language = "fr"\n', encoding="utf-8")
+    got = session_config(tmp_path if root == "no-file" else None, machine=machine)
+    assert got.config is None and got.warnings == ()
+    assert got.owner.personal.reply_language == "fr"
 
 
 def test_both_broken(tmp_path: Path) -> None:
