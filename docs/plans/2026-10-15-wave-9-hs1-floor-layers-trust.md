@@ -969,3 +969,88 @@ def test_the_row_skips_without_claude_code(tmp_path): ...
 
 Written by Tasks 1 and 11, and by the controller when a wave's implementer reports (its token total,
 its fix rounds).
+
+### Task 1 — measured 2026-10-16 on Claude Code 2.1.296 (macOS)
+
+Probes ran in an isolated `CLAUDE_CONFIG_DIR=<scratchpad>/a1/cfg`, in a scratch git repository
+`<scratchpad>/a1/proj`, with `claude -p --model haiku --output-format stream-json --verbose`; a probe
+counts as "wrote" when its canary file grew. The canary for Step 1 sits at
+`/Users/Shared/stayfixed-a1/canary/rec`, outside the per-user temp directory, which the sandbox
+leaves writable (a first canary under the scratchpad was written with the sandbox on, so it proved
+nothing and was moved). The interactive steps were run by the owner in a terminal.
+
+**Step 1 — the sandbox and its overrides** (a `printf x >> <canary>` asked of the shell tool, with
+the instruction to retry once with `dangerouslyDisableSandbox` if the sandbox blocks it;
+`--allowedTools Bash`):
+
+| Settings | Wrote | What happened |
+|---|---|---|
+| none | yes | ran unsandboxed |
+| user `sandbox.enabled = true` | yes | blocked, then the agent's retry with `dangerouslyDisableSandbox: true` ran unsandboxed |
+| + project `.claude/settings.json` `sandbox.enabled = false` | yes | ran unsandboxed: the project file turns the user's sandbox off |
+| + local `.claude/settings.local.json` the same | yes | ran unsandboxed |
+| + user `sandbox.allowUnsandboxedCommands = false` | yes | the project file still turns the sandbox off |
+| user `enabled` + `allowUnsandboxedCommands = false`, project `enabled = false`, no local file | yes | the same |
+| user `enabled`, project `enabled = false`, `--settings '{"sandbox":{"allowUnsandboxedCommands":false}}'` | no | the project's `false` is ignored; the retry is ignored |
+| user `enabled` + `allowUnsandboxedCommands = false`, no project file | no | blocked; the retry with `dangerouslyDisableSandbox` was ignored |
+
+So `dangerouslyDisableSandbox` is reachable from the agent unless `allowUnsandboxedCommands` is
+false; a repository's project or local file turns a user's `sandbox.enabled = true` off, and a
+user's `allowUnsandboxedCommands = false` does not stop it. Only managed settings or `--settings`
+make the sandbox admin-required, which is when a repository's `false` is ignored — as the
+sandboxing documentation states for 2.1.285 and later. Managed settings live in
+`/Library/Application Support/ClaudeCode/managed-settings.json` (macOS) and
+`/etc/claude-code/managed-settings.json` (Linux and WSL), each with an optional
+`managed-settings.d/` beside it.
+
+**Step 2 — deny rules** (user `sandbox.enabled = true` and one `permissions.deny` rule over
+`<scratchpad>/a1/proj/inner/**`; a shell write and a `Write`-tool write into that directory):
+
+| Rule | Shell write | `Write` tool |
+|---|---|---|
+| `Edit(//<absolute path>/**)` | stopped (the unsandboxed retry was denied) | stopped |
+| `Edit(./inner/**)` | stopped | stopped |
+| `Edit(<absolute path>/**)` (one leading slash) | wrote | wrote |
+| `Write(...)`, any of the three spellings | wrote | wrote |
+
+An `Edit` deny rule covers both the sandboxed shell and the file tools; a `Write` deny rule covers
+neither; a single leading slash anchors at the working directory, so an absolute path needs `//`.
+
+**Step 3 — the `ask` rule** (user `permissions.ask = ["Bash(stayfixed trust approve:*)"]`, fake
+`stayfixed`, `uvx` and `python` first on `PATH`, `--allowedTools Bash`):
+
+| Spelling | `-p` |
+|---|---|
+| `stayfixed trust approve memory` | denied |
+| `script -q /dev/null stayfixed trust approve memory` | denied |
+| `python -m stayfixed trust approve memory` | ran |
+| `uvx stayfixed trust approve memory` | ran |
+| `<absolute path>/stayfixed trust approve memory` | ran |
+| bare, with a project `permissions.allow = ["Bash(stayfixed:*)"]` | denied |
+| bare, with a project `permissions.defaultMode = "bypassPermissions"` | denied |
+| bare, with no `ask` rule (the control) | ran |
+
+Interactively, in a terminal in auto mode, the bare spelling showed the prompt "Ask rule
+Bash(stayfixed trust approve:*) overrides auto mode for this command". So `-p` treats `ask` as
+deny; a project `allow` or `defaultMode` does not lift a user's `ask`; the rule matches its own
+prefix and the `script` wrapper, and every other spelling needs a rule of its own.
+
+**Step 4 — a terminal in the shell tool:** `[ -t 0 ]` is false in the agent's shell tool, both in
+a terminal session ("notty") and on the desktop Code tab.
+
+**Step 5 — the warning's channel** (a `SessionStart` hook printing `{"systemMessage": "x"}`):
+the terminal shows the person `SessionStart:startup says: x` (on 2.1.296 and 2.1.301); in `-p` the
+model, asked to quote its context, did not see a `systemMessage`, and did see a
+`hookSpecificOutput.additionalContext` printed beside it. The desktop Code tab's display of
+`systemMessage` was not observed.
+
+**What Tasks 5 and 10 take from this:**
+
+- Task 5 renders the notice through both channels: `systemMessage` for the person and
+  `additionalContext` for the model, which also covers a surface that does not show a
+  `systemMessage`; both count inside the output cap.
+- Task 10's deny rule is `Edit(//<the trust record's directory>/**)`; its `ask` rules cover each
+  spelling that bypasses the bare one (`python -m stayfixed`, `uvx stayfixed`, the absolute path of
+  the `stayfixed` that `setup` runs as) for `trust approve` and the alias; its reference says `-p`
+  treats `ask` as deny. The `approval-boundary` row reads a repository's project and local files as
+  able to turn the sandbox off unless managed settings make it admin-required.
