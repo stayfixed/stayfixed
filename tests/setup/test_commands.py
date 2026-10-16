@@ -571,11 +571,11 @@ def test_a_run_that_names_its_destination_leaves_claude_config_dir_alone(
 
 
 def _recorded_in(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, directory: str
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, directory: str, spelled: str = ""
 ) -> dict[str, Path]:
     """`_settings_places`, with a machine file whose `[setup]` switches the ask rules off and
     records one rule added to `directory`'s settings file, which holds it beside one of the
-    owner's and nothing else."""
+    owner's and nothing else; the record spells the directory with `spelled` after it."""
     places = _settings_places(tmp_path, monkeypatch)
     place = tmp_path / directory
     place.mkdir(exist_ok=True)
@@ -585,7 +585,7 @@ def _recorded_in(
     machine = places["owner"] / ".config" / "stayfixed" / "config.toml"
     machine.parent.mkdir(parents=True)
     machine.write_text(
-        f'[setup]\nask_rules = false\nadded_rules_in = [{{directory = "{place}", '
+        f'[setup]\nask_rules = false\nadded_rules_in = [{{directory = "{place}{spelled}", '
         f'ask = ["{_RECORDED}"]}}]\n',
         encoding="utf-8",
     )
@@ -596,16 +596,30 @@ def _recorded_in(
 _RECORDED = "Bash(stayfixed trust approve:*)"
 
 
+@pytest.mark.parametrize(
+    "spelled",
+    [
+        pytest.param("", id="as-setup-records-it"),
+        pytest.param("/", id="trailing-slash"),
+        pytest.param("//", id="doubled-slash"),
+        pytest.param("/./", id="dot"),
+    ],
+)
 def test_taking_the_rules_back_writes_nothing_else_where_no_one_named_the_directory(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, spelled: str
 ) -> None:
     # A recorded directory that neither a flag nor the variable names this run has its recorded
     # `ask` rule taken back and nothing added: not `--approval-boundary`'s deny rules, not the
-    # preset's, not `pluginConfigs`; the owner's rule stays, and the record is emptied of it.
-    # Mutations (`mutations/`'s "taking the rules back merges the preset into a directory no one
-    # named" -> the file gains deny rules and `pluginConfigs`; "taking the rules back records the
-    # approval boundary in a directory no one named" -> the record keeps a deny list there).
-    places = _recorded_in(tmp_path, monkeypatch, "cfg")
+    # preset's, not `pluginConfigs`; the owner's rule stays, and the record is emptied of it. The
+    # machine file is the person's to write too, so a directory spelled with a trailing `/`, `//`
+    # or `/./` is taken back alike, found in the record by that spelling. Mutations (`mutations/`'s
+    # "taking the rules back merges the preset into a directory no one named" -> the file gains
+    # deny rules and `pluginConfigs`; "taking the rules back records the approval boundary in a
+    # directory no one named" -> the record keeps a deny list there; "taking the rules back looks
+    # a recorded directory up by its path" -> each spelling but `as-setup-records-it` is an
+    # internal error; "taking the rules back keys the record by the path" -> each spelling but
+    # `as-setup-records-it` stays recorded).
+    places = _recorded_in(tmp_path, monkeypatch, "cfg", spelled)
     argv = ["setup", "--preset", "recommended", "--yes", "--root", str(places["project"])]
     assert invoke([*argv, "--approval-boundary"]) == 0
     settings = places["place"] / "settings.json"

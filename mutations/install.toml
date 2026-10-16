@@ -2426,8 +2426,8 @@ reddens = [
 [[mutation]]
 name = "switching the ask rules off leaves the other directories' rules"
 file = "src/stayfixed/setup/run.py"
-before = "        for place in take_back.directories\n    }"
-after = "        for place in ()\n    }"
+before = "        for key, place in take_back.directories\n    }"
+after = "        for key, place in ()\n    }"
 reddens = [
   "tests/setup/test_commands.py::test_switching_the_ask_rules_off_takes_them_back_in_each_recorded_directory",
 ]
@@ -2476,10 +2476,34 @@ reddens = [
 [[mutation]]
 name = "taking the rules back records the approval boundary in a directory no one named"
 file = "src/stayfixed/setup/run.py"
-before = "            place / name, recorded.added_in[str(place)], ask_rules=False, wanted=(), boundary=()"
-after = "            place / name, recorded.added_in[str(place)], ask_rules=False, wanted=(), boundary=rules"
+before = "        key: _plan(place / name, recorded.added_in[key], ask_rules=False, wanted=(), boundary=())"
+after = "        key: _plan(place / name, recorded.added_in[key], ask_rules=False, wanted=(), boundary=rules)"
 reddens = [
   "tests/setup/test_commands.py::test_taking_the_rules_back_writes_nothing_else_where_no_one_named_the_directory",
+]
+
+# A recorded directory is found in the record, and its entry rewritten, by the spelling the record
+# holds it under, which a hand-written machine file may give a trailing `/` or a `.` component.
+[[mutation]]
+name = "taking the rules back looks a recorded directory up by its path"
+file = "src/stayfixed/setup/run.py"
+before = "        key: _plan(place / name, recorded.added_in[key], ask_rules=False, wanted=(), boundary=())"
+after = "        key: _plan(place / name, recorded.added_in[str(place)], ask_rules=False, wanted=(), boundary=())"
+reddens = [
+  "tests/setup/test_commands.py::test_taking_the_rules_back_writes_nothing_else_where_no_one_named_the_directory[trailing-slash]",
+  "tests/setup/test_commands.py::test_taking_the_rules_back_writes_nothing_else_where_no_one_named_the_directory[doubled-slash]",
+  "tests/setup/test_commands.py::test_taking_the_rules_back_writes_nothing_else_where_no_one_named_the_directory[dot]",
+]
+
+[[mutation]]
+name = "taking the rules back keys the record by the path"
+file = "src/stayfixed/setup/run.py"
+before = "        key: _plan(place / name, recorded.added_in[key], ask_rules=False, wanted=(), boundary=())"
+after = "        str(place): _plan(place / name, recorded.added_in[key], ask_rules=False, wanted=(), boundary=())"
+reddens = [
+  "tests/setup/test_commands.py::test_taking_the_rules_back_writes_nothing_else_where_no_one_named_the_directory[trailing-slash]",
+  "tests/setup/test_commands.py::test_taking_the_rules_back_writes_nothing_else_where_no_one_named_the_directory[doubled-slash]",
+  "tests/setup/test_commands.py::test_taking_the_rules_back_writes_nothing_else_where_no_one_named_the_directory[dot]",
 ]
 
 [[mutation]]
@@ -2494,8 +2518,8 @@ reddens = [
 [[mutation]]
 name = "taking the rules back asks nothing of a recorded directory before the first write"
 file = "src/stayfixed/setup/run.py"
-before = "        for place in take_back.directories:\n            _check_settings_parent(place / Path(USER_SETTINGS).name)"
-after = "        for place in take_back.directories:\n            pass"
+before = "        for _, place in take_back.directories:\n            _check_settings_parent(place / Path(USER_SETTINGS).name)"
+after = "        for _, place in take_back.directories:\n            pass"
 reddens = [
   "tests/setup/test_commands.py::test_taking_the_rules_back_refuses_a_linked_settings_file_before_any_write",
 ]

@@ -1526,7 +1526,7 @@ def _before_the_first_write(
             )
         recorded = _setup_table(machine)
         take_back = _take_back(recorded, also=also, project_root=project_root)
-        for place in take_back.directories:
+        for _, place in take_back.directories:
             _check_settings_parent(place / Path(USER_SETTINGS).name)
     except OSError as exc:
         asked = (
@@ -1541,19 +1541,28 @@ def _before_the_first_write(
 @dataclass(frozen=True)
 class _TakeBack:
     """The recorded directories `[setup] ask_rules = false` takes `ask` rules back from this run
-    besides the one `also` names, and the notes for those it leaves alone."""
+    besides the one `also` names, each as the record spells it and as a path, and the notes for
+    those it leaves alone.
 
-    directories: tuple[Path, ...] = ()
+    The record's spelling is the key: the person may write the machine file by hand, and a
+    directory spelled `/x/`, `/x//` or `/x/./` there is `/x` as a path, so only the spelling finds
+    its rules in the record and rewrites its entry."""
+
+    directories: tuple[tuple[str, Path], ...] = ()
     notes: tuple[str, ...] = ()
 
 
 def _take_back(recorded: _Recorded, *, also: Path | None, project_root: Path) -> _TakeBack:
     """Where the switch is off, each directory `[setup] added_rules_in` records that is not `also`
     and is still a directory: taken back from where it still lies outside the project, and named
-    and left alone, still recorded, where it now lies inside."""
+    and left alone, still recorded, where it now lies inside.
+
+    `also` is left out only under the spelling `setup` records it by, `str(also)`, the one key its
+    own plan reads; another spelling of the same directory is another entry, whose rules are taken
+    back here."""
     if recorded.ask_rules:
         return _TakeBack()
-    directories: list[Path] = []
+    directories: list[tuple[str, Path]] = []
     notes: list[str] = []
     for directory in recorded.added_in:
         place = Path(directory)
@@ -1562,7 +1571,7 @@ def _take_back(recorded: _Recorded, *, also: Path | None, project_root: Path) ->
         if in_project(place, project_root):
             notes.append(RECORDED_IN_PROJECT.format(path=quoted(directory)))
         else:
-            directories.append(place)
+            directories.append((directory, place))
     return _TakeBack(tuple(directories), tuple(notes))
 
 
@@ -1641,15 +1650,14 @@ def setup(
     plan = planned(path, recorded.added)
     name = Path(USER_SETTINGS).name
     # Every other directory this run writes: the one `also` names, and, while the `ask` rules are
-    # switched off, each recorded one `_take_back` found, only to take its recorded rules back.
+    # switched off, each recorded one `_take_back` found, only to take its recorded rules back, by
+    # the spelling the record holds it under (`_TakeBack` says why).
     others: dict[str, _Plan] = {}
     if also is not None:
         others[str(also)] = planned(also / name, recorded.added_in.get(str(also), _NOTHING))
     back = {
-        str(place): _plan(
-            place / name, recorded.added_in[str(place)], ask_rules=False, wanted=(), boundary=()
-        )
-        for place in take_back.directories
+        key: _plan(place / name, recorded.added_in[key], ask_rules=False, wanted=(), boundary=())
+        for key, place in take_back.directories
     }
     held_table = _recorded_table(recorded.added, recorded.added_in)
 
