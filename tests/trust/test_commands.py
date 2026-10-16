@@ -107,6 +107,40 @@ def test_the_refusal_asks_for_the_person_and_tells_an_agent_to_stop() -> None:
         assert said not in refusal
 
 
+# The approval as every sentence below asks for it: of the person at the machine, with an agent
+# told to stop, written out here so the words a reader meets are held whole.
+ASKED = (
+    "ask the person at this machine to run `stayfixed trust approve memory` in their own terminal "
+    "— an agent must not run it for them"
+)
+
+
+def test_every_sentence_that_names_the_memory_approval_asks_for_the_person() -> None:
+    # The sentences outside `trust` that name the approval reach a session's context or an agent's
+    # shell tool, and each used to say "run `stayfixed trust approve memory` in a terminal", which
+    # an agent able to open a pseudo-terminal reads as its instruction. Each asks for the person
+    # now, in the words `trust approve`'s own refusal uses. `REVOKED` is written out in its module,
+    # which imports nothing at module level that discovery would load, so it is held whole.
+    # Mutations (`mutations/`'s "the terminal refusal tells its reader to run the approval itself"
+    # -> every sentence built on the shared words; "the revoked link line tells its reader to
+    # approve in a terminal" -> `REVOKED`; "memory asks no person for the store's approval" -> the
+    # three `memory` sentences; "attach asks no person for the store's approval" -> the two
+    # `attach` sentences).
+    from stayfixed.attach.write import HARNESS_WAITS, REAPPROVE
+    from stayfixed.memory.commands import _DROPPED, _LINK_WAITS, _UNTRUSTED
+    from stayfixed.memory.hooks import REVOKED
+
+    assert (
+        "stayfixed: this store is no longer trusted, so the harness memory link was removed; once "
+        f"what changed has been reviewed, {ASKED}"
+    ) == REVOKED
+    assert _UNTRUSTED.endswith(f"nor through the harness memory link; {ASKED}")
+    assert _LINK_WAITS.endswith(f"volatile-notes bundles; to link it, {ASKED}")
+    assert _DROPPED.endswith(f"if the store should reach a session, {ASKED}")
+    assert HARNESS_WAITS.endswith(f"no approval yet; {ASKED}; then run `stayfixed attach` again")
+    assert f"read what changed, then {ASKED}; then run `stayfixed attach` again" == REAPPROVE
+
+
 @pytest.mark.parametrize("argv", SPELLINGS, ids=["trust-approve", "memory-trust"])
 def test_a_terminal_approves(project: Path, tmp_path: Path, argv: list[str]) -> None:
     # The other half of `test_no_terminal_no_approval`: under a pseudo-terminal both spellings
@@ -136,7 +170,7 @@ def test_the_alias_keeps_its_old_json_keys(
     project: Path, capsys: pytest.CaptureFixture[str], at_a_terminal: None
 ) -> None:
     # The old spelling lives one release, and a caller of its `--json` read `was_trusted`,
-    # `trusted` and `digest`; they stay beside the approve path's keys, with their old meanings.
+    # `trusted` and `digest`; they stay beside the approve path's keys, each read off this run.
     # Mutations (`mutations/`'s "the memory trust alias drops its old JSON keys" -> no
     # `was_trusted`; "the memory trust alias says the store was trusted before it approved it" ->
     # the first run's `was_trusted` reads true).
@@ -275,7 +309,8 @@ def test_list_names_the_command_on_every_unapproved_line(
     command = shlex.join(["stayfixed", "trust", "approve", "memory", *common(project)])
     assert invoke(["trust", "list", *common(project)]) == 0
     assert capsys.readouterr().out == (
-        f"memory .stayfixed/local/memory: missing — run `{command}` in a terminal to approve it\n"
+        f"memory .stayfixed/local/memory: missing — to approve it, ask the person at this machine "
+        f"to run `{command}` in their own terminal — an agent must not run it for them\n"
     )
     assert invoke(["trust", "approve", "memory", *common(project)]) == 0
     capsys.readouterr()

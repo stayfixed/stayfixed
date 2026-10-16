@@ -139,6 +139,7 @@ from stayfixed.scaffold import (
     settings_text,
     upsert,
 )
+from stayfixed.trust.api import PERSON_RUNS
 
 LEDGER_FORMAT = 1
 GITIGNORE = ".gitignore"
@@ -1106,13 +1107,15 @@ def _harness_fallback(
     return () if wanted is None else (FALLBACK_KEY,)
 
 
+# How the sentences below ask for the store's approval: of the person at the machine, never of an
+# agent (`trust.api.PERSON_RUNS`).
+_APPROVE = PERSON_RUNS.format(command="stayfixed trust approve memory")
 # Said when the harness memory link was left out because the gate withheld it, which in overlay
 # mode it does until the owner approves the store: the link tree sits inside the repository.
 # Nothing in it is repository-authored, so it prints.
 HARNESS_WAITS = (
     "the harness memory link was not created, because the link tree it would expose sits inside "
-    "this repository and has no approval yet; run `stayfixed trust approve memory` in a terminal, "
-    "then `stayfixed attach` again"
+    f"this repository and has no approval yet; {_APPROVE}; then run `stayfixed attach` again"
 )
 
 
@@ -1123,10 +1126,7 @@ APPROVAL_LAPSED = (
     "the store or its memory.index_extra changed since its approval was recorded, so that "
     "approval no longer holds"
 )
-REAPPROVE = (
-    "read what changed, run `stayfixed trust approve memory` in a terminal, then `stayfixed "
-    "attach` again"
-)
+REAPPROVE = f"read what changed, then {_APPROVE}; then run `stayfixed attach` again"
 # Said instead of `HARNESS_WAITS` where the machine records an approval and the store changed
 # since, which closes the gate as surely as no approval and also withdraws the links an earlier run
 # made: one line appended to one note is enough.

@@ -18,6 +18,7 @@ from stayfixed.memory.store import Store, resolve
 from stayfixed.memory.trust import (
     _UNREADABLE,
     DELIMITER,
+    UNSAFE_NOTE,
     UnreadableTrustRecord,
     UnsafeNote,
     _content_digest,
@@ -155,6 +156,10 @@ def test_a_body_that_forges_the_marker_is_refused() -> None:
     # A caller that tolerates exit 1 ("a routine finding, proceed") must never read an attempted
     # marker forgery that way — this has to be a refusal (exit 2), not a failure (exit 1).
     assert isinstance(excinfo.value, Refusal)
+    # And it says exactly its constant, which quotes nothing of the body it refused. Mutation
+    # (`mutations/`'s "a forged marker's refusal quotes the body it refused"): the body follows the
+    # sentence.
+    assert str(excinfo.value) == UNSAFE_NOTE
 
 
 def test_two_invocations_do_not_share_a_nonce() -> None:
@@ -500,10 +505,10 @@ def test_a_key_this_version_cannot_read_costs_only_that_key(tmp_path: Path) -> N
 
 
 def test_a_store_0_3_0_approved_is_still_approved(tmp_path: Path) -> None:
-    # Review Focus 4 through the memory area: `0.3.0`'s flat map reads as kind `memory`, so every
-    # store it approved answers approved, and the first approval after upgrades the file.
-    # Mutation (`mutations/`'s "the memory area keeps its approvals under another kind"): the
-    # store reads unapproved.
+    # A record `0.3.0` wrote, read through the memory area: its flat map reads as kind `memory`, so
+    # every store it approved answers approved, and the first approval after upgrades the file.
+    # Mutation (`mutations/`'s "the memory area keeps its approvals under another kind"): the store
+    # reads unapproved.
     store, config, machine = a_store(tmp_path, "in-repo")
     flat = {str(store.path.resolve()): store_digest(store, config)}
     _trust_json(machine).write_text(json.dumps(flat), encoding="utf-8")

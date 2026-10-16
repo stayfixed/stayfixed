@@ -97,9 +97,9 @@ def test_a_file_that_cannot_be_read_as_toml_falls_back_whole(
 
 
 def test_a_newer_release_keeps_every_other_setting(tmp_path: Path) -> None:
-    # Review Focus 1: an unknown section and an unknown enum value together, and the raised
-    # budget beside them stands. Mutation (`mutations/`'s "session_config answers no
-    # configuration for a file that loads with notes"): the budget goes with the file.
+    # A `stayfixed.toml` a newer release wrote: an unknown section and an unknown enum value
+    # together, and the raised budget beside them stands. Mutation (`mutations/`'s "session_config
+    # answers no configuration for a file that loads with notes"): the budget goes with the file.
     write(
         tmp_path,
         HEAD_LATER + '[project]\nname = "p"\n[newer]\n[memory]\nmode = "harness"\n'
@@ -129,8 +129,9 @@ def test_the_newer_release_warning_gives_doctors_remedy() -> None:
 
 
 def test_a_broken_machine_file_keeps_the_project(tmp_path: Path) -> None:
-    # Review Focus 2. Mutation (`mutations/`'s "a session says nothing of a machine file it could
-    # not use"): the warning goes.
+    # A machine file that is not TOML costs the session nothing of the project's, and is named.
+    # Mutation (`mutations/`'s "a session says nothing of a machine file it could not use"): the
+    # warning goes.
     write(tmp_path, MINIMAL)
     machine = broken_machine(tmp_path)
     got = session_config(tmp_path, machine=machine)
@@ -142,10 +143,10 @@ def test_a_broken_machine_file_keeps_the_project(tmp_path: Path) -> None:
 def test_a_broken_machine_file_is_named_with_no_project_configuration(
     tmp_path: Path, root: str
 ) -> None:
-    # Review Focus 2 with nothing of the project's to read: no `stayfixed.toml`, or a hook with no
-    # project root. The guards still run on the preset's owner values, and the warning still names
-    # the machine file. Mutation (`mutations/`'s "a session with no project configuration says
-    # nothing of a machine file it could not use"): the warning goes.
+    # A machine file that is not TOML, with nothing of the project's to read: no `stayfixed.toml`,
+    # or a hook with no project root. The guards still run on the preset's owner values, and the
+    # warning still names the machine file. Mutation (`mutations/`'s "a session with no project
+    # configuration says nothing of a machine file it could not use"): the warning goes.
     machine = broken_machine(tmp_path)
     got = session_config(tmp_path if root == "no-file" else None, machine=machine)
     assert got.config is None

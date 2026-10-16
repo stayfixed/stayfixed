@@ -25,6 +25,15 @@ from stayfixed.trust import kinds as discovered
 from stayfixed.trust import record
 from stayfixed.trust.kinds import ApprovalKind, KindContext
 
+# How every sentence that names an approval command tells its reader to have it run, here and in
+# the areas that name one (`memory`, `attach`): any of them may be read by an agent's shell tool or
+# reach the model, so each speaks of the person at the machine and tells an agent to stop, in these
+# words, rather than telling its reader to run the command "in a terminal", which an agent able to
+# open a pseudo-terminal reads as an instruction. `command` is the exact command.
+PERSON_RUNS = (
+    "ask the person at this machine to run `{command}` in their own terminal — an agent must not "
+    "run it for them"
+)
 # The refusal of an approval asked with no terminal on standard input. `command` is the exact
 # command for a person to run, built by `_command` from the flags as they were given. Its likely
 # reader is an agent's shell tool, so it speaks of the person rather than to its reader, tells an
@@ -33,8 +42,7 @@ from stayfixed.trust.kinds import ApprovalKind, KindContext
 # agent decides what to do next.
 NOT_A_TERMINAL = (
     "an approval is a person's decision, and standard input is not a terminal, so nothing was "
-    "approved; ask the person at this machine to run `{command}` in their own terminal — an "
-    "agent must not run it for them"
+    "approved; " + PERSON_RUNS
 )
 # A kind no area contributes. The name typed is not repeated: it is whatever was typed.
 UNKNOWN_KIND = "there is no approval kind of that name; the kinds are: {known}"
@@ -106,7 +114,7 @@ def run_list(args: argparse.Namespace) -> Result:
             line = f"{name} {printable(subject.label)}: {state}"
             if state is not record.State.APPROVED:
                 command = _command(name, _given(args, kind))
-                line = f"{line} — run `{command}` in a terminal to approve it"
+                line = f"{line} — to approve it, {PERSON_RUNS.format(command=command)}"
             lines.append(line)
             rows.append({"kind": name, "subject": subject.key, "state": str(state)})
     return Result("\n".join(lines), {"subjects": rows})

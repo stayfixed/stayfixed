@@ -3419,3 +3419,15 @@ after = "                None\n                if False\n                else bi
 reddens = [
   "tests/doctor/test_floor_report.py::test_an_attached_checkout_whose_stayfixed_toml_is_gone_still_has_its_claims_asked",
 ]
+
+# `attach`'s sentences that name the store's approval ask for the person at the machine and tell an
+# agent to stop.
+[[mutation]]
+name = "attach asks no person for the store's approval"
+file = "src/stayfixed/attach/write.py"
+before = '_APPROVE = PERSON_RUNS.format(command="stayfixed trust approve memory")'
+after = '_APPROVE = "run `stayfixed trust approve memory` in a terminal"'
+reddens = [
+  "tests/trust/test_commands.py::test_every_sentence_that_names_the_memory_approval_asks_for_the_person",
+  "tests/attach/test_commands.py::test_a_harness_link_that_waits_for_approval_is_said_with_the_way_out",
+]

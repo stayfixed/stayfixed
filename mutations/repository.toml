@@ -178,8 +178,19 @@ reddens = [
 [[mutation]]
 name = "the public-anchor gate reads the plan headings case-sensitively again"
 file = "tests/test_public_anchors.py"
-before = '    ("plan section", re.compile(r"\bPremise\s+\d+|(?i:\bglobal\s+constraint)")),'
-after = '    ("plan section", re.compile(r"\bPremise \d+|G[l]obal Constraint")),'
+before = '        re.compile(r"\bPremise\s+\d+|(?i:\bglobal\s+constraint)|(?i:\breview\s+focus)"),'
+after = '        re.compile(r"\bPremise \d+|G[l]obal Constraint|(?i:\breview\s+focus)"),'
+reddens = [
+  "tests/test_public_anchors.py::test_the_citation_gate_discriminates",
+]
+
+# The list of inputs a plan asks its tasks to exercise, cited by name and number: eight test
+# comments did it, and no arm saw one.
+[[mutation]]
+name = "the public-anchor gate stops seeing the plans' list of inputs to exercise"
+file = "tests/test_public_anchors.py"
+before = '        re.compile(r"\bPremise\s+\d+|(?i:\bglobal\s+constraint)|(?i:\breview\s+focus)"),'
+after = '        re.compile(r"\bPremise\s+\d+|(?i:\bglobal\s+constraint)"),'
 reddens = [
   "tests/test_public_anchors.py::test_the_citation_gate_discriminates",
 ]

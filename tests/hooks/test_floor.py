@@ -54,7 +54,8 @@ def unparseable(root: Path, home: Path) -> None:
 
 
 def newer_release(root: Path, home: Path) -> None:
-    # Review Focus 1: an unknown section, an unknown key and an unknown enum value together.
+    # A file a newer release wrote: an unknown section, an unknown key and an unknown enum value
+    # together.
     text = LATER + '\n[newer]\nx = 1\n[memory]\nmode = "harness"\nfuture = 1\n'
     (root / "stayfixed.toml").write_text(text, encoding="utf-8")
 
@@ -100,7 +101,8 @@ def test_the_background_guard_judges_whatever_the_configuration(
 
 
 def test_the_owner_switches_the_guard_off_with_no_stayfixed_toml(tmp_path: Path) -> None:
-    # Review Focus 3. The machine file is the one place a session guard is switched off.
+    # No `stayfixed.toml`, and the machine file switches the background guard off: the machine
+    # file is the one place a session guard is switched off.
     # Mutation (`mutations/`'s "the owner's switch never turns the background guard off"): the
     # sleep is refused with the switch off.
     root, home = _setup(tmp_path, no_file)

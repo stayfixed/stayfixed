@@ -560,8 +560,8 @@ def _read_harness(
       anything but the owning checkout's store, resolved, the one value `attach` writes there
       (`_written_fallback`), compared as a string. Red, the row's whole detail, naming the file;
       remove the key, then `attach`.
-    - `trust-record-unreadable`: this machine's trust record cannot be read. Warn; `trust approve
-      memory` in a terminal, which says why.
+    - `trust-record-unreadable`: this machine's trust record cannot be read. Warn; `trust list
+      --all`, which says why and needs no terminal.
     - `attached`: a link to the store, the gate open. Ok.
     - `link-lapsed`: a link to the store, the gate closed, the approval lapsed. Warn;
       `HARNESS_LAPSED`'s remedy (read what changed, approve, `attach`).
@@ -684,8 +684,8 @@ def _read_harness(
             WARN,
             f"{words}, and this machine's trust record cannot be read, so whether the harness "
             "should see this store could not be checked",
-            "run `stayfixed trust approve memory` in a terminal, which says why the trust record "
-            "cannot be read, then `stayfixed doctor` again",
+            "run `stayfixed trust list --all`, which says why the trust record cannot be read, "
+            "then `stayfixed doctor` again",
         )
     if shape == _LINK:
         if gate == GATE_OPEN:  # attached

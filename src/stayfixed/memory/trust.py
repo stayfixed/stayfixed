@@ -63,9 +63,14 @@ def markers(nonce: str) -> tuple[str, str]:
     return f"{DELIMITER}:{nonce}>>>", f"{DELIMITER}:end:{nonce}>>>"
 
 
+# The refusal of a body that forges the marker. Fixed, and naming nothing the body holds: the body
+# is repository-authored, and the refusal reaches a terminal and a hook's output.
+UNSAFE_NOTE = "a note body contains the repository-data marker; refusing to inject it"
+
+
 def wrap(text: str, nonce: str) -> str:
     if DELIMITER in text:
-        raise UnsafeNote("a note body contains the repository-data marker; refusing to inject it")
+        raise UnsafeNote(UNSAFE_NOTE)
     begin, end = markers(nonce)
     return f"{begin}\n{_LEAD}\n\n{text}\n{end}"
 

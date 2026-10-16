@@ -43,7 +43,7 @@ from stayfixed.memory.store import Store, Unresolved, in_repository, resolved
 from stayfixed.memory.worktree import harness_link_needed
 from stayfixed.printed import printable, quoted
 from stayfixed.result import Result
-from stayfixed.trust.api import State, approve_kind, kind_context, state
+from stayfixed.trust.api import PERSON_RUNS, State, approve_kind, kind_context, state
 
 
 def _machine(args: argparse.Namespace) -> Path | None:
@@ -103,6 +103,9 @@ def store_at(root: Path, config: Config, machine: Path | None, override: str | N
     return found[0]
 
 
+# How each sentence below asks for the store's approval: of the person at the machine, never of an
+# agent (`trust.api.PERSON_RUNS`).
+_APPROVE = PERSON_RUNS.format(command="stayfixed trust approve memory")
 # What the trust gate withholds until there is a record, said where a person will read it:
 # `bundles.blocks` returns `[]` for repository-data notes, and `worktree.harness_link_needed`
 # withholds the harness memory link from a store whose directory is inside the repository.
@@ -115,7 +118,7 @@ def store_at(root: Path, config: Config, machine: Path | None, override: str | N
 _UNTRUSTED = (
     "this store holds repository data with no trust record, so none of it reaches a session — "
     "not through the standing-rules and volatile-notes bundles, nor through the harness memory "
-    "link — run `stayfixed trust approve memory` in a terminal"
+    "link; " + _APPROVE
 )
 # The overlay store whose notes are all the machine owner's: the bundles deliver them with no
 # record, and only the link to the store's directory, which is inside the repository, waits.
@@ -123,8 +126,7 @@ _UNTRUSTED = (
 _LINK_WAITS = (
     "the harness memory link to this store waits for a trust record, because the store's "
     "directory is inside the repository; its notes still reach a session through the "
-    "standing-rules and volatile-notes bundles — run `stayfixed trust approve memory` in a "
-    "terminal to link it"
+    "standing-rules and volatile-notes bundles; to link it, " + _APPROVE
 )
 # The narrow case where a stayfixed-authored write cannot carry trust forward: the store changed
 # under it, so re-recording would bless bytes the owner has never looked at, or the record did —
@@ -133,8 +135,7 @@ _LINK_WAITS = (
 # the human has to be told which it was.
 _DROPPED = (
     "the store or its trust record changed while this command ran, so the approval was not "
-    "carried over — review the change, and run `stayfixed trust approve memory` in a terminal "
-    "if the store should reach a session"
+    "carried over; review the change, and if the store should reach a session, " + _APPROVE
 )
 # What the write path put into notes that nobody curated: an `index:` line taken from a note's
 # `metadata.index` or, failing that, its description. Said on the line and not only in `--json`'s
@@ -375,7 +376,7 @@ def run_trust(args: argparse.Namespace) -> Result:
     check included.
 
     Its `--json` keeps the old spelling's keys for as long as the spelling lives, beside the new
-    ones and with their old meanings: `was_trusted`, whether the store was approved at its digest
+    ones, each read off the new run: `was_trusted`, whether the store was approved at its digest
     before the run; `trusted`, whether the record holds that digest after it; `digest`, the
     store's digest."""
     context, given = kind_context(args)

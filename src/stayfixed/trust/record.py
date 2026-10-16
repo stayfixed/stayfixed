@@ -21,8 +21,10 @@ machine, and reading it as empty would let the next write persist the loss.
 
 Every write replaces the whole file through `fsops` in one atomic step. No lock is taken: two
 writers at once each replace the file whole, the last one wins, and neither leaves it torn. The
-one writer that is not a person's, `refresh`, writes only while the record still holds the digest
-its caller read, so a revoke made while a command ran is not undone by that command.
+one writer that is not a person's, `refresh`, re-reads the record just before its write and writes
+only while it still holds the digest its caller read, so a revoke made before that final re-read
+is never undone; one that lands between the re-read and the write is the window no lock closes,
+and the last writer wins it.
 """
 
 from __future__ import annotations
@@ -181,8 +183,9 @@ def refresh(machine: Path | None, kind: str, subject: str, *, expected: str, dig
 
     For a write stayfixed itself authored, whose caller read the approval before it wrote: a
     revoke, or a new approval, recorded since then is the person's, and a refresh that wrote
-    anyway would undo it. The record is re-read here, just before the write, so the window left
-    is this function's own; no lock is taken (the module docstring says so).
+    anyway would undo it. The record is re-read here, just before the write, so a revoke made
+    before that re-read is kept; one made between the re-read and the write is not, since no lock
+    is taken (the module docstring says so).
     """
     approvals = recorded(machine)
     held = approvals.get((kind, subject))

@@ -3422,7 +3422,8 @@ after = 'MEMORY = "store"'
 reddens = ["tests/memory/test_trust.py::test_a_store_0_3_0_approved_is_still_approved"]
 
 # A stayfixed-authored write carries the store's approval forward only while the record still holds
-# the digest the command read before writing: a revoke made while it ran stays, and is said.
+# the digest the command read before writing: a revoke made before the refresh re-reads the
+# record stays, and is said.
 [[mutation]]
 name = "a stayfixed write approves the store again whatever the record holds now"
 file = "src/stayfixed/memory/trust.py"
@@ -3485,7 +3486,7 @@ before = "    approved = approve_kind(trust.MEMORY, context, given)"
 after = '    trust.record(*_store(args))\n    return Result("recorded")'
 reddens = ["tests/trust/test_commands.py::test_no_terminal_no_approval[memory-trust]"]
 
-# For as long as the old spelling lives, its `--json` keeps its old keys with their old meanings.
+# For as long as the old spelling lives, its `--json` keeps its old keys, each read off the new run.
 [[mutation]]
 name = "the memory trust alias drops its old JSON keys"
 file = "src/stayfixed/memory/commands.py"
@@ -3499,3 +3500,32 @@ file = "src/stayfixed/memory/commands.py"
 before = '        "was_trusted": store["was"] == State.APPROVED,'
 after = '        "was_trusted": after is State.APPROVED,'
 reddens = ["tests/trust/test_commands.py::test_the_alias_keeps_its_old_json_keys"]
+
+# The sentences that name the store's approval ask for the person at the machine and tell an agent
+# to stop; none tells its reader to run the approval in a terminal.
+[[mutation]]
+name = "the revoked link line tells its reader to approve in a terminal"
+file = "src/stayfixed/memory/hooks.py"
+before = '    "changed has been reviewed, ask the person at this machine to run `stayfixed trust approve "'
+after = '    "changed has been reviewed, run `stayfixed trust approve "'
+reddens = [
+  "tests/trust/test_commands.py::test_every_sentence_that_names_the_memory_approval_asks_for_the_person",
+]
+
+[[mutation]]
+name = "memory asks no person for the store's approval"
+file = "src/stayfixed/memory/commands.py"
+before = '_APPROVE = PERSON_RUNS.format(command="stayfixed trust approve memory")'
+after = '_APPROVE = "run `stayfixed trust approve memory` in a terminal"'
+reddens = [
+  "tests/trust/test_commands.py::test_every_sentence_that_names_the_memory_approval_asks_for_the_person",
+]
+
+# A body that forges the repository-data marker is refused in a fixed sentence that quotes nothing
+# of the body.
+[[mutation]]
+name = "a forged marker's refusal quotes the body it refused"
+file = "src/stayfixed/memory/trust.py"
+before = "        raise UnsafeNote(UNSAFE_NOTE)"
+after = '        raise UnsafeNote(f"{UNSAFE_NOTE}: {text}")'
+reddens = ["tests/memory/test_trust.py::test_a_body_that_forges_the_marker_is_refused"]

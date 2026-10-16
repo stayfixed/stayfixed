@@ -45,8 +45,8 @@ def machine(tmp_path: Path) -> Path:
 
 
 def test_a_0_3_0_record_keeps_every_memory_approval(tmp_path: Path) -> None:
-    # Review Focus 4, the upgrade half. Mutation (`mutations/`'s "the trust record no longer reads
-    # 0.3.0's flat map"): the approval reads missing.
+    # Upgrading over a record `0.3.0` wrote keeps every approval in it. Mutation (`mutations/`'s
+    # "the trust record no longer reads 0.3.0's flat map"): the approval reads missing.
     (tmp_path / RECORD).write_text(json.dumps({"/s": "d", "/t": "e"}), encoding="utf-8")
     assert state(machine(tmp_path), "memory", "/s", "d") is State.APPROVED
     assert state(machine(tmp_path), "memory", "/t", "e") is State.APPROVED
@@ -74,9 +74,9 @@ def test_the_first_write_upgrades_the_file_in_place(tmp_path: Path) -> None:
 
 
 def test_0_3_0s_reader_sees_no_approval_in_a_version_1_record(tmp_path: Path) -> None:
-    # Review Focus 4, the downgrade half: `0.3.0` reads no approval and asks again, never a stale
-    # one. No mutation of the source reaches it — it is a property of the record's shape against a
-    # reader frozen in `0.3.0` — so the shape is held exactly in the test above.
+    # Downgrading: a `0.3.0` reading the record this release wrote reads no approval and asks again,
+    # never a stale one. No mutation of the source reaches it — it is a property of the record's
+    # shape against a reader frozen in `0.3.0` — so the shape is held exactly in the test above.
     approve(machine(tmp_path), "memory", "/s", "d", now=T0)
     assert legacy_reader(tmp_path / RECORD) == {}
 
@@ -143,6 +143,45 @@ def test_an_unreadable_record_refuses_and_is_never_overwritten(
     with pytest.raises(UnreadableTrust):
         revoke(machine(tmp_path), "memory", "/s")
     assert path.read_text(encoding="utf-8") == document
+
+
+# What every refusal of a record that is there and cannot be read ends with, written out rather than
+# imported, so the sentence a person reads is held here and not only by the module that says it.
+KEPT = (
+    "it holds every project's approval on this machine, so nothing here will overwrite it — repair "
+    "or delete it"
+)
+
+
+def _json_says(text: str) -> str:
+    """What the standard library's parser says of `text`, which the refusal quotes."""
+    try:
+        json.loads(text)
+    except json.JSONDecodeError as exc:
+        return str(exc)
+    raise AssertionError(f"{text!r} parses")
+
+
+@pytest.mark.parametrize(
+    ("data", "said"),
+    [
+        pytest.param(b"{", f"is not valid JSON: {_json_says('{')}", id="not-json"),
+        pytest.param(b"\xff{}", "is not UTF-8 text", id="not-utf-8"),
+    ],
+)
+def test_a_record_that_does_not_parse_says_why_and_that_it_is_kept(
+    tmp_path: Path, data: bytes, said: str
+) -> None:
+    # The two arms before the version-1 reader, each asserted whole: the refusal names the file and
+    # why, and closes with what keeps the record from being overwritten. Mutations (`mutations/`'s
+    # "a trust record that is not JSON is refused without saying it is kept" -> `not-json` loses
+    # its close; "a trust record that is not UTF-8 is refused without saying why" -> `not-utf-8`
+    # names no cause).
+    path = tmp_path / RECORD
+    path.write_bytes(data)
+    with pytest.raises(UnreadableTrust) as caught:
+        recorded(machine(tmp_path))
+    assert str(caught.value) == f"{path} {said}; {KEPT}"
 
 
 def test_lapsed_missing_and_approved_are_told_apart(tmp_path: Path) -> None:
@@ -217,8 +256,8 @@ def test_a_refresh_moves_only_the_digest_it_was_read_at(tmp_path: Path) -> None:
 
 
 def test_a_refresh_never_brings_back_a_revoked_approval(tmp_path: Path) -> None:
-    # The revoke landed between the caller's read and its write. Mutation (`mutations/`'s "a
-    # refresh brings back a revoked approval"): the approval is recorded again.
+    # The revoke landed after the caller's read and before the refresh re-read the record. Mutation
+    # (`mutations/`'s "a refresh brings back a revoked approval"): the approval is recorded again.
     approve(machine(tmp_path), "memory", "/s", "d", now=T0)
     assert revoke(machine(tmp_path), "memory", "/s") is True
     assert refresh(machine(tmp_path), "memory", "/s", expected="d", digest="e") is False

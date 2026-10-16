@@ -4611,7 +4611,10 @@ before = "    if held is None or held.digest != expected:"
 after = """    if held is None:
         held = Approval(kind, subject, expected, "")
     if held.digest != expected:"""
-reddens = ["tests/trust/test_record.py::test_a_refresh_never_brings_back_a_revoked_approval"]
+reddens = [
+  "tests/trust/test_record.py::test_a_refresh_never_brings_back_a_revoked_approval",
+  "tests/attach/test_write.py::test_an_approval_attach_could_not_carry_is_said_as_what_happened[record]",
+]
 
 [[mutation]]
 name = "a refresh restamps when the person approved"
@@ -4648,10 +4651,12 @@ reddens = [
 [[mutation]]
 name = "the terminal refusal tells its reader to run the approval itself"
 file = "src/stayfixed/trust/commands.py"
-before = '    "approved; ask the person at this machine to run `{command}` in their own terminal — an "'
-after = '    "approved; run `{command}` yourself, in a terminal — an "'
+before = '    "ask the person at this machine to run `{command}` in their own terminal — an agent must not "'
+after = '    "run `{command}` yourself, in a terminal — an agent must not "'
 reddens = [
   "tests/trust/test_commands.py::test_the_refusal_asks_for_the_person_and_tells_an_agent_to_stop",
+  "tests/trust/test_commands.py::test_every_sentence_that_names_the_memory_approval_asks_for_the_person",
+  "tests/trust/test_commands.py::test_list_names_the_command_on_every_unapproved_line",
 ]
 
 # Withdrawing needs no terminal, and a revoke that matches nothing says so with exit 1.
@@ -4673,7 +4678,7 @@ reddens = ["tests/trust/test_commands.py::test_revoke_of_nothing_lists_what_is_r
 [[mutation]]
 name = "trust list names no command on an unapproved line"
 file = "src/stayfixed/trust/commands.py"
-before = '                line = f"{line} — run `{command}` in a terminal to approve it"'
+before = '                line = f"{line} — to approve it, {PERSON_RUNS.format(command=command)}"'
 after = "                line = line"
 reddens = ["tests/trust/test_commands.py::test_list_names_the_command_on_every_unapproved_line"]
 
@@ -4719,3 +4724,22 @@ file = "src/stayfixed/trust/kinds.py"
 before = "            if kind.name in found:"
 after = "            if False:"
 reddens = ["tests/trust/test_commands.py::test_kind_discovery_refuses_a_duplicate_name"]
+
+# A trust record that is there and does not parse says why, and that nothing will overwrite it.
+[[mutation]]
+name = "a trust record that is not JSON is refused without saying it is kept"
+file = "src/stayfixed/trust/record.py"
+before = '    raw = json_object(text, str(path), error=lambda reason: UnreadableTrust(f"{reason}; {_KEPT}"))'
+after = "    raw = json_object(text, str(path), error=lambda reason: UnreadableTrust(reason))"
+reddens = [
+  "tests/trust/test_record.py::test_a_record_that_does_not_parse_says_why_and_that_it_is_kept[not-json]",
+]
+
+[[mutation]]
+name = "a trust record that is not UTF-8 is refused without saying why"
+file = "src/stayfixed/trust/record.py"
+before = '        raise UnreadableTrust(f"{path} is not UTF-8 text; {_KEPT}") from None'
+after = '        raise UnreadableTrust(f"{path} cannot be read; {_KEPT}") from None'
+reddens = [
+  "tests/trust/test_record.py::test_a_record_that_does_not_parse_says_why_and_that_it_is_kept[not-utf-8]",
+]

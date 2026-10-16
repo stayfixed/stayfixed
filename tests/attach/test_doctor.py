@@ -969,8 +969,8 @@ ONE_MACHINE_STATE: dict[str, tuple[Callable[[_Machine], None], tuple[str, str, s
             "warn",
             "not in place, and this machine's trust record cannot be read, so whether the harness "
             "should see this store could not be checked",
-            "run `stayfixed trust approve memory` in a terminal, which says why the trust record "
-            "cannot be read, then `stayfixed doctor` again",
+            "run `stayfixed trust list --all`, which says why the trust record cannot be read, "
+            "then `stayfixed doctor` again",
         ),
     ),
     "fallback-approved": (_fallback_everywhere, ("ok", f"{_FALLBACK} instead", "")),
@@ -1008,7 +1008,8 @@ ONE_MACHINE_STATE: dict[str, tuple[Callable[[_Machine], None], tuple[str, str, s
             "warn",
             "not in place, because the store or its memory.index_extra changed since its approval "
             "was recorded, so that approval no longer holds — the harness sees no memory here",
-            "read what changed, run `stayfixed trust approve memory` in a terminal, then "
+            "read what changed, then ask the person at this machine to run `stayfixed trust "
+            "approve memory` in their own terminal — an agent must not run it for them; then run "
             "`stayfixed attach` again",
         ),
     ),
@@ -1023,7 +1024,8 @@ ONE_MACHINE_STATE: dict[str, tuple[Callable[[_Machine], None], tuple[str, str, s
             "a link to the store, although the store or its memory.index_extra changed since its "
             "approval was recorded, so that approval no longer holds — the harness reads notes "
             "nobody approved",
-            "read what changed, run `stayfixed trust approve memory` in a terminal, then "
+            "read what changed, then ask the person at this machine to run `stayfixed trust "
+            "approve memory` in their own terminal — an agent must not run it for them; then run "
             "`stayfixed attach` again",
         ),
     ),
@@ -1088,8 +1090,8 @@ ONE_MACHINE_STATE: dict[str, tuple[Callable[[_Machine], None], tuple[str, str, s
             "warn",
             "a link, and this machine's trust record cannot be read, so whether the harness "
             "should see this store could not be checked",
-            "run `stayfixed trust approve memory` in a terminal, which says why the trust record "
-            "cannot be read, then `stayfixed doctor` again",
+            "run `stayfixed trust list --all`, which says why the trust record cannot be read, "
+            "then `stayfixed doctor` again",
         ),
     ),
     "fallback-elsewhere-beside-a-link": (

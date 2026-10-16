@@ -161,14 +161,15 @@ on. It does not — it re-records the hash across exactly the files it itself wr
 other file's approved digest forward unchanged. If something else changed the store while the
 command ran, it refuses to carry trust and says so. So it does if the record changed: the hash is
 re-recorded only while the record, read again just before the write, still holds the digest the
-command read before writing, so a `trust revoke memory`, or a new approval, made while it ran is
-kept, and the approval keeps the time the person gave it.
+command read before writing, so a `trust revoke memory`, or a new approval, made before that
+final re-read is kept, and the approval keeps the time the person gave it.
 
 ## `stayfixed trust list [--all] [--store PATH]`
 
 Every kind of approval the areas contribute, and its state in this checkout: one line per subject
 — `approved`, `lapsed` (approved once, at a digest that no longer matches) or `missing` — and on
-every line not approved, the exact command that approves it, for a person to run in a terminal.
+every line not approved, the exact command that approves it, for the person at the machine to run
+in their own terminal; the line says an agent must not run it for them.
 Today the one kind is `memory`, a store of notes inside the repository, and `--store` is its flag.
 A kind with nothing to describe here (no `stayfixed.toml`, or no store) says so, and says why in the
 kind's own words. `--all` lists every approval recorded on the machine instead, whichever checkout
@@ -194,10 +195,10 @@ and digest are printed before the run ends.
 
 **It is asked of a person.** When standard input is not a terminal it refuses with exit `2`,
 writes nothing, names the exact command for the person at the machine to run in their own
-terminal, and says that an agent must not run it for them. An agent's shell
-tool runs a command with no terminal on standard input (measured on Claude Code 2.1.296, in a
-terminal session and on the desktop app's Code tab alike), so a bare call from one is refused; an
-agent able to open a pseudo-terminal passes the check, which is a speed bump and no guarantee.
+terminal, and says that an agent must not run it for them. An agent's shell tool runs a command
+with no terminal on standard input (measured on Claude Code 2.1.296, in a terminal session and on
+the desktop app's Code tab alike), so a bare call from one is refused; an agent able to open a
+pseudo-terminal passes the check, which is a speed bump and no guarantee.
 Against such an agent the harness's own write restriction is the boundary ([SECURITY.md](../SECURITY.md)).
 No flag skips the check, and nothing takes `--yes`.
 
@@ -225,20 +226,20 @@ kind `memory`, so an upgrade keeps every one, and the first write upgrades the f
 `0.3.0` reading a version-1 record finds no approval in it and asks again. Every write replaces the
 whole file in one atomic step, and no lock is taken: two commands writing at once each replace it
 whole, the last one wins, and neither leaves it torn. The one write a person did not ask for, the
-refresh `memory index` makes over its own files, is the exception: it writes only while the record
-holds the digest it read, so the write it can lose to is never a revoke made while it ran.
+refresh `memory index` makes over its own files, is the exception: it writes only while the record,
+read again just before its write, holds the digest it read, so it never undoes a revoke made before
+that final re-read.
 
 Exits `2` if `trust.json` exists and is neither a record this stayfixed reads nor `0.3.0`'s flat
 map — not JSON, not UTF-8, a later version, or a version-1 record that is not whole: a key besides
 `version` and `approvals`, an approval that is not an object of four text fields, or one approval
-named twice. It holds every project's approval on the machine,
-so nothing will overwrite a file it could not read — repair or delete it. An unknown `KIND` exits
-`2` naming the kinds there are.
+named twice. It holds every project's approval on the machine, so nothing will overwrite a file
+it could not read — repair or delete it. An unknown `KIND` exits `2` naming the kinds there are.
 
 `stayfixed memory trust --in-repo-memory` is the old spelling of `stayfixed trust approve memory`:
 it runs this command, terminal check included, says so after it ran, and is removed in `0.5.0`.
-Until then its `--json` carries this command's keys and keeps the old spelling's beside them, with
-their old meanings: `was_trusted`, whether the store was approved at its digest before the run;
+Until then its `--json` carries this command's keys and keeps the old spelling's beside them, each
+read off this run: `was_trusted`, whether the store was approved at its digest before the run;
 `trusted`, whether the record holds that digest after it; and `digest`, the store's digest.
 
 ## `stayfixed trust revoke KIND [--subject KEY] [--store PATH]`
@@ -2999,15 +3000,15 @@ policy settings and `--settings` are yours, not the repository's, and this row d
 | `links-elsewhere` | a link to anything but the main checkout's `paths.memory` or this checkout's own | `red` | `attach` |
 | `tree-gone` | anything else, where the store does not resolve because its link tree at `paths.memory` is gone | `warn` | `attach` |
 | `tree-there-not-resolving` | anything else, where the store does not resolve and its link tree is there | `warn` | `memory index --check`, then `doctor` |
-| `trust-record-unreadable` | anything else, where this machine's trust record cannot be read | `warn` | `trust approve memory` in a terminal, which says why, then `doctor` |
+| `trust-record-unreadable` | anything else, where this machine's trust record cannot be read | `warn` | `trust list --all`, which says why and needs no terminal, then `doctor` |
 | `attached` | a link to the store, its approval holding | `ok` | — |
-| `link-lapsed` | a link to the store, its approval lapsed | `warn` | read what changed, `trust approve memory` in a terminal, then `attach` |
+| `link-lapsed` | a link to the store, its approval lapsed | `warn` | read what changed, have the person at the machine run `trust approve memory` in their own terminal, then `attach` |
 | `link-never-approved` | a link to the store, no approval recorded | `warn` | `attach`, which withdraws a link to the main checkout's tree; a link to this checkout's own tree, which it does not withdraw, is named to be removed |
 | `fallback-unapproved` | anything but a link, with the fallback naming the store, its approval lapsed or never given; the row says which | `warn` | `attach`, which withdraws the key |
 | `fallback-approved` | a real directory, with the fallback naming the store, its approval holding | `ok` | — |
 | `fallback-instead-of-a-link` | nothing, with the fallback naming the store, its approval holding | `warn` | `attach`, which makes the link |
 | `no-links-approved` | nothing, the store's approval holding | `warn` | `attach` |
-| `lapsed-links-withdrawn` | nothing, its approval lapsed | `warn` | read what changed, `trust approve memory` in a terminal, then `attach` |
+| `lapsed-links-withdrawn` | nothing, its approval lapsed | `warn` | read what changed, have the person at the machine run `trust approve memory` in their own terminal, then `attach` |
 | `never-approved` | nothing, no approval recorded | `ok` | — |
 | `settings-unreadable` | any state above that reads `ok`, beside a settings file that cannot be read as settings; the row names the file | `warn` | make the file one JSON object, then `doctor` |
 

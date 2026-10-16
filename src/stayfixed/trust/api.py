@@ -1,20 +1,23 @@
 """The trust package's import surface: the machine's one record of approvals.
 
-The `memory` area keeps its store approvals in the record under kind `memory`, and reads
-`recorded`, `approve`, `record_path` and `UnreadableTrust`; `refresh` is how it carries an approval
-across a write stayfixed itself made without undoing a revoke made meanwhile. `Approval` is what
-`recorded` and `approve` return, which a consumer holding the value has to be able to declare.
-`state` and `revoke`, with the `State` the first answers in, complete the record's answers: a
-consumer handed half of it could approve and could not withdraw, or could read an approval and not
-tell one that lapsed from one never given. `ApprovalKind`, `KindContext` and `Subject` are what an
-area's `approvals.py` builds its `KINDS` from (`memory.approvals`), and `approve_kind` is the
-approve path the `memory trust` alias runs, terminal check included, on what `kind_context` reads
-off its command line, so the old spelling cannot read its flags another way than the new one.
+The `memory` area keeps its store approvals in the record under kind `memory`, and reads `recorded`,
+`approve`, `record_path` and `UnreadableTrust`; `refresh` is how it carries an approval across a
+write stayfixed itself made without undoing a revoke made before its final re-read of the record.
+`Approval` is what `recorded` and `approve` return, which a consumer holding the value has to be
+able to declare. `state` and `revoke`, with the `State` the first answers in, complete the record's
+answers: a consumer handed half of it could approve and could not withdraw, or could read an
+approval and not tell one that lapsed from one never given. `ApprovalKind`, `KindContext` and
+`Subject` are what an area's `approvals.py` builds its `KINDS` from (`memory.approvals`), and
+`approve_kind` is the approve path the `memory trust` alias runs, terminal check included, on what
+`kind_context` reads off its command line, so the old spelling cannot read its flags another way
+than the new one. `PERSON_RUNS` is the sentence `memory` and `attach` tell their reader in to have
+an approval made: the person at the machine runs it, and an agent does not, in the words `trust
+approve`'s own refusal uses.
 """
 
 from __future__ import annotations
 
-from stayfixed.trust.commands import approve_kind, kind_context
+from stayfixed.trust.commands import PERSON_RUNS, approve_kind, kind_context
 from stayfixed.trust.kinds import ApprovalKind, KindContext, Subject
 from stayfixed.trust.record import (
     Approval,
@@ -29,6 +32,7 @@ from stayfixed.trust.record import (
 )
 
 __all__ = [
+    "PERSON_RUNS",
     "Approval",
     "ApprovalKind",
     "KindContext",
