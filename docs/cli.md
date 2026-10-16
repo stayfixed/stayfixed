@@ -258,9 +258,10 @@ the person (`systemMessage`) and at the head of the model's context (`additional
 counted inside the hook's output cap: that `stayfixed.toml` does not load, that one of its keys
 cannot be used and nothing can stand in for it (naming the key), that it loaded with some
 settings ignored or put back to the preset's (counting them, and saying when a newer stayfixed
-wrote it), or that the machine file could not be used whole. Each points at `stayfixed doctor`,
-and none carries the loader's own message, which carries the repository's text; a command such as
-`stayfixed docs check` still refuses the file and prints that message in full. Every other event
+wrote it), or that the machine file, named by the path that was read, could not be used whole.
+Each points at `stayfixed doctor`, and none carries the loader's own message, which carries the
+repository's text; a command such as `stayfixed docs check` still refuses the file and prints that
+message in full. Every other event
 prints no warning, and records once per session, in the diagnostics log below, that the session
 runs without some of its configuration (`config-fallback`).
 

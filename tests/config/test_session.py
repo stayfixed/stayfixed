@@ -131,18 +131,21 @@ def test_a_broken_machine_file_keeps_the_project(tmp_path: Path) -> None:
     # Review Focus 2. Mutation (`mutations/`'s "a session says nothing of a machine file it could
     # not use"): the warning goes.
     write(tmp_path, MINIMAL)
-    got = session_config(tmp_path, machine=broken_machine(tmp_path))
+    machine = broken_machine(tmp_path)
+    got = session_config(tmp_path, machine=machine)
     assert got.config is not None
-    assert got.warnings == (MACHINE_FILE_WARNING,)
+    assert got.warnings == (MACHINE_FILE_WARNING.format(path=machine),)
 
 
 def test_both_broken(tmp_path: Path) -> None:
     # One warning about each file, the project's first. Mutation: as above, the machine file's
     # warning goes.
     unparseable(tmp_path)
-    got = session_config(tmp_path, machine=broken_machine(tmp_path))
+    machine = broken_machine(tmp_path)
+    got = session_config(tmp_path, machine=machine)
     assert got.config is None
-    assert got.warnings == (FALLBACK_WARNING, MACHINE_FILE_WARNING)
+    assert got.warnings == (FALLBACK_WARNING, MACHINE_FILE_WARNING.format(path=machine))
+    assert got.project_warnings == (FALLBACK_WARNING,)
 
 
 def _docs_symlink(root: Path) -> str:

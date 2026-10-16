@@ -63,23 +63,21 @@ import os
 import re
 import shutil
 import subprocess
-import tomllib
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 
 import stayfixed
 from stayfixed import REPOSITORY_URL, fsops
 from stayfixed.config.classes import CLASSES, KeyClass, Layer, LayerName, resolve
-from stayfixed.config.loader import CONFIG_FILE, UNPARSEABLE, read_document
+from stayfixed.config.loader import CONFIG_FILE
 from stayfixed.config.machine import (
     homes_agree,
     machine_config_path,
     override_is_honoured,
     passwd_home,
 )
-from stayfixed.config.paths import PathEscape
 from stayfixed.config.schema import MEMORY_MODES
-from stayfixed.config.session import MACHINE_FILE_WARNING, SessionConfig, cause, session_config
+from stayfixed.config.session import SessionConfig, cause, session_config
 from stayfixed.doctor.entries import hook_entries
 from stayfixed.doctor.model import (
     NO_CONFIG_SKIP,
@@ -94,7 +92,6 @@ from stayfixed.doctor.model import (
     Row,
 )
 from stayfixed.doctor.registry import contributions
-from stayfixed.errors import Failure
 from stayfixed.findings import listed
 from stayfixed.grammar import PATH_VALUE
 from stayfixed.harnesses import CANONICAL, CLAUDE, CODEX, HARNESSES, Tier
@@ -275,7 +272,7 @@ def _not_initialised(context: Context) -> Row:
     red, in the session's own words. The machine file's warning is the `preferences` row's.
     """
     session = context.session
-    dropped = [w for w in session.warnings if w != MACHINE_FILE_WARNING]
+    dropped = session.project_warnings
     if context.config is None:
         if dropped:
             return Row(RED, cause(dropped[0]), FALLBACK_REMEDY)
@@ -663,18 +660,14 @@ def _owner_keys(session: SessionConfig) -> list[str]:
 
 def _held(context: Context) -> dict[str, object]:
     """The preferences the repository's `stayfixed.toml` holds after the NOTE load: written there,
-    and neither the key nor its section ignored or put back to the preset's."""
-    try:
-        text = read_document(context.root)
-        raw = tomllib.loads(text) if text is not None else {}
-    except (Failure, PathEscape, *UNPARSEABLE):
-        return {}
-    noted = set(context.session.noted)
+    and neither the key nor its section ignored or put back to the preset's. Read off the document
+    the session's own load used, never the file again, so the layer and the notes come from one
+    read."""
     held: dict[str, object] = {}
     for key in PREFERENCES:
         section, _, name = key.partition(".")
-        table = raw.get(section)
-        if isinstance(table, dict) and name in table and not {key, section} & noted:
+        table = context.session.document.get(section)
+        if isinstance(table, dict) and name in table:
             held[key] = table[name]
     return held
 

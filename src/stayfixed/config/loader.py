@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import re
 import tomllib
-from collections.abc import Collection
-from dataclasses import MISSING, Field, dataclass, fields, replace
+from collections.abc import Collection, Mapping
+from dataclasses import MISSING, Field, dataclass, field, fields, replace
 from enum import StrEnum
 from functools import cache
 from pathlib import Path
@@ -757,11 +757,13 @@ def _built(
 class Noted:
     """What `loads_noting` read, a note for every name it ignored or value it reset, and the
     dotted key each note is about, in the same order. A key is any text the document chose: a
-    reader prints one through `stayfixed.printed`."""
+    reader prints one through `stayfixed.printed`. `document` is the parsed document the config
+    was built from: every name it ignored and every key it reset removed."""
 
     config: Config
     notes: tuple[str, ...]
     keys: tuple[str, ...] = ()
+    document: Mapping[str, Any] = field(default_factory=dict)
 
 
 def loads_noting(text: str, root: Path, *, owner: Owner, label: str | None = None) -> Noted:
@@ -811,7 +813,7 @@ def loads_noting(text: str, root: Path, *, owner: Owner, label: str | None = Non
             notes.append(RESET_NOTE.format(key=clipped(exc.key), reason=exc))
             keys.append(exc.key)
             continue
-        return Noted(config, tuple(notes), tuple(keys))
+        return Noted(config, tuple(notes), tuple(keys), document)
 
 
 def _without_fallback(
@@ -868,18 +870,18 @@ def _stands_in(dotted: str, defaults: dict[str, Any]) -> bool:
     if schema is None:
         return False
     if not name:
-        return all(_defaulted(section, field, defaults) for field in fields(schema))
-    declared = {field.name: field for field in fields(schema)}
+        return all(_defaulted(section, key, defaults) for key in fields(schema))
+    declared = {key.name: key for key in fields(schema)}
     return name in declared and _defaulted(section, declared[name], defaults)
 
 
-def _defaulted(section: str, field: Field[Any], defaults: dict[str, Any]) -> bool:
-    """Whether `section`'s `field` has a value when the document gives it none."""
+def _defaulted(section: str, key: Field[Any], defaults: dict[str, Any]) -> bool:
+    """Whether `section`'s field `key` has a value when the document gives it none."""
     return (
-        field.default is not MISSING
-        or field.default_factory is not MISSING
-        or field.name in defaults.get(section, {})
-        or f"{section}.{field.name}" in _FILLED
+        key.default is not MISSING
+        or key.default_factory is not MISSING
+        or key.name in defaults.get(section, {})
+        or f"{section}.{key.name}" in _FILLED
     )
 
 

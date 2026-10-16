@@ -4096,7 +4096,7 @@ reddens = [
 [[mutation]]
 name = "a section with no fallback resets"
 file = "src/stayfixed/config/loader.py"
-before = "        return all(_defaulted(section, field, defaults) for field in fields(schema))"
+before = "        return all(_defaulted(section, key, defaults) for key in fields(schema))"
 after = "        return True"
 reddens = [
   "tests/config/test_loader_note.py::test_a_required_key_it_cannot_use_is_named_and_never_called_missing[project-not-a-table]",
@@ -4128,7 +4128,7 @@ reddens = [
 [[mutation]]
 name = "a key the preset holds is called unusable"
 file = "src/stayfixed/config/loader.py"
-before = "        or field.name in defaults.get(section, {})"
+before = "        or key.name in defaults.get(section, {})"
 after = "        or False"
 reddens = [
   "tests/config/test_loader_note.py::test_an_invalid_value_resets_only_its_key",
@@ -4145,13 +4145,13 @@ reddens = [
   "tests/config/test_loader_note.py::test_a_key_with_a_value_to_fall_back_to_resets_with_its_note[filled-by-the-loader]",
 ]
 
-# `field.default` has no mutation of its own: no schema field has a plain default today, so no
+# `key.default` has no mutation of its own: no schema field has a plain default today, so no
 # document reaches that arm; it mirrors `_build`'s own reading of "required".
 [[mutation]]
 name = "a schema default is called unusable"
 file = "src/stayfixed/config/loader.py"
-before = "        or field.default_factory is not MISSING\n        or field.name in defaults"
-after = "        or False\n        or field.name in defaults"
+before = "        or key.default_factory is not MISSING\n        or key.name in defaults"
+after = "        or False\n        or key.name in defaults"
 reddens = [
   "tests/config/test_loader_note.py::test_a_key_with_a_value_to_fall_back_to_resets_with_its_note[schema-default]",
 ]
@@ -4206,16 +4206,35 @@ reddens = [
 [[mutation]]
 name = "session_config answers no configuration for a file that loads with notes"
 file = "src/stayfixed/config/session.py"
-before = "    return SessionConfig(noted.config, owner, warnings + _owners(owner), noted.keys)"
-after = "    return SessionConfig(None, owner, warnings + _owners(owner), noted.keys)"
+before = "        noted.config, owner, warnings + _owners(owner, path), noted.keys, noted.document"
+after = "        None, owner, warnings + _owners(owner, path), noted.keys, noted.document"
 reddens = ["tests/config/test_session.py::test_a_newer_release_keeps_every_other_setting"]
 
 [[mutation]]
 name = "a session lists no key it noted"
 file = "src/stayfixed/config/session.py"
-before = "    return SessionConfig(noted.config, owner, warnings + _owners(owner), noted.keys)"
-after = "    return SessionConfig(noted.config, owner, warnings + _owners(owner))"
+before = "        noted.config, owner, warnings + _owners(owner, path), noted.keys, noted.document"
+after = "        noted.config, owner, warnings + _owners(owner, path), (), noted.document"
 reddens = ["tests/config/test_session.py::test_a_newer_release_keeps_every_other_setting"]
+
+# `doctor` tells which preferences the repository set from the document the session's own load
+# used, never from a second read of the file.
+[[mutation]]
+name = "a session hands doctor no document"
+file = "src/stayfixed/config/session.py"
+before = "        noted.config, owner, warnings + _owners(owner, path), noted.keys, noted.document"
+after = "        noted.config, owner, warnings + _owners(owner, path), noted.keys"
+reddens = [
+  "tests/doctor/test_floor_report.py::test_preferences_names_the_layer_and_hides_free_text",
+  "tests/doctor/test_floor_report.py::test_a_preference_the_session_put_back_is_the_presets",
+]
+
+[[mutation]]
+name = "the NOTE load hands its reader the document as written"
+file = "src/stayfixed/config/loader.py"
+before = "        return Noted(config, tuple(notes), tuple(keys), document)"
+after = "        return Noted(config, tuple(notes), tuple(keys), raw)"
+reddens = ["tests/doctor/test_floor_report.py::test_a_preference_the_session_put_back_is_the_presets"]
 
 [[mutation]]
 name = "the session warns of a newer release for every file with notes"
@@ -4237,13 +4256,34 @@ reddens = [
 [[mutation]]
 name = "a session says nothing of a machine file it could not use"
 file = "src/stayfixed/config/session.py"
-before = "    return (MACHINE_FILE_WARNING,) if owner.notes else ()"
+before = "    return (MACHINE_FILE_WARNING.format(path=machine),) if owner.notes else ()"
 after = "    return ()"
 reddens = [
   "tests/config/test_session.py::test_a_broken_machine_file_keeps_the_project",
   "tests/config/test_session.py::test_both_broken",
   "tests/hooks/test_hook_command.py::test_a_machine_file_that_does_not_load_is_not_blamed_on_stayfixed_toml",
 ]
+
+# The machine file a session read is under the password database's home, so the warning names
+# that file and never a `~` that a differing `HOME` moves.
+[[mutation]]
+name = "the machine-file warning names the file by a fixed path"
+file = "src/stayfixed/config/session.py"
+before = "    return (MACHINE_FILE_WARNING.format(path=machine),) if owner.notes else ()"
+after = "    return (MACHINE_FILE_WARNING.format(path=\"~/.config/stayfixed/config.toml\"),) if owner.notes else ()"
+reddens = [
+  "tests/config/test_session.py::test_a_broken_machine_file_keeps_the_project",
+  "tests/hooks/test_hook_command.py::test_a_machine_file_that_does_not_load_is_not_blamed_on_stayfixed_toml",
+  "tests/hooks/test_floor.py::test_session_start_carries_each_warning_once[broken-machine-file]",
+]
+
+# The machine file's warning is the `preferences` row's: `not-initialised` reads the project's.
+[[mutation]]
+name = "the project's warnings include the machine file's"
+file = "src/stayfixed/config/session.py"
+before = "        return self.warnings[:-1] if self.owner.notes else self.warnings"
+after = "        return self.warnings"
+reddens = ["tests/config/test_session.py::test_both_broken"]
 
 [[mutation]]
 name = "a session with no project root reads no machine file"
@@ -4255,19 +4295,20 @@ reddens = ["tests/config/test_session.py::test_no_project_root_still_has_the_own
 [[mutation]]
 name = "a session names no key it could not use"
 file = "src/stayfixed/config/session.py"
-before = "    except UnusableKey as exc:\n        return _with_owner(owner, _unusable(exc.key))"
-after = "    except UnusableKey as exc:\n        return _with_owner(owner, _unusable(None))"
+before = "    except UnusableKey as exc:\n        return _with_owner(owner, path, _unusable(exc.key))"
+after = "    except UnusableKey as exc:\n        return _with_owner(owner, path, _unusable(None))"
 reddens = [
   "tests/config/test_session.py::test_a_key_nothing_can_stand_in_for_drops_the_project_and_names_it[project-name]",
   "tests/config/test_session.py::test_a_key_nothing_can_stand_in_for_drops_the_project_and_names_it[version]",
   "tests/config/test_session.py::test_a_key_nothing_can_stand_in_for_drops_the_project_and_names_it[docs-symlink]",
+  "tests/config/test_session.py::test_a_key_nothing_can_stand_in_for_drops_the_project_and_names_it[project-not-a-table]",
 ]
 
 [[mutation]]
 name = "a session names no key a document is missing"
 file = "src/stayfixed/config/session.py"
-before = "        return _with_owner(owner, _unusable(exc.missing[0]))"
-after = "        return _with_owner(owner, _unusable(None))"
+before = "        return _with_owner(owner, path, _unusable(exc.missing[0]))"
+after = "        return _with_owner(owner, path, _unusable(None))"
 reddens = [
   "tests/config/test_session.py::test_a_required_key_the_document_never_wrote_drops_the_project_and_names_it",
 ]

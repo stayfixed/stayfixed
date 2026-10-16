@@ -424,4 +424,6 @@ def test_a_machine_file_that_does_not_load_is_not_blamed_on_stayfixed_toml(tmp_p
         "SessionStart", json.dumps({"hook_event_name": "SessionStart"}), project, home=home
     )
     person, _ = notice_texts(json.loads(started.stdout))
-    assert person == [MACHINE_FILE_WARNING]
+    # The file the hook read, under the password database's home, which is the hook's pinned one.
+    machine = home / ".config" / "stayfixed" / "config.toml"
+    assert person == [MACHINE_FILE_WARNING.format(path=machine)]

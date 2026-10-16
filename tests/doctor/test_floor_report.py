@@ -150,6 +150,18 @@ def test_preferences_names_the_layer_and_hides_free_text(tmp_path: Path) -> None
     assert "SECRET-WORD" not in checked.detail
 
 
+def test_a_preference_the_session_put_back_is_the_presets(tmp_path: Path) -> None:
+    # The row reads the document the session's own load used, so a value it put back to the
+    # preset's is the preset's, from the same read that noted it. Mutation (`mutations/`'s "the
+    # NOTE load hands its reader the document as written"): `memory.mode` reads as the
+    # repository's.
+    template = LOCAL_ONLY.replace('mode = "local-only"', 'mode = "harness"')
+    root = _initialised(tmp_path, template=template)
+    checked = row(run_checks_for(tmp_path, root, machine=none(tmp_path)), "preferences")
+    assert "memory.mode = local-only (preset)" in checked.detail
+    assert "memory.groups (repository)" in checked.detail
+
+
 def test_preferences_with_no_stayfixed_toml_are_the_presets(tmp_path: Path) -> None:
     # Mutation (`mutations/`'s "the preferences row credits the repository with the preset's
     # values"): a preference reads as the repository's with no repository there.

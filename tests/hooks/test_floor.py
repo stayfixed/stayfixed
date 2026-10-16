@@ -138,6 +138,8 @@ def test_session_start_carries_each_warning_once(
     started = hook("SessionStart", json.dumps(SESSION_START), root, home=home)
     assert (started.returncode, started.stderr) == (0, "")
     person, model = notice_texts(json.loads(started.stdout))
+    # The machine file's warning names the file the hook read, under its pinned home.
+    warnings = [w.format(path=home / ".config" / "stayfixed" / "config.toml") for w in warnings]
     assert person == warnings
     assert model[: len(warnings)] == warnings
     assert all(model.count(warning) == 1 for warning in warnings)

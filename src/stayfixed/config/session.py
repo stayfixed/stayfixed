@@ -26,8 +26,10 @@ reaches the model, so the one value of the repository's it carries, a key, is pr
 from __future__ import annotations
 
 import tomllib
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from stayfixed import __version__
 from stayfixed.config.loader import (
@@ -73,10 +75,12 @@ NEWER_RELEASE_WARNING = (
     "does not read were ignored or put back to the preset's; update the stayfixed plugin, and run "
     "`stayfixed doctor` for the list"
 )
+# `path` is the machine file that was read: under the password database's home, never `HOME`'s
+# (`config.machine`), so a `~` would point an owner whose `HOME` differs at the wrong file. The
+# owner's own path, never the repository's.
 MACHINE_FILE_WARNING = (
-    "stayfixed: the machine file, ~/.config/stayfixed/config.toml, could not be used whole, so the "
-    "preset's personal values and guards stand in for what it could not give; run `stayfixed "
-    "doctor` for the detail"
+    "stayfixed: the machine file, {path}, could not be used whole, so the preset's personal values "
+    "and guards stand in for what it could not give; run `stayfixed doctor` for the detail"
 )
 
 
@@ -86,12 +90,21 @@ class SessionConfig:
     there always is; and the warnings `SessionStart` shows, at most one about each file.
 
     `noted` is the dotted key of every setting the project's file had ignored or reset, in the
-    order of its notes, for `doctor` to list by key alone: a key is text the document chose."""
+    order of its notes, for `doctor` to list by key alone: a key is text the document chose.
+    `document` is the project's file as the NOTE load used it (`loader.Noted.document`), for
+    `doctor` to tell which values the repository set from the one read the session made."""
 
     config: Config | None
     owner: Owner
     warnings: tuple[str, ...]
     noted: tuple[str, ...] = ()
+    document: Mapping[str, Any] = field(default_factory=dict)
+
+    @property
+    def project_warnings(self) -> tuple[str, ...]:
+        """Every warning but the machine file's, which comes last when the owner's layer has
+        notes (`_owners`)."""
+        return self.warnings[:-1] if self.owner.notes else self.warnings
 
 
 def session_config(root: Path | None, *, machine: Path | None = None) -> SessionConfig:
@@ -119,20 +132,22 @@ def session_config(root: Path | None, *, machine: Path | None = None) -> Session
     try:
         noted = loads_noting(text, root, owner=owner)
     except UnusableKey as exc:
-        return _with_owner(owner, _unusable(exc.key))
+        return _with_owner(owner, path, _unusable(exc.key))
     except MissingKeys as exc:
-        return _with_owner(owner, _unusable(exc.missing[0]))
+        return _with_owner(owner, path, _unusable(exc.missing[0]))
     except (ConfigError, PathEscape) as exc:
         # Every refusal `loads_noting` raises past the two above names a key or is the document
         # not parsing, which `tomllib` already answered; this arm is for one it has not, so that a
         # session still goes on.
-        return _with_owner(owner, _unusable(exc.key))
+        return _with_owner(owner, path, _unusable(exc.key))
     warnings: tuple[str, ...] = ()
     if noted.notes:
         newer = later(noted.config.stayfixed.version, __version__) is True
         template = NEWER_RELEASE_WARNING if newer else NOTED_WARNING
         warnings = (template.format(count=len(noted.notes)),)
-    return SessionConfig(noted.config, owner, warnings + _owners(owner), noted.keys)
+    return SessionConfig(
+        noted.config, owner, warnings + _owners(owner, path), noted.keys, noted.document
+    )
 
 
 def cause(warning: str) -> str:
@@ -155,13 +170,14 @@ def _unusable(key: str | None) -> str:
     return UNUSABLE_WARNING.format(key=printable(key, UNNAMED_KEY) if key else UNNAMED_KEY)
 
 
-def _owners(owner: Owner) -> tuple[str, ...]:
-    return (MACHINE_FILE_WARNING,) if owner.notes else ()
+def _owners(owner: Owner, machine: Path | None) -> tuple[str, ...]:
+    # The owner's layer has notes only for a machine file it read, so `machine` is a path here.
+    return (MACHINE_FILE_WARNING.format(path=machine),) if owner.notes else ()
 
 
-def _with_owner(owner: Owner, warning: str) -> SessionConfig:
-    return SessionConfig(None, owner, (warning, *_owners(owner)))
+def _with_owner(owner: Owner, machine: Path | None, warning: str) -> SessionConfig:
+    return SessionConfig(None, owner, (warning, *_owners(owner, machine)))
 
 
 def _fallback(machine: Path | None, warning: str) -> SessionConfig:
-    return _with_owner(resolve_owner(machine), warning)
+    return _with_owner(resolve_owner(machine), machine, warning)
