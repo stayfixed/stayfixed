@@ -127,13 +127,13 @@ row whenever `[stayfixed] agents` lists `codex`.
 
 ## Install
 
-**Released as 0.3.0.** The plugin form below takes that release's tag. `uv tool install
+**Released as 0.3.1.** The plugin form below takes that release's tag. `uv tool install
 stayfixed` names no version, so it installs the newest release on PyPI:
 
 As a Claude Code plugin:
 
 ```
-/plugin marketplace add stayfixed/stayfixed@v0.3.0
+/plugin marketplace add stayfixed/stayfixed@v0.3.1
 /plugin install stayfixed@stayfixed-marketplace
 ```
 
@@ -163,7 +163,7 @@ of them, annotated.
 
 ```toml
 [stayfixed]
-version = "0.3.0"
+version = "0.3.1"
 
 [project]
 name = "widget"          # one lowercase path segment
