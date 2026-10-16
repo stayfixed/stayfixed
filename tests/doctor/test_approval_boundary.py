@@ -26,6 +26,7 @@ from stayfixed.doctor import boundary
 from stayfixed.doctor.api import OK, RED, SKIP, WARN, Check
 from stayfixed.doctor.checks import run_checks
 from stayfixed.harnesses import CLAUDE
+from stayfixed.trust import kinds
 from stayfixed.trust.api import approve, managed_settings
 from tests.runners import Recorder
 
@@ -288,17 +289,59 @@ def test_the_row_skips_without_claude_code(m: Machine) -> None:
     assert (row.status, row.detail, row.remedy) == (SKIP, boundary.NO_CLAUDE_CODE, "")
 
 
-def test_the_user_settings_directory_follows_claude_config_dir(m: Machine) -> None:
+def test_the_user_settings_directory_follows_claude_config_dir_from_a_terminal(
+    m: Machine, monkeypatch: pytest.MonkeyPatch
+) -> None:
     # Claude Code reads the user's settings from `CLAUDE_CONFIG_DIR` when it is set, and so does
-    # the row: a home with no `.claude` is not skipped then. Mutation (`mutations/`'s "the
-    # boundary row ignores CLAUDE_CONFIG_DIR"): the row skips.
+    # the row for a person at a terminal: a home with no `.claude` is not skipped then. Mutation
+    # (`mutations/`'s "the user settings directory ignores CLAUDE_CONFIG_DIR"): the row skips.
+    monkeypatch.setattr(kinds, "interactive", lambda: True)
     (m.home / ".claude").rmdir()
     config = m.tmp / "config-dir"
     _write(config / "settings.json", _merged(ADMIN_REQUIRED, _deny(_rule(m.record_directory))))
     m.env["CLAUDE_CONFIG_DIR"] = str(config)
     m.managed(ADMIN_REQUIRED)
     m.approvals(1)
-    assert m.row().status == OK
+    row = m.row()
+    assert row.status == OK, row
+    assert boundary.IGNORED_CONFIG_DIR not in row.detail
+
+
+@pytest.mark.parametrize(
+    "claude_code_here", [True, False], ids=["home-settings", "no-home-settings"]
+)
+def test_off_a_terminal_claude_config_dir_is_not_read_and_is_named(
+    m: Machine, monkeypatch: pytest.MonkeyPatch, claude_code_here: bool
+) -> None:
+    # A repository's committed `env` block can set `CLAUDE_CONFIG_DIR` for an agent's shell, so off
+    # a terminal a decoy directory holding every setting is not read: the row reads the home's
+    # `.claude`, and says the variable was passed over. Mutations (`mutations/`'s "the user
+    # settings directory follows CLAUDE_CONFIG_DIR off a terminal" -> the decoy is read and the
+    # row is green; "the boundary row does not say it passed CLAUDE_CONFIG_DIR over" -> both
+    # details lack the sentence).
+    monkeypatch.setattr(kinds, "interactive", lambda: False)
+    decoy = m.tmp / "decoy"
+    _write(decoy / "settings.json", _merged(ADMIN_REQUIRED, _deny(_rule(m.record_directory))))
+    m.env["CLAUDE_CONFIG_DIR"] = str(decoy)
+    m.managed(ADMIN_REQUIRED)
+    m.approvals(1)
+    if not claude_code_here:
+        (m.home / ".claude").rmdir()
+    row = m.row()
+    if claude_code_here:
+        assert row.status == RED, row
+        assert row.detail == "; ".join(
+            (
+                boundary.HELD.format(count=1),
+                boundary.NO_DENY.format(rule=_rule(m.record_directory)),
+                boundary.IGNORED_CONFIG_DIR,
+            )
+        )
+    else:
+        assert (row.status, row.detail) == (
+            SKIP,
+            "; ".join((boundary.NO_CLAUDE_CODE, boundary.IGNORED_CONFIG_DIR)),
+        )
 
 
 def test_the_row_skips_when_the_project_lists_no_claude(m: Machine) -> None:
@@ -327,38 +370,70 @@ def test_an_unreadable_trust_record_is_taken_to_hold_approvals(m: Machine) -> No
     assert row.detail.startswith(boundary.RECORD_UNREAD + "; ")
 
 
-def test_a_deny_rule_over_the_resolved_directory_counts(m: Machine, tmp_path: Path) -> None:
-    # The record's directory reached through a link: a rule spelled over where it leads covers it.
-    # No mutation of its own: it is the positive control for the case below, without which a row
-    # that never saw a rule at all would pass that one.
+@pytest.mark.parametrize(
+    ("spelled", "missing"),
+    [
+        pytest.param(("named", "resolved"), None, id="both"),
+        pytest.param(("resolved",), "named", id="resolved-only"),
+        pytest.param(("named",), "resolved", id="named-only"),
+    ],
+)
+def test_a_linked_record_directory_is_covered_only_by_both_rules_setup_writes(
+    m: Machine, tmp_path: Path, spelled: tuple[str, ...], missing: str | None
+) -> None:
+    # Through a link the record's directory has two spellings, and `setup` writes a rule over each:
+    # the harness compares a write against the path it resolves, and a tool call may carry the path
+    # as named. The row counts the directory covered only while both stand, and names the one
+    # missing. `both` is the positive control, without which a row that never saw a rule at all
+    # would pass the other two. Mutations (`mutations/`'s "the boundary row takes a rule over the
+    # directory as named for one over where it leads" -> `named-only` is ok; "the boundary row
+    # counts the rule over where the directory leads alone" -> `resolved-only` is ok).
     real = tmp_path / "real-machine"
     real.mkdir()
     linked = tmp_path / "linked-machine"
     linked.symlink_to(real)
     m.machine = linked / "config.toml"
-    m.user(_deny(_rule(real.resolve())))
+    rules = {"named": _rule(linked), "resolved": _rule(real.resolve())}
+    m.user(_deny(*(rules[name] for name in spelled)))
     m.managed(ADMIN_REQUIRED)
     m.approvals(1)
-    assert m.row().status == OK
+    row = m.row()
+    if missing is None:
+        assert row.status == OK, row
+    else:
+        assert row.status == RED, row
+        assert row.detail == "; ".join(
+            (boundary.HELD.format(count=1), boundary.NO_DENY.format(rule=rules[missing]))
+        )
 
 
-def test_a_deny_rule_over_the_directory_as_named_is_not_enough(m: Machine, tmp_path: Path) -> None:
-    # The harness compares a write against the path it resolves, so a rule over the link's
-    # spelling alone denies nothing there; the gap names the rule over where it leads. Mutation
-    # (`mutations/`'s "the boundary row takes a rule over the directory as named for one over where
-    # it leads"): the row reads ok.
-    real = tmp_path / "real-machine"
-    real.mkdir()
-    linked = tmp_path / "linked-machine"
-    linked.symlink_to(real)
-    m.machine = linked / "config.toml"
-    m.user(_deny(_rule(linked)))
+@pytest.mark.parametrize(
+    "spelling",
+    [
+        pytest.param(lambda d: f"Edit(/{d}/./**)", id="dot-component"),
+        pytest.param(lambda d: f"Edit(/{d}//**)", id="doubled-slash"),
+        pytest.param(lambda d: f"Edit(/{d}/x/../**)", id="parent-component"),
+        pytest.param(lambda d: f"Edit(/{str(d).swapcase()}/**)", id="case-variant"),
+        pytest.param(lambda d: f"Edit( /{d}/**)", id="leading-space"),
+    ],
+)
+def test_a_deny_rule_in_any_spelling_but_setup_s_is_not_counted(
+    m: Machine, monkeypatch: pytest.MonkeyPatch, spelling: Any
+) -> None:
+    # Only the rule as `setup` writes it, byte for byte, covers the record's directory: another
+    # spelling of the same directory is one the harness may read otherwise, and the row does not
+    # normalise a settings file's text to make it match. Case folding, which the row applies to
+    # widening entries on macOS, is on here too and still does not count a case variant. Mutation
+    # (`mutations/`'s "the boundary row counts a deny rule by its normalised spelling"): the
+    # dot, doubled-slash, parent and case spellings read ok.
+    monkeypatch.setattr(boundary, "CASE_FOLDS", True)
+    m.user(_deny(spelling(m.record_directory)))
     m.managed(ADMIN_REQUIRED)
     m.approvals(1)
     row = m.row()
     assert row.status == RED, row
     assert row.detail == "; ".join(
-        (boundary.HELD.format(count=1), boundary.NO_DENY.format(rule=_rule(real.resolve())))
+        (boundary.HELD.format(count=1), boundary.NO_DENY.format(rule=_rule(m.record_directory)))
     )
 
 
@@ -391,15 +466,10 @@ def test_while_admin_required_a_repository_false_gives_way_only_to_an_owners_tru
         )
 
 
-def _absolute(m: Machine, under: Path | None = None) -> str:
-    """The record's directory, or `under`, spelled as an absolute entry: `//` and the path."""
-    return "/" + str(m.record_directory if under is None else under)
-
-
-# What widens confinement: (the file, its document given the machine, whether managed settings make
-# the sandbox admin-required, the approvals, the status, and the sentence said or `None`). The keys
-# are the sandboxing reference's. An entry is read as text: shown to reach the record directory
-# (a gap, red with an approval), or not shown either way (a warning).
+# What widens confinement. The keys are the sandboxing reference's; an entry is read as text, and is
+# safe only when it is a literal path, of the allowed characters with no `.`, `..` or empty
+# component, anchored outside the working directory as its key anchors it, outside the project,
+# and neither the record's directory, above it, nor inside it. Every other entry is a gap.
 (_PROJECT,) = CLAUDE.settings
 (_LOCAL,) = CLAUDE.local_settings
 _USER = f"~/{_PROJECT}"
@@ -412,12 +482,146 @@ def _allow_write(*entries: str) -> dict[str, Any]:
     return {"sandbox": {"filesystem": {"allowWrite": list(entries)}}}
 
 
-WIDENING = [
+def _edit(*paths: str) -> dict[str, Any]:
+    return {"permissions": {"allow": [f"Edit({path})" for path in paths]}}
+
+
+def _directories(*entries: str) -> dict[str, Any]:
+    return {"permissions": {"additionalDirectories": list(entries)}}
+
+
+def _under_config(m: Machine, document: dict[str, Any]) -> dict[str, Any]:
+    """`document`, with the machine file, and so the trust record, moved under the home's
+    `.config`, where `config.machine` puts it."""
+    m.machine = m.home / ".config" / "stayfixed" / "config.toml"
+    m.machine.parent.mkdir(parents=True, exist_ok=True)
+    return document
+
+
+def _project_in_a_work_tree(m: Machine) -> Path:
+    """Move the project one directory down, so a directory holds it and not the record; the
+    project's new root."""
+    m.root = m.tmp / "work" / "project"
+    m.root.mkdir(parents=True)
+    return m.root
+
+
+# (where the entry is written, a callable given the machine that may move its record or project and
+# returns the document, whether managed settings make the sandbox admin-required, the status, and
+# the gap said or `None` for none). A repository file is read while the sandbox is not
+# admin-required, so with no gap it warns that it is not; the user's is read in every case, so
+# under admin-required with no gap it is ok.
+SAFE = [
+    pytest.param("project", lambda m: _allow_write("~/.kube"), False, WARN, None, id="home-kube"),
+    pytest.param(
+        "project", lambda m: _allow_write("/tmp/build"), False, WARN, None, id="tmp-build"
+    ),
+    pytest.param("user", lambda m: _allow_write("~/.kube"), True, OK, None, id="user-home-kube"),
+    pytest.param("user", lambda m: _directories("/tmp/build"), True, OK, None, id="user-tmp-dir"),
+    pytest.param("project", lambda m: _edit("//tmp/build"), False, WARN, None, id="edit-absolute"),
+    pytest.param("project", lambda m: _edit("~/.kube"), False, WARN, None, id="edit-home"),
+]
+
+
+def _gap(
+    where: str, document: Any, key: str, admin: bool = False
+) -> tuple[str, Any, bool, str, str]:
+    """A case whose entry is a gap: red, with the sentence naming `key` in `where`'s file."""
+    named = {"project": _PROJECT, "local": _LOCAL, "user": _USER}[where]
+    return (where, document, admin, RED, boundary.WIDENED.format(label=named, key=key))
+
+
+GAPS = [
+    pytest.param(*_gap("project", lambda m: _allow_write("//**"), _WRITE), id="double-slash-glob"),
+    pytest.param(*_gap("project", lambda m: _allow_write("**"), _WRITE), id="glob"),
+    pytest.param(*_gap("project", lambda m: _allow_write("/"), _WRITE), id="root"),
+    pytest.param(*_gap("project", lambda m: _allow_write("~"), _WRITE), id="bare-home"),
+    pytest.param(*_gap("project", lambda m: _allow_write("~/"), _WRITE), id="home-slash"),
+    pytest.param(
+        *_gap("project", lambda m: _under_config(m, _allow_write("~/.config")), _WRITE),
+        id="home-config",
+    ),
+    pytest.param(
+        *_gap("local", lambda m: _allow_write(str(m.record_directory)), _WRITE),
+        id="the-record-directory",
+    ),
+    pytest.param(
+        *_gap("project", lambda m: _allow_write(f"{m.record_directory}/trust.json"), _WRITE),
+        id="inside-the-directory",
+    ),
+    pytest.param(
+        *_gap("project", lambda m: _directories(str(m.tmp)), _DIRECTORIES),
+        id="above-the-directory",
+    ),
+    pytest.param(
+        *_gap("project", lambda m: _allow_write(f"{m.root}/build"), _WRITE),
+        id="inside-the-project",
+    ),
+    pytest.param(
+        *_gap(
+            "project",
+            lambda m: _allow_write(str(_project_in_a_work_tree(m).parent)),
+            _WRITE,
+        ),
+        id="above-the-project",
+    ),
+    pytest.param(*_gap("project", lambda m: _allow_write("./build"), _WRITE), id="dot-relative"),
+    pytest.param(*_gap("project", lambda m: _allow_write("build"), _WRITE), id="relative"),
+    pytest.param(
+        *_gap("user", lambda m: _allow_write("build"), _WRITE, admin=True), id="user-relative"
+    ),
+    pytest.param(*_gap("project", lambda m: _edit("/tmp/build"), _EDIT), id="edit-one-slash"),
+    pytest.param(*_gap("project", lambda m: _edit("./build"), _EDIT), id="edit-dot-relative"),
+    pytest.param(
+        *_gap("project", lambda m: _allow_write("//tmp/build"), _WRITE), id="path-two-slashes"
+    ),
+    pytest.param(*_gap("project", lambda m: _allow_write("/tmp/./build"), _WRITE), id="dot"),
+    pytest.param(
+        *_gap("project", lambda m: _allow_write("/tmp/x/../build"), _WRITE), id="parent-component"
+    ),
+    pytest.param(
+        *_gap("project", lambda m: _allow_write("/tmp/build/"), _WRITE), id="trailing-slash"
+    ),
+    pytest.param(*_gap("project", lambda m: _allow_write("/tmp/b\x00"), _WRITE), id="nul"),
+    pytest.param(*_gap("project", lambda m: _allow_write("/tmp/x]"), _WRITE), id="bracket"),
+    pytest.param(*_gap("project", lambda m: _allow_write("/tmp/x\\"), _WRITE), id="backslash"),
+    pytest.param(*_gap("project", lambda m: _allow_write("/tmp/a b"), _WRITE), id="space"),
+    pytest.param(
+        *_gap("project", lambda m: _allow_write("/tmp/caf" + chr(0xE9)), _WRITE), id="composed"
+    ),
+    pytest.param(
+        *_gap("project", lambda m: _allow_write("/tmp/cafe" + chr(0x301)), _WRITE),
+        id="decomposed",
+    ),
+    pytest.param(
+        *_gap("project", lambda m: _allow_write("/" + "*a" * 5000), _WRITE),
+        id="ten-thousand-wildcards",
+    ),
+    pytest.param(*_gap("project", lambda m: _allow_write("/tmp/*"), _WRITE), id="absolute-glob"),
+    pytest.param(*_gap("project", lambda m: _edit("//tmp/**"), _EDIT), id="edit-glob"),
+    pytest.param(
+        *_gap("project", lambda m: _allow_write("/tmp/build", "**"), _WRITE),
+        id="one-safe-one-not",
+    ),
+    pytest.param(
+        *_gap("user", lambda m: {"permissions": {"allow": ["Edit"]}}, _EDIT, admin=True),
+        id="user-bare-edit",
+    ),
+    pytest.param(
+        *_gap("user", lambda m: _directories(str(m.record_directory)), _DIRECTORIES, admin=True),
+        id="user-additional-directory",
+    ),
+    pytest.param(
+        *_gap("user", lambda m: _edit("/" + str(m.record_directory)), _EDIT, admin=True),
+        id="user-edit-record",
+    ),
+]
+
+REPOSITORY_SETTINGS = [
     pytest.param(
         "project",
         lambda m: {"sandbox": {"excludedCommands": ["docker"]}},
         False,
-        1,
         RED,
         boundary.EXCLUDED.format(label=_PROJECT),
         id="excluded-commands",
@@ -425,234 +629,98 @@ WIDENING = [
     pytest.param(
         "project",
         lambda m: {"sandbox": {"excludedCommands": ["docker"]}},
-        False,
-        0,
-        WARN,
-        boundary.EXCLUDED.format(label=_PROJECT),
-        id="excluded-commands-no-approval",
-    ),
-    pytest.param(
-        "project",
-        lambda m: {"sandbox": {"excludedCommands": ["docker"]}},
         True,
-        1,
         OK,
         None,
         id="excluded-commands-under-admin",
     ),
     pytest.param(
-        "local",
-        lambda m: _allow_write(_absolute(m)),
-        False,
-        1,
-        RED,
-        boundary.WIDENED.format(label=_LOCAL, key=_WRITE),
-        id="local-allow-write",
-    ),
-    pytest.param(
-        "local",
-        lambda m: _allow_write(_absolute(m)),
-        True,
-        1,
-        OK,
-        None,
-        id="local-allow-write-under-admin",
-    ),
-    pytest.param(
-        "project",
-        lambda m: {"permissions": {"allow": [f"Edit({_absolute(m)})"]}},
-        False,
-        1,
-        RED,
-        boundary.WIDENED.format(label=_PROJECT, key=_EDIT),
-        id="project-edit-allow",
-    ),
-    pytest.param(
-        "project",
-        lambda m: {"permissions": {"additionalDirectories": [_absolute(m, m.tmp)]}},
-        False,
-        1,
-        RED,
-        boundary.WIDENED.format(label=_PROJECT, key=_DIRECTORIES),
-        id="project-additional-directory-above",
-    ),
-    pytest.param(
-        "project",
-        lambda m: _allow_write(_absolute(m) + "/trust.json"),
-        False,
-        1,
-        RED,
-        boundary.WIDENED.format(label=_PROJECT, key=_WRITE),
-        id="inside-the-directory",
-    ),
-    pytest.param(
-        "user",
-        lambda m: _allow_write(_absolute(m)),
-        True,
-        1,
-        RED,
-        boundary.WIDENED.format(label=_USER, key=_WRITE),
-        id="user-allow-write-under-admin",
-    ),
-    pytest.param(
-        "user",
-        lambda m: {"permissions": {"allow": ["Edit"]}},
-        True,
-        1,
-        RED,
-        boundary.WIDENED.format(label=_USER, key=_EDIT),
-        id="user-bare-edit",
-    ),
-    pytest.param(
-        "user",
-        lambda m: {"permissions": {"additionalDirectories": [_absolute(m)]}},
-        True,
-        1,
-        RED,
-        boundary.WIDENED.format(label=_USER, key=_DIRECTORIES),
-        id="user-additional-directory",
-    ),
-    pytest.param(
-        "user",
-        lambda m: {"permissions": {"allow": [f"Edit({_absolute(m, m.tmp)}/**)"]}},
-        True,
-        1,
-        WARN,
-        boundary.UNKNOWN.format(label=_USER, key=_EDIT),
-        id="user-edit-glob",
-    ),
-    pytest.param(
-        "project",
-        lambda m: _allow_write("/elsewhere"),
-        False,
-        1,
-        WARN,
-        boundary.UNKNOWN.format(label=_PROJECT, key=_WRITE),
-        id="allow-write-elsewhere",
-    ),
-    pytest.param(
-        "project",
-        lambda m: {"permissions": {"allow": ["Edit(src)"]}},
-        False,
-        1,
-        WARN,
-        boundary.UNKNOWN.format(label=_PROJECT, key=_EDIT),
-        id="edit-allow-in-the-project",
-    ),
-    pytest.param(
-        "project",
-        lambda m: _allow_write("/" + "*a" * 5000),
-        False,
-        1,
-        WARN,
-        boundary.UNKNOWN.format(label=_PROJECT, key=_WRITE),
-        id="ten-thousand-wildcards",
-    ),
-    pytest.param(
-        "project",
-        lambda m: _allow_write("/x/[ab]"),
-        False,
-        1,
-        WARN,
-        boundary.UNKNOWN.format(label=_PROJECT, key=_WRITE),
-        id="could-not-tell",
-    ),
-    pytest.param(
-        "project",
-        lambda m: _allow_write(_absolute(m) + "/x/.."),
-        False,
-        1,
-        WARN,
-        boundary.UNKNOWN.format(label=_PROJECT, key=_WRITE),
-        id="parent-component",
-    ),
-    pytest.param(
-        "project",
-        lambda m: _allow_write(_absolute(m) + "/x]"),
-        False,
-        1,
-        WARN,
-        boundary.UNKNOWN.format(label=_PROJECT, key=_WRITE),
-        id="closing-bracket",
-    ),
-    pytest.param(
-        "project",
-        lambda m: _allow_write(_absolute(m) + "/x\\"),
-        False,
-        1,
-        WARN,
-        boundary.UNKNOWN.format(label=_PROJECT, key=_WRITE),
-        id="backslash",
-    ),
-    pytest.param(
-        "project",
-        lambda m: _allow_write(_absolute(m) + "/x\x00"),
-        False,
-        1,
-        WARN,
-        boundary.UNKNOWN.format(label=_PROJECT, key=_WRITE),
-        id="nul",
-    ),
-    pytest.param(
-        "project",
-        lambda m: _allow_write(_absolute(m) + "/a b"),
-        False,
-        1,
-        WARN,
-        boundary.UNKNOWN.format(label=_PROJECT, key=_WRITE),
-        id="space",
+        "local", lambda m: _allow_write("**"), True, OK, None, id="local-allow-write-under-admin"
     ),
 ]
 
 
-@pytest.mark.parametrize(("where", "document", "admin", "approvals", "expected", "said"), WIDENING)
-def test_a_setting_that_widens_confinement_is_said(
-    m: Machine,
-    where: str,
-    document: Any,
-    admin: bool,
-    approvals: int,
-    expected: str,
-    said: str | None,
+@pytest.mark.parametrize(
+    ("where", "document", "admin", "expected", "said"), [*SAFE, *GAPS, *REPOSITORY_SETTINGS]
+)
+def test_a_setting_that_widens_confinement_is_a_gap_unless_shown_safe(
+    m: Machine, where: str, document: Any, admin: bool, expected: str, said: str | None
 ) -> None:
-    # The sandbox on and the deny rule in place, and one setting that widens them. A repository's
-    # `excludedCommands`, and an entry shown, as text, to be the record's directory, to hold it or
-    # to lie inside it, is a gap while the sandbox is not admin-required (Claude Code ignores those
-    # repository entries while it is), and the user's is one always. Any other entry -- a pattern,
-    # a `..` component, a character outside the allowlist, or a literal that does not reach it --
-    # is not shown either way, and the row warns it could not tell; nothing is proven safe.
-    # Mutations (`mutations/`'s "the boundary row reads no excludedCommands" -> the two
-    # `excluded-commands` gaps go; "the boundary row reads no repository entry that widens" ->
-    # `local-allow-write`, `project-edit-allow`, `project-additional-directory-above` and
-    # `inside-the-directory` go; "the boundary row reads no user entry that widens" -> the four
-    # `user-` cases go; "the boundary row reads widening repository entries while admin-required"
-    # -> the two `-under-admin` cases are red; "the boundary row says nothing of an entry it could
-    # not show either way" -> `could-not-tell`, `ten-thousand-wildcards`, `allow-write-elsewhere`
-    # and `edit-allow-in-the-project` say nothing; "the boundary row takes every entry for one that
-    # reaches the record" -> `allow-write-elsewhere` is red; "the boundary row takes an entry that
-    # holds the record for one that misses it" -> `project-additional-directory-above` warns; "the
-    # boundary row takes an entry inside the record for one that misses it" ->
-    # `inside-the-directory` warns; "the boundary row reads an entry outside the allowlist" ->
-    # `closing-bracket`, `backslash`, `nul` and `space` are red; "the boundary row lets a parent
-    # component through" -> `parent-component` is red).
+    # The sandbox on and the deny rule in place, one approval, and one setting that may widen them.
+    # `glob` and `double-slash-glob` are refused by the anchor and component tests before the
+    # allowlist is asked, and `bare-home` by the anchor test, so each is held by those mutations.
+    # Mutations (`mutations/`'s "the boundary row reads no excludedCommands" ->
+    # `excluded-commands`; "the boundary row reads widening repository entries while
+    # admin-required" -> the two `-under-admin` cases are red; "the boundary row reads no
+    # repository entry that widens" -> the repository gaps but `excluded-commands` go; "the
+    # boundary row reads no user entry that widens" -> the `user-` gaps go; "the boundary row
+    # takes every entry for a gap" -> the safe cases are red; "the boundary row reads an entry
+    # outside the allowlist" -> `nul`, `bracket`, `backslash`, `space`, `composed`, `decomposed`,
+    # `ten-thousand-wildcards`, `absolute-glob` and `edit-glob` go; "the boundary row lets a dot,
+    # parent or empty component through" -> `dot`, `parent-component`, `trailing-slash`,
+    # `path-two-slashes`, `home-slash` and `root` go; "the boundary row anchors an Edit rule's
+    # single slash at the root" -> `edit-one-slash` goes and `edit-absolute` is red; "the
+    # boundary row reads a relative entry as absolute" -> `relative`, `dot-relative`,
+    # `user-relative`, `edit-dot-relative` and `bare-home` go; "the boundary row takes an entry
+    # in the project for one outside it" -> `inside-the-project` and `above-the-project` go; "the
+    # boundary row takes an entry that holds the record for one that misses it" -> `home-config`,
+    # `above-the-directory` and `above-the-project` go; "the boundary row takes an entry inside
+    # the record for one that misses it" -> `inside-the-directory` and `inside-the-project` go;
+    # "the boundary row judges a key by one entry" -> `one-safe-one-not` goes; "the boundary row
+    # passes a bare Edit" -> `user-bare-edit` goes).
+    written = document(m)
     base = _merged(SANDBOX_ON, _deny(_rule(m.record_directory)))
     if admin:
         m.managed(ADMIN_REQUIRED)
-    written = document(m)
     if where == "user":
         m.user(_merged(base, written))
     else:
         m.user(base)
         getattr(m, where)(written)
-    m.approvals(approvals)
+    m.approvals(1)
     row = m.row()
     assert row.status == expected, row
     parts = row.detail.split("; ")
     if said is not None:
         assert said in parts, row.detail
+        assert boundary.NARROW_THE_SETTINGS in row.remedy.split("; ")
     else:
-        named = (_PROJECT, _LOCAL, _USER, "could not tell")
-        assert not any(part.startswith(named) for part in parts), row.detail
+        widened = ("holds an entry not shown", "sets sandbox.excludedCommands")
+        assert not any(sentence in row.detail for sentence in widened), row.detail
+
+
+def test_a_widening_gap_with_no_approval_is_a_warning(m: Machine) -> None:
+    # As every gap: a warning until the machine holds an approval. Mutation (`mutations/`'s "the
+    # boundary row is red with no approval"): red.
+    m.user(_merged(SANDBOX_ON, _deny(_rule(m.record_directory))))
+    m.project(_allow_write("**"))
+    row = m.row()
+    assert row.status == WARN, row
+    assert row.detail == "; ".join(
+        (boundary.NONE_HELD, boundary.WIDENED.format(label=_PROJECT, key=_WRITE))
+    )
+    assert row.remedy == boundary.NARROW_THE_SETTINGS
+
+
+def test_with_no_trust_record_directory_no_entry_is_shown_safe(
+    m: Machine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A machine whose password database lists no home, run without `--machine`, has no record
+    # directory to compare an entry with, so not even a literal path elsewhere is shown to stay
+    # clear of it. Mutation (`mutations/`'s "the boundary row shows an entry safe with no record
+    # directory to compare"): the entry is shown safe and only the deny rule's gap is said.
+    monkeypatch.setattr(boundary, "record_path", lambda machine: None)
+    m.user(SANDBOX_ON)
+    m.project(_allow_write("/tmp/build"))
+    row = m.row()
+    assert row.status == WARN, row
+    assert row.detail == "; ".join(
+        (
+            boundary.NONE_HELD,
+            boundary.NO_DENY.format(rule=boundary.NO_RECORD_RULE),
+            boundary.WIDENED.format(label=_PROJECT, key=_WRITE),
+        )
+    )
 
 
 @pytest.mark.parametrize("carried", ["project", "local"])
@@ -677,10 +745,11 @@ def test_an_entry_is_read_without_asking_the_filesystem(
     m: Machine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # An entry under an automounted root -- `/net`, `/Network`, `/Volumes` -- can hang a `stat` or
-    # reach the network, so the row asks nothing of the filesystem about an entry: this one is not
-    # shown either way, and is said so. The stand-in calls refuse any path under `/net` rather than
-    # let one reach the machine. Mutation (`mutations/`'s "the boundary row asks the filesystem
-    # about an entry"): the check stats `/net`, and the row turns red, unable to run.
+    # reach the network, so the row asks nothing of the filesystem about an entry: these are read
+    # as text, the one literal path outside the project and the record shown safe and the other a
+    # gap. The stand-in calls refuse any path under `/net` rather than let one reach the machine.
+    # Mutation (`mutations/`'s "the boundary row asks the filesystem about an entry"): the check
+    # stats `/net`, and the row turns red, unable to run.
     asked: list[str] = []
     for name in ("stat", "lstat"):
         real = getattr(os, name)
@@ -693,28 +762,13 @@ def test_an_entry_is_read_without_asking_the_filesystem(
 
         monkeypatch.setattr(os, name, refusing)
     m.user(_merged(SANDBOX_ON, _deny(_rule(m.record_directory))))
-    m.project(_allow_write("//net/host/share"))
+    m.project(_merged(_allow_write("/net/host/share"), _directories("/net/host/x/../share")))
     m.approvals(1)
     row = m.row()
     monkeypatch.undo()
     assert asked == []
-    assert row.status == WARN, row
-    assert boundary.UNKNOWN.format(label=_PROJECT, key=_WRITE) in row.detail.split("; ")
-
-
-def test_a_literal_path_through_a_link_is_not_followed(m: Machine, tmp_path: Path) -> None:
-    # An entry whose prefix is a link to a directory above the record reaches it, which its text
-    # does not show; the row follows no link, so the entry is one it could not tell about. No
-    # mutation of its own: following the link is the filesystem call the case above refuses.
-    other = tmp_path / "other"
-    other.mkdir()
-    (other / "link").symlink_to(m.record_directory.parent)
-    m.user(_merged(SANDBOX_ON, _deny(_rule(m.record_directory))))
-    m.project(_allow_write("/" + str(other / "link")))
-    m.approvals(1)
-    row = m.row()
-    assert row.status == WARN, row
-    assert boundary.UNKNOWN.format(label=_PROJECT, key=_WRITE) in row.detail.split("; ")
+    assert row.status == RED, row
+    assert row.detail.split("; ")[1:] == [boundary.WIDENED.format(label=_PROJECT, key=_DIRECTORIES)]
 
 
 def test_a_case_variant_names_the_record_on_a_volume_that_folds_case(
@@ -722,10 +776,11 @@ def test_a_case_variant_names_the_record_on_a_volume_that_folds_case(
 ) -> None:
     # On macOS's default volume two spellings that differ in case are one directory, so a variant
     # of the record's directory reaches it. Mutation (`mutations/`'s "the boundary row compares
-    # paths by their case where the volume folds it"): the row only warns.
+    # paths by their case where the volume folds it"): the entry is shown safe and the row only
+    # warns.
     monkeypatch.setattr(boundary, "CASE_FOLDS", True)
     m.user(_merged(SANDBOX_ON, _deny(_rule(m.record_directory))))
-    m.project(_allow_write(_absolute(m).swapcase()))
+    m.project(_allow_write(str(m.record_directory).swapcase()))
     m.approvals(1)
     row = m.row()
     assert row.status == RED, row
@@ -739,9 +794,9 @@ def test_composed_and_decomposed_spellings_compare_alike_where_names_fold(
     # compare in NFC there. Mutation (`mutations/`'s "the boundary row compares names composed
     # and decomposed as different"): the two spellings differ.
     monkeypatch.setattr(boundary, "CASE_FOLDS", True)
-    assert boundary._folded("/Users/José") == boundary._folded("/Users/José")
+    assert boundary._folded("/Users/José") == boundary._folded("/Users/José")
     monkeypatch.setattr(boundary, "CASE_FOLDS", False)
-    assert boundary._folded("/Users/José") != boundary._folded("/Users/José")
+    assert boundary._folded("/Users/José") != boundary._folded("/Users/José")
 
 
 def test_the_row_runs_no_regular_expression_on_what_a_settings_file_holds() -> None:

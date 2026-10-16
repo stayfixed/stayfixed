@@ -40,6 +40,7 @@ from stayfixed import fsops
 from stayfixed.config.machine import machine_config_path
 from stayfixed.errors import Failure, Refusal
 from stayfixed.jsonobject import json_object
+from stayfixed.trust.boundary import sandbox_refused
 
 RECORD = "trust.json"
 VERSION = 1
@@ -54,6 +55,14 @@ _KEPT = (
 )
 LATER_VERSION = "{path} is a trust record of a version this stayfixed does not read; " + _KEPT
 NOT_A_RECORD = "{path} is neither a trust record nor the flat map 0.3.0 wrote; " + _KEPT
+# A write to the record that was refused the way an agent's sandbox refuses one (`boundary`'s
+# docstring): run from an agent's shell, nothing it asks of the record can be written. Constant,
+# since its likely reader is that agent, and speaking of the person, who runs it outside.
+SANDBOXED = (
+    "the trust record was not written: its directory refused the write, which Claude Code's "
+    "sandbox does to every write an agent's shell makes outside the working directory, so a "
+    "person must run this command in their own terminal, outside the agent's sandbox"
+)
 
 
 @dataclass(frozen=True)
@@ -74,6 +83,11 @@ class State(StrEnum):
     # Recorded with another digest: approved once, and what was approved has changed since.
     LAPSED = "lapsed"
     MISSING = "missing"
+
+
+class SandboxedWrite(Refusal):
+    """A write to the record refused as an agent's sandbox refuses one: `SANDBOXED`, exit 2, and
+    nothing written, since the write is one atomic replacement."""
 
 
 class UnreadableTrust(Refusal):
@@ -225,6 +239,8 @@ def _write(machine: Path | None, approvals: dict[tuple[str, str], Approval]) -> 
     try:
         fsops.write_atomically(path, json.dumps(document, indent=2, sort_keys=True) + "\n")
     except OSError as exc:
+        if sandbox_refused(exc):
+            raise SandboxedWrite(SANDBOXED) from None
         where = (
             "it is under the home the password database records for this user, which is the "
             "only place a hook reads a trust record"

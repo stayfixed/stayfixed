@@ -5,32 +5,37 @@ An approval holds against what a repository commits; against an agent that write
 itself it holds only while the harness stops that write (`trust.boundary` says what stops it, and
 how that was measured). So the row reads this project's effective Claude Code settings, in the
 harness's own precedence — managed settings with their drop-ins, then the project's
-`.claude/settings.local.json`, then its `.claude/settings.json`, then the user's file under
-`CLAUDE_CONFIG_DIR` or `~/.claude` — and answers three questions: is the sandbox on for this
-project; does a `permissions.deny` rule in the measured spelling cover the record's directory where
-it leads, its symbolic links resolved (a rule over the directory as named is accepted beside it and
-is not enough alone); and does any setting widen what those two confine to reach the record.
+`.claude/settings.local.json`, then its `.claude/settings.json`, then the user's file in the
+directory `trust.boundary.user_settings` finds (`CLAUDE_CONFIG_DIR` only from a terminal, since a
+committed `env` block can set it for an agent's shell) — and answers three questions: is the sandbox
+on for this project; do the `permissions.deny` rules `setup` writes over the record's directory
+stand, byte for byte; and does any setting widen what those two confine.
 
 - **Whether the sandbox is on** is the highest layer's `sandbox.enabled`. While the sandbox is
   admin-required, which only managed settings make it (`sandbox.allowUnsandboxedCommands = false`
   there; a user's own does not stop a repository turning the sandbox off), a repository's `false` is
   passed over when managed settings or the user's file set `true`, as Claude Code's sandboxing
   reference says, and stands otherwise.
-- **A deny rule** from any layer counts, as the harness adds them up.
+- **The deny rules** from any layer count, as the harness adds them up, and only `setup`'s own
+  spellings count: `Edit(//<directory>/**)` over the directory where it leads, and over the
+  directory as named where a symbolic link makes the two differ (`trust.boundary.deny_rules`), each
+  compared byte for byte. Another spelling of the same directory is not read as covering it.
 - **What widens them**, by the key names the sandboxing reference gives, which were not measured
   here: a repository's non-empty `sandbox.excludedCommands`, which runs commands outside the
-  sandbox, and a `sandbox.filesystem.allowWrite` entry, an `Edit(...)` rule in `permissions.allow`
-  or a `permissions.additionalDirectories` entry that reaches the record's directory, in the
-  project's or the local file while the sandbox is not admin-required (the reference says Claude
-  Code ignores them while it is), and in the user's file always, since there one undoes the deny
-  rule. **An entry is read as text and nothing else**: no filesystem call and no pattern engine
-  touches it. One holding only letters, digits, `.`, `_`, `-`, `~` and `/`, with no `..`
-  component, is anchored as the harness anchors it and normalised; it is a gap when it is either
-  spelling of the record's directory (as named, and resolved by stayfixed from its own machine
-  path), holds it, or lies inside it, compared in NFC and case-folded on macOS. Every other entry
-  is not shown either way, and the row warns that it could not tell whether it covers the record:
-  there is no class of entry proven safe. A deny rule covers the record only when it is the
-  spelling `setup` writes over the resolved directory, compared as text the same way.
+  sandbox, and any entry of `sandbox.filesystem.allowWrite`, an `Edit` rule in `permissions.allow`
+  or `permissions.additionalDirectories` not shown safe, in the project's or the local file while
+  the sandbox is not admin-required (the reference says Claude Code ignores them while it is), and
+  in the user's file always, since there one undoes the deny rule. **An entry is read as text and
+  nothing else**: no filesystem call and no pattern engine touches it. It is safe only when every
+  condition `_safe` asks holds: a literal path of letters, digits, `.`, `_`, `-`, `~` and `/` with
+  no `.`, `..` or empty component; anchored outside the working directory as the documentation
+  anchors it for its key (a sandbox path list's or `additionalDirectories`' `/x` is absolute, an
+  `Edit` rule's `//x` is, and `~/x` is under the home for both, while an `Edit` rule's `/x` is the
+  project's and a relative path is the working directory's for both); outside the project, its
+  root neither held nor holding it; and neither either spelling of the record's directory (as
+  named, and resolved by stayfixed from its own machine path), nor above it, nor inside it —
+  compared in NFC and case-folded on macOS. Every other entry is a gap: there is no class of entry
+  the row could not tell about.
 
 **Red only once the machine holds an approval.** With one, a gap is red; with none, it is a
 warning, so a default install is never red here. With both settings in force the row still warns
@@ -64,7 +69,7 @@ from stayfixed import fsops
 from stayfixed.config.machine import passwd_home
 from stayfixed.doctor.model import OK, RED, SKIP, WARN, Context, Row, Status
 from stayfixed.errors import Failure
-from stayfixed.harnesses import CLAUDE, CLAUDE_DIR
+from stayfixed.harnesses import CLAUDE
 from stayfixed.jsonobject import json_object
 from stayfixed.presets import load_preset
 from stayfixed.trust.api import (
@@ -74,10 +79,11 @@ from stayfixed.trust.api import (
     SANDBOX,
     UNSANDBOXED_ALLOWED,
     UnreadableTrust,
-    deny_rule,
+    deny_rules,
     managed_settings,
     record_path,
     recorded,
+    user_settings,
 )
 
 (PROJECT_SETTINGS,) = CLAUDE.settings
@@ -107,8 +113,8 @@ TURNED_OFF = (
     "agent's shell commands run outside it, where nothing stops one writing the trust record"
 )
 NO_DENY = (
-    "no permissions.deny rule {rule} covers the trust record's directory, so the shell and the "
-    "file tools may write the approvals in it"
+    "permissions.deny lacks {rule}, as setup writes it over the trust record's directory, so the "
+    "shell and the file tools may write the approvals in it"
 )
 # A setting that widens what the sandbox or the deny rule confines. `label` names the file and
 # `key` the setting; the entry itself is not printed, since a repository wrote it.
@@ -117,11 +123,9 @@ EXCLUDED = (
     "where nothing stops one writing the trust record"
 )
 WIDENED = (
-    "{label}'s {key} reaches the trust record's directory, so the shell or the file tools may "
-    "write the approvals in it past the deny rule"
+    "{label}'s {key} holds an entry not shown to stay clear of the trust record's directory, so "
+    "the shell or the file tools may write the approvals in it past the deny rule"
 )
-# An entry the row reads only as text and cannot show to reach the record or not: a warning.
-UNKNOWN = "could not tell whether {key} in {label} covers the trust record"
 # Both in force, and not admin-required: what a repository can still do.
 NOT_ADMIN = (
     f"the sandbox is on and the deny rule covers the trust record's directory, but managed "
@@ -132,6 +136,13 @@ GUARDED = (
     "the sandbox is on and admin-required, and {rule} denies writes to the trust record's directory"
 )
 NOT_READ = "{label} is not JSON and was read as absent"
+# `CLAUDE_CONFIG_DIR` set where it is not read: off a terminal, where a repository's committed `env`
+# block may have set it for an agent's shell (`trust.boundary.user_settings`).
+IGNORED_CONFIG_DIR = (
+    f"{CONFIG_DIR_VARIABLE} is set and was not read, since standard input is not a terminal and a "
+    f"repository's env block can set it for an agent's shell; the user settings read are "
+    f"~/{PROJECT_SETTINGS} under the home the password database records"
+)
 # The remedies.
 ADD_THE_BOUNDARY = (
     "run `stayfixed setup --approval-boundary`, which adds the deny rule and prints the sandbox "
@@ -143,9 +154,11 @@ MAKE_IT_ADMIN = (
     "command runs outside it"
 )
 MAKE_IT_JSON = "make each file the detail names one JSON object, then run `stayfixed doctor` again"
-CHECK_THE_ENTRIES = (
-    "check that no entry of a key the detail names reaches the trust record's directory, or spell "
-    "each as a literal path of letters, digits, `.`, `_`, `-`, `~` and `/`"
+NARROW_THE_SETTINGS = (
+    "take sandbox.excludedCommands out of each repository file the detail names, and take out each "
+    "entry of a key it names or spell it as a literal path outside the project and the trust "
+    "record's directory, of letters, digits, `.`, `_`, `-` and `/`: `/…` or `~/…` in a sandbox "
+    "path list and permissions.additionalDirectories, `//…` or `~/…` in an Edit rule"
 )
 NO_MANAGED_PATH = "the managed settings file"
 # The rule's place in a sentence on a machine with no home for a trust record: the password
@@ -247,17 +260,25 @@ WIDENING_KEYS = (
     "permissions.allow",
     f"permissions.{ADDITIONAL_DIRECTORIES}",
 )
-# The only characters an entry this row judges may hold. Anything else -- a pattern character, a
-# backslash, a NUL, a space, a letter outside ASCII -- makes the entry one it could not tell about:
-# the row reads an entry as text and never asks the filesystem or a pattern engine about it, since
-# proving what someone else's matcher, or an automounted root, makes of it is not this row's to do.
+# The only characters a safe entry may hold. Anything else -- a pattern character, a backslash, a
+# NUL, a space, a letter outside ASCII -- makes the entry a gap: the row reads an entry as text and
+# never asks the filesystem or a pattern engine about it, since proving what someone else's
+# matcher, or an automounted root, makes of it is not this row's to do.
 ALLOWED = frozenset(string.ascii_letters + string.digits + "._/~-")
-PARENT = ".."
+# The components a safe entry may not hold: the empty one (`a//b`, a trailing `/`), `.` and `..`.
+NOT_A_NAME = frozenset({"", ".", ".."})
 # The macOS default volume folds case, and its names may arrive composed or decomposed, so a
 # spelling is compared there in NFC, case-folded.
 CASE_FOLDS = sys.platform == "darwin"
 # An `Edit` rule in `permissions.allow`: bare, which allows every edit, or with its path.
 EDIT = "Edit"
+# The prefix that makes an entry of each key absolute, as Claude Code's documentation states (not
+# measured here): one slash in a sandbox path list and in `additionalDirectories`, two in a
+# permission rule, whose single slash is the project's. `~/` is the home for every key, and a
+# relative path the working directory's. Only these anchors lie outside the working directory;
+# every other spelling lies in the project, or where the row cannot show, and is a gap.
+ABSOLUTE = {WIDENING_KEYS[0]: "/", WIDENING_KEYS[1]: "//", WIDENING_KEYS[2]: "/"}
+HOME = "~/"
 
 
 def _table(document: Mapping[str, Any] | None, *keys: str) -> object:
@@ -276,49 +297,51 @@ def _folded(text: str) -> str:
     return unicodedata.normalize("NFC", text).casefold() if CASE_FOLDS else text
 
 
-def _normalised(entry: str, root: Path, home: Path | None) -> str | None:
-    """`entry` anchored and normalised as text, or `None` for one the row does not judge.
+def _related(place: str, held: str) -> bool:
+    """Whether the paths `place` and `held`, as text, are one, or either holds the other."""
+    return place == held or place.startswith(held + "/") or held.startswith(place + "/")
 
-    `//x` is `/x`; `~/x` is under the home; `/x` is under the session's working directory, the
-    project root; `./x` and `x` are under the project root. No filesystem call is made."""
-    if not entry or not set(entry) <= ALLOWED or PARENT in entry.split("/"):
+
+def _anchored(entry: str, key: str, home: Path | None) -> str | None:
+    """The absolute path `entry` names under `key`'s anchoring, as text, when it is a literal
+    anchored outside the working directory; `None` for every other entry. No filesystem call."""
+    if not set(entry) <= ALLOWED:
         return None
-    if entry.startswith("//"):
-        anchored = entry[1:]
-    elif entry == "~" or entry.startswith("~/"):
-        if home is None:
-            return None
-        anchored = f"{home}/{entry[2:]}"
-    elif entry.startswith("~"):
-        return None
-    elif entry.startswith("/"):
-        anchored = f"{root}{entry}"
+    if entry.startswith(ABSOLUTE[key]):
+        base, rest = "", entry[len(ABSOLUTE[key]) :]
+    elif entry.startswith(HOME) and home is not None:
+        base, rest = home.as_posix().rstrip("/"), entry[len(HOME) :]
     else:
-        anchored = f"{root}/{entry.removeprefix('./')}"
-    return _folded(posixpath.normpath(anchored))
+        return None
+    if any(part in NOT_A_NAME for part in rest.split("/")):
+        return None
+    return f"{base}/{rest}"
 
 
-def _proven(entry: str | None, root: Path, home: Path | None, spellings: Sequence[str]) -> bool:
-    """Whether `entry` is shown, as text, to be one of the record directory's `spellings`, to hold
-    it, or to lie inside it; a bare `Edit` (`None`) allows every edit and always is."""
-    if entry is None:
-        return True
-    place = _normalised(entry, root, home)
+def _safe(
+    entry: str | None,
+    key: str,
+    home: Path | None,
+    project: Sequence[str],
+    record: Sequence[str],
+) -> bool:
+    """Whether `entry` of `key` is shown, as text, to lie outside the project and clear of the
+    record's directory: a literal anchored outside the working directory, related to none of the
+    project root's spellings and none of the record directory's (each folded). A bare `Edit`
+    (`None`) allows every edit and never is, and with no record directory to compare nothing is."""
+    if entry is None or not record:
+        return False
+    place = _anchored(entry, key, home)
     if place is None:
         return False
-    above = place.rstrip("/") + "/"
-    return any(
-        place == held or held.startswith(above) or place.startswith(held + "/")
-        for held in spellings
-    )
+    folded = _folded(place)
+    return not any(_related(folded, held) for held in (*project, *record))
 
 
 def _widened(
-    layer: _Layer, root: Path, home: Path | None, spellings: Sequence[str]
-) -> tuple[list[str], list[str]]:
-    """What `layer`'s widening keys do to the record directory, named by its `spellings` (folded,
-    as stayfixed computed them from its own machine path): the keys with an entry shown to reach
-    it, and the keys with an entry the row could not tell about."""
+    layer: _Layer, home: Path | None, project: Sequence[str], record: Sequence[str]
+) -> list[str]:
+    """The gaps `layer`'s widening keys open: one for each key holding an entry not shown safe."""
     allowed = _strings(_table(layer.document, "permissions", "allow"))
     entries: dict[str, list[str | None]] = {
         WIDENING_KEYS[0]: [*_strings(_table(layer.document, SANDBOX, FILESYSTEM, ALLOW_WRITE))],
@@ -331,27 +354,11 @@ def _widened(
             *_strings(_table(layer.document, "permissions", ADDITIONAL_DIRECTORIES))
         ],
     }
-    proven: list[str] = []
-    unknown: list[str] = []
-    for key, listed in entries.items():
-        if any(_proven(entry, root, home, spellings) for entry in listed):
-            proven.append(WIDENED.format(label=layer.label, key=key))
-        elif listed:
-            unknown.append(UNKNOWN.format(label=layer.label, key=key))
-    return proven, unknown
-
-
-def _deny_covers(rules: set[str], resolved: str) -> bool:
-    """Whether a deny rule is the spelling `setup` writes over the resolved record directory,
-    compared as text after the same normalisation; no other rule is read as covering it."""
-    head, tail = "Edit(/", "/**)"
-    return any(
-        rule.startswith(head + "/")
-        and rule.endswith(tail)
-        and "\0" not in rule
-        and _folded(posixpath.normpath(rule[len(head) : -len(tail)])) == resolved
-        for rule in rules
-    )
+    return [
+        WIDENED.format(label=layer.label, key=key)
+        for key, listed in entries.items()
+        if not all(_safe(entry, key, home, project, record) for entry in listed)
+    ]
 
 
 def _carries_settings(root: Path) -> bool:
@@ -362,15 +369,13 @@ def _carries_settings(root: Path) -> bool:
     )
 
 
-def _user_directory(context: Context) -> tuple[Path | None, str]:
-    """Where the user's settings live, and how the row names the file, or `None` for no home."""
-    chosen = context.env.get(CONFIG_DIR_VARIABLE)
-    if chosen:
-        return Path(chosen), f"${CONFIG_DIR_VARIABLE}/{USER_FILE}"
-    home = context.home if context.home is not None else passwd_home()
-    if home is None:
-        return None, f"~/{PROJECT_SETTINGS}"
-    return home / CLAUDE_DIR, f"~/{PROJECT_SETTINGS}"
+def _user_directory(context: Context) -> tuple[Path | None, str, bool]:
+    """Where the user's settings live (`None` for no home), how the row names the file, and
+    whether a `CLAUDE_CONFIG_DIR` was passed over."""
+    found = user_settings(context.env, context.home)
+    if found.from_variable:
+        return found.directory, f"${CONFIG_DIR_VARIABLE}/{USER_FILE}", False
+    return found.directory, f"~/{PROJECT_SETTINGS}", found.ignored
 
 
 def _lists_claude(context: Context) -> bool:
@@ -380,13 +385,19 @@ def _lists_claude(context: Context) -> bool:
     return CLAUDE.name in agents
 
 
+def _spellings(*paths: Path) -> list[str]:
+    """Each of stayfixed's own `paths` as the row compares an entry with it."""
+    return [_folded(posixpath.normpath(str(path))) for path in paths]
+
+
 def approval_boundary(context: Context) -> Row:
     """The row (the module docstring says what it reads and how it answers)."""
     if not _lists_claude(context) and not _carries_settings(context.root):
         return Row(SKIP, NOT_LISTED)
-    directory, user_label = _user_directory(context)
+    directory, user_label, ignored = _user_directory(context)
+    of_the_variable = (IGNORED_CONFIG_DIR,) if ignored else ()
     if directory is None or not fsops.is_dir(directory):
-        return Row(SKIP, NO_CLAUDE_CODE)
+        return Row(SKIP, "; ".join((NO_CLAUDE_CODE, *of_the_variable)))
     managed, managed_unread = _managed()
     local = _read(context.root / LOCAL_SETTINGS, LOCAL_SETTINGS)
     project = _read(context.root / PROJECT_SETTINGS, PROJECT_SETTINGS)
@@ -415,20 +426,17 @@ def approval_boundary(context: Context) -> Row:
         held, lead = 1, RECORD_UNREAD
 
     path = record_path(context.machine)
-    # Where the directory leads is what the harness compares a write against, so only a rule over
-    # that covers it; a rule over the directory as named may stand beside it.
+    # Where the directory leads is what the harness compares a write against, and the spelling as
+    # named is what a tool call may carry, so `setup` writes a rule over each and only those count.
     real = fsops.resolved(path.parent) if path is not None else None
-    rule = deny_rule(real) if real is not None else NO_RECORD_RULE
+    wanted = deny_rules(path.parent, real) if path is not None and real is not None else ()
     rules = _deny_rules((managed, local, project, user))
-    covered = real is not None and _deny_covers(rules, _folded(posixpath.normpath(str(real))))
+    missing = [rule for rule in wanted if rule not in rules] if wanted else [NO_RECORD_RULE]
     home = context.home if context.home is not None else passwd_home()
-    # Both spellings of the record directory, computed from stayfixed's own machine path.
-    spellings = (
-        [_folded(posixpath.normpath(str(where))) for where in (path.parent, real)]
-        if path is not None and real is not None
-        else []
-    )
-    unknown: list[str] = []
+    # Both spellings of the record's directory and of the project root, each computed from
+    # stayfixed's own paths, never from an entry.
+    record = _spellings(path.parent, real) if path is not None and real is not None else []
+    project_root = _spellings(context.root, fsops.resolved(context.root))
 
     gaps: list[str] = []
     if enabled is not True:
@@ -437,18 +445,15 @@ def approval_boundary(context: Context) -> Row:
             if enabled is False and source is not None
             else NO_SANDBOX
         )
-    if not covered:
-        gaps.append(NO_DENY.format(rule=rule))
+    if missing:
+        gaps.append(NO_DENY.format(rule=" and ".join(missing)))
+    widened: list[str] = []
     if not admin:
         for layer in (local, project):
             if _strings(_sandbox(layer, EXCLUDED_COMMANDS)):
-                gaps.append(EXCLUDED.format(label=layer.label))
-            shown, untold = _widened(layer, context.root, home, spellings)
-            gaps.extend(shown)
-            unknown.extend(untold)
-    shown, untold = _widened(user, context.root, home, spellings)
-    gaps.extend(shown)
-    unknown.extend(untold)
+                widened.append(EXCLUDED.format(label=layer.label))
+            widened.extend(_widened(layer, home, project_root, record))
+    widened.extend(_widened(user, home, project_root, record))
     unread = [
         NOT_READ.format(label=layer.label)
         for layer in (*managed_unread, local, project, user)
@@ -456,12 +461,17 @@ def approval_boundary(context: Context) -> Row:
     ]
 
     managed_path = managed_settings()
-    if gaps:
+    if gaps or widened:
         status: Status = RED if held else WARN
-        return Row(status, "; ".join((lead, *gaps, *unknown, *unread)), ADD_THE_BOUNDARY)
+        remedies = [
+            *([ADD_THE_BOUNDARY] if gaps else []),
+            *([NARROW_THE_SETTINGS] if widened else []),
+        ]
+        detail = "; ".join((lead, *gaps, *widened, *unread, *of_the_variable))
+        return Row(status, detail, "; ".join(remedies))
     if not admin:
         remedy = MAKE_IT_ADMIN.format(managed=managed_path or NO_MANAGED_PATH)
-        return Row(WARN, "; ".join((lead, NOT_ADMIN, *unknown, *unread)), remedy)
-    detail = "; ".join((lead, GUARDED.format(rule=rule), *unknown, *unread))
-    remedies = [*([CHECK_THE_ENTRIES] if unknown else []), *([MAKE_IT_JSON] if unread else [])]
-    return Row(WARN, detail, "; ".join(remedies)) if remedies else Row(OK, detail)
+        return Row(WARN, "; ".join((lead, NOT_ADMIN, *unread, *of_the_variable)), remedy)
+    rule = " and ".join(wanted)
+    detail = "; ".join((lead, GUARDED.format(rule=rule), *unread, *of_the_variable))
+    return Row(WARN, detail, MAKE_IT_JSON) if unread else Row(OK, detail)

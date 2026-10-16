@@ -7,8 +7,10 @@ added; `[setup] ask_rules = false` takes back exactly those and never a rule you
 writes to the trust record's directory (`Edit(//<that directory>/**)`) and prints the sandbox
 settings that rule needs; it never sets them. `stayfixed doctor` has a nineteenth row,
 `approval-boundary`, which reads this project's effective Claude Code settings: red once the
-machine holds an approval and the sandbox is off for the project, no deny rule covers the record's
-directory where it leads, or a setting widens either (a repository's `sandbox.excludedCommands`, or
-an `allowWrite`, `Edit` allow or `additionalDirectories` entry reaching the record), a warning
-before that, a warning while a repository's settings could still turn the sandbox
-off, and green only when managed settings make it admin-required.
+machine holds an approval and the sandbox is off for the project, the deny rules setup writes are
+not there byte for byte, or a setting widens them (a repository's `sandbox.excludedCommands`, or
+any `allowWrite`, `Edit` allow or `additionalDirectories` entry not shown, as text, to be a literal
+path outside the project and the record's directory), a warning before that, a warning while a
+repository's settings could still turn the sandbox off, and green only when managed settings make
+it admin-required. It reads `CLAUDE_CONFIG_DIR` only when run at a terminal, and says when it
+passed one over.

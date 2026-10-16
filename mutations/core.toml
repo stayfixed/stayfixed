@@ -4460,8 +4460,8 @@ reddens = ["tests/memory/test_commands.py::test_trust_with_no_home_in_the_databa
 [[mutation]]
 name = "an unwritable trust record directory ends as an internal error"
 file = "src/stayfixed/trust/record.py"
-before = "    except OSError as exc:\n        where = ("
-after = "    except LookupError as exc:\n        where = ("
+before = "    except OSError as exc:\n        if sandbox_refused(exc):\n            raise SandboxedWrite(SANDBOXED) from None\n        where = ("
+after = "    except LookupError as exc:\n        if sandbox_refused(exc):\n            raise SandboxedWrite(SANDBOXED) from None\n        where = ("
 reddens = [
   "tests/memory/test_commands.py::test_trust_where_the_database_home_cannot_be_written_fails_naming_the_directory",
 ]
@@ -4755,4 +4755,71 @@ after = "DENY_RULE = \"Edit({directory}/**)\""
 reddens = [
   "tests/setup/test_ask_rules.py::test_the_deny_rule_is_the_measured_spelling",
   "tests/setup/test_ask_rules.py::test_setup_never_writes_a_sandbox_key",
+]
+
+# Claude Code's user settings directory as stayfixed reads it: `CLAUDE_CONFIG_DIR` only from a
+# terminal, since a repository's committed `env` block can set it for an agent's shell, and the
+# password database's home otherwise, never `HOME`.
+
+[[mutation]]
+name = "the user settings directory ignores CLAUDE_CONFIG_DIR"
+file = "src/stayfixed/trust/boundary.py"
+before = "    if chosen and kinds.interactive():"
+after = "    if False:"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_the_user_settings_directory_follows_claude_config_dir_from_a_terminal",
+  "tests/setup/test_commands.py::test_setup_writes_the_user_settings_where_doctor_reads_them[config-dir-from-a-terminal]",
+]
+
+[[mutation]]
+name = "the user settings directory follows CLAUDE_CONFIG_DIR off a terminal"
+file = "src/stayfixed/trust/boundary.py"
+before = "    if chosen and kinds.interactive():"
+after = "    if chosen:"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_off_a_terminal_claude_config_dir_is_not_read_and_is_named[home-settings]",
+  "tests/doctor/test_approval_boundary.py::test_off_a_terminal_claude_config_dir_is_not_read_and_is_named[no-home-settings]",
+  "tests/setup/test_commands.py::test_setup_writes_the_user_settings_where_doctor_reads_them[config-dir-off-a-terminal]",
+]
+
+[[mutation]]
+name = "the user settings directory is HOME's off CLAUDE_CONFIG_DIR"
+file = "src/stayfixed/trust/boundary.py"
+before = "    base = home if home is not None else passwd_home()"
+after = "    base = home if home is not None else Path.home()"
+reddens = [
+  "tests/setup/test_commands.py::test_setup_writes_the_user_settings_where_doctor_reads_them[config-dir-off-a-terminal]",
+  "tests/setup/test_commands.py::test_setup_writes_the_user_settings_where_doctor_reads_them[homes-differ]",
+]
+
+# A write the sandbox refuses: `EPERM`, as macOS's sandbox answers, and `EROFS`, a read-only
+# mount's, and not `EACCES`, a mode's. The record says so in its constant sentence.
+
+[[mutation]]
+name = "a read-only mount's refusal is not read as the sandbox's"
+file = "src/stayfixed/trust/boundary.py"
+before = "SANDBOX_ERRNOS = frozenset({errno.EPERM, errno.EROFS})"
+after = "SANDBOX_ERRNOS = frozenset({errno.EPERM})"
+reddens = ["tests/trust/test_record.py::test_a_write_refused_as_a_sandbox_refuses_one_is_said_so[erofs]"]
+
+[[mutation]]
+name = "a directory's mode is read as the sandbox"
+file = "src/stayfixed/trust/boundary.py"
+before = "SANDBOX_ERRNOS = frozenset({errno.EPERM, errno.EROFS})"
+after = "SANDBOX_ERRNOS = frozenset({errno.EPERM, errno.EROFS, errno.EACCES})"
+reddens = [
+  "tests/trust/test_record.py::test_a_write_refused_as_a_sandbox_refuses_one_is_said_so[eacces]",
+  "tests/memory/test_commands.py::test_trust_where_the_database_home_cannot_be_written_fails_naming_the_directory",
+]
+
+[[mutation]]
+name = "the trust record says nothing of the sandbox that refused its write"
+file = "src/stayfixed/trust/record.py"
+before = "        if sandbox_refused(exc):\n            raise SandboxedWrite(SANDBOXED) from None"
+after = "        if False:\n            raise SandboxedWrite(SANDBOXED) from None"
+reddens = [
+  "tests/trust/test_record.py::test_a_write_refused_as_a_sandbox_refuses_one_is_said_so[eperm]",
+  "tests/trust/test_commands.py::test_a_record_write_a_sandbox_refused_says_a_person_must_run_it[revoke]",
+  "tests/trust/test_commands.py::test_a_record_write_a_sandbox_refused_says_a_person_must_run_it[approve]",
+  "tests/memory/test_commands.py::test_index_whose_refresh_a_sandbox_refused_leaves_the_approval_and_says_so",
 ]

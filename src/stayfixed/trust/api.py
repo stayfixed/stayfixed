@@ -15,10 +15,13 @@ an approval made: the person at the machine runs it, and an agent does not, in t
 approve`'s own refusal uses.
 
 The approval boundary's spellings (`boundary`) are read by two consumers that must not drift apart:
-`setup`, which writes `deny_rule` over the record's directory and names `managed_settings` in what
-it prints, and `doctor`'s `approval-boundary` row, which reads the settings layers through
-`managed_settings`, `MANAGED_DROP_INS` and `CONFIG_DIR_VARIABLE`, judges the sandbox by `SANDBOX`,
-`ENABLED` and `UNSANDBOXED_ALLOWED`, and looks for that same `deny_rule`.
+`setup`, which writes `deny_rules` over the record's directory, writes the user settings in the
+directory `user_settings` finds, and names `managed_settings` in what it prints, and `doctor`'s
+`approval-boundary` row, which reads the settings layers through `managed_settings`,
+`MANAGED_DROP_INS` and `user_settings` (whose `UserSettings` names `CONFIG_DIR_VARIABLE` when it
+was passed over), judges the sandbox by `SANDBOX`, `ENABLED` and `UNSANDBOXED_ALLOWED`, and counts
+those same `deny_rules`. `sandbox_refused` is how `setup` and `memory` tell a write an agent's
+sandbox refused, and `SandboxedWrite` is the record's own refusal of one.
 """
 
 from __future__ import annotations
@@ -29,13 +32,18 @@ from stayfixed.trust.boundary import (
     MANAGED_DROP_INS,
     SANDBOX,
     UNSANDBOXED_ALLOWED,
+    UserSettings,
     deny_rule,
+    deny_rules,
     managed_settings,
+    sandbox_refused,
+    user_settings,
 )
 from stayfixed.trust.commands import PERSON_RUNS, approve_kind, kind_context
 from stayfixed.trust.kinds import ApprovalKind, KindContext, Subject
 from stayfixed.trust.record import (
     Approval,
+    SandboxedWrite,
     State,
     UnreadableTrust,
     approve,
@@ -56,17 +64,22 @@ __all__ = [
     "Approval",
     "ApprovalKind",
     "KindContext",
+    "SandboxedWrite",
     "State",
     "Subject",
     "UnreadableTrust",
+    "UserSettings",
     "approve",
     "approve_kind",
     "deny_rule",
+    "deny_rules",
     "kind_context",
     "managed_settings",
     "record_path",
     "recorded",
     "refresh",
     "revoke",
+    "sandbox_refused",
     "state",
+    "user_settings",
 ]

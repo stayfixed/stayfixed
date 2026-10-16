@@ -192,7 +192,8 @@ def _cli(walk: Walkthrough, *argv: str, tty: bool = False) -> subprocess.Complet
     # A user settings directory that is not there, so `doctor`'s `approval-boundary` row skips
     # before it reads Claude Code's managed settings, which sit at a fixed system path no patch in
     # this process reaches in the child; the row is held in
-    # `tests/doctor/test_approval_boundary.py`.
+    # `tests/doctor/test_approval_boundary.py`. The row reads the variable only from a terminal,
+    # which is why `_doctor` runs on a pseudo-terminal.
     env["CLAUDE_CONFIG_DIR"] = str(walk.home / "no-claude-config-dir")
     # The launcher's own lines, with the password database answering the scratch home as `HOME`
     # does: off a terminal, that is where the machine owner's home is read (`tests/ownerhome.py`).
@@ -225,7 +226,8 @@ def _cli(walk: Walkthrough, *argv: str, tty: bool = False) -> subprocess.Complet
 
 def _doctor(walk: Walkthrough, *, root: Path | None = None) -> list[dict[str, str]]:
     """The nineteen rows, read back out of what `doctor --json` printed on the launcher's
-    stdout."""
+    stdout. Run on a pseudo-terminal, where `CLAUDE_CONFIG_DIR` is read (`_cli` says why it is
+    set)."""
     done = _cli(
         walk,
         "doctor",
@@ -236,6 +238,7 @@ def _doctor(walk: Walkthrough, *, root: Path | None = None) -> list[dict[str, st
         str(walk.home),
         "--machine",
         str(walk.machine),
+        tty=True,
     )
     assert done.stdout, done.stderr
     rows: list[dict[str, str]] = json.loads(done.stdout)["checks"]

@@ -23,14 +23,38 @@ findings at the end of the 2026-10-15 floor, layers and trust plan in `docs/plan
   neither outside it, and a `Write(...)` rule stopped neither in any spelling.
 - **Where an administrator's settings live:** `MANAGED_SETTINGS`, each with an optional directory
   of drop-in files beside it.
+
+**Which user settings directory is Claude Code's** (`user_settings`): `CLAUDE_CONFIG_DIR` when it is
+set and standard input is a terminal, and `.claude` under the home the password database records
+otherwise. A repository's committed `env` block can set `CLAUDE_CONFIG_DIR` for an agent's shell,
+and a directory it chose would let `doctor` judge a decoy and `setup` write rules where no session
+reads them; a person at a terminal set the one they have. The terminal check is `kinds.interactive`,
+the seam `trust approve` asks.
+
+**A write the sandbox refuses** (`sandbox_refused`): with Claude Code's sandbox on, an agent's shell
+writes only the working directory and the temporary directory, so stayfixed's own writes to the
+machine directory -- the trust record, the machine file -- and to the user settings fail there with
+a permission error, whether or not the deny rule is in place. macOS's sandbox answers `EPERM`
+(measured with `sandbox-exec` on macOS 27 on 2026-10-16: an open and a `mkdir` in a denied directory
+each raised `PermissionError` `EPERM`); a read-only mount answers `EROFS`, which Linux's sandbox was
+not measured to give. So `EPERM` and `EROFS` are read as that refusal, and each writer says so in
+its own words, naming a person outside the agent's sandbox as the one to run it. A directory whose
+mode refuses the user answers `EACCES`, which is not the sandbox, and keeps each writer's sentence
+naming the directory.
 """
 
 from __future__ import annotations
 
+import errno
 import sys
 from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
+
+from stayfixed.config.machine import passwd_home
+from stayfixed.harnesses import CLAUDE_DIR
+from stayfixed.trust import kinds
 
 # Claude Code's managed settings, by `sys.platform`: the file only an administrator writes, whose
 # `sandbox` keys a repository's settings cannot override. Measured on Claude Code 2.1.296 (the
@@ -58,6 +82,47 @@ def deny_rule(directory: Path) -> str:
     """The `permissions.deny` rule that keeps the sandboxed shell and the file tools out of
     `directory`, an absolute path."""
     return DENY_RULE.format(directory=directory.as_posix())
+
+
+def deny_rules(named: Path, resolved: Path) -> tuple[str, ...]:
+    """The deny rules `setup` writes over the trust record's directory, spelled `named` and, where
+    a symbolic link makes it differ, `resolved`: the only spellings `doctor` counts, byte for byte.
+    """
+    return tuple(dict.fromkeys((deny_rule(named), deny_rule(resolved))))
+
+
+@dataclass(frozen=True)
+class UserSettings:
+    """Claude Code's user settings directory as stayfixed reads it: the directory (`None` for no
+    home), whether `CLAUDE_CONFIG_DIR` named it, and whether one was set and passed over."""
+
+    directory: Path | None
+    from_variable: bool
+    ignored: bool
+
+
+def user_settings(env: Mapping[str, str], home: Path | None = None) -> UserSettings:
+    """The user settings directory (the module docstring says which): `CLAUDE_CONFIG_DIR` only when
+    standard input is a terminal, and otherwise `.claude` under `home`, a home the person named on
+    the command line, or under the password database's home."""
+    chosen = env.get(CONFIG_DIR_VARIABLE)
+    # Through the module, so the one seam a test replaces is the one asked here.
+    if chosen and kinds.interactive():
+        return UserSettings(Path(chosen), from_variable=True, ignored=False)
+    base = home if home is not None else passwd_home()
+    return UserSettings(
+        None if base is None else base / CLAUDE_DIR, from_variable=False, ignored=bool(chosen)
+    )
+
+
+# The errors a sandboxed write fails with (the module docstring says which were measured).
+SANDBOX_ERRNOS = frozenset({errno.EPERM, errno.EROFS})
+
+
+def sandbox_refused(exc: OSError) -> bool:
+    """Whether `exc` is the refusal an agent's sandbox gives a write outside the working directory
+    (the module docstring says which errors those are)."""
+    return exc.errno in SANDBOX_ERRNOS
 
 
 def managed_settings(platform: str | None = None) -> Path | None:

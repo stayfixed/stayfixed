@@ -4,19 +4,25 @@ and subjects beside the machine file, which still reads the flat map `0.3.0` wro
 
 from __future__ import annotations
 
+import errno
 import json
+import os
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
+from stayfixed import fsops
 from stayfixed.config.machine import machine_config_path
+from stayfixed.errors import Failure
 from stayfixed.trust.record import (
     LATER_VERSION,
     NOT_A_RECORD,
     RECORD,
+    SANDBOXED,
     VERSION,
     Approval,
+    SandboxedWrite,
     State,
     UnreadableTrust,
     approve,
@@ -262,3 +268,41 @@ def test_a_refresh_never_brings_back_a_revoked_approval(tmp_path: Path) -> None:
     assert revoke(machine(tmp_path), "memory", "/s") is True
     assert refresh(machine(tmp_path), "memory", "/s", expected="d", digest="e") is False
     assert recorded(machine(tmp_path)) == {}
+
+
+@pytest.mark.parametrize(
+    ("code", "sandboxed"),
+    [
+        pytest.param(errno.EPERM, True, id="eperm"),
+        pytest.param(errno.EROFS, True, id="erofs"),
+        pytest.param(errno.EACCES, False, id="eacces"),
+    ],
+)
+def test_a_write_refused_as_a_sandbox_refuses_one_is_said_so(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, code: int, sandboxed: bool
+) -> None:
+    # `EPERM`, which macOS's sandbox answers, and `EROFS`, a read-only mount's answer, are read as
+    # the sandbox's refusal and said in the record's constant sentence, a refusal; `EACCES`, a
+    # directory whose mode refuses the user, keeps the sentence naming the directory, a failure.
+    # Nothing is written either way. Mutations (`mutations/`'s "a read-only mount's refusal is not
+    # read as the sandbox's" -> `erofs` names the directory; "a directory's mode is read as the
+    # sandbox" -> `eacces` says the sandbox's sentence).
+    path = machine(tmp_path).parent / RECORD
+
+    def refusing(target: Path, text: str, **kwargs: object) -> None:
+        raise OSError(code, os.strerror(code), str(target))
+
+    monkeypatch.setattr(fsops, "write_atomically", refusing)
+    with pytest.raises((SandboxedWrite, Failure)) as refused:
+        approve(machine(tmp_path), "memory", "/s", "d", now=T0)
+    if sandboxed:
+        assert type(refused.value) is SandboxedWrite
+        assert str(refused.value) == SANDBOXED
+    else:
+        assert type(refused.value) is Failure
+        assert str(refused.value) == (
+            f"{path.parent} cannot be written ({fsops.said(OSError(code, os.strerror(code)))}), "
+            "so the trust record cannot be kept there; it is beside the machine configuration "
+            "file --machine names"
+        )
+    assert not path.exists()

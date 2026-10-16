@@ -1002,8 +1002,12 @@ reddens = [
 name = "a settings write's other OSErrors escape as an internal error again"
 file = "src/stayfixed/setup/run.py"
 before = """    except OSError as exc:
+        if sandbox_refused(exc):
+            raise Refusal(SANDBOXED) from exc
         # `UnsafePath` is not the only `OSError` reachable here"""
 after = """    except UnsafePath as exc:
+        if sandbox_refused(exc):
+            raise Refusal(SANDBOXED) from exc
         # `UnsafePath` is not the only `OSError` reachable here"""
 reddens = [
   "tests/setup/test_setup.py::test_a_settings_path_whose_directory_is_not_there_is_a_refusal_and_not_an_internal_error",
@@ -1015,8 +1019,8 @@ reddens = [
 [[mutation]]
 name = "setup stops expanding a leading ~ in --settings"
 file = "src/stayfixed/setup/commands.py"
-before = "        settings=Path(args.settings).expanduser() if args.settings else None,"
-after = "        settings=Path(args.settings) if args.settings else None,"
+before = "    settings = Path(args.settings).expanduser() if args.settings else None"
+after = "    settings = Path(args.settings) if args.settings else None"
 reddens = [
   "tests/setup/test_commands.py::test_a_tilde_in_settings_is_expanded_the_way_home_and_machine_already_are",
 ]
@@ -1757,8 +1761,8 @@ reddens = ["tests/setup/test_commands.py::test_setup_where_the_homes_differ_says
 [[mutation]]
 name = "an unwritable machine file directory ends as an internal error"
 file = "src/stayfixed/setup/machine.py"
-before = "    except OSError as exc:\n        # With no `--machine`"
-after = "    except LookupError as exc:\n        # With no `--machine`"
+before = "    except OSError as exc:\n        if sandbox_refused(exc):\n            raise Refusal(SANDBOXED) from None\n        # With no `--machine`"
+after = "    except LookupError as exc:\n        if sandbox_refused(exc):\n            raise Refusal(SANDBOXED) from None\n        # With no `--machine`"
 reddens = [
   "tests/setup/test_commands.py::test_setup_where_the_database_home_cannot_be_written_fails_naming_the_directory",
 ]
@@ -2341,8 +2345,70 @@ reddens = [
 [[mutation]]
 name = "the approval boundary covers only the directory as named"
 file = "src/stayfixed/setup/run.py"
-before = "    return tuple(dict.fromkeys((deny_rule(directory), deny_rule(fsops.resolved(directory)))))"
-after = "    return (deny_rule(directory),)"
+before = "    return deny_rules(directory, fsops.resolved(directory))"
+after = "    return deny_rules(directory, directory)"
 reddens = [
   "tests/setup/test_ask_rules.py::test_a_linked_machine_directory_gets_a_rule_for_each_spelling",
+]
+
+# `setup` run from an agent's sandboxed shell: each write the sandbox refuses, and the question
+# asked of the settings directory before the first write, end in the one constant sentence.
+
+[[mutation]]
+name = "setup says nothing of the sandbox that refused its machine file"
+file = "src/stayfixed/setup/machine.py"
+before = "        if sandbox_refused(exc):\n            raise Refusal(SANDBOXED) from None"
+after = "        if False:\n            raise Refusal(SANDBOXED) from None"
+reddens = [
+  "tests/setup/test_commands.py::test_setup_from_a_sandboxed_shell_says_a_person_must_run_it[machine-file]",
+]
+
+[[mutation]]
+name = "setup says nothing of the sandbox that refused its settings file"
+file = "src/stayfixed/setup/run.py"
+before = "        if sandbox_refused(exc):\n            raise Refusal(SANDBOXED) from exc"
+after = "        if False:\n            raise Refusal(SANDBOXED) from exc"
+reddens = [
+  "tests/setup/test_commands.py::test_setup_from_a_sandboxed_shell_says_a_person_must_run_it[settings-file]",
+]
+
+[[mutation]]
+name = "setup reads a directory the sandbox refuses as one its mode refuses"
+file = "src/stayfixed/setup/run.py"
+before = "    return Refusal(SANDBOXED if owned else said)"
+after = "    return Refusal(said)"
+reddens = [
+  "tests/setup/test_commands.py::test_setup_from_a_sandboxed_shell_says_a_person_must_run_it[settings-directory]",
+]
+
+[[mutation]]
+name = "setup reads a directory its mode refuses as the sandbox"
+file = "src/stayfixed/setup/run.py"
+before = "    return Refusal(SANDBOXED if owned else said)"
+after = "    return Refusal(SANDBOXED)"
+reddens = [
+  "tests/setup/test_setup.py::test_a_settings_directory_that_cannot_be_written_is_refused_before_the_machine_file",
+]
+
+# The user settings go where `doctor` reads them: `trust.boundary.user_settings`' directory when
+# neither `--home` nor `--settings` names one.
+
+[[mutation]]
+name = "setup writes the user settings under HOME whatever CLAUDE_CONFIG_DIR says"
+file = "src/stayfixed/setup/commands.py"
+before = "    if found is not None:\n        settings = _claude_settings(found, home)"
+after = "    if False:\n        settings = _claude_settings(found, home)"
+reddens = [
+  "tests/setup/test_commands.py::test_setup_writes_the_user_settings_where_doctor_reads_them[config-dir-from-a-terminal]",
+  "tests/setup/test_commands.py::test_setup_writes_the_user_settings_where_doctor_reads_them[config-dir-off-a-terminal]",
+  "tests/setup/test_commands.py::test_setup_writes_the_user_settings_where_doctor_reads_them[homes-differ]",
+]
+
+[[mutation]]
+name = "setup does not say it passed CLAUDE_CONFIG_DIR over"
+file = "src/stayfixed/setup/commands.py"
+before = "                if found is not None and found.ignored"
+after = "                if False"
+reddens = [
+  "tests/setup/test_commands.py::test_setup_writes_the_user_settings_where_doctor_reads_them[config-dir-off-a-terminal]",
 ]

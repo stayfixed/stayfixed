@@ -43,7 +43,14 @@ from stayfixed.memory.store import Store, Unresolved, in_repository, resolved
 from stayfixed.memory.worktree import harness_link_needed
 from stayfixed.printed import printable, quoted
 from stayfixed.result import Result
-from stayfixed.trust.api import PERSON_RUNS, State, approve_kind, kind_context, state
+from stayfixed.trust.api import (
+    PERSON_RUNS,
+    SandboxedWrite,
+    State,
+    approve_kind,
+    kind_context,
+    state,
+)
 
 
 def _machine(args: argparse.Namespace) -> Path | None:
@@ -136,6 +143,16 @@ _LINK_WAITS = (
 _DROPPED = (
     "the store or its trust record changed while this command ran, so the approval was not "
     "carried over; review the change, and if the store should reach a session, " + _APPROVE
+)
+# The refresh's write refused as an agent's sandbox refuses one (`trust.boundary`): the files were
+# written and the approval was left at the digest the person gave, which they no longer match, so
+# a later run cannot carry it either and only a new approval brings the store back.
+_NOT_REFRESHED = (
+    "the store's approval could not be refreshed and was left as it was: the trust record's "
+    "directory refused the write, as Claude Code's sandbox refuses every write an agent's shell "
+    "makes outside the working directory, so only a person outside the agent's sandbox can write "
+    "it; the approval no longer matches the files this command wrote, so review them, and if the "
+    "store should reach a session, " + _APPROVE
 )
 # What the write path put into notes that nobody curated: an `index:` line taken from a note's
 # `metadata.index` or, failing that, its description. Said on the line and not only in `--json`'s
@@ -315,10 +332,21 @@ def run_index(args: argparse.Namespace) -> Result:
         )
     text = render_index(reconciled, config, store)
     path = write_index(store, config, text)
-    carried = trust.refresh_if_trusted(store, config, before, [*reconciled.written, path])
+    try:
+        carried = trust.refresh_if_trusted(store, config, before, [*reconciled.written, path])
+        sandboxed = False
+    except SandboxedWrite:
+        # The index is written; the refresh alone was refused, and nothing reached the record.
+        carried, sandboxed = False, True
     # Asked after the write and its refresh, which is the state the next session meets.
     trusted = harness_link_needed(store, config)
-    note = _DROPPED if before.trusted and not carried else _gate(store, config, trusted)
+    note: str | None
+    if sandboxed:
+        note = _NOT_REFRESHED
+    elif before.trusted and not carried:
+        note = _DROPPED
+    else:
+        note = _gate(store, config, trusted)
     # Exit 0: the write succeeded, and `--check` is the mode that fails a build. The findings
     # are still said, because a person running this by hand is who can act on them.
     wrote = "; ".join(

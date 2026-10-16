@@ -13,13 +13,18 @@ from pathlib import Path
 
 import pytest
 
+from stayfixed import fsops
 from stayfixed.cli import build_parser, discover_registrars, run
 from stayfixed.overlay.api import MARKETPLACE_MANIFEST, PLUGIN_MANIFEST
 from stayfixed.printed import quoted
 from stayfixed.setup.api import SetupReport
+from stayfixed.setup.commands import CONFIG_DIR_PASSED_OVER
+from stayfixed.setup.machine import SANDBOXED
+from stayfixed.trust import kinds
 from tests.ownerhome import as_owner_home
 from tests.parserlimits import LONG_NUMBER, NESTED
 from tests.runners import Recorder
+from tests.sandboxed import refuse_writes_under
 
 
 def invoke(argv: list[str]) -> int:
@@ -357,3 +362,98 @@ def test_setup_whose_named_machine_file_cannot_be_written_says_nothing_of_runnin
     err = capsys.readouterr().err
     assert f"{named.parent} cannot be written" in err
     assert "--machine" not in err
+
+
+@pytest.mark.parametrize(
+    ("terminal", "variable", "written", "passed_over"),
+    [
+        pytest.param(True, True, "cfg", False, id="config-dir-from-a-terminal"),
+        pytest.param(False, True, "owner", True, id="config-dir-off-a-terminal"),
+        pytest.param(False, False, "owner", False, id="homes-differ"),
+    ],
+)
+def test_setup_writes_the_user_settings_where_doctor_reads_them(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    terminal: bool,
+    variable: bool,
+    written: str,
+    passed_over: bool,
+) -> None:
+    # With neither `--home` nor `--settings`, the user settings go into the directory
+    # `trust.boundary.user_settings` finds, the one `doctor`'s approval-boundary row reads:
+    # `CLAUDE_CONFIG_DIR` from a terminal, and otherwise `.claude` under the home the password
+    # database records, never under `HOME` or a `CLAUDE_CONFIG_DIR` a repository's `env` block may
+    # have set for an agent's shell, which the line then names. Mutations (`mutations/`'s "setup
+    # writes the user settings under HOME whatever CLAUDE_CONFIG_DIR says" -> every case writes
+    # under `HOME`; "the user settings directory ignores CLAUDE_CONFIG_DIR" ->
+    # `config-dir-from-a-terminal` writes under the owner's home; "the user settings directory
+    # follows CLAUDE_CONFIG_DIR off a terminal" -> `config-dir-off-a-terminal` writes into it;
+    # "the user settings directory is HOME's off CLAUDE_CONFIG_DIR" -> the two off-terminal cases
+    # write under `HOME`; "setup does not say it passed CLAUDE_CONFIG_DIR over" ->
+    # `config-dir-off-a-terminal` says nothing of it).
+    places = {name: tmp_path / name for name in ("owner", "chosen", "cfg")}
+    for place in places.values():
+        place.mkdir()
+    (places["owner"] / ".claude").mkdir()
+    as_owner_home(monkeypatch, places["owner"])
+    monkeypatch.setenv("HOME", str(places["chosen"]))
+    if variable:
+        monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(places["cfg"]))
+    monkeypatch.setattr(kinds, "interactive", lambda: terminal)
+    monkeypatch.setattr("stayfixed.setup.commands.subprocess_runner", lambda: Recorder())
+    assert invoke(["setup", "--preset", "recommended", "--yes"]) == 0
+    files = {
+        "owner": places["owner"] / ".claude" / "settings.json",
+        "cfg": places["cfg"] / "settings.json",
+        "chosen": places["chosen"] / ".claude" / "settings.json",
+    }
+    assert {name for name, path in files.items() if path.exists()} == {written}
+    said = capsys.readouterr().out
+    named = CONFIG_DIR_PASSED_OVER.format(path=files[written])
+    assert (named in said) is passed_over, said
+
+
+@pytest.mark.parametrize("refused", ["machine-file", "settings-file", "settings-directory"])
+def test_setup_from_a_sandboxed_shell_says_a_person_must_run_it(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    refused: str,
+) -> None:
+    # An agent's sandbox refuses every write outside the working directory, answering the write
+    # `EPERM` and `os.access` no (`trust.boundary`'s docstring and `setup.run._not_writable` say
+    # how each was measured). Whichever of setup's writes meets it -- the machine file, the user
+    # settings file, or the question asked of the settings directory before the first write --
+    # setup ends in exit 2 and its constant sentence, never a traceback. Mutations (`mutations/`'s
+    # "setup says nothing of the sandbox that refused its machine file" -> `machine-file` fails
+    # naming the directory, exit 1; "setup says nothing of the sandbox that refused its settings
+    # file" -> `settings-file` refuses naming the file; "setup reads a directory the sandbox
+    # refuses as one its mode refuses" -> `settings-directory` says the directory is not
+    # writable).
+    home, machine = tmp_path / "home", tmp_path / "machine" / "config.toml"
+    (home / ".claude").mkdir(parents=True)
+    monkeypatch.setattr("stayfixed.setup.commands.subprocess_runner", lambda: Recorder())
+    met: list[Path] = []
+    if refused == "machine-file":
+        met = refuse_writes_under(monkeypatch, machine.parent)
+    elif refused == "settings-file":
+        met = refuse_writes_under(monkeypatch, home / ".claude")
+    else:
+        real = fsops.creatable
+        monkeypatch.setattr(
+            fsops, "creatable", lambda path: path.parent != home / ".claude" and real(path)
+        )
+    argv = ["setup", "--preset", "recommended", "--yes", "--home", str(home)]
+    assert invoke([*argv, "--machine", str(machine)]) == 2
+    assert capsys.readouterr().err == f"stayfixed: refused: {SANDBOXED}\n"
+    assert (
+        met
+        == {
+            "machine-file": [machine],
+            "settings-file": [home / ".claude" / "settings.json"],
+            "settings-directory": [],
+        }[refused]
+    )
+    assert not (home / ".claude" / "settings.json").exists()

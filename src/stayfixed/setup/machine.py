@@ -62,6 +62,17 @@ from stayfixed import fsops, tomlout
 from stayfixed.config.machine import machine_config_path
 from stayfixed.errors import Failure, Refusal
 from stayfixed.harnesses import CLAUDE
+from stayfixed.trust.api import sandbox_refused
+
+# Said by `setup` where a directory it writes -- stayfixed's machine directory, Claude Code's user
+# settings -- refused a write as an agent's sandbox refuses one (`trust.boundary`'s docstring).
+# Constant, since its likely reader is that agent, and speaking of the person, who runs it outside.
+# A run it stops part-way is one the next run finishes (`setup.run`'s module docstring).
+SANDBOXED = (
+    "setup stopped: a directory it writes refused the write, which Claude Code's sandbox does to "
+    "every write an agent's shell makes outside the working directory, so a person must run "
+    "`stayfixed setup` in their own terminal, outside the agent's sandbox"
+)
 
 # The one machine-scope settings file `setup` writes, relative to `home`, and the one `doctor`'s
 # `hook-entries` check reads back: Claude Code's settings file, which it reads under the home
@@ -185,6 +196,8 @@ def write_machine(
     try:
         fsops.write_atomically(path, text)
     except OSError as exc:
+        if sandbox_refused(exc):
+            raise Refusal(SANDBOXED) from None
         # With no `--machine` the directory is under the home the password database records,
         # which a system user's entry often names as a directory that is not there or not
         # theirs; no other place is one a hook reads, so the failure names the directory. A file

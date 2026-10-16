@@ -21,8 +21,9 @@ check of the CLI's exit codes. Scoped to `attach`/`detach` on purpose, and left 
 from __future__ import annotations
 
 import argparse
+import os
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from stayfixed import fsops
 from stayfixed.areas import SubParsers
@@ -31,6 +32,9 @@ from stayfixed.errors import Failure, Refusal
 from stayfixed.printed import quoted
 from stayfixed.result import Result
 from stayfixed.runner import subprocess_runner
+
+if TYPE_CHECKING:
+    from stayfixed.trust.api import UserSettings
 
 # Imported at module scope, and not deferred into `run_setup` the way `setup.run.setup` still
 # is: a test that wants to keep this command away from a real `claude`/`codex` binary has to
@@ -117,6 +121,13 @@ EMPTY_HOME = (
     "HOME is empty, so it names no home directory and there is no default for --home; set HOME "
     "to your home directory, or pass --home PATH"
 )
+# `CLAUDE_CONFIG_DIR` set where it is not read (`trust.boundary.user_settings`). `path` is the file
+# written, under the home the password database records: the machine's, not the repository's.
+CONFIG_DIR_PASSED_OVER = (
+    "CLAUDE_CONFIG_DIR is set and was not read, since standard input is not a terminal and a "
+    "repository's env block can set it for an agent's shell; the user settings were written to "
+    "{path}"
+)
 
 
 def run_setup(args: argparse.Namespace) -> Result:
@@ -126,7 +137,9 @@ def run_setup(args: argparse.Namespace) -> Result:
         return run_git_hooks(args)
 
     from stayfixed.config.machine import home_is_empty, homes_agree, machine_config_path
+    from stayfixed.setup.machine import USER_SETTINGS
     from stayfixed.setup.run import setup
+    from stayfixed.trust.api import user_settings
 
     # The file every *reader* of it reads (`config.loader.load`, `config.overlay.overlay_root`,
     # `trust.record.record_path`), which no variable moves. This command once took the `isatty`
@@ -146,6 +159,13 @@ def run_setup(args: argparse.Namespace) -> Result:
         # Off `--machine`, the file is under the home the password database records, and this
         # user has none there; a file put under `HOME` instead would be one no hook reads.
         raise Failure(NO_MACHINE_HOME)
+    # The user settings go where Claude Code reads them as `doctor` finds them: a file `--settings`
+    # names, `.claude` under a `--home` the person named, and otherwise the directory
+    # `user_settings` finds, `CLAUDE_CONFIG_DIR` only from a terminal.
+    settings = Path(args.settings).expanduser() if args.settings else None
+    found = user_settings(os.environ) if settings is None and args.home is None else None
+    if found is not None:
+        settings = _claude_settings(found, home)
     report = setup(
         args.preset or "recommended",
         home=home,
@@ -154,9 +174,10 @@ def run_setup(args: argparse.Namespace) -> Result:
         yes=args.yes,
         overlay=args.overlay,
         project_root=_root(args.root),
-        settings=Path(args.settings).expanduser() if args.settings else None,
+        settings=settings,
         boundary=args.approval_boundary,
     )
+    written_to = settings if settings is not None else home / USER_SETTINGS
     data = {
         "machine_written": report.machine_written,
         "plugins_installed": list(report.plugins_installed),
@@ -188,9 +209,26 @@ def run_setup(args: argparse.Namespace) -> Result:
             if report.overlay
             else "no overlay recorded",
             *report.notes,
+            *(
+                [CONFIG_DIR_PASSED_OVER.format(path=written_to)]
+                if found is not None and found.ignored
+                else []
+            ),
         )
     )
     return Result(summary, data)
+
+
+def _claude_settings(found: UserSettings, home: Path) -> Path | None:
+    """The settings file in the directory `user_settings` found, as `setup`'s `settings`: `None`
+    where that is `home`'s own `.claude/settings.json`, which `setup` writes through its walk under
+    `home`, or where no directory was found."""
+    from stayfixed.setup.machine import USER_SETTINGS
+
+    if found.directory is None:
+        return None
+    path = found.directory / Path(USER_SETTINGS).name
+    return None if path == home / USER_SETTINGS else path
 
 
 def register(groups: SubParsers) -> None:

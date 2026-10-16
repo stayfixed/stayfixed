@@ -28,6 +28,7 @@ from tests.floor import developer_free_environ
 from tests.memory.test_commands import common, invoke
 from tests.memory.test_commands import project as project
 from tests.ownerhome import as_owner_home, stayfixed_argv
+from tests.sandboxed import refuse_writes_under
 from tests.scriptload import SCRIPTS, load
 
 T0 = datetime(2026, 10, 16, 9, 30, tzinfo=UTC)
@@ -207,6 +208,34 @@ def test_revoke_needs_no_terminal(project: Path, tmp_path: Path, at_a_terminal: 
     )
     assert proc.returncode == 0, proc.stderr
     assert not _approved(project)
+
+
+@pytest.mark.parametrize("verb", ["revoke", "approve"])
+def test_a_record_write_a_sandbox_refused_says_a_person_must_run_it(
+    project: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    at_a_terminal: None,
+    verb: str,
+) -> None:
+    # From an agent's sandboxed shell the machine directory cannot be written (`EPERM`, as macOS's
+    # sandbox answers), so a revoke there, and an approval from a pseudo-terminal there, end in
+    # exit 2 and the record's constant sentence, nothing written, never a traceback. Mutation
+    # (`mutations/`'s "the trust record says nothing of the sandbox that refused its write"):
+    # exit 1 and the sentence about a directory that cannot be written.
+    from stayfixed.trust.record import SANDBOXED
+
+    assert invoke(["trust", "approve", "memory", *common(project)]) == 0
+    if verb == "approve":
+        assert invoke(["trust", "revoke", "memory", *common(project)]) == 0
+    before = recorded(_machine(project))
+    refused = refuse_writes_under(monkeypatch, _machine(project).parent / RECORD)
+    capsys.readouterr()
+    assert invoke(["trust", verb, "memory", *common(project)]) == 2
+    err = capsys.readouterr().err
+    assert refused == [_machine(project).parent / RECORD]
+    assert err == f"stayfixed: refused: {SANDBOXED}\n"
+    assert recorded(_machine(project)) == before
 
 
 def test_revoke_of_nothing_lists_what_is_recorded(

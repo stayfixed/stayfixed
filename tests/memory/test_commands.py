@@ -16,6 +16,7 @@ from tests import parserlimits
 from tests.crafted import CRAFTED, CRAFTED_TOML, assert_never_raw
 from tests.gitfixture import git
 from tests.ownerhome import as_owner_home
+from tests.sandboxed import refuse_writes_under
 
 CONFIG = """
 [stayfixed]
@@ -411,6 +412,34 @@ def test_index_never_undoes_a_revoke_made_while_it_ran_and_says_so(
     assert invoke(["memory", "index", "--json", *common(project)]) == 0
     assert _DROPPED in json.loads(capsys.readouterr().out)["summary"]
     assert recorded(machine) == {}
+
+
+def test_index_whose_refresh_a_sandbox_refused_leaves_the_approval_and_says_so(
+    project: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Run from an agent's sandboxed shell, the index is written inside the repository and the
+    # refresh of the approval, in the machine directory, is refused (`EPERM`, as macOS's sandbox
+    # answers). The run still exits 0, since the index was written; the approval stays at the
+    # digest the person gave; and the line says, in stayfixed's words, that it could not be
+    # refreshed and why. Never a traceback. Mutations (`mutations/`'s "memory index ends in the
+    # record's refusal when a sandbox refuses its refresh" -> exit 2; "memory index says the
+    # store changed when a sandbox refused its refresh" -> the line says `_DROPPED` instead).
+    from stayfixed.memory.commands import _NOT_REFRESHED
+
+    notes = project / ".stayfixed" / "local" / "memory" / "developer"
+    (notes / "c.md").write_text(NOTE_WITHOUT_INDEX, encoding="utf-8")
+    assert invoke(["trust", "approve", "memory", *common(project)]) == 0
+    machine = project.parent / "machine.toml"
+    before = recorded(machine)
+    refused = refuse_writes_under(monkeypatch, machine.parent / "trust.json")
+    capsys.readouterr()
+    assert invoke(["memory", "index", "--json", *common(project)]) == 0
+    out, err = capsys.readouterr()
+    assert refused == [machine.parent / "trust.json"]
+    assert json.loads(out)["summary"].endswith("; " + _NOT_REFRESHED)
+    assert err == ""
+    assert recorded(machine) == before
+    assert "index:" in (notes / "c.md").read_text(encoding="utf-8")
 
 
 def test_index_says_so_when_the_trust_gate_is_what_empties_the_bundles(

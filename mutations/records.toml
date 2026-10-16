@@ -3438,8 +3438,8 @@ reddens = [
 [[mutation]]
 name = "memory index says nothing when it could not carry an approval over"
 file = "src/stayfixed/memory/commands.py"
-before = "    note = _DROPPED if before.trusted and not carried else _gate(store, config, trusted)"
-after = "    note = _gate(store, config, trusted)"
+before = "    elif before.trusted and not carried:\n        note = _DROPPED"
+after = "    elif False:\n        note = _DROPPED"
 reddens = [
   "tests/memory/test_commands.py::test_index_never_undoes_a_revoke_made_while_it_ran_and_says_so",
 ]
@@ -3529,3 +3529,34 @@ file = "src/stayfixed/memory/trust.py"
 before = "        raise UnsafeNote(UNSAFE_NOTE)"
 after = '        raise UnsafeNote(f"{UNSAFE_NOTE}: {text}")'
 reddens = ["tests/memory/test_trust.py::test_a_body_that_forges_the_marker_is_refused"]
+
+# A refresh of the store's approval that an agent's sandbox refused: the files stayfixed wrote stay
+# written, the approval stays as the person gave it, and the command says so rather than ending in
+# the record's refusal.
+
+[[mutation]]
+name = "memory index ends in the record's refusal when a sandbox refuses its refresh"
+file = "src/stayfixed/memory/commands.py"
+before = "    except SandboxedWrite:\n        # The index is written;"
+after = "    except LookupError:\n        # The index is written;"
+reddens = [
+  "tests/memory/test_commands.py::test_index_whose_refresh_a_sandbox_refused_leaves_the_approval_and_says_so",
+]
+
+[[mutation]]
+name = "memory index says the store changed when a sandbox refused its refresh"
+file = "src/stayfixed/memory/commands.py"
+before = "    if sandboxed:\n        note = _NOT_REFRESHED"
+after = "    if False:\n        note = _NOT_REFRESHED"
+reddens = [
+  "tests/memory/test_commands.py::test_index_whose_refresh_a_sandbox_refused_leaves_the_approval_and_says_so",
+]
+
+[[mutation]]
+name = "attach stops at a refresh the sandbox refused"
+file = "src/stayfixed/memory/worktree.py"
+before = "    with contextlib.suppress(SandboxedWrite):"
+after = "    with contextlib.suppress(LookupError):"
+reddens = [
+  "tests/attach/test_write.py::test_an_approval_attach_could_not_carry_is_said_as_what_happened[sandboxed]",
+]

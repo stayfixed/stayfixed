@@ -491,6 +491,24 @@ and the record is what lets `stayfixed attach` create the harness memory link to
 exists, `stayfixed memory index` and `memory fit` say the link waits for it, and `attach` says
 so instead of making the link.
 
+An agent whose shell can write any file you can could write that record itself, and against it
+Claude Code's own write restriction is the boundary. `stayfixed setup --approval-boundary` adds a
+`permissions.deny` rule over the record's directory and prints the sandbox settings to set, which
+it never sets. `stayfixed doctor`'s `approval-boundary` row says what is in force for a project:
+**red** once the machine holds an approval and the sandbox is off, a repository's settings turn it
+off, `setup`'s deny rules are missing (only its own spellings count), or a setting widens them;
+a **warning** for the same before any approval, and while all of it holds until managed settings
+make the sandbox admin-required (`sandbox.allowUnsandboxedCommands = false` there, after which,
+from Claude Code 2.1.285, a repository's widening settings are ignored); **green** only then. An
+entry of `sandbox.filesystem.allowWrite`, `permissions.additionalDirectories` or an `Edit` allow
+rule is safe only as a literal path outside the project and that directory — `~/.kube` and
+`/tmp/build` are; `**`, `~/.config` and `./build` are not — and every other entry is a gap the row
+names. With the sandbox on, an agent's shell cannot write the machine directory at all, so `setup`,
+`trust revoke` and `memory index`'s refresh of an approval, run there, say a person must run them
+in their own terminal. `stayfixed uninstall` leaves these machine-wide rules:
+`[setup] ask_rules = false` takes the `ask` rules back, and the deny rule is yours to remove by
+hand ([docs/cli.md](https://github.com/stayfixed/stayfixed/blob/main/docs/cli.md#stayfixed-setup---preset-name---yes---approval-boundary---home-path---settings-path---machine-path---overlay-value---root-path)).
+
 ## Memory, in one page
 
 A note is a Markdown file with frontmatter, under a group directory in the store:

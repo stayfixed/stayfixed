@@ -52,6 +52,7 @@ from tests.gitfixture import run_git
 from tests.parserlimits import LONG_NUMBER, NESTED
 from tests.pathfaults import ROOT_SEARCHES_EVERYTHING, unsearchable
 from tests.runners import Recorder
+from tests.sandboxed import refuse_writes_under
 
 # The walk-based snapshot guard, owned at the top level rather than duplicated here and in
 # tests/test_install_path.py: it used to exist twice, verbatim including its docstring, and the
@@ -2232,7 +2233,7 @@ def test_a_trusted_store_keeps_its_approval_when_attach_renders_its_missing_inde
     assert harness_memory_path(root, home).is_symlink()
 
 
-@pytest.mark.parametrize("changed", ["record", "store"])
+@pytest.mark.parametrize("changed", ["record", "store", "sandboxed"])
 def test_an_approval_attach_could_not_carry_is_said_as_what_happened(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, changed: str
 ) -> None:
@@ -2241,9 +2242,12 @@ def test_an_approval_attach_could_not_carry_is_said_as_what_happened(
     # So each way the refresh declines is said as what happened. A revoke made while attach ran
     # (`record`) is kept, and the link waits for an approval the store does not have; a note that
     # arrived while it ran (`store`) leaves the approval at the digest the person gave, and the
-    # link waits because the store changed since. Neither says the approval was carried. Mutation
-    # (`mutations/`'s "a refresh brings back a revoked approval"): `record` reads approved again,
-    # and the link is made.
+    # link waits because the store changed since; a record write an agent's sandbox refuses
+    # (`sandboxed`, `EPERM` from the write, as macOS's sandbox answers) leaves the approval as it
+    # was too, and attach finishes rather than stopping with half its links made. None says the
+    # approval was carried. Mutations (`mutations/`'s "a refresh brings back a revoked approval"
+    # -> `record` reads approved again, and the link is made; "attach stops at a refresh the
+    # sandbox refused" -> `sandboxed` ends in the record's refusal).
     from stayfixed.memory import trust as memory_trust
     from stayfixed.memory.api import harness_memory_path, resolve
     from stayfixed.trust.api import recorded, revoke
@@ -2263,20 +2267,24 @@ def test_an_approval_attach_could_not_carry_is_said_as_what_happened(
         # What happens after the render read the record and before it writes it again.
         if changed == "record":
             revoke(machine, approval.kind, approval.subject)
-        else:
+        elif changed == "store":
             arrived = store / "project-stable" / "arrived.md"
             arrived.write_text("---\nname: arrived\n---\nnew\n", encoding="utf-8")
         carried: bool = real(*args)
         return carried
 
     monkeypatch.setattr(memory_trust, "refresh_if_trusted", meanwhile)
+    record = machine.parent / "trust.json"
+    refused = refuse_writes_under(monkeypatch, record) if changed == "sandboxed" else []
     attached = _attach_it(root, store, machine, home)
+    assert refused == ([record] if changed == "sandboxed" else [])
     assert (store / "MEMORY.md").is_file()
     assert not harness_memory_path(root, home).is_symlink()
     if changed == "record":
         assert attached.notes == (HARNESS_WAITS,)
         assert recorded(machine) == {}
     else:
+        # `store` and `sandboxed` alike: the approval stays at the person's digest.
         assert attached.notes == (HARNESS_LAPSED,)
         assert recorded(machine) == {(approval.kind, approval.subject): approval}
 

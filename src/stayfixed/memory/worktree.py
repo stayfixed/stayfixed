@@ -82,6 +82,7 @@ from stayfixed.memory.store import (
     permitted_roots,
     resolve,
 )
+from stayfixed.trust.api import SandboxedWrite
 
 
 class PartialLink(OSError):
@@ -736,7 +737,11 @@ def _render_missing_index(store: Store, config: Config) -> None:
     before = trust.snapshot(store, config)
     rendered = render_index(reconcile(store, config, write=False), config, store)
     written = write_index(store, config, rendered)
-    trust.refresh_if_trusted(store, config, before, [written])
+    # A refresh an agent's sandbox refused leaves the approval at the person's digest, which the
+    # store no longer matches: the harness link's gate then reads it as lapsed and says so, so
+    # attach carries on rather than stopping with half its links made.
+    with contextlib.suppress(SandboxedWrite):
+        trust.refresh_if_trusted(store, config, before, [written])
 
 
 def _detach_source(config: Config, machine: Path | None, name: str) -> Path | None:

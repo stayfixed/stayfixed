@@ -38,9 +38,23 @@ description: Configure the machine for stayfixed — the preset, the personal pa
    grant a capability, so the user agrees to them by name before the run without `--dry-run`.
 6. Offer the approval boundary, and **ask before running it**:
    `stayfixed setup --preset recommended --approval-boundary` denies the agent writes to the
-   trust record's directory, so `setup` and `trust revoke` run by the agent cannot write there
-   either. Relay the sandbox settings it prints for the user to set; never write a `sandbox` key
-   yourself.
+   trust record's directory. Relay the sandbox settings it prints for the user to set; never write
+   a `sandbox` key yourself. `stayfixed doctor`'s `approval-boundary` row then says what is in
+   force: red once the machine holds an approval and the sandbox is off, a repository file turns it
+   off, `setup`'s deny rules are not there as it spells them, or a setting widens them; a warning
+   for the same before any approval, and a warning while all holds until managed settings make the
+   sandbox admin-required (`sandbox.allowUnsandboxedCommands = false` there; from Claude Code
+   2.1.285 a repository's widening settings are then ignored); green only then. An entry of
+   `sandbox.filesystem.allowWrite`, `permissions.additionalDirectories` or an `Edit` allow rule is
+   safe only as a literal path outside the project and the trust record's directory, `/…` or `~/…`
+   (`//…` or `~/…` in an `Edit` rule), of letters, digits, `.`, `_`, `-` and `/`; every other entry
+   is a gap the row names by key and file.
+   With the sandbox on, the agent's shell cannot write the machine directory at all: when `setup`,
+   `trust revoke` or `memory index` says a person must run it in their own terminal, outside the
+   agent's sandbox, relay that sentence and stop — never retry it outside the sandbox yourself.
+   `stayfixed uninstall` leaves these machine-wide rules: `[setup] ask_rules = false` in the
+   machine configuration file takes the `ask` rules back on the next `setup`, and the deny rule is
+   the user's to remove by hand.
 7. **The preset's plugins install on Claude Code only.** Codex has no verified non-interactive
    marketplace source for them, so `setup` reports the gap as a note rather than attempting an
    unverified install. Relay that note and tell the user to add those plugins by hand on Codex;

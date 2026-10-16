@@ -124,6 +124,7 @@ from __future__ import annotations
 import datetime
 import os
 import shutil
+import stat
 import sys
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
@@ -140,8 +141,14 @@ from stayfixed.jsonobject import json_object, json_text
 from stayfixed.presets import load_preset
 from stayfixed.printed import answered, quoted
 from stayfixed.runner import Runner
-from stayfixed.setup.machine import USER_SETTINGS, read_machine, read_personal, write_machine
-from stayfixed.trust.api import deny_rule, managed_settings, record_path
+from stayfixed.setup.machine import (
+    SANDBOXED,
+    USER_SETTINGS,
+    read_machine,
+    read_personal,
+    write_machine,
+)
+from stayfixed.trust.api import deny_rules, managed_settings, record_path, sandbox_refused
 
 # `<plugin-name>@<marketplace-name>`, matching `.claude-plugin/plugin.json`'s `name` and
 # `.claude-plugin/marketplace.json`'s `name` (`tests/test_manifests.py` holds both). Claude
@@ -485,6 +492,8 @@ def _write_user_settings(
     except UnsafePath as exc:
         raise Refusal(f"{path} cannot be written: {exc}; {_SYMLINKED_SETTINGS}") from exc
     except OSError as exc:
+        if sandbox_refused(exc):
+            raise Refusal(SANDBOXED) from exc
         # `UnsafePath` is not the only `OSError` reachable here, and the two that are not it
         # used to leave this library and land on `cli.run`'s final handler as `stayfixed:
         # internal error: FileNotFoundError`, exit 2, no remedy -- the exact rendering the
@@ -612,6 +621,25 @@ def _check_settings_path(home: Path) -> None:
         )
 
 
+def _not_writable(directory: Path, said: str) -> Refusal:
+    """The refusal of `directory`, which `os.access` says this user may not write: `SANDBOXED`
+    where its mode lets its owner, this user, write and search it, and `said` otherwise.
+
+    An agent's sandbox answers `os.access` as it answers the write (measured with `sandbox-exec`
+    on macOS 27 on 2026-10-16: `os.access(W_OK)` was false for a directory the profile denied and
+    whose mode allowed the write), so a directory its mode does not refuse is refused by something
+    else -- the sandbox, or a read-only mount, whose answer is the same for a person: run it from
+    their own terminal. A mode that refuses the user is not the sandbox, and keeps `said`.
+    """
+    try:
+        found = os.stat(directory)
+    except OSError:
+        return Refusal(said)
+    writable = stat.S_IWUSR | stat.S_IXUSR
+    owned = found.st_uid == os.getuid() and found.st_mode & writable == writable
+    return Refusal(SANDBOXED if owned else said)
+
+
 def _check_home_usable(
     home: Path, *, settings: Path | None = None, created: Path | None = None
 ) -> None:
@@ -658,7 +686,9 @@ def _check_home_usable(
         # `mkdir`'s to name, as "File exists" or "Not a directory": "is not writable" said of it
         # would be a cause it does not have.
         if fsops.is_dir(directory) and not fsops.creatable(path):
-            raise Refusal(f"--home {home} cannot be used: {directory} is not writable")
+            raise _not_writable(
+                directory, f"--home {home} cannot be used: {directory} is not writable"
+            )
     if settings is None:
         unread = _unreadable_on_the_walk(home, USER_SETTINGS)
         if unread is not None:
@@ -749,7 +779,7 @@ def _check_settings_parent(settings: Path) -> None:
     # in the words above about a symlink that was not there. `os.access` says yes to root, for
     # whom the write's own refusal stays the floor.
     if not fsops.creatable(settings):
-        raise Refusal(f"{settings} cannot be written: {parent} is not writable")
+        raise _not_writable(parent, f"{settings} cannot be written: {parent} is not writable")
     if _unreadable_on_the_walk(parent, settings.name) is not None:
         raise Refusal(f"{settings} cannot be written: {parent} {_OPENED_TO_READ}")
 
@@ -1545,4 +1575,4 @@ def _boundary_rules(machine: Path) -> tuple[str, ...]:
     a write against the path it resolves and `doctor` asks for that one."""
     path = record_path(machine)
     directory = machine.parent if path is None else path.parent
-    return tuple(dict.fromkeys((deny_rule(directory), deny_rule(fsops.resolved(directory)))))
+    return deny_rules(directory, fsops.resolved(directory))
