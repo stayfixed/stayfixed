@@ -3417,5 +3417,5 @@ file = "src/stayfixed/attach/doctor.py"
 before = "                None\n                if context.config is None\n                else binding_for("
 after = "                None\n                if False\n                else binding_for("
 reddens = [
-  "tests/doctor/test_floor_report.py::test_a_machine_with_an_overlay_and_no_stayfixed_toml_is_red_about_nothing",
+  "tests/doctor/test_floor_report.py::test_an_attached_checkout_whose_stayfixed_toml_is_gone_still_has_its_claims_asked",
 ]

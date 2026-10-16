@@ -13,6 +13,7 @@ from typing import Any, cast
 
 import pytest
 
+from stayfixed.config.session import SessionConfig
 from stayfixed.gitenv import _git_toplevel
 from stayfixed.harnesses import CLAUDE, HARNESSES, Harness
 from stayfixed.hooks.api import Decision, Handler, HookEvent, HookResult, NullSink, Policy
@@ -907,8 +908,10 @@ def test_a_user_the_password_database_does_not_list_still_gets_an_answer(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # A container run under a uid with no entry has no home off a terminal, so no machine file:
-    # the configuration loads with the preset's `[personal]` and the guards still answer. Read as
-    # an error instead, a `closed` entry would refuse every tool call on such a machine.
+    # the configuration loads over the preset's owner values and the guards still answer. Read as
+    # an error instead, a `closed` entry would refuse every tool call on such a machine. Mutation
+    # (`mutations/`'s "the configuration reads a machine file that has no home"): the owner's
+    # layer raises and the call is refused.
     as_owner_home(monkeypatch, None)
     (tmp_path / ".git").mkdir()
     (tmp_path / "stayfixed.toml").write_text(
@@ -925,4 +928,5 @@ def test_a_user_the_password_database_does_not_list_still_gets_an_answer(
     probe = Handler(name="probe", event="PreToolUse", policy=Policy.CLOSED, run=note)
     payload: dict[str, object] = {"cwd": str(tmp_path), "tool_name": "Bash"}
     assert _hook(monkeypatch, "PreToolUse", payload, probe, env={"HOME": str(tmp_path)}) == 0
-    assert len(seen) == 1 and seen[0] is not None
+    # The session a handler is handed always exists; its project configuration is what loaded.
+    assert len(seen) == 1 and isinstance(seen[0], SessionConfig) and seen[0].config is not None

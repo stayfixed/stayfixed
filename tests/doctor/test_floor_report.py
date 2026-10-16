@@ -17,7 +17,7 @@ import pytest
 from stayfixed.config.session import FALLBACK_WARNING, cause
 from stayfixed.doctor.api import NO_CONFIG_SKIP, OK, RED, SKIP, WARN, Check, run_checks
 from stayfixed.doctor.checks import NOT_INITIALISED
-from tests.doctor.test_checks import LOCAL_ONLY, _initialised
+from tests.doctor.test_checks import LOCAL_ONLY, _attached, _initialised, _machine
 from tests.overlay.test_requires import overlay_with
 from tests.ownerhome import as_owner_home
 from tests.runners import Recorder
@@ -165,9 +165,9 @@ def test_a_machine_with_an_overlay_and_no_stayfixed_toml_is_red_about_nothing(
     # The two rows that read the project configuration beside a recorded overlay: the claims
     # `hook-entries` asks name the project's binding, and `overlay-requires` asks whether the
     # project consults the overlay. With no project, the claims answer what `common/` grants and
-    # an unmet floor is a warning. Mutations (`mutations/`'s "the attach claims ask a binding of
-    # no project configuration" -> `hook-entries` reads as a check that could not run; "the
-    # overlay floor asks a project configuration that is not there" -> `overlay-requires` does).
+    # an unmet floor is a warning. Mutation (`mutations/`'s "the overlay floor asks a project
+    # configuration that is not there"): `overlay-requires` reads as a check that could not run.
+    # With no ledger the claims never ask the overlay, so the test below holds them.
     root = tmp_path / "project"
     root.mkdir()
     machine = _recorded_overlay(tmp_path, ">=99.0.0")
@@ -188,3 +188,17 @@ def test_harness_link_skips_without_a_configuration_when_the_homes_differ(
     root.mkdir()
     checked = row(run_checks_for(tmp_path, root, machine=none(tmp_path)), "harness-link")
     assert (checked.status, checked.detail) == (SKIP, NO_CONFIG_SKIP)
+
+
+def test_an_attached_checkout_whose_stayfixed_toml_is_gone_still_has_its_claims_asked(
+    tmp_path: Path,
+) -> None:
+    # A ledger recording an entry is what makes `hook-entries` ask `attach`'s claims, and they
+    # derived the binding from the project's name, so with no project configuration they raised
+    # and the row read as one that could not run. They answer what `common/` grants instead.
+    # Mutation (`mutations/`'s "the attach claims ask a binding of no project configuration"):
+    # the row names the claims that did not answer.
+    root = _attached(tmp_path)
+    (root / "stayfixed.toml").unlink()
+    checked = row(run_checks_for(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    assert "could not run" not in checked.detail, checked

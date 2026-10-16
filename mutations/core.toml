@@ -107,9 +107,9 @@ reddens = [
 # `closed` hook that raised would refuse every tool call on such a machine.
 [[mutation]]
 name = "the configuration reads a machine file that has no home"
-file = "src/stayfixed/config/loader.py"
-before = '    raw = None if machine is None else read_machine_toml(machine)'
-after = '    raw = read_machine_toml(machine)'
+file = "src/stayfixed/config/owner.py"
+before = '        raw = None if machine is None else read_machine_toml(machine)'
+after = '        raw = read_machine_toml(machine)'
 reddens = ["tests/hooks/test_dispatch.py::test_a_user_the_password_database_does_not_list_still_gets_an_answer"]
 
 [[mutation]]
