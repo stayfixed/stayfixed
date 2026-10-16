@@ -110,7 +110,13 @@ What each edge carries:
   `stayfixed.config.session` (`SessionConfig`, `session_config`). HS2 adds the
   `overlay` and `checkout` kinds and wires the overlay's three layers into `resolve`; HS3 rewrites
   the `memory` kind and removes the `memory trust` alias; CP2 adds the `regressions` kind; PF1
-  makes `profiles` a layered preference with a union merge.
+  makes `profiles` a layered preference with a union merge. As HS1 shipped, `resolve` decides who
+  may set a key and gives doctor's `preferences` row its provenance, while the loader still builds
+  `Config`'s values: HS2's first task builds the preference and session values from a `Resolution`
+  and carries the provenance on `SessionConfig`, so doctor stops deriving it a second time. HS1 also
+  ships `stayfixed.config.reading` (the names both loaders share), `ApprovalKind.flags` as a mapping
+  of flag to help text, the layer names `OVERLAY_COMMON`, `OVERLAY_PROJECT`, `OVERLAY_MACHINE`, and
+  `stayfixed.trust.boundary` (the approval boundary's settings reading, shared by doctor and setup).
 - **HS2 → HS3.** The binding id, the confirmed checkout and the machine data directory's layout;
   HS3's pointer to the composed store is whatever HS2's measurement of an absolute
   `autoMemoryDirectory` chose.

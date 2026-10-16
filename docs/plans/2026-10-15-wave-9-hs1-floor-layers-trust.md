@@ -992,8 +992,8 @@ the instruction to retry once with `dangerouslyDisableSandbox` if the sandbox bl
 |---|---|---|
 | none | yes | ran unsandboxed |
 | user `sandbox.enabled = true` | yes | blocked, then the agent's retry with `dangerouslyDisableSandbox: true` ran unsandboxed |
-| + project `.claude/settings.json` `sandbox.enabled = false` | yes | ran unsandboxed: the project file turns the user's sandbox off |
-| + local `.claude/settings.local.json` the same | yes | ran unsandboxed |
+| + the project settings file setting `sandbox.enabled = false` | yes | ran unsandboxed: the project file turns the user's sandbox off |
+| + the local settings file doing the same | yes | ran unsandboxed |
 | + user `sandbox.allowUnsandboxedCommands = false` | yes | the project file still turns the sandbox off |
 | user `enabled` + `allowUnsandboxedCommands = false`, project `enabled = false`, no local file | yes | the same |
 | user `enabled`, project `enabled = false`, `--settings '{"sandbox":{"allowUnsandboxedCommands":false}}'` | no | the project's `false` is ignored; the retry is ignored |
@@ -1070,3 +1070,47 @@ model, asked to quote its context, did not see a `systemMessage`, and did see a
   fallback (`[project] name = "has space"` surfaced as "missing required key(s): name"; a committed
   `docs` symlink failed the preset's `paths.architecture`). Put to the owner, who chose a typed
   refusal and a whole fallback at the session (Global Constraints, amended); Task 5 builds it.
+
+### Wave C — Tasks 5–6
+
+- Implementer 709,103 tokens (ended without a hand-back; its report file was complete); one fix
+  round by a fresh implementer (375,367 tokens). The review found the NOTE retry's third failure at
+  one seam (a section that is not a table surfaced as a missing key), so the retry was redesigned
+  rather than patched: a refused key is removed only when a fallback exists, decided before the
+  removal. Also: an oracle survivor wave B's `_preset` change had left, and unbounded key names in
+  a doctor detail the doctor skill relays to the model (now at most three, each clipped). Codex's
+  hooks reference lists `systemMessage` as a common output field, so one render serves both.
+
+### Wave D — Tasks 7–9
+
+- Implementer 483,530 tokens; one fix round (343,092 tokens): the terminal check's refusal now
+  addresses the person and tells an agent to stop instead of naming the bypass; four refusal arms of
+  the version-1 reader gained tests; the alias keeps its old `--json` keys for its one release; the
+  refresh became a compare-and-set that keeps `approved_at`; subjects print as `~/…`.
+
+### Wave E — Task 10
+
+- Implementer 696,924 tokens, then three fix rounds (640,475; 425,517; 278,214). Six automated
+  security passes and three reviews went over the `approval-boundary` row's reading of settings
+  entries. Emulating Claude Code's glob matcher kept failing (a regex built from a settings string,
+  unnormalised paths, live-filesystem calls on settings paths), so the owner ruled the final shape:
+  a widening entry is safe only as a literal absolute or `~/` path outside the project that, as
+  text, neither is, contains nor lies inside the record's directory; everything else is a gap;
+  deny coverage counts setup's spellings byte for byte; no filesystem call and no regex on a
+  settings string. Later rounds added: green only from managed or user settings, with managed
+  `failIfUnavailable`; `filesystem.disabled` and every `excludedCommands` judged; `CLAUDE_CONFIG_DIR`
+  may only worsen the row; stayfixed's own writes from a sandboxed shell fail with a sentence.
+
+### Wave F — Task 11
+
+- Four parallel seats (correctness 372,090 tokens; architecture 300,695; security 280,062;
+  lifecycle 305,808) found no Critical and seven Important issues: commands never read the owner's
+  layer (three seats); a ~200 KB `stayfixed.toml` of bad custom gates pushed the NOTE retry past
+  the hook's 10 s timeout, which Claude Code lets through (now `NOTE_REMOVAL_LIMIT`, one parse);
+  widening keys of the wrong type read as empty; a byte-order mark hid a project settings file;
+  `trust revoke` blocked by a file `trust list` could not load; `CLAUDE_CONFIG_DIR` printed whole;
+  `resolve`'s documented role. One fix wave (716,774 tokens) and one scoped re-review.
+- Follow-ups for the owner: `onFailure: "block"` on the `PreToolUse` hook entry (the hook file
+  belongs to HS2 and HS3); a managed widening entry inside a non-managed one; doctor relaying at
+  most three clipped key names; a pull request narrowing `memory.groups`; whether commands should
+  only warn, not refuse, on a key the owner's machine file holds that they cannot use.
