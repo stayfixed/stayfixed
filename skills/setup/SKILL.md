@@ -36,11 +36,16 @@ description: Configure the machine for stayfixed — the preset, the personal pa
 5. After a stayfixed release, `stayfixed overlay upgrade --root PATH --dry-run` says what would
    change. Relay the report, and relay the `ASK FIRST` list separately: those two files can
    grant a capability, so the user agrees to them by name before the run without `--dry-run`.
-6. **The preset's plugins install on Claude Code only.** Codex has no verified non-interactive
+6. Offer the approval boundary, and **ask before running it**:
+   `stayfixed setup --preset recommended --approval-boundary` denies the agent writes to the
+   trust record's directory, so `setup` and `trust revoke` run by the agent cannot write there
+   either. Relay the sandbox settings it prints for the user to set; never write a `sandbox` key
+   yourself.
+7. **The preset's plugins install on Claude Code only.** Codex has no verified non-interactive
    marketplace source for them, so `setup` reports the gap as a note rather than attempting an
    unverified install. Relay that note and tell the user to add those plugins by hand on Codex;
    do not present the run as having configured both harnesses.
-7. `--home` and `--machine` point the `--preset` run at a scratch destination instead of the
+8. `--home` and `--machine` point the `--preset` run at a scratch destination instead of the
    real home directory and `~/.config/stayfixed/config.toml`. They are **not** a dry run — the
    same files are written, just elsewhere — and `--git-hooks` ignores both. Do not offer them
    as a way to preview what `setup` would do; there is no such mode.

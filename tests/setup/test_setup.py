@@ -623,7 +623,7 @@ def test_rerunning_overlay_create_over_an_existing_overlay_creates_nothing_and_n
     )
     assert not any(argv[:3] == ["gh", "repo", "create"] for argv in runner.calls)
     assert not any(argv[:3] == ["gh", "repo", "view"] for argv in runner.calls)
-    text = " ".join(str(note) for note in vars(report).values())
+    text = " ".join(str(value) for value in vars(report).values() if value is not None)
     assert "None" not in text
     assert "already" in " ".join(report.notes)
     assert overlay_root(machine) == destination

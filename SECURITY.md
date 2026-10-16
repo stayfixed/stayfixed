@@ -101,7 +101,9 @@ Out of scope:
   holds against a repository's bytes and a `git pull`: a clone cannot write the record, and a
   changed note lapses it. An agent that can run any command as you can also write any file you
   can, the record included, and against it the harness's own write restriction is the boundary —
-  keep the machine file's directory out of what the agent may write. `stayfixed trust approve`
+  keep the machine file's directory out of what the agent may write: `stayfixed setup
+  --approval-boundary` adds the deny rule and says which sandbox settings it needs, and `stayfixed
+  doctor`'s `approval-boundary` row says what is in force for a project. `stayfixed trust approve`
   refuses when standard input is not a terminal. Claude Code 2.1.296's shell tool gave a command
   none, measured in a terminal session and on the desktop app's Code tab; no other harness, Codex
   among them, was measured. The check slows a bare call and guarantees nothing against an agent

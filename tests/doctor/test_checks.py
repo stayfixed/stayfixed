@@ -1,6 +1,6 @@
 """What `doctor` answers about an installation, and what it refuses to guess.
 
-One of the eighteen checks cannot be answered by this build and says so rather than guessing:
+One of the nineteen checks cannot be answered by this build and says so rather than guessing:
 `codex-hooks`, a platform question no measurement has answered yet, and a check that
 returned green because it could not look would be strictly worse than one that admits it.
 `ci-ref` used to be counted beside it; `init` writes `[ci] ref`, so its skip reports a state of
@@ -352,7 +352,7 @@ def test_a_configuration_holding_a_number_past_the_parser_does_not_load(tmp_path
     assert (row.status, row.detail) == (RED, cause(FALLBACK_WARNING))
 
 
-# The report's eighteen names in the report's order, written out rather than read back from the
+# The report's nineteen names in the report's order, written out rather than read back from the
 # registry: the core's own checks, then each delivery area's in area-name order — `attach`,
 # `memory`, `overlay`. `docs/cli.md`'s table is held to the same order.
 REPORT = (
@@ -368,6 +368,7 @@ REPORT = (
     "ci-ref",
     "diagnostics",
     "ignored-env",
+    "approval-boundary",
     "attached",
     "bundles",
     "store-debris",
@@ -379,7 +380,7 @@ REPORT = (
 
 def test_every_check_has_one_row_in_one_report(tmp_path: Path) -> None:
     # Moving a check into its area must not cost it its row, nor give it a second one: the
-    # eighteen are the same eighteen, once each. A literal tuple and not the registry read back,
+    # nineteen are the same nineteen, once each. A literal tuple and not the registry read back,
     # so a check that dropped out of both the core and the areas reddens here. Mutation (oracle):
     # `mutations/`'s "doctor drops the checks an area contributes" -> the six delivery rows are
     # missing. The fixture is an initialised project with nothing else to look at -- no overlay,
@@ -2934,7 +2935,7 @@ def test_every_registry_name_is_spelled_exactly_once_in_the_module() -> None:
     # times, and the registry spelled the name an eighth time. A row that disagreed with its
     # key was one typo away and nothing would have said so. Now a check
     # returns a `Row` and `_guarded` stamps the registry's name, so each name is a string
-    # literal exactly once in the modules that hold it: the core's twelve in `CHECKS`, counted
+    # literal exactly once in the modules that hold it: the core's thirteen in `CHECKS`, counted
     # over every module that defines one of `CHECKS`' checks, and each area's in its own
     # `doctor.py`, in the `Contribution` its `register()` returns. The core's modules are read off
     # where the checks are defined rather than listed, so a check split into a module of its own
@@ -2961,7 +2962,7 @@ def test_every_registry_name_is_spelled_exactly_once_in_the_module() -> None:
         return {name: literals.count(name) for name in names}
 
     names = [name for name, _ in module.CHECKS]
-    assert len(names) == 12
+    assert len(names) == 13
     core = [module, *{sys.modules[check.__module__] for _, check in module.CHECKS} - {module}]
     # `hook-entries` is defined outside `checks.py`, so the walk reads more than the registry.
     assert "stayfixed.doctor.entries" in [each.__name__ for each in core]

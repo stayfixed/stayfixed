@@ -13,10 +13,25 @@ approval and not tell one that lapsed from one never given. `ApprovalKind`, `Kin
 than the new one. `PERSON_RUNS` is the sentence `memory` and `attach` tell their reader in to have
 an approval made: the person at the machine runs it, and an agent does not, in the words `trust
 approve`'s own refusal uses.
+
+The approval boundary's spellings (`boundary`) are read by two consumers that must not drift apart:
+`setup`, which writes `deny_rule` over the record's directory and names `managed_settings` in what
+it prints, and `doctor`'s `approval-boundary` row, which reads the settings layers through
+`managed_settings`, `MANAGED_DROP_INS` and `CONFIG_DIR_VARIABLE`, judges the sandbox by `SANDBOX`,
+`ENABLED` and `UNSANDBOXED_ALLOWED`, and looks for that same `deny_rule`.
 """
 
 from __future__ import annotations
 
+from stayfixed.trust.boundary import (
+    CONFIG_DIR_VARIABLE,
+    ENABLED,
+    MANAGED_DROP_INS,
+    SANDBOX,
+    UNSANDBOXED_ALLOWED,
+    deny_rule,
+    managed_settings,
+)
 from stayfixed.trust.commands import PERSON_RUNS, approve_kind, kind_context
 from stayfixed.trust.kinds import ApprovalKind, KindContext, Subject
 from stayfixed.trust.record import (
@@ -32,7 +47,12 @@ from stayfixed.trust.record import (
 )
 
 __all__ = [
+    "CONFIG_DIR_VARIABLE",
+    "ENABLED",
+    "MANAGED_DROP_INS",
     "PERSON_RUNS",
+    "SANDBOX",
+    "UNSANDBOXED_ALLOWED",
     "Approval",
     "ApprovalKind",
     "KindContext",
@@ -41,7 +61,9 @@ __all__ = [
     "UnreadableTrust",
     "approve",
     "approve_kind",
+    "deny_rule",
     "kind_context",
+    "managed_settings",
     "record_path",
     "recorded",
     "refresh",

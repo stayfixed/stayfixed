@@ -192,7 +192,7 @@ mkdir -p .stayfixed/local/memory/developer
 printf -- '---\nname: first-note\ndescription: "When to open this note"\n---\n\nThe note.\n' \
   > .stayfixed/local/memory/developer/first-note.md
 stayfixed memory index      # renders .stayfixed/local/memory/MEMORY.md from the notes
-stayfixed doctor            # eighteen checks over this installation, one line; --json has the remedies
+stayfixed doctor            # nineteen checks over this installation, one line; --json has the remedies
 ```
 
 `memory index` will tell you the notes reach no session until you run
@@ -226,7 +226,7 @@ stayfixed writes files. Being specific about which is the point of this section.
 | `.stayfixed/manifest.json` | The ledger of every scaffolded artifact | the scaffold engine |
 | `.stayfixed/local/artifacts/` | The artifacts `[artifacts] local` keeps out of git, at the path each would have in the repository — git-ignored, never recorded in the manifest | `stayfixed init` and `stayfixed upgrade`, when `[artifacts] local` lists them; `stayfixed uninstall` takes them back |
 | `.stayfixed/local/artifacts.json` | The record of the bytes stayfixed last wrote under `.stayfixed/local/artifacts/`, so an unedited copy is refreshed or retired and an edited one is left. Git-ignored and never committed. Deleted, later runs judge a copy at its artifact's own place by what they render, and no longer find a copy left at an earlier place at all | the scaffold engine; `stayfixed uninstall` removes it |
-| `~/.config/stayfixed/config.toml` | Machine-level settings: `[personal]`, `[overlay]`, `[machine]`. `~` is your home as the password database records it, never `HOME`, which direnv, mise or a devcontainer can set from a file the repository commits ([docs/cli.md](https://github.com/stayfixed/stayfixed/blob/main/docs/cli.md#configuration)) | you, or `stayfixed setup` |
+| `~/.config/stayfixed/config.toml` | Machine-level settings: `[personal]`, `[overlay]`, `[machine]`, and `[setup]`, whose `added_rules` records the rules `setup` added to `~/.claude/settings.json` and whose `ask_rules = false` takes its `ask` rules back. `~` is your home as the password database records it, never `HOME`, which direnv, mise or a devcontainer can set from a file the repository commits ([docs/cli.md](https://github.com/stayfixed/stayfixed/blob/main/docs/cli.md#configuration)) | you, or `stayfixed setup` |
 | `~/.config/stayfixed/trust.json` | Every approval you gave on this machine — today, which repositories' committed notes may reach the model — as a versioned record of kinds and subjects, under the same home | `stayfixed trust approve` and `stayfixed trust revoke` |
 | `hooks/hooks.json` and `hooks/run-hook.sh` | The zero-config wiring both harnesses read, and the wrapper they execute. **Shipped in the plugin; never written into a project** | nothing — they are part of the plugin |
 | `${CLAUDE_PLUGIN_DATA}/stayfixed/` | Once-per-session markers and the hook diagnostics log. Deleted with the plugin | the hook dispatcher |
@@ -432,6 +432,7 @@ stayfixed setup --preset recommended                   # the machine configurati
 stayfixed setup --preset recommended --overlay ../stayfixed-private   # record an existing overlay; no --yes needed
 stayfixed setup --preset recommended --overlay create:you/stayfixed-private --yes  # create one on GitHub; --yes is the consent
 stayfixed setup --preset recommended --settings ~/dotfiles/claude/settings.json    # a linked settings file, written where it really is
+stayfixed setup --preset recommended --approval-boundary  # also deny agents writes to the trust record; prints the sandbox settings to set
 stayfixed setup --git-hooks                            # install the commit-message hook into this repository
 stayfixed setup --git-hooks --uninstall                # remove it; restore the hook it chained to
 
@@ -445,7 +446,7 @@ stayfixed adopt promote                                # enforce every gate that
 stayfixed adopt promote --builtin                      # the same, running none of the repository's own gate commands
 
 # Diagnosing an installation
-stayfixed doctor                                       # eighteen checks over this installation, one line
+stayfixed doctor                                       # nineteen checks over this installation, one line
 stayfixed doctor --json                                # every check with its status, detail and remedy
 
 # Internal

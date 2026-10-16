@@ -43,9 +43,9 @@ from stayfixed.runner import subprocess_runner
 # `discover()` that `tests/boundaries/test_discovery.py` holds `hooks.py` to.
 
 _BOTH_MODES = (
-    "--git-hooks installs a hook into one repository; --preset writes machine-level files. "
-    "A single run has one exit code to report, so it does only one of the two — run them "
-    "separately"
+    "--git-hooks installs a hook into one repository; --preset and --approval-boundary write "
+    "machine-level files. A single run has one exit code to report, so it does only one of the "
+    "two — run them separately"
 )
 
 
@@ -121,7 +121,7 @@ EMPTY_HOME = (
 
 def run_setup(args: argparse.Namespace) -> Result:
     if args.git_hooks:
-        if args.preset is not None:
+        if args.preset is not None or args.approval_boundary:
             raise Refusal(_BOTH_MODES)
         return run_git_hooks(args)
 
@@ -155,6 +155,7 @@ def run_setup(args: argparse.Namespace) -> Result:
         overlay=args.overlay,
         project_root=_root(args.root),
         settings=Path(args.settings).expanduser() if args.settings else None,
+        boundary=args.approval_boundary,
     )
     data = {
         "machine_written": report.machine_written,
@@ -162,6 +163,9 @@ def run_setup(args: argparse.Namespace) -> Result:
         "deny_written": report.deny_written,
         "cli_on_path": report.cli_on_path,
         "overlay": str(report.overlay) if report.overlay is not None else None,
+        "ask_added": list(report.ask_added),
+        "ask_removed": list(report.ask_removed),
+        "boundary": report.boundary,
         "notes": list(report.notes),
     }
     # Where `HOME` is not the database's home, the file is not where the person may look for it,
@@ -177,6 +181,8 @@ def run_setup(args: argparse.Namespace) -> Result:
             f"machine configuration written to {machine}{under}",
             f"{len(report.plugins_installed)} plugin(s) installed",
             "deny rules merged" if report.deny_written else "deny rules unchanged",
+            *([f"{len(report.ask_added)} ask rule(s) added"] if report.ask_added else []),
+            *([f"{len(report.ask_removed)} ask rule(s) taken back"] if report.ask_removed else []),
             "stayfixed is on PATH" if report.cli_on_path else "stayfixed is not on PATH",
             f"overlay recorded at {quoted(str(report.overlay))}"
             if report.overlay
@@ -221,6 +227,14 @@ def register(groups: SubParsers) -> None:
         help=(
             "record an existing overlay by path, or create one with "
             "create:<owner>/<name> (asks GitHub for a private repository from the template)"
+        ),
+    )
+    setup.add_argument(
+        "--approval-boundary",
+        action="store_true",
+        help=(
+            "also deny writes to the trust record's directory in the user-scope settings file, and "
+            "print the sandbox settings that rule needs, which this command never sets"
         ),
     )
     setup.add_argument(

@@ -34,6 +34,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from types import MappingProxyType
 
 import pytest
 
@@ -63,6 +64,28 @@ def _a_home_of_its_own(
     # from a terminal finds the machine owner's home (`tests/ownerhome.py`).
     follows_home(monkeypatch)
     return home
+
+
+@pytest.fixture(autouse=True)
+def _no_real_harness_settings(
+    tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+) -> Path:
+    """Claude Code's managed settings are an administrator's file at a fixed system path, and
+    `CLAUDE_CONFIG_DIR` names the user's settings directory, so a test that reached either would
+    read the developer's machine: `doctor`'s `approval-boundary` row reads both, and `setup` names
+    the managed file. Each test gets a managed path of its own, not there until it writes one, and
+    no `CLAUDE_CONFIG_DIR` unless it sets one. A `stayfixed` a test starts as another process is
+    outside this patch; `tests/test_install_path.py` says what its rows read."""
+    from stayfixed.trust import boundary
+
+    managed = tmp_path_factory.mktemp("managed") / "managed-settings.json"
+    monkeypatch.setattr(
+        boundary,
+        "MANAGED_SETTINGS",
+        MappingProxyType(dict.fromkeys(boundary.MANAGED_SETTINGS, managed)),
+    )
+    monkeypatch.delenv(boundary.CONFIG_DIR_VARIABLE, raising=False)
+    return managed
 
 
 def _is_latin_1(name: str) -> bool:

@@ -70,6 +70,7 @@ def _args(**over: object) -> argparse.Namespace:
         "machine": "/nonexistent/stayfixed-test-guard/config.toml",
         "overlay": None,
         "git_hooks": True,
+        "approval_boundary": False,
         "uninstall": False,
         "root": ".",
     }

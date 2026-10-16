@@ -3007,3 +3007,141 @@ file = "src/stayfixed/doctor/checks.py"
 before = "        name for name, value in budgets.configured.items() if value < budgets.preset[name]"
 after = "        name for name, value in budgets.configured.items() if value > budgets.preset[name]"
 reddens = ["tests/doctor/test_checks.py::test_a_budget_the_project_lowered_is_reported_green_and_named"]
+
+# `doctor`'s `approval-boundary` row (`src/stayfixed/doctor/boundary.py`): red only once the
+# machine holds an approval, for a sandbox not in force or no deny rule over the trust record's
+# directory; a warning until managed settings make the sandbox admin-required.
+
+[[mutation]]
+name = "the boundary row passes without the deny rule"
+file = "src/stayfixed/doctor/boundary.py"
+before = "    covered = bool(rules & _deny_rules((managed, local, project, user)))"
+after = "    covered = True"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_the_boundary_row[sandbox-only]",
+  "tests/doctor/test_approval_boundary.py::test_the_boundary_row[deny-elsewhere]",
+  "tests/doctor/test_approval_boundary.py::test_the_boundary_row[deny-one-slash]",
+  "tests/doctor/test_approval_boundary.py::test_a_gap_names_the_missing_setting_and_what_it_stops",
+]
+
+[[mutation]]
+name = "the boundary row ignores a project file that turns the sandbox off"
+file = "src/stayfixed/doctor/boundary.py"
+before = "    for layer, repository in ((managed, False), (local, True), (project, True), (user, False)):"
+after = "    for layer, repository in ((managed, False), (user, False)):"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_the_boundary_row[project-disables]",
+  "tests/doctor/test_approval_boundary.py::test_the_boundary_row[local-disables]",
+  "tests/doctor/test_approval_boundary.py::test_a_project_that_turns_the_sandbox_off_is_named",
+]
+
+[[mutation]]
+name = "the boundary row lets a repository's false win over managed settings"
+file = "src/stayfixed/doctor/boundary.py"
+before = "        if value is False and admin and repository:"
+after = "        if False:"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_the_boundary_row[project-disables-under-admin]",
+]
+
+[[mutation]]
+name = "the boundary row takes a user's allowUnsandboxedCommands for admin-required"
+file = "src/stayfixed/doctor/boundary.py"
+before = "    admin = _sandbox(managed, UNSANDBOXED_ALLOWED) is False"
+after = "    admin = any(_sandbox(layer, UNSANDBOXED_ALLOWED) is False for layer in (managed, user))"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_the_boundary_row[user-forbids-retry]",
+  "tests/doctor/test_approval_boundary.py::test_a_boundary_that_is_not_admin_required_says_where_to_make_it_so",
+]
+
+[[mutation]]
+name = "the boundary row is red with no approval"
+file = "src/stayfixed/doctor/boundary.py"
+before = "        status: Status = RED if held else WARN"
+after = "        status: Status = RED"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_the_boundary_row[nothing-no-approval]",
+  "tests/doctor/test_approval_boundary.py::test_the_boundary_row[project-disables-no-approval]",
+]
+
+[[mutation]]
+name = "the boundary row reads no managed drop-in"
+file = "src/stayfixed/doctor/boundary.py"
+before = "    if fsops.is_dir(drop_ins):"
+after = "    if False:"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_the_boundary_row[admin-by-drop-in]",
+]
+
+[[mutation]]
+name = "the boundary row names no gap"
+file = "src/stayfixed/doctor/boundary.py"
+before = "        return Row(status, \"; \".join((lead, *gaps, *unread)), ADD_THE_BOUNDARY)"
+after = "        return Row(status, lead, ADD_THE_BOUNDARY)"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_a_gap_names_the_missing_setting_and_what_it_stops",
+  "tests/doctor/test_approval_boundary.py::test_a_project_that_turns_the_sandbox_off_is_named",
+]
+
+[[mutation]]
+name = "a settings file that is not JSON ends the boundary row"
+file = "src/stayfixed/doctor/boundary.py"
+before = "    except Failure:\n        return _Layer(label, None, unread=True)"
+after = "    except OSError:\n        return _Layer(label, None, unread=True)"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_a_settings_file_that_is_not_json_is_read_as_absent_and_named",
+]
+
+[[mutation]]
+name = "the boundary row is green beside a settings file it could not read"
+file = "src/stayfixed/doctor/boundary.py"
+before = "    return Row(WARN, detail, MAKE_IT_JSON) if unread else Row(OK, detail)"
+after = "    return Row(OK, detail)"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_a_settings_file_that_is_not_json_is_read_as_absent_and_named",
+]
+
+[[mutation]]
+name = "the boundary row asks a machine with no Claude Code"
+file = "src/stayfixed/doctor/boundary.py"
+before = "    if directory is None or not fsops.is_dir(directory):"
+after = "    if directory is None:"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_the_row_skips_without_claude_code",
+]
+
+[[mutation]]
+name = "the boundary row ignores CLAUDE_CONFIG_DIR"
+file = "src/stayfixed/doctor/boundary.py"
+before = "    if chosen:\n        return Path(chosen)"
+after = "    if False:\n        return Path(chosen)"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_the_user_settings_directory_follows_claude_config_dir",
+]
+
+[[mutation]]
+name = "the boundary row asks a project that lists no claude"
+file = "src/stayfixed/doctor/boundary.py"
+before = "    if not _lists_claude(context):"
+after = "    if False:"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_the_row_skips_when_the_project_lists_no_claude",
+]
+
+[[mutation]]
+name = "the boundary row reads an unreadable trust record as empty"
+file = "src/stayfixed/doctor/boundary.py"
+before = "        held, lead = 1, RECORD_UNREAD"
+after = "        held, lead = 0, NONE_HELD"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_an_unreadable_trust_record_is_taken_to_hold_approvals",
+]
+
+[[mutation]]
+name = "the boundary row reads a deny rule only over the directory as named"
+file = "src/stayfixed/doctor/boundary.py"
+before = "        {deny_rule(path.parent), deny_rule(path.parent.resolve())} if path is not None else set()"
+after = "        {deny_rule(path.parent)} if path is not None else set()"
+reddens = [
+  "tests/doctor/test_approval_boundary.py::test_a_deny_rule_over_the_resolved_directory_counts",
+]

@@ -879,8 +879,8 @@ reddens = [
 [[mutation]]
 name = "setup mirrors only the values this run itself added"
 file = "src/stayfixed/setup/run.py"
-before = "    deny_written = _write_user_settings(home, deny_rules, read_personal(machine), settings=settings)"
-after = "    deny_written = _write_user_settings(home, deny_rules, personal, settings=settings)"
+before = "        read_personal(machine),\n        settings=settings,"
+after = "        personal,\n        settings=settings,"
 reddens = ["tests/setup/test_setup.py::test_the_plugin_config_mirror_follows_the_machine_file"]
 
 # A remedy is held to the standard of the refusal that carries it. `stow` folds a package as far
@@ -2215,4 +2215,125 @@ before = "        consults = context.config is not None and context.config.memor
 after = "        consults = context.config.memory.mode == OVERLAY_MODE"
 reddens = [
   "tests/doctor/test_floor_report.py::test_a_machine_with_an_overlay_and_no_stayfixed_toml_is_red_about_nothing",
+]
+
+# The `ask` rules `setup` writes for approvals, the record that makes them its own, and the
+# approval boundary's deny rule (`src/stayfixed/setup/run.py`).
+
+[[mutation]]
+name = "setup counts an ask rule the file already holds as one it adds"
+file = "src/stayfixed/setup/run.py"
+before = "    ask_add = [rule for rule in wanted if rule not in asked]"
+after = "    ask_add = list(wanted)"
+reddens = [
+  "tests/setup/test_ask_rules.py::test_setup_adds_the_ask_rules_once_and_records_them",
+  "tests/setup/test_ask_rules.py::test_an_ask_rule_the_owner_typed_first_is_never_recorded",
+]
+
+[[mutation]]
+name = "setup records none of the ask rules it adds"
+file = "src/stayfixed/setup/run.py"
+before = "        \"ask\": [*held[\"ask\"], *(r for r in ask_add if r not in held[\"ask\"])],"
+after = "        \"ask\": [*held[\"ask\"]],"
+reddens = [
+  "tests/setup/test_ask_rules.py::test_setup_adds_the_ask_rules_once_and_records_them",
+]
+
+[[mutation]]
+name = "setup asks nothing for the absolute path it runs as"
+file = "src/stayfixed/setup/run.py"
+before = "    if own is None:\n        return ASK_RULES, ()"
+after = "    if True:\n        return ASK_RULES, ()"
+reddens = [
+  "tests/setup/test_ask_rules.py::test_setup_adds_the_ask_rules_once_and_records_them",
+]
+
+[[mutation]]
+name = "switching the ask rules off takes every ask rule"
+file = "src/stayfixed/setup/run.py"
+before = "    ask_remove = [] if recorded.ask_rules else [r for r in recorded.added[\"ask\"] if r in asked]"
+after = "    ask_remove = [] if recorded.ask_rules else list(asked)"
+reddens = [
+  "tests/setup/test_ask_rules.py::test_switching_off_removes_only_recorded_rules",
+]
+
+[[mutation]]
+name = "setup writes the ask rules before it records them"
+file = "src/stayfixed/setup/run.py"
+before = "    if before != held:\n        write_machine(\n            machine, personal={}, overlay_root=None, machine={}, setup=_recorded_table(before)\n        )\n    # **The `pluginConfigs` mirror is recomputed from the machine file, not from this run's own\n    # new keys.** `personal` above is empty on every run after the first, so the mirror was\n    # write-once: an owner who edited `reply_language` in the machine file — the documented way,\n    # `README.md`'s own \"Written by: you, or `stayfixed setup`\" — kept `\"\"` in\n    # `~/.claude/settings.json` for ever. The other answer the review offered was to stop\n    # writing the mirror at all; it is rejected because `pluginConfigs` is where Claude Code\n    # itself reads a plugin's `userConfig` answers, and this plugin's own manifest declares\n    # them, so dropping it would leave the harness reading nothing. The cost of this direction\n    # is stated where a reader will meet it: a value set in Claude Code's plugin-config UI is\n    # overwritten by the machine file on the next `setup`, because one file has to win and the\n    # machine file is the one every stayfixed reader reads.\n    deny_written = _write_user_settings(\n        home,\n        [*deny_rules, *deny_add],\n        read_personal(machine),\n        settings=settings,\n        ask_add=ask_add,\n        ask_remove=ask_remove,\n    )\n"
+after = "    # **The `pluginConfigs` mirror is recomputed from the machine file, not from this run's own\n    # new keys.** `personal` above is empty on every run after the first, so the mirror was\n    # write-once: an owner who edited `reply_language` in the machine file — the documented way,\n    # `README.md`'s own \"Written by: you, or `stayfixed setup`\" — kept `\"\"` in\n    # `~/.claude/settings.json` for ever. The other answer the review offered was to stop\n    # writing the mirror at all; it is rejected because `pluginConfigs` is where Claude Code\n    # itself reads a plugin's `userConfig` answers, and this plugin's own manifest declares\n    # them, so dropping it would leave the harness reading nothing. The cost of this direction\n    # is stated where a reader will meet it: a value set in Claude Code's plugin-config UI is\n    # overwritten by the machine file on the next `setup`, because one file has to win and the\n    # machine file is the one every stayfixed reader reads.\n    deny_written = _write_user_settings(\n        home,\n        [*deny_rules, *deny_add],\n        read_personal(machine),\n        settings=settings,\n        ask_add=ask_add,\n        ask_remove=ask_remove,\n    )\n    if before != held:\n        write_machine(\n            machine, personal={}, overlay_root=None, machine={}, setup=_recorded_table(before)\n        )\n"
+reddens = [
+  "tests/setup/test_ask_rules.py::test_a_run_stopped_at_the_record_converges_on_the_next",
+]
+
+[[mutation]]
+name = "switching the ask rules off forgets them before it removes them"
+file = "src/stayfixed/setup/run.py"
+before = "    deny_written = _write_user_settings(\n        home,\n        [*deny_rules, *deny_add],\n        read_personal(machine),\n        settings=settings,\n        ask_add=ask_add,\n        ask_remove=ask_remove,\n    )\n    if after != before:\n        write_machine(\n            machine, personal={}, overlay_root=None, machine={}, setup=_recorded_table(after)\n        )\n"
+after = "    if after != before:\n        write_machine(\n            machine, personal={}, overlay_root=None, machine={}, setup=_recorded_table(after)\n        )\n    deny_written = _write_user_settings(\n        home,\n        [*deny_rules, *deny_add],\n        read_personal(machine),\n        settings=settings,\n        ask_add=ask_add,\n        ask_remove=ask_remove,\n    )\n"
+reddens = [
+  "tests/setup/test_ask_rules.py::test_a_switch_off_stopped_at_the_settings_file_converges_on_the_next",
+]
+
+[[mutation]]
+name = "the approval boundary is never added"
+file = "src/stayfixed/setup/run.py"
+before = "    rule = deny_rule(_trust_directory(machine)) if boundary else None"
+after = "    rule = None"
+reddens = [
+  "tests/setup/test_ask_rules.py::test_setup_never_writes_a_sandbox_key",
+]
+
+[[mutation]]
+name = "setup writes an ask rule for a path no rule can hold"
+file = "src/stayfixed/setup/run.py"
+before = "    if not _rulable(own):"
+after = "    if False:"
+reddens = [
+  "tests/setup/test_ask_rules.py::test_a_path_a_rule_cannot_hold_gets_no_rule_and_a_note",
+]
+
+[[mutation]]
+name = "setup reads a switch that is not true or false as on"
+file = "src/stayfixed/setup/run.py"
+before = "    if not isinstance(wanted, bool):"
+after = "    if False:"
+reddens = [
+  "tests/setup/test_ask_rules.py::test_a_setup_table_setup_cannot_read_refuses_before_any_write[switch-not-a-bool]",
+]
+
+[[mutation]]
+name = "setup reads a record it cannot read as empty"
+file = "src/stayfixed/setup/run.py"
+before = "    if not isinstance(raw, dict) or not set(raw) <= set(_RECORDED_KINDS):"
+after = "    if not isinstance(raw, dict):"
+reddens = [
+  "tests/setup/test_ask_rules.py::test_a_setup_table_setup_cannot_read_refuses_before_any_write[record-stray]",
+]
+
+[[mutation]]
+name = "setup reads a record's rules that are not text"
+file = "src/stayfixed/setup/run.py"
+before = "        if not isinstance(rules, list) or not all(isinstance(rule, str) for rule in rules):"
+after = "        if not isinstance(rules, list):"
+reddens = [
+  "tests/setup/test_ask_rules.py::test_a_setup_table_setup_cannot_read_refuses_before_any_write[record-not-rules]",
+]
+
+[[mutation]]
+name = "write_machine writes a setup key it was told to drop"
+file = "src/stayfixed/setup/machine.py"
+before = "            if value is not None"
+after = "            if True"
+reddens = [
+  "tests/setup/test_ask_rules.py::test_switching_off_removes_only_recorded_rules",
+]
+
+[[mutation]]
+name = "setup's command line drops --approval-boundary"
+file = "src/stayfixed/setup/commands.py"
+before = "        boundary=args.approval_boundary,"
+after = "        boundary=False,"
+reddens = [
+  "tests/setup/test_ask_rules.py::test_the_flag_reaches_setup_through_the_cli",
 ]

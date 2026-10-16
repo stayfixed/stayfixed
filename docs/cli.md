@@ -68,7 +68,7 @@ Three things hold everywhere:
 - [`stayfixed overlay publish-template --owner OWNER [--name NAME] [--yes]`](#stayfixed-overlay-publish-template---owner-owner---name-name---yes)
 - [`stayfixed attach --store PATH [--check] [--yes] [--trust-remote] [--root PATH] [--machine PATH]`](#stayfixed-attach---store-path---check---yes---trust-remote---root-path---machine-path)
 - [`stayfixed detach [--root PATH] [--machine PATH]`](#stayfixed-detach---root-path---machine-path)
-- [`stayfixed setup [--preset NAME] [--yes] [--home PATH] [--settings PATH] [--machine PATH] [--overlay VALUE] [--root PATH]`](#stayfixed-setup---preset-name---yes---home-path---settings-path---machine-path---overlay-value---root-path)
+- [`stayfixed setup [--preset NAME] [--yes] [--approval-boundary] [--home PATH] [--settings PATH] [--machine PATH] [--overlay VALUE] [--root PATH]`](#stayfixed-setup---preset-name---yes---approval-boundary---home-path---settings-path---machine-path---overlay-value---root-path)
 - [`stayfixed setup --git-hooks [--uninstall] [--root PATH]`](#stayfixed-setup---git-hooks---uninstall---root-path)
 - [`stayfixed doctor [--json] [--root PATH] [--home PATH] [--machine PATH]`](#stayfixed-doctor---json---root-path---home-path---machine-path)
 - [The reusable workflow](#the-reusable-workflow)
@@ -2674,12 +2674,12 @@ with part of the attach already undone:
 
 ---
 
-## `stayfixed setup [--preset NAME] [--yes] [--home PATH] [--settings PATH] [--machine PATH] [--overlay VALUE] [--root PATH]`
+## `stayfixed setup [--preset NAME] [--yes] [--approval-boundary] [--home PATH] [--settings PATH] [--machine PATH] [--overlay VALUE] [--root PATH]`
 
 Configures this machine from a preset, `recommended` unless `--preset` names another: the
-machine configuration file's `[personal]` and `[machine]` tables, the deny rules and personal
-values in `<home>/.claude/settings.json`, and the preset's plugins, one install per plugin per
-configured harness. `--home` and `--machine` default to the home directory and to
+machine configuration file's `[personal]` and `[machine]` tables, the deny rules, the `ask` rules
+for approvals and the personal values in `<home>/.claude/settings.json`, and the preset's plugins,
+one install per plugin per configured harness. `--home` and `--machine` default to the home directory and to
 `~/.config/stayfixed/config.toml` — the file every reader reads, and not whatever
 `XDG_CONFIG_HOME` or `STAYFIXED_CONFIG` names, because a machine file half the installation
 cannot find is not a machine file. Both flags exist so this command can be pointed at a
@@ -2724,6 +2724,44 @@ where Claude Code reads this plugin's own options, and that mirror is recomputed
 file on every run. The machine file wins: a value you set in Claude Code's plugin-config UI is
 overwritten by the next `setup`, because one of the two copies has to decide and the machine file
 is the one everything in stayfixed reads.
+
+**The `ask` rules.** Every run adds to the user's `permissions.ask` a rule for each way an agent's
+shell reaches an approval: `Bash(stayfixed trust approve:*)`, the same for `python -m stayfixed`,
+`python3 -m stayfixed` and `uvx stayfixed`, each of the four again for the approval's old
+spelling, and one pair for the absolute path of the `stayfixed` this run runs as — none for a path
+holding a space, a parenthesis or a character that does not print, which the report says. Claude Code then asks the
+person before any of them runs. `trust revoke` gets none: withdrawing needs no person. Measured on
+Claude Code 2.1.296: a rule matches its own prefix and the `script -q /dev/null` wrapper around it,
+and every other spelling needs one of its own; `-p`, which asks nobody, treats an `ask` rule as a
+deny and refuses the command; and a project's `permissions.allow` or `permissions.defaultMode` does
+not lift a user's `ask`. Like the terminal check, the rules slow an agent and guarantee nothing: an
+agent can still reach the record by a spelling no rule names, and the approval boundary below is
+what stops the write. A rule already in the file is yours and is left alone; each rule `setup` adds
+is recorded in the machine configuration file's `[setup] added_rules`. Set `[setup] ask_rules =
+false` there and the next run takes back exactly the recorded rules — an identical rule you typed
+first stays — and adds none. The record is written before a rule is added and after one is taken
+back, so it always names every rule `setup` put in the file, and a run that stops part-way is
+finished by the next one. `stayfixed uninstall` takes back one repository's footprint and leaves
+these rules, which are the machine's: `[setup] ask_rules = false` takes the `ask` rules back, and
+the deny rule below is yours to remove by hand.
+
+**`--approval-boundary`** also adds `Edit(//<the trust record's directory>/**)` to the user's
+`permissions.deny`, recorded under `[setup] added_rules` the same way; no run takes it back. The
+directory is that of `~/.config/stayfixed/trust.json`, or of the file beside `--machine`, which is
+the machine configuration file's own, so the rule covers that file too. Measured on Claude Code
+2.1.296, an `Edit` rule in that spelling stops both the sandboxed shell and the file tools; one
+leading slash anchors the path at the working directory and stops nothing outside it, and a `Write`
+rule stops neither. The rule holds only while the sandbox is on, and `setup` never writes a
+`sandbox` key: the report says what to set — `sandbox.enabled = true` in the same file, and, for a
+sandbox no repository's settings can turn off and no command can leave, `sandbox.enabled = true`
+and `sandbox.allowUnsandboxedCommands = false` in the managed settings file only an administrator
+writes, `/Library/Application Support/ClaudeCode/managed-settings.json` on macOS and
+`/etc/claude-code/managed-settings.json` on Linux. A project's `.claude/settings.json` or
+`.claude/settings.local.json` turns a user's sandbox off, and a user's own
+`allowUnsandboxedCommands = false` does not stop it. While the rule is in force, nothing an agent
+runs in the sandbox writes that directory, `stayfixed setup`, `trust revoke` and `memory index`'s
+refresh of an approval included, so run those from your own terminal. `doctor`'s
+`approval-boundary` row says what is in force for a project.
 
 **Plugins are installed per configured harness**, from `[defaults.stayfixed] agents` (`claude`
 and `codex` by default) and from the preset's own per-harness marketplace table
@@ -2782,7 +2820,8 @@ wrapper's banner), that refuses the repository it found (another user's under `s
 one whose `.git` it cannot read) or that cannot list its checkouts is a refusal.
 
 **Writes** `<home>` itself when it is not there yet; `--machine`'s file, with the directories above
-it, once for the preset and again for the overlay root `--overlay` records;
+it, once for the preset, again for `[setup] added_rules` before a rule is added and after one is
+taken back, and again for the overlay root `--overlay` records;
 `<home>/.claude/settings.json`, or the file `--settings` names in its place; and, through the plugin
 commands it runs for each harness with a declared marketplace (`claude plugin marketplace add` and
 `claude plugin install`, `codex plugin marketplace add` and `codex plugin add`), the marketplace
@@ -2798,6 +2837,8 @@ hook).
 
 **Exits** `0` on success, and `2` on each of these refusals:
 
+- a `[setup] ask_rules` in the machine configuration file that is not `true` or `false`, or a
+  `[setup] added_rules` that is not lists of rules under `ask` and `deny`, named with the file;
 - a refused `--overlay`: missing, not an overlay, reachable from the project root, inside a
   checkout of another repository, where `git` gives no answer inside a checkout, at a path that is
   not UTF-8 text and so cannot be recorded in the machine file, or `create:` without `--yes`;
@@ -2828,8 +2869,8 @@ ends the run `1`.
 
 These questions are asked in one fixed order, and the first refusal ends the run: what `--overlay`
 names, and whether an existing path is an overlay; the preset; the settings file's place; where a
-write under `--home` lands; and last where the overlay lies, the one that runs `git`. Every one of
-those refusals happens before the first write, **with one exception**: for
+write under `--home` lands; where the overlay lies, the one that runs `git`; and last the machine
+configuration file's `[setup]`. Every one of those refusals happens before the first write, **with one exception**: for
 `--overlay create:<owner>/<name>`, "not an overlay" is a check on the tree that arrived, so it runs
 after the repository has been created on GitHub and cloned — along with the machine file, the
 settings merge and the plugin installs. That refusal says so, and names the repository and where it
@@ -2905,10 +2946,10 @@ also given, the hook cannot be read, or a hook names `prepare-commit-msg.local`.
 
 ## `stayfixed doctor [--json] [--root PATH] [--home PATH] [--machine PATH]`
 
-Eighteen checks over one installation. It **reports and never repairs**: every finding
+Nineteen checks over one installation. It **reports and never repairs**: every finding
 carries the command that would fix it, and not one of them is run for you. Nothing is written.
 
-The rows come in a fixed order: the installation's own twelve first, then the six about the
+The rows come in a fixed order: the installation's own thirteen first, then the six about the
 private layer — the binding's (`attached`), the note store's (`bundles`, `store-debris`,
 `harness-link`) and the private overlay's (`pre-commit`, `overlay-requires`). Match a row by its `name`, never by its
 position.
@@ -2960,6 +3001,7 @@ check with `name`, `status`, `detail` and `remedy`, so every remedy is there.
 | `ci-ref` | whether `[ci] ref` is the commit of a released stayfixed tag (or the `v1` alias: a warning, as mutable, once a `1.x` release creates it, and red until then), and whether the rendered workflow pins the same ref — under `[ci] mode = "reusable"`, a workflow that is not there at all is a warning and never a green row, and so are a path that is there and is not a regular file and a file past the 256 KiB bound on the read | `git ls-remote --exit-code` over the public repository's tags, bounded at 30 seconds; *.github/workflows/stayfixed.yml*, read as a regular file and to a bound |
 | `diagnostics` | how many reasons the hook sink recorded — a count, never a line of the file | `${CLAUDE_PLUGIN_DATA}/stayfixed/diagnostics.jsonl` |
 | `ignored-env` | `STAYFIXED_CONFIG` or `XDG_CONFIG_HOME` set and not honoured, and a `HOME` that is not the home the password database records for this user, with the directory stayfixed's machine files are under instead, or that it records none; from a terminal, the remedy says to move files of your own there first | the environment, the password database |
+| `approval-boundary` | whether a session of this project keeps an agent out of the trust record: the sandbox on for this project, and a `permissions.deny` rule `Edit(//<the trust record's directory>/**)` over that directory. Read in Claude Code's precedence, a repository's `sandbox.enabled = false` winning over the user's unless managed settings make the sandbox admin-required (`sandbox.allowUnsandboxedCommands = false`), a deny rule from any file counting. Red where either is missing once the machine holds an approval, or the trust record cannot be read; a warning where either is missing before one; a warning while both hold and the sandbox is not admin-required, naming the managed settings file and the two keys to set there; ok only then. A settings file that is not JSON is read as absent and named, and keeps the row from ok. Skips with no Claude Code user settings directory, or where `[stayfixed] agents` lists no `claude` | the managed settings file and its `managed-settings.d/`, `.claude/settings.local.json`, `.claude/settings.json`, `$CLAUDE_CONFIG_DIR/settings.json` or `~/.claude/settings.json`, the trust record, `stayfixed.toml` |
 | `attached` | the overlay binding, and the harness memory path's shape, judged off a terminal only where `HOME` is the database's home and read alike from every checkout (the states are below the table) | `.stayfixed/local/attach.json`, `~/.claude/projects/<slug>/memory`, `.claude/settings.local.json`, the link tree |
 | `bundles` | a bundle that does not fit its slots, and one whose part reaches the cap | the note store |
 | `store-debris` | files in the note store that are not notes (at most 500,000 entries) | the note store |
@@ -3012,8 +3054,8 @@ policy settings and `--settings` are yours, not the repository's, and this row d
 | `never-approved` | nothing, no approval recorded | `ok` | — |
 | `settings-unreadable` | any state above that reads `ok`, beside a settings file that cannot be read as settings; the row names the file | `warn` | make the file one JSON object, then `doctor` |
 
-**Twelve of the eighteen have a `skip` arm — twenty-two arms between them: one no build can
-answer, and twenty-one on a state of this machine or this repository.** A `skip` is **not** a finding and
+**Thirteen of the nineteen have a `skip` arm — twenty-four arms between them: one no build can
+answer, and twenty-three on a state of this machine or this repository.** A `skip` is **not** a finding and
 never reaches the exit code, so read the detail — each one says which measurement it is missing.
 
 The one no build can answer is `codex-hooks`: it needs the hash Codex keys hook trust on, which
@@ -3028,7 +3070,7 @@ repository `init` set up carries a ref and the row answers. `files` compares the
 plugin against the hashes the release recorded beside it, and skips only on a build carrying no
 such record.
 
-The eleven that skip on a state are `files` and `wrapper`, when there is no plugin root this
+The twelve that skip on a state are `files` and `wrapper`, when there is no plugin root this
 process can vouch for; `attached`, when this machine records no overlay to check the ledger
 against, or the overlay could not be asked at all; `pre-commit` and `overlay-requires`, when
 no overlay root is recorded on this machine **or** when the root it records is not a directory
@@ -3036,29 +3078,32 @@ no overlay root is recorded on this machine **or** when the root it records is n
 and then moved it is not a machine that recorded none; `overlay-requires` again when the
 overlay declares no stayfixed requirement; `bundles` and `store-debris`, when the note store does
 not resolve; `diagnostics`, when no harness data root is set in the environment, which is every
-`stayfixed doctor` run from a terminal rather than from a hook; and `ci-ref`, when no `[ci] ref`
-is recorded. `files` has a second state arm of its own — a plugin built
+`stayfixed doctor` run from a terminal rather than from a hook; `ci-ref`, when no `[ci] ref`
+is recorded; and `approval-boundary`, when this machine has no Claude Code user settings directory,
+and again when the project's `[stayfixed] agents` lists no `claude`. `files` has a second state arm of its own — a plugin built
 before the release record existed carries none, and it says so rather than comparing anything.
 And six rows read the project configuration and skip, in one sentence, when there is none to
 read — no `stayfixed.toml`, or one a session drops whole: `budgets`, `ci-ref`, `attached`,
 `bundles`, `store-debris`, and `harness-link` where `HOME` is not the database's home, since what
 makes the link then depends on the store's mode.
 
-**A `skip` does not mean there is nothing to do.** Seven of the twenty-two arms carry a remedy:
+**A `skip` does not mean there is nothing to do.** Seven of the twenty-four arms carry a remedy:
 the two plugin-root skips, `wrapper`'s named-root skip, both of `attached`'s, and the
 moved-overlay arm of `pre-commit` and of `overlay-requires`. The dividing line is not "always"
 versus "on a state" — every other arm skips on a state and carries nothing: `bundles`,
 `store-debris`, `diagnostics` and `ci-ref`, the *no overlay recorded* arms of the two overlay
-rows, `overlay-requires`' no-requirement arm, `files` on a build with no release record, and the
-six with no project configuration, whose remedy is `not-initialised`'s. Nor
+rows, `overlay-requires`' no-requirement arm, `files` on a build with no release record, both of
+`approval-boundary`'s, and the six with no project configuration, whose remedy is
+`not-initialised`'s. Nor
 is it whether another row names a command that changes the state: `pre-commit`'s arm carries
 nothing though `attached` names `stayfixed setup --overlay` there. It is whether the skip is
 itself worth acting on. Those seven report something wrong that no other
 row will tell you: a plugin root nothing can find, a root that will be read and never executed,
 a recorded attach the overlay could not confirm, an overlay root recorded and not there. The
-other fifteen report a measurement that is simply unavailable — no store, no overlay, no overlay
-requirement, no harness data root, no `[ci] ref`, no release record in this build, no way to ask
-Codex, no project configuration — and no command in that row's gift changes it.
+other seventeen report a measurement that is simply unavailable — no store, no overlay, no
+overlay requirement, no harness data root, no `[ci] ref`, no release record in this build, no way
+to ask Codex, no project configuration, no Claude Code settings to read or no `claude` among a
+project's agents — and no command in that row's gift changes it.
 
 **The one to read first is the plugin root**, because it is the quietest and the worst. When
 this process can find no plugin root at all, `files` and `wrapper` both skip — two rows, no red,

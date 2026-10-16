@@ -4743,3 +4743,16 @@ after = '        raise UnreadableTrust(f"{path} cannot be read; {_KEPT}") from N
 reddens = [
   "tests/trust/test_record.py::test_a_record_that_does_not_parse_says_why_and_that_it_is_kept[not-utf-8]",
 ]
+
+# The approval boundary's deny rule is the spelling measured to stop the sandboxed shell and the
+# file tools: two leading slashes before an absolute path.
+
+[[mutation]]
+name = "the approval boundary is spelled with one leading slash"
+file = "src/stayfixed/trust/boundary.py"
+before = "DENY_RULE = \"Edit(/{directory}/**)\""
+after = "DENY_RULE = \"Edit({directory}/**)\""
+reddens = [
+  "tests/setup/test_ask_rules.py::test_the_deny_rule_is_the_measured_spelling",
+  "tests/setup/test_ask_rules.py::test_setup_never_writes_a_sandbox_key",
+]
