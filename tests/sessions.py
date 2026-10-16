@@ -5,12 +5,16 @@ preset's owner's layer, with no warnings. A test about the session itself builds
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from stayfixed.config.owner import resolve_owner
 from stayfixed.config.schema import Config
 from stayfixed.config.session import SessionConfig
 
-# The owner's layer with no machine file: the preset's personal values, every guard on.
-OWNER = resolve_owner(None)
+# The owner's layer with no machine file: the preset's personal values, every guard on. A path
+# where no file is, and not `None`: `None` is a machine with no home, whose reading a mutation of
+# `resolve_owner` breaks, and a module every hook test imports must still import under it.
+OWNER = resolve_owner(Path(__file__).with_name("no-machine-file.toml"))
 # A session with no project configuration.
 NO_CONFIG = SessionConfig(None, OWNER, ())
 
