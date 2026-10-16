@@ -173,9 +173,9 @@ Today the one kind is `memory`, a store of notes inside the repository, and `--s
 A kind with nothing to describe here (no `stayfixed.toml`, or no store) says so, and says why in the
 kind's own words. `--all` lists every approval recorded on the machine instead, whichever checkout
 it was given in, each with when it was approved. It names each subject — for `memory`, the store's
-absolute path — from `~` when it is under the home the password database records, and through the
-bound a refusal names a path by anywhere else: escaped where it leaves the path grammar, and past
-120 characters only its start and its length. `--json` carries every subject whole.
+absolute path — escaped where it leaves the path grammar and, past 120 characters, by its start
+and its length; a subject under the home the password database records is named from `~/`.
+`--json` carries every subject whole.
 
 `--json` keys: `subjects`, one object per subject in this checkout with its `kind`, its `subject`
 and its `state`, and for a kind with nothing to describe, `kind`, `state` (`undescribed`) and
