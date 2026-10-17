@@ -25,7 +25,6 @@ from stayfixed.trust.record import (
     SandboxedWrite,
     State,
     UnreadableTrust,
-    approve,
     approve_all,
     record_path,
     recorded,
@@ -65,7 +64,7 @@ def test_the_first_write_upgrades_the_file_in_place(tmp_path: Path) -> None:
     # The old entry is carried into the version-1 record beside the new one. Mutation: as above,
     # the flat map's entry is lost on the write.
     (tmp_path / RECORD).write_text(json.dumps({"/s": "d"}), encoding="utf-8")
-    approve(machine(tmp_path), "memory", "/t", "e", now=T0)
+    approve_all(machine(tmp_path), "memory", {"/t": "e"}, now=T0)
     written = json.loads((tmp_path / RECORD).read_text(encoding="utf-8"))
     assert written == {
         "version": VERSION,
@@ -85,7 +84,7 @@ def test_0_3_0s_reader_sees_no_approval_in_a_version_1_record(tmp_path: Path) ->
     # Downgrading: a `0.3.0` reading the record this release wrote reads no approval and asks again,
     # never a stale one. No mutation of the source reaches it — it is a property of the record's
     # shape against a reader frozen in `0.3.0` — so the shape is held exactly in the test above.
-    approve(machine(tmp_path), "memory", "/s", "d", now=T0)
+    approve_all(machine(tmp_path), "memory", {"/s": "d"}, now=T0)
     assert legacy_reader(tmp_path / RECORD) == {}
 
 
@@ -155,7 +154,7 @@ def test_an_unreadable_record_refuses_and_is_never_overwritten(
     if sentence is not None:
         assert str(caught.value) == sentence.format(path=path)
     with pytest.raises(UnreadableTrust):
-        approve(machine(tmp_path), "memory", "/s", "d", now=T0)
+        approve_all(machine(tmp_path), "memory", {"/s": "d"}, now=T0)
     with pytest.raises(UnreadableTrust):
         revoke_all(machine(tmp_path), "memory", ["/s"])
     assert path.read_text(encoding="utf-8") == document
@@ -203,7 +202,7 @@ def test_a_record_that_does_not_parse_says_why_and_that_it_is_kept(
 def test_lapsed_missing_and_approved_are_told_apart(tmp_path: Path) -> None:
     # Mutations (`mutations/`'s "the trust record ignores the digest" -> the changed digest reads
     # approved; "a lapsed approval reads as missing" -> it reads missing).
-    approve(machine(tmp_path), "memory", "/s", "d", now=T0)
+    approve_all(machine(tmp_path), "memory", {"/s": "d"}, now=T0)
     assert state(machine(tmp_path), "memory", "/s", "d") is State.APPROVED
     assert state(machine(tmp_path), "memory", "/s", "changed") is State.LAPSED
     assert state(machine(tmp_path), "memory", "/elsewhere", "d") is State.MISSING
@@ -212,8 +211,8 @@ def test_lapsed_missing_and_approved_are_told_apart(tmp_path: Path) -> None:
 def test_two_kinds_never_share_a_subject(tmp_path: Path) -> None:
     # Mutation (`mutations/`'s "the trust record keys an approval by its subject alone"): the
     # second approval replaces the first, and the first kind reads lapsed.
-    approve(machine(tmp_path), "memory", "/s", "d", now=T0)
-    approve(machine(tmp_path), "other", "/s", "e", now=T0)
+    approve_all(machine(tmp_path), "memory", {"/s": "d"}, now=T0)
+    approve_all(machine(tmp_path), "other", {"/s": "e"}, now=T0)
     assert state(machine(tmp_path), "memory", "/s", "d") is State.APPROVED
     assert state(machine(tmp_path), "other", "/s", "e") is State.APPROVED
     assert revoke_all(machine(tmp_path), "other", ["/s"]) == ["/s"]
@@ -223,7 +222,7 @@ def test_two_kinds_never_share_a_subject(tmp_path: Path) -> None:
 def test_revoke_of_nothing_says_so(tmp_path: Path) -> None:
     # False, and the file is not rewritten. Mutation (`mutations/`'s "a revoke of nothing rewrites
     # the trust record"): the file is replaced with the same approvals, under a new inode.
-    approve(machine(tmp_path), "memory", "/s", "d", now=T0)
+    approve_all(machine(tmp_path), "memory", {"/s": "d"}, now=T0)
     path = tmp_path / RECORD
     before = (path.read_bytes(), path.stat().st_ino)
     assert revoke_all(machine(tmp_path), "memory", ["/elsewhere"]) == []
@@ -260,7 +259,7 @@ def test_a_refresh_moves_only_the_digest_it_was_read_at(tmp_path: Path) -> None:
     # approval given meanwhile is the person's. Mutations (`mutations/`'s "a refresh writes over an
     # approval it did not read" -> the stale refresh moves `e` to `f`; "a refresh restamps when
     # the person approved" -> `approved_at` reads now).
-    approve(machine(tmp_path), "memory", "/s", "d", now=T0)
+    approve_all(machine(tmp_path), "memory", {"/s": "d"}, now=T0)
     assert refresh(machine(tmp_path), "memory", "/s", expected="d", digest="e") is True
     assert recorded(machine(tmp_path))[("memory", "/s")] == Approval(
         "memory", "/s", "e", "2026-10-16T09:30:00+00:00"
@@ -278,7 +277,7 @@ def test_a_refresh_to_the_digest_the_record_holds_writes_nothing(
     # from an agent's sandboxed shell, where the write is refused, a rewrite said the approval was
     # not refreshed while it held. Mutation (`mutations/`'s "a refresh rewrites the digest the
     # record already holds"): the refused write is attempted and raises `SandboxedWrite`.
-    approve(machine(tmp_path), "memory", "/s", "d", now=T0)
+    approve_all(machine(tmp_path), "memory", {"/s": "d"}, now=T0)
     before = recorded(machine(tmp_path))
     refused = refuse_writes_under(monkeypatch, tmp_path / RECORD)
     assert refresh(machine(tmp_path), "memory", "/s", expected="d", digest="d") is True
@@ -289,7 +288,7 @@ def test_a_refresh_to_the_digest_the_record_holds_writes_nothing(
 def test_a_refresh_never_brings_back_a_revoked_approval(tmp_path: Path) -> None:
     # The revoke landed after the caller's read and before the refresh re-read the record. Mutation
     # (`mutations/`'s "a refresh brings back a revoked approval"): the approval is recorded again.
-    approve(machine(tmp_path), "memory", "/s", "d", now=T0)
+    approve_all(machine(tmp_path), "memory", {"/s": "d"}, now=T0)
     assert revoke_all(machine(tmp_path), "memory", ["/s"]) == ["/s"]
     assert refresh(machine(tmp_path), "memory", "/s", expected="d", digest="e") is False
     assert recorded(machine(tmp_path)) == {}
@@ -319,7 +318,7 @@ def test_a_write_refused_as_a_sandbox_refuses_one_is_said_so(
 
     monkeypatch.setattr(fsops, "write_atomically", refusing)
     with pytest.raises((SandboxedWrite, Failure)) as refused:
-        approve(machine(tmp_path), "memory", "/s", "d", now=T0)
+        approve_all(machine(tmp_path), "memory", {"/s": "d"}, now=T0)
     if sandboxed:
         assert type(refused.value) is SandboxedWrite
         assert str(refused.value) == SANDBOXED
@@ -352,7 +351,7 @@ def test_every_subject_of_a_kind_is_approved_in_one_write(
     # each before. Mutation (`mutations/`'s "approving a kind writes the record once per subject"):
     # two writes.
     machine = tmp_path / "config.toml"
-    approve(machine, "memory", "/a", "old", now=T0)
+    approve_all(machine, "memory", {"/a": "old"}, now=T0)
     writes: list[Path] = []
     real = fsops.write_atomically
 

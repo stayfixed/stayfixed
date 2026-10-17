@@ -196,17 +196,6 @@ def state_in(
     return State.APPROVED if approval.digest == current else State.LAPSED
 
 
-def approve(
-    machine: Path | None, kind: str, subject: str, digest: str, *, now: datetime
-) -> Approval:
-    """Record `subject` of `kind` as approved at `digest`, replacing any approval it had."""
-    approvals = recorded(machine)
-    approval = Approval(kind, subject, digest, now.isoformat(timespec="seconds"))
-    approvals[(kind, subject)] = approval
-    _write(machine, approvals)
-    return approval
-
-
 def approve_all(
     machine: Path | None, kind: str, digests: Mapping[str, str], *, now: datetime
 ) -> dict[str, State]:

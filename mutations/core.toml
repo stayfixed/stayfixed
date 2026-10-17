@@ -4598,8 +4598,8 @@ reddens = [
 [[mutation]]
 name = "an approval over an unreadable trust record writes the record anyway"
 file = "src/stayfixed/trust/record.py"
-before = "    approvals = recorded(machine)\n    approval = Approval("
-after = "    try:\n        approvals = recorded(machine)\n    except UnreadableTrust:\n        approvals = {}\n    approval = Approval("
+before = "    approvals = recorded(machine)\n    was = {"
+after = "    try:\n        approvals = recorded(machine)\n    except UnreadableTrust:\n        approvals = {}\n    was = {"
 reddens = [
   "tests/trust/test_record.py::test_an_unreadable_record_refuses_and_is_never_overwritten[not-json]",
   "tests/trust/test_record.py::test_an_unreadable_record_refuses_and_is_never_overwritten[version-2]",
@@ -4625,8 +4625,8 @@ reddens = ["tests/trust/test_record.py::test_lapsed_missing_and_approved_are_tol
 [[mutation]]
 name = "the trust record keys an approval by its subject alone"
 file = "src/stayfixed/trust/record.py"
-before = "    approvals[(kind, subject)] = approval"
-after = "    approvals = {key: a for key, a in approvals.items() if key[1] != subject}\n    approvals[(kind, subject)] = approval"
+before = "        approvals[(kind, subject)] = Approval(kind, subject, digest, when)"
+after = "        approvals = {key: a for key, a in approvals.items() if key[1] != subject}\n        approvals[(kind, subject)] = Approval(kind, subject, digest, when)"
 reddens = ["tests/trust/test_record.py::test_two_kinds_never_share_a_subject"]
 
 # A revoke that matches nothing writes nothing.

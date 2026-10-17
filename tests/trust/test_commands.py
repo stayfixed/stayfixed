@@ -25,7 +25,7 @@ from stayfixed.trust import kinds, record
 from stayfixed.trust.approving import NOT_A_TERMINAL, UNKNOWN_KIND
 from stayfixed.trust.commands import NOTHING_TO_REVOKE, UNDESCRIBED
 from stayfixed.trust.kinds import DUPLICATE_KIND, ApprovalKind, Subject
-from stayfixed.trust.record import RECORD, State, approve, record_path, recorded, state
+from stayfixed.trust.record import RECORD, State, approve_all, record_path, recorded, state
 from tests.boundaries.test_delivery import IMPORT_EACH
 from tests.crafted import CRAFTED, assert_never_raw
 from tests.floor import developer_free_environ
@@ -275,8 +275,8 @@ def test_list_all_names_each_subject_from_the_home(
     home = tmp_path.resolve()
     as_owner_home(monkeypatch, home)
     machine = tmp_path / "machine.toml"
-    approve(machine, "memory", str(home / "project" / ".stayfixed" / "memory"), "d", now=T0)
-    approve(machine, "memory", "/zz/elsewhere/memory", "e", now=T0)
+    approve_all(machine, "memory", {str(home / "project" / ".stayfixed" / "memory"): "d"}, now=T0)
+    approve_all(machine, "memory", {"/zz/elsewhere/memory": "e"}, now=T0)
     assert invoke(["trust", "list", "--all", "--machine", str(machine)]) == 0
     # In the order of the subjects themselves, and `/zz` sorts after any temporary directory.
     assert capsys.readouterr().out == (
@@ -296,8 +296,8 @@ def test_a_hostile_subject_prints_escaped_and_bounded(
     as_owner_home(monkeypatch, tmp_path / "owner")
     machine = tmp_path / "machine.toml"
     hostile, long = f"/{CRAFTED}", "/" + "a" * 300
-    approve(machine, "memory", hostile, "d", now=T0)
-    approve(machine, "memory", long, "e", now=T0)
+    approve_all(machine, "memory", {hostile: "d"}, now=T0)
+    approve_all(machine, "memory", {long: "e"}, now=T0)
     shown = (repr(hostile), f"{long[:CLIPPED_CHARS]!r}…({len(long)} chars)")
     assert invoke(["trust", "list", "--all", "--machine", str(machine)]) == 0
     listed = capsys.readouterr()
@@ -508,8 +508,8 @@ def test_a_kind_of_several_subjects_is_listed_off_one_read_and_revoked_in_one_wr
     several = ApprovalKind("several", lambda context: subjects)
     monkeypatch.setattr(kinds, "kinds", lambda: {"several": several})
     machine = tmp_path / "machine.toml"
-    approve(machine, "several", "/a", "da", now=T0)
-    approve(machine, "several", "/b", "old", now=T0)
+    approve_all(machine, "several", {"/a": "da"}, now=T0)
+    approve_all(machine, "several", {"/b": "old"}, now=T0)
     common_args = ["--root", str(tmp_path), "--machine", str(machine)]
 
     reads: list[Path | None] = []
