@@ -122,7 +122,7 @@ from stayfixed.fsops import UnsafePath, utf_8_name
 from stayfixed.gitenv import NO_ANSWER, answer_lines, git_run, in_work_tree
 from stayfixed.harnesses import BYTE_ORDER_MARK, lenient_settings
 from stayfixed.jsonobject import json_object, json_text
-from stayfixed.presets import load_preset
+from stayfixed.presets import defaults_of, load_preset
 from stayfixed.printed import answered, quoted
 from stayfixed.runner import Runner
 from stayfixed.setup.machine import SETUP_SANDBOXED, USER_SETTINGS, read_personal, write_machine
@@ -182,7 +182,7 @@ class SetupReport:
 
 
 def _personal_defaults(preset: dict[str, Any]) -> dict[str, Any]:
-    return dict(preset.get("defaults", {}).get("personal", {}))
+    return dict(defaults_of(preset).get("personal", {}))
 
 
 def _new_personal_values(preset: dict[str, Any], machine: Path) -> dict[str, Any]:
@@ -197,7 +197,7 @@ def _new_personal_values(preset: dict[str, Any], machine: Path) -> dict[str, Any
 
 
 def _agents(preset: dict[str, Any]) -> tuple[str, ...]:
-    agents = preset.get("defaults", {}).get("stayfixed", {}).get("agents", [])
+    agents = defaults_of(preset).get("stayfixed", {}).get("agents", [])
     return tuple(agent for agent in agents if isinstance(agent, str))
 
 

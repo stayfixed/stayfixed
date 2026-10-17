@@ -8,7 +8,7 @@ import tomllib
 from collections.abc import Mapping
 from functools import cache
 from importlib import resources
-from typing import Any
+from typing import Any, cast
 
 from stayfixed.errors import Failure
 
@@ -68,8 +68,8 @@ def _parsed(name: str) -> dict[str, Any]:
 
 def defaults_of(preset: Mapping[str, Any]) -> dict[str, Any]:
     """The `[defaults]` of the loaded `preset`, by section: what a layer builds on where it sets
-    nothing, `{}` for a preset with none."""
-    return dict(preset.get("defaults", {}))
+    nothing, `{}` for a preset with none. Not a copy: `load_preset` hands every caller its own."""
+    return cast(dict[str, Any], preset.get("defaults", {}))
 
 
 def available() -> str:

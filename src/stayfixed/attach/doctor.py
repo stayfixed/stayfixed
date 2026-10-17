@@ -195,7 +195,7 @@ def _attached(context: Context, config: Config, answers: Answers, ledger: _Ledge
         # both are read before the ledger is. The verdict is the one the row ends with, read once.
         fallback = _settings_fallback(context.root)
         if fallback.held or _shape_of(harness) == _REAL_DIRECTORY:
-            verdict = _harness_verdict(context, answers, harness, fallback)
+            verdict = _harness_verdict(context, config, answers, harness, fallback)
             if verdict.whole:
                 return Row(verdict.status, verdict.shape, verdict.remedy)
     if ledger.state(context.root) == NO_LEDGER:
@@ -245,7 +245,7 @@ def _attached(context: Context, config: Config, answers: Answers, ledger: _Ledge
             remedy += f"; {_CHECKED_AT_A_TERMINAL}"
         return Row(WARN, f"attached; {harness.cause}; the binding is {state}", remedy)
     if verdict is None:
-        verdict = _harness_verdict(context, answers, harness, fallback)
+        verdict = _harness_verdict(context, config, answers, harness, fallback)
     return Row(
         verdict.status,
         f"attached; the harness memory path is {verdict.shape}; the binding is {state}",
@@ -273,15 +273,6 @@ MACHINE_UNREAD: Final = "machine-unread"
 # standing in. Told with the other two, the row would blame `git` or an unreadable record and send
 # the reader to run `stayfixed doctor` where `git` runs, which cannot fix it, and its `skip` never
 # reaches the exit code, so a repository's own committed, malformed ledger would go unreported.
-
-
-def _project(context: Context) -> Config:
-    """The project configuration, for a helper of the `attached` row: the row skips before it asks
-    any of them when there is none, so `None` here is a defect in this module, and `_guarded`
-    makes it the red row such a defect earns."""
-    if context.config is None:
-        raise LookupError("the attached row asked a helper without a project configuration")
-    return context.config
 
 
 def _re_attach() -> str:
@@ -501,7 +492,7 @@ def _owner(context: Context) -> Path:
         return context.root
 
 
-def _store_of(context: Context, answers: Answers, checkout: Path) -> Store | None:
+def _store_of(context: Context, config: Config, answers: Answers, checkout: Path) -> Store | None:
     """`checkout`'s note store, or `None` where it does not resolve: `answers`' own for this
     checkout, resolved the same way (`errors.resolved_or_none`) for another.
 
@@ -520,18 +511,18 @@ def _store_of(context: Context, answers: Answers, checkout: Path) -> Store | Non
 
     if checkout.resolve() == context.root.resolve():
         return answers.store(context)
-    return resolved_or_none(lambda: resolve(checkout, _project(context), machine=context.machine))
+    return resolved_or_none(lambda: resolve(checkout, config, machine=context.machine))
 
 
 def _harness_verdict(
-    context: Context, answers: Answers, harness: Path, fallback: _Fallback
+    context: Context, config: Config, answers: Answers, harness: Path, fallback: _Fallback
 ) -> _Verdict:
     """The one reading of the harness memory path; `_read_harness` is the reading, and this is
     it with a settings file that cannot be read said beside every green answer: what the harness
     makes of that file is unknown, so nothing beside it is green."""
     from stayfixed.doctor.api import OK, WARN
 
-    verdict = _read_harness(context, answers, harness, fallback)
+    verdict = _read_harness(context, config, answers, harness, fallback)
     if verdict.status != OK or not fallback.unread:
         return verdict
     return _Verdict(  # settings-unreadable
@@ -544,7 +535,7 @@ def _harness_verdict(
 
 
 def _read_harness(
-    context: Context, answers: Answers, harness: Path, fallback: _Fallback
+    context: Context, config: Config, answers: Answers, harness: Path, fallback: _Fallback
 ) -> _Verdict:
     """The one reading of the harness memory path: each machine state one status, sentence and
     remedy, answered alike from the main checkout and from a linked worktree.
@@ -644,7 +635,7 @@ def _read_harness(
     }[shape]
     owner = _owner(context)
     try:
-        targets = harness_targets(context.root, owner, _project(context))
+        targets = harness_targets(context.root, owner, config)
     except Refusal as refused:  # targets-unaskable
         unchecked = {
             _LINK: "what the link points at",
@@ -663,7 +654,7 @@ def _read_harness(
         _OTHER: "something other than a link",
         _ABSENT: "not in place",
     }[shape]
-    written = str(_written_fallback(owner, _project(context)))
+    written = str(_written_fallback(owner, config))
     if fallback.held and fallback.value != written:
         return _fallback_elsewhere(plain, fallback.where)  # fallback-elsewhere
     reached = harness.resolve() if shape == _LINK else None
@@ -678,16 +669,16 @@ def _read_harness(
     # one reaches this checkout's own.
     own = reached is not None and reached != targets[0]
     checkout = context.root if own else owner
-    store = _store_of(context, answers, checkout)
+    store = _store_of(context, config, answers, checkout)
     if store is not None and reached is not None and store.path.resolve() != reached:
         # A linked worktree whose own tree does not resolve resolves through the main checkout
         # (`memory.store.resolved`), and that store is not the one the harness reads through a
         # link to the worktree's own tree.
         store = None
     if store is None:  # tree-gone, tree-there-not-resolving
-        return _unresolved(context, checkout, shape, words, relink)
+        return _unresolved(context, config, checkout, shape, words, relink)
     try:
-        gate = harness_gate(store, _project(context))
+        gate = harness_gate(store, config)
     except Refusal:  # trust-record-unreadable
         return _Verdict(
             WARN,
@@ -806,7 +797,9 @@ def _real_directory(harness: Path) -> _Verdict:
     )
 
 
-def _unresolved(context: Context, checkout: Path, shape: str, words: str, relink: str) -> _Verdict:
+def _unresolved(
+    context: Context, config: Config, checkout: Path, shape: str, words: str, relink: str
+) -> _Verdict:
     """The `tree-gone` and `tree-there-not-resolving` rows of `_harness_verdict`: the note store
     of `checkout`, the one `_store_of` was asked of, does not resolve, by what its tree is.
 
@@ -822,7 +815,7 @@ def _unresolved(context: Context, checkout: Path, shape: str, words: str, relink
     from stayfixed import fsops
     from stayfixed.doctor.api import WARN
 
-    tree = checkout / _project(context).paths.memory
+    tree = checkout / config.paths.memory
     try:
         gone = not fsops.is_symlink(tree) and not fsops.exists(tree)
     except OSError:

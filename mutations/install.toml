@@ -1635,8 +1635,8 @@ reddens = [
 [[mutation]]
 name = "setup loads the overlay area at import again"
 file = "src/stayfixed/setup/run.py"
-before = "from stayfixed.presets import load_preset\n"
-after = "from stayfixed.overlay.api import require_overlay, target_root\nfrom stayfixed.presets import load_preset\n"
+before = "from stayfixed.presets import defaults_of, load_preset\n"
+after = "from stayfixed.overlay.api import require_overlay, target_root\nfrom stayfixed.presets import defaults_of, load_preset\n"
 reddens = [
   "tests/boundaries/test_delivery.py::test_in_isolation_no_core_module_loads_a_delivery_area",
 ]
