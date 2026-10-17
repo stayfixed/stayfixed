@@ -125,7 +125,7 @@ from stayfixed.jsonobject import json_object, json_text
 from stayfixed.presets import load_preset
 from stayfixed.printed import answered, quoted
 from stayfixed.runner import Runner
-from stayfixed.setup.machine import SANDBOXED, USER_SETTINGS, read_personal, write_machine
+from stayfixed.setup.machine import SETUP_SANDBOXED, USER_SETTINGS, read_personal, write_machine
 from stayfixed.trust.api import sandbox_refused
 
 # `<plugin-name>@<marketplace-name>`, matching `.claude-plugin/plugin.json`'s `name` and
@@ -346,7 +346,7 @@ def _write_user_settings(
         raise Refusal(f"{path} cannot be written: {exc}; {_SYMLINKED_SETTINGS}") from exc
     except OSError as exc:
         if sandbox_refused(exc):
-            raise Refusal(SANDBOXED) from exc
+            raise Refusal(SETUP_SANDBOXED) from exc
         # `UnsafePath` is not the only `OSError` reachable here, and the two that are not it
         # used to leave this library and land on `cli.run`'s final handler as `stayfixed:
         # internal error: FileNotFoundError`, exit 2, no remedy -- the exact rendering the
@@ -475,7 +475,7 @@ def _check_settings_path(home: Path) -> None:
 
 
 def _not_writable(directory: Path, said: str) -> Refusal:
-    """The refusal of `directory`, which `os.access` says this user may not write: `SANDBOXED`
+    """The refusal of `directory`, which `os.access` says this user may not write: `SETUP_SANDBOXED`
     where its mode lets its owner, this user, write and search it, and `said` otherwise.
 
     An agent's sandbox answers `os.access` as it answers the write (measured with `sandbox-exec`
@@ -490,7 +490,7 @@ def _not_writable(directory: Path, said: str) -> Refusal:
         return Refusal(said)
     writable = stat.S_IWUSR | stat.S_IXUSR
     owned = found.st_uid == os.getuid() and found.st_mode & writable == writable
-    return Refusal(SANDBOXED if owned else said)
+    return Refusal(SETUP_SANDBOXED if owned else said)
 
 
 def _check_home_usable(

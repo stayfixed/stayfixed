@@ -35,12 +35,13 @@ a permission error, whether or not the deny rule is in place. Claude Code's sand
 gives the error for such a write: `Operation not permitted` (`EPERM`) on macOS, and `Read-only file
 system` (`EROFS`) on Linux and WSL2. macOS's was also measured here (with `sandbox-exec` on macOS 27
 on 2026-10-16: an open and a `mkdir` in a denied directory each raised `PermissionError` `EPERM`);
-Linux's was not. So `EPERM` and `EROFS` are read as that refusal, and each writer says so in its own
-words, naming a person outside the agent's sandbox as the one to run it. A read-only mount and an
-immutable flag answer the same, so the sentences of the two commands a person runs, `setup` and
-the trust record's writers, end with `OWN_TERMINAL_TOO`, lest a person already in their own terminal
-be sent there again. A directory whose mode refuses the user answers `EACCES`, which is not the
-sandbox, and keeps each writer's sentence naming the directory.
+Linux's was not. So `EPERM` and `EROFS` are read as that refusal, and every writer says so in one
+sentence, `SANDBOX_REFUSED`, naming a person outside the agent's sandbox as the one to make the
+write. A read-only mount and an immutable flag answer the same, so the two commands a person runs
+again, `setup` and the trust record's writers, give the remedy `RUN_OUTSIDE`, which ends with
+`OWN_TERMINAL_TOO`, lest a person already in their own terminal be sent there again. A directory
+whose mode refuses the user answers `EACCES`, which is not the sandbox, and keeps each writer's
+sentence naming the directory.
 """
 
 from __future__ import annotations
@@ -111,6 +112,18 @@ SANDBOX_ERRNOS = frozenset({errno.EPERM, errno.EROFS})
 OWN_TERMINAL_TOO = (
     "; met in a person's own terminal, it is the directory itself that refuses writes, as a "
     "read-only mount or an immutable flag does"
+)
+# The one sentence for a write an agent's sandbox refused (the module docstring), whoever wrote:
+# what did not happen, the directory that refused, and who makes the write instead. Constant once
+# filled, since its likely reader is that agent, and speaking of the person, who runs it outside.
+SANDBOX_REFUSED = (
+    "{outcome}: {directory} refused the write, which Claude Code's sandbox does to every write an "
+    "agent's shell makes outside the working directory, so {remedy}"
+)
+# `SANDBOX_REFUSED`'s remedy for a command a person runs again, which `{command}` names.
+RUN_OUTSIDE = (
+    "a person must run {command} in their own terminal, outside the agent's sandbox"
+    + OWN_TERMINAL_TOO
 )
 
 

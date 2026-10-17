@@ -309,7 +309,7 @@ LISTED = {
         "names `CLAUDE_PLUGIN_ROOT` in the remedy",
     ),
     ("src/stayfixed/doctor/checks.py", "plugin_data"): (1, "`${CLAUDE_PLUGIN_DATA}` in the"),
-    ("src/stayfixed/trust/boundary.py", "claude"): (1, "`trust.boundary` spells"),
+    ("src/stayfixed/trust/boundary.py", "claude"): (2, "`trust.boundary` spells"),
 }
 # The mentions that are no fact the code acts on, each with how many constants make it and why.
 PROSE = {
@@ -321,11 +321,6 @@ PROSE = {
     ("src/stayfixed/doctor/entries.py", "claude"): 2,
     # The refusal for a home directory whose `.claude` the link walk cannot follow.
     ("src/stayfixed/memory/worktree.py", "claude"): 1,
-    # The sentences said where Claude Code's sandbox refused a write to the machine directory or
-    # the user settings: each names the harness to a person, and none is a fact the code acts on.
-    ("src/stayfixed/memory/commands.py", "claude"): 1,
-    ("src/stayfixed/setup/machine.py", "claude"): 1,
-    ("src/stayfixed/trust/record.py", "claude"): 1,
     # The advice `setup --approval-boundary` prints, which names the harness whose settings it is.
     ("src/stayfixed/setup/commands.py", "claude"): 1,
     # The commit-trailer guard's names of tools that sign commits as authors: the agent as an

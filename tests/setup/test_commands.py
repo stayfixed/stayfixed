@@ -18,7 +18,7 @@ from stayfixed.cli import build_parser, discover_registrars, run
 from stayfixed.overlay.api import MARKETPLACE_MANIFEST, PLUGIN_MANIFEST
 from stayfixed.printed import quoted
 from stayfixed.setup.api import SetupReport
-from stayfixed.setup.machine import SANDBOXED
+from stayfixed.setup.machine import SETUP_SANDBOXED
 from tests.ownerhome import as_owner_home
 from tests.parserlimits import LONG_NUMBER, NESTED
 from tests.runners import Recorder
@@ -413,7 +413,7 @@ def test_setup_from_a_sandboxed_shell_says_a_person_must_run_it(
         )
     argv = ["setup", "--preset", "recommended", "--yes", "--home", str(home)]
     assert invoke([*argv, "--machine", str(machine)]) == 2
-    assert capsys.readouterr().err == f"stayfixed: refused: {SANDBOXED}\n"
+    assert capsys.readouterr().err == f"stayfixed: refused: {SETUP_SANDBOXED}\n"
     assert (
         met
         == {
@@ -427,8 +427,8 @@ def test_setup_from_a_sandboxed_shell_says_a_person_must_run_it(
 
 def test_setup_s_sandbox_sentence_says_what_a_person_in_their_own_terminal_meets() -> None:
     # As the trust record's: the sandbox's answer is also a read-only mount's or an immutable
-    # flag's, met by a person already in their own terminal. Mutation (`mutations/`'s "setup's
-    # sandbox sentence sends a person in their own terminal there again"): it ends at the sandbox.
-    from stayfixed.trust.api import OWN_TERMINAL_TOO
+    # flag's, met by a person already in their own terminal. Mutation (`mutations/`'s "the sandbox
+    # sentence sends a person in their own terminal there again"): it ends at the sandbox.
+    from stayfixed.trust.boundary import OWN_TERMINAL_TOO
 
-    assert SANDBOXED.endswith(OWN_TERMINAL_TOO)
+    assert SETUP_SANDBOXED.endswith(OWN_TERMINAL_TOO)

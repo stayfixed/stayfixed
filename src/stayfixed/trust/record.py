@@ -41,7 +41,7 @@ from stayfixed import fsops
 from stayfixed.config.machine import machine_config_path
 from stayfixed.errors import Failure, Refusal
 from stayfixed.jsonobject import json_object
-from stayfixed.trust.boundary import OWN_TERMINAL_TOO, sandbox_refused
+from stayfixed.trust.boundary import RUN_OUTSIDE, SANDBOX_REFUSED, sandbox_refused
 
 RECORD = "trust.json"
 VERSION = 1
@@ -60,13 +60,11 @@ LATER_VERSION = (
 )
 NOT_A_RECORD = "{path} is neither a trust record nor the flat map 0.3.0 wrote; " + _KEPT
 # A write to the record that was refused the way an agent's sandbox refuses one (`boundary`'s
-# docstring): run from an agent's shell, nothing it asks of the record can be written. Constant,
-# since its likely reader is that agent, and speaking of the person, who runs it outside.
-SANDBOXED = (
-    "the trust record was not written: its directory refused the write, which Claude Code's "
-    "sandbox does to every write an agent's shell makes outside the working directory, so a "
-    "person must run this command in their own terminal, outside the agent's sandbox"
-    f"{OWN_TERMINAL_TOO}"
+# docstring): run from an agent's shell, nothing it asks of the record can be written.
+SANDBOXED = SANDBOX_REFUSED.format(
+    outcome="the trust record was not written",
+    directory="its directory",
+    remedy=RUN_OUTSIDE.format(command="this command"),
 )
 
 

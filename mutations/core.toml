@@ -4850,12 +4850,13 @@ reddens = [
 ]
 
 [[mutation]]
-name = "the trust record's sandbox sentence sends a person in their own terminal there again"
-file = "src/stayfixed/trust/record.py"
-before = "    \"person must run this command in their own terminal, outside the agent's sandbox\"\n    f\"{OWN_TERMINAL_TOO}\""
-after = "    \"person must run this command in their own terminal, outside the agent's sandbox\""
+name = "the sandbox sentence sends a person in their own terminal there again"
+file = "src/stayfixed/trust/boundary.py"
+before = "    \"a person must run {command} in their own terminal, outside the agent's sandbox\"\n    + OWN_TERMINAL_TOO"
+after = "    \"a person must run {command} in their own terminal, outside the agent's sandbox\""
 reddens = [
   "tests/trust/test_record.py::test_the_sandbox_sentence_says_what_a_person_in_their_own_terminal_meets",
+  "tests/setup/test_commands.py::test_setup_s_sandbox_sentence_says_what_a_person_in_their_own_terminal_meets",
 ]
 
 # One reader of the machine file for every load (`loader._built`): a load no command handed a layer

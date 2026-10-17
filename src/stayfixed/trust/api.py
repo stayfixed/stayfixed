@@ -3,9 +3,9 @@
 The `memory` area keeps its store approvals in the record under kind `memory`, and reads `recorded`,
 with the `Approval` it answers in, and `UnreadableTrust`, and `state` with the `State` it answers
 in; `refresh` is how it carries an approval across a write stayfixed itself made without undoing a
-revoke made before its final re-read of the record. A person approves and revokes through `stayfixed
-trust`, whose commands are this package's own, so the record's writers are not published: a consumer
-that needs one grows this list in a commit that names it.
+revoke made before its final re-read of the record. A person approves and revokes through
+`stayfixed trust`, whose commands are this package's own, so the record's writers are not
+published: a consumer that needs one grows this list in a commit that names it.
 
 `ApprovalKind`, `KindContext` and `Subject` are what an area's `approvals.py` builds its `KINDS`
 from (`memory.approvals`), and `approve_kind` is the approve path the `memory trust` alias runs,
@@ -19,8 +19,9 @@ not, in the words `trust approve`'s own refusal uses.
 of it (`boundary`): `record_deny_rules` over the directory `record_path` names, `SANDBOX_ON` for
 the user settings, and `ENFORCING_SETTINGS` for `managed_named`'s file. `sandbox_refused` is how
 `setup` tells a write an agent's sandbox refused, `SandboxedWrite` is the record's own refusal of
-one, which `memory` catches, and `OWN_TERMINAL_TOO` ends `setup`'s sentence for it as it ends the
-record's.
+one, which `memory` catches. `SANDBOX_REFUSED` is the one sentence every writer gives such a write,
+`setup`'s and `memory`'s as the record's, and `RUN_OUTSIDE` the remedy `setup` gives in it as the
+record does.
 """
 
 from __future__ import annotations
@@ -28,8 +29,9 @@ from __future__ import annotations
 from stayfixed.trust.approving import PERSON_RUNS, approve_kind, kind_context
 from stayfixed.trust.boundary import (
     ENFORCING_SETTINGS,
-    OWN_TERMINAL_TOO,
+    RUN_OUTSIDE,
     SANDBOX_ON,
+    SANDBOX_REFUSED,
     managed_named,
     record_deny_rules,
     sandbox_refused,
@@ -48,9 +50,10 @@ from stayfixed.trust.record import (
 
 __all__ = [
     "ENFORCING_SETTINGS",
-    "OWN_TERMINAL_TOO",
     "PERSON_RUNS",
+    "RUN_OUTSIDE",
     "SANDBOX_ON",
+    "SANDBOX_REFUSED",
     "Approval",
     "ApprovalKind",
     "KindContext",
