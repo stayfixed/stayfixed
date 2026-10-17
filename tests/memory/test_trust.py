@@ -34,7 +34,7 @@ from stayfixed.memory.trust import (
     store_digest,
     wrap,
 )
-from stayfixed.trust.record import Approval, approve, recorded, revoke
+from stayfixed.trust.record import Approval, approve, recorded, revoke_all
 from tests.approved import record
 from tests.gitfixture import git
 
@@ -374,7 +374,8 @@ def test_a_refresh_never_undoes_a_revoke_made_while_the_command_ran(tmp_path: Pa
     record(store, config)
     before = snapshot(store, config)
     assert before.trusted is True
-    assert revoke(machine, "memory", str(store.path.resolve())) is True
+    key = str(store.path.resolve())
+    assert revoke_all(machine, "memory", [key]) == [key]
     mine = store.groups["developer"] / "a.md"
     mine.write_text(NOTE.replace("Body.", "Rewritten by stayfixed."), encoding="utf-8")
     assert refresh_if_trusted(store, config, before, [mine]) is False

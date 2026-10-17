@@ -30,7 +30,7 @@ from stayfixed.trust.record import (
     record_path,
     recorded,
     refresh,
-    revoke,
+    revoke_all,
     state,
 )
 from tests.ownerhome import as_owner_home
@@ -157,7 +157,7 @@ def test_an_unreadable_record_refuses_and_is_never_overwritten(
     with pytest.raises(UnreadableTrust):
         approve(machine(tmp_path), "memory", "/s", "d", now=T0)
     with pytest.raises(UnreadableTrust):
-        revoke(machine(tmp_path), "memory", "/s")
+        revoke_all(machine(tmp_path), "memory", ["/s"])
     assert path.read_text(encoding="utf-8") == document
 
 
@@ -216,7 +216,7 @@ def test_two_kinds_never_share_a_subject(tmp_path: Path) -> None:
     approve(machine(tmp_path), "other", "/s", "e", now=T0)
     assert state(machine(tmp_path), "memory", "/s", "d") is State.APPROVED
     assert state(machine(tmp_path), "other", "/s", "e") is State.APPROVED
-    assert revoke(machine(tmp_path), "other", "/s") is True
+    assert revoke_all(machine(tmp_path), "other", ["/s"]) == ["/s"]
     assert state(machine(tmp_path), "memory", "/s", "d") is State.APPROVED
 
 
@@ -226,9 +226,9 @@ def test_revoke_of_nothing_says_so(tmp_path: Path) -> None:
     approve(machine(tmp_path), "memory", "/s", "d", now=T0)
     path = tmp_path / RECORD
     before = (path.read_bytes(), path.stat().st_ino)
-    assert revoke(machine(tmp_path), "memory", "/elsewhere") is False
+    assert revoke_all(machine(tmp_path), "memory", ["/elsewhere"]) == []
     assert (path.read_bytes(), path.stat().st_ino) == before
-    assert revoke(machine(tmp_path), "memory", "/s") is True
+    assert revoke_all(machine(tmp_path), "memory", ["/s"]) == ["/s"]
     assert state(machine(tmp_path), "memory", "/s", "d") is State.MISSING
 
 
@@ -290,7 +290,7 @@ def test_a_refresh_never_brings_back_a_revoked_approval(tmp_path: Path) -> None:
     # The revoke landed after the caller's read and before the refresh re-read the record. Mutation
     # (`mutations/`'s "a refresh brings back a revoked approval"): the approval is recorded again.
     approve(machine(tmp_path), "memory", "/s", "d", now=T0)
-    assert revoke(machine(tmp_path), "memory", "/s") is True
+    assert revoke_all(machine(tmp_path), "memory", ["/s"]) == ["/s"]
     assert refresh(machine(tmp_path), "memory", "/s", expected="d", digest="e") is False
     assert recorded(machine(tmp_path)) == {}
 
@@ -366,6 +366,27 @@ def test_every_subject_of_a_kind_is_approved_in_one_write(
     assert was == {"/a": State.LAPSED, "/b": State.MISSING}
     assert state(machine, "memory", "/a", "new") is State.APPROVED
     assert state(machine, "memory", "/b", "d") is State.APPROVED
+
+
+def test_every_subject_of_a_kind_is_revoked_in_one_write(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Withdrawn as `approve_all` approves: one replacement of the record whatever the number of
+    # subjects, answering those that had an approval in the order given, and leaving the rest.
+    # Mutation (`mutations/`'s "revoking a kind writes the record once per subject"): two writes.
+    machine = tmp_path / "config.toml"
+    approve_all(machine, "memory", {"/a": "d", "/b": "d", "/c": "d"}, now=T0)
+    writes: list[Path] = []
+    real = fsops.write_atomically
+
+    def counting(path: Path, text: str) -> None:
+        writes.append(path)
+        real(path, text)
+
+    monkeypatch.setattr(fsops, "write_atomically", counting)
+    assert revoke_all(machine, "memory", ["/b", "/x", "/a"]) == ["/b", "/a"]
+    assert writes == [tmp_path / RECORD]
+    assert list(recorded(machine)) == [("memory", "/c")]
 
 
 def test_approving_no_subject_writes_nothing(tmp_path: Path) -> None:

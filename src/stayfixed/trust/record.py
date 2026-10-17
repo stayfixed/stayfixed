@@ -30,7 +30,7 @@ and the last writer wins it.
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import asdict, dataclass, fields, replace
 from datetime import datetime
 from enum import StrEnum
@@ -184,12 +184,14 @@ def _approvals(raw: dict[str, Any], path: Path) -> dict[tuple[str, str], Approva
 
 def state(machine: Path | None, kind: str, subject: str, current: str) -> State:
     """Whether `subject` of `kind` is approved at the digest `current`."""
-    return _state(recorded(machine), kind, subject, current)
+    return state_in(recorded(machine), kind, subject, current)
 
 
-def _state(
+def state_in(
     approvals: Mapping[tuple[str, str], Approval], kind: str, subject: str, current: str
 ) -> State:
+    """`state`'s answer out of `approvals`, the record read once by a caller that asks of several
+    subjects (`trust list`)."""
     approval = approvals.get((kind, subject))
     if approval is None:
         return State.MISSING
@@ -216,7 +218,9 @@ def approve_all(
     One write, so a kind with several subjects is approved whole or not at all: a write that fails
     leaves the record as it was. Nothing is written for no subject."""
     approvals = recorded(machine)
-    was = {subject: _state(approvals, kind, subject, digest) for subject, digest in digests.items()}
+    was = {
+        subject: state_in(approvals, kind, subject, digest) for subject, digest in digests.items()
+    }
     if not digests:
         return was
     when = now.isoformat(timespec="seconds")
@@ -252,14 +256,17 @@ def refresh(machine: Path | None, kind: str, subject: str, *, expected: str, dig
     return True
 
 
-def revoke(machine: Path | None, kind: str, subject: str) -> bool:
-    """Remove the approval of `subject` of `kind`; `False`, and nothing written, when there is
-    none."""
+def revoke_all(machine: Path | None, kind: str, subjects: Iterable[str]) -> list[str]:
+    """Remove the approval of every subject of `kind` in `subjects` that has one, in one write of
+    the record, and answer those subjects in the order given; nothing is written when none had one.
+
+    One write, as `approve_all`'s, so a kind with several subjects is withdrawn whole or not at
+    all, and the record is not replaced once per subject."""
     approvals = recorded(machine)
-    if approvals.pop((kind, subject), None) is None:
-        return False
-    _write(machine, approvals)
-    return True
+    revoked = [subject for subject in subjects if approvals.pop((kind, subject), None) is not None]
+    if revoked:
+        _write(machine, approvals)
+    return revoked
 
 
 def _write(machine: Path | None, approvals: dict[tuple[str, str], Approval]) -> None:

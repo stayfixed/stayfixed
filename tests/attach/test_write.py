@@ -2252,7 +2252,7 @@ def test_an_approval_attach_could_not_carry_is_said_as_what_happened(
     # refresh the sandbox refused" -> `sandboxed` says only that the approval lapsed).
     from stayfixed.memory import trust as memory_trust
     from stayfixed.memory.api import harness_memory_path, resolve
-    from stayfixed.trust.api import recorded, revoke
+    from stayfixed.trust.record import recorded, revoke_all
     from tests.approved import record as approved
 
     root, store, machine = _attachable(tmp_path, allow=(RULE,))
@@ -2269,7 +2269,7 @@ def test_an_approval_attach_could_not_carry_is_said_as_what_happened(
     def meanwhile(*args: Any) -> bool:
         # What happens after the render read the record and before it writes it again.
         if changed == "record":
-            revoke(machine, approval.kind, approval.subject)
+            revoke_all(machine, approval.kind, [approval.subject])
         elif changed == "store":
             arrived = store / "project-stable" / "arrived.md"
             arrived.write_text("---\nname: arrived\n---\nnew\n", encoding="utf-8")

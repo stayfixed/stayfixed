@@ -18,12 +18,13 @@ from types import ModuleType, SimpleNamespace
 
 import pytest
 
+from stayfixed import fsops
 from stayfixed.memory.approvals import NO_CONFIGURATION
 from stayfixed.printed import CLIPPED_CHARS
-from stayfixed.trust import kinds
+from stayfixed.trust import kinds, record
 from stayfixed.trust.approving import NOT_A_TERMINAL, UNKNOWN_KIND
 from stayfixed.trust.commands import NOTHING_TO_REVOKE, UNDESCRIBED
-from stayfixed.trust.kinds import DUPLICATE_KIND, ApprovalKind
+from stayfixed.trust.kinds import DUPLICATE_KIND, ApprovalKind, Subject
 from stayfixed.trust.record import RECORD, State, approve, record_path, recorded, state
 from tests.boundaries.test_delivery import IMPORT_EACH
 from tests.crafted import CRAFTED, assert_never_raw
@@ -493,3 +494,47 @@ def test_the_records_surface_loads_no_command_module() -> None:
     assert Path(origin).is_relative_to(source), origin
     assert "stayfixed.trust.api" in loaded
     assert not {"stayfixed.trust.commands", "stayfixed.command"} & set(loaded)
+
+
+def test_a_kind_of_several_subjects_is_listed_off_one_read_and_revoked_in_one_write(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A kind may describe several subjects in one checkout. `trust list` reads the record once for
+    # all of them, and `trust revoke` withdraws them in one write, as `trust approve` approves them,
+    # so a write that fails part-way leaves the record as it was. Mutations (`mutations/`'s "trust
+    # list reads the record once per subject" -> three reads; "revoking a kind writes the record
+    # once per subject" -> two writes).
+    subjects = (Subject("/a", "a", "da"), Subject("/b", "b", "db"), Subject("/c", "c", "dc"))
+    several = ApprovalKind("several", lambda context: subjects)
+    monkeypatch.setattr(kinds, "kinds", lambda: {"several": several})
+    machine = tmp_path / "machine.toml"
+    approve(machine, "several", "/a", "da", now=T0)
+    approve(machine, "several", "/b", "old", now=T0)
+    common_args = ["--root", str(tmp_path), "--machine", str(machine)]
+
+    reads: list[Path | None] = []
+    real_recorded = record.recorded
+
+    def counted_read(at: Path | None) -> dict[tuple[str, str], record.Approval]:
+        reads.append(at)
+        return real_recorded(at)
+
+    monkeypatch.setattr(record, "recorded", counted_read)
+    assert invoke(["trust", "list", *common_args]) == 0
+    listed = capsys.readouterr().out
+    assert "several a: approved" in listed
+    assert "several b: lapsed" in listed
+    assert "several c: missing" in listed
+    assert reads == [machine]
+
+    writes: list[Path] = []
+    real_write = fsops.write_atomically
+
+    def counted_write(path: Path, text: str) -> None:
+        writes.append(path)
+        real_write(path, text)
+
+    monkeypatch.setattr(fsops, "write_atomically", counted_write)
+    assert invoke(["trust", "revoke", "several", *common_args]) == 0
+    assert writes == [tmp_path / RECORD]
+    assert real_recorded(machine) == {}

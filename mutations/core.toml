@@ -4633,9 +4633,30 @@ reddens = ["tests/trust/test_record.py::test_two_kinds_never_share_a_subject"]
 [[mutation]]
 name = "a revoke of nothing rewrites the trust record"
 file = "src/stayfixed/trust/record.py"
-before = "    if approvals.pop((kind, subject), None) is None:\n        return False"
-after = "    if approvals.pop((kind, subject), None) is None:\n        _write(machine, approvals)\n        return False"
+before = "    if revoked:\n        _write(machine, approvals)\n    return revoked"
+after = "    if True:\n        _write(machine, approvals)\n    return revoked"
 reddens = ["tests/trust/test_record.py::test_revoke_of_nothing_says_so"]
+
+# Revoking several subjects of a kind is one write of the record, as approving them is.
+[[mutation]]
+name = "revoking a kind writes the record once per subject"
+file = "src/stayfixed/trust/record.py"
+before = "    if revoked:\n        _write(machine, approvals)\n    return revoked"
+after = "    for _ in revoked:\n        _write(machine, approvals)\n    return revoked"
+reddens = [
+  "tests/trust/test_record.py::test_every_subject_of_a_kind_is_revoked_in_one_write",
+  "tests/trust/test_commands.py::test_a_kind_of_several_subjects_is_listed_off_one_read_and_revoked_in_one_write",
+]
+
+# `trust list` reads the record once, however many subjects the kinds describe.
+[[mutation]]
+name = "trust list reads the record once per subject"
+file = "src/stayfixed/trust/commands.py"
+before = "            if approvals is None:\n                approvals = record.recorded(context.machine)"
+after = "            if True:\n                approvals = record.recorded(context.machine)"
+reddens = [
+  "tests/trust/test_commands.py::test_a_kind_of_several_subjects_is_listed_off_one_read_and_revoked_in_one_write",
+]
 
 # A refresh, stayfixed's own write over an approval its caller read, moves only the digest it read,
 # never brings back a revoked approval, and keeps when the person approved.
@@ -4705,8 +4726,8 @@ reddens = [
 [[mutation]]
 name = "trust revoke revokes nothing"
 file = "src/stayfixed/trust/commands.py"
-before = "    revoked = [key for key in keys if record.revoke(context.machine, kind.name, key)]"
-after = "    revoked = [key for key in keys if False]"
+before = "    revoked = record.revoke_all(context.machine, kind.name, keys)"
+after = "    revoked: list[str] = []"
 reddens = ["tests/trust/test_commands.py::test_revoke_needs_no_terminal"]
 
 [[mutation]]
