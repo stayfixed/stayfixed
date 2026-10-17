@@ -456,14 +456,14 @@ an exit code, and by default Claude Code then carries the tool call out. So the 
 `PreToolUse` entry sets `"onFailure": "block"`: from Claude Code 2.1.295, such a failure blocks the
 call as an exit `2` does, in Claude Code's words and with no stayfixed reason. The wrapper's own
 exits under `closed` are `0` and `2`, neither of which that setting reads as a failure, so it
-changes nothing a working hook decides; a session whose hook cannot start at all then runs no
-`Bash` call until the plugin is repaired. Such a session still edits files: the entry's matcher is
-`Bash`, so the Read, Edit and Write tools can repair what keeps the hook from answering. To run
-`Bash` meanwhile, turn the plugin off with `/plugin`, or start Claude Code with
+changes nothing a working hook decides; a session whose hook cannot start at all then runs no `Bash`
+call until the plugin is repaired. Such a session still edits files: the entry's matcher is `Bash`,
+so the Read, Edit and Write tools can repair what keeps the hook from answering. To run `Bash`
+meanwhile, turn the plugin off with `/plugin`, or start Claude Code with
 `claude --settings '{"disableAllHooks": true}'`, which turns off every hook for that session and
-every guard with them. Claude Code before 2.1.295 was not measured with the key: one that
-rejected it would lose the closed entry, and the `Bash` guards with it. `stayfixed doctor`'s `wrapper` row says so
-beside its `ok`, on every Claude Code, since nothing in the report asks which one runs.
+every guard with them. Claude Code before 2.1.295 was not measured with the key: one that rejected
+it would lose the closed entry, and the `Bash` guards with it. `stayfixed doctor`'s `wrapper` row
+says so beside its `ok`, on every Claude Code, since nothing in the report asks which one runs.
 Codex's reader of `hooks.json` ignores a key it does not define on an entry (read in its source,
 `codex-rs/config/src/hook_config.rs`, on 2026-10-17, and not measured). The `open` entries leave it
 unset: a failure there is the session's to survive.

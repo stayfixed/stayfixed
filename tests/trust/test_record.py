@@ -133,11 +133,11 @@ def test_an_unreadable_record_refuses_and_is_never_overwritten(
     tmp_path: Path, document: str, sentence: str | None
 ) -> None:
     # Each arm of the version-1 reader has a case of its own: every other version-1 record in the
-    # suite is one `approve` wrote, and it can write none of these. Only a version above this one
-    # sends its reader to a later stayfixed, and an object holding `approvals` is never `0.3.0`'s
-    # flat map. Mutations (`mutations/`'s "a trust record of a later version is read as empty" ->
-    # version 2 reads as no approval and the write replaces it; "a trust record of any other version
-    # is sent to a later stayfixed" -> `bool`, `version-0`, `negative` and `text` say
+    # suite is one `approve_all` wrote, and it can write none of these. Only a version above this
+    # one sends its reader to a later stayfixed, and an object holding `approvals` is never
+    # `0.3.0`'s flat map. Mutations (`mutations/`'s "a trust record of a later version is read as
+    # empty" -> version 2 reads as no approval and the write replaces it; "a trust record of any
+    # other version is sent to a later stayfixed" -> `bool`, `version-0`, `negative` and `text` say
     # `LATER_VERSION`; "a trust record with approvals and no version reads as 0.3.0's flat map" ->
     # `no-version` reads as no approval and the next write erases it; "an approval over an
     # unreadable trust record writes the record anyway" -> the write replaces every case; "a trust

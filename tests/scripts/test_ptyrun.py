@@ -111,11 +111,12 @@ def test_a_process_the_command_started_is_killed_with_it_at_the_deadline() -> No
     found = re.search(r"sleeper (\d+)", str(stopped.value))
     assert found is not None, stopped.value
     sleeper = int(found.group(1))
-    try:
-        assert _gone(sleeper)
-    finally:
+    gone = _gone(sleeper)
+    if not gone:
+        # Only a sleeper still there is killed: once gone, its pid may be another process's.
         with contextlib.suppress(ProcessLookupError):
             os.kill(sleeper, signal.SIGKILL)
+    assert gone
 
 
 def test_a_command_that_closes_the_terminal_and_runs_on_is_killed_at_the_deadline() -> None:

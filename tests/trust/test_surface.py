@@ -10,10 +10,10 @@ import stayfixed.trust.api as trust
 
 def test_the_surface_carries_what_every_consumer_reaches_for() -> None:
     # An equality and not a subset, as `tests/doctor/test_surface.py` holds its own: a subset lets
-    # an export arrive unnoticed, and this surface once published three names nothing imported
-    # (`Approval`'s importer, `approve` and `revoke`, which only tests called). What each name is
-    # doing here is written beside it. No mutation entry, for that file's reason: the mutation is
-    # adding an export, two lines in `api.py` and not one substituted line.
+    # an export arrive unnoticed, and this surface once published `approve` and `revoke`, which only
+    # tests called, so both left it; `Approval` stays, as the type `recorded` answers in. What each
+    # name is doing here is written beside it. No mutation entry, for that file's reason: the
+    # mutation is adding an export, two lines in `api.py` and not one substituted line.
     required = {
         # the record as `memory` reads it: every approval (`memory.trust`), with the type it answers
         # in, whose fields `memory.trust` reads, and the refusal of a record that cannot be read

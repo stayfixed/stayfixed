@@ -785,12 +785,12 @@ def test_a_0_3_0_record_keeps_every_memory_approval(tmp_path):
     assert state(tmp_path / "config.toml", "memory", "/s", "d") is State.APPROVED
 def test_the_first_write_upgrades_the_file_in_place(tmp_path): ...   # version 1; the old entry kept
 def test_0_3_0s_reader_sees_no_approval_in_a_version_1_record(tmp_path):
-    approve(tmp_path / "config.toml", "memory", "/s", "d", now=T0)
+    approve_all(tmp_path / "config.toml", "memory", {"/s": "d"}, now=T0)
     assert legacy_reader(tmp_path / "trust.json") == {}   # 0.3.0's filter, copied as a literal
 def test_an_unreadable_record_refuses_and_is_never_overwritten(tmp_path): ...   # "{", and version 2
 def test_lapsed_missing_and_approved_are_told_apart(tmp_path): ...
 def test_two_kinds_never_share_a_subject(tmp_path): ...
-def test_revoke_of_nothing_says_so(tmp_path): ...             # False; file unchanged
+def test_revoke_of_nothing_says_so(tmp_path): ...             # []; file unchanged
 def test_the_record_ignores_xdg_and_home(tmp_path, monkeypatch): ...
 ```
 
@@ -806,7 +806,7 @@ def test_the_record_ignores_xdg_and_home(tmp_path, monkeypatch): ...
   `mutations/records.toml` entry whose `before` text moves to `src/stayfixed/trust/record.py` moves
   to `mutations/core.toml`, re-anchored.
 - [ ] **Step 5: Mutations:** `state` ignoring the digest; `LAPSED` read as `MISSING`; the key built
-  from the subject alone; `approve` writing over an unreadable record; the flat-map reader dropped.
+  from the subject alone; `approve_all` writing over an unreadable record; the flat-map reader dropped.
   Expected: each reddens its test.
 - [ ] **Step 6: Documents** per Shipped sentences ("The trust record"); `SECURITY.md`: approvals hold
   against repository bytes and a `git pull`, and against an agent with an unsandboxed shell the
