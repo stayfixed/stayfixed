@@ -967,7 +967,7 @@ reddens = [
 [[mutation]]
 name = "doctor reports a pinned ref as ok with no workflow file to pin it in"
 file = "src/stayfixed/doctor/checks.py"
-before = '        if context.config.ci.mode == "reusable":'
+before = '        if config.ci.mode == "reusable":'
 after = "        if False:"
 reddens = [
   "tests/doctor/test_checks.py::test_a_recorded_ref_with_no_workflow_file_at_all_is_never_green",
@@ -2948,16 +2948,28 @@ reddens = [
 [[mutation]]
 name = "the budgets row reads a configuration that is not there"
 file = "src/stayfixed/doctor/checks.py"
-before = "    if context.config is None:\n        return Row(SKIP, NO_CONFIG_SKIP, \"\")\n    budgets = context.config.budgets"
-after = "    budgets = context.config.budgets"
+before = "    (\"budgets\", configured(_budgets)),"
+after = "    (\"budgets\", lambda context: _budgets(context, context.config)),  # type: ignore[arg-type]"
 reddens = ["tests/doctor/test_floor_report.py::test_rows_that_read_the_configuration_skip_without_one[budgets]"]
 
 [[mutation]]
 name = "the ci-ref row reads a configuration that is not there"
 file = "src/stayfixed/doctor/checks.py"
-before = "    if context.config is None:\n        return Row(SKIP, NO_CONFIG_SKIP, \"\")\n    ref = context.config.ci.ref"
-after = "    ref = context.config.ci.ref"
+before = "    (\"ci-ref\", configured(_ci_ref)),"
+after = "    (\"ci-ref\", lambda context: _ci_ref(context, context.config)),  # type: ignore[arg-type]"
 reddens = ["tests/doctor/test_floor_report.py::test_rows_that_read_the_configuration_skip_without_one[ci-ref]"]
+
+# Every row that reads the configuration before anything else skips through `model.configured`, so
+# breaking that one wrapper reaches the core's rows and the areas' alike.
+[[mutation]]
+name = "a row that reads the configuration is asked without one"
+file = "src/stayfixed/doctor/model.py"
+before = "        if context.config is None:\n            return Row(SKIP, NO_CONFIG_SKIP)\n        return check(context, context.config)"
+after = "        return check(context, context.config)  # type: ignore[arg-type]"
+reddens = [
+  "tests/doctor/test_floor_report.py::test_rows_that_read_the_configuration_skip_without_one[budgets]",
+  "tests/doctor/test_checks.py::test_a_repository_without_a_configuration_skips_only_the_rows_that_read_one",
+]
 
 # The `preferences` row names each owner key and preference with its layer, and prints a value
 # only where it is a boolean, a number or one of stayfixed's own words.
@@ -3042,3 +3054,12 @@ file = "src/stayfixed/doctor/checks.py"
 before = "        name for name, value in budgets.configured.items() if value < budgets.preset[name]"
 after = "        name for name, value in budgets.configured.items() if value > budgets.preset[name]"
 reddens = ["tests/doctor/test_checks.py::test_a_budget_the_project_lowered_is_reported_green_and_named"]
+
+# The green `wrapper` row names the Claude Code the closed entry's `onFailure: "block"` was
+# measured on, and that an earlier one was not.
+[[mutation]]
+name = "the wrapper row leaves out which Claude Code was measured with onFailure"
+file = "src/stayfixed/doctor/checks.py"
+before = "    return Row(OK, f\"{WRAPPER} reached stayfixed and exited 0; {UNMEASURED_ON_FAILURE}\", \"\")"
+after = "    return Row(OK, f\"{WRAPPER} reached stayfixed and exited 0\", \"\")"
+reddens = ["tests/doctor/test_checks.py::test_a_wrapper_that_runs_is_reported_green"]

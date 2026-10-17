@@ -1003,11 +1003,11 @@ name = "a settings write's other OSErrors escape as an internal error again"
 file = "src/stayfixed/setup/run.py"
 before = """    except OSError as exc:
         if sandbox_refused(exc):
-            raise Refusal(SANDBOXED) from exc
+            raise Refusal(SETUP_SANDBOXED) from exc
         # `UnsafePath` is not the only `OSError` reachable here"""
 after = """    except UnsafePath as exc:
         if sandbox_refused(exc):
-            raise Refusal(SANDBOXED) from exc
+            raise Refusal(SETUP_SANDBOXED) from exc
         # `UnsafePath` is not the only `OSError` reachable here"""
 reddens = [
   "tests/setup/test_setup.py::test_a_settings_path_whose_directory_is_not_there_is_a_refusal_and_not_an_internal_error",
@@ -1635,8 +1635,8 @@ reddens = [
 [[mutation]]
 name = "setup loads the overlay area at import again"
 file = "src/stayfixed/setup/run.py"
-before = "from stayfixed.presets import load_preset\n"
-after = "from stayfixed.overlay.api import require_overlay, target_root\nfrom stayfixed.presets import load_preset\n"
+before = "from stayfixed.presets import defaults_of, load_preset\n"
+after = "from stayfixed.overlay.api import require_overlay, target_root\nfrom stayfixed.presets import defaults_of, load_preset\n"
 reddens = [
   "tests/boundaries/test_delivery.py::test_in_isolation_no_core_module_loads_a_delivery_area",
 ]
@@ -1774,8 +1774,8 @@ reddens = ["tests/setup/test_commands.py::test_setup_where_the_homes_differ_says
 [[mutation]]
 name = "an unwritable machine file directory ends as an internal error"
 file = "src/stayfixed/setup/machine.py"
-before = "    except OSError as exc:\n        if sandbox_refused(exc):\n            raise Refusal(SANDBOXED) from None\n        # With no `--machine`"
-after = "    except LookupError as exc:\n        if sandbox_refused(exc):\n            raise Refusal(SANDBOXED) from None\n        # With no `--machine`"
+before = "    except OSError as exc:\n        if sandbox_refused(exc):\n            raise Refusal(SETUP_SANDBOXED) from None\n        # With no `--machine`"
+after = "    except LookupError as exc:\n        if sandbox_refused(exc):\n            raise Refusal(SETUP_SANDBOXED) from None\n        # With no `--machine`"
 reddens = [
   "tests/setup/test_commands.py::test_setup_where_the_database_home_cannot_be_written_fails_naming_the_directory",
 ]
@@ -2240,8 +2240,8 @@ reddens = [
 [[mutation]]
 name = "setup says nothing of the sandbox that refused its machine file"
 file = "src/stayfixed/setup/machine.py"
-before = "        if sandbox_refused(exc):\n            raise Refusal(SANDBOXED) from None"
-after = "        if False:\n            raise Refusal(SANDBOXED) from None"
+before = "        if sandbox_refused(exc):\n            raise Refusal(SETUP_SANDBOXED) from None"
+after = "        if False:\n            raise Refusal(SETUP_SANDBOXED) from None"
 reddens = [
   "tests/setup/test_commands.py::test_setup_from_a_sandboxed_shell_says_a_person_must_run_it[machine-file]",
 ]
@@ -2249,8 +2249,8 @@ reddens = [
 [[mutation]]
 name = "setup says nothing of the sandbox that refused its settings file"
 file = "src/stayfixed/setup/run.py"
-before = "        if sandbox_refused(exc):\n            raise Refusal(SANDBOXED) from exc"
-after = "        if False:\n            raise Refusal(SANDBOXED) from exc"
+before = "        if sandbox_refused(exc):\n            raise Refusal(SETUP_SANDBOXED) from exc"
+after = "        if False:\n            raise Refusal(SETUP_SANDBOXED) from exc"
 reddens = [
   "tests/setup/test_commands.py::test_setup_from_a_sandboxed_shell_says_a_person_must_run_it[settings-file]",
 ]
@@ -2258,7 +2258,7 @@ reddens = [
 [[mutation]]
 name = "setup reads a directory the sandbox refuses as one its mode refuses"
 file = "src/stayfixed/setup/run.py"
-before = "    return Refusal(SANDBOXED if owned else said)"
+before = "    return Refusal(SETUP_SANDBOXED if owned else said)"
 after = "    return Refusal(said)"
 reddens = [
   "tests/setup/test_commands.py::test_setup_from_a_sandboxed_shell_says_a_person_must_run_it[settings-directory]",
@@ -2267,19 +2267,10 @@ reddens = [
 [[mutation]]
 name = "setup reads a directory its mode refuses as the sandbox"
 file = "src/stayfixed/setup/run.py"
-before = "    return Refusal(SANDBOXED if owned else said)"
-after = "    return Refusal(SANDBOXED)"
+before = "    return Refusal(SETUP_SANDBOXED if owned else said)"
+after = "    return Refusal(SETUP_SANDBOXED)"
 reddens = [
   "tests/setup/test_setup.py::test_a_settings_directory_that_cannot_be_written_is_refused_before_the_machine_file",
-]
-
-[[mutation]]
-name = "setup's sandbox sentence sends a person in their own terminal there again"
-file = "src/stayfixed/setup/machine.py"
-before = "    \"`stayfixed setup` in their own terminal, outside the agent's sandbox\"\n    f\"{OWN_TERMINAL_TOO}\""
-after = "    \"`stayfixed setup` in their own terminal, outside the agent's sandbox\""
-reddens = [
-  "tests/setup/test_commands.py::test_setup_s_sandbox_sentence_says_what_a_person_in_their_own_terminal_meets",
 ]
 
 # `setup`'s settings merge reads the owner's file past a leading byte-order mark, as Claude Code
@@ -2341,6 +2332,40 @@ after = "        switched = (args.yes, args.git_hooks)"
 reddens = [
   "tests/setup/test_approval_boundary.py::test_the_advice_beside_a_flag_that_writes_is_refused[uninstall]",
 ]
+
+# `--uninstall` is taken only with `--git-hooks`: alone it refuses, naming that flag, and writes
+# nothing, where it was dropped and the machine setup ran.
+[[mutation]]
+name = "setup drops a lone --uninstall and runs the machine setup"
+file = "src/stayfixed/setup/commands.py"
+before = "    if args.uninstall:\n        raise Refusal(_UNINSTALL_ALONE)"
+after = "    if False:\n        raise Refusal(_UNINSTALL_ALONE)"
+reddens = [
+  "tests/setup/test_commands.py::test_uninstall_without_git_hooks_refuses_and_runs_no_machine_setup",
+]
+
+# `--git-hooks` takes no flag that asks machine setup to act: each refuses beside it, where all but
+# `--preset` were dropped and the hook installed.
+[[mutation]]
+name = "setup --git-hooks drops --preset"
+file = "src/stayfixed/setup/commands.py"
+before = "        if args.yes or args.preset is not None or args.overlay is not None:"
+after = "        if args.yes or args.overlay is not None:"
+reddens = ["tests/setup/test_git_hooks.py::test_git_hooks_refuses_every_flag_that_asks_machine_setup_to_act[preset]"]
+
+[[mutation]]
+name = "setup --git-hooks drops --overlay"
+file = "src/stayfixed/setup/commands.py"
+before = "        if args.yes or args.preset is not None or args.overlay is not None:"
+after = "        if args.yes or args.preset is not None:"
+reddens = ["tests/setup/test_git_hooks.py::test_git_hooks_refuses_every_flag_that_asks_machine_setup_to_act[overlay]"]
+
+[[mutation]]
+name = "setup --git-hooks drops --yes"
+file = "src/stayfixed/setup/commands.py"
+before = "        if args.yes or args.preset is not None or args.overlay is not None:"
+after = "        if args.preset is not None or args.overlay is not None:"
+reddens = ["tests/setup/test_git_hooks.py::test_git_hooks_refuses_every_flag_that_asks_machine_setup_to_act[yes]"]
 
 # The advice names the user settings file `setup` would write: the one `--settings` names, else the
 # home's, and either absolute, so a relative `--home` or `--settings` names the file meant.

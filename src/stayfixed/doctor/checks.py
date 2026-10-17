@@ -76,7 +76,7 @@ from stayfixed.config.machine import (
     override_is_honoured,
     passwd_home,
 )
-from stayfixed.config.schema import MEMORY_MODES
+from stayfixed.config.schema import MEMORY_MODES, Config
 from stayfixed.config.session import (
     SESSION_READ_LIMIT,
     TOO_LARGE_WARNING,
@@ -86,7 +86,6 @@ from stayfixed.config.session import (
 )
 from stayfixed.doctor.entries import hook_entries
 from stayfixed.doctor.model import (
-    NO_CONFIG_SKIP,
     OK,
     RED,
     REPORT_THIS,
@@ -96,6 +95,7 @@ from stayfixed.doctor.model import (
     Context,
     Contribution,
     Row,
+    configured,
 )
 from stayfixed.doctor.registry import contributions
 from stayfixed.findings import listed
@@ -108,7 +108,7 @@ from stayfixed.hooks.api import (
     MARKERS,
     data_root,
 )
-from stayfixed.presets import DEFAULT_PRESET, load_preset
+from stayfixed.presets import DEFAULT_PRESET, defaults_of, load_preset
 from stayfixed.printed import clipped
 from stayfixed.release.api import (
     HASHED_FILES,
@@ -141,6 +141,15 @@ _TOKEN = re.compile(r"\bSF_[A-Z_]+\b")
 # Wide enough for a cold interpreter start on a loaded machine, narrow enough that a hung probe does
 # not hang `doctor`.
 WRAPPER_TIMEOUT_SECONDS = 30
+# What the `wrapper` row says beside its `ok`: the closed `PreToolUse` entry in `hooks/hooks.json`
+# sets `onFailure: "block"`, which decides what a wrapper that cannot start costs, and only Claude
+# Code 2.1.295 and later were measured with it (`docs/cli.md`, "What never reaches the wrapper").
+# Said on every green row, since nothing here asks which Claude Code runs.
+UNMEASURED_ON_FAILURE = (
+    "from Claude Code 2.1.295 a closed hook that cannot start blocks the Bash call; an earlier "
+    "Claude Code was not measured with that setting, and one that rejected it would lose the "
+    "closed entry, and the Bash guards with it"
+)
 # Wall-clock bound on the one call this area makes that leaves the machine: the `ci-ref` row's
 # `git ls-remote` over the public repository's tags, which `doctor/commands.py` builds the runner
 # with. `runner.NETWORK_TIMEOUT_SECONDS` is 300 and is right for what it was written for — `gh
@@ -570,7 +579,7 @@ def _wrapper(context: Context) -> Row:
             f"{WRAPPER} exited {done.returncode} with no refusal token",
             "run `hooks/run-hook.sh open --version` and read its stderr",
         )
-    return Row(OK, f"{WRAPPER} reached stayfixed and exited 0", "")
+    return Row(OK, f"{WRAPPER} reached stayfixed and exited 0; {UNMEASURED_ON_FAILURE}", "")
 
 
 def _joined(words: Sequence[str]) -> str:
@@ -602,7 +611,7 @@ def _codex_hooks(context: Context) -> Row:
     return Row(SKIP, detail, "")
 
 
-def _budgets(context: Context) -> Row:
+def _budgets(context: Context, config: Config) -> Row:
     """Every budget set above the preset and every one set below it.
 
     The base branch's `stayfixed.toml` sets a gate's budget and the owner's machine file a
@@ -613,9 +622,7 @@ def _budgets(context: Context) -> Row:
     `Budgets.NAMES` and the loader refuses any other, so these are stayfixed's own names rather
     than a repository's strings.
     """
-    if context.config is None:
-        return Row(SKIP, NO_CONFIG_SKIP, "")
-    budgets = context.config.budgets
+    budgets = config.budgets
     raised = sorted(
         name for name, value in budgets.configured.items() if value > budgets.preset[name]
     )
@@ -711,9 +718,7 @@ def _preferences(context: Context) -> Row:
     run that exited 0 on it. What the owner's layer read past in a file that loads is a warning.
     """
     config = context.config
-    defaults = load_preset(config.stayfixed.preset if config else DEFAULT_PRESET).get(
-        "defaults", {}
-    )
+    defaults = defaults_of(load_preset(config.stayfixed.preset if config else DEFAULT_PRESET))
     preset: dict[str, object] = {}
     for key in PREFERENCES:
         section, _, name = key.partition(".")
@@ -873,7 +878,7 @@ def _ref_is_released(context: Context, ref: str) -> Row:
     )
 
 
-def _ci_ref(context: Context) -> Row:
+def _ci_ref(context: Context, config: Config) -> Row:
     """Whether `[ci] ref` is the commit of a released stayfixed, and whether the rendered workflow
     pins the same ref.
 
@@ -897,9 +902,7 @@ def _ci_ref(context: Context) -> Row:
     The value is repository-authored and is never printed -- not in the detail, not in the
     remedy, and not in an argument list.
     """
-    if context.config is None:
-        return Row(SKIP, NO_CONFIG_SKIP, "")
-    ref = context.config.ci.ref
+    ref = config.ci.ref
     if not ref:
         return Row(SKIP, "no [ci] ref is recorded, so there is nothing to resolve", "")
     row = _ref_is_released(context, ref)
@@ -928,7 +931,7 @@ def _ci_ref(context: Context) -> Row:
         # whenever it reports `ci-workflow` under `skipped`, and the state anyone reaches by
         # deleting the file. `mode` is what tells the cases apart: under `none` or `uvx` this build
         # renders no workflow, so an absent one is the configuration working.
-        if context.config.ci.mode == "reusable":
+        if config.ci.mode == "reusable":
             return Row(WARN, NO_WORKFLOW, NO_WORKFLOW_REMEDY)
         return row
     try:
@@ -1169,10 +1172,10 @@ CHECKS: tuple[tuple[str, Callable[[Context], Row]], ...] = (
     ("wrapper", _wrapper),
     ("hook-entries", hook_entries),
     ("codex-hooks", _codex_hooks),
-    ("budgets", _budgets),
+    ("budgets", configured(_budgets)),
     ("preferences", _preferences),
     ("cli-path", _cli_path),
-    ("ci-ref", _ci_ref),
+    ("ci-ref", configured(_ci_ref)),
     ("diagnostics", _diagnostics),
     ("ignored-env", _ignored_env),
 )

@@ -396,7 +396,7 @@ def test_index_never_undoes_a_revoke_made_while_it_ran_and_says_so(
     from stayfixed.memory import trust
     from stayfixed.memory.commands import _DROPPED
     from stayfixed.memory.store import Store
-    from stayfixed.trust.record import revoke
+    from stayfixed.trust.record import revoke_all
 
     assert invoke(["trust", "approve", "memory", *common(project)]) == 0
     machine = project.parent / "machine.toml"
@@ -404,7 +404,8 @@ def test_index_never_undoes_a_revoke_made_while_it_ran_and_says_so(
 
     def revoked_after(store: Store, config: Config) -> trust.Snapshot:
         before = taken(store, config)
-        assert revoke(machine, "memory", trust.store_key(store)) is True
+        key = trust.store_key(store)
+        assert revoke_all(machine, "memory", [key]) == [key]
         return before
 
     monkeypatch.setattr(trust, "snapshot", revoked_after)

@@ -276,7 +276,8 @@ _HARNESS_MENTION = re.compile(
 # The mentions that are harness facts the registry does not carry, each with how many string
 # constants of its module make it and the phrase of `harnesses`' module docstring that lists it,
 # which must be there: a fact moved onto the registry takes its pardon with it, and a new one needs
-# a new item in that list. Counted, so a new constant beside a pardoned one reddens too.
+# a new item in that list. Counted, so a new constant beside a pardoned one reddens too. A site
+# whose constants make more than one fact gives a phrase for each.
 LISTED = {
     ("src/stayfixed/setup/run.py", "claude"): (4, "`_MARKETPLACE_ADD` and `_PLUGIN_INSTALL`"),
     ("src/stayfixed/setup/run.py", "codex"): (4, "`_MARKETPLACE_ADD` and `_PLUGIN_INSTALL`"),
@@ -295,13 +296,16 @@ LISTED = {
         "(`attach.permissions`, `attach.write`)",
     ),
     ("src/stayfixed/attach/permissions.py", "codex"): (2, "(`attach.permissions`, `attach.write`)"),
-    ("src/stayfixed/attach/write.py", "claude"): (4, "(`attach.permissions`, `attach.write`)"),
+    ("src/stayfixed/attach/write.py", "claude"): (3, "(`attach.permissions`, `attach.write`)"),
     ("src/stayfixed/attach/write.py", "codex"): (4, "(`attach.permissions`, `attach.write`)"),
     ("src/stayfixed/hooks/api.py", "claude"): (1, "`hooks.api.DATA_ROOT_VARIABLES`"),
     ("src/stayfixed/hooks/api.py", "plugin_data"): (2, "`hooks.api.DATA_ROOT_VARIABLES`"),
     ("src/stayfixed/doctor/checks.py", "claude"): (
-        3,
-        "every variable under Claude Code's and Codex's",
+        4,
+        (
+            "every variable under Claude Code's and Codex's",
+            "`doctor`'s `wrapper` row names the Claude Code release",
+        ),
     ),
     ("src/stayfixed/doctor/checks.py", "codex"): (4, "reads `CODEX` by name in its"),
     ("src/stayfixed/doctor/checks.py", "plugin_root"): (
@@ -309,7 +313,7 @@ LISTED = {
         "names `CLAUDE_PLUGIN_ROOT` in the remedy",
     ),
     ("src/stayfixed/doctor/checks.py", "plugin_data"): (1, "`${CLAUDE_PLUGIN_DATA}` in the"),
-    ("src/stayfixed/trust/boundary.py", "claude"): (1, "`trust.boundary` spells"),
+    ("src/stayfixed/trust/boundary.py", "claude"): (2, "`trust.boundary` spells"),
 }
 # The mentions that are no fact the code acts on, each with how many constants make it and why.
 PROSE = {
@@ -321,11 +325,6 @@ PROSE = {
     ("src/stayfixed/doctor/entries.py", "claude"): 2,
     # The refusal for a home directory whose `.claude` the link walk cannot follow.
     ("src/stayfixed/memory/worktree.py", "claude"): 1,
-    # The sentences said where Claude Code's sandbox refused a write to the machine directory or
-    # the user settings: each names the harness to a person, and none is a fact the code acts on.
-    ("src/stayfixed/memory/commands.py", "claude"): 1,
-    ("src/stayfixed/setup/machine.py", "claude"): 1,
-    ("src/stayfixed/trust/record.py", "claude"): 1,
     # The advice `setup --approval-boundary` prints, which names the harness whose settings it is.
     ("src/stayfixed/setup/commands.py", "claude"): 1,
     # The commit-trailer guard's names of tools that sign commits as authors: the agent as an
@@ -365,5 +364,10 @@ def test_every_harness_fact_outside_the_registry_is_listed_where_the_registry_sa
     pardoned = Counter({site: count for site, (count, _) in LISTED.items()}) + Counter(PROSE)
     assert _harness_mentions() == pardoned
     listed = harnesses.__doc__ or ""
-    missing = {site: phrase for site, (_, phrase) in LISTED.items() if phrase not in listed}
+    missing = {
+        site: phrase
+        for site, (_, phrases) in LISTED.items()
+        for phrase in ((phrases,) if isinstance(phrases, str) else phrases)
+        if phrase not in listed
+    }
     assert missing == {}

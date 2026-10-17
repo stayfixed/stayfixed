@@ -1649,8 +1649,8 @@ reddens = [
 [[mutation]]
 name = "doctor compares a worktree's harness link with that worktree's own tree"
 file = "src/stayfixed/attach/doctor.py"
-before = "        targets = harness_targets(context.root, owner, _project(context))"
-after = "        targets = harness_targets(context.root, context.root, _project(context))"
+before = "        targets = harness_targets(context.root, owner, config)"
+after = "        targets = harness_targets(context.root, context.root, config)"
 reddens = [
   "tests/attach/test_doctor.py::test_a_normally_attached_linked_worktree_is_ok",
 ]
@@ -1900,7 +1900,7 @@ reddens = [
 [[mutation]]
 name = "doctor reads a store that does not resolve as one whose trust record asks for no link"
 file = "src/stayfixed/attach/doctor.py"
-before = "    if store is None:  # tree-gone, tree-there-not-resolving\n        return _unresolved(context, checkout, shape, words, relink)"
+before = "    if store is None:  # tree-gone, tree-there-not-resolving\n        return _unresolved(context, config, checkout, shape, words, relink)"
 after = "    if store is None:  # tree-gone, tree-there-not-resolving\n        return _Verdict(OK, \"not in place, which is what this store's trust record asks for\", \"\")"
 reddens = [
   "tests/attach/test_doctor.py::test_a_ledger_whose_link_tree_is_gone_warns_and_names_attach",
@@ -3170,7 +3170,7 @@ reddens = [
 name = "doctor asks whether the store resolves before whether the harness link dangles"
 file = "src/stayfixed/attach/doctor.py"
 before = "    shape = _shape_of(harness)\n    if shape == _DANGLING:  # dangling\n"
-after = "    shape = _shape_of(harness)\n    if shape == _DANGLING and _store_of(context, answers, _owner(context)) is None:\n        return _unresolved(context, _owner(context), _LINK, \"a link\", relink)\n    if shape == _DANGLING:  # dangling\n"
+after = "    shape = _shape_of(harness)\n    if shape == _DANGLING and _store_of(context, config, answers, _owner(context)) is None:\n        return _unresolved(context, config, _owner(context), _LINK, \"a link\", relink)\n    if shape == _DANGLING:  # dangling\n"
 reddens = [
   "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[tree-gone-links-dangle]",
 ]
@@ -3294,7 +3294,7 @@ reddens = [
 name = "doctor lets a gone link tree answer before a fallback naming another directory"
 file = "src/stayfixed/attach/doctor.py"
 before = "    if fallback.held and fallback.value != written:\n"
-after = "    if fallback.held and fallback.value != written and _store_of(context, answers, owner) is not None:\n"
+after = "    if fallback.held and fallback.value != written and _store_of(context, config, answers, owner) is not None:\n"
 reddens = [
   "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[fallback-elsewhere-tree-gone]",
 ]
@@ -3405,8 +3405,8 @@ reddens = [
 [[mutation]]
 name = "the attached row reads a configuration that is not there"
 file = "src/stayfixed/attach/doctor.py"
-before = "    if config is None:\n        # Which store, which tree"
-after = "    if False:\n        # Which store, which tree"
+before = "    attached = configured(lambda context, config: _attached(context, config, answers, ledger))"
+after = "    attached = lambda context: _attached(context, context.config, answers, ledger)  # noqa: E731"
 reddens = [
   "tests/doctor/test_checks.py::test_a_repository_without_a_configuration_skips_only_the_rows_that_read_one",
 ]
@@ -3475,3 +3475,11 @@ after = "    if False:\n        # Not \"nothing records a source\""
 reddens = [
   "tests/attach/test_doctor.py::test_hook_entries_asks_no_overlay_of_a_machine_file_that_does_not_load",
 ]
+
+# Every writer says a write the sandbox refused in `trust.boundary`'s one sentence.
+[[mutation]]
+name = "attach writes its sandbox sentence by hand"
+file = "src/stayfixed/attach/write.py"
+before = "    remedy=ONLY_OUTSIDE,\n)"
+after = "    remedy=ONLY_OUTSIDE + \" (an agent's shell writes nothing outside the working directory)\",\n)"
+reddens = ["tests/trust/test_boundary.py::test_no_module_writes_the_sandbox_sentence_by_hand"]

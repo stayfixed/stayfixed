@@ -56,6 +56,9 @@ def run_list(args: argparse.Namespace) -> Result:
         return _everything(context.machine)
     lines: list[str] = []
     rows: list[dict[str, str]] = []
+    # Read once, when the first subject is asked of, and not once per subject: a kind with no
+    # subject to describe asks nothing of the record.
+    approvals: dict[tuple[str, str], record.Approval] | None = None
     for name, kind in discovered.kinds().items():
         try:
             subjects = kind.describe(context)
@@ -68,7 +71,9 @@ def run_list(args: argparse.Namespace) -> Result:
             rows.append({"kind": name, "state": "undescribed", "reason": str(refused)})
             continue
         for subject in subjects:
-            state = record.state(context.machine, name, subject.key, subject.digest)
+            if approvals is None:
+                approvals = record.recorded(context.machine)
+            state = record.state_in(approvals, name, subject.key, subject.digest)
             line = f"{name} {printable(subject.label)}: {state}"
             if state is not record.State.APPROVED:
                 command = command_for(name, _given(args, kind))
@@ -93,7 +98,7 @@ def run_revoke(args: argparse.Namespace) -> Result:
             return _not_revoked(
                 kind, context.machine, UNDESCRIBED.format(kind=kind.name, reason=refused)
             )
-    revoked = [key for key in keys if record.revoke(context.machine, kind.name, key)]
+    revoked = record.revoke_all(context.machine, kind.name, keys)
     if revoked:
         return Result(
             f"revoked {len(revoked)} {kind.name} approval(s)",

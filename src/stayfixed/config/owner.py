@@ -37,10 +37,10 @@ from stayfixed.config.reading import (
     MachineConfigError,
     coerced,
     read_machine_toml,
-    schema_types,
+    table_types,
 )
 from stayfixed.config.schema import Budgets, Personal
-from stayfixed.presets import DEFAULT_PRESET, load_preset
+from stayfixed.presets import DEFAULT_PRESET, defaults_of, load_preset
 from stayfixed.printed import clipped
 
 
@@ -104,7 +104,7 @@ def resolve_owner(
 
     `preset` is a preset this build ships, and every caller holds it to that before it asks: the
     project loader hands the name its own `_preset` has already loaded, and a session the
-    document's name only when it is shipped, `DEFAULT_PRESET` otherwise (`config.session`). The
+    document's name only when it is shipped, `DEFAULT_PRESET` otherwise (`loader.preset_named`). The
     repository's value is the loader's to judge, so it is refused or reset once, in the loader's
     words. `machine` is the machine file; `None`, a machine with no home to hold one
     (`machine_config_path`), is read as no file, as an absent file is.
@@ -144,8 +144,7 @@ def _over(upper: Mapping[str, object], preset: str, unloaded: str | None) -> Own
     `classes.resolve` gives them."""
     shipped = load_preset(preset)
     lower: dict[str, object] = {
-        f"personal.{key}": value
-        for key, value in shipped.get("defaults", {}).get("personal", {}).items()
+        f"personal.{key}": value for key, value in defaults_of(shipped).get("personal", {}).items()
     }
     lower.update({f"guards.{item.name}": item.default for item in fields(Guards)})
     layers = [Layer(LayerName.PRESET, lower), Layer(LayerName.MACHINE_FILE, dict(upper))]
@@ -202,14 +201,16 @@ def _machine_values(raw: dict[str, Any], machine: Path, notes: list[str]) -> dic
         notes.append(template.format(path=machine, problem=sentence))
 
     found: dict[str, object] = {}
-    for table in ("personal", "guards", "budgets"):
+    # Each table this layer reads, with the schema class `reading.table_types` holds its keys to.
+    tables: dict[str, type[Any]] = {"personal": Personal, "guards": Guards, "budgets": Budgets}
+    for table, cls in tables.items():
         if table not in raw:
             continue
         values = raw[table]
         if not isinstance(values, dict):
             problem(NOT_A_TABLE.format(table=table), ignored=False)
             continue
-        types = _types(table)
+        types = table_types(cls)
         for key, value in values.items():
             if key not in types:
                 problem(UNKNOWN_KEY.format(table=table, key=clipped(key)), ignored=True)
@@ -223,11 +224,3 @@ def _machine_values(raw: dict[str, Any], machine: Path, notes: list[str]) -> dic
                 except ConfigError as exc:
                     problem(str(exc), ignored=False)
     return found
-
-
-def _types(table: str) -> Mapping[str, Any]:
-    """The keys `table` holds and the schema type of each, which `coerced` holds its value to:
-    every budget is an integer, and `[personal]` and `[guards]` are their classes' fields."""
-    if table == "budgets":
-        return dict.fromkeys(Budgets.NAMES, int)
-    return schema_types(Personal if table == "personal" else Guards)

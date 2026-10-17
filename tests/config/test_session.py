@@ -68,6 +68,22 @@ def symlink_to_dev_zero(root: Path) -> None:
     os.symlink("/dev/zero", root / "stayfixed.toml")
 
 
+def test_a_session_parses_its_preset_once(tmp_path: Path) -> None:
+    # A hook resolves the owner's layer over the preset and then loads the project over it, and
+    # each asked the package to parse the same TOML again, on every hook: the preset is asked for
+    # at least twice and parsed once. Mutation (`mutations/`'s "the preset is parsed on every
+    # load"): every load parses past the cache, which then records no parse at all.
+    from stayfixed import presets
+
+    write(tmp_path, MINIMAL)
+    presets._parsed.cache_clear()
+    got = session_config(tmp_path, machine=none(tmp_path))
+    assert got.config is not None
+    asked = presets._parsed.cache_info()
+    assert asked.misses == 1
+    assert asked.hits >= 1
+
+
 def test_no_file_is_no_config_and_no_warning(tmp_path: Path) -> None:
     # No mutation of its own: nothing here is decided, the file is simply absent; the cases below
     # are what each arm reddens.

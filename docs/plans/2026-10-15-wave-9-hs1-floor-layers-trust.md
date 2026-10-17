@@ -762,13 +762,18 @@ def test_removing_a_code_root_is_noted_when_nothing_enforces(tmp_path): ...
   - `record.record_path(machine: Path | None) -> Path | None`.
   - `record.recorded(machine) -> dict[tuple[str, str], Approval]` — a flat map (every value a
     string) reads as kind `memory`, one approval per entry.
-  - `record.state(machine, kind: str, subject: str, current: str) -> State`.
-  - `record.approve(machine, kind, subject, digest, *, now: datetime) -> Approval` and
-    `record.revoke(machine, kind, subject) -> bool` — each writes the whole record as version 1
-    through `fsops` (an atomic replace). Two writers at once: the last write wins and neither file is
-    torn; no lock is taken, and the reference says so.
-  - `src/stayfixed/trust/api.py` (create) publishes `record_path`, `recorded`, `state`, `approve`, `revoke`, `State`,
-    `Approval`, `UnreadableTrust`.
+  - `record.state(machine, kind: str, subject: str, current: str) -> State`, and
+    `record.state_in(approvals, kind, subject, current) -> State`, the same answer out of a record
+    read once.
+  - `record.approve_all(machine, kind, digests: Mapping[str, str], *, now: datetime) ->
+    dict[str, State]` and `record.revoke_all(machine, kind, subjects: Iterable[str]) -> list[str]`
+    — each writes the whole record once as version 1 through `fsops` (an atomic replace), whatever
+    the number of subjects; `revoke_all` answers the subjects it withdrew and writes nothing for
+    none. Two writers at once: the last write wins and neither file is torn; no lock is taken, and
+    the reference says so.
+  - `src/stayfixed/trust/api.py` (create) publishes what its consumers import, and no writer of the
+    record: `record_path`, `recorded`, `state`, `refresh`, `State`, `Approval`, `UnreadableTrust`,
+    among the rest `tests/trust/test_surface.py` lists.
   - `src/stayfixed/memory/trust.py` keeps its public functions and their behaviour, each through `trust.api` with
     kind `memory` and the store's path key.
 
@@ -780,12 +785,12 @@ def test_a_0_3_0_record_keeps_every_memory_approval(tmp_path):
     assert state(tmp_path / "config.toml", "memory", "/s", "d") is State.APPROVED
 def test_the_first_write_upgrades_the_file_in_place(tmp_path): ...   # version 1; the old entry kept
 def test_0_3_0s_reader_sees_no_approval_in_a_version_1_record(tmp_path):
-    approve(tmp_path / "config.toml", "memory", "/s", "d", now=T0)
+    approve_all(tmp_path / "config.toml", "memory", {"/s": "d"}, now=T0)
     assert legacy_reader(tmp_path / "trust.json") == {}   # 0.3.0's filter, copied as a literal
 def test_an_unreadable_record_refuses_and_is_never_overwritten(tmp_path): ...   # "{", and version 2
 def test_lapsed_missing_and_approved_are_told_apart(tmp_path): ...
 def test_two_kinds_never_share_a_subject(tmp_path): ...
-def test_revoke_of_nothing_says_so(tmp_path): ...             # False; file unchanged
+def test_revoke_of_nothing_says_so(tmp_path): ...             # []; file unchanged
 def test_the_record_ignores_xdg_and_home(tmp_path, monkeypatch): ...
 ```
 
@@ -801,7 +806,7 @@ def test_the_record_ignores_xdg_and_home(tmp_path, monkeypatch): ...
   `mutations/records.toml` entry whose `before` text moves to `src/stayfixed/trust/record.py` moves
   to `mutations/core.toml`, re-anchored.
 - [ ] **Step 5: Mutations:** `state` ignoring the digest; `LAPSED` read as `MISSING`; the key built
-  from the subject alone; `approve` writing over an unreadable record; the flat-map reader dropped.
+  from the subject alone; `approve_all` writing over an unreadable record; the flat-map reader dropped.
   Expected: each reddens its test.
 - [ ] **Step 6: Documents** per Shipped sentences ("The trust record"); `SECURITY.md`: approvals hold
   against repository bytes and a `git pull`, and against an agent with an unsandboxed shell the
@@ -850,9 +855,11 @@ def test_the_record_ignores_xdg_and_home(tmp_path, monkeypatch): ...
     `_describe` resolves the store as `memory trust` does today; the digest is `trust.store_digest`.
   - `memory trust --in-repo-memory` runs the same approve path, terminal check included, and prints
     `ALIAS_NOTE` (the new spelling; the alias is removed in `0.5.0`).
-  - `scripts/ptyrun.py` (create): `run_in_pty(argv: Sequence[str], *, env: Mapping[str, str]) ->
-    tuple[int, str]` — runs a command under `pty.fork` and returns its exit code and output; the
-    smoke script and the tests that approve through a subprocess use it.
+  - `scripts/ptyrun.py` (create): `run_in_pty(argv: Sequence[str], *, env: Mapping[str, str],
+    cwd: Path | None = None, deadline: float = DEADLINE_SECONDS) -> tuple[int, str]` — runs a
+    command under `pty.openpty` and `subprocess.Popen` and returns its exit code and output, or
+    kills its process group and raises `TimeoutError` when it has not exited within `deadline`
+    seconds; the smoke scripts and the tests that approve through a subprocess use it.
 
 - [ ] **Step 1: Write the failing tests:**
 

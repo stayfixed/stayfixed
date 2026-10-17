@@ -7,7 +7,8 @@ on the owner's layer, so the two meet here, below both, rather than one importin
 private names: a refusal is one type (`ConfigError`, and `MachineConfigError` for the machine
 file), a document that does not parse is said in one set of words (`toml_position`), the machine
 file is read once (`read_machine_toml`), and a value is held to its schema type by one rule
-(`coerced`, `positive`, `schema_types`) whichever layer wrote it.
+(`coerced`, `positive`, `schema_types`) whichever layer wrote it, against one answer for the keys a
+table holds (`table_types`).
 """
 
 from __future__ import annotations
@@ -17,9 +18,10 @@ import tomllib
 from dataclasses import fields
 from functools import cache
 from pathlib import Path
-from typing import Any, get_origin, get_type_hints
+from typing import Any, cast, get_origin, get_type_hints
 
 from stayfixed import fsops
+from stayfixed.config.schema import Budgets
 from stayfixed.errors import Failure
 from stayfixed.fsops import said
 
@@ -156,6 +158,16 @@ def schema_types(cls: type[Any]) -> dict[str, Any]:
     """
     hints = get_type_hints(cls)
     return {f.name: hints[f.name] for f in fields(cls)}
+
+
+def table_types(cls: type[Any]) -> dict[str, Any]:
+    """The keys a table of the schema class `cls` holds and the type `coerced` holds each value to:
+    `Budgets` is a table of named integers (`Budgets.NAMES`), and every other class's keys are its
+    fields. One answer for both layers, so a budget the project file may set and one the machine
+    file may set are the same names."""
+    if cls is Budgets:
+        return dict.fromkeys(Budgets.NAMES, int)
+    return schema_types(cast(Any, cls))
 
 
 # What `coerced` says of a value its schema type does not take. Each names the key and never the

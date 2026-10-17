@@ -456,13 +456,14 @@ an exit code, and by default Claude Code then carries the tool call out. So the 
 `PreToolUse` entry sets `"onFailure": "block"`: from Claude Code 2.1.295, such a failure blocks the
 call as an exit `2` does, in Claude Code's words and with no stayfixed reason. The wrapper's own
 exits under `closed` are `0` and `2`, neither of which that setting reads as a failure, so it
-changes nothing a working hook decides; a session whose hook cannot start at all then runs no
-`Bash` call until the plugin is repaired. Such a session still edits files: the entry's matcher is
-`Bash`, so the Read, Edit and Write tools can repair what keeps the hook from answering. To run
-`Bash` meanwhile, turn the plugin off with `/plugin`, or start Claude Code with
+changes nothing a working hook decides; a session whose hook cannot start at all then runs no `Bash`
+call until the plugin is repaired. Such a session still edits files: the entry's matcher is `Bash`,
+so the Read, Edit and Write tools can repair what keeps the hook from answering. To run `Bash`
+meanwhile, turn the plugin off with `/plugin`, or start Claude Code with
 `claude --settings '{"disableAllHooks": true}'`, which turns off every hook for that session and
-every guard with them. Claude Code before 2.1.295 was not measured with the key: one that
-rejected it would lose the entry, and the guard with it.
+every guard with them. Claude Code before 2.1.295 was not measured with the key: one that rejected
+it would lose the closed entry, and the `Bash` guards with it. `stayfixed doctor`'s `wrapper` row
+says so beside its `ok`, on every Claude Code, since nothing in the report asks which one runs.
 Codex's reader of `hooks.json` ignores a key it does not define on an entry (read in its source,
 `codex-rs/config/src/hook_config.rs`, on 2026-10-17, and not measured). The `open` entries leave it
 unset: a failure there is the session's to survive.
@@ -2766,7 +2767,7 @@ cannot find is not a machine file. Both flags exist so this command can be point
 scratch destination instead of your real one, the same way every other command here takes
 `--root`. A scratch destination is **not a dry run**: the same files are written, at the paths
 these two flags name, and nothing is suppressed. They apply to `--preset` alone — `--git-hooks`
-writes inside a repository and ignores both.
+writes inside a repository and ignores both, and `--settings` with them.
 
 `--settings PATH` writes the user-scope settings file at `PATH` instead of at
 `<home>/.claude/settings.json`, for a dotfiles layout that links that file into another tree.
@@ -2884,6 +2885,7 @@ hook).
 
 **Exits** `0` on success, and `2` on each of these refusals:
 
+- `--uninstall`, which is taken only with `--git-hooks` (below), before anything is written;
 - a refused `--overlay`: missing, not an overlay, reachable from the project root, inside a
   checkout of another repository, where `git` gives no answer inside a checkout, at a path that is
   not UTF-8 text and so cannot be recorded in the machine file, or `create:` without `--yes`;
@@ -2980,9 +2982,14 @@ file, is not refused there, because on a case-sensitive volume it names another 
 would refuse a chain that cannot loop. A hook past the 64 MiB read cap is not read, so it is not
 judged either: it is kept and chained, as below.
 
-**Refuses (`2`) together with `--preset`.** The two write to different scopes — one repository,
-one machine-wide — and a single invocation has only one exit code to report, so it does one of
-the two.
+**Refuses (`2`) together with `--preset`, `--overlay` or `--yes`.** Each asks machine setup to do
+something, which this form does not do, so it names `--git-hooks` and writes nothing, where
+`--overlay` and `--yes` used to be dropped and the hook installed. `--home`, `--settings` and
+`--machine` say only where machine setup would write, and are ignored.
+
+**Refuses (`2`) `--uninstall` without `--git-hooks`.** It removes the hook this form installs and
+means nothing to machine setup, so `stayfixed setup --uninstall` names `--git-hooks` and writes
+nothing, where it used to drop the flag and run the machine setup.
 
 **Writes** the hook file in `--root`'s hooks directory, and the `.local` file beside it only when a
 foreign hook was there to preserve, by renaming that hook. Under `--uninstall` it removes the hook
@@ -2994,8 +3001,9 @@ was: it is not stayfixed's hook; nothing was removed`; `--json` carries it as `f
 `--uninstall`, which leaves it, and the install refuses it (`2`). A hook whose mode forbids reading
 is neither stayfixed's nor foreign: either form refuses (`2`) naming it and the reason, and leaves
 it. A regular file past the 64 MiB read cap is foreign, since stayfixed's own hook is a couple of
-kilobytes: it is kept and chained, and `--uninstall` leaves it. Exits `0`; `2` when `--preset` is
-also given, the hook cannot be read, or a hook names `prepare-commit-msg.local`.
+kilobytes: it is kept and chained, and `--uninstall` leaves it. Exits `0`; `2` when `--preset`,
+`--overlay` or `--yes` is also given, `--uninstall` is given without `--git-hooks`, the hook cannot
+be read, or a hook names `prepare-commit-msg.local`.
 
 ---
 
@@ -3087,7 +3095,7 @@ check with `name`, `status`, `detail` and `remedy`, so every remedy is there.
 | `not-initialised` | whether there is a `stayfixed.toml` here, and how much of it a session can use: with none, a warning that the session guards and `doctor` work without one and `stayfixed init` adds the rest; with one that loaded with settings ignored or put back to the preset's, a warning naming at most three of their keys and counting the rest, never their values; red only for one a session drops whole, in the words of the session's warning | `stayfixed.toml` |
 | `versions` | whether the project's `[stayfixed] version` is the stayfixed running; with no project configuration, which stayfixed runs | `stayfixed.toml`, the package |
 | `files` | the hook wrapper's executable bit, and the three shipped files against the hashes the release recorded beside them | `hooks/run-hook.sh`, `hooks/hooks.json`, `scripts/stayfixed`, `hooks/hashes.json` |
-| `wrapper` | whether the wrapper can actually reach stayfixed on this machine | one `run-hook.sh open --version`, and only under the plugin root this stayfixed is part of |
+| `wrapper` | whether the wrapper can actually reach stayfixed on this machine; beside an `ok`, that Claude Code before 2.1.295 was not measured with the closed entry's `onFailure: "block"` | one `run-hook.sh open --version`, and only under the plugin root this stayfixed is part of |
 | `hook-entries` | every hook entry, counted by provenance, with any that claims the stayfixed marker and is in no ledger named by position; and, as a warning, every skill, command or agent file whose frontmatter declares hooks, which it does not judge | `.claude/settings.json`, `.claude/settings.local.json`, `.codex/hooks.json`, and `~/.claude/settings.json`; every `SKILL.md` below a `.claude/skills` anywhere in the tree that git does not ignore, a checked-out submodule's committed files included, and every `*.md` below `.claude/commands` and `.claude/agents` |
 | `codex-hooks` | whether any stayfixed hook is untrusted on Codex, and, when `[stayfixed] agents` lists `codex`, which surfaces are not verified there and which hold in CI | `stayfixed.toml`, the harness registry |
 | `budgets` | every budget set above the preset, named raised, and every one set below it, named lowered | `stayfixed.toml`, the machine file, the preset |
