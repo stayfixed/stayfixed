@@ -48,10 +48,14 @@ from stayfixed.runner import subprocess_runner
 # `hooks.py` files are), so a module-scope import here does not reach the clean-interpreter
 # `discover()` that `tests/boundaries/test_discovery.py` holds `hooks.py` to.
 
-_BOTH_MODES = (
-    "--git-hooks installs a hook into one repository; --preset writes machine-level files. "
-    "A single run has one exit code to report, so it does only one of the two — run them "
-    "separately"
+# `--git-hooks` installs a hook into one repository and does nothing of machine setup's, so a flag
+# that asks machine setup to do something has no run to belong to beside it: `--preset` was
+# refused, and `--overlay` and `--yes` were dropped, exit 0, the hook installed, for a person who
+# asked for both. Refused alike. `--home`, `--settings` and `--machine` say only where machine setup
+# would write, ask nothing done, and are ignored here, as `docs/cli.md` says.
+_HOOKS_ALONE = (
+    "--git-hooks installs a hook into one repository and does nothing of machine setup's, so it "
+    "takes no --preset, --overlay or --yes; run `stayfixed setup` with those separately"
 )
 # `--uninstall` removes the hook `--git-hooks` installed, and means nothing to machine setup: on
 # its own it was dropped and the machine setup ran, exit 0, for a person who asked for a hook to be
@@ -160,8 +164,8 @@ def run_setup(args: argparse.Namespace) -> Result:
             raise Refusal(_ADVICE_ALONE)
         return run_boundary_advice(args)
     if args.git_hooks:
-        if args.preset is not None:
-            raise Refusal(_BOTH_MODES)
+        if args.yes or args.preset is not None or args.overlay is not None:
+            raise Refusal(_HOOKS_ALONE)
         return run_git_hooks(args)
     if args.uninstall:
         raise Refusal(_UNINSTALL_ALONE)

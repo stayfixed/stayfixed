@@ -2344,6 +2344,22 @@ reddens = [
   "tests/setup/test_commands.py::test_uninstall_without_git_hooks_refuses_and_runs_no_machine_setup",
 ]
 
+# `--git-hooks` takes no flag that asks machine setup to act: each refuses beside it, where all but
+# `--preset` were dropped and the hook installed.
+[[mutation]]
+name = "setup --git-hooks drops --overlay"
+file = "src/stayfixed/setup/commands.py"
+before = "        if args.yes or args.preset is not None or args.overlay is not None:"
+after = "        if args.yes or args.preset is not None:"
+reddens = ["tests/setup/test_git_hooks.py::test_git_hooks_refuses_every_flag_that_asks_machine_setup_to_act[overlay]"]
+
+[[mutation]]
+name = "setup --git-hooks drops --yes"
+file = "src/stayfixed/setup/commands.py"
+before = "        if args.yes or args.preset is not None or args.overlay is not None:"
+after = "        if args.preset is not None or args.overlay is not None:"
+reddens = ["tests/setup/test_git_hooks.py::test_git_hooks_refuses_every_flag_that_asks_machine_setup_to_act[yes]"]
+
 # The advice names the user settings file `setup` would write: the one `--settings` names, else the
 # home's, and either absolute, so a relative `--home` or `--settings` names the file meant.
 [[mutation]]

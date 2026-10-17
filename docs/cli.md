@@ -2767,7 +2767,7 @@ cannot find is not a machine file. Both flags exist so this command can be point
 scratch destination instead of your real one, the same way every other command here takes
 `--root`. A scratch destination is **not a dry run**: the same files are written, at the paths
 these two flags name, and nothing is suppressed. They apply to `--preset` alone — `--git-hooks`
-writes inside a repository and ignores both.
+writes inside a repository and ignores both, and `--settings` with them.
 
 `--settings PATH` writes the user-scope settings file at `PATH` instead of at
 `<home>/.claude/settings.json`, for a dotfiles layout that links that file into another tree.
@@ -2885,6 +2885,7 @@ hook).
 
 **Exits** `0` on success, and `2` on each of these refusals:
 
+- `--uninstall`, which is taken only with `--git-hooks` (below), before anything is written;
 - a refused `--overlay`: missing, not an overlay, reachable from the project root, inside a
   checkout of another repository, where `git` gives no answer inside a checkout, at a path that is
   not UTF-8 text and so cannot be recorded in the machine file, or `create:` without `--yes`;
@@ -2981,9 +2982,10 @@ file, is not refused there, because on a case-sensitive volume it names another 
 would refuse a chain that cannot loop. A hook past the 64 MiB read cap is not read, so it is not
 judged either: it is kept and chained, as below.
 
-**Refuses (`2`) together with `--preset`.** The two write to different scopes — one repository,
-one machine-wide — and a single invocation has only one exit code to report, so it does one of
-the two.
+**Refuses (`2`) together with `--preset`, `--overlay` or `--yes`.** Each asks machine setup to do
+something, which this form does not do, so it names `--git-hooks` and writes nothing, where
+`--overlay` and `--yes` used to be dropped and the hook installed. `--home`, `--settings` and
+`--machine` say only where machine setup would write, and are ignored.
 
 **Refuses (`2`) `--uninstall` without `--git-hooks`.** It removes the hook this form installs and
 means nothing to machine setup, so `stayfixed setup --uninstall` names `--git-hooks` and writes
@@ -2999,8 +3001,9 @@ was: it is not stayfixed's hook; nothing was removed`; `--json` carries it as `f
 `--uninstall`, which leaves it, and the install refuses it (`2`). A hook whose mode forbids reading
 is neither stayfixed's nor foreign: either form refuses (`2`) naming it and the reason, and leaves
 it. A regular file past the 64 MiB read cap is foreign, since stayfixed's own hook is a couple of
-kilobytes: it is kept and chained, and `--uninstall` leaves it. Exits `0`; `2` when `--preset` is
-also given, the hook cannot be read, or a hook names `prepare-commit-msg.local`.
+kilobytes: it is kept and chained, and `--uninstall` leaves it. Exits `0`; `2` when `--preset`,
+`--overlay` or `--yes` is also given, `--uninstall` is given without `--git-hooks`, the hook cannot
+be read, or a hook names `prepare-commit-msg.local`.
 
 ---
 
