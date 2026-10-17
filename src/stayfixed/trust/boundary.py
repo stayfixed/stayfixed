@@ -39,9 +39,10 @@ Linux's was not. So `EPERM` and `EROFS` are read as that refusal, and every writ
 sentence, `SANDBOX_REFUSED`, naming a person outside the agent's sandbox as the one to make the
 write. A read-only mount and an immutable flag answer the same, so the two commands a person runs
 again, `setup` and the trust record's writers, give the remedy `RUN_OUTSIDE`, which ends with
-`OWN_TERMINAL_TOO`, lest a person already in their own terminal be sent there again. A directory
-whose mode refuses the user answers `EACCES`, which is not the sandbox, and keeps each writer's
-sentence naming the directory.
+`OWN_TERMINAL_TOO`, lest a person already in their own terminal be sent there again; the two that
+carry an approval across a write of their own, `memory index` and `attach`, give `ONLY_OUTSIDE`. A
+directory whose mode refuses the user answers `EACCES`, which is not the sandbox, and keeps each
+writer's sentence naming the directory.
 """
 
 from __future__ import annotations
@@ -125,6 +126,10 @@ RUN_OUTSIDE = (
     "a person must run {command} in their own terminal, outside the agent's sandbox"
     + OWN_TERMINAL_TOO
 )
+# `SANDBOX_REFUSED`'s remedy for a write a command made on the person's behalf, which no one runs
+# again for its own sake: carrying an approval across a write stayfixed made, which a new approval
+# replaces.
+ONLY_OUTSIDE = "only a person outside the agent's sandbox can write it"
 
 
 def sandbox_refused(exc: OSError) -> bool:

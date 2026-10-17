@@ -141,7 +141,7 @@ from stayfixed.scaffold import (
     settings_text,
     upsert,
 )
-from stayfixed.trust.api import PERSON_RUNS
+from stayfixed.trust.api import ONLY_OUTSIDE, PERSON_RUNS, SANDBOX_REFUSED
 
 LEDGER_FORMAT = 1
 GITIGNORE = ".gitignore"
@@ -1137,11 +1137,11 @@ HARNESS_LAPSED = f"the harness memory link was not created, because {APPROVAL_LA
 # trust record's directory refused the write as an agent's sandbox refuses one: the approval stays
 # at the person's digest, which the store no longer matches, so `HARNESS_LAPSED` follows it, and
 # this says why it lapsed.
-REFRESH_REFUSED = (
-    "the store's approval was not carried across the index this run wrote and was left as it was: "
-    "the trust record's directory refused the write, as Claude Code's sandbox refuses every write "
-    "an agent's shell makes outside the working directory, so only a person outside the agent's "
-    "sandbox can write it"
+REFRESH_REFUSED = SANDBOX_REFUSED.format(
+    outcome="the store's approval was not carried across the index this run wrote and was left "
+    "as it was",
+    directory="the trust record's directory",
+    remedy=ONLY_OUTSIDE,
 )
 # Said whenever the run withdrew harness memory links, which only the gate does, so the line
 # never leaves a withdrawal unsaid; the count is the one `--json` gives as `links_revoked`.

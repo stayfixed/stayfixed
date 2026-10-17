@@ -44,6 +44,7 @@ from stayfixed.memory.worktree import harness_link_needed
 from stayfixed.printed import printable, quoted
 from stayfixed.result import Result
 from stayfixed.trust.api import (
+    ONLY_OUTSIDE,
     PERSON_RUNS,
     SANDBOX_REFUSED,
     SandboxedWrite,
@@ -151,9 +152,8 @@ _DROPPED = (
 _NOT_REFRESHED = SANDBOX_REFUSED.format(
     outcome="the store's approval could not be refreshed and was left as it was",
     directory="the trust record's directory",
-    remedy="only a person outside the agent's sandbox can write it; the approval no longer matches "
-    "the files this command wrote, so review them, and if the store should reach a session, "
-    + _APPROVE,
+    remedy=f"{ONLY_OUTSIDE}; the approval no longer matches the files this command wrote, so "
+    "review them, and if the store should reach a session, " + _APPROVE,
 )
 # What the write path put into notes that nobody curated: an `index:` line taken from a note's
 # `metadata.index` or, failing that, its description. Said on the line and not only in `--json`'s

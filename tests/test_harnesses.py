@@ -295,7 +295,7 @@ LISTED = {
         "(`attach.permissions`, `attach.write`)",
     ),
     ("src/stayfixed/attach/permissions.py", "codex"): (2, "(`attach.permissions`, `attach.write`)"),
-    ("src/stayfixed/attach/write.py", "claude"): (4, "(`attach.permissions`, `attach.write`)"),
+    ("src/stayfixed/attach/write.py", "claude"): (3, "(`attach.permissions`, `attach.write`)"),
     ("src/stayfixed/attach/write.py", "codex"): (4, "(`attach.permissions`, `attach.write`)"),
     ("src/stayfixed/hooks/api.py", "claude"): (1, "`hooks.api.DATA_ROOT_VARIABLES`"),
     ("src/stayfixed/hooks/api.py", "plugin_data"): (2, "`hooks.api.DATA_ROOT_VARIABLES`"),

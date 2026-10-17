@@ -3475,3 +3475,11 @@ after = "    if False:\n        # Not \"nothing records a source\""
 reddens = [
   "tests/attach/test_doctor.py::test_hook_entries_asks_no_overlay_of_a_machine_file_that_does_not_load",
 ]
+
+# Every writer says a write the sandbox refused in `trust.boundary`'s one sentence.
+[[mutation]]
+name = "attach writes its sandbox sentence by hand"
+file = "src/stayfixed/attach/write.py"
+before = "    remedy=ONLY_OUTSIDE,\n)"
+after = "    remedy=ONLY_OUTSIDE + \" (an agent's shell writes nothing outside the working directory)\",\n)"
+reddens = ["tests/trust/test_boundary.py::test_no_module_writes_the_sandbox_sentence_by_hand"]

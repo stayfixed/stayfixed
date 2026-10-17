@@ -20,8 +20,8 @@ of it (`boundary`): `record_deny_rules` over the directory `record_path` names, 
 the user settings, and `ENFORCING_SETTINGS` for `managed_named`'s file. `sandbox_refused` is how
 `setup` tells a write an agent's sandbox refused, `SandboxedWrite` is the record's own refusal of
 one, which `memory` catches. `SANDBOX_REFUSED` is the one sentence every writer gives such a write,
-`setup`'s and `memory`'s as the record's, and `RUN_OUTSIDE` the remedy `setup` gives in it as the
-record does.
+`setup`'s, `memory`'s and `attach`'s as the record's; `RUN_OUTSIDE` is the remedy `setup` gives in
+it as the record does, and `ONLY_OUTSIDE` the one `memory` and `attach` give.
 """
 
 from __future__ import annotations
@@ -29,6 +29,7 @@ from __future__ import annotations
 from stayfixed.trust.approving import PERSON_RUNS, approve_kind, kind_context
 from stayfixed.trust.boundary import (
     ENFORCING_SETTINGS,
+    ONLY_OUTSIDE,
     RUN_OUTSIDE,
     SANDBOX_ON,
     SANDBOX_REFUSED,
@@ -50,6 +51,7 @@ from stayfixed.trust.record import (
 
 __all__ = [
     "ENFORCING_SETTINGS",
+    "ONLY_OUTSIDE",
     "PERSON_RUNS",
     "RUN_OUTSIDE",
     "SANDBOX_ON",
