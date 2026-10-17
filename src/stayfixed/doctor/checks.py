@@ -76,7 +76,7 @@ from stayfixed.config.machine import (
     override_is_honoured,
     passwd_home,
 )
-from stayfixed.config.schema import MEMORY_MODES
+from stayfixed.config.schema import MEMORY_MODES, Config
 from stayfixed.config.session import (
     SESSION_READ_LIMIT,
     TOO_LARGE_WARNING,
@@ -86,7 +86,6 @@ from stayfixed.config.session import (
 )
 from stayfixed.doctor.entries import hook_entries
 from stayfixed.doctor.model import (
-    NO_CONFIG_SKIP,
     OK,
     RED,
     REPORT_THIS,
@@ -96,6 +95,7 @@ from stayfixed.doctor.model import (
     Context,
     Contribution,
     Row,
+    configured,
 )
 from stayfixed.doctor.registry import contributions
 from stayfixed.findings import listed
@@ -602,7 +602,7 @@ def _codex_hooks(context: Context) -> Row:
     return Row(SKIP, detail, "")
 
 
-def _budgets(context: Context) -> Row:
+def _budgets(context: Context, config: Config) -> Row:
     """Every budget set above the preset and every one set below it.
 
     The base branch's `stayfixed.toml` sets a gate's budget and the owner's machine file a
@@ -613,9 +613,7 @@ def _budgets(context: Context) -> Row:
     `Budgets.NAMES` and the loader refuses any other, so these are stayfixed's own names rather
     than a repository's strings.
     """
-    if context.config is None:
-        return Row(SKIP, NO_CONFIG_SKIP, "")
-    budgets = context.config.budgets
+    budgets = config.budgets
     raised = sorted(
         name for name, value in budgets.configured.items() if value > budgets.preset[name]
     )
@@ -871,7 +869,7 @@ def _ref_is_released(context: Context, ref: str) -> Row:
     )
 
 
-def _ci_ref(context: Context) -> Row:
+def _ci_ref(context: Context, config: Config) -> Row:
     """Whether `[ci] ref` is the commit of a released stayfixed, and whether the rendered workflow
     pins the same ref.
 
@@ -895,9 +893,7 @@ def _ci_ref(context: Context) -> Row:
     The value is repository-authored and is never printed -- not in the detail, not in the
     remedy, and not in an argument list.
     """
-    if context.config is None:
-        return Row(SKIP, NO_CONFIG_SKIP, "")
-    ref = context.config.ci.ref
+    ref = config.ci.ref
     if not ref:
         return Row(SKIP, "no [ci] ref is recorded, so there is nothing to resolve", "")
     row = _ref_is_released(context, ref)
@@ -926,7 +922,7 @@ def _ci_ref(context: Context) -> Row:
         # whenever it reports `ci-workflow` under `skipped`, and the state anyone reaches by
         # deleting the file. `mode` is what tells the cases apart: under `none` or `uvx` this build
         # renders no workflow, so an absent one is the configuration working.
-        if context.config.ci.mode == "reusable":
+        if config.ci.mode == "reusable":
             return Row(WARN, NO_WORKFLOW, NO_WORKFLOW_REMEDY)
         return row
     try:
@@ -1167,10 +1163,10 @@ CHECKS: tuple[tuple[str, Callable[[Context], Row]], ...] = (
     ("wrapper", _wrapper),
     ("hook-entries", hook_entries),
     ("codex-hooks", _codex_hooks),
-    ("budgets", _budgets),
+    ("budgets", configured(_budgets)),
     ("preferences", _preferences),
     ("cli-path", _cli_path),
-    ("ci-ref", _ci_ref),
+    ("ci-ref", configured(_ci_ref)),
     ("diagnostics", _diagnostics),
     ("ignored-env", _ignored_env),
 )

@@ -33,7 +33,8 @@ one nobody can tell from a leftover:
   recorded nothing.
 - `NO_CONFIG_SKIP` is the skip of a row that reads the project configuration in a repository with
   none: the areas' `attached`, `bundles`, `store-debris` and `harness-link` give it as the core's
-  rows do, so one sentence says one state.
+  rows do, so one sentence says one state. `configured` gives it for a row that reads nothing
+  before it reads the configuration, which is every one of them but `harness-link`.
 
 `plugin_root` is not here: nothing outside this area imports it, and the one test that reads it
 takes it from `stayfixed.doctor.checks`, its own area's module. Nor is `SETTINGS_FILES`, the
@@ -58,6 +59,7 @@ from stayfixed.doctor.model import (
     Row,
     Status,
     Wording,
+    configured,
 )
 
 __all__ = [
@@ -75,5 +77,6 @@ __all__ = [
     "Row",
     "Status",
     "Wording",
+    "configured",
     "run_checks",
 ]

@@ -143,8 +143,9 @@ def test_a_terminal_whose_home_is_empty_is_told_it_is_home_that_names_none(
     as_owner_home(monkeypatch, tmp_path / "home")
     monkeypatch.setenv("HOME", "")
     monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
-    context = _context(root, load(root, machine=_machine(tmp_path)))
-    row = attached_row(context, Answers(), _Ledger())
+    config = load(root, machine=_machine(tmp_path))
+    context = _context(root, config)
+    row = attached_row(context, config, Answers(), _Ledger())
     assert (row.status, row.detail, row.remedy) == (
         WARN,
         "HOME is empty, so it names no home directory and there is no harness memory path to check",

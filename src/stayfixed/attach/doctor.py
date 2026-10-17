@@ -109,7 +109,7 @@ def _attach_ledger_entries(state: AttachLedger | str) -> dict[str, str] | None:
     return dict(state.entries)
 
 
-def _attached(context: Context, answers: Answers, ledger: _Ledger) -> Row:
+def _attached(context: Context, config: Config, answers: Answers, ledger: _Ledger) -> Row:
     """Attach state, and the shape of the harness memory path.
 
     `attach` prefers a symlink at `~/.claude/projects/<slug>/memory`, because a settings-file
@@ -139,7 +139,7 @@ def _attached(context: Context, answers: Answers, ledger: _Ledger) -> Row:
     from stayfixed.config.layout import ATTACH_LEDGER
     from stayfixed.config.machine import home_is_empty, override_is_honoured
     from stayfixed.config.schema import OVERLAY_MODE
-    from stayfixed.doctor.api import NO_CONFIG_SKIP, OK, RED, SKIP, WARN, Row
+    from stayfixed.doctor.api import OK, RED, WARN, Row
     from stayfixed.errors import Refusal
     from stayfixed.memory.api import (
         DIFFERENT_REMOTE,
@@ -151,11 +151,6 @@ def _attached(context: Context, answers: Answers, ledger: _Ledger) -> Row:
         harness_memory_path,
     )
 
-    config = context.config
-    if config is None:
-        # Which store, which tree and whether the overlay is consulted at all are the project's
-        # file's to say.
-        return Row(SKIP, NO_CONFIG_SKIP)
     if config.memory.mode != OVERLAY_MODE:
         # `memory.mode` is repository-authored and is safe to print for one reason only: the
         # loader holds it to a fixed set of three words, so what reaches this line is one of
@@ -1093,12 +1088,15 @@ def _claims(context: Context, ledger: _Ledger) -> Claims:
 def register() -> Contribution:
     """The `attached` row and this area's claims, sharing one `_Ledger` for the report, and the
     row's one `Answers` for the note store."""
-    from stayfixed.doctor.api import Contribution
+    from stayfixed.doctor.api import Contribution, configured
     from stayfixed.memory.api import Answers
 
     answers = Answers()
     ledger = _Ledger()
+    # `configured`: which store, which tree and whether the overlay is consulted at all are the
+    # project's file's to say, so with none the row skips.
+    attached = configured(lambda context, config: _attached(context, config, answers, ledger))
     return Contribution(
-        checks=(("attached", lambda context: _attached(context, answers, ledger)),),
+        checks=(("attached", attached),),
         claims=lambda context: _claims(context, ledger),
     )

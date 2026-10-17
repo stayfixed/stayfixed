@@ -46,6 +46,9 @@ def test_the_surface_carries_what_every_consumer_reaches_for() -> None:
         # the skip of a row that reads the project configuration in a repository with none, which
         # the areas' rows give in the core's words
         "NO_CONFIG_SKIP",
+        # the wrapper that gives that skip for a row reading nothing before the configuration,
+        # which the areas' `attached`, `bundles` and `store-debris` register through
+        "configured",
         # one of the answers `Context.overlay_root` gives, a machine file that could not be read,
         # which the overlay rows and `attached` tell from "no overlay recorded" by its type
         "MachineUnread",
