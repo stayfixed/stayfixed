@@ -804,6 +804,8 @@ def _defaulted(section: str, key: Field[Any], defaults: dict[str, Any]) -> bool:
 
 
 _SCHEMA_OF: dict[str, type[Any]] = {
+    # Not a table of fields like the rest: `reading.table_types` reads a budget table's keys from
+    # `Budgets.NAMES`, and `_stands_in` answers a budget before it asks this map.
     "budgets": Budgets,
     "stayfixed": Stayfixed,
     "project": Project,

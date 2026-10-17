@@ -147,7 +147,8 @@ WRAPPER_TIMEOUT_SECONDS = 30
 # Said on every green row, since nothing here asks which Claude Code runs.
 UNMEASURED_ON_FAILURE = (
     "from Claude Code 2.1.295 a closed hook that cannot start blocks the Bash call; an earlier "
-    "Claude Code was not measured with that setting, and one that rejected it would run no guard"
+    "Claude Code was not measured with that setting, and one that rejected it would lose the "
+    "closed entry, and the Bash guards with it"
 )
 # Wall-clock bound on the one call this area makes that leaves the machine: the `ci-ref` row's
 # `git ls-remote` over the public repository's tags, which `doctor/commands.py` builds the runner
