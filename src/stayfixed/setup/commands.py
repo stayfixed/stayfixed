@@ -53,6 +53,13 @@ _BOTH_MODES = (
     "A single run has one exit code to report, so it does only one of the two — run them "
     "separately"
 )
+# `--uninstall` removes the hook `--git-hooks` installed, and means nothing to machine setup: on
+# its own it was dropped and the machine setup ran, exit 0, for a person who asked for a hook to be
+# removed. Refused before anything is written, naming the flag that gives it a meaning.
+_UNINSTALL_ALONE = (
+    "--uninstall removes the commit-message hook and is taken only with --git-hooks; run "
+    "`stayfixed setup --git-hooks --uninstall` to remove it, and nothing was written"
+)
 
 
 def _root(given: str) -> Path:
@@ -156,6 +163,8 @@ def run_setup(args: argparse.Namespace) -> Result:
         if args.preset is not None:
             raise Refusal(_BOTH_MODES)
         return run_git_hooks(args)
+    if args.uninstall:
+        raise Refusal(_UNINSTALL_ALONE)
 
     from stayfixed.config.machine import homes_agree
     from stayfixed.setup.run import setup

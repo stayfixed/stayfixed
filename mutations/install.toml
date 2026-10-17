@@ -2342,6 +2342,17 @@ reddens = [
   "tests/setup/test_approval_boundary.py::test_the_advice_beside_a_flag_that_writes_is_refused[uninstall]",
 ]
 
+# `--uninstall` is taken only with `--git-hooks`: alone it refuses, naming that flag, and writes
+# nothing, where it was dropped and the machine setup ran.
+[[mutation]]
+name = "setup drops a lone --uninstall and runs the machine setup"
+file = "src/stayfixed/setup/commands.py"
+before = "    if args.uninstall:\n        raise Refusal(_UNINSTALL_ALONE)"
+after = "    if False:\n        raise Refusal(_UNINSTALL_ALONE)"
+reddens = [
+  "tests/setup/test_commands.py::test_uninstall_without_git_hooks_refuses_and_runs_no_machine_setup",
+]
+
 # The advice names the user settings file `setup` would write: the one `--settings` names, else the
 # home's, and either absolute, so a relative `--home` or `--settings` names the file meant.
 [[mutation]]

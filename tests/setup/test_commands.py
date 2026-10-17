@@ -72,6 +72,25 @@ def test_git_hooks_and_preset_refuse_to_combine_through_the_cli(tmp_path: Path) 
     assert code == 2
 
 
+def test_uninstall_without_git_hooks_refuses_and_runs_no_machine_setup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # `--uninstall` means something only beside `--git-hooks`. Taken alone it was dropped and the
+    # machine setup ran, exit 0, for a person who asked for a hook to be removed.
+    #
+    # Mutation (`mutations/`'s "setup drops a lone --uninstall and runs the machine setup"): the
+    # run exits 0, writes the machine file and reaches the runner, and this reddens.
+    stub = Recorder()
+    monkeypatch.setattr("stayfixed.setup.commands.subprocess_runner", lambda: stub)
+    home = tmp_path / "home"
+    machine = tmp_path / "config.toml"
+    argv = ["setup", "--uninstall", "--yes", "--home", str(home), "--machine", str(machine)]
+    assert invoke(argv) == 2
+    assert "--git-hooks" in capsys.readouterr().err
+    assert not machine.exists()
+    assert not stub.calls
+
+
 def test_the_machine_default_is_the_file_every_reader_reads(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

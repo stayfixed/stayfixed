@@ -2984,6 +2984,10 @@ judged either: it is kept and chained, as below.
 one machine-wide — and a single invocation has only one exit code to report, so it does one of
 the two.
 
+**Refuses (`2`) `--uninstall` without `--git-hooks`.** It removes the hook this form installs and
+means nothing to machine setup, so `stayfixed setup --uninstall` names `--git-hooks` and writes
+nothing, where it used to drop the flag and run the machine setup.
+
 **Writes** the hook file in `--root`'s hooks directory, and the `.local` file beside it only when a
 foreign hook was there to preserve, by renaming that hook. Under `--uninstall` it removes the hook
 file only when it is stayfixed's, and renames the `.local` file beside it, when there is one, back
