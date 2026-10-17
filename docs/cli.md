@@ -462,7 +462,7 @@ changes nothing a working hook decides; a session whose hook cannot start at all
 `Bash` meanwhile, turn the plugin off with `/plugin`, or start Claude Code with
 `claude --settings '{"disableAllHooks": true}'`, which turns off every hook for that session and
 every guard with them. Claude Code before 2.1.295 was not measured with the key: one that
-rejected it would lose the entry, and the guard with it. `stayfixed doctor`'s `wrapper` row says so
+rejected it would lose the closed entry, and the `Bash` guards with it. `stayfixed doctor`'s `wrapper` row says so
 beside its `ok`, on every Claude Code, since nothing in the report asks which one runs.
 Codex's reader of `hooks.json` ignores a key it does not define on an entry (read in its source,
 `codex-rs/config/src/hook_config.rs`, on 2026-10-17, and not measured). The `open` entries leave it

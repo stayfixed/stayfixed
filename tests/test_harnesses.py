@@ -276,7 +276,8 @@ _HARNESS_MENTION = re.compile(
 # The mentions that are harness facts the registry does not carry, each with how many string
 # constants of its module make it and the phrase of `harnesses`' module docstring that lists it,
 # which must be there: a fact moved onto the registry takes its pardon with it, and a new one needs
-# a new item in that list. Counted, so a new constant beside a pardoned one reddens too.
+# a new item in that list. Counted, so a new constant beside a pardoned one reddens too. A site
+# whose constants make more than one fact gives a phrase for each.
 LISTED = {
     ("src/stayfixed/setup/run.py", "claude"): (4, "`_MARKETPLACE_ADD` and `_PLUGIN_INSTALL`"),
     ("src/stayfixed/setup/run.py", "codex"): (4, "`_MARKETPLACE_ADD` and `_PLUGIN_INSTALL`"),
@@ -301,7 +302,10 @@ LISTED = {
     ("src/stayfixed/hooks/api.py", "plugin_data"): (2, "`hooks.api.DATA_ROOT_VARIABLES`"),
     ("src/stayfixed/doctor/checks.py", "claude"): (
         4,
-        "every variable under Claude Code's and Codex's",
+        (
+            "every variable under Claude Code's and Codex's",
+            "`doctor`'s `wrapper` row names the Claude Code release",
+        ),
     ),
     ("src/stayfixed/doctor/checks.py", "codex"): (4, "reads `CODEX` by name in its"),
     ("src/stayfixed/doctor/checks.py", "plugin_root"): (
@@ -360,5 +364,10 @@ def test_every_harness_fact_outside_the_registry_is_listed_where_the_registry_sa
     pardoned = Counter({site: count for site, (count, _) in LISTED.items()}) + Counter(PROSE)
     assert _harness_mentions() == pardoned
     listed = harnesses.__doc__ or ""
-    missing = {site: phrase for site, (_, phrase) in LISTED.items() if phrase not in listed}
+    missing = {
+        site: phrase
+        for site, (_, phrases) in LISTED.items()
+        for phrase in ((phrases,) if isinstance(phrases, str) else phrases)
+        if phrase not in listed
+    }
     assert missing == {}

@@ -7,7 +7,8 @@ on the owner's layer, so the two meet here, below both, rather than one importin
 private names: a refusal is one type (`ConfigError`, and `MachineConfigError` for the machine
 file), a document that does not parse is said in one set of words (`toml_position`), the machine
 file is read once (`read_machine_toml`), and a value is held to its schema type by one rule
-(`coerced`, `positive`, `schema_types`) whichever layer wrote it.
+(`coerced`, `positive`, `schema_types`) whichever layer wrote it, against one answer for the keys a
+table holds (`table_types`).
 """
 
 from __future__ import annotations
