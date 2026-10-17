@@ -462,7 +462,8 @@ changes nothing a working hook decides; a session whose hook cannot start at all
 `Bash` meanwhile, turn the plugin off with `/plugin`, or start Claude Code with
 `claude --settings '{"disableAllHooks": true}'`, which turns off every hook for that session and
 every guard with them. Claude Code before 2.1.295 was not measured with the key: one that
-rejected it would lose the entry, and the guard with it.
+rejected it would lose the entry, and the guard with it. `stayfixed doctor`'s `wrapper` row says so
+beside its `ok`, on every Claude Code, since nothing in the report asks which one runs.
 Codex's reader of `hooks.json` ignores a key it does not define on an entry (read in its source,
 `codex-rs/config/src/hook_config.rs`, on 2026-10-17, and not measured). The `open` entries leave it
 unset: a failure there is the session's to survive.
@@ -3091,7 +3092,7 @@ check with `name`, `status`, `detail` and `remedy`, so every remedy is there.
 | `not-initialised` | whether there is a `stayfixed.toml` here, and how much of it a session can use: with none, a warning that the session guards and `doctor` work without one and `stayfixed init` adds the rest; with one that loaded with settings ignored or put back to the preset's, a warning naming at most three of their keys and counting the rest, never their values; red only for one a session drops whole, in the words of the session's warning | `stayfixed.toml` |
 | `versions` | whether the project's `[stayfixed] version` is the stayfixed running; with no project configuration, which stayfixed runs | `stayfixed.toml`, the package |
 | `files` | the hook wrapper's executable bit, and the three shipped files against the hashes the release recorded beside them | `hooks/run-hook.sh`, `hooks/hooks.json`, `scripts/stayfixed`, `hooks/hashes.json` |
-| `wrapper` | whether the wrapper can actually reach stayfixed on this machine | one `run-hook.sh open --version`, and only under the plugin root this stayfixed is part of |
+| `wrapper` | whether the wrapper can actually reach stayfixed on this machine; beside an `ok`, that Claude Code before 2.1.295 was not measured with the closed entry's `onFailure: "block"` | one `run-hook.sh open --version`, and only under the plugin root this stayfixed is part of |
 | `hook-entries` | every hook entry, counted by provenance, with any that claims the stayfixed marker and is in no ledger named by position; and, as a warning, every skill, command or agent file whose frontmatter declares hooks, which it does not judge | `.claude/settings.json`, `.claude/settings.local.json`, `.codex/hooks.json`, and `~/.claude/settings.json`; every `SKILL.md` below a `.claude/skills` anywhere in the tree that git does not ignore, a checked-out submodule's committed files included, and every `*.md` below `.claude/commands` and `.claude/agents` |
 | `codex-hooks` | whether any stayfixed hook is untrusted on Codex, and, when `[stayfixed] agents` lists `codex`, which surfaces are not verified there and which hold in CI | `stayfixed.toml`, the harness registry |
 | `budgets` | every budget set above the preset, named raised, and every one set below it, named lowered | `stayfixed.toml`, the machine file, the preset |

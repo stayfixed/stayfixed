@@ -3054,3 +3054,12 @@ file = "src/stayfixed/doctor/checks.py"
 before = "        name for name, value in budgets.configured.items() if value < budgets.preset[name]"
 after = "        name for name, value in budgets.configured.items() if value > budgets.preset[name]"
 reddens = ["tests/doctor/test_checks.py::test_a_budget_the_project_lowered_is_reported_green_and_named"]
+
+# The green `wrapper` row names the Claude Code the closed entry's `onFailure: "block"` was
+# measured on, and that an earlier one was not.
+[[mutation]]
+name = "the wrapper row leaves out which Claude Code was measured with onFailure"
+file = "src/stayfixed/doctor/checks.py"
+before = "    return Row(OK, f\"{WRAPPER} reached stayfixed and exited 0; {UNMEASURED_ON_FAILURE}\", \"\")"
+after = "    return Row(OK, f\"{WRAPPER} reached stayfixed and exited 0\", \"\")"
+reddens = ["tests/doctor/test_checks.py::test_a_wrapper_that_runs_is_reported_green"]

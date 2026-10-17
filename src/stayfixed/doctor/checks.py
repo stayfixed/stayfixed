@@ -141,6 +141,14 @@ _TOKEN = re.compile(r"\bSF_[A-Z_]+\b")
 # Wide enough for a cold interpreter start on a loaded machine, narrow enough that a hung probe does
 # not hang `doctor`.
 WRAPPER_TIMEOUT_SECONDS = 30
+# What the `wrapper` row says beside its `ok`: the closed `PreToolUse` entry in `hooks/hooks.json`
+# sets `onFailure: "block"`, which decides what a wrapper that cannot start costs, and only Claude
+# Code 2.1.295 and later were measured with it (`docs/cli.md`, "What never reaches the wrapper").
+# Said on every green row, since nothing here asks which Claude Code runs.
+UNMEASURED_ON_FAILURE = (
+    "from Claude Code 2.1.295 a closed hook that cannot start blocks the Bash call; an earlier "
+    "Claude Code was not measured with that setting, and one that rejected it would run no guard"
+)
 # Wall-clock bound on the one call this area makes that leaves the machine: the `ci-ref` row's
 # `git ls-remote` over the public repository's tags, which `doctor/commands.py` builds the runner
 # with. `runner.NETWORK_TIMEOUT_SECONDS` is 300 and is right for what it was written for — `gh
@@ -570,7 +578,7 @@ def _wrapper(context: Context) -> Row:
             f"{WRAPPER} exited {done.returncode} with no refusal token",
             "run `hooks/run-hook.sh open --version` and read its stderr",
         )
-    return Row(OK, f"{WRAPPER} reached stayfixed and exited 0", "")
+    return Row(OK, f"{WRAPPER} reached stayfixed and exited 0; {UNMEASURED_ON_FAILURE}", "")
 
 
 def _joined(words: Sequence[str]) -> str:

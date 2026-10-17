@@ -64,6 +64,8 @@ package that names a harness is pardoned there, each pardon by one of these item
   its managed-settings paths, its sandbox settings and its deny-rule grammar, and names it in the
   one sentence every writer gives a write its sandbox refused. Another harness's sandbox is an
   edit there.
+- `doctor`'s `wrapper` row names the Claude Code release the closed `PreToolUse` entry's
+  `onFailure` was measured on, which is a fact of that harness alone.
 - The hook payload is read in Claude Code's schema, the canonical one (`CANONICAL`): its keys
   (`hook_event_name`, `tool_name`, `tool_input`, `session_id`, `run_in_background`), the tool
   name `Bash` and its event names are spelled across the `hooks` package (`hooks.dispatch`,

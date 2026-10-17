@@ -576,12 +576,17 @@ def test_the_wrapper_is_executed_rather_than_only_read(
 def test_a_wrapper_that_runs_is_reported_green(tmp_path: Path) -> None:
     # The vacuity guard for the test above: an implementation that reported `red` whatever the
     # wrapper printed would pass it. This is the shipped wrapper, executed for real, against
-    # this checkout's own launcher.
+    # this checkout's own launcher. Its detail says which Claude Code was measured with the closed
+    # entry's `onFailure: "block"`, since nothing in the report asks which one runs. Mutation
+    # (`mutations/`'s "the wrapper row leaves out which Claude Code was measured with onFailure"):
+    # the green row stops at the exit code.
     check = _by_name(
         _checks(tmp_path, _initialised(tmp_path)),
         "wrapper",
     )
     assert check.status == "ok"
+    assert check.detail.endswith(checks.UNMEASURED_ON_FAILURE)
+    assert "2.1.295" in checks.UNMEASURED_ON_FAILURE
 
 
 def test_the_wrapper_runs_under_the_variables_the_harness_registry_names(
