@@ -54,6 +54,7 @@ from pathlib import Path
 import stayfixed
 from stayfixed.config.loader import loads, read_document
 from stayfixed.config.owned import Value, rewrite
+from stayfixed.config.owner import Owner
 from stayfixed.config.schema import Config
 from stayfixed.errors import Refusal
 from stayfixed.project.footprint import Passes, prepare
@@ -173,13 +174,16 @@ def upgrade(
     runner: Runner,
     dry_run: bool,
     force: Sequence[str],
+    owner: Owner | None = None,
 ) -> UpgradeReport:
+    """`owner` is the owner's layer the command resolved, which both loads take, so the machine
+    file is read once and what it read past is said once (`config.loader.loads`' own)."""
     if not Manifest.present(root):
         raise Refusal(NOT_INITIALISED)
     text = read_document(root)
     if text is None:
         raise Refusal(NO_DOCUMENT)
-    before = loads(text, root, machine=machine)
+    before = loads(text, root, machine=machine, owner=owner)
     running = stayfixed.__version__
     # Read by its leading `X.Y.Z`, so `1.0.0-rc1` is newer than `0.9.9` and not unknown, and a
     # release is newer than its own pre-release; a value with no leading `X.Y.Z` at all is
@@ -213,7 +217,7 @@ def upgrade(
     elif pinned and rewrite(text, changes) != text:
         changes, held = {}, NO_RELEASE
     document = rewrite(text, changes)
-    config = loads(document, root, machine=machine)
+    config = loads(document, root, machine=machine, owner=owner)
     passes, footprint = _footprint(root, config, text, resolution, force)
     if pinned and document != text and not _rewrites_the_workflow(footprint):
         changes, held, config = {}, WORKFLOW_HELD, before

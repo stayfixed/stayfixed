@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from stayfixed.areas import SubParsers
-from stayfixed.command import common_flags, grammar, root_and_config
+from stayfixed.command import command_owner, common_flags, grammar, root_and_config
 from stayfixed.result import Result
 
 if TYPE_CHECKING:
@@ -120,7 +120,9 @@ def run_assess(args: argparse.Namespace) -> Result:
 
     root = Path(args.root).resolve()
     machine = Path(args.machine) if args.machine else None
-    assessment = assess(root, machine=machine, base=args.base, builtin=args.builtin)
+    assessment = assess(
+        root, machine=machine, base=args.base, builtin=args.builtin, owner=command_owner(machine)
+    )
     write(root, assessment)
     summary = render(assessment)
     unanswered = {g.name for g in assessment.gates if not g.answered}
@@ -165,7 +167,10 @@ def run_gate(args: argparse.Namespace) -> Result:
     # The tree's configuration is read here for its default base and the branch a base the
     # checkout lacks is named by, and kept nowhere: every later decision is the verdict's, and a
     # name for the tree's copy in scope is one a later line could pick in its place.
-    tree = loads(tree_text, root, machine=machine)
+    # The owner's layer, once for the run: the tree's load here and both of the verdict's take it,
+    # so what the machine file read past is said once and not once a document.
+    owner = command_owner(machine)
+    tree = loads(tree_text, root, machine=machine, owner=owner)
     default, branch = local_base(tree), tree.project.base_branch
     del tree
     base = args.base or default
@@ -178,6 +183,7 @@ def run_gate(args: argparse.Namespace) -> Result:
         running=__version__,
         workflow_sha=args.workflow_sha,
         released=lambda sha: is_released(sha, runner, cwd=root),
+        owner=owner,
     )
     # The configuration this run uses is the verdict's: the base's when anything was refused, so
     # the names it runs, which of them are custom, and the paths and commands the gates read are
@@ -289,10 +295,14 @@ def run_adopt_promote(args: argparse.Namespace) -> Result:
     from stayfixed.findings import listed
     from stayfixed.printed import printable
 
-    root, config = root_and_config(args)
-    base = args.base or local_base(config)
     machine = Path(args.machine) if args.machine else None
-    transition = promote(root, config, args.gates, base=base, machine=machine, builtin=args.builtin)
+    # Once for the command: the base's copy a custom gate is promoted against loads under it too.
+    owner = command_owner(machine)
+    root, config = root_and_config(args, owner=owner)
+    base = args.base or local_base(config)
+    transition = promote(
+        root, config, args.gates, base=base, machine=machine, builtin=args.builtin, owner=owner
+    )
     # Gate names only: the loader holds each to a grammar, and a count is stayfixed's own.
     advisory = [f"{r.name} ({findings_text(r)})" for r in transition.results if r.failing]
     advisory += [f"{name} (not on the base)" for name in transition.waiting]

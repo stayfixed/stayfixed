@@ -7,9 +7,11 @@ from pathlib import Path
 
 import pytest
 
+from stayfixed.config import paths
 from stayfixed.config.loader import CONFIG_FILE, load, loads
 from stayfixed.config.paths import (
     PATH_RULE,
+    PATH_VALUE_LIMIT,
     STAYFIXED_DIRECTORY,
     PathEscape,
     contained,
@@ -321,6 +323,56 @@ def test_a_paths_value_outside_the_grammar_is_refused_and_never_quoted(tmp_path:
         assert PATH_VALUE.match(value), value
     for value in ("docs/ specs", "docs/spécs", "-docs", "docs/`x`", "docs/x\n"):
         assert PATH_VALUE.match(value) is None, value
+
+
+def test_a_paths_value_longer_than_its_cap_is_refused_naming_the_key(tmp_path: Path) -> None:
+    # Every reader of a `[paths]` value pays for its length and every `PreToolUse` hook reads every
+    # value, so one past `PATH_VALUE_LIMIT` is refused before anything else reads it, by its key
+    # and never by the value; one of exactly the cap, sound otherwise, loads. Mutations
+    # (`mutations/`'s "a [paths] value may be any length" -> the longer value loads; "the [paths]
+    # length cap refuses a value of its own length" -> the one at the cap is refused).
+    head = '[stayfixed]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n\n[paths]\n'
+    segments = "/".join(["a" * 99] * 10)
+    at_cap = f"{segments}/{'b' * (PATH_VALUE_LIMIT - len(segments) - 1)}"
+    assert len(at_cap) == PATH_VALUE_LIMIT
+    machine = tmp_path / "absent.toml"
+    assert loads(f'{head}specs = "{at_cap}"\n', tmp_path, machine=machine).paths.specs == at_cap
+    with pytest.raises(PathEscape) as caught:
+        loads(f'{head}specs = "{at_cap}b"\n', tmp_path, machine=machine)
+    assert caught.value.key == "paths.specs"
+    assert "paths.specs" in str(caught.value) and "aaa" not in str(caught.value)
+
+
+class _Asking:
+    """`os` as `config.paths` sees it, with every `lstat` it asks recorded."""
+
+    def __init__(self) -> None:
+        self.asked: list[str] = []
+
+    def lstat(self, path: Path) -> os.stat_result:
+        self.asked.append(os.fspath(path))
+        return os.lstat(path)
+
+    def __getattr__(self, name: str) -> object:
+        return getattr(os, name)
+
+
+def test_contained_asks_no_ancestor_below_the_first_that_is_not_there(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Every path below an ancestor that reaches no file reaches none either, so the walk down from
+    # the root stops there. Walked up from the target, `contained()` built, compared with the root
+    # and asked every ancestor, and twenty thousand components cost it two and a half seconds;
+    # here it asks the two that are there and the first that is not. Counted rather than timed, so
+    # no load moves it. Mutation (`mutations/`'s "contained asks every ancestor of a value that
+    # reaches no file"): it asks all 2,001.
+    (tmp_path / "a" / "a").mkdir(parents=True)
+    asking = _Asking()
+    monkeypatch.setattr(paths, "os", asking)
+    deep = "a/" * 2_000 + "AGENTS.md"
+    assert contained(tmp_path, deep) == tmp_path.joinpath(*deep.split("/"))
+    assert len(asking.asked) == 3, len(asking.asked)
+    assert asking.asked == [str(tmp_path.joinpath(*["a"] * depth)) for depth in (1, 2, 3)]
 
 
 # Every spelling the two readers of a path could have disagreed about, and the plain ones they

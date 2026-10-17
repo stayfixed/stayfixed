@@ -21,9 +21,9 @@ could not use in one warning, which `SessionStart` shows (`hooks.dispatch`):
 - one that loads with notes (`loader.loads_noting`): the configuration, and `NEWER_RELEASE_WARNING`
   when its `[stayfixed] version` is later than the running one, `NOTED_WARNING` otherwise.
 
-The owner's layer is resolved under `Unknown.NOTE` whatever the project holds, so the guards run on
-the preset and the machine file in every one of those cases, and a machine file that could not be
-used whole adds `MACHINE_FILE_WARNING`. Every warning is a constant in stayfixed's own words: it
+The owner's layer is resolved, not `strict`, whatever the project holds, so the guards run on the
+preset and the machine file in every one of those cases, and a machine file that could not be used
+whole adds `MACHINE_FILE_WARNING`. Every warning is a constant in stayfixed's own words: it
 reaches the model, so the one value of the repository's it carries, a key, is printed through
 `printed.printable`.
 """
@@ -58,11 +58,13 @@ from stayfixed.semver import later
 # `hooks/hooks.json` gives each entry, and a `PreToolUse` hook that runs past them loses its guard
 # or, with that file's `onFailure: "block"`, every call, so what the parse and the NOTE load cost,
 # each in proportion to the file, is bounded by the file before either starts: a 2.8 MB file of
-# custom gates kept a hook fourteen seconds. A `stayfixed.toml` that `init` writes is a few hundred
-# bytes, and one that spells out every setting and a few dozen gates is a few kilobytes; 1 MiB is
-# hundreds of times that, and parses and builds in a fraction of a second. A command reads the file
-# to `fsops.REGULAR_READ_LIMIT`.
-SESSION_READ_LIMIT = 1024 * 1024
+# custom gates kept a hook fourteen seconds, and at 1 MiB the costliest file a session read took 6
+# to 7.5 s of CPU on a laptop's efficiency cores. A `stayfixed.toml` that `init` writes is a few
+# hundred bytes, and one that spells out every setting and a few dozen gates is a few kilobytes;
+# 256 KiB is still dozens of times the second, and the costliest file of that length takes 0.25 s
+# on Python 3.13 and 1.4 to 1.5 s on efficiency cores (`loader.NOTE_REBUILT_LIMIT` gives its
+# shape). A command reads the file to `fsops.REGULAR_READ_LIMIT`.
+SESSION_READ_LIMIT = 256 * 1024
 # How every warning opens, and how the two that drop the project configuration close: `doctor`
 # shows the words between (`cause`), since it is where that pointer leads.
 PREFIX = "stayfixed: "

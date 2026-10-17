@@ -77,7 +77,13 @@ from stayfixed.config.machine import (
     passwd_home,
 )
 from stayfixed.config.schema import MEMORY_MODES
-from stayfixed.config.session import SessionConfig, cause, session_config
+from stayfixed.config.session import (
+    SESSION_READ_LIMIT,
+    TOO_LARGE_WARNING,
+    SessionConfig,
+    cause,
+    session_config,
+)
 from stayfixed.doctor.entries import hook_entries
 from stayfixed.doctor.model import (
     NO_CONFIG_SKIP,
@@ -264,6 +270,13 @@ UNPRINTABLE_KEY = "<a key that is not a plain name>"
 FALLBACK_REMEDY = (
     f"`stayfixed docs check` prints why; run `stayfixed doctor` again after fixing {CONFIG_FILE}"
 )
+# A file longer than a session reads is not one a command refuses: `docs check` reads it to the
+# command's own bound and loads it, so `FALLBACK_REMEDY` sent the owner to a command that exits 0.
+# Formatted from the constant, which is the session's to move.
+TOO_LARGE_REMEDY = (
+    f"shorten {CONFIG_FILE} below {SESSION_READ_LIMIT:,} bytes, the most a session reads of it, "
+    f"then run `stayfixed doctor` again"
+)
 
 
 def _not_initialised(context: Context) -> Row:
@@ -277,7 +290,8 @@ def _not_initialised(context: Context) -> Row:
     dropped = session.project_warnings
     if context.config is None:
         if dropped:
-            return Row(RED, cause(dropped[0]), FALLBACK_REMEDY)
+            remedy = TOO_LARGE_REMEDY if dropped[0] == TOO_LARGE_WARNING else FALLBACK_REMEDY
+            return Row(RED, cause(dropped[0]), remedy)
         return Row(WARN, NOT_INITIALISED, NOT_INITIALISED_REMEDY)
     if session.noted:
         keys = _noted_keys(session.noted)
@@ -626,6 +640,13 @@ PREFERENCES: tuple[str, ...] = tuple(
 # is not.
 ENUMERATED: Mapping[str, tuple[str, ...]] = {"memory.mode": MEMORY_MODES}
 PREFERENCES_REMEDY = "fix the machine file the detail names, then run `stayfixed doctor` again"
+# A machine file that does not load, in the words of its refusal (`Owner.unloaded`), which names
+# the file and the parser's position and never its text. Red, as every red row is a statement that
+# this installation is wrong: a session reads past the file, and every command refuses it.
+MACHINE_UNLOADED = (
+    "{error}, so every command refuses it, and a session runs on the preset's personal values and "
+    "guards in its place"
+)
 
 
 def _shown(key: str, value: object) -> str | None:
@@ -684,6 +705,10 @@ def _preferences(context: Context) -> Row:
     number or one of stayfixed's own words (`ENUMERATED`): a name list, a profile or a personal
     value is text a repository or an owner wrote, and stays out of a row a model may read. Runs
     with no `stayfixed.toml` too, where every preference is the preset's.
+
+    A machine file that does not load is red, in its refusal's words (`MACHINE_UNLOADED`): every
+    command refuses it, and the report, which reads it as a session does, was otherwise the one
+    run that exited 0 on it. What the owner's layer read past in a file that loads is a warning.
     """
     config = context.config
     defaults = load_preset(config.stayfixed.preset if config else DEFAULT_PRESET).get(
@@ -702,7 +727,12 @@ def _preferences(context: Context) -> Row:
         value = getattr(getattr(config, section), name) if config else preset.get(key)
         named.append(_named(key, value, str(layers.provenance.get(key, LayerName.PRESET))))
     detail = "; ".join(named)
-    notes = context.session.owner.notes
+    owner = context.session.owner
+    if owner.unloaded is not None:
+        return Row(
+            RED, f"{detail}. {MACHINE_UNLOADED.format(error=owner.unloaded)}", PREFERENCES_REMEDY
+        )
+    notes = owner.notes
     if notes:
         return Row(
             WARN,

@@ -1,7 +1,7 @@
 """No gate reads a key the tighten-only rule calls `neutral`.
 
-The rule lets a pull request change every key of a class no gate judges by — a preference, a
-session's parameter, the machine owner's keys and the plugin's — and the repository's own
+The rule lets a pull request change every key of a class no gate judges by — a preference, the
+machine owner's keys and the plugin's — and the repository's own
 `stayfixed.preset`, `stayfixed.agents` and `project.name`, whatever the base enforces, on the
 ground that no gate reads them. That ground is a fact about the gates, so it is executed rather
 than asserted: every built-in gate runs over a clone once under the loaded configuration and once
@@ -87,12 +87,11 @@ def _moved(config: Config, key: str) -> Config:
 
 def test_the_neutral_keys_are_derived_whole() -> None:
     # A floor against a derivation that finds nothing, and the gap this file had: it ran six keys
-    # by hand while the rule made every preference, session budget, machine key and plugin cap
-    # neutral. No mutation of the source reaches it: it holds this file's own derivation.
+    # by hand while the rule made every preference, machine key and plugin cap neutral. No
+    # mutation of the source reaches it: it holds this file's own derivation.
     assert {
         "memory.groups",
         "memory.index_extra",
-        "budgets.volatile_ttl_days",
         "native_caps.hook_output_chars",
         "personal.reply_language",
         "stayfixed.preset",

@@ -35,6 +35,7 @@ from stayfixed.attach.api import LOCAL_SETTINGS
 from stayfixed.config.layout import ATTACH_LEDGER as LEDGER
 from stayfixed.config.loader import CONFIG_FILE, load
 from stayfixed.config.overlay import overlay_root
+from stayfixed.config.reading import MachineConfigError, read_machine_toml
 from stayfixed.config.schema import Config
 from stayfixed.config.session import FALLBACK_WARNING, cause
 from stayfixed.doctor import checks, entries, hooked, registry
@@ -50,6 +51,8 @@ from stayfixed.doctor.api import (
     run_checks,
 )
 from stayfixed.doctor.checks import (
+    MACHINE_UNLOADED,
+    PREFERENCES_REMEDY,
     VERSION_AHEAD,
     VERSION_BEHIND,
     VERSION_UNORDERED,
@@ -3179,22 +3182,30 @@ def test_a_shipped_file_that_is_absent_is_named_as_absent_and_not_as_a_mismatch(
     assert "do(es) not match the release record" not in row.detail
 
 
-def test_a_machine_file_that_does_not_load_is_not_blamed_on_stayfixed_toml(tmp_path: Path) -> None:
+def test_a_machine_file_that_does_not_load_is_red_and_not_blamed_on_stayfixed_toml(
+    tmp_path: Path,
+) -> None:
     # The run once blamed `stayfixed.toml` for either file, so an owner whose
     # `~/.config/stayfixed/config.toml` had a stray bracket in it was told to fix a repository file
     # with nothing wrong with it; then it said whose file it was and skipped every other row. The
     # report reads the configuration the way a session does now: the project's file loads and its
-    # row is green, every row is asked, and the `preferences` row warns of the machine file, by
-    # its path, with the owner's layer standing on the preset. Mutation (`mutations/`'s "the
-    # preferences row says nothing of the machine file's notes"): green.
+    # row is green, every row is asked, and the `preferences` row names the machine file, by its
+    # path and in its refusal's words. Red, as it was before the report read the file as a session
+    # does: every command refuses the file, and a warning left `doctor` the one run exiting 0 on
+    # it. Mutations (`mutations/`'s "the preferences row reads a machine file that does not load as
+    # one it read past" and "the owner's layer forgets that the machine file did not load"): a
+    # warning.
     root = _initialised(tmp_path)
     machine = tmp_path / "machine.toml"
     machine.write_text("[personal\n", encoding="utf-8")
+    with pytest.raises(MachineConfigError) as refused:
+        read_machine_toml(machine)
     rows = _checks(tmp_path, root, machine=machine)
     assert _by_name(rows, "not-initialised").status == OK
     preferences = _by_name(rows, "preferences")
-    assert preferences.status == WARN
-    assert str(machine) in preferences.detail
+    assert preferences.status == RED
+    assert preferences.detail.endswith(f". {MACHINE_UNLOADED.format(error=refused.value)}")
+    assert str(machine) in preferences.detail and preferences.remedy == PREFERENCES_REMEDY
     assert CONFIG_FILE not in preferences.detail
 
 
@@ -3225,7 +3236,7 @@ def test_a_machine_file_that_does_not_load_is_named_as_the_file_that_was_read(
         root, home=tmp_path / "home", machine=None, runner=Recorder(), env=_env(tmp_path)
     )
     preferences = _by_name(rows, "preferences")
-    assert preferences.status == WARN
+    assert preferences.status == RED
     assert str(read) in preferences.detail
     assert str(elsewhere) not in preferences.detail
 

@@ -30,7 +30,7 @@ from stayfixed.hooks.api import DIAGNOSTICS, DIRECTORY, Handler, HookEvent, Hook
 from stayfixed.hooks.commands import CONFIG_FALLBACK
 from stayfixed.memory.hooks import register as memory_handlers
 from stayfixed.trust import kinds
-from tests.config.test_session import long_file_of_gates_that_run
+from tests.config.test_session import densest_file, long_file_of_gates_that_run
 from tests.gitfixture import git
 from tests.hooks.test_hook_command import BACKGROUND_SLEEP, CONFIG, TOOL_CALL, hook, notice_texts
 from tests.memory.test_commands import CONFIG as MEMORY_CONFIG
@@ -112,6 +112,12 @@ MANY_UNUSABLE_GATES = (
 # Well above what the hook takes with the file refused whole, and well below the ten-second
 # timeout `hooks/hooks.json` gives the `PreToolUse` entry.
 HOOK_BOUND_SECONDS = 5
+# The most a hook may spend on the densest file, as a multiple of what it spends on the same gates
+# built once: five builds at the read cap, with the parse and the start-up, come to one and a half
+# times the one build, and 65 builds to ten or eleven. Two hooks on the same machine, so a slower
+# runner moves both sides of the ratio, and four leaves room on each: eight such tests at once, or
+# one on efficiency cores, put the five builds at 1.5 to 1.6.
+DENSE_BUILDS_BOUND = 4
 
 
 def test_a_file_of_thousands_of_unusable_keys_never_outlasts_the_hook(tmp_path: Path) -> None:
@@ -128,20 +134,61 @@ def test_a_file_of_thousands_of_unusable_keys_never_outlasts_the_hook(tmp_path: 
     assert elapsed < HOOK_BOUND_SECONDS, elapsed
 
 
-def test_a_long_file_of_gates_that_run_never_outlasts_the_hook(tmp_path: Path) -> None:
-    # A file of thousands of gates that run is built once per removal its length allows
-    # (`loader.NOTE_REBUILT_LIMIT`), so what one build costs is paid that often, and the hook still
-    # answers well inside its timeout. Counted in the hook's own CPU time, in a process of its own:
-    # timed inside the suite's process, a CI runner measured its coverage tracer and its scheduler,
-    # 6.6 s for a read that takes 0.4 s, and neither is what a session pays. By hand, `_enforcement`
-    # asking the tuple of gate names rather than a set: the hook takes about ten seconds of CPU.
+def _hook_seconds(tmp_path: Path, document: str) -> float:
+    """The CPU time a `PreToolUse` hook spends refusing a background sleep beside `document`.
+
+    Counted in the hook's own process: timed inside the suite's process, a CI runner measured its
+    coverage tracer and its scheduler, 6.6 s for a read that takes 0.4 s, and neither is what a
+    session pays. CPU time and not the wall clock, which the suite's other workers stretch."""
+    tmp_path.mkdir(exist_ok=True)
     root, home = _setup(tmp_path, no_file)
-    (root / "stayfixed.toml").write_text(long_file_of_gates_that_run(), encoding="utf-8")
+    (root / "stayfixed.toml").write_text(document, encoding="utf-8")
     before = resource.getrusage(resource.RUSAGE_CHILDREN)
     refused = hook("PreToolUse", json.dumps(BACKGROUND_SLEEP), root, home=home)
     after = resource.getrusage(resource.RUSAGE_CHILDREN)
-    spent = (after.ru_utime + after.ru_stime) - (before.ru_utime + before.ru_stime)
     assert refused.returncode == 2 and SLEEP_REASON in refused.stderr
+    return (after.ru_utime + after.ru_stime) - (before.ru_utime + before.ru_stime)
+
+
+def test_a_long_file_of_gates_that_run_never_outlasts_the_hook(tmp_path: Path) -> None:
+    # A file of thousands of gates that run is built once per removal its length allows
+    # (`loader.NOTE_REBUILT_LIMIT`), so what one build costs is paid that often, and the hook still
+    # answers well inside its timeout. By hand, `_enforcement` asking the tuple of gate names
+    # rather than a set: the hook takes about ten seconds of CPU.
+    spent = _hook_seconds(tmp_path, long_file_of_gates_that_run())
+    assert spent < HOOK_BOUND_SECONDS, spent
+
+
+def test_the_densest_file_a_session_reads_never_outlasts_the_hook(tmp_path: Path) -> None:
+    # Dotted gates that run, filled to the read cap, beside 64 keys the NOTE load cannot use, each
+    # refused only once every gate before it is built (`tests/config/test_session.py`'s
+    # `densest_file`): built five times, the most its length allows, and dropped whole, so the hook
+    # spends about 0.4 s of CPU here, one and a half times what the same gates built once cost it.
+    # Under the hook's bound, and the ratio is what tells five builds from 65, which the bound
+    # alone could not: mutation (`mutations/`'s "the NOTE path's removals are bounded by their
+    # count alone"), the hook spends 2.2 to 2.9 s, ten times what the one build costs it. The one
+    # build is timed first, so a cold bytecode cache, paid by the first hook, can only lower the
+    # ratio.
+    once = _hook_seconds(tmp_path / "once", densest_file(unusable=False))
+    spent = _hook_seconds(tmp_path / "unusable", densest_file())
+    assert spent < HOOK_BOUND_SECONDS, spent
+    assert spent < DENSE_BUILDS_BOUND * once, (spent, once)
+
+
+# A `[paths]` value of forty thousand components, eighty kilobytes, none of which is there.
+DEEP_PATH = "a/" * 40_000 + "AGENTS.md"
+
+
+def test_a_path_value_of_thousands_of_components_never_outlasts_the_hook(tmp_path: Path) -> None:
+    # `contained()` walked up from the target, building every ancestor and comparing it with the
+    # root, and compared every parent of the resolved target with the root again, so each hook
+    # took seconds over this one value. It is held twice, and no one mutation reddens it: the value
+    # is longer than `config.paths.PATH_VALUE_LIMIT` allows, so the NOTE load puts the preset's
+    # back before `contained()` sees it (`mutations/`'s "a [paths] value may be any length"), and
+    # `contained()` walks down and stops at the first ancestor that is not there (`mutations/`'s
+    # "contained asks every ancestor of a value that reaches no file"). By hand, both undone: the
+    # hook spends 11.6 s of CPU, against 0.14 s.
+    spent = _hook_seconds(tmp_path, CONFIG + f'\n[paths]\nagents_md = "{DEEP_PATH}"\n')
     assert spent < HOOK_BOUND_SECONDS, spent
 
 

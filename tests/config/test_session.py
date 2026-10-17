@@ -225,7 +225,7 @@ def test_a_long_file_says_how_few_unusable_settings_it_is_read_past(tmp_path: Pa
     # and the warning says how many. No mutation of its own: the bound is held by
     # `tests/config/test_loader_note.py::test_a_long_document_is_read_past_fewer_unusable_keys`;
     # by hand, the warning formatted with `NOTE_REMOVAL_LIMIT` says 64 here.
-    runnable = "".join(f'v{n} = {{ run = ["true"] }}\n' for n in range(18_000))
+    runnable = "".join(f'v{n} = {{ run = ["true"] }}\n' for n in range(3_000))
     text = MINIMAL + "[gates.custom]\n" + runnable
     limit = NOTE_REBUILT_LIMIT // len(text)
     assert limit < NOTE_REMOVAL_LIMIT
@@ -259,7 +259,7 @@ def test_a_file_longer_than_a_session_reads_is_read_no_further(tmp_path: Path) -
 # Custom gates that run, every one of them enforced, in a file just under what a session reads,
 # beside `[paths]` values that fail containment: each of those is refused after the enforced list
 # is checked, so each removal builds the whole file again, every gate and its enforcement included.
-ENFORCED_GATES = 26_000
+ENFORCED_GATES = 6_500
 UNCONTAINED = [field.name for field in fields(Paths)][:4]
 
 
@@ -278,9 +278,11 @@ def test_a_long_file_of_gates_that_run_is_read_past_every_removal_its_length_all
     tmp_path: Path,
 ) -> None:
     # The file the hook's timing test reads (`tests/hooks/test_floor.py`'s
-    # `test_a_long_file_of_gates_that_run_never_outlasts_the_hook`), held to the shape that makes
-    # it the expensive case: under the read cap, read past exactly as many removals as its length
-    # allows, each one a rebuild of every gate, and still loaded.
+    # `test_a_long_file_of_gates_that_run_never_outlasts_the_hook`), held to the shape that test
+    # is about: under the read cap, read past exactly as many removals as its length allows, each
+    # one a rebuild of every gate and of its enforcement, and still loaded. It is not the costliest
+    # file a session reads, since a gate spelled out and enforced takes more than twice the bytes of
+    # the densest one; `densest_file` below is.
     text = long_file_of_gates_that_run()
     assert len(text.encode()) <= SESSION_READ_LIMIT
     assert NOTE_REBUILT_LIMIT // len(text) == len(UNCONTAINED)  # every removal the length allows
@@ -288,6 +290,49 @@ def test_a_long_file_of_gates_that_run_is_read_past_every_removal_its_length_all
     got = session_config(tmp_path, machine=none(tmp_path))
     assert got.config is not None and len(got.config.stayfixed.enforced) == ENFORCED_GATES
     assert got.noted == tuple(f"paths.{name}" for name in UNCONTAINED)
+
+
+# Keys the densest file holds that the NOTE load cannot use: the `UNCONTAINED` paths, and custom
+# gates that cannot run, as many as the NOTE load would remove were its removals bounded by their
+# count alone.
+UNRUNNABLE_GATES = NOTE_REMOVAL_LIMIT - len(UNCONTAINED)
+
+
+def densest_file(*, unusable: bool = True) -> str:
+    """The costliest file a session reads: dotted custom gates that run, `g<hex>.run=[""]`, the
+    most gates to the byte, up to the read cap, beside `NOTE_REMOVAL_LIMIT` keys the NOTE load
+    cannot use, each refused only once every gate before it is built: the `UNRUNNABLE_GATES` named
+    to sort after every gate that runs, then the `UNCONTAINED` paths, refused after every gate.
+    Not `unusable`, the same gates fill it alone, and it is built once.
+    `tests/hooks/test_floor.py` times a hook over both."""
+    paths = "".join(f'{name} = "../x"\n' for name in UNCONTAINED) if unusable else ""
+    count = UNRUNNABLE_GATES if unusable else 0
+    unrunnable = "".join(f"zz{n}.run=[]\n" for n in range(count))
+    text = MINIMAL + "[paths]\n" + paths + "[gates.custom]\n" + unrunnable
+    gates: list[str] = []
+    room = SESSION_READ_LIMIT - len(text)
+    while room >= len(gate := f'g{len(gates):x}.run=[""]\n'):
+        gates.append(gate)
+        room -= len(gate)
+    return text + "".join(gates)
+
+
+def test_the_densest_file_a_session_reads_is_built_as_often_as_its_length_allows(
+    tmp_path: Path,
+) -> None:
+    # The file the hook's timing test reads (`tests/hooks/test_floor.py`'s
+    # `test_the_densest_file_a_session_reads_never_outlasts_the_hook`), held to the shape that
+    # makes it the costliest: filled to the read cap, so its length allows the fewest removals,
+    # with more unusable keys than that, each a rebuild of every gate, and so dropped whole after
+    # the last removal its length allows. Mutation (`mutations/`'s "the NOTE path's removals are
+    # bounded by their count alone"): the file loads with 64 notes.
+    text = densest_file()
+    assert SESSION_READ_LIMIT - len('g10000.run=[""]\n') < len(text.encode()) <= SESSION_READ_LIMIT
+    limit = NOTE_REBUILT_LIMIT // len(text)
+    assert 0 < limit < NOTE_REMOVAL_LIMIT  # bounded by its length, and not by the count
+    write(tmp_path, text)
+    got = session_config(tmp_path, machine=none(tmp_path))
+    assert got.config is None and got.warnings == (TOO_MANY_WARNING.format(limit=limit),)
 
 
 @pytest.mark.parametrize(("make", "key"), UNUSABLE)

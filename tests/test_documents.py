@@ -975,6 +975,30 @@ def test_every_document_counts_the_rows_the_report_has() -> None:
         assert counted == [expected] * len(found), (name, found, expected)
 
 
+# The reference's sentence on the report's order counts the core's rows and the private layer's
+# apart, a second count beside the total the test above holds: it said "the installation's own
+# thirteen first" over a `CHECKS` of twelve, and the total, eighteen, still came out right.
+_ROW_ORDER = re.compile(
+    r"the installation's own (\w+) first, then the (\w+) about the\s+private layer"
+)
+
+
+def test_the_reference_counts_the_cores_rows_and_the_private_layers_apart() -> None:
+    # Mutation (`mutations/`'s "the reference counts thirteen of the installation's own doctor
+    # rows"): reddens naming the word.
+    from stayfixed.doctor.checks import CHECKS
+    from stayfixed.doctor.registry import contributions
+
+    section = _DOCTOR_SECTION.search(CLI_REFERENCE.read_text(encoding="utf-8"))
+    assert section is not None, "docs/cli.md has no `stayfixed doctor` section"
+    found = _ROW_ORDER.findall(section.group(1))
+    assert len(found) == 1, found
+    core, layer = found[0]
+    contributed = sum(len(contribution.checks) for contribution in contributions(CHECKS))
+    counted = (_NUMBER_WORDS.get(core.lower()), _NUMBER_WORDS.get(layer.lower()))
+    assert counted == (len(CHECKS), contributed), (found[0], len(CHECKS), contributed)
+
+
 # Every sentence in `docs/cli.md` that says how many noted key names `doctor` prints before it
 # counts the rest: the `not-initialised` row, the paragraph under the table, and the exception in
 # "What is printed".

@@ -298,8 +298,10 @@ scratch configuration is removed at Step 6.
 - Produces:
   - `classes.KeyClass(StrEnum)`: `MACHINE_ONLY`, `PREFERENCE`, `SESSION_PARAMETER`,
     `GATE_PARAMETER`, `REPOSITORY_ONLY`, `PLUGIN_OWNED`.
-  - `classes.LayerName(StrEnum)`: `PRESET`, `REPOSITORY`, `COMMON`, `PROJECT`, `MACHINE_SCOPE`,
-    `MACHINE_FILE`; `classes.ORDER: tuple[LayerName, ...]`, lowest first, in that order.
+  - `classes.LayerName(StrEnum)`: `PRESET`, `REPOSITORY`, `OVERLAY_COMMON`, `OVERLAY_PROJECT`,
+    `OVERLAY_MACHINE`, `MACHINE_FILE`; `classes.ORDER: tuple[LayerName, ...]`, lowest first, in
+    that order (amended 2026-10-17: shipped under the `OVERLAY_*` names, since "project" means
+    the repository everywhere else a person reads it).
   - `classes.ALLOWED: Mapping[KeyClass, frozenset[LayerName]]`: `MACHINE_ONLY` — every layer but
     `REPOSITORY`; `PREFERENCE` and `SESSION_PARAMETER` — every layer; `GATE_PARAMETER` and
     `REPOSITORY_ONLY` — `PRESET`, `REPOSITORY` (HS2 adds `PROJECT` for a repository with no file,
@@ -368,8 +370,8 @@ def test_merge_folds_lowest_first(): ...   # merge={"k": lambda a, b: a + b} ove
 
   `schema_keys()` derives keys from `dataclasses.fields`, skipping only the names in `NOT_KEYS`, so a
   scalar field added to a section is a key and fails the first test until it has a class.
-  `MACHINE_FILE_KEYS` is `{"guards.bg_cleanup", "setup.ask_rules", "setup.added_rules"}`; the
-  `personal.*` fields are schema keys already.
+  `MACHINE_FILE_KEYS` is `{"guards.bg_cleanup"}` (amended 2026-10-17: the `setup.*` keys left
+  with Task 10's ask rules); the `personal.*` fields are schema keys already.
 
 - [ ] **Step 2: Run** `uv run pytest tests/config/test_classes.py -q`. Expected: import error.
 - [ ] **Step 3: Implement** the module: the table, the two lookups, `resolve`.
@@ -706,8 +708,10 @@ def test_preferences_names_the_layer_and_hides_free_text(tmp_path): ...    # ind
 - Consumes: Task 2's `class_of`, `GATE_BUDGETS`.
 - Produces:
   - `Budgets.effective(name) -> int` — the configured value when set, else the preset's.
-  - `rule._row(key)` asks `class_of` first: `PREFERENCE`, `SESSION_PARAMETER`, `MACHINE_ONLY` and
-    `PLUGIN_OWNED` keys are `_neutral`; a gate budget is `_budget`; `ledger.code_roots` and
+  - `rule._row(key)` asks `class_of` first: `PREFERENCE`, `MACHINE_ONLY` and `PLUGIN_OWNED` keys
+    are `_neutral`; every budget, a gate's or a session's, is `_budget` (amended 2026-10-17 by the
+    owner, after the re-review: a session budget was `_neutral`, so a pull request could raise
+    `memory_index_words` and loosen a base gate running `memory index --check`); `ledger.code_roots` and
     `ledger.evidence_boundary_required_for` are `_additive` (a superset is `TIGHTENED`, equal
     `NEUTRAL`, anything else `_other`); every other key keeps today's row. A pull request may change
     `memory.mode`, a preference.
@@ -719,7 +723,7 @@ def test_the_base_branch_raises_a_gate_budget(tmp_path):
     config = loads(MINIMAL + "[budgets]\nagents_md_lines = 900\n", tmp_path, machine=NONE)
     assert config.budgets.effective("agents_md_lines") == 900          # above the preset's
 def test_a_pull_request_still_only_lowers_a_gate_budget(tmp_path): ...  # REFUSED raised, TIGHTENED lowered
-def test_a_pull_request_may_change_a_session_budget(tmp_path): ...      # NEUTRAL both ways
+def test_a_pull_request_only_lowers_a_session_budget(tmp_path): ...     # REFUSED raised, TIGHTENED lowered
 def test_a_pull_request_may_change_memory_mode(tmp_path): ...           # NEUTRAL
 def test_adding_a_code_root_tightens_and_removing_one_is_refused_while_enforcing(tmp_path): ...
 def test_removing_a_code_root_is_noted_when_nothing_enforces(tmp_path): ...
@@ -1132,5 +1136,15 @@ model, asked to quote its context, did not see a `systemMessage`, and did see a
   machine file it cannot use (Task 3's Interfaces block), and that the closed `PreToolUse` entry
   takes `onFailure: "block"` in this pull request, after the NOTE retry's cost was bounded by the
   document's length and a session's read capped at 1 MiB.
+- A five-seat re-review the same day found two Important issues, both fixed before merge: a
+  `[paths]` value of tens of thousands of components made the containment walk quadratic, so a
+  72 KB committed file kept the hook past its timeout, which `onFailure: "block"` turned into a
+  blocked `Bash` call (now a 1024-character cap, a walk down from the root, a session read of
+  256 KiB and at most 1 MiB rebuilt; the densest file measured 0.25 s, 1.5 s on efficiency cores);
+  and `doctor` exited 0 over a machine file every command refuses (now the `preferences` row is
+  red, and the overlay rows say the file could not be read). The machine file's notes are said
+  once a command (`command.command_owner`), and `Unknown` became `resolve_owner(strict=)`. The
+  owner ruled that a pull request may only lower a session's budget, as a gate's (Task 7's
+  Interfaces block).
 - Follow-ups for the owner: doctor relaying at most three clipped key names; a pull request
   narrowing `memory.groups`.

@@ -1331,6 +1331,40 @@ def test_a_ledger_on_a_machine_that_records_no_overlay_skips_and_never_reads_as_
     assert "stayfixed setup --overlay" in row.remedy
 
 
+def test_a_ledger_on_a_machine_whose_file_does_not_load_skips_in_words_of_its_own(
+    tmp_path: Path,
+) -> None:
+    # Whether a machine whose file nobody could read records an overlay is not known, which is
+    # neither of the two arms beside it: read as no overlay, the row told the owner to run
+    # `stayfixed setup --overlay`; read as an overlay that could not be asked, it blamed `git`. The
+    # `preferences` row is red on the file and carries the remedy, so this skip carries none.
+    # Mutations (`mutations/`'s "the attached row reads a machine file nobody could read as an
+    # overlay that could not be asked" and "the report reads a machine file it could not read as
+    # one that records no overlay"): the sentence and remedy of the other arms.
+    root = _attached(tmp_path)
+    machine = tmp_path / "unreadable.toml"
+    machine.write_text("[personal\nx = 1\n", encoding="utf-8")
+    row = _by_name(_checks(tmp_path, root, machine=machine), "attached")
+    assert row.status == SKIP and row.remedy == "", row
+    assert "the machine configuration file could not be read" in row.detail, row
+    assert "the `preferences` row says why" in row.detail and "attached;" not in row.detail
+
+
+def test_hook_entries_asks_no_overlay_of_a_machine_file_that_does_not_load(tmp_path: Path) -> None:
+    # With no project configuration there is no binding to ask, and the grant was asked of the
+    # overlay root itself, which was the machine file's refusal: the claims raised and the row went
+    # red as one that could not run. A source that could not be asked is a warning, decided by this
+    # machine's state alone. Mutation (`mutations/`'s "hook-entries asks the overlay root of a
+    # machine file nobody could read"): red.
+    root = _attached(tmp_path)
+    (root / CONFIG_FILE).unlink()
+    machine = tmp_path / "unreadable.toml"
+    machine.write_text("[personal\nx = 1\n", encoding="utf-8")
+    row = _by_name(_checks(tmp_path, root, machine=machine), "hook-entries")
+    assert row.status == WARN, row
+    assert "could not be asked which entries it grants" in row.detail, row
+
+
 def test_an_overlay_record_this_process_cannot_read_skips_rather_than_reading_as_attached(
     tmp_path: Path,
 ) -> None:

@@ -27,6 +27,10 @@ one nobody can tell from a leftover:
 - `Status` is the type `Row.status` declares, for a check that decides its status before it
   builds its row, as an area's own check may: an annotation it could not import would be a type
   it could hold and not declare.
+- `MachineUnread` is one of the answers `Context.overlay_root` gives, a machine file that could
+  not be read: a row that reads the root cannot tell it from "no overlay recorded" without it,
+  and told as that, `pre-commit`, `overlay-requires` and `attached` said a file nobody could read
+  recorded nothing.
 - `NO_CONFIG_SKIP` is the skip of a row that reads the project configuration in a repository with
   none: the areas' `attached`, `bundles`, `store-debris` and `harness-link` give it as the core's
   rows do, so one sentence says one state.
@@ -50,6 +54,7 @@ from stayfixed.doctor.model import (
     Claims,
     Context,
     Contribution,
+    MachineUnread,
     Row,
     Status,
     Wording,
@@ -66,6 +71,7 @@ __all__ = [
     "Claims",
     "Context",
     "Contribution",
+    "MachineUnread",
     "Row",
     "Status",
     "Wording",

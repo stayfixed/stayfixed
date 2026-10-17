@@ -260,14 +260,26 @@ reddens = [
   "tests/doctor/test_checks.py::test_an_entry_the_ledger_records_is_not_reported_as_claiming_the_marker",
 ]
 
+# A machine file that does not load is not one that records no overlay: the report keeps the
+# refusal as `MachineUnread`, so every row that reads the root says the file could not be read.
+[[mutation]]
+name = "the report reads a machine file it could not read as one that records no overlay"
+file = "src/stayfixed/doctor/model.py"
+before = "            return MachineUnread(str(exc))"
+after = "            return None"
+reddens = [
+  "tests/overlay/test_doctor.py::test_a_machine_file_that_does_not_load_is_not_reported_as_one_that_records_no_overlay",
+  "tests/attach/test_doctor.py::test_a_ledger_on_a_machine_whose_file_does_not_load_skips_in_words_of_its_own",
+]
+
 # The overlay root is the machine file's, the core's, and more than one area reads it: the report's
 # `Context` resolves it on first read and keeps the answer, so one report asks the machine file once
 # however many rows read it. A plain property would ask it again for every reader.
 [[mutation]]
 name = "the report resolves the overlay root for every reader"
 file = "src/stayfixed/doctor/model.py"
-before = "    @cached_property\n    def overlay_root(self) -> Path | None:"
-after = "    @property\n    def overlay_root(self) -> Path | None:"
+before = "    @cached_property\n    def overlay_root(self) -> Path | MachineUnread | None:"
+after = "    @property\n    def overlay_root(self) -> Path | MachineUnread | None:"
 reddens = [
   "tests/attach/test_doctor.py::test_one_report_resolves_the_overlay_root_once_for_every_area",
 ]
@@ -2926,8 +2938,8 @@ reddens = ["tests/doctor/test_floor_report.py::test_noted_keys_are_bounded_in_nu
 [[mutation]]
 name = "a whole fallback reads as a repository with no stayfixed.toml"
 file = "src/stayfixed/doctor/checks.py"
-before = "        if dropped:\n            return Row(RED, cause(dropped[0]), FALLBACK_REMEDY)"
-after = "        if False:\n            return Row(RED, cause(dropped[0]), FALLBACK_REMEDY)"
+before = "        if dropped:\n            remedy = TOO_LARGE_REMEDY if dropped[0] == TOO_LARGE_WARNING else FALLBACK_REMEDY"
+after = "        if False:\n            remedy = TOO_LARGE_REMEDY if dropped[0] == TOO_LARGE_WARNING else FALLBACK_REMEDY"
 reddens = [
   "tests/doctor/test_floor_report.py::test_a_whole_fallback_is_red",
   "tests/doctor/test_checks.py::test_a_configuration_that_does_not_load_is_described_in_words",
@@ -2982,7 +2994,30 @@ before = "    if notes:\n        return Row(\n            WARN,"
 after = "    if False:\n        return Row(\n            WARN,"
 reddens = [
   "tests/doctor/test_floor_report.py::test_preferences_warn_of_a_machine_file_that_could_not_be_used",
-  "tests/doctor/test_checks.py::test_a_machine_file_that_does_not_load_is_not_blamed_on_stayfixed_toml",
+]
+
+# A `stayfixed.toml` longer than a session reads is not one a command refuses, so the remedy that
+# sends every other whole fallback to `stayfixed docs check` would send this one to a command that
+# loads it and exits 0.
+[[mutation]]
+name = "a stayfixed.toml longer than a session reads is sent to docs check"
+file = "src/stayfixed/doctor/checks.py"
+before = "            remedy = TOO_LARGE_REMEDY if dropped[0] == TOO_LARGE_WARNING else FALLBACK_REMEDY"
+after = "            remedy = FALLBACK_REMEDY"
+reddens = [
+  "tests/doctor/test_floor_report.py::test_a_file_longer_than_a_session_reads_is_red_with_a_remedy_of_its_own",
+]
+
+# A machine file that does not load is red, in its refusal's words: every command refuses it, and
+# read as one more note of a file read past, `doctor` was the one run that exited 0 on it.
+[[mutation]]
+name = "the preferences row reads a machine file that does not load as one it read past"
+file = "src/stayfixed/doctor/checks.py"
+before = "    if owner.unloaded is not None:"
+after = "    if False:"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_machine_file_that_does_not_load_is_red_and_not_blamed_on_stayfixed_toml",
+  "tests/doctor/test_command.py::test_a_machine_file_that_does_not_load_exits_one",
 ]
 
 # The reference states the cap in words, so the cap and every sentence that states it move together.

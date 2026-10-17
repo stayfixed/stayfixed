@@ -775,7 +775,7 @@ reddens = [
 [[mutation]]
 name = "promote enforces a custom gate whose command the base does not have"
 file = "src/stayfixed/assess/state.py"
-before = "    waiting = _not_on_base(root, config, asked, base=base, machine=machine)"
+before = "    waiting = _not_on_base(root, config, asked, base=base, machine=machine, owner=owner)"
 after = "    waiting = ()"
 reddens = [
   "tests/assess/test_state.py::test_a_custom_gate_the_base_does_not_have_is_neither_run_nor_promoted",
@@ -1175,8 +1175,8 @@ reddens = [
 [[mutation]]
 name = "adopt promote drops --builtin on the way to the promotion"
 file = "src/stayfixed/assess/commands.py"
-before = "    transition = promote(root, config, args.gates, base=base, machine=machine, builtin=args.builtin)"
-after = "    transition = promote(root, config, args.gates, base=base, machine=machine, builtin=False)"
+before = "        root, config, args.gates, base=base, machine=machine, builtin=args.builtin, owner=owner"
+after = "        root, config, args.gates, base=base, machine=machine, builtin=False, owner=owner"
 reddens = [
   "tests/assess/test_state.py::test_adopt_promote_builtin_names_the_custom_gates_it_did_not_run",
 ]
@@ -1755,14 +1755,15 @@ reddens = [
   "tests/assess/test_probes.py::test_a_settings_file_with_no_hook_entry_lists_nothing",
 ]
 
-# A key's class is asked before the rule's own table: a preference and a session's parameter are
-# neutral whatever the base enforces, and a gate's budget is the only one the budget row judges.
+# A key's class is asked before the rule's own table: a preference is neutral whatever the base
+# enforces. A session's budget is not: the budget row judges it as it judges a gate's, since a gate
+# the base enforces may read it.
 [[mutation]]
-name = "the ratchet asks its own table before a key's class"
+name = "a session's budget is neutral by its class"
 file = "src/stayfixed/assess/rule.py"
-before = "    if _class(key) in _NEUTRAL_CLASSES:\n        return _neutral\n    if key in ROWS:\n        return ROWS[key]\n    return next((row for prefix, row in PREFIX_ROWS if key.startswith(prefix)), _other)"
-after = "    if key in ROWS:\n        return ROWS[key]\n    found = next((row for prefix, row in PREFIX_ROWS if key.startswith(prefix)), None)\n    if found is not None:\n        return found\n    return _neutral if _class(key) in _NEUTRAL_CLASSES else _other"
-reddens = ["tests/assess/test_rule_classes.py::test_a_pull_request_may_change_a_session_budget[raised]"]
+before = "        KeyClass.PREFERENCE,\n        KeyClass.MACHINE_ONLY,"
+after = "        KeyClass.PREFERENCE,\n        KeyClass.SESSION_PARAMETER,\n        KeyClass.MACHINE_ONLY,"
+reddens = ["tests/assess/test_rule_classes.py::test_a_pull_request_only_lowers_a_session_budget[raised]"]
 
 [[mutation]]
 name = "the ratchet judges no key by its class"

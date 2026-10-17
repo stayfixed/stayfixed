@@ -19,9 +19,10 @@ from pathlib import Path
 from typing import Final, Literal
 
 from stayfixed.config.overlay import overlay_root as recorded_overlay_root
+from stayfixed.config.reading import MachineConfigError
 from stayfixed.config.schema import Config
 from stayfixed.config.session import SessionConfig
-from stayfixed.errors import resolved_or_none
+from stayfixed.errors import Failure, Refusal
 from stayfixed.runner import Runner
 from stayfixed.scaffold import Placed
 
@@ -76,6 +77,20 @@ class Row:
 
 
 @dataclass(frozen=True)
+class MachineUnread:
+    """`Context.overlay_root`'s answer when the machine file that records the root could not be
+    read: whether this machine records an overlay is not known, which is not "it records none".
+
+    `reason` is `config.reading.read_machine_toml`'s refusal, which names the file and the
+    parser's position or the error's class, and never the file's text. The `preferences` row is
+    red on it and says it; a row that reads the overlay root skips without claiming that nothing
+    is recorded, which was false and pointed the owner at `stayfixed setup` for a stray bracket.
+    """
+
+    reason: str
+
+
+@dataclass(frozen=True)
 class Context:
     """Everything a check may read for one report, built whole by `checks.run_checks` and never
     changed after.
@@ -115,9 +130,10 @@ class Context:
     session: SessionConfig = field(kw_only=True)
 
     @cached_property
-    def overlay_root(self) -> Path | None:
+    def overlay_root(self) -> Path | MachineUnread | None:
         """The overlay root the machine file records, whether or not anything is there; `None`
-        when it records none, or when it cannot be read.
+        when it records none, or when the root it records cannot be resolved; `MachineUnread`
+        when the machine file itself cannot be read or parsed.
 
         Resolved on first read and never again for this report: `cached_property` keeps the
         answer in the instance's `__dict__` without going through `__setattr__`, which is why a
@@ -125,12 +141,20 @@ class Context:
         as well. A fresh `Context` per report is a fresh answer per report, so nothing one run
         resolved reaches the next.
 
-        A resolution that fails is `None`, as a machine that records no overlay is
-        (`errors.resolved_or_none`): a machine file that names an overlay nothing can read is a
-        row's skip, never "this check could not run", which is red and gates the exit code for
-        something the repository did not do wrong.
+        A resolution that fails is a row's skip, never "this check could not run", which is red
+        and gates the exit code for something the repository did not do wrong. Told apart by the
+        exception's type and never by its text: a machine file that does not load is
+        `MachineUnread`, which the `preferences` row is red on and every reader of this answer
+        skips on in its own words, since saying "no overlay root is recorded" of a file nobody
+        could read was false; any other failure the way `errors.resolved_or_none` reads one, as
+        nothing to look at.
         """
-        return resolved_or_none(lambda: recorded_overlay_root(self.machine))
+        try:
+            return recorded_overlay_root(self.machine)
+        except MachineConfigError as exc:
+            return MachineUnread(str(exc))
+        except (Failure, Refusal, OSError):
+            return None
 
 
 @dataclass(frozen=True)

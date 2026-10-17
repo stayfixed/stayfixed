@@ -1495,7 +1495,7 @@ reddens = [
 [[mutation]]
 name = "an adopted document the next command cannot load is adopted anyway"
 file = "src/stayfixed/project/init.py"
-before = "        loads(on_disk, root, machine=machine)"
+before = "        loads(on_disk, root, machine=machine, owner=owner)"
 after = "        pass"
 reddens = [
   "tests/project/test_init.py::test_an_adopted_document_the_loader_would_refuse_is_refused_before_anything_is_written",

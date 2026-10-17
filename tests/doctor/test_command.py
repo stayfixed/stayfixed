@@ -155,6 +155,22 @@ def test_any_red_check_exits_one(tmp_path: Path, capsys: pytest.CaptureFixture[s
     assert invoke(["doctor", "--root", str(tmp_path), "--home", str(tmp_path / "home")]) == 0
 
 
+def test_a_machine_file_that_does_not_load_exits_one(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Every command that reads the machine file refuses one that does not load, with exit 1, and
+    # `doctor`, which reads it as a session does, exited 0 on it with one warning. Mutation
+    # (`mutations/`'s "the preferences row reads a machine file that does not load as one it read
+    # past"): exit 0.
+    root = _initialised(tmp_path)
+    machine = tmp_path / "machine.toml"
+    machine.write_text("[personal\nx = 1\n", encoding="utf-8")
+    argv = ["doctor", "--root", str(root), "--home", str(tmp_path / "home"), "--json"]
+    assert invoke([*argv, "--machine", str(machine)]) == 1
+    report = json.loads(capsys.readouterr().out)
+    assert [c["name"] for c in report["checks"] if c["status"] == RED] == ["preferences"]
+
+
 def test_claims_that_raise_an_os_error_fail_the_report(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

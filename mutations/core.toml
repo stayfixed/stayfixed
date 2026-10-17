@@ -1274,7 +1274,7 @@ file = "src/stayfixed/config/reading.py"
 before = '        raise MachineConfigError(f"{path} is not valid TOML {toml_position(exc)}") from None'
 after = '        raise ConfigError(f"{path} is not valid TOML {toml_position(exc)}") from None'
 reddens = [
-  "tests/doctor/test_checks.py::test_a_machine_file_that_does_not_load_is_not_blamed_on_stayfixed_toml",
+  "tests/doctor/test_checks.py::test_a_machine_file_that_does_not_load_is_red_and_not_blamed_on_stayfixed_toml",
 ]
 
 # A `[paths]` value outside the path grammar is refused, and never quoted back.
@@ -1285,6 +1285,28 @@ before = "        if not PATH_VALUE.match(relative):"
 after = "        if False:"
 reddens = [
   "tests/config/test_paths.py::test_a_paths_value_outside_the_grammar_is_refused_and_never_quoted",
+]
+
+# A `[paths]` value past `paths.PATH_VALUE_LIMIT` is refused by its key before anything else reads
+# it: every reader pays for a value's length, and every `PreToolUse` hook reads every value.
+[[mutation]]
+name = "a [paths] value may be any length"
+file = "src/stayfixed/config/paths.py"
+before = "        if len(relative) > PATH_VALUE_LIMIT:"
+after = "        if False:"
+reddens = [
+  "tests/config/test_paths.py::test_a_paths_value_longer_than_its_cap_is_refused_naming_the_key",
+  "tests/config/test_loader_note.py::test_a_path_longer_than_its_cap_resets_only_that_path",
+  "tests/config/test_loader_note.py::test_refuse_still_refuses_each_of_them[path-length]",
+]
+
+[[mutation]]
+name = "the [paths] length cap refuses a value of its own length"
+file = "src/stayfixed/config/paths.py"
+before = "        if len(relative) > PATH_VALUE_LIMIT:"
+after = "        if len(relative) >= PATH_VALUE_LIMIT:"
+reddens = [
+  "tests/config/test_paths.py::test_a_paths_value_longer_than_its_cap_is_refused_naming_the_key",
 ]
 
 # The release pins read off a tag listing: an annotated tag resolves to the commit it points at and
@@ -2247,7 +2269,7 @@ reddens = [
 [[mutation]]
 name = "contained lets a symlinked ancestor through"
 file = "src/stayfixed/config/paths.py"
-before = "        if stat.S_ISLNK(mode) and not (allow_final_symlink and ancestor == target):"
+before = "        if stat.S_ISLNK(answer) and not (allow_final_symlink and ancestor == target):"
 after = "        if False:"
 reddens = [
   "tests/config/test_paths.py::test_a_symlinked_intermediate_directory_is_refused",
@@ -2260,10 +2282,22 @@ reddens = [
 [[mutation]]
 name = "contained refuses at the first ancestor it cannot ask, before it looks for a link above"
 file = "src/stayfixed/config/paths.py"
-before = "                unasked.__cause__ = exc\n            continue"
-after = "                unasked.__cause__ = exc\n            raise unasked"
+before = "                unasked.__cause__ = answer\n            continue"
+after = "                unasked.__cause__ = answer\n            raise unasked"
 reddens = [
   "tests/config/test_paths.py::test_each_fault_an_ancestor_meets_has_one_answer_on_every_interpreter[through-a-link-into-a-directory-that-cannot-be-searched]",
+]
+
+# The walk goes down from the root and stops at the first ancestor that reaches no file, since every
+# path below it reaches none either; walking up over every ancestor of a value of twenty thousand
+# components cost `contained()` two and a half seconds.
+[[mutation]]
+name = "contained asks every ancestor of a value that reaches no file"
+file = "src/stayfixed/config/paths.py"
+before = "            if exc.errno in REACHES_NO_FILE:\n                break"
+after = "            if exc.errno in REACHES_NO_FILE:\n                continue"
+reddens = [
+  "tests/config/test_paths.py::test_contained_asks_no_ancestor_below_the_first_that_is_not_there",
 ]
 
 # The fork points, asked once for `plan`, `bugs` and `test attribute`. A history the change shapes
@@ -3790,16 +3824,40 @@ reddens = ["tests/config/test_classes.py::test_a_layer_reads_as_its_name"]
 # The owner's layer (`src/stayfixed/config/owner.py`): a session goes on through a machine file
 # that does not load, on the preset's personal values and guards, and says so; a command refuses.
 [[mutation]]
-name = "a broken machine file raises under NOTE"
+name = "a broken machine file raises for a reader that must go on"
 file = "src/stayfixed/config/owner.py"
 before = """    except MachineConfigError as exc:
-        if unknown is Unknown.REFUSE:
+        if strict:
             raise"""
 after = """    except MachineConfigError as exc:
         if True:
             raise"""
 reddens = [
   "tests/config/test_owner.py::test_a_broken_machine_file_is_the_preset_and_names_the_file",
+]
+
+# The refusal is kept beside the notes, so `doctor` reads a file that does not load as the one
+# every command refuses, red, and not as one more note of a file it read past.
+[[mutation]]
+name = "the owner's layer forgets that the machine file did not load"
+file = "src/stayfixed/config/owner.py"
+before = "        raw, unloaded = None, str(exc)"
+after = "        raw, unloaded = None, None"
+reddens = [
+  "tests/config/test_owner.py::test_a_broken_machine_file_is_the_preset_and_names_the_file",
+  "tests/doctor/test_checks.py::test_a_machine_file_that_does_not_load_is_red_and_not_blamed_on_stayfixed_toml",
+]
+
+# A command resolves the owner's layer once, over the default preset, and hands it to every load:
+# a document naming another preset stands the machine file's values on that preset's defaults.
+[[mutation]]
+name = "a command's owner layer stays on the preset it was resolved over"
+file = "src/stayfixed/config/owner.py"
+before = "    if preset == owner.preset:\n        return owner"
+after = "    if True:\n        return owner"
+reddens = [
+  "tests/config/test_owner.py::test_the_owners_layer_stands_on_another_preset_without_reading_the_file_again",
+  "tests/config/test_owner.py::test_a_load_stands_the_layer_it_is_handed_on_the_documents_preset",
 ]
 
 # A gate's budget is the repository's: the owner's layer leaves it out before `resolve`, whose
@@ -3819,7 +3877,7 @@ file = "src/stayfixed/config/owner.py"
 before = "        template = IGNORED_NOTE if ignored else MACHINE_RESET_NOTE"
 after = """        raise MachineConfigError(f"{machine}: {sentence}")"""
 reddens = [
-  "tests/config/test_owner.py::test_refuse_notes_what_note_notes_in_a_file_that_loads[unknown-key]",
+  "tests/config/test_owner.py::test_strict_notes_what_a_session_notes_in_a_file_that_loads[unknown-key]",
   "tests/memory/test_owner_budgets.py::test_a_command_reads_past_a_machine_file_key_it_cannot_use_and_says_so[gate-budget]",
 ]
 
@@ -3830,6 +3888,7 @@ before = '        print(f"stayfixed: {note}", file=sys.stderr)'
 after = "        pass"
 reddens = [
   "tests/memory/test_owner_budgets.py::test_a_command_reads_past_a_machine_file_key_it_cannot_use_and_says_so[gate-budget]",
+  "tests/test_command.py::test_a_command_says_a_machine_file_note_once_however_many_documents_it_loads[gate]",
 ]
 
 # A guard is on until the owner switches it off: off by default, it would be off on every machine
@@ -3866,8 +3925,8 @@ reddens = [
 [[mutation]]
 name = "the preset's personal values win over the machine file's"
 file = "src/stayfixed/config/owner.py"
-before = "    resolution = resolve([Layer(LayerName.PRESET, lower), Layer(LayerName.MACHINE_FILE, upper)])"
-after = "    resolution = resolve([Layer(LayerName.MACHINE_FILE, lower), Layer(LayerName.PRESET, upper)])"
+before = "    layers = [Layer(LayerName.PRESET, lower), Layer(LayerName.MACHINE_FILE, dict(upper))]"
+after = "    layers = [Layer(LayerName.MACHINE_FILE, lower), Layer(LayerName.PRESET, dict(upper))]"
 reddens = ["tests/config/test_owner.py::test_the_machine_files_personal_values_win"]
 
 # A session budget is the owner's only where the machine file set it.
@@ -4778,27 +4837,56 @@ reddens = [
   "tests/trust/test_record.py::test_the_sandbox_sentence_says_what_a_person_in_their_own_terminal_meets",
 ]
 
-# One reader of the machine file for every load (`loader._built`): a command folds the owner's layer
-# a session folds, read under `Unknown.REFUSE`, so `memory fit`, `memory index` and `doctor` measure
-# one set of session budgets, and a command refuses a machine file that does not load.
+# One reader of the machine file for every load (`loader._built`): a load no command handed a layer
+# folds the owner's layer a session folds, read `strict`, so `memory fit`, `memory index` and
+# `doctor` measure one set of session budgets, and a load refuses a machine file that does not load.
 [[mutation]]
 name = "a command's load reads no machine file for the owner's layer"
 file = "src/stayfixed/config/loader.py"
-before = "                machine or machine_config_path(), preset=preset_name, unknown=Unknown.REFUSE"
-after = "                None, preset=preset_name, unknown=Unknown.REFUSE"
+before = "            resolve_owner(machine or machine_config_path(), preset=preset_name, strict=True)"
+after = "            resolve_owner(None, preset=preset_name, strict=True)"
 reddens = [
   "tests/memory/test_owner_budgets.py::test_a_command_loads_the_session_budgets_the_session_runs_on",
-  "tests/memory/test_owner_budgets.py::test_memory_index_judges_by_the_owners_budget[owner-budget]",
-  "tests/memory/test_owner_budgets.py::test_memory_fit_and_doctor_answer_alike_under_the_owners_budget[owner-raised-budget]",
 ]
 
 [[mutation]]
 name = "a command's load reads the owner's layer as a session does"
 file = "src/stayfixed/config/loader.py"
-before = "                machine or machine_config_path(), preset=preset_name, unknown=Unknown.REFUSE"
-after = "                machine or machine_config_path(), preset=preset_name, unknown=Unknown.NOTE"
+before = "            resolve_owner(machine or machine_config_path(), preset=preset_name, strict=True)"
+after = "            resolve_owner(machine or machine_config_path(), preset=preset_name, strict=False)"
 reddens = [
   "tests/memory/test_owner_budgets.py::test_a_command_refuses_a_machine_file_that_does_not_load",
+]
+
+[[mutation]]
+name = "a load keeps the owner's layer on the preset it was handed"
+file = "src/stayfixed/config/loader.py"
+before = "            else rebased(owner, preset_name)"
+after = "            else owner"
+reddens = [
+  "tests/config/test_owner.py::test_a_load_stands_the_layer_it_is_handed_on_the_documents_preset",
+]
+
+# The command's half of the same reader (`command.command_owner`): the layer every load of a
+# command takes is the machine file's, read `strict`, so the command measures what a session runs
+# on and refuses a file that does not load.
+[[mutation]]
+name = "a command reads no machine file for the owner's layer"
+file = "src/stayfixed/command.py"
+before = "        resolve_owner(machine_config_path() if machine is None else machine, strict=True)"
+after = "        resolve_owner(None, strict=True)"
+reddens = [
+  "tests/memory/test_owner_budgets.py::test_memory_index_judges_by_the_owners_budget[owner-budget]",
+  "tests/memory/test_owner_budgets.py::test_memory_fit_and_doctor_answer_alike_under_the_owners_budget[owner-raised-budget]",
+]
+
+[[mutation]]
+name = "a command reads the owner's layer as a session does"
+file = "src/stayfixed/command.py"
+before = "        resolve_owner(machine_config_path() if machine is None else machine, strict=True)"
+after = "        resolve_owner(machine_config_path() if machine is None else machine, strict=False)"
+reddens = [
+  "tests/test_command.py::test_a_command_refuses_a_machine_file_that_does_not_load",
 ]
 
 # The NOTE retry's bound (`loader.NOTE_REMOVAL_LIMIT`): each removal is a whole build, so a document
@@ -4824,6 +4912,8 @@ before = "    limit = min(NOTE_REMOVAL_LIMIT, NOTE_REBUILT_LIMIT // max(len(text
 after = "    limit = NOTE_REMOVAL_LIMIT"
 reddens = [
   "tests/config/test_loader_note.py::test_a_long_document_is_read_past_fewer_unusable_keys",
+  "tests/config/test_session.py::test_the_densest_file_a_session_reads_is_built_as_often_as_its_length_allows",
+  "tests/hooks/test_floor.py::test_the_densest_file_a_session_reads_never_outlasts_the_hook",
 ]
 
 # A session reads `stayfixed.toml` to `session.SESSION_READ_LIMIT` and no further, so what its parse
@@ -4853,6 +4943,80 @@ file = "src/stayfixed/trust/boundary.py"
 before = "(deny_rule(named), deny_rule("
 after = "(deny_rule(fsops.resolved(named)), deny_rule("
 reddens = ["tests/setup/test_approval_boundary.py::test_a_linked_machine_directory_gets_a_rule_for_each_spelling"]
+
+# A relative `--machine` names a relative directory, and one leading slash anchors a rule at the
+# working directory: the rule is over the directory made absolute.
+[[mutation]]
+name = "the approval boundary is anchored at the working directory for a relative --machine"
+file = "src/stayfixed/trust/boundary.py"
+before = "    named = record.parent.absolute()"
+after = "    named = record.parent"
+reddens = [
+  "tests/setup/test_approval_boundary.py::test_a_relative_machine_and_home_are_advised_as_absolute_paths[bare-name]",
+  "tests/setup/test_approval_boundary.py::test_a_relative_machine_and_home_are_advised_as_absolute_paths[subdirectory]",
+]
+
+# The managed settings file and the sandbox keys the advice names, held by literals in the tests
+# rather than by the constants themselves: the paths Claude Code reads on each platform, the
+# sentence for a platform where none was measured, and the recipe's keys and values.
+[[mutation]]
+name = "the advice names another macOS managed settings file"
+file = "src/stayfixed/trust/boundary.py"
+before = '        "darwin": Path("/Library/Application Support/ClaudeCode/managed-settings.json"),'
+after = '        "darwin": Path("/Library/WRONG/managed-settings.json"),'
+reddens = ["tests/setup/test_approval_boundary.py::test_the_managed_settings_file_is_the_documented_path_on_each_platform[darwin]"]
+
+[[mutation]]
+name = "the advice names another Linux managed settings file"
+file = "src/stayfixed/trust/boundary.py"
+before = '        "linux": Path("/etc/claude-code/managed-settings.json"),'
+after = '        "linux": Path("/etc/claude-code/WRONG/managed-settings.json"),'
+reddens = ["tests/setup/test_approval_boundary.py::test_the_managed_settings_file_is_the_documented_path_on_each_platform[linux]"]
+
+[[mutation]]
+name = "the advice names managed settings on the host's platform only"
+file = "src/stayfixed/trust/boundary.py"
+before = "    managed = MANAGED_SETTINGS.get(sys.platform if platform is None else platform)"
+after = "    managed = MANAGED_SETTINGS.get(sys.platform)"
+reddens = [
+  "tests/setup/test_approval_boundary.py::test_the_managed_settings_file_is_the_documented_path_on_each_platform[darwin]",
+  "tests/setup/test_approval_boundary.py::test_the_managed_settings_file_is_the_documented_path_on_each_platform[linux]",
+]
+
+[[mutation]]
+name = "the advice names no managed settings file where none was measured"
+file = "src/stayfixed/trust/boundary.py"
+before = 'NO_MANAGED_PATH = "the managed settings file"'
+after = 'NO_MANAGED_PATH = ""'
+reddens = ["tests/setup/test_approval_boundary.py::test_the_managed_settings_file_is_the_documented_path_on_each_platform[unmeasured]"]
+
+[[mutation]]
+name = "the advice names a missing managed settings file as None"
+file = "src/stayfixed/trust/boundary.py"
+before = "    return NO_MANAGED_PATH if managed is None else str(managed)"
+after = "    return str(managed)"
+reddens = ["tests/setup/test_approval_boundary.py::test_the_managed_settings_file_is_the_documented_path_on_each_platform[unmeasured]"]
+
+[[mutation]]
+name = "the advice turns the sandbox off"
+file = "src/stayfixed/trust/boundary.py"
+before = 'SANDBOX_ON = "sandbox.enabled = true"'
+after = 'SANDBOX_ON = "sandbox.enabled = false"'
+reddens = ["tests/setup/test_approval_boundary.py::test_the_sandbox_settings_are_the_documented_keys_and_values"]
+
+[[mutation]]
+name = "the advice lets Claude Code start without the sandbox"
+file = "src/stayfixed/trust/boundary.py"
+before = "sandbox.failIfUnavailable = true and"
+after = "sandbox.failIfUnavailable = false and"
+reddens = ["tests/setup/test_approval_boundary.py::test_the_sandbox_settings_are_the_documented_keys_and_values"]
+
+[[mutation]]
+name = "the advice lets a command run outside the sandbox"
+file = "src/stayfixed/trust/boundary.py"
+before = 'sandbox.allowUnsandboxedCommands = false"'
+after = 'sandbox.allowUnsandboxedCommands = true"'
+reddens = ["tests/setup/test_approval_boundary.py::test_the_sandbox_settings_are_the_documented_keys_and_values"]
 
 # `trust list` and `trust revoke` describe a checkout as a session reads it, so a file a session
 # reads past cannot hide or keep a live approval; a revoke whose kind cannot describe the

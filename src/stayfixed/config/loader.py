@@ -1,11 +1,12 @@
 """Read stayfixed.toml, merge it under the preset, validate it.
 
-The machine owner's layer is merged too (`config.owner`): read here under `Unknown.REFUSE` when the
-caller hands none in, so every command runs on the personal values and session budgets a session
-runs on, refuses a machine file that does not load and says on stderr what it read past in one
-that does; or handed in, read once by a caller that must
-go on (`config.session`). `loads` refuses what it cannot use; `loads_noting` reads what it can and
-says what it ignored or reset. What the two loaders share is `config.reading`'s.
+The machine owner's layer is merged too (`config.owner`), so every command runs on the personal
+values and session budgets a session runs on: handed in, read once by the command, which says on
+stderr what it read past (`command.command_owner`), or by a caller that must go on
+(`config.session`); or, when the caller hands none in, read here, `strict`, refusing a machine file
+that does not load and saying nothing of what it read past in one that does. `loads` refuses what
+it cannot use; `loads_noting` reads what it can and says what it ignored or reset. What the two
+loaders share is `config.reading`'s.
 """
 
 from __future__ import annotations
@@ -26,14 +27,13 @@ from stayfixed.config.classes import (
     resolve,
 )
 from stayfixed.config.machine import machine_config_path
-from stayfixed.config.owner import Owner, resolve_owner, said_on_stderr
+from stayfixed.config.owner import Owner, rebased, resolve_owner
 from stayfixed.config.paths import PathEscape, contained, validate_path_values, validate_paths
 from stayfixed.config.reading import (
     NOT_UTF8,
     UNPARSEABLE,
     UNREADABLE,
     ConfigError,
-    Unknown,
     coerced,
     positive,
     schema_types,
@@ -119,11 +119,16 @@ NOTE_REMOVAL_LIMIT = 64
 # 50,000 custom gates that run beside 64 that cannot, a 1.4 MB file, took a session six seconds
 # within the count alone, 64 builds each over every gate. So a document is read past only as many
 # removals as this divided by its length allows, and never more than `NOTE_REMOVAL_LIMIT`: 64 for
-# any document up to 64 KiB, which is a hundred times a `stayfixed.toml` that `init` writes, and 4
-# for the longest a session reads (`session.SESSION_READ_LIMIT`, 1 MiB). With the parse, the worst
-# document a session reads costs it about 5 MiB of building, a fraction of a second. No shipped
-# file states it.
-NOTE_REBUILT_LIMIT = 4 * 1024 * 1024
+# any document up to 16 KiB, still many times a `stayfixed.toml` that `init` writes, and 4 for the
+# longest a session reads (`session.SESSION_READ_LIMIT`, 256 KiB), so a session builds at most
+# about 1.25 MiB of any document it reads. The costliest is that longest one filled with dotted
+# custom gates that run (`g1.run = [""]`, the most gates to the byte) beside keys that fail only
+# once every gate is built, four `[paths]` values that escape: parsed and built five times, it
+# took 0.25 s of CPU on Python 3.13 and 0.28 s on 3.11.4 on a laptop's performance cores, and 1.4
+# to 1.5 s on its efficiency cores (`taskpolicy -c background`). With this at 4 MiB and the read
+# at 1 MiB, the same shape a mebibyte long took 1.2 s, 1.9 s and 6.1 to 7.5 s, which a slower
+# machine would have carried past a hook's ten seconds. No shipped file states it.
+NOTE_REBUILT_LIMIT = 1024 * 1024
 TOO_MANY_RESETS = (
     "{path} holds more than {limit} settings this stayfixed cannot use, so it is not read key "
     "by key"
@@ -458,7 +463,7 @@ def _budgets(raw: dict[str, Any], preset: dict[str, Any], owner: Owner | None) -
     return Budgets(preset=dict(preset["budgets"]), configured={**configured, **session})
 
 
-def load(root: Path, *, machine: Path | None = None) -> Config:
+def load(root: Path, *, machine: Path | None = None, owner: Owner | None = None) -> Config:
     """Read `stayfixed.toml` under the preset, and the owner's layer out of the machine file.
 
     With no `machine`, the machine file is `config.machine.machine_config_path`'s, the one file
@@ -470,10 +475,10 @@ def load(root: Path, *, machine: Path | None = None) -> Config:
     path a person typed rather than one an environment chose.
 
     **One reader of the machine file.** The owner's layer is `config.owner.resolve_owner`'s, read
-    under `Unknown.REFUSE` over the document's preset, as a session reads it under `NOTE`
-    (`config.session`): the same `[personal]`, `[guards]` and session `[budgets]`, so a command
-    measures what a session runs on. It refuses a machine file that does not load, and reads past a
-    key it cannot use, as a session does, saying so on stderr (`config.owner.said_on_stderr`).
+    `strict` over the document's preset, as a session reads it without (`config.session`): the
+    same `[personal]`, `[guards]` and session `[budgets]`, so a command measures what a session
+    runs on. It refuses a machine file that does not load, and reads past a key it cannot use, as
+    a session does. A command hands in the layer it resolved and said once (`loads`' `owner`).
 
     **One reader of the file.** Through `read_document`, which goes through `contained()`: a
     `stayfixed.toml` that is a symlink is refused by every command, as `stayfixed gate` refuses
@@ -483,7 +488,7 @@ def load(root: Path, *, machine: Path | None = None) -> Config:
     text = read_document(root)
     if text is None:
         raise ConfigError(NOT_THERE.format(path=root / CONFIG_FILE))
-    return loads(text, root, machine=machine)
+    return loads(text, root, machine=machine, owner=owner)
 
 
 def read_document(root: Path, *, limit: int | None = None) -> str | None:
@@ -529,10 +534,12 @@ def loads(
     its machine file came from — a gate, handed `(root, config, base)` — loads a second
     document with it, and so reads no machine file but the one the command was given. Given
     both, `personal` wins and `machine` is never read. `owner` is the machine owner's layer
-    (`config.owner.resolve_owner`), read once by the caller: its `personal` stands in for the
-    machine file's, as `personal` does, and its session budgets are folded into `[budgets]` as
-    configured values that win over the document's. Every argument after `root` is
-    keyword-only.
+    (`config.owner.resolve_owner`), read once by the caller and stood on the document's preset
+    (`config.owner.rebased`): its `personal` stands in for the machine file's, as `personal` does,
+    and its session budgets are folded into `[budgets]` as configured values that win over the
+    document's; a command resolves it once, saying its notes there (`command.command_owner`), and
+    hands it to every load it makes, so a note is said once a command and never once a document.
+    Every argument after `root` is keyword-only.
     """
     path = label or root / CONFIG_FILE
     raw = _parsed(text, path)
@@ -610,15 +617,16 @@ def _built(
     )
     caps = _build(NativeCaps, "native_caps", dict(preset["native_caps"]))
     if personal is None:
-        if owner is None:
-            # The owner's layer a session folds in, read here under `REFUSE`, which refuses only a
-            # file that does not load: one reader of the machine file for every load, so a command
-            # and a session never run on two sets of budgets.
-            owner = said_on_stderr(
-                resolve_owner(
-                    machine or machine_config_path(), preset=preset_name, unknown=Unknown.REFUSE
-                )
-            )
+        # The owner's layer a session folds in: one reader of the machine file for every load, so a
+        # command and a session never run on two sets of budgets. Handed in, it is stood on this
+        # document's preset; otherwise read here, `strict`, which refuses only a file that does
+        # not load, and said nowhere: saying it is the command's, once (`command.command_owner`),
+        # and said here it was said once a document, three times in one `gate`.
+        owner = (
+            resolve_owner(machine or machine_config_path(), preset=preset_name, strict=True)
+            if owner is None
+            else rebased(owner, preset_name)
+        )
         personal = owner.personal
     config = Config(
         stayfixed=stayfixed,
@@ -660,7 +668,8 @@ def loads_noting(
     label: str | None = None,
     parsed: dict[str, Any] | None = None,
 ) -> Noted:
-    """`loads` under `Unknown.NOTE`: read what the document holds that this stayfixed can use.
+    """`loads`, noting rather than refusing: read what the document holds that this stayfixed can
+    use.
 
     For a reader that must go on, a session above all, where one name a newer release added or
     one value nobody can use would otherwise cost every setting the project made. An unknown

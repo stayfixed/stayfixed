@@ -14,9 +14,21 @@ from pathlib import Path
 
 import pytest
 
-from stayfixed.config.session import FALLBACK_WARNING, cause
+from stayfixed.config.session import (
+    FALLBACK_WARNING,
+    SESSION_READ_LIMIT,
+    TOO_LARGE_WARNING,
+    cause,
+)
 from stayfixed.doctor.api import NO_CONFIG_SKIP, OK, RED, SKIP, WARN, Check, run_checks
-from stayfixed.doctor.checks import NAMES_SHOWN, NOT_INITIALISED, NOTED, UNPRINTABLE_KEY
+from stayfixed.doctor.checks import (
+    FALLBACK_REMEDY,
+    NAMES_SHOWN,
+    NOT_INITIALISED,
+    NOTED,
+    TOO_LARGE_REMEDY,
+    UNPRINTABLE_KEY,
+)
 from stayfixed.printed import CLIPPED_CHARS, clipped
 from tests.crafted import assert_never_raw
 from tests.doctor.test_checks import LOCAL_ONLY, _attached, _initialised, _machine
@@ -125,6 +137,24 @@ def test_a_whole_fallback_is_red(tmp_path: Path) -> None:
     assert row(report, "cli-path").detail != NO_CONFIG_SKIP
 
 
+def test_a_file_longer_than_a_session_reads_is_red_with_a_remedy_of_its_own(
+    tmp_path: Path,
+) -> None:
+    # A file past the session's read limit is no file a command refuses: `stayfixed docs check`
+    # reads it to the command's own bound, loads it and exits 0, so the remedy every other whole
+    # fallback gets sent the owner to a command that finds nothing. The remedy is to shorten it,
+    # below the limit the session's own constant states. Mutation (`mutations/`'s "a stayfixed.toml
+    # longer than a session reads is sent to docs check"): `FALLBACK_REMEDY`.
+    root = _initialised(tmp_path, template=LOCAL_ONLY)
+    document = root / "stayfixed.toml"
+    text = document.read_text(encoding="utf-8")
+    document.write_text(text + "#" + "x" * (SESSION_READ_LIMIT - len(text)) + "\n", "utf-8")
+    checked = row(run_checks_for(tmp_path, root, machine=none(tmp_path)), "not-initialised")
+    assert (checked.status, checked.detail) == (RED, cause(TOO_LARGE_WARNING))
+    assert checked.remedy == TOO_LARGE_REMEDY != FALLBACK_REMEDY
+    assert f"{SESSION_READ_LIMIT:,} bytes" in checked.remedy
+
+
 def test_preferences_names_the_layer_and_hides_free_text(tmp_path: Path) -> None:
     # Each owner key and each preference as `key (layer)`, with a value only where it is one of
     # stayfixed's own words, a number or a boolean: `index_extra` and `reply_language` are text a
@@ -173,12 +203,14 @@ def test_preferences_with_no_stayfixed_toml_are_the_presets(tmp_path: Path) -> N
 
 
 def test_preferences_warn_of_a_machine_file_that_could_not_be_used(tmp_path: Path) -> None:
-    # The session's warning names the machine file and sends the owner here. Mutation
-    # (`mutations/`'s "the preferences row says nothing of the machine file's notes"): green.
+    # The session's warning names the machine file and sends the owner here. A file that loads,
+    # with a key this stayfixed does not read: what a command and a session both read past is a
+    # warning, and only a file that does not load is red. Mutation (`mutations/`'s "the
+    # preferences row says nothing of the machine file's notes"): green.
     root = tmp_path / "project"
     root.mkdir()
     machine = tmp_path / "machine.toml"
-    machine.write_text("[guards\n", encoding="utf-8")
+    machine.write_text("[guards]\nfuture = 1\n", encoding="utf-8")
     checked = row(run_checks_for(tmp_path, root, machine=machine), "preferences")
     assert checked.status == WARN
     assert str(machine) in checked.detail

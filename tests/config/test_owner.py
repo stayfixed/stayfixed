@@ -3,8 +3,10 @@ file's `[personal]`, `[guards]` and session `[budgets]` (`src/stayfixed/config/o
 
 from __future__ import annotations
 
+import copy
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -18,9 +20,10 @@ from stayfixed.config.owner import (
     NOT_A_TABLE,
     UNKNOWN_KEY,
     Guards,
+    rebased,
     resolve_owner,
 )
-from stayfixed.config.reading import MachineConfigError, Unknown, read_machine_toml
+from stayfixed.config.reading import MachineConfigError, read_machine_toml
 from stayfixed.config.schema import Personal
 from stayfixed.presets import load_preset
 from stayfixed.printed import clipped
@@ -182,13 +185,17 @@ def test_a_broken_machine_file_is_the_preset_and_names_the_file(tmp_path: Path) 
     assert got.personal == preset_personal() and got.guards == Guards()
     assert got.notes == (MACHINE_FILE_NOTE.format(error=raised.value),)
     assert str(path) in got.notes[0]
+    # Kept as the refusal's own words, so `doctor` can say the file every command refuses, red,
+    # rather than one note of a file it read past. Mutation (`mutations/`'s "the owner's layer
+    # forgets that the machine file did not load"): `None`.
+    assert got.unloaded == str(raised.value)
 
 
-def test_refuse_raises_for_a_broken_machine_file(tmp_path: Path) -> None:
-    # Mutation (`mutations/`'s "a broken machine file raises under NOTE"): the NOTE arm re-raises
-    # and the test above reddens; this one holds the REFUSE arm.
+def test_strict_raises_for_a_broken_machine_file(tmp_path: Path) -> None:
+    # Mutation (`mutations/`'s "a broken machine file raises for a reader that must go on"): the
+    # session's arm re-raises and the test above reddens; this one holds the command's.
     with pytest.raises(MachineConfigError, match=r"is not valid TOML"):
-        resolve_owner(machine_file(tmp_path, "[[["), unknown=Unknown.REFUSE)
+        resolve_owner(machine_file(tmp_path, "[[["), strict=True)
 
 
 @pytest.mark.parametrize(
@@ -201,14 +208,67 @@ def test_refuse_raises_for_a_broken_machine_file(tmp_path: Path) -> None:
     ],
     ids=["unknown-key", "gate-budget", "invalid-value", "not-a-table"],
 )
-def test_refuse_notes_what_note_notes_in_a_file_that_loads(tmp_path: Path, text: str) -> None:
-    # `REFUSE` refuses only a file that does not load: in one that does, what the owner wrote and
+def test_strict_notes_what_a_session_notes_in_a_file_that_loads(tmp_path: Path, text: str) -> None:
+    # `strict` refuses only a file that does not load: in one that does, what the owner wrote and
     # this stayfixed cannot use costs its key, with the note a session gets. Mutation
     # (`mutations/`'s "the owner's layer refuses a key it cannot use in a file that loads"): each
     # case raises.
     path = machine_file(tmp_path, text)
-    got = resolve_owner(path, unknown=Unknown.REFUSE)
+    got = resolve_owner(path, strict=True)
     assert got.notes and got == resolve_owner(path)
+    assert got.unloaded is None
+
+
+def _second_preset(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every preset name but `recommended` loads as `recommended` with another
+    `artifact_language`, in both readers of a preset a load asks: the project loader's and the
+    owner's layer's."""
+    from stayfixed import presets
+    from stayfixed.config import loader
+
+    real = presets.load_preset
+
+    def load(name: str, *, key: str = "[stayfixed] preset") -> dict[str, Any]:
+        preset = copy.deepcopy(real("recommended", key=key))
+        if name != "recommended":
+            preset["defaults"]["personal"]["artifact_language"] = "de"
+        return preset
+
+    monkeypatch.setattr(loader, "load_preset", load)
+    monkeypatch.setattr(owner, "load_preset", load)
+
+
+def test_the_owners_layer_stands_on_another_preset_without_reading_the_file_again(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A command resolves the layer once, before it reads a document, and a document may name
+    # another preset than the one it was resolved over: the machine file's values stand on that
+    # preset's defaults, as a layer resolved over it would, and its notes are not said again.
+    # Mutation (`mutations/`'s "a command's owner layer stays on the preset it was resolved
+    # over"): the other preset's `artifact_language` never arrives.
+    _second_preset(monkeypatch)
+    path = machine_file(tmp_path, '[personal]\nreply_language = "ru"\n[guards]\nfuture = 1\n')
+    got = resolve_owner(path)
+    path.unlink()
+    moved = rebased(got, "other")
+    assert (moved.preset, moved.personal.artifact_language) == ("other", "de")
+    assert moved.personal.reply_language == "ru" and moved.notes == got.notes
+    assert rebased(got, "recommended") is got
+
+
+def test_a_load_stands_the_layer_it_is_handed_on_the_documents_preset(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `loads(owner=...)` is how a command hands every load the one layer it resolved, over the
+    # default preset. Mutation (`mutations/`'s "a load keeps the owner's layer on the preset it was
+    # handed"): the document's preset is not the layer's, and the default's value stands.
+    from stayfixed.config.loader import loads
+
+    _second_preset(monkeypatch)
+    path = machine_file(tmp_path, '[personal]\nreply_language = "ru"\n')
+    document = '[stayfixed]\nversion = "0.1.0"\npreset = "other"\n\n[project]\nname = "sample"\n'
+    config = loads(document, tmp_path, owner=resolve_owner(path))
+    assert (config.personal.artifact_language, config.personal.reply_language) == ("de", "ru")
 
 
 def test_write_machine_keeps_the_owners_guards_and_budgets(tmp_path: Path) -> None:

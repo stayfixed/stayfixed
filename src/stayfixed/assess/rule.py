@@ -27,11 +27,11 @@ repository is the machine's (`/tmp` on macOS, a symlinked home) and is admitted.
 derives, key by dotted key: each budget by its effective value, each custom gate as one key per
 field. A comment, a key spelled out at its default, a reordered `enforced` or `[gates] builtin`
 and `installed` beside a list that says the same are therefore no change. Every changed key gets
-one verdict, and a key's class (`config.classes`) is asked first: a preference, a session's
-parameter, the machine owner's key and the plugin's are neutral, because no gate judges a pull
-request by them. The change may enforce more gates and move its state forward (`initialised`,
-`adopting`, `installed`); add a gate, and drop or re-command one the base does not enforce; lower
-a gate's budget, which the base branch may set above the preset or below it; and add to
+one verdict, and a key's class (`config.classes`) is asked first: a preference, the machine
+owner's key and the plugin's are neutral, because no gate judges a pull request by them. The
+change may enforce more gates and move its state forward (`initialised`, `adopting`,
+`installed`); add a gate, and drop or re-command one the base does not enforce; lower a budget, a
+gate's or a session's, which the base branch may set above the preset or below it; and add to
 `[ledger] code_roots` and `evidence_boundary_required_for`. The preset's name, the harnesses and
 the project's name are neutral too, because no gate reads them; every value a preset switch moves
 is judged by its own key. The
@@ -63,6 +63,7 @@ from stayfixed.committed import (
 )
 from stayfixed.config.classes import KeyClass, class_of
 from stayfixed.config.loader import CONFIG_FILE, loads
+from stayfixed.config.owner import Owner
 from stayfixed.config.reading import NOT_UTF8
 from stayfixed.config.schema import STATES, Budgets, Config, CustomGate
 from stayfixed.errors import Failure, Refusal
@@ -294,18 +295,19 @@ ROWS: Mapping[str, Row] = {
     "stayfixed.agents": _neutral,
     "project.name": _neutral,
 }
-# A gate's budget is the only `budgets.*` key this reaches: a session's is neutral by its class.
+# Every budget, a gate's and a session's: a session's bounds what a session loads, and a gate
+# the base enforces may read it (`stayfixed memory index --check`), so a pull request that raised
+# one would loosen the gate that judges it.
 PREFIX_ROWS: tuple[tuple[str, Row], ...] = (
     ("budgets.", _budget),
     ("gates.custom.", _custom_gate),
 )
 # The classes no gate judges a pull request by. `personal.*` and `native_caps.*` reach a `Config`
 # from the machine file and the preset, which both sides share, so either moves only with a
-# preset switch; a preference and a session's parameter are what the repository may choose.
+# preset switch; a preference is what the repository may choose.
 _NEUTRAL_CLASSES = frozenset(
     {
         KeyClass.PREFERENCE,
-        KeyClass.SESSION_PARAMETER,
         KeyClass.MACHINE_ONLY,
         KeyClass.PLUGIN_OWNED,
     }
@@ -354,14 +356,15 @@ def _values(config: Config) -> dict[str, object]:
 
 
 def read_base_gates(
-    root: Path, base: str, *, branch: str, machine: Path | None
+    root: Path, base: str, *, branch: str, machine: Path | None, owner: Owner | None = None
 ) -> Mapping[str, CustomGate]:
     """The base's custom gates by name, loaded as `judge` loads the base's copy; none when the
-    base has no `stayfixed.toml` at the project's path. Raises as `read_base` and the loader do."""
+    base has no `stayfixed.toml` at the project's path. Raises as `read_base` and the loader do.
+    `owner` is the owner's layer the command already resolved (`loads`' own)."""
     text = read_base(root, base, branch=branch)
     if text is None:
         return {}
-    config = loads(text, root, machine=machine, label=BASE_COPY)
+    config = loads(text, root, machine=machine, label=BASE_COPY, owner=owner)
     return config.gates.custom
 
 
@@ -374,6 +377,7 @@ def judge(
     running: str,
     workflow_sha: str | None,
     released: Callable[[str], bool | None],
+    owner: Owner | None = None,
 ) -> ConfigVerdict:
     """The tree's `stayfixed.toml` judged against the base's, key by derived key.
 
@@ -381,13 +385,14 @@ def judge(
     command would read: a comment, a key spelled at its default and a reordered list are no
     change. `base_text` is `None` for the bootstrap, where the tree decides. The run uses the
     tree's configuration unless something was refused, then the base's; it enforces what either
-    side enforces.
+    side enforces. `owner` is the owner's layer the command already resolved, which both loads
+    take, so the machine file is read once and its notes are said once (`loads`' own).
     """
-    tree = loads(tree_text, root, machine=machine)
+    tree = loads(tree_text, root, machine=machine, owner=owner)
     if base_text is None:
         return ConfigVerdict(None, (), tree, tree.stayfixed.enforcing)
     try:
-        base = loads(base_text, root, machine=machine, label=BASE_COPY)
+        base = loads(base_text, root, machine=machine, label=BASE_COPY, owner=owner)
     except Failure as exc:
         # Never the bootstrap: read as "no copy", the change would decide its own configuration.
         # The machine file is not the base's: both sides read it, and the tree's load above has

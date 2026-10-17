@@ -1,21 +1,28 @@
 """What keeps an agent from writing the trust record itself, which is the harness's to keep.
 
-An approval holds against repository bytes: a clone, a pull, a pull request cannot write
-`trust.json`, which lies under the home the password database records, outside every repository.
-Against an agent whose shell can write that file, it holds nothing: the terminal check `trust
-approve` makes is a speed bump (`kinds`' docstring says why), and stayfixed neither enforces nor
-checks anything stronger. What stops such an agent is the harness's own sandbox, configured by the
-person: under Claude Code, its sandbox, which confines what the shell tool writes, and a
-`permissions.deny` rule over the record's directory, which the sandboxed shell and the file tools
-both honour. `setup --approval-boundary` prints both for the person to set, and writes nothing.
-This module holds the spellings it prints, and nothing here reads or writes a file.
+An approval holds against repository bytes: stayfixed never writes `trust.json` from them, and a
+clone, a pull or a pull request does not reach it, since it lies under the home the password
+database records, outside every repository. A repository whose hooks the harness runs (a committed
+`.claude/settings.json` hook in a folder the person trusted) is code running as that person, and
+writes any file they can, the record included. Against an agent whose shell can write that file,
+an approval holds nothing: the terminal check `trust approve` makes is a speed bump (`kinds`'
+docstring says why), and stayfixed neither enforces nor checks anything stronger. What stops such
+an agent is the harness's own sandbox, configured by the person: under Claude Code, its sandbox,
+which confines what the shell tool writes, and a `permissions.deny` rule over the record's
+directory, which the sandboxed shell and the file tools both honour. `setup --approval-boundary`
+prints both for the person to set, and writes nothing. This module holds the spellings it prints,
+and nothing here reads or writes a file.
 
 Every literal below was measured on Claude Code 2.1.296 (macOS) on 2026-10-16; the record is the
 findings at the end of the 2026-10-15 floor, layers and trust plan in `docs/plans/`.
 
 - **The sandbox.** A project's `.claude/settings.json` or `.claude/settings.local.json` setting
-  `sandbox.enabled = false` turns a user's `sandbox.enabled = true` off for that project. Only
-  managed settings make the sandbox admin-required, and then a repository's `false` is ignored.
+  `sandbox.enabled = false` turns a user's `sandbox.enabled = true` off for that project. The
+  sandbox is admin-required, and then a repository's `false` is ignored, where
+  `sandbox.allowUnsandboxedCommands = false` is set in managed settings or, unless managed settings
+  set it `true`, in a file or JSON passed to Claude Code's own `--settings` flag on each start
+  (the sandboxing reference; the flag was read there and not measured). The advice names managed
+  settings, which hold on every start without a flag.
 - **The rule.** `Edit(//<absolute path>/**)` stopped a sandboxed shell write and a file-tool write
   into that directory; one leading slash anchors the path at the working directory and stopped
   neither outside it, and a `Write(...)` rule stopped neither in any spelling.
@@ -79,8 +86,13 @@ def deny_rule(directory: Path) -> str:
 def record_deny_rules(record: Path) -> tuple[str, ...]:
     """The deny rules over the directory the trust record at `record` is kept in: over it as
     named, and, where a symbolic link makes the two differ, over where it leads, since the harness
-    compares a write against the path it resolves."""
-    named = record.parent
+    compares a write against the path it resolves.
+
+    As named but absolute: a relative `--machine` names a relative directory, which `deny_rule`
+    spelled `Edit(/sub/**)` or `Edit(/./**)`, and one leading slash anchors a rule at the working
+    directory, so the rule pasted into user settings denied a subtree of, or the whole of, every
+    project and not the record's directory."""
+    named = record.parent.absolute()
     return tuple(dict.fromkeys((deny_rule(named), deny_rule(fsops.resolved(named)))))
 
 

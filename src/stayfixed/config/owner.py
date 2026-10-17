@@ -7,14 +7,17 @@ file's `[personal]`, `[guards]` and `[budgets]`, resolved through `classes.resol
 off; a repository's `[guards]` is a layer `classes.ALLOWED` does not admit.
 
 Two readers ask, and they differ only over a file that does not load. A command the owner runs
-refuses it (`Unknown.REFUSE`, which `config.loader` asks for every load of a command), as
-`config.overlay.overlay_root` refuses it; a session must go on (`Unknown.NOTE`), and the preset's
-values stand in, with `MACHINE_FILE_NOTE`. In a file that loads, an unknown key, a gate's budget
-or an unusable value costs that key alone, with a note, for both: what the owner sets is honoured,
-and what this stayfixed cannot use is said and never a block. Refused, a key a later release's
-`setup` writes would stop every older command on the machine — the CLI and the plugin's hooks are
-easily two versions — over a key none of them reads, and no boundary rests on the refusal: no
-repository writes this file. A command says the notes on stderr (`said_on_stderr`). Every
+refuses it (`strict`, which every load of a command asks for), as `config.overlay.overlay_root`
+refuses it; a session must go on, and the preset's values stand in, with `MACHINE_FILE_NOTE`, and
+the refusal is kept (`Owner.unloaded`), so `doctor` can say that every command refuses the file
+the session read past. In a file that loads, an unknown key, a gate's budget or an unusable value
+costs that key alone, with a note, for both: what the owner sets is honoured, and what this
+stayfixed cannot use is said and never a block. Refused, a key a later release's `setup` writes
+would stop every older command on the machine — the CLI and the plugin's hooks are easily two
+versions — over a key none of them reads, and no boundary rests on the refusal: no repository
+writes this file. A command says the notes on stderr (`said_on_stderr`), once, where it resolves
+the layer, and hands that layer to every load it makes (`rebased` stands it on the preset each
+document names), so the machine file is read once a command and no note is said twice. Every
 sentence names the file and the key — the key through `printed.clipped`, since a TOML key is any
 quoted text — and never a value.
 """
@@ -23,7 +26,7 @@ from __future__ import annotations
 
 import sys
 from collections.abc import Mapping
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, field, fields, replace
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, cast
@@ -32,7 +35,6 @@ from stayfixed.config.classes import GATE_BUDGETS, Layer, LayerName, resolve
 from stayfixed.config.reading import (
     ConfigError,
     MachineConfigError,
-    Unknown,
     coerced,
     read_machine_toml,
     schema_types,
@@ -60,6 +62,15 @@ class Owner:
     session_budgets: Mapping[str, int]
     provenance: Mapping[str, LayerName]
     notes: tuple[str, ...]
+    # The preset the values stand on, and what the machine file set that this stayfixed can use,
+    # as dotted keys: what `rebased` stands on another preset without reading the file again.
+    preset: str = DEFAULT_PRESET
+    # A factory, since Python 3.11 refuses an unhashable default on a dataclass field.
+    layer: Mapping[str, object] = field(default_factory=lambda: MappingProxyType({}))
+    # `read_machine_toml`'s refusal of a machine file that does not load, which names the file and
+    # the parser's position or the error's class and never the file's text; `None` for a file
+    # that loads or is not there. Only a reader that is not `strict` gets an `Owner` with one.
+    unloaded: str | None = None
 
 
 # A machine file that does not load. `error` is `read_machine_toml`'s refusal, which names the file
@@ -83,9 +94,13 @@ def resolve_owner(
     machine: Path | None,
     *,
     preset: str = DEFAULT_PRESET,
-    unknown: Unknown = Unknown.NOTE,
+    strict: bool = False,
 ) -> Owner:
     """The owner's layer over the preset named `preset`.
+
+    `strict` is a command's: a machine file that does not load raises `MachineConfigError`.
+    Otherwise, a session's, it is read as no file, with `MACHINE_FILE_NOTE` and `Owner.unloaded`.
+    In a file that loads, both read past what they cannot use alike, with a note.
 
     `preset` is a preset this build ships, and every caller holds it to that before it asks: the
     project loader hands the name its own `_preset` has already loaded, and a session the
@@ -95,25 +110,46 @@ def resolve_owner(
     (`machine_config_path`), is read as no file, as an absent file is.
     """
     notes: list[str] = []
+    unloaded: str | None = None
+    try:
+        raw = None if machine is None else read_machine_toml(machine)
+    except MachineConfigError as exc:
+        if strict:
+            raise
+        raw, unloaded = None, str(exc)
+        notes.append(MACHINE_FILE_NOTE.format(error=exc))
+    upper: dict[str, object] = {}
+    if raw is not None and machine is not None:
+        upper = _machine_values(raw, machine, notes)
+    owner = _over(upper, preset, unloaded)
+    return replace(owner, notes=(*notes, *owner.notes))
+
+
+def rebased(owner: Owner, preset: str) -> Owner:
+    """`owner` stood on the preset named `preset`: the machine file's values it holds over that
+    preset's defaults, and its own notes, the file not read again.
+
+    How a command that resolved the owner's layer once, before it read a document, loads a
+    document naming another preset: the personal values a preset sets fall back to that preset's,
+    as they would had the layer been resolved over it, and nothing is said twice. `preset` is one
+    this build ships, as `resolve_owner`'s is.
+    """
+    if preset == owner.preset:
+        return owner
+    return replace(_over(owner.layer, preset, owner.unloaded), notes=owner.notes)
+
+
+def _over(upper: Mapping[str, object], preset: str, unloaded: str | None) -> Owner:
+    """The machine file's usable values `upper` over the preset named `preset`, with the notes
+    `classes.resolve` gives them."""
     shipped = load_preset(preset)
     lower: dict[str, object] = {
         f"personal.{key}": value
         for key, value in shipped.get("defaults", {}).get("personal", {}).items()
     }
-    lower.update({f"guards.{field.name}": field.default for field in fields(Guards)})
-
-    try:
-        raw = None if machine is None else read_machine_toml(machine)
-    except MachineConfigError as exc:
-        if unknown is Unknown.REFUSE:
-            raise
-        raw = None
-        notes.append(MACHINE_FILE_NOTE.format(error=exc))
-    upper: dict[str, object] = {}
-    if raw is not None and machine is not None:
-        upper = _machine_values(raw, machine, notes)
-
-    resolution = resolve([Layer(LayerName.PRESET, lower), Layer(LayerName.MACHINE_FILE, upper)])
+    lower.update({f"guards.{item.name}": item.default for item in fields(Guards)})
+    layers = [Layer(LayerName.PRESET, lower), Layer(LayerName.MACHINE_FILE, dict(upper))]
+    resolution = resolve(layers)
     values = resolution.values
     personal = Personal(**_section(values, "personal"))
     guards = Guards(**_section(values, "guards"))
@@ -129,13 +165,17 @@ def resolve_owner(
         guards=guards,
         session_budgets=MappingProxyType(session_budgets),
         provenance=resolution.provenance,
-        notes=(*notes, *resolution.notes),
+        notes=resolution.notes,
+        preset=preset,
+        layer=MappingProxyType(dict(upper)),
+        unloaded=unloaded,
     )
 
 
 def said_on_stderr(owner: Owner) -> Owner:
     """`owner`, after its notes are said on stderr, one line each: how a command tells its reader
-    what it read past in the machine file, beside an answer on stdout that `--json` keeps whole."""
+    what it read past in the machine file, beside an answer on stdout that `--json` keeps whole.
+    Called by the command layer, once a command (`command.command_owner`), and never by a load."""
     for note in owner.notes:
         print(f"stayfixed: {note}", file=sys.stderr)
     return owner

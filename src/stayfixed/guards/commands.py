@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any
 
 from stayfixed import fsops
 from stayfixed.areas import SubParsers
-from stayfixed.command import common_flags
+from stayfixed.command import command_owner, common_flags
 from stayfixed.config.loader import load
 from stayfixed.errors import Failure, Refusal
 from stayfixed.findings import listed
@@ -139,7 +139,7 @@ def _split_trailing_comment_block(text: str) -> tuple[str, str]:
 def _root_and_config(args: argparse.Namespace) -> tuple[Path, Config]:
     root = Path(args.root).resolve()
     machine = Path(args.machine) if getattr(args, "machine", None) else None
-    return root, load(root, machine=machine)
+    return root, load(root, machine=machine, owner=command_owner(machine))
 
 
 def run_commit_check(args: argparse.Namespace) -> Result:

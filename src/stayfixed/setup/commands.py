@@ -124,10 +124,14 @@ EMPTY_HOME = (
     "to your home directory, or pass --home PATH"
 )
 # `--approval-boundary` writes nothing, so a flag that names something to write has no run to
-# belong to: refused rather than dropped, since a person who typed it expects it done.
+# belong to: refused rather than dropped, since a person who typed it expects it done. `--home`,
+# `--settings` and `--machine` name files too, and are taken: the advice names the user settings
+# file and the trust record's directory as they would be written. `--uninstall` was taken and
+# dropped, exit 0, for a person who asked for a hook to be removed. `--root` is taken and unread:
+# it says only where `--git-hooks` and `--overlay` act, and both are refused here.
 _ADVICE_ALONE = (
     "--approval-boundary prints what to set and writes nothing, so it takes no --preset, "
-    "--overlay, --settings, --yes or --git-hooks; run `stayfixed setup` with those separately"
+    "--overlay, --yes, --git-hooks or --uninstall; run `stayfixed setup` with those separately"
 )
 # What `--approval-boundary` prints: the deny rule over the trust record's directory and the user
 # settings file it belongs in, the setting that turns the sandbox on, and the managed settings that
@@ -143,8 +147,9 @@ BOUNDARY_ADVICE = (
 
 def run_setup(args: argparse.Namespace) -> Result:
     if args.approval_boundary:
-        named = (args.preset, args.overlay, args.settings)
-        if args.git_hooks or args.yes or any(value is not None for value in named):
+        named = (args.preset, args.overlay)
+        switched = (args.yes, args.git_hooks, args.uninstall)
+        if any(switched) or any(value is not None for value in named):
             raise Refusal(_ADVICE_ALONE)
         return run_boundary_advice(args)
     if args.git_hooks:
@@ -174,7 +179,7 @@ def run_setup(args: argparse.Namespace) -> Result:
         yes=args.yes,
         overlay=args.overlay,
         project_root=_root(args.root),
-        settings=Path(args.settings).expanduser() if args.settings else None,
+        settings=_settings(args),
     )
     data = {
         "machine_written": report.machine_written,
@@ -223,9 +228,19 @@ def _home_and_machine(args: argparse.Namespace) -> tuple[Path, Path]:
     return home, machine
 
 
+def _settings(args: argparse.Namespace) -> Path | None:
+    """The user settings file `--settings` names, or `None` for the one under the home, which
+    `setup.run` writes in its place; one reading for the setup and the advice alike."""
+    return Path(args.settings).expanduser() if args.settings else None
+
+
 def run_boundary_advice(args: argparse.Namespace) -> Result:
     """`setup --approval-boundary`: `BOUNDARY_ADVICE` for the trust record beside the machine file
-    and the user settings file under the home, both as `setup` would write them; writes nothing."""
+    and the user settings file `--settings` names or the one under the home, both as `setup` would
+    write them; writes nothing.
+
+    Both are printed absolute: the rule for the reason `record_deny_rules` gives, and the file so
+    that a person who opens it from another directory opens the one meant."""
     from stayfixed.setup.machine import USER_SETTINGS
     from stayfixed.trust.api import (
         ENFORCING_SETTINGS,
@@ -237,8 +252,18 @@ def run_boundary_advice(args: argparse.Namespace) -> Result:
 
     home, machine = _home_and_machine(args)
     # Never `None` beside a machine file, which `_home_and_machine` always names.
-    rules = record_deny_rules(cast(Path, record_path(machine)))
-    settings = home / USER_SETTINGS
+    record = cast(Path, record_path(machine))
+    try:
+        rules = record_deny_rules(record)
+    except OSError as exc:
+        # `fsops.resolved` meets a symbolic-link loop in the directory as an `OSError` on every
+        # interpreter, which would otherwise end in `internal error`.
+        raise Refusal(
+            f"{quoted(str(record.parent))} cannot be checked ({fsops.said(exc)}), so no rule "
+            "for it can be advised"
+        ) from exc
+    given = _settings(args)
+    settings = (home / USER_SETTINGS if given is None else given).absolute()
     summary = BOUNDARY_ADVICE.format(
         rules=" and ".join(rules),
         settings=settings,

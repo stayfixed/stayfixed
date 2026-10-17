@@ -37,7 +37,7 @@ from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
 
 from stayfixed.areas import SubParsers
-from stayfixed.command import DRY_RUN_HELP, common_flags, grammar
+from stayfixed.command import DRY_RUN_HELP, command_owner, common_flags, grammar
 from stayfixed.errors import Refusal
 from stayfixed.findings import listed
 from stayfixed.result import Result
@@ -154,6 +154,7 @@ def run_init(args: argparse.Namespace) -> Result:
         dry_run=args.dry_run,
         ci=args.ci,
         given=_given(args),
+        owner=command_owner(machine),
     )
     once, footprint = render_report(report.once), render_report(report.footprint)
     pin = report.resolution.pin
@@ -278,12 +279,14 @@ def run_upgrade(args: argparse.Namespace) -> Result:
     from stayfixed.runner import subprocess_runner
 
     force = _force_paths(args.force)
+    machine = Path(args.machine) if args.machine else None
     report = upgrade(
         Path(args.root).resolve(),
-        machine=Path(args.machine) if args.machine else None,
+        machine=machine,
         runner=subprocess_runner(),
         dry_run=args.dry_run,
         force=force,
+        owner=command_owner(machine),
     )
     refused = report.refused
     moved = "; ".join(f"[{m.key[0]}] {m.key[1]} {m.before} -> {m.after}" for m in report.moved)
@@ -334,11 +337,13 @@ def run_uninstall(args: argparse.Namespace) -> Result:
     from stayfixed.project.uninstall import KEPT_CONFIG, KEPT_LOCALLY, uninstall
 
     force = _force_paths(args.force)
+    machine = Path(args.machine) if args.machine else None
     report = uninstall(
         Path(args.root).resolve(),
-        machine=Path(args.machine) if args.machine else None,
+        machine=machine,
         dry_run=args.dry_run,
         force=force,
+        owner=command_owner(machine),
     )
     refused = report.refused
     # Through `printable`, the bound the reports use, so a forged target is `<id>` in both. A

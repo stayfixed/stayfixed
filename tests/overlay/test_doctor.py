@@ -205,3 +205,31 @@ def test_an_overlay_that_moved_is_not_reported_as_one_never_recorded(tmp_path: P
         assert row.status == SKIP, row
         assert row.detail == "no overlay root is recorded on this machine", row
         assert not row.remedy, row
+
+
+def test_a_machine_file_that_does_not_load_is_not_reported_as_one_that_records_no_overlay(
+    tmp_path: Path,
+) -> None:
+    """A third state beside the two above, with a sentence of its own in both rows.
+
+    A machine file nobody could read records nothing anybody knows of: `Context.overlay_root`
+    swallowed the refusal into `None`, so both rows told an owner whose file had a stray bracket
+    that no overlay root is recorded, while the `preferences` row, which names the file and its
+    remedy, was the only one that knew. Neither row carries a remedy of its own for it, since that
+    one does.
+
+    Mutations: `mutations/`'s "the report reads a machine file it could not read as one that
+    records no overlay" and "the two overlay rows say a machine file nobody could read records no
+    overlay".
+    """
+    # Pasted rather than imported, for the reason the test above gives.
+    unread = (
+        "the machine configuration file could not be read, so whether this machine records an "
+        "overlay is not known here; the `preferences` row says why"
+    )
+    machine = tmp_path / "machine.toml"
+    machine.write_text("[personal\nx = 1\n", encoding="utf-8")
+    rows = _checks(tmp_path, _initialised(tmp_path), machine=machine)
+    for name in ("pre-commit", "overlay-requires"):
+        row = _by_name(rows, name)
+        assert (row.status, row.detail, row.remedy) == (SKIP, unread, ""), row

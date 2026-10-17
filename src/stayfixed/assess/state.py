@@ -42,6 +42,7 @@ from stayfixed.assess.rule import read_base_gates
 from stayfixed.assess.tracked import Unseen, as_ci_sees
 from stayfixed.config.loader import read_document
 from stayfixed.config.owned import OwnedKeyError, UnparsedDocument, rewrite
+from stayfixed.config.owner import Owner
 from stayfixed.config.schema import CONFIG_CHECK, Config
 from stayfixed.errors import Refusal, StayfixedError
 from stayfixed.project.api import rewrite_owned
@@ -142,7 +143,13 @@ def _write(root: Path, state: str, enforced: tuple[str, ...]) -> None:
 
 
 def _not_on_base(
-    root: Path, config: Config, wanted: Sequence[str], *, base: str, machine: Path | None
+    root: Path,
+    config: Config,
+    wanted: Sequence[str],
+    *,
+    base: str,
+    machine: Path | None,
+    owner: Owner | None,
 ) -> tuple[str, ...]:
     """The custom gates in `wanted` whose command the base's `stayfixed.toml` does not have.
 
@@ -156,7 +163,9 @@ def _not_on_base(
     if not asked:
         return ()
     try:
-        landed = read_base_gates(root, base, branch=config.project.base_branch, machine=machine)
+        landed = read_base_gates(
+            root, base, branch=config.project.base_branch, machine=machine, owner=owner
+        )
     except StayfixedError:
         landed = {}
     return tuple(name for name in asked if landed.get(name) != custom[name])
@@ -170,12 +179,13 @@ def promote(
     base: str,
     machine: Path | None,
     builtin: bool = False,
+    owner: Owner | None = None,
 ) -> Transition:
     """Enforce the named gates if every one of them passes now, or, with none named, each
     configured gate not yet enforcing that passes; `base` is what `plan` and `commit` judge a
     range against, what `bugs` compares the ledger with (where HEAD forked from it), and what a
-    custom gate's command must already be on (`machine` loads the base's copy, as the tree's
-    was loaded).
+    custom gate's command must already be on (`machine` and `owner` load the base's copy, as the
+    tree's was loaded).
 
     `builtin` runs no custom gate, for a clone whose commands the person has not agreed to run:
     in a clone the base is the clone author's, so its having the command is no brake. A custom
@@ -203,7 +213,7 @@ def promote(
     Manifest.read(root)  # the write re-stamps its record, so one it cannot read refuses here
     skipped = tuple(n for n in wanted if builtin and n in config.gates.custom)
     asked = [n for n in wanted if n not in skipped]
-    waiting = _not_on_base(root, config, asked, base=base, machine=machine)
+    waiting = _not_on_base(root, config, asked, base=base, machine=machine, owner=owner)
     ran = run_gates(GateContext(root, config, base), [n for n in asked if n not in waiting])
     # A gate that reads a file git does not track passes here and fails every pull request in
     # CI, which never checks that file out: it could not judge the tree as CI will, so it is

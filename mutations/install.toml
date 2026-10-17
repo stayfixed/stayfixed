@@ -1019,8 +1019,8 @@ reddens = [
 [[mutation]]
 name = "setup stops expanding a leading ~ in --settings"
 file = "src/stayfixed/setup/commands.py"
-before = "        settings=Path(args.settings).expanduser() if args.settings else None,"
-after = "        settings=Path(args.settings) if args.settings else None,"
+before = "    return Path(args.settings).expanduser() if args.settings else None"
+after = "    return Path(args.settings) if args.settings else None"
 reddens = [
   "tests/setup/test_commands.py::test_a_tilde_in_settings_is_expanded_the_way_home_and_machine_already_are",
 ]
@@ -1249,10 +1249,24 @@ name = "the two overlay rows call a moved overlay an unrecorded one"
 file = "src/stayfixed/overlay/doctor.py"
 before = '''    if overlay is None:
         return Row(SKIP, NO_OVERLAY_RECORDED, "")
+    if isinstance(overlay, MachineUnread):
+        return Row(SKIP, MACHINE_UNREAD, "")
     return Row(SKIP, OVERLAY_GONE, OVERLAY_GONE_REMEDY)'''
 after = '    return Row(SKIP, NO_OVERLAY_RECORDED, "")'
 reddens = [
   "tests/overlay/test_doctor.py::test_an_overlay_that_moved_is_not_reported_as_one_never_recorded",
+]
+
+# A machine file that does not load is a third state, neither "no overlay recorded" nor "the
+# recorded root is gone": both rows say the file could not be read, and the `preferences` row,
+# red on it, carries the remedy.
+[[mutation]]
+name = "the two overlay rows say a machine file nobody could read records no overlay"
+file = "src/stayfixed/overlay/doctor.py"
+before = '''        return Row(SKIP, MACHINE_UNREAD, "")'''
+after = '''        return Row(SKIP, NO_OVERLAY_RECORDED, "")'''
+reddens = [
+  "tests/overlay/test_doctor.py::test_a_machine_file_that_does_not_load_is_not_reported_as_one_that_records_no_overlay",
 ]
 
 # The `key` half was pinned only by a direct call, so reverting the call site left `setup --preset`
@@ -2302,20 +2316,57 @@ reddens = [
 [[mutation]]
 name = "setup --approval-boundary takes a flag that names a write"
 file = "src/stayfixed/setup/commands.py"
-before = "        if args.git_hooks or args.yes or any(value is not None for value in named):"
-after = "        if args.git_hooks or args.yes:"
+before = "        if any(switched) or any(value is not None for value in named):"
+after = "        if any(switched):"
 reddens = [
   "tests/setup/test_approval_boundary.py::test_the_advice_beside_a_flag_that_writes_is_refused[preset]",
   "tests/setup/test_approval_boundary.py::test_the_advice_beside_a_flag_that_writes_is_refused[overlay]",
-  "tests/setup/test_approval_boundary.py::test_the_advice_beside_a_flag_that_writes_is_refused[settings]",
 ]
 
 [[mutation]]
 name = "setup --approval-boundary takes --yes or --git-hooks"
 file = "src/stayfixed/setup/commands.py"
-before = "        if args.git_hooks or args.yes or any(value is not None for value in named):"
-after = "        if any(value is not None for value in named):"
+before = "        switched = (args.yes, args.git_hooks, args.uninstall)"
+after = "        switched = (args.uninstall,)"
 reddens = [
   "tests/setup/test_approval_boundary.py::test_the_advice_beside_a_flag_that_writes_is_refused[yes]",
   "tests/setup/test_approval_boundary.py::test_the_advice_beside_a_flag_that_writes_is_refused[git-hooks]",
 ]
+
+[[mutation]]
+name = "setup --approval-boundary takes --uninstall"
+file = "src/stayfixed/setup/commands.py"
+before = "        switched = (args.yes, args.git_hooks, args.uninstall)"
+after = "        switched = (args.yes, args.git_hooks)"
+reddens = [
+  "tests/setup/test_approval_boundary.py::test_the_advice_beside_a_flag_that_writes_is_refused[uninstall]",
+]
+
+# The advice names the user settings file `setup` would write: the one `--settings` names, else the
+# home's, and either absolute, so a relative `--home` or `--settings` names the file meant.
+[[mutation]]
+name = "setup --approval-boundary names the home's settings file beside --settings"
+file = "src/stayfixed/setup/commands.py"
+before = "    settings = (home / USER_SETTINGS if given is None else given).absolute()"
+after = "    settings = (home / USER_SETTINGS).absolute()"
+reddens = [
+  "tests/setup/test_approval_boundary.py::test_settings_names_the_file_the_advice_puts_the_rule_in",
+]
+
+[[mutation]]
+name = "setup --approval-boundary names a relative settings file as given"
+file = "src/stayfixed/setup/commands.py"
+before = "    settings = (home / USER_SETTINGS if given is None else given).absolute()"
+after = "    settings = home / USER_SETTINGS if given is None else given"
+reddens = [
+  "tests/setup/test_approval_boundary.py::test_a_relative_machine_and_home_are_advised_as_absolute_paths[bare-name]",
+  "tests/setup/test_approval_boundary.py::test_a_relative_machine_and_home_are_advised_as_absolute_paths[subdirectory]",
+]
+
+# A symbolic-link loop at the machine file's directory is refused by name, never `internal error`.
+[[mutation]]
+name = "setup --approval-boundary lets a looping machine directory raise"
+file = "src/stayfixed/setup/commands.py"
+before = "        rules = record_deny_rules(record)\n    except OSError as exc:"
+after = "        rules = record_deny_rules(record)\n    except LookupError as exc:"
+reddens = ["tests/setup/test_approval_boundary.py::test_a_looping_machine_directory_is_refused_by_name"]

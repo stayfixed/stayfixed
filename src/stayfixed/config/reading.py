@@ -15,7 +15,6 @@ from __future__ import annotations
 import re
 import tomllib
 from dataclasses import fields
-from enum import StrEnum
 from functools import cache
 from pathlib import Path
 from typing import Any, get_origin, get_type_hints
@@ -60,18 +59,6 @@ TOO_LONG = "(holds a number longer than the parser converts)"
 # integer is `memory_index_bytes = 25600`), and below what every reader of one handles: `str`,
 # `float`, a comparison. No shipped file states it.
 INTEGER_LIMIT = 2**31
-
-
-class Unknown(StrEnum):
-    """What a reader does with a name it does not know or a value it cannot use.
-
-    `REFUSE` is every CLI command's: a file somebody is about to act on is refused whole, naming
-    the key. `NOTE` is for a reader that must go on — a session, `doctor` — and reads the file it
-    can, ignoring the name, resetting the value to the preset's, and saying so in a note.
-    """
-
-    REFUSE = "refuse"
-    NOTE = "note"
 
 
 class ConfigError(Failure):

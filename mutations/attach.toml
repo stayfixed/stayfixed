@@ -3451,3 +3451,27 @@ after = "    return Links(created, revoked, withheld=links.withheld, refresh_ref
 reddens = [
   "tests/attach/test_write.py::test_an_approval_attach_could_not_carry_is_said_as_what_happened[sandboxed]",
 ]
+
+# A machine file that does not load is a fact about this machine's inputs that is neither "no
+# overlay recorded" nor "an overlay that could not be asked": the `attached` row says the file could
+# not be read, and leaves the remedy to the `preferences` row, red on the same file.
+[[mutation]]
+name = "the attached row reads a machine file nobody could read as an overlay that could not be asked"
+file = "src/stayfixed/attach/doctor.py"
+before = "    if isinstance(context.overlay_root, MachineUnread):\n        return MACHINE_UNREAD"
+after = "    if False:\n        return MACHINE_UNREAD"
+reddens = [
+  "tests/attach/test_doctor.py::test_a_ledger_on_a_machine_whose_file_does_not_load_skips_in_words_of_its_own",
+]
+
+# Whether the overlay grants an entry is asked only of a root the machine file records: one nobody
+# could read is a source that could not be asked, a warning, and never the overlay root asked for
+# what it grants.
+[[mutation]]
+name = "hook-entries asks the overlay root of a machine file nobody could read"
+file = "src/stayfixed/attach/doctor.py"
+before = "    if isinstance(overlay, MachineUnread):\n        # Not \"nothing records a source\""
+after = "    if False:\n        # Not \"nothing records a source\""
+reddens = [
+  "tests/attach/test_doctor.py::test_hook_entries_asks_no_overlay_of_a_machine_file_that_does_not_load",
+]

@@ -64,9 +64,6 @@ UNKNOWN_NAMES = [
     ("[memory]\nfuture = 1\n", "memory.future"),  # a key, in _build
     ("[budgets]\nfuture = 1\n", "budgets.future"),  # a key, in _budgets
     ('[gates.custom.g]\nrun = ["x"]\nfuture = 1\n', "gates.custom.g.future"),  # a key, in _gates
-    # A section the machine file once held: no class names it, so it is a repository's unknown
-    # section like any other, never a machine-only one refused key by key.
-    ('[setup]\nask_rules = ["Bash(x)"]\n', "setup"),
 ]
 
 
@@ -75,9 +72,7 @@ def test_an_unknown_name_is_ignored_with_a_note(tmp_path: Path, extra: str, name
     # Ignored, not reset: the name is no value of this release, so nothing stands in for it.
     # Mutations (`mutations/`'s "an unknown section is dropped without a note" -> the `newer`
     # case has no note; "the NOTE path resets an unknown key instead of ignoring it" -> each key
-    # case gets a reset note from the refusal `loads` raises). By hand: a `"setup.*"` row of the
-    # machine-only class put back in `classes.CLASSES` gives the `setup` case the refused-layer
-    # note instead.
+    # case gets a reset note from the refusal `loads` raises).
     got = loads_noting(MINIMAL + extra, tmp_path, owner=OWNER)
     assert got.notes == (UNKNOWN_NOTE.format(name=named),)
     assert_never_raw(*got.notes)
@@ -130,6 +125,18 @@ def test_an_escaping_path_resets_only_that_path(tmp_path: Path) -> None:
     # Mutation (`mutations/`'s "the NOTE path catches ConfigError but not PathEscape"): the
     # refusal of `../x` propagates and the session would lose the whole file.
     text = MINIMAL + '[paths]\nbugs = "../x"\nspecs = "design/specs"\n'
+    got = loads_noting(text, tmp_path, owner=OWNER)
+    assert got.config.paths.bugs == preset_defaults("paths")["bugs"]
+    assert got.config.paths.specs == "design/specs"
+    assert got.notes == (reset("paths.bugs", text, tmp_path),)
+
+
+def test_a_path_longer_than_its_cap_resets_only_that_path(tmp_path: Path) -> None:
+    # A value of twenty thousand components cost every hook that read it seconds, so one past
+    # `config.paths.PATH_VALUE_LIMIT` is put back to the preset's like any value that cannot be
+    # used, and the project's other paths stand. Mutation (`mutations/`'s "a [paths] value may be
+    # any length"): the value loads.
+    text = MINIMAL + f'[paths]\nbugs = "{"a/" * 20_000}x"\nspecs = "design/specs"\n'
     got = loads_noting(text, tmp_path, owner=OWNER)
     assert got.config.paths.bugs == preset_defaults("paths")["bugs"]
     assert got.config.paths.specs == "design/specs"
@@ -282,8 +289,10 @@ REFUSED = [
     pytest.param(
         '[paths]\nbugs = "../x"\n', r"paths\.bugs is not a plain relative path", id="path"
     ),
+    pytest.param(
+        f'[paths]\nbugs = "{"a/" * 600}x"\n', r"paths\.bugs is longer than the", id="path-length"
+    ),
     pytest.param("[guards]\nbg_cleanup = false\n", r"unknown section\(s\): guards", id="guards"),
-    pytest.param('[setup]\nask_rules = ["Bash(x)"]\n', r"unknown section\(s\): setup", id="setup"),
 ]
 
 

@@ -85,6 +85,7 @@ from stayfixed.config.machine import (
     override_is_honoured,
     passwd_home,
 )
+from stayfixed.config.owner import Owner
 from stayfixed.config.paths import PathEscape, PathUnasked, contained
 from stayfixed.config.reading import UNPARSEABLE
 from stayfixed.config.schema import Config
@@ -1199,6 +1200,7 @@ def attach(
     trust_remote: bool,
     runner: Runner,
     home: Path | None,
+    owner: Owner | None = None,
 ) -> Attached:
     """Bind this repository to the overlay, merge what the overlay grants, and link the notes in.
 
@@ -1257,6 +1259,8 @@ def attach(
     a real `pre-commit` or the developer's own `~/.claude/`. A default here would leave that as
     a convention, which is the thing the rule exists to replace: while this module was being
     written, every call that omitted `home` computed a path under the real home directory.
+    `owner` is the owner's layer the command resolved, which the one load takes
+    (`config.loader.loads`' own).
     """
     planned = _plan(
         root,
@@ -1265,6 +1269,7 @@ def attach(
         confirmed=confirmed,
         trust_remote=trust_remote,
         home=home,
+        owner=owner,
     )
     return _carry_out(root, planned, machine=machine, runner=runner, home=home)
 
@@ -1375,6 +1380,7 @@ def _plan(
     confirmed: bool,
     trust_remote: bool,
     home: Path | None,
+    owner: Owner | None,
 ) -> AttachPlan:
     """Every read, decode and check `attach` makes, in the order `attach` enumerates them, and
     nothing written: what it returns is all `_carry_out` may act on.
@@ -1394,7 +1400,7 @@ def _plan(
     # nothing moves in the order the refusals happen in; what changes is that `project.name`,
     # `memory.groups` and `paths.memory` are read once and the refusals below are about the
     # same document the binding was read under.
-    config = load(root, machine=machine)
+    config = load(root, machine=machine, owner=owner)
     binding = read_binding(root, store=store, machine=machine, config=config)
     gates = Gates(root, config, binding)
     for stop in gates:
@@ -2084,7 +2090,9 @@ def _other_harness_home() -> tuple[Path, str] | None:
     return Path(chosen), "HOME"
 
 
-def detach(root: Path, *, machine: Path | None, home: Path | None) -> Detached:
+def detach(
+    root: Path, *, machine: Path | None, home: Path | None, owner: Owner | None = None
+) -> Detached:
     """Remove exactly what `attach` added, reading the ledger for what that was.
 
     It does **not** touch `projects/<name>/project.toml`. That record is the owner's consent,
@@ -2123,7 +2131,7 @@ def detach(root: Path, *, machine: Path | None, home: Path | None) -> Detached:
     harness link points at.
     """
     recorded = ledger(root)
-    config = load(root, machine=machine)
+    config = load(root, machine=machine, owner=owner)
     entries = tuple(sorted(owned_ids(local_document(root))))
     # Asked before the first withdrawal, because it is the one thing here that needs `git` and a
     # `git` that cannot run is knowable at the start. Asked between the settings withdrawal and

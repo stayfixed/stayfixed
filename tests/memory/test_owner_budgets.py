@@ -139,13 +139,16 @@ def test_a_command_reads_past_a_machine_file_key_it_cannot_use_and_says_so(
 ) -> None:
     # What the owner sets is honoured and what this stayfixed cannot use is said, never a block: a
     # key a later release's `setup` writes once stopped every older command on the machine. A
-    # command goes on as a session does, on the preset's value, and says the key on stderr.
-    # Mutations (`mutations/`'s "the owner's layer refuses a key it cannot use in a file that loads"
-    # -> the load raises; "a command keeps quiet about what it read past in the machine file" ->
-    # stderr is empty).
+    # command goes on as a session does, on the preset's value, and says the key on stderr; the
+    # load itself says nothing, since a command that loads twice would say it twice. Mutations
+    # (`mutations/`'s "the owner's layer refuses a key it cannot use in a file that loads" -> the
+    # load raises; "a command keeps quiet about what it read past in the machine file" -> stderr is
+    # empty).
     root, machine = _project(tmp_path, table)
     config = load(root, machine=machine)
     assert config.budgets.effective("agents_md_lines") != 9
+    assert capsys.readouterr().err == ""
+    invoke(["--json", "memory", "fit", "--root", str(root), "--machine", str(machine)])
     assert capsys.readouterr().err == f"stayfixed: {note.format(machine=machine)}\n"
 
 

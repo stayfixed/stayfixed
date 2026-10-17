@@ -70,7 +70,7 @@ Three things hold everywhere:
 - [`stayfixed detach [--root PATH] [--machine PATH]`](#stayfixed-detach---root-path---machine-path)
 - [`stayfixed setup [--preset NAME] [--yes] [--home PATH] [--settings PATH] [--machine PATH] [--overlay VALUE] [--root PATH]`](#stayfixed-setup---preset-name---yes---home-path---settings-path---machine-path---overlay-value---root-path)
 - [`stayfixed setup --git-hooks [--uninstall] [--root PATH]`](#stayfixed-setup---git-hooks---uninstall---root-path)
-- [`stayfixed setup --approval-boundary [--home PATH] [--machine PATH]`](#stayfixed-setup---approval-boundary---home-path---machine-path)
+- [`stayfixed setup --approval-boundary [--home PATH] [--settings PATH] [--machine PATH]`](#stayfixed-setup---approval-boundary---home-path---settings-path---machine-path)
 - [`stayfixed doctor [--json] [--root PATH] [--home PATH] [--machine PATH]`](#stayfixed-doctor---json---root-path---home-path---machine-path)
 - [The reusable workflow](#the-reusable-workflow)
 - [Shared flags](#shared-flags)
@@ -212,15 +212,19 @@ call from one is refused; an agent able to open a pseudo-terminal passes the che
 speed bump and no guarantee.
 No flag skips the check, and nothing takes `--yes`.
 
-**What an approval holds against.** Repository bytes: a clone, a pull or a pull request cannot
-write `trust.json`, which lies under the home the password database records and outside every
-repository, and a change to anything the approval hashes lapses it. Not the session's own agent:
+**What an approval holds against.** Repository bytes: stayfixed never writes `trust.json` from
+what a repository holds, and a clone, a pull or a pull request does not reach it, since it lies
+under the home the password database records and outside every repository; a change to anything
+the approval hashes lapses it. A repository whose hooks your harness runs — a committed
+`.claude/settings.json` hook in a folder you trusted — is code running as you, and can write any
+file you can, this one included. Not the session's own agent:
 an agent whose shell can write any file you can may write the record as well, and stayfixed
 neither stops nor checks that. That boundary is the harness's sandbox, which is yours to set;
 `stayfixed setup --approval-boundary` prints what to set under Claude Code. Even a sandbox that
 keeps the record out of reach leaves an agent a way to instruct the next session: Claude Code's
-documentation does not list `CLAUDE.md` or `AGENTS.md` among the paths its sandbox keeps from the
-agent's own writes, and Claude Code loads both as instructions (read in the documentation, not
+documentation does not list a project's `CLAUDE.md` or `AGENTS.md` among the paths its sandbox
+keeps from the agent's own writes, and Claude Code loads the first as instructions and can load
+the second, through an import or its project instructions setting (read in the documentation, not
 measured). [SECURITY.md](../SECURITY.md) lists an agent with an unsandboxed shell as out of scope.
 
 **Reads** every file the kind hashes — for `memory`, every file the store yields.
@@ -370,9 +374,9 @@ configuration to use, which is so when there is no file, and when the file is a 
 nothing can stand in for: a required key with no default (`[stayfixed] version`, `[project]
 name`) that is missing or cannot be used, or whose section is not a table, or a key whose preset
 value does not hold in this repository either, such as a `[paths]` default under a committed
-symlink. Nor is a file longer than 1 MiB read at all, nor one read key by key past more settings it
-cannot use than its length allows — 64 for a file of up to 64 KiB, fewer for a longer one, 4 at
-1 MiB: each costs the session a whole rebuild of the configuration, which costs what the file is
+symlink. Nor is a file longer than 256 KiB read at all, nor one read key by key past more settings
+it cannot use than its length allows — 64 for a file of up to 16 KiB, fewer for a longer one, 4 at
+256 KiB: each costs the session a whole rebuild of the configuration, which costs what the file is
 long, so a long file of unusable keys would keep a hook past its timeout, which lets the call
 through, or blocks it where the hook sets `onFailure` (below). Such a file is dropped whole, and the guards run on the
 preset and the owner's layer.
@@ -453,7 +457,12 @@ an exit code, and by default Claude Code then carries the tool call out. So the 
 call as an exit `2` does, in Claude Code's words and with no stayfixed reason. The wrapper's own
 exits under `closed` are `0` and `2`, neither of which that setting reads as a failure, so it
 changes nothing a working hook decides; a session whose hook cannot start at all then runs no
-`Bash` call until the plugin is repaired. Claude Code before 2.1.295 was not measured with the key.
+`Bash` call until the plugin is repaired. Such a session still edits files: the entry's matcher is
+`Bash`, so the Read, Edit and Write tools can repair what keeps the hook from answering. To run
+`Bash` meanwhile, turn the plugin off with `/plugin`, or start Claude Code with
+`claude --settings '{"disableAllHooks": true}'`, which turns off every hook for that session and
+every guard with them. Claude Code before 2.1.295 was not measured with the key: one that
+rejected it would lose the entry, and the guard with it.
 Codex's reader of `hooks.json` ignores a key it does not define on an entry (read in its source,
 `codex-rs/config/src/hook_config.rs`, on 2026-10-17, and not measured). The `open` entries leave it
 unset: a failure there is the session's to survive.
@@ -1213,9 +1222,9 @@ thing are no change at all. Each changed key gets one verdict:
 | `stayfixed.state` and `stayfixed.enforced`, judged as one | this tree enforces every gate the base enforces, and `state` does not move back (`initialised`, `adopting`, `installed`) | `tightened` when either moved forward, else `neutral` | `refused` |
 | `gates.builtin` | a gate added, or one removed that the base does not enforce | `tightened` when one was added, else `neutral` | `refused` |
 | `gates.custom.<name>.run` | the gate is new, or the base does not enforce it | `tightened` when new, else `neutral` | `refused` |
-| `budgets.<name>` for a gate's budget (`agents_md_lines`, `agents_md_words`, `status_lines`, `roadmap_prose_lines`, `roadmap_prose_words`) | the effective value is at most the base's | `tightened` | `refused` |
+| `budgets.<name>`, a gate's budget (`agents_md_lines`, `agents_md_words`, `status_lines`, `roadmap_prose_lines`, `roadmap_prose_words`) or a session's (`memory_index_words`, `startup_rules_words`, `volatile_notes_words`, `volatile_ttl_days`) | the effective value is at most the base's | `tightened` | `refused` |
 | `ledger.code_roots` and `ledger.evidence_boundary_required_for` | every entry the base lists is still listed | `tightened` when one was added, else `neutral` | as any other key |
-| `stayfixed.preset`, `stayfixed.agents`, `project.name`, and every key whose class is a preference (`stayfixed.profile`, `memory.mode`, `memory.groups`, `memory.index_extra`), a session's budget (`memory_index_words`, `startup_rules_words`, `volatile_notes_words`, `volatile_ttl_days`), the machine owner's or the plugin's | always: no gate judges a pull request by them | `neutral` | — |
+| `stayfixed.preset`, `stayfixed.agents`, `project.name`, and every key whose class is a preference (`stayfixed.profile`, `memory.mode`, `memory.groups`, `memory.index_extra`), the machine owner's or the plugin's | always: no gate judges a pull request by them | `neutral` | — |
 | `stayfixed.version` and `ci.ref`, judged as one upgrade | the version is exactly the running stayfixed's and not earlier than the base's, and a moved `ci.ref` is the commit `--workflow-sha` names and one of stayfixed's release tags names | `upgrade` | as any other key |
 | any other key | — | — | `refused` while the base enforces any gate, `noted` while it enforces none |
 
@@ -2990,7 +2999,7 @@ also given, the hook cannot be read, or a hook names `prepare-commit-msg.local`.
 
 ---
 
-## `stayfixed setup --approval-boundary [--home PATH] [--machine PATH]`
+## `stayfixed setup --approval-boundary [--home PATH] [--settings PATH] [--machine PATH]`
 
 Prints what keeps an agent's shell out of the trust record's directory under Claude Code, for you
 to set, and sets none of it: an approval holds against an agent only while the harness's sandbox
@@ -2998,14 +3007,16 @@ holds ([`stayfixed trust approve`](#stayfixed-trust-approve-kind---store-path---
 stayfixed neither enforces nor checks that boundary. The line names:
 
 - the deny rule `Edit(//<the trust record's directory>/**)` for `permissions.deny` in
-  `<home>/.claude/settings.json`. The directory is that of `~/.config/stayfixed/trust.json`, or of
-  the file beside `--machine`, which is the machine configuration file's own, so the rule covers
-  that file too; where a symbolic link makes the directory as named and the directory it leads to
-  differ, a rule is named for each, since the harness compares a write against the resolved path
-  and a tool call may carry the path as named. Measured on Claude Code 2.1.296, an `Edit` rule in
-  that spelling stops both the sandboxed shell and the file tools; one leading slash anchors the
-  path at the working directory and stops nothing outside it, and a `Write` rule stops neither;
-- `sandbox.enabled = true` in the same file, since the rule holds only while the sandbox is on;
+  `<home>/.claude/settings.json`, or in the file `--settings` names. The directory is that of
+  `~/.config/stayfixed/trust.json`, or of the file beside `--machine`, which is the machine
+  configuration file's own, so the rule covers that file too; where a symbolic link makes the
+  directory as named and the directory it leads to differ, a rule is named for each, since the
+  harness compares a write against the resolved path and a tool call may carry the path as named.
+  Measured on Claude Code 2.1.296, an `Edit` rule in that spelling stops both the sandboxed shell
+  and the file tools; one leading slash anchors the path at the working directory and stops
+  nothing outside it, and a `Write` rule stops neither;
+- `sandbox.enabled = true` in the same file, since the rule holds against the file tools on its
+  own and against the shell only while the sandbox confines it;
 - and, since a project's `.claude/settings.json` or `.claude/settings.local.json` turns a user's
   sandbox off, `sandbox.enabled = true`, `sandbox.failIfUnavailable = true` and
   `sandbox.allowUnsandboxedCommands = false` in the managed settings file only an administrator
@@ -3013,16 +3024,18 @@ stayfixed neither enforces nor checks that boundary. The line names:
   `/Library/Application Support/ClaudeCode/managed-settings.json` on macOS and
   `/etc/claude-code/managed-settings.json` on Linux.
 
-`--home` and `--machine` name the two files as `setup` would write them. `--json` keys:
-`deny_rules`, `settings` and `managed`.
+`--home`, `--settings` and `--machine` name the two files as `setup` would write them, and each is
+printed absolute: a rule over a relative `--machine`'s directory would carry one leading slash and
+deny edits under the working directory of every project. `--json` keys: `deny_rules`, `settings`
+and `managed`.
 
 **Reads** nothing but the directory the trust record lies in, to resolve it.
 
 **Writes** nothing.
 
-**Exits** `0`; `2` beside `--preset`, `--overlay`, `--settings`, `--yes` or `--git-hooks`, which name
-a write this run does not make; `1` for a `HOME` that is empty with no `--home`, and for a machine
-whose password database lists no home with no `--machine`.
+**Exits** `0`; `2` beside `--preset`, `--overlay`, `--yes`, `--git-hooks` or `--uninstall`, which
+name a write this run does not make; `1` for a `HOME` that is empty with no `--home`, and for a
+machine whose password database lists no home with no `--machine`.
 
 ---
 
@@ -3031,7 +3044,7 @@ whose password database lists no home with no `--machine`.
 Eighteen checks over one installation. It **reports and never repairs**: every finding
 carries the command that would fix it, and not one of them is run for you. Nothing is written.
 
-The rows come in a fixed order: the installation's own thirteen first, then the six about the
+The rows come in a fixed order: the installation's own twelve first, then the six about the
 private layer — the binding's (`attached`), the note store's (`bundles`, `store-debris`,
 `harness-link`) and the private overlay's (`pre-commit`, `overlay-requires`). Match a row by its `name`, never by its
 position.
@@ -3078,7 +3091,7 @@ check with `name`, `status`, `detail` and `remedy`, so every remedy is there.
 | `hook-entries` | every hook entry, counted by provenance, with any that claims the stayfixed marker and is in no ledger named by position; and, as a warning, every skill, command or agent file whose frontmatter declares hooks, which it does not judge | `.claude/settings.json`, `.claude/settings.local.json`, `.codex/hooks.json`, and `~/.claude/settings.json`; every `SKILL.md` below a `.claude/skills` anywhere in the tree that git does not ignore, a checked-out submodule's committed files included, and every `*.md` below `.claude/commands` and `.claude/agents` |
 | `codex-hooks` | whether any stayfixed hook is untrusted on Codex, and, when `[stayfixed] agents` lists `codex`, which surfaces are not verified there and which hold in CI | `stayfixed.toml`, the harness registry |
 | `budgets` | every budget set above the preset, named raised, and every one set below it, named lowered | `stayfixed.toml`, the machine file, the preset |
-| `preferences` | each machine-owner key and each preference, with the layer its value came from — the preset, the repository or the machine file — and the value only where it is a boolean, a number or one of stayfixed's own words; a warning naming the machine file when it could not be used whole | `stayfixed.toml`, the preset, the machine file |
+| `preferences` | each machine-owner key and each preference, with the layer its value came from — the preset, the repository or the machine file — and the value only where it is a boolean, a number or one of stayfixed's own words; red when the machine file does not load, in the words every command refuses it in, which name the file and where the parser stopped; a warning naming the file when a key in it could not be used | `stayfixed.toml`, the preset, the machine file |
 | `cli-path` | whether `stayfixed` resolves on `PATH` | `PATH` |
 | `ci-ref` | whether `[ci] ref` is the commit of a released stayfixed tag (or the `v1` alias: a warning, as mutable, once a `1.x` release creates it, and red until then), and whether the rendered workflow pins the same ref — under `[ci] mode = "reusable"`, a workflow that is not there at all is a warning and never a green row, and so are a path that is there and is not a regular file and a file past the 256 KiB bound on the read | `git ls-remote --exit-code` over the public repository's tags, bounded at 30 seconds; *.github/workflows/stayfixed.yml*, read as a regular file and to a bound |
 | `diagnostics` | how many reasons the hook sink recorded — a count, never a line of the file | `${CLAUDE_PLUGIN_DATA}/stayfixed/diagnostics.jsonl` |
@@ -3135,8 +3148,8 @@ policy settings and `--settings` are yours, not the repository's, and this row d
 | `never-approved` | nothing, no approval recorded | `ok` | — |
 | `settings-unreadable` | any state above that reads `ok`, beside a settings file that cannot be read as settings; the row names the file | `warn` | make the file one JSON object, then `doctor` |
 
-**Twelve of the eighteen have a `skip` arm — twenty-two arms between them: one no build can
-answer, and twenty-one on a state of this machine or this repository.** A `skip` is **not** a finding and
+**Twelve of the eighteen have a `skip` arm — twenty-five arms between them: one no build can
+answer, and twenty-four on a state of this machine or this repository.** A `skip` is **not** a finding and
 never reaches the exit code, so read the detail — each one says which measurement it is missing.
 
 The one no build can answer is `codex-hooks`: it needs the hash Codex keys hook trust on, which
@@ -3156,7 +3169,9 @@ process can vouch for; `attached`, when this machine records no overlay to check
 against, or the overlay could not be asked at all; `pre-commit` and `overlay-requires`, when
 no overlay root is recorded on this machine **or** when the root it records is not a directory
 — two different arms with two different sentences, because a machine that recorded an overlay
-and then moved it is not a machine that recorded none; `overlay-requires` again when the
+and then moved it is not a machine that recorded none; `attached`, `pre-commit` and
+`overlay-requires` again, each in a sentence of its own, when the machine file does not load, so
+whether it records an overlay is not known, which is neither of those; `overlay-requires` again when the
 overlay declares no stayfixed requirement; `bundles` and `store-debris`, when the note store does
 not resolve; `diagnostics`, when no harness data root is set in the environment, which is every
 `stayfixed doctor` run from a terminal rather than from a hook; and `ci-ref`, when no `[ci] ref`
@@ -3168,22 +3183,24 @@ read — no `stayfixed.toml`, or one a session drops whole: `budgets`, `ci-ref`,
 `bundles`, `store-debris`, and `harness-link` where `HOME` is not the database's home, since what
 makes the link then depends on the store's mode.
 
-**A `skip` does not mean there is nothing to do.** Seven of the twenty-two arms carry a remedy:
-the two plugin-root skips, `wrapper`'s named-root skip, both of `attached`'s, and the
-moved-overlay arm of `pre-commit` and of `overlay-requires`. The dividing line is not "always"
+**A `skip` does not mean there is nothing to do.** Seven of the twenty-five arms carry a remedy:
+the two plugin-root skips, `wrapper`'s named-root skip, `attached`'s no-overlay and
+could-not-be-asked arms, and the moved-overlay arm of `pre-commit` and of `overlay-requires`. The dividing line is not "always"
 versus "on a state" — every other arm skips on a state and carries nothing: `bundles`,
 `store-debris`, `diagnostics` and `ci-ref`, the *no overlay recorded* arms of the two overlay
 rows, `overlay-requires`' no-requirement arm, `files` on a build with no release record, and the
 six with no project configuration, whose remedy is
-`not-initialised`'s. Nor
+`not-initialised`'s, and the three on a machine file that does not load, whose remedy is
+`preferences`', red on the same file. Nor
 is it whether another row names a command that changes the state: `pre-commit`'s arm carries
 nothing though `attached` names `stayfixed setup --overlay` there. It is whether the skip is
 itself worth acting on. Those seven report something wrong that no other
 row will tell you: a plugin root nothing can find, a root that will be read and never executed,
-a recorded attach the overlay could not confirm, an overlay root recorded and not there. The
-other fifteen report a measurement that is simply unavailable — no store, no overlay, no
+a recorded attach the overlay could not confirm, an overlay root recorded and not there. Of the
+other eighteen, fifteen report a measurement that is simply unavailable — no store, no overlay, no
 overlay requirement, no harness data root, no `[ci] ref`, no release record in this build, no way
-to ask Codex or no project configuration — and no command in that row's gift changes it.
+to ask Codex or no project configuration — and no command in that row's gift changes it, and
+three report a machine file another row is red about, with the command that clears it.
 
 **The one to read first is the plugin root**, because it is the quietest and the worst. When
 this process can find no plugin root at all, `files` and `wrapper` both skip — two rows, no red,
@@ -3633,7 +3650,7 @@ name = "widget"          # one lowercase path segment
 base_branch = "main"
 release_branch = "main"
 
-[paths]                  # each must stay inside the root, and out of .git and .stayfixed
+[paths]                  # each inside the root, out of .git and .stayfixed, 1024 characters at most
 agents_md = "AGENTS.md"
 architecture = "docs/architecture"
 runbooks = "docs/runbooks"
@@ -3844,11 +3861,13 @@ preset's. A command that loads `stayfixed.toml` reads this file's `[personal]`, 
 measure the session budgets a session runs on. What you write here is honoured, and what this
 stayfixed cannot use is said and never refused: a key in those three tables it does not know, a
 value it cannot use or a table that is not one costs that key or table alone — an unknown key is
-ignored, an unusable value is put back to the preset's — and a command says so on stderr, naming
-the file and the key, while a session says so once, when it starts. So a key a later release's
+ignored, an unusable value is put back to the preset's — and a command says so on stderr, once
+however many documents it loads, naming the file and the key, while a session says so once, when
+it starts. So a key a later release's
 `setup` writes stops no older command on the machine. Only a file that does not load at all is
-refused by a command, as `[overlay] root`'s reader refuses it, and leaves a session on the
-preset's personal values and guards, with one warning naming this file when the session starts.
+refused by a command, as `[overlay] root`'s reader refuses it, before the command reads anything
+else, and leaves a session on the preset's personal values and guards, with one warning naming
+this file when the session starts and `stayfixed doctor`'s `preferences` row red.
 With no `stayfixed.toml` in the repository a session still reads this file: `bg_cleanup = false`
 turns the guard off there too.
 
@@ -3857,7 +3876,7 @@ they meant something only through the `recommended` preset's standing rule about
 each audience gets, which the preset no longer carries. To state a language preference, write a
 personal standing rule, a note with `metadata.startup` in your overlay's `common/memory/`.
 
-`stayfixed setup` writes a third table, `[machine]`, into the same file — `version`, the
+`stayfixed setup` writes one more table, `[machine]`, into the same file — `version`, the
 stayfixed that ran, and `installed`, the date it ran. It is `setup`'s record of what it did, not
 a setting: it is written, never hand-edited, and a file that has never had one loads fine.
 

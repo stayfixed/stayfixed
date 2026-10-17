@@ -1,7 +1,7 @@
 """The tighten-only rule asks a key's class first (`assess.rule._row`): a key no gate judges a pull
-request by — a preference, a session's parameter, the machine owner's, the plugin's — is
-`neutral` whatever the base enforces; a gate's budget may only be lowered; and the two ledger
-lists only grow. `tests/assess/test_rule.py` holds every other row."""
+request by — a preference, the machine owner's, the plugin's — is `neutral` whatever the base
+enforces; a budget, a gate's or a session's, may only be lowered; and the two ledger lists only
+grow. `tests/assess/test_rule.py` holds every other row."""
 
 from __future__ import annotations
 
@@ -27,15 +27,21 @@ def test_a_pull_request_still_only_lowers_a_gate_budget(tmp_path: Path) -> None:
     assert _verdicts(lowered) == {"budgets.agents_md_lines": Verdict.TIGHTENED}
 
 
-@pytest.mark.parametrize("value", [9000, 10], ids=["raised", "lowered"])
-def test_a_pull_request_may_change_a_session_budget(tmp_path: Path, value: int) -> None:
-    # A session budget bounds what a session loads, not what a gate judges. Mutation
-    # (`mutations/`'s "the ratchet asks its own table before a key's class"): the budget row
-    # judges it and refuses the raise.
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [(9000, Verdict.REFUSED), (10, Verdict.TIGHTENED)],
+    ids=["raised", "lowered"],
+)
+def test_a_pull_request_only_lowers_a_session_budget(
+    tmp_path: Path, value: int, expected: Verdict
+) -> None:
+    # A gate the base enforces may read a session budget (`memory index --check` reads
+    # `memory_index_words`), so a pull request that raised one would loosen the gate judging it.
+    # Mutation (`mutations/`'s "a session's budget is neutral by its class"): the raise is
+    # admitted as neutral.
     tree = f"{STRICT}memory_index_words = {value}\n"
     verdict = _judge(STRICT, tree, tmp_path)
-    assert _verdicts(verdict) == {"budgets.memory_index_words": Verdict.NEUTRAL}
-    assert not verdict.refused
+    assert _verdicts(verdict) == {"budgets.memory_index_words": expected}
 
 
 def test_a_pull_request_may_change_memory_mode(tmp_path: Path) -> None:

@@ -18,8 +18,9 @@ uses.
 `setup --approval-boundary` prints what keeps an agent's shell out of the record, and writes none
 of it (`boundary`): `record_deny_rules` over the directory `record_path` names, `SANDBOX_ON` for
 the user settings, and `ENFORCING_SETTINGS` for `managed_named`'s file. `sandbox_refused` is how
-`setup` and `memory` tell a write an agent's sandbox refused, `SandboxedWrite` is the record's own
-refusal of one, and `OWN_TERMINAL_TOO` ends `setup`'s sentence for it as it ends the record's.
+`setup` tells a write an agent's sandbox refused, `SandboxedWrite` is the record's own refusal of
+one, which `memory` catches, and `OWN_TERMINAL_TOO` ends `setup`'s sentence for it as it ends the
+record's.
 """
 
 from __future__ import annotations

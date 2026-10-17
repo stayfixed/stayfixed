@@ -29,6 +29,7 @@ def _describe(context: KindContext) -> tuple[Subject, ...]:
     """This checkout's one store: keyed by its resolved path, labelled by its path in the
     repository, at its digest now. Read as a session reads the configuration when the context is
     `noting`, and as a command reads it, refusing, otherwise (`KindContext.noting`)."""
+    from stayfixed.command import command_owner
     from stayfixed.config.loader import load
     from stayfixed.config.session import session_config
     from stayfixed.errors import Refusal
@@ -41,7 +42,7 @@ def _describe(context: KindContext) -> tuple[Subject, ...]:
             raise Refusal(NO_CONFIGURATION)
         config = session
     else:
-        config = load(context.root, machine=context.machine)
+        config = load(context.root, machine=context.machine, owner=command_owner(context.machine))
     store = store_at(context.root, config, context.machine, context.options.get("--store"))
     try:
         label = store.path.relative_to(context.root).as_posix()

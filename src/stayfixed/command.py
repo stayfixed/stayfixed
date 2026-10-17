@@ -1,10 +1,12 @@
 """What every configured command shares: the common flags and the configuration load.
 
 Three areas register commands that take `--root` and `--machine` and then load
-`stayfixed.toml`; at three the convention is code. Not in `stayfixed.areas`: that module is
-imported by the hook registry, and `tests/boundaries/test_discovery.py` asserts that discovery in
-a clean interpreter imports neither the configuration layer nor the presets — this module imports
-the loader at module level and is imported only by `commands.py` modules.
+`stayfixed.toml`; at three the convention is code. So is the machine owner's layer every load of a
+command runs on (`command_owner`), resolved once a command and said once. Not in
+`stayfixed.areas`: that module is imported by the hook registry, and
+`tests/boundaries/test_discovery.py` asserts that discovery in a clean interpreter imports neither
+the configuration layer nor the presets — this module imports the loader at module level and is
+imported only by `commands.py` modules.
 """
 
 from __future__ import annotations
@@ -15,6 +17,8 @@ from collections.abc import Callable
 from pathlib import Path
 
 from stayfixed.config.loader import load
+from stayfixed.config.machine import machine_config_path
+from stayfixed.config.owner import Owner, resolve_owner, said_on_stderr
 from stayfixed.config.schema import Config
 
 # One sentence per shared flag. `--root` and `--machine` were spelled by hand in three
@@ -85,7 +89,24 @@ def common_flags(
     return parser
 
 
-def root_and_config(args: argparse.Namespace) -> tuple[Path, Config]:
+def command_owner(machine: Path | None) -> Owner:
+    """The machine owner's layer a command runs on, read once from `machine` (`None` is the file
+    `config.machine` names) and `strict`, so a file that does not load is refused, with every note
+    on what it read past said on stderr here and nowhere else.
+
+    A command hands this to every load it makes (`config.loader.loads`' `owner`), which stands it
+    on the preset each document names. Said by the load instead, the notes were said once a
+    document: twice in `init --yes` and `upgrade --dry-run`, three times in one `gate`.
+    """
+    return said_on_stderr(
+        resolve_owner(machine_config_path() if machine is None else machine, strict=True)
+    )
+
+
+def root_and_config(args: argparse.Namespace, *, owner: Owner | None = None) -> tuple[Path, Config]:
+    """The resolved `--root` and its configuration, loaded under `owner`: the command's own when it
+    loads again later and so resolved it first, `command_owner`'s otherwise."""
     root = Path(args.root).resolve()
     machine = Path(args.machine) if args.machine else None
-    return root, load(root, machine=machine)
+    owner = command_owner(machine) if owner is None else owner
+    return root, load(root, machine=machine, owner=owner)

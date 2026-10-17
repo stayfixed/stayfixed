@@ -20,7 +20,7 @@ import argparse
 from pathlib import Path
 
 from stayfixed.areas import SubParsers
-from stayfixed.command import CHECK_HELP, common_flags
+from stayfixed.command import CHECK_HELP, command_owner, common_flags
 from stayfixed.config.loader import load
 from stayfixed.config.schema import Config
 from stayfixed.config.session import session_config
@@ -88,7 +88,7 @@ def _no_store(reason: Unresolved) -> Failure:
 def _store(args: argparse.Namespace) -> tuple[Store, Config]:
     root = Path(args.root).resolve()
     machine = _machine(args)
-    config = load(root, machine=machine)
+    config = load(root, machine=machine, owner=command_owner(machine))
     return _store_of(args, root, config, machine), config
 
 

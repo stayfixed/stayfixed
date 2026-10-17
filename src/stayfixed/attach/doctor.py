@@ -269,6 +269,10 @@ _CHECKED_AT_A_TERMINAL = "`stayfixed doctor` run from a terminal checks the link
 UNRESOLVED: Final = "unresolved"
 NO_OVERLAY: Final = "no-overlay"
 UNASKABLE: Final = "unaskable"
+# About this machine too: its machine file could not be read (`Context.overlay_root`'s
+# `MachineUnread`), so whether it records an overlay is not known. Read as `NO_OVERLAY` it told the
+# owner the machine records none, and as `UNASKABLE` that `git` or the overlay was at fault.
+MACHINE_UNREAD: Final = "machine-unread"
 # The fourth is `UNREADABLE_LEDGER`, above, and it is about the repository rather than about this
 # machine: a ledger that is there and will not parse is a file in the checkout the reader is
 # standing in. Told with the other two, the row would blame `git` or an unreadable record and send
@@ -331,6 +335,16 @@ def _uncorroborated(reason: str) -> Row:
             f"{ATTACH_LEDGER} is here and cannot be read as a ledger, so nothing in it can be "
             f"corroborated and this checkout's attach state is unknown — {not_evidence}",
             f"remove {ATTACH_LEDGER}, then run `{ATTACH_STORE} --check`",
+        )
+    if reason == MACHINE_UNREAD:
+        # No remedy of its own: the `preferences` row is red on the same file, and names it and
+        # what to do.
+        return Row(
+            SKIP,
+            f"{ATTACH_LEDGER} records an attach and the machine configuration file could not be "
+            f"read, so whether this checkout is attached could not be answered here; the "
+            f"`preferences` row says why — {not_evidence}",
+            "",
         )
     if reason == NO_OVERLAY:
         return Row(
@@ -843,6 +857,8 @@ def _binding_answer(context: Context, ledger: _Ledger) -> Binding | str:
     overlay is a fact about **this repository**, and `.stayfixed/local/attach.json` is a path a
     clone can commit, so it earns a warning. A missing overlay or a missing `git` is a fact about
     **our own inputs**, and a row that accused the repository on it would be reporting on itself.
+    So is a machine file that could not be read (`MACHINE_UNREAD`), asked first as `NO_OVERLAY` is:
+    `read_binding` would raise its refusal as a `Failure`, read as `UNASKABLE`, which blames `git`.
 
     The three are told apart without restructuring `read_binding`, which raises `Refusal` for
     two of them: `context.overlay_root` is the answer of the same `overlay_root(machine)` that
@@ -855,11 +871,14 @@ def _binding_answer(context: Context, ledger: _Ledger) -> Binding | str:
     from pathlib import Path
 
     from stayfixed.attach.binding import read_binding
+    from stayfixed.doctor.api import MachineUnread
     from stayfixed.errors import Failure, Refusal
     from stayfixed.gitenv import GitUnavailable
 
     if context.overlay_root is None:
         return NO_OVERLAY
+    if isinstance(context.overlay_root, MachineUnread):
+        return MACHINE_UNREAD
     recorded = ledger.state(context.root)
     # This one is the repository's file and not our inputs, so it does not join the other two: a
     # clone can commit `.stayfixed/local/attach.json`, and a file that will not parse is a fact
@@ -950,6 +969,7 @@ def _granted_commands(context: Context) -> tuple[set[Placed] | None, str | None]
     """
     from stayfixed.attach.binding import UnreadableRecord, binding_for
     from stayfixed.attach.permissions import common_entries, overlay_entries
+    from stayfixed.doctor.api import MachineUnread
     from stayfixed.errors import Failure, Refusal
     from stayfixed.memory.api import BOUND, MISMATCH
     from stayfixed.scaffold import wanted_placements
@@ -957,6 +977,10 @@ def _granted_commands(context: Context) -> tuple[set[Placed] | None, str | None]
     overlay = context.overlay_root
     if overlay is None:
         return set(), None
+    if isinstance(overlay, MachineUnread):
+        # Not "nothing records a source": whether one is recorded is not known, which is a source
+        # that could not be asked, decided by this machine's state alone as `Claims` requires.
+        return None, None
     narrowed: str | None = None
     try:
         try:

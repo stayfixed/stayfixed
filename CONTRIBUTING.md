@@ -121,8 +121,8 @@ it finishes is outside the rule: nothing but that command ever wrote into it.
 
 Every key a configuration layer can hold — the preset, a repository's `stayfixed.toml`, the
 overlay's files, the machine file — has one class in `src/stayfixed/config/classes.py`, and the
-class names the layers that may set it: the machine owner's alone (`personal.*`, `guards.*`,
-`setup.*`), a preference, a session's parameter, a gate's parameter, the repository's alone, or
+class names the layers that may set it: the machine owner's alone (`personal.*`, `guards.*`), a
+preference, a session's parameter, a gate's parameter, the repository's alone, or
 the plugin's. `classes.resolve` applies the classes over a stack of layers — a layer a key's class
 does not admit contributes nothing to it — and so decides who may set a key and gives `doctor` the
 layer each value came from; it builds the owner's layer from the preset and the machine file, but
