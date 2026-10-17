@@ -263,7 +263,9 @@ def test_a_file_longer_than_a_session_reads_is_read_no_further(tmp_path: Path) -
 ENFORCED_GATES = 26_000
 UNCONTAINED = [field.name for field in fields(Paths)][:4]
 # Well above what the read takes, well below the ten-second timeout `hooks/hooks.json` gives a hook,
-# as `tests/hooks/test_floor.py`'s `HOOK_BOUND_SECONDS` is.
+# as `tests/hooks/test_floor.py`'s `HOOK_BOUND_SECONDS` is. Counted in this process's CPU time and
+# not on the wall clock: the claim is what a read costs, and under the suite's workers a CI runner's
+# clock measured its scheduler instead, 6.5 s for a read that takes 0.4 s alone.
 SESSION_BOUND_SECONDS = 5
 
 
@@ -284,9 +286,9 @@ def test_a_long_file_of_gates_that_run_beside_bad_values_never_outlasts_the_hook
     assert len(text.encode()) <= SESSION_READ_LIMIT
     assert NOTE_REBUILT_LIMIT // len(text) == len(UNCONTAINED)  # every removal the length allows
     write(tmp_path, text)
-    started = time.monotonic()
+    started = time.process_time()
     got = session_config(tmp_path, machine=none(tmp_path))
-    elapsed = time.monotonic() - started
+    elapsed = time.process_time() - started
     assert got.config is not None and len(got.config.stayfixed.enforced) == ENFORCED_GATES
     assert got.noted == tuple(f"paths.{name}" for name in UNCONTAINED)
     assert elapsed < SESSION_BOUND_SECONDS, elapsed
