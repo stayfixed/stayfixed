@@ -205,7 +205,7 @@ def _attached(context: Context, config: Config, answers: Answers, ledger: _Ledge
             f"attach",
             f"run `{ATTACH_STORE} --check`",
         )
-    answer = _binding_answer(context, ledger)
+    answer = _binding_answer(context, config, ledger)
     # The ledger exists, so from here on this row's job is to say what the **overlay** makes of it
     # (principle 5), for the reason `_granted_commands` gives: the ledger is a path a clone can
     # commit, and the overlay is the one source a repository cannot choose. Every arm below but the
@@ -835,7 +835,7 @@ def _unresolved(
     )
 
 
-def _binding_answer(context: Context, ledger: _Ledger) -> Binding | str:
+def _binding_answer(context: Context, config: Config, ledger: _Ledger) -> Binding | str:
     """The overlay binding this repository would attach under, or the label of why there is none.
 
     Three different situations are three answers and never one `None` — a ledger naming a store
@@ -877,7 +877,7 @@ def _binding_answer(context: Context, ledger: _Ledger) -> Binding | str:
     try:
         # The report's own `Config`, which `read_binding` would otherwise load a second time.
         return read_binding(
-            context.root, store=Path(recorded.store), machine=context.machine, config=context.config
+            context.root, store=Path(recorded.store), machine=context.machine, config=config
         )
     except Refusal:
         return UNRESOLVED
