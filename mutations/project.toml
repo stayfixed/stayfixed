@@ -2136,3 +2136,18 @@ after = "    if fsops.is_dir(path) and not fsops.is_symlink(path):\n        with
 reddens = [
   "tests/project/test_footprint_commands.py::test_uninstall_removes_a_ledger_file_linked_where_nobody_may_search_as_a_link[.stayfixed/local/artifacts.json]",
 ]
+
+# A preset is parsed once per process, and every load hands its caller a copy of that parse.
+[[mutation]]
+name = "the preset is parsed on every load"
+file = "src/stayfixed/presets/__init__.py"
+before = "    return copy.deepcopy(_parsed(name))"
+after = "    return copy.deepcopy(_parsed.__wrapped__(name))"
+reddens = ["tests/config/test_session.py::test_a_session_parses_its_preset_once"]
+
+[[mutation]]
+name = "a caller's edit of a loaded preset reaches the next load"
+file = "src/stayfixed/presets/__init__.py"
+before = "    return copy.deepcopy(_parsed(name))"
+after = "    return _parsed(name)"
+reddens = ["tests/config/test_schema.py::test_a_loaded_preset_is_the_callers_own_copy"]

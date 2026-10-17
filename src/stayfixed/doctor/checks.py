@@ -108,7 +108,7 @@ from stayfixed.hooks.api import (
     MARKERS,
     data_root,
 )
-from stayfixed.presets import DEFAULT_PRESET, load_preset
+from stayfixed.presets import DEFAULT_PRESET, defaults_of, load_preset
 from stayfixed.printed import clipped
 from stayfixed.release.api import (
     HASHED_FILES,
@@ -711,9 +711,7 @@ def _preferences(context: Context) -> Row:
     run that exited 0 on it. What the owner's layer read past in a file that loads is a warning.
     """
     config = context.config
-    defaults = load_preset(config.stayfixed.preset if config else DEFAULT_PRESET).get(
-        "defaults", {}
-    )
+    defaults = defaults_of(load_preset(config.stayfixed.preset if config else DEFAULT_PRESET))
     preset: dict[str, object] = {}
     for key in PREFERENCES:
         section, _, name = key.partition(".")

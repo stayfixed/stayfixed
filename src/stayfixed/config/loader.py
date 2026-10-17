@@ -37,6 +37,7 @@ from stayfixed.config.reading import (
     coerced,
     positive,
     schema_types,
+    table_types,
     toml_position,
 )
 from stayfixed.config.schema import (
@@ -68,7 +69,13 @@ from stayfixed.config.schema import (
 from stayfixed.errors import Failure
 from stayfixed.findings import LISTED_LIMIT, listed
 from stayfixed.fsops import TooLarge, read_regular_text, said
-from stayfixed.presets import DEFAULT_PRESET, available, load_preset
+from stayfixed.presets import (
+    DEFAULT_PRESET,
+    available,
+    defaults_of,
+    load_preset,
+    shipped_presets,
+)
 from stayfixed.printed import clipped
 
 CONFIG_FILE = "stayfixed.toml"
@@ -588,7 +595,7 @@ def _built(
     # raises past 4,300 digits.
     preset_name = head.get("preset", DEFAULT_PRESET)
     preset = _preset(preset_name)
-    defaults = dict(preset.get("defaults", {}))
+    defaults = defaults_of(preset)
     defaults["stayfixed"] = {**defaults.get("stayfixed", {}), "preset": preset_name}
 
     stayfixed = _build(Stayfixed, "stayfixed", _merged(raw, defaults, "stayfixed"))
@@ -734,7 +741,7 @@ def _without_fallback(
 ) -> str | None:
     """Why nothing can stand in for `key`, which the document holds and `refused` refused; `None`
     when leaving it out leaves a value to build with. Asked before the key is removed."""
-    defaults = _defaults_of(document)
+    defaults = defaults_of(load_preset(preset_named(document)))
     if not _stands_in(key, defaults):
         return UNUSABLE_REQUIRED.format(key=clipped(key), reason=refused)
     section, _, name = key.partition(".")
@@ -748,17 +755,15 @@ def _without_fallback(
     return None
 
 
-def _defaults_of(document: dict[str, Any]) -> dict[str, Any]:
-    """The `[defaults]` of the preset `document` builds on: the one it names, or
-    `DEFAULT_PRESET`'s where it names none this build ships, which is what leaving
-    `stayfixed.preset` out builds on."""
+def preset_named(document: Mapping[str, object]) -> str:
+    """The preset the parsed `document` builds on: the one its `[stayfixed] preset` names when this
+    build ships it, and `DEFAULT_PRESET` otherwise, which is what a NOTE load resets an unshipped
+    name to and what leaving the key out builds on. Whether the document's name is usable is the
+    load's to say, in one note: this answers only what the defaults come from meanwhile, for the
+    owner's layer a session resolves (`config.session`) and for a key the load resets."""
     head = document.get("stayfixed")
     named = head.get("preset", DEFAULT_PRESET) if isinstance(head, dict) else DEFAULT_PRESET
-    try:
-        preset = _preset(named)
-    except ConfigError:
-        preset = _preset(DEFAULT_PRESET)
-    return dict(preset.get("defaults", {}))
+    return named if isinstance(named, str) and named in shipped_presets() else DEFAULT_PRESET
 
 
 # The keys the loader fills itself when the document leaves them out, where the preset's
@@ -799,6 +804,7 @@ def _defaulted(section: str, key: Field[Any], defaults: dict[str, Any]) -> bool:
 
 
 _SCHEMA_OF: dict[str, type[Any]] = {
+    "budgets": Budgets,
     "stayfixed": Stayfixed,
     "project": Project,
     "paths": Paths,
@@ -813,9 +819,7 @@ _SCHEMA_OF: dict[str, type[Any]] = {
 
 def _keys_of(section: str) -> Collection[str]:
     """The keys this stayfixed reads in `section`: `Budgets.NAMES`, or the schema class's fields."""
-    if section == "budgets":
-        return Budgets.NAMES
-    return schema_types(cast(Any, _SCHEMA_OF[section])).keys()
+    return table_types(_SCHEMA_OF[section]).keys()
 
 
 def _known_only(raw: dict[str, Any], notes: list[str], keys: list[str]) -> dict[str, Any]:
@@ -900,7 +904,7 @@ def preset_defaults(project: str, *, preset: str = DEFAULT_PRESET) -> Config:
     documents an overlay does not carry.
     """
     raw = load_preset(preset)
-    defaults = dict(raw.get("defaults", {}))
+    defaults = defaults_of(raw)
     head = {**defaults.get("stayfixed", {}), "preset": preset, "version": __version__}
     project_config = _build(Project, "project", {**defaults.get("project", {}), "name": project})
     return Config(

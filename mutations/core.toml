@@ -3915,8 +3915,8 @@ reddens = ["tests/config/test_owner.py::test_a_machine_with_no_home_is_the_prese
 [[mutation]]
 name = "the owner's layer never reads [guards]"
 file = "src/stayfixed/config/owner.py"
-before = '    for table in ("personal", "guards", "budgets"):'
-after = '    for table in ("personal", "budgets"):'
+before = '    tables: dict[str, type[Any]] = {"personal": Personal, "guards": Guards, "budgets": Budgets}'
+after = '    tables: dict[str, type[Any]] = {"personal": Personal, "budgets": Budgets}'
 reddens = [
   "tests/config/test_owner.py::test_the_machine_file_switches_the_background_guard_off",
 ]
@@ -4356,7 +4356,7 @@ reddens = [
 
 [[mutation]]
 name = "the owner's layer is handed a preset the loader resets"
-file = "src/stayfixed/config/session.py"
+file = "src/stayfixed/config/loader.py"
 before = "    return named if isinstance(named, str) and named in shipped_presets() else DEFAULT_PRESET"
 after = "    return named"
 reddens = [

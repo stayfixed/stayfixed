@@ -29,3 +29,15 @@ def test_unknown_budget_name_is_a_key_error() -> None:
     # the empty dict's own lookup raises the identical KeyError and the check is unfalsifiable.
     with pytest.raises(KeyError):
         Budgets(preset={"no_such_budget": 999}, configured={}).effective("no_such_budget")
+
+
+def test_a_loaded_preset_is_the_callers_own_copy() -> None:
+    # The parse is kept for the process, so what a caller is handed must not be it: an edit one
+    # caller makes would reach every later load. Mutation (`mutations/`'s "a caller's edit of a
+    # loaded preset reaches the next load"): the second load holds the first one's edit.
+    first = load_preset("recommended")
+    first["defaults"]["project"]["edited"] = True
+    first["budgets"].clear()
+    second = load_preset("recommended")
+    assert "edited" not in second["defaults"]["project"]
+    assert second["budgets"]
