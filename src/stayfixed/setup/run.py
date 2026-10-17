@@ -108,6 +108,7 @@ from __future__ import annotations
 import datetime
 import os
 import shutil
+import stat
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -119,11 +120,13 @@ from stayfixed.config.paths import PathEscape, PathUnasked, contained
 from stayfixed.errors import Failure, Refusal
 from stayfixed.fsops import UnsafePath, utf_8_name
 from stayfixed.gitenv import NO_ANSWER, answer_lines, git_run, in_work_tree
+from stayfixed.harnesses import BYTE_ORDER_MARK, lenient_settings
 from stayfixed.jsonobject import json_object, json_text
 from stayfixed.presets import load_preset
 from stayfixed.printed import answered, quoted
 from stayfixed.runner import Runner
-from stayfixed.setup.machine import USER_SETTINGS, read_personal, write_machine
+from stayfixed.setup.machine import SANDBOXED, USER_SETTINGS, read_personal, write_machine
+from stayfixed.trust.api import sandbox_refused
 
 # `<plugin-name>@<marketplace-name>`, matching `.claude-plugin/plugin.json`'s `name` and
 # `.claude-plugin/marketplace.json`'s `name` (`tests/test_manifests.py` holds both). Claude
@@ -255,17 +258,21 @@ def _install_plugins(
 
 
 def _read_document(path: Path) -> tuple[dict[str, Any], str]:
+    """The user settings file at `path` as one JSON object, and its text as it is on disk.
+
+    Read as Claude Code reads it (`harnesses.lenient_settings`), past a leading byte-order mark,
+    so an owner's file the harness reads is merged into rather than refused."""
     with fsops.reading(path, Failure):
         try:
             text = path.read_text(encoding="utf-8")
         except FileNotFoundError:
             return {}, ""
-    if not text.strip():
+    if not lenient_settings(text).strip():
         return {}, text
     # The file is the owner's and this run rewrites it, so valid JSON past the parser's reach is
     # refused as a `Failure` naming it rather than read, and rather than ending setup in an
     # internal error.
-    return json_object(text, str(path), error=Failure), text
+    return json_object(lenient_settings(text), str(path), error=Failure), text
 
 
 def _write_user_settings(
@@ -313,7 +320,9 @@ def _write_user_settings(
 
     # Written back through `json_text`, which answers a document the parser read and the
     # indenting encoder cannot follow (Python 3.12) as the reader answers one nested too deep.
-    new_text = json_text(document, str(path), error=Failure, indent=2, sort_keys=True) + "\n"
+    # A byte-order mark the file opened with is kept, so a run that changes nothing writes nothing.
+    mark = BYTE_ORDER_MARK if text.startswith(BYTE_ORDER_MARK) else ""
+    new_text = mark + json_text(document, str(path), error=Failure, indent=2, sort_keys=True) + "\n"
     if new_text == text:
         return False
     root, relative = (
@@ -336,6 +345,8 @@ def _write_user_settings(
     except UnsafePath as exc:
         raise Refusal(f"{path} cannot be written: {exc}; {_SYMLINKED_SETTINGS}") from exc
     except OSError as exc:
+        if sandbox_refused(exc):
+            raise Refusal(SANDBOXED) from exc
         # `UnsafePath` is not the only `OSError` reachable here, and the two that are not it
         # used to leave this library and land on `cli.run`'s final handler as `stayfixed:
         # internal error: FileNotFoundError`, exit 2, no remedy -- the exact rendering the
@@ -463,6 +474,25 @@ def _check_settings_path(home: Path) -> None:
         )
 
 
+def _not_writable(directory: Path, said: str) -> Refusal:
+    """The refusal of `directory`, which `os.access` says this user may not write: `SANDBOXED`
+    where its mode lets its owner, this user, write and search it, and `said` otherwise.
+
+    An agent's sandbox answers `os.access` as it answers the write (measured with `sandbox-exec`
+    on macOS 27 on 2026-10-16: `os.access(W_OK)` was false for a directory the profile denied and
+    whose mode allowed the write), so a directory its mode does not refuse is refused by something
+    else -- the sandbox, or a read-only mount, whose answer is the same for a person: run it from
+    their own terminal. A mode that refuses the user is not the sandbox, and keeps `said`.
+    """
+    try:
+        found = os.stat(directory)
+    except OSError:
+        return Refusal(said)
+    writable = stat.S_IWUSR | stat.S_IXUSR
+    owned = found.st_uid == os.getuid() and found.st_mode & writable == writable
+    return Refusal(SANDBOXED if owned else said)
+
+
 def _check_home_usable(
     home: Path, *, settings: Path | None = None, created: Path | None = None
 ) -> None:
@@ -509,7 +539,9 @@ def _check_home_usable(
         # `mkdir`'s to name, as "File exists" or "Not a directory": "is not writable" said of it
         # would be a cause it does not have.
         if fsops.is_dir(directory) and not fsops.creatable(path):
-            raise Refusal(f"--home {home} cannot be used: {directory} is not writable")
+            raise _not_writable(
+                directory, f"--home {home} cannot be used: {directory} is not writable"
+            )
     if settings is None:
         unread = _unreadable_on_the_walk(home, USER_SETTINGS)
         if unread is not None:
@@ -600,7 +632,7 @@ def _check_settings_parent(settings: Path) -> None:
     # in the words above about a symlink that was not there. `os.access` says yes to root, for
     # whom the write's own refusal stays the floor.
     if not fsops.creatable(settings):
-        raise Refusal(f"{settings} cannot be written: {parent} is not writable")
+        raise _not_writable(parent, f"{settings} cannot be written: {parent} is not writable")
     if _unreadable_on_the_walk(parent, settings.name) is not None:
         raise Refusal(f"{settings} cannot be written: {parent} {_OPENED_TO_READ}")
 

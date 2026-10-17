@@ -48,15 +48,11 @@ from pathlib import Path
 
 import stayfixed
 from stayfixed import fsops
-from stayfixed.config.loader import (
-    CONFIG_FILE,
-    UNPARSEABLE,
-    loads,
-    read_document,
-    toml_position,
-)
+from stayfixed.config.loader import CONFIG_FILE, loads, read_document
 from stayfixed.config.owned import rewrite
+from stayfixed.config.owner import Owner
 from stayfixed.config.paths import contained
+from stayfixed.config.reading import UNPARSEABLE, toml_position
 from stayfixed.errors import Failure, Refusal
 from stayfixed.project.detect import CURRENT_BRANCH, DEFAULT_BRANCH, Detected, detect
 from stayfixed.project.footprint import prepare
@@ -205,7 +201,7 @@ def _existing(root: Path) -> tuple[str, dict[str, object]] | None:
     stopped at, and nothing else the parser had to say. `tomllib`'s own message embeds the
     source for several of its faults — a duplicate table or inline-table key is reported with
     the key in it, and a TOML key is arbitrary quoted text — so the exception is bounded by
-    `config.loader.toml_position` before any of it prints. The file is `stayfixed.toml`, which
+    `config.reading.toml_position` before any of it prints. The file is `stayfixed.toml`, which
     on adoption is the repository's own document, read as its answers rather than replaced, and
     this refusal is one the `init` skill is instructed to relay and stop on.
     """
@@ -353,6 +349,7 @@ def init(
     dry_run: bool,
     ci: bool,
     given: Given = NO_ANSWERS,
+    owner: Owner | None = None,
 ) -> InitReport:
     """Plan both passes, then apply both — or neither.
 
@@ -368,6 +365,9 @@ def init(
     (`footprint.refuse_local_root_only`), a planned write git ignores
     (`ignored.refuse_ignored`), and finally a refusal in either plan, which is returned rather
     than raised so the report can name the artifact.
+
+    `owner` is the owner's layer the command resolved, which every load here takes, so the machine
+    file is read once and what it read past is said once (`config.loader.loads`' own).
     """
     if not yes:
         raise Refusal(NEEDS_YES)
@@ -376,12 +376,12 @@ def init(
     existing = read[1] if read is not None else None
     tables, head_note = _tables(root, existing, ci=ci, given=given)
     document = _rendered(tables)
-    config = loads(document, root, machine=machine)
+    config = loads(document, root, machine=machine, owner=owner)
     on_disk, stamped = _as_on_disk(read)
     if on_disk is not None:
         # What the next command loads is the file, not the merged document: that one forces
         # `state`, drops `enforced` and detects a name the file may lack.
-        loads(on_disk, root, machine=machine)
+        loads(on_disk, root, machine=machine, owner=owner)
     # Not asked on the adoption path with no `[ci] ref` either: `_ci` answers that path with
     # `NO_REF` before it reads the resolution, and the ask is a network round trip that can take
     # the whole of its timeout for an answer nothing prints.
@@ -399,7 +399,7 @@ def init(
     if resolution.pin is not None and existing is None:
         tables.setdefault("ci", {})["ref"] = resolution.pin.sha
         document = _rendered(tables)
-        config = loads(document, root, machine=machine)
+        config = loads(document, root, machine=machine, owner=owner)
     # No manifest yet, so nothing to retire: `prepare` for its refusals and the pass order.
     passes = prepare(
         root, config, {}, resolution=resolution, document=document, adopted=existing is not None

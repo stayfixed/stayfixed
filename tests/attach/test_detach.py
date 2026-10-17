@@ -22,12 +22,12 @@ from stayfixed.config.layout import ATTACH_LEDGER as LEDGER
 from stayfixed.config.layout import IGNORE_BODY, IGNORE_REGION
 from stayfixed.errors import Failure, Refusal
 from stayfixed.memory.api import harness_memory_path, resolve
-from stayfixed.memory.trust import record
 from stayfixed.printed import quoted
 from stayfixed.project.init import init
 from stayfixed.project.uninstall import uninstall
 from stayfixed.scaffold import MANIFEST_PATH, Kind, Location, Manifest, Record, digest
 from stayfixed.scaffold.regions import RegionError, Style, extract, markers, upsert
+from tests.approved import record
 from tests.attach.test_binding import DEFAULT_MEMORY
 from tests.attach.test_links import _attach, _bound, _config, _trusted
 from tests.attach.test_write import SETTINGS

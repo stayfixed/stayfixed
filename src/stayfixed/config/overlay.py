@@ -2,17 +2,17 @@
 
 The overlay itself is the private layer's, and this module reads nothing of it: only
 `[overlay] root`, the machine file's record of where it is, which the note store, `attach`,
-`doctor` and `init --questions` all ask for. Beside `config.loader` rather than in
-`config.machine`, because the loader imports `config.machine` at module level and this reader
-reads the file through the loader's `read_machine_toml`.
+`doctor` and `init --questions` all ask for. Beside `config.reading` rather than in
+`config.machine`, because `config.reading` is what reads the file (`read_machine_toml`), for this
+reader and the owner's layer alike.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from stayfixed.config.loader import read_machine_toml
 from stayfixed.config.machine import in_owner_home, machine_config_path
+from stayfixed.config.reading import read_machine_toml
 
 
 def overlay_root(machine: Path | None) -> Path | None:
@@ -22,8 +22,8 @@ def overlay_root(machine: Path | None) -> Path | None:
     "no overlay root is recorded in the machine configuration; run `stayfixed setup`", which is
     wrong advice for a broken file.
 
-    So a file that cannot be read or parsed raises the loader's `MachineConfigError`, in the
-    loader's words for the same file (`read_machine_toml`), and the three shapes that genuinely
+    So a file that cannot be read or parsed raises `config.reading`'s `MachineConfigError`, in its
+    words for the same file (`read_machine_toml`), and the three shapes that genuinely
     record no overlay answer `None`: an absent file (the ordinary state before `setup` has run),
     no `[overlay]` table, and a table with no usable `root`.
 

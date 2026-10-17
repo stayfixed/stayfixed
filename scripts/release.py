@@ -54,7 +54,7 @@ try:
     from stayfixed import fsops
     from stayfixed.cli import JSON_EPILOG, run
     from stayfixed.command import CHECK_HELP, ROOT_HELP
-    from stayfixed.config.loader import UNPARSEABLE
+    from stayfixed.config.reading import UNPARSEABLE
     from stayfixed.errors import Failure, Refusal
     from stayfixed.jsonobject import json_object
     from stayfixed.printed import clipped

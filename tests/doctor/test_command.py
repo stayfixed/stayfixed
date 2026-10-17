@@ -66,7 +66,7 @@ def test_the_command_is_discovered() -> None:
 def test_a_clean_installation_exits_zero_with_one_line(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # Every command prints a one-line result. Seventeen rows on stdout would make `doctor`
+    # Every command prints a one-line result. Eighteen rows on stdout would make `doctor`
     # the one command a caller has to parse rather than read, and `--json` is where the rows are.
     root = _initialised(tmp_path)
     code = invoke(["doctor", "--root", str(root), "--home", str(tmp_path / "home")])
@@ -144,11 +144,31 @@ def test_a_skip_is_not_a_finding(tmp_path: Path, capsys: pytest.CaptureFixture[s
 def test_any_red_check_exits_one(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     # Exit 1 is "findings". A doctor that always exits 0 is a doctor nothing can gate on: a
     # script or a CI step that runs it reads the exit code, since `stayfixed assess` runs no
-    # doctor check. A directory with no `stayfixed.toml` is the cheapest red there is, and the
-    # report's own first row.
+    # doctor check. A `stayfixed.toml` that is not TOML is the cheapest red there is, and the
+    # report's own first row; a directory with none at all is a warning, which exits 0. Mutation
+    # (`mutations/`'s "not-initialised is red with no stayfixed.toml"): the second run exits 1.
+    (tmp_path / "stayfixed.toml").write_text("[[[", encoding="utf-8")
     code = invoke(["doctor", "--root", str(tmp_path), "--home", str(tmp_path / "home")])
     assert code == 1
     assert "not-initialised" in capsys.readouterr().out
+    (tmp_path / "stayfixed.toml").unlink()
+    assert invoke(["doctor", "--root", str(tmp_path), "--home", str(tmp_path / "home")]) == 0
+
+
+def test_a_machine_file_that_does_not_load_exits_one(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Every command that reads the machine file refuses one that does not load, with exit 1, and
+    # `doctor`, which reads it as a session does, exited 0 on it with one warning. Mutation
+    # (`mutations/`'s "the preferences row reads a machine file that does not load as one it read
+    # past"): exit 0.
+    root = _initialised(tmp_path)
+    machine = tmp_path / "machine.toml"
+    machine.write_text("[personal\nx = 1\n", encoding="utf-8")
+    argv = ["doctor", "--root", str(root), "--home", str(tmp_path / "home"), "--json"]
+    assert invoke([*argv, "--machine", str(machine)]) == 1
+    report = json.loads(capsys.readouterr().out)
+    assert [c["name"] for c in report["checks"] if c["status"] == RED] == ["preferences"]
 
 
 def test_claims_that_raise_an_os_error_fail_the_report(
@@ -217,11 +237,14 @@ def test_the_json_form_carries_every_check_and_its_remedy(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # The skill relays remedies verbatim, so a remedy missing from `--json` is a remedy the
-    # user never sees — and the summary line has room for none of them.
+    # user never sees — and the summary line has room for none of them. The count is the
+    # report's eighteen rows, held beside `README.md`, `docs/cli.md`, the doctor skill and the
+    # smoke workflow by `tests/test_documents.py`.
+    (tmp_path / "stayfixed.toml").write_text("[[[", encoding="utf-8")
     code = invoke(["doctor", "--root", str(tmp_path), "--home", str(tmp_path / "home"), "--json"])
     assert code == 1
     report = json.loads(capsys.readouterr().out)
-    assert len(report["checks"]) == 17
+    assert len(report["checks"]) == 18
     assert all({"name", "status", "detail", "remedy"} <= set(check) for check in report["checks"])
     red = next(check for check in report["checks"] if check["status"] == "red")
     assert red["remedy"]
@@ -229,7 +252,7 @@ def test_the_json_form_carries_every_check_and_its_remedy(
 
 def test_the_summary_line_is_bounded() -> None:
     # `findings.LISTED_LIMIT` exists because an unbounded summary pushes the repairing command
-    # off the end of the line, and seventeen checks is already past eight. Asserted over a
+    # off the end of the line, and eighteen checks is already past eight. Asserted over a
     # synthetic report rather than a fixture, because arranging nine simultaneous real failures
     # would be a test about the fixture.
     checks = [Check(f"check-{n}", RED, "d", "r") for n in range(LISTED_LIMIT + 3)]

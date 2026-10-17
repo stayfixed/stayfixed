@@ -98,6 +98,7 @@ from pathlib import Path, PurePosixPath
 from stayfixed import fsops
 from stayfixed.config.layout import ATTACH_LEDGER
 from stayfixed.config.loader import loads, read_document
+from stayfixed.config.owner import Owner
 from stayfixed.config.paths import STAYFIXED_DIRECTORY, contained
 from stayfixed.errors import Refusal
 from stayfixed.fsops import path_key, remove_within, rmdir_within, said
@@ -313,7 +314,12 @@ def _remove_ledger(root: Path) -> None:
 
 
 def uninstall(
-    root: Path, *, machine: Path | None, dry_run: bool, force: Sequence[str]
+    root: Path,
+    *,
+    machine: Path | None,
+    dry_run: bool,
+    force: Sequence[str],
+    owner: Owner | None = None,
 ) -> UninstallReport:
     if not Manifest.present(root):
         raise Refusal(NOTHING)
@@ -331,7 +337,7 @@ def uninstall(
             _remove_ledger(root)
         note = NO_CONFIG.format(count=len(manifest.records))
         return UninstallReport(Plan(), Plan(), 0, dry_run, note, 0)
-    config = loads(document, root, machine=machine)
+    config = loads(document, root, machine=machine, owner=owner)
     # `removing`: every record `retired_templates` lists goes, and a profile artifact kept out of
     # git is not refused, so a configuration written before that rule can still be taken back.
     passes = prepare(

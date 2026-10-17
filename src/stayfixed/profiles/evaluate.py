@@ -41,8 +41,8 @@ from pathlib import Path
 from typing import Any, TypeVar
 
 from stayfixed import fsops
-from stayfixed.config.loader import UNPARSEABLE
 from stayfixed.config.paths import PathEscape, contained
+from stayfixed.config.reading import UNPARSEABLE
 from stayfixed.fsops import read_regular_text
 from stayfixed.gitenv import git_run, in_work_tree
 from stayfixed.profiles.model import Check, CheckKind, Locator, Profile

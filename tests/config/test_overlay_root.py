@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from stayfixed.config.loader import MachineConfigError
 from stayfixed.config.overlay import overlay_root
+from stayfixed.config.reading import MachineConfigError
 from tests.ownerhome import as_owner_home
 
 
@@ -31,10 +31,10 @@ def test_a_recorded_root_is_answered_and_an_empty_machine_file_records_none(
 def test_a_machine_file_that_is_not_valid_toml_is_not_an_unrecorded_overlay(
     tmp_path: Path,
 ) -> None:
-    # `config.loader._personal` raises `ConfigError` for this very file and this very syntax
-    # error. This reader answered `None`, which the store renders as "no overlay root is
-    # recorded … run `stayfixed setup`" — wrong advice for a file that is already there. The
-    # loader's class, so the one file has one failure whichever reader meets it first.
+    # `config.owner.resolve_owner` raises `MachineConfigError` for this very file and this very
+    # syntax error. This reader answered `None`, which the store renders as "no overlay root is
+    # recorded … run `stayfixed setup`" — wrong advice for a file that is already there. One
+    # class, so the one file has one failure whichever reader meets it first.
     broken = tmp_path / "machine.toml"
     broken.write_text("[overlay\nroot = 'x'\n", encoding="utf-8")
     with pytest.raises(MachineConfigError, match=r"is not valid TOML \(at line 1"):

@@ -17,6 +17,7 @@ from stayfixed.hooks.dispatch import Recorder, dispatch
 from tests.floor import floor_env
 from tests.gitfixture import git
 from tests.ownerhome import stayfixed_argv
+from tests.sessions import NO_CONFIG, session_of
 
 ROOT = Path(__file__).resolve().parents[2]
 CONFIG = """
@@ -87,17 +88,26 @@ def test_the_background_guard_is_the_closed_pre_tool_use_handler() -> None:
     assert handler.policy is Policy.CLOSED
 
 
-def test_no_config_is_silence_for_every_handler(tmp_path: Path) -> None:
-    # With no stayfixed.toml, no hook handler says anything. The guard included, by design.
-    for handler in register():
-        result = handler.run(bash_event(tmp_path, "sleep 300 &"), None)
-        assert result.decision is None and result.context is None
+def test_no_config_silences_the_hygiene_note_and_never_the_guard(tmp_path: Path) -> None:
+    # With no stayfixed.toml the guard was silent too, by design, so a repository that had not
+    # run `stayfixed init` was not guarded. It judges with any configuration now, none included,
+    # and the hygiene note, which is about the project, stays silent. Mutations (`mutations/`'s
+    # "the background guard is silent without a project configuration" -> the deny goes; "the
+    # hygiene note judges with no project configuration" -> the note raises on `None`).
+    verdicts = {
+        handler.event: handler.run(bash_event(tmp_path, "sleep 300 &"), NO_CONFIG)
+        for handler in register()
+    }
+    assert verdicts["PreToolUse"].decision == Decision.DENY
+    assert verdicts["PreToolUse"].reason == bgcleanup.SLEEP_REASON
+    for event in ("PostToolUse", "PostToolUseFailure"):
+        assert verdicts[event].decision is None and verdicts[event].context is None
 
 
 def test_a_leaking_background_call_is_denied(tmp_path: Path) -> None:
     root = a_project(tmp_path)
     config = load(root, machine=tmp_path / "absent.toml")
-    result = guard().run(bash_event(root, "python -m http.server 8000 &"), config)
+    result = guard().run(bash_event(root, "python -m http.server 8000 &"), session_of(config))
     assert result.decision is Decision.DENY
     assert result.reason == bgcleanup.LEAK_REASON
 
@@ -114,7 +124,7 @@ def test_every_leaking_call_of_a_session_is_denied_not_only_the_first(tmp_path: 
         outcome = dispatch(
             bash_event(root, "python -m http.server 8000 &"),
             register(),
-            config,
+            session_of(config),
             harness=CLAUDE,
             sink=recorder,
         )
@@ -127,7 +137,7 @@ def test_a_non_bash_tool_is_ignored(tmp_path: Path) -> None:
     # stops this event, and the assertion would say nothing about `tool_name`.
     root = a_project(tmp_path)
     config = load(root, machine=tmp_path / "absent.toml")
-    result = guard().run(bash_event(root, "sleep 300 &", tool="Edit"), config)
+    result = guard().run(bash_event(root, "sleep 300 &", tool="Edit"), session_of(config))
     assert result.decision is None
 
 
@@ -135,7 +145,7 @@ def test_a_trailing_restore_arrives_as_context_not_a_decision(tmp_path: Path) ->
     root = a_project(tmp_path)
     config = load(root, machine=tmp_path / "absent.toml")
     command = "cp a a.bak; sed -i '' 's/x/y/' a; pytest; cp a.bak a"
-    result = guard().run(bash_event(root, command, background=False), config)
+    result = guard().run(bash_event(root, command, background=False), session_of(config))
     assert result.decision is None
     assert result.context is not None and "trap" in result.context
 
@@ -144,7 +154,7 @@ def test_a_masking_echo_arrives_as_context_not_a_decision(tmp_path: Path) -> Non
     root = a_project(tmp_path)
     config = load(root, machine=tmp_path / "absent.toml")
     command = 'pytest -q > out.log 2>&1; echo "EXIT=$?" >> out.log'
-    result = guard().run(bash_event(root, command, background=True), config)
+    result = guard().run(bash_event(root, command, background=True), session_of(config))
     assert result.decision is None
     assert result.context is not None and "notification" in result.context
 
@@ -161,7 +171,9 @@ def test_a_guard_that_cannot_judge_refuses_rather_than_permits(
     root = a_project(tmp_path)
     config = load(root, machine=tmp_path / "absent.toml")
     recorder = Recorder()
-    outcome = dispatch(bash_event(root, "ls"), register(), config, harness=CLAUDE, sink=recorder)
+    outcome = dispatch(
+        bash_event(root, "ls"), register(), session_of(config), harness=CLAUDE, sink=recorder
+    )
     assert outcome.exit_code == 2
     assert "bg-cleanup: RuntimeError: boom" in outcome.stderr
     assert recorder.records[0]["handler"] == "bg-cleanup"
@@ -300,7 +312,7 @@ def test_a_red_pytest_over_a_dirty_tree_is_noticed(
     # Reddened by mutating `_test_hygiene`'s last line to `return HookResult()`; measured.
     root = dirty_project(tmp_path)
     config = load(root, machine=tmp_path / "absent.toml")
-    result = hygiene().run(post_event(root, "pytest -q", extra), config)
+    result = hygiene().run(post_event(root, "pytest -q", extra), session_of(config))
     assert result.decision is None
     assert result.context is not None and "uncommitted" in result.context
 
@@ -314,12 +326,14 @@ def test_a_green_run_or_a_non_pytest_command_is_silence(tmp_path: Path) -> None:
     config = load(root, machine=tmp_path / "absent.toml")
     assert (
         hygiene()
-        .run(post_event(root, "pytest -q", {"tool_response": {"stdout": "ok"}}), config)
+        .run(post_event(root, "pytest -q", {"tool_response": {"stdout": "ok"}}), session_of(config))
         .context
         is None
     )
     assert (
-        hygiene().run(post_event(root, "ls", {"tool_response": {"exit_code": 1}}), config).context
+        hygiene()
+        .run(post_event(root, "ls", {"tool_response": {"exit_code": 1}}), session_of(config))
+        .context
         is None
     )
 
@@ -355,7 +369,7 @@ def test_a_hygiene_failure_is_recorded_and_never_costs_the_call(
     outcome = dispatch(
         post_event(root, "pytest", RED_ON[event], name=event),
         register(),
-        config,
+        session_of(config),
         harness=CLAUDE,
         sink=recorder,
     )
@@ -375,14 +389,14 @@ def test_an_unrelated_call_does_not_consume_the_one_delivery(tmp_path: Path) -> 
     dispatch(
         post_event(root, "ls", {"tool_response": {"stdout": ""}}),
         register(),
-        config,
+        session_of(config),
         harness=CLAUDE,
         sink=recorder,
     )
     outcome = dispatch(
         post_event(root, "pytest", {"tool_response": {"exit_code": 1}}),
         register(),
-        config,
+        session_of(config),
         harness=CLAUDE,
         sink=recorder,
     )
@@ -412,7 +426,7 @@ def test_the_red_run_note_is_delivered_once_per_context_whichever_event_carries_
         outcome = dispatch(
             post_event(root, "pytest -q", RED_ON[event], name=event),
             register(),
-            config,
+            session_of(config),
             harness=CLAUDE,
             sink=recorder,
         )

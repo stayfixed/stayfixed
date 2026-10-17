@@ -19,8 +19,8 @@ from posixpath import relpath
 from typing import TYPE_CHECKING, Any
 
 from stayfixed import fsops
-from stayfixed.config.loader import UNPARSEABLE, toml_position
 from stayfixed.config.paths import contained
+from stayfixed.config.reading import UNPARSEABLE, toml_position
 from stayfixed.docs.hygiene import TRAIL_MARKER, TRAIL_MARKER_LINE, read_document
 from stayfixed.docs.themes import ThemePattern, compile_theme
 from stayfixed.errors import Failure
@@ -151,7 +151,7 @@ def read_trail(path: Path, where: str) -> Trail:
     try:
         raw: dict[str, Any] = tomllib.loads(read_document(path, where))
     except UNPARSEABLE as exc:
-        # Through `config.loader.toml_position`: `tomllib`'s message embeds the source for
+        # Through `config.reading.toml_position`: `tomllib`'s message embeds the source for
         # several of its faults — a duplicate table is reported with the table's name in it —
         # and a TOML key is arbitrary quoted text. `trail.toml` is one of the twelve files
         # `stayfixed init` ships, so every repository `init` touches has one that this function

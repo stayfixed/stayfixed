@@ -6,7 +6,8 @@ overlay binding. `--machine` exists for the same reason the resolver takes one �
 did not thread it would read the developer's real configuration and, worse, write a trust
 record into their home directory.
 
-It is threaded exactly twice, into `load` and into `resolve`, and never again: `resolve` puts
+It is threaded exactly twice, into `load` (`session_config` for `session-context`, which reads
+the file the way a session does) and into `resolve`, and never again: `resolve` puts
 it on the `Store` it builds, so every later call takes it from there. It used to be an optional
 keyword on about twenty functions, and the only thing keeping a command's overlay, its index
 destination and its trust record in agreement was that each of those call sites remembered to
@@ -19,10 +20,10 @@ import argparse
 from pathlib import Path
 
 from stayfixed.areas import SubParsers
-from stayfixed.command import CHECK_HELP, common_flags
+from stayfixed.command import CHECK_HELP, command_owner, common_flags
 from stayfixed.config.loader import load
-from stayfixed.config.machine import homes_agree
 from stayfixed.config.schema import Config
+from stayfixed.config.session import session_config
 from stayfixed.errors import Failure, Refusal
 from stayfixed.findings import labels, listed
 from stayfixed.memory import trust
@@ -42,6 +43,14 @@ from stayfixed.memory.store import Store, Unresolved, in_repository, resolved
 from stayfixed.memory.worktree import harness_link_needed
 from stayfixed.printed import printable, quoted
 from stayfixed.result import Result
+from stayfixed.trust.api import (
+    PERSON_RUNS,
+    SandboxedWrite,
+    State,
+    approve_kind,
+    kind_context,
+    state,
+)
 
 
 def _machine(args: argparse.Namespace) -> Path | None:
@@ -79,17 +88,31 @@ def _no_store(reason: Unresolved) -> Failure:
 def _store(args: argparse.Namespace) -> tuple[Store, Config]:
     root = Path(args.root).resolve()
     machine = _machine(args)
-    config = load(root, machine=machine)
+    config = load(root, machine=machine, owner=command_owner(machine))
+    return _store_of(args, root, config, machine), config
+
+
+def _store_of(args: argparse.Namespace, root: Path, config: Config, machine: Path | None) -> Store:
+    """The store `config` names in `root`, or the refusal that says why there is none."""
+    return store_at(root, config, machine, args.store)
+
+
+def store_at(root: Path, config: Config, machine: Path | None, override: str | None) -> Store:
+    """`_store_of` for a caller holding `--store`'s value rather than the parsed arguments: the
+    `memory` approval kind (`memory.approvals`) resolves the store as `memory trust` did."""
     # `resolved` and not `resolve` + `refusal_reason`: the pair walked the whole resolution
     # twice, four `git` queries with a five-second timeout apiece each time, so a hanging `git`
     # cost a refused `memory session-context` up to forty seconds — once per `SessionStart`
     # bundle entry.
-    found = resolved(root, config, override=args.store, machine=machine)
+    found = resolved(root, config, override=override, machine=machine)
     if found[0] is None:
         raise _no_store(found[1])
-    return found[0], config
+    return found[0]
 
 
+# How each sentence below asks for the store's approval: of the person at the machine, never of an
+# agent (`trust.api.PERSON_RUNS`).
+_APPROVE = PERSON_RUNS.format(command="stayfixed trust approve memory")
 # What the trust gate withholds until there is a record, said where a person will read it:
 # `bundles.blocks` returns `[]` for repository-data notes, and `worktree.harness_link_needed`
 # withholds the harness memory link from a store whose directory is inside the repository.
@@ -102,7 +125,7 @@ def _store(args: argparse.Namespace) -> tuple[Store, Config]:
 _UNTRUSTED = (
     "this store holds repository data with no trust record, so none of it reaches a session — "
     "not through the standing-rules and volatile-notes bundles, nor through the harness memory "
-    "link — run `stayfixed memory trust --in-repo-memory`"
+    "link; " + _APPROVE
 )
 # The overlay store whose notes are all the machine owner's: the bundles deliver them with no
 # record, and only the link to the store's directory, which is inside the repository, waits.
@@ -110,15 +133,26 @@ _UNTRUSTED = (
 _LINK_WAITS = (
     "the harness memory link to this store waits for a trust record, because the store's "
     "directory is inside the repository; its notes still reach a session through the "
-    "standing-rules and volatile-notes bundles — run `stayfixed memory trust --in-repo-memory` "
-    "to link it"
+    "standing-rules and volatile-notes bundles; to link it, " + _APPROVE
 )
 # The narrow case where a stayfixed-authored write cannot carry trust forward: the store changed
-# under it, so re-recording would bless bytes the owner has never looked at. `refresh_if_trusted`
-# refuses rather than guess, which is right, and the human has to be told which it was.
+# under it, so re-recording would bless bytes the owner has never looked at, or the record did —
+# the owner revoked the approval, or gave a new one, while the command ran — so re-recording would
+# undo the owner's own word. `refresh_if_trusted` refuses rather than guess, which is right, and
+# the human has to be told which it was.
 _DROPPED = (
-    "the store changed while this command ran, so its trust record was not carried over — "
-    "review the change and re-run `stayfixed memory trust --in-repo-memory`"
+    "the store or its trust record changed while this command ran, so the approval was not "
+    "carried over; review the change, and if the store should reach a session, " + _APPROVE
+)
+# The refresh's write refused as an agent's sandbox refuses one (`trust.boundary`): the files were
+# written and the approval was left at the digest the person gave, which they no longer match, so
+# a later run cannot carry it either and only a new approval brings the store back.
+_NOT_REFRESHED = (
+    "the store's approval could not be refreshed and was left as it was: the trust record's "
+    "directory refused the write, as Claude Code's sandbox refuses every write an agent's shell "
+    "makes outside the working directory, so only a person outside the agent's sandbox can write "
+    "it; the approval no longer matches the files this command wrote, so review them, and if the "
+    "store should reach a session, " + _APPROVE
 )
 # What the write path put into notes that nobody curated: an `index:` line taken from a note's
 # `metadata.index` or, failing that, its description. Said on the line and not only in `--json`'s
@@ -298,10 +332,21 @@ def run_index(args: argparse.Namespace) -> Result:
         )
     text = render_index(reconciled, config, store)
     path = write_index(store, config, text)
-    carried = trust.refresh_if_trusted(store, config, before, [*reconciled.written, path])
+    try:
+        carried = trust.refresh_if_trusted(store, config, before, [*reconciled.written, path])
+        sandboxed = False
+    except SandboxedWrite:
+        # The index is written; the refresh alone was refused, and nothing reached the record.
+        carried, sandboxed = False, True
     # Asked after the write and its refresh, which is the state the next session meets.
     trusted = harness_link_needed(store, config)
-    note = _DROPPED if before.trusted and not carried else _gate(store, config, trusted)
+    note: str | None
+    if sandboxed:
+        note = _NOT_REFRESHED
+    elif before.trusted and not carried:
+        note = _DROPPED
+    else:
+        note = _gate(store, config, trusted)
     # Exit 0: the write succeeded, and `--check` is the mode that fails a build. The findings
     # are still said, because a person running this by hand is who can act on them.
     wrote = "; ".join(
@@ -334,28 +379,45 @@ def run_session_context(args: argparse.Namespace) -> Result:
     except ValueError as exc:
         known = ", ".join(b.value for b in Bundle)
         raise Refusal(f"unknown bundle {args.bundle!r}; known: {known}") from exc
-    store, config = _store(args)
-    text = render(bundle, store, config, part=args.part)
+    # Read the way the session it feeds reads it (`config.session`): a key a newer release added
+    # or a value nobody can use costs that key, not every bundle; a file that does not load at
+    # all gives no project configuration, and so no store and nothing to say. The notice about it
+    # is the `hook SessionStart` entry's, which runs beside this one.
+    root = Path(args.root).resolve()
+    machine = _machine(args)
+    config = session_config(root, machine=machine).config
+    if config is None:
+        return Result("")
+    text = render(bundle, _store_of(args, root, config, machine), config, part=args.part)
     return Result(text if text is not None else "")
 
 
+# What the old spelling says after it ran, so a person learns the new one before it goes.
+ALIAS_NOTE = (
+    "`stayfixed memory trust --in-repo-memory` is now `stayfixed trust approve memory`; the old "
+    "spelling is removed in 0.5.0"
+)
+
+
 def run_trust(args: argparse.Namespace) -> Result:
-    store, config = _store(args)
-    before = trust.state(store, config)
-    after = trust.record(store, config)
-    summary = f"recorded the store hash for {store.path}"
-    written = trust.record_path(store.machine)
-    if store.machine is None and written is not None and not homes_agree():
-        # Said where `HOME` is not the database's home, because a person who looks under `HOME`
-        # for the record finds an older one or none (`config.machine`'s docstring says why).
-        summary = (
-            f"{summary}, in {written}: under the home the password database records for this "
-            f"user, not under HOME, because that is where a hook reads it"
-        )
-    return Result(
-        summary,
-        {"was_trusted": before.trusted, "trusted": after.trusted, "digest": after.current},
-    )
+    """The old spelling of `stayfixed trust approve memory`: the same approve path, the terminal
+    check included.
+
+    Its `--json` keeps the old spelling's keys for as long as the spelling lives, beside the new
+    ones, each read off the new run: `was_trusted`, whether the store was approved at its digest
+    before the run; `trusted`, whether the record holds that digest after it; `digest`, the
+    store's digest."""
+    context, given = kind_context(args)
+    approved = approve_kind(trust.MEMORY, context, given)
+    # The memory kind describes one store per checkout, or refuses before anything is approved.
+    (store,) = approved.data["approved"]
+    after = state(context.machine, trust.MEMORY, store["subject"], store["digest"])
+    old = {
+        "was_trusted": store["was"] == State.APPROVED,
+        "trusted": after is State.APPROVED,
+        "digest": store["digest"],
+    }
+    return Result(f"{approved.summary}\n{ALIAS_NOTE}", {**approved.data, **old}, approved.exit_code)
 
 
 def run_inventory(args: argparse.Namespace) -> Result:
@@ -476,21 +538,25 @@ def register(groups: SubParsers) -> None:
     context.set_defaults(func=run_session_context)
 
     trusted = common_flags(
-        sub.add_parser("trust", help="trust notes committed to this repository"), store=True
+        sub.add_parser(
+            "trust",
+            help="the old spelling of `stayfixed trust approve memory`, removed in 0.5.0",
+        ),
+        store=True,
     )
     trusted.add_argument(
         "--in-repo-memory",
         action="store_true",
         required=True,
-        # Required and never read by `run_trust` — that is not a missing guard, it is the whole
-        # point. This is an explicit-confirmation gesture, not a switch between two behaviours:
-        # its presence is what stops `memory trust` from being a bare, trivially scripted
-        # command. It is not a safety check either, so there is nothing here to branch on: trust
-        # is only ever *consulted* for content that lives in the repository — the notes, when
-        # `inside_project(store)`, and `MEMORY.md` whenever it resolves inside the repository,
-        # which it does in overlay mode too, since `store.path` is a real directory there. For
-        # a store holding neither, `trust.may_inject` short-circuits to `True`, so recording a
-        # hash for it is inert rather than dangerous.
+        # Required and never read by `run_trust`: the old spelling required it, and an alias keeps
+        # its spelling whole until it is removed. What stops the command being run without a
+        # person is the terminal check on the approve path both spellings share, not this flag,
+        # and there is nothing here to branch on: trust is only ever *consulted* for content that
+        # lives in the repository — the notes, when `inside_project(store)`, and `MEMORY.md`
+        # whenever it resolves inside the repository, which it does in overlay mode too, since
+        # `store.path` is a real directory there. For a store holding neither,
+        # `trust.may_inject` short-circuits to `True`, so recording a hash for it is inert
+        # rather than dangerous.
         help="the only kind of store trust applies to",
     )
     trusted.set_defaults(func=run_trust)

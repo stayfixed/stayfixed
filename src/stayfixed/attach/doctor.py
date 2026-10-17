@@ -139,7 +139,7 @@ def _attached(context: Context, answers: Answers, ledger: _Ledger) -> Row:
     from stayfixed.config.layout import ATTACH_LEDGER
     from stayfixed.config.machine import home_is_empty, override_is_honoured
     from stayfixed.config.schema import OVERLAY_MODE
-    from stayfixed.doctor.api import OK, RED, WARN, Row
+    from stayfixed.doctor.api import NO_CONFIG_SKIP, OK, RED, SKIP, WARN, Row
     from stayfixed.errors import Refusal
     from stayfixed.memory.api import (
         DIFFERENT_REMOTE,
@@ -152,6 +152,10 @@ def _attached(context: Context, answers: Answers, ledger: _Ledger) -> Row:
     )
 
     config = context.config
+    if config is None:
+        # Which store, which tree and whether the overlay is consulted at all are the project's
+        # file's to say.
+        return Row(SKIP, NO_CONFIG_SKIP)
     if config.memory.mode != OVERLAY_MODE:
         # `memory.mode` is repository-authored and is safe to print for one reason only: the
         # loader holds it to a fixed set of three words, so what reaches this line is one of
@@ -265,11 +269,24 @@ _CHECKED_AT_A_TERMINAL = "`stayfixed doctor` run from a terminal checks the link
 UNRESOLVED: Final = "unresolved"
 NO_OVERLAY: Final = "no-overlay"
 UNASKABLE: Final = "unaskable"
+# About this machine too: its machine file could not be read (`Context.overlay_root`'s
+# `MachineUnread`), so whether it records an overlay is not known. Read as `NO_OVERLAY` it told the
+# owner the machine records none, and as `UNASKABLE` that `git` or the overlay was at fault.
+MACHINE_UNREAD: Final = "machine-unread"
 # The fourth is `UNREADABLE_LEDGER`, above, and it is about the repository rather than about this
 # machine: a ledger that is there and will not parse is a file in the checkout the reader is
 # standing in. Told with the other two, the row would blame `git` or an unreadable record and send
 # the reader to run `stayfixed doctor` where `git` runs, which cannot fix it, and its `skip` never
 # reaches the exit code, so a repository's own committed, malformed ledger would go unreported.
+
+
+def _project(context: Context) -> Config:
+    """The project configuration, for a helper of the `attached` row: the row skips before it asks
+    any of them when there is none, so `None` here is a defect in this module, and `_guarded`
+    makes it the red row such a defect earns."""
+    if context.config is None:
+        raise LookupError("the attached row asked a helper without a project configuration")
+    return context.config
 
 
 def _re_attach() -> str:
@@ -318,6 +335,16 @@ def _uncorroborated(reason: str) -> Row:
             f"{ATTACH_LEDGER} is here and cannot be read as a ledger, so nothing in it can be "
             f"corroborated and this checkout's attach state is unknown — {not_evidence}",
             f"remove {ATTACH_LEDGER}, then run `{ATTACH_STORE} --check`",
+        )
+    if reason == MACHINE_UNREAD:
+        # No remedy of its own: the `preferences` row is red on the same file, and names it and
+        # what to do.
+        return Row(
+            SKIP,
+            f"{ATTACH_LEDGER} records an attach and the machine configuration file could not be "
+            f"read, so whether this checkout is attached could not be answered here; the "
+            f"`preferences` row says why — {not_evidence}",
+            "",
         )
     if reason == NO_OVERLAY:
         return Row(
@@ -498,7 +525,7 @@ def _store_of(context: Context, answers: Answers, checkout: Path) -> Store | Non
 
     if checkout.resolve() == context.root.resolve():
         return answers.store(context)
-    return resolved_or_none(lambda: resolve(checkout, context.config, machine=context.machine))
+    return resolved_or_none(lambda: resolve(checkout, _project(context), machine=context.machine))
 
 
 def _harness_verdict(
@@ -547,8 +574,8 @@ def _read_harness(
       anything but the owning checkout's store, resolved, the one value `attach` writes there
       (`_written_fallback`), compared as a string. Red, the row's whole detail, naming the file;
       remove the key, then `attach`.
-    - `trust-record-unreadable`: this machine's trust record cannot be read. Warn; `memory trust
-      --in-repo-memory`, which says why.
+    - `trust-record-unreadable`: this machine's trust record cannot be read. Warn; `trust list
+      --all`, which says why and needs no terminal.
     - `attached`: a link to the store, the gate open. Ok.
     - `link-lapsed`: a link to the store, the gate closed, the approval lapsed. Warn;
       `HARNESS_LAPSED`'s remedy (read what changed, approve, `attach`).
@@ -622,7 +649,7 @@ def _read_harness(
     }[shape]
     owner = _owner(context)
     try:
-        targets = harness_targets(context.root, owner, context.config)
+        targets = harness_targets(context.root, owner, _project(context))
     except Refusal as refused:  # targets-unaskable
         unchecked = {
             _LINK: "what the link points at",
@@ -641,7 +668,7 @@ def _read_harness(
         _OTHER: "something other than a link",
         _ABSENT: "not in place",
     }[shape]
-    written = str(_written_fallback(owner, context.config))
+    written = str(_written_fallback(owner, _project(context)))
     if fallback.held and fallback.value != written:
         return _fallback_elsewhere(plain, fallback.where)  # fallback-elsewhere
     reached = harness.resolve() if shape == _LINK else None
@@ -665,14 +692,14 @@ def _read_harness(
     if store is None:  # tree-gone, tree-there-not-resolving
         return _unresolved(context, checkout, shape, words, relink)
     try:
-        gate = harness_gate(store, context.config)
+        gate = harness_gate(store, _project(context))
     except Refusal:  # trust-record-unreadable
         return _Verdict(
             WARN,
             f"{words}, and this machine's trust record cannot be read, so whether the harness "
             "should see this store could not be checked",
-            "run `stayfixed memory trust --in-repo-memory`, which says why the trust record "
-            "cannot be read, then `stayfixed doctor` again",
+            "run `stayfixed trust list --all`, which says why the trust record cannot be read, "
+            "then `stayfixed doctor` again",
         )
     if shape == _LINK:
         if gate == GATE_OPEN:  # attached
@@ -800,7 +827,7 @@ def _unresolved(context: Context, checkout: Path, shape: str, words: str, relink
     from stayfixed import fsops
     from stayfixed.doctor.api import WARN
 
-    tree = checkout / context.config.paths.memory
+    tree = checkout / _project(context).paths.memory
     try:
         gone = not fsops.is_symlink(tree) and not fsops.exists(tree)
     except OSError:
@@ -830,6 +857,8 @@ def _binding_answer(context: Context, ledger: _Ledger) -> Binding | str:
     overlay is a fact about **this repository**, and `.stayfixed/local/attach.json` is a path a
     clone can commit, so it earns a warning. A missing overlay or a missing `git` is a fact about
     **our own inputs**, and a row that accused the repository on it would be reporting on itself.
+    So is a machine file that could not be read (`MACHINE_UNREAD`), asked first as `NO_OVERLAY` is:
+    `read_binding` would raise its refusal as a `Failure`, read as `UNASKABLE`, which blames `git`.
 
     The three are told apart without restructuring `read_binding`, which raises `Refusal` for
     two of them: `context.overlay_root` is the answer of the same `overlay_root(machine)` that
@@ -842,11 +871,14 @@ def _binding_answer(context: Context, ledger: _Ledger) -> Binding | str:
     from pathlib import Path
 
     from stayfixed.attach.binding import read_binding
+    from stayfixed.doctor.api import MachineUnread
     from stayfixed.errors import Failure, Refusal
     from stayfixed.gitenv import GitUnavailable
 
     if context.overlay_root is None:
         return NO_OVERLAY
+    if isinstance(context.overlay_root, MachineUnread):
+        return MACHINE_UNREAD
     recorded = ledger.state(context.root)
     # This one is the repository's file and not our inputs, so it does not join the other two: a
     # clone can commit `.stayfixed/local/attach.json`, and a file that will not parse is a fact
@@ -937,6 +969,7 @@ def _granted_commands(context: Context) -> tuple[set[Placed] | None, str | None]
     """
     from stayfixed.attach.binding import UnreadableRecord, binding_for
     from stayfixed.attach.permissions import common_entries, overlay_entries
+    from stayfixed.doctor.api import MachineUnread
     from stayfixed.errors import Failure, Refusal
     from stayfixed.memory.api import BOUND, MISMATCH
     from stayfixed.scaffold import wanted_placements
@@ -944,11 +977,17 @@ def _granted_commands(context: Context) -> tuple[set[Placed] | None, str | None]
     overlay = context.overlay_root
     if overlay is None:
         return set(), None
+    if isinstance(overlay, MachineUnread):
+        # Not "nothing records a source": whether one is recorded is not known, which is a source
+        # that could not be asked, decided by this machine's state alone as `Claims` requires.
+        return None, None
     narrowed: str | None = None
     try:
         try:
-            binding: Binding | None = binding_for(
-                context.root, context.config, machine=context.machine
+            binding: Binding | None = (
+                None
+                if context.config is None
+                else binding_for(context.root, context.config, machine=context.machine)
             )
         except UnreadableRecord:
             binding, narrowed = None, UNREADABLE_RECORD

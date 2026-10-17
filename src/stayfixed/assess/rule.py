@@ -27,10 +27,14 @@ repository is the machine's (`/tmp` on macOS, a symlinked home) and is admitted.
 derives, key by dotted key: each budget by its effective value, each custom gate as one key per
 field. A comment, a key spelled out at its default, a reordered `enforced` or `[gates] builtin`
 and `installed` beside a list that says the same are therefore no change. Every changed key gets
-one verdict. The change may enforce more gates and move its state forward (`initialised`,
-`adopting`, `installed`); add a gate, and drop or re-command one the base does not enforce; lower
-a budget. The preset's name, the profile, the harnesses and the project's name are neutral,
-because no gate reads them; every value a preset switch moves is judged by its own key. The
+one verdict, and a key's class (`config.classes`) is asked first: a preference, the machine
+owner's key and the plugin's are neutral, because no gate judges a pull request by them. The
+change may enforce more gates and move its state forward (`initialised`, `adopting`,
+`installed`); add a gate, and drop or re-command one the base does not enforce; lower a budget, a
+gate's or a session's, which the base branch may set above the preset or below it; and add to
+`[ledger] code_roots` and `evidence_boundary_required_for`. The preset's name, the harnesses and
+the project's name are neutral too, because no gate reads them; every value a preset switch moves
+is judged by its own key. The
 recorded version and the workflow pin move together as an upgrade: to exactly the running
 stayfixed, never below the base's by the reader `stayfixed upgrade` refuses by, and a moved pin
 only at the commit the platform says is running and a public release tag names. Any other key is
@@ -57,7 +61,10 @@ from stayfixed.committed import (
     committed_document,
     repository_prefix,
 )
-from stayfixed.config.loader import CONFIG_FILE, NOT_UTF8, loads
+from stayfixed.config.classes import KeyClass, class_of
+from stayfixed.config.loader import CONFIG_FILE, loads
+from stayfixed.config.owner import Owner
+from stayfixed.config.reading import NOT_UTF8
 from stayfixed.config.schema import STATES, Budgets, Config, CustomGate
 from stayfixed.errors import Failure, Refusal
 from stayfixed.gitenv import git_run
@@ -244,6 +251,17 @@ def _custom_gate(key: str, sides: _Sides) -> Verdict:
     return Verdict.REFUSED if name in sides.base.stayfixed.enforcing else Verdict.NEUTRAL
 
 
+def _additive(key: str, sides: _Sides) -> Verdict:
+    """A list a gate reads more of as it grows: a superset tightens, the same set in another
+    order is neutral, and anything else is a key the rule cannot tell the direction of."""
+    section, _, name = key.partition(".")
+    before = set(getattr(getattr(sides.base, section), name))
+    after = set(getattr(getattr(sides.tree, section), name))
+    if after > before:
+        return Verdict.TIGHTENED
+    return Verdict.NEUTRAL if after == before else _other(key, sides)
+
+
 def _budget(key: str, sides: _Sides) -> Verdict:
     name = key.removeprefix("budgets.")
     lower = sides.tree.budgets.effective(name) <= sides.base.budgets.effective(name)
@@ -269,19 +287,45 @@ ROWS: Mapping[str, Row] = {
     "gates.builtin": _builtin_gates,
     "stayfixed.version": _upgrade,
     "ci.ref": _upgrade,
-    # Keys no gate reads. The preset's name is one: each value it moves is judged by its own row.
+    "ledger.code_roots": _additive,
+    "ledger.evidence_boundary_required_for": _additive,
+    # The repository's own keys no gate reads. The preset's name is one: each value it moves is
+    # judged by its own row.
     "stayfixed.preset": _neutral,
-    "stayfixed.profile": _neutral,
     "stayfixed.agents": _neutral,
     "project.name": _neutral,
 }
+# Every budget, a gate's and a session's: a session's bounds what a session loads, and a gate
+# the base enforces may read it (`stayfixed memory index --check`), so a pull request that raised
+# one would loosen the gate that judges it.
 PREFIX_ROWS: tuple[tuple[str, Row], ...] = (
     ("budgets.", _budget),
     ("gates.custom.", _custom_gate),
 )
+# The classes no gate judges a pull request by. `personal.*` and `native_caps.*` reach a `Config`
+# from the machine file and the preset, which both sides share, so either moves only with a
+# preset switch; a preference is what the repository may choose.
+_NEUTRAL_CLASSES = frozenset(
+    {
+        KeyClass.PREFERENCE,
+        KeyClass.MACHINE_ONLY,
+        KeyClass.PLUGIN_OWNED,
+    }
+)
+
+
+def _class(key: str) -> KeyClass | None:
+    """`key`'s class, or `None` for a custom gate's field, which has no row of its own."""
+    try:
+        return class_of(key)
+    except KeyError:
+        return None
 
 
 def _row(key: str) -> Row:
+    """The class first, then this rule's own table, then the key the rule cannot read."""
+    if _class(key) in _NEUTRAL_CLASSES:
+        return _neutral
     if key in ROWS:
         return ROWS[key]
     return next((row for prefix, row in PREFIX_ROWS if key.startswith(prefix)), _other)
@@ -291,7 +335,8 @@ def _values(config: Config) -> dict[str, object]:
     """Every value the loader derived, by dotted key: each budget by its effective value, each
     custom gate as one key per field. `native_caps` (the preset's) and `personal` (the machine
     file's) are `Config` fields and not `stayfixed.toml` sections; both sides load under one
-    machine file, so either moves only with a preset switch, and is compared like any field."""
+    machine file, so either moves only with a preset switch, and is compared like any field, and
+    neutral by its class."""
     values: dict[str, object] = {}
     for section in fields(config):
         table = getattr(config, section.name)
@@ -311,14 +356,15 @@ def _values(config: Config) -> dict[str, object]:
 
 
 def read_base_gates(
-    root: Path, base: str, *, branch: str, machine: Path | None
+    root: Path, base: str, *, branch: str, machine: Path | None, owner: Owner | None = None
 ) -> Mapping[str, CustomGate]:
     """The base's custom gates by name, loaded as `judge` loads the base's copy; none when the
-    base has no `stayfixed.toml` at the project's path. Raises as `read_base` and the loader do."""
+    base has no `stayfixed.toml` at the project's path. Raises as `read_base` and the loader do.
+    `owner` is the owner's layer the command already resolved (`loads`' own)."""
     text = read_base(root, base, branch=branch)
     if text is None:
         return {}
-    config = loads(text, root, machine=machine, label=BASE_COPY)
+    config = loads(text, root, machine=machine, label=BASE_COPY, owner=owner)
     return config.gates.custom
 
 
@@ -331,6 +377,7 @@ def judge(
     running: str,
     workflow_sha: str | None,
     released: Callable[[str], bool | None],
+    owner: Owner | None = None,
 ) -> ConfigVerdict:
     """The tree's `stayfixed.toml` judged against the base's, key by derived key.
 
@@ -338,18 +385,20 @@ def judge(
     command would read: a comment, a key spelled at its default and a reordered list are no
     change. `base_text` is `None` for the bootstrap, where the tree decides. The run uses the
     tree's configuration unless something was refused, then the base's; it enforces what either
-    side enforces.
+    side enforces. `owner` is the owner's layer the command already resolved, which both loads
+    take, so the machine file is read once and its notes are said once (`loads`' own).
     """
-    tree = loads(tree_text, root, machine=machine)
+    tree = loads(tree_text, root, machine=machine, owner=owner)
     if base_text is None:
         return ConfigVerdict(None, (), tree, tree.stayfixed.enforcing)
     try:
-        base = loads(base_text, root, machine=machine, label=BASE_COPY)
+        base = loads(base_text, root, machine=machine, label=BASE_COPY, owner=owner)
     except Failure as exc:
         # Never the bootstrap: read as "no copy", the change would decide its own configuration.
         # The machine file is not the base's: both sides read it, and the tree's load above has
-        # already answered for it. `Failure` and not `ConfigError` alone: a preset this stayfixed
-        # does not ship is the preset loader's plain `Failure`, and still the base's copy.
+        # already answered for it. A preset this stayfixed does not ship is the loader's keyed
+        # `ConfigError` (`loader._preset`); `Failure` and not `ConfigError` alone, so a plain
+        # refusal any load may raise is still named as the base's copy.
         raise Failure(BASE_DOES_NOT_LOAD.format(reason=exc)) from None
     except Refusal as exc:
         # A symlink the change planted on a path only the base's `[paths]` names: the run fails

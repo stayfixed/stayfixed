@@ -30,7 +30,8 @@ import tomllib
 from collections.abc import Mapping
 from typing import Any
 
-from stayfixed.config.loader import CONFIG_FILE, UNPARSEABLE, toml_position
+from stayfixed.config.loader import CONFIG_FILE
+from stayfixed.config.reading import UNPARSEABLE, toml_position
 from stayfixed.errors import Refusal
 from stayfixed.tomlout import quoted
 

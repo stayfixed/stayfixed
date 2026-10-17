@@ -17,7 +17,8 @@ from typing import TYPE_CHECKING
 
 from stayfixed import fsops
 from stayfixed.committed import committed_document, repository_prefix
-from stayfixed.config.loader import CONFIG_FILE, NOT_UTF8, loads
+from stayfixed.config.loader import CONFIG_FILE, loads
+from stayfixed.config.reading import NOT_UTF8
 from stayfixed.errors import Failure, Refusal
 from stayfixed.findings import Finding, listed
 from stayfixed.gitenv import ForkUnknown, fork_points, git_run

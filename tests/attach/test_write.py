@@ -28,8 +28,10 @@ from stayfixed.attach.write import (
     GITIGNORE,
     GROUP_ESCAPES,
     GROUP_UNASKED,
+    HARNESS_LAPSED,
     HARNESS_WAITS,
     REAL_DIRECTORIES,
+    REFRESH_REFUSED,
     Attached,
     _planned_ignore_region,
     attach,
@@ -51,6 +53,7 @@ from tests.gitfixture import run_git
 from tests.parserlimits import LONG_NUMBER, NESTED
 from tests.pathfaults import ROOT_SEARCHES_EVERYTHING, unsearchable
 from tests.runners import Recorder
+from tests.sandboxed import refuse_writes_under
 
 # The walk-based snapshot guard, owned at the top level rather than duplicated here and in
 # tests/test_install_path.py: it used to exist twice, verbatim including its docstring, and the
@@ -2215,7 +2218,7 @@ def test_a_trusted_store_keeps_its_approval_when_attach_renders_its_missing_inde
     # Mutation: `mutations/`'s "attach's index render drops the store's approval".
     from stayfixed.config.loader import load
     from stayfixed.memory.api import harness_memory_path, resolve
-    from stayfixed.memory.trust import record
+    from tests.approved import record
 
     root, store, machine = _attachable(tmp_path, allow=(RULE,))
     home = tmp_path / "home"
@@ -2229,6 +2232,65 @@ def test_a_trusted_store_keeps_its_approval_when_attach_renders_its_missing_inde
     assert (store / "MEMORY.md").is_file()
     assert HARNESS_WAITS not in attached.notes
     assert harness_memory_path(root, home).is_symlink()
+
+
+@pytest.mark.parametrize("changed", ["record", "store", "sandboxed"])
+def test_an_approval_attach_could_not_carry_is_said_as_what_happened(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, changed: str
+) -> None:
+    # What attach says of the link comes from the gate, which reads the record and the store
+    # again after the render's refresh, so each way the refresh declines is said as what happened.
+    # A revoke made while attach ran (`record`) is kept, and the link waits for an approval the
+    # store does not have; a note that arrived while it ran (`store`) leaves the approval at the
+    # digest the person gave, and the link waits because the store changed since; a record write an
+    # agent's sandbox refuses (`sandboxed`, `EPERM` from the write, as macOS's sandbox answers)
+    # leaves the approval as it was too, attach finishes rather than stopping with half its links
+    # made, and it says the refresh was refused before it says the approval lapsed. None says the
+    # approval was carried. Mutations (`mutations/`'s "a refresh brings back a revoked approval"
+    # -> `record` reads approved again, and the link is made; "attach stops at a refresh the
+    # sandbox refused" -> `sandboxed` ends in the record's refusal; "attach says nothing of a
+    # refresh the sandbox refused" -> `sandboxed` says only that the approval lapsed).
+    from stayfixed.memory import trust as memory_trust
+    from stayfixed.memory.api import harness_memory_path, resolve
+    from stayfixed.trust.api import recorded, revoke
+    from tests.approved import record as approved
+
+    root, store, machine = _attachable(tmp_path, allow=(RULE,))
+    home = tmp_path / "home"
+    _attach_it(root, store, machine, home)
+    (store / "MEMORY.md").unlink()
+    config = load(root, machine=machine)
+    resolved = resolve(root, config, machine=machine)
+    assert resolved is not None
+    assert approved(resolved, config).trusted
+    (approval,) = recorded(machine).values()
+    real = memory_trust.refresh_if_trusted
+
+    def meanwhile(*args: Any) -> bool:
+        # What happens after the render read the record and before it writes it again.
+        if changed == "record":
+            revoke(machine, approval.kind, approval.subject)
+        elif changed == "store":
+            arrived = store / "project-stable" / "arrived.md"
+            arrived.write_text("---\nname: arrived\n---\nnew\n", encoding="utf-8")
+        carried: bool = real(*args)
+        return carried
+
+    monkeypatch.setattr(memory_trust, "refresh_if_trusted", meanwhile)
+    record = machine.parent / "trust.json"
+    refused = refuse_writes_under(monkeypatch, record) if changed == "sandboxed" else []
+    attached = _attach_it(root, store, machine, home)
+    assert refused == ([record] if changed == "sandboxed" else [])
+    assert (store / "MEMORY.md").is_file()
+    assert not harness_memory_path(root, home).is_symlink()
+    if changed == "record":
+        assert attached.notes == (HARNESS_WAITS,)
+        assert recorded(machine) == {}
+    else:
+        # `store` and `sandboxed` alike: the approval stays at the person's digest.
+        first = (REFRESH_REFUSED,) if changed == "sandboxed" else ()
+        assert attached.notes == (*first, HARNESS_LAPSED)
+        assert recorded(machine) == {(approval.kind, approval.subject): approval}
 
 
 def test_a_settings_file_an_earlier_attach_wrote_is_hidden_by_the_next_one(

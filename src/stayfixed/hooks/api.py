@@ -46,7 +46,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
 if TYPE_CHECKING:
-    from stayfixed.config.schema import Config
+    from stayfixed.config.session import SessionConfig
 
 __all__ = [
     "DATA_ROOT_VARIABLES",
@@ -111,7 +111,7 @@ class HookResult:
     reason: str | None = None
 
 
-HandlerFn = Callable[[HookEvent, "Config | None"], HookResult]
+HandlerFn = Callable[[HookEvent, "SessionConfig"], HookResult]
 
 
 @dataclass(frozen=True)
@@ -120,8 +120,10 @@ class Handler:
     event: str
     policy: Policy
     run: HandlerFn
-    # Handlers stay pure `(event, config) -> result`, so a handler that must run once
-    # per context declares the marker key and the dispatcher owns the bookkeeping.
+    # Handlers stay pure `(event, session) -> result`, so a handler that must run once
+    # per context declares the marker key and the dispatcher owns the bookkeeping. The session is
+    # `config.session.SessionConfig`: a handler about the project answers nothing when its
+    # `config` is `None`, and a guard judges with any.
     once_key: str | None = None
 
 

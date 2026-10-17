@@ -107,9 +107,9 @@ reddens = [
 # `closed` hook that raised would refuse every tool call on such a machine.
 [[mutation]]
 name = "the configuration reads a machine file that has no home"
-file = "src/stayfixed/config/loader.py"
-before = '    raw = None if machine is None else read_machine_toml(machine)'
-after = '    raw = read_machine_toml(machine)'
+file = "src/stayfixed/config/owner.py"
+before = '        raw = None if machine is None else read_machine_toml(machine)'
+after = '        raw = read_machine_toml(machine)'
 reddens = ["tests/hooks/test_dispatch.py::test_a_user_the_password_database_does_not_list_still_gets_an_answer"]
 
 [[mutation]]
@@ -997,8 +997,8 @@ reddens = [
 [[mutation]]
 name = "the clamp drops the truncation mark"
 file = "src/stayfixed/hooks/dispatch.py"
-before = "        stdout = render(event_name, context[:keep] + TRUNCATION_MARK)"
-after = "        stdout = render(event_name, context[:keep])"
+before = "        stdout = render(event_name, context[:keep] + TRUNCATION_MARK, notice)"
+after = "        stdout = render(event_name, context[:keep], notice)"
 reddens = [
   "tests/hooks/test_dispatch.py::test_json_escaping_is_charged_to_the_same_budget",
 ]
@@ -1009,8 +1009,8 @@ reddens = [
 [[mutation]]
 name = "the dispatcher renders every answer in Claude Code's shape"
 file = "src/stayfixed/hooks/dispatch.py"
-before = "    stdout = harness.render(event.name, context)"
-after = '    stdout = __import__("stayfixed.harnesses", fromlist=["CANONICAL"]).CANONICAL.render(event.name, context)'
+before = "    stdout = harness.render(event.name, context, message)"
+after = '    stdout = __import__("stayfixed.harnesses", fromlist=["CANONICAL"]).CANONICAL.render(event.name, context, message)'
 reddens = [
   "tests/hooks/test_dispatch.py::test_a_detected_harness_renders_its_own_answer",
 ]
@@ -1018,8 +1018,8 @@ reddens = [
 [[mutation]]
 name = "the clamp measures Claude Code's envelope whatever the harness"
 file = "src/stayfixed/hooks/dispatch.py"
-before = "        stdout = _clamp(harness.render, event.name, context, cap)"
-after = '        stdout = _clamp(__import__("stayfixed.harnesses", fromlist=["CANONICAL"]).CANONICAL.render, event.name, context, cap)'
+before = "        stdout = _clamp(harness.render, event.name, context, message, cap)"
+after = '        stdout = _clamp(__import__("stayfixed.harnesses", fromlist=["CANONICAL"]).CANONICAL.render, event.name, context, message, cap)'
 reddens = [
   "tests/hooks/test_dispatch.py::test_a_clamped_answer_is_the_detected_harnesss_envelope",
 ]
@@ -1270,11 +1270,11 @@ reddens = [
 # because the loader builds that text out of the file's own keys and values.
 [[mutation]]
 name = "a broken machine file is blamed on stayfixed.toml again"
-file = "src/stayfixed/config/loader.py"
+file = "src/stayfixed/config/reading.py"
 before = '        raise MachineConfigError(f"{path} is not valid TOML {toml_position(exc)}") from None'
 after = '        raise ConfigError(f"{path} is not valid TOML {toml_position(exc)}") from None'
 reddens = [
-  "tests/doctor/test_checks.py::test_a_machine_file_that_does_not_load_is_not_blamed_on_stayfixed_toml",
+  "tests/doctor/test_checks.py::test_a_machine_file_that_does_not_load_is_red_and_not_blamed_on_stayfixed_toml",
 ]
 
 # A `[paths]` value outside the path grammar is refused, and never quoted back.
@@ -1285,6 +1285,28 @@ before = "        if not PATH_VALUE.match(relative):"
 after = "        if False:"
 reddens = [
   "tests/config/test_paths.py::test_a_paths_value_outside_the_grammar_is_refused_and_never_quoted",
+]
+
+# A `[paths]` value past `paths.PATH_VALUE_LIMIT` is refused by its key before anything else reads
+# it: every reader pays for a value's length, and every `PreToolUse` hook reads every value.
+[[mutation]]
+name = "a [paths] value may be any length"
+file = "src/stayfixed/config/paths.py"
+before = "        if len(relative) > PATH_VALUE_LIMIT:"
+after = "        if False:"
+reddens = [
+  "tests/config/test_paths.py::test_a_paths_value_longer_than_its_cap_is_refused_naming_the_key",
+  "tests/config/test_loader_note.py::test_a_path_longer_than_its_cap_resets_only_that_path",
+  "tests/config/test_loader_note.py::test_refuse_still_refuses_each_of_them[path-length]",
+]
+
+[[mutation]]
+name = "the [paths] length cap refuses a value of its own length"
+file = "src/stayfixed/config/paths.py"
+before = "        if len(relative) > PATH_VALUE_LIMIT:"
+after = "        if len(relative) >= PATH_VALUE_LIMIT:"
+reddens = [
+  "tests/config/test_paths.py::test_a_paths_value_longer_than_its_cap_is_refused_naming_the_key",
 ]
 
 # The release pins read off a tag listing: an annotated tag resolves to the commit it points at and
@@ -1331,7 +1353,7 @@ reddens = [
 # this completes it, and one extractor serves all three call sites.
 [[mutation]]
 name = "a tomllib message is quoted back whole, so a hostile key reaches a refusal"
-file = "src/stayfixed/config/loader.py"
+file = "src/stayfixed/config/reading.py"
 before = "    return found.group(0) if found is not None else NO_POSITION"
 after = "    return str(exc)"
 reddens = [
@@ -1526,8 +1548,8 @@ reddens = [
 [[mutation]]
 name = "an unknown key in a known table is echoed back raw"
 file = "src/stayfixed/config/loader.py"
-before = '''        raise ConfigError(f"[{name}] has unknown key(s): {_named(unknown, 'key')}")'''
-after = '''        raise ConfigError(f"[{name}] has unknown key(s): {', '.join(unknown)}")'''
+before = '''            f"[{name}] has unknown key(s): {_named(unknown, 'key')}", key=f"{name}.{unknown[0]}"'''
+after = '''            f"[{name}] has unknown key(s): {', '.join(unknown)}", key=f"{name}.{unknown[0]}"'''
 reddens = [
   "tests/config/test_loader.py::test_unknown_keys_name_the_typo_and_count_the_rest_never_quoting_them",
 ]
@@ -1538,8 +1560,8 @@ reddens = [
 [[mutation]]
 name = "an unknown budget key is echoed back raw"
 file = "src/stayfixed/config/loader.py"
-before = '''        raise ConfigError(f"[budgets] has unknown key(s): {_named(unknown, 'key')}")'''
-after = '''        raise ConfigError(f"[budgets] has unknown key(s): {', '.join(unknown)}")'''
+before = '''            f"[budgets] has unknown key(s): {_named(unknown, 'key')}", key=f"budgets.{unknown[0]}"'''
+after = '''            f"[budgets] has unknown key(s): {', '.join(unknown)}", key=f"budgets.{unknown[0]}"'''
 reddens = [
   "tests/config/test_loader.py::test_unknown_keys_name_the_typo_and_count_the_rest_never_quoting_them",
 ]
@@ -1552,8 +1574,8 @@ reddens = [
 [[mutation]]
 name = "a configuration enum quotes the value back again"
 file = "src/stayfixed/config/loader.py"
-before = '''        raise ConfigError(f"{section}.{key} must be one of {', '.join(allowed)}")'''
-after = '''        raise ConfigError(f"{section}.{key} must be one of {', '.join(allowed)}; got {value!r}")'''
+before = '''            f"{section}.{key} must be one of {', '.join(allowed)}", key=f"{section}.{key}"'''
+after = '''            f"{section}.{key} must be one of {', '.join(allowed)}; got {value!r}", key=f"{section}.{key}"'''
 reddens = [
   "tests/config/test_loader.py::test_an_enumerated_value_is_refused_without_being_quoted",
 ]
@@ -1563,7 +1585,7 @@ reddens = [
 [[mutation]]
 name = "stayfixed.toml is read with no bound"
 file = "src/stayfixed/config/loader.py"
-before = '        return read_regular_text(contained(root, CONFIG_FILE), newline="")'
+before = '        return read_regular_text(contained(root, CONFIG_FILE), newline="", limit=limit)'
 after = """        with contained(root, CONFIG_FILE).open(encoding="utf-8", newline="") as stream:
             return stream.read()"""
 reddens = [
@@ -1585,7 +1607,7 @@ reddens = [
 
 [[mutation]]
 name = "a machine file that cannot be read is said by its error's class name"
-file = "src/stayfixed/config/loader.py"
+file = "src/stayfixed/config/reading.py"
 before = "raise MachineConfigError(UNREADABLE.format(path=path, error=said(exc))) from None"
 after = "raise MachineConfigError(UNREADABLE.format(path=path, error=type(exc).__name__)) from None"
 reddens = [
@@ -1659,7 +1681,7 @@ reddens = [
 [[mutation]]
 name = "the loader admits a gate the project does not run into [stayfixed] enforced"
 file = "src/stayfixed/config/loader.py"
-before = "    unknown = [name for name in stayfixed.enforced if name not in names]"
+before = "    unknown = [name for name in stayfixed.enforced if name not in configured]"
 after = "    unknown: list[str] = []"
 reddens = [
   "tests/config/test_loader.py::test_a_gate_the_project_does_not_run_is_counted_and_never_quoted",
@@ -1677,7 +1699,7 @@ reddens = [
 [[mutation]]
 name = "an installed project's partial enforced list loads again"
 file = "src/stayfixed/config/loader.py"
-before = "    if stayfixed.enforced and set(stayfixed.enforced) != set(names):"
+before = "    if stayfixed.enforced and set(stayfixed.enforced) != configured:"
 after = "    if False:"
 reddens = [
   "tests/config/test_loader.py::test_an_installed_project_with_a_partial_list_is_refused",
@@ -1796,7 +1818,7 @@ reddens = [
 
 [[mutation]]
 name = "a machine file that is not UTF-8 crashes every command that loads the configuration"
-file = "src/stayfixed/config/loader.py"
+file = "src/stayfixed/config/reading.py"
 before = """    except UnicodeDecodeError:
         raise MachineConfigError(NOT_UTF8.format(path=path)) from None"""
 after = """    except KeyError:
@@ -1805,6 +1827,15 @@ reddens = [
   "tests/test_undecodable.py::test_an_undecodable_file_is_its_readers_own_failure[the machine file, under the loader]",
   "tests/test_undecodable.py::test_a_command_meeting_an_undecodable_file_fails_and_does_not_crash[init-machine]",
 ]
+
+[[mutation]]
+name = "a trust record that is not UTF-8 crashes instead of refusing loudly"
+file = "src/stayfixed/trust/record.py"
+before = """    except UnicodeDecodeError:
+        raise UnreadableTrust("""
+after = """    except KeyError:
+        raise UnreadableTrust("""
+reddens = ["tests/test_undecodable.py::test_an_undecodable_file_is_its_readers_own_failure[the trust record]"]
 
 # The default base is the remote-tracking ref spelled in full, so a tag named like the branch cannot
 # answer for it.
@@ -1894,7 +1925,7 @@ reddens = [
 # document somebody else wrote answers it as one that does not parse.
 [[mutation]]
 name = "the TOML readers answer a document nested past the parser as an internal error"
-file = "src/stayfixed/config/loader.py"
+file = "src/stayfixed/config/reading.py"
 before = "UNPARSEABLE = (tomllib.TOMLDecodeError, RecursionError, ValueError)"
 after = "UNPARSEABLE = (tomllib.TOMLDecodeError, ValueError)"
 reddens = [
@@ -1904,11 +1935,11 @@ reddens = [
 
 # An integer literal longer than the interpreter converts is valid TOML that `tomllib` answers
 # with a plain `ValueError`, not a `TOMLDecodeError`: `doctor` and `gate` ended in an internal
-# error, a hook said "internal error" where it says "does not load", and three `doctor` rows went
+# error, a hook refused a tool call as an internal error, and three `doctor` rows went
 # red "could not run" on an overlay record holding one. Every reader shares the one tuple.
 [[mutation]]
 name = "the TOML readers answer a number past the parser as an internal error"
-file = "src/stayfixed/config/loader.py"
+file = "src/stayfixed/config/reading.py"
 before = "UNPARSEABLE = (tomllib.TOMLDecodeError, RecursionError, ValueError)"
 after = "UNPARSEABLE = (tomllib.TOMLDecodeError, RecursionError)"
 reddens = [
@@ -1919,8 +1950,8 @@ reddens = [
   "tests/assess/test_gate_command.py::test_a_stayfixed_toml_holding_a_number_past_the_parser_does_not_load_naming_the_side[base]",
   "tests/assess/test_gate_command.py::test_a_trail_toml_holding_a_number_past_the_parser_is_one_gate_that_could_not_run",
   "tests/doctor/test_checks.py::test_a_configuration_holding_a_number_past_the_parser_does_not_load",
-  "tests/hooks/test_hook_command.py::test_an_unloadable_config_refuses_a_tool_call_in_its_own_words[long-number]",
-  "tests/hooks/test_hook_command.py::test_an_unloadable_config_leaves_a_session_open_in_its_own_words[long-number]",
+  "tests/hooks/test_hook_command.py::test_a_config_that_does_not_load_whole_never_refuses_a_tool_call[long-number]",
+  "tests/hooks/test_hook_command.py::test_a_config_that_does_not_load_whole_is_named_once_at_session_start[long-number]",
   "tests/attach/test_doctor.py::test_an_owners_binding_record_holding_a_number_past_the_parser_reads_as_one_that_will_not_parse",
 ]
 
@@ -1928,7 +1959,7 @@ reddens = [
 # raise a process-wide limit, which is no remedy for a file somebody else wrote.
 [[mutation]]
 name = "a TOML number past the parser is refused with no reason given"
-file = "src/stayfixed/config/loader.py"
+file = "src/stayfixed/config/reading.py"
 before = """
     if not isinstance(exc, tomllib.TOMLDecodeError):
         return TOO_LONG
@@ -1946,13 +1977,13 @@ reddens = [
 name = "stayfixed.toml nested past the parser is an internal error"
 file = "src/stayfixed/config/loader.py"
 before = """
-        raw = tomllib.loads(text)
+        return tomllib.loads(text)
     except UNPARSEABLE as exc:
-"""
+        raise ConfigError("""
 after = """
-        raw = tomllib.loads(text)
+        return tomllib.loads(text)
     except tomllib.TOMLDecodeError as exc:
-"""
+        raise ConfigError("""
 reddens = [
   "tests/config/test_deep_toml.py::test_a_reader_answers_a_document_nested_past_the_parser_as_one_that_does_not_parse[loads]",
   "tests/assess/test_gate_command.py::test_a_stayfixed_toml_nested_past_the_parser_does_not_load_naming_the_side[tree]",
@@ -1962,7 +1993,7 @@ reddens = [
 
 [[mutation]]
 name = "a machine file nested past the parser is an internal error"
-file = "src/stayfixed/config/loader.py"
+file = "src/stayfixed/config/reading.py"
 before = """
     except UNPARSEABLE as exc:
         raise MachineConfigError(f"{path} is not valid TOML {toml_position(exc)}") from None
@@ -2025,7 +2056,7 @@ reddens = [
 # custom gate "could not run" without a word about why.
 [[mutation]]
 name = "an integer setting at or below zero loads"
-file = "src/stayfixed/config/loader.py"
+file = "src/stayfixed/config/reading.py"
 before = "    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:"
 after = "    if isinstance(value, bool) or not isinstance(value, int):"
 reddens = [
@@ -2035,7 +2066,7 @@ reddens = [
 
 [[mutation]]
 name = "a bool loads as an integer setting"
-file = "src/stayfixed/config/loader.py"
+file = "src/stayfixed/config/reading.py"
 before = "    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:"
 after = "    if not isinstance(value, int) or value <= 0:"
 reddens = [
@@ -2044,16 +2075,21 @@ reddens = [
 
 # `stayfixed hook` asked `is_file()` of stayfixed.toml, which follows a link: one to a regular file
 # reached the loader's refusal as an internal error, one to `/dev/zero` read as no file and ran
-# every handler without the project's configuration. The name itself is asked first now.
+# every handler without the project's configuration. A session reads it through `read_document`,
+# which refuses the link before it follows it, and falls back whole; let through, the refusal
+# escapes as an internal error and refuses every tool call.
 [[mutation]]
-name = "the hook takes a symlinked stayfixed.toml by what it points at"
-file = "src/stayfixed/hooks/commands.py"
-before = "        if document is not None and fsops.is_symlink(document):"
-after = "        if False:"
+name = "a session lets a symlinked stayfixed.toml raise"
+file = "src/stayfixed/config/session.py"
+before = "    except (ConfigError, PathEscape):\n        # `read_document` refuses"
+after = "    except ConfigError:\n        # `read_document` refuses"
 reddens = [
-  "tests/hooks/test_hook_command.py::test_a_symlinked_config_gets_one_named_verdict_whatever_it_points_at[PreToolUse-2-refused-regular-file]",
-  "tests/hooks/test_hook_command.py::test_a_symlinked_config_gets_one_named_verdict_whatever_it_points_at[PreToolUse-2-refused-/dev/zero]",
-  "tests/hooks/test_hook_command.py::test_a_symlinked_config_gets_one_named_verdict_whatever_it_points_at[SessionStart-0-continuing open-/dev/zero]",
+  "tests/config/test_session.py::test_a_file_that_cannot_be_read_as_toml_falls_back_whole[symlink_to_loadable]",
+  "tests/config/test_session.py::test_a_file_that_cannot_be_read_as_toml_falls_back_whole[symlink_to_dev_zero]",
+  "tests/hooks/test_hook_command.py::test_a_symlinked_config_gets_one_verdict_whatever_it_points_at[regular-file]",
+  "tests/hooks/test_hook_command.py::test_a_symlinked_config_gets_one_verdict_whatever_it_points_at[/dev/zero]",
+  "tests/doctor/test_checks.py::test_a_symlinked_configuration_is_one_that_does_not_load_whatever_it_points_at[regular-file]",
+  "tests/doctor/test_checks.py::test_a_symlinked_configuration_is_one_that_does_not_load_whatever_it_points_at[/dev/zero]",
 ]
 
 # In the block led by `mutations/`'s "the --name refusal prints the pattern": a name refusal words
@@ -2061,8 +2097,8 @@ reddens = [
 [[mutation]]
 name = "a custom gate's name refusal prints the pattern"
 file = "src/stayfixed/config/loader.py"
-before = "        raise ConfigError(GATES_CUSTOM_NAME.format(count=len(unusable), rule=NAME_RULE))"
-after = "        raise ConfigError(GATES_CUSTOM_NAME.format(count=len(unusable), rule=PROJECT_NAME.pattern))"
+before = "        raise ConfigError(GATES_CUSTOM_NAME.format(count=len(unusable), rule=NAME_RULE), key=first)"
+after = "        raise ConfigError(GATES_CUSTOM_NAME.format(count=len(unusable), rule=PROJECT_NAME.pattern), key=first)"
 reddens = [
   "tests/config/test_loader.py::test_every_name_refusal_words_the_rule_and_never_prints_the_pattern",
 ]
@@ -2233,7 +2269,7 @@ reddens = [
 [[mutation]]
 name = "contained lets a symlinked ancestor through"
 file = "src/stayfixed/config/paths.py"
-before = "        if stat.S_ISLNK(mode) and not (allow_final_symlink and ancestor == target):"
+before = "        if stat.S_ISLNK(answer) and not (allow_final_symlink and ancestor == target):"
 after = "        if False:"
 reddens = [
   "tests/config/test_paths.py::test_a_symlinked_intermediate_directory_is_refused",
@@ -2246,21 +2282,22 @@ reddens = [
 [[mutation]]
 name = "contained refuses at the first ancestor it cannot ask, before it looks for a link above"
 file = "src/stayfixed/config/paths.py"
-before = "                unasked.__cause__ = exc\n            continue"
-after = "                unasked.__cause__ = exc\n            raise unasked"
+before = "                unasked.__cause__ = answer\n            continue"
+after = "                unasked.__cause__ = answer\n            raise unasked"
 reddens = [
   "tests/config/test_paths.py::test_each_fault_an_ancestor_meets_has_one_answer_on_every_interpreter[through-a-link-into-a-directory-that-cannot-be-searched]",
 ]
 
-# A path on which a directory cannot be asked whether it is a link neither leaves the project nor
-# passes through a symlink, so the hook's line says what it is.
+# The walk goes down from the root and stops at the first ancestor that reaches no file, since every
+# path below it reaches none either; walking up over every ancestor of a value of twenty thousand
+# components cost `contained()` two and a half seconds.
 [[mutation]]
-name = "the hook words a path it cannot check as an escape"
-file = "src/stayfixed/hooks/commands.py"
-before = "            except PathUnasked:\n                return _unloadable(event_name, UNASKED_PATH)"
-after = "            except PathUnasked:\n                return _unloadable(event_name, ESCAPING_PATH)"
+name = "contained asks every ancestor of a value that reaches no file"
+file = "src/stayfixed/config/paths.py"
+before = "            if exc.errno in REACHES_NO_FILE:\n                break"
+after = "            if exc.errno in REACHES_NO_FILE:\n                continue"
 reddens = [
-  "tests/hooks/test_hook_command.py::test_a_path_that_cannot_be_checked_for_a_symlink_refuses_a_tool_call_in_those_words",
+  "tests/config/test_paths.py::test_contained_asks_no_ancestor_below_the_first_that_is_not_there",
 ]
 
 # The fork points, asked once for `plan`, `bugs` and `test attribute`. A history the change shapes
@@ -2358,43 +2395,6 @@ after = """        if code == -1:
 reddens = [
   "tests/test_fork_points.py::test_a_shallow_check_git_does_not_answer_is_not_known[signalled]",
   "tests/test_fork_points.py::test_a_merge_base_git_does_not_give_is_not_known[signalled]",
-]
-
-# A `stayfixed.toml` that does not load reached the generic handler and printed `internal error`
-# with the loader's message, which reads as a stayfixed bug and carries the repository's text to
-# the model on a refused `PreToolUse`. The two named branches are the guard; their exit code
-# matches the generic one's, so only the words can tell them apart.
-[[mutation]]
-name = "the hook reports an unloadable config as an internal error"
-file = "src/stayfixed/hooks/commands.py"
-before = "            except PathEscape:"
-after = "            except OSError:"
-reddens = [
-  "tests/hooks/test_hook_command.py::test_an_unloadable_config_refuses_a_tool_call_in_its_own_words[escaping-path]",
-]
-
-[[mutation]]
-name = "the hook prints a refused value's own text as an internal error"
-file = "src/stayfixed/hooks/commands.py"
-before = "            except ConfigError:"
-after = "            except OSError:"
-reddens = [
-  "tests/hooks/test_hook_command.py::test_an_unloadable_config_refuses_a_tool_call_in_its_own_words[refused-value]",
-]
-
-# A broken machine file raises a `ConfigError` too; caught with the others, the hook blamed it on
-# `stayfixed.toml` and pointed at `stayfixed docs check` about a file that loads.
-[[mutation]]
-name = "the hook blames a broken machine file on stayfixed.toml"
-file = "src/stayfixed/hooks/commands.py"
-before = """            except MachineConfigError:
-                # The machine file's fault, not `stayfixed.toml`'s: this line would name the
-                # wrong file, so it keeps the generic verdict below.
-                raise
-"""
-after = ""
-reddens = [
-  "tests/hooks/test_hook_command.py::test_a_machine_file_that_does_not_load_is_not_blamed_on_stayfixed_toml",
 ]
 
 # What `gh`, `git clone`, `git init` and `pre-commit` print reached a terminal and a CI log raw: a
@@ -2780,12 +2780,12 @@ reddens = [
   "tests/memory/test_store.py::test_a_git_that_exits_non_zero_for_everything_cannot_name_the_main_checkout",
 ]
 
-# A machine file the overlay root's reader cannot open is the loader's `MachineConfigError`, in the
-# loader's words, so it reaches every caller as the `Failure` they catch rather than as a bare
-# `PermissionError`. The reader is the loader's own, which `[personal]` is read through too.
+# A machine file the overlay root's reader cannot open is `config.reading`'s `MachineConfigError`, in
+# its words, so it reaches every caller as the `Failure` they catch rather than as a bare
+# `PermissionError`. The reader is the one the owner's layer reads `[personal]` through too.
 [[mutation]]
 name = "the overlay root's reader lets a machine file it cannot read raise past its callers"
-file = "src/stayfixed/config/loader.py"
+file = "src/stayfixed/config/reading.py"
 before = "    except OSError as exc:\n        raise MachineConfigError(UNREADABLE.format("
 after = "    except FileNotFoundError as exc:\n        raise MachineConfigError(UNREADABLE.format("
 reddens = [
@@ -3064,7 +3064,7 @@ reddens = [
 # internal error. Every integer key is bounded by `INTEGER_LIMIT`.
 [[mutation]]
 name = "a configuration integer is bounded only below"
-file = "src/stayfixed/config/loader.py"
+file = "src/stayfixed/config/reading.py"
 before = "    if value >= INTEGER_LIMIT:"
 after = "    if False:"
 reddens = [
@@ -3075,9 +3075,9 @@ reddens = [
 
 [[mutation]]
 name = "the schema's integer keys are taken unchecked"
-file = "src/stayfixed/config/loader.py"
-before = '            coerced[key] = _positive(f"{name}.{key}", value)'
-after = "            coerced[key] = value"
+file = "src/stayfixed/config/reading.py"
+before = "        return positive(key, value)"
+after = "        return value"
 reddens = [
   "tests/config/test_loader.py::test_an_integer_key_at_or_past_its_bound_is_refused_without_printing_it[octal]",
 ]
@@ -3085,7 +3085,7 @@ reddens = [
 [[mutation]]
 name = "a `[budgets]` value is taken unchecked"
 file = "src/stayfixed/config/loader.py"
-before = '        _positive(f"budgets.{key}", value)'
+before = '        positive(f"budgets.{key}", value)'
 after = "        pass"
 reddens = [
   "tests/config/test_loader.py::test_an_integer_key_at_or_past_its_bound_is_refused_without_printing_it[budget]",
@@ -3194,8 +3194,8 @@ reddens = [
 [[mutation]]
 name = "the loader spells a preset that is not a string with str"
 file = "src/stayfixed/config/loader.py"
-before = '    preset_name = head.get("preset", "recommended")'
-after = '    preset_name = str(head.get("preset", "recommended"))'
+before = '    preset_name = head.get("preset", DEFAULT_PRESET)'
+after = '    preset_name = str(head.get("preset", DEFAULT_PRESET))'
 reddens = [
   "tests/config/test_loader.py::test_a_preset_that_is_a_number_past_the_conversion_limit_is_refused_as_any_non_name",
 ]
@@ -3203,7 +3203,7 @@ reddens = [
 # The bound is the first integer refused, not one under it: the largest value it admits loads.
 [[mutation]]
 name = "a configuration integer one under the bound is refused"
-file = "src/stayfixed/config/loader.py"
+file = "src/stayfixed/config/reading.py"
 before = "    if value >= INTEGER_LIMIT:"
 after = "    if value > INTEGER_LIMIT - 2:"
 reddens = [
@@ -3698,4 +3698,1393 @@ after = "        resolved_root = root.resolve()"
 reddens = [
   "tests/config/test_paths.py::test_a_root_through_a_symlink_loop_is_an_oserror_naming_it[as-3-11]",
   "tests/setup/test_setup.py::test_a_symlink_loop_at_any_path_setup_is_given_is_a_refusal_naming_it[home]",
+]
+
+# Every configuration key has one class, and the class decides which layers may set it
+# (`src/stayfixed/config/classes.py`). A gate's input is the base branch's to set, so moving one
+# to the repository-only class would change nothing a test of the layers sees and the table must.
+[[mutation]]
+name = "ledger.code_roots is classed as the repository's alone"
+file = "src/stayfixed/config/classes.py"
+before = '        "ledger.code_roots": KeyClass.GATE_PARAMETER,'
+after = '        "ledger.code_roots": KeyClass.REPOSITORY_ONLY,'
+reddens = ["tests/config/test_classes.py::test_the_table[ledger.code_roots-gate-parameter]"]
+
+# The repository never sets a machine-only key: a clone's `[guards] bg_cleanup = false` would
+# switch the owner's guard off.
+[[mutation]]
+name = "the repository may set a machine-only key"
+file = "src/stayfixed/config/classes.py"
+before = "        KeyClass.MACHINE_ONLY: frozenset(ORDER) - {LayerName.REPOSITORY},"
+after = "        KeyClass.MACHINE_ONLY: frozenset(ORDER),"
+reddens = ["tests/config/test_classes.py::test_the_repository_cannot_set_a_machine_only_key"]
+
+# The layers are ranked by `ORDER`, not by where the caller put them, and the highest wins.
+[[mutation]]
+name = "resolve keeps the lowest layer's value"
+file = "src/stayfixed/config/classes.py"
+before = "    for layer in sorted(stack, key=lambda layer: _RANK[layer.name]):"
+after = "    for layer in sorted(stack, key=lambda layer: _RANK[layer.name], reverse=True):"
+reddens = ["tests/config/test_classes.py::test_a_higher_layer_wins_and_says_which"]
+
+[[mutation]]
+name = "a merged key folds highest first"
+file = "src/stayfixed/config/classes.py"
+before = "                values[key] = folds[key](values[key], value)"
+after = "                values[key] = folds[key](value, values[key])"
+reddens = ["tests/config/test_classes.py::test_merge_folds_lowest_first"]
+
+# A bare section name is not a key: answered by its wildcard, a caller that forgot to dot a key
+# would be told the section's class rather than that it asked about no key.
+[[mutation]]
+name = "class_of answers a bare section by its wildcard"
+file = "src/stayfixed/config/classes.py"
+before = "    if not dot or wildcard not in CLASSES:"
+after = "    if wildcard not in CLASSES:"
+reddens = ["tests/config/test_classes.py::test_a_key_with_no_class_is_a_key_error[guards]"]
+
+# A key under a wildcard is any quoted TOML text the layer chose, so the note prints it through
+# `printed.clipped`.
+[[mutation]]
+name = "a refused layer's note prints its key raw"
+file = "src/stayfixed/config/classes.py"
+before = "                notes.append(REFUSED_LAYER_NOTE.format(key=clipped(key), layer=layer.name))"
+after = "                notes.append(REFUSED_LAYER_NOTE.format(key=key, layer=layer.name))"
+reddens = [
+  "tests/config/test_classes.py::test_a_refused_layer_note_carries_neither_its_value_nor_a_raw_key",
+]
+
+# `class_of` asks the exact row first, so an exact row of another class under a wildcard makes one
+# key of the section settable by layers its siblings refuse.
+[[mutation]]
+name = "an exact row contradicts its section's wildcard"
+file = "src/stayfixed/config/classes.py"
+before = '        "paths.*": KeyClass.REPOSITORY_ONLY,'
+after = '''        "paths.*": KeyClass.REPOSITORY_ONLY,
+        "paths.bugs": KeyClass.GATE_PARAMETER,'''
+reddens = ["tests/config/test_classes.py::test_no_exact_key_contradicts_its_wildcard"]
+
+# Every budget is a gate's or a session's, never both: the owner sets only a session's.
+[[mutation]]
+name = "a budget is both a gate's and a session's"
+file = "src/stayfixed/config/classes.py"
+before = '''        "agents_md_lines",
+        "agents_md_words",'''
+after = '''        "agents_md_lines",
+        "memory_index_words",
+        "agents_md_words",'''
+reddens = ["tests/config/test_classes.py::test_the_budget_split_is_total_and_disjoint"]
+
+# `ORDER` alone decides which layer wins.
+[[mutation]]
+name = "the overlay's common and project layers swap places"
+file = "src/stayfixed/config/classes.py"
+before = "    LayerName.OVERLAY_COMMON,\n    LayerName.OVERLAY_PROJECT,"
+after = "    LayerName.OVERLAY_PROJECT,\n    LayerName.OVERLAY_COMMON,"
+reddens = ["tests/config/test_classes.py::test_the_layers_run_lowest_first"]
+
+# A limit of the platform is the shipped preset's alone: a repository raising it would raise what
+# a hook may print.
+[[mutation]]
+name = "the repository may set a key the plugin owns"
+file = "src/stayfixed/config/classes.py"
+before = "        KeyClass.PLUGIN_OWNED: frozenset({LayerName.PRESET}),"
+after = "        KeyClass.PLUGIN_OWNED: _REPOSITORY_SIDE,"
+reddens = ["tests/config/test_classes.py::test_which_layers_may_set_each_class"]
+
+# A refused layer contributes nothing even where no layer beneath it sets the key: its value
+# standing in for a missing one would be the refused value applied.
+[[mutation]]
+name = "a refused layer's value stands where nothing beneath it is set"
+file = "src/stayfixed/config/classes.py"
+before = """                notes.append(REFUSED_LAYER_NOTE.format(key=clipped(key), layer=layer.name))
+                continue"""
+after = """                notes.append(REFUSED_LAYER_NOTE.format(key=clipped(key), layer=layer.name))
+                if key in values:
+                    continue"""
+reddens = ["tests/config/test_classes.py::test_a_key_only_a_refused_layer_sets_has_no_value"]
+
+# A key with no class reaching `resolve` is its caller's defect, and is raised rather than
+# passed off as a refused layer.
+[[mutation]]
+name = "resolve notes an unknown key instead of raising"
+file = "src/stayfixed/config/classes.py"
+before = "            if layer.name not in ALLOWED[class_of(key)]:"
+after = "            if layer.name not in ALLOWED.get(CLASSES.get(key) or CLASSES.get(key.split('.')[0] + '.*'), frozenset()):"
+reddens = ["tests/config/test_classes.py::test_an_unknown_key_in_a_layer_is_a_key_error"]
+
+# A note names a layer by its value, which is the word a person reads.
+[[mutation]]
+name = "a layer's name reads as its identifier"
+file = "src/stayfixed/config/classes.py"
+before = '    MACHINE_FILE = "machine file"'
+after = '    MACHINE_FILE = "machine_file"'
+reddens = ["tests/config/test_classes.py::test_a_layer_reads_as_its_name"]
+
+# The owner's layer (`src/stayfixed/config/owner.py`): a session goes on through a machine file
+# that does not load, on the preset's personal values and guards, and says so; a command refuses.
+[[mutation]]
+name = "a broken machine file raises for a reader that must go on"
+file = "src/stayfixed/config/owner.py"
+before = """    except MachineConfigError as exc:
+        if strict:
+            raise"""
+after = """    except MachineConfigError as exc:
+        if True:
+            raise"""
+reddens = [
+  "tests/config/test_owner.py::test_a_broken_machine_file_is_the_preset_and_names_the_file",
+]
+
+# The refusal is kept beside the notes, so `doctor` reads a file that does not load as the one
+# every command refuses, red, and not as one more note of a file it read past.
+[[mutation]]
+name = "the owner's layer forgets that the machine file did not load"
+file = "src/stayfixed/config/owner.py"
+before = "        raw, unloaded = None, str(exc)"
+after = "        raw, unloaded = None, None"
+reddens = [
+  "tests/config/test_owner.py::test_a_broken_machine_file_is_the_preset_and_names_the_file",
+  "tests/doctor/test_checks.py::test_a_machine_file_that_does_not_load_is_red_and_not_blamed_on_stayfixed_toml",
+]
+
+# A command resolves the owner's layer once, over the default preset, and hands it to every load:
+# a document naming another preset stands the machine file's values on that preset's defaults.
+[[mutation]]
+name = "a command's owner layer stays on the preset it was resolved over"
+file = "src/stayfixed/config/owner.py"
+before = "    if preset == owner.preset:\n        return owner"
+after = "    if True:\n        return owner"
+reddens = [
+  "tests/config/test_owner.py::test_the_owners_layer_stands_on_another_preset_without_reading_the_file_again",
+  "tests/config/test_owner.py::test_a_load_stands_the_layer_it_is_handed_on_the_documents_preset",
+]
+
+# A gate's budget is the repository's: the owner's layer leaves it out before `resolve`, whose
+# own refusal would otherwise be the only thing between the machine file and a gate's bound.
+[[mutation]]
+name = "the owner's layer admits a gate budget"
+file = "src/stayfixed/config/owner.py"
+before = '            elif table == "budgets" and key in GATE_BUDGETS:'
+after = "            elif False:"
+reddens = ["tests/config/test_owner.py::test_a_gate_budget_in_the_machine_file_is_a_note"]
+
+# In a machine file that loads, what the owner wrote and this stayfixed cannot use costs its key
+# with a note under either mode: refused, a later release's key would stop every older command.
+[[mutation]]
+name = "the owner's layer refuses a key it cannot use in a file that loads"
+file = "src/stayfixed/config/owner.py"
+before = "        template = IGNORED_NOTE if ignored else MACHINE_RESET_NOTE"
+after = """        raise MachineConfigError(f"{machine}: {sentence}")"""
+reddens = [
+  "tests/config/test_owner.py::test_strict_notes_what_a_session_notes_in_a_file_that_loads[unknown-key]",
+  "tests/memory/test_owner_budgets.py::test_a_command_reads_past_a_machine_file_key_it_cannot_use_and_says_so[gate-budget]",
+]
+
+[[mutation]]
+name = "a command keeps quiet about what it read past in the machine file"
+file = "src/stayfixed/config/owner.py"
+before = '        print(f"stayfixed: {note}", file=sys.stderr)'
+after = "        pass"
+reddens = [
+  "tests/memory/test_owner_budgets.py::test_a_command_reads_past_a_machine_file_key_it_cannot_use_and_says_so[gate-budget]",
+  "tests/test_command.py::test_a_command_says_a_machine_file_note_once_however_many_documents_it_loads[gate]",
+]
+
+# A guard is on until the owner switches it off: off by default, it would be off on every machine
+# whose owner never wrote a `[guards]` table.
+[[mutation]]
+name = "the background guard is off by default"
+file = "src/stayfixed/config/owner.py"
+before = "    bg_cleanup: bool = True"
+after = "    bg_cleanup: bool = False"
+reddens = [
+  "tests/config/test_owner.py::test_the_guards_are_on_by_default",
+  "tests/config/test_owner.py::test_no_machine_file_is_the_preset",
+]
+
+# `None` is a machine with no home, read as no file rather than handed to the reader.
+[[mutation]]
+name = "a machine with no home is read as a path"
+file = "src/stayfixed/config/owner.py"
+before = "        raw = None if machine is None else read_machine_toml(machine)"
+after = "        raw = read_machine_toml(cast(Path, machine))"
+reddens = ["tests/config/test_owner.py::test_a_machine_with_no_home_is_the_preset"]
+
+# The machine file's `[guards]` is the one place a session guard is switched off.
+[[mutation]]
+name = "the owner's layer never reads [guards]"
+file = "src/stayfixed/config/owner.py"
+before = '    for table in ("personal", "guards", "budgets"):'
+after = '    for table in ("personal", "budgets"):'
+reddens = [
+  "tests/config/test_owner.py::test_the_machine_file_switches_the_background_guard_off",
+]
+
+# The machine file is the higher layer: its values win over the preset's.
+[[mutation]]
+name = "the preset's personal values win over the machine file's"
+file = "src/stayfixed/config/owner.py"
+before = "    layers = [Layer(LayerName.PRESET, lower), Layer(LayerName.MACHINE_FILE, dict(upper))]"
+after = "    layers = [Layer(LayerName.MACHINE_FILE, lower), Layer(LayerName.PRESET, dict(upper))]"
+reddens = ["tests/config/test_owner.py::test_the_machine_files_personal_values_win"]
+
+# A session budget is the owner's only where the machine file set it.
+[[mutation]]
+name = "the owner's session budgets are read from the preset layer"
+file = "src/stayfixed/config/owner.py"
+before = '        if key.startswith("budgets.") and resolution.provenance[key] is LayerName.MACHINE_FILE'
+after = '        if key.startswith("budgets.") and resolution.provenance[key] is LayerName.PRESET'
+reddens = ["tests/config/test_owner.py::test_a_session_budget_is_the_owners"]
+
+# A TOML key is any quoted text, so the owner's note prints it through `printed.clipped`.
+[[mutation]]
+name = "the owner's unknown-key note prints the key raw"
+file = "src/stayfixed/config/owner.py"
+before = "                problem(UNKNOWN_KEY.format(table=table, key=clipped(key)), ignored=True)"
+after = "                problem(UNKNOWN_KEY.format(table=table, key=key), ignored=True)"
+reddens = ["tests/config/test_owner.py::test_an_unknown_key_is_a_note_and_never_printed_raw"]
+
+# An unusable value costs its own key, never the values read before it.
+[[mutation]]
+name = "an invalid value in the machine file costs every value read before it"
+file = "src/stayfixed/config/owner.py"
+before = "                    problem(str(exc), ignored=False)"
+after = "                    problem(str(exc), ignored=False)\n                    found.clear()"
+reddens = ["tests/config/test_owner.py::test_an_invalid_value_resets_only_its_key[personal]"]
+
+# A table that is not one is a note, never a session's owner layer failing.
+[[mutation]]
+name = "a machine table that is not a table is read as one"
+file = "src/stayfixed/config/owner.py"
+before = "        if not isinstance(values, dict):\n            problem(NOT_A_TABLE"
+after = "        if False:\n            problem(NOT_A_TABLE"
+reddens = ["tests/config/test_owner.py::test_a_table_that_is_not_a_table_is_a_note"]
+
+# The NOTE loader (`loader.loads_noting`): an unknown name is ignored and an invalid value costs
+# only its own key, so a session keeps every other setting the project made.
+[[mutation]]
+name = "the NOTE path drops the whole document on a keyed refusal"
+file = "src/stayfixed/config/loader.py"
+before = "            table, name = held\n            del table[name]"
+after = "            document.clear()"
+reddens = ["tests/config/test_loader_note.py::test_an_invalid_value_resets_only_its_key"]
+
+[[mutation]]
+name = "the NOTE path catches ConfigError but not PathEscape"
+file = "src/stayfixed/config/loader.py"
+before = "        except (ConfigError, PathEscape) as exc:"
+after = "        except ConfigError as exc:"
+reddens = ["tests/config/test_loader_note.py::test_an_escaping_path_resets_only_that_path"]
+
+[[mutation]]
+name = "the NOTE retry takes a key the document does not hold for removed"
+file = "src/stayfixed/config/loader.py"
+before = "                return found\n    return None"
+after = "                return found\n    return table, dotted"
+reddens = [
+  "tests/config/test_loader_note.py::test_a_validator_that_keeps_refusing_spends_the_document_and_stops",
+  "tests/config/test_loader_note.py::test_a_key_the_document_does_not_hold_is_unusable",
+]
+
+[[mutation]]
+name = "an unknown name's note prints it raw"
+file = "src/stayfixed/config/loader.py"
+before = '            notes.append(UNKNOWN_NOTE.format(name=clipped(f"{dotted}.{key}")))'
+after = '            notes.append(UNKNOWN_NOTE.format(name=f"{dotted}.{key}"))'
+reddens = ["tests/config/test_loader_note.py::test_an_unknown_name_is_never_printed_raw"]
+
+[[mutation]]
+name = "the NOTE path removes a repository's machine-only table without a note"
+file = "src/stayfixed/config/loader.py"
+before = "    notes.extend(resolve([Layer(LayerName.REPOSITORY, machine_only)]).notes)"
+after = "    pass"
+reddens = ["tests/config/test_loader_note.py::test_a_repository_guards_section_is_refused_by_resolve"]
+
+[[mutation]]
+name = "the document's budget wins over the owner's session budget"
+file = "src/stayfixed/config/loader.py"
+before = "configured={**configured, **session})"
+after = "configured={**session, **configured})"
+reddens = ["tests/config/test_loader_note.py::test_the_owners_session_budgets_win_over_the_repositorys"]
+
+# Under REFUSE nothing changes: an unknown key is still the command's refusal.
+[[mutation]]
+name = "_build drops an unknown key under REFUSE"
+file = "src/stayfixed/config/loader.py"
+before = """    unknown = sorted(set(values) - set(known))
+    if unknown:"""
+after = """    values = {key: value for key, value in values.items() if key in known}
+    unknown = sorted(set(values) - set(known))
+    if unknown:"""
+reddens = ["tests/config/test_loader_note.py::test_refuse_still_refuses_each_of_them[key]"]
+
+# The preset loader's refusal carries no key, so `_preset` re-raises it keyed to
+# `stayfixed.preset`; a call outside that `try` lets the keyless one escape.
+[[mutation]]
+name = "the preset loader's refusal escapes without its key"
+file = "src/stayfixed/config/loader.py"
+before = "    try:\n        return load_preset(name)\n    except Failure as exc:"
+after = "    load_preset(name)\n    try:\n        return load_preset(name)\n    except Failure as exc:"
+reddens = ["tests/config/test_loader_note.py::test_an_unknown_preset_resets_to_recommended"]
+
+# A command refuses a preset this build does not ship, rather than reading it as `recommended`.
+[[mutation]]
+name = "an unknown preset name is quietly read as recommended"
+file = "src/stayfixed/config/loader.py"
+before = "        raise ConfigError(str(exc), key=PRESET_KEY) from None"
+after = "        return load_preset(\"recommended\")"
+reddens = ["tests/config/test_loader_note.py::test_refuse_still_refuses_an_unknown_preset"]
+
+# `contained()` names no key; `validate_paths` knows which `[paths]` key it was asked about.
+[[mutation]]
+name = "validate_paths stops naming the key of a contained() refusal"
+file = "src/stayfixed/config/paths.py"
+before = '            exc.key = f"paths.{name}"'
+after = "            exc.key = None"
+reddens = [
+  "tests/config/test_loader_note.py::test_a_path_through_a_symlink_resets_only_that_path",
+]
+
+# A custom gate's name may hold a dot, so the retry asks each level for the whole remaining name
+# before it splits it.
+[[mutation]]
+name = "the NOTE retry cannot remove a key whose name holds a dot"
+file = "src/stayfixed/config/loader.py"
+before = "    if dotted in table:\n        return table, dotted"
+after = "    if dotted in table and \".\" not in dotted:\n        return table, dotted"
+reddens = [
+  "tests/config/test_loader_note.py::test_a_custom_gate_whose_name_holds_a_dot_is_dropped_by_its_whole_name",
+]
+
+# An unknown name is ignored with a note of its own: nothing stands in for it, and nothing beside
+# it is lost.
+[[mutation]]
+name = "an unknown section is dropped without a note"
+file = "src/stayfixed/config/loader.py"
+before = "            notes.append(UNKNOWN_NOTE.format(name=clipped(name)))"
+after = "            pass"
+reddens = ["tests/config/test_loader_note.py::test_an_unknown_name_is_ignored_with_a_note[newer]"]
+
+[[mutation]]
+name = "the NOTE path resets an unknown key instead of ignoring it"
+file = "src/stayfixed/config/loader.py"
+before = "        if key not in known:\n            notes.append(UNKNOWN_NOTE"
+after = "        if False:\n            notes.append(UNKNOWN_NOTE"
+reddens = [
+  "tests/config/test_loader_note.py::test_an_unknown_name_is_ignored_with_a_note[memory.future]",
+  "tests/config/test_loader_note.py::test_an_unknown_name_is_ignored_with_a_note[budgets.future]",
+  "tests/config/test_loader_note.py::test_an_unknown_name_is_ignored_with_a_note[gates.custom.g.future]",
+]
+
+[[mutation]]
+name = "an unknown key costs the NOTE path its whole section"
+file = "src/stayfixed/config/loader.py"
+before = '            notes.append(UNKNOWN_NOTE.format(name=clipped(f"{dotted}.{key}")))'
+after = '''            notes.append(UNKNOWN_NOTE.format(name=clipped(f"{dotted}.{key}")))
+            return {}'''
+reddens = ["tests/config/test_loader_note.py::test_the_rest_of_a_newer_file_survives"]
+
+# A custom gate has no preset value, so a refusal of one is keyed to that gate alone.
+[[mutation]]
+name = "a custom gate that cannot run costs every custom gate"
+file = "src/stayfixed/config/loader.py"
+before = "            raise ConfigError(GATES_CUSTOM_EMPTY.format(name=name), key=gate_key)"
+after = '            raise ConfigError(GATES_CUSTOM_EMPTY.format(name=name), key="gates.custom")'
+reddens = ["tests/config/test_loader_note.py::test_a_custom_gate_that_cannot_run_is_dropped"]
+
+# A refusal with no key is the whole document's, and the NOTE path propagates it; a missing
+# required key has no preset value to reset to, so it stays the document's.
+[[mutation]]
+name = "a missing required key is keyed as one value"
+file = "src/stayfixed/config/loader.py"
+before = "        super().__init__(message)\n        self.missing = missing"
+after = "        super().__init__(message, key=missing[0])\n        self.missing = missing"
+reddens = ["tests/config/test_loader_note.py::test_a_document_level_refusal_propagates[no-version]"]
+
+[[mutation]]
+name = "a document that is not TOML is keyed to a section"
+file = "src/stayfixed/config/loader.py"
+before = """        raise ConfigError(f"{path} is not valid TOML {toml_position(exc)}") from None"""
+after = """        raise ConfigError(f"{path} is not valid TOML {toml_position(exc)}", key="stayfixed") from None"""
+reddens = ["tests/config/test_loader_note.py::test_a_document_level_refusal_propagates[not-toml]"]
+
+# What a refused key falls back to is decided before it is removed (`loader.loads_noting`): a key
+# with nothing to stand in for it is named by `UnusableKey` at once, and never removed for the next
+# attempt to call it missing or to blame the preset's value.
+[[mutation]]
+name = "a key with no fallback is removed and retried"
+file = "src/stayfixed/config/loader.py"
+before = "    if not _stands_in(key, defaults):"
+after = "    if False:"
+reddens = [
+  "tests/config/test_loader_note.py::test_a_required_key_it_cannot_use_is_named_and_never_called_missing[project-name]",
+  "tests/config/test_loader_note.py::test_a_required_key_it_cannot_use_is_named_and_never_called_missing[version]",
+  "tests/config/test_loader_note.py::test_a_required_key_it_cannot_use_is_named_and_never_called_missing[project-not-a-table]",
+  "tests/config/test_loader_note.py::test_a_required_key_it_cannot_use_is_named_and_never_called_missing[stayfixed-not-a-table]",
+]
+
+[[mutation]]
+name = "a section with no fallback resets"
+file = "src/stayfixed/config/loader.py"
+before = "        return all(_defaulted(section, key, defaults) for key in fields(schema))"
+after = "        return True"
+reddens = [
+  "tests/config/test_loader_note.py::test_a_required_key_it_cannot_use_is_named_and_never_called_missing[project-not-a-table]",
+  "tests/config/test_loader_note.py::test_a_required_key_it_cannot_use_is_named_and_never_called_missing[stayfixed-not-a-table]",
+]
+
+[[mutation]]
+name = "the NOTE path relays the refusal of a key it cannot remove"
+file = "src/stayfixed/config/loader.py"
+before = "            if held is None:\n                message = UNUSABLE_PRESET"
+after = "            if held is None:\n                raise\n                message = UNUSABLE_PRESET"
+reddens = [
+  "tests/config/test_loader_note.py::test_a_preset_value_a_committed_symlink_breaks_is_named[preset-value]",
+  "tests/config/test_loader_note.py::test_a_key_the_document_does_not_hold_is_unusable",
+]
+
+# The preset's `[paths]` value is a path in this repository too, so it is asked before a key is put
+# back to it: the key named is the one the document wrote.
+[[mutation]]
+name = "a preset value that fails containment is reset to anyway"
+file = "src/stayfixed/config/loader.py"
+before = '    if section == "paths" and name:'
+after = "    if False:"
+reddens = [
+  "tests/config/test_loader_note.py::test_a_preset_value_a_committed_symlink_breaks_is_named[reset-before-the-first-preset]",
+]
+
+# Each kind of value a removed key falls back to (`loader._stands_in`).
+[[mutation]]
+name = "a key the preset holds is called unusable"
+file = "src/stayfixed/config/loader.py"
+before = "        or key.name in defaults.get(section, {})"
+after = "        or False"
+reddens = [
+  "tests/config/test_loader_note.py::test_an_invalid_value_resets_only_its_key",
+  "tests/config/test_loader_note.py::test_a_section_that_is_not_a_table_is_the_presets",
+]
+
+[[mutation]]
+name = "a value the loader fills is called unusable"
+file = "src/stayfixed/config/loader.py"
+before = '_FILLED = frozenset({PRESET_KEY, "ci.gate_branch"})'
+after = "_FILLED: frozenset[str] = frozenset()"
+reddens = [
+  "tests/config/test_loader_note.py::test_an_unknown_preset_resets_to_recommended",
+  "tests/config/test_loader_note.py::test_a_key_with_a_value_to_fall_back_to_resets_with_its_note[filled-by-the-loader]",
+]
+
+# `key.default` has no mutation of its own: no schema field has a plain default today, so no
+# document reaches that arm; it mirrors `_build`'s own reading of "required".
+[[mutation]]
+name = "a schema default is called unusable"
+file = "src/stayfixed/config/loader.py"
+before = "        or key.default_factory is not MISSING\n        or key.name in defaults"
+after = "        or False\n        or key.name in defaults"
+reddens = [
+  "tests/config/test_loader_note.py::test_a_key_with_a_value_to_fall_back_to_resets_with_its_note[schema-default]",
+]
+
+[[mutation]]
+name = "a budget or a custom gate is called unusable"
+file = "src/stayfixed/config/loader.py"
+before = '    if section == "budgets" or dotted.startswith("gates.custom."):'
+after = "    if False:"
+reddens = [
+  "tests/config/test_loader_note.py::test_a_key_with_a_value_to_fall_back_to_resets_with_its_note[absent-entry]",
+  "tests/config/test_loader_note.py::test_a_custom_gate_that_cannot_run_is_dropped",
+]
+
+# `Noted.keys` is what `doctor` lists a session's notes by.
+[[mutation]]
+name = "a reset key is not recorded beside its note"
+file = "src/stayfixed/config/loader.py"
+before = "            keys.append(exc.key)\n"
+after = ""
+reddens = ["tests/config/test_loader_note.py::test_each_note_names_the_key_it_is_about"]
+
+[[mutation]]
+name = "an unknown key is not recorded beside its note"
+file = "src/stayfixed/config/loader.py"
+before = "            keys.append(f\"{dotted}.{key}\")\n"
+after = ""
+reddens = ["tests/config/test_loader_note.py::test_each_note_names_the_key_it_is_about"]
+
+# A section that is not a table is keyed to the section, which the NOTE path puts back to the
+# preset's; unkeyed, it would cost the session the whole file.
+[[mutation]]
+name = "a section that is not a table is refused with no key"
+file = "src/stayfixed/config/loader.py"
+before = """        raise ConfigError(f"[{name}] must be a table", key=name)"""
+after = """        raise ConfigError(f"[{name}] must be a table")"""
+reddens = ["tests/config/test_loader_note.py::test_a_section_that_is_not_a_table_is_the_presets"]
+
+# A repository's `[guards]` that is not even a table is still the repository trying to set a
+# machine-only key, and says so.
+[[mutation]]
+name = "a repository's machine-only value that is not a table is dropped without a note"
+file = "src/stayfixed/config/loader.py"
+before = "                notes.append(REFUSED_LAYER_NOTE.format(key=name, layer=LayerName.REPOSITORY))"
+after = "                pass"
+reddens = [
+  "tests/config/test_loader_note.py::test_a_repository_guards_value_that_is_not_a_table_is_refused_too",
+]
+
+# A session never dies of its configuration (`config.session`): it reads what loads, falls back
+# whole only when nothing can stand in, and says so in one warning about each file.
+[[mutation]]
+name = "session_config answers no configuration for a file that loads with notes"
+file = "src/stayfixed/config/session.py"
+before = "        noted.config, owner, warnings, _owners(owner, path), noted.keys, noted.document"
+after = "        None, owner, warnings, _owners(owner, path), noted.keys, noted.document"
+reddens = ["tests/config/test_session.py::test_a_newer_release_keeps_every_other_setting"]
+
+[[mutation]]
+name = "a session lists no key it noted"
+file = "src/stayfixed/config/session.py"
+before = "        noted.config, owner, warnings, _owners(owner, path), noted.keys, noted.document"
+after = "        noted.config, owner, warnings, _owners(owner, path), (), noted.document"
+reddens = ["tests/config/test_session.py::test_a_newer_release_keeps_every_other_setting"]
+
+# `doctor` tells which preferences the repository set from the document the session's own load
+# used, never from a second read of the file.
+[[mutation]]
+name = "a session hands doctor no document"
+file = "src/stayfixed/config/session.py"
+before = "        noted.config, owner, warnings, _owners(owner, path), noted.keys, noted.document"
+after = "        noted.config, owner, warnings, _owners(owner, path), noted.keys"
+reddens = [
+  "tests/doctor/test_floor_report.py::test_preferences_names_the_layer_and_hides_free_text",
+  "tests/doctor/test_floor_report.py::test_a_preference_the_session_put_back_is_the_presets",
+]
+
+[[mutation]]
+name = "the NOTE load hands its reader the document as written"
+file = "src/stayfixed/config/loader.py"
+before = "        return Noted(config, tuple(notes), tuple(keys), document)"
+after = "        return Noted(config, tuple(notes), tuple(keys), raw)"
+reddens = ["tests/doctor/test_floor_report.py::test_a_preference_the_session_put_back_is_the_presets"]
+
+[[mutation]]
+name = "the session warns of a newer release for every file with notes"
+file = "src/stayfixed/config/session.py"
+before = "        newer = later(noted.config.stayfixed.version, __version__) is True"
+after = "        newer = True"
+reddens = ["tests/config/test_session.py::test_a_file_from_this_release_with_notes_is_not_called_newer"]
+
+[[mutation]]
+name = "a session lets a file that is not TOML raise"
+file = "src/stayfixed/config/session.py"
+before = "    except UNPARSEABLE:\n        return _fallback(path, FALLBACK_WARNING)"
+after = "    except UNPARSEABLE:\n        raise"
+reddens = [
+  "tests/config/test_session.py::test_a_file_that_cannot_be_read_as_toml_falls_back_whole[unparseable]",
+  "tests/hooks/test_floor.py::test_the_background_guard_judges_whatever_the_configuration[unparseable]",
+]
+
+[[mutation]]
+name = "a session says nothing of a machine file it could not use"
+file = "src/stayfixed/config/session.py"
+before = "    return (MACHINE_FILE_WARNING.format(path=machine),) if owner.notes else ()"
+after = "    return ()"
+reddens = [
+  "tests/config/test_session.py::test_a_broken_machine_file_keeps_the_project",
+  "tests/config/test_session.py::test_both_broken",
+  "tests/hooks/test_hook_command.py::test_a_machine_file_that_does_not_load_is_not_blamed_on_stayfixed_toml",
+]
+
+# The machine file a session read is under the password database's home, so the warning names
+# that file and never a `~` that a differing `HOME` moves.
+[[mutation]]
+name = "the machine-file warning names the file by a fixed path"
+file = "src/stayfixed/config/session.py"
+before = "    return (MACHINE_FILE_WARNING.format(path=machine),) if owner.notes else ()"
+after = "    return (MACHINE_FILE_WARNING.format(path=\"~/.config/stayfixed/config.toml\"),) if owner.notes else ()"
+reddens = [
+  "tests/config/test_session.py::test_a_broken_machine_file_keeps_the_project",
+  "tests/hooks/test_hook_command.py::test_a_machine_file_that_does_not_load_is_not_blamed_on_stayfixed_toml",
+  "tests/hooks/test_floor.py::test_session_start_carries_each_warning_once[broken-machine-file]",
+]
+
+# The machine file's warning is the `preferences` row's: `not-initialised` reads the project's.
+[[mutation]]
+name = "the project's warnings include the machine file's"
+file = "src/stayfixed/config/session.py"
+before = "    return SessionConfig(None, owner, (warning,), _owners(owner, machine))"
+after = "    return SessionConfig(None, owner, (warning, *_owners(owner, machine)))"
+reddens = ["tests/config/test_session.py::test_both_broken"]
+
+[[mutation]]
+name = "a session with no project root reads no machine file"
+file = "src/stayfixed/config/session.py"
+before = "        owner = resolve_owner(path)\n        return SessionConfig(None, owner, machine_warnings=_owners(owner, path))"
+after = "        owner = resolve_owner(None)\n        return SessionConfig(None, owner, machine_warnings=_owners(owner, path))"
+reddens = ["tests/config/test_session.py::test_no_project_root_still_has_the_owners_layer"]
+
+[[mutation]]
+name = "a session with no project configuration says nothing of a machine file it could not use"
+file = "src/stayfixed/config/session.py"
+before = "        return SessionConfig(None, owner, machine_warnings=_owners(owner, path))"
+after = "        return SessionConfig(None, owner)"
+reddens = [
+  "tests/config/test_session.py::test_a_broken_machine_file_is_named_with_no_project_configuration[no-file]",
+  "tests/config/test_session.py::test_a_broken_machine_file_is_named_with_no_project_configuration[no-root]",
+]
+
+[[mutation]]
+name = "a session names no key it could not use"
+file = "src/stayfixed/config/session.py"
+before = "    except UnusableKey as exc:\n        return _with_owner(owner, path, _unusable(exc.key))"
+after = "    except UnusableKey as exc:\n        return _with_owner(owner, path, _unusable(None))"
+reddens = [
+  "tests/config/test_session.py::test_a_key_nothing_can_stand_in_for_drops_the_project_and_names_it[project-name]",
+  "tests/config/test_session.py::test_a_key_nothing_can_stand_in_for_drops_the_project_and_names_it[version]",
+  "tests/config/test_session.py::test_a_key_nothing_can_stand_in_for_drops_the_project_and_names_it[docs-symlink]",
+  "tests/config/test_session.py::test_a_key_nothing_can_stand_in_for_drops_the_project_and_names_it[project-not-a-table]",
+]
+
+[[mutation]]
+name = "a session names no key a document is missing"
+file = "src/stayfixed/config/session.py"
+before = "        return _with_owner(owner, path, _unusable(exc.missing[0]))"
+after = "        return _with_owner(owner, path, _unusable(None))"
+reddens = [
+  "tests/config/test_session.py::test_a_required_key_the_document_never_wrote_drops_the_project_and_names_it",
+]
+
+[[mutation]]
+name = "the owner's layer is handed a preset the loader resets"
+file = "src/stayfixed/config/session.py"
+before = "    return named if isinstance(named, str) and named in shipped_presets() else DEFAULT_PRESET"
+after = "    return named"
+reddens = [
+  "tests/config/test_session.py::test_a_preset_this_build_cannot_use_is_one_note[unshipped]",
+  "tests/config/test_session.py::test_a_preset_this_build_cannot_use_is_one_note[not-a-string]",
+]
+
+# The notice is rendered on `SessionStart` alone, through both channels, inside the cap; every
+# other event leaves one record of it in the sink for the session.
+[[mutation]]
+name = "dispatch renders the notice on every event"
+file = "src/stayfixed/hooks/dispatch.py"
+before = "    shown = session.warnings if event.name == NOTICE_EVENT else ()"
+after = "    shown = session.warnings"
+reddens = [
+  "tests/hooks/test_floor.py::test_pre_tool_use_prints_no_warning_and_logs_it_once",
+  "tests/hooks/test_hook_command.py::test_a_config_that_does_not_load_whole_never_refuses_a_tool_call[unparseable]",
+]
+
+[[mutation]]
+name = "the notice never reaches the person"
+file = "src/stayfixed/harnesses.py"
+before = "    if notice:\n        payload[\"systemMessage\"] = notice"
+after = "    if False:\n        payload[\"systemMessage\"] = notice"
+reddens = [
+  "tests/hooks/test_floor.py::test_session_start_carries_each_warning_once[unparseable]",
+  "tests/hooks/test_hook_command.py::test_a_config_that_does_not_load_whole_is_named_once_at_session_start[unparseable]",
+]
+
+[[mutation]]
+name = "the notice never reaches the model"
+file = "src/stayfixed/hooks/dispatch.py"
+before = "    context = \"\\n\\n\".join((*shown, *contexts))"
+after = "    context = \"\\n\\n\".join(contexts)"
+reddens = [
+  "tests/hooks/test_floor.py::test_session_start_carries_each_warning_once[unparseable]",
+  "tests/hooks/test_hook_command.py::test_a_config_that_does_not_load_whole_is_named_once_at_session_start[unparseable]",
+]
+
+[[mutation]]
+name = "the clamp cuts the notice from its answer"
+file = "src/stayfixed/hooks/dispatch.py"
+before = "        stdout = render(event_name, context[:keep] + TRUNCATION_MARK, notice)"
+after = "        stdout = render(event_name, context[:keep] + TRUNCATION_MARK, \"\")"
+reddens = ["tests/hooks/test_dispatch.py::test_the_notice_counts_inside_the_cap_and_is_never_cut"]
+
+[[mutation]]
+name = "the hook logs a configuration fallback on every call"
+file = "src/stayfixed/hooks/commands.py"
+before = "    if sink.seen(CONFIG_FALLBACK):\n        return\n"
+after = ""
+reddens = ["tests/hooks/test_floor.py::test_pre_tool_use_prints_no_warning_and_logs_it_once"]
+
+[[mutation]]
+name = "the hook never logs a configuration fallback"
+file = "src/stayfixed/hooks/commands.py"
+before = "            _log_fallback(event_name, sink)"
+after = "            pass"
+reddens = ["tests/hooks/test_floor.py::test_pre_tool_use_prints_no_warning_and_logs_it_once"]
+
+# A budget is what the layer that may set it says: the base branch raises a gate's above the
+# preset, and the owner a session's.
+[[mutation]]
+name = "a budget is still only ever lowered"
+file = "src/stayfixed/config/schema.py"
+before = "        if name in self.configured:\n            return self.configured[name]"
+after = "        if name in self.configured:\n            return min(self.preset[name], self.configured[name])"
+reddens = [
+  "tests/config/test_budgets_raise.py::test_the_base_branch_raises_a_gate_budget",
+  "tests/config/test_budgets_raise.py::test_the_owner_raises_a_session_budget",
+  "tests/assess/test_rule_classes.py::test_a_pull_request_still_only_lowers_a_gate_budget",
+]
+
+# The machine's one trust record (`stayfixed.trust`). A record that does not parse refuses and is
+# never overwritten; read as empty, it would leave every approval lapsed and be rewritten over.
+[[mutation]]
+name = "a corrupt trust record reads as an empty one again"
+file = "src/stayfixed/trust/record.py"
+before = '    raw = json_object(text, str(path), error=lambda reason: UnreadableTrust(f"{reason}; {_KEPT}"))'
+after = '''    try:
+        raw = json_object(text, str(path), error=lambda reason: UnreadableTrust(f"{reason}; {_KEPT}"))
+    except UnreadableTrust:
+        return {}'''
+reddens = [
+  "tests/memory/test_trust.py::test_a_corrupt_record_refuses_rather_than_reading_as_untrusted",
+  "tests/memory/test_trust.py::test_a_corrupt_record_is_never_overwritten",
+]
+
+# Nor does a record past the parser's reach escape as an internal error. Nested past the parser,
+# or holding an integer longer than Python converts, it is valid JSON that `json.loads` meets with
+# no `JSONDecodeError`, and the reader caught only that.
+[[mutation]]
+name = "the trust record's reader lets a document past the parser escape"
+file = "src/stayfixed/trust/record.py"
+before = '    raw = json_object(text, str(path), error=lambda reason: UnreadableTrust(f"{reason}; {_KEPT}"))'
+after = '''    try:
+        raw = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise UnreadableTrust(f"{path} is not valid JSON: {exc}; {_KEPT}") from exc'''
+reddens = [
+  "tests/memory/test_commands.py::test_a_trust_record_past_the_parser_is_refused_and_never_overwritten[nested]",
+  "tests/memory/test_commands.py::test_a_trust_record_past_the_parser_is_refused_and_never_overwritten[long-number]",
+]
+
+# No home in the password database is no trust record: none is read, and none is written beside
+# whatever directory the command happens to run in.
+[[mutation]]
+name = "a trust record with no home is written beside the working directory"
+file = "src/stayfixed/trust/record.py"
+before = '        raise Failure(NO_HOME)'
+after = '        path = Path(RECORD)'
+reddens = ["tests/memory/test_commands.py::test_trust_with_no_home_in_the_database_fails_and_writes_nothing"]
+
+[[mutation]]
+name = "a trust record with no home is read as a path"
+file = "src/stayfixed/trust/record.py"
+before = '    if path is None or not fsops.is_file(path):'
+after = '    if not fsops.is_file(path):'
+reddens = ["tests/memory/test_commands.py::test_trust_with_no_home_in_the_database_fails_and_writes_nothing"]
+
+# A trust record that cannot be written under the database's home is a failure naming the
+# directory, never an internal error; and where the homes differ the command says where it wrote.
+[[mutation]]
+name = "an unwritable trust record directory ends as an internal error"
+file = "src/stayfixed/trust/record.py"
+before = "    except OSError as exc:\n        if sandbox_refused(exc):\n            raise SandboxedWrite(SANDBOXED) from None\n        where = ("
+after = "    except LookupError as exc:\n        if sandbox_refused(exc):\n            raise SandboxedWrite(SANDBOXED) from None\n        where = ("
+reddens = [
+  "tests/memory/test_commands.py::test_trust_where_the_database_home_cannot_be_written_fails_naming_the_directory",
+]
+
+[[mutation]]
+name = "memory trust keeps quiet about where it wrote while the homes differ"
+file = "src/stayfixed/trust/approving.py"
+before = "    if approved and context.machine is None and written is not None and not homes_agree():"
+after = "    if False:"
+reddens = [
+  "tests/memory/test_commands.py::test_an_owner_whose_home_differs_from_the_database_trusts_from_a_terminal_unrefused",
+]
+
+# The machine's trust record that cannot be read is named once with the reason in words: the
+# error's own text named the same absolute path a second time.
+[[mutation]]
+name = "a trust record that cannot be read is reported with the error's own text"
+file = "src/stayfixed/trust/record.py"
+before = '            f"{path} cannot be read ({fsops.said(exc)}); refusing to answer about trust or to "'
+after = '            f"{path} cannot be read ({exc}); refusing to answer about trust or to "'
+reddens = ["tests/memory/test_trust.py::test_a_record_that_cannot_be_read_says_why_in_words"]
+
+# The record reads `0.3.0`'s flat map as approvals of kind `memory`, and refuses, never reads as
+# empty, a version it does not know.
+[[mutation]]
+name = "the trust record no longer reads 0.3.0's flat map"
+file = "src/stayfixed/trust/record.py"
+before = "            if isinstance(digest, str)\n        }"
+after = "            if isinstance(digest, str) and False\n        }"
+reddens = [
+  "tests/trust/test_record.py::test_a_0_3_0_record_keeps_every_memory_approval",
+  "tests/trust/test_record.py::test_the_first_write_upgrades_the_file_in_place",
+]
+
+[[mutation]]
+name = "a trust record of a later version is read as empty"
+file = "src/stayfixed/trust/record.py"
+before = "    if type(version) is int and version > VERSION:\n        raise UnreadableTrust(LATER_VERSION.format(path=path))"
+after = "    if type(version) is int and version > VERSION:\n        return {}"
+reddens = [
+  "tests/trust/test_record.py::test_an_unreadable_record_refuses_and_is_never_overwritten[version-2]",
+]
+
+[[mutation]]
+name = "a trust record of any other version is sent to a later stayfixed"
+file = "src/stayfixed/trust/record.py"
+before = "    if type(version) is int and version > VERSION:"
+after = "    if not (type(version) is int and version == VERSION):"
+reddens = [
+  "tests/trust/test_record.py::test_an_unreadable_record_refuses_and_is_never_overwritten[bool]",
+  "tests/trust/test_record.py::test_an_unreadable_record_refuses_and_is_never_overwritten[version-0]",
+  "tests/trust/test_record.py::test_an_unreadable_record_refuses_and_is_never_overwritten[negative]",
+  "tests/trust/test_record.py::test_an_unreadable_record_refuses_and_is_never_overwritten[text]",
+]
+
+[[mutation]]
+name = "a trust record with approvals and no version reads as 0.3.0's flat map"
+file = "src/stayfixed/trust/record.py"
+before = '    if "version" not in raw and "approvals" not in raw:'
+after = '    if "version" not in raw:'
+reddens = [
+  "tests/trust/test_record.py::test_an_unreadable_record_refuses_and_is_never_overwritten[no-version]",
+]
+
+# A version-1 record is held whole: anything but exactly its two keys, a list of approvals, and
+# each approval an object of four strings named once refuses, never reads as part of a record.
+[[mutation]]
+name = "a trust record's approvals that are not a list read as none"
+file = "src/stayfixed/trust/record.py"
+before = '    if set(raw) != {"version", "approvals"} or not isinstance(entries, list):'
+after = '    if set(raw) != {"version", "approvals"}:'
+reddens = [
+  "tests/trust/test_record.py::test_an_unreadable_record_refuses_and_is_never_overwritten[approvals-not-a-list]",
+]
+
+[[mutation]]
+name = "a trust record with a stray key is read"
+file = "src/stayfixed/trust/record.py"
+before = '    if set(raw) != {"version", "approvals"} or not isinstance(entries, list):'
+after = "    if not isinstance(entries, list):"
+reddens = [
+  "tests/trust/test_record.py::test_an_unreadable_record_refuses_and_is_never_overwritten[stray-key]",
+]
+
+[[mutation]]
+name = "a trust record's digest that is not a string is read"
+file = "src/stayfixed/trust/record.py"
+before = "            or not all(isinstance(value, str) for value in entry.values())"
+after = "            or False"
+reddens = [
+  "tests/trust/test_record.py::test_an_unreadable_record_refuses_and_is_never_overwritten[digest-not-a-string]",
+]
+
+[[mutation]]
+name = "a trust record naming one approval twice keeps the last"
+file = "src/stayfixed/trust/record.py"
+before = "        if key in found:"
+after = "        if False:"
+reddens = [
+  "tests/trust/test_record.py::test_an_unreadable_record_refuses_and_is_never_overwritten[duplicate-pair]",
+]
+
+[[mutation]]
+name = "a trust record's approval that is not an object is read"
+file = "src/stayfixed/trust/record.py"
+before = "            not isinstance(entry, dict)\n            or set(entry) != _FIELDS"
+after = "            set(entry) != _FIELDS"
+reddens = [
+  "tests/trust/test_record.py::test_an_unreadable_record_refuses_and_is_never_overwritten[entry-not-an-object]",
+]
+
+[[mutation]]
+name = "an approval over an unreadable trust record writes the record anyway"
+file = "src/stayfixed/trust/record.py"
+before = "    approvals = recorded(machine)\n    approval = Approval("
+after = "    try:\n        approvals = recorded(machine)\n    except UnreadableTrust:\n        approvals = {}\n    approval = Approval("
+reddens = [
+  "tests/trust/test_record.py::test_an_unreadable_record_refuses_and_is_never_overwritten[not-json]",
+  "tests/trust/test_record.py::test_an_unreadable_record_refuses_and_is_never_overwritten[version-2]",
+]
+
+# An approval holds at its digest, and the record tells a changed digest from none at all.
+[[mutation]]
+name = "the trust record ignores the digest"
+file = "src/stayfixed/trust/record.py"
+before = "    return State.APPROVED if approval.digest == current else State.LAPSED"
+after = "    return State.APPROVED"
+reddens = ["tests/trust/test_record.py::test_lapsed_missing_and_approved_are_told_apart"]
+
+[[mutation]]
+name = "a lapsed approval reads as missing"
+file = "src/stayfixed/trust/record.py"
+before = "    return State.APPROVED if approval.digest == current else State.LAPSED"
+after = "    return State.APPROVED if approval.digest == current else State.MISSING"
+reddens = ["tests/trust/test_record.py::test_lapsed_missing_and_approved_are_told_apart"]
+
+# An approval is one kind and one subject: approving another kind of the same subject replaces
+# nothing.
+[[mutation]]
+name = "the trust record keys an approval by its subject alone"
+file = "src/stayfixed/trust/record.py"
+before = "    approvals[(kind, subject)] = approval"
+after = "    approvals = {key: a for key, a in approvals.items() if key[1] != subject}\n    approvals[(kind, subject)] = approval"
+reddens = ["tests/trust/test_record.py::test_two_kinds_never_share_a_subject"]
+
+# A revoke that matches nothing writes nothing.
+[[mutation]]
+name = "a revoke of nothing rewrites the trust record"
+file = "src/stayfixed/trust/record.py"
+before = "    if approvals.pop((kind, subject), None) is None:\n        return False"
+after = "    if approvals.pop((kind, subject), None) is None:\n        _write(machine, approvals)\n        return False"
+reddens = ["tests/trust/test_record.py::test_revoke_of_nothing_says_so"]
+
+# A refresh, stayfixed's own write over an approval its caller read, moves only the digest it read,
+# never brings back a revoked approval, and keeps when the person approved.
+[[mutation]]
+name = "a refresh writes over an approval it did not read"
+file = "src/stayfixed/trust/record.py"
+before = "    if held is None or held.digest != expected:"
+after = "    if held is None:"
+reddens = ["tests/trust/test_record.py::test_a_refresh_moves_only_the_digest_it_was_read_at"]
+
+[[mutation]]
+name = "a refresh brings back a revoked approval"
+file = "src/stayfixed/trust/record.py"
+before = "    if held is None or held.digest != expected:"
+after = """    if held is None:
+        held = Approval(kind, subject, expected, "")
+    if held.digest != expected:"""
+reddens = [
+  "tests/trust/test_record.py::test_a_refresh_never_brings_back_a_revoked_approval",
+  "tests/attach/test_write.py::test_an_approval_attach_could_not_carry_is_said_as_what_happened[record]",
+]
+
+[[mutation]]
+name = "a refresh restamps when the person approved"
+file = "src/stayfixed/trust/record.py"
+before = "    approvals[(kind, subject)] = replace(held, digest=digest)"
+after = "    approvals[(kind, subject)] = replace(held, digest=digest, approved_at=datetime.now().isoformat())"
+reddens = [
+  "tests/trust/test_record.py::test_a_refresh_moves_only_the_digest_it_was_read_at",
+  "tests/memory/test_trust.py::test_a_refresh_keeps_when_the_person_approved",
+]
+
+# The record is beside the machine file under the password database's home, never `HOME`'s.
+[[mutation]]
+name = "the trust record follows HOME"
+file = "src/stayfixed/trust/record.py"
+before = "    base = machine_config_path() if machine is None else machine"
+after = '    base = Path.home() / ".config" / "stayfixed" / "config.toml" if machine is None else machine'
+reddens = ["tests/trust/test_record.py::test_the_record_ignores_xdg_and_home"]
+
+# `stayfixed trust` (`src/stayfixed/trust/commands.py`). An approval is asked of a person: with no
+# terminal on standard input it refuses and writes nothing.
+[[mutation]]
+name = "trust approve asks no terminal"
+file = "src/stayfixed/trust/approving.py"
+before = "    if not discovered.interactive():\n        raise Refusal("
+after = "    if False:\n        raise Refusal("
+reddens = [
+  "tests/trust/test_commands.py::test_no_terminal_no_approval[trust-approve]",
+  "tests/trust/test_commands.py::test_no_terminal_no_approval[memory-trust]",
+]
+
+# The refusal speaks of the person and tells an agent to stop; it never tells its reader, likely
+# an agent, to run the approval itself.
+[[mutation]]
+name = "the terminal refusal tells its reader to run the approval itself"
+file = "src/stayfixed/trust/approving.py"
+before = '    "ask the person at this machine to run `{command}` in their own terminal — an agent must not "'
+after = '    "run `{command}` yourself, in a terminal — an agent must not "'
+reddens = [
+  "tests/trust/test_commands.py::test_the_refusal_asks_for_the_person_and_tells_an_agent_to_stop",
+  "tests/trust/test_commands.py::test_every_sentence_that_names_the_memory_approval_asks_for_the_person",
+  "tests/trust/test_commands.py::test_list_names_the_command_on_every_unapproved_line",
+]
+
+# Withdrawing needs no terminal, and a revoke that matches nothing says so with exit 1.
+[[mutation]]
+name = "trust revoke revokes nothing"
+file = "src/stayfixed/trust/commands.py"
+before = "    revoked = [key for key in keys if record.revoke(context.machine, kind.name, key)]"
+after = "    revoked = [key for key in keys if False]"
+reddens = ["tests/trust/test_commands.py::test_revoke_needs_no_terminal"]
+
+[[mutation]]
+name = "a revoke of nothing exits 0"
+file = "src/stayfixed/trust/commands.py"
+before = "        exit_code=1,\n    )"
+after = "        exit_code=0,\n    )"
+reddens = ["tests/trust/test_commands.py::test_revoke_of_nothing_lists_what_is_recorded"]
+
+# Every line `trust list` prints that is not approved names the command that approves it.
+[[mutation]]
+name = "trust list names no command on an unapproved line"
+file = "src/stayfixed/trust/commands.py"
+before = '                line = f"{line} — to approve it, {PERSON_RUNS.format(command=command)}"'
+after = "                line = line"
+reddens = ["tests/trust/test_commands.py::test_list_names_the_command_on_every_unapproved_line"]
+
+# A kind with nothing to approve here says its own reason: `trust approve`, which would say it,
+# refuses with no terminal before it asks the kind anything.
+[[mutation]]
+name = "trust list sends its reader to the approve command for the reason"
+file = "src/stayfixed/trust/commands.py"
+before = '            lines.append(f"{name}: nothing to approve in this checkout: {refused}")'
+after = '            lines.append(f"{name}: nothing to approve in this checkout (`stayfixed trust approve {name}` says why)")'
+reddens = ["tests/trust/test_commands.py::test_list_says_why_a_kind_has_nothing_to_approve"]
+
+# A recorded subject prints on a line, from `~` under the password database's home, and always
+# escaped and bounded, never withheld and never raw.
+[[mutation]]
+name = "a recorded subject under the home prints whole"
+file = "src/stayfixed/trust/commands.py"
+before = "    if home is not None:"
+after = "    if False:"
+reddens = [
+  "tests/trust/test_commands.py::test_list_all_names_each_subject_from_the_home",
+  "tests/trust/test_commands.py::test_revoke_of_nothing_lists_what_is_recorded",
+]
+
+[[mutation]]
+name = "a recorded subject prints raw"
+file = "src/stayfixed/trust/commands.py"
+before = "    return clipped(subject)"
+after = "    return subject"
+reddens = ["tests/trust/test_commands.py::test_a_hostile_subject_prints_escaped_and_bounded"]
+
+[[mutation]]
+name = "revoke's recorded list prints a subject raw"
+file = "src/stayfixed/trust/commands.py"
+before = '    shown = ", ".join(_shown(subject) for subject in recorded) or "none"'
+after = '    shown = ", ".join(recorded) or "none"'
+reddens = ["tests/trust/test_commands.py::test_a_hostile_subject_prints_escaped_and_bounded"]
+
+# Two areas contributing a kind of one name refuse, rather than the second answering for the first.
+[[mutation]]
+name = "approval kind discovery accepts a duplicate name"
+file = "src/stayfixed/trust/kinds.py"
+before = "            if kind.name in found:"
+after = "            if False:"
+reddens = ["tests/trust/test_commands.py::test_kind_discovery_refuses_a_duplicate_name"]
+
+# A trust record that is there and does not parse says why, and that nothing will overwrite it.
+[[mutation]]
+name = "a trust record that is not JSON is refused without saying it is kept"
+file = "src/stayfixed/trust/record.py"
+before = '    raw = json_object(text, str(path), error=lambda reason: UnreadableTrust(f"{reason}; {_KEPT}"))'
+after = "    raw = json_object(text, str(path), error=lambda reason: UnreadableTrust(reason))"
+reddens = [
+  "tests/trust/test_record.py::test_a_record_that_does_not_parse_says_why_and_that_it_is_kept[not-json]",
+]
+
+[[mutation]]
+name = "a trust record that is not UTF-8 is refused without saying why"
+file = "src/stayfixed/trust/record.py"
+before = '        raise UnreadableTrust(f"{path} is not UTF-8 text; {_KEPT}") from None'
+after = '        raise UnreadableTrust(f"{path} cannot be read; {_KEPT}") from None'
+reddens = [
+  "tests/trust/test_record.py::test_a_record_that_does_not_parse_says_why_and_that_it_is_kept[not-utf-8]",
+]
+
+# The approval boundary's deny rule is the spelling measured to stop the sandboxed shell and the
+# file tools: two leading slashes before an absolute path.
+
+[[mutation]]
+name = "the approval boundary is spelled with one leading slash"
+file = "src/stayfixed/trust/boundary.py"
+before = "DENY_RULE = \"Edit(/{directory}/**)\""
+after = "DENY_RULE = \"Edit({directory}/**)\""
+reddens = ["tests/setup/test_approval_boundary.py::test_the_deny_rule_is_the_measured_spelling"]
+
+# A write the sandbox refuses: `EPERM`, as macOS's sandbox answers, and `EROFS`, a read-only
+# mount's, and not `EACCES`, a mode's. The record says so in its constant sentence.
+
+[[mutation]]
+name = "a read-only mount's refusal is not read as the sandbox's"
+file = "src/stayfixed/trust/boundary.py"
+before = "SANDBOX_ERRNOS = frozenset({errno.EPERM, errno.EROFS})"
+after = "SANDBOX_ERRNOS = frozenset({errno.EPERM})"
+reddens = ["tests/trust/test_record.py::test_a_write_refused_as_a_sandbox_refuses_one_is_said_so[erofs]"]
+
+[[mutation]]
+name = "a directory's mode is read as the sandbox"
+file = "src/stayfixed/trust/boundary.py"
+before = "SANDBOX_ERRNOS = frozenset({errno.EPERM, errno.EROFS})"
+after = "SANDBOX_ERRNOS = frozenset({errno.EPERM, errno.EROFS, errno.EACCES})"
+reddens = [
+  "tests/trust/test_record.py::test_a_write_refused_as_a_sandbox_refuses_one_is_said_so[eacces]",
+  "tests/memory/test_commands.py::test_trust_where_the_database_home_cannot_be_written_fails_naming_the_directory",
+]
+
+[[mutation]]
+name = "the trust record says nothing of the sandbox that refused its write"
+file = "src/stayfixed/trust/record.py"
+before = "        if sandbox_refused(exc):\n            raise SandboxedWrite(SANDBOXED) from None"
+after = "        if False:\n            raise SandboxedWrite(SANDBOXED) from None"
+reddens = [
+  "tests/trust/test_record.py::test_a_write_refused_as_a_sandbox_refuses_one_is_said_so[eperm]",
+  "tests/trust/test_commands.py::test_a_record_write_a_sandbox_refused_says_a_person_must_run_it[revoke]",
+  "tests/trust/test_commands.py::test_a_record_write_a_sandbox_refused_says_a_person_must_run_it[approve]",
+  "tests/memory/test_commands.py::test_index_whose_refresh_a_sandbox_refused_leaves_the_approval_and_says_so",
+]
+
+[[mutation]]
+name = "the trust record's sandbox sentence sends a person in their own terminal there again"
+file = "src/stayfixed/trust/record.py"
+before = "    \"person must run this command in their own terminal, outside the agent's sandbox\"\n    f\"{OWN_TERMINAL_TOO}\""
+after = "    \"person must run this command in their own terminal, outside the agent's sandbox\""
+reddens = [
+  "tests/trust/test_record.py::test_the_sandbox_sentence_says_what_a_person_in_their_own_terminal_meets",
+]
+
+# One reader of the machine file for every load (`loader._built`): a load no command handed a layer
+# folds the owner's layer a session folds, read `strict`, so `memory fit`, `memory index` and
+# `doctor` measure one set of session budgets, and a load refuses a machine file that does not load.
+[[mutation]]
+name = "a command's load reads no machine file for the owner's layer"
+file = "src/stayfixed/config/loader.py"
+before = "            resolve_owner(machine or machine_config_path(), preset=preset_name, strict=True)"
+after = "            resolve_owner(None, preset=preset_name, strict=True)"
+reddens = [
+  "tests/memory/test_owner_budgets.py::test_a_command_loads_the_session_budgets_the_session_runs_on",
+]
+
+[[mutation]]
+name = "a command's load reads the owner's layer as a session does"
+file = "src/stayfixed/config/loader.py"
+before = "            resolve_owner(machine or machine_config_path(), preset=preset_name, strict=True)"
+after = "            resolve_owner(machine or machine_config_path(), preset=preset_name, strict=False)"
+reddens = [
+  "tests/memory/test_owner_budgets.py::test_a_command_refuses_a_machine_file_that_does_not_load",
+]
+
+[[mutation]]
+name = "a load keeps the owner's layer on the preset it was handed"
+file = "src/stayfixed/config/loader.py"
+before = "            else rebased(owner, preset_name)"
+after = "            else owner"
+reddens = [
+  "tests/config/test_owner.py::test_a_load_stands_the_layer_it_is_handed_on_the_documents_preset",
+]
+
+# The command's half of the same reader (`command.command_owner`): the layer every load of a
+# command takes is the machine file's, read `strict`, so the command measures what a session runs
+# on and refuses a file that does not load.
+[[mutation]]
+name = "a command reads no machine file for the owner's layer"
+file = "src/stayfixed/command.py"
+before = "        resolve_owner(machine_config_path() if machine is None else machine, strict=True)"
+after = "        resolve_owner(None, strict=True)"
+reddens = [
+  "tests/memory/test_owner_budgets.py::test_memory_index_judges_by_the_owners_budget[owner-budget]",
+  "tests/memory/test_owner_budgets.py::test_memory_fit_and_doctor_answer_alike_under_the_owners_budget[owner-raised-budget]",
+]
+
+[[mutation]]
+name = "a command reads the owner's layer as a session does"
+file = "src/stayfixed/command.py"
+before = "        resolve_owner(machine_config_path() if machine is None else machine, strict=True)"
+after = "        resolve_owner(machine_config_path() if machine is None else machine, strict=False)"
+reddens = [
+  "tests/test_command.py::test_a_command_refuses_a_machine_file_that_does_not_load",
+]
+
+# The NOTE retry's bound (`loader.NOTE_REMOVAL_LIMIT`): each removal is a whole build, so a document
+# of thousands of unusable keys cost a hook more than its timeout, which lets the call through.
+[[mutation]]
+name = "the NOTE path removes every key it cannot use, however many"
+file = "src/stayfixed/config/loader.py"
+before = "            if removed == limit:"
+after = "            if False:"
+reddens = [
+  "tests/config/test_loader_note.py::test_one_unusable_key_past_the_limit_refuses_the_whole_document",
+  "tests/config/test_session.py::test_more_unusable_keys_than_the_note_path_reads_drop_the_project",
+  "tests/hooks/test_floor.py::test_a_file_of_thousands_of_unusable_keys_never_outlasts_the_hook",
+]
+
+# The NOTE retry's bound on what its builds cost together (`loader.NOTE_REBUILT_LIMIT`): a build
+# costs in proportion to the document, so 64 of them over tens of thousands of gates that run kept a
+# session past a hook's timeout while the count stayed within its cap.
+[[mutation]]
+name = "the NOTE path's removals are bounded by their count alone"
+file = "src/stayfixed/config/loader.py"
+before = "    limit = min(NOTE_REMOVAL_LIMIT, NOTE_REBUILT_LIMIT // max(len(text), 1))"
+after = "    limit = NOTE_REMOVAL_LIMIT"
+reddens = [
+  "tests/config/test_loader_note.py::test_a_long_document_is_read_past_fewer_unusable_keys",
+  "tests/config/test_session.py::test_the_densest_file_a_session_reads_is_built_as_often_as_its_length_allows",
+  "tests/hooks/test_floor.py::test_the_densest_file_a_session_reads_never_outlasts_the_hook",
+]
+
+# A session reads `stayfixed.toml` to `session.SESSION_READ_LIMIT` and no further, so what its parse
+# and its NOTE load cost is bounded by the file before either starts.
+[[mutation]]
+name = "a session reads stayfixed.toml as far as a command does"
+file = "src/stayfixed/config/session.py"
+before = "        text = None if root is None else read_document(root, limit=SESSION_READ_LIMIT)"
+after = "        text = None if root is None else read_document(root)"
+reddens = [
+  "tests/config/test_session.py::test_a_file_longer_than_a_session_reads_is_read_no_further",
+]
+
+# The trust record's directory's deny rules (`trust.boundary.record_deny_rules`), which
+# `setup --approval-boundary` prints: over the directory as named, and over where it leads, since
+# the harness compares a write against the path it resolves.
+[[mutation]]
+name = "the approval boundary covers only the directory as named"
+file = "src/stayfixed/trust/boundary.py"
+before = "deny_rule(fsops.resolved(named))"
+after = "deny_rule(named)"
+reddens = ["tests/setup/test_approval_boundary.py::test_a_linked_machine_directory_gets_a_rule_for_each_spelling"]
+
+[[mutation]]
+name = "the approval boundary covers only where the directory leads"
+file = "src/stayfixed/trust/boundary.py"
+before = "(deny_rule(named), deny_rule("
+after = "(deny_rule(fsops.resolved(named)), deny_rule("
+reddens = ["tests/setup/test_approval_boundary.py::test_a_linked_machine_directory_gets_a_rule_for_each_spelling"]
+
+# A relative `--machine` names a relative directory, and one leading slash anchors a rule at the
+# working directory: the rule is over the directory made absolute.
+[[mutation]]
+name = "the approval boundary is anchored at the working directory for a relative --machine"
+file = "src/stayfixed/trust/boundary.py"
+before = "    named = record.parent.absolute()"
+after = "    named = record.parent"
+reddens = [
+  "tests/setup/test_approval_boundary.py::test_a_relative_machine_and_home_are_advised_as_absolute_paths[bare-name]",
+  "tests/setup/test_approval_boundary.py::test_a_relative_machine_and_home_are_advised_as_absolute_paths[subdirectory]",
+]
+
+# The managed settings file and the sandbox keys the advice names, held by literals in the tests
+# rather than by the constants themselves: the paths Claude Code reads on each platform, the
+# sentence for a platform where none was measured, and the recipe's keys and values.
+[[mutation]]
+name = "the advice names another macOS managed settings file"
+file = "src/stayfixed/trust/boundary.py"
+before = '        "darwin": Path("/Library/Application Support/ClaudeCode/managed-settings.json"),'
+after = '        "darwin": Path("/Library/WRONG/managed-settings.json"),'
+reddens = ["tests/setup/test_approval_boundary.py::test_the_managed_settings_file_is_the_documented_path_on_each_platform[darwin]"]
+
+[[mutation]]
+name = "the advice names another Linux managed settings file"
+file = "src/stayfixed/trust/boundary.py"
+before = '        "linux": Path("/etc/claude-code/managed-settings.json"),'
+after = '        "linux": Path("/etc/claude-code/WRONG/managed-settings.json"),'
+reddens = ["tests/setup/test_approval_boundary.py::test_the_managed_settings_file_is_the_documented_path_on_each_platform[linux]"]
+
+[[mutation]]
+name = "the advice names managed settings on the host's platform only"
+file = "src/stayfixed/trust/boundary.py"
+before = "    managed = MANAGED_SETTINGS.get(sys.platform if platform is None else platform)"
+after = "    managed = MANAGED_SETTINGS.get(sys.platform)"
+reddens = [
+  "tests/setup/test_approval_boundary.py::test_the_managed_settings_file_is_the_documented_path_on_each_platform[darwin]",
+  "tests/setup/test_approval_boundary.py::test_the_managed_settings_file_is_the_documented_path_on_each_platform[linux]",
+]
+
+[[mutation]]
+name = "the advice names no managed settings file where none was measured"
+file = "src/stayfixed/trust/boundary.py"
+before = 'NO_MANAGED_PATH = "the managed settings file"'
+after = 'NO_MANAGED_PATH = ""'
+reddens = ["tests/setup/test_approval_boundary.py::test_the_managed_settings_file_is_the_documented_path_on_each_platform[unmeasured]"]
+
+[[mutation]]
+name = "the advice names a missing managed settings file as None"
+file = "src/stayfixed/trust/boundary.py"
+before = "    return NO_MANAGED_PATH if managed is None else str(managed)"
+after = "    return str(managed)"
+reddens = ["tests/setup/test_approval_boundary.py::test_the_managed_settings_file_is_the_documented_path_on_each_platform[unmeasured]"]
+
+[[mutation]]
+name = "the advice turns the sandbox off"
+file = "src/stayfixed/trust/boundary.py"
+before = 'SANDBOX_ON = "sandbox.enabled = true"'
+after = 'SANDBOX_ON = "sandbox.enabled = false"'
+reddens = ["tests/setup/test_approval_boundary.py::test_the_sandbox_settings_are_the_documented_keys_and_values"]
+
+[[mutation]]
+name = "the advice lets Claude Code start without the sandbox"
+file = "src/stayfixed/trust/boundary.py"
+before = "sandbox.failIfUnavailable = true and"
+after = "sandbox.failIfUnavailable = false and"
+reddens = ["tests/setup/test_approval_boundary.py::test_the_sandbox_settings_are_the_documented_keys_and_values"]
+
+[[mutation]]
+name = "the advice lets a command run outside the sandbox"
+file = "src/stayfixed/trust/boundary.py"
+before = 'sandbox.allowUnsandboxedCommands = false"'
+after = 'sandbox.allowUnsandboxedCommands = true"'
+reddens = ["tests/setup/test_approval_boundary.py::test_the_sandbox_settings_are_the_documented_keys_and_values"]
+
+# `trust list` and `trust revoke` describe a checkout as a session reads it, so a file a session
+# reads past cannot hide or keep a live approval; a revoke whose kind cannot describe the
+# checkout names the spelling that revokes by key.
+[[mutation]]
+name = "trust list describes a checkout as a command reads it"
+file = "src/stayfixed/trust/commands.py"
+before = "    context, _ = kind_context(args, noting=True)\n    if args.all:"
+after = "    context, _ = kind_context(args)\n    if args.all:"
+reddens = [
+  "tests/trust/test_commands.py::test_list_reports_an_approval_a_session_uses_past_a_newer_section",
+]
+
+[[mutation]]
+name = "trust revoke describes a checkout as a command reads it"
+file = "src/stayfixed/trust/commands.py"
+before = "    context, _ = kind_context(args, noting=True)\n    kind = known_kind(args.kind)"
+after = "    context, _ = kind_context(args)\n    kind = known_kind(args.kind)"
+reddens = [
+  "tests/trust/test_commands.py::test_revoke_withdraws_an_approval_a_session_uses_past_a_newer_section",
+]
+
+[[mutation]]
+name = "trust revoke lets a kind that cannot describe the checkout refuse"
+file = "src/stayfixed/trust/commands.py"
+before = "        except (Failure, Refusal) as refused:\n            return _not_revoked("
+after = "        except ZeroDivisionError as refused:\n            return _not_revoked("
+reddens = [
+  "tests/trust/test_commands.py::test_revoke_that_cannot_describe_the_checkout_names_the_spelling_that_can",
+]
+
+# `approve_kind` records every subject of a kind in one write of the record (`record.approve_all`).
+[[mutation]]
+name = "approving a kind writes the record once per subject"
+file = "src/stayfixed/trust/record.py"
+before = "        approvals[(kind, subject)] = Approval(kind, subject, digest, when)\n    _write(machine, approvals)"
+after = "        approvals[(kind, subject)] = Approval(kind, subject, digest, when)\n        _write(machine, approvals)"
+reddens = [
+  "tests/trust/test_record.py::test_every_subject_of_a_kind_is_approved_in_one_write",
+]
+
+[[mutation]]
+name = "approving no subject writes the record"
+file = "src/stayfixed/trust/record.py"
+before = "    if not digests:\n        return was"
+after = "    if False:\n        return was"
+reddens = [
+  "tests/trust/test_record.py::test_approving_no_subject_writes_nothing",
+]
+
+# The record's surface loads no command module: the hook path reaches it through `memory`.
+[[mutation]]
+name = "the trust surface takes the approve path from the command module"
+file = "src/stayfixed/trust/api.py"
+before = "from stayfixed.trust.approving import PERSON_RUNS, approve_kind, kind_context"
+after = "from stayfixed.trust.commands import PERSON_RUNS, approve_kind, kind_context"
+reddens = [
+  "tests/trust/test_commands.py::test_the_records_surface_loads_no_command_module",
+]
+
+# A refresh to the digest the record already holds writes nothing: rewritten, a `memory index` that
+# changed nothing was refused in an agent's sandbox and said the approval no longer matched.
+[[mutation]]
+name = "a refresh rewrites the digest the record already holds"
+file = "src/stayfixed/trust/record.py"
+before = "    if digest != held.digest:\n        approvals[(kind, subject)] = replace(held, digest=digest)"
+after = "    if True:\n        approvals[(kind, subject)] = replace(held, digest=digest)"
+reddens = [
+  "tests/trust/test_record.py::test_a_refresh_to_the_digest_the_record_holds_writes_nothing",
+  "tests/memory/test_commands.py::test_an_index_that_changes_nothing_writes_no_record_from_a_sandboxed_shell",
 ]

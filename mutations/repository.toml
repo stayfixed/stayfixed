@@ -178,8 +178,19 @@ reddens = [
 [[mutation]]
 name = "the public-anchor gate reads the plan headings case-sensitively again"
 file = "tests/test_public_anchors.py"
-before = '    ("plan section", re.compile(r"\bPremise\s+\d+|(?i:\bglobal\s+constraint)")),'
-after = '    ("plan section", re.compile(r"\bPremise \d+|G[l]obal Constraint")),'
+before = '        re.compile(r"\bPremise\s+\d+|(?i:\bglobal\s+constraint)|(?i:\breview\s+focus)"),'
+after = '        re.compile(r"\bPremise \d+|G[l]obal Constraint|(?i:\breview\s+focus)"),'
+reddens = [
+  "tests/test_public_anchors.py::test_the_citation_gate_discriminates",
+]
+
+# The list of inputs a plan asks its tasks to exercise, cited by name and number: eight test
+# comments did it, and no arm saw one.
+[[mutation]]
+name = "the public-anchor gate stops seeing the plans' list of inputs to exercise"
+file = "tests/test_public_anchors.py"
+before = '        re.compile(r"\bPremise\s+\d+|(?i:\bglobal\s+constraint)|(?i:\breview\s+focus)"),'
+after = '        re.compile(r"\bPremise\s+\d+|(?i:\bglobal\s+constraint)"),'
 reddens = [
   "tests/test_public_anchors.py::test_the_citation_gate_discriminates",
 ]
@@ -1020,9 +1031,11 @@ name = "a hook entry declares a type the harness cannot classify"
 file = "hooks/hooks.json"
 before = '''            "type": "command",
             "timeout": 10,
+            "onFailure": "block",
             "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.sh\" closed hook PreToolUse"'''
 after = '''            "type": "commandd",
             "timeout": 10,
+            "onFailure": "block",
             "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.sh\" closed hook PreToolUse"'''
 reddens = [
   "tests/hooks/test_hooks_json.py::test_every_entry_is_a_command_entry",
@@ -1150,9 +1163,9 @@ reddens = [
 [[mutation]]
 name = "the core's import list admits a module outside the standard library"
 file = "tests/boundaries/test_delivery.py"
-before = """        "typing",
+before = """        "unicodedata",
         "urllib.parse","""
-after = """        "typing",
+after = """        "unicodedata",
         "urllib.parse",
         "yaml","""
 reddens = [
@@ -1629,10 +1642,10 @@ file = "README.md"
 before = "The same\ncommand run in the foreground passes. "
 after = ""
 reddens = [
-  "tests/test_documents.py::test_the_readme_says_the_guards_have_no_off_switch_and_how_to_pass_one",
+  "tests/test_documents.py::test_the_readme_says_only_the_owner_switches_a_guard_off_and_how_to_pass_one",
 ]
 
-# The other three clauses of the same section, each a promise a user acts on. The scope: a guard
+# The other clauses of the same section, each a promise a user acts on. The scope: a guard
 # described as judging every command would send an agent looking for a way past one it never meets.
 [[mutation]]
 name = "the README stops saying the blocking guard judges only backgrounded commands"
@@ -1640,18 +1653,29 @@ file = "README.md"
 before = "it judges only a command the agent runs in the"
 after = "it judges a command the agent runs in the"
 reddens = [
-  "tests/test_documents.py::test_the_readme_says_the_guards_have_no_off_switch_and_how_to_pass_one",
+  "tests/test_documents.py::test_the_readme_says_only_the_owner_switches_a_guard_off_and_how_to_pass_one",
 ]
 
-# The one a user relies on most: no configuration key or flag turns a guard off, so a block is
-# either right or a bug. A README that offered a switch would invite the workaround.
+# The one a user relies on most: only the machine owner turns a guard off, in the machine file,
+# and no repository key or flag does, so a block in a clone is either right or a bug. A README
+# that offered a repository the switch would invite the workaround.
 [[mutation]]
-name = "the README gives the guards a switch that turns them off"
+name = "the README lets a repository switch a guard off"
 file = "README.md"
-before = "stayfixed has no switch that turns a guard off"
-after = "stayfixed has a setting that turns a guard off"
+before = "a repository never can, and"
+after = "a repository can too, and"
 reddens = [
-  "tests/test_documents.py::test_the_readme_says_the_guards_have_no_off_switch_and_how_to_pass_one",
+  "tests/test_documents.py::test_the_readme_says_only_the_owner_switches_a_guard_off_and_how_to_pass_one",
+]
+
+# Nor does a flag: a command line is where an agent that met a block would look for one.
+[[mutation]]
+name = "the README offers a command-line flag that turns a guard off"
+file = "README.md"
+before = "and no command-line flag does"
+after = "and a command-line flag does"
+reddens = [
+  "tests/test_documents.py::test_the_readme_says_only_the_owner_switches_a_guard_off_and_how_to_pass_one",
 ]
 
 # And where a false block goes: called a defect, it is reported rather than worked around.
@@ -1661,7 +1685,7 @@ file = "README.md"
 before = "so a false block is a defect: report it in"
 after = "so report a false block in"
 reddens = [
-  "tests/test_documents.py::test_the_readme_says_the_guards_have_no_off_switch_and_how_to_pass_one",
+  "tests/test_documents.py::test_the_readme_says_only_the_owner_switches_a_guard_off_and_how_to_pass_one",
 ]
 
 # The harness guard for the sweep. `main` deletes every `stayfixed-oracle-*` directory under
@@ -3241,7 +3265,6 @@ reddens = [
   "tests/test_patterns.py::test_the_scan_reads_a_pattern_wherever_the_source_spells_it[a function taken out of re]",
 ]
 
-
 # The payload is the plugin's generated tree, which the directory scans, and not the repository
 # beside it: a walk of the whole root judges files that never ship and misses nothing that does.
 [[mutation]]
@@ -3374,4 +3397,42 @@ after = """   git switch -C main origin/main
 """
 reddens = [
   "tests/test_fixtures.py::test_the_release_is_cut_on_origin_main_whatever_the_local_main_holds",
+]
+
+# Every document that counts `doctor`'s rows is held to the report's count.
+[[mutation]]
+name = "the reference counts the doctor rows it had before preferences"
+file = "docs/cli.md"
+before = "Eighteen checks over one installation."
+after = "Seventeen checks over one installation."
+reddens = ["tests/test_documents.py::test_every_document_counts_the_rows_the_report_has"]
+
+# And the reference's order sentence counts the core's rows and the private layer's apart.
+[[mutation]]
+name = "the reference counts thirteen of the installation's own doctor rows"
+file = "docs/cli.md"
+before = "The rows come in a fixed order: the installation's own twelve first, then the six about the"
+after = "The rows come in a fixed order: the installation's own thirteen first, then the six about the"
+reddens = [
+  "tests/test_documents.py::test_the_reference_counts_the_cores_rows_and_the_private_layers_apart",
+]
+
+# The shipped documents name `stayfixed memory trust` only as the old spelling of `trust approve
+# memory`.
+[[mutation]]
+name = "the README tells a reader to run memory trust again"
+file = "README.md"
+before = "repository reach the model only after you run `stayfixed trust approve memory` once, at a"
+after = "repository reach the model only after you run `stayfixed memory trust` once, at a"
+reddens = ["tests/test_documents.py::test_no_shipped_document_names_memory_trust_outside_its_alias_note"]
+
+# The closed `PreToolUse` entry blocks the call when the hook cannot answer at all (a timeout, a
+# wrapper that cannot start), which Claude Code would otherwise let through.
+[[mutation]]
+name = "the closed PreToolUse entry lets a hook that cannot answer through"
+file = "hooks/hooks.json"
+before = '"onFailure": "block",'
+after = '"onFailure": "continue",'
+reddens = [
+  "tests/hooks/test_hooks_json.py::test_the_closed_entry_blocks_when_it_cannot_answer_and_no_open_one_does",
 ]

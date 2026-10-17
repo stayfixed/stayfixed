@@ -28,14 +28,9 @@ from stayfixed import fsops
 from stayfixed.attach import binding, permissions, write
 from stayfixed.attach.binding import Binding
 from stayfixed.config.layout import ATTACH_LEDGER
-from stayfixed.config.loader import (
-    CONFIG_FILE,
-    ConfigError,
-    MachineConfigError,
-    load,
-    read_document,
-)
+from stayfixed.config.loader import CONFIG_FILE, load, read_document
 from stayfixed.config.overlay import overlay_root
+from stayfixed.config.reading import ConfigError, MachineConfigError
 from stayfixed.errors import Failure, Refusal
 from stayfixed.memory import index, store, trust
 from stayfixed.overlay import create, identity

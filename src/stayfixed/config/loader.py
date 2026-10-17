@@ -1,20 +1,44 @@
 """Read stayfixed.toml, merge it under the preset, validate it.
 
-The machine config is merged too, but it contributes `[personal]` and nothing else.
+The machine owner's layer is merged too (`config.owner`), so every command runs on the personal
+values and session budgets a session runs on: handed in, read once by the command, which says on
+stderr what it read past (`command.command_owner`), or by a caller that must go on
+(`config.session`); or, when the caller hands none in, read here, `strict`, refusing a machine file
+that does not load and saying nothing of what it read past in one that does. `loads` refuses what
+it cannot use; `loads_noting` reads what it can and says what it ignored or reset. What the two
+loaders share is `config.reading`'s.
 """
 
 from __future__ import annotations
 
-import re
 import tomllib
-from dataclasses import MISSING, fields, replace
-from functools import cache
+from collections.abc import Collection, Mapping
+from dataclasses import MISSING, Field, dataclass, field, fields, replace
 from pathlib import Path
-from typing import Any, TypeVar, cast, get_origin, get_type_hints
+from typing import Any, TypeVar, cast
 
-from stayfixed import __version__, fsops
+from stayfixed import __version__
+from stayfixed.config.classes import (
+    CLASSES,
+    REFUSED_LAYER_NOTE,
+    KeyClass,
+    Layer,
+    LayerName,
+    resolve,
+)
 from stayfixed.config.machine import machine_config_path
-from stayfixed.config.paths import contained, validate_paths
+from stayfixed.config.owner import Owner, rebased, resolve_owner
+from stayfixed.config.paths import PathEscape, contained, validate_path_values, validate_paths
+from stayfixed.config.reading import (
+    NOT_UTF8,
+    UNPARSEABLE,
+    UNREADABLE,
+    ConfigError,
+    coerced,
+    positive,
+    schema_types,
+    toml_position,
+)
 from stayfixed.config.schema import (
     BRANCH_NAME,
     BRANCH_RULE,
@@ -43,36 +67,11 @@ from stayfixed.config.schema import (
 )
 from stayfixed.errors import Failure
 from stayfixed.findings import LISTED_LIMIT, listed
-from stayfixed.fsops import read_regular_text, said
-from stayfixed.presets import available, load_preset
+from stayfixed.fsops import TooLarge, read_regular_text, said
+from stayfixed.presets import DEFAULT_PRESET, available, load_preset
+from stayfixed.printed import clipped
 
 CONFIG_FILE = "stayfixed.toml"
-# Where `tomllib` stopped, and nothing else it had to say. Every `TOMLDecodeError` this
-# package can raise is about a document somebody else wrote — a project's `stayfixed.toml`, the
-# machine file `--machine` named — and `tomllib` builds its message as `f"{msg} (at line N,
-# column M)"`, where `msg` embeds the source for at least five of its own faults: `Cannot
-# declare ('x',) twice`, `Duplicate inline table key 'k'`, `Cannot redefine namespace k`,
-# `Found invalid character 'c'`, `Cannot overwrite a value`. A TOML key is arbitrary quoted
-# text, so interpolating the exception whole puts unbounded repository bytes into a refusal a
-# skill is instructed to relay to a model. The position is the actionable half and it is
-# stayfixed-shaped: two integers, or the parser's end-of-document form. Measured against CPython
-# 3.11 and 3.12; the suffix is what `tomllib` appends, not what its `msg` says, so a `msg`
-# reworded upstream does not move it.
-_TOML_POSITION = re.compile(r"\((?:at line \d+, column \d+|at end of document)\)\Z")
-NO_POSITION = "(at a position tomllib did not report)"
-# `tomllib` reads nested arrays and inline tables by recursion, so a document nested a few
-# thousand levels deep — `a = [[[…]]]` — raises `RecursionError` and not `TOMLDecodeError`.
-# Uncaught, that is an internal error, the class stayfixed keeps for its own defects, and in a
-# gate run it ended every gate. And an integer literal longer than the interpreter converts
-# (4,300 digits by default, `sys.get_int_max_str_digits`) is valid TOML that `tomllib` answers with
-# a plain `ValueError`, which is not a `TOMLDecodeError`: one line of a committed file ended
-# `doctor`, `gate` and `init` the same way. Every reader of a document somebody else wrote catches
-# all three. `ValueError` is caught whole, `TOMLDecodeError` being one: no reader's `try` holds
-# anything else that raises it but a decode, whose `UnicodeDecodeError` it catches first or
-# answers as it answers a record that does not parse.
-UNPARSEABLE = (tomllib.TOMLDecodeError, RecursionError, ValueError)
-TOO_DEEP = "(nested deeper than the parser reads)"
-TOO_LONG = "(holds a number longer than the parser converts)"
 SECTIONS = (
     "stayfixed",
     "project",
@@ -84,6 +83,63 @@ SECTIONS = (
     "ci",
     "gates",
     "commit_messages",
+)
+# The machine owner's tables, which a repository's `stayfixed.toml` cannot set: refused outright
+# by `loads` as unknown sections, and refused key by key by `classes.resolve` under NOTE. Read off
+# `classes.CLASSES`, whose section wildcards of the machine-only class they are, so the two never
+# name different tables.
+MACHINE_ONLY_SECTIONS = frozenset(
+    key.removesuffix(".*")
+    for key, cls in CLASSES.items()
+    if key.endswith(".*") and cls is KeyClass.MACHINE_ONLY
+)
+PRESET_KEY = "stayfixed.preset"
+# A preset value that is not a string, which no name of a preset can be.
+NOT_A_PRESET_NAME = "stayfixed.preset must be a string; {available}"
+# What the NOTE path says. A name is printed through `printed.clipped`, since a TOML key is any
+# quoted text; `reason` is the refusal `loads` would have raised, which names its key. The one
+# such refusal that quotes a value the document wrote is `contained()`'s, through `repr`, for a
+# `[paths]` value `validate_paths` has already held to `grammar.PATH_VALUE`: ASCII letters,
+# digits, `.`, `_` and `-` in `/`-separated segments.
+UNKNOWN_NOTE = "{name} is not a setting this stayfixed reads; it is ignored"
+RESET_NOTE = "{key} is left out ({reason}); the preset's value applies"
+# A named cap: the most keys the NOTE path removes from a document and builds it again without. Each
+# removal costs a whole build of the configuration, `validate_paths` included, so a document holding
+# thousands of keys nothing can use -- ten thousand custom gates with an empty `run`, a 200 KB
+# committed file -- cost a hook more than its ten-second timeout, which Claude Code answers by
+# letting the `PreToolUse` call through, the guard silent, or, where `hooks/hooks.json` sets
+# `onFailure: "block"`, by blocking every call, the session dead of its configuration. A release
+# that leaves a handful of keys an older one cannot use is what the NOTE path reads key by key; 64
+# is far above that. It bounds how many builds there are and not what they cost: a build costs in
+# proportion to the document, which `NOTE_REBUILT_LIMIT` bounds them by. Past it the document is
+# refused whole (`TooManyResets`), and a session runs on the preset and the owner's layer. No
+# shipped file states it.
+NOTE_REMOVAL_LIMIT = 64
+# A named cap: how many characters of document the NOTE path builds again, its removals together.
+# 50,000 custom gates that run beside 64 that cannot, a 1.4 MB file, took a session six seconds
+# within the count alone, 64 builds each over every gate. So a document is read past only as many
+# removals as this divided by its length allows, and never more than `NOTE_REMOVAL_LIMIT`: 64 for
+# any document up to 16 KiB, still many times a `stayfixed.toml` that `init` writes, and 4 for the
+# longest a session reads (`session.SESSION_READ_LIMIT`, 256 KiB), so a session builds at most
+# about 1.25 MiB of any document it reads. The costliest is that longest one filled with dotted
+# custom gates that run (`g1.run = [""]`, the most gates to the byte) beside keys that fail only
+# once every gate is built, four `[paths]` values that escape: parsed and built five times, it
+# took 0.25 s of CPU on Python 3.13 and 0.28 s on 3.11.4 on a laptop's performance cores, and 1.4
+# to 1.5 s on its efficiency cores (`taskpolicy -c background`). With this at 4 MiB and the read
+# at 1 MiB, the same shape a mebibyte long took 1.2 s, 1.9 s and 6.1 to 7.5 s, which a slower
+# machine would have carried past a hook's ten seconds. No shipped file states it.
+NOTE_REBUILT_LIMIT = 1024 * 1024
+TOO_MANY_RESETS = (
+    "{path} holds more than {limit} settings this stayfixed cannot use, so it is not read key "
+    "by key"
+)
+# `UnusableKey`'s two sentences, in the same words as the notes: a key, or a section holding one,
+# that has no default, and a key whose preset value fails too. `reason` is again the refusal
+# `loads` would have raised for that key, or, for a preset value, the one that value got.
+UNUSABLE_REQUIRED = "{key} cannot be used ({reason}), and it has no default to fall back to"
+UNUSABLE_PRESET = (
+    "{key} falls back to the preset's value, which does not hold in this repository either "
+    "({reason})"
 )
 # Every refusal below names its key and quotes no value from the document. A state is a member
 # of `STATES`, a count is a count, and the names a refusal lists are stayfixed's own tuple or
@@ -104,6 +160,9 @@ GATES_UNKNOWN = (
     "{known}"
 )
 GATES_TWICE = "[stayfixed] enforced names a gate twice"
+# The key every refusal of `[stayfixed] enforced` is about: left out, the project enforces what
+# its state alone says.
+ENFORCED = "stayfixed.enforced"
 GATES_EARLY = (
     "[stayfixed] state is initialised and enforced lists {count} gate(s), but an initialised "
     "project enforces nothing: promoting a gate is what moves a project to adopting"
@@ -116,94 +175,59 @@ GATES_PARTIAL = (
 
 T = TypeVar("T")
 
-# A named cap: every integer a configuration key holds is below it. `tomllib` converts a hex,
-# octal or binary literal of any length (a power-of-two base is exempt from the interpreter's
-# 4,300-digit limit), and a decimal of 401 digits is inside that limit, so a key checked only for
-# `<= 0` handed its reader a number no `str` could print or no `float` could hold: `[gates]
-# custom_timeout_seconds` ended `assess` and `gate` in an internal error. 2**31 is what a signed
-# 32-bit count holds, far above any budget, cap or timeout a project writes (the preset's largest
-# integer is `memory_index_bytes = 25600`), and below what every reader of one handles: `str`,
-# `float`, a comparison. No shipped file states it.
-INTEGER_LIMIT = 2**31
+
+class MissingKeys(ConfigError):
+    """A section without a key that has no default: a refusal of the whole document, so `key`
+    is `None`. `missing` is every such key, dotted, for a reader that must go on to name the one
+    the document never wrote (`config.session`); never printed. The NOTE path never removes such
+    a key, so a document it raises for never wrote one."""
+
+    def __init__(self, message: str, *, missing: tuple[str, ...]) -> None:
+        super().__init__(message)
+        self.missing = missing
 
 
-class ConfigError(Failure):
-    """A stayfixed.toml that cannot be trusted as written."""
+class UnusableKey(ConfigError):
+    """A key the NOTE path cannot stand anything in for: one the document holds that has no
+    default, or a section holding such a key; or a key whose preset value does not hold in this
+    repository either.
+
+    A reader that must go on cannot keep the project's configuration without it, so it drops the
+    configuration whole, naming `key`, rather than removing the key and relaying the refusal the
+    next attempt would raise: that one would say a key the document holds was missing, or name
+    the preset's value as the fault. Raised only by `loads_noting`; `loads` refuses as it always
+    has. It carries no notes: the load stopped before reading the rest of the document, so the
+    notes made by then are not the file's list, and the reader names the one key that stopped it.
+    """
+
+    def __init__(self, message: str, *, key: str) -> None:
+        super().__init__(message, key=key)
 
 
-# Fixed text and a path stayfixed chose or the owner typed. Not the decoder's message: it is only
-# a byte and an offset, but the one sentence says what to do about every such file.
-NOT_UTF8 = "{path} is not UTF-8 text; stayfixed reads it only as UTF-8"
-# What the error says, in `fsops.said`'s words, and not its message, which repeats the path and
-# adds nothing to act on; never its class's name, which for a reader's own refusal is a name of
-# stayfixed's internals (`fsops.TooLarge`, `fsops.NotRegularFile`) and names no condition.
-UNREADABLE = "{path} cannot be read ({error})"
+class TooManyResets(ConfigError):
+    """A document holding more keys the NOTE path cannot use than it removes (`limit`, which
+    `NOTE_REMOVAL_LIMIT` and `NOTE_REBUILT_LIMIT` set): a refusal of the whole document, so `key` is
+    `None`, and a reader that must go on drops the project's configuration whole, as for a
+    document that does not parse."""
+
+    def __init__(self, message: str, *, limit: int) -> None:
+        super().__init__(message)
+        self.limit = limit
+
+
+class TooLargeDocument(ConfigError):
+    """`stayfixed.toml` longer than its reader reads (`read_document`'s `limit`), read no further:
+    a refusal of the whole document, in the words of any file that cannot be read, which a session
+    tells apart by this type to say what it means for the session (`config.session`)."""
+
+
 NOT_THERE = "{path} does not exist; run `stayfixed init` first"
-
-
-class MachineConfigError(ConfigError):
-    """The **machine** file could not be read, which is not `stayfixed.toml`'s doing.
-
-    A subclass and not a message, because the one caller that has to tell them apart must not
-    do it by reading the text: `doctor` deliberately never quotes a loader message — the loader
-    builds it out of the file's own keys and values — so its only way to say which of the two
-    files is broken is the type. Without it, a `~/.config/stayfixed/config.toml` with a stray
-    bracket in it would read as `stayfixed.toml is here and does not load`, sending the owner to
-    edit a file with nothing wrong with it.
-    """
-
-
-def toml_position(exc: tomllib.TOMLDecodeError | RecursionError | ValueError) -> str:
-    """The `(at line N, column M)` suffix `tomllib` appends, with its message text dropped.
-
-    One extractor for every caller in this package that reports a document it did not write,
-    so that "what may print out of a parse failure" is one decision rather than one per site.
-    See `_TOML_POSITION` for which of `tomllib`'s own messages embed the source and why that
-    makes the whole exception unprintable.
-
-    A suffix this cannot find is reported as absent rather than as the message: a `tomllib` that
-    stopped appending a position would otherwise take this guard with it silently, which is the
-    shape every other bounded value in this file refuses. A document nested past the parser's
-    recursion has no position, and says so; so does one holding a number past the conversion
-    limit, whose own message would tell the reader to raise a process-wide limit rather than fix a
-    file somebody else wrote.
-    """
-    if isinstance(exc, RecursionError):
-        return TOO_DEEP
-    if not isinstance(exc, tomllib.TOMLDecodeError):
-        return TOO_LONG
-    found = _TOML_POSITION.search(str(exc))
-    return found.group(0) if found is not None else NO_POSITION
-
-
-def read_machine_toml(path: Path) -> dict[str, Any] | None:
-    """The machine file at `path` as `tomllib` parses it, or `None` when no file is there.
-
-    One reader for every reader of the file — `[personal]` here, `[overlay] root` in
-    `config.overlay` — so a file that cannot be read, is not UTF-8 or is not TOML is one failure
-    in one set of words: `MachineConfigError`, the type `doctor` tells it from a broken
-    `stayfixed.toml` by, naming the error's class or the parser's position and never the parser's
-    message, which quotes the file's own text. An absent file is the ordinary state before
-    `stayfixed setup` has run, and each caller says what it means.
-    """
-    if not fsops.is_file(path):
-        return None
-    try:
-        text = path.read_text(encoding="utf-8")
-    except UnicodeDecodeError:
-        raise MachineConfigError(NOT_UTF8.format(path=path)) from None
-    except OSError as exc:
-        raise MachineConfigError(UNREADABLE.format(path=path, error=said(exc))) from None
-    try:
-        return tomllib.loads(text)
-    except UNPARSEABLE as exc:
-        raise MachineConfigError(f"{path} is not valid TOML {toml_position(exc)}") from None
 
 
 def _table(raw: dict[str, Any], name: str) -> dict[str, Any]:
     value = raw.get(name, {})
     if not isinstance(value, dict):
-        raise ConfigError(f"[{name}] must be a table")
+        raise ConfigError(f"[{name}] must be a table", key=name)
     return value
 
 
@@ -222,20 +246,6 @@ def _gate_branch(ci: dict[str, Any], project: Project) -> dict[str, Any]:
     it is the base branch, which the loader has already held to the branch grammar.
     """
     return {"gate_branch": project.base_branch, **ci}
-
-
-@cache
-def _schema_types(cls: type[Any]) -> dict[str, Any]:
-    """Real type objects for a schema class, resolved once per process.
-
-    `get_type_hints` is what makes them real: under `from __future__ import annotations`
-    `field.type` is only the source string, and dispatching on that string would make every type
-    the branches do not spell — `float`, `int | None`, an alias — silently "must be a string", so
-    a valid config would be refused with a wrong reason. Resolving costs an `eval` per annotation,
-    which is why a load does not pay it nine times.
-    """
-    hints = get_type_hints(cls)
-    return {f.name: hints[f.name] for f in fields(cls)}
 
 
 def _named(unknown: list[str], noun: str) -> str:
@@ -278,10 +288,12 @@ def _named(unknown: list[str], noun: str) -> str:
 
 
 def _build(cls: type[T], name: str, values: dict[str, Any]) -> T:
-    known = _schema_types(cast(Any, cls))
+    known = schema_types(cast(Any, cls))
     unknown = sorted(set(values) - set(known))
     if unknown:
-        raise ConfigError(f"[{name}] has unknown key(s): {_named(unknown, 'key')}")
+        raise ConfigError(
+            f"[{name}] has unknown key(s): {_named(unknown, 'key')}", key=f"{name}.{unknown[0]}"
+        )
     # A field with a default is filled by the section's own reader after `_build` (`Gates.custom`
     # is the one), so only a field without one is required of the merged table.
     required = {
@@ -291,41 +303,13 @@ def _build(cls: type[T], name: str, values: dict[str, Any]) -> T:
     }
     missing = sorted(required - set(values))
     if missing:
-        raise ConfigError(f"[{name}] is missing required key(s): {', '.join(missing)}")
-    coerced: dict[str, Any] = {}
-    for key, value in values.items():
-        annotation = known[key]
-        if get_origin(annotation) is tuple:
-            if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
-                raise ConfigError(f"{name}.{key} must be a list of strings")
-            coerced[key] = tuple(value)
-        elif annotation is bool:
-            if not isinstance(value, bool):
-                raise ConfigError(f"{name}.{key} must be true or false")
-            coerced[key] = value
-        elif annotation is int:
-            coerced[key] = _positive(f"{name}.{key}", value)
-        elif annotation is str:
-            if not isinstance(value, str):
-                raise ConfigError(f"{name}.{key} must be a string")
-            coerced[key] = value
-        else:
-            label = getattr(annotation, "__name__", None) or str(annotation)
-            raise ConfigError(
-                f"{name}.{key} has an unsupported schema type: {label}; "
-                "the loader coerces tuple[str, ...], bool, int and str"
-            )
-    return cls(**coerced)
-
-
-def _positive(key: str, value: object) -> int:
-    """`value` when it is a positive integer below `INTEGER_LIMIT`; a `ConfigError` naming `key`
-    otherwise. Never the value: a number that large is the one no message could print."""
-    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
-        raise ConfigError(f"{key} must be a positive integer")
-    if value >= INTEGER_LIMIT:
-        raise ConfigError(f"{key} must be a positive integer below {INTEGER_LIMIT:,}")
-    return value
+        raise MissingKeys(
+            f"[{name}] is missing required key(s): {', '.join(missing)}",
+            missing=tuple(f"{name}.{key}" for key in missing),
+        )
+    return cls(
+        **{key: coerced(f"{name}.{key}", known[key], value) for key, value in values.items()}
+    )
 
 
 def _enum(section: str, key: str, value: str, allowed: tuple[str, ...]) -> None:
@@ -345,7 +329,9 @@ def _enum(section: str, key: str, value: str, allowed: tuple[str, ...]) -> None:
     {project.name!r}` — and `_named` took for the keys of every table.
     """
     if value not in allowed:
-        raise ConfigError(f"{section}.{key} must be one of {', '.join(allowed)}")
+        raise ConfigError(
+            f"{section}.{key} must be one of {', '.join(allowed)}", key=f"{section}.{key}"
+        )
 
 
 def _deduplicated(memory: Memory) -> Memory:
@@ -390,24 +376,35 @@ def _gates(raw: dict[str, Any], defaults: dict[str, Any]) -> Gates:
     unknown = [name for name in gates.builtin if name not in BUILTIN_GATES]
     if unknown:
         known = ", ".join(BUILTIN_GATES)
-        raise ConfigError(GATES_BUILTIN_UNKNOWN.format(count=len(unknown), known=known))
+        raise ConfigError(
+            GATES_BUILTIN_UNKNOWN.format(count=len(unknown), known=known), key="gates.builtin"
+        )
     if len(set(gates.builtin)) != len(gates.builtin):
-        raise ConfigError(GATES_BUILTIN_TWICE)
+        raise ConfigError(GATES_BUILTIN_TWICE, key="gates.builtin")
     if not isinstance(tables, dict):
-        raise ConfigError("[gates.custom] must be a table")
+        raise ConfigError("[gates.custom] must be a table", key="gates.custom")
     reserved = (*BUILTIN_GATES, CONFIG_CHECK)
     unusable = [name for name in tables if not PROJECT_NAME.match(name) or name in reserved]
     if unusable:
-        raise ConfigError(GATES_CUSTOM_NAME.format(count=len(unusable), rule=NAME_RULE))
+        # The key of the first unusable gate, which the NOTE path drops before it asks again; a
+        # second unusable one is the next attempt's refusal.
+        first = f"gates.custom.{unusable[0]}"
+        raise ConfigError(GATES_CUSTOM_NAME.format(count=len(unusable), rule=NAME_RULE), key=first)
     custom: dict[str, CustomGate] = {}
     for name, table in sorted(tables.items()):
+        # A custom gate has no preset value to fall back to, so every refusal of one is keyed to
+        # the gate itself: the NOTE path leaves the gate out rather than one of its keys.
+        gate_key = f"gates.custom.{name}"
         if not isinstance(table, dict):
-            raise ConfigError(GATES_CUSTOM_TABLE.format(name=name))
-        gate = _build(CustomGate, f"gates.custom.{name}", table)
+            raise ConfigError(GATES_CUSTOM_TABLE.format(name=name), key=gate_key)
+        try:
+            gate = _build(CustomGate, gate_key, table)
+        except ConfigError as exc:
+            raise ConfigError(str(exc), key=gate_key) from None
         if not gate.run:
-            raise ConfigError(GATES_CUSTOM_EMPTY.format(name=name))
+            raise ConfigError(GATES_CUSTOM_EMPTY.format(name=name), key=gate_key)
         if any("\0" in part for part in gate.run):
-            raise ConfigError(GATES_CUSTOM_NUL.format(name=name))
+            raise ConfigError(GATES_CUSTOM_NUL.format(name=name), key=gate_key)
         custom[name] = gate
     return replace(gates, custom=custom)
 
@@ -429,60 +426,59 @@ def _enforcement(config: Config) -> Config:
     """
     stayfixed = config.stayfixed
     names = config.gate_names
-    unknown = [name for name in stayfixed.enforced if name not in names]
+    # Asked of a set: both lists are the repository's to lengthen, and forty thousand enforced
+    # gates asked of the tuple cost one build seconds.
+    configured = frozenset(names)
+    unknown = [name for name in stayfixed.enforced if name not in configured]
     if unknown:
         # Capped: custom gates are the repository's to add, so the list is bounded by nothing.
         known = listed(list(names)) or "none"
-        raise ConfigError(GATES_UNKNOWN.format(count=len(unknown), known=known))
+        raise ConfigError(GATES_UNKNOWN.format(count=len(unknown), known=known), key=ENFORCED)
     if len(set(stayfixed.enforced)) != len(stayfixed.enforced):
-        raise ConfigError(GATES_TWICE)
+        raise ConfigError(GATES_TWICE, key=ENFORCED)
     if stayfixed.state == "initialised" and stayfixed.enforced:
-        raise ConfigError(GATES_EARLY.format(count=len(stayfixed.enforced)))
+        raise ConfigError(GATES_EARLY.format(count=len(stayfixed.enforced)), key=ENFORCED)
     if stayfixed.state != "installed":
         return config
-    if stayfixed.enforced and set(stayfixed.enforced) != set(names):
+    if stayfixed.enforced and set(stayfixed.enforced) != configured:
         total = len(names)
-        raise ConfigError(GATES_PARTIAL.format(count=len(stayfixed.enforced), total=total))
+        raise ConfigError(
+            GATES_PARTIAL.format(count=len(stayfixed.enforced), total=total), key=ENFORCED
+        )
     return replace(config, stayfixed=replace(stayfixed, enforced=names))
 
 
-def _budgets(raw: dict[str, Any], preset: dict[str, Any]) -> Budgets:
+def _budgets(raw: dict[str, Any], preset: dict[str, Any], owner: Owner | None) -> Budgets:
     configured = _table(raw, "budgets")
     unknown = sorted(set(configured) - set(Budgets.NAMES))
     if unknown:
-        raise ConfigError(f"[budgets] has unknown key(s): {_named(unknown, 'key')}")
+        raise ConfigError(
+            f"[budgets] has unknown key(s): {_named(unknown, 'key')}", key=f"budgets.{unknown[0]}"
+        )
     for key, value in configured.items():
-        _positive(f"budgets.{key}", value)
-    return Budgets(preset=dict(preset["budgets"]), configured=dict(configured))
+        positive(f"budgets.{key}", value)
+    # The owner's session budgets, which `config.owner` admitted only for the session's names,
+    # are configured values that win over the document's.
+    session = {} if owner is None else owner.session_budgets
+    return Budgets(preset=dict(preset["budgets"]), configured={**configured, **session})
 
 
-def _personal(machine: Path | None, preset: dict[str, Any]) -> Personal:
-    values: dict[str, Any] = dict(preset.get("defaults", {}).get("personal", {}))
-    # `None` is a machine with no home to hold the file (`machine_config_path`), read as no file.
-    raw = None if machine is None else read_machine_toml(machine)
-    if raw is None:
-        # No machine file, so `values` is the preset's own `[personal]` defaults and nothing
-        # else. A fault here would be the preset's, not a machine's, and must not be relabelled.
-        return _build(Personal, "personal", values)
-    try:
-        values.update(_table(raw, "personal"))
-        return _build(Personal, "personal", values)
-    except ConfigError as exc:
-        # Everything from here is this file's doing: what `values` gained between the arm above
-        # and this one is exactly its `[personal]` table.
-        raise MachineConfigError(f"{machine}: {exc}") from None
-
-
-def load(root: Path, *, machine: Path | None = None) -> Config:
-    """Read `stayfixed.toml` under the preset, and `[personal]` out of the machine file.
+def load(root: Path, *, machine: Path | None = None, owner: Owner | None = None) -> Config:
+    """Read `stayfixed.toml` under the preset, and the owner's layer out of the machine file.
 
     With no `machine`, the machine file is `config.machine.machine_config_path`'s, the one file
-    the overlay root's reader and `trust._trust_file` read too, which no variable moves: an
+    the overlay root's reader and `trust.record.record_path` read too, which no variable moves: an
     interactive run with `XDG_CONFIG_HOME` set once read `[personal]` from the file it named and
     `[overlay] root` and `trust.json` from `~/.config/stayfixed/`, so an owner who wrote one file
     with both tables got `[personal]` honoured and the overlay silently unrecorded. `--machine`
     is the supported way to name another file, honoured by all three readers, because it is a
     path a person typed rather than one an environment chose.
+
+    **One reader of the machine file.** The owner's layer is `config.owner.resolve_owner`'s, read
+    `strict` over the document's preset, as a session reads it without (`config.session`): the
+    same `[personal]`, `[guards]` and session `[budgets]`, so a command measures what a session
+    runs on. It refuses a machine file that does not load, and reads past a key it cannot use, as
+    a session does. A command hands in the layer it resolved and said once (`loads`' `owner`).
 
     **One reader of the file.** Through `read_document`, which goes through `contained()`: a
     `stayfixed.toml` that is a symlink is refused by every command, as `stayfixed gate` refuses
@@ -492,10 +488,10 @@ def load(root: Path, *, machine: Path | None = None) -> Config:
     text = read_document(root)
     if text is None:
         raise ConfigError(NOT_THERE.format(path=root / CONFIG_FILE))
-    return loads(text, root, machine=machine)
+    return loads(text, root, machine=machine, owner=owner)
 
 
-def read_document(root: Path) -> str | None:
+def read_document(root: Path, *, limit: int | None = None) -> str | None:
     """`stayfixed.toml` exactly as it is on disk, or `None` when there is none.
 
     `newline=""` and not `read_text`: this is the text a command hands to `config.owned.rewrite`,
@@ -503,14 +499,16 @@ def read_document(root: Path) -> str | None:
     rewritten every CRLF in a file somebody else owns before the editor saw it. `contained`
     first, as for every configured path, so a symlinked `stayfixed.toml` is a refusal; then read
     to the read cap, a regular file only (`fsops.read_regular_text`), as every reader of a
-    committed file reads one.
+    committed file reads one: `limit`, or `fsops.REGULAR_READ_LIMIT` where the caller names none.
     """
     try:
-        return read_regular_text(contained(root, CONFIG_FILE), newline="")
+        return read_regular_text(contained(root, CONFIG_FILE), newline="", limit=limit)
     except FileNotFoundError:
         return None
     except UnicodeDecodeError:
         raise ConfigError(NOT_UTF8.format(path=CONFIG_FILE)) from None
+    except TooLarge as exc:
+        raise TooLargeDocument(UNREADABLE.format(path=CONFIG_FILE, error=said(exc))) from None
     except OSError as exc:
         raise ConfigError(UNREADABLE.format(path=CONFIG_FILE, error=said(exc))) from None
 
@@ -522,6 +520,7 @@ def loads(
     machine: Path | None = None,
     label: str | None = None,
     personal: Personal | None = None,
+    owner: Owner | None = None,
 ) -> Config:
     """Build a `Config` from `text` as `stayfixed.toml`'s contents, without reading a file.
 
@@ -534,25 +533,61 @@ def loads(
     place of reading the machine file again: a caller that holds a `Config` and not the path
     its machine file came from — a gate, handed `(root, config, base)` — loads a second
     document with it, and so reads no machine file but the one the command was given. Given
-    both, `personal` wins and `machine` is never read. Every argument after `root` is
-    keyword-only.
+    both, `personal` wins and `machine` is never read. `owner` is the machine owner's layer
+    (`config.owner.resolve_owner`), read once by the caller and stood on the document's preset
+    (`config.owner.rebased`): its `personal` stands in for the machine file's, as `personal` does,
+    and its session budgets are folded into `[budgets]` as configured values that win over the
+    document's; a command resolves it once, saying its notes there (`command.command_owner`), and
+    hands it to every load it makes, so a note is said once a command and never once a document.
+    Every argument after `root` is keyword-only.
     """
     path = label or root / CONFIG_FILE
-    try:
-        raw = tomllib.loads(text)
-    except UNPARSEABLE as exc:
-        raise ConfigError(f"{path} is not valid TOML {toml_position(exc)}") from None
+    raw = _parsed(text, path)
     unknown = sorted(set(raw) - set(SECTIONS))
     if unknown:
         raise ConfigError(f"{path} has unknown section(s): {_named(unknown, 'section')}")
+    return _built(raw, root, machine=machine, personal=personal, owner=owner)
 
+
+def _parsed(text: str, path: Path | str) -> dict[str, Any]:
+    """`text` as TOML, or a refusal of the whole document naming only where the parser stopped."""
+    try:
+        return tomllib.loads(text)
+    except UNPARSEABLE as exc:
+        raise ConfigError(f"{path} is not valid TOML {toml_position(exc)}") from None
+
+
+def _preset(name: object) -> dict[str, Any]:
+    """The preset `[stayfixed] preset` names, or a refusal keyed to `stayfixed.preset`.
+
+    `load_preset` holds the name to `shipped_presets()` before it reads anything, and refuses
+    with a plain `Failure` carrying no key, which the NOTE path could only propagate: a
+    `stayfixed.toml` naming a preset a later release ships would cost a session the whole file.
+    So its refusal, and nothing it read, is re-raised keyed. The words are still the preset
+    loader's, which never quote the name.
+    """
+    if not isinstance(name, str):
+        raise ConfigError(NOT_A_PRESET_NAME.format(available=available()), key=PRESET_KEY)
+    try:
+        return load_preset(name)
+    except Failure as exc:
+        raise ConfigError(str(exc), key=PRESET_KEY) from None
+
+
+def _built(
+    raw: dict[str, Any],
+    root: Path,
+    *,
+    machine: Path | None,
+    personal: Personal | None,
+    owner: Owner | None,
+) -> Config:
+    """The `Config` a parsed document holds, every section read and held under the preset."""
     head = _table(raw, "stayfixed")
     # Asked before anything spells it: a hex literal of any length converts, and its `str`
     # raises past 4,300 digits.
-    preset_name = head.get("preset", "recommended")
-    if not isinstance(preset_name, str):
-        raise ConfigError(f"stayfixed.preset must be a string; {available()}")
-    preset = load_preset(preset_name)
+    preset_name = head.get("preset", DEFAULT_PRESET)
+    preset = _preset(preset_name)
     defaults = dict(preset.get("defaults", {}))
     defaults["stayfixed"] = {**defaults.get("stayfixed", {}), "preset": preset_name}
 
@@ -560,13 +595,15 @@ def loads(
     _enum("stayfixed", "state", stayfixed.state, STATES)
     project = _build(Project, "project", _merged(raw, defaults, "project"))
     if not PROJECT_NAME.match(project.name):
-        raise ConfigError(f"project.name must be {NAME_RULE}")
+        raise ConfigError(f"project.name must be {NAME_RULE}", key="project.name")
     for key in ("base_branch", "release_branch"):
         # Named, never quoted: the value becomes a git ref and reaches output lines, and it is
         # the text the grammar refused. The grammar is the one the rendered workflow holds
         # `[ci] gate_branch` to; git could not have such a branch anyway.
         if not BRANCH_NAME.match(getattr(project, key)):
-            raise ConfigError(f"project.{key} is not a plain branch name: {BRANCH_RULE}")
+            raise ConfigError(
+                f"project.{key} is not a plain branch name: {BRANCH_RULE}", key=f"project.{key}"
+            )
     paths = _build(Paths, "paths", _merged(raw, defaults, "paths"))
     memory = _deduplicated(_build(Memory, "memory", _merged(raw, defaults, "memory")))
     _enum("memory", "mode", memory.mode, MEMORY_MODES)
@@ -580,13 +617,23 @@ def loads(
     )
     caps = _build(NativeCaps, "native_caps", dict(preset["native_caps"]))
     if personal is None:
-        personal = _personal(machine or machine_config_path(), preset)
+        # The owner's layer a session folds in: one reader of the machine file for every load, so a
+        # command and a session never run on two sets of budgets. Handed in, it is stood on this
+        # document's preset; otherwise read here, `strict`, which refuses only a file that does
+        # not load, and said nowhere: saying it is the command's, once (`command.command_owner`),
+        # and said here it was said once a document, three times in one `gate`.
+        owner = (
+            resolve_owner(machine or machine_config_path(), preset=preset_name, strict=True)
+            if owner is None
+            else rebased(owner, preset_name)
+        )
+        personal = owner.personal
     config = Config(
         stayfixed=stayfixed,
         project=project,
         paths=paths,
         memory=memory,
-        budgets=_budgets(raw, preset),
+        budgets=_budgets(raw, preset, owner),
         native_caps=caps,
         ledger=ledger,
         artifacts=artifacts,
@@ -600,7 +647,242 @@ def loads(
     return config
 
 
-def preset_defaults(project: str, *, preset: str = "recommended") -> Config:
+@dataclass(frozen=True)
+class Noted:
+    """What `loads_noting` read, a note for every name it ignored or value it reset, and the
+    dotted key each note is about, in the same order. A key is any text the document chose: a
+    reader prints one through `stayfixed.printed`. `document` is the parsed document the config
+    was built from: every name it ignored and every key it reset removed."""
+
+    config: Config
+    notes: tuple[str, ...]
+    keys: tuple[str, ...] = ()
+    document: Mapping[str, Any] = field(default_factory=dict)
+
+
+def loads_noting(
+    text: str,
+    root: Path,
+    *,
+    owner: Owner,
+    label: str | None = None,
+    parsed: dict[str, Any] | None = None,
+) -> Noted:
+    """`loads`, noting rather than refusing: read what the document holds that this stayfixed can
+    use.
+
+    For a reader that must go on, a session above all, where one name a newer release added or
+    one value nobody can use would otherwise cost every setting the project made. An unknown
+    section or key is removed with `UNKNOWN_NOTE`; the repository's `[personal]` and `[guards]` go
+    through `classes.resolve`, which refuses the repository layer for every key in them, and are
+    removed with its note. Then the document is built as `loads` builds it, and a refusal carrying
+    a `key` — a `ConfigError`, or `validate_paths`' `PathEscape` — is decided before anything is
+    removed, from the document and the preset alone:
+
+    - a key the document holds that has a value to fall back to (`_stands_in`) — a preset value
+      that holds in this repository, a schema default, a value the loader fills, or an entry that
+      may simply be absent — is removed with `RESET_NOTE`, and the build is tried again;
+    - a key the document does not hold, whose value was therefore the preset's, raises
+      `UnusableKey` with `UNUSABLE_PRESET`;
+    - a key the document holds with nothing to fall back to — a required key, a section holding
+      one, a preset value that does not hold here either — raises `UnusableKey` at once.
+
+    Nothing is removed that would leave the next attempt a required key to call missing, so no
+    refusal is ever read against an earlier removal. Each retry removes one key the document
+    holds and builds the whole document again, so the removals are bounded by what they cost as
+    well as by their count: at most `NOTE_REMOVAL_LIMIT`, and at most `NOTE_REBUILT_LIMIT` over the
+    length of `text`. The refusal that would remove one more raises `TooManyResets`, a refusal of
+    the whole document. A refusal with no key is the whole document's and propagates, as a
+    document that is not TOML does; a required key the document never wrote is one
+    (`MissingKeys`). The owner's layer is folded in as `loads` folds it.
+    `parsed` is `text` as a caller already parsed it, which is then not parsed again.
+    """
+    path = label or root / CONFIG_FILE
+    raw = _parsed(text, path) if parsed is None else parsed
+    notes: list[str] = []
+    keys: list[str] = []
+    document = _known_only(raw, notes, keys)
+    limit = min(NOTE_REMOVAL_LIMIT, NOTE_REBUILT_LIMIT // max(len(text), 1))
+    removed = 0
+    while True:
+        try:
+            config = _built(document, root, machine=None, personal=None, owner=owner)
+        except (ConfigError, PathEscape) as exc:
+            if exc.key is None:
+                raise
+            held = _holding(document, exc.key)
+            if held is None:
+                message = UNUSABLE_PRESET.format(key=clipped(exc.key), reason=exc)
+                raise UnusableKey(message, key=exc.key) from None
+            unusable = _without_fallback(exc.key, exc, document, root)
+            if unusable is not None:
+                raise UnusableKey(unusable, key=exc.key) from None
+            if removed == limit:
+                message = TOO_MANY_RESETS.format(path=path, limit=limit)
+                raise TooManyResets(message, limit=limit) from None
+            removed += 1
+            table, name = held
+            del table[name]
+            notes.append(RESET_NOTE.format(key=clipped(exc.key), reason=exc))
+            keys.append(exc.key)
+            continue
+        return Noted(config, tuple(notes), tuple(keys), document)
+
+
+def _without_fallback(
+    key: str, refused: Exception, document: dict[str, Any], root: Path
+) -> str | None:
+    """Why nothing can stand in for `key`, which the document holds and `refused` refused; `None`
+    when leaving it out leaves a value to build with. Asked before the key is removed."""
+    defaults = _defaults_of(document)
+    if not _stands_in(key, defaults):
+        return UNUSABLE_REQUIRED.format(key=clipped(key), reason=refused)
+    section, _, name = key.partition(".")
+    if section == "paths" and name:
+        # The preset's value is a path in this repository, which a committed symlink can break as
+        # it breaks the document's own: asked here, so a reset never lands on a value that fails.
+        try:
+            validate_path_values({name: defaults["paths"][name]}, root)
+        except PathEscape as fault:
+            return UNUSABLE_PRESET.format(key=clipped(key), reason=fault)
+    return None
+
+
+def _defaults_of(document: dict[str, Any]) -> dict[str, Any]:
+    """The `[defaults]` of the preset `document` builds on: the one it names, or
+    `DEFAULT_PRESET`'s where it names none this build ships, which is what leaving
+    `stayfixed.preset` out builds on."""
+    head = document.get("stayfixed")
+    named = head.get("preset", DEFAULT_PRESET) if isinstance(head, dict) else DEFAULT_PRESET
+    try:
+        preset = _preset(named)
+    except ConfigError:
+        preset = _preset(DEFAULT_PRESET)
+    return dict(preset.get("defaults", {}))
+
+
+# The keys the loader fills itself when the document leaves them out, where the preset's
+# `[defaults]` holds no value: the preset's own name (`DEFAULT_PRESET`), and `[ci] gate_branch`,
+# which is `[project] base_branch` (`_gate_branch`).
+_FILLED = frozenset({PRESET_KEY, "ci.gate_branch"})
+
+
+def _stands_in(dotted: str, defaults: dict[str, Any]) -> bool:
+    """Whether a document without the key `dotted` names still builds a value for it.
+
+    A budget and a custom gate may simply be absent. A key of a schema section has a value when
+    it has a schema default, a preset value in `defaults` (the preset's `[defaults]`), or one the
+    loader fills (`_FILLED`); a section that is not a table has one when every key it holds does.
+    A name no schema declares is answered no: `_known_only` removed every such name the document
+    wrote before the first build, so one here is a name nothing has vouched for.
+    """
+    section, _, name = dotted.partition(".")
+    if section == "budgets" or dotted.startswith("gates.custom."):
+        return True
+    schema = _SCHEMA_OF.get(section)
+    if schema is None:
+        return False
+    if not name:
+        return all(_defaulted(section, key, defaults) for key in fields(schema))
+    declared = {key.name: key for key in fields(schema)}
+    return name in declared and _defaulted(section, declared[name], defaults)
+
+
+def _defaulted(section: str, key: Field[Any], defaults: dict[str, Any]) -> bool:
+    """Whether `section`'s field `key` has a value when the document gives it none."""
+    return (
+        key.default is not MISSING
+        or key.default_factory is not MISSING
+        or key.name in defaults.get(section, {})
+        or f"{section}.{key.name}" in _FILLED
+    )
+
+
+_SCHEMA_OF: dict[str, type[Any]] = {
+    "stayfixed": Stayfixed,
+    "project": Project,
+    "paths": Paths,
+    "memory": Memory,
+    "ledger": Ledger,
+    "artifacts": Artifacts,
+    "ci": Ci,
+    "gates": Gates,
+    "commit_messages": CommitMessages,
+}
+
+
+def _keys_of(section: str) -> Collection[str]:
+    """The keys this stayfixed reads in `section`: `Budgets.NAMES`, or the schema class's fields."""
+    if section == "budgets":
+        return Budgets.NAMES
+    return schema_types(cast(Any, _SCHEMA_OF[section])).keys()
+
+
+def _known_only(raw: dict[str, Any], notes: list[str], keys: list[str]) -> dict[str, Any]:
+    """`raw` without the names this stayfixed does not read, noting each one it removed and
+    recording the key each note is about."""
+    document: dict[str, Any] = {}
+    machine_only: dict[str, object] = {}
+    for name, value in raw.items():
+        if name in MACHINE_ONLY_SECTIONS:
+            if isinstance(value, dict) and value:
+                machine_only.update({f"{name}.{key}": item for key, item in value.items()})
+            else:
+                notes.append(REFUSED_LAYER_NOTE.format(key=name, layer=LayerName.REPOSITORY))
+                keys.append(name)
+        elif name not in SECTIONS:
+            notes.append(UNKNOWN_NOTE.format(name=clipped(name)))
+            keys.append(name)
+        elif isinstance(value, dict):
+            document[name] = _known_keys(name, value, _keys_of(name), notes, keys)
+        else:
+            # Not a table: the section's own reader refuses it, keyed to the section.
+            document[name] = value
+    notes.extend(resolve([Layer(LayerName.REPOSITORY, machine_only)]).notes)
+    # One note per key above: no machine-only key's class admits the repository layer.
+    keys.extend(machine_only)
+    return document
+
+
+def _known_keys(
+    dotted: str, table: dict[str, Any], known: Collection[str], notes: list[str], keys: list[str]
+) -> dict[str, Any]:
+    kept: dict[str, Any] = {}
+    for key, value in table.items():
+        if key not in known:
+            notes.append(UNKNOWN_NOTE.format(name=clipped(f"{dotted}.{key}")))
+            keys.append(f"{dotted}.{key}")
+        elif dotted == "gates" and key == "custom" and isinstance(value, dict):
+            fields_of_gate = schema_types(CustomGate).keys()
+            kept[key] = {
+                name: _known_keys(f"gates.custom.{name}", gate, fields_of_gate, notes, keys)
+                if isinstance(gate, dict)
+                else gate
+                for name, gate in value.items()
+            }
+        else:
+            kept[key] = value
+    return kept
+
+
+def _holding(table: dict[str, Any], dotted: str) -> tuple[dict[str, Any], str] | None:
+    """The table that holds the key `dotted` names, at any depth, and the key's name in it;
+    `None` when `table` holds no such key.
+
+    A name may itself hold a dot (a custom gate's name may), so each level is asked for the
+    whole remaining name first and then for every table whose name prefixes it.
+    """
+    if dotted in table:
+        return table, dotted
+    for name, value in table.items():
+        if isinstance(value, dict) and dotted.startswith(f"{name}."):
+            found = _holding(value, dotted[len(name) + 1 :])
+            if found is not None:
+                return found
+    return None
+
+
+def preset_defaults(project: str, *, preset: str = DEFAULT_PRESET) -> Config:
     """A `Config` built from a preset's `[defaults.*]` alone, for a directory that has no
     `stayfixed.toml` and never will.
 

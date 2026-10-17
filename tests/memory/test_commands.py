@@ -10,10 +10,13 @@ from stayfixed.cli import build_parser, discover_registrars, run
 from stayfixed.findings import LISTED_LIMIT
 from stayfixed.jsonobject import LONG_NUMBER, NESTED
 from stayfixed.printed import UNPRINTABLE
+from stayfixed.trust import kinds
+from stayfixed.trust.record import NO_HOME, recorded
 from tests import parserlimits
 from tests.crafted import CRAFTED, CRAFTED_TOML, assert_never_raw
 from tests.gitfixture import git
 from tests.ownerhome import as_owner_home
+from tests.sandboxed import refuse_writes_under
 
 CONFIG = """
 [stayfixed]
@@ -42,6 +45,14 @@ NOTE = (
 
 def invoke(argv: list[str]) -> int:
     return run(argv, parser=build_parser(discover_registrars()))
+
+
+@pytest.fixture(autouse=True)
+def _at_a_terminal(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`memory trust --in-repo-memory` is asked of a person at a terminal (`trust.kinds`); these
+    cases run it in-process, where the seam stands in for one. `tests/trust/test_commands.py`
+    holds the refusal without a terminal, through a real subprocess."""
+    monkeypatch.setattr(kinds, "interactive", lambda: True)
 
 
 @pytest.fixture
@@ -124,9 +135,16 @@ def test_an_unreached_part_prints_nothing_and_succeeds(
 def test_trust_writes_to_the_machine_file_it_was_given_not_to_the_home_directory(
     project: Path,
 ) -> None:
+    # The version-1 record beside the given machine file, holding the store's approval as kind
+    # `memory`. No mutation of its own: where the record goes is `trust.record.record_path`'s, held
+    # in `tests/trust/test_record.py`.
     machine = project.parent / "machine.toml"
     assert invoke(["memory", "trust", "--in-repo-memory", *common(project)]) == 0
-    assert (machine.parent / "trust.json").is_file()
+    written = json.loads((machine.parent / "trust.json").read_text(encoding="utf-8"))
+    assert written["version"] == 1
+    assert [(a["kind"], a["subject"]) for a in written["approvals"]] == [
+        ("memory", str((project / ".stayfixed" / "local" / "memory").resolve()))
+    ]
 
 
 @pytest.mark.parametrize("spelling", ["relative", "absolute"])
@@ -222,7 +240,7 @@ def test_trust_with_no_home_in_the_database_fails_and_writes_nothing(
     as_owner_home(monkeypatch, None)
     monkeypatch.chdir(tmp_path)
     assert invoke(["memory", "trust", "--in-repo-memory", "--root", str(project)]) == 1
-    assert "lists no home directory" in capsys.readouterr().err
+    assert capsys.readouterr().err == f"stayfixed: failed: {NO_HOME}\n"
     assert list(tmp_path.rglob("trust.json")) == []
 
 
@@ -268,6 +286,7 @@ def test_trust_without_the_flag_is_refused_not_silently_granted(
         invoke(["memory", "trust", *common(project)])
     assert excinfo.value.code == 2
     assert not (machine.parent / "trust.json").is_file()
+    assert recorded(machine) == {}
 
 
 def test_inventory_reports_what_a_sweep_acts_on(
@@ -365,6 +384,90 @@ def test_a_change_stayfixed_did_not_write_is_not_blessed_by_indexing(
     assert capsys.readouterr().out.strip() == ""
 
 
+def test_index_never_undoes_a_revoke_made_while_it_ran_and_says_so(
+    project: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The owner's `trust revoke memory` lands after `memory index` took its snapshot and before it
+    # wrote: the revoke stays, and the line says the approval was not carried over. Mutations
+    # (`mutations/`'s "a stayfixed write approves the store again whatever the record holds now"
+    # -> the approval is back; "memory index says nothing when it could not carry an approval
+    # over" -> the line keeps quiet about it).
+    from stayfixed.config.schema import Config
+    from stayfixed.memory import trust
+    from stayfixed.memory.commands import _DROPPED
+    from stayfixed.memory.store import Store
+    from stayfixed.trust.record import revoke
+
+    assert invoke(["trust", "approve", "memory", *common(project)]) == 0
+    machine = project.parent / "machine.toml"
+    taken = trust.snapshot
+
+    def revoked_after(store: Store, config: Config) -> trust.Snapshot:
+        before = taken(store, config)
+        assert revoke(machine, "memory", trust.store_key(store)) is True
+        return before
+
+    monkeypatch.setattr(trust, "snapshot", revoked_after)
+    capsys.readouterr()
+    assert invoke(["memory", "index", "--json", *common(project)]) == 0
+    assert _DROPPED in json.loads(capsys.readouterr().out)["summary"]
+    assert recorded(machine) == {}
+
+
+def test_index_whose_refresh_a_sandbox_refused_leaves_the_approval_and_says_so(
+    project: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Run from an agent's sandboxed shell, the index is written inside the repository and the
+    # refresh of the approval, in the machine directory, is refused (`EPERM`, as macOS's sandbox
+    # answers). The run still exits 0, since the index was written; the approval stays at the
+    # digest the person gave; and the line says, in stayfixed's words, that it could not be
+    # refreshed and why. Never a traceback. Mutations (`mutations/`'s "memory index ends in the
+    # record's refusal when a sandbox refuses its refresh" -> exit 2; "memory index says the
+    # store changed when a sandbox refused its refresh" -> the line says `_DROPPED` instead).
+    from stayfixed.memory.commands import _NOT_REFRESHED
+
+    notes = project / ".stayfixed" / "local" / "memory" / "developer"
+    (notes / "c.md").write_text(NOTE_WITHOUT_INDEX, encoding="utf-8")
+    assert invoke(["trust", "approve", "memory", *common(project)]) == 0
+    machine = project.parent / "machine.toml"
+    before = recorded(machine)
+    refused = refuse_writes_under(monkeypatch, machine.parent / "trust.json")
+    capsys.readouterr()
+    assert invoke(["memory", "index", "--json", *common(project)]) == 0
+    out, err = capsys.readouterr()
+    assert refused == [machine.parent / "trust.json"]
+    assert json.loads(out)["summary"].endswith("; " + _NOT_REFRESHED)
+    assert err == ""
+    assert recorded(machine) == before
+    assert "index:" in (notes / "c.md").read_text(encoding="utf-8")
+
+
+def test_an_index_that_changes_nothing_writes_no_record_from_a_sandboxed_shell(
+    project: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The most common way the refresh runs: the store approved and indexed, and an agent in its
+    # sandbox runs `memory index` again over nothing new. The approval already holds the digest the
+    # files have, so there is nothing to move and nothing is written; a refresh that rewrote it was
+    # refused there, and the line told the agent the approval no longer matched the files while
+    # `trust list` said approved. Mutation (`mutations/`'s "a refresh rewrites the digest the record
+    # already holds"): the refused write is attempted and the line says `_NOT_REFRESHED`.
+    from stayfixed.memory.commands import _DROPPED, _NOT_REFRESHED
+
+    notes = project / ".stayfixed" / "local" / "memory" / "developer"
+    (notes / "c.md").write_text(NOTE_WITHOUT_INDEX, encoding="utf-8")
+    assert invoke(["trust", "approve", "memory", *common(project)]) == 0
+    assert invoke(["memory", "index", *common(project)]) == 0
+    machine = project.parent / "machine.toml"
+    before = recorded(machine)
+    refused = refuse_writes_under(monkeypatch, machine.parent / "trust.json")
+    capsys.readouterr()
+    assert invoke(["memory", "index", "--json", *common(project)]) == 0
+    summary = json.loads(capsys.readouterr().out)["summary"]
+    assert refused == []
+    assert _NOT_REFRESHED not in summary and _DROPPED not in summary
+    assert recorded(machine) == before
+
+
 def test_index_says_so_when_the_trust_gate_is_what_empties_the_bundles(
     project: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -373,18 +476,18 @@ def test_index_says_so_when_the_trust_gate_is_what_empties_the_bundles(
     # running the command by hand is where that belongs.
     assert invoke(["memory", "index", *common(project)]) == 0
     out = capsys.readouterr().out
-    assert "stayfixed memory trust" in out
+    assert "stayfixed trust approve memory" in out
     assert invoke(["memory", "trust", "--in-repo-memory", *common(project)]) == 0
     capsys.readouterr()
     assert invoke(["memory", "index", "--check", *common(project)]) == 0
-    assert "stayfixed memory trust" not in capsys.readouterr().out
+    assert "stayfixed trust approve memory" not in capsys.readouterr().out
 
 
 def test_fit_says_so_when_the_trust_gate_is_what_empties_the_bundles(
     project: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     assert invoke(["memory", "fit", *common(project)]) == 0
-    assert "stayfixed memory trust" in capsys.readouterr().out
+    assert "stayfixed trust approve memory" in capsys.readouterr().out
 
 
 # --- the index seam: the file that is written, checked, harvested and injected ---------------
@@ -707,7 +810,7 @@ def test_editing_index_extra_alone_cannot_slip_a_pointer_past_the_trust_record(
     assert invoke(["--json", "memory", "index", "--check", *common(project)]) == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["trusted"] is False
-    assert "stayfixed memory trust" in payload["summary"]
+    assert "stayfixed trust approve memory" in payload["summary"]
 
 
 # --- what `memory index` says, and what it exits with, are one answer ------------------------
@@ -961,14 +1064,14 @@ def test_a_committed_index_is_reported_untrusted(
     assert invoke(["--json", "memory", "index", "--check", *common(overlay_project)]) == 1
     payload = json.loads(capsys.readouterr().out)
     assert payload["trusted"] is False
-    assert "stayfixed memory trust" in payload["summary"]
+    assert "stayfixed trust approve memory" in payload["summary"]
     # The committed index is repository data the bundles withhold too, so the words are the
     # whole gate's and not the link's alone. Mutation: `mutations/`'s "a committed index is told
     # only the harness link waits".
     assert "none of it reaches a session" in payload["summary"]
 
     assert invoke(["--json", "memory", "fit", *common(overlay_project)]) == 0
-    assert "stayfixed memory trust" in json.loads(capsys.readouterr().out)["summary"]
+    assert "stayfixed trust approve memory" in json.loads(capsys.readouterr().out)["summary"]
 
 
 @needs_git
@@ -1010,7 +1113,7 @@ def test_an_overlay_store_with_no_record_says_its_link_waits_while_its_notes_sti
     assert invoke(["--json", "memory", "fit", *common(overlay_project)]) == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["trusted"] is True
-    assert "stayfixed memory trust" not in payload["summary"]
+    assert "stayfixed trust approve memory" not in payload["summary"]
 
 
 # --- `memory refs` refuses a partial resolution with the reasons, not a pointer ------------

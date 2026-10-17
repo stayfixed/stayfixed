@@ -1102,17 +1102,17 @@ def test_a_harness_link_that_waits_for_approval_is_said_with_the_way_out(tmp_pat
     # The link tree sits inside the repository, so the harness link that exposes it waits for
     # `memory trust --in-repo-memory` (`worktree.harness_link_needed`). `attach` skipped it and
     # said nothing, so the owner found out from a session with no native memory.
+    from stayfixed.attach.write import HARNESS_WAITS
     from stayfixed.config.loader import load
     from stayfixed.memory.api import harness_memory_path, resolve
-    from stayfixed.memory.trust import record
+    from tests.approved import record
 
     root, store = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
     _overlay_grants(store)
     machine = _machine(tmp_path, overlay=store.parents[2])
     code, out, _ = cli(root, tmp_path, "attach", "--store", str(store), machine=machine)
     assert code == 0
-    assert "stayfixed memory trust --in-repo-memory" in out
-    assert "then `stayfixed attach` again" in out
+    assert HARNESS_WAITS in out
     # The other direction, so the sentence is about the gate and not about every attach: once
     # the store is approved the link is made and nothing asks for the approval again.
     config = load(root, machine=machine)
@@ -1212,7 +1212,7 @@ def test_attach_at_a_terminal_with_no_home_at_all_refuses_in_words(
     # `HOME`; the refusal's words are the assertions' own.
     from stayfixed.config.loader import load
     from stayfixed.memory.api import resolve
-    from stayfixed.memory.trust import record
+    from tests.approved import record
     from tests.ownerhome import as_owner_home
 
     root, store = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
@@ -1281,14 +1281,16 @@ _UNREAD = {
 }
 _WAITS = (
     "the harness memory link was not created, because the link tree it would expose sits inside "
-    "this repository and has no approval yet; run `stayfixed memory trust --in-repo-memory`, then "
+    "this repository and has no approval yet; ask the person at this machine to run `stayfixed "
+    "trust approve memory` in their own terminal — an agent must not run it for them; then run "
     "`stayfixed attach` again"
 )
 # Said instead where the approval is recorded and the store changed since.
 _LAPSED = (
     "the harness memory link was not created, because the store or its memory.index_extra changed "
-    "since its approval was recorded, so that approval no longer holds; read what changed, run "
-    "`stayfixed memory trust --in-repo-memory`, then `stayfixed attach` again"
+    "since its approval was recorded, so that approval no longer holds; read what changed, then "
+    "ask the person at this machine to run `stayfixed trust approve memory` in their own "
+    "terminal — an agent must not run it for them; then run `stayfixed attach` again"
 )
 
 
@@ -1319,7 +1321,7 @@ def _approve(root: Path) -> None:
     """`stayfixed memory trust --in-repo-memory`, recorded under the database's home."""
     from stayfixed.config.loader import load
     from stayfixed.memory.api import resolve
-    from stayfixed.memory.trust import record
+    from tests.approved import record
 
     config = load(root, machine=None)
     resolved = resolve(root, config, machine=None)

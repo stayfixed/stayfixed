@@ -26,8 +26,8 @@ class Unregistered:
     """The one check an area gets in place of its own when it could not contribute them: a red row
     saying why, named after the area and sitting where its rows would have been.
 
-    Public within the package because the run's early report (`checks._early`) tells it apart
-    from every other check: it is about stayfixed's own code, so it is red there too."""
+    It is about stayfixed's own code, which no configuration changes, so it is red in every
+    report, one for a repository with no `stayfixed.toml` included."""
 
     detail: str
 

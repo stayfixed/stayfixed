@@ -18,6 +18,7 @@ from stayfixed import __version__
 from stayfixed.gitenv import GIT_CANDIDATES, HOOK_WRAPPER_LAUNCHED, HOOK_WRAPPER_VARIABLE
 from tests.gitfixture import git
 from tests.ownerhome import pin_git_home, plugin_root_with_owner_home, stayfixed_argv
+from tests.scriptload import SCRIPTS, load
 from tests.test_launcher import _old_python
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -1132,15 +1133,12 @@ def test_a_trust_record_under_a_home_the_environment_names_is_never_read(
     project = tmp_path / "project"
     shutil.copytree(ROOT / "tests" / "fixtures" / "hostile-project", project)
     plugin = plugin_root_with_owner_home(tmp_path, owner)
-    trusted = subprocess.run(
-        [*stayfixed_argv(owner), "memory", "trust", "--in-repo-memory", "--root", str(project)],
-        capture_output=True,
-        text=True,
-        check=False,
-        stdin=subprocess.DEVNULL,
+    # The approval is a person's, at a terminal (`scripts/ptyrun.py`).
+    code, said = load(SCRIPTS / "ptyrun.py", "ptyrun_for_wrapper_tests").run_in_pty(
+        [*stayfixed_argv(owner), "trust", "approve", "memory", "--root", str(project)],
         env=dict(os.environ, HOME=str(owner)),
     )
-    assert trusted.returncode == 0, trusted.stderr
+    assert code == 0, said
     owners = owner / ".config" / "stayfixed" / "trust.json"
     planted = project / "fakehome" / ".config" / "stayfixed" / "trust.json"
     planted.parent.mkdir(parents=True)

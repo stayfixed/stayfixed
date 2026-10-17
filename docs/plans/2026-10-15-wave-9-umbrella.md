@@ -110,7 +110,14 @@ What each edge carries:
   `stayfixed.config.session` (`SessionConfig`, `session_config`). HS2 adds the
   `overlay` and `checkout` kinds and wires the overlay's three layers into `resolve`; HS3 rewrites
   the `memory` kind and removes the `memory trust` alias; CP2 adds the `regressions` kind; PF1
-  makes `profiles` a layered preference with a union merge.
+  makes `profiles` a layered preference with a union merge. As HS1 shipped, `resolve` decides who
+  may set a key and gives doctor's `preferences` row its provenance, while the loader still builds
+  `Config`'s values: HS2's first task builds the preference and session values from a `Resolution`
+  and carries the provenance on `SessionConfig`, so doctor stops deriving it a second time. HS1 also
+  ships `stayfixed.config.reading` (the names both loaders share), `ApprovalKind.flags` as a mapping
+  of flag to help text, the layer names `OVERLAY_COMMON`, `OVERLAY_PROJECT`, `OVERLAY_MACHINE`, and
+  `stayfixed.trust.boundary` (amended 2026-10-17: after the narrowing, the sandboxed-write refusal
+  and the spellings `setup --approval-boundary` prints; doctor reads no settings for it).
 - **HS2 → HS3.** The binding id, the confirmed checkout and the machine data directory's layout;
   HS3's pointer to the composed store is whatever HS2's measurement of an absolute
   `autoMemoryDirectory` chose.
@@ -162,7 +169,7 @@ to the group file `scripts/mutation_oracle.py` `GROUP_OF` routes them to.
 | `src/stayfixed/ledger/` | RC1, then CP2 | |
 | `src/stayfixed/profiles/` | CP1 (adapters under `profiles/python/`, `profiles/javascript/`, `profiles/go/`), PF1 (the model and the list) | per pull request (§15.4) |
 | `src/stayfixed/project/`, `skills/init/` | HS3 (`upgrade`'s memory migration), HS4 (the walk), PF1 (the profile step; rules released from the manifest), CP3 (the adopt step) | a chain: each quotes the previous lane's text it rewrites |
-| `src/stayfixed/setup/` | HS1 (the `ask` rules), HS4 | |
+| `src/stayfixed/setup/` | HS1 (`--approval-boundary`, advice only), HS4 | |
 | `src/stayfixed/templates/overlay/`, `scripts/check_artifacts.py`, `ci.yml`'s overlay-render step | HS4 | `overlay create` and `overlay init` retire into `setup --overlay` |
 | `src/stayfixed/doctor/`, `tests/doctor/test_command.py`, `.github/workflows/smoke.yml`, `scripts/smoke_hooks.py` | HS1 → HS2 → HS3 → HS4 → CP2 → PF1 | **hot spot**: each lane that adds or renames a `doctor` row or a hook entry updates the smoke workflow's row and entry counts and quotes the previous lane's numbers in its plan |
 | `.github/workflows/check.yml` | CP1 (the evidence upload), CP2 (the regressions step) | |

@@ -31,8 +31,8 @@ applies with no trust prompt in a non-interactive session.
 **The machine file makes the same claim.** `machine_config_path` reads none of
 `STAYFIXED_CONFIG`, `XDG_CONFIG_HOME` and `HOME` (the home directory is the password database's),
 since gating one alone is worth nothing: each of them reaches the same file, and this area routes
-the store's overlay anchor (`overlay_root(None)`) and the trust record (`trust._trust_file(None)`)
-through it. A committed
+the store's overlay anchor (`overlay_root(None)`) and the trust record
+(`trust.record.record_path(None)`) through it. A committed
 `env` block setting `STAYFIXED_CONFIG`, or direnv, mise or a devcontainer setting
 `XDG_CONFIG_HOME` or `HOME` from a file the clone commits, would choose which overlay root
 `permitted_roots` is computed from, and which `trust.json` `may_inject` consults, wherever no
@@ -56,9 +56,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from stayfixed import fsops
-from stayfixed.config.loader import UNPARSEABLE
 from stayfixed.config.overlay import overlay_root
 from stayfixed.config.paths import PathEscape, PathUnasked, contained
+from stayfixed.config.reading import UNPARSEABLE, MachineConfigError
 from stayfixed.config.schema import LOCAL_ONLY_MODE, OVERLAY_MODE, Config
 from stayfixed.findings import listed
 from stayfixed.fsops import read_regular_text
@@ -480,11 +480,26 @@ def _names_own_share(override: str | None, config: Config, overlay: Path | None)
 Resolution = tuple[Store, None] | tuple[None, Unresolved]
 
 
+def _recorded_overlay(machine: Path | None) -> Path | None:
+    """The overlay root the machine file records, or `None` where it records none or cannot be
+    read.
+
+    A command never meets a machine file it cannot read here: its load refuses that file first
+    (`config.loader`). A session does, since it reads the configuration that file leaves it
+    (`config.session`), and its `SessionStart` warning already names the file
+    (`MACHINE_FILE_WARNING`), so the store resolves as one with no overlay recorded, and the
+    session's standing rules and volatile notes still arrive where they are not the overlay's."""
+    try:
+        return overlay_root(machine)
+    except MachineConfigError:
+        return None
+
+
 def _resolve_at(
     root: Path, config: Config, override: str | None, machine: Path | None
 ) -> Resolution:
     mode = config.memory.mode
-    overlay = overlay_root(machine)
+    overlay = _recorded_overlay(machine)
     if _names_own_share(override, config, overlay):
         override = None
     if override is not None:

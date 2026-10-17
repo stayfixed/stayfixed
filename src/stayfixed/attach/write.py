@@ -77,7 +77,7 @@ from stayfixed.config.layout import (
     IGNORE_REGION,
     LOCAL_STATE_PATHS,
 )
-from stayfixed.config.loader import UNPARSEABLE, load
+from stayfixed.config.loader import load
 from stayfixed.config.machine import (
     anchor_home,
     home_is_empty,
@@ -85,7 +85,9 @@ from stayfixed.config.machine import (
     override_is_honoured,
     passwd_home,
 )
+from stayfixed.config.owner import Owner
 from stayfixed.config.paths import PathEscape, PathUnasked, contained
+from stayfixed.config.reading import UNPARSEABLE
 from stayfixed.config.schema import Config
 from stayfixed.errors import Failure, Refusal
 from stayfixed.fsops import UnsafePath
@@ -139,6 +141,7 @@ from stayfixed.scaffold import (
     settings_text,
     upsert,
 )
+from stayfixed.trust.api import PERSON_RUNS
 
 LEDGER_FORMAT = 1
 GITIGNORE = ".gitignore"
@@ -1005,7 +1008,7 @@ def _link_everywhere(
             continue
         created += more.created
         revoked += more.revoked
-    return Links(created, revoked, withheld=links.withheld)
+    return Links(created, revoked, withheld=links.withheld, refresh_refused=links.refresh_refused)
 
 
 def _keys_in(document: str) -> tuple[str, ...]:
@@ -1106,13 +1109,15 @@ def _harness_fallback(
     return () if wanted is None else (FALLBACK_KEY,)
 
 
+# How the sentences below ask for the store's approval: of the person at the machine, never of an
+# agent (`trust.api.PERSON_RUNS`).
+_APPROVE = PERSON_RUNS.format(command="stayfixed trust approve memory")
 # Said when the harness memory link was left out because the gate withheld it, which in overlay
 # mode it does until the owner approves the store: the link tree sits inside the repository.
 # Nothing in it is repository-authored, so it prints.
 HARNESS_WAITS = (
     "the harness memory link was not created, because the link tree it would expose sits inside "
-    "this repository and has no approval yet; run `stayfixed memory trust --in-repo-memory`, "
-    "then `stayfixed attach` again"
+    f"this repository and has no approval yet; {_APPROVE}; then run `stayfixed attach` again"
 )
 
 
@@ -1123,14 +1128,21 @@ APPROVAL_LAPSED = (
     "the store or its memory.index_extra changed since its approval was recorded, so that "
     "approval no longer holds"
 )
-REAPPROVE = (
-    "read what changed, run `stayfixed memory trust --in-repo-memory`, then `stayfixed attach` "
-    "again"
-)
+REAPPROVE = f"read what changed, then {_APPROVE}; then run `stayfixed attach` again"
 # Said instead of `HARNESS_WAITS` where the machine records an approval and the store changed
 # since, which closes the gate as surely as no approval and also withdraws the links an earlier run
 # made: one line appended to one note is enough.
 HARNESS_LAPSED = f"the harness memory link was not created, because {APPROVAL_LAPSED}; {REAPPROVE}"
+# Said where the index this run rendered for the store could not carry its approval, because the
+# trust record's directory refused the write as an agent's sandbox refuses one: the approval stays
+# at the person's digest, which the store no longer matches, so `HARNESS_LAPSED` follows it, and
+# this says why it lapsed.
+REFRESH_REFUSED = (
+    "the store's approval was not carried across the index this run wrote and was left as it was: "
+    "the trust record's directory refused the write, as Claude Code's sandbox refuses every write "
+    "an agent's shell makes outside the working directory, so only a person outside the agent's "
+    "sandbox can write it"
+)
 # Said whenever the run withdrew harness memory links, which only the gate does, so the line
 # never leaves a withdrawal unsaid; the count is the one `--json` gives as `links_revoked`.
 HARNESS_WITHDREW = "withdrew {count} harness memory link(s)"
@@ -1188,6 +1200,7 @@ def attach(
     trust_remote: bool,
     runner: Runner,
     home: Path | None,
+    owner: Owner | None = None,
 ) -> Attached:
     """Bind this repository to the overlay, merge what the overlay grants, and link the notes in.
 
@@ -1246,6 +1259,8 @@ def attach(
     a real `pre-commit` or the developer's own `~/.claude/`. A default here would leave that as
     a convention, which is the thing the rule exists to replace: while this module was being
     written, every call that omitted `home` computed a path under the real home directory.
+    `owner` is the owner's layer the command resolved, which the one load takes
+    (`config.loader.loads`' own).
     """
     planned = _plan(
         root,
@@ -1254,6 +1269,7 @@ def attach(
         confirmed=confirmed,
         trust_remote=trust_remote,
         home=home,
+        owner=owner,
     )
     return _carry_out(root, planned, machine=machine, runner=runner, home=home)
 
@@ -1364,6 +1380,7 @@ def _plan(
     confirmed: bool,
     trust_remote: bool,
     home: Path | None,
+    owner: Owner | None,
 ) -> AttachPlan:
     """Every read, decode and check `attach` makes, in the order `attach` enumerates them, and
     nothing written: what it returns is all `_carry_out` may act on.
@@ -1383,7 +1400,7 @@ def _plan(
     # nothing moves in the order the refusals happen in; what changes is that `project.name`,
     # `memory.groups` and `paths.memory` are read once and the refusals below are about the
     # same document the binding was read under.
-    config = load(root, machine=machine)
+    config = load(root, machine=machine, owner=owner)
     binding = read_binding(root, store=store, machine=machine, config=config)
     gates = Gates(root, config, binding)
     for stop in gates:
@@ -1611,6 +1628,8 @@ def _carry_out(
         written = True
     if links.revoked:
         notes.append(HARNESS_WITHDREW.format(count=len(links.revoked)))
+    if links.refresh_refused:
+        notes.append(REFRESH_REFUSED)
     if keys and links.withheld:
         # Left as an earlier run recorded it, and said so: "was recorded" would read as this run's
         # act, beside a note that this run makes no link at all.
@@ -2071,7 +2090,9 @@ def _other_harness_home() -> tuple[Path, str] | None:
     return Path(chosen), "HOME"
 
 
-def detach(root: Path, *, machine: Path | None, home: Path | None) -> Detached:
+def detach(
+    root: Path, *, machine: Path | None, home: Path | None, owner: Owner | None = None
+) -> Detached:
     """Remove exactly what `attach` added, reading the ledger for what that was.
 
     It does **not** touch `projects/<name>/project.toml`. That record is the owner's consent,
@@ -2110,7 +2131,7 @@ def detach(root: Path, *, machine: Path | None, home: Path | None) -> Detached:
     harness link points at.
     """
     recorded = ledger(root)
-    config = load(root, machine=machine)
+    config = load(root, machine=machine, owner=owner)
     entries = tuple(sorted(owned_ids(local_document(root))))
     # Asked before the first withdrawal, because it is the one thing here that needs `git` and a
     # `git` that cannot run is knowable at the start. Asked between the settings withdrawal and

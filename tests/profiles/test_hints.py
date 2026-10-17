@@ -29,6 +29,7 @@ from tests.profiles.redrun import (
     red_event,
     ship,
 )
+from tests.sessions import session_of
 
 
 def a_project(tmp_path: Path) -> Path:
@@ -68,7 +69,7 @@ def test_two_recognising_hints_both_speak(tmp_path: Path, monkeypatch: pytest.Mo
         },
     )
     root = a_project(tmp_path)
-    result = hygiene().run(red_event(root, "alpha-test && beta-test"), config_of(root))
+    result = hygiene().run(red_event(root, "alpha-test && beta-test"), session_of(config_of(root)))
     assert result.context == f"{LEAD}\n- alpha says (1)\n- beta says (1)"
 
 
@@ -91,7 +92,11 @@ def test_a_hint_that_raises_costs_its_note_not_the_dispatch(
     )
     root = a_project(tmp_path)
     outcome = dispatch(
-        red_event(root, "x"), register(), config_of(root), harness=CLAUDE, sink=Recorder()
+        red_event(root, "x"),
+        register(),
+        session_of(config_of(root)),
+        harness=CLAUDE,
+        sink=Recorder(),
     )
     assert outcome.exit_code == 0
     assert outcome.stderr == ""
@@ -121,7 +126,11 @@ def test_a_hint_that_cannot_load_or_gives_no_text_costs_only_its_own_line(
     )
     root = a_dirty_project(tmp_path)
     outcome = dispatch(
-        red_event(root, "x"), register(), config_of(root), harness=CLAUDE, sink=Recorder()
+        red_event(root, "x"),
+        register(),
+        session_of(config_of(root)),
+        harness=CLAUDE,
+        sink=Recorder(),
     )
     assert outcome.exit_code == 0
     assert outcome.stderr == ""
@@ -145,7 +154,7 @@ def test_a_note_is_handed_counts_and_nothing_else(
     loud = LoudHint("x", "loud says")
     ship(monkeypatch, {"alpha": loud})
     root = a_project(tmp_path)
-    result = hygiene().run(red_event(root, "x"), config_of(root))
+    result = hygiene().run(red_event(root, "x"), session_of(config_of(root)))
     assert result.context == f"{LEAD}\n- loud says (1)"
     assert loud.given == {"found": 1}
     assert loud.given is not loud.returned

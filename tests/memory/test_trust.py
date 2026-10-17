@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import errno
 import hashlib
+import json
 import os
 import shutil
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -16,6 +18,7 @@ from stayfixed.memory.store import Store, resolve
 from stayfixed.memory.trust import (
     _UNREADABLE,
     DELIMITER,
+    UNSAFE_NOTE,
     UnreadableTrustRecord,
     UnsafeNote,
     _content_digest,
@@ -25,16 +28,19 @@ from stayfixed.memory.trust import (
     markers,
     may_inject,
     new_nonce,
-    record,
     refresh_if_trusted,
     snapshot,
     state,
     store_digest,
     wrap,
 )
+from stayfixed.trust.record import Approval, approve, recorded, revoke
+from tests.approved import record
 from tests.gitfixture import git
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
+
+T0 = datetime(2026, 10, 16, 9, 30, tzinfo=UTC)
 
 CONFIG = """
 [stayfixed]
@@ -150,6 +156,10 @@ def test_a_body_that_forges_the_marker_is_refused() -> None:
     # A caller that tolerates exit 1 ("a routine finding, proceed") must never read an attempted
     # marker forgery that way — this has to be a refusal (exit 2), not a failure (exit 1).
     assert isinstance(excinfo.value, Refusal)
+    # And it says exactly its constant, which quotes nothing of the body it refused. Mutation
+    # (`mutations/`'s "a forged marker's refusal quotes the body it refused"): the body follows the
+    # sentence.
+    assert str(excinfo.value) == UNSAFE_NOTE
 
 
 def test_two_invocations_do_not_share_a_nonce() -> None:
@@ -336,6 +346,59 @@ def test_a_refresh_does_nothing_for_a_store_that_was_never_trusted(tmp_path: Pat
     assert may_inject(store, config) is False
 
 
+def test_a_refresh_stops_when_an_approved_file_vanished(tmp_path: Path) -> None:
+    # A note the owner approved went while the command ran, and stayfixed deletes no note, so the
+    # store the record would bless is not the one approved. Mutation (`mutations/`'s "a refresh
+    # carries past an approved file that vanished"): the refresh writes and the store stays
+    # trusted.
+    store, config, _machine = a_store(tmp_path, "in-repo")
+    theirs = store.groups["developer"] / "b.md"
+    theirs.write_text(NOTE.replace("name: a", "name: b"), encoding="utf-8")
+    record(store, config)
+    before = snapshot(store, config)
+    assert before.trusted is True
+    theirs.unlink()
+    mine = store.groups["developer"] / "a.md"
+    mine.write_text(NOTE.replace("Body.", "Rewritten by stayfixed."), encoding="utf-8")
+    assert refresh_if_trusted(store, config, before, [mine]) is False
+    assert may_inject(store, config) is False
+
+
+def test_a_refresh_never_undoes_a_revoke_made_while_the_command_ran(tmp_path: Path) -> None:
+    # The owner ran `trust revoke memory` while a `memory index` was writing: the refresh decided
+    # on its snapshot, taken before the revoke, and put the approval back after the revoke had
+    # said it was gone. It writes only while the record still holds the digest the snapshot read.
+    # Mutation (`mutations/`'s "a stayfixed write approves the store again whatever the record
+    # holds now"): the approval comes back.
+    store, config, machine = a_store(tmp_path, "in-repo")
+    record(store, config)
+    before = snapshot(store, config)
+    assert before.trusted is True
+    assert revoke(machine, "memory", str(store.path.resolve())) is True
+    mine = store.groups["developer"] / "a.md"
+    mine.write_text(NOTE.replace("Body.", "Rewritten by stayfixed."), encoding="utf-8")
+    assert refresh_if_trusted(store, config, before, [mine]) is False
+    assert recorded(machine) == {}
+    assert may_inject(store, config) is False
+
+
+def test_a_refresh_keeps_when_the_person_approved(tmp_path: Path) -> None:
+    # A refresh is stayfixed's write and approves nothing, so `trust list --all` must not say the
+    # store was approved at the time of the last `memory index`. Mutations (`mutations/`'s "a
+    # stayfixed write approves the store again whatever the record holds now" and "a refresh
+    # restamps when the person approved"): `approved_at` reads the refresh's time.
+    store, config, machine = a_store(tmp_path, "in-repo")
+    key = str(store.path.resolve())
+    approve(machine, "memory", key, store_digest(store, config), now=T0)
+    before = snapshot(store, config)
+    mine = store.groups["developer"] / "a.md"
+    mine.write_text(NOTE.replace("Body.", "Rewritten by stayfixed."), encoding="utf-8")
+    assert refresh_if_trusted(store, config, before, [mine]) is True
+    assert recorded(machine)[("memory", key)] == Approval(
+        "memory", key, store_digest(store, config), T0.isoformat(timespec="seconds")
+    )
+
+
 def test_editing_only_index_extra_does_not_leave_the_store_trusted(tmp_path: Path) -> None:
     # `memory.index_extra` is repository-controlled, lives in `stayfixed.toml` — which no store
     # file covers — and is rendered straight into `MEMORY.md`, the file the harness memory link
@@ -429,17 +492,29 @@ def test_an_absent_record_is_still_the_ordinary_fresh_machine(tmp_path: Path) ->
 
 
 def test_a_key_this_version_cannot_read_costs_only_that_key(tmp_path: Path) -> None:
-    # A non-string value is a key this version cannot interpret, not a file it cannot read, so
-    # it is dropped rather than raised: that costs one project a re-approval instead of costing
-    # every project its record.
+    # In `0.3.0`'s flat map, a non-string value is a key that version could not interpret either,
+    # not a file it cannot read, so it is dropped rather than raised: that costs one project a
+    # re-approval instead of costing every project its record. No mutation of its own: the flat
+    # map's reader is held by `tests/trust/test_record.py`.
     store, config, machine = a_store(tmp_path, "in-repo")
-    record(store, config)
-    broken = _trust_json(machine)
-    import json as _json
+    flat = {str(store.path.resolve()): store_digest(store, config)}
+    _trust_json(machine).write_text(
+        json.dumps({**flat, "/somewhere/else": {"not": "a digest"}}), encoding="utf-8"
+    )
+    assert may_inject(store, config) is True
 
-    raw = _json.loads(broken.read_text(encoding="utf-8"))
-    raw["/somewhere/else"] = {"not": "a digest"}
-    broken.write_text(_json.dumps(raw), encoding="utf-8")
+
+def test_a_store_0_3_0_approved_is_still_approved(tmp_path: Path) -> None:
+    # A record `0.3.0` wrote, read through the memory area: its flat map reads as kind `memory`, so
+    # every store it approved answers approved, and the first approval after upgrades the file.
+    # Mutation (`mutations/`'s "the memory area keeps its approvals under another kind"): the store
+    # reads unapproved.
+    store, config, machine = a_store(tmp_path, "in-repo")
+    flat = {str(store.path.resolve()): store_digest(store, config)}
+    _trust_json(machine).write_text(json.dumps(flat), encoding="utf-8")
+    assert may_inject(store, config) is True
+    record(store, config)
+    assert json.loads(_trust_json(machine).read_text(encoding="utf-8"))["version"] == 1
     assert may_inject(store, config) is True
 
 

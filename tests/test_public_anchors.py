@@ -57,8 +57,12 @@ CITATIONS = (
     # The design's measurement log, cited as `Findings → S6`.
     ("design finding", re.compile(r"Findings\s*→")),
     # A plan's own headings, which a module quoted as if the reader had the plan open: "Premise 2
-    # of the lane's plan", "by the Global Constraints' own list", in either case.
-    ("plan section", re.compile(r"\bPremise\s+\d+|(?i:\bglobal\s+constraint)")),
+    # of the lane's plan", "by the Global Constraints' own list", in either case, and the list of
+    # inputs a plan asks its tasks to exercise, which eight test comments cited by its number.
+    (
+        "plan section",
+        re.compile(r"\bPremise\s+\d+|(?i:\bglobal\s+constraint)|(?i:\breview\s+focus)"),
+    ),
     # The plans' word for a unit of work. A module, a test and a document all name the area, the
     # module or the command they mean instead: "the foundation lane" told a reader nothing that
     # `stayfixed.hooks.dispatch` does not tell them better. A letter and not a word character is the
@@ -188,6 +192,8 @@ def test_the_citation_gate_discriminates() -> None:
         "the global constraints make `gh` a seam",
         "The Global\nConstraints list it",
         "under Premise\n12",
+        "Review Focus 4, the upgrade half",
+        "the review\nfocus of the plan",
         "the foundation lane",
         "Lanes that scaffold",
         "def test_what_every_downstream_lane_reaches_for",
@@ -205,6 +211,7 @@ def test_the_citation_gate_discriminates() -> None:
         "a sha256 digest, MD5 never",
         "exit code 2 (a refusal)",
         "a global constant",
+        "a review of the focus ring",
         "a plane of glass",
         "planes and lanemarks",
         "the core's `hooks` area answers through it",

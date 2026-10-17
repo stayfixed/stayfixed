@@ -174,6 +174,39 @@ def test_an_existing_user_settings_file_keeps_the_owners_own_rules(tmp_path: Pat
     assert settings["theme"] == "dark"
 
 
+def test_an_owners_settings_file_opening_with_a_byte_order_mark_is_merged_and_keeps_it(
+    tmp_path: Path,
+) -> None:
+    # Claude Code reads past a leading byte-order mark in the user's settings file, so setup does
+    # too, rather than refusing a file the harness reads; and it keeps the mark, so a second run
+    # rewrites nothing. Mutations (`mutations/`'s "setup refuses a user settings file opening with
+    # a byte-order mark" -> the run refuses; "setup drops the byte-order mark the owner's file
+    # opened with" -> the file loses it).
+    home = tmp_path / "home"
+    path = home / USER_SETTINGS
+    path.parent.mkdir(parents=True)
+    path.write_text("\ufeff" + json.dumps({"theme": "dark"}), encoding="utf-8")
+
+    def run() -> None:
+        setup(
+            "recommended",
+            home=home,
+            machine=tmp_path / "config.toml",
+            runner=Recorder(),
+            yes=True,
+            overlay=None,
+            project_root=tmp_path / "project",
+        )
+
+    run()
+    text = path.read_text(encoding="utf-8")
+    assert text.startswith("\ufeff")
+    assert json.loads(text.removeprefix("\ufeff"))["theme"] == "dark"
+    before = path.read_bytes()
+    run()
+    assert path.read_bytes() == before
+
+
 @pytest.mark.parametrize(
     ("document", "clause"),
     [(parserlimits.NESTED, NESTED), ('{"n": ' + parserlimits.LONG_NUMBER + "}", LONG_NUMBER)],
@@ -623,7 +656,7 @@ def test_rerunning_overlay_create_over_an_existing_overlay_creates_nothing_and_n
     )
     assert not any(argv[:3] == ["gh", "repo", "create"] for argv in runner.calls)
     assert not any(argv[:3] == ["gh", "repo", "view"] for argv in runner.calls)
-    text = " ".join(str(note) for note in vars(report).values())
+    text = " ".join(str(value) for value in vars(report).values() if value is not None)
     assert "None" not in text
     assert "already" in " ".join(report.notes)
     assert overlay_root(machine) == destination

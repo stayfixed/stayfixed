@@ -16,7 +16,9 @@ in `/`-separated segments. A name inside it prints as itself, so ordinary output
 
 A third bound is on a name's length rather than its content: `clipped` prints a name through
 `quoted` and, past `CLIPPED_CHARS`, only its start and its length. It is for a refusal naming
-something nothing upstream bounds in length, a TOML key, a label or a group.
+something nothing upstream bounds in length, a TOML key, a label or a group, and for a line naming
+values that all lie outside the grammar, where `printable` would withhold every one: the absolute
+paths `stayfixed trust` lists as the subjects of its approvals.
 """
 
 from __future__ import annotations
@@ -47,8 +49,9 @@ def quoted(name: str) -> str:
 # How many characters of a name a refusal prints before it clips the rest to a count. A named cap
 # (CONTRIBUTING.md#named-caps), and `docs/cli.md` states the number for the refusals that use it
 # (`docs trail`'s stale `[states]` keys and its `[[theme]]` label, the memory store's unresolved
-# groups, and what `answered` quotes from a subprocess for `overlay create`, `overlay
-# publish-template`, `attach` and `setup`), so a change to either is a change to both. `quoted`
+# groups, what `answered` quotes from a subprocess for `overlay create`, `overlay
+# publish-template`, `attach` and `setup`, and the subjects `trust list --all` and `trust revoke`
+# name), so a change to either is a change to both. `quoted`
 # escapes a name and does not bound its length, and a TOML key, a label or a group is bounded in
 # length by nothing, so without this a refusal's line is as long as the repository makes one name.
 # 120 is well past any name an operator would type, and short enough that the start still says

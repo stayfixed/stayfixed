@@ -13,13 +13,16 @@ from pathlib import Path
 
 import pytest
 
+from stayfixed import fsops
 from stayfixed.cli import build_parser, discover_registrars, run
 from stayfixed.overlay.api import MARKETPLACE_MANIFEST, PLUGIN_MANIFEST
 from stayfixed.printed import quoted
 from stayfixed.setup.api import SetupReport
+from stayfixed.setup.machine import SANDBOXED
 from tests.ownerhome import as_owner_home
 from tests.parserlimits import LONG_NUMBER, NESTED
 from tests.runners import Recorder
+from tests.sandboxed import refuse_writes_under
 
 
 def invoke(argv: list[str]) -> int:
@@ -357,3 +360,56 @@ def test_setup_whose_named_machine_file_cannot_be_written_says_nothing_of_runnin
     err = capsys.readouterr().err
     assert f"{named.parent} cannot be written" in err
     assert "--machine" not in err
+
+
+@pytest.mark.parametrize("refused", ["machine-file", "settings-file", "settings-directory"])
+def test_setup_from_a_sandboxed_shell_says_a_person_must_run_it(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    refused: str,
+) -> None:
+    # An agent's sandbox refuses every write outside the working directory, answering the write
+    # `EPERM` and `os.access` no (`trust.boundary`'s docstring and `setup.run._not_writable` say
+    # how each was measured). Whichever of setup's writes meets it -- the machine file, the user
+    # settings file, or the question asked of the settings directory before the first write --
+    # setup ends in exit 2 and its constant sentence, never a traceback. Mutations (`mutations/`'s
+    # "setup says nothing of the sandbox that refused its machine file" -> `machine-file` fails
+    # naming the directory, exit 1; "setup says nothing of the sandbox that refused its settings
+    # file" -> `settings-file` refuses naming the file; "setup reads a directory the sandbox
+    # refuses as one its mode refuses" -> `settings-directory` says the directory is not
+    # writable).
+    home, machine = tmp_path / "home", tmp_path / "machine" / "config.toml"
+    (home / ".claude").mkdir(parents=True)
+    monkeypatch.setattr("stayfixed.setup.commands.subprocess_runner", lambda: Recorder())
+    met: list[Path] = []
+    if refused == "machine-file":
+        met = refuse_writes_under(monkeypatch, machine.parent)
+    elif refused == "settings-file":
+        met = refuse_writes_under(monkeypatch, home / ".claude")
+    else:
+        real = fsops.creatable
+        monkeypatch.setattr(
+            fsops, "creatable", lambda path: path.parent != home / ".claude" and real(path)
+        )
+    argv = ["setup", "--preset", "recommended", "--yes", "--home", str(home)]
+    assert invoke([*argv, "--machine", str(machine)]) == 2
+    assert capsys.readouterr().err == f"stayfixed: refused: {SANDBOXED}\n"
+    assert (
+        met
+        == {
+            "machine-file": [machine],
+            "settings-file": [home / ".claude" / "settings.json"],
+            "settings-directory": [],
+        }[refused]
+    )
+    assert not (home / ".claude" / "settings.json").exists()
+
+
+def test_setup_s_sandbox_sentence_says_what_a_person_in_their_own_terminal_meets() -> None:
+    # As the trust record's: the sandbox's answer is also a read-only mount's or an immutable
+    # flag's, met by a person already in their own terminal. Mutation (`mutations/`'s "setup's
+    # sandbox sentence sends a person in their own terminal there again"): it ends at the sandbox.
+    from stayfixed.trust.api import OWN_TERMINAL_TOO
+
+    assert SANDBOXED.endswith(OWN_TERMINAL_TOO)

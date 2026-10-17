@@ -13,9 +13,14 @@ from stayfixed.harnesses import Harness, project_root_variables
 from stayfixed.hooks.api import Decision, Handler, HookEvent, HookResult, Policy, Sink, first_set
 
 if TYPE_CHECKING:
-    from stayfixed.config.schema import Config
+    from stayfixed.config.session import SessionConfig
 
 TRUNCATION_MARK = "\n[stayfixed: context truncated to the platform cap]"
+# The one event whose answer a person sees as well as the model, and so the one a session's notice
+# is rendered on. Measured on Claude Code 2.1.296 (macOS, 2026-10-16): a terminal shows the person a
+# `SessionStart` hook's `systemMessage`, and the model reads its `additionalContext` and never its
+# `systemMessage`; the desktop app's display was not observed.
+NOTICE_EVENT = "SessionStart"
 
 
 @dataclass(frozen=True)
@@ -73,7 +78,9 @@ def read_event(payload: dict[str, Any], env: Mapping[str, str]) -> HookEvent:
     )
 
 
-def _clamp(render: Callable[[str, str], str], event_name: str, context: str, cap: int) -> str:
+def _clamp(
+    render: Callable[[str, str, str], str], event_name: str, context: str, notice: str, cap: int
+) -> str:
     """Fit the emitted string, envelope included, inside the platform's per-hook cap.
 
     Claude Code caps each hook's output string at 10,000 characters — `additionalContext`,
@@ -84,20 +91,26 @@ def _clamp(render: Callable[[str, str], str], event_name: str, context: str, cap
     so the largest prefix that still fits, as `render` (the detected harness's) shapes it, is
     searched for rather than computed. A cap that leaves no room even for the empty envelope
     emits nothing: an over-cap string would be replaced by a preview anyway.
+
+    `notice` is rendered whole on every try, so it is counted inside the cap and never cut; the
+    context it also opens loses its tail first. A cap too small for the notice drops it before
+    the envelope.
     """
     best: str | None = None
     low, high = 0, min(len(context), cap)  # a kept character costs at least one of the cap
     while low <= high:
         keep = (low + high) // 2
-        stdout = render(event_name, context[:keep] + TRUNCATION_MARK)
+        stdout = render(event_name, context[:keep] + TRUNCATION_MARK, notice)
         if len(stdout) <= cap:
             best, low = stdout, keep + 1
         else:
             high = keep - 1
     if best is not None:
         return best
-    bare = render(event_name, "")
-    return bare if len(bare) <= cap else ""
+    for bare in (render(event_name, "", notice), render(event_name, "", "")):
+        if len(bare) <= cap:
+            return bare
+    return ""
 
 
 class _UnrecognisedDecision(Exception):
@@ -144,7 +157,7 @@ def _failure(exc: BaseException) -> tuple[str, dict[str, object]]:
 def dispatch(
     event: HookEvent,
     handlers: list[Handler],
-    config: Config | None,
+    session: SessionConfig,
     *,
     harness: Harness,
     sink: Sink,
@@ -158,6 +171,13 @@ def dispatch(
     deny. `sink` and `harness` carry no default on purpose: a caller that has no durable sink
     must say so with `NullSink()` and inherit its forgetfulness, and one that has not asked which
     harness it runs under must say which it means, rather than acquire either by omission.
+
+    `session` is what every handler is handed, and its notice is what the session's configuration
+    could not give it (`SessionConfig.warnings`), rendered on `NOTICE_EVENT` alone, through both
+    of the harness's channels: the person's (`systemMessage`) and, ahead of every handler's
+    context, the model's. It counts inside `cap` like the context. On every other event it is
+    ignored: a notice on each tool call would repeat itself, and a refused call's stderr is the
+    model's alone.
     """
     contexts: list[str] = []
     reasons: list[str] = []
@@ -182,7 +202,7 @@ def dispatch(
                 else copy.deepcopy(event.tool_input)
             )
             view = replace(event, tool_input=tool_input_view, raw=raw_view)
-            result = handler.run(view, config)
+            result = handler.run(view, session)
             # Consuming the result belongs inside this `try`: reading `.context` off whatever a
             # handler actually returned used to raise out of `dispatch` entirely, so one later
             # handler's malformed return destroyed an earlier handler's deny.
@@ -239,9 +259,11 @@ def dispatch(
     if refuse:
         return Outcome(2, "", "stayfixed: refused: " + "; ".join(reasons) + "\n", "deny")
     stderr = ("stayfixed: " + "; ".join(reasons) + "\n") if reasons else ""
-    context = "\n\n".join(contexts)
-    stdout = harness.render(event.name, context)
+    shown = session.warnings if event.name == NOTICE_EVENT else ()
+    context = "\n\n".join((*shown, *contexts))
+    message = "\n".join(shown)
+    stdout = harness.render(event.name, context, message)
     if cap is not None and len(stdout) > cap:
-        stdout = _clamp(harness.render, event.name, context, cap)
+        stdout = _clamp(harness.render, event.name, context, message, cap)
         sink.diagnostic({"event": event.name, "handler": "*", "error": "context-truncated"})
     return Outcome(0, stdout, stderr, None)

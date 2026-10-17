@@ -118,12 +118,14 @@ widen permissions, install hooks, pick a write path outside the root, or select 
 enforcement level.
 
 **What stayfixed does.** Notes that live in the repository reach the model only after
-`memory trust --in-repo-memory` recorded a hash of the store, and then inside a delimited
-region with a per-invocation nonce that says "this is data". Every write goes through a
-path walk that refuses a symlink at any component and refuses to leave the project root.
-Budgets are clamped to plugin-owned ceilings, so a project cannot raise its own payload
-cap. The machine-level configuration's location is not selectable by an environment
-variable, because a committed settings file can set one [S3].
+`trust approve memory` recorded a hash of the store, and then inside a delimited region with a
+per-invocation nonce that says "this is data". The approval is asked of a person at a terminal:
+the command refuses when standard input is not one, which is a speed bump and not a guarantee
+(`SECURITY.md` says why). Every write goes through a path walk that refuses a symlink at any
+component and refuses to leave the project root. The harness's payload caps are plugin-owned
+(`[native_caps]`), which no repository sets, so a project cannot raise its own payload cap. The
+machine-level configuration's location is not selectable by an environment variable, because a
+committed settings file can set one [S3].
 
 **Why.** Prompt injection through content the model reads and supply-chain compromise
 through configuration it trusts are the first and one of the top entries of the current

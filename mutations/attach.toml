@@ -1649,8 +1649,8 @@ reddens = [
 [[mutation]]
 name = "doctor compares a worktree's harness link with that worktree's own tree"
 file = "src/stayfixed/attach/doctor.py"
-before = "        targets = harness_targets(context.root, owner, context.config)"
-after = "        targets = harness_targets(context.root, context.root, context.config)"
+before = "        targets = harness_targets(context.root, owner, _project(context))"
+after = "        targets = harness_targets(context.root, context.root, _project(context))"
 reddens = [
   "tests/attach/test_doctor.py::test_a_normally_attached_linked_worktree_is_ok",
 ]
@@ -1765,16 +1765,8 @@ reddens = [
 [[mutation]]
 name = "attach asks the overlay about the store the ledger names"
 file = "src/stayfixed/attach/doctor.py"
-before = '''            binding: Binding | None = binding_for(
-                context.root, context.config, machine=context.machine
-            )'''
-after = '''            from pathlib import Path
-
-            from stayfixed.attach.binding import read_binding
-            from stayfixed.attach.write import ledger
-
-            store = Path(ledger(context.root).store)
-            binding = read_binding(context.root, store=store, machine=context.machine)'''
+before = "                else binding_for(context.root, context.config, machine=context.machine)"
+after = '                else __import__("stayfixed.attach.binding", fromlist=["read_binding"]).read_binding(context.root, store=__import__("pathlib").Path(__import__("stayfixed.attach.write", fromlist=["ledger"]).ledger(context.root).store), machine=context.machine)'
 reddens = [
   "tests/attach/test_doctor.py::test_only_this_machines_state_turns_an_entry_the_ledger_records_into_a_warning[forged-foreign-store]",
   "tests/attach/test_doctor.py::test_only_this_machines_state_turns_an_entry_the_ledger_records_into_a_warning[owner-moved-store]",
@@ -3396,4 +3388,90 @@ after = "    except OSError:  # trust-record-unreadable\n"
 reddens = [
   "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[trust-record-unreadable]",
   "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[link-trust-record-unreadable]",
+]
+
+# The overlay status is about the project, and silent without its configuration.
+[[mutation]]
+name = "the overlay status judges with no project configuration"
+file = "src/stayfixed/attach/hooks.py"
+before = "    if config is None or event.project_root is None or config.memory.mode != OVERLAY_MODE:"
+after = "    if event.project_root is None or config.memory.mode != OVERLAY_MODE:"
+reddens = [
+  "tests/hooks/test_floor.py::test_project_handlers_speak_on_a_file_and_stay_silent_without_one[overlay_status]",
+]
+
+# With no project configuration the `attached` row skips in the core's words, and the claims
+# `hook-entries` asks answer what `common/` grants, since a binding needs the project's name.
+[[mutation]]
+name = "the attached row reads a configuration that is not there"
+file = "src/stayfixed/attach/doctor.py"
+before = "    if config is None:\n        # Which store, which tree"
+after = "    if False:\n        # Which store, which tree"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_repository_without_a_configuration_skips_only_the_rows_that_read_one",
+]
+
+[[mutation]]
+name = "the attach claims ask a binding of no project configuration"
+file = "src/stayfixed/attach/doctor.py"
+before = "                None\n                if context.config is None\n                else binding_for("
+after = "                None\n                if False\n                else binding_for("
+reddens = [
+  "tests/doctor/test_floor_report.py::test_an_attached_checkout_whose_stayfixed_toml_is_gone_still_has_its_claims_asked",
+]
+
+# `attach`'s sentences that name the store's approval ask for the person at the machine and tell an
+# agent to stop.
+[[mutation]]
+name = "attach asks no person for the store's approval"
+file = "src/stayfixed/attach/write.py"
+before = '_APPROVE = PERSON_RUNS.format(command="stayfixed trust approve memory")'
+after = '_APPROVE = "run `stayfixed trust approve memory` in a terminal"'
+reddens = [
+  "tests/trust/test_commands.py::test_every_sentence_that_names_the_memory_approval_asks_for_the_person",
+  "tests/attach/test_commands.py::test_a_harness_link_that_waits_for_approval_is_said_with_the_way_out",
+]
+
+# Attach says the refresh of the store's approval was refused, not only that the approval
+# lapsed.
+[[mutation]]
+name = "attach says nothing of a refresh the sandbox refused"
+file = "src/stayfixed/attach/write.py"
+before = "    if links.refresh_refused:"
+after = "    if False:"
+reddens = [
+  "tests/attach/test_write.py::test_an_approval_attach_could_not_carry_is_said_as_what_happened[sandboxed]",
+]
+
+[[mutation]]
+name = "attach drops the refresh the sandbox refused on its way out of the checkouts"
+file = "src/stayfixed/attach/write.py"
+before = "    return Links(created, revoked, withheld=links.withheld, refresh_refused=links.refresh_refused)"
+after = "    return Links(created, revoked, withheld=links.withheld, refresh_refused=False)"
+reddens = [
+  "tests/attach/test_write.py::test_an_approval_attach_could_not_carry_is_said_as_what_happened[sandboxed]",
+]
+
+# A machine file that does not load is a fact about this machine's inputs that is neither "no
+# overlay recorded" nor "an overlay that could not be asked": the `attached` row says the file could
+# not be read, and leaves the remedy to the `preferences` row, red on the same file.
+[[mutation]]
+name = "the attached row reads a machine file nobody could read as an overlay that could not be asked"
+file = "src/stayfixed/attach/doctor.py"
+before = "    if isinstance(context.overlay_root, MachineUnread):\n        return MACHINE_UNREAD"
+after = "    if False:\n        return MACHINE_UNREAD"
+reddens = [
+  "tests/attach/test_doctor.py::test_a_ledger_on_a_machine_whose_file_does_not_load_skips_in_words_of_its_own",
+]
+
+# Whether the overlay grants an entry is asked only of a root the machine file records: one nobody
+# could read is a source that could not be asked, a warning, and never the overlay root asked for
+# what it grants.
+[[mutation]]
+name = "hook-entries asks the overlay root of a machine file nobody could read"
+file = "src/stayfixed/attach/doctor.py"
+before = "    if isinstance(overlay, MachineUnread):\n        # Not \"nothing records a source\""
+after = "    if False:\n        # Not \"nothing records a source\""
+reddens = [
+  "tests/attach/test_doctor.py::test_hook_entries_asks_no_overlay_of_a_machine_file_that_does_not_load",
 ]

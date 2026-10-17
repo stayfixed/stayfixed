@@ -31,7 +31,7 @@ import argparse
 from pathlib import Path
 
 from stayfixed.areas import SubParsers
-from stayfixed.command import ATTACH_CHECK_HELP, common_flags
+from stayfixed.command import ATTACH_CHECK_HELP, command_owner, common_flags
 from stayfixed.config.machine import override_is_honoured
 from stayfixed.errors import Refusal
 from stayfixed.result import Result
@@ -76,7 +76,7 @@ def run_attach(args: argparse.Namespace) -> Result:
     if args.check:
         # `None`, for the reason `attach` below is handed it: the real command's home is the
         # machine owner's own.
-        return check(root, store=store, machine=machine, home=None)
+        return check(root, store=store, machine=machine, home=None, owner=command_owner(machine))
     attached = attach(
         root,
         store=store,
@@ -88,6 +88,7 @@ def run_attach(args: argparse.Namespace) -> Result:
         # to say which home and which runner it means, and the real command's answer is the
         # machine owner's own.
         home=None,
+        owner=command_owner(machine),
     )
     data = {
         # Counts and not paths, which is the rule rather than a preference: every one of these
@@ -116,7 +117,10 @@ def run_attach(args: argparse.Namespace) -> Result:
 def run_detach(args: argparse.Namespace) -> Result:
     from stayfixed.attach.write import detach
 
-    removed = detach(Path(args.root).resolve(), machine=_machine_argument(args.machine), home=None)
+    machine = _machine_argument(args.machine)
+    removed = detach(
+        Path(args.root).resolve(), machine=machine, home=None, owner=command_owner(machine)
+    )
     data = {
         # Counts and not the strings, which is the same ruling `attach.check` makes about
         # `already_present` and this module makes about `project.name` two functions up — and it

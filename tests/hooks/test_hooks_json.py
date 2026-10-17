@@ -136,6 +136,19 @@ def test_only_pre_tool_use_entries_may_be_closed() -> None:
             assert event == "PreToolUse"
 
 
+def test_the_closed_entry_blocks_when_it_cannot_answer_and_no_open_one_does() -> None:
+    # A hook past its timeout, or one that cannot start, never reaches the wrapper's exit mapping,
+    # and Claude Code then lets the tool call through: the fail-open the closed guard exists to
+    # deny. `onFailure: "block"` (Claude Code 2.1.295) blocks it instead. An open entry blocking
+    # on its failure would refuse what its policy says to survive. Mutation (`mutations/`'s "the
+    # closed PreToolUse entry lets a hook that cannot answer through"): `"continue"` reddens.
+    closed = [entry for _, _, entry in _entries() if entry["command"].split()[1] == "closed"]
+    assert closed, "no closed entry, so the assertion below measures nothing"
+    assert {entry.get("onFailure") for entry in closed} == {"block"}
+    opened = [entry for _, _, entry in _entries() if entry["command"].split()[1] == "open"]
+    assert opened and all("onFailure" not in entry for entry in opened)
+
+
 def test_no_entry_is_async() -> None:
     # Codex async hooks cannot block. Unmeasured by the spikes — which is a reason to
     # hold the line in the file, not a reason to test it against the platform.

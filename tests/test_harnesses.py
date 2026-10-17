@@ -162,7 +162,7 @@ TEXT = Harness(
     settings=(),
     local_settings=(),
     project_dir_env=None,
-    render=lambda event, context: f"[{event}] {context}",
+    render=lambda event, context, notice: f"{notice}[{event}] {context}",
     reach=CLAUDE.reach,
     plugin_root_env="TEXT_PLUGIN_ROOT",
 )
@@ -176,11 +176,11 @@ TEXT = Harness(
     ids=["empty", "plain", "deny-shaped"],
 )
 def test_no_harness_renders_a_decision(harness: Harness, event: str, context: str) -> None:
-    # A rendering is context in an envelope, and a context shaped like a decision is still a
-    # string inside it, never a key of the envelope. Mutation (declared, on `harnesses`): the
-    # canonical render adds `"permissionDecision": "allow"` beside `hookEventName` -> every
+    # A rendering is context in an envelope, and a context or a notice shaped like a decision is
+    # still a string inside it, never a key of the envelope. Mutation (declared, on `harnesses`):
+    # the canonical render adds `"permissionDecision": "allow"` beside `hookEventName` -> every
     # Claude Code and Codex case reddens, since both render through the same function.
-    assert not _decisions(harness.render(event, context), context)
+    assert not _decisions(harness.render(event, context, context), context)
 
 
 def test_every_harness_renders_through_the_canonical_render() -> None:
@@ -223,11 +223,11 @@ def test_the_decision_check_finds_a_decision_in_either_shape() -> None:
     assert _decisions(json.dumps({"hookSpecificOutput": {"decision": "block"}}), "") == {"decision"}
     assert _decisions(json.dumps(["permissionDecision"]), "") == {"permissionDecision"}
     assert _decisions("continue: false\n[PreToolUse] a note", "a note") == {"continue"}
-    assert _decisions(TEXT.render("PreToolUse", deny), deny) == set()
+    assert _decisions(TEXT.render("PreToolUse", deny, ""), deny) == set()
 
 
 def test_every_harness_states_every_surface() -> None:
-    # The README's table and `doctor`'s `codex-trust` row both read a harness's reach, and a
+    # The README's table and `doctor`'s `codex-hooks` row both read a harness's reach, and a
     # surface a value leaves out is one neither can say anything true about: the table would
     # lose a cell and the row would stop naming what is not verified. Mutation (declared, on
     # `harnesses`): drop the session-notices row from Codex's reach -> this reddens.
@@ -295,7 +295,7 @@ LISTED = {
         "(`attach.permissions`, `attach.write`)",
     ),
     ("src/stayfixed/attach/permissions.py", "codex"): (2, "(`attach.permissions`, `attach.write`)"),
-    ("src/stayfixed/attach/write.py", "claude"): (3, "(`attach.permissions`, `attach.write`)"),
+    ("src/stayfixed/attach/write.py", "claude"): (4, "(`attach.permissions`, `attach.write`)"),
     ("src/stayfixed/attach/write.py", "codex"): (4, "(`attach.permissions`, `attach.write`)"),
     ("src/stayfixed/hooks/api.py", "claude"): (1, "`hooks.api.DATA_ROOT_VARIABLES`"),
     ("src/stayfixed/hooks/api.py", "plugin_data"): (2, "`hooks.api.DATA_ROOT_VARIABLES`"),
@@ -309,6 +309,7 @@ LISTED = {
         "names `CLAUDE_PLUGIN_ROOT` in the remedy",
     ),
     ("src/stayfixed/doctor/checks.py", "plugin_data"): (1, "`${CLAUDE_PLUGIN_DATA}` in the"),
+    ("src/stayfixed/trust/boundary.py", "claude"): (1, "`trust.boundary` spells"),
 }
 # The mentions that are no fact the code acts on, each with how many constants make it and why.
 PROSE = {
@@ -320,6 +321,13 @@ PROSE = {
     ("src/stayfixed/doctor/entries.py", "claude"): 2,
     # The refusal for a home directory whose `.claude` the link walk cannot follow.
     ("src/stayfixed/memory/worktree.py", "claude"): 1,
+    # The sentences said where Claude Code's sandbox refused a write to the machine directory or
+    # the user settings: each names the harness to a person, and none is a fact the code acts on.
+    ("src/stayfixed/memory/commands.py", "claude"): 1,
+    ("src/stayfixed/setup/machine.py", "claude"): 1,
+    ("src/stayfixed/trust/record.py", "claude"): 1,
+    # The advice `setup --approval-boundary` prints, which names the harness whose settings it is.
+    ("src/stayfixed/setup/commands.py", "claude"): 1,
     # The commit-trailer guard's names of tools that sign commits as authors: the agent as an
     # author of a commit, not as a harness stayfixed runs under.
     ("src/stayfixed/guards/commit.py", "claude"): 2,

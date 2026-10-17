@@ -23,13 +23,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from stayfixed import fsops
-from stayfixed.config.machine import machine_config_path
 from stayfixed.config.schema import Config
-from stayfixed.errors import Failure, Refusal
-from stayfixed.fsops import write_atomically
-from stayfixed.jsonobject import json_object
+from stayfixed.errors import Refusal
 from stayfixed.memory.index import INDEX_NAME
 from stayfixed.memory.store import Store, inside_project
+from stayfixed.trust.api import UnreadableTrust, recorded, refresh
 
 DELIMITER = "<<<stayfixed:repository-data"
 _LEAD = (
@@ -63,72 +61,22 @@ def markers(nonce: str) -> tuple[str, str]:
     return f"{DELIMITER}:{nonce}>>>", f"{DELIMITER}:end:{nonce}>>>"
 
 
+# The refusal of a body that forges the marker. Fixed, and naming nothing the body holds: the body
+# is repository-authored, and the refusal reaches a terminal and a hook's output.
+UNSAFE_NOTE = "a note body contains the repository-data marker; refusing to inject it"
+
+
 def wrap(text: str, nonce: str) -> str:
     if DELIMITER in text:
-        raise UnsafeNote("a note body contains the repository-data marker; refusing to inject it")
+        raise UnsafeNote(UNSAFE_NOTE)
     begin, end = markers(nonce)
     return f"{begin}\n{_LEAD}\n\n{text}\n{end}"
 
 
-def _trust_file(machine: Path | None) -> Path | None:
-    """The record `may_inject` consults, beside the machine configuration file.
-
-    `machine=None` resolves it through `machine_config_path`, which reads **neither** variable
-    that could name that file. It gated only `STAYFIXED_CONFIG` once, and
-    `XDG_CONFIG_HOME` beside it chose this very file for direnv, mise or a devcontainer applying
-    a file the clone commits (Claude Code's `env` block cannot set it), wherever no `--machine`
-    was threaded — the gate the security record of this module rests on, bypassed by the
-    variable three lines below it. `store.py`'s module docstring states what that exposure was
-    and what bounded it. `HOME` chose it the same way until the home directory, too, came from
-    the password database off a terminal.
-
-    `None` for a machine with no such home (`config.machine.owner_home`): it holds no record,
-    so nothing is trusted, and `record` refuses to invent a place for one.
-    """
-    base = machine_config_path() if machine is None else machine
-    return None if base is None else base.parent / "trust.json"
-
-
-NO_HOME = (
-    "the password database lists no home directory for this user, so there is no trust record "
-    "to write; pass --machine PATH to keep one beside that file, which no hook reads"
-)
-
-
-def record_path(machine: Path | None) -> Path | None:
-    """Where this machine's trust record is, for a command that says where it wrote."""
-    return _trust_file(machine)
-
-
-def _writable_trust_file(machine: Path | None) -> Path:
-    path = _trust_file(machine)
-    if path is None:
-        raise Failure(NO_HOME)
-    return path
-
-
-def _write_record(machine: Path | None, raw: dict[str, str]) -> None:
-    """Write the record, and fail naming its directory when that cannot be written.
-
-    With no `--machine` the directory is under the home the password database records, which a
-    system user's entry often names as a directory that is not there or not theirs. There is no
-    second place to put it that a hook would read, so the failure says which directory it was
-    rather than ending as an internal error about a temporary file.
-    """
-    path = _writable_trust_file(machine)
-    try:
-        write_atomically(path, json.dumps(raw, indent=2, sort_keys=True) + "\n")
-    except OSError as exc:
-        where = (
-            "it is under the home the password database records for this user, which is the "
-            "only place a hook reads a trust record"
-            if machine is None
-            else "it is beside the machine configuration file --machine names"
-        )
-        raise Failure(
-            f"{path.parent} cannot be written ({fsops.said(exc)}), so the trust record cannot be "
-            f"kept there; {where}"
-        ) from None
+# The kind the machine's trust record (`stayfixed.trust`) keeps a store's approval under, its
+# subject the store's resolved path (`_path_key`). `0.3.0`'s flat record reads as this kind, so it
+# is the one spelling every approval made before the record was versioned answers to.
+MEMORY = "memory"
 
 
 @dataclass(frozen=True)
@@ -163,7 +111,7 @@ def _content_digest(path: Path) -> str:
     `notes.walk` deliberately quarantines this class of file rather than letting one of them
     cost the whole store. An unguarded `read_bytes` here takes `store_digest`, `may_inject` and
     `record` down together, so one committed dangling `gone.md` symlink turns every
-    trust-dependent command into exit 2 — `memory trust`, the command that would recover the
+    trust-dependent command into exit 2 — `trust approve memory`, the command that would recover the
     state, included.
     """
     try:
@@ -219,12 +167,12 @@ def _config_digest(config: Config) -> str:
     `refresh_if_trusted` because stayfixed itself authored that write. The rule that a changed
     hash re-prompts has to mean the hash covers what actually reaches the file.
 
-    Only this field, not the whole file. Folding `stayfixed.toml` in wholesale would revoke
-    memory trust on every unrelated edit — a budget, a branch name — and a prompt that fires
+    Only this field, not the whole file. Folding `stayfixed.toml` in wholesale would lapse
+    a store's approval on every unrelated edit — a budget, a branch name — and a prompt that fires
     for everything trains the owner to answer it without looking, which is worse than the hole
     it closes. Every other repository-controlled input to what the store yields already lands
     in the digest by another route: `memory.groups` and `paths.memory` decide which files
-    `_files` walks and what `_key` names.
+    `_files` walks and what `store_key` names.
 
     JSON for the framing, so the list `["a/b", "c"]` cannot collide with `["a/b\0c"]`, and a
     fixed-width hex digest out, so `_entry`'s 128-byte-per-entry parse still holds.
@@ -282,7 +230,8 @@ def store_digest(store: Store, config: Config) -> str:
     return _digest_of(_read(store, config))
 
 
-def _key(store: Store) -> str:
+def store_key(store: Store) -> str:
+    """The store's subject in the machine's trust record, under kind `MEMORY`."""
     return _path_key(store.path)
 
 
@@ -294,63 +243,24 @@ def _path_key(path: Path) -> str:
     return str(path.resolve())
 
 
-class UnreadableTrustRecord(Refusal):
-    """`trust.json` exists and does not parse as the record it is supposed to be.
-
-    A refusal and not a `Failure`: every caller of `state` and `may_inject` reads a `False` as
-    "not approved", and a corrupt file must never be answered that way twice — once by
-    reporting the store untrusted, and again by the next `record` overwriting what could not be
-    read. Exit 2 is the code a caller may not read as permission.
-    """
+# `trust.json` exists and is not a record this stayfixed reads: the machine's trust record's own
+# refusal (`trust.record.UnreadableTrust`), under the name this area has always published it by.
+UnreadableTrustRecord = UnreadableTrust
 
 
 def _recorded(machine: Path | None) -> dict[str, str]:
-    """Every approval on this machine, or `UnreadableTrustRecord` when the file is broken.
+    """Every store approval on this machine, store path to digest, or `UnreadableTrustRecord`
+    when the record is there and cannot be read.
 
-    **Absent and unreadable are not the same answer.** They were: an absent file, an
-    unreadable one, a syntax error and a non-dict payload all returned `{}`. `record` then
-    read `{}`, added one key and wrote the result back — so one stray byte collapsed the
-    machine-wide trust record and the very next `memory trust` persisted the collapse. The
-    owner was told their store was untrusted, with no hint the file was broken, re-ran the
-    command they were told to run, and lost every other project's approval permanently.
-
-    This is the security record of a tool whose whole gate rests on it, so it fails loudly
-    rather than quietly empty. An absent file still answers `{}`: never approving anything is
-    the ordinary state of a fresh machine, and it is the state `record` is for.
-
-    The per-key filter stays, and is deliberately not an error: a value that is not a string
-    is a key this version cannot interpret rather than a file it cannot read, and dropping one
-    costs that project a re-approval instead of costing every project its record.
+    **Absent and unreadable are not the same answer**, and the machine's record
+    (`stayfixed.trust`) keeps them apart: one stray byte read as `{}` once collapsed every
+    project's approval on the next approval. An absent file still answers `{}`.
     """
-    path = _trust_file(machine)
-    if path is None or not fsops.is_file(path):
-        return {}
-    try:
-        text = path.read_text(encoding="utf-8")
-    except OSError as exc:
-        raise UnreadableTrustRecord(
-            f"{path} cannot be read ({fsops.said(exc)}); refusing to answer about trust or to "
-            "overwrite it"
-        ) from exc
-    except UnicodeDecodeError:
-        raise UnreadableTrustRecord(
-            f"{path} is not UTF-8 text; it holds every project's approval on this machine, so "
-            f"nothing here will overwrite it — repair or delete it"
-        ) from None
-    # Through `jsonobject`, whose parser-limit arms are what this reader lacked: a record nested
-    # past the parser or holding an integer longer than it converts is valid JSON that
-    # `json.loads` meets with no `JSONDecodeError`, and it ended `memory trust` and the gate in an
-    # internal error. Each of its sentences is this record's refusal, with the record's reason.
-    raw = json_object(text, str(path), error=_refused_record)
-    return {k: v for k, v in raw.items() if isinstance(v, str)}
-
-
-def _refused_record(reason: str) -> UnreadableTrustRecord:
-    """The refusal for a `trust.json` that does not parse as the record, `reason` first."""
-    return UnreadableTrustRecord(
-        f"{reason}; it holds every project's approval on this machine, so nothing here will "
-        f"overwrite it — repair or delete it"
-    )
+    return {
+        subject: approval.digest
+        for (kind, subject), approval in recorded(machine).items()
+        if kind == MEMORY
+    }
 
 
 def approval_recorded(path: Path, machine: Path | None) -> bool:
@@ -376,15 +286,8 @@ def require_readable_record(machine: Path | None) -> None:
 
 def state(store: Store, config: Config) -> TrustState:
     current = store_digest(store, config)
-    recorded = _recorded(store.machine).get(_key(store))
+    recorded = _recorded(store.machine).get(store_key(store))
     return TrustState(trusted=recorded == current, recorded=recorded, current=current)
-
-
-def record(store: Store, config: Config) -> TrustState:
-    raw = _recorded(store.machine)
-    raw[_key(store)] = store_digest(store, config)
-    _write_record(store.machine, raw)
-    return state(store, config)
 
 
 @dataclass(frozen=True)
@@ -394,17 +297,20 @@ class Snapshot:
     Taken at the top of a command, *before* it writes anything. `entries` is the per-file half
     of `store_digest` kept apart instead of folded together, so `refresh_if_trusted` can carry
     an untouched file's approved digest forward without re-reading the file — which is what
-    keeps a change stayfixed did not author out of the record it re-writes.
+    keeps a change stayfixed did not author out of the record it re-writes. `recorded` is the
+    digest the record held for the store then, which the refresh writes over only while the
+    record still holds it.
     """
 
     trusted: bool
     entries: dict[str, str]
+    recorded: str | None
 
 
 def snapshot(store: Store, config: Config) -> Snapshot:
     read = _read(store, config)
-    recorded = _recorded(store.machine).get(_key(store))
-    return Snapshot(trusted=recorded == _digest_of(read), entries=dict(read))
+    recorded = _recorded(store.machine).get(store_key(store))
+    return Snapshot(trusted=recorded == _digest_of(read), entries=dict(read), recorded=recorded)
 
 
 def refresh_if_trusted(
@@ -424,15 +330,22 @@ def refresh_if_trusted(
     So the digest written here is not a fresh read of the disk. It is built entry by entry:
     a file this command wrote contributes the bytes now on disk, and every other file
     contributes the digest `before` captured — the bytes the owner approved. Anything that
-    arrived on disk between the owner's `memory trust` and this command therefore does **not**
-    ride along: either `before.trusted` is already False and nothing is recorded at all, or the
-    recorded digest simply will not match the next `state()` read and the owner is re-prompted.
+    arrived on disk between the owner's `trust approve memory` and this command therefore does
+    **not** ride along: either `before.trusted` is already False and nothing is recorded at all, or
+    the recorded digest simply will not match the next `state()` read and the owner is re-prompted.
     Fail-closed in both directions, and a file that appeared or vanished without stayfixed
     touching it stops the refresh outright.
 
-    Returns whether a record was written.
+    The record is a second thing that can change while the command runs: the owner may run
+    `trust revoke memory` meanwhile, or approve the store anew. So the write is a compare-and-set
+    (`trust.record.refresh`): it moves the approval only while the record, re-read just before the
+    write, still holds the digest `before` read, and it keeps the time the person approved it,
+    since a refresh is stayfixed's write and approves nothing.
+
+    Returns whether the approval holds over what this command wrote: moved to the new digest, or
+    already at it, which writes nothing (`trust.record.refresh`).
     """
-    if not before.trusted:
+    if not before.trusted or before.recorded is None:
         return False
     touched = {path.resolve() for path in written}
     # The configuration entry is read live rather than carried from `before`, and that is not a
@@ -449,10 +362,13 @@ def refresh_if_trusted(
             return False  # it appeared while the command ran, and stayfixed did not write it
     if not set(before.entries) <= {key for key, _ in expected}:
         return False  # an approved file is gone, and stayfixed does not delete notes
-    raw = _recorded(store.machine)
-    raw[_key(store)] = _digest_of(expected)
-    _write_record(store.machine, raw)
-    return True
+    return refresh(
+        store.machine,
+        MEMORY,
+        store_key(store),
+        expected=before.recorded,
+        digest=_digest_of(expected),
+    )
 
 
 def may_inject(store: Store, config: Config, *, repository_data: bool = False) -> bool:

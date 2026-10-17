@@ -112,15 +112,21 @@ stops and reports the mismatch.
   a configuration file, the machine file or a preset name did not load.
 - An invalid value resets that one key to the preset, with a note; the whole project
   configuration is dropped only when the file is a symlink, is not UTF-8, cannot be read, or is
-  not TOML. A containment failure resets the value, never the session.
+  not TOML. A containment failure resets the value, never the session. Amended on 2026-10-16 by
+  the owner's ruling on wave B's review (the NOTE retry's seam): a key whose reset leaves nothing
+  usable — a required key with no default, or a preset value that itself fails containment in this
+  repository — makes the NOTE load raise one typed refusal naming that key, decided before any key
+  is removed (a key is removed only when a fallback exists), and the session falls back to the floor
+  whole with a warning naming the key; the guards still run on the preset and the owner's layer.
 - `Config` gains no field: `assess.rule` compares configurations field by field.
 - Core never imports a delivery area (`attach`, `memory`, `overlay`); `tests/boundaries/` holds it.
   A kind a delivery area owns reaches core through discovery.
 - Approvals hold against repository bytes and a `git pull`, never against an agent with an
-  unsandboxed shell; the terminal check and the `ask` rules are speed bumps. `attach`, `upgrade`
-  and `--yes` never approve. `revoke` needs no terminal: it is the fail-safe direction.
-- `doctor` is not red on a default install: with nothing configured it warns; the
-  approval-boundary row is red only once the machine holds an approval.
+  unsandboxed shell; the terminal check is a speed bump, and the harness's sandbox is that
+  agent's boundary, which stayfixed does not check (amended 2026-10-17: Task 10's ask rules and
+  doctor row were cut). `attach`, `upgrade` and `--yes` never approve. `revoke` needs no
+  terminal: it is the fail-safe direction.
+- `doctor` is not red on a default install: with nothing configured it warns.
 - Every new assertion ships with the mutation that reddens it, in the group file
   `scripts/mutation_oracle.py` `GROUP_OF` routes its source to (`src/stayfixed/` → `core`;
   `memory/`, `docs/`, `ledger/` → `records`; `setup/`, `overlay/` → `install`; `doctor/` → `doctor`;
@@ -141,7 +147,7 @@ document's mention of `memory trust` to its alias note.
 | The guards have no switch | `README.md`, "What each agent enforces" | 3 | "stayfixed has no switch that turns a guard off" → "the machine owner may switch a session guard off in the machine file; a repository never can" |
 | The guards without configuration | `README.md`, "What each agent enforces"; `docs/cli.md`, the `hook <event>` section | 5 | an unloadable `stayfixed.toml` refuses → the guards run on the preset and the owner's layer; one warning at `SessionStart` |
 | `not-initialised` | `src/stayfixed/doctor/checks.py`; `docs/cli.md`'s `doctor` table | 6 | "the plugin's hooks are silent in this repository" (red) → what works without configuration (warn) |
-| The doctor count | `README.md` (two lines), `docs/cli.md` ("Seventeen checks", "Ten of the seventeen"), `skills/doctor/SKILL.md`, `.github/workflows/smoke.yml` | 6, 10 | seventeen → eighteen (`preferences`, Task 6) → nineteen (`approval-boundary`, Task 10) |
+| The doctor count | `README.md` (two lines), `docs/cli.md` ("Seventeen checks", "Ten of the seventeen"), `skills/doctor/SKILL.md`, `.github/workflows/smoke.yml` | 6 | seventeen → eighteen (`preferences`, Task 6); Task 10's nineteenth row was cut on 2026-10-17 |
 | Budgets are only lowered | `docs/cli.md` ("a project may lower a preset's budget, never raise it"; "A budget is only ever lowered"); `CONTRIBUTING.md` ("preset and never raise") | 7 | → the base branch and the owner raise or lower; a pull request lowers a gate's budget only |
 | The trust record | `README.md`'s machine-files table; `docs/cli.md` | 8 | a flat map of approvals → a versioned record of kinds and subjects, same file |
 | `memory trust` | `README.md`, `docs/cli.md`, `SECURITY.md`, `CONTRIBUTING.md`, `docs/methodology/principles.md`, `src/stayfixed/config/machine.py`, every refusal sentence under `src/stayfixed/` | 9 | `stayfixed memory trust --in-repo-memory` → `stayfixed trust approve memory`, run by a person at a terminal; the alias noted once |
@@ -292,8 +298,10 @@ scratch configuration is removed at Step 6.
 - Produces:
   - `classes.KeyClass(StrEnum)`: `MACHINE_ONLY`, `PREFERENCE`, `SESSION_PARAMETER`,
     `GATE_PARAMETER`, `REPOSITORY_ONLY`, `PLUGIN_OWNED`.
-  - `classes.LayerName(StrEnum)`: `PRESET`, `REPOSITORY`, `COMMON`, `PROJECT`, `MACHINE_SCOPE`,
-    `MACHINE_FILE`; `classes.ORDER: tuple[LayerName, ...]`, lowest first, in that order.
+  - `classes.LayerName(StrEnum)`: `PRESET`, `REPOSITORY`, `OVERLAY_COMMON`, `OVERLAY_PROJECT`,
+    `OVERLAY_MACHINE`, `MACHINE_FILE`; `classes.ORDER: tuple[LayerName, ...]`, lowest first, in
+    that order (amended 2026-10-17: shipped under the `OVERLAY_*` names, since "project" means
+    the repository everywhere else a person reads it).
   - `classes.ALLOWED: Mapping[KeyClass, frozenset[LayerName]]`: `MACHINE_ONLY` — every layer but
     `REPOSITORY`; `PREFERENCE` and `SESSION_PARAMETER` — every layer; `GATE_PARAMETER` and
     `REPOSITORY_ONLY` — `PRESET`, `REPOSITORY` (HS2 adds `PROJECT` for a repository with no file,
@@ -313,11 +321,12 @@ scratch configuration is removed at Step 6.
     the values lowest first. An unknown key raises `KeyError` (the loader removes unknown keys
     before calling it).
 
-  The table, from the spec's decision 12 (a wildcard covers every field of its section):
+  The table, from the spec's decision 12 (a wildcard covers every field of its section). Amended
+  2026-10-17: `setup.*` left the table with Task 10's `[setup]` record.
 
   | Key | Class |
   |---|---|
-  | `personal.*`, `guards.*`, `setup.*` | `MACHINE_ONLY` |
+  | `personal.*`, `guards.*` | `MACHINE_ONLY` |
   | `memory.mode`, `memory.groups`, `memory.index_extra`, `stayfixed.profile` | `PREFERENCE` |
   | `budgets.memory_index_words`, `budgets.startup_rules_words`, `budgets.volatile_notes_words`, `budgets.volatile_ttl_days` | `SESSION_PARAMETER` |
   | `budgets.agents_md_lines`, `budgets.agents_md_words`, `budgets.status_lines`, `budgets.roadmap_prose_lines`, `budgets.roadmap_prose_words`, `stayfixed.state`, `stayfixed.enforced`, `gates.builtin`, `gates.custom`, `ledger.code_roots`, `ledger.evidence_boundary_required_for` | `GATE_PARAMETER` |
@@ -361,8 +370,8 @@ def test_merge_folds_lowest_first(): ...   # merge={"k": lambda a, b: a + b} ove
 
   `schema_keys()` derives keys from `dataclasses.fields`, skipping only the names in `NOT_KEYS`, so a
   scalar field added to a section is a key and fails the first test until it has a class.
-  `MACHINE_FILE_KEYS` is `{"guards.bg_cleanup", "setup.ask_rules", "setup.added_rules"}`; the
-  `personal.*` fields are schema keys already.
+  `MACHINE_FILE_KEYS` is `{"guards.bg_cleanup"}` (amended 2026-10-17: the `setup.*` keys left
+  with Task 10's ask rules); the `personal.*` fields are schema keys already.
 
 - [ ] **Step 2: Run** `uv run pytest tests/config/test_classes.py -q`. Expected: import error.
 - [ ] **Step 3: Implement** the module: the table, the two lookups, `resolve`.
@@ -393,9 +402,11 @@ def test_merge_folds_lowest_first(): ...   # merge={"k": lambda a, b: a + b} ove
     no session budget, overridden by the machine file's `[personal]`, `[guards]` and `[budgets]`
     (session budgets only). Under `NOTE`: an unreadable or non-TOML machine file gives the preset's
     values and `MACHINE_FILE_NOTE`; an unknown key, or a `[budgets]` key outside `SESSION_BUDGETS`,
-    is a note; an invalid value resets that key. Under `REFUSE`, each of those raises
-    `MachineConfigError`, as `_personal` does today. `preset` is the repository's preset name when
-    one loaded, else `recommended`. Task 3 defines `loader.Unknown` (`REFUSE`, `NOTE`); Task 4
+    is a note; an invalid value resets that key. Under `REFUSE`, an unreadable or non-TOML machine
+    file raises `MachineConfigError`, and the rest are notes as under `NOTE`, which a command prints
+    on stderr (`owner.said_on_stderr`); amended 2026-10-17 by the owner, after the final review,
+    from "each of those raises". `preset` is a name this build ships (amended 2026-10-17: the
+    loader and the session hold it to that before they ask). Task 3 defines `loader.Unknown` (`REFUSE`, `NOTE`); Task 4
     gives the project loader its NOTE mode.
 
 - [ ] **Step 1: Write the failing tests:**
@@ -697,8 +708,10 @@ def test_preferences_names_the_layer_and_hides_free_text(tmp_path): ...    # ind
 - Consumes: Task 2's `class_of`, `GATE_BUDGETS`.
 - Produces:
   - `Budgets.effective(name) -> int` — the configured value when set, else the preset's.
-  - `rule._row(key)` asks `class_of` first: `PREFERENCE`, `SESSION_PARAMETER`, `MACHINE_ONLY` and
-    `PLUGIN_OWNED` keys are `_neutral`; a gate budget is `_budget`; `ledger.code_roots` and
+  - `rule._row(key)` asks `class_of` first: `PREFERENCE`, `MACHINE_ONLY` and `PLUGIN_OWNED` keys
+    are `_neutral`; every budget, a gate's or a session's, is `_budget` (amended 2026-10-17 by the
+    owner, after the re-review: a session budget was `_neutral`, so a pull request could raise
+    `memory_index_words` and loosen a base gate running `memory index --check`); `ledger.code_roots` and
     `ledger.evidence_boundary_required_for` are `_additive` (a superset is `TIGHTENED`, equal
     `NEUTRAL`, anything else `_other`); every other key keeps today's row. A pull request may change
     `memory.mode`, a preference.
@@ -710,7 +723,7 @@ def test_the_base_branch_raises_a_gate_budget(tmp_path):
     config = loads(MINIMAL + "[budgets]\nagents_md_lines = 900\n", tmp_path, machine=NONE)
     assert config.budgets.effective("agents_md_lines") == 900          # above the preset's
 def test_a_pull_request_still_only_lowers_a_gate_budget(tmp_path): ...  # REFUSED raised, TIGHTENED lowered
-def test_a_pull_request_may_change_a_session_budget(tmp_path): ...      # NEUTRAL both ways
+def test_a_pull_request_only_lowers_a_session_budget(tmp_path): ...     # REFUSED raised, TIGHTENED lowered
 def test_a_pull_request_may_change_memory_mode(tmp_path): ...           # NEUTRAL
 def test_adding_a_code_root_tightens_and_removing_one_is_refused_while_enforcing(tmp_path): ...
 def test_removing_a_code_root_is_noted_when_nothing_enforces(tmp_path): ...
@@ -896,7 +909,17 @@ def test_no_shipped_document_names_memory_trust_outside_its_alias_note(): ...   
   `.github/workflows/smoke.yml`, `tests/doctor/test_command.py`, `mutations/install.toml`,
   `mutations/doctor.toml`
 
-**Interfaces:**
+**Interfaces:** amended 2026-10-17, after the final review found the `approval-boundary` row
+unsound after a dozen fix rounds at one seam: the owner narrowed the record to what it defends,
+repository bytes, and left the session's own agent to the harness's sandbox. What shipped:
+- Consumes: Task 1's measured deny-rule spelling and managed-settings paths.
+- Produces: `setup --approval-boundary`, which writes nothing and prints the deny rule over the
+  trust record's directory (`trust.boundary.record_deny_rules`), `trust.boundary.SANDBOX_ON` for
+  the user settings and `trust.boundary.ENFORCING_SETTINGS` for the managed settings file
+  (`trust.boundary.managed_named`); it refuses beside `--preset`, `--overlay`, `--settings`,
+  `--yes` or `--git-hooks`. No `ask` rules, no `[setup]` table and no `doctor` row.
+
+As planned, and cut:
 - Consumes: Task 1's measured spellings, keys, precedence and managed-settings paths; Task 9's
   command names; Task 2's `setup.*` class.
 - Produces:
@@ -969,3 +992,159 @@ def test_the_row_skips_without_claude_code(tmp_path): ...
 
 Written by Tasks 1 and 11, and by the controller when a wave's implementer reports (its token total,
 its fix rounds).
+
+### Task 1 — measured 2026-10-16 on Claude Code 2.1.296 (macOS)
+
+Probes ran in an isolated `CLAUDE_CONFIG_DIR=<scratchpad>/a1/cfg`, in a scratch git repository
+`<scratchpad>/a1/proj`, with `claude -p --model haiku --output-format stream-json --verbose`; a probe
+counts as "wrote" when its canary file grew. The canary for Step 1 sits at
+`/Users/Shared/stayfixed-a1/canary/rec`, outside the per-user temp directory, which the sandbox
+leaves writable (a first canary under the scratchpad was written with the sandbox on, so it proved
+nothing and was moved). The interactive steps were run by the owner in a terminal.
+
+**Step 1 — the sandbox and its overrides** (a `printf x >> <canary>` asked of the shell tool, with
+the instruction to retry once with `dangerouslyDisableSandbox` if the sandbox blocks it;
+`--allowedTools Bash`):
+
+| Settings | Wrote | What happened |
+|---|---|---|
+| none | yes | ran unsandboxed |
+| user `sandbox.enabled = true` | yes | blocked, then the agent's retry with `dangerouslyDisableSandbox: true` ran unsandboxed |
+| + the project settings file setting `sandbox.enabled = false` | yes | ran unsandboxed: the project file turns the user's sandbox off |
+| + the local settings file doing the same | yes | ran unsandboxed |
+| + user `sandbox.allowUnsandboxedCommands = false` | yes | the project file still turns the sandbox off |
+| user `enabled` + `allowUnsandboxedCommands = false`, project `enabled = false`, no local file | yes | the same |
+| user `enabled`, project `enabled = false`, `--settings '{"sandbox":{"allowUnsandboxedCommands":false}}'` | no | the project's `false` is ignored; the retry is ignored |
+| user `enabled` + `allowUnsandboxedCommands = false`, no project file | no | blocked; the retry with `dangerouslyDisableSandbox` was ignored |
+
+So `dangerouslyDisableSandbox` is reachable from the agent unless `allowUnsandboxedCommands` is
+false; a repository's project or local file turns a user's `sandbox.enabled = true` off, and a
+user's `allowUnsandboxedCommands = false` does not stop it. Only managed settings or `--settings`
+make the sandbox admin-required, which is when a repository's `false` is ignored — as the
+sandboxing documentation states for 2.1.285 and later. Managed settings live in
+`/Library/Application Support/ClaudeCode/managed-settings.json` (macOS) and
+`/etc/claude-code/managed-settings.json` (Linux and WSL), each with an optional
+`managed-settings.d/` beside it.
+
+**Step 2 — deny rules** (user `sandbox.enabled = true` and one `permissions.deny` rule over
+`<scratchpad>/a1/proj/inner/**`; a shell write and a `Write`-tool write into that directory):
+
+| Rule | Shell write | `Write` tool |
+|---|---|---|
+| `Edit(//<absolute path>/**)` | stopped (the unsandboxed retry was denied) | stopped |
+| `Edit(./inner/**)` | stopped | stopped |
+| `Edit(<absolute path>/**)` (one leading slash) | wrote | wrote |
+| `Write(...)`, any of the three spellings | wrote | wrote |
+
+An `Edit` deny rule covers both the sandboxed shell and the file tools; a `Write` deny rule covers
+neither; a single leading slash anchors at the working directory, so an absolute path needs `//`.
+
+**Step 3 — the `ask` rule** (user `permissions.ask = ["Bash(stayfixed trust approve:*)"]`, fake
+`stayfixed`, `uvx` and `python` first on `PATH`, `--allowedTools Bash`):
+
+| Spelling | `-p` |
+|---|---|
+| `stayfixed trust approve memory` | denied |
+| `script -q /dev/null stayfixed trust approve memory` | denied |
+| `python -m stayfixed trust approve memory` | ran |
+| `uvx stayfixed trust approve memory` | ran |
+| `<absolute path>/stayfixed trust approve memory` | ran |
+| bare, with a project `permissions.allow = ["Bash(stayfixed:*)"]` | denied |
+| bare, with a project `permissions.defaultMode = "bypassPermissions"` | denied |
+| bare, with no `ask` rule (the control) | ran |
+
+Interactively, in a terminal in auto mode, the bare spelling showed the prompt "Ask rule
+Bash(stayfixed trust approve:*) overrides auto mode for this command". So `-p` treats `ask` as
+deny; a project `allow` or `defaultMode` does not lift a user's `ask`; the rule matches its own
+prefix and the `script` wrapper, and every other spelling needs a rule of its own.
+
+**Step 4 — a terminal in the shell tool:** `[ -t 0 ]` is false in the agent's shell tool, both in
+a terminal session ("notty") and on the desktop Code tab.
+
+**Step 5 — the warning's channel** (a `SessionStart` hook printing `{"systemMessage": "x"}`):
+the terminal shows the person `SessionStart:startup says: x` (on 2.1.296 and 2.1.301); in `-p` the
+model, asked to quote its context, did not see a `systemMessage`, and did see a
+`hookSpecificOutput.additionalContext` printed beside it. The desktop Code tab's display of
+`systemMessage` was not observed.
+
+**What Tasks 5 and 10 take from this:**
+
+- Task 5 renders the notice through both channels: `systemMessage` for the person and
+  `additionalContext` for the model, which also covers a surface that does not show a
+  `systemMessage`; both count inside the output cap.
+- Task 10's deny rule is `Edit(//<the trust record's directory>/**)`; its `ask` rules cover each
+  spelling that bypasses the bare one (`python -m stayfixed`, `uvx stayfixed`, the absolute path of
+  the `stayfixed` that `setup` runs as) for `trust approve` and the alias; its reference says `-p`
+  treats `ask` as deny. The `approval-boundary` row reads a repository's project and local files as
+  able to turn the sandbox off unless managed settings make it admin-required.
+
+### Wave B — Tasks 2–4
+
+- Implementer: 359,623 tokens, three commits; one fix round, by a fresh implementer (263,771 tokens)
+  since the first was past 300k, on the review's two Important findings (a committed comment citing
+  a report; 24 tests with no declared mutation) and seven Minor ones; the scoped re-review found all
+  addressed. Reviewer 212,967 tokens, re-reviewer 156,676.
+- Two Minor findings pointed at the same seam — the NOTE retry when a removed key has no usable
+  fallback (`[project] name = "has space"` surfaced as "missing required key(s): name"; a committed
+  `docs` symlink failed the preset's `paths.architecture`). Put to the owner, who chose a typed
+  refusal and a whole fallback at the session (Global Constraints, amended); Task 5 builds it.
+
+### Wave C — Tasks 5–6
+
+- Implementer 709,103 tokens (ended without a hand-back; its report file was complete); one fix
+  round by a fresh implementer (375,367 tokens). The review found the NOTE retry's third failure at
+  one seam (a section that is not a table surfaced as a missing key), so the retry was redesigned
+  rather than patched: a refused key is removed only when a fallback exists, decided before the
+  removal. Also: an oracle survivor wave B's `_preset` change had left, and unbounded key names in
+  a doctor detail the doctor skill relays to the model (now at most three, each clipped). Codex's
+  hooks reference lists `systemMessage` as a common output field, so one render serves both.
+
+### Wave D — Tasks 7–9
+
+- Implementer 483,530 tokens; one fix round (343,092 tokens): the terminal check's refusal now
+  addresses the person and tells an agent to stop instead of naming the bypass; four refusal arms of
+  the version-1 reader gained tests; the alias keeps its old `--json` keys for its one release; the
+  refresh became a compare-and-set that keeps `approved_at`; subjects print as `~/…`.
+
+### Wave E — Task 10
+
+- Implementer 696,924 tokens, then three fix rounds (640,475; 425,517; 278,214). Six automated
+  security passes and three reviews went over the `approval-boundary` row's reading of settings
+  entries. Emulating Claude Code's glob matcher kept failing (a regex built from a settings string,
+  unnormalised paths, live-filesystem calls on settings paths), so the owner ruled the final shape:
+  a widening entry is safe only as a literal absolute or `~/` path outside the project that, as
+  text, neither is, contains nor lies inside the record's directory; everything else is a gap;
+  deny coverage counts setup's spellings byte for byte; no filesystem call and no regex on a
+  settings string. Later rounds added: green only from managed or user settings, with managed
+  `failIfUnavailable`; `filesystem.disabled` and every `excludedCommands` judged; `CLAUDE_CONFIG_DIR`
+  may only worsen the row; stayfixed's own writes from a sandboxed shell fail with a sentence.
+
+### Wave F — Task 11
+
+- Four parallel seats (correctness 372,090 tokens; architecture 300,695; security 280,062;
+  lifecycle 305,808) found no Critical and seven Important issues: commands never read the owner's
+  layer (three seats); a ~200 KB `stayfixed.toml` of bad custom gates pushed the NOTE retry past
+  the hook's 10 s timeout, which Claude Code lets through (now `NOTE_REMOVAL_LIMIT`, one parse);
+  widening keys of the wrong type read as empty; a byte-order mark hid a project settings file;
+  `trust revoke` blocked by a file `trust list` could not load; `CLAUDE_CONFIG_DIR` printed whole;
+  `resolve`'s documented role. One fix wave (716,774 tokens) and one scoped re-review.
+- After a six-seat final review on 2026-10-17 found seven more classes at the `approval-boundary`
+  row's seam and a defective `[setup]` record, the owner narrowed Task 10 (its Interfaces block
+  says what shipped): the row, the `ask` rules, their record and `setup`'s writes into the
+  `CLAUDE_CONFIG_DIR` directory were removed, and `setup --approval-boundary` became advice that
+  writes nothing. The owner also ruled that a command warns, never refuses, on a key of the
+  machine file it cannot use (Task 3's Interfaces block), and that the closed `PreToolUse` entry
+  takes `onFailure: "block"` in this pull request, after the NOTE retry's cost was bounded by the
+  document's length and a session's read capped at 1 MiB.
+- A five-seat re-review the same day found two Important issues, both fixed before merge: a
+  `[paths]` value of tens of thousands of components made the containment walk quadratic, so a
+  72 KB committed file kept the hook past its timeout, which `onFailure: "block"` turned into a
+  blocked `Bash` call (now a 1024-character cap, a walk down from the root, a session read of
+  256 KiB and at most 1 MiB rebuilt; the densest file measured 0.25 s, 1.5 s on efficiency cores);
+  and `doctor` exited 0 over a machine file every command refuses (now the `preferences` row is
+  red, and the overlay rows say the file could not be read). The machine file's notes are said
+  once a command (`command.command_owner`), and `Unknown` became `resolve_owner(strict=)`. The
+  owner ruled that a pull request may only lower a session's budget, as a gate's (Task 7's
+  Interfaces block).
+- Follow-ups for the owner: doctor relaying at most three clipped key names; a pull request
+  narrowing `memory.groups`.

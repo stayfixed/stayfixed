@@ -47,7 +47,7 @@ In scope, and treated as security rather than as an ordinary bug:
   root or outside the machine owner's own store — through `..`, an absolute path, a symlink at
   any component, a TOCTOU window, or a configured value that reaches no guard.
 - **The trust gate.** Any way repository-authored text reaches the model without
-  `stayfixed memory trust` having been given, or reaches it outside `trust.wrap`'s delimited
+  `stayfixed trust approve memory` having been given, or reaches it outside `trust.wrap`'s delimited
   region — including through a channel stayfixed hands to the harness, such as a symlink into
   the harness's own project-memory directory.
 - **Marker forgery.** Any note, index entry or configuration value that can close or forge the
@@ -97,6 +97,22 @@ Out of scope:
   says so under "Variables Claude Code ignores in `env`", and Claude Code 2.1.293 was measured
   keeping the real `HOME` and an empty `XDG_CONFIG_HOME` in project and plugin hooks.
   `XDG_CONFIG_HOME`, git's other door to that configuration, is dropped before any `git` runs.
+- An agent with an unsandboxed shell writing an approval itself. An approval in `trust.json`
+  holds against a repository's bytes: stayfixed never writes the record from them, a clone, a
+  pull or a pull request does not reach it, and a changed note lapses it. A repository whose hooks
+  the harness runs is code running as you, which can write any file you can (the last item
+  below). An agent that can run any command as you can also write any file
+  you can, the record included, and stayfixed neither stops nor checks that: the harness's sandbox
+  is that boundary, and `stayfixed setup --approval-boundary` prints what to set under Claude Code.
+  Even an agent the sandbox confines keeps a channel no record closes: Claude Code's documentation
+  does not list a project's `CLAUDE.md` or `AGENTS.md` among the paths its sandbox keeps from the
+  agent's own writes, and Claude Code loads the first as instructions and can load the second,
+  through an import or its project instructions setting (read in the documentation, not
+  measured).
+  `stayfixed trust approve` refuses when standard input is not a terminal. Claude Code 2.1.296's
+  shell tool gave a command none, measured in a terminal session and on the desktop app's Code
+  tab; no other harness, Codex among them, was measured. The check slows a bare call and
+  guarantees nothing against an agent that can open a pseudo-terminal.
 - A repository being able to make stayfixed **refuse** — suppressing memory, failing a hook
   closed. Undesirable, and an ordinary bug, but not a vulnerability: the whole design fails
   closed on purpose.

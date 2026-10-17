@@ -1495,7 +1495,7 @@ reddens = [
 [[mutation]]
 name = "an adopted document the next command cannot load is adopted anyway"
 file = "src/stayfixed/project/init.py"
-before = "        loads(on_disk, root, machine=machine)"
+before = "        loads(on_disk, root, machine=machine, owner=owner)"
 after = "        pass"
 reddens = [
   "tests/project/test_init.py::test_an_adopted_document_the_loader_would_refuse_is_refused_before_anything_is_written",
@@ -1591,8 +1591,8 @@ reddens = [
   "tests/profiles/test_evaluate.py::test_a_file_that_does_not_parse_resolves_to_nothing[nested-past-the-stack]",
 ]
 
-# In the block led by `mutations/`'s "the hook takes a symlinked stayfixed.toml by what it points
-# at": a symlinked `stayfixed.toml` is asked about by its own name first.
+# In the block led by `mutations/`'s "a session lets a symlinked stayfixed.toml raise": a
+# symlinked `stayfixed.toml` is asked about by its own name first.
 [[mutation]]
 name = "init's answer-sheet check takes a symlinked stayfixed.toml by what it points at"
 file = "src/stayfixed/project/init.py"

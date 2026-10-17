@@ -17,7 +17,7 @@ A value also states its reach: for each enforcement surface stayfixed has (`Surf
 which that surface holds under this harness (`Tier`), or `None` where no tier is claimed there, and
 the evidence each rests on: what was observed, on which version, and where its record is. The
 README's table of what each agent enforces is held equal to these values by a test, and `doctor`'s
-`codex-trust` row reads them, so a measurement that moves a tier is one edit here.
+`codex-hooks` row reads them, so a measurement that moves a tier is one edit here.
 
 A new harness is a value with a positive `detects`, its project-root and plugin-root variables,
 its `render`, its settings files, the places it reads hooks out of a Markdown frontmatter, its
@@ -43,7 +43,7 @@ package that names a harness is pardoned there, each pardon by one of these item
   harness is in use, with every variable under Claude Code's and Codex's prefixes taken out of its
   environment first; names `CLAUDE_PLUGIN_ROOT` in the remedy of the rows that find no plugin
   root and `${CLAUDE_PLUGIN_DATA}` in the `diagnostics` row's; and reads `CODEX` by name in its
-  `codex-trust` row.
+  `codex-hooks` row.
 - `setup` installs the plugin through each harness's own command-line verbs,
   `_MARKETPLACE_ADD` and `_PLUGIN_INSTALL` in `setup/run.py`, keyed by harness name, so another
   harness is another entry in each.
@@ -60,6 +60,9 @@ package that names a harness is pardoned there, each pardon by one of these item
   there.
 - One hook output cap, `native_caps.hook_output_chars`, is Claude Code's and is applied under
   every harness.
+- The advice `setup --approval-boundary` prints is Claude Code's alone: `trust.boundary` spells
+  its managed-settings paths, its sandbox settings and its deny-rule grammar. Another harness's
+  sandbox is an edit there.
 - The hook payload is read in Claude Code's schema, the canonical one (`CANONICAL`): its keys
   (`hook_event_name`, `tool_name`, `tool_input`, `session_id`, `run_in_background`), the tool
   name `Bash` and its event names are spelled across the `hooks` package (`hooks.dispatch`,
@@ -128,7 +131,7 @@ class Reach:
     """One surface under one harness."""
 
     # `None`: no tier is claimed for the surface under this harness, which the README's table and
-    # `doctor`'s `codex-trust` row print as "not verified".
+    # `doctor`'s `codex-hooks` row print as "not verified".
     tier: Tier | None
     # The observation the tier rests on and where its record is: a public record, named, or, for a
     # measurement whose record is not in this repository, the date it was made and that it is not
@@ -162,9 +165,10 @@ class Harness:
     # The variable this harness names the project root in, if any. Every registered value's is
     # asked, in `project_root_variables`' order, whichever harness was detected (`detect`).
     project_dir_env: str | None
-    # How the hook's stdout is shaped: (event name, joined context) -> stdout. Context only:
-    # no rendering carries a decision, because a deny travels on the exit code.
-    render: Callable[[str, str], str]
+    # How the hook's stdout is shaped: (event name, joined context, notice) -> stdout, where the
+    # notice is what the person is shown and the context what the model reads. Never a decision:
+    # a deny travels on the exit code.
+    render: Callable[[str, str, str], str]
     # Every `Surface`, each with the tier it holds at under this harness. Compared, and left out
     # of the hash: a mapping has none, and the other fields already tell two harnesses apart.
     reach: Mapping[Surface, Reach] = field(hash=False)
@@ -192,12 +196,19 @@ class MemoryHarness(Harness):
     memory_dir: Callable[[str], str]
 
 
-def hook_specific_output(event_name: str, context: str) -> str:
+def hook_specific_output(event_name: str, context: str, notice: str) -> str:
     """Claude Code's hook answer: the whole string a hook writes to stdout, which the harness
-    caps, rather than the field inside it."""
+    caps, rather than the field inside it.
+
+    `notice` is for the person, and goes out as `systemMessage`, which Claude Code shows a person
+    in a terminal on `SessionStart` and never hands the model (`hooks.dispatch.NOTICE_EVENT` says
+    where that was measured); the model's copy is the caller's to put into `context`. An empty one
+    adds no key."""
     payload: dict[str, Any] = {"hookSpecificOutput": {"hookEventName": event_name}}
     if context:
         payload["hookSpecificOutput"]["additionalContext"] = context
+    if notice:
+        payload["systemMessage"] = notice
     return json.dumps(payload)
 
 
@@ -365,6 +376,20 @@ HARNESSES: tuple[Harness, ...] = (CLAUDE, CODEX)
 # measurement covers -- is read as strictly as the merge that rewrites it. A path relative to the
 # file's root, so `~/.claude/settings.json` is the first of these under the home directory.
 LENIENT_SETTINGS: frozenset[str] = frozenset((*CLAUDE.settings, *CLAUDE.local_settings))
+# The leading UTF-8 byte-order mark Claude Code reads past in a file of `LENIENT_SETTINGS`.
+BYTE_ORDER_MARK = "\ufeff"
+
+
+def lenient_settings(text: str) -> str:
+    """The text of a Claude Code settings file of `LENIENT_SETTINGS` as Claude Code reads it: past a
+    leading UTF-8 byte-order mark.
+
+    The one reading of that mark for every reader of such a file: the hook entries' walk
+    (`scaffold.judged_entries`) and `setup`'s merge into the user settings file, the last from the
+    file's bytes as UTF-8. Refused, the mark stopped `setup` on an owner's own file the harness
+    reads.
+    """
+    return text.removeprefix(BYTE_ORDER_MARK)
 
 
 def project_root_variables() -> tuple[str, ...]:

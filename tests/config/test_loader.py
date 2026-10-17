@@ -7,16 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from stayfixed.config.loader import (
-    CONFIG_FILE,
-    INTEGER_LIMIT,
-    ConfigError,
-    MachineConfigError,
-    _build,
-    load,
-    loads,
-)
+from stayfixed.config.loader import CONFIG_FILE, _build, load, loads
 from stayfixed.config.paths import PathEscape
+from stayfixed.config.reading import INTEGER_LIMIT, ConfigError, MachineConfigError
 from stayfixed.config.schema import (
     BUILTIN_GATES,
     CI_MODES,
@@ -63,7 +56,7 @@ def test_file_values_override_preset_values(tmp_path: Path) -> None:
     config = load(tmp_path, machine=tmp_path / "no-machine.toml")
     assert config.paths.specs == "design/specs"
     assert config.budgets.effective("agents_md_lines") == 250
-    assert config.budgets.overrides == {"agents_md_lines": 250}
+    assert config.budgets.configured == {"agents_md_lines": 250}
 
 
 def test_machine_config_sits_between_file_and_preset(tmp_path: Path) -> None:
@@ -167,9 +160,9 @@ def test_an_unsupported_schema_type_is_named_instead_of_read_as_a_string() -> No
 def test_one_command_reads_one_machine_file(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # `load` resolved the machine file with the `isatty` sniff while `overlay_root` and
-    # `trust._trust_file` resolved it off a terminal always. On an interactive run with
-    # `XDG_CONFIG_HOME` set the two disagreed, so an owner who wrote one file holding both
+    # `load` resolved the machine file with the `isatty` sniff while `overlay_root` and the trust
+    # record (`trust.record.record_path`) resolved it off a terminal always. On an interactive run
+    # with `XDG_CONFIG_HOME` set the two disagreed, so an owner who wrote one file holding both
     # `[personal]` and `[overlay] root` got `[personal]` honoured and the overlay silently
     # unrecorded — `memory index` refusing with "no overlay root is recorded in the machine
     # configuration; run `stayfixed setup`" about the file it had just read successfully.
@@ -178,7 +171,7 @@ def test_one_command_reads_one_machine_file(
     # reddens the `load` assertion.
     from stayfixed.config.machine import machine_config_path
     from stayfixed.config.overlay import overlay_root
-    from stayfixed.memory.trust import _trust_file
+    from stayfixed.trust.record import record_path
 
     class ATty:
         def isatty(self) -> bool:
@@ -207,7 +200,7 @@ def test_one_command_reads_one_machine_file(
     # one the two security anchors were always going to read.
     assert load(root).personal.reply_language == "the-owners"
     assert overlay_root(None) == Path("/tmp/recorded")
-    trust_file, machine = _trust_file(None), machine_config_path()
+    trust_file, machine = record_path(None), machine_config_path()
     assert trust_file is not None and machine is not None
     assert trust_file.parent == machine.parent
 
@@ -220,7 +213,7 @@ def test_the_machine_file_a_person_names_is_honoured_by_every_reader(
     # supported way to put the machine file somewhere else. A gate that left no such way would
     # be a regression rather than a fix.
     from stayfixed.config.overlay import overlay_root
-    from stayfixed.memory.trust import _trust_file
+    from stayfixed.trust.record import record_path
 
     mine = tmp_path / "mine" / "config.toml"
     mine.parent.mkdir(parents=True)
@@ -235,7 +228,7 @@ def test_the_machine_file_a_person_names_is_honoured_by_every_reader(
     (root / CONFIG_FILE).write_text(MINIMAL, encoding="utf-8")
     assert load(root, machine=mine).personal.reply_language == "mine"
     assert overlay_root(mine) == Path("/tmp/mine")
-    assert _trust_file(mine) == mine.parent / "trust.json"
+    assert record_path(mine) == mine.parent / "trust.json"
 
 
 def test_loads_answers_for_a_document_that_is_not_on_disk(tmp_path: Path) -> None:
@@ -371,7 +364,7 @@ def test_a_parse_failure_with_no_position_says_so_rather_than_quoting_the_messag
     # Skipping `__init__` gives the exact type with the exact text on both.
     import tomllib
 
-    from stayfixed.config.loader import NO_POSITION, toml_position
+    from stayfixed.config.reading import NO_POSITION, toml_position
 
     def carrying(text: str) -> tomllib.TOMLDecodeError:
         return tomllib.TOMLDecodeError.__new__(tomllib.TOMLDecodeError, text)

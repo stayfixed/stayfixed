@@ -27,8 +27,9 @@ from stayfixed.attach.binding import (
     unlinked_groups,
 )
 from stayfixed.attach.permissions import diff_permissions
-from stayfixed.config.loader import CONFIG_FILE, ConfigError, load, loads
+from stayfixed.config.loader import CONFIG_FILE, load, loads
 from stayfixed.config.paths import PathEscape, PathUnasked
+from stayfixed.config.reading import ConfigError
 from stayfixed.errors import Failure, Refusal
 from stayfixed.memory.api import NO_ORIGIN, PROJECT_RECORD, PROJECTS, UNBOUND
 from stayfixed.overlay.api import COMMON_CLAUDE, COMMON_CODEX, COMMON_MEMORY
@@ -144,7 +145,7 @@ def test_read_binding_reads_the_machine_file_once(
     #
     # Mutation (oracle): `mutations/`'s "read_binding reads the machine file a second time for the
     # binding" -> two reads, and this reddens.
-    from stayfixed.config.loader import read_machine_toml as real
+    from stayfixed.config.reading import read_machine_toml as real
 
     root, store = _project_and_store(tmp_path, recorded=None, origin="git@github.com:o/p.git")
     machine = _machine(tmp_path, overlay=store.parents[2])
@@ -352,7 +353,7 @@ def test_a_binding_record_that_will_not_parse_reports_only_where_the_parser_stop
     it came from. `tomllib` builds its message as `f"{msg} (at line N, column M)"` and `msg`
     embeds the source for several of its faults, so interpolating the exception whole would put
     the *file's own text* into a `Failure` that `skills/attach/SKILL.md` has the model relay.
-    `config.loader.toml_position` bounds it to the suffix, as it does for every other caller.
+    `config.reading.toml_position` bounds it to the suffix, as it does for every other caller.
 
     Mutation (oracle): the message interpolates `exc` again -> the `not in` reddens.
     """

@@ -1,10 +1,13 @@
-"""Write the machine configuration file, the one both existing readers already read.
+"""Write the machine configuration file, the one its readers in `config` already read.
 
-**This module invents no schema.** `config.loader._personal` reads `[personal]` and
-`config.overlay.overlay_root` reads `[overlay] root`, both from the file no variable moves, and
-neither changes here. This writer adds `[machine]` beside them — what `setup` installed, so `doctor`
-can check it later — and nothing else. A caller that wants a fourth table is asking for a third
-reader of this file, which the same rule keeps out.
+**This module invents no schema.** `config.owner.resolve_owner` reads `[personal]`, `[guards]`
+and the session budgets of `[budgets]`, for every command's load and every session, and
+`config.overlay.overlay_root` reads `[overlay] root`, all from the file no variable moves, and
+none of them changes here. This writer adds `[machine]` beside them — what `setup` installed, so
+`doctor` can check it later — and nothing else. `[guards]` and `[budgets]` are the owner's to write
+by hand, and a rewrite carries them through untouched, as it carries every table and key it does
+not own (below). A caller that wants another table is asking for another reader of this file,
+which belongs beside those readers, in `config`.
 
 **A rewrite merges, table by table, key by key — including the tables this writer knows
 nothing about.** `setup` runs again on a machine that already has a file, and the common case is
@@ -58,6 +61,18 @@ from stayfixed import fsops, tomlout
 from stayfixed.config.machine import machine_config_path
 from stayfixed.errors import Failure, Refusal
 from stayfixed.harnesses import CLAUDE
+from stayfixed.trust.api import OWN_TERMINAL_TOO, sandbox_refused
+
+# Said by `setup` where a directory it writes -- stayfixed's machine directory, Claude Code's user
+# settings -- refused a write as an agent's sandbox refuses one (`trust.boundary`'s docstring).
+# Constant, since its likely reader is that agent, and speaking of the person, who runs it outside.
+# A run it stops part-way is one the next run finishes, since every write it makes merges.
+SANDBOXED = (
+    "setup stopped: a directory it writes refused the write, which Claude Code's sandbox does to "
+    "every write an agent's shell makes outside the working directory, so a person must run "
+    "`stayfixed setup` in their own terminal, outside the agent's sandbox"
+    f"{OWN_TERMINAL_TOO}"
+)
 
 # The one machine-scope settings file `setup` writes, relative to `home`, and the one `doctor`'s
 # `hook-entries` check reads back: Claude Code's settings file, which it reads under the home
@@ -78,13 +93,13 @@ class Written:
 def read_machine(path: Path) -> dict[str, Any]:
     """The machine file as a raw `dict`, exactly as `tomllib` parses it, and `{}` where no file is.
 
-    Read through `config.loader.read_machine_toml`, the one reader every reader of this file
-    shares, so a file that cannot be read, is not UTF-8 or is not TOML is the loader's
+    Read through `config.reading.read_machine_toml`, the one reader every reader of this file
+    shares, so a file that cannot be read, is not UTF-8 or is not TOML is the one
     `MachineConfigError` here as everywhere: one failure in one set of words, naming the error's
     class or the parser's position and never the parser's message. `setup` reports it as the
     failure it is, rather than as an internal error with the operating system's own message.
     """
-    from stayfixed.config.loader import read_machine_toml
+    from stayfixed.config.reading import read_machine_toml
 
     return read_machine_toml(path) or {}
 
@@ -173,6 +188,8 @@ def write_machine(
     try:
         fsops.write_atomically(path, text)
     except OSError as exc:
+        if sandbox_refused(exc):
+            raise Refusal(SANDBOXED) from None
         # With no `--machine` the directory is under the home the password database records,
         # which a system user's entry often names as a directory that is not there or not
         # theirs; no other place is one a hook reads, so the failure names the directory. A file

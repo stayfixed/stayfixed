@@ -64,7 +64,7 @@ kept in silence is what made this pass necessary:
   vocabulary cannot be used by the consumer that is handed a value from it.
 - **The trust gate**: `may_inject`, `changed`, `TrustState` and `UnreadableTrustRecord`. The
   project's standing constraint is that anything a repository authored reaches a model only
-  after `stayfixed memory trust` and only inside a delimited region; a consumer that injects
+  after `stayfixed trust approve memory` and only inside a delimited region; a consumer that injects
   repository bytes therefore has to be able to *ask this area* whether it may, to honour the
   trust gate's re-prompt predicate — "a store that was trusted and is not any more" — and to
   tell "this trust record is broken" from "this store is not approved", which is the whole

@@ -219,7 +219,7 @@ def _cli(walk: Walkthrough, *argv: str, tty: bool = False) -> subprocess.Complet
 
 
 def _doctor(walk: Walkthrough, *, root: Path | None = None) -> list[dict[str, str]]:
-    """The seventeen rows, read back out of what `doctor --json` printed on the launcher's
+    """The eighteen rows, read back out of what `doctor --json` printed on the launcher's
     stdout."""
     done = _cli(
         walk,
@@ -234,7 +234,7 @@ def _doctor(walk: Walkthrough, *, root: Path | None = None) -> list[dict[str, st
     )
     assert done.stdout, done.stderr
     rows: list[dict[str, str]] = json.loads(done.stdout)["checks"]
-    assert len(rows) == 17, rows
+    assert len(rows) == 18, rows
     return rows
 
 
@@ -568,7 +568,8 @@ def test_a_wrapped_bundle_arrives_with_both_of_its_region_markers(tmp_path: Path
     bin_dir = tmp_path / "bin"
     _fake_binaries(bin_dir)
     walk = Walkthrough(root, root, machine, tmp_path / "home", tmp_path / "data", notes, bin_dir)
-    trusted = _cli(walk, "memory", "trust", "--in-repo-memory", "--machine", str(machine))
+    # The approval is a person's, at a terminal.
+    trusted = _cli(walk, "trust", "approve", "memory", "--machine", str(machine), tty=True)
     assert trusted.returncode == 0, trusted.stderr
     done = _bundle(walk, "standing-rules")
     assert done.returncode == 0, done.stderr
@@ -656,10 +657,7 @@ def test_doctor_is_green_on_the_attached_fixture(tmp_path: Path) -> None:
     walk = _install_path(tmp_path)
     rows = _doctor(walk)
     assert [row["name"] for row in rows if row["status"] == RED] == []
-    assert [row["name"] for row in rows if row["status"] == SKIP] == [
-        "codex-trust",
-        "ci-ref",
-    ]
+    assert [row["name"] for row in rows if row["status"] == SKIP] == ["codex-hooks", "ci-ref"]
     assert next(row for row in rows if row["name"] == "files")["status"] == OK
 
 

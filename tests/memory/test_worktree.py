@@ -15,7 +15,6 @@ from stayfixed.errors import Refusal
 from stayfixed.memory import worktree
 from stayfixed.memory.index import INDEX_NAME
 from stayfixed.memory.store import LOCAL_STORE, Store, resolve
-from stayfixed.memory.trust import record
 from stayfixed.memory.worktree import (
     MakeUnder,
     PartialLink,
@@ -27,6 +26,7 @@ from stayfixed.memory.worktree import (
     linked_names,
 )
 from stayfixed.presets import load_preset
+from tests.approved import record
 from tests.gitfixture import git
 from tests.ownerhome import as_owner_home
 from tests.pathfaults import (

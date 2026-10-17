@@ -263,6 +263,7 @@ after = "    lower = True"
 reddens = [
   "tests/assess/test_rule.py::test_each_row_of_the_table_while_a_gate_enforces[budget-raised]",
   "tests/assess/test_rule.py::test_a_preset_switch_is_judged_by_every_value_it_moves[raises-a-budget]",
+  "tests/assess/test_rule_classes.py::test_a_pull_request_still_only_lowers_a_gate_budget",
 ]
 
 [[mutation]]
@@ -774,7 +775,7 @@ reddens = [
 [[mutation]]
 name = "promote enforces a custom gate whose command the base does not have"
 file = "src/stayfixed/assess/state.py"
-before = "    waiting = _not_on_base(root, config, asked, base=base, machine=machine)"
+before = "    waiting = _not_on_base(root, config, asked, base=base, machine=machine, owner=owner)"
 after = "    waiting = ()"
 reddens = [
   "tests/assess/test_state.py::test_a_custom_gate_the_base_does_not_have_is_neither_run_nor_promoted",
@@ -837,14 +838,15 @@ before = "    skipped = tuple(name for name in config.gate_names if builtin and 
 after = "    skipped = tuple(name for name in config.gate_names if False and name in custom)"
 reddens = ["tests/assess/test_command.py::test_builtin_runs_no_custom_gate_and_says_which_it_left_out"]
 
-# A base naming a preset this stayfixed does not ship fails in the preset loader, with a plain
-# `Failure` the base-arm wrapper let through: the run failed, but the message never said the
-# fault was the base's copy, which only a direct push to the base branch can fix.
+# A base naming a preset this stayfixed does not ship is refused by the loader (`loader._preset`
+# keys the preset loader's refusal as a `ConfigError`); without the base arm the run fails, but
+# the message never says the fault is the base's copy, which only a direct push to the base
+# branch can fix.
 [[mutation]]
 name = "a base naming an unshipped preset fails without saying it is the base's copy"
 file = "src/stayfixed/assess/rule.py"
 before = "    except Failure as exc:"
-after = "    except tuple(Failure.__subclasses__()) as exc:"
+after = "    except ZeroDivisionError as exc:"
 reddens = [
   "tests/assess/test_gate_command.py::test_a_base_that_does_not_load_fails_the_run_and_names_the_base_s_copy[unshipped-preset]",
 ]
@@ -1173,8 +1175,8 @@ reddens = [
 [[mutation]]
 name = "adopt promote drops --builtin on the way to the promotion"
 file = "src/stayfixed/assess/commands.py"
-before = "    transition = promote(root, config, args.gates, base=base, machine=machine, builtin=args.builtin)"
-after = "    transition = promote(root, config, args.gates, base=base, machine=machine, builtin=False)"
+before = "        root, config, args.gates, base=base, machine=machine, builtin=args.builtin, owner=owner"
+after = "        root, config, args.gates, base=base, machine=machine, builtin=False, owner=owner"
 reddens = [
   "tests/assess/test_state.py::test_adopt_promote_builtin_names_the_custom_gates_it_did_not_run",
 ]
@@ -1751,4 +1753,34 @@ after = """        if True:
             found.append(relative)"""
 reddens = [
   "tests/assess/test_probes.py::test_a_settings_file_with_no_hook_entry_lists_nothing",
+]
+
+# A key's class is asked before the rule's own table: a preference is neutral whatever the base
+# enforces. A session's budget is not: the budget row judges it as it judges a gate's, since a gate
+# the base enforces may read it.
+[[mutation]]
+name = "a session's budget is neutral by its class"
+file = "src/stayfixed/assess/rule.py"
+before = "        KeyClass.PREFERENCE,\n        KeyClass.MACHINE_ONLY,"
+after = "        KeyClass.PREFERENCE,\n        KeyClass.SESSION_PARAMETER,\n        KeyClass.MACHINE_ONLY,"
+reddens = ["tests/assess/test_rule_classes.py::test_a_pull_request_only_lowers_a_session_budget[raised]"]
+
+[[mutation]]
+name = "the ratchet judges no key by its class"
+file = "src/stayfixed/assess/rule.py"
+before = "    if _class(key) in _NEUTRAL_CLASSES:\n        return _neutral"
+after = "    if False:\n        return _neutral"
+reddens = ["tests/assess/test_rule_classes.py::test_a_pull_request_may_change_memory_mode"]
+
+# `[ledger] code_roots` and `evidence_boundary_required_for` only grow: a list that lost an entry
+# is no tightening, whatever it gained.
+[[mutation]]
+name = "a ledger list that lost an entry reads as grown"
+file = "src/stayfixed/assess/rule.py"
+before = "    if after > before:\n        return Verdict.TIGHTENED"
+after = "    if after != before:\n        return Verdict.TIGHTENED"
+reddens = [
+  "tests/assess/test_rule_classes.py::test_adding_a_code_root_tightens_and_removing_one_is_refused_while_enforcing[root-removed]",
+  "tests/assess/test_rule_classes.py::test_adding_a_code_root_tightens_and_removing_one_is_refused_while_enforcing[root-swapped]",
+  "tests/assess/test_rule_classes.py::test_adding_a_code_root_tightens_and_removing_one_is_refused_while_enforcing[severity-removed]",
 ]

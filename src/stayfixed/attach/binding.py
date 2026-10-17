@@ -30,9 +30,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from stayfixed import fsops
-from stayfixed.config.loader import UNPARSEABLE, load, toml_position
+from stayfixed.config.loader import load
 from stayfixed.config.overlay import overlay_root
 from stayfixed.config.paths import PathEscape, PathUnasked, contained
+from stayfixed.config.reading import UNPARSEABLE, toml_position
 from stayfixed.config.schema import OVERLAY_MODE, Config
 from stayfixed.errors import Failure, Refusal
 from stayfixed.fsops import said

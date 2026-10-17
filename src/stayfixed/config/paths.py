@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import os
 import stat
+from collections.abc import Mapping
 from pathlib import Path
 
 from stayfixed.config.schema import Config
@@ -46,7 +47,15 @@ from stayfixed.grammar import PATH_VALUE
 
 class PathEscape(Refusal):
     """A configured path that leaves the project root or passes through a symlink, or one
-    `contained()` cannot say either of (`PathUnasked`)."""
+    `contained()` cannot say either of (`PathUnasked`).
+
+    `key` is the `[paths]` key `validate_paths` refused, `paths.<name>`, which the loader's NOTE
+    path removes so the preset's value applies; `None` from any other caller of `contained()`.
+    """
+
+    def __init__(self, message: str, *, key: str | None = None) -> None:
+        super().__init__(message)
+        self.key = key
 
 
 class PathUnasked(PathEscape):
@@ -86,10 +95,19 @@ def contained(
     # the rule itself is `fsops.names_control_directory` in both places, because a guard stated
     # twice is the defect this module was just repaired for.
     target = root.joinpath(*parts)
-    unasked: PathUnasked | None = None
-    for ancestor in [target, *target.parents]:
-        if ancestor == root:
-            break
+    # Asked from the root down, and no further than the first ancestor that reaches no file: every
+    # path below one that reaches no file reaches none either, since its lookup fails at the same
+    # component, so the walk ends where the answers stop telling it anything. It walked up from the
+    # target over `[target, *target.parents]`, every one of them a fresh path built, compared with
+    # the root and asked, so a value of twenty thousand components that reach nothing, forty
+    # kilobytes, cost this function two and a half seconds; down from the root it asks one. An
+    # ancestor that does exist is asked on the way down, and the walk still ends past the longest
+    # path, where `lstat` answers `ENAMETOOLONG`. The answers are then judged from the deepest up,
+    # as the walk up judged them.
+    answers: list[tuple[Path, int | OSError]] = []
+    ancestor = root
+    for part in parts:
+        ancestor = ancestor / part
         # Asked with `lstat` here and each fault given its answer, never left to
         # `Path.is_symlink()`, which raises on `ENAMETOOLONG` up to Python 3.13 and answers
         # `False` from 3.14: `attach` ended in an internal error on one interpreter and attached
@@ -100,10 +118,14 @@ def contained(
         # does not follow the link it is asked about. Any other fault leaves the question
         # unanswered, which is a refusal: no path is contained until every ancestor is asked.
         try:
-            mode = os.lstat(ancestor).st_mode
+            answers.append((ancestor, os.lstat(ancestor).st_mode))
         except OSError as exc:
             if exc.errno in REACHES_NO_FILE:
-                continue
+                break
+            answers.append((ancestor, exc))
+    unasked: PathUnasked | None = None
+    for ancestor, answer in reversed(answers):
+        if isinstance(answer, OSError):
             # The deepest such ancestor is the one refused, and only once the walk has asked
             # every ancestor above it: a committed link into a directory nobody may search makes
             # every path through it unaskable, and the link is the cause to name. By its place
@@ -112,18 +134,18 @@ def contained(
             if unasked is None:
                 place = ancestor.relative_to(root).as_posix()
                 unasked = PathUnasked(
-                    f"{relative!r} cannot be checked for a symlink at {place!r} ({said(exc)})",
-                    fault=said(exc),
+                    f"{relative!r} cannot be checked for a symlink at {place!r} ({said(answer)})",
+                    fault=said(answer),
                 )
-                unasked.__cause__ = exc
+                unasked.__cause__ = answer
             continue
-        if stat.S_ISLNK(mode) and not (allow_final_symlink and ancestor == target):
+        if stat.S_ISLNK(answer) and not (allow_final_symlink and ancestor == target):
             # Both through `repr`, which escapes every line break and control character: in a
             # checkout the ancestor's name is the repository's, and a caller may show this refusal
             # to a terminal or a CI runner. Both by their place under the root: the ancestor's
             # absolute path said where this machine keeps the tree and nothing about the tree,
             # and a command relaying the refusal (`overlay init`'s `left` line) printed that.
-            # `ancestor` is below `root`, since the walk stops there.
+            # `ancestor` is below `root`, since the walk starts below it.
             named = ancestor.relative_to(root).as_posix()
             raise PathEscape(f"{relative!r} passes through a symlink at {named!r}")
     if unasked is not None:
@@ -135,10 +157,13 @@ def contained(
     # many paths against one root passes `resolved_root` so this resolve happens once. Through
     # `fsops.resolved`, so a loop at or above the root is an `OSError` naming the path on every
     # interpreter, where 3.11 and 3.12 raised `RuntimeError` past every caller's `except OSError`.
+    # Compared by components, both paths resolved and so absolute and normal: `reached.parents`
+    # built every parent of a deep target and compared each with the root, the quadratic cost the
+    # walk above was rid of, which kept twenty thousand components at eight tenths of a second.
     if resolved_root is None:
         resolved_root = resolved(root)
     reached = resolved(target.parent) / target.name if allow_final_symlink else resolved(target)
-    if reached != resolved_root and resolved_root not in reached.parents:
+    if reached.parts[: len(resolved_root.parts)] != resolved_root.parts:
         raise PathEscape(f"{relative!r} resolves outside the project root")
     return target
 
@@ -164,6 +189,17 @@ def names_stayfixed_directory(relative: str) -> bool:
     return names_component(relative, STAYFIXED_DIRECTORY)
 
 
+# A named cap: the longest `[paths]` value, in characters, which the grammar holds to ASCII and so
+# to as many bytes. A value is joined below the project root, and 1024 is the longest path macOS
+# opens by name (`PATH_MAX`; Linux takes 4096), so a longer one names nothing a person could have
+# meant there, and no documentation path a project keeps comes near it. Every reader of a value
+# pays for its length — the grammar, `contained()`'s walk and resolve, a refusal quoting it — and
+# every `PreToolUse` hook reads every value, so a committed value of forty thousand characters cost
+# each hook seconds before the walk stopped at the first component that is not there. Asked
+# before the grammar, and the refusal names the key, never the value. No shipped file states it.
+PATH_VALUE_LIMIT = 1024
+
+
 # `PATH_VALUE` in words, for the refusal a person reads. Kept beside the one reader that prints
 # it; a change to the grammar is a change to this sentence.
 PATH_RULE = (
@@ -173,13 +209,30 @@ PATH_RULE = (
 
 
 def validate_paths(config: Config, root: Path) -> dict[str, Path]:
+    """Every `[paths]` value contained in `root`, or a `PathEscape` keyed to the first that is
+    not, so the loader's NOTE path can put that one key back to the preset's value."""
+    return validate_path_values(config.paths.as_dict(), root)
+
+
+def validate_path_values(values: Mapping[str, str], root: Path) -> dict[str, Path]:
+    """`validate_paths` for `values`, `[paths]` values by their key's name: the loader's NOTE
+    path asks it of a preset's value before it puts a key back to that value, so a value that
+    does not hold in this repository either is named rather than reset to."""
     resolved_root = root.resolve()
-    for name, relative in config.paths.as_dict().items():
+    for name, relative in values.items():
+        if len(relative) > PATH_VALUE_LIMIT:
+            raise PathEscape(
+                f"paths.{name} is longer than the {PATH_VALUE_LIMIT} characters a configured path "
+                "may be",
+                key=f"paths.{name}",
+            )
         if not PATH_VALUE.match(relative):
             # Named and never quoted: this is the value a report would otherwise print.
             # The rule in words, not `PATH_VALUE.pattern`: the lookahead that closes `.` and `..`
             # as segments is correct and is no sentence a person can act on.
-            raise PathEscape(f"paths.{name} is not a plain relative path: {PATH_RULE}")
+            raise PathEscape(
+                f"paths.{name} is not a plain relative path: {PATH_RULE}", key=f"paths.{name}"
+            )
         if names_control_directory(relative):
             # Named and never quoted, for the same reason. Nothing reserved git's control
             # directory: the grammar admits a leading dot, and `contained()` refused an
@@ -194,7 +247,8 @@ def validate_paths(config: Config, root: Path) -> dict[str, Path]:
             # `.github/workflows/` is stayfixed's own footprint.
             raise PathEscape(
                 f"paths.{name} names git's control directory, which is git's and not "
-                "stayfixed's to write into"
+                "stayfixed's to write into",
+                key=f"paths.{name}",
             )
         if names_stayfixed_directory(relative):
             # Named and never quoted. `.stayfixed/` is where stayfixed keeps its manifest and, under
@@ -210,14 +264,20 @@ def validate_paths(config: Config, root: Path) -> dict[str, Path]:
             # keeps in it is found by a constant, never through `[paths]`.
             raise PathEscape(
                 f"paths.{name} names stayfixed's own directory {STAYFIXED_DIRECTORY}, which holds "
-                "its manifest and state git never sees and is not a place for a configured path"
+                "its manifest and state git never sees and is not a place for a configured path",
+                key=f"paths.{name}",
             )
-    return {
-        name: contained(
-            root,
-            relative,
-            allow_final_symlink=(name == "memory"),
-            resolved_root=resolved_root,
-        )
-        for name, relative in config.paths.as_dict().items()
-    }
+    found: dict[str, Path] = {}
+    for name, relative in values.items():
+        try:
+            found[name] = contained(
+                root,
+                relative,
+                allow_final_symlink=(name == "memory"),
+                resolved_root=resolved_root,
+            )
+        except PathEscape as exc:
+            # `contained()` is every caller's and names no key; this caller knows which one.
+            exc.key = f"paths.{name}"
+            raise
+    return found

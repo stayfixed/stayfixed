@@ -39,6 +39,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from stayfixed.config.schema import Config
+    from stayfixed.config.session import SessionConfig
 
 # Fixed, and carrying nothing the repository chose. A plain string is not an import, so
 # these cost `discover()` nothing. `count` is the length of a list this module built, never a
@@ -50,10 +51,13 @@ NOT_LINKED = "stayfixed: a memory path was refused for this worktree and was not
 # The revocation half of the trust gate, and it gets its own line because it is its own event:
 # the harness's project-memory link has just been withdrawn because this store's approval has
 # lapsed, so a session that had native memory a moment ago no longer does. Reported as
-# `LINKED.format(count=0)` — or not at all — it would look like "nothing to do".
+# `LINKED.format(count=0)` — or not at all — it would look like "nothing to do". It reaches the
+# model, so it asks for the person in `trust.api.PERSON_RUNS`' words, written out here because this
+# module imports nothing at module level that discovery would load.
 REVOKED = (
-    "stayfixed: this store is no longer trusted, so the harness memory link was removed — "
-    "run `stayfixed memory trust --in-repo-memory` after reviewing what changed"
+    "stayfixed: this store is no longer trusted, so the harness memory link was removed; once what "
+    "changed has been reviewed, ask the person at this machine to run `stayfixed trust approve "
+    "memory` in their own terminal — an agent must not run it for them"
 )
 # `git` could not be run, or the machine configuration file is broken. Neither is "there is
 # no store", which is why `gitenv.git_answer` tells "could not ask" from "the answer is
@@ -120,7 +124,8 @@ NO_HARNESS_LINK_EMPTY_HOME = Withheld(
 )
 
 
-def _link_worktree(event: HookEvent, config: Config | None) -> HookResult:
+def _link_worktree(event: HookEvent, session: SessionConfig) -> HookResult:
+    config = session.config
     if config is None or event.project_root is None:
         return HookResult()
     try:

@@ -30,8 +30,8 @@ from stayfixed.doctor import checks as doctor_checks
 from stayfixed.doctor.api import OK, SKIP, WARN, Check
 from stayfixed.errors import Failure
 from stayfixed.memory.api import PROJECT_RECORD, PROJECTS, resolve
-from stayfixed.memory.trust import record
 from stayfixed.overlay.api import COMMON_CLAUDE
+from tests.approved import record
 from tests.attach.test_binding import DEFAULT_MEMORY
 from tests.doctor.test_checks import (
     LOCAL_ONLY,
@@ -659,7 +659,7 @@ def _change_a_note(case: _Machine) -> None:
 
 
 def _forget_the_approval(case: _Machine) -> None:
-    from stayfixed.memory.trust import record_path
+    from stayfixed.trust.record import record_path
 
     recorded = record_path(case.machine)
     assert recorded is not None and recorded.is_file()
@@ -761,7 +761,7 @@ def _trust_record_unreadable(case: _Machine) -> None:
 
 
 def _trust_record_broken(case: _Machine) -> None:
-    from stayfixed.memory.trust import record_path
+    from stayfixed.trust.record import record_path
 
     recorded = record_path(case.machine)
     assert recorded is not None
@@ -969,8 +969,8 @@ ONE_MACHINE_STATE: dict[str, tuple[Callable[[_Machine], None], tuple[str, str, s
             "warn",
             "not in place, and this machine's trust record cannot be read, so whether the harness "
             "should see this store could not be checked",
-            "run `stayfixed memory trust --in-repo-memory`, which says why the trust record cannot "
-            "be read, then `stayfixed doctor` again",
+            "run `stayfixed trust list --all`, which says why the trust record cannot be read, "
+            "then `stayfixed doctor` again",
         ),
     ),
     "fallback-approved": (_fallback_everywhere, ("ok", f"{_FALLBACK} instead", "")),
@@ -1008,8 +1008,9 @@ ONE_MACHINE_STATE: dict[str, tuple[Callable[[_Machine], None], tuple[str, str, s
             "warn",
             "not in place, because the store or its memory.index_extra changed since its approval "
             "was recorded, so that approval no longer holds — the harness sees no memory here",
-            "read what changed, run `stayfixed memory trust --in-repo-memory`, then `stayfixed "
-            "attach` again",
+            "read what changed, then ask the person at this machine to run `stayfixed trust "
+            "approve memory` in their own terminal — an agent must not run it for them; then run "
+            "`stayfixed attach` again",
         ),
     ),
     "never-approved": (
@@ -1023,8 +1024,9 @@ ONE_MACHINE_STATE: dict[str, tuple[Callable[[_Machine], None], tuple[str, str, s
             "a link to the store, although the store or its memory.index_extra changed since its "
             "approval was recorded, so that approval no longer holds — the harness reads notes "
             "nobody approved",
-            "read what changed, run `stayfixed memory trust --in-repo-memory`, then `stayfixed "
-            "attach` again",
+            "read what changed, then ask the person at this machine to run `stayfixed trust "
+            "approve memory` in their own terminal — an agent must not run it for them; then run "
+            "`stayfixed attach` again",
         ),
     ),
     "link-never-approved": (
@@ -1088,8 +1090,8 @@ ONE_MACHINE_STATE: dict[str, tuple[Callable[[_Machine], None], tuple[str, str, s
             "warn",
             "a link, and this machine's trust record cannot be read, so whether the harness "
             "should see this store could not be checked",
-            "run `stayfixed memory trust --in-repo-memory`, which says why the trust record cannot "
-            "be read, then `stayfixed doctor` again",
+            "run `stayfixed trust list --all`, which says why the trust record cannot be read, "
+            "then `stayfixed doctor` again",
         ),
     ),
     "fallback-elsewhere-beside-a-link": (
@@ -1327,6 +1329,40 @@ def test_a_ledger_on_a_machine_that_records_no_overlay_skips_and_never_reads_as_
     assert "records no overlay to check it against" in row.detail
     assert "attached;" not in row.detail
     assert "stayfixed setup --overlay" in row.remedy
+
+
+def test_a_ledger_on_a_machine_whose_file_does_not_load_skips_in_words_of_its_own(
+    tmp_path: Path,
+) -> None:
+    # Whether a machine whose file nobody could read records an overlay is not known, which is
+    # neither of the two arms beside it: read as no overlay, the row told the owner to run
+    # `stayfixed setup --overlay`; read as an overlay that could not be asked, it blamed `git`. The
+    # `preferences` row is red on the file and carries the remedy, so this skip carries none.
+    # Mutations (`mutations/`'s "the attached row reads a machine file nobody could read as an
+    # overlay that could not be asked" and "the report reads a machine file it could not read as
+    # one that records no overlay"): the sentence and remedy of the other arms.
+    root = _attached(tmp_path)
+    machine = tmp_path / "unreadable.toml"
+    machine.write_text("[personal\nx = 1\n", encoding="utf-8")
+    row = _by_name(_checks(tmp_path, root, machine=machine), "attached")
+    assert row.status == SKIP and row.remedy == "", row
+    assert "the machine configuration file could not be read" in row.detail, row
+    assert "the `preferences` row says why" in row.detail and "attached;" not in row.detail
+
+
+def test_hook_entries_asks_no_overlay_of_a_machine_file_that_does_not_load(tmp_path: Path) -> None:
+    # With no project configuration there is no binding to ask, and the grant was asked of the
+    # overlay root itself, which was the machine file's refusal: the claims raised and the row went
+    # red as one that could not run. A source that could not be asked is a warning, decided by this
+    # machine's state alone. Mutation (`mutations/`'s "hook-entries asks the overlay root of a
+    # machine file nobody could read"): red.
+    root = _attached(tmp_path)
+    (root / CONFIG_FILE).unlink()
+    machine = tmp_path / "unreadable.toml"
+    machine.write_text("[personal\nx = 1\n", encoding="utf-8")
+    row = _by_name(_checks(tmp_path, root, machine=machine), "hook-entries")
+    assert row.status == WARN, row
+    assert "could not be asked which entries it grants" in row.detail, row
 
 
 def test_an_overlay_record_this_process_cannot_read_skips_rather_than_reading_as_attached(

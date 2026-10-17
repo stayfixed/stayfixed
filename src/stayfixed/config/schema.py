@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from typing import ClassVar
 
 # The future import above is load-bearing for the loader: it turns every annotation here into
-# a string, which `config.loader._schema_types` resolves with `typing.get_type_hints` to decide
+# a string, which `config.reading.schema_types` resolves with `typing.get_type_hints` to decide
 # how to coerce a value. Every name an annotation uses must stay resolvable from this module's
 # globals at runtime, so a type imported only under `TYPE_CHECKING` would break the loader.
 
@@ -126,7 +126,10 @@ class Memory:
 
 @dataclass(frozen=True)
 class Budgets:
-    """A project may lower a budget below the preset and never raise it."""
+    """The preset's budgets and the ones a layer set (`configured`): the base branch's
+    `stayfixed.toml` sets a gate's budget and the owner's machine file a session's, either way
+    above the preset or below it. What a pull request may do to a gate's budget is
+    `assess.rule`'s to judge, against the base's effective value."""
 
     NAMES: ClassVar[tuple[str, ...]] = (
         "agents_md_lines",
@@ -144,16 +147,12 @@ class Budgets:
     configured: dict[str, int] = field(default_factory=dict)
 
     def effective(self, name: str) -> int:
+        """The configured value when a layer set one, else the preset's."""
         if name not in self.NAMES:
             raise KeyError(name)
-        value = self.preset[name]
         if name in self.configured:
-            value = min(value, self.configured[name])
-        return value
-
-    @property
-    def overrides(self) -> dict[str, int]:
-        return {k: v for k, v in self.configured.items() if v != self.preset.get(k)}
+            return self.configured[name]
+        return self.preset[name]
 
 
 @dataclass(frozen=True)

@@ -17,13 +17,21 @@ from stayfixed.attach.binding import Binding, not_overlay, read_binding
 from stayfixed.attach.permissions import codex_rules
 from stayfixed.attach.write import Gates, plan_writes
 from stayfixed.config.loader import load
+from stayfixed.config.owner import Owner
 from stayfixed.config.schema import Config
 from stayfixed.errors import Refusal, StayfixedError
 from stayfixed.memory.api import MISMATCH, NO_ORIGIN, NO_REMOTE
 from stayfixed.result import Result
 
 
-def check(root: Path, *, store: Path, machine: Path | None, home: Path | None) -> Result:
+def check(
+    root: Path,
+    *,
+    store: Path,
+    machine: Path | None,
+    home: Path | None,
+    owner: Owner | None = None,
+) -> Result:
     """`attach --check`: the binding and the diff, with nothing written.
 
     Exit 1 on a `mismatch`, and on a memory group that never moved — findings, not refusals,
@@ -53,6 +61,7 @@ def check(root: Path, *, store: Path, machine: Path | None, home: Path | None) -
     `home` is the home the harness memory link goes under, which `plan_writes` asks about as the
     run does, and it is keyword-required for `attach`'s reason: no caller reaches the developer's
     own `~/.claude/` by leaving it out. The command passes `None`, the machine owner's own.
+    `owner` is the owner's layer the command resolved (`config.loader.loads`' own).
 
     **Nor does `project.name`, and that is the same rule rather than a second one.** The name is
     repository-authored (principle 5), `config/schema.py`'s `PROJECT_NAME` is looser than the
@@ -62,7 +71,7 @@ def check(root: Path, *, store: Path, machine: Path | None, home: Path | None) -
     to stayfixed. The reader opens `stayfixed.toml` to learn the name either way; what this line
     owes them is the state and the counts, which this command computed.
     """
-    config = load(root, machine=machine)
+    config = load(root, machine=machine, owner=owner)
     binding = read_binding(root, store=store, machine=machine, config=config)
     try:
         return _report(root, config, binding, machine=machine, home=home)

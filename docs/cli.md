@@ -17,10 +17,11 @@ Three things hold everywhere:
   treats `1` as "proceed anyway" must still never treat `2` that way — a refusal is a boundary,
   not a low-confidence result. Every command that reads `stayfixed.toml` refuses one that is a
   symbolic link, whatever it points at, before reading anything through it: a link to
-  `/dev/zero` would otherwise be read until memory ran out. The refusal exits `2`, except in two
-  commands whose exits mean something else: `stayfixed hook` refuses only on `PreToolUse` and
-  continues on every other event (see [its section](#stayfixed-hook-event)), and `stayfixed doctor`
-  reports it as a `stayfixed.toml` that does not load, a red row, exit `1`.
+  `/dev/zero` would otherwise be read until memory ran out. The refusal exits `2`, except in three
+  commands that read the file the way a session does: `stayfixed hook` runs on with no project
+  configuration and warns once when the session starts (see [its section](#stayfixed-hook-event)),
+  `stayfixed memory session-context` prints nothing, and `stayfixed doctor` reports it as a
+  `stayfixed.toml` that does not load, a red row, exit `1`.
 - **Every `memory` command takes the same three options**, described once here rather than six
   times below. `--root` and `--machine` are not memory's alone: [Shared flags](#shared-flags) says
   which commands take them, and in which sense.
@@ -33,7 +34,9 @@ Three things hold everywhere:
 ## Contents
 
 - [`stayfixed memory index`](#stayfixed-memory-index)
-- [`stayfixed memory trust --in-repo-memory`](#stayfixed-memory-trust---in-repo-memory)
+- [`stayfixed trust list [--all] [--store PATH] [--root PATH] [--machine PATH]`](#stayfixed-trust-list---all---store-path---root-path---machine-path)
+- [`stayfixed trust approve KIND [--store PATH] [--root PATH] [--machine PATH]`](#stayfixed-trust-approve-kind---store-path---root-path---machine-path)
+- [`stayfixed trust revoke KIND [--subject KEY] [--store PATH] [--root PATH] [--machine PATH]`](#stayfixed-trust-revoke-kind---subject-key---store-path---root-path---machine-path)
 - [`stayfixed memory session-context --bundle <name> [--part N]`](#stayfixed-memory-session-context---bundle-name---part-n)
 - [`stayfixed memory inventory`](#stayfixed-memory-inventory)
 - [`stayfixed memory fit`](#stayfixed-memory-fit)
@@ -67,6 +70,7 @@ Three things hold everywhere:
 - [`stayfixed detach [--root PATH] [--machine PATH]`](#stayfixed-detach---root-path---machine-path)
 - [`stayfixed setup [--preset NAME] [--yes] [--home PATH] [--settings PATH] [--machine PATH] [--overlay VALUE] [--root PATH]`](#stayfixed-setup---preset-name---yes---home-path---settings-path---machine-path---overlay-value---root-path)
 - [`stayfixed setup --git-hooks [--uninstall] [--root PATH]`](#stayfixed-setup---git-hooks---uninstall---root-path)
+- [`stayfixed setup --approval-boundary [--home PATH] [--settings PATH] [--machine PATH]`](#stayfixed-setup---approval-boundary---home-path---settings-path---machine-path)
 - [`stayfixed doctor [--json] [--root PATH] [--home PATH] [--machine PATH]`](#stayfixed-doctor---json---root-path---home-path---machine-path)
 - [The reusable workflow](#the-reusable-workflow)
 - [Shared flags](#shared-flags)
@@ -124,8 +128,8 @@ project's own share of the recorded overlay is honoured).
 
 **When the trust gate is shut, the line says so**, on `--check` and on the write path alike, and
 `--json`'s `trusted` is `false`. The question is the one the harness memory link asks: is a note,
-or the store's own directory, inside the repository with no record from `stayfixed memory trust
---in-repo-memory` matching it? In overlay mode, where the store's directory is a real directory in
+or the store's own directory, inside the repository with no record from `stayfixed trust approve
+memory` matching it? In overlay mode, where the store's directory is a real directory in
 the repository, that is every store until the record is made. When the notes or a committed
 `MEMORY.md` are themselves repository data, the line says none of it reaches a session. When only
 the directory is — an overlay store whose notes all live in the overlay — it says the link waits
@@ -156,30 +160,147 @@ out is
 index` rewrites the very files the trust hash covers, so it would revoke the approval it depends
 on. It does not — it re-records the hash across exactly the files it itself wrote, carrying every
 other file's approved digest forward unchanged. If something else changed the store while the
-command ran, it refuses to carry trust and says so.
+command ran, it refuses to carry trust and says so. So it does if the record changed: the hash is
+re-recorded only while the record, read again just before the write, still holds the digest the
+command read before writing, so a `trust revoke memory`, or a new approval, made before that
+final re-read is kept, and the approval keeps the time the person gave it; a run that leaves the
+store's digest where the record holds it writes no record at all. Run from an agent's
+sandboxed shell, where the record's directory refuses the write, the files are still written and
+the command still exits `0`; the approval is left as it was, which the files no longer match, and
+the line says it could not be refreshed, why, and that the person approves the store again after
+reviewing what changed. `stayfixed attach`'s render of a missing index carries the approval the same
+way, and from such a shell leaves it as it was and says the refresh was refused, before the line
+that says the harness memory link waits for a new approval.
 
-## `stayfixed memory trust --in-repo-memory`
+## `stayfixed trust list [--all] [--store PATH] [--root PATH] [--machine PATH]`
 
-Record that the notes sitting inside this repository may reach the model.
+Every kind of approval the areas contribute, and its state in this checkout: one line per subject
+— `approved`, `lapsed` (approved once, at a digest that no longer matches) or `missing` — and on
+every line not approved, the exact command that approves it, for the person at the machine to run
+in their own terminal; the line says an agent must not run it for them.
+Today the one kind is `memory`, a store of notes inside the repository, and `--store` is its flag.
+The checkout is read as a session reads it ([Configuration](#configuration)): a `stayfixed.toml`
+a newer release added a section or key to still describes its store, so what this lists as
+approved is what a session uses. A kind with nothing to describe here (no `stayfixed.toml` a
+session can read, or no store) says so, and says why in the kind's own words. `--all` lists every approval recorded on the machine instead, whichever checkout
+it was given in, each with when it was approved. It names each subject — for `memory`, the store's
+absolute path — escaped where it leaves the path grammar and, past 120 characters, by its start
+and its length; a subject under the home the password database records is named from `~/`.
+`--json` carries every subject whole.
 
-The flag is required and never read: it is a confirmation gesture, not a switch, and it is what
-stops this from being a bare, trivially scripted command.
+`--json` keys: `subjects`, one object per subject in this checkout with its `kind`, its `subject`
+and its `state`, and for a kind with nothing to describe, `kind`, `state` (`undescribed`) and
+`reason`; with `--all`, `approvals` instead, one object per approval with its `kind`, `subject`,
+`digest` and `approved_at` (empty for one `0.3.0` recorded).
 
-**Reads** every file the store yields.
+**Reads** the machine's trust record, and every file each kind hashes.
+
+**Writes** nothing.
+
+## `stayfixed trust approve KIND [--store PATH] [--root PATH] [--machine PATH]`
+
+Record that a person approved every subject of `KIND` in this checkout at its digest now; for
+`memory`, that the notes sitting inside this repository may reach the model. Each subject's label
+and digest are printed before the run ends.
+
+**It is asked of a person.** When standard input is not a terminal it refuses with exit `2`,
+writes nothing, names the exact command for the person at the machine to run in their own
+terminal, and says that an agent must not run it for them. An agent's shell tool runs a command
+with no terminal on standard input (measured on Claude Code 2.1.296, in a terminal session and on
+the desktop app's Code tab alike; no other harness, Codex among them, was measured), so a bare
+call from one is refused; an agent able to open a pseudo-terminal passes the check, which is a
+speed bump and no guarantee.
+No flag skips the check, and nothing takes `--yes`.
+
+**What an approval holds against.** Repository bytes: stayfixed never writes `trust.json` from
+what a repository holds, and a clone, a pull or a pull request does not reach it, since it lies
+under the home the password database records and outside every repository; a change to anything
+the approval hashes lapses it. A repository whose hooks your harness runs — a committed
+`.claude/settings.json` hook in a folder you trusted — is code running as you, and can write any
+file you can, this one included. Not the session's own agent:
+an agent whose shell can write any file you can may write the record as well, and stayfixed
+neither stops nor checks that. That boundary is the harness's sandbox, which is yours to set;
+`stayfixed setup --approval-boundary` prints what to set under Claude Code. Even a sandbox that
+keeps the record out of reach leaves an agent a way to instruct the next session: Claude Code's
+documentation does not list a project's `CLAUDE.md` or `AGENTS.md` among the paths its sandbox
+keeps from the agent's own writes, and Claude Code loads the first as instructions and can load
+the second, through an import or its project instructions setting (read in the documentation, not
+measured). [SECURITY.md](../SECURITY.md) lists an agent with an unsandboxed shell as out of scope.
+
+**Reads** every file the kind hashes — for `memory`, every file the store yields.
 
 **Writes** `~/.config/stayfixed/trust.json` (or the file beside `--machine`).
 
-The hash covers every note, `MEMORY.md`, and the repository-controlled configuration rendered
-into it, keyed by the store's absolute path. Change any of it and the approval lapses — you are
-asked again rather than silently kept. Notes that are *yours* (an overlay store) need no
-approval to reach a session: the standing-rules and volatile-notes bundles deliver them without
-one. A record for an overlay store is not inert, though. The store's directory of links sits
-inside the repository, and the record is what lets `stayfixed attach` create the harness memory
-link to it: until one exists, `memory index` and `memory fit` say the link waits for it and
-`attach` names this command instead of making the link.
+`--json` keys: `kind`, and `approved`, one object per subject recorded, with its `subject`, its
+`label`, its `digest` and `was`, its state before the run (`approved`, `lapsed` or `missing`).
 
-Exits `2` if `trust.json` exists and does not parse. It holds every project's approval on the
-machine, so nothing will overwrite a file it could not read — repair or delete it.
+For `memory`, the hash covers every note, `MEMORY.md`, and the repository-controlled
+configuration rendered into it, keyed by the store's absolute path. Change any of it and the
+approval lapses — you are asked again rather than silently kept. Notes that are *yours* (an
+overlay store) need no approval to reach a session: the standing-rules and volatile-notes bundles
+deliver them without one. A record for an overlay store is not inert, though. The store's
+directory of links sits inside the repository, and the record is what lets `stayfixed attach`
+create the harness memory link to it: until one exists, `memory index` and `memory fit` say the
+link waits for it and `attach` names this command instead of making the link.
+
+The record is the machine's one record of approvals, of every kind, and this command keeps the
+store's as kind `memory`, its subject the store's absolute path. It is versioned: a JSON object
+holding `version` (`1`) and `approvals`, each with its `kind`, `subject`, `digest` and
+`approved_at`. The flat map `0.3.0` wrote, a store's path to its digest, is read as approvals of
+kind `memory`, so an upgrade keeps every one, and the first write upgrades the file in place; a
+`0.3.0` reading a version-1 record finds no approval in it and asks again — and an approval made
+there, after a downgrade, rewrites the record as its flat map holding that one approval, so every
+other approval the version-1 record held is gone and is asked for again after the upgrade back.
+Every write replaces the
+whole file in one atomic step, and no lock is taken: two commands writing at once each replace it
+whole, the last one wins, and neither leaves it torn. The one write a person did not ask for, the
+refresh `memory index` makes over its own files, is the exception: it writes only while the record,
+read again just before its write, holds the digest it read, so it never undoes a revoke made before
+that final re-read.
+
+Exits `2` if `trust.json` exists and is neither a record this stayfixed reads nor `0.3.0`'s flat
+map — not JSON, not UTF-8, a later version, a `version` that is neither `1` nor later (`0`, `"1"`,
+`true`), an `approvals` with no `version`, or a version-1 record that is not whole: a key besides
+`version` and `approvals`, an approval that is not an object of four text fields, or one approval
+named twice. It holds every project's approval on the machine, so nothing will overwrite a file
+it could not read — repair or delete it; for a record of a later version, which a later stayfixed
+wrote and is met after a downgrade, update stayfixed instead, since deleting it would destroy that
+release's approvals. An unknown `KIND` exits `2` naming the kinds there are. Every subject is
+recorded in one write of the record, so a write that fails leaves it as it was.
+A write to the record refused as an agent's sandbox refuses one (`EPERM` on macOS and `EROFS` on
+Linux and WSL2, as Claude Code's sandboxing reference gives them) exits `2`, writes nothing, and
+says that a person must run the command in their own terminal, outside the agent's sandbox, and
+that met in their own terminal it is the directory itself refusing writes, as a read-only mount or
+an immutable flag does; `trust revoke` says the same. A directory you may not write for its mode
+exits `1`, naming it.
+
+`stayfixed memory trust --in-repo-memory` is the old spelling of `stayfixed trust approve memory`:
+it runs this command, terminal check included, says so after it ran, and is removed in `0.5.0`.
+Until then its `--json` carries this command's keys and keeps the old spelling's beside them, each
+read off this run: `was_trusted`, whether the store was approved at its digest before the run;
+`trusted`, whether the record holds that digest after it; and `digest`, the store's digest.
+
+## `stayfixed trust revoke KIND [--subject KEY] [--store PATH] [--root PATH] [--machine PATH]`
+
+Withdraw the approval of every subject of `KIND` in this checkout, or of the one recorded subject
+`--subject` names, as `trust list --all --json` spells it. It needs no terminal: withdrawing is the
+direction that fails safe. The checkout is described as a session reads it, as `trust list`
+describes it, so an approval a session uses is withdrawn by this spelling whatever a command would
+refuse in `stayfixed.toml`. A revoke that matches nothing exits `1`, writes nothing, and lists what
+the kind has recorded, each subject named as `trust list --all` names it. So does one whose kind
+cannot describe the checkout — no `stayfixed.toml` a session can read, as after `stayfixed
+uninstall` — which says why and names `stayfixed trust revoke KIND --subject KEY` with a subject
+`stayfixed trust list --all --json` prints.
+
+`--json` keys: `kind`, and `revoked`, the subjects withdrawn; a revoke that matched nothing adds
+`recorded`, every subject the kind has recorded, whole.
+
+**Reads** the machine's trust record, and, with no `--subject`, every file the kind hashes.
+
+**Writes** `~/.config/stayfixed/trust.json` (or the file beside `--machine`), only when an
+approval was withdrawn. Run from an agent's sandboxed shell, that write is refused: the command
+exits `2`, withdraws nothing, and says a person must run it in their own terminal, outside the
+agent's sandbox.
 
 ## `stayfixed memory session-context --bundle <name> [--part N]`
 
@@ -204,7 +325,10 @@ entry.
 When the store's notes are repository data with no trust record, both bundles are empty, and
 this command says nothing rather than explaining why — its output *is* what reaches the model.
 `stayfixed memory index` and `stayfixed memory fit` are where the explanation is printed,
-because those are the commands a person runs.
+because those are the commands a person runs. It reads the configuration as the session does
+([Configuration](#configuration)), and a machine file that does not load is read as recording no
+overlay, so the notes not kept in an overlay still arrive; the session's own warning names that
+file.
 
 **Writes** nothing: the bundle goes to standard output and nowhere else.
 
@@ -236,27 +360,46 @@ event, and writes the harness's expected output.
 Not something to run by hand. Its exit-code policy differs from every other command: an internal
 error refuses (`2`) only on `PreToolUse`, and degrades open (`0`) everywhere else — on
 `UserPromptSubmit` an exit `2` erases what you typed, so a bug in stayfixed must not cost you
-your prompt. A `stayfixed.toml` that does not load takes the same path, and standard error names
-the kind of fault in stayfixed's own words, not an internal error's:
-`stayfixed: stayfixed.toml does not load (a file or value the loader refuses)` — a file it cannot
-read, one that is not TOML, or a value it refuses — `(a path that leaves the project or passes
-through a symlink)`, such as a symlinked `AGENTS.md`, or `(a path on which a directory cannot be
-checked for a symlink)` — then `; refused` or `; continuing open`, and a pointer
-to `stayfixed docs check` for the detail. The loader's own message is never printed here:
-it carries the repository's text, and a refused `PreToolUse` shows this stream to the model.
-`stayfixed docs check` loads the same file and prints that message in full.
+your prompt.
 
-A `stayfixed.toml` that is a symbolic link is never read, whatever it points at, and no handler
-runs. On `PreToolUse` the call is refused (`2`), and on every other event, `SessionStart`
-included, the hook continues (`0`) with nothing on standard output; either way standard error
-says `stayfixed: stayfixed.toml is a symbolic link, and no stayfixed command reads stayfixed.toml
-through one; replace the link with the file itself`, followed by `; refused` or `; continuing
-open`.
+**A session never dies of its configuration.** The guards run in every repository, on the preset
+and the machine owner's layer, whatever `stayfixed.toml` holds: none at all, one that does not
+load, and a broken machine file included. A configuration is never the reason a call is refused;
+only a guard refuses. The project's file is read the way [Configuration](#configuration) says a
+session reads it: an unknown section or key is ignored and a value that cannot be used is put back
+to the preset's, so the rest of the file still applies. The handlers about the project — the
+worktree link, the overlay status, the red-run note — say nothing when there is no project
+configuration to use, which is so when there is no file, and when the file is a symbolic link
+(never read, whatever it points at), is not UTF-8, cannot be read or is not TOML, or holds a key
+nothing can stand in for: a required key with no default (`[stayfixed] version`, `[project]
+name`) that is missing or cannot be used, or whose section is not a table, or a key whose preset
+value does not hold in this repository either, such as a `[paths]` default under a committed
+symlink. Nor is a file longer than 256 KiB read at all, nor one read key by key past more settings
+it cannot use than its length allows — 64 for a file of up to 16 KiB, fewer for a longer one, 4 at
+256 KiB: each costs the session a whole rebuild of the configuration, which costs what the file is
+long, so a long file of unusable keys would keep a hook past its timeout, which lets the call
+through, or blocks it where the hook sets `onFailure` (below). Such a file is dropped whole, and the guards run on the
+preset and the owner's layer.
+
+What the session could not use is said once, on `SessionStart`, in one warning about each file, to
+the person (`systemMessage`) and at the head of the model's context (`additionalContext`), both
+counted inside the hook's output cap: that `stayfixed.toml` does not load, that one of its keys
+cannot be used and nothing can stand in for it (naming the key), that it is longer than a session
+reads, that it holds more settings this stayfixed cannot use than a file its length is read past,
+that it loaded with some
+settings ignored or put back to the preset's (counting them, and saying when a newer stayfixed
+wrote it), or that the machine file, named by the path that was read, could not be used whole.
+Each points at `stayfixed doctor`, and none carries the loader's own message, which carries the
+repository's text; a command such as `stayfixed docs check` still refuses the file and prints that
+message in full. Every other event
+prints no warning, and records once per session, in the diagnostics log below, that the session
+runs without some of its configuration (`config-fallback`).
 
 **Writes** inside `stayfixed/` under the data root the harness names — `CLAUDE_PLUGIN_DATA`, or
 Codex's `PLUGIN_DATA` — and nowhere else of its own: `.probe`, written each time it dispatches to
 learn whether the root can be written at all; under `markers/`, one empty file per `once_key`
-handler that delivered, filed under a directory per session, both names hashed to a fixed width,
+handler that delivered, and one for a `config-fallback` record, filed under a directory per
+session, both names hashed to a fixed width,
 with all but the newest fifty session directories removed; and `diagnostics.jsonl`, one JSON line
 per diagnostic record, rotated to `diagnostics.1.jsonl` once it would pass 256 KiB. With no data
 root, or a relative one, nothing is written there and a `once_key` handler is asked on every
@@ -307,6 +450,23 @@ is unmeasured: Codex CLI 0.162.0-alpha.17.2 ran the plugin's hooks once they wer
 stderr has not been observed there, and the README's [What each agent
 enforces](../README.md#what-each-agent-enforces) says what stayfixed claims on Codex.
 
+**What never reaches the wrapper is Claude Code's to block.** A hook that runs past its ten-second
+`timeout`, or that cannot start at all — the wrapper missing or not executable — never gets to map
+an exit code, and by default Claude Code then carries the tool call out. So the `closed`
+`PreToolUse` entry sets `"onFailure": "block"`: from Claude Code 2.1.295, such a failure blocks the
+call as an exit `2` does, in Claude Code's words and with no stayfixed reason. The wrapper's own
+exits under `closed` are `0` and `2`, neither of which that setting reads as a failure, so it
+changes nothing a working hook decides; a session whose hook cannot start at all then runs no
+`Bash` call until the plugin is repaired. Such a session still edits files: the entry's matcher is
+`Bash`, so the Read, Edit and Write tools can repair what keeps the hook from answering. To run
+`Bash` meanwhile, turn the plugin off with `/plugin`, or start Claude Code with
+`claude --settings '{"disableAllHooks": true}'`, which turns off every hook for that session and
+every guard with them. Claude Code before 2.1.295 was not measured with the key: one that
+rejected it would lose the entry, and the guard with it.
+Codex's reader of `hooks.json` ignores a key it does not define on an entry (read in its source,
+`codex-rs/config/src/hook_config.rs`, on 2026-10-17, and not measured). The `open` entries leave it
+unset: a failure there is the session's to survive.
+
 **Exit `2` is shared with the platform, and the wrapper does not pretend otherwise.** Because a
 `2` the dispatcher produced is a deny that must pass through, a `2` CPython produced underneath
 is indistinguishable from it and no token accompanies it. What the wrapper owns is the set of
@@ -321,7 +481,7 @@ wrapper, and `stayfixed doctor`'s `wrapper` row reports on the same basis.
 | `SF_NO_PY` | No candidate interpreter is 3.11 or newer **and outside the project root**. The message distinguishes the two states, because their remedies differ: a candidate that was found inside the checkout and skipped says so and names the remedy, while "none among the candidates" means no interpreter answered at all. `STAYFIXED_PYTHON_CANDIDATES` replaces the built-in list, space-separated — and is honoured **only when the wrapper's stdin is a terminal**, because it names the program the wrapper executes. See below. |
 | `SF_NO_GIT` | There is no `git` at any of the wrapper's absolute candidate paths. `git`'s answer is one of the two anchors the interpreter containment is measured against, so a machine without one has no anchor this process can trust: it degrades under `open` and refuses under `closed`, rather than keeping the shape of the containment and none of its strength. `git` is **not** looked up on `PATH` here — see below. |
 | `SF_NO_LAUNCHER` | There is no readable `scripts/stayfixed` beside the wrapper. The launcher is derived from the wrapper's own path and never read out of the environment: the harness substitutes the plugin root into the *command string*, so the wrapper that runs is always the plugin's own, while a variable of that name reaching this process from anywhere else would choose the program Python is handed — before any stayfixed guard runs. Readability and not merely existence: a launcher at mode `000` otherwise reached CPython, which printed its own error and exited `2` with no token. |
-| `SF_NO_ROOT` | `CLAUDE_PROJECT_DIR`, or `git`, named a project root the wrapper could not enter. A root that cannot be *resolved* is silent and correct — nothing is configured, so nothing is emitted — but a root that was named and cannot be entered used to leave the process in the harness's working directory, where every `--root`-defaulting entry would read whatever project happened to be there. |
+| `SF_NO_ROOT` | `CLAUDE_PROJECT_DIR`, or `git`, named a project root the wrapper could not enter. A root that cannot be *resolved* is correct: no project configuration is read, so the handlers about the project say nothing, and the session guards still judge on the preset and the machine owner's layer — but a root that was named and cannot be entered used to leave the process in the harness's working directory, where every `--root`-defaulting entry would read whatever project happened to be there. |
 | `SF_RC` | `stayfixed` exited with something other than `0` or `2`; the code is printed. |
 
 **Which values may choose what.** The wrapper asks one question of everything it reads: is this
@@ -786,7 +946,7 @@ finding); every relative local link in the agents file resolves to a file — re
 document's own directory, and only when it lands inside the project root, since a link that
 walks out through `..` would be settled against the machine rather than the repository (an
 absolute link is not read at all, nor is an anchor, a URL or a `mailto:`). Budgets are the
-effective ones — the preset's, lowered by `[budgets]` if the project chose to. The memory
+effective ones — the preset's, or the value `[budgets]` sets in its place. The memory
 store's link graph is `stayfixed memory refs`'s, as advice.
 
 **Writes** nothing.
@@ -1062,8 +1222,9 @@ thing are no change at all. Each changed key gets one verdict:
 | `stayfixed.state` and `stayfixed.enforced`, judged as one | this tree enforces every gate the base enforces, and `state` does not move back (`initialised`, `adopting`, `installed`) | `tightened` when either moved forward, else `neutral` | `refused` |
 | `gates.builtin` | a gate added, or one removed that the base does not enforce | `tightened` when one was added, else `neutral` | `refused` |
 | `gates.custom.<name>.run` | the gate is new, or the base does not enforce it | `tightened` when new, else `neutral` | `refused` |
-| `budgets.<name>` | the effective value is at most the base's | `tightened` | `refused` |
-| `stayfixed.preset`, `stayfixed.profile`, `stayfixed.agents`, `project.name` | always: no gate reads them | `neutral` | — |
+| `budgets.<name>`, a gate's budget (`agents_md_lines`, `agents_md_words`, `status_lines`, `roadmap_prose_lines`, `roadmap_prose_words`) or a session's (`memory_index_words`, `startup_rules_words`, `volatile_notes_words`, `volatile_ttl_days`) | the effective value is at most the base's | `tightened` | `refused` |
+| `ledger.code_roots` and `ledger.evidence_boundary_required_for` | every entry the base lists is still listed | `tightened` when one was added, else `neutral` | as any other key |
+| `stayfixed.preset`, `stayfixed.agents`, `project.name`, and every key whose class is a preference (`stayfixed.profile`, `memory.mode`, `memory.groups`, `memory.index_extra`), the machine owner's or the plugin's | always: no gate judges a pull request by them | `neutral` | — |
 | `stayfixed.version` and `ci.ref`, judged as one upgrade | the version is exactly the running stayfixed's and not earlier than the base's, and a moved `ci.ref` is the commit `--workflow-sha` names and one of stayfixed's release tags names | `upgrade` | as any other key |
 | any other key | — | — | `refused` while the base enforces any gate, `noted` while it enforces none |
 
@@ -1077,7 +1238,7 @@ promotes a gate is held to that gate in its own run.
 
 **How a refused change lands.** While any gate enforces, a pull request cannot make a change the
 table refuses, and under `installed` that includes routine upkeep: a `[paths]` value,
-`[artifacts] local`, a `[ledger] code_roots` entry, a `[commit_messages] types` entry, a custom
+`[artifacts] local`, a `[ledger] code_roots` entry removed, a `[commit_messages] types` entry, a custom
 gate's `run`, `[gates] custom_timeout_seconds`, `[project] base_branch`. The owner makes such a
 change by pushing it directly to the base branch; every later pull request is judged against it.
 If you want that push to need you, and not an agent working with your credentials, protect the
@@ -1844,6 +2005,13 @@ under an ignored `build/`, say): creating it was allowed because nothing was the
 finishes the run. A `CLAUDE.md` or `AGENTS.md` your own excludes ignore is taken back like any
 other. Run it on a checkout you trust.
 
+**What stays on the machine.** `uninstall` takes back one repository's footprint, and what is the
+machine's stays: the deny rules `stayfixed setup` added to the user settings file, and every
+approval in `~/.config/stayfixed/trust.json`, this repository's store among them. Run `stayfixed
+trust revoke memory` before uninstalling to withdraw this repository's approval; afterwards, with no
+`stayfixed.toml` to describe the store, `trust revoke` says so and names `stayfixed trust revoke
+memory --subject KEY`, with a key `stayfixed trust list --all --json` prints.
+
 **Reads** `stayfixed.toml`, `.stayfixed/manifest.json`, `.stayfixed/local/artifacts.json`, every file
 an artifact targets, `git check-ignore` for each existing file a removal targets at a place a
 `[paths]` value chose, and what is under `.stayfixed/local/`.
@@ -2312,8 +2480,8 @@ looked like before `attach` created it.
 
 **When the harness memory link waits for approval, `attach` says so, and says why.** The link
 exposes the link tree, which sits inside the repository, so it is made only once the store is
-approved; until then the run's line ends with a note to run `stayfixed memory trust
---in-repo-memory`, then `stayfixed attach` again. The note says whether the store has no approval
+approved; until then the run's line ends with a note to run `stayfixed trust approve memory` in
+a terminal, then `stayfixed attach` again. The note says whether the store has no approval
 yet or had one and then changed — a note, or `memory.index_extra`, that changed since the approval
 was recorded lapses it, and a pull that appends one line to one note is enough. A lapsed approval
 also withdraws the harness memory link from every checkout that held one, and whenever the run
@@ -2405,8 +2573,8 @@ It exits `2` on a refusal, in the order the run meets them:
   `git rev-parse --git-path info/exclude` that names no exclude file; an exclude file that cannot
   be read or holds a `stayfixed:attach` block opened or closed twice (the refusal names the file),
   or, when the block needs a line, that is a symlink or sits in a directory you cannot write.
-- A trust record, the machine's `trust.json`, that cannot be read or is not the record it should
-  be.
+- A trust record, the machine's `trust.json`, that cannot be read or is not a record this
+  stayfixed reads.
 
 Every refusal in that list happens before anything is written, so a refused attach leaves both the
 repository and the overlay as they were. What is left can only happen once writing has begun:
@@ -2590,7 +2758,8 @@ with part of the attach already undone:
 Configures this machine from a preset, `recommended` unless `--preset` names another: the
 machine configuration file's `[personal]` and `[machine]` tables, the deny rules and personal
 values in `<home>/.claude/settings.json`, and the preset's plugins, one install per plugin per
-configured harness. `--home` and `--machine` default to the home directory and to
+configured harness. That file is read as Claude Code reads it, past a leading byte-order mark,
+which a rewrite keeps. `--home` and `--machine` default to the home directory and to
 `~/.config/stayfixed/config.toml` — the file every reader reads, and not whatever
 `XDG_CONFIG_HOME` or `STAYFIXED_CONFIG` names, because a machine file half the installation
 cannot find is not a machine file. Both flags exist so this command can be pointed at a
@@ -2615,15 +2784,16 @@ else: the machine configuration file is still `--machine`'s, and the harness mem
 under `--home`.
 
 `setup` is not the only command that writes outside a repository, and two others say so in their
-own sections: `stayfixed memory trust` records approval in `~/.config/stayfixed/trust.json`, and
+own sections: `stayfixed trust approve` records approval in `~/.config/stayfixed/trust.json`, and
 `stayfixed attach` places the harness memory link under `<home>/.claude/projects/`. It is the only
 one that writes the machine configuration file and `<home>/.claude/settings.json`. `--root` (default `.`) is the project this invocation
 was run from; the only thing it is used for is refusing an `--overlay` any checkout of it could
 reach (below).
 
-`setup` is the only writer of the machine configuration file, and the two existing readers do
-not change: `[personal]` is `config.loader`'s, `[overlay] root` is `memory.store`'s, and both
-still resolve the file `--machine` names or the default one. A second run merges rather than
+`setup` is the only writer of the machine configuration file, and its readers do not change to
+suit it: `[personal]`, `[guards]` and the session `[budgets]` are `config.owner`'s, which every
+command's load and every session read; `[overlay] root` is `config.overlay`'s; and each resolves
+the file `--machine` names or the default one. A second run merges rather than
 replaces, key by key: a personal value already recorded — by an earlier `setup` or by your own
 hand — is never overwritten by the preset's own default, and an overlay root a previous run
 recorded survives a run that only changes something else. A table `setup` knows nothing about is
@@ -2635,6 +2805,11 @@ where Claude Code reads this plugin's own options, and that mirror is recomputed
 file on every run. The machine file wins: a value you set in Claude Code's plugin-config UI is
 overwritten by the next `setup`, because one of the two copies has to decide and the machine file
 is the one everything in stayfixed reads.
+
+**From an agent's sandboxed shell** `setup` cannot write the machine directory or the user
+settings: with Claude Code's sandbox on, an agent's shell writes nothing outside the working
+directory and the temporary directory. It says so in one sentence (below, under the exits), naming a
+person outside the agent's sandbox as the one to run it, and never ends in a traceback.
 
 **Plugins are installed per configured harness**, from `[defaults.stayfixed] agents` (`claude`
 and `codex` by default) and from the preset's own per-harness marketplace table
@@ -2732,10 +2907,20 @@ hook).
 - any other path this command cannot ask about before its first write, named with why: `<home>`,
   an `--overlay`, a `--root` or a `--settings` directory below a directory nobody may search, and a
   symbolic-link loop at `~/.claude`, `--home`, `--root`, `--settings` or `--overlay`, on every
-  Python.
+  Python;
+- a write refused as an agent's sandbox refuses one, met by the machine file or the user settings
+  file (`EPERM` on macOS and `EROFS` on Linux and WSL2, as Claude Code's sandboxing reference gives
+  them), or by the question asked of the settings directory before the first write (a directory
+  whose mode lets you write it, which the system still says you may not): one sentence, saying
+  `setup` stopped, that a person must run it in their own terminal, outside the agent's sandbox,
+  and that met in their own terminal it is the directory itself refusing writes, as a read-only
+  mount or an immutable flag does. A run it stops part-way is finished by the next.
 
 The machine file's directory is not asked about before the first write: a write there that fails
-ends the run `1`.
+ends the run `1`, or `2` in the sentence above where the sandbox refused it. So does the user
+settings file, which is read when it is merged, after the machine file is written: one that cannot
+be read or is not one JSON object the parser reaches ends the run `1`, naming it, and once it is
+repaired the next run finishes what this one began.
 
 These questions are asked in one fixed order, and the first refusal ends the run: what `--overlay`
 names, and whether an existing path is an overlay; the preset; the settings file's place; where a
@@ -2814,12 +2999,52 @@ also given, the hook cannot be read, or a hook names `prepare-commit-msg.local`.
 
 ---
 
+## `stayfixed setup --approval-boundary [--home PATH] [--settings PATH] [--machine PATH]`
+
+Prints what keeps an agent's shell out of the trust record's directory under Claude Code, for you
+to set, and sets none of it: an approval holds against an agent only while the harness's sandbox
+holds ([`stayfixed trust approve`](#stayfixed-trust-approve-kind---store-path---root-path---machine-path) says why), and
+stayfixed neither enforces nor checks that boundary. The line names:
+
+- the deny rule `Edit(//<the trust record's directory>/**)` for `permissions.deny` in
+  `<home>/.claude/settings.json`, or in the file `--settings` names. The directory is that of
+  `~/.config/stayfixed/trust.json`, or of the file beside `--machine`, which is the machine
+  configuration file's own, so the rule covers that file too; where a symbolic link makes the
+  directory as named and the directory it leads to differ, a rule is named for each, since the
+  harness compares a write against the resolved path and a tool call may carry the path as named.
+  Measured on Claude Code 2.1.296, an `Edit` rule in that spelling stops both the sandboxed shell
+  and the file tools; one leading slash anchors the path at the working directory and stops
+  nothing outside it, and a `Write` rule stops neither;
+- `sandbox.enabled = true` in the same file, since the rule holds against the file tools on its
+  own and against the shell only while the sandbox confines it;
+- and, since a project's `.claude/settings.json` or `.claude/settings.local.json` turns a user's
+  sandbox off, `sandbox.enabled = true`, `sandbox.failIfUnavailable = true` and
+  `sandbox.allowUnsandboxedCommands = false` in the managed settings file only an administrator
+  writes (Claude Code's sandboxing reference's recipe for enforcing the sandbox),
+  `/Library/Application Support/ClaudeCode/managed-settings.json` on macOS and
+  `/etc/claude-code/managed-settings.json` on Linux.
+
+`--home`, `--settings` and `--machine` name the two files as `setup` would write them, and each is
+printed absolute: a rule over a relative `--machine`'s directory would carry one leading slash and
+deny edits under the working directory of every project. `--json` keys: `deny_rules`, `settings`
+and `managed`.
+
+**Reads** nothing but the directory the trust record lies in, to resolve it.
+
+**Writes** nothing.
+
+**Exits** `0`; `2` beside `--preset`, `--overlay`, `--yes`, `--git-hooks` or `--uninstall`, which
+name a write this run does not make; `1` for a `HOME` that is empty with no `--home`, and for a
+machine whose password database lists no home with no `--machine`.
+
+---
+
 ## `stayfixed doctor [--json] [--root PATH] [--home PATH] [--machine PATH]`
 
-Seventeen checks over one installation. It **reports and never repairs**: every finding
+Eighteen checks over one installation. It **reports and never repairs**: every finding
 carries the command that would fix it, and not one of them is run for you. Nothing is written.
 
-The rows come in a fixed order: the installation's own eleven first, then the six about the
+The rows come in a fixed order: the installation's own twelve first, then the six about the
 private layer — the binding's (`attached`), the note store's (`bundles`, `store-debris`,
 `harness-link`) and the private overlay's (`pre-commit`, `overlay-requires`). Match a row by its `name`, never by its
 position.
@@ -2859,13 +3084,14 @@ check with `name`, `status`, `detail` and `remedy`, so every remedy is there.
 
 | Check | What it answers | What it reads |
 |---|---|---|
-| `not-initialised` | whether there is a `stayfixed.toml` here, and whether it loads | `stayfixed.toml` |
-| `versions` | whether the project's `[stayfixed] version` is the stayfixed running | `stayfixed.toml`, the package |
+| `not-initialised` | whether there is a `stayfixed.toml` here, and how much of it a session can use: with none, a warning that the session guards and `doctor` work without one and `stayfixed init` adds the rest; with one that loaded with settings ignored or put back to the preset's, a warning naming at most three of their keys and counting the rest, never their values; red only for one a session drops whole, in the words of the session's warning | `stayfixed.toml` |
+| `versions` | whether the project's `[stayfixed] version` is the stayfixed running; with no project configuration, which stayfixed runs | `stayfixed.toml`, the package |
 | `files` | the hook wrapper's executable bit, and the three shipped files against the hashes the release recorded beside them | `hooks/run-hook.sh`, `hooks/hooks.json`, `scripts/stayfixed`, `hooks/hashes.json` |
 | `wrapper` | whether the wrapper can actually reach stayfixed on this machine | one `run-hook.sh open --version`, and only under the plugin root this stayfixed is part of |
 | `hook-entries` | every hook entry, counted by provenance, with any that claims the stayfixed marker and is in no ledger named by position; and, as a warning, every skill, command or agent file whose frontmatter declares hooks, which it does not judge | `.claude/settings.json`, `.claude/settings.local.json`, `.codex/hooks.json`, and `~/.claude/settings.json`; every `SKILL.md` below a `.claude/skills` anywhere in the tree that git does not ignore, a checked-out submodule's committed files included, and every `*.md` below `.claude/commands` and `.claude/agents` |
-| `codex-trust` | whether any stayfixed hook is untrusted on Codex, and, when `[stayfixed] agents` lists `codex`, which surfaces are not verified there and which hold in CI | `stayfixed.toml`, the harness registry |
-| `budgets` | every budget that overrides the preset, and every one the ceiling clamps | `stayfixed.toml`, the preset |
+| `codex-hooks` | whether any stayfixed hook is untrusted on Codex, and, when `[stayfixed] agents` lists `codex`, which surfaces are not verified there and which hold in CI | `stayfixed.toml`, the harness registry |
+| `budgets` | every budget set above the preset, named raised, and every one set below it, named lowered | `stayfixed.toml`, the machine file, the preset |
+| `preferences` | each machine-owner key and each preference, with the layer its value came from — the preset, the repository or the machine file — and the value only where it is a boolean, a number or one of stayfixed's own words; red when the machine file does not load, in the words every command refuses it in, which name the file and where the parser stopped; a warning naming the file when a key in it could not be used | `stayfixed.toml`, the preset, the machine file |
 | `cli-path` | whether `stayfixed` resolves on `PATH` | `PATH` |
 | `ci-ref` | whether `[ci] ref` is the commit of a released stayfixed tag (or the `v1` alias: a warning, as mutable, once a `1.x` release creates it, and red until then), and whether the rendered workflow pins the same ref — under `[ci] mode = "reusable"`, a workflow that is not there at all is a warning and never a green row, and so are a path that is there and is not a regular file and a file past the 256 KiB bound on the read | `git ls-remote --exit-code` over the public repository's tags, bounded at 30 seconds; *.github/workflows/stayfixed.yml*, read as a regular file and to a bound |
 | `diagnostics` | how many reasons the hook sink recorded — a count, never a line of the file | `${CLAUDE_PLUGIN_DATA}/stayfixed/diagnostics.jsonl` |
@@ -2910,23 +3136,23 @@ policy settings and `--settings` are yours, not the repository's, and this row d
 | `links-elsewhere` | a link to anything but the main checkout's `paths.memory` or this checkout's own | `red` | `attach` |
 | `tree-gone` | anything else, where the store does not resolve because its link tree at `paths.memory` is gone | `warn` | `attach` |
 | `tree-there-not-resolving` | anything else, where the store does not resolve and its link tree is there | `warn` | `memory index --check`, then `doctor` |
-| `trust-record-unreadable` | anything else, where this machine's trust record cannot be read | `warn` | `memory trust --in-repo-memory`, which says why, then `doctor` |
+| `trust-record-unreadable` | anything else, where this machine's trust record cannot be read | `warn` | `trust list --all`, which says why and needs no terminal, then `doctor` |
 | `attached` | a link to the store, its approval holding | `ok` | — |
-| `link-lapsed` | a link to the store, its approval lapsed | `warn` | read what changed, `memory trust --in-repo-memory`, then `attach` |
+| `link-lapsed` | a link to the store, its approval lapsed | `warn` | read what changed, have the person at the machine run `trust approve memory` in their own terminal, then `attach` |
 | `link-never-approved` | a link to the store, no approval recorded | `warn` | `attach`, which withdraws a link to the main checkout's tree; a link to this checkout's own tree, which it does not withdraw, is named to be removed |
 | `fallback-unapproved` | anything but a link, with the fallback naming the store, its approval lapsed or never given; the row says which | `warn` | `attach`, which withdraws the key |
 | `fallback-approved` | a real directory, with the fallback naming the store, its approval holding | `ok` | — |
 | `fallback-instead-of-a-link` | nothing, with the fallback naming the store, its approval holding | `warn` | `attach`, which makes the link |
 | `no-links-approved` | nothing, the store's approval holding | `warn` | `attach` |
-| `lapsed-links-withdrawn` | nothing, its approval lapsed | `warn` | read what changed, `memory trust --in-repo-memory`, then `attach` |
+| `lapsed-links-withdrawn` | nothing, its approval lapsed | `warn` | read what changed, have the person at the machine run `trust approve memory` in their own terminal, then `attach` |
 | `never-approved` | nothing, no approval recorded | `ok` | — |
 | `settings-unreadable` | any state above that reads `ok`, beside a settings file that cannot be read as settings; the row names the file | `warn` | make the file one JSON object, then `doctor` |
 
-**Ten of the seventeen have a `skip` arm — sixteen arms between them: one no build can answer,
-and fifteen on a state of this machine or this repository.** A `skip` is **not** a finding and
+**Twelve of the eighteen have a `skip` arm — twenty-five arms between them: one no build can
+answer, and twenty-four on a state of this machine or this repository.** A `skip` is **not** a finding and
 never reaches the exit code, so read the detail — each one says which measurement it is missing.
 
-The one no build can answer is `codex-trust`: it needs the hash Codex keys hook trust on, which
+The one no build can answer is `codex-hooks`: it needs the hash Codex keys hook trust on, which
 no spike measured. When `[stayfixed] agents` lists `codex`, its detail also says what stayfixed
 claims there: the session guards and session notices are not verified on Codex, and the
 repository gates hold in CI.
@@ -2938,32 +3164,43 @@ repository `init` set up carries a ref and the row answers. `files` compares the
 plugin against the hashes the release recorded beside it, and skips only on a build carrying no
 such record.
 
-The nine that skip on a state are `files` and `wrapper`, when there is no plugin root this
+The eleven that skip on a state are `files` and `wrapper`, when there is no plugin root this
 process can vouch for; `attached`, when this machine records no overlay to check the ledger
 against, or the overlay could not be asked at all; `pre-commit` and `overlay-requires`, when
 no overlay root is recorded on this machine **or** when the root it records is not a directory
 — two different arms with two different sentences, because a machine that recorded an overlay
-and then moved it is not a machine that recorded none; `overlay-requires` again when the
+and then moved it is not a machine that recorded none; `attached`, `pre-commit` and
+`overlay-requires` again, each in a sentence of its own, when the machine file does not load, so
+whether it records an overlay is not known, which is neither of those; `overlay-requires` again when the
 overlay declares no stayfixed requirement; `bundles` and `store-debris`, when the note store does
 not resolve; `diagnostics`, when no harness data root is set in the environment, which is every
 `stayfixed doctor` run from a terminal rather than from a hook; and `ci-ref`, when no `[ci] ref`
-is recorded. `files` has a second state arm of its own — a plugin built
-before the release record existed carries none, and it says so rather than comparing anything.
+is recorded. `files` has a
+second state arm of its own — a plugin built before the release record existed carries none, and
+it says so rather than comparing anything.
+And six rows read the project configuration and skip, in one sentence, when there is none to
+read — no `stayfixed.toml`, or one a session drops whole: `budgets`, `ci-ref`, `attached`,
+`bundles`, `store-debris`, and `harness-link` where `HOME` is not the database's home, since what
+makes the link then depends on the store's mode.
 
-**A `skip` does not mean there is nothing to do.** Seven of the sixteen arms carry a remedy:
-the two plugin-root skips, `wrapper`'s named-root skip, both of `attached`'s, and the
-moved-overlay arm of `pre-commit` and of `overlay-requires`. The dividing line is not "always"
+**A `skip` does not mean there is nothing to do.** Seven of the twenty-five arms carry a remedy:
+the two plugin-root skips, `wrapper`'s named-root skip, `attached`'s no-overlay and
+could-not-be-asked arms, and the moved-overlay arm of `pre-commit` and of `overlay-requires`. The dividing line is not "always"
 versus "on a state" — every other arm skips on a state and carries nothing: `bundles`,
 `store-debris`, `diagnostics` and `ci-ref`, the *no overlay recorded* arms of the two overlay
-rows, `overlay-requires`' no-requirement arm, and `files` on a build with no release record. Nor
+rows, `overlay-requires`' no-requirement arm, `files` on a build with no release record, and the
+six with no project configuration, whose remedy is
+`not-initialised`'s, and the three on a machine file that does not load, whose remedy is
+`preferences`', red on the same file. Nor
 is it whether another row names a command that changes the state: `pre-commit`'s arm carries
 nothing though `attached` names `stayfixed setup --overlay` there. It is whether the skip is
 itself worth acting on. Those seven report something wrong that no other
 row will tell you: a plugin root nothing can find, a root that will be read and never executed,
-a recorded attach the overlay could not confirm, an overlay root recorded and not there. The
-other nine report a measurement that is simply unavailable — no store, no overlay, no overlay
-requirement, no harness data root, no `[ci] ref`, no release record in this build, no way to ask
-Codex — and no command in that row's gift changes it.
+a recorded attach the overlay could not confirm, an overlay root recorded and not there. Of the
+other eighteen, fifteen report a measurement that is simply unavailable — no store, no overlay, no
+overlay requirement, no harness data root, no `[ci] ref`, no release record in this build, no way
+to ask Codex or no project configuration — and no command in that row's gift changes it, and
+three report a machine file another row is red about, with the command that clears it.
 
 **The one to read first is the plugin root**, because it is the quietest and the worst. When
 this process can find no plugin root at all, `files` and `wrapper` both skip — two rows, no red,
@@ -2972,19 +3209,27 @@ plugin's own launcher, so its root answers for itself, or set `CLAUDE_PLUGIN_ROO
 plugin is installed, which lets `files` read the wrapper even though `wrapper` still will not
 run it.
 
-One more case is not a skip but produces sixteen of them: with no `stayfixed.toml` in `--root`,
-or one that does not load, `not-initialised` goes **red** and every other check skips against it.
-The red row is the one to act on. A `stayfixed.toml` that is a symbolic link is one that does not
-load, whatever it points at, and the row says it is a link; for any other, the row names
-`stayfixed docs check`, which prints the loader's own message.
+**Nothing configured is not broken.** `doctor` reads the configuration the way a session does
+([`stayfixed hook <event>`](#stayfixed-hook-event)), so every row is asked whatever `--root`
+holds. With no `stayfixed.toml`, `not-initialised` **warns**, the six rows above that read the
+project configuration skip, and no row is red for it: a default install, where the guards and
+this report already work, exits `0`. A `stayfixed.toml` that loads with settings ignored or put
+back to the preset's warns, naming at most three of their keys and counting the rest. Only one a session drops whole is **red**: a
+symbolic link, whatever it points at, a file that is not UTF-8, cannot be read or is not TOML, or
+one holding a key nothing can stand in for; the row says which in the session's own words and
+names `stayfixed docs check`, which prints the loader's own message.
 
-**What is printed, and what is not. There is no exception.** Counts, statuses, file paths this
-project chose and stayfixed's own vocabulary print freely; a repository-authored string does not.
-`[stayfixed] version`, `[ci] ref`, a note's filename, a hook's command text, the marker id an
-entry claims, every field of the hook sink's diagnostics log and the reason the store would not
-resolve are all read and none is quoted back — `stayfixed doctor --json` is relayed to a model
-verbatim by the `doctor` skill, so a byte a repository wrote reaching this report is a byte
-reaching the model outside `trust.wrap`.
+**What is printed, and what is not. There is one exception, and it is bounded.** Counts,
+statuses, file paths this project chose and stayfixed's own vocabulary print freely; a
+repository-authored string does not. `[stayfixed] version`, `[ci] ref`, a note's filename, a hook's
+command text, the marker id an entry claims, every field of the hook sink's diagnostics log and the
+reason the store would not resolve are all read and none is quoted back — `stayfixed doctor
+--json` is relayed to a model verbatim by the `doctor` skill, so a byte a repository wrote reaching
+this report is a byte reaching the model outside `trust.wrap`. The exception is the name of a
+`stayfixed.toml` key that `not-initialised` says was ignored or put back to the preset's, which is
+what the owner needs to find it: at most three names, one outside the path grammar withheld and
+one inside it clipped at 120 characters, then a count of the rest, so the row stays short however
+many keys the file holds and however long their names are.
 
 `hook-entries` is where that bites, because its job is to list every entry with its provenance.
 It identifies an entry **by position** — `.claude/settings.local.json entry 3 of 5` — which is
@@ -3086,8 +3331,11 @@ quotes. Its three fields are stayfixed's own vocabulary *for a log stayfixed wro
 is found through `${CLAUDE_PLUGIN_DATA}` — the same environment class a committed `env` block
 reaches — so this command never establishes that. Refusing a marker id that a grammar bounds and
 a cap limits, while printing an unbounded free-text `error` from a file of unknown provenance,
-would not be a policy. The row reports how many failures are recorded and how many sessions were
-seen, and the remedy names the file by its variable; you open it yourself.
+would not be a policy. The row reports how many records are logged and how many sessions were
+seen, and the remedy names the file by its variable; you open it yourself. A record is a hook
+failure, an answer the output cap cut, or a session that ran without some of its configuration
+(`config-fallback`), and the count does not tell them apart: which one a line is lies in its
+`error` field, the very field this row does not trust.
 
 **A plugin root the environment named is read and never run.** `wrapper` launches
 `hooks/run-hook.sh` only under the root this stayfixed derived from its own module path. With a
@@ -3402,7 +3650,7 @@ name = "widget"          # one lowercase path segment
 base_branch = "main"
 release_branch = "main"
 
-[paths]                  # each must stay inside the root, and out of .git and .stayfixed
+[paths]                  # each inside the root, out of .git and .stayfixed, 1024 characters at most
 agents_md = "AGENTS.md"
 architecture = "docs/architecture"
 runbooks = "docs/runbooks"
@@ -3426,7 +3674,7 @@ id_prefix = "BR"         # a capital letter, then up to seven more capitals or d
 code_roots = ["src", "tests", "scripts"]
 evidence_boundary_required_for = ["high"]
 
-[budgets]                # a project may lower a preset's budget, never raise it
+[budgets]                # the base branch raises or lowers a budget; a pull request lowers a gate's
 agents_md_lines = 300
 agents_md_words = 3000
 status_lines = 50
@@ -3472,6 +3720,22 @@ set `[ci] gate_branch = "main"` to keep the old one — and `ref` is written by 
 `commit check`, `[commit_messages] types` by `stayfixed assess`'s commit-vocabulary probe,
 `[artifacts] local` by the scaffold engine, and `[gates]` and `[stayfixed] enforced` by
 `stayfixed assess`, `stayfixed gate` and the reusable workflow.
+
+**Commands refuse; a session reads what it can.** Every command that loads `stayfixed.toml`, but
+`doctor` and `memory session-context`, refuses it whole over an unknown section or key, a value it
+cannot use or a `[paths]` value that leaves the root, naming the key and never the value. Those
+two read it the way a session does: an unknown section or key is ignored, a value that cannot be
+used is put back to the preset's, one key at a time, a custom gate that cannot run is left out,
+and each says so in a note naming the key, so a file a newer stayfixed wrote keeps every setting
+this one understands. A repository's `[personal]` or `[guards]` is the machine owner's
+to set and is ignored the same way, with a note. A session drops the project configuration whole
+only for a file it cannot read as TOML — a symbolic link, one that is not UTF-8, one it cannot
+read, or one that is not TOML — and for a key nothing can stand in for: a key that has no default
+(`[stayfixed] version`, `[project] name`) and is missing or cannot be used, or whose section is not
+a table, or a key whose preset value does not hold in this repository either, such as a `[paths]`
+default under a committed symbolic link. It then names that key rather than calling a key the file holds missing, and runs
+the guards on the preset and the machine owner's layer ([`stayfixed hook
+<event>`](#stayfixed-hook-event)).
 
 Every value above is what a key you leave out takes, from the `recommended` preset — with three
 exceptions, and one line that is an example rather than a default. `[stayfixed] version` and
@@ -3560,8 +3824,11 @@ status that needs neither `severity:` nor `area:`. `severity` is `bugs new`'s re
 **`[budgets]`.** The first five are the documentation budgets `docs check` enforces:
 `agents_md_lines`, `agents_md_words` and `status_lines` over the always-loaded document and its
 `## Current status` section, `roadmap_prose_lines` and `roadmap_prose_words` over the roadmap
-above its trail marker. The last four bound the memory store. A budget is only ever lowered: a
-value above the preset's is ignored rather than refused, so raising one is not an escape.
+above its trail marker. The last four bound the memory store. The base branch and the machine
+owner raise or lower a budget — the base branch's `stayfixed.toml` any of the nine, the machine
+file a session's four — and the value set is the value in force. A pull request lowers a gate's
+budget only (`stayfixed gate` refuses a raise), and may move a session's,
+which no gate reads.
 
 `~/.config/stayfixed/config.toml` is yours, not the project's:
 
@@ -3573,14 +3840,43 @@ preset = "recommended"   # the preset `setup` applies
 
 [overlay]
 root = "~/stayfixed-overlay"   # only read in overlay mode
+
+[guards]
+bg_cleanup = true        # false switches the bg-cleanup session guard off on this machine
+
+[budgets]                # the session's budgets only, which win over a project's
+memory_index_words = 1200
+startup_rules_words = 1600
+volatile_notes_words = 2500
+volatile_ttl_days = 30
 ```
+
+`[guards]` is the one place a session guard is switched off, and it is yours: a repository's
+`stayfixed.toml` cannot carry the table. `[budgets]` here holds only the four budgets that bound
+what a session loads; the five a gate judges a pull request by (`agents_md_lines`,
+`agents_md_words`, `status_lines`, `roadmap_prose_lines`, `roadmap_prose_words`) are the
+repository's alone: one written here is ignored, with a note. Every key you leave out is the
+preset's. A command that loads `stayfixed.toml` reads this file's `[personal]`, `[guards]` and
+`[budgets]` too, as a session reads them, so `memory fit`, `memory index` and `memory inventory`
+measure the session budgets a session runs on. What you write here is honoured, and what this
+stayfixed cannot use is said and never refused: a key in those three tables it does not know, a
+value it cannot use or a table that is not one costs that key or table alone — an unknown key is
+ignored, an unusable value is put back to the preset's — and a command says so on stderr, once
+however many documents it loads, naming the file and the key, while a session says so once, when
+it starts. So a key a later release's
+`setup` writes stops no older command on the machine. Only a file that does not load at all is
+refused by a command, as `[overlay] root`'s reader refuses it, before the command reads anything
+else, and leaves a session on the preset's personal values and guards, with one warning naming
+this file when the session starts and `stayfixed doctor`'s `preferences` row red.
+With no `stayfixed.toml` in the repository a session still reads this file: `bg_cleanup = false`
+turns the guard off there too.
 
 `reply_language` and `artifact_language` are kept for you and read by nothing in this release:
 they meant something only through the `recommended` preset's standing rule about which language
 each audience gets, which the preset no longer carries. To state a language preference, write a
 personal standing rule, a note with `metadata.startup` in your overlay's `common/memory/`.
 
-`stayfixed setup` writes a third table, `[machine]`, into the same file — `version`, the
+`stayfixed setup` writes one more table, `[machine]`, into the same file — `version`, the
 stayfixed that ran, and `installed`, the date it ran. It is `setup`'s record of what it did, not
 a setting: it is written, never hand-edited, and a file that has never had one loads fine.
 
@@ -3593,19 +3889,19 @@ rather than one an environment chose, and honoured by every reader of it.
 **`~` here is your home directory as the password database records it, not `HOME`.** A direnv,
 mise or devcontainer setup can set `HOME`, and a hook runs in the project, so `HOME=fakehome`
 would name a directory the clone ships, with a `trust.json` in it. Every command reads and writes
-this file and `trust.json` under the database's home, `setup` and `memory trust` included, so the
+this file and `trust.json` under the database's home, `setup` and `trust approve` included, so the
 file you write is the one a hook reads; a `~` in `[overlay] root` means that home too. `HOME`
 still decides `--home`'s default and where `attach` at a terminal puts the harness memory link;
 empty, it names none, so `setup`, `attach` and `detach` stop there and `doctor` says so.
 
 A container or home-manager setup whose `HOME` is not its database entry is not refused:
 
-- Its files live under the entry's home. `memory trust` and `setup` say which directory they
+- Its files live under the entry's home. `trust approve` and `setup` say which directory they
   wrote under, and `doctor`'s `ignored-env` row names it.
 - A hook gives no sign that a file under `HOME` is no longer read: approved notes stop arriving
   and `[personal]` falls back to the preset. If you kept a `config.toml` or `trust.json` of your
   own under `HOME`'s `.config/stayfixed` before this release, check that they are yours and move
-  them to the entry's home **before** running `setup` or `memory trust`, which write there, or
+  them to the entry's home **before** running `setup` or `trust approve`, which write there, or
   merge them afterwards. Move only files you put there yourself: a clone's `.envrc` can point
   `HOME` at a directory it ships.
 - A hook makes no harness memory link while the two homes differ, because the harness finds its
@@ -3615,7 +3911,7 @@ A container or home-manager setup whose `HOME` is not its database entry is not 
   A link an earlier release made under `HOME` is still withdrawn when the store's approval lapses.
 
 A user the database lists no home for has no such file off `--machine`: nothing is read,
-`memory trust` and `setup` fail and say so, and a hook makes no harness memory link. A home the
+`trust approve` and `setup` fail and say so, and a hook makes no harness memory link. A home the
 database records that cannot be written fails the same two commands naming the directory; no
 other place is one a hook reads.
 

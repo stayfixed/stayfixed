@@ -59,8 +59,8 @@ refuses any other call, except the few it pins with a reason (the package's own 
 
 **Repository bytes are data.** Anything a repository authored — a note, an index line, a
 `memory.groups` entry, a refusal message built out of one — reaches the model only inside
-`trust.wrap`'s delimited region, and only after `stayfixed memory trust`. If you find yourself
-putting such a string into a `Result.summary`, a `HookResult.context` or an exception message,
+`trust.wrap`'s delimited region, and only after `stayfixed trust approve memory`. If you find
+yourself putting such a string into a `Result.summary`, a `HookResult.context` or an exception message,
 wrap it.
 
 The wrap is for the model and escapes no byte, and the same string also reaches a terminal and a
@@ -76,8 +76,9 @@ the name is defined.
 ### Named caps
 
 A bound comes from one of three places. A limit a project may tune — a document's line or word
-count, a note's time to live — is a key under `[budgets]`, which a project may lower below its
-preset and never raise. A limit the harness sets — how much of an index it loads, how many
+count, a note's time to live — is a key under `[budgets]`, which the base branch and the machine
+owner may raise above its preset or lower below it, and a pull request may only lower when a
+gate reads it. A limit the harness sets — how much of an index it loads, how many
 characters of a hook's output it keeps — is a key under `[native_caps]`. Code reads both
 through `Config` (`src/stayfixed/config/schema.py`). Every other bound — a subprocess's
 wall-clock timeout, how many bytes of a repository-authored file are read, how deep a parser
@@ -116,6 +117,22 @@ that tree holds nothing but the local artifacts the same run just removed. Both 
 as every removal in a project root does. A temporary directory a command creates for itself and removes whole when
 it finishes is outside the rule: nothing but that command ever wrote into it.
 
+## Configuration
+
+Every key a configuration layer can hold — the preset, a repository's `stayfixed.toml`, the
+overlay's files, the machine file — has one class in `src/stayfixed/config/classes.py`, and the
+class names the layers that may set it: the machine owner's alone (`personal.*`, `guards.*`), a
+preference, a session's parameter, a gate's parameter, the repository's alone, or
+the plugin's. `classes.resolve` applies the classes over a stack of layers — a layer a key's class
+does not admit contributes nothing to it — and so decides who may set a key and gives `doctor` the
+layer each value came from; it builds the owner's layer from the preset and the machine file, but
+the project's `Config` is still built by `config.loader`, which merges `stayfixed.toml` over the
+preset and folds the owner's layer in. So a field added to a section of
+`src/stayfixed/config/schema.py` needs its row in `CLASSES` in the same change:
+`tests/config/test_classes.py` derives every key from the schema's dataclasses and reddens on one
+with no class. Choose the narrowest class that is true of the key: a gate's input is never a
+preference, or a pull request would choose what it is judged by.
+
 ## Areas
 
 An area is a subpackage of `src/stayfixed/` that the CLI frame, the hook registry and `doctor`'s
@@ -125,7 +142,7 @@ report discover by name — there is no shared registry to edit. One table does 
 its entries go in the group its path falls into.
 
 Today the discovered ones are `assess`, `attach`, `docs`, `doctor`, `guards`, `hooks`, `ledger`,
-`memory`, `overlay`, `project` and `setup`, and they fall on two sides of one line. Three of them
+`memory`, `overlay`, `project`, `setup` and `trust`, and they fall on two sides of one line. Three of them
 are **delivery**: `overlay`, `attach` and `memory`, the private layer's code — the overlay, binding
 a repository to it, and the note store — named in `DELIVERY_AREAS` in `src/stayfixed/areas.py`.
 `overlay` renders and upgrades the private overlay; `attach` binds a repository to one, and its
@@ -135,7 +152,8 @@ and the subpackages that are not areas included, is the **core**: what stayfixed
 private layer — the gates, the records they check and a machine's setup. `ledger` keeps the bug
 ledger, `docs` the documentation and plan lints, `guards` the session guard, the commit-message
 rules and the test-run checks, `hooks` the dispatcher every hook event goes through, and `setup` a
-machine's configuration. `project` holds the shipped project templates and `init`, the command that
+machine's configuration, and `trust` every approval a person gave on the machine, in one record,
+with the `stayfixed trust` commands over it. `project` holds the shipped project templates and `init`, the command that
 writes a repository's footprint from them; `assess` runs the gates and the inventory over a
 repository as it is, judges a change's `stayfixed.toml` against what its base branch enforces
 (`stayfixed gate`), and moves `[stayfixed] state` and `enforced` as a project promotes its gates
@@ -143,8 +161,8 @@ repository as it is, judges a change's `stayfixed.toml` against what its base br
 none of it. `assess` publishes no `api.py`: nothing under `src/` or `scripts/` outside it imports
 it, and tests reach its modules directly, as they do every area's. (`config`, `presets`, `profiles`,
 `release`, `scaffold` and `templates` are subpackages and not areas, and `harnesses` is a module —
-area discovery does not find them, because they carry none of `commands.py`, `hooks.py` and
-`doctor.py`. `release` still publishes an `api.py`, which holds what an installed stayfixed reads
+area discovery does not find them, because they carry none of `commands.py`, `hooks.py`,
+`doctor.py` and `approvals.py`. `release` still publishes an `api.py`, which holds what an installed stayfixed reads
 about its own releases: the tags it pins and the record of the files a release ships.)
 
 The rule between the two runs one way: delivery may import the core, and the core may not import
@@ -194,9 +212,10 @@ among them) is a row of `MACHINERY_IMPORTERS`, with what each file reaches in it
 so the core calls it only on its own package, `__package__` or `"stayfixed"`, and every other read
 of it is a row.
 
-Every call of `area_modules` or `area_imports` names `commands`, `hooks` or `doctor` as a literal,
-and is made by that submodule's one reader: `cli.py` asks for `commands`, `hooks/registry.py` for
-`hooks` and `doctor/registry.py` for `doctor`, pinned in `DISCOVERY_CALLERS`. No other module refers
+Every call of `area_modules` or `area_imports` names `commands`, `hooks`, `doctor` or `approvals`
+as a literal, and is made by that submodule's one reader: `cli.py` asks for `commands`,
+`hooks/registry.py` for `hooks`, `doctor/registry.py` for `doctor` and `trust/kinds.py` for
+`approvals`, pinned in `DISCOVERY_CALLERS`. No other module refers
 to `cli.discover_registrars`, which hands on what discovery found.
 
 These rules are a tripwire, not a proof: they catch a crossing written the ordinary way. They cannot
@@ -256,6 +275,13 @@ too, since Python runs each package's `__init__.py` first.
   modules, such as the binding and the note store, resolves the root again.
   `Contribution`, `Context` and `Row` come from `stayfixed.doctor.api`, and, as in a `hooks.py`,
   every import sits inside a function body; `tests/boundaries/test_discovery.py` holds that one.
+- `approvals.py` with a `KINDS` tuple of `stayfixed.trust.api.ApprovalKind` gives it kinds of
+  approval: what a person approves, how this checkout's subjects of it are found and hashed, and
+  the flags `stayfixed trust approve` takes for it, each with the words `--help` gives it, so a
+  kind's new flag edits its own `approvals.py` and nothing in the core. `memory` contributes `memory`, its store. The
+  `trust` area reads every one through discovery (`trust/kinds.py`), so a kind a delivery area owns
+  reaches the core without the core importing it, and two kinds of one name refuse. `KINDS` is read
+  when the CLI's parser is built, so every other import sits inside the kind's functions.
 - `api.py` is the area's import surface. Other areas import from it and from nothing else, and its
   `__all__` must equal exactly what it imports — a test parses the file and checks, and
   `tests/boundaries/test_api_surface.py` walks every module under `src/stayfixed/` and `scripts/`

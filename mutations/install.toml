@@ -868,7 +868,10 @@ before = """        else:
             tables[name] = dict(value)"""
 after = """        else:
             continue"""
-reddens = ["tests/setup/test_machine.py::test_a_table_this_writer_does_not_know_survives_a_rewrite"]
+reddens = [
+  "tests/setup/test_machine.py::test_a_table_this_writer_does_not_know_survives_a_rewrite",
+  "tests/config/test_owner.py::test_write_machine_keeps_the_owners_guards_and_budgets",
+]
 
 # `pluginConfigs` is where Claude Code reads this plugin's own options, and the mirror was
 # written from this run's *new* keys — empty on every run after the first. An owner who edited
@@ -999,8 +1002,12 @@ reddens = [
 name = "a settings write's other OSErrors escape as an internal error again"
 file = "src/stayfixed/setup/run.py"
 before = """    except OSError as exc:
+        if sandbox_refused(exc):
+            raise Refusal(SANDBOXED) from exc
         # `UnsafePath` is not the only `OSError` reachable here"""
 after = """    except UnsafePath as exc:
+        if sandbox_refused(exc):
+            raise Refusal(SANDBOXED) from exc
         # `UnsafePath` is not the only `OSError` reachable here"""
 reddens = [
   "tests/setup/test_setup.py::test_a_settings_path_whose_directory_is_not_there_is_a_refusal_and_not_an_internal_error",
@@ -1012,8 +1019,8 @@ reddens = [
 [[mutation]]
 name = "setup stops expanding a leading ~ in --settings"
 file = "src/stayfixed/setup/commands.py"
-before = "        settings=Path(args.settings).expanduser() if args.settings else None,"
-after = "        settings=Path(args.settings) if args.settings else None,"
+before = "    return Path(args.settings).expanduser() if args.settings else None"
+after = "    return Path(args.settings) if args.settings else None"
 reddens = [
   "tests/setup/test_commands.py::test_a_tilde_in_settings_is_expanded_the_way_home_and_machine_already_are",
 ]
@@ -1184,8 +1191,8 @@ reddens = [
 [[mutation]]
 name = "an unrelated overlay's declared floor reddens a project that never reads it"
 file = "src/stayfixed/overlay/doctor.py"
-before = '        unmet: Status = RED if context.config.memory.mode == OVERLAY_MODE else WARN'
-after = "        unmet: Status = RED"
+before = "        consults = context.config is not None and context.config.memory.mode == OVERLAY_MODE"
+after = "        consults = True"
 reddens = [
   "tests/overlay/test_doctor.py::test_a_local_only_project_is_warned_and_never_reddened_by_an_unrelated_floor",
   "tests/overlay/test_doctor.py::test_a_local_only_project_is_not_judged_by_an_unrelated_overlays_floor",
@@ -1242,10 +1249,24 @@ name = "the two overlay rows call a moved overlay an unrecorded one"
 file = "src/stayfixed/overlay/doctor.py"
 before = '''    if overlay is None:
         return Row(SKIP, NO_OVERLAY_RECORDED, "")
+    if isinstance(overlay, MachineUnread):
+        return Row(SKIP, MACHINE_UNREAD, "")
     return Row(SKIP, OVERLAY_GONE, OVERLAY_GONE_REMEDY)'''
 after = '    return Row(SKIP, NO_OVERLAY_RECORDED, "")'
 reddens = [
   "tests/overlay/test_doctor.py::test_an_overlay_that_moved_is_not_reported_as_one_never_recorded",
+]
+
+# A machine file that does not load is a third state, neither "no overlay recorded" nor "the
+# recorded root is gone": both rows say the file could not be read, and the `preferences` row,
+# red on it, carries the remedy.
+[[mutation]]
+name = "the two overlay rows say a machine file nobody could read records no overlay"
+file = "src/stayfixed/overlay/doctor.py"
+before = '''        return Row(SKIP, MACHINE_UNREAD, "")'''
+after = '''        return Row(SKIP, NO_OVERLAY_RECORDED, "")'''
+reddens = [
+  "tests/overlay/test_doctor.py::test_a_machine_file_that_does_not_load_is_not_reported_as_one_that_records_no_overlay",
 ]
 
 # The `key` half was pinned only by a direct call, so reverting the call site left `setup --preset`
@@ -1258,7 +1279,6 @@ after = "        data = load_preset(preset)"
 reddens = [
   "tests/setup/test_setup.py::test_a_mistyped_preset_names_the_flag_and_never_quotes_it",
 ]
-
 
 # git's exit 128 inside a checkout is a repository it will not describe — another user's under
 # `safe.directory`, or one whose `.git` it cannot read — and read as "no repository" it let the
@@ -1714,8 +1734,8 @@ reddens = [
 [[mutation]]
 name = "setup encodes the owner's merged settings with a bare json.dumps"
 file = "src/stayfixed/setup/run.py"
-before = '    new_text = json_text(document, str(path), error=Failure, indent=2, sort_keys=True) + "\n"'
-after = '    new_text = __import__("json").dumps(document, indent=2, sort_keys=True) + "\n"'
+before = '    new_text = mark + json_text(document, str(path), error=Failure, indent=2, sort_keys=True) + "\n"'
+after = '    new_text = mark + __import__("json").dumps(document, indent=2, sort_keys=True) + "\n"'
 reddens = [
   "tests/setup/test_setup.py::test_a_user_settings_file_the_encoder_cannot_write_back_is_a_failure_naming_it",
 ]
@@ -1754,8 +1774,8 @@ reddens = ["tests/setup/test_commands.py::test_setup_where_the_homes_differ_says
 [[mutation]]
 name = "an unwritable machine file directory ends as an internal error"
 file = "src/stayfixed/setup/machine.py"
-before = "    except OSError as exc:\n        # With no `--machine`"
-after = "    except LookupError as exc:\n        # With no `--machine`"
+before = "    except OSError as exc:\n        if sandbox_refused(exc):\n            raise Refusal(SANDBOXED) from None\n        # With no `--machine`"
+after = "    except LookupError as exc:\n        if sandbox_refused(exc):\n            raise Refusal(SANDBOXED) from None\n        # With no `--machine`"
 reddens = [
   "tests/setup/test_commands.py::test_setup_where_the_database_home_cannot_be_written_fails_naming_the_directory",
 ]
@@ -2203,3 +2223,150 @@ after = "            and True"
 reddens = [
   "tests/setup/test_setup.py::test_a_created_overlays_destination_swapped_after_the_phase_is_compared[absent-then-a-link]",
 ]
+
+# With no project configuration the project does not consult the overlay, so an unmet floor warns.
+[[mutation]]
+name = "the overlay floor asks a project configuration that is not there"
+file = "src/stayfixed/overlay/doctor.py"
+before = "        consults = context.config is not None and context.config.memory.mode == OVERLAY_MODE"
+after = "        consults = context.config.memory.mode == OVERLAY_MODE"
+reddens = [
+  "tests/doctor/test_floor_report.py::test_a_machine_with_an_overlay_and_no_stayfixed_toml_is_red_about_nothing",
+]
+
+# `setup` run from an agent's sandboxed shell: each write the sandbox refuses, and the question
+# asked of the settings directory before the first write, end in the one constant sentence.
+
+[[mutation]]
+name = "setup says nothing of the sandbox that refused its machine file"
+file = "src/stayfixed/setup/machine.py"
+before = "        if sandbox_refused(exc):\n            raise Refusal(SANDBOXED) from None"
+after = "        if False:\n            raise Refusal(SANDBOXED) from None"
+reddens = [
+  "tests/setup/test_commands.py::test_setup_from_a_sandboxed_shell_says_a_person_must_run_it[machine-file]",
+]
+
+[[mutation]]
+name = "setup says nothing of the sandbox that refused its settings file"
+file = "src/stayfixed/setup/run.py"
+before = "        if sandbox_refused(exc):\n            raise Refusal(SANDBOXED) from exc"
+after = "        if False:\n            raise Refusal(SANDBOXED) from exc"
+reddens = [
+  "tests/setup/test_commands.py::test_setup_from_a_sandboxed_shell_says_a_person_must_run_it[settings-file]",
+]
+
+[[mutation]]
+name = "setup reads a directory the sandbox refuses as one its mode refuses"
+file = "src/stayfixed/setup/run.py"
+before = "    return Refusal(SANDBOXED if owned else said)"
+after = "    return Refusal(said)"
+reddens = [
+  "tests/setup/test_commands.py::test_setup_from_a_sandboxed_shell_says_a_person_must_run_it[settings-directory]",
+]
+
+[[mutation]]
+name = "setup reads a directory its mode refuses as the sandbox"
+file = "src/stayfixed/setup/run.py"
+before = "    return Refusal(SANDBOXED if owned else said)"
+after = "    return Refusal(SANDBOXED)"
+reddens = [
+  "tests/setup/test_setup.py::test_a_settings_directory_that_cannot_be_written_is_refused_before_the_machine_file",
+]
+
+[[mutation]]
+name = "setup's sandbox sentence sends a person in their own terminal there again"
+file = "src/stayfixed/setup/machine.py"
+before = "    \"`stayfixed setup` in their own terminal, outside the agent's sandbox\"\n    f\"{OWN_TERMINAL_TOO}\""
+after = "    \"`stayfixed setup` in their own terminal, outside the agent's sandbox\""
+reddens = [
+  "tests/setup/test_commands.py::test_setup_s_sandbox_sentence_says_what_a_person_in_their_own_terminal_meets",
+]
+
+# `setup`'s settings merge reads the owner's file past a leading byte-order mark, as Claude Code
+# does, and keeps it.
+[[mutation]]
+name = "setup refuses a user settings file opening with a byte-order mark"
+file = "src/stayfixed/setup/run.py"
+before = "    return json_object(lenient_settings(text), str(path), error=Failure), text"
+after = "    return json_object(text, str(path), error=Failure), text"
+reddens = [
+  "tests/setup/test_setup.py::test_an_owners_settings_file_opening_with_a_byte_order_mark_is_merged_and_keeps_it",
+]
+
+[[mutation]]
+name = "setup drops the byte-order mark the owner's file opened with"
+file = "src/stayfixed/setup/run.py"
+before = "    mark = BYTE_ORDER_MARK if text.startswith(BYTE_ORDER_MARK) else \"\""
+after = "    mark = \"\""
+reddens = [
+  "tests/setup/test_setup.py::test_an_owners_settings_file_opening_with_a_byte_order_mark_is_merged_and_keeps_it",
+]
+
+# `setup --approval-boundary` prints advice and writes nothing, so it runs alone: never the machine
+# setup, and never beside a flag that names a write.
+[[mutation]]
+name = "setup --approval-boundary runs the machine setup"
+file = "src/stayfixed/setup/commands.py"
+before = "        return run_boundary_advice(args)"
+after = "        pass"
+reddens = [
+  "tests/setup/test_approval_boundary.py::test_the_advice_names_the_rule_and_the_sandbox_and_writes_nothing",
+]
+
+[[mutation]]
+name = "setup --approval-boundary takes a flag that names a write"
+file = "src/stayfixed/setup/commands.py"
+before = "        if any(switched) or any(value is not None for value in named):"
+after = "        if any(switched):"
+reddens = [
+  "tests/setup/test_approval_boundary.py::test_the_advice_beside_a_flag_that_writes_is_refused[preset]",
+  "tests/setup/test_approval_boundary.py::test_the_advice_beside_a_flag_that_writes_is_refused[overlay]",
+]
+
+[[mutation]]
+name = "setup --approval-boundary takes --yes or --git-hooks"
+file = "src/stayfixed/setup/commands.py"
+before = "        switched = (args.yes, args.git_hooks, args.uninstall)"
+after = "        switched = (args.uninstall,)"
+reddens = [
+  "tests/setup/test_approval_boundary.py::test_the_advice_beside_a_flag_that_writes_is_refused[yes]",
+  "tests/setup/test_approval_boundary.py::test_the_advice_beside_a_flag_that_writes_is_refused[git-hooks]",
+]
+
+[[mutation]]
+name = "setup --approval-boundary takes --uninstall"
+file = "src/stayfixed/setup/commands.py"
+before = "        switched = (args.yes, args.git_hooks, args.uninstall)"
+after = "        switched = (args.yes, args.git_hooks)"
+reddens = [
+  "tests/setup/test_approval_boundary.py::test_the_advice_beside_a_flag_that_writes_is_refused[uninstall]",
+]
+
+# The advice names the user settings file `setup` would write: the one `--settings` names, else the
+# home's, and either absolute, so a relative `--home` or `--settings` names the file meant.
+[[mutation]]
+name = "setup --approval-boundary names the home's settings file beside --settings"
+file = "src/stayfixed/setup/commands.py"
+before = "    settings = (home / USER_SETTINGS if given is None else given).absolute()"
+after = "    settings = (home / USER_SETTINGS).absolute()"
+reddens = [
+  "tests/setup/test_approval_boundary.py::test_settings_names_the_file_the_advice_puts_the_rule_in",
+]
+
+[[mutation]]
+name = "setup --approval-boundary names a relative settings file as given"
+file = "src/stayfixed/setup/commands.py"
+before = "    settings = (home / USER_SETTINGS if given is None else given).absolute()"
+after = "    settings = home / USER_SETTINGS if given is None else given"
+reddens = [
+  "tests/setup/test_approval_boundary.py::test_a_relative_machine_and_home_are_advised_as_absolute_paths[bare-name]",
+  "tests/setup/test_approval_boundary.py::test_a_relative_machine_and_home_are_advised_as_absolute_paths[subdirectory]",
+]
+
+# A symbolic-link loop at the machine file's directory is refused by name, never `internal error`.
+[[mutation]]
+name = "setup --approval-boundary lets a looping machine directory raise"
+file = "src/stayfixed/setup/commands.py"
+before = "        rules = record_deny_rules(record)\n    except OSError as exc:"
+after = "        rules = record_deny_rules(record)\n    except LookupError as exc:"
+reddens = ["tests/setup/test_approval_boundary.py::test_a_looping_machine_directory_is_refused_by_name"]

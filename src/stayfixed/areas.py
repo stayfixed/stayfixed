@@ -1,9 +1,10 @@
 """Areas discovered by name: the half `stayfixed.cli`, `stayfixed.hooks.registry` and
 `stayfixed.doctor.registry` share.
 
-Three submodules are discovered, each by the module that reads it: an area's `commands.py` gives
-it a CLI group, its `hooks.py` hook handlers, and its `doctor.py` rows in `stayfixed doctor`'s
-report. The CLI frame and the hook registry import through `area_modules`, so an area that
+Four submodules are discovered, each by the module that reads it: an area's `commands.py` gives
+it a CLI group, its `hooks.py` hook handlers, its `doctor.py` rows in `stayfixed doctor`'s report,
+and its `approvals.py` the kinds of approval `stayfixed trust` asks about (`trust.kinds`). The CLI
+frame, the hook registry and the trust kinds import through `area_modules`, so an area that
 fails to import fails them; the report imports through `area_imports`, which hands that failure
 over in the area's place, because the report must outlive any one area's broken code.
 

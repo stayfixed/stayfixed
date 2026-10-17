@@ -11,6 +11,11 @@ forbids a test from touching the developer's real `~/.claude` or `~/.config/stay
 command whose only mode writes to the real ones could not be tested at all. Both default to the
 real paths, exactly as `--root` defaults to the current directory elsewhere in this CLI.
 
+`--approval-boundary` is a third thing, and the one that writes nothing: it prints the deny rule and
+the sandbox settings that keep an agent's shell out of the trust record's directory, which are the
+harness's to enforce and the person's to set (`trust.boundary` says why stayfixed sets none of
+them), so it runs alone.
+
 `--machine` is **not** gated behind an interactive shell here, unlike `attach`/`detach`'s. That
 gate is about a flag that decides which overlay a *read* trusts; `setup` is the command that
 *writes* the machine file in the first place, so gating its own `--machine` would refuse the
@@ -22,12 +27,13 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from stayfixed import fsops
 from stayfixed.areas import SubParsers
 from stayfixed.command import HOME_HELP, SETUP_MACHINE_HELP, SETUP_ROOT_HELP
 from stayfixed.errors import Failure, Refusal
+from stayfixed.presets import DEFAULT_PRESET
 from stayfixed.printed import quoted
 from stayfixed.result import Result
 from stayfixed.runner import subprocess_runner
@@ -117,19 +123,45 @@ EMPTY_HOME = (
     "HOME is empty, so it names no home directory and there is no default for --home; set HOME "
     "to your home directory, or pass --home PATH"
 )
+# `--approval-boundary` writes nothing, so a flag that names something to write has no run to
+# belong to: refused rather than dropped, since a person who typed it expects it done. `--home`,
+# `--settings` and `--machine` name files too, and are taken: the advice names the user settings
+# file and the trust record's directory as they would be written. `--uninstall` was taken and
+# dropped, exit 0, for a person who asked for a hook to be removed. `--root` is taken and unread:
+# it says only where `--git-hooks` and `--overlay` act, and both are refused here.
+_ADVICE_ALONE = (
+    "--approval-boundary prints what to set and writes nothing, so it takes no --preset, "
+    "--overlay, --yes, --git-hooks or --uninstall; run `stayfixed setup` with those separately"
+)
+# What `--approval-boundary` prints: the deny rule over the trust record's directory and the user
+# settings file it belongs in, the setting that turns the sandbox on, and the managed settings that
+# keep a repository from turning it off (`trust.boundary` says where each was measured).
+BOUNDARY_ADVICE = (
+    "setup wrote nothing; an approval holds against repository bytes, and against an agent only "
+    "while the agent's shell cannot write the trust record, which Claude Code's sandbox stops "
+    "and stayfixed does not check: add {rules} to permissions.deny in {settings} and set "
+    "{sandbox} there, and, since a repository's own settings can turn that sandbox off, set "
+    "{enforcing} in {managed}, a file only an administrator writes"
+)
 
 
 def run_setup(args: argparse.Namespace) -> Result:
+    if args.approval_boundary:
+        named = (args.preset, args.overlay)
+        switched = (args.yes, args.git_hooks, args.uninstall)
+        if any(switched) or any(value is not None for value in named):
+            raise Refusal(_ADVICE_ALONE)
+        return run_boundary_advice(args)
     if args.git_hooks:
         if args.preset is not None:
             raise Refusal(_BOTH_MODES)
         return run_git_hooks(args)
 
-    from stayfixed.config.machine import home_is_empty, homes_agree, machine_config_path
+    from stayfixed.config.machine import homes_agree
     from stayfixed.setup.run import setup
 
     # The file every *reader* of it reads (`config.loader.load`, `config.overlay.overlay_root`,
-    # `memory.trust._trust_file`), which no variable moves. This command once took the `isatty`
+    # `trust.record.record_path`), which no variable moves. This command once took the `isatty`
     # sniff there: with `XDG_CONFIG_HOME=/xdg`, an owner running `stayfixed setup` in their own
     # shell wrote `/xdg/stayfixed/config.toml`, got exit 0, and every reader then said "no overlay
     # root is recorded in the machine configuration; run `stayfixed setup`". `--machine` itself is
@@ -138,23 +170,16 @@ def run_setup(args: argparse.Namespace) -> Result:
     #
     # Resolved here rather than in `register()`, so that `stayfixed setup --help` prints the
     # sentence and not whichever home directory the parser happened to be built under.
-    if args.home is None and home_is_empty():
-        raise Failure(EMPTY_HOME)
-    home = Path.home() if args.home is None else Path(args.home).expanduser()
-    machine = machine_config_path() if args.machine is None else Path(args.machine).expanduser()
-    if machine is None:
-        # Off `--machine`, the file is under the home the password database records, and this
-        # user has none there; a file put under `HOME` instead would be one no hook reads.
-        raise Failure(NO_MACHINE_HOME)
+    home, machine = _home_and_machine(args)
     report = setup(
-        args.preset or "recommended",
+        args.preset or DEFAULT_PRESET,
         home=home,
         machine=machine,
         runner=subprocess_runner(),
         yes=args.yes,
         overlay=args.overlay,
         project_root=_root(args.root),
-        settings=Path(args.settings).expanduser() if args.settings else None,
+        settings=_settings(args),
     )
     data = {
         "machine_written": report.machine_written,
@@ -184,6 +209,69 @@ def run_setup(args: argparse.Namespace) -> Result:
             *report.notes,
         )
     )
+    return Result(summary, data)
+
+
+def _home_and_machine(args: argparse.Namespace) -> tuple[Path, Path]:
+    """The home the user settings file lies under and the machine file, as `--home` and
+    `--machine` name them or by default, or the failure for a machine that names neither."""
+    from stayfixed.config.machine import home_is_empty, machine_config_path
+
+    if args.home is None and home_is_empty():
+        raise Failure(EMPTY_HOME)
+    home = Path.home() if args.home is None else Path(args.home).expanduser()
+    machine = machine_config_path() if args.machine is None else Path(args.machine).expanduser()
+    if machine is None:
+        # Off `--machine`, the file is under the home the password database records, and this
+        # user has none there; a file put under `HOME` instead would be one no hook reads.
+        raise Failure(NO_MACHINE_HOME)
+    return home, machine
+
+
+def _settings(args: argparse.Namespace) -> Path | None:
+    """The user settings file `--settings` names, or `None` for the one under the home, which
+    `setup.run` writes in its place; one reading for the setup and the advice alike."""
+    return Path(args.settings).expanduser() if args.settings else None
+
+
+def run_boundary_advice(args: argparse.Namespace) -> Result:
+    """`setup --approval-boundary`: `BOUNDARY_ADVICE` for the trust record beside the machine file
+    and the user settings file `--settings` names or the one under the home, both as `setup` would
+    write them; writes nothing.
+
+    Both are printed absolute: the rule for the reason `record_deny_rules` gives, and the file so
+    that a person who opens it from another directory opens the one meant."""
+    from stayfixed.setup.machine import USER_SETTINGS
+    from stayfixed.trust.api import (
+        ENFORCING_SETTINGS,
+        SANDBOX_ON,
+        managed_named,
+        record_deny_rules,
+        record_path,
+    )
+
+    home, machine = _home_and_machine(args)
+    # Never `None` beside a machine file, which `_home_and_machine` always names.
+    record = cast(Path, record_path(machine))
+    try:
+        rules = record_deny_rules(record)
+    except OSError as exc:
+        # `fsops.resolved` meets a symbolic-link loop in the directory as an `OSError` on every
+        # interpreter, which would otherwise end in `internal error`.
+        raise Refusal(
+            f"{quoted(str(record.parent))} cannot be checked ({fsops.said(exc)}), so no rule "
+            "for it can be advised"
+        ) from exc
+    given = _settings(args)
+    settings = (home / USER_SETTINGS if given is None else given).absolute()
+    summary = BOUNDARY_ADVICE.format(
+        rules=" and ".join(rules),
+        settings=settings,
+        sandbox=SANDBOX_ON,
+        enforcing=ENFORCING_SETTINGS,
+        managed=managed_named(),
+    )
+    data = {"deny_rules": list(rules), "settings": str(settings), "managed": managed_named()}
     return Result(summary, data)
 
 
@@ -221,6 +309,14 @@ def register(groups: SubParsers) -> None:
         help=(
             "record an existing overlay by path, or create one with "
             "create:<owner>/<name> (asks GitHub for a private repository from the template)"
+        ),
+    )
+    setup.add_argument(
+        "--approval-boundary",
+        action="store_true",
+        help=(
+            "print the deny rule and the sandbox settings that keep an agent's shell out of the "
+            "trust record's directory, and write nothing"
         ),
     )
     setup.add_argument(

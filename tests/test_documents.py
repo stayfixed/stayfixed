@@ -247,6 +247,7 @@ _NUMBER_WORDS = {
     "ten": 10,
     "eleven": 11,
     "twelve": 12,
+    "eighteen": 18,
 }
 
 
@@ -621,21 +622,26 @@ def test_the_readme_states_each_agents_reach_as_the_registry_does() -> None:
     assert set(_MEASURED_AT.findall(match.group(1))) == measured
 
 
-def test_the_readme_says_the_guards_have_no_off_switch_and_how_to_pass_one() -> None:
+def test_the_readme_says_only_the_owner_switches_a_guard_off_and_how_to_pass_one() -> None:
     # A blocked agent's first question is how to get past the block, and a user's is how to turn
     # it off. The section answers both where the table says a guard blocks: the one blocking
     # guard judges only backgrounded commands, so the same command run in the foreground passes;
-    # nothing turns a guard off; and a false block is a defect to report. Each clause is one
+    # only the machine owner switches a guard off, in the machine file, a repository never can
+    # and no command-line flag does; and a false block is a defect to report. Each clause is one
     # needle, read from the section alone, so a paragraph moved elsewhere in the README reddens
     # too. Mutations (declared), one per needle: the foreground sentence deleted, the scope's
-    # "only" dropped, the guards given a switch, and the false block no longer called a defect ->
-    # each reddens this.
+    # "only" dropped, a repository given the switch, a flag offered, and the false block no
+    # longer called a defect -> each reddens this.
     match = _REACH_SECTION.search(README.read_text(encoding="utf-8"))
     assert match, "README.md has no ## What each agent enforces section"
     section = " ".join(match.group(1).split())
     assert "judges only a command the agent runs in the background" in section
     assert "The same command run in the foreground passes." in section
-    assert "stayfixed has no switch that turns a guard off" in section
+    assert (
+        "machine owner may switch a session guard off in the machine file; a repository never can"
+        in section
+    )
+    assert "no command-line flag does" in section
     assert "a false block is a defect" in section
 
 
@@ -904,11 +910,11 @@ def test_the_plan_rule_count_is_the_number_of_rules_plan_check_emits() -> None:
     assert _NUMBER_WORDS.get(match.group(1).lower()) == len(codes), (match.group(1), sorted(codes))
 
 
-# The `doctor` check table: seventeen rows, each spelling a check name, and the one
+# The `doctor` check table: eighteen rows, each spelling a check name, and the one
 # code-restating table in this document the branch that built this binding mechanism did not
 # bind. `tests/doctor/test_checks.py` pins each name as a literal exactly once *inside* the module
 # that registers it — `checks.py` or an area's `doctor.py` — so the document's copy is a *second*
-# spelling of each of the seventeen — one that
+# spelling of each of the eighteen — one that
 # guard cannot see, and a renamed check would leave this page green and wrong. That the unbound
 # ones drift is not a hypothesis: `len(OVERLAY_FILES)` was sixteen while four comments one
 # directory over still said fourteen.
@@ -938,6 +944,112 @@ def test_the_doctor_table_is_the_registry_and_not_a_second_spelling() -> None:
     assert rows == expected, [
         (row, name) for row, name in zip(rows, expected, strict=True) if row != name
     ]
+
+
+# Every shipped document that counts `doctor`'s rows, and the spelling each counts them in: the
+# README's two command summaries, the reference's opening line, the skill's first step and the smoke
+# workflow's assertion over an installed plugin's report.
+_DOCTOR_COUNTS = {
+    "README.md": re.compile(r"^stayfixed doctor +# (\w+) checks over this installation", re.M),
+    "docs/cli.md": re.compile(r"^(\w+) checks over one installation", re.M),
+    "skills/doctor/SKILL.md": re.compile(r"read the report: (\w+) checks"),
+    ".github/workflows/smoke.yml": re.compile(r"assert len\(rows\) == (\d+), len\(rows\)"),
+}
+
+
+def test_every_document_counts_the_rows_the_report_has() -> None:
+    # The count was written in five places and held in none: a row added to the report left four
+    # documents and the smoke workflow saying the old number. Mutation (`mutations/`'s "the
+    # reference counts the doctor rows it had before preferences"): `docs/cli.md` says
+    # seventeen.
+    from stayfixed.doctor.checks import CHECKS
+    from stayfixed.doctor.registry import contributions
+
+    expected = len(CHECKS) + sum(len(c.checks) for c in contributions(CHECKS))
+    for name, pattern in _DOCTOR_COUNTS.items():
+        found = pattern.findall((ROOT / name).read_text(encoding="utf-8"))
+        assert found, f"{name} no longer counts the doctor rows where this test reads"
+        counted = [
+            int(word) if word.isdigit() else _NUMBER_WORDS.get(word.lower()) for word in found
+        ]
+        assert counted == [expected] * len(found), (name, found, expected)
+
+
+# The reference's sentence on the report's order counts the core's rows and the private layer's
+# apart, a second count beside the total the test above holds: it said "the installation's own
+# thirteen first" over a `CHECKS` of twelve, and the total, eighteen, still came out right.
+_ROW_ORDER = re.compile(
+    r"the installation's own (\w+) first, then the (\w+) about the\s+private layer"
+)
+
+
+def test_the_reference_counts_the_cores_rows_and_the_private_layers_apart() -> None:
+    # Mutation (`mutations/`'s "the reference counts thirteen of the installation's own doctor
+    # rows"): reddens naming the word.
+    from stayfixed.doctor.checks import CHECKS
+    from stayfixed.doctor.registry import contributions
+
+    section = _DOCTOR_SECTION.search(CLI_REFERENCE.read_text(encoding="utf-8"))
+    assert section is not None, "docs/cli.md has no `stayfixed doctor` section"
+    found = _ROW_ORDER.findall(section.group(1))
+    assert len(found) == 1, found
+    core, layer = found[0]
+    contributed = sum(len(contribution.checks) for contribution in contributions(CHECKS))
+    counted = (_NUMBER_WORDS.get(core.lower()), _NUMBER_WORDS.get(layer.lower()))
+    assert counted == (len(CHECKS), contributed), (found[0], len(CHECKS), contributed)
+
+
+# Every sentence in `docs/cli.md` that says how many noted key names `doctor` prints before it
+# counts the rest: the `not-initialised` row, the paragraph under the table, and the exception in
+# "What is printed".
+_NAMES_SHOWN_SENTENCES = (
+    re.compile(r"naming at most (\w+) of their keys and counting the rest"),
+    re.compile(r"at most (\w+) names, one outside the path grammar withheld"),
+)
+
+
+def test_every_sentence_that_counts_the_names_doctor_shows_is_the_cap() -> None:
+    # The cap was stated in words in the reference and held by nothing, while a comment beside it
+    # said no shipped file stated it. Mutation (`mutations/`'s "doctor shows four noted names"):
+    # the cap is four and the reference still says three.
+    from stayfixed.doctor.checks import NAMES_SHOWN
+
+    text = (ROOT / "docs" / "cli.md").read_text(encoding="utf-8")
+    found = [word for pattern in _NAMES_SHOWN_SENTENCES for word in pattern.findall(text)]
+    assert len(found) == 3, found
+    assert [_NUMBER_WORDS[word] for word in found] == [NAMES_SHOWN] * 3
+
+
+# The documents a reader of the plugin reads, where the old spelling of `trust approve memory` may
+# appear only as its alias note: each line naming it says it is the old spelling.
+_SHIPPED_DOCUMENTS = ("README.md", "SECURITY.md", "CONTRIBUTING.md", "docs/cli.md")
+_SHIPPED_TREES = ("docs/methodology", "skills", "agents")
+OLD_SPELLING = "memory trust"
+ALIAS_MARK = "the old spelling of"
+
+
+def test_no_shipped_document_names_memory_trust_outside_its_alias_note() -> None:
+    # `stayfixed memory trust --in-repo-memory` became `stayfixed trust approve memory`, run by a
+    # person at a terminal, and a document still telling a reader to run the old spelling teaches
+    # the command that goes in 0.5.0. Every mention is the alias note, and the reference and the
+    # README's command block each carry one, so the walk cannot pass by finding none. Mutation
+    # (`mutations/`'s "the README tells a reader to run memory trust again"): the threat-model
+    # paragraph names the old spelling as the command to run.
+    paths = [ROOT / name for name in _SHIPPED_DOCUMENTS]
+    paths += [path for tree in _SHIPPED_TREES for path in sorted((ROOT / tree).rglob("*.md"))]
+    stray: list[str] = []
+    notes: dict[str, int] = {}
+    for path in paths:
+        relative = path.relative_to(ROOT).as_posix()
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            if OLD_SPELLING not in line:
+                continue
+            if ALIAS_MARK in line:
+                notes[relative] = notes.get(relative, 0) + 1
+            else:
+                stray.append(f"{relative}:{number}")
+    assert stray == []
+    assert notes == {"README.md": 1, "docs/cli.md": 1}
 
 
 # The five verdict sentences are `VERDICTS` in `stayfixed.guards.attribute` and are reproduced by

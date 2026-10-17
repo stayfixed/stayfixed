@@ -35,6 +35,7 @@ from stayfixed.hooks.registry import discover
 from tests.boundaries.test_discovery import LIST_IMPORTS, ROOT
 from tests.gitfixture import git, needs_git
 from tests.overlay.test_requires import overlay_with
+from tests.sessions import NO_CONFIG, session_of
 
 ORIGIN = "git@github.com:owner/widget.git"
 CONFIG = (
@@ -89,7 +90,7 @@ def _run(
         machine.write_text(machine_text, encoding="utf-8")
     config = load(root, machine=root / "absent.toml")
     (handler,) = register()
-    return handler.run(_event(root, source), config).context
+    return handler.run(_event(root, source), session_of(config)).context
 
 
 def _recorded(
@@ -318,14 +319,17 @@ def test_other_modes_no_config_and_a_broken_machine_file_are_silence_or_one_fixe
 ) -> None:
     machine = _machine_home(tmp_path, monkeypatch)
     (handler,) = register()
-    assert handler.run(_event(tmp_path), None).context is None
+    assert handler.run(_event(tmp_path), NO_CONFIG).context is None
     assert _run(_project(tmp_path, mode="local-only"), machine, None) is None
     root = _project(tmp_path / "two")
     # No machine file at all is "no overlay recorded", which is the ordinary state before
     # `stayfixed setup` has run and is not the same event as a file that will not parse.
-    assert handler.run(_event(root), load(root, machine=root / "absent.toml")).context == NO_OVERLAY
+    assert (
+        handler.run(_event(root), session_of(load(root, machine=root / "absent.toml"))).context
+        == NO_OVERLAY
+    )
     machine.write_text("[overlay\n", encoding="utf-8")
-    result = handler.run(_event(root), load(root, machine=root / "absent.toml"))
+    result = handler.run(_event(root), session_of(load(root, machine=root / "absent.toml")))
     assert result.decision is None and result.context == NOT_ASKABLE
 
 
@@ -492,7 +496,7 @@ def test_a_failure_with_no_except_of_its_own_is_silence_not_an_exception(
     root, _, _ = _recorded(tmp_path, monkeypatch)
     monkeypatch.setattr(binding_module, "unlinked_groups", raising)
     (handler,) = register()
-    result = handler.run(_event(root), load(root, machine=root / "absent.toml"))
+    result = handler.run(_event(root), session_of(load(root, machine=root / "absent.toml")))
     assert result.context is None and result.decision is None
 
 
@@ -532,7 +536,7 @@ def test_the_registration_is_what_the_dispatcher_acts_on(
     monkeypatch.setattr(attach_hooks, "_overlay_status", failing)
     handlers = register()
     sink = Recorder()
-    outcome = dispatch(_event(tmp_path), handlers, None, harness=CLAUDE, sink=sink)
+    outcome = dispatch(_event(tmp_path), handlers, NO_CONFIG, harness=CLAUDE, sink=sink)
     assert seen == ["SessionStart"]
     assert outcome.exit_code == 0 and outcome.decision is None
     assert "overlay-status: RuntimeError" in outcome.stderr
@@ -541,5 +545,7 @@ def test_the_registration_is_what_the_dispatcher_acts_on(
     ]
     for name in (event for event in EVENTS if event != "SessionStart"):
         other = replace(_event(tmp_path), name=name)
-        assert dispatch(other, handlers, None, harness=CLAUDE, sink=Recorder()).exit_code == 0, name
+        assert (
+            dispatch(other, handlers, NO_CONFIG, harness=CLAUDE, sink=Recorder()).exit_code == 0
+        ), name
     assert seen == ["SessionStart"]

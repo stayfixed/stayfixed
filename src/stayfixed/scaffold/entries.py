@@ -25,6 +25,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from stayfixed.errors import Refusal
+from stayfixed.harnesses import lenient_settings
 from stayfixed.jsonobject import json_object, json_text
 from stayfixed.printed import clipped
 
@@ -376,7 +377,7 @@ def judged_entries(document: str, *, lenient: bool) -> Walked:
     file `attach` merges into, which must refuse what the merge refuses.
     """
     if lenient:
-        return live_entries(document.removeprefix("\ufeff"))
+        return live_entries(lenient_settings(document))
     placed = placed_entries(document)
     return Walked(tuple(enumerate(placed, start=1)), len(placed), partly=False, hidden=False)
 

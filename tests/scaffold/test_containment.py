@@ -5,8 +5,9 @@ from pathlib import Path
 import pytest
 
 from stayfixed import presets
-from stayfixed.config.loader import CONFIG_FILE, ConfigError, load
+from stayfixed.config.loader import CONFIG_FILE, load
 from stayfixed.config.paths import PathEscape
+from stayfixed.config.reading import ConfigError
 from stayfixed.config.schema import Config
 from stayfixed.errors import Failure, Refusal
 from stayfixed.presets import load_preset
