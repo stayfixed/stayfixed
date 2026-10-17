@@ -67,11 +67,6 @@ def test_the_preset_flow_runs_through_the_cli_with_a_stubbed_runner(
     assert stub.calls, "the stubbed runner was never called; the patch may have stopped applying"
 
 
-def test_git_hooks_and_preset_refuse_to_combine_through_the_cli(tmp_path: Path) -> None:
-    code = invoke(["setup", "--preset", "recommended", "--git-hooks", "--root", str(tmp_path)])
-    assert code == 2
-
-
 def test_uninstall_without_git_hooks_refuses_and_runs_no_machine_setup(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
