@@ -3518,3 +3518,19 @@ file = "scripts/ptyrun.py"
 before = "    except BaseException:\n        # No child will close its end"
 after = "    except ZeroDivisionError:\n        # No child will close its end"
 reddens = ["tests/scripts/test_ptyrun.py::test_a_command_that_cannot_start_leaves_no_descriptor_open"]
+
+# The read has a deadline: a command still holding the terminal at it is killed, its whole process
+# group, and the caller is told so.
+[[mutation]]
+name = "a pseudo-terminal read waits past its deadline"
+file = "scripts/ptyrun.py"
+before = "    give_up = time.monotonic() + deadline"
+after = "    give_up = time.monotonic() + DEADLINE_SECONDS"
+reddens = ["tests/scripts/test_ptyrun.py::test_a_command_that_does_not_finish_is_killed_at_the_deadline"]
+
+[[mutation]]
+name = "a pseudo-terminal command past its deadline is left running"
+file = "scripts/ptyrun.py"
+before = "                _kill(child)\n                raise TimeoutError("
+after = "                raise TimeoutError("
+reddens = ["tests/scripts/test_ptyrun.py::test_a_command_that_does_not_finish_is_killed_at_the_deadline"]

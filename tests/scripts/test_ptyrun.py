@@ -6,7 +6,10 @@ from __future__ import annotations
 
 import os
 import pty
+import subprocess
+import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -42,3 +45,33 @@ def test_a_command_that_cannot_start_leaves_no_descriptor_open(
         ptyrun.run_in_pty([str(tmp_path / "no-such-program")], env={})
     assert len(opened) == 2
     assert sorted(fd for fd in closed if fd in opened) == sorted(opened)
+
+
+def test_a_command_that_does_not_finish_is_killed_at_the_deadline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The read had no deadline: a command that hung, or left a process holding the terminal open,
+    # blocked the caller for ever, and a CI job with it. Mutations (`mutations/`'s "a
+    # pseudo-terminal read waits past its deadline" -> the command runs out its five seconds and
+    # no `TimeoutError` comes; "a pseudo-terminal command past its deadline is left running" ->
+    # it is still running when the caller is told it was killed).
+    ptyrun = load(SCRIPTS / "ptyrun.py", "ptyrun_for_its_own_tests")
+    started: list[subprocess.Popen[bytes]] = []
+    real_popen = subprocess.Popen
+
+    def popen(*args: Any, **kwargs: Any) -> subprocess.Popen[bytes]:
+        child: subprocess.Popen[bytes] = real_popen(*args, **kwargs)
+        started.append(child)
+        return child
+
+    monkeypatch.setattr(subprocess, "Popen", popen)
+    sleeper = [sys.executable, "-c", "import time; time.sleep(5)"]
+    with pytest.raises(TimeoutError):
+        ptyrun.run_in_pty(sleeper, env=dict(os.environ), deadline=0.5)
+    try:
+        assert len(started) == 1
+        assert started[0].poll() is not None
+    finally:
+        for child in started:
+            child.kill()
+            child.wait()
