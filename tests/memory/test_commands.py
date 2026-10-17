@@ -442,6 +442,32 @@ def test_index_whose_refresh_a_sandbox_refused_leaves_the_approval_and_says_so(
     assert "index:" in (notes / "c.md").read_text(encoding="utf-8")
 
 
+def test_an_index_that_changes_nothing_writes_no_record_from_a_sandboxed_shell(
+    project: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The most common way the refresh runs: the store approved and indexed, and an agent in its
+    # sandbox runs `memory index` again over nothing new. The approval already holds the digest the
+    # files have, so there is nothing to move and nothing is written; a refresh that rewrote it was
+    # refused there, and the line told the agent the approval no longer matched the files while
+    # `trust list` said approved. Mutation (`mutations/`'s "a refresh rewrites the digest the record
+    # already holds"): the refused write is attempted and the line says `_NOT_REFRESHED`.
+    from stayfixed.memory.commands import _DROPPED, _NOT_REFRESHED
+
+    notes = project / ".stayfixed" / "local" / "memory" / "developer"
+    (notes / "c.md").write_text(NOTE_WITHOUT_INDEX, encoding="utf-8")
+    assert invoke(["trust", "approve", "memory", *common(project)]) == 0
+    assert invoke(["memory", "index", *common(project)]) == 0
+    machine = project.parent / "machine.toml"
+    before = recorded(machine)
+    refused = refuse_writes_under(monkeypatch, machine.parent / "trust.json")
+    capsys.readouterr()
+    assert invoke(["memory", "index", "--json", *common(project)]) == 0
+    summary = json.loads(capsys.readouterr().out)["summary"]
+    assert refused == []
+    assert _NOT_REFRESHED not in summary and _DROPPED not in summary
+    assert recorded(machine) == before
+
+
 def test_index_says_so_when_the_trust_gate_is_what_empties_the_bundles(
     project: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

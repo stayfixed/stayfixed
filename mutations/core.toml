@@ -1563,7 +1563,7 @@ reddens = [
 [[mutation]]
 name = "stayfixed.toml is read with no bound"
 file = "src/stayfixed/config/loader.py"
-before = '        return read_regular_text(contained(root, CONFIG_FILE), newline="")'
+before = '        return read_regular_text(contained(root, CONFIG_FILE), newline="", limit=limit)'
 after = """        with contained(root, CONFIG_FILE).open(encoding="utf-8", newline="") as stream:
             return stream.read()"""
 reddens = [
@@ -1659,7 +1659,7 @@ reddens = [
 [[mutation]]
 name = "the loader admits a gate the project does not run into [stayfixed] enforced"
 file = "src/stayfixed/config/loader.py"
-before = "    unknown = [name for name in stayfixed.enforced if name not in names]"
+before = "    unknown = [name for name in stayfixed.enforced if name not in configured]"
 after = "    unknown: list[str] = []"
 reddens = [
   "tests/config/test_loader.py::test_a_gate_the_project_does_not_run_is_counted_and_never_quoted",
@@ -1677,7 +1677,7 @@ reddens = [
 [[mutation]]
 name = "an installed project's partial enforced list loads again"
 file = "src/stayfixed/config/loader.py"
-before = "    if stayfixed.enforced and set(stayfixed.enforced) != set(names):"
+before = "    if stayfixed.enforced and set(stayfixed.enforced) != configured:"
 after = "    if False:"
 reddens = [
   "tests/config/test_loader.py::test_an_installed_project_with_a_partial_list_is_refused",
@@ -3041,9 +3041,9 @@ reddens = [
 
 [[mutation]]
 name = "the schema's integer keys are taken unchecked"
-file = "src/stayfixed/config/loader.py"
-before = '            coerced[key] = positive(f"{name}.{key}", value)'
-after = "            coerced[key] = value"
+file = "src/stayfixed/config/reading.py"
+before = "        return positive(key, value)"
+after = "        return value"
 reddens = [
   "tests/config/test_loader.py::test_an_integer_key_at_or_past_its_bound_is_refused_without_printing_it[octal]",
 ]
@@ -3811,16 +3811,25 @@ before = '            elif table == "budgets" and key in GATE_BUDGETS:'
 after = "            elif False:"
 reddens = ["tests/config/test_owner.py::test_a_gate_budget_in_the_machine_file_is_a_note"]
 
-# Under REFUSE every problem a session would note is the command's refusal, naming the file.
+# In a machine file that loads, what the owner wrote and this stayfixed cannot use costs its key
+# with a note under either mode: refused, a later release's key would stop every older command.
 [[mutation]]
-name = "the owner's layer notes instead of refusing under REFUSE"
+name = "the owner's layer refuses a key it cannot use in a file that loads"
 file = "src/stayfixed/config/owner.py"
-before = """        if unknown is Unknown.REFUSE:
-            raise MachineConfigError(f"{machine}: {sentence}")"""
-after = """        if False:
-            raise MachineConfigError(f"{machine}: {sentence}")"""
+before = "        template = IGNORED_NOTE if ignored else MACHINE_RESET_NOTE"
+after = """        raise MachineConfigError(f"{machine}: {sentence}")"""
 reddens = [
-  "tests/config/test_owner.py::test_refuse_raises_for_what_note_notes[unknown-key]",
+  "tests/config/test_owner.py::test_refuse_notes_what_note_notes_in_a_file_that_loads[unknown-key]",
+  "tests/memory/test_owner_budgets.py::test_a_command_reads_past_a_machine_file_key_it_cannot_use_and_says_so[gate-budget]",
+]
+
+[[mutation]]
+name = "a command keeps quiet about what it read past in the machine file"
+file = "src/stayfixed/config/owner.py"
+before = '        print(f"stayfixed: {note}", file=sys.stderr)'
+after = "        pass"
+reddens = [
+  "tests/memory/test_owner_budgets.py::test_a_command_reads_past_a_machine_file_key_it_cannot_use_and_says_so[gate-budget]",
 ]
 
 # A guard is on until the owner switches it off: off by default, it would be off on every machine
@@ -3881,8 +3890,8 @@ reddens = ["tests/config/test_owner.py::test_an_unknown_key_is_a_note_and_never_
 [[mutation]]
 name = "an invalid value in the machine file costs every value read before it"
 file = "src/stayfixed/config/owner.py"
-before = "                problem(sentence, ignored=False)"
-after = "                problem(sentence, ignored=False)\n                found.clear()"
+before = "                    problem(str(exc), ignored=False)"
+after = "                    problem(str(exc), ignored=False)\n                    found.clear()"
 reddens = ["tests/config/test_owner.py::test_an_invalid_value_resets_only_its_key[personal]"]
 
 # A table that is not one is a note, never a session's owner layer failing.
@@ -3892,52 +3901,6 @@ file = "src/stayfixed/config/owner.py"
 before = "        if not isinstance(values, dict):\n            problem(NOT_A_TABLE"
 after = "        if False:\n            problem(NOT_A_TABLE"
 reddens = ["tests/config/test_owner.py::test_a_table_that_is_not_a_table_is_a_note"]
-
-# A preset name this build does not ship: a session falls back to `recommended` with a note
-# printing the name through `printed.clipped`, and a command refuses it.
-[[mutation]]
-name = "an unknown preset name raises under NOTE"
-file = "src/stayfixed/config/owner.py"
-before = "    elif unknown is Unknown.NOTE and preset not in shipped_presets():"
-after = "    elif False:"
-reddens = [
-  "tests/config/test_owner.py::test_an_unknown_preset_is_the_recommended_one_with_a_note[future]",
-]
-
-[[mutation]]
-name = "the unknown preset's note prints the name raw"
-file = "src/stayfixed/config/owner.py"
-before = "        notes.append(UNKNOWN_PRESET_NOTE.format(name=clipped(preset)))"
-after = "        notes.append(UNKNOWN_PRESET_NOTE.format(name=preset))"
-reddens = [
-  "tests/config/test_owner.py::test_an_unknown_preset_is_the_recommended_one_with_a_note[hostile]",
-]
-
-[[mutation]]
-name = "an unknown preset name is noted under REFUSE too"
-file = "src/stayfixed/config/owner.py"
-before = "    elif unknown is Unknown.NOTE and preset not in shipped_presets():"
-after = "    elif preset not in shipped_presets():"
-reddens = [
-  "tests/config/test_owner.py::test_refuse_still_refuses_a_preset_this_build_does_not_ship",
-]
-
-# A preset value that is not a string: a session hands the value over as the document wrote it.
-[[mutation]]
-name = "a preset value that is not a string reaches the name check"
-file = "src/stayfixed/config/owner.py"
-before = "    if not isinstance(preset, str):\n        if unknown is Unknown.REFUSE:"
-after = "    if False:\n        if unknown is Unknown.REFUSE:"
-reddens = [
-  "tests/config/test_owner.py::test_a_preset_value_that_is_not_a_string_is_the_recommended_one_with_a_note",
-]
-
-[[mutation]]
-name = "a preset value that is not a string is noted under REFUSE too"
-file = "src/stayfixed/config/owner.py"
-before = "        if unknown is Unknown.REFUSE:\n            raise ConfigError(NOT_A_PRESET_NAME"
-after = "        if False:\n            raise ConfigError(NOT_A_PRESET_NAME"
-reddens = ["tests/config/test_owner.py::test_refuse_refuses_a_preset_value_that_is_not_a_string"]
 
 # The NOTE loader (`loader.loads_noting`): an unknown name is ignored and an invalid value costs
 # only its own key, so a session keeps every other setting the project made.
@@ -4499,11 +4462,31 @@ reddens = [
 [[mutation]]
 name = "a trust record of a later version is read as empty"
 file = "src/stayfixed/trust/record.py"
-before = "    if type(version) is not int or version != VERSION:\n        raise UnreadableTrust(LATER_VERSION.format(path=path))"
-after = "    if type(version) is not int or version != VERSION:\n        return {}"
+before = "    if type(version) is int and version > VERSION:\n        raise UnreadableTrust(LATER_VERSION.format(path=path))"
+after = "    if type(version) is int and version > VERSION:\n        return {}"
 reddens = [
   "tests/trust/test_record.py::test_an_unreadable_record_refuses_and_is_never_overwritten[version-2]",
+]
+
+[[mutation]]
+name = "a trust record of any other version is sent to a later stayfixed"
+file = "src/stayfixed/trust/record.py"
+before = "    if type(version) is int and version > VERSION:"
+after = "    if not (type(version) is int and version == VERSION):"
+reddens = [
   "tests/trust/test_record.py::test_an_unreadable_record_refuses_and_is_never_overwritten[bool]",
+  "tests/trust/test_record.py::test_an_unreadable_record_refuses_and_is_never_overwritten[version-0]",
+  "tests/trust/test_record.py::test_an_unreadable_record_refuses_and_is_never_overwritten[negative]",
+  "tests/trust/test_record.py::test_an_unreadable_record_refuses_and_is_never_overwritten[text]",
+]
+
+[[mutation]]
+name = "a trust record with approvals and no version reads as 0.3.0's flat map"
+file = "src/stayfixed/trust/record.py"
+before = '    if "version" not in raw and "approvals" not in raw:'
+after = '    if "version" not in raw:'
+reddens = [
+  "tests/trust/test_record.py::test_an_unreadable_record_refuses_and_is_never_overwritten[no-version]",
 ]
 
 # A version-1 record is held whole: anything but exactly its two keys, a list of approvals, and
@@ -4752,80 +4735,7 @@ name = "the approval boundary is spelled with one leading slash"
 file = "src/stayfixed/trust/boundary.py"
 before = "DENY_RULE = \"Edit(/{directory}/**)\""
 after = "DENY_RULE = \"Edit({directory}/**)\""
-reddens = [
-  "tests/setup/test_ask_rules.py::test_the_deny_rule_is_the_measured_spelling",
-  "tests/setup/test_ask_rules.py::test_setup_never_writes_a_sandbox_key",
-]
-
-# Claude Code's user settings directories as stayfixed reads them: `.claude` under the password
-# database's home, never `HOME`'s, and the one `CLAUDE_CONFIG_DIR` names where it differs.
-
-[[mutation]]
-name = "the user settings directory ignores CLAUDE_CONFIG_DIR"
-file = "src/stayfixed/trust/boundary.py"
-before = "    return UserSettings(directory, Path(named) if named and not same else None)"
-after = "    return UserSettings(directory, None)"
-reddens = [
-  "tests/doctor/test_approval_boundary.py::test_a_claude_config_dir_alone_is_judged_and_never_above_a_warning[guarded]",
-  "tests/doctor/test_approval_boundary.py::test_the_home_s_directory_is_the_subject_and_claude_config_dir_only_worsens_it[chosen]",
-  "tests/setup/test_commands.py::test_setup_writes_the_home_s_settings_and_a_claude_config_dir_outside_the_project[config-dir-elsewhere]",
-]
-
-[[mutation]]
-name = "the user settings directory takes CLAUDE_CONFIG_DIR spelling the home's own for another"
-file = "src/stayfixed/trust/boundary.py"
-before = "    same = directory is not None and named == str(directory)"
-after = "    same = False"
-reddens = [
-  "tests/doctor/test_approval_boundary.py::test_claude_config_dir_is_the_home_s_own_only_when_spelled_alike_to_the_byte[byte-for-byte]",
-  "tests/setup/test_commands.py::test_setup_writes_the_home_s_settings_and_a_claude_config_dir_outside_the_project[config-dir-is-the-home-s]",
-]
-
-[[mutation]]
-name = "the user settings directory normalises CLAUDE_CONFIG_DIR"
-file = "src/stayfixed/trust/boundary.py"
-before = "    same = directory is not None and named == str(directory)"
-after = "    same = directory is not None and named is not None and os.path.normpath(named) == os.path.normpath(str(directory))"
-reddens = [
-  "tests/doctor/test_approval_boundary.py::test_claude_config_dir_is_the_home_s_own_only_when_spelled_alike_to_the_byte[trailing-slash]",
-]
-
-[[mutation]]
-name = "a directory whose links loop is read as outside the project"
-file = "src/stayfixed/trust/boundary.py"
-before = "    except OSError:\n        return True"
-after = "    except OSError:\n        return False"
-reddens = [
-  "tests/doctor/test_approval_boundary.py::test_a_claude_config_dir_whose_links_loop_is_taken_to_be_inside_the_project",
-]
-
-[[mutation]]
-name = "a directory is judged inside the project by its spelling alone"
-file = "src/stayfixed/trust/boundary.py"
-before = "        led = fsops.resolved(directory)"
-after = "        led = Path(os.path.abspath(directory))"
-reddens = [
-  "tests/doctor/test_approval_boundary.py::test_a_claude_config_dir_that_leads_into_the_project_is_inside_it",
-]
-
-[[mutation]]
-name = "a directory spelled inside the project is followed"
-file = "src/stayfixed/trust/boundary.py"
-before = "    if _inside(os.path.abspath(directory), roots):\n        return True"
-after = "    if False:\n        return True"
-reddens = [
-  "tests/doctor/test_approval_boundary.py::test_a_claude_config_dir_spelled_inside_the_project_is_never_followed",
-]
-
-[[mutation]]
-name = "the user settings directory is HOME's"
-file = "src/stayfixed/trust/boundary.py"
-before = "    base = home if home is not None else passwd_home()"
-after = "    base = home if home is not None else Path.home()"
-reddens = [
-  "tests/setup/test_commands.py::test_setup_writes_the_home_s_settings_and_a_claude_config_dir_outside_the_project[homes-differ]",
-  "tests/setup/test_commands.py::test_setup_writes_the_home_s_settings_and_a_claude_config_dir_outside_the_project[config-dir-missing]",
-]
+reddens = ["tests/setup/test_approval_boundary.py::test_the_deny_rule_is_the_measured_spelling"]
 
 # A write the sandbox refuses: `EPERM`, as macOS's sandbox answers, and `EROFS`, a read-only
 # mount's, and not `EACCES`, a mode's. The record says so in its constant sentence.
@@ -4860,34 +4770,6 @@ reddens = [
 ]
 
 [[mutation]]
-name = "the boundary row compares paths by their case where the volume folds it"
-file = "src/stayfixed/trust/boundary.py"
-before = "    return unicodedata.normalize(\"NFC\", text).casefold() if CASE_FOLDS else text"
-after = "    return unicodedata.normalize(\"NFC\", text) if CASE_FOLDS else text"
-reddens = [
-  "tests/doctor/test_approval_boundary.py::test_a_case_variant_names_the_record_on_a_volume_that_folds_case",
-  "tests/doctor/test_approval_boundary.py::test_a_case_variant_of_the_project_is_inside_it",
-]
-
-[[mutation]]
-name = "the boundary row compares names composed and decomposed as different"
-file = "src/stayfixed/trust/boundary.py"
-before = "    return unicodedata.normalize(\"NFC\", text).casefold() if CASE_FOLDS else text"
-after = "    return text.casefold() if CASE_FOLDS else text"
-reddens = [
-  "tests/doctor/test_approval_boundary.py::test_composed_and_decomposed_spellings_compare_alike_where_names_fold",
-]
-
-[[mutation]]
-name = "a directory is judged inside the project by its case"
-file = "src/stayfixed/trust/boundary.py"
-before = "    return any(_within(folded(spelling), held) for held in roots)"
-after = "    return any(_within(spelling, held) for held in roots)"
-reddens = [
-  "tests/doctor/test_approval_boundary.py::test_a_case_variant_of_the_project_is_inside_it",
-]
-
-[[mutation]]
 name = "the trust record's sandbox sentence sends a person in their own terminal there again"
 file = "src/stayfixed/trust/record.py"
 before = "    \"person must run this command in their own terminal, outside the agent's sandbox\"\n    f\"{OWN_TERMINAL_TOO}\""
@@ -4898,7 +4780,7 @@ reddens = [
 
 # One reader of the machine file for every load (`loader._built`): a command folds the owner's layer
 # a session folds, read under `Unknown.REFUSE`, so `memory fit`, `memory index` and `doctor` measure
-# one set of session budgets, and a command refuses a machine file whose tables it cannot use.
+# one set of session budgets, and a command refuses a machine file that does not load.
 [[mutation]]
 name = "a command's load reads no machine file for the owner's layer"
 file = "src/stayfixed/config/loader.py"
@@ -4916,8 +4798,7 @@ file = "src/stayfixed/config/loader.py"
 before = "                machine or machine_config_path(), preset=preset_name, unknown=Unknown.REFUSE"
 after = "                machine or machine_config_path(), preset=preset_name, unknown=Unknown.NOTE"
 reddens = [
-  "tests/memory/test_owner_budgets.py::test_a_command_refuses_a_machine_file_the_owners_layer_cannot_use[guard-not-a-switch]",
-  "tests/memory/test_owner_budgets.py::test_a_command_refuses_a_machine_file_the_owners_layer_cannot_use[gate-budget]",
+  "tests/memory/test_owner_budgets.py::test_a_command_refuses_a_machine_file_that_does_not_load",
 ]
 
 # The NOTE retry's bound (`loader.NOTE_REMOVAL_LIMIT`): each removal is a whole build, so a document
@@ -4925,7 +4806,7 @@ reddens = [
 [[mutation]]
 name = "the NOTE path removes every key it cannot use, however many"
 file = "src/stayfixed/config/loader.py"
-before = "            if removed == NOTE_REMOVAL_LIMIT:"
+before = "            if removed == limit:"
 after = "            if False:"
 reddens = [
   "tests/config/test_loader_note.py::test_one_unusable_key_past_the_limit_refuses_the_whole_document",
@@ -4933,76 +4814,45 @@ reddens = [
   "tests/hooks/test_floor.py::test_a_file_of_thousands_of_unusable_keys_never_outlasts_the_hook",
 ]
 
-# The trust record's directory's deny rules are one computation (`trust.boundary.record_deny_rules`)
-# that `setup --approval-boundary` writes and `doctor`'s approval-boundary row asks for: over the
-# directory as named, and over where it leads, since the harness compares a write against the path
-# it resolves.
+# The NOTE retry's bound on what its builds cost together (`loader.NOTE_REBUILT_LIMIT`): a build
+# costs in proportion to the document, so 64 of them over tens of thousands of gates that run kept a
+# session past a hook's timeout while the count stayed within its cap.
+[[mutation]]
+name = "the NOTE path's removals are bounded by their count alone"
+file = "src/stayfixed/config/loader.py"
+before = "    limit = min(NOTE_REMOVAL_LIMIT, NOTE_REBUILT_LIMIT // max(len(text), 1))"
+after = "    limit = NOTE_REMOVAL_LIMIT"
+reddens = [
+  "tests/config/test_loader_note.py::test_a_long_document_is_read_past_fewer_unusable_keys",
+]
+
+# A session reads `stayfixed.toml` to `session.SESSION_READ_LIMIT` and no further, so what its parse
+# and its NOTE load cost is bounded by the file before either starts.
+[[mutation]]
+name = "a session reads stayfixed.toml as far as a command does"
+file = "src/stayfixed/config/session.py"
+before = "        text = None if root is None else read_document(root, limit=SESSION_READ_LIMIT)"
+after = "        text = None if root is None else read_document(root)"
+reddens = [
+  "tests/config/test_session.py::test_a_file_longer_than_a_session_reads_is_read_no_further",
+]
+
+# The trust record's directory's deny rules (`trust.boundary.record_deny_rules`), which
+# `setup --approval-boundary` prints: over the directory as named, and over where it leads, since
+# the harness compares a write against the path it resolves.
 [[mutation]]
 name = "the approval boundary covers only the directory as named"
 file = "src/stayfixed/trust/boundary.py"
-before = "    return deny_rules(record.parent, fsops.resolved(record.parent))"
-after = "    return deny_rules(record.parent, record.parent)"
-reddens = [
-  "tests/setup/test_ask_rules.py::test_a_linked_machine_directory_gets_a_rule_for_each_spelling",
-  "tests/doctor/test_approval_boundary.py::test_a_linked_record_directory_is_covered_only_by_both_rules_setup_writes[named-only]",
-]
+before = "deny_rule(fsops.resolved(named))"
+after = "deny_rule(named)"
+reddens = ["tests/setup/test_approval_boundary.py::test_a_linked_machine_directory_gets_a_rule_for_each_spelling"]
 
 [[mutation]]
-name = "the boundary row counts the rule over where the directory leads alone"
+name = "the approval boundary covers only where the directory leads"
 file = "src/stayfixed/trust/boundary.py"
-before = "    return deny_rules(record.parent, fsops.resolved(record.parent))"
-after = "    return deny_rules(fsops.resolved(record.parent), fsops.resolved(record.parent))"
-reddens = [
-  "tests/doctor/test_approval_boundary.py::test_a_linked_record_directory_is_covered_only_by_both_rules_setup_writes[resolved-only]",
-]
-
-# Where a directory `CLAUDE_CONFIG_DIR` names lies (`trust.boundary.placement`), which `doctor` and
-# `setup` both ask: one inside the project, or where its links lead into it, is never judged or
-# written.
-[[mutation]]
-name = "the boundary row judges a CLAUDE_CONFIG_DIR inside the project"
-file = "src/stayfixed/trust/boundary.py"
-before = "    return Placement.INSIDE if in_project(directory, root, known) else Placement.OUTSIDE"
-after = "    return Placement.OUTSIDE"
-reddens = [
-  "tests/doctor/test_approval_boundary.py::test_a_claude_config_dir_inside_the_project_is_never_judged[home-guarded]",
-  "tests/doctor/test_approval_boundary.py::test_a_claude_config_dir_inside_the_project_is_never_judged[home-has-none]",
-  "tests/doctor/test_approval_boundary.py::test_a_claude_config_dir_that_leads_into_the_project_is_inside_it",
-  "tests/setup/test_commands.py::test_setup_writes_the_home_s_settings_and_a_claude_config_dir_outside_the_project[config-dir-in-project]",
-  "tests/setup/test_commands.py::test_taking_the_rules_back_leaves_a_recorded_directory_now_inside_the_project",
-]
-
-# Where a directory `CLAUDE_CONFIG_DIR` names lies (`trust.boundary.placement`): one under neither a
-# home nor the project is never asked of the filesystem, every checkout of the repository is
-# inside it, and a repository whose checkouts git cannot list is taken to hold the directory.
-[[mutation]]
-name = "a CLAUDE_CONFIG_DIR under neither the home nor the project is asked of the filesystem"
-file = "src/stayfixed/trust/boundary.py"
-before = "        return Placement.UNJUDGED\n"
-after = "        pass\n"
-reddens = [
-  "tests/doctor/test_approval_boundary.py::test_a_claude_config_dir_under_neither_the_home_nor_the_project_is_never_asked_about",
-  "tests/setup/test_commands.py::test_a_claude_config_dir_under_neither_the_home_nor_the_project_is_left_alone",
-]
-
-[[mutation]]
-name = "a CLAUDE_CONFIG_DIR in another checkout of the repository is outside it"
-file = "src/stayfixed/trust/boundary.py"
-before = "    return Placement.INSIDE if in_project(directory, root, known) else Placement.OUTSIDE"
-after = "    return Placement.INSIDE if in_project(directory, root) else Placement.OUTSIDE"
-reddens = [
-  "tests/doctor/test_approval_boundary.py::test_a_claude_config_dir_in_another_checkout_of_the_repository_is_inside_it",
-  "tests/setup/test_commands.py::test_a_claude_config_dir_in_another_checkout_of_the_repository_is_left_alone",
-]
-
-[[mutation]]
-name = "a repository whose checkouts git cannot list is read as having none"
-file = "src/stayfixed/trust/boundary.py"
-before = "    return None if in_work_tree(root) else ()"
-after = "    return ()"
-reddens = [
-  "tests/doctor/test_approval_boundary.py::test_a_repository_whose_checkouts_git_cannot_list_holds_the_directory",
-]
+before = "(deny_rule(named), deny_rule("
+after = "(deny_rule(fsops.resolved(named)), deny_rule("
+reddens = ["tests/setup/test_approval_boundary.py::test_a_linked_machine_directory_gets_a_rule_for_each_spelling"]
 
 # `trust list` and `trust revoke` describe a checkout as a session reads it, so a file a session
 # reads past cannot hide or keep a live approval; a revoke whose kind cannot describe the
@@ -5061,4 +4911,16 @@ before = "from stayfixed.trust.approving import PERSON_RUNS, approve_kind, kind_
 after = "from stayfixed.trust.commands import PERSON_RUNS, approve_kind, kind_context"
 reddens = [
   "tests/trust/test_commands.py::test_the_records_surface_loads_no_command_module",
+]
+
+# A refresh to the digest the record already holds writes nothing: rewritten, a `memory index` that
+# changed nothing was refused in an agent's sandbox and said the approval no longer matched.
+[[mutation]]
+name = "a refresh rewrites the digest the record already holds"
+file = "src/stayfixed/trust/record.py"
+before = "    if digest != held.digest:\n        approvals[(kind, subject)] = replace(held, digest=digest)"
+after = "    if True:\n        approvals[(kind, subject)] = replace(held, digest=digest)"
+reddens = [
+  "tests/trust/test_record.py::test_a_refresh_to_the_digest_the_record_holds_writes_nothing",
+  "tests/memory/test_commands.py::test_an_index_that_changes_nothing_writes_no_record_from_a_sandboxed_shell",
 ]

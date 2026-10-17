@@ -2,7 +2,8 @@
 
 The machine owner's layer is merged too (`config.owner`): read here under `Unknown.REFUSE` when the
 caller hands none in, so every command runs on the personal values and session budgets a session
-runs on, and refuses a machine file it cannot use; or handed in, read once by a caller that must
+runs on, refuses a machine file that does not load and says on stderr what it read past in one
+that does; or handed in, read once by a caller that must
 go on (`config.session`). `loads` refuses what it cannot use; `loads_noting` reads what it can and
 says what it ignored or reset. What the two loaders share is `config.reading`'s.
 """
@@ -13,20 +14,27 @@ import tomllib
 from collections.abc import Collection, Mapping
 from dataclasses import MISSING, Field, dataclass, field, fields, replace
 from pathlib import Path
-from typing import Any, TypeVar, cast, get_origin
+from typing import Any, TypeVar, cast
 
 from stayfixed import __version__
-from stayfixed.config.classes import REFUSED_LAYER_NOTE, Layer, LayerName, resolve
+from stayfixed.config.classes import (
+    CLASSES,
+    REFUSED_LAYER_NOTE,
+    KeyClass,
+    Layer,
+    LayerName,
+    resolve,
+)
 from stayfixed.config.machine import machine_config_path
-from stayfixed.config.owner import Owner, resolve_owner
+from stayfixed.config.owner import Owner, resolve_owner, said_on_stderr
 from stayfixed.config.paths import PathEscape, contained, validate_path_values, validate_paths
 from stayfixed.config.reading import (
-    NOT_A_PRESET_NAME,
     NOT_UTF8,
     UNPARSEABLE,
     UNREADABLE,
     ConfigError,
     Unknown,
+    coerced,
     positive,
     schema_types,
     toml_position,
@@ -59,7 +67,7 @@ from stayfixed.config.schema import (
 )
 from stayfixed.errors import Failure
 from stayfixed.findings import LISTED_LIMIT, listed
-from stayfixed.fsops import read_regular_text, said
+from stayfixed.fsops import TooLarge, read_regular_text, said
 from stayfixed.presets import DEFAULT_PRESET, available, load_preset
 from stayfixed.printed import clipped
 
@@ -77,9 +85,17 @@ SECTIONS = (
     "commit_messages",
 )
 # The machine owner's tables, which a repository's `stayfixed.toml` cannot set: refused outright
-# by `loads` as unknown sections, and refused key by key by `classes.resolve` under NOTE.
-MACHINE_ONLY_SECTIONS = ("personal", "guards", "setup")
+# by `loads` as unknown sections, and refused key by key by `classes.resolve` under NOTE. Read off
+# `classes.CLASSES`, whose section wildcards of the machine-only class they are, so the two never
+# name different tables.
+MACHINE_ONLY_SECTIONS = frozenset(
+    key.removesuffix(".*")
+    for key, cls in CLASSES.items()
+    if key.endswith(".*") and cls is KeyClass.MACHINE_ONLY
+)
 PRESET_KEY = "stayfixed.preset"
+# A preset value that is not a string, which no name of a preset can be.
+NOT_A_PRESET_NAME = "stayfixed.preset must be a string; {available}"
 # What the NOTE path says. A name is printed through `printed.clipped`, since a TOML key is any
 # quoted text; `reason` is the refusal `loads` would have raised, which names its key. The one
 # such refusal that quotes a value the document wrote is `contained()`'s, through `repr`, for a
@@ -87,16 +103,27 @@ PRESET_KEY = "stayfixed.preset"
 # digits, `.`, `_` and `-` in `/`-separated segments.
 UNKNOWN_NOTE = "{name} is not a setting this stayfixed reads; it is ignored"
 RESET_NOTE = "{key} is left out ({reason}); the preset's value applies"
-# A named cap: the most keys the NOTE path removes from a document and builds it again without.
-# Each removal costs a whole build of the configuration, `validate_paths` included, so a document
-# holding thousands of keys nothing can use -- ten thousand custom gates with an empty `run`, a
-# 200 KB committed file -- cost a hook more than its ten-second timeout, and Claude Code lets a
-# `PreToolUse` call through when its hook times out, so the guard went silent. A release that
-# leaves a handful of keys an older one cannot use is what the NOTE path reads key by key; 64 is
-# far above that and keeps the worst document to 64 builds, about 50 ms. Past it the document is
+# A named cap: the most keys the NOTE path removes from a document and builds it again without. Each
+# removal costs a whole build of the configuration, `validate_paths` included, so a document holding
+# thousands of keys nothing can use -- ten thousand custom gates with an empty `run`, a 200 KB
+# committed file -- cost a hook more than its ten-second timeout, which Claude Code answers by
+# letting the `PreToolUse` call through, the guard silent, or, where `hooks/hooks.json` sets
+# `onFailure: "block"`, by blocking every call, the session dead of its configuration. A release
+# that leaves a handful of keys an older one cannot use is what the NOTE path reads key by key; 64
+# is far above that. It bounds how many builds there are and not what they cost: a build costs in
+# proportion to the document, which `NOTE_REBUILT_LIMIT` bounds them by. Past it the document is
 # refused whole (`TooManyResets`), and a session runs on the preset and the owner's layer. No
 # shipped file states it.
 NOTE_REMOVAL_LIMIT = 64
+# A named cap: how many characters of document the NOTE path builds again, its removals together.
+# 50,000 custom gates that run beside 64 that cannot, a 1.4 MB file, took a session six seconds
+# within the count alone, 64 builds each over every gate. So a document is read past only as many
+# removals as this divided by its length allows, and never more than `NOTE_REMOVAL_LIMIT`: 64 for
+# any document up to 64 KiB, which is a hundred times a `stayfixed.toml` that `init` writes, and 4
+# for the longest a session reads (`session.SESSION_READ_LIMIT`, 1 MiB). With the parse, the worst
+# document a session reads costs it about 5 MiB of building, a fraction of a second. No shipped
+# file states it.
+NOTE_REBUILT_LIMIT = 4 * 1024 * 1024
 TOO_MANY_RESETS = (
     "{path} holds more than {limit} settings this stayfixed cannot use, so it is not read key "
     "by key"
@@ -173,9 +200,20 @@ class UnusableKey(ConfigError):
 
 
 class TooManyResets(ConfigError):
-    """A document holding more keys the NOTE path cannot use than it removes
-    (`NOTE_REMOVAL_LIMIT`): a refusal of the whole document, so `key` is `None`, and a reader that
-    must go on drops the project's configuration whole, as for a document that does not parse."""
+    """A document holding more keys the NOTE path cannot use than it removes (`limit`, which
+    `NOTE_REMOVAL_LIMIT` and `NOTE_REBUILT_LIMIT` set): a refusal of the whole document, so `key` is
+    `None`, and a reader that must go on drops the project's configuration whole, as for a
+    document that does not parse."""
+
+    def __init__(self, message: str, *, limit: int) -> None:
+        super().__init__(message)
+        self.limit = limit
+
+
+class TooLargeDocument(ConfigError):
+    """`stayfixed.toml` longer than its reader reads (`read_document`'s `limit`), read no further:
+    a refusal of the whole document, in the words of any file that cannot be read, which a session
+    tells apart by this type to say what it means for the session (`config.session`)."""
 
 
 NOT_THERE = "{path} does not exist; run `stayfixed init` first"
@@ -264,30 +302,9 @@ def _build(cls: type[T], name: str, values: dict[str, Any]) -> T:
             f"[{name}] is missing required key(s): {', '.join(missing)}",
             missing=tuple(f"{name}.{key}" for key in missing),
         )
-    coerced: dict[str, Any] = {}
-    for key, value in values.items():
-        annotation = known[key]
-        if get_origin(annotation) is tuple:
-            if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
-                raise ConfigError(f"{name}.{key} must be a list of strings", key=f"{name}.{key}")
-            coerced[key] = tuple(value)
-        elif annotation is bool:
-            if not isinstance(value, bool):
-                raise ConfigError(f"{name}.{key} must be true or false", key=f"{name}.{key}")
-            coerced[key] = value
-        elif annotation is int:
-            coerced[key] = positive(f"{name}.{key}", value)
-        elif annotation is str:
-            if not isinstance(value, str):
-                raise ConfigError(f"{name}.{key} must be a string", key=f"{name}.{key}")
-            coerced[key] = value
-        else:
-            label = getattr(annotation, "__name__", None) or str(annotation)
-            raise ConfigError(
-                f"{name}.{key} has an unsupported schema type: {label}; "
-                "the loader coerces tuple[str, ...], bool, int and str"
-            )
-    return cls(**coerced)
+    return cls(
+        **{key: coerced(f"{name}.{key}", known[key], value) for key, value in values.items()}
+    )
 
 
 def _enum(section: str, key: str, value: str, allowed: tuple[str, ...]) -> None:
@@ -404,7 +421,10 @@ def _enforcement(config: Config) -> Config:
     """
     stayfixed = config.stayfixed
     names = config.gate_names
-    unknown = [name for name in stayfixed.enforced if name not in names]
+    # Asked of a set: both lists are the repository's to lengthen, and forty thousand enforced
+    # gates asked of the tuple cost one build seconds.
+    configured = frozenset(names)
+    unknown = [name for name in stayfixed.enforced if name not in configured]
     if unknown:
         # Capped: custom gates are the repository's to add, so the list is bounded by nothing.
         known = listed(list(names)) or "none"
@@ -415,7 +435,7 @@ def _enforcement(config: Config) -> Config:
         raise ConfigError(GATES_EARLY.format(count=len(stayfixed.enforced)), key=ENFORCED)
     if stayfixed.state != "installed":
         return config
-    if stayfixed.enforced and set(stayfixed.enforced) != set(names):
+    if stayfixed.enforced and set(stayfixed.enforced) != configured:
         total = len(names)
         raise ConfigError(
             GATES_PARTIAL.format(count=len(stayfixed.enforced), total=total), key=ENFORCED
@@ -452,7 +472,8 @@ def load(root: Path, *, machine: Path | None = None) -> Config:
     **One reader of the machine file.** The owner's layer is `config.owner.resolve_owner`'s, read
     under `Unknown.REFUSE` over the document's preset, as a session reads it under `NOTE`
     (`config.session`): the same `[personal]`, `[guards]` and session `[budgets]`, so a command
-    measures what a session runs on, and refuses a machine file whose tables it cannot use whole.
+    measures what a session runs on. It refuses a machine file that does not load, and reads past a
+    key it cannot use, as a session does, saying so on stderr (`config.owner.said_on_stderr`).
 
     **One reader of the file.** Through `read_document`, which goes through `contained()`: a
     `stayfixed.toml` that is a symlink is refused by every command, as `stayfixed gate` refuses
@@ -465,7 +486,7 @@ def load(root: Path, *, machine: Path | None = None) -> Config:
     return loads(text, root, machine=machine)
 
 
-def read_document(root: Path) -> str | None:
+def read_document(root: Path, *, limit: int | None = None) -> str | None:
     """`stayfixed.toml` exactly as it is on disk, or `None` when there is none.
 
     `newline=""` and not `read_text`: this is the text a command hands to `config.owned.rewrite`,
@@ -473,14 +494,16 @@ def read_document(root: Path) -> str | None:
     rewritten every CRLF in a file somebody else owns before the editor saw it. `contained`
     first, as for every configured path, so a symlinked `stayfixed.toml` is a refusal; then read
     to the read cap, a regular file only (`fsops.read_regular_text`), as every reader of a
-    committed file reads one.
+    committed file reads one: `limit`, or `fsops.REGULAR_READ_LIMIT` where the caller names none.
     """
     try:
-        return read_regular_text(contained(root, CONFIG_FILE), newline="")
+        return read_regular_text(contained(root, CONFIG_FILE), newline="", limit=limit)
     except FileNotFoundError:
         return None
     except UnicodeDecodeError:
         raise ConfigError(NOT_UTF8.format(path=CONFIG_FILE)) from None
+    except TooLarge as exc:
+        raise TooLargeDocument(UNREADABLE.format(path=CONFIG_FILE, error=said(exc))) from None
     except OSError as exc:
         raise ConfigError(UNREADABLE.format(path=CONFIG_FILE, error=said(exc))) from None
 
@@ -588,11 +611,13 @@ def _built(
     caps = _build(NativeCaps, "native_caps", dict(preset["native_caps"]))
     if personal is None:
         if owner is None:
-            # The owner's layer a session folds in, read here under `REFUSE`: one reader of the
-            # machine file for every load, so a command and a session never run on two sets of
-            # budgets.
-            owner = resolve_owner(
-                machine or machine_config_path(), preset=preset_name, unknown=Unknown.REFUSE
+            # The owner's layer a session folds in, read here under `REFUSE`, which refuses only a
+            # file that does not load: one reader of the machine file for every load, so a command
+            # and a session never run on two sets of budgets.
+            owner = said_on_stderr(
+                resolve_owner(
+                    machine or machine_config_path(), preset=preset_name, unknown=Unknown.REFUSE
+                )
             )
         personal = owner.personal
     config = Config(
@@ -639,11 +664,11 @@ def loads_noting(
 
     For a reader that must go on, a session above all, where one name a newer release added or
     one value nobody can use would otherwise cost every setting the project made. An unknown
-    section or key is removed with `UNKNOWN_NOTE`; the repository's `[personal]`, `[guards]` and
-    `[setup]` go through `classes.resolve`, which refuses the repository layer for every key in
-    them, and are removed with its note. Then the document is built as `loads` builds it, and a
-    refusal carrying a `key` — a `ConfigError`, or `validate_paths`' `PathEscape` — is decided
-    before anything is removed, from the document and the preset alone:
+    section or key is removed with `UNKNOWN_NOTE`; the repository's `[personal]` and `[guards]` go
+    through `classes.resolve`, which refuses the repository layer for every key in them, and are
+    removed with its note. Then the document is built as `loads` builds it, and a refusal carrying
+    a `key` — a `ConfigError`, or `validate_paths`' `PathEscape` — is decided before anything is
+    removed, from the document and the preset alone:
 
     - a key the document holds that has a value to fall back to (`_stands_in`) — a preset value
       that holds in this repository, a schema default, a value the loader fills, or an entry that
@@ -655,10 +680,12 @@ def loads_noting(
 
     Nothing is removed that would leave the next attempt a required key to call missing, so no
     refusal is ever read against an earlier removal. Each retry removes one key the document
-    holds, and at most `NOTE_REMOVAL_LIMIT` are removed: the refusal that would remove one more
-    raises `TooManyResets`, a refusal of the whole document. A refusal with no key is the whole
-    document's and propagates, as a document that is not TOML does; a required key the document
-    never wrote is one (`MissingKeys`). The owner's layer is folded in as `loads` folds it.
+    holds and builds the whole document again, so the removals are bounded by what they cost as
+    well as by their count: at most `NOTE_REMOVAL_LIMIT`, and at most `NOTE_REBUILT_LIMIT` over the
+    length of `text`. The refusal that would remove one more raises `TooManyResets`, a refusal of
+    the whole document. A refusal with no key is the whole document's and propagates, as a
+    document that is not TOML does; a required key the document never wrote is one
+    (`MissingKeys`). The owner's layer is folded in as `loads` folds it.
     `parsed` is `text` as a caller already parsed it, which is then not parsed again.
     """
     path = label or root / CONFIG_FILE
@@ -666,6 +693,7 @@ def loads_noting(
     notes: list[str] = []
     keys: list[str] = []
     document = _known_only(raw, notes, keys)
+    limit = min(NOTE_REMOVAL_LIMIT, NOTE_REBUILT_LIMIT // max(len(text), 1))
     removed = 0
     while True:
         try:
@@ -680,10 +708,9 @@ def loads_noting(
             unusable = _without_fallback(exc.key, exc, document, root)
             if unusable is not None:
                 raise UnusableKey(unusable, key=exc.key) from None
-            if removed == NOTE_REMOVAL_LIMIT:
-                raise TooManyResets(
-                    TOO_MANY_RESETS.format(path=path, limit=NOTE_REMOVAL_LIMIT)
-                ) from None
+            if removed == limit:
+                message = TOO_MANY_RESETS.format(path=path, limit=limit)
+                raise TooManyResets(message, limit=limit) from None
             removed += 1
             table, name = held
             del table[name]

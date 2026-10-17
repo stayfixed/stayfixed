@@ -41,7 +41,6 @@ from stayfixed.attach.hooks import NOT_ATTACHED, REAL_DIRECTORIES
 from stayfixed.config.layout import ATTACH_LEDGER
 from stayfixed.config.loader import CONFIG_FILE, load
 from stayfixed.doctor.api import OK, RED, SKIP, WARN, run_checks
-from stayfixed.doctor.boundary import NOT_READ
 from stayfixed.memory.api import DELIMITER, PROJECTS, harness_memory_path, markers
 from tests.floor import developer_free_environ
 from tests.gitfixture import git
@@ -139,12 +138,6 @@ class Walkthrough:
     store: Path
     bin: Path
 
-    @property
-    def managed(self) -> Path:
-        """The file every `stayfixed` this walk starts reads as Claude Code's managed settings, in
-        place of the system's (`_cli`); not there until a test writes it."""
-        return self.home.parent / "managed" / "managed-settings.json"
-
 
 def _fake_binaries(bin_dir: Path) -> None:
     """The four binaries the CLI resolves through `PATH`, as the walkthrough may see them.
@@ -197,11 +190,8 @@ def _cli(walk: Walkthrough, *argv: str, tty: bool = False) -> subprocess.Complet
     env["CLAUDE_PLUGIN_ROOT"] = str(ROOT)
     env["CLAUDE_PLUGIN_DATA"] = str(walk.data)
     # The launcher's own lines, with the password database answering the scratch home as `HOME`
-    # does: off a terminal, that is where the machine owner's home is read (`tests/ownerhome.py`);
-    # and with `walk.managed` read as Claude Code's managed settings, so `doctor`'s
-    # `approval-boundary` row reads no file of the developer's machine. The row itself is held in
-    # `tests/doctor/test_approval_boundary.py`.
-    command = [*stayfixed_argv(walk.home, managed=walk.managed), *argv]
+    # does: off a terminal, that is where the machine owner's home is read (`tests/ownerhome.py`).
+    command = [*stayfixed_argv(walk.home), *argv]
     if not tty:
         return subprocess.run(
             command,
@@ -229,7 +219,7 @@ def _cli(walk: Walkthrough, *argv: str, tty: bool = False) -> subprocess.Complet
 
 
 def _doctor(walk: Walkthrough, *, root: Path | None = None) -> list[dict[str, str]]:
-    """The nineteen rows, read back out of what `doctor --json` printed on the launcher's
+    """The eighteen rows, read back out of what `doctor --json` printed on the launcher's
     stdout."""
     done = _cli(
         walk,
@@ -244,7 +234,7 @@ def _doctor(walk: Walkthrough, *, root: Path | None = None) -> list[dict[str, st
     )
     assert done.stdout, done.stderr
     rows: list[dict[str, str]] = json.loads(done.stdout)["checks"]
-    assert len(rows) == 19, rows
+    assert len(rows) == 18, rows
     return rows
 
 
@@ -664,19 +654,10 @@ def test_doctor_is_green_on_the_attached_fixture(tmp_path: Path) -> None:
     # against the checkout, so the row compares the three shipped files against the record
     # committed beside them and is green. A `files` back in this list means the
     # record went stale — `uv run python scripts/release.py hashes` is what refreshes it.
-    # `approval-boundary` is judged against this walk's settings and warns, since no approval is
-    # recorded; the managed settings it reads are the walk's own, which a file that is not JSON
-    # there shows, named in its detail. Mutation (`mutations/`'s "a child stayfixed of the suite
-    # reads the system's managed settings"): the row reads the system's path and names no file.
     walk = _install_path(tmp_path)
-    walk.managed.parent.mkdir()
-    walk.managed.write_text("{ not json", encoding="utf-8")
     rows = _doctor(walk)
     assert [row["name"] for row in rows if row["status"] == RED] == []
     assert [row["name"] for row in rows if row["status"] == SKIP] == ["codex-hooks", "ci-ref"]
-    boundary = next(row for row in rows if row["name"] == "approval-boundary")
-    assert boundary["status"] == WARN
-    assert NOT_READ.format(label=walk.managed) in boundary["detail"].split("; "), boundary
     assert next(row for row in rows if row["name"] == "files")["status"] == OK
 
 

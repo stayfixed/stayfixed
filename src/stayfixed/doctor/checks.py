@@ -7,8 +7,7 @@ here imports an area, and nothing here names or counts the rows an area contribu
 report has is `docs/cli.md`'s table, and `tests/doctor/test_checks.py`'s literal `REPORT`.
 `hook-entries` is a core check because every settings file is the core's to walk, and it asks the
 areas' `Claims` for what each put into them. This module is the list and the run: that row's walk
-is `entries.py`'s, the `approval-boundary` row's reading of the harness's settings is
-`boundary.py`'s, and how the areas' rows are found and guarded is `registry.py`'s.
+is `entries.py`'s, and how the areas' rows are found and guarded is `registry.py`'s.
 
 **A `Check` is not a `Finding`.** `findings.Finding` carries a rule, a path and a line, and its
 docstring says the label carries "what the check computed" while the detail "may quote the
@@ -79,7 +78,6 @@ from stayfixed.config.machine import (
 )
 from stayfixed.config.schema import MEMORY_MODES
 from stayfixed.config.session import SessionConfig, cause, session_config
-from stayfixed.doctor.boundary import approval_boundary
 from stayfixed.doctor.entries import hook_entries
 from stayfixed.doctor.model import (
     NO_CONFIG_SKIP,
@@ -1147,7 +1145,6 @@ CHECKS: tuple[tuple[str, Callable[[Context], Row]], ...] = (
     ("ci-ref", _ci_ref),
     ("diagnostics", _diagnostics),
     ("ignored-env", _ignored_env),
-    ("approval-boundary", approval_boundary),
 )
 
 

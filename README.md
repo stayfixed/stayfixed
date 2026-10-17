@@ -192,7 +192,7 @@ mkdir -p .stayfixed/local/memory/developer
 printf -- '---\nname: first-note\ndescription: "When to open this note"\n---\n\nThe note.\n' \
   > .stayfixed/local/memory/developer/first-note.md
 stayfixed memory index      # renders .stayfixed/local/memory/MEMORY.md from the notes
-stayfixed doctor            # nineteen checks over this installation, one line; --json has the remedies
+stayfixed doctor            # eighteen checks over this installation, one line; --json has the remedies
 ```
 
 `memory index` will tell you the notes reach no session until you run
@@ -226,7 +226,7 @@ stayfixed writes files. Being specific about which is the point of this section.
 | `.stayfixed/manifest.json` | The ledger of every scaffolded artifact | the scaffold engine |
 | `.stayfixed/local/artifacts/` | The artifacts `[artifacts] local` keeps out of git, at the path each would have in the repository — git-ignored, never recorded in the manifest | `stayfixed init` and `stayfixed upgrade`, when `[artifacts] local` lists them; `stayfixed uninstall` takes them back |
 | `.stayfixed/local/artifacts.json` | The record of the bytes stayfixed last wrote under `.stayfixed/local/artifacts/`, so an unedited copy is refreshed or retired and an edited one is left. Git-ignored and never committed. Deleted, later runs judge a copy at its artifact's own place by what they render, and no longer find a copy left at an earlier place at all | the scaffold engine; `stayfixed uninstall` removes it |
-| `~/.config/stayfixed/config.toml` | Machine-level settings: `[personal]`; `[guards]`, where `bg_cleanup = false` switches the background guard off on this machine; `[budgets]`, the four budgets that bound what a session loads; `[overlay]`; `[machine]`; and `[setup]`, whose `added_rules` records the rules `setup` added to `~/.claude/settings.json` and whose `ask_rules = false` takes its `ask` rules back. `~` is your home as the password database records it, never `HOME`, which direnv, mise or a devcontainer can set from a file the repository commits ([docs/cli.md](https://github.com/stayfixed/stayfixed/blob/main/docs/cli.md#configuration)) | you, or `stayfixed setup` |
+| `~/.config/stayfixed/config.toml` | Machine-level settings: `[personal]`; `[guards]`, where `bg_cleanup = false` switches the background guard off on this machine; `[budgets]`, the four budgets that bound what a session loads; `[overlay]`; and `[machine]`. `~` is your home as the password database records it, never `HOME`, which direnv, mise or a devcontainer can set from a file the repository commits ([docs/cli.md](https://github.com/stayfixed/stayfixed/blob/main/docs/cli.md#configuration)) | you, or `stayfixed setup` |
 | `~/.config/stayfixed/trust.json` | Every approval you gave on this machine — today, which repositories' committed notes may reach the model — as a versioned record of kinds and subjects, under the same home | `stayfixed trust approve`, under either of its spellings, and `stayfixed trust revoke`; and `stayfixed memory index` and `stayfixed attach`, which carry an approval across a write of their own to the store and never give one |
 | `hooks/hooks.json` and `hooks/run-hook.sh` | The zero-config wiring both harnesses read, and the wrapper they execute. **Shipped in the plugin; never written into a project** | nothing — they are part of the plugin |
 | `${CLAUDE_PLUGIN_DATA}/stayfixed/` | Once-per-session markers and the hook diagnostics log. Deleted with the plugin | the hook dispatcher |
@@ -432,9 +432,9 @@ stayfixed setup --preset recommended                   # the machine configurati
 stayfixed setup --preset recommended --overlay ../stayfixed-private   # record an existing overlay; no --yes needed
 stayfixed setup --preset recommended --overlay create:you/stayfixed-private --yes  # create one on GitHub; --yes is the consent
 stayfixed setup --preset recommended --settings ~/dotfiles/claude/settings.json    # a linked settings file, written where it really is
-stayfixed setup --preset recommended --approval-boundary  # also deny agents writes to the trust record; prints the sandbox settings to set
 stayfixed setup --git-hooks                            # install the commit-message hook into this repository
 stayfixed setup --git-hooks --uninstall                # remove it; restore the hook it chained to
+stayfixed setup --approval-boundary                    # print the deny rule and sandbox settings that keep an agent out of the trust record; writes nothing
 
 # Assessing a repository
 stayfixed assess                                       # every gate and probe; the whole inventory in .stayfixed/assessment.json
@@ -446,7 +446,7 @@ stayfixed adopt promote                                # enforce every gate that
 stayfixed adopt promote --builtin                      # the same, running none of the repository's own gate commands
 
 # Diagnosing an installation
-stayfixed doctor                                       # nineteen checks over this installation, one line
+stayfixed doctor                                       # eighteen checks over this installation, one line
 stayfixed doctor --json                                # every check with its status, detail and remedy
 
 # Internal
@@ -491,44 +491,12 @@ and the record is what lets `stayfixed attach` create the harness memory link to
 exists, `stayfixed memory index` and `memory fit` say the link waits for it, and `attach` says
 so instead of making the link.
 
-An agent whose shell can write any file you can could write that record itself, and against it
-Claude Code's own write restriction is the boundary. `stayfixed setup --approval-boundary` adds a
-`permissions.deny` rule over the record's directory and prints the sandbox settings to set, which
-it never sets. `stayfixed doctor`'s `approval-boundary` row says what is in force for a project:
-**red** once the machine holds an approval and the sandbox is off, a repository's settings turn it
-off, `sandbox.filesystem.disabled` turns off what it confines, `setup`'s deny rules are missing
-(only its own spellings count), or a setting widens them; a **warning** for the same before any
-approval, and while all of it holds until three things are true as well: the sandbox's `true` and
-the deny rules come from managed settings or `~/.claude/settings.json` — a repository's
-`.claude/settings.json` or `.claude/settings.local.json` may make the answer worse and never
-better, since a later commit can remove what it holds — and managed settings make the sandbox
-admin-required and refuse to start without it (`sandbox.enabled = true`,
-`sandbox.failIfUnavailable = true` and `sandbox.allowUnsandboxedCommands = false` there, the
-sandboxing reference's recipe); **green** only then. While the sandbox is admin-required, from
-Claude Code 2.1.285, Claude Code ignores the write access a repository's widening entries give
-sandboxed commands, and its file tools still follow a repository's `Edit` allow rules and additional
-directories, which the deny rule outranks. A non-empty `sandbox.excludedCommands` runs its commands
-with no filesystem restriction: in `~/.claude/settings.json` it is a gap whether or not the sandbox
-is admin-required, in a repository's file while it is not, and in managed settings it is named and
-keeps the row at a warning. An entry of `sandbox.filesystem.allowWrite`,
-`permissions.additionalDirectories` or an `Edit` allow rule is safe only as a literal path outside
-the project and that directory, below no `claude-<digits>` component (the sandbox's own temporary
-directory), and strictly inside no other such entry, managed settings' included — `~/.kube` and
-`/tmp/build` are, the same place in `allowWrite` and an `Edit` rule too; `**`, `~/.config`,
-`./build`, `/tmp/claude-501/build` and `~/a/b` beside `~/a` are not, and a `~/` entry must be clear
-under every home it may mean, `HOME` included — and every other entry is a gap the row names. Where
-`CLAUDE_CONFIG_DIR` names a user settings directory besides `~/.claude`, that directory may only
-make the row worse — never better than a warning when it is the only one, never read at all
-inside the project or another checkout of its repository, and never looked at under neither the
-home nor the project — and `setup` writes it too only where it exists under the home and outside
-the project and its checkouts, and neither `--home` nor `--settings` names the destination. A
-setting of the wrong shape — a sandbox switch that is not `true` or `false`, a widening key that
-is not a list of strings — is a gap, and the settings files are read past a leading byte-order
-mark, as Claude Code reads them. With the sandbox on, an agent's shell
-cannot write the machine directory at all, so `setup`, `trust revoke` and `memory index`'s refresh
-of an approval, run there, say a person must run them in their own terminal. `stayfixed uninstall` leaves these machine-wide rules:
-`[setup] ask_rules = false` takes the `ask` rules back, and the deny rule is yours to remove by
-hand ([docs/cli.md](https://github.com/stayfixed/stayfixed/blob/main/docs/cli.md#stayfixed-setup---preset-name---yes---approval-boundary---home-path---settings-path---machine-path---overlay-value---root-path)).
+The approval holds against what a repository ships, and not against an agent whose shell can write
+any file you can: such an agent can write the record itself, and stayfixed does not check for it.
+That boundary is the harness's sandbox, which is yours to set; `stayfixed setup
+--approval-boundary` prints what to set under Claude Code and writes nothing
+([docs/cli.md](https://github.com/stayfixed/stayfixed/blob/main/docs/cli.md#stayfixed-trust-approve-kind---store-path---root-path---machine-path)
+says what an approval holds against).
 
 ## Memory, in one page
 

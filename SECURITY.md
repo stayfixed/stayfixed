@@ -98,16 +98,17 @@ Out of scope:
   keeping the real `HOME` and an empty `XDG_CONFIG_HOME` in project and plugin hooks.
   `XDG_CONFIG_HOME`, git's other door to that configuration, is dropped before any `git` runs.
 - An agent with an unsandboxed shell writing an approval itself. An approval in `trust.json`
-  holds against a repository's bytes and a `git pull`: a clone cannot write the record, and a
-  changed note lapses it. An agent that can run any command as you can also write any file you
-  can, the record included, and against it the harness's own write restriction is the boundary —
-  keep the machine file's directory out of what the agent may write: `stayfixed setup
-  --approval-boundary` adds the deny rule and says which sandbox settings it needs, and `stayfixed
-  doctor`'s `approval-boundary` row says what is in force for a project. `stayfixed trust approve`
-  refuses when standard input is not a terminal. Claude Code 2.1.296's shell tool gave a command
-  none, measured in a terminal session and on the desktop app's Code tab; no other harness, Codex
-  among them, was measured. The check slows a bare call and guarantees nothing against an agent
-  that can open a pseudo-terminal.
+  holds against a repository's bytes: a clone, a pull or a pull request cannot write the record,
+  and a changed note lapses it. An agent that can run any command as you can also write any file
+  you can, the record included, and stayfixed neither stops nor checks that: the harness's sandbox
+  is that boundary, and `stayfixed setup --approval-boundary` prints what to set under Claude Code.
+  Even an agent the sandbox confines keeps a channel no record closes: Claude Code's documentation
+  does not list `CLAUDE.md` or `AGENTS.md` among the paths its sandbox keeps from the agent's own
+  writes, and Claude Code loads both as instructions (read in the documentation, not measured).
+  `stayfixed trust approve` refuses when standard input is not a terminal. Claude Code 2.1.296's
+  shell tool gave a command none, measured in a terminal session and on the desktop app's Code
+  tab; no other harness, Codex among them, was measured. The check slows a bare call and
+  guarantees nothing against an agent that can open a pseudo-terminal.
 - A repository being able to make stayfixed **refuse** — suppressing memory, failing a hook
   closed. Undesirable, and an ordinary bug, but not a vulnerability: the whole design fails
   closed on purpose.

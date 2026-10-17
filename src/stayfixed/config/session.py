@@ -10,8 +10,11 @@ could not use in one warning, which `SessionStart` shows (`hooks.dispatch`):
 - no `stayfixed.toml`: no project configuration, and nothing to say;
 - one that is a symbolic link, is not UTF-8, cannot be read or is not TOML: no project
   configuration, and `FALLBACK_WARNING`;
-- one holding more settings it cannot use than the NOTE load removes (`loader.NOTE_REMOVAL_LIMIT`):
-  no project configuration, and `TOO_MANY_WARNING`;
+- one longer than a session reads (`SESSION_READ_LIMIT`), read no further: no project
+  configuration, and `TOO_LARGE_WARNING`;
+- one holding more settings it cannot use than the NOTE load removes (`loader.NOTE_REMOVAL_LIMIT`,
+  and fewer for a long file, `loader.NOTE_REBUILT_LIMIT`): no project configuration, and
+  `TOO_MANY_WARNING`;
 - one whose key cannot be used and has nothing to stand in for it — a required key, or a section
   holding one, that the document got wrong or never wrote, or a preset value that does not hold in
   this repository — no project configuration, and `UNUSABLE_WARNING` naming the key;
@@ -35,8 +38,8 @@ from typing import Any
 
 from stayfixed import __version__
 from stayfixed.config.loader import (
-    NOTE_REMOVAL_LIMIT,
     MissingKeys,
+    TooLargeDocument,
     TooManyResets,
     UnusableKey,
     loads_noting,
@@ -51,6 +54,15 @@ from stayfixed.presets import DEFAULT_PRESET, shipped_presets
 from stayfixed.printed import printable
 from stayfixed.semver import later
 
+# A named cap: the most bytes of `stayfixed.toml` a session reads. A hook has the ten seconds
+# `hooks/hooks.json` gives each entry, and a `PreToolUse` hook that runs past them loses its guard
+# or, with that file's `onFailure: "block"`, every call, so what the parse and the NOTE load cost,
+# each in proportion to the file, is bounded by the file before either starts: a 2.8 MB file of
+# custom gates kept a hook fourteen seconds. A `stayfixed.toml` that `init` writes is a few hundred
+# bytes, and one that spells out every setting and a few dozen gates is a few kilobytes; 1 MiB is
+# hundreds of times that, and parses and builds in a fraction of a second. A command reads the file
+# to `fsops.REGULAR_READ_LIMIT`.
+SESSION_READ_LIMIT = 1024 * 1024
 # How every warning opens, and how the two that drop the project configuration close: `doctor`
 # shows the words between (`cause`), since it is where that pointer leads.
 PREFIX = "stayfixed: "
@@ -60,18 +72,23 @@ FALLBACK_WARNING = (
     "be read or is not TOML — so this session runs the guards on the preset and the machine "
     f"owner's layer, without the project's settings{DOCTOR_DETAIL}"
 )
+TOO_LARGE_WARNING = (
+    f"{PREFIX}stayfixed.toml is larger than the {SESSION_READ_LIMIT:,} bytes a session reads, so "
+    "this session runs the guards on the preset and the machine owner's layer, without the "
+    f"project's settings{DOCTOR_DETAIL}"
+)
 UNUSABLE_WARNING = (
     f"{PREFIX}in stayfixed.toml, {{key}} cannot be used and nothing can stand in for it, so this "
     "session runs the guards on the preset and the machine owner's layer, without the project's "
     f"settings{DOCTOR_DETAIL}"
 )
-# A file holding more settings this stayfixed cannot use than the NOTE load reads past one by one:
-# read key by key, it would cost a hook more than its timeout, which Claude Code answers by letting
-# the call through.
+# A file holding more settings this stayfixed cannot use than the NOTE load reads past one by one,
+# `limit` (`loader.TooManyResets`): read key by key, it would cost a hook more than its timeout,
+# which Claude Code answers by letting the call through.
 TOO_MANY_WARNING = (
-    f"{PREFIX}stayfixed.toml holds more than {NOTE_REMOVAL_LIMIT} settings this stayfixed cannot "
-    "use, so this session runs the guards on the preset and the machine owner's layer, without the "
-    f"project's settings{DOCTOR_DETAIL}"
+    f"{PREFIX}stayfixed.toml holds more than {{limit}} settings this stayfixed cannot use, so this "
+    "session runs the guards on the preset and the machine owner's layer, without the project's "
+    f"settings{DOCTOR_DETAIL}"
 )
 # What `UNUSABLE_WARNING` says for a key `printable` withholds, or for a refusal that named none.
 UNNAMED_KEY = "a setting"
@@ -129,7 +146,9 @@ def session_config(root: Path | None, *, machine: Path | None = None) -> Session
     """
     path = machine if machine is not None else machine_config_path()
     try:
-        text = None if root is None else read_document(root)
+        text = None if root is None else read_document(root, limit=SESSION_READ_LIMIT)
+    except TooLargeDocument:
+        return _fallback(path, TOO_LARGE_WARNING)
     except (ConfigError, PathEscape):
         # `read_document` refuses a symlink through `contained()` before it follows it, so a link
         # to a loadable file and one to `/dev/zero` meet the same rule.
@@ -151,8 +170,8 @@ def session_config(root: Path | None, *, machine: Path | None = None) -> Session
         return _with_owner(owner, path, _unusable(exc.key))
     except MissingKeys as exc:
         return _with_owner(owner, path, _unusable(exc.missing[0]))
-    except TooManyResets:
-        return _with_owner(owner, path, TOO_MANY_WARNING)
+    except TooManyResets as exc:
+        return _with_owner(owner, path, TOO_MANY_WARNING.format(limit=exc.limit))
     except (ConfigError, PathEscape) as exc:
         # Every refusal `loads_noting` raises past the two above names a key or is the document
         # not parsing, which `tomllib` already answered; this arm is for one it has not, so that a
@@ -176,8 +195,9 @@ def cause(warning: str) -> str:
 
 def _preset(raw: dict[str, object]) -> str:
     """The preset the owner's layer stands on: the document's, when it names one this build ships,
-    and `DEFAULT_PRESET` otherwise, which is what the NOTE load resets an unshipped one to. So an
-    unshipped name is one note, the loader's, and not the owner's `UNKNOWN_PRESET_NOTE` too.
+    and `DEFAULT_PRESET` otherwise, which is what the NOTE load resets an unshipped one to. Asked
+    here because `resolve_owner` loads the name it is handed: the document's value is the loader's
+    to judge, and an unshipped one is one note, the loader's.
     """
     head = raw.get("stayfixed")
     named = head.get("preset", DEFAULT_PRESET) if isinstance(head, dict) else DEFAULT_PRESET

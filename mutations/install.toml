@@ -123,8 +123,8 @@ reddens = [
 [[mutation]]
 name = "setup's settings merge writes the deny rules under allow instead"
 file = "src/stayfixed/setup/run.py"
-before = '        permissions["deny"] = existing_deny + added_deny'
-after = '        permissions["allow"] = existing_deny + added_deny'
+before = 'permissions["deny"] = existing_deny + [r for r in deny_rules if r not in existing_deny]'
+after = 'permissions["allow"] = existing_deny + [r for r in deny_rules if r not in existing_deny]'
 reddens = ["tests/setup/test_setup.py::test_setup_writes_the_machine_file_and_the_deny_rules"]
 
 # The creation gate, restated in code: `overlay create` runs `gh repo create ... --private` on
@@ -580,8 +580,26 @@ reddens = [
 [[mutation]]
 name = "setup asks where the overlay lies before it asks about --home"
 file = "src/stayfixed/setup/run.py"
-before = "        if settings is None:\n            _check_settings_path(home)\n        else:\n            _check_settings_parent(settings)\n        if also is not None:\n            _check_settings_parent(also / Path(USER_SETTINGS).name)\n        _check_home_usable(home, settings=settings, created=created)\n        if planned is not None:\n            planned = replace(planned, exempt=_exemption(planned, machine=machine))\n            _outside_the_project(\n                planned.root, project_root=project_root, exempt=planned.exempt is not None\n            )"
-after = "        if planned is not None:\n            planned = replace(planned, exempt=_exemption(planned, machine=machine))\n            _outside_the_project(\n                planned.root, project_root=project_root, exempt=planned.exempt is not None\n            )\n        if settings is None:\n            _check_settings_path(home)\n        else:\n            _check_settings_parent(settings)\n        if also is not None:\n            _check_settings_parent(also / Path(USER_SETTINGS).name)\n        _check_home_usable(home, settings=settings, created=created)"
+before = """        if settings is None:
+            _check_settings_path(home)
+        else:
+            _check_settings_parent(settings)
+        _check_home_usable(home, settings=settings, created=created)
+        if planned is not None:
+            planned = replace(planned, exempt=_exemption(planned, machine=machine))
+            _outside_the_project(
+                planned.root, project_root=project_root, exempt=planned.exempt is not None
+            )"""
+after = """        if planned is not None:
+            planned = replace(planned, exempt=_exemption(planned, machine=machine))
+            _outside_the_project(
+                planned.root, project_root=project_root, exempt=planned.exempt is not None
+            )
+        if settings is None:
+            _check_settings_path(home)
+        else:
+            _check_settings_parent(settings)
+        _check_home_usable(home, settings=settings, created=created)"""
 reddens = [
   "tests/setup/test_setup.py::test_a_created_overlay_under_a_home_nobody_may_search_is_refused_before_anything[no-repository]",
   "tests/setup/test_setup.py::test_a_created_overlay_under_a_home_nobody_may_search_is_refused_before_anything[repository]",
@@ -852,7 +870,7 @@ after = """        else:
             continue"""
 reddens = [
   "tests/setup/test_machine.py::test_a_table_this_writer_does_not_know_survives_a_rewrite",
-  "tests/config/test_owner.py::test_write_machine_keeps_guards_budgets_and_setup",
+  "tests/config/test_owner.py::test_write_machine_keeps_the_owners_guards_and_budgets",
 ]
 
 # `pluginConfigs` is where Claude Code reads this plugin's own options, and the mirror was
@@ -861,8 +879,8 @@ reddens = [
 [[mutation]]
 name = "setup mirrors only the values this run itself added"
 file = "src/stayfixed/setup/run.py"
-before = "    personal_values = read_personal(machine)"
-after = "    personal_values = personal"
+before = "    deny_written = _write_user_settings(home, deny_rules, read_personal(machine), settings=settings)"
+after = "    deny_written = _write_user_settings(home, deny_rules, personal, settings=settings)"
 reddens = ["tests/setup/test_setup.py::test_the_plugin_config_mirror_follows_the_machine_file"]
 
 # A remedy is held to the standard of the refusal that carries it. `stow` folds a package as far
@@ -1001,8 +1019,8 @@ reddens = [
 [[mutation]]
 name = "setup stops expanding a leading ~ in --settings"
 file = "src/stayfixed/setup/commands.py"
-before = "    settings = Path(args.settings).expanduser() if args.settings else None"
-after = "    settings = Path(args.settings) if args.settings else None"
+before = "        settings=Path(args.settings).expanduser() if args.settings else None,"
+after = "        settings=Path(args.settings) if args.settings else None,"
 reddens = [
   "tests/setup/test_commands.py::test_a_tilde_in_settings_is_expanded_the_way_home_and_machine_already_are",
 ]
@@ -1247,7 +1265,6 @@ after = "        data = load_preset(preset)"
 reddens = [
   "tests/setup/test_setup.py::test_a_mistyped_preset_names_the_flag_and_never_quotes_it",
 ]
-
 
 # git's exit 128 inside a checkout is a repository it will not describe — another user's under
 # `safe.directory`, or one whose `.git` it cannot read — and read as "no repository" it let the
@@ -2203,127 +2220,6 @@ reddens = [
   "tests/doctor/test_floor_report.py::test_a_machine_with_an_overlay_and_no_stayfixed_toml_is_red_about_nothing",
 ]
 
-# The `ask` rules `setup` writes for approvals, the record that makes them its own, and the
-# approval boundary's deny rule (`src/stayfixed/setup/run.py`).
-
-[[mutation]]
-name = "setup counts an ask rule the file already holds as one it adds"
-file = "src/stayfixed/setup/run.py"
-before = "    ask_add = [rule for rule in wanted if rule not in asked]"
-after = "    ask_add = list(wanted)"
-reddens = [
-  "tests/setup/test_ask_rules.py::test_setup_adds_the_ask_rules_once_and_records_them",
-  "tests/setup/test_ask_rules.py::test_an_ask_rule_the_owner_typed_first_is_never_recorded",
-]
-
-[[mutation]]
-name = "setup records none of the ask rules it adds"
-file = "src/stayfixed/setup/run.py"
-before = "        \"ask\": [*held[\"ask\"], *(r for r in ask_add if r not in held[\"ask\"])],"
-after = "        \"ask\": [*held[\"ask\"]],"
-reddens = [
-  "tests/setup/test_ask_rules.py::test_setup_adds_the_ask_rules_once_and_records_them",
-]
-
-[[mutation]]
-name = "setup asks nothing for the absolute path it runs as"
-file = "src/stayfixed/setup/run.py"
-before = "    if own is None:\n        return ASK_RULES, ()"
-after = "    if True:\n        return ASK_RULES, ()"
-reddens = [
-  "tests/setup/test_ask_rules.py::test_setup_adds_the_ask_rules_once_and_records_them",
-]
-
-[[mutation]]
-name = "switching the ask rules off takes every ask rule"
-file = "src/stayfixed/setup/run.py"
-before = "    ask_remove = [rule for rule in held_record[\"ask\"] if rule not in wanted and rule in asked]"
-after = "    ask_remove = list(asked)"
-reddens = [
-  "tests/setup/test_ask_rules.py::test_switching_off_removes_only_recorded_rules",
-]
-
-[[mutation]]
-name = "setup writes the ask rules before it records them"
-file = "src/stayfixed/setup/run.py"
-before = "    if table(\"before\") != held_table:\n        write_machine(machine, personal={}, overlay_root=None, machine={}, setup=table(\"before\"))\n    # **The `pluginConfigs` mirror is recomputed from the machine file, not from this run's own\n    # new keys.** `personal` above is empty on every run after the first, so the mirror was\n    # write-once: an owner who edited `reply_language` in the machine file — the documented way,\n    # `README.md`'s own \"Written by: you, or `stayfixed setup`\" — kept `\"\"` in\n    # `~/.claude/settings.json` for ever. The other answer the review offered was to stop\n    # writing the mirror at all; it is rejected because `pluginConfigs` is where Claude Code\n    # itself reads a plugin's `userConfig` answers, and this plugin's own manifest declares\n    # them, so dropping it would leave the harness reading nothing. The cost of this direction\n    # is stated where a reader will meet it: a value set in Claude Code's plugin-config UI is\n    # overwritten by the machine file on the next `setup`, because one file has to win and the\n    # machine file is the one every stayfixed reader reads.\n    personal_values = read_personal(machine)\n    deny_merged = _write_user_settings(\n        home,\n        [*deny_rules, *plan.deny_add],\n        personal_values,\n        settings=settings,\n        ask_add=plan.ask_add,\n        ask_remove=plan.ask_remove,\n    )\n    for other in others.values():\n        _write_user_settings(\n            home,\n            [*deny_rules, *other.deny_add],\n            personal_values,\n            settings=other.path,\n            ask_add=other.ask_add,\n            ask_remove=other.ask_remove,\n        )\n"
-after = "    # **The `pluginConfigs` mirror is recomputed from the machine file, not from this run's own\n    # new keys.** `personal` above is empty on every run after the first, so the mirror was\n    # write-once: an owner who edited `reply_language` in the machine file — the documented way,\n    # `README.md`'s own \"Written by: you, or `stayfixed setup`\" — kept `\"\"` in\n    # `~/.claude/settings.json` for ever. The other answer the review offered was to stop\n    # writing the mirror at all; it is rejected because `pluginConfigs` is where Claude Code\n    # itself reads a plugin's `userConfig` answers, and this plugin's own manifest declares\n    # them, so dropping it would leave the harness reading nothing. The cost of this direction\n    # is stated where a reader will meet it: a value set in Claude Code's plugin-config UI is\n    # overwritten by the machine file on the next `setup`, because one file has to win and the\n    # machine file is the one every stayfixed reader reads.\n    personal_values = read_personal(machine)\n    deny_merged = _write_user_settings(\n        home,\n        [*deny_rules, *plan.deny_add],\n        personal_values,\n        settings=settings,\n        ask_add=plan.ask_add,\n        ask_remove=plan.ask_remove,\n    )\n    for other in others.values():\n        _write_user_settings(\n            home,\n            [*deny_rules, *other.deny_add],\n            personal_values,\n            settings=other.path,\n            ask_add=other.ask_add,\n            ask_remove=other.ask_remove,\n        )\n    if table(\"before\") != held_table:\n        write_machine(machine, personal={}, overlay_root=None, machine={}, setup=table(\"before\"))\n"
-reddens = [
-  "tests/setup/test_ask_rules.py::test_a_run_stopped_at_the_record_converges_on_the_next",
-]
-
-[[mutation]]
-name = "switching the ask rules off forgets them before it removes them"
-file = "src/stayfixed/setup/run.py"
-before = "    # **The `pluginConfigs` mirror is recomputed from the machine file, not from this run's own\n    # new keys.** `personal` above is empty on every run after the first, so the mirror was\n    # write-once: an owner who edited `reply_language` in the machine file — the documented way,\n    # `README.md`'s own \"Written by: you, or `stayfixed setup`\" — kept `\"\"` in\n    # `~/.claude/settings.json` for ever. The other answer the review offered was to stop\n    # writing the mirror at all; it is rejected because `pluginConfigs` is where Claude Code\n    # itself reads a plugin's `userConfig` answers, and this plugin's own manifest declares\n    # them, so dropping it would leave the harness reading nothing. The cost of this direction\n    # is stated where a reader will meet it: a value set in Claude Code's plugin-config UI is\n    # overwritten by the machine file on the next `setup`, because one file has to win and the\n    # machine file is the one every stayfixed reader reads.\n    personal_values = read_personal(machine)\n    deny_merged = _write_user_settings(\n        home,\n        [*deny_rules, *plan.deny_add],\n        personal_values,\n        settings=settings,\n        ask_add=plan.ask_add,\n        ask_remove=plan.ask_remove,\n    )\n    for other in others.values():\n        _write_user_settings(\n            home,\n            [*deny_rules, *other.deny_add],\n            personal_values,\n            settings=other.path,\n            ask_add=other.ask_add,\n            ask_remove=other.ask_remove,\n        )\n    for other in back.values():\n        if other.ask_remove:\n            _write_user_settings(\n                home, (), {}, settings=other.path, ask_remove=other.ask_remove, merge=False\n            )\n    if table(\"after\") != table(\"before\"):\n        write_machine(machine, personal={}, overlay_root=None, machine={}, setup=table(\"after\"))\n"
-after = "    if table(\"after\") != table(\"before\"):\n        write_machine(machine, personal={}, overlay_root=None, machine={}, setup=table(\"after\"))\n    # **The `pluginConfigs` mirror is recomputed from the machine file, not from this run's own\n    # new keys.** `personal` above is empty on every run after the first, so the mirror was\n    # write-once: an owner who edited `reply_language` in the machine file — the documented way,\n    # `README.md`'s own \"Written by: you, or `stayfixed setup`\" — kept `\"\"` in\n    # `~/.claude/settings.json` for ever. The other answer the review offered was to stop\n    # writing the mirror at all; it is rejected because `pluginConfigs` is where Claude Code\n    # itself reads a plugin's `userConfig` answers, and this plugin's own manifest declares\n    # them, so dropping it would leave the harness reading nothing. The cost of this direction\n    # is stated where a reader will meet it: a value set in Claude Code's plugin-config UI is\n    # overwritten by the machine file on the next `setup`, because one file has to win and the\n    # machine file is the one every stayfixed reader reads.\n    personal_values = read_personal(machine)\n    deny_merged = _write_user_settings(\n        home,\n        [*deny_rules, *plan.deny_add],\n        personal_values,\n        settings=settings,\n        ask_add=plan.ask_add,\n        ask_remove=plan.ask_remove,\n    )\n    for other in others.values():\n        _write_user_settings(\n            home,\n            [*deny_rules, *other.deny_add],\n            personal_values,\n            settings=other.path,\n            ask_add=other.ask_add,\n            ask_remove=other.ask_remove,\n        )\n    for other in back.values():\n        if other.ask_remove:\n            _write_user_settings(\n                home, (), {}, settings=other.path, ask_remove=other.ask_remove, merge=False\n            )\n"
-reddens = [
-  "tests/setup/test_ask_rules.py::test_a_switch_off_stopped_at_the_settings_file_converges_on_the_next",
-]
-
-[[mutation]]
-name = "the approval boundary is never added"
-file = "src/stayfixed/setup/run.py"
-before = "    rules = record_deny_rules(record_path(machine)) if boundary else ()"
-after = "    rules = ()"
-reddens = [
-  "tests/setup/test_ask_rules.py::test_setup_never_writes_a_sandbox_key",
-]
-
-[[mutation]]
-name = "setup writes an ask rule for a path no rule can hold"
-file = "src/stayfixed/setup/run.py"
-before = "    if not _rulable(own):"
-after = "    if False:"
-reddens = [
-  "tests/setup/test_ask_rules.py::test_a_path_a_rule_cannot_hold_gets_no_rule_and_a_note",
-]
-
-[[mutation]]
-name = "setup reads a switch that is not true or false as on"
-file = "src/stayfixed/setup/run.py"
-before = "    if not isinstance(wanted, bool):"
-after = "    if False:"
-reddens = [
-  "tests/setup/test_ask_rules.py::test_a_setup_table_setup_cannot_read_refuses_before_any_write[switch-not-a-bool]",
-]
-
-[[mutation]]
-name = "setup reads a record it cannot read as empty"
-file = "src/stayfixed/setup/run.py"
-before = "    if not isinstance(raw, dict) or not set(raw) <= set(_RECORDED_KINDS):"
-after = "    if not isinstance(raw, dict):"
-reddens = [
-  "tests/setup/test_ask_rules.py::test_a_setup_table_setup_cannot_read_refuses_before_any_write[record-stray]",
-]
-
-[[mutation]]
-name = "setup reads a record's rules that are not text"
-file = "src/stayfixed/setup/run.py"
-before = "        if not isinstance(rules, list) or not all(isinstance(rule, str) for rule in rules):"
-after = "        if not isinstance(rules, list):"
-reddens = [
-  "tests/setup/test_ask_rules.py::test_a_setup_table_setup_cannot_read_refuses_before_any_write[record-not-rules]",
-]
-
-[[mutation]]
-name = "write_machine writes a setup key it was told to drop"
-file = "src/stayfixed/setup/machine.py"
-before = "            if value is not None"
-after = "            if True"
-reddens = [
-  "tests/setup/test_ask_rules.py::test_switching_off_removes_only_recorded_rules",
-]
-
-[[mutation]]
-name = "setup's command line drops --approval-boundary"
-file = "src/stayfixed/setup/commands.py"
-before = "        boundary=args.approval_boundary,"
-after = "        boundary=False,"
-reddens = [
-  "tests/setup/test_ask_rules.py::test_the_flag_reaches_setup_through_the_cli",
-]
-
 # `setup` run from an agent's sandboxed shell: each write the sandbox refuses, and the question
 # asked of the settings directory before the first write, end in the one constant sentence.
 
@@ -2363,75 +2259,6 @@ reddens = [
   "tests/setup/test_setup.py::test_a_settings_directory_that_cannot_be_written_is_refused_before_the_machine_file",
 ]
 
-# The user settings go where `doctor` always reads them, `.claude` under the password database's
-# home, when neither `--home` nor `--settings` names one; another directory
-# `CLAUDE_CONFIG_DIR` names is said and not written.
-
-[[mutation]]
-name = "setup writes the user settings under HOME"
-file = "src/stayfixed/setup/commands.py"
-before = "    if not named:\n        settings = _claude_settings(found, home)"
-after = "    if False:\n        settings = _claude_settings(found, home)"
-reddens = [
-  "tests/setup/test_commands.py::test_setup_writes_the_home_s_settings_and_a_claude_config_dir_outside_the_project[homes-differ]",
-  "tests/setup/test_commands.py::test_setup_writes_the_home_s_settings_and_a_claude_config_dir_outside_the_project[config-dir-missing]",
-  "tests/setup/test_commands.py::test_setup_writes_the_home_s_settings_and_a_claude_config_dir_outside_the_project[config-dir-elsewhere]",
-]
-
-[[mutation]]
-name = "setup writes a CLAUDE_CONFIG_DIR inside the project"
-file = "src/stayfixed/setup/commands.py"
-before = "    if where is Placement.INSIDE:\n        return None, (CONFIG_DIR_IN_PROJECT"
-after = "    if False:\n        return None, (CONFIG_DIR_IN_PROJECT"
-reddens = [
-  "tests/setup/test_commands.py::test_setup_writes_the_home_s_settings_and_a_claude_config_dir_outside_the_project[config-dir-in-project]",
-]
-
-[[mutation]]
-name = "setup writes into a CLAUDE_CONFIG_DIR that is not a directory"
-file = "src/stayfixed/setup/commands.py"
-before = "    if not fsops.is_dir(chosen):"
-after = "    if False:"
-reddens = [
-  "tests/setup/test_commands.py::test_setup_writes_the_home_s_settings_and_a_claude_config_dir_outside_the_project[config-dir-missing]",
-]
-
-[[mutation]]
-name = "setup never writes the directory CLAUDE_CONFIG_DIR names"
-file = "src/stayfixed/setup/commands.py"
-before = "        boundary=args.approval_boundary,\n        also=also,"
-after = "        boundary=args.approval_boundary,\n        also=None,"
-reddens = [
-  "tests/setup/test_commands.py::test_setup_writes_the_home_s_settings_and_a_claude_config_dir_outside_the_project[config-dir-elsewhere]",
-]
-
-[[mutation]]
-name = "setup records none of the rules it adds in another directory"
-file = "src/stayfixed/setup/run.py"
-before = "            **{directory: getattr(other, stage) for directory, other in others.items()},"
-after = ""
-reddens = [
-  "tests/setup/test_commands.py::test_setup_writes_the_home_s_settings_and_a_claude_config_dir_outside_the_project[config-dir-elsewhere]",
-]
-
-[[mutation]]
-name = "switching the ask rules off leaves the other directories' rules"
-file = "src/stayfixed/setup/run.py"
-before = "        for key, place in take_back.directories\n    }"
-after = "        for key, place in ()\n    }"
-reddens = [
-  "tests/setup/test_commands.py::test_switching_the_ask_rules_off_takes_them_back_in_each_recorded_directory",
-]
-
-[[mutation]]
-name = "setup reads a record naming one directory twice"
-file = "src/stayfixed/setup/run.py"
-before = "            or entry[_DIRECTORY] in added_in"
-after = "            or False"
-reddens = [
-  "tests/setup/test_commands.py::test_a_record_of_other_directories_that_is_not_one_is_refused",
-]
-
 [[mutation]]
 name = "setup's sandbox sentence sends a person in their own terminal there again"
 file = "src/stayfixed/setup/machine.py"
@@ -2441,91 +2268,15 @@ reddens = [
   "tests/setup/test_commands.py::test_setup_s_sandbox_sentence_says_what_a_person_in_their_own_terminal_meets",
 ]
 
-# A run whose --home or --settings names its destination, perhaps a scratch one, never
-# writes the real directory CLAUDE_CONFIG_DIR names beside it.
-[[mutation]]
-name = "setup writes the directory CLAUDE_CONFIG_DIR names whatever destination the run named"
-file = "src/stayfixed/setup/commands.py"
-before = "    if named:\n        return None, (CONFIG_DIR_NOT_NAMED.format(path=spelled),)"
-after = "    if False:\n        return None, (CONFIG_DIR_NOT_NAMED.format(path=spelled),)"
-reddens = [
-  "tests/setup/test_commands.py::test_a_run_that_names_its_destination_leaves_claude_config_dir_alone[home]",
-  "tests/setup/test_commands.py::test_a_run_that_names_its_destination_leaves_claude_config_dir_alone[settings]",
-]
-
-# Taking the ask rules back from a recorded directory no flag or variable names this run
-# takes back what was recorded and writes nothing else there.
-[[mutation]]
-name = "taking the rules back merges the preset into a directory no one named"
-file = "src/stayfixed/setup/run.py"
-before = "                home, (), {}, settings=other.path, ask_remove=other.ask_remove, merge=False"
-after = "                home, (), {}, settings=other.path, ask_remove=other.ask_remove, merge=True"
-reddens = [
-  "tests/setup/test_commands.py::test_taking_the_rules_back_writes_nothing_else_where_no_one_named_the_directory",
-]
-
-[[mutation]]
-name = "taking the rules back records the approval boundary in a directory no one named"
-file = "src/stayfixed/setup/run.py"
-before = "        key: _plan(place / name, recorded.added_in[key], ask_rules=False, wanted=(), boundary=())"
-after = "        key: _plan(place / name, recorded.added_in[key], ask_rules=False, wanted=(), boundary=rules)"
-reddens = [
-  "tests/setup/test_commands.py::test_taking_the_rules_back_writes_nothing_else_where_no_one_named_the_directory",
-]
-
-# A recorded directory is found in the record, and its entry rewritten, by the spelling the record
-# holds it under, which a hand-written machine file may give a trailing `/` or a `.` component.
-[[mutation]]
-name = "taking the rules back looks a recorded directory up by its path"
-file = "src/stayfixed/setup/run.py"
-before = "        key: _plan(place / name, recorded.added_in[key], ask_rules=False, wanted=(), boundary=())"
-after = "        key: _plan(place / name, recorded.added_in[str(place)], ask_rules=False, wanted=(), boundary=())"
-reddens = [
-  "tests/setup/test_commands.py::test_taking_the_rules_back_writes_nothing_else_where_no_one_named_the_directory[trailing-slash]",
-  "tests/setup/test_commands.py::test_taking_the_rules_back_writes_nothing_else_where_no_one_named_the_directory[doubled-slash]",
-  "tests/setup/test_commands.py::test_taking_the_rules_back_writes_nothing_else_where_no_one_named_the_directory[dot]",
-]
-
-[[mutation]]
-name = "taking the rules back keys the record by the path"
-file = "src/stayfixed/setup/run.py"
-before = "        key: _plan(place / name, recorded.added_in[key], ask_rules=False, wanted=(), boundary=())"
-after = "        str(place): _plan(place / name, recorded.added_in[key], ask_rules=False, wanted=(), boundary=())"
-reddens = [
-  "tests/setup/test_commands.py::test_taking_the_rules_back_writes_nothing_else_where_no_one_named_the_directory[trailing-slash]",
-  "tests/setup/test_commands.py::test_taking_the_rules_back_writes_nothing_else_where_no_one_named_the_directory[doubled-slash]",
-  "tests/setup/test_commands.py::test_taking_the_rules_back_writes_nothing_else_where_no_one_named_the_directory[dot]",
-]
-
-[[mutation]]
-name = "taking the rules back writes a recorded directory inside the project"
-file = "src/stayfixed/setup/run.py"
-before = "        if where is Placement.INSIDE:\n            if fsops.is_dir(place):"
-after = "        if False:\n            if fsops.is_dir(place):"
-reddens = [
-  "tests/setup/test_commands.py::test_taking_the_rules_back_leaves_a_recorded_directory_now_inside_the_project",
-]
-
-[[mutation]]
-name = "taking the rules back asks nothing of a recorded directory before the first write"
-file = "src/stayfixed/setup/run.py"
-before = "        for _, place in take_back.directories:\n            _check_settings_parent(place / Path(USER_SETTINGS).name)"
-after = "        for _, place in take_back.directories:\n            pass"
-reddens = [
-  "tests/setup/test_commands.py::test_taking_the_rules_back_refuses_a_linked_settings_file_before_any_write",
-]
-
-# `setup`'s settings merge reads the owner's file past a leading byte-order mark and keeps it;
-# says "deny rules merged" only for a deny rule it added; takes back a recorded `ask` rule it no
-# longer wants; and names the `stayfixed` on `PATH` as spelled. `CLAUDE_CONFIG_DIR` prints through
-# `printed.clipped` and is recorded by its absolute path.
+# `setup`'s settings merge reads the owner's file past a leading byte-order mark, as Claude Code
+# does, and keeps it.
 [[mutation]]
 name = "setup refuses a user settings file opening with a byte-order mark"
 file = "src/stayfixed/setup/run.py"
 before = "    return json_object(lenient_settings(text), str(path), error=Failure), text"
 after = "    return json_object(text, str(path), error=Failure), text"
 reddens = [
-  "tests/setup/test_ask_rules.py::test_an_owners_settings_file_opening_with_a_byte_order_mark_is_merged_and_keeps_it",
+  "tests/setup/test_setup.py::test_an_owners_settings_file_opening_with_a_byte_order_mark_is_merged_and_keeps_it",
 ]
 
 [[mutation]]
@@ -2534,78 +2285,37 @@ file = "src/stayfixed/setup/run.py"
 before = "    mark = BYTE_ORDER_MARK if text.startswith(BYTE_ORDER_MARK) else \"\""
 after = "    mark = \"\""
 reddens = [
-  "tests/setup/test_ask_rules.py::test_an_owners_settings_file_opening_with_a_byte_order_mark_is_merged_and_keeps_it",
+  "tests/setup/test_setup.py::test_an_owners_settings_file_opening_with_a_byte_order_mark_is_merged_and_keeps_it",
 ]
 
+# `setup --approval-boundary` prints advice and writes nothing, so it runs alone: never the machine
+# setup, and never beside a flag that names a write.
 [[mutation]]
-name = "setup reports deny rules merged for any rewrite of the file"
-file = "src/stayfixed/setup/run.py"
-before = "        ) from exc\n    return bool(added_deny)"
-after = "        ) from exc\n    return True"
-reddens = [
-  "tests/setup/test_ask_rules.py::test_a_run_that_only_takes_ask_rules_back_reports_no_deny_merge",
-]
-
-[[mutation]]
-name = "setup takes back a recorded rule only with the switch off"
-file = "src/stayfixed/setup/run.py"
-before = "    ask_remove = [rule for rule in held_record[\"ask\"] if rule not in wanted and rule in asked]"
-after = "    ask_remove = [rule for rule in held_record[\"ask\"] if not ask_rules and rule in asked]"
-reddens = [
-  "tests/setup/test_ask_rules.py::test_a_recorded_ask_rule_no_longer_wanted_is_taken_back_while_the_switch_is_on",
-]
-
-[[mutation]]
-name = "setup forgets only with the switch off"
-file = "src/stayfixed/setup/run.py"
-before = "    after = {**before, \"ask\": [rule for rule in before[\"ask\"] if rule in wanted]}"
-after = "    after = {**before, \"ask\": before[\"ask\"] if ask_rules else []}"
-reddens = [
-  "tests/setup/test_ask_rules.py::test_a_recorded_ask_rule_no_longer_wanted_is_taken_back_while_the_switch_is_on",
-]
-
-[[mutation]]
-name = "setup's absolute-path rule follows where the stayfixed on PATH leads"
-file = "src/stayfixed/setup/run.py"
-before = "    return Path(os.path.abspath(found)) if found is not None else None"
-after = "    return Path(os.path.realpath(found)) if found is not None else None"
-reddens = [
-  "tests/setup/test_ask_rules.py::test_the_absolute_path_rule_names_the_stayfixed_on_path_as_spelled",
-]
-
-[[mutation]]
-name = "setup prints CLAUDE_CONFIG_DIR whole"
+name = "setup --approval-boundary runs the machine setup"
 file = "src/stayfixed/setup/commands.py"
-before = "    spelled = clipped(str(chosen))"
-after = "    spelled = str(chosen)"
+before = "        return run_boundary_advice(args)"
+after = "        pass"
 reddens = [
-  "tests/setup/test_commands.py::test_a_claude_config_dir_of_any_length_prints_bounded[inside-the-project]",
-  "tests/setup/test_commands.py::test_a_claude_config_dir_of_any_length_prints_bounded[elsewhere]",
+  "tests/setup/test_approval_boundary.py::test_the_advice_names_the_rule_and_the_sandbox_and_writes_nothing",
 ]
 
 [[mutation]]
-name = "setup's line for a CLAUDE_CONFIG_DIR elsewhere names no way to write it"
+name = "setup --approval-boundary takes a flag that names a write"
 file = "src/stayfixed/setup/commands.py"
-before = "    \"there and wrote nothing there, though \"\n    \"`stayfixed setup --settings <that directory>/settings.json`, with this run's other flags, \"\n    \"writes the rules there\"\n"
-after = "    \"there and wrote nothing there\"\n"
+before = "        if args.git_hooks or args.yes or any(value is not None for value in named):"
+after = "        if args.git_hooks or args.yes:"
 reddens = [
-  "tests/setup/test_commands.py::test_the_line_for_a_claude_config_dir_elsewhere_names_the_flag_that_writes_it",
+  "tests/setup/test_approval_boundary.py::test_the_advice_beside_a_flag_that_writes_is_refused[preset]",
+  "tests/setup/test_approval_boundary.py::test_the_advice_beside_a_flag_that_writes_is_refused[overlay]",
+  "tests/setup/test_approval_boundary.py::test_the_advice_beside_a_flag_that_writes_is_refused[settings]",
 ]
 
 [[mutation]]
-name = "setup writes the home's settings whatever --settings names"
+name = "setup --approval-boundary takes --yes or --git-hooks"
 file = "src/stayfixed/setup/commands.py"
-before = "    settings = Path(args.settings).expanduser() if args.settings else None"
-after = "    settings = None"
+before = "        if args.git_hooks or args.yes or any(value is not None for value in named):"
+after = "        if any(value is not None for value in named):"
 reddens = [
-  "tests/setup/test_commands.py::test_the_line_for_a_claude_config_dir_elsewhere_names_the_flag_that_writes_it",
-]
-
-[[mutation]]
-name = "setup records a relative CLAUDE_CONFIG_DIR as spelled"
-file = "src/stayfixed/setup/commands.py"
-before = "    return Path(os.path.abspath(chosen)), (CONFIG_DIR_WRITTEN.format(path=spelled),)"
-after = "    return chosen, (CONFIG_DIR_WRITTEN.format(path=spelled),)"
-reddens = [
-  "tests/setup/test_commands.py::test_a_relative_claude_config_dir_is_recorded_by_its_absolute_path",
+  "tests/setup/test_approval_boundary.py::test_the_advice_beside_a_flag_that_writes_is_refused[yes]",
+  "tests/setup/test_approval_boundary.py::test_the_advice_beside_a_flag_that_writes_is_refused[git-hooks]",
 ]

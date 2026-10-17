@@ -18,6 +18,7 @@ from stayfixed.config import loader
 from stayfixed.config.classes import REFUSED_LAYER_NOTE
 from stayfixed.config.loader import (
     CONFIG_FILE,
+    NOTE_REBUILT_LIMIT,
     NOTE_REMOVAL_LIMIT,
     RESET_NOTE,
     TOO_MANY_RESETS,
@@ -63,6 +64,9 @@ UNKNOWN_NAMES = [
     ("[memory]\nfuture = 1\n", "memory.future"),  # a key, in _build
     ("[budgets]\nfuture = 1\n", "budgets.future"),  # a key, in _budgets
     ('[gates.custom.g]\nrun = ["x"]\nfuture = 1\n', "gates.custom.g.future"),  # a key, in _gates
+    # A section the machine file once held: no class names it, so it is a repository's unknown
+    # section like any other, never a machine-only one refused key by key.
+    ('[setup]\nask_rules = ["Bash(x)"]\n', "setup"),
 ]
 
 
@@ -71,7 +75,9 @@ def test_an_unknown_name_is_ignored_with_a_note(tmp_path: Path, extra: str, name
     # Ignored, not reset: the name is no value of this release, so nothing stands in for it.
     # Mutations (`mutations/`'s "an unknown section is dropped without a note" -> the `newer`
     # case has no note; "the NOTE path resets an unknown key instead of ignoring it" -> each key
-    # case gets a reset note from the refusal `loads` raises).
+    # case gets a reset note from the refusal `loads` raises). By hand: a `"setup.*"` row of the
+    # machine-only class put back in `classes.CLASSES` gives the `setup` case the refused-layer
+    # note instead.
     got = loads_noting(MINIMAL + extra, tmp_path, owner=OWNER)
     assert got.notes == (UNKNOWN_NOTE.format(name=named),)
     assert_never_raw(*got.notes)
@@ -187,7 +193,36 @@ def test_one_unusable_key_past_the_limit_refuses_the_whole_document(tmp_path: Pa
         loads_noting(_unusable_gates(NOTE_REMOVAL_LIMIT + 1), tmp_path, owner=OWNER)
     path = tmp_path / CONFIG_FILE
     assert str(refused.value) == TOO_MANY_RESETS.format(path=path, limit=NOTE_REMOVAL_LIMIT)
-    assert refused.value.key is None
+    assert refused.value.key is None and refused.value.limit == NOTE_REMOVAL_LIMIT
+
+
+# Custom gates that run, about half a megabyte of them: a document long enough that
+# `NOTE_REBUILT_LIMIT` allows it fewer removals than `NOTE_REMOVAL_LIMIT` does.
+RUNNABLE_GATES = "".join(f'v{n} = {{ run = ["true"] }}\n' for n in range(18_000))
+
+
+def _long_with_unusable_gates(count: int) -> str:
+    unusable = "".join(f"g{n} = {{ run = [] }}\n" for n in range(count))
+    return MINIMAL + "[gates.custom]\n" + RUNNABLE_GATES + unusable
+
+
+def test_a_long_document_is_read_past_fewer_unusable_keys(tmp_path: Path) -> None:
+    # Each removal builds the whole document again, every gate that runs included, so 50,000 of
+    # them beside 64 that could not took a session six seconds while the count stayed within its
+    # cap. A long document is allowed as many removals as `NOTE_REBUILT_LIMIT` over its length:
+    # exactly that many load, one more refuses it whole. Mutation (`mutations/`'s "the NOTE path's
+    # removals are bounded by their count alone"): the second document loads with its notes.
+    limit = NOTE_REBUILT_LIMIT // len(_long_with_unusable_gates(0))
+    assert 0 < limit < NOTE_REMOVAL_LIMIT  # the document is long enough to be bounded by size
+    got = loads_noting(_long_with_unusable_gates(limit), tmp_path, owner=OWNER)
+    assert len(got.notes) == limit and len(got.config.gates.custom) == 18_000
+    longer = _long_with_unusable_gates(limit + 1)
+    assert NOTE_REBUILT_LIMIT // len(longer) == limit  # one gate more moves the bound nowhere
+    with pytest.raises(TooManyResets) as refused:
+        loads_noting(longer, tmp_path, owner=OWNER)
+    path = tmp_path / CONFIG_FILE
+    assert str(refused.value) == TOO_MANY_RESETS.format(path=path, limit=limit)
+    assert refused.value.limit == limit
 
 
 def test_a_document_parsed_once_is_read_as_its_text_is(tmp_path: Path) -> None:
@@ -248,6 +283,7 @@ REFUSED = [
         '[paths]\nbugs = "../x"\n', r"paths\.bugs is not a plain relative path", id="path"
     ),
     pytest.param("[guards]\nbg_cleanup = false\n", r"unknown section\(s\): guards", id="guards"),
+    pytest.param('[setup]\nask_rules = ["Bash(x)"]\n', r"unknown section\(s\): setup", id="setup"),
 ]
 
 

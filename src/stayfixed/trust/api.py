@@ -1,7 +1,7 @@
 """The trust package's import surface: the machine's one record of approvals.
 
-The `memory` area keeps its store approvals in the record under kind `memory`, and reads `recorded`,
-`record_path` and `UnreadableTrust`; `refresh` is how it carries an approval across a write
+The `memory` area keeps its store approvals in the record under kind `memory`, and reads `recorded`
+and `UnreadableTrust`; `refresh` is how it carries an approval across a write
 stayfixed itself made without undoing a revoke made before its final re-read of the record.
 `approve`, `revoke` and `state`, with `Approval` and the `State` the last answers in, complete the
 record's answers for the kinds the next areas bring (an overlay's parts, a checkout's regressions):
@@ -15,42 +15,23 @@ come from `approving`, not from the command module, so importing the record load
 the person at the machine runs it, and an agent does not, in the words `trust approve`'s own refusal
 uses.
 
-The approval boundary's spellings (`boundary`) are read by two consumers that must not drift apart:
-`setup`, which writes `record_deny_rules` over the record's directory, writes the user settings in
-the home's directory `user_settings` finds, asks `placement` where the one `CLAUDE_CONFIG_DIR` chose
-lies before it writes there, and prints `ENFORCING_SETTINGS` for `managed_named`'s file; and
-`doctor`'s `approval-boundary` row, which reads the settings layers through `managed_settings`,
-`MANAGED_DROP_INS` (`NO_MANAGED_PATH` where none was measured) and each directory `user_settings`
-(`UserSettings`) finds, asks `placement` (`Placement`) before it reads the variable's, judges the
-sandbox by `SANDBOX`, `ENABLED`, `UNSANDBOXED_ALLOWED` and `FAIL_IF_UNAVAILABLE`, names
-`ENFORCING_SETTINGS` in its remedy, and counts those same `record_deny_rules`; `folded` is how both
-compare two paths, so the two cannot fold case differently. `sandbox_refused` is how `setup` and
-`memory` tell a write an agent's sandbox refused, `SandboxedWrite` is the record's own refusal of
-one, and `OWN_TERMINAL_TOO` ends `setup`'s sentence for it as it ends the record's.
+`setup --approval-boundary` prints what keeps an agent's shell out of the record, and writes none
+of it (`boundary`): `record_deny_rules` over the directory `record_path` names, `SANDBOX_ON` for
+the user settings, and `ENFORCING_SETTINGS` for `managed_named`'s file. `sandbox_refused` is how
+`setup` and `memory` tell a write an agent's sandbox refused, `SandboxedWrite` is the record's own
+refusal of one, and `OWN_TERMINAL_TOO` ends `setup`'s sentence for it as it ends the record's.
 """
 
 from __future__ import annotations
 
 from stayfixed.trust.approving import PERSON_RUNS, approve_kind, kind_context
 from stayfixed.trust.boundary import (
-    CONFIG_DIR_VARIABLE,
-    ENABLED,
     ENFORCING_SETTINGS,
-    FAIL_IF_UNAVAILABLE,
-    MANAGED_DROP_INS,
-    NO_MANAGED_PATH,
     OWN_TERMINAL_TOO,
-    SANDBOX,
-    UNSANDBOXED_ALLOWED,
-    Placement,
-    UserSettings,
-    folded,
+    SANDBOX_ON,
     managed_named,
-    managed_settings,
-    placement,
     record_deny_rules,
     sandbox_refused,
-    user_settings,
 )
 from stayfixed.trust.kinds import ApprovalKind, KindContext, Subject
 from stayfixed.trust.record import (
@@ -67,32 +48,21 @@ from stayfixed.trust.record import (
 )
 
 __all__ = [
-    "CONFIG_DIR_VARIABLE",
-    "ENABLED",
     "ENFORCING_SETTINGS",
-    "FAIL_IF_UNAVAILABLE",
-    "MANAGED_DROP_INS",
-    "NO_MANAGED_PATH",
     "OWN_TERMINAL_TOO",
     "PERSON_RUNS",
-    "SANDBOX",
-    "UNSANDBOXED_ALLOWED",
+    "SANDBOX_ON",
     "Approval",
     "ApprovalKind",
     "KindContext",
-    "Placement",
     "SandboxedWrite",
     "State",
     "Subject",
     "UnreadableTrust",
-    "UserSettings",
     "approve",
     "approve_kind",
-    "folded",
     "kind_context",
     "managed_named",
-    "managed_settings",
-    "placement",
     "record_deny_rules",
     "record_path",
     "recorded",
@@ -100,5 +70,4 @@ __all__ = [
     "revoke",
     "sandbox_refused",
     "state",
-    "user_settings",
 ]

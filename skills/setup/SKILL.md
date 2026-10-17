@@ -36,35 +36,12 @@ description: Configure the machine for stayfixed — the preset, the personal pa
 5. After a stayfixed release, `stayfixed overlay upgrade --root PATH --dry-run` says what would
    change. Relay the report, and relay the `ASK FIRST` list separately: those two files can
    grant a capability, so the user agrees to them by name before the run without `--dry-run`.
-6. Offer the approval boundary, and **ask before running it**:
-   `stayfixed setup --preset recommended --approval-boundary` denies the agent writes to the
-   trust record's directory. Relay the sandbox settings it prints for the user to set; never write
-   a `sandbox` key yourself. `stayfixed doctor`'s `approval-boundary` row then says what is in
-   force: red once the machine holds an approval and the sandbox is off, a repository file turns it
-   off, `sandbox.filesystem.disabled` turns off what it confines, `setup`'s deny rules are not
-   there as it spells them, or a setting widens them; a warning for the same before any approval,
-   and a warning while all holds until the sandbox's `true` and the deny rules come from managed
-   settings or the user's own file (never only from a repository's, which a later commit can
-   change) and managed settings set `sandbox.enabled = true`, `sandbox.failIfUnavailable = true`
-   and `sandbox.allowUnsandboxedCommands = false`; green only then. A non-empty
-   `sandbox.excludedCommands` in the user's own file is a gap even while the sandbox is
-   admin-required, and in managed settings keeps the row at a warning. An entry of
-   `sandbox.filesystem.allowWrite`, `permissions.additionalDirectories` or a file-edit allow rule
-   is safe only as a literal path outside the project and the trust record's directory, below no
-   `claude-<digits>` component, strictly inside no other such entry (managed settings' included),
-   `/…` or `~/…` (`//…` or `~/…` in a file-edit rule; a `~/` one only where it stays clear under
-   every home it may mean, `HOME` included), of letters, digits, `.`, `_`, `-` and `/`; every other
-   entry is a gap the row names by key and file. Where `CLAUDE_CONFIG_DIR`
-   names a user settings directory besides `~/.claude`, that directory may only make the row
-   worse, and `setup` writes it too only where it exists under the home and outside the project
-   and its other checkouts, and neither `--home` nor `--settings` was given; relay the line that
-   names it.
-   With the sandbox on, the agent's shell cannot write the machine directory at all: when `setup`,
-   `trust revoke` or `memory index` says a person must run it in their own terminal, outside the
-   agent's sandbox, relay that sentence and stop — never retry it outside the sandbox yourself.
-   `stayfixed uninstall` leaves these machine-wide rules: `[setup] ask_rules = false` in the
-   machine configuration file takes the `ask` rules back on the next `setup`, and the deny rule is
-   the user's to remove by hand.
+6. `stayfixed setup --approval-boundary` prints the deny rule and the sandbox settings that keep
+   an agent's shell out of the trust record's directory, and writes nothing. Relay its line for
+   the user to set; never write a `sandbox` key or that deny rule yourself. With the sandbox on,
+   the agent's shell cannot write the machine directory at all: when `setup`, `trust revoke` or
+   `memory index` says a person must run it in their own terminal, outside the agent's sandbox,
+   relay that sentence and stop — never retry it outside the sandbox yourself.
 7. **The preset's plugins install on Claude Code only.** Codex has no verified non-interactive
    marketplace source for them, so `setup` reports the gap as a note rather than attempting an
    unverified install. Relay that note and tell the user to add those plugins by hand on Codex;

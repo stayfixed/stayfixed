@@ -11,6 +11,11 @@ forbids a test from touching the developer's real `~/.claude` or `~/.config/stay
 command whose only mode writes to the real ones could not be tested at all. Both default to the
 real paths, exactly as `--root` defaults to the current directory elsewhere in this CLI.
 
+`--approval-boundary` is a third thing, and the one that writes nothing: it prints the deny rule and
+the sandbox settings that keep an agent's shell out of the trust record's directory, which are the
+harness's to enforce and the person's to set (`trust.boundary` says why stayfixed sets none of
+them), so it runs alone.
+
 `--machine` is **not** gated behind an interactive shell here, unlike `attach`/`detach`'s. That
 gate is about a flag that decides which overlay a *read* trusts; `setup` is the command that
 *writes* the machine file in the first place, so gating its own `--machine` would refuse the
@@ -21,21 +26,17 @@ check of the CLI's exit codes. Scoped to `attach`/`detach` on purpose, and left 
 from __future__ import annotations
 
 import argparse
-import os
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any, cast
 
 from stayfixed import fsops
 from stayfixed.areas import SubParsers
 from stayfixed.command import HOME_HELP, SETUP_MACHINE_HELP, SETUP_ROOT_HELP
 from stayfixed.errors import Failure, Refusal
 from stayfixed.presets import DEFAULT_PRESET
-from stayfixed.printed import clipped, quoted
+from stayfixed.printed import quoted
 from stayfixed.result import Result
 from stayfixed.runner import subprocess_runner
-
-if TYPE_CHECKING:
-    from stayfixed.trust.api import UserSettings
 
 # Imported at module scope, and not deferred into `run_setup` the way `setup.run.setup` still
 # is: a test that wants to keep this command away from a real `claude`/`codex` binary has to
@@ -48,9 +49,9 @@ if TYPE_CHECKING:
 # `discover()` that `tests/boundaries/test_discovery.py` holds `hooks.py` to.
 
 _BOTH_MODES = (
-    "--git-hooks installs a hook into one repository; --preset and --approval-boundary write "
-    "machine-level files. A single run has one exit code to report, so it does only one of the "
-    "two — run them separately"
+    "--git-hooks installs a hook into one repository; --preset writes machine-level files. "
+    "A single run has one exit code to report, so it does only one of the two — run them "
+    "separately"
 )
 
 
@@ -122,50 +123,37 @@ EMPTY_HOME = (
     "HOME is empty, so it names no home directory and there is no default for --home; set HOME "
     "to your home directory, or pass --home PATH"
 )
-# What becomes of the directory `CLAUDE_CONFIG_DIR` names where it is not the home's `.claude`
-# (`trust.boundary.user_settings`): written too where it exists outside the project and every
-# checkout of its repository, under the home, and the person named no destination; otherwise named
-# and left alone. `path` is the variable's value, which a repository may have chosen and no bound
-# limits in length, so it is printed through `printed.clipped`.
-CONFIG_DIR_WRITTEN = (
-    "CLAUDE_CONFIG_DIR names another user settings directory, {path}, and its settings.json took "
-    "the same rules, recorded under that directory in the machine configuration's "
-    "[setup] added_rules_in"
+# `--approval-boundary` writes nothing, so a flag that names something to write has no run to
+# belong to: refused rather than dropped, since a person who typed it expects it done.
+_ADVICE_ALONE = (
+    "--approval-boundary prints what to set and writes nothing, so it takes no --preset, "
+    "--overlay, --settings, --yes or --git-hooks; run `stayfixed setup` with those separately"
 )
-CONFIG_DIR_MISSING = (
-    "CLAUDE_CONFIG_DIR names {path}, which is not a directory, so setup wrote nothing there"
-)
-CONFIG_DIR_IN_PROJECT = (
-    "CLAUDE_CONFIG_DIR names {path}, inside the project or another checkout of its repository, "
-    "whose contents the repository chooses, so setup wrote nothing there"
-)
-# Under neither the home nor the project: never asked of the filesystem, since a path a committed
-# `env` block chose may lie under a network mount (`trust.boundary.placement`). A person whose own
-# settings directory lies there names its file with `--settings`, which this run's rules then take.
-CONFIG_DIR_ELSEWHERE = (
-    "CLAUDE_CONFIG_DIR names {path}, under neither the home nor the project, so setup did not look "
-    "there and wrote nothing there, though "
-    "`stayfixed setup --settings <that directory>/settings.json`, with this run's other flags, "
-    "writes the rules there"
-)
-# `--home` or `--settings` names where this run writes, which may be a scratch destination: a real
-# settings directory written beside it would hold rules whose record is in the scratch machine file,
-# which no later run of the real one could take back.
-CONFIG_DIR_NOT_NAMED = (
-    "CLAUDE_CONFIG_DIR names {path}, and --home or --settings named where this run writes, so "
-    "setup wrote nothing there"
+# What `--approval-boundary` prints: the deny rule over the trust record's directory and the user
+# settings file it belongs in, the setting that turns the sandbox on, and the managed settings that
+# keep a repository from turning it off (`trust.boundary` says where each was measured).
+BOUNDARY_ADVICE = (
+    "setup wrote nothing; an approval holds against repository bytes, and against an agent only "
+    "while the agent's shell cannot write the trust record, which Claude Code's sandbox stops "
+    "and stayfixed does not check: add {rules} to permissions.deny in {settings} and set "
+    "{sandbox} there, and, since a repository's own settings can turn that sandbox off, set "
+    "{enforcing} in {managed}, a file only an administrator writes"
 )
 
 
 def run_setup(args: argparse.Namespace) -> Result:
+    if args.approval_boundary:
+        named = (args.preset, args.overlay, args.settings)
+        if args.git_hooks or args.yes or any(value is not None for value in named):
+            raise Refusal(_ADVICE_ALONE)
+        return run_boundary_advice(args)
     if args.git_hooks:
-        if args.preset is not None or args.approval_boundary:
+        if args.preset is not None:
             raise Refusal(_BOTH_MODES)
         return run_git_hooks(args)
 
-    from stayfixed.config.machine import home_is_empty, homes_agree, machine_config_path
+    from stayfixed.config.machine import homes_agree
     from stayfixed.setup.run import setup
-    from stayfixed.trust.api import user_settings
 
     # The file every *reader* of it reads (`config.loader.load`, `config.overlay.overlay_root`,
     # `trust.record.record_path`), which no variable moves. This command once took the `isatty`
@@ -177,26 +165,7 @@ def run_setup(args: argparse.Namespace) -> Result:
     #
     # Resolved here rather than in `register()`, so that `stayfixed setup --help` prints the
     # sentence and not whichever home directory the parser happened to be built under.
-    if args.home is None and home_is_empty():
-        raise Failure(EMPTY_HOME)
-    home = Path.home() if args.home is None else Path(args.home).expanduser()
-    machine = machine_config_path() if args.machine is None else Path(args.machine).expanduser()
-    if machine is None:
-        # Off `--machine`, the file is under the home the password database records, and this
-        # user has none there; a file put under `HOME` instead would be one no hook reads.
-        raise Failure(NO_MACHINE_HOME)
-    # The user settings go where Claude Code reads them as `doctor` finds them: a file `--settings`
-    # names, `.claude` under a `--home` the person named, and otherwise `.claude` under the home the
-    # password database records; a `CLAUDE_CONFIG_DIR` naming another directory takes the same
-    # rules only where neither flag named the destination and that directory exists outside the
-    # project (`trust.boundary.user_settings` says why).
-    settings = Path(args.settings).expanduser() if args.settings else None
-    found = user_settings(os.environ, None if args.home is None else home)
-    named = settings is not None or args.home is not None
-    if not named:
-        settings = _claude_settings(found, home)
-    project_root = _root(args.root)
-    also, said = _also(found.chosen, project_root, named=named)
+    home, machine = _home_and_machine(args)
     report = setup(
         args.preset or DEFAULT_PRESET,
         home=home,
@@ -204,10 +173,8 @@ def run_setup(args: argparse.Namespace) -> Result:
         runner=subprocess_runner(),
         yes=args.yes,
         overlay=args.overlay,
-        project_root=project_root,
-        settings=settings,
-        boundary=args.approval_boundary,
-        also=also,
+        project_root=_root(args.root),
+        settings=Path(args.settings).expanduser() if args.settings else None,
     )
     data = {
         "machine_written": report.machine_written,
@@ -215,9 +182,6 @@ def run_setup(args: argparse.Namespace) -> Result:
         "deny_written": report.deny_written,
         "cli_on_path": report.cli_on_path,
         "overlay": str(report.overlay) if report.overlay is not None else None,
-        "ask_added": list(report.ask_added),
-        "ask_removed": list(report.ask_removed),
-        "boundary": list(report.boundary),
         "notes": list(report.notes),
     }
     # Where `HOME` is not the database's home, the file is not where the person may look for it,
@@ -233,57 +197,57 @@ def run_setup(args: argparse.Namespace) -> Result:
             f"machine configuration written to {machine}{under}",
             f"{len(report.plugins_installed)} plugin(s) installed",
             "deny rules merged" if report.deny_written else "deny rules unchanged",
-            *([f"{len(report.ask_added)} ask rule(s) added"] if report.ask_added else []),
-            *([f"{len(report.ask_removed)} ask rule(s) taken back"] if report.ask_removed else []),
             "stayfixed is on PATH" if report.cli_on_path else "stayfixed is not on PATH",
             f"overlay recorded at {quoted(str(report.overlay))}"
             if report.overlay
             else "no overlay recorded",
             *report.notes,
-            *said,
         )
     )
     return Result(summary, data)
 
 
-def _also(
-    chosen: Path | None, project_root: Path, *, named: bool
-) -> tuple[Path | None, tuple[str, ...]]:
-    """The directory `CLAUDE_CONFIG_DIR` names, made absolute, where this run writes it too, and
-    what the line says of it: written where the person `named` no destination with `--home` or
-    `--settings` and it exists outside the project and every checkout of its repository, under the
-    home the password database records (`trust.boundary.placement`); named and left alone
-    otherwise. Absolute, since it is recorded by its spelling, and a relative one would name
-    another directory from the next run's working directory."""
-    from stayfixed.config.machine import passwd_home
-    from stayfixed.trust.api import Placement, placement
+def _home_and_machine(args: argparse.Namespace) -> tuple[Path, Path]:
+    """The home the user settings file lies under and the machine file, as `--home` and
+    `--machine` name them or by default, or the failure for a machine that names neither."""
+    from stayfixed.config.machine import home_is_empty, machine_config_path
 
-    if chosen is None:
-        return None, ()
-    spelled = clipped(str(chosen))
-    if named:
-        return None, (CONFIG_DIR_NOT_NAMED.format(path=spelled),)
-    homes = [home] if (home := passwd_home()) is not None else []
-    where = placement(chosen, project_root, homes)
-    if where is Placement.INSIDE:
-        return None, (CONFIG_DIR_IN_PROJECT.format(path=spelled),)
-    if where is Placement.UNJUDGED:
-        return None, (CONFIG_DIR_ELSEWHERE.format(path=spelled),)
-    if not fsops.is_dir(chosen):
-        return None, (CONFIG_DIR_MISSING.format(path=spelled),)
-    return Path(os.path.abspath(chosen)), (CONFIG_DIR_WRITTEN.format(path=spelled),)
+    if args.home is None and home_is_empty():
+        raise Failure(EMPTY_HOME)
+    home = Path.home() if args.home is None else Path(args.home).expanduser()
+    machine = machine_config_path() if args.machine is None else Path(args.machine).expanduser()
+    if machine is None:
+        # Off `--machine`, the file is under the home the password database records, and this
+        # user has none there; a file put under `HOME` instead would be one no hook reads.
+        raise Failure(NO_MACHINE_HOME)
+    return home, machine
 
 
-def _claude_settings(found: UserSettings, home: Path) -> Path | None:
-    """The settings file in the directory `user_settings` found, as `setup`'s `settings`: `None`
-    where that is `home`'s own `.claude/settings.json`, which `setup` writes through its walk under
-    `home`, or where no directory was found."""
+def run_boundary_advice(args: argparse.Namespace) -> Result:
+    """`setup --approval-boundary`: `BOUNDARY_ADVICE` for the trust record beside the machine file
+    and the user settings file under the home, both as `setup` would write them; writes nothing."""
     from stayfixed.setup.machine import USER_SETTINGS
+    from stayfixed.trust.api import (
+        ENFORCING_SETTINGS,
+        SANDBOX_ON,
+        managed_named,
+        record_deny_rules,
+        record_path,
+    )
 
-    if found.directory is None:
-        return None
-    path = found.directory / Path(USER_SETTINGS).name
-    return None if path == home / USER_SETTINGS else path
+    home, machine = _home_and_machine(args)
+    # Never `None` beside a machine file, which `_home_and_machine` always names.
+    rules = record_deny_rules(cast(Path, record_path(machine)))
+    settings = home / USER_SETTINGS
+    summary = BOUNDARY_ADVICE.format(
+        rules=" and ".join(rules),
+        settings=settings,
+        sandbox=SANDBOX_ON,
+        enforcing=ENFORCING_SETTINGS,
+        managed=managed_named(),
+    )
+    data = {"deny_rules": list(rules), "settings": str(settings), "managed": managed_named()}
+    return Result(summary, data)
 
 
 def register(groups: SubParsers) -> None:
@@ -326,8 +290,8 @@ def register(groups: SubParsers) -> None:
         "--approval-boundary",
         action="store_true",
         help=(
-            "also deny writes to the trust record's directory in the user-scope settings file, and "
-            "print the sandbox settings that rule needs, which this command never sets"
+            "print the deny rule and the sandbox settings that keep an agent's shell out of the "
+            "trust record's directory, and write nothing"
         ),
     )
     setup.add_argument(

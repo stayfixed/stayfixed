@@ -1031,9 +1031,11 @@ name = "a hook entry declares a type the harness cannot classify"
 file = "hooks/hooks.json"
 before = '''            "type": "command",
             "timeout": 10,
+            "onFailure": "block",
             "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.sh\" closed hook PreToolUse"'''
 after = '''            "type": "commandd",
             "timeout": 10,
+            "onFailure": "block",
             "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.sh\" closed hook PreToolUse"'''
 reddens = [
   "tests/hooks/test_hooks_json.py::test_every_entry_is_a_command_entry",
@@ -3263,7 +3265,6 @@ reddens = [
   "tests/test_patterns.py::test_the_scan_reads_a_pattern_wherever_the_source_spells_it[a function taken out of re]",
 ]
 
-
 # The payload is the plugin's generated tree, which the directory scans, and not the repository
 # beside it: a walk of the whole root judges files that never ship and misses nothing that does.
 [[mutation]]
@@ -3400,10 +3401,10 @@ reddens = [
 
 # Every document that counts `doctor`'s rows is held to the report's count.
 [[mutation]]
-name = "the reference counts the doctor rows it had before approval-boundary"
+name = "the reference counts the doctor rows it had before preferences"
 file = "docs/cli.md"
-before = "Nineteen checks over one installation."
-after = "Eighteen checks over one installation."
+before = "Eighteen checks over one installation."
+after = "Seventeen checks over one installation."
 reddens = ["tests/test_documents.py::test_every_document_counts_the_rows_the_report_has"]
 
 # The shipped documents name `stayfixed memory trust` only as the old spelling of `trust approve
@@ -3415,12 +3416,13 @@ before = "repository reach the model only after you run `stayfixed trust approve
 after = "repository reach the model only after you run `stayfixed memory trust` once, at a"
 reddens = ["tests/test_documents.py::test_no_shipped_document_names_memory_trust_outside_its_alias_note"]
 
-# Every stayfixed the walk starts reads the walk's own managed settings, never the system's.
+# The closed `PreToolUse` entry blocks the call when the hook cannot answer at all (a timeout, a
+# wrapper that cannot start), which Claude Code would otherwise let through.
 [[mutation]]
-name = "a child stayfixed of the suite reads the system's managed settings"
-file = "tests/ownerhome.py"
-before = "        f\"{moved}\"\n"
-after = "        \"\"\n"
+name = "the closed PreToolUse entry lets a hook that cannot answer through"
+file = "hooks/hooks.json"
+before = '"onFailure": "block",'
+after = '"onFailure": "continue",'
 reddens = [
-  "tests/test_install_path.py::test_doctor_is_green_on_the_attached_fixture",
+  "tests/hooks/test_hooks_json.py::test_the_closed_entry_blocks_when_it_cannot_answer_and_no_open_one_does",
 ]

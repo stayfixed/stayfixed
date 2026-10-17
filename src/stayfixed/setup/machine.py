@@ -3,12 +3,11 @@
 **This module invents no schema.** `config.owner.resolve_owner` reads `[personal]`, `[guards]`
 and the session budgets of `[budgets]`, for every command's load and every session, and
 `config.overlay.overlay_root` reads `[overlay] root`, all from the file no variable moves, and
-none of them changes here. This writer adds `[machine]` beside them — what
-`setup` installed, so `doctor` can check it later — and `[setup] added_rules`, its record of the
-rules it added to the settings file, which `setup.run` alone reads. `[guards]`, `[budgets]` and
-`[setup] ask_rules` are the owner's to write by hand, and a rewrite carries them through untouched,
-as it carries every table and key it does not own (below). A caller that wants another table is
-asking for another reader of this file, which belongs beside those readers, in `config`.
+none of them changes here. This writer adds `[machine]` beside them — what `setup` installed, so
+`doctor` can check it later — and nothing else. `[guards]` and `[budgets]` are the owner's to write
+by hand, and a rewrite carries them through untouched, as it carries every table and key it does
+not own (below). A caller that wants another table is asking for another reader of this file,
+which belongs beside those readers, in `config`.
 
 **A rewrite merges, table by table, key by key — including the tables this writer knows
 nothing about.** `setup` runs again on a machine that already has a file, and the common case is
@@ -22,9 +21,9 @@ fourth state (see `config.overlay.overlay_root`'s own docstring on that).
 
 `README.md` lists this file under "Written by: **you**, or `stayfixed setup`", which makes a
 table this writer does not recognise the ordinary case rather than the exotic one: a merge that
-covered only the tables it owns and replaced the rest of the file would lose a `[trust]`
+covered only the three tables it owns and replaced the rest of the file would lose a `[trust]`
 table or a key at the top level after one `setup`. So every table it does not own is carried
-through in the file's own order, and the four it owns are merged in place.
+through in the file's own order, and the three it owns are merged in place.
 
 **Two things a rewrite still costs, both stated rather than discovered.** Comments do not
 survive — `tomllib` discards them on the way in, and there is no round-tripping parser in the
@@ -67,7 +66,7 @@ from stayfixed.trust.api import OWN_TERMINAL_TOO, sandbox_refused
 # Said by `setup` where a directory it writes -- stayfixed's machine directory, Claude Code's user
 # settings -- refused a write as an agent's sandbox refuses one (`trust.boundary`'s docstring).
 # Constant, since its likely reader is that agent, and speaking of the person, who runs it outside.
-# A run it stops part-way is one the next run finishes (`setup.run`'s module docstring).
+# A run it stops part-way is one the next run finishes, since every write it makes merges.
 SANDBOXED = (
     "setup stopped: a directory it writes refused the write, which Claude Code's sandbox does to "
     "every write an agent's shell makes outside the working directory, so a person must run "
@@ -122,18 +121,15 @@ def write_machine(
     personal: Mapping[str, object],
     overlay_root: Path | None,
     machine: Mapping[str, object],
-    setup: Mapping[str, object | None] | None = None,
 ) -> Written:
-    """Merge `personal`, `overlay_root`, `machine` and `setup` into the file at `path`; write it.
+    """Merge `personal`, `overlay_root` and `machine` into the file at `path`, and write it.
 
-    Each of the four is merged over what the file already holds, key by key, rather than
+    Each of the three is merged over what the file already holds, key by key, rather than
     replacing its table outright — a second `setup` run that only sets one of them must not
     erase what an earlier run recorded, which both unchanged readers still read (the test this
     docstring's module comment names). `overlay_root=None` reads as "not given this run": the
     existing `[overlay] root`, if any, is carried over unchanged. There is no way to ask this
-    function to *clear* a recorded overlay root; nothing in stayfixed needs one. A key of `setup`
-    whose value is `None` is taken out of `[setup]`, which is how `setup.run` drops its record once
-    it records nothing; every other key of the table is carried as it was.
+    function to *clear* a recorded overlay root; nothing in stayfixed needs one.
 
     Everything else in the file — a table this writer has never heard of, a key at the top
     level — is carried through untouched, in the order it was written in.
@@ -141,7 +137,7 @@ def write_machine(
     existing = read_machine(path)
 
     merged_personal = {**_table(existing, "personal"), **personal}
-    # All four spread over the existing table, `overlay` included: replaced outright, a
+    # All three spread over the existing table, `overlay` included: replaced outright, a
     # hand-written `[overlay] note` would be gone after any `setup`, and an `[overlay]` carrying no
     # `root` would vanish whole -- on the file this module's own docstring promises to merge
     # "table by table, key by key".
@@ -157,11 +153,6 @@ def write_machine(
             **({"root": str(overlay_root)} if overlay_root is not None else {}),
         },
         "machine": {**_table(existing, "machine"), **machine},
-        "setup": {
-            key: value
-            for key, value in {**_table(existing, "setup"), **(setup or {})}.items()
-            if value is not None
-        },
     }
 
     tables: dict[str, dict[str, object]] = {}

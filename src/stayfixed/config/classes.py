@@ -110,7 +110,6 @@ CLASSES: Mapping[str, KeyClass] = MappingProxyType(
     {
         "personal.*": KeyClass.MACHINE_ONLY,
         "guards.*": KeyClass.MACHINE_ONLY,
-        "setup.*": KeyClass.MACHINE_ONLY,
         "memory.mode": KeyClass.PREFERENCE,
         "memory.groups": KeyClass.PREFERENCE,
         "memory.index_extra": KeyClass.PREFERENCE,

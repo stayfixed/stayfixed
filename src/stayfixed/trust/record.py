@@ -140,9 +140,11 @@ def recorded(machine: Path | None) -> dict[tuple[str, str], Approval]:
     # past the parser or holding an integer longer than it converts is valid JSON that
     # `json.loads` meets with no `JSONDecodeError`. Each sentence is this record's refusal.
     raw = json_object(text, str(path), error=lambda reason: UnreadableTrust(f"{reason}; {_KEPT}"))
-    if "version" not in raw:
+    if "version" not in raw and "approvals" not in raw:
         # `0.3.0`'s flat map. A store's key is a resolved absolute path, so no store is named
-        # `version`. A value that is not a string is one entry `0.3.0` could not interpret
+        # `version` or `approvals`, and an object holding either is a record, read whole or
+        # refused: read as a flat map, `{"approvals": [...]}` was no approval, and the next write
+        # erased it. A value that is not a string is one entry `0.3.0` could not interpret
         # either, and dropping it costs that store a re-approval, as it did there.
         return {
             ("memory", subject): Approval("memory", subject, digest, "")
@@ -154,10 +156,14 @@ def recorded(machine: Path | None) -> dict[tuple[str, str], Approval]:
 
 def _approvals(raw: dict[str, Any], path: Path) -> dict[tuple[str, str], Approval]:
     """A version-1 record's approvals, or the refusal for one this stayfixed cannot read whole."""
-    version = raw["version"]
-    if type(version) is not int or version != VERSION:
+    version = raw.get("version")
+    # Only an integer above this one is a later stayfixed's: `0`, `-1`, `"1"` or `true` is no
+    # version any release writes, and sending its reader to upgrade would send them nowhere.
+    if type(version) is int and version > VERSION:
         raise UnreadableTrust(LATER_VERSION.format(path=path))
     entries = raw.get("approvals")
+    if type(version) is not int or version != VERSION:
+        raise UnreadableTrust(NOT_A_RECORD.format(path=path))
     if set(raw) != {"version", "approvals"} or not isinstance(entries, list):
         raise UnreadableTrust(NOT_A_RECORD.format(path=path))
     found: dict[tuple[str, str], Approval] = {}
@@ -230,13 +236,19 @@ def refresh(machine: Path | None, kind: str, subject: str, *, expected: str, dig
     anyway would undo it. The record is re-read here, just before the write, so a revoke made
     before that re-read is kept; one made between the re-read and the write is not, since no lock
     is taken (the module docstring says so).
+
+    A move to the digest the record already holds writes nothing and answers `True`: the approval
+    holds as it is. Rewritten, an index that changed nothing rewrote the record on every run, and
+    from an agent's sandboxed shell, where the write is refused, it said the approval no longer
+    matched the files while `trust list` said approved.
     """
     approvals = recorded(machine)
     held = approvals.get((kind, subject))
     if held is None or held.digest != expected:
         return False
-    approvals[(kind, subject)] = replace(held, digest=digest)
-    _write(machine, approvals)
+    if digest != held.digest:
+        approvals[(kind, subject)] = replace(held, digest=digest)
+        _write(machine, approvals)
     return True
 
 

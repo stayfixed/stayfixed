@@ -6,8 +6,8 @@ and `config.owner`, the machine owner's layer out of the machine file. The proje
 on the owner's layer, so the two meet here, below both, rather than one importing the other's
 private names: a refusal is one type (`ConfigError`, and `MachineConfigError` for the machine
 file), a document that does not parse is said in one set of words (`toml_position`), the machine
-file is read once (`read_machine_toml`), and an integer key or a schema class is held to one rule
-(`positive`, `schema_types`) whichever layer wrote it.
+file is read once (`read_machine_toml`), and a value is held to its schema type by one rule
+(`coerced`, `positive`, `schema_types`) whichever layer wrote it.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from dataclasses import fields
 from enum import StrEnum
 from functools import cache
 from pathlib import Path
-from typing import Any, get_type_hints
+from typing import Any, get_origin, get_type_hints
 
 from stayfixed import fsops
 from stayfixed.errors import Failure
@@ -50,9 +50,6 @@ NO_POSITION = "(at a position tomllib did not report)"
 UNPARSEABLE = (tomllib.TOMLDecodeError, RecursionError, ValueError)
 TOO_DEEP = "(nested deeper than the parser reads)"
 TOO_LONG = "(holds a number longer than the parser converts)"
-# A preset value that is not a string, which no name of a preset can be. `config.owner` refuses
-# the same value in these words under `Unknown.REFUSE`.
-NOT_A_PRESET_NAME = "stayfixed.preset must be a string; {available}"
 
 # A named cap: every integer a configuration key holds is below it. `tomllib` converts a hex,
 # octal or binary literal of any length (a power-of-two base is exempt from the interpreter's
@@ -172,6 +169,44 @@ def schema_types(cls: type[Any]) -> dict[str, Any]:
     """
     hints = get_type_hints(cls)
     return {f.name: hints[f.name] for f in fields(cls)}
+
+
+# What `coerced` says of a value its schema type does not take. Each names the key and never the
+# value, which is the layer's text.
+NOT_A_LIST = "{key} must be a list of strings"
+NOT_A_SWITCH = "{key} must be true or false"
+NOT_A_STRING = "{key} must be a string"
+UNSUPPORTED_TYPE = (
+    "{key} has an unsupported schema type: {label}; the loader coerces tuple[str, ...], bool, int "
+    "and str"
+)
+
+
+def coerced(key: str, annotation: Any, value: object) -> Any:
+    """`value` as the schema type `annotation` holds it; a `ConfigError` naming `key` otherwise.
+
+    Keyed on the type `schema_types` resolved, never on the table the key sits in: the machine
+    file's reader once checked `[guards]` for a bool and everything else for a string, so an `int`
+    added to `Personal` would have been "must be a string" in the machine file while the project
+    loader took it. An annotation none of the four branches spells is stayfixed's own defect, and
+    its refusal is the whole document's, so it carries no key.
+    """
+    if get_origin(annotation) is tuple:
+        if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
+            raise ConfigError(NOT_A_LIST.format(key=key), key=key)
+        return tuple(value)
+    if annotation is bool:
+        if not isinstance(value, bool):
+            raise ConfigError(NOT_A_SWITCH.format(key=key), key=key)
+        return value
+    if annotation is int:
+        return positive(key, value)
+    if annotation is str:
+        if not isinstance(value, str):
+            raise ConfigError(NOT_A_STRING.format(key=key), key=key)
+        return value
+    label = getattr(annotation, "__name__", None) or str(annotation)
+    raise ConfigError(UNSUPPORTED_TYPE.format(key=key, label=label))
 
 
 def positive(key: str, value: object) -> int:

@@ -38,7 +38,7 @@ NOT_KEYS = ("NAMES",)
 # is a key, so a scalar added there fails the first test until it has a class.
 PER_NAME = frozenset({("budgets", "preset"), ("budgets", "configured")})
 # The keys the machine file holds that no `Config` section carries; `personal.*` is a section.
-MACHINE_FILE_KEYS = frozenset({"guards.bg_cleanup", "setup.ask_rules", "setup.added_rules"})
+MACHINE_FILE_KEYS = frozenset({"guards.bg_cleanup"})
 
 PRESET = LayerName.PRESET
 REPOSITORY = LayerName.REPOSITORY
@@ -76,8 +76,6 @@ TABLE_ROWS = [
     ("personal.artifact_language", KeyClass.MACHINE_ONLY),
     ("personal.preset", KeyClass.MACHINE_ONLY),
     ("guards.bg_cleanup", KeyClass.MACHINE_ONLY),
-    ("setup.ask_rules", KeyClass.MACHINE_ONLY),
-    ("setup.added_rules", KeyClass.MACHINE_ONLY),
     ("memory.mode", KeyClass.PREFERENCE),
     ("memory.groups", KeyClass.PREFERENCE),
     ("memory.index_extra", KeyClass.PREFERENCE),

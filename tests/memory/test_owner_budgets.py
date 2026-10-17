@@ -17,8 +17,8 @@ from pathlib import Path
 import pytest
 
 from stayfixed.config.loader import load
-from stayfixed.config.owner import GATE_BUDGET, NOT_A_SWITCH
-from stayfixed.config.reading import MachineConfigError
+from stayfixed.config.owner import GATE_BUDGET, IGNORED_NOTE, MACHINE_RESET_NOTE
+from stayfixed.config.reading import NOT_A_SWITCH, MachineConfigError
 from stayfixed.config.session import session_config
 from stayfixed.doctor.api import OK, RED
 from stayfixed.trust import kinds
@@ -117,21 +117,42 @@ def test_memory_fit_and_doctor_answer_alike_under_the_owners_budget(
 
 
 @pytest.mark.parametrize(
-    ("table", "sentence"),
+    ("table", "note"),
     [
-        ("[guards]\nbg_cleanup = 3\n", NOT_A_SWITCH.format(key="guards.bg_cleanup")),
-        ("[budgets]\nagents_md_lines = 9\n", GATE_BUDGET.format(name="agents_md_lines")),
+        (
+            "[guards]\nbg_cleanup = 3\n",
+            MACHINE_RESET_NOTE.format(
+                path="{machine}", problem=NOT_A_SWITCH.format(key="guards.bg_cleanup")
+            ),
+        ),
+        (
+            "[budgets]\nagents_md_lines = 9\n",
+            IGNORED_NOTE.format(
+                path="{machine}", problem=GATE_BUDGET.format(name="agents_md_lines")
+            ),
+        ),
     ],
     ids=["guard-not-a-switch", "gate-budget"],
 )
-def test_a_command_refuses_a_machine_file_the_owners_layer_cannot_use(
-    tmp_path: Path, table: str, sentence: str
+def test_a_command_reads_past_a_machine_file_key_it_cannot_use_and_says_so(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], table: str, note: str
 ) -> None:
-    # A session notes either and goes on (`config.session`); a command, about to act on the
-    # file, refuses it naming the file and the key, as it always refused an unusable `[personal]`.
-    # Mutation (`mutations/`'s "a command's load reads the owner's layer as a session does"): the
-    # load notes the value and goes on.
+    # What the owner sets is honoured and what this stayfixed cannot use is said, never a block: a
+    # key a later release's `setup` writes once stopped every older command on the machine. A
+    # command goes on as a session does, on the preset's value, and says the key on stderr.
+    # Mutations (`mutations/`'s "the owner's layer refuses a key it cannot use in a file that loads"
+    # -> the load raises; "a command keeps quiet about what it read past in the machine file" ->
+    # stderr is empty).
     root, machine = _project(tmp_path, table)
-    with pytest.raises(MachineConfigError) as refused:
+    config = load(root, machine=machine)
+    assert config.budgets.effective("agents_md_lines") != 9
+    assert capsys.readouterr().err == f"stayfixed: {note.format(machine=machine)}\n"
+
+
+def test_a_command_refuses_a_machine_file_that_does_not_load(tmp_path: Path) -> None:
+    # Only a file that does not load is refused, as `[overlay] root`'s reader refuses it: nothing
+    # of it can be read past key by key. Mutation (`mutations/`'s "a command's load reads the
+    # owner's layer as a session does"): the load notes the file and goes on.
+    root, machine = _project(tmp_path, "[[[\n")
+    with pytest.raises(MachineConfigError, match=r"is not valid TOML"):
         load(root, machine=machine)
-    assert str(refused.value) == f"{machine}: {sentence}"

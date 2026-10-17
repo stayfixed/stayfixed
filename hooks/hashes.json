@@ -1,6 +1,6 @@
 {
   "files": {
-    "hooks/hooks.json": "fd660c73b714325ed4841d48922da11a13ab7d922aa54f73498d43efd2f95700",
+    "hooks/hooks.json": "5696658df8b26b62da7a221f5822caea6945f2a798e9df4c7093d654846dfebb",
     "hooks/run-hook.sh": "a55ec0e6d1de06a9373a5e601e7bfa460d31eeba599312329e81bdf02cf8c131",
     "scripts/stayfixed": "bd34f506ef13dc515dcea8e02e5a66dee40866911b0d661d4e8565684058b7b3"
   },

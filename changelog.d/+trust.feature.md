@@ -12,6 +12,5 @@ checkout as a session does, so a `stayfixed.toml` a newer stayfixed added to sti
 approval a session uses, and revoking it works. Every message
 that told you to run `stayfixed memory trust --in-repo-memory` now names `stayfixed trust approve
 memory`, and asks for the person at the machine to run it in their own terminal, telling an agent
-that reads it not to. `stayfixed doctor`'s `codex-trust` row is now called `codex-hooks`, and its
-`attached` row sends a trust record it cannot read to `stayfixed trust list --all`, which says why
-and needs no terminal.
+that reads it not to. `stayfixed doctor`'s `attached` row sends a trust record it cannot read to
+`stayfixed trust list --all`, which says why and needs no terminal.

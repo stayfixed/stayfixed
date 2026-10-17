@@ -56,6 +56,7 @@
           {
             "type": "command",
             "timeout": 10,
+            "onFailure": "block",
             "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.sh\" closed hook PreToolUse"
           }
         ]

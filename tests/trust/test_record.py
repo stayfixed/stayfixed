@@ -34,6 +34,7 @@ from stayfixed.trust.record import (
     state,
 )
 from tests.ownerhome import as_owner_home
+from tests.sandboxed import refuse_writes_under
 
 T0 = datetime(2026, 10, 16, 9, 30, tzinfo=UTC)
 # One approval as a version-1 record spells it, every field a string.
@@ -93,7 +94,11 @@ def test_0_3_0s_reader_sees_no_approval_in_a_version_1_record(tmp_path: Path) ->
     [
         pytest.param("{", None, id="not-json"),
         pytest.param(json.dumps({"version": 2, "approvals": []}), LATER_VERSION, id="version-2"),
-        pytest.param(json.dumps({"version": True, "approvals": []}), LATER_VERSION, id="bool"),
+        pytest.param(json.dumps({"version": True, "approvals": []}), NOT_A_RECORD, id="bool"),
+        pytest.param(json.dumps({"version": 0, "approvals": []}), NOT_A_RECORD, id="version-0"),
+        pytest.param(json.dumps({"version": -1, "approvals": []}), NOT_A_RECORD, id="negative"),
+        pytest.param(json.dumps({"version": "1", "approvals": []}), NOT_A_RECORD, id="text"),
+        pytest.param(json.dumps({"approvals": [APPROVAL]}), NOT_A_RECORD, id="no-version"),
         pytest.param(json.dumps({"version": 1}), NOT_A_RECORD, id="no-approvals"),
         pytest.param(
             json.dumps({"version": 1, "approvals": [{"kind": "memory", "subject": "/s"}]}),
@@ -129,16 +134,20 @@ def test_an_unreadable_record_refuses_and_is_never_overwritten(
     tmp_path: Path, document: str, sentence: str | None
 ) -> None:
     # Each arm of the version-1 reader has a case of its own: every other version-1 record in the
-    # suite is one `approve` wrote, and it can write none of these. Mutations (`mutations/`'s "a
-    # trust record of a later version is read as empty" -> version 2 reads as no approval and the
-    # write replaces it; "an approval over an unreadable trust record writes the record anyway" ->
-    # the write replaces every case; "a trust record's approvals that are not a list read as none"
-    # -> `approvals-not-a-list` reads as no approval; "a trust record with a stray key is read" ->
-    # `stray-key` reads; "a trust record's digest that is not a string is read" ->
-    # `digest-not-a-string` reads as a lapsed approval; "a trust record naming one approval twice
-    # keeps the last" -> `duplicate-pair` reads, and the next write persists the survivor; "a
-    # trust record's approval that is not an object is read" -> `entry-not-an-object` raises an
-    # `AttributeError` instead of refusing).
+    # suite is one `approve` wrote, and it can write none of these. Only a version above this one
+    # sends its reader to a later stayfixed, and an object holding `approvals` is never `0.3.0`'s
+    # flat map. Mutations (`mutations/`'s "a trust record of a later version is read as empty" ->
+    # version 2 reads as no approval and the write replaces it; "a trust record of any other version
+    # is sent to a later stayfixed" -> `bool`, `version-0`, `negative` and `text` say
+    # `LATER_VERSION`; "a trust record with approvals and no version reads as 0.3.0's flat map" ->
+    # `no-version` reads as no approval and the next write erases it; "an approval over an
+    # unreadable trust record writes the record anyway" -> the write replaces every case; "a trust
+    # record's approvals that are not a list read as none" -> `approvals-not-a-list` reads as no
+    # approval; "a trust record with a stray key is read" -> `stray-key` reads; "a trust record's
+    # digest that is not a string is read" -> `digest-not-a-string` reads as a lapsed approval; "a
+    # trust record naming one approval twice keeps the last" -> `duplicate-pair` reads, and the next
+    # write persists the survivor; "a trust record's approval that is not an object is read" ->
+    # `entry-not-an-object` raises an `AttributeError` instead of refusing).
     path = tmp_path / RECORD
     path.write_text(document, encoding="utf-8")
     with pytest.raises(UnreadableTrust) as caught:
@@ -260,6 +269,21 @@ def test_a_refresh_moves_only_the_digest_it_was_read_at(tmp_path: Path) -> None:
     before = (path.read_bytes(), path.stat().st_ino)
     assert refresh(machine(tmp_path), "memory", "/s", expected="d", digest="f") is False
     assert (path.read_bytes(), path.stat().st_ino) == before
+
+
+def test_a_refresh_to_the_digest_the_record_holds_writes_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A move to the digest already recorded holds the approval as it is, so nothing is written:
+    # from an agent's sandboxed shell, where the write is refused, a rewrite said the approval was
+    # not refreshed while it held. Mutation (`mutations/`'s "a refresh rewrites the digest the
+    # record already holds"): the refused write is attempted and raises `SandboxedWrite`.
+    approve(machine(tmp_path), "memory", "/s", "d", now=T0)
+    before = recorded(machine(tmp_path))
+    refused = refuse_writes_under(monkeypatch, tmp_path / RECORD)
+    assert refresh(machine(tmp_path), "memory", "/s", expected="d", digest="d") is True
+    assert refused == []
+    assert recorded(machine(tmp_path)) == before
 
 
 def test_a_refresh_never_brings_back_a_revoked_approval(tmp_path: Path) -> None:

@@ -6,18 +6,23 @@ file's `[personal]`, `[guards]` and `[budgets]`, resolved through `classes.resol
 (`config.machine` says why no variable moves it), so it is the one place a guard may be switched
 off; a repository's `[guards]` is a layer `classes.ALLOWED` does not admit.
 
-Two readers ask, and they want different answers to a file that is wrong. A command the owner
-runs refuses it (`Unknown.REFUSE`, which `config.loader` asks for every load of a command), naming
-the file and the key.
-A session must go on (`Unknown.NOTE`): a file that does not load gives the preset's values and
-`MACHINE_FILE_NOTE`, and an unknown key, a gate's budget or an unusable value costs that key alone,
-with a note. Every sentence names the file and the key — the key through `printed.clipped`, since
-a TOML key is any quoted text — and never a value.
+Two readers ask, and they differ only over a file that does not load. A command the owner runs
+refuses it (`Unknown.REFUSE`, which `config.loader` asks for every load of a command), as
+`config.overlay.overlay_root` refuses it; a session must go on (`Unknown.NOTE`), and the preset's
+values stand in, with `MACHINE_FILE_NOTE`. In a file that loads, an unknown key, a gate's budget
+or an unusable value costs that key alone, with a note, for both: what the owner sets is honoured,
+and what this stayfixed cannot use is said and never a block. Refused, a key a later release's
+`setup` writes would stop every older command on the machine — the CLI and the plugin's hooks are
+easily two versions — over a key none of them reads, and no boundary rests on the refusal: no
+repository writes this file. A command says the notes on stderr (`said_on_stderr`). Every
+sentence names the file and the key — the key through `printed.clipped`, since a TOML key is any
+quoted text — and never a value.
 """
 
 from __future__ import annotations
 
-from collections.abc import Collection, Mapping
+import sys
+from collections.abc import Mapping
 from dataclasses import dataclass, fields
 from pathlib import Path
 from types import MappingProxyType
@@ -25,16 +30,15 @@ from typing import Any, cast
 
 from stayfixed.config.classes import GATE_BUDGETS, Layer, LayerName, resolve
 from stayfixed.config.reading import (
-    NOT_A_PRESET_NAME,
     ConfigError,
     MachineConfigError,
     Unknown,
-    positive,
+    coerced,
     read_machine_toml,
     schema_types,
 )
 from stayfixed.config.schema import Budgets, Personal
-from stayfixed.presets import DEFAULT_PRESET, available, load_preset, shipped_presets
+from stayfixed.presets import DEFAULT_PRESET, load_preset
 from stayfixed.printed import clipped
 
 
@@ -63,58 +67,34 @@ class Owner:
 MACHINE_FILE_NOTE = (
     "{error}, so the preset's personal values and guards stand in for the machine file's"
 )
-# What one table or key of a readable machine file got wrong. Under `REFUSE` the sentence is the
-# refusal, after the file's path; under `NOTE` it is the note, with what happened to the value.
+# What one table or key of a readable machine file got wrong, in the note that says what happened
+# to the value.
 UNKNOWN_KEY = "[{table}] has a key this stayfixed does not read: {key}"
 GATE_BUDGET = (
     "budgets.{name} is a gate's budget, which only a repository's stayfixed.toml sets; the "
     "machine file sets only a session's"
 )
 NOT_A_TABLE = "[{table}] must be a table"
-NOT_A_STRING = "{key} must be a string"
-NOT_A_SWITCH = "{key} must be true or false"
 IGNORED_NOTE = "{path}: {problem}; it is ignored"
 MACHINE_RESET_NOTE = "{path}: {problem}; the preset's value applies"
-# A preset name this build does not ship, under `NOTE`. The name is the repository's, so it is
-# printed through `printed.clipped`; `REFUSE` raises the preset loader's refusal, which never
-# prints it.
-UNKNOWN_PRESET_NOTE = (
-    "{name} is not a preset this stayfixed ships, so the owner's layer stands on the "
-    f"{DEFAULT_PRESET} preset's personal values"
-)
-# A preset value that is not a string at all, which no name of a preset can be: there is nothing
-# to print, and a `TOML` value of another type is none of `printed`'s to bound.
-UNREADABLE_PRESET_NOTE = (
-    "stayfixed.preset is not a string, so the owner's layer stands on the "
-    f"{DEFAULT_PRESET} preset's personal values"
-)
 
 
 def resolve_owner(
     machine: Path | None,
     *,
-    preset: object = DEFAULT_PRESET,
+    preset: str = DEFAULT_PRESET,
     unknown: Unknown = Unknown.NOTE,
 ) -> Owner:
     """The owner's layer over the preset named `preset`.
 
-    `preset` is the repository's preset value as the document wrote it, else `recommended`. A
-    name this build does not ship is refused under `REFUSE`, as the preset loader refuses it, and
-    so is a value that is not a string; under `NOTE` the owner's layer stands on
-    `DEFAULT_PRESET` with `UNKNOWN_PRESET_NOTE` or `UNREADABLE_PRESET_NOTE`, since a session
-    reads the value from a `stayfixed.toml` before anything has held it to the shipped presets.
-    `machine` is the machine file; `None`, a machine with no home to hold one
+    `preset` is a preset this build ships, and every caller holds it to that before it asks: the
+    project loader hands the name its own `_preset` has already loaded, and a session the
+    document's name only when it is shipped, `DEFAULT_PRESET` otherwise (`config.session`). The
+    repository's value is the loader's to judge, so it is refused or reset once, in the loader's
+    words. `machine` is the machine file; `None`, a machine with no home to hold one
     (`machine_config_path`), is read as no file, as an absent file is.
     """
     notes: list[str] = []
-    if not isinstance(preset, str):
-        if unknown is Unknown.REFUSE:
-            raise ConfigError(NOT_A_PRESET_NAME.format(available=available()))
-        notes.append(UNREADABLE_PRESET_NOTE)
-        preset = DEFAULT_PRESET
-    elif unknown is Unknown.NOTE and preset not in shipped_presets():
-        notes.append(UNKNOWN_PRESET_NOTE.format(name=clipped(preset)))
-        preset = DEFAULT_PRESET
     shipped = load_preset(preset)
     lower: dict[str, object] = {
         f"personal.{key}": value
@@ -131,7 +111,7 @@ def resolve_owner(
         notes.append(MACHINE_FILE_NOTE.format(error=exc))
     upper: dict[str, object] = {}
     if raw is not None and machine is not None:
-        upper = _machine_values(raw, machine, unknown, notes)
+        upper = _machine_values(raw, machine, notes)
 
     resolution = resolve([Layer(LayerName.PRESET, lower), Layer(LayerName.MACHINE_FILE, upper)])
     values = resolution.values
@@ -153,6 +133,14 @@ def resolve_owner(
     )
 
 
+def said_on_stderr(owner: Owner) -> Owner:
+    """`owner`, after its notes are said on stderr, one line each: how a command tells its reader
+    what it read past in the machine file, beside an answer on stdout that `--json` keeps whole."""
+    for note in owner.notes:
+        print(f"stayfixed: {note}", file=sys.stderr)
+    return owner
+
+
 def _section(values: Mapping[str, object], section: str) -> dict[str, Any]:
     prefix = f"{section}."
     return {
@@ -160,19 +148,16 @@ def _section(values: Mapping[str, object], section: str) -> dict[str, Any]:
     }
 
 
-def _machine_values(
-    raw: dict[str, Any], machine: Path, unknown: Unknown, notes: list[str]
-) -> dict[str, object]:
+def _machine_values(raw: dict[str, Any], machine: Path, notes: list[str]) -> dict[str, object]:
     """The machine file's `[personal]`, `[guards]` and session `[budgets]` as dotted keys.
 
-    Every other table is another reader's (`[overlay]`, `[machine]`, `[setup]`) or nobody's, and
-    is not this function's to judge. A problem raises under `REFUSE` and is a note under `NOTE`,
-    where it costs only its own key, or its own table when the table is not one.
+    Every other table is another reader's (`[overlay]`, `[machine]`) or nobody's, and is not this
+    function's to judge. A problem is a note, and costs only its own key, or its own table when the
+    table is not one. A value is held to its key's
+    schema type by `coerced`, the project loader's rule, and kept as `coerced` gives it.
     """
 
     def problem(sentence: str, *, ignored: bool) -> None:
-        if unknown is Unknown.REFUSE:
-            raise MachineConfigError(f"{machine}: {sentence}")
         template = IGNORED_NOTE if ignored else MACHINE_RESET_NOTE
         notes.append(template.format(path=machine, problem=sentence))
 
@@ -184,35 +169,25 @@ def _machine_values(
         if not isinstance(values, dict):
             problem(NOT_A_TABLE.format(table=table), ignored=False)
             continue
+        types = _types(table)
         for key, value in values.items():
-            if key not in _keys(table):
+            if key not in types:
                 problem(UNKNOWN_KEY.format(table=table, key=clipped(key)), ignored=True)
             elif table == "budgets" and key in GATE_BUDGETS:
                 # Before `resolve`, which would refuse it too, so the note says which budgets the
                 # owner does set rather than only that this layer may not.
                 problem(GATE_BUDGET.format(name=key), ignored=True)
-            elif (sentence := _invalid(table, key, value)) is not None:
-                problem(sentence, ignored=False)
             else:
-                found[f"{table}.{key}"] = value
+                try:
+                    found[f"{table}.{key}"] = coerced(f"{table}.{key}", types[key], value)
+                except ConfigError as exc:
+                    problem(str(exc), ignored=False)
     return found
 
 
-def _keys(table: str) -> Collection[str]:
+def _types(table: str) -> Mapping[str, Any]:
+    """The keys `table` holds and the schema type of each, which `coerced` holds its value to:
+    every budget is an integer, and `[personal]` and `[guards]` are their classes' fields."""
     if table == "budgets":
-        return Budgets.NAMES
-    return schema_types(Personal if table == "personal" else Guards).keys()
-
-
-def _invalid(table: str, key: str, value: object) -> str | None:
-    """What is wrong with a known `table.key = value`, or `None` when nothing is."""
-    dotted = f"{table}.{key}"
-    if table == "budgets":
-        try:
-            positive(dotted, value)
-        except ConfigError as exc:
-            return str(exc)
-        return None
-    if table == "guards":
-        return None if isinstance(value, bool) else NOT_A_SWITCH.format(key=dotted)
-    return None if isinstance(value, str) else NOT_A_STRING.format(key=dotted)
+        return dict.fromkeys(Budgets.NAMES, int)
+    return schema_types(Personal if table == "personal" else Guards)

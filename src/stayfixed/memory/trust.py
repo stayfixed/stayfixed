@@ -342,7 +342,8 @@ def refresh_if_trusted(
     write, still holds the digest `before` read, and it keeps the time the person approved it,
     since a refresh is stayfixed's write and approves nothing.
 
-    Returns whether a record was written.
+    Returns whether the approval holds over what this command wrote: moved to the new digest, or
+    already at it, which writes nothing (`trust.record.refresh`).
     """
     if not before.trusted or before.recorded is None:
         return False

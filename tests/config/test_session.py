@@ -7,19 +7,24 @@ below is a document a command refuses and a session reads anyway, or drops with 
 from __future__ import annotations
 
 import os
+import time
 from collections.abc import Callable
+from dataclasses import fields
 from pathlib import Path
 
 import pytest
 
 from stayfixed import __version__
-from stayfixed.config.loader import NOTE_REMOVAL_LIMIT
+from stayfixed.config.loader import NOTE_REBUILT_LIMIT, NOTE_REMOVAL_LIMIT
 from stayfixed.config.owner import resolve_owner
+from stayfixed.config.schema import Paths
 from stayfixed.config.session import (
     FALLBACK_WARNING,
     MACHINE_FILE_WARNING,
     NEWER_RELEASE_WARNING,
     NOTED_WARNING,
+    SESSION_READ_LIMIT,
+    TOO_LARGE_WARNING,
     TOO_MANY_WARNING,
     UNUSABLE_WARNING,
     session_config,
@@ -211,8 +216,80 @@ def test_more_unusable_keys_than_the_note_path_reads_drop_the_project(tmp_path: 
     gates = "".join(f"g{n} = {{ run = [] }}\n" for n in range(NOTE_REMOVAL_LIMIT + 1))
     write(tmp_path, MINIMAL + "[gates.custom]\n" + gates)
     got = session_config(tmp_path, machine=none(tmp_path))
-    assert got.config is None and got.warnings == (TOO_MANY_WARNING,)
-    assert got.project_warnings == (TOO_MANY_WARNING,) and got.machine_warnings == ()
+    warning = TOO_MANY_WARNING.format(limit=NOTE_REMOVAL_LIMIT)
+    assert got.config is None and got.warnings == (warning,)
+    assert got.project_warnings == (warning,) and got.machine_warnings == ()
+
+
+def test_a_long_file_says_how_few_unusable_settings_it_is_read_past(tmp_path: Path) -> None:
+    # A long file is read past fewer unusable keys than a short one (`loader.NOTE_REBUILT_LIMIT`),
+    # and the warning says how many. No mutation of its own: the bound is held by
+    # `tests/config/test_loader_note.py::test_a_long_document_is_read_past_fewer_unusable_keys`;
+    # by hand, the warning formatted with `NOTE_REMOVAL_LIMIT` says 64 here.
+    runnable = "".join(f'v{n} = {{ run = ["true"] }}\n' for n in range(18_000))
+    text = MINIMAL + "[gates.custom]\n" + runnable
+    limit = NOTE_REBUILT_LIMIT // len(text)
+    assert limit < NOTE_REMOVAL_LIMIT
+    write(tmp_path, text + "".join(f"g{n} = {{ run = [] }}\n" for n in range(limit + 1)))
+    got = session_config(tmp_path, machine=none(tmp_path))
+    assert got.config is None and got.warnings == (TOO_MANY_WARNING.format(limit=limit),)
+
+
+def _padded(size: int) -> str:
+    """`MINIMAL`, then a comment that makes the file exactly `size` bytes long."""
+    return MINIMAL + "#" + "x" * (size - len(MINIMAL) - 2) + "\n"
+
+
+def test_a_file_longer_than_a_session_reads_is_read_no_further(tmp_path: Path) -> None:
+    # The parse and every build of the NOTE load cost in proportion to the file, and a hook that
+    # runs past its timeout loses the call, so a session reads `SESSION_READ_LIMIT` bytes
+    # at most and drops a longer file whole, in words of its own. Mutation (`mutations/`'s "a
+    # session reads stayfixed.toml as far as a command does"): the longer file loads. By hand, the
+    # `TooLargeDocument` arm taken out: the warning is `FALLBACK_WARNING`, which sends the owner
+    # to `stayfixed docs check`, where the file loads.
+    write(tmp_path, _padded(SESSION_READ_LIMIT + 1))
+    got = session_config(tmp_path, machine=none(tmp_path))
+    assert got.config is None and got.warnings == (TOO_LARGE_WARNING,)
+    # The control: a file of exactly the cap is read and loads.
+    write(tmp_path, _padded(SESSION_READ_LIMIT))
+    assert (tmp_path / "stayfixed.toml").stat().st_size == SESSION_READ_LIMIT
+    got = session_config(tmp_path, machine=none(tmp_path))
+    assert got.config is not None and got.warnings == ()
+
+
+# Custom gates that run, every one of them enforced, in a file just under what a session reads,
+# beside `[paths]` values that fail containment: each of those is refused after the enforced list
+# is checked, so each removal builds the whole file again, every gate and its enforcement included.
+ENFORCED_GATES = 26_000
+UNCONTAINED = [field.name for field in fields(Paths)][:4]
+# Well above what the read takes, well below the ten-second timeout `hooks/hooks.json` gives a hook,
+# as `tests/hooks/test_floor.py`'s `HOOK_BOUND_SECONDS` is.
+SESSION_BOUND_SECONDS = 5
+
+
+def test_a_long_file_of_gates_that_run_beside_bad_values_never_outlasts_the_hook(
+    tmp_path: Path,
+) -> None:
+    # A file of thousands of gates that run is read once per removal, so what one build costs is
+    # paid as often as the removals allow (`loader.NOTE_REBUILT_LIMIT`): one build in proportion to
+    # the file, and the session's whole read well inside a hook's timeout. By hand, `_enforcement`
+    # asking the tuple of gate names rather than a set: each build costs about two seconds, and the
+    # read about ten.
+    names = [f"v{n}" for n in range(ENFORCED_GATES)]
+    enforced = ", ".join(f'"{name}"' for name in names)
+    head = HEAD.replace("\n", f'\nstate = "adopting"\nenforced = [{enforced}]\n', 1)
+    gates = "".join(f'{name} = {{ run = ["true"] }}\n' for name in names)
+    paths = "".join(f'{name} = "../x"\n' for name in UNCONTAINED)
+    text = head + '[project]\nname = "sample"\n[paths]\n' + paths + "[gates.custom]\n" + gates
+    assert len(text.encode()) <= SESSION_READ_LIMIT
+    assert NOTE_REBUILT_LIMIT // len(text) == len(UNCONTAINED)  # every removal the length allows
+    write(tmp_path, text)
+    started = time.monotonic()
+    got = session_config(tmp_path, machine=none(tmp_path))
+    elapsed = time.monotonic() - started
+    assert got.config is not None and len(got.config.stayfixed.enforced) == ENFORCED_GATES
+    assert got.noted == tuple(f"paths.{name}" for name in UNCONTAINED)
+    assert elapsed < SESSION_BOUND_SECONDS, elapsed
 
 
 @pytest.mark.parametrize(("make", "key"), UNUSABLE)
@@ -251,7 +328,7 @@ def test_a_preset_this_build_cannot_use_is_one_note(tmp_path: Path, value: str) 
     # The loader resets the key with its note, and the owner's layer stands on the fallback
     # preset without a note of its own, which would have read as the machine file's fault.
     # Mutation (`mutations/`'s "the owner's layer is handed a preset the loader resets"): the
-    # owner notes it too, and the machine file is blamed.
+    # owner's layer is asked to load a preset this build cannot, and the session raises.
     write(tmp_path, MINIMAL.replace('preset = "recommended"', f"preset = {value}"))
     got = session_config(tmp_path, machine=none(tmp_path))
     assert got.config is not None and got.config.stayfixed.preset == "recommended"

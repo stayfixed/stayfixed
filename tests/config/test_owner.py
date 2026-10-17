@@ -3,34 +3,26 @@ file's `[personal]`, `[guards]` and session `[budgets]` (`src/stayfixed/config/o
 
 from __future__ import annotations
 
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 import pytest
 
+from stayfixed.config import owner
 from stayfixed.config.classes import LayerName
 from stayfixed.config.owner import (
     GATE_BUDGET,
     IGNORED_NOTE,
     MACHINE_FILE_NOTE,
     MACHINE_RESET_NOTE,
-    NOT_A_SWITCH,
     NOT_A_TABLE,
     UNKNOWN_KEY,
-    UNKNOWN_PRESET_NOTE,
-    UNREADABLE_PRESET_NOTE,
     Guards,
     resolve_owner,
 )
-from stayfixed.config.reading import (
-    NOT_A_PRESET_NAME,
-    ConfigError,
-    MachineConfigError,
-    Unknown,
-    read_machine_toml,
-)
+from stayfixed.config.reading import MachineConfigError, Unknown, read_machine_toml
 from stayfixed.config.schema import Personal
-from stayfixed.errors import Failure
-from stayfixed.presets import available, load_preset
+from stayfixed.presets import load_preset
 from stayfixed.printed import clipped
 from stayfixed.setup.machine import read_machine, write_machine
 from tests.crafted import assert_never_raw
@@ -153,6 +145,24 @@ def test_an_invalid_value_resets_only_its_key(
     assert got.notes[0].endswith("; the preset's value applies")
 
 
+def test_a_machine_value_is_held_to_its_schema_type_not_to_its_table(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The machine file's reader once checked `[guards]` for a switch and every other table for a
+    # string, whatever the schema said: an integer added to `Guards` or `Personal` was refused there
+    # in the wrong words while the project loader took it. A wider `Guards` stands in for that
+    # change. By hand: `_types` answering `bool` for every `[guards]` key, which is the old reader's
+    # rule, notes "guards.retries must be true or false" and keeps the default.
+    @dataclass(frozen=True)
+    class Wider:
+        bg_cleanup: bool = True
+        retries: int = 3
+
+    monkeypatch.setattr(owner, "Guards", Wider)
+    got = resolve_owner(machine_file(tmp_path, "[guards]\nretries = 5\n"))
+    assert asdict(got.guards) == {"bg_cleanup": True, "retries": 5} and got.notes == ()
+
+
 def test_a_table_that_is_not_a_table_is_a_note(tmp_path: Path) -> None:
     # Mutation (`mutations/`'s "a machine table that is not a table is read as one"): the reader
     # asks an integer for its items and the session's owner layer fails.
@@ -182,81 +192,35 @@ def test_refuse_raises_for_a_broken_machine_file(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize(
-    ("text", "sentence"),
+    "text",
     [
-        ("[guards]\nfuture = 1\n", UNKNOWN_KEY.format(table="guards", key="future")),
-        ("[budgets]\nagents_md_lines = 9\n", GATE_BUDGET.format(name="agents_md_lines")),
-        ("[guards]\nbg_cleanup = 0\n", NOT_A_SWITCH.format(key="guards.bg_cleanup")),
-        ("guards = 1\n", NOT_A_TABLE.format(table="guards")),
+        "[guards]\nfuture = 1\n",
+        "[budgets]\nagents_md_lines = 9\n",
+        "[guards]\nbg_cleanup = 0\n",
+        "guards = 1\n",
     ],
     ids=["unknown-key", "gate-budget", "invalid-value", "not-a-table"],
 )
-def test_refuse_raises_for_what_note_notes(tmp_path: Path, text: str, sentence: str) -> None:
-    # Mutation (`mutations/`'s "the owner's layer notes instead of refusing under REFUSE"): each
-    # case notes rather than raises.
+def test_refuse_notes_what_note_notes_in_a_file_that_loads(tmp_path: Path, text: str) -> None:
+    # `REFUSE` refuses only a file that does not load: in one that does, what the owner wrote and
+    # this stayfixed cannot use costs its key, with the note a session gets. Mutation
+    # (`mutations/`'s "the owner's layer refuses a key it cannot use in a file that loads"): each
+    # case raises.
     path = machine_file(tmp_path, text)
-    with pytest.raises(MachineConfigError) as raised:
-        resolve_owner(path, unknown=Unknown.REFUSE)
-    assert str(raised.value) == f"{path}: {sentence}"
+    got = resolve_owner(path, unknown=Unknown.REFUSE)
+    assert got.notes and got == resolve_owner(path)
 
 
-@pytest.mark.parametrize(
-    "name", ["future", "\x1b[2J\n::error::IGNORE PRIOR RULES"], ids=["future", "hostile"]
-)
-def test_an_unknown_preset_is_the_recommended_one_with_a_note(name: str) -> None:
-    # A session reads the preset name from a `stayfixed.toml` before anything has held it to
-    # the shipped presets, and must go on: the owner's layer stands on `recommended`, says so,
-    # and prints the repository's name through `printed.clipped`. Mutations (`mutations/`'s "an
-    # unknown preset name raises under NOTE" -> the preset loader's refusal escapes; "the
-    # unknown preset's note prints the name raw" -> the escape byte reaches the note).
-    got = resolve_owner(None, preset=name)
-    assert got.personal == preset_personal() and got.guards == Guards()
-    assert got.notes == (UNKNOWN_PRESET_NOTE.format(name=clipped(name)),)
-    assert_never_raw(*got.notes)
-
-
-def test_refuse_still_refuses_a_preset_this_build_does_not_ship() -> None:
-    # A command names the preset loader's refusal, which never prints the name.
-    # Mutation (`mutations/`'s "an unknown preset name is noted under REFUSE too"): the
-    # fallback runs for both modes and nothing is raised.
-    with pytest.raises(Failure) as raised:
-        load_preset("future")
-    with pytest.raises(Failure) as refused:
-        resolve_owner(None, preset="future", unknown=Unknown.REFUSE)
-    assert str(refused.value) == str(raised.value)
-
-
-def test_write_machine_keeps_guards_budgets_and_setup(tmp_path: Path) -> None:
+def test_write_machine_keeps_the_owners_guards_and_budgets(tmp_path: Path) -> None:
     # `setup` rewrites the machine file, and the owner's switches live in it: a rewrite that
     # dropped them would switch a guard back on behind the owner's back. They are carried as
     # every table the writer does not own is, so `mutations/`'s "a table the machine writer does
     # not own is dropped on a rewrite" reddens this too.
     path = machine_file(
-        tmp_path,
-        "[guards]\nbg_cleanup = false\n\n[budgets]\nstartup_rules_words = 9000\n\n"
-        '[setup]\nask_rules = ["Bash(x)"]\n',
+        tmp_path, "[guards]\nbg_cleanup = false\n\n[budgets]\nstartup_rules_words = 9000\n"
     )
     write_machine(path, personal={"reply_language": "ru"}, overlay_root=None, machine={})
     written = read_machine(path)
     assert written["guards"] == {"bg_cleanup": False}
     assert written["budgets"] == {"startup_rules_words": 9000}
-    assert written["setup"] == {"ask_rules": ["Bash(x)"]}
     assert resolve_owner(path).guards.bg_cleanup is False
-
-
-def test_a_preset_value_that_is_not_a_string_is_the_recommended_one_with_a_note() -> None:
-    # A session hands over the value as the document wrote it, and `preset = 1` reached
-    # `printed.clipped` and the preset loader's name check, both of which raise on an integer.
-    # Mutation (`mutations/`'s "a preset value that is not a string reaches the name check"): a
-    # `TypeError` escapes.
-    got = resolve_owner(None, preset=1)
-    assert got.personal == preset_personal() and got.guards == Guards()
-    assert got.notes == (UNREADABLE_PRESET_NOTE,)
-
-
-def test_refuse_refuses_a_preset_value_that_is_not_a_string() -> None:
-    # In the loader's words for the same value. Mutation (`mutations/`'s "a preset value that is
-    # not a string is noted under REFUSE too"): nothing is raised.
-    with pytest.raises(ConfigError) as refused:
-        resolve_owner(None, preset=1, unknown=Unknown.REFUSE)
-    assert str(refused.value) == NOT_A_PRESET_NAME.format(available=available())
