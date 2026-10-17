@@ -7,7 +7,6 @@ below is a document a command refuses and a session reads anyway, or drops with 
 from __future__ import annotations
 
 import os
-import time
 from collections.abc import Callable
 from dataclasses import fields
 from pathlib import Path
@@ -262,36 +261,33 @@ def test_a_file_longer_than_a_session_reads_is_read_no_further(tmp_path: Path) -
 # is checked, so each removal builds the whole file again, every gate and its enforcement included.
 ENFORCED_GATES = 26_000
 UNCONTAINED = [field.name for field in fields(Paths)][:4]
-# Well above what the read takes, well below the ten-second timeout `hooks/hooks.json` gives a hook,
-# as `tests/hooks/test_floor.py`'s `HOOK_BOUND_SECONDS` is. Counted in this process's CPU time and
-# not on the wall clock: the claim is what a read costs, and under the suite's workers a CI runner's
-# clock measured its scheduler instead, 6.5 s for a read that takes 0.4 s alone.
-SESSION_BOUND_SECONDS = 5
 
 
-def test_a_long_file_of_gates_that_run_beside_bad_values_never_outlasts_the_hook(
-    tmp_path: Path,
-) -> None:
-    # A file of thousands of gates that run is read once per removal, so what one build costs is
-    # paid as often as the removals allow (`loader.NOTE_REBUILT_LIMIT`): one build in proportion to
-    # the file, and the session's whole read well inside a hook's timeout. By hand, `_enforcement`
-    # asking the tuple of gate names rather than a set: each build costs about two seconds, and the
-    # read about ten.
+def long_file_of_gates_that_run() -> str:
+    """`ENFORCED_GATES` enforced gates that run and the `UNCONTAINED` paths, under the read cap;
+    `tests/hooks/test_floor.py` times a hook over the same file."""
     names = [f"v{n}" for n in range(ENFORCED_GATES)]
     enforced = ", ".join(f'"{name}"' for name in names)
     head = HEAD.replace("\n", f'\nstate = "adopting"\nenforced = [{enforced}]\n', 1)
     gates = "".join(f'{name} = {{ run = ["true"] }}\n' for name in names)
     paths = "".join(f'{name} = "../x"\n' for name in UNCONTAINED)
-    text = head + '[project]\nname = "sample"\n[paths]\n' + paths + "[gates.custom]\n" + gates
+    return head + '[project]\nname = "sample"\n[paths]\n' + paths + "[gates.custom]\n" + gates
+
+
+def test_a_long_file_of_gates_that_run_is_read_past_every_removal_its_length_allows(
+    tmp_path: Path,
+) -> None:
+    # The file the hook's timing test reads (`tests/hooks/test_floor.py`'s
+    # `test_a_long_file_of_gates_that_run_never_outlasts_the_hook`), held to the shape that makes
+    # it the expensive case: under the read cap, read past exactly as many removals as its length
+    # allows, each one a rebuild of every gate, and still loaded.
+    text = long_file_of_gates_that_run()
     assert len(text.encode()) <= SESSION_READ_LIMIT
     assert NOTE_REBUILT_LIMIT // len(text) == len(UNCONTAINED)  # every removal the length allows
     write(tmp_path, text)
-    started = time.process_time()
     got = session_config(tmp_path, machine=none(tmp_path))
-    elapsed = time.process_time() - started
     assert got.config is not None and len(got.config.stayfixed.enforced) == ENFORCED_GATES
     assert got.noted == tuple(f"paths.{name}" for name in UNCONTAINED)
-    assert elapsed < SESSION_BOUND_SECONDS, elapsed
 
 
 @pytest.mark.parametrize(("make", "key"), UNUSABLE)

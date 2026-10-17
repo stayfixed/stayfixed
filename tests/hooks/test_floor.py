@@ -9,6 +9,7 @@ which no variable moves, and none of these reads the developer's."""
 from __future__ import annotations
 
 import json
+import resource
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -29,6 +30,7 @@ from stayfixed.hooks.api import DIAGNOSTICS, DIRECTORY, Handler, HookEvent, Hook
 from stayfixed.hooks.commands import CONFIG_FALLBACK
 from stayfixed.memory.hooks import register as memory_handlers
 from stayfixed.trust import kinds
+from tests.config.test_session import long_file_of_gates_that_run
 from tests.gitfixture import git
 from tests.hooks.test_hook_command import BACKGROUND_SLEEP, CONFIG, TOOL_CALL, hook, notice_texts
 from tests.memory.test_commands import CONFIG as MEMORY_CONFIG
@@ -124,6 +126,23 @@ def test_a_file_of_thousands_of_unusable_keys_never_outlasts_the_hook(tmp_path: 
     elapsed = time.monotonic() - started
     assert refused.returncode == 2 and SLEEP_REASON in refused.stderr
     assert elapsed < HOOK_BOUND_SECONDS, elapsed
+
+
+def test_a_long_file_of_gates_that_run_never_outlasts_the_hook(tmp_path: Path) -> None:
+    # A file of thousands of gates that run is built once per removal its length allows
+    # (`loader.NOTE_REBUILT_LIMIT`), so what one build costs is paid that often, and the hook still
+    # answers well inside its timeout. Counted in the hook's own CPU time, in a process of its own:
+    # timed inside the suite's process, a CI runner measured its coverage tracer and its scheduler,
+    # 6.6 s for a read that takes 0.4 s, and neither is what a session pays. By hand, `_enforcement`
+    # asking the tuple of gate names rather than a set: the hook takes about ten seconds of CPU.
+    root, home = _setup(tmp_path, no_file)
+    (root / "stayfixed.toml").write_text(long_file_of_gates_that_run(), encoding="utf-8")
+    before = resource.getrusage(resource.RUSAGE_CHILDREN)
+    refused = hook("PreToolUse", json.dumps(BACKGROUND_SLEEP), root, home=home)
+    after = resource.getrusage(resource.RUSAGE_CHILDREN)
+    spent = (after.ru_utime + after.ru_stime) - (before.ru_utime + before.ru_stime)
+    assert refused.returncode == 2 and SLEEP_REASON in refused.stderr
+    assert spent < HOOK_BOUND_SECONDS, spent
 
 
 def test_the_owner_switches_the_guard_off_with_no_stayfixed_toml(tmp_path: Path) -> None:
