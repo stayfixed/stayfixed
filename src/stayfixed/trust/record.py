@@ -30,7 +30,7 @@ and the last writer wins it.
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import asdict, dataclass, fields, replace
 from datetime import datetime
 from enum import StrEnum
@@ -41,7 +41,7 @@ from stayfixed import fsops
 from stayfixed.config.machine import machine_config_path
 from stayfixed.errors import Failure, Refusal
 from stayfixed.jsonobject import json_object
-from stayfixed.trust.boundary import OWN_TERMINAL_TOO, sandbox_refused
+from stayfixed.trust.boundary import RUN_OUTSIDE, SANDBOX_REFUSED, sandbox_refused
 
 RECORD = "trust.json"
 VERSION = 1
@@ -60,13 +60,11 @@ LATER_VERSION = (
 )
 NOT_A_RECORD = "{path} is neither a trust record nor the flat map 0.3.0 wrote; " + _KEPT
 # A write to the record that was refused the way an agent's sandbox refuses one (`boundary`'s
-# docstring): run from an agent's shell, nothing it asks of the record can be written. Constant,
-# since its likely reader is that agent, and speaking of the person, who runs it outside.
-SANDBOXED = (
-    "the trust record was not written: its directory refused the write, which Claude Code's "
-    "sandbox does to every write an agent's shell makes outside the working directory, so a "
-    "person must run this command in their own terminal, outside the agent's sandbox"
-    f"{OWN_TERMINAL_TOO}"
+# docstring): run from an agent's shell, nothing it asks of the record can be written.
+SANDBOXED = SANDBOX_REFUSED.format(
+    outcome="the trust record was not written",
+    directory="its directory",
+    remedy=RUN_OUTSIDE.format(command="this command"),
 )
 
 
@@ -184,27 +182,18 @@ def _approvals(raw: dict[str, Any], path: Path) -> dict[tuple[str, str], Approva
 
 def state(machine: Path | None, kind: str, subject: str, current: str) -> State:
     """Whether `subject` of `kind` is approved at the digest `current`."""
-    return _state(recorded(machine), kind, subject, current)
+    return state_in(recorded(machine), kind, subject, current)
 
 
-def _state(
+def state_in(
     approvals: Mapping[tuple[str, str], Approval], kind: str, subject: str, current: str
 ) -> State:
+    """`state`'s answer out of `approvals`, the record read once by a caller that asks of several
+    subjects (`trust list`)."""
     approval = approvals.get((kind, subject))
     if approval is None:
         return State.MISSING
     return State.APPROVED if approval.digest == current else State.LAPSED
-
-
-def approve(
-    machine: Path | None, kind: str, subject: str, digest: str, *, now: datetime
-) -> Approval:
-    """Record `subject` of `kind` as approved at `digest`, replacing any approval it had."""
-    approvals = recorded(machine)
-    approval = Approval(kind, subject, digest, now.isoformat(timespec="seconds"))
-    approvals[(kind, subject)] = approval
-    _write(machine, approvals)
-    return approval
 
 
 def approve_all(
@@ -216,7 +205,9 @@ def approve_all(
     One write, so a kind with several subjects is approved whole or not at all: a write that fails
     leaves the record as it was. Nothing is written for no subject."""
     approvals = recorded(machine)
-    was = {subject: _state(approvals, kind, subject, digest) for subject, digest in digests.items()}
+    was = {
+        subject: state_in(approvals, kind, subject, digest) for subject, digest in digests.items()
+    }
     if not digests:
         return was
     when = now.isoformat(timespec="seconds")
@@ -252,14 +243,17 @@ def refresh(machine: Path | None, kind: str, subject: str, *, expected: str, dig
     return True
 
 
-def revoke(machine: Path | None, kind: str, subject: str) -> bool:
-    """Remove the approval of `subject` of `kind`; `False`, and nothing written, when there is
-    none."""
+def revoke_all(machine: Path | None, kind: str, subjects: Iterable[str]) -> list[str]:
+    """Remove the approval of every subject of `kind` in `subjects` that has one, in one write of
+    the record, and answer those subjects in the order given; nothing is written when none had one.
+
+    One write, as `approve_all`'s, so a kind with several subjects is withdrawn whole or not at
+    all, and the record is not replaced once per subject."""
     approvals = recorded(machine)
-    if approvals.pop((kind, subject), None) is None:
-        return False
-    _write(machine, approvals)
-    return True
+    revoked = [subject for subject in subjects if approvals.pop((kind, subject), None) is not None]
+    if revoked:
+        _write(machine, approvals)
+    return revoked
 
 
 def _write(machine: Path | None, approvals: dict[tuple[str, str], Approval]) -> None:

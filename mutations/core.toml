@@ -3915,8 +3915,8 @@ reddens = ["tests/config/test_owner.py::test_a_machine_with_no_home_is_the_prese
 [[mutation]]
 name = "the owner's layer never reads [guards]"
 file = "src/stayfixed/config/owner.py"
-before = '    for table in ("personal", "guards", "budgets"):'
-after = '    for table in ("personal", "budgets"):'
+before = '    tables: dict[str, type[Any]] = {"personal": Personal, "guards": Guards, "budgets": Budgets}'
+after = '    tables: dict[str, type[Any]] = {"personal": Personal, "budgets": Budgets}'
 reddens = [
   "tests/config/test_owner.py::test_the_machine_file_switches_the_background_guard_off",
 ]
@@ -4356,7 +4356,7 @@ reddens = [
 
 [[mutation]]
 name = "the owner's layer is handed a preset the loader resets"
-file = "src/stayfixed/config/session.py"
+file = "src/stayfixed/config/loader.py"
 before = "    return named if isinstance(named, str) and named in shipped_presets() else DEFAULT_PRESET"
 after = "    return named"
 reddens = [
@@ -4598,8 +4598,8 @@ reddens = [
 [[mutation]]
 name = "an approval over an unreadable trust record writes the record anyway"
 file = "src/stayfixed/trust/record.py"
-before = "    approvals = recorded(machine)\n    approval = Approval("
-after = "    try:\n        approvals = recorded(machine)\n    except UnreadableTrust:\n        approvals = {}\n    approval = Approval("
+before = "    approvals = recorded(machine)\n    was = {"
+after = "    try:\n        approvals = recorded(machine)\n    except UnreadableTrust:\n        approvals = {}\n    was = {"
 reddens = [
   "tests/trust/test_record.py::test_an_unreadable_record_refuses_and_is_never_overwritten[not-json]",
   "tests/trust/test_record.py::test_an_unreadable_record_refuses_and_is_never_overwritten[version-2]",
@@ -4625,17 +4625,38 @@ reddens = ["tests/trust/test_record.py::test_lapsed_missing_and_approved_are_tol
 [[mutation]]
 name = "the trust record keys an approval by its subject alone"
 file = "src/stayfixed/trust/record.py"
-before = "    approvals[(kind, subject)] = approval"
-after = "    approvals = {key: a for key, a in approvals.items() if key[1] != subject}\n    approvals[(kind, subject)] = approval"
+before = "        approvals[(kind, subject)] = Approval(kind, subject, digest, when)"
+after = "        approvals = {key: a for key, a in approvals.items() if key[1] != subject}\n        approvals[(kind, subject)] = Approval(kind, subject, digest, when)"
 reddens = ["tests/trust/test_record.py::test_two_kinds_never_share_a_subject"]
 
 # A revoke that matches nothing writes nothing.
 [[mutation]]
 name = "a revoke of nothing rewrites the trust record"
 file = "src/stayfixed/trust/record.py"
-before = "    if approvals.pop((kind, subject), None) is None:\n        return False"
-after = "    if approvals.pop((kind, subject), None) is None:\n        _write(machine, approvals)\n        return False"
+before = "    if revoked:\n        _write(machine, approvals)\n    return revoked"
+after = "    if True:\n        _write(machine, approvals)\n    return revoked"
 reddens = ["tests/trust/test_record.py::test_revoke_of_nothing_says_so"]
+
+# Revoking several subjects of a kind is one write of the record, as approving them is.
+[[mutation]]
+name = "revoking a kind writes the record once per subject"
+file = "src/stayfixed/trust/record.py"
+before = "    if revoked:\n        _write(machine, approvals)\n    return revoked"
+after = "    for _ in revoked:\n        _write(machine, approvals)\n    return revoked"
+reddens = [
+  "tests/trust/test_record.py::test_every_subject_of_a_kind_is_revoked_in_one_write",
+  "tests/trust/test_commands.py::test_a_kind_of_several_subjects_is_listed_off_one_read_and_revoked_in_one_write",
+]
+
+# `trust list` reads the record once, however many subjects the kinds describe.
+[[mutation]]
+name = "trust list reads the record once per subject"
+file = "src/stayfixed/trust/commands.py"
+before = "            if approvals is None:\n                approvals = record.recorded(context.machine)"
+after = "            if True:\n                approvals = record.recorded(context.machine)"
+reddens = [
+  "tests/trust/test_commands.py::test_a_kind_of_several_subjects_is_listed_off_one_read_and_revoked_in_one_write",
+]
 
 # A refresh, stayfixed's own write over an approval its caller read, moves only the digest it read,
 # never brings back a revoked approval, and keeps when the person approved.
@@ -4705,8 +4726,8 @@ reddens = [
 [[mutation]]
 name = "trust revoke revokes nothing"
 file = "src/stayfixed/trust/commands.py"
-before = "    revoked = [key for key in keys if record.revoke(context.machine, kind.name, key)]"
-after = "    revoked = [key for key in keys if False]"
+before = "    revoked = record.revoke_all(context.machine, kind.name, keys)"
+after = "    revoked: list[str] = []"
 reddens = ["tests/trust/test_commands.py::test_revoke_needs_no_terminal"]
 
 [[mutation]]
@@ -4829,12 +4850,13 @@ reddens = [
 ]
 
 [[mutation]]
-name = "the trust record's sandbox sentence sends a person in their own terminal there again"
-file = "src/stayfixed/trust/record.py"
-before = "    \"person must run this command in their own terminal, outside the agent's sandbox\"\n    f\"{OWN_TERMINAL_TOO}\""
-after = "    \"person must run this command in their own terminal, outside the agent's sandbox\""
+name = "the sandbox sentence sends a person in their own terminal there again"
+file = "src/stayfixed/trust/boundary.py"
+before = "    \"a person must run {command} in their own terminal, outside the agent's sandbox\"\n    + OWN_TERMINAL_TOO"
+after = "    \"a person must run {command} in their own terminal, outside the agent's sandbox\""
 reddens = [
   "tests/trust/test_record.py::test_the_sandbox_sentence_says_what_a_person_in_their_own_terminal_meets",
+  "tests/setup/test_commands.py::test_setup_s_sandbox_sentence_says_what_a_person_in_their_own_terminal_meets",
 ]
 
 # One reader of the machine file for every load (`loader._built`): a load no command handed a layer

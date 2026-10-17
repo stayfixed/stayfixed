@@ -252,3 +252,15 @@ class Contribution:
     # Must not raise on repository bytes: an answer it cannot read is a `None` field of `Claims`.
     # `hook-entries` asks it under its own guard, so one that raises costs that row, red.
     claims: Callable[[Context], Claims] | None = None
+
+
+def configured(check: Callable[[Context, Config], Row]) -> Callable[[Context], Row]:
+    """`check`, a row that reads the project configuration, asked with it where the report has one;
+    where it has none the row skips with `NO_CONFIG_SKIP`, and `not-initialised` says why."""
+
+    def row(context: Context) -> Row:
+        if context.config is None:
+            return Row(SKIP, NO_CONFIG_SKIP)
+        return check(context, context.config)
+
+    return row

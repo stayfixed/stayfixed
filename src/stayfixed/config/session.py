@@ -43,6 +43,7 @@ from stayfixed.config.loader import (
     TooManyResets,
     UnusableKey,
     loads_noting,
+    preset_named,
     read_document,
 )
 from stayfixed.config.machine import machine_config_path
@@ -50,7 +51,6 @@ from stayfixed.config.owner import Owner, resolve_owner
 from stayfixed.config.paths import PathEscape
 from stayfixed.config.reading import UNPARSEABLE, ConfigError
 from stayfixed.config.schema import Config
-from stayfixed.presets import DEFAULT_PRESET, shipped_presets
 from stayfixed.printed import printable
 from stayfixed.semver import later
 
@@ -164,7 +164,7 @@ def session_config(root: Path | None, *, machine: Path | None = None) -> Session
         raw = tomllib.loads(text)
     except UNPARSEABLE:
         return _fallback(path, FALLBACK_WARNING)
-    owner = resolve_owner(path, preset=_preset(raw))
+    owner = resolve_owner(path, preset=preset_named(raw))
     try:
         # Parsed once, above: the NOTE load reads the same document rather than parsing it again.
         noted = loads_noting(text, root, owner=owner, parsed=raw)
@@ -193,17 +193,6 @@ def cause(warning: str) -> str:
     """`warning` without its opening and without the pointer at `doctor`: what `doctor` says of
     the same state, where pointing at itself would say nothing."""
     return warning.removeprefix(PREFIX).removesuffix(DOCTOR_DETAIL)
-
-
-def _preset(raw: dict[str, object]) -> str:
-    """The preset the owner's layer stands on: the document's, when it names one this build ships,
-    and `DEFAULT_PRESET` otherwise, which is what the NOTE load resets an unshipped one to. Asked
-    here because `resolve_owner` loads the name it is handed: the document's value is the loader's
-    to judge, and an unshipped one is one note, the loader's.
-    """
-    head = raw.get("stayfixed")
-    named = head.get("preset", DEFAULT_PRESET) if isinstance(head, dict) else DEFAULT_PRESET
-    return named if isinstance(named, str) and named in shipped_presets() else DEFAULT_PRESET
 
 
 def _unusable(key: str | None) -> str:

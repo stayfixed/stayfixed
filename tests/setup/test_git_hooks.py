@@ -78,6 +78,21 @@ def _args(**over: object) -> argparse.Namespace:
     return argparse.Namespace(**base)
 
 
+@pytest.mark.parametrize("over", [{"overlay": "elsewhere"}, {"yes": True}], ids=["overlay", "yes"])
+def test_git_hooks_refuses_every_flag_that_asks_machine_setup_to_act(
+    tmp_path: Path, over: dict[str, object]
+) -> None:
+    # `--git-hooks` does nothing of machine setup's. Only `--preset` was refused beside it, and
+    # `--overlay` and `--yes` were dropped and the hook installed, exit 0. Mutations
+    # (`mutations/`'s "setup --git-hooks drops --overlay" -> the first case installs; "setup
+    # --git-hooks drops --yes" -> the second does).
+    root = _repo(tmp_path)
+    with pytest.raises(Refusal) as refused:
+        run_setup(_args(root=str(root), **over))
+    assert "--git-hooks" in str(refused.value)
+    assert not (hooks_dir(root) / HOOK_NAME).exists()
+
+
 def test_the_hook_is_installed_into_the_repositorys_own_hooks_path(tmp_path: Path) -> None:
     # The hook is installed per repository into `git rev-parse --git-path hooks`, never into
     # `core.hooksPath`. The "never" is the assertion: `core.hooksPath` is global state this command

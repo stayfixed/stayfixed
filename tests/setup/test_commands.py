@@ -18,7 +18,7 @@ from stayfixed.cli import build_parser, discover_registrars, run
 from stayfixed.overlay.api import MARKETPLACE_MANIFEST, PLUGIN_MANIFEST
 from stayfixed.printed import quoted
 from stayfixed.setup.api import SetupReport
-from stayfixed.setup.machine import SANDBOXED
+from stayfixed.setup.machine import SETUP_SANDBOXED
 from tests.ownerhome import as_owner_home
 from tests.parserlimits import LONG_NUMBER, NESTED
 from tests.runners import Recorder
@@ -70,6 +70,25 @@ def test_the_preset_flow_runs_through_the_cli_with_a_stubbed_runner(
 def test_git_hooks_and_preset_refuse_to_combine_through_the_cli(tmp_path: Path) -> None:
     code = invoke(["setup", "--preset", "recommended", "--git-hooks", "--root", str(tmp_path)])
     assert code == 2
+
+
+def test_uninstall_without_git_hooks_refuses_and_runs_no_machine_setup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # `--uninstall` means something only beside `--git-hooks`. Taken alone it was dropped and the
+    # machine setup ran, exit 0, for a person who asked for a hook to be removed.
+    #
+    # Mutation (`mutations/`'s "setup drops a lone --uninstall and runs the machine setup"): the
+    # run exits 0, writes the machine file and reaches the runner, and this reddens.
+    stub = Recorder()
+    monkeypatch.setattr("stayfixed.setup.commands.subprocess_runner", lambda: stub)
+    home = tmp_path / "home"
+    machine = tmp_path / "config.toml"
+    argv = ["setup", "--uninstall", "--yes", "--home", str(home), "--machine", str(machine)]
+    assert invoke(argv) == 2
+    assert "--git-hooks" in capsys.readouterr().err
+    assert not machine.exists()
+    assert not stub.calls
 
 
 def test_the_machine_default_is_the_file_every_reader_reads(
@@ -394,7 +413,7 @@ def test_setup_from_a_sandboxed_shell_says_a_person_must_run_it(
         )
     argv = ["setup", "--preset", "recommended", "--yes", "--home", str(home)]
     assert invoke([*argv, "--machine", str(machine)]) == 2
-    assert capsys.readouterr().err == f"stayfixed: refused: {SANDBOXED}\n"
+    assert capsys.readouterr().err == f"stayfixed: refused: {SETUP_SANDBOXED}\n"
     assert (
         met
         == {
@@ -408,8 +427,8 @@ def test_setup_from_a_sandboxed_shell_says_a_person_must_run_it(
 
 def test_setup_s_sandbox_sentence_says_what_a_person_in_their_own_terminal_meets() -> None:
     # As the trust record's: the sandbox's answer is also a read-only mount's or an immutable
-    # flag's, met by a person already in their own terminal. Mutation (`mutations/`'s "setup's
-    # sandbox sentence sends a person in their own terminal there again"): it ends at the sandbox.
-    from stayfixed.trust.api import OWN_TERMINAL_TOO
+    # flag's, met by a person already in their own terminal. Mutation (`mutations/`'s "the sandbox
+    # sentence sends a person in their own terminal there again"): it ends at the sandbox.
+    from stayfixed.trust.boundary import OWN_TERMINAL_TOO
 
-    assert SANDBOXED.endswith(OWN_TERMINAL_TOO)
+    assert SETUP_SANDBOXED.endswith(OWN_TERMINAL_TOO)

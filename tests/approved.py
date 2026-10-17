@@ -12,11 +12,11 @@ from datetime import UTC, datetime
 from stayfixed.config.schema import Config
 from stayfixed.memory.store import Store
 from stayfixed.memory.trust import MEMORY, TrustState, state, store_digest, store_key
-from stayfixed.trust.record import approve
+from stayfixed.trust.record import approve_all
 
 
 def record(store: Store, config: Config) -> TrustState:
     """Approve `store` at its digest now, as `trust approve memory` would, and its state after."""
     digest = store_digest(store, config)
-    approve(store.machine, MEMORY, store_key(store), digest, now=datetime.now(UTC))
+    approve_all(store.machine, MEMORY, {store_key(store): digest}, now=datetime.now(UTC))
     return state(store, config)

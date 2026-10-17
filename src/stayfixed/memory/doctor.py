@@ -17,6 +17,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from stayfixed.config.schema import Config
     from stayfixed.doctor.api import Context, Contribution, Row
     from stayfixed.memory.answers import Answers
 
@@ -33,20 +34,17 @@ if TYPE_CHECKING:
 NEARLY_FULL = 0.9
 
 
-def _bundles(context: Context, answers: Answers) -> Row:
+def _bundles(context: Context, config: Config, answers: Answers) -> Row:
     """A bundle whose notes do not fit its slots needs a human, not a wider cap.
 
     Raising a slot count edits `hooks/hooks.json`, which is a shipped file, so this is reported
     and never repaired. A part already close to the platform cap is the warning before that:
     one more sentence in one note and the bundle needs a slot that does not exist.
     """
-    from stayfixed.doctor.api import NO_CONFIG_SKIP, OK, RED, SKIP, WARN, Row
+    from stayfixed.doctor.api import OK, RED, SKIP, WARN, Row
     from stayfixed.findings import listed
     from stayfixed.memory.bundles import SLOTS, fit, render
 
-    config = context.config
-    if config is None:
-        return Row(SKIP, NO_CONFIG_SKIP)
     store = answers.store(context)
     if store is None:
         return Row(SKIP, "the note store does not resolve, so no bundle can be built")
@@ -86,10 +84,8 @@ def _store_debris(context: Context, answers: Answers) -> Row:
     walk with a "could not tell" answer reads, and past it says it could not tell.
     """
     from stayfixed import fsops
-    from stayfixed.doctor.api import NO_CONFIG_SKIP, OK, SKIP, WARN, Row
+    from stayfixed.doctor.api import OK, SKIP, WARN, Row
 
-    if context.config is None:
-        return Row(SKIP, NO_CONFIG_SKIP)
     store = answers.store(context)
     if store is None:
         return Row(SKIP, "the note store does not resolve", "")
@@ -154,14 +150,14 @@ def _harness_link(context: Context) -> Row:
 def register() -> Contribution:
     """This area's three rows, the two that read the store sharing one `Answers`, so the store
     resolves once for both."""
-    from stayfixed.doctor.api import Contribution
+    from stayfixed.doctor.api import Contribution, configured
     from stayfixed.memory.answers import Answers
 
     answers = Answers()
     return Contribution(
         checks=(
-            ("bundles", lambda context: _bundles(context, answers)),
-            ("store-debris", lambda context: _store_debris(context, answers)),
+            ("bundles", configured(lambda context, config: _bundles(context, config, answers))),
+            ("store-debris", configured(lambda context, _: _store_debris(context, answers))),
             ("harness-link", _harness_link),
         )
     )
