@@ -906,8 +906,8 @@ with `{` and ends with `}`, which jest reads as JSON), `-u`/`--updateSnapshot` a
 snapshots), `--mergeReports` and `--dangerouslyIgnoreUnhandledErrors`; and node's own
 `--test-reporter…`, `--env-file`, `--env-file-if-exists`, its configuration file options,
 `--test-update-snapshots` and `--test-rerun-failures`, and code the command spells (`-e`,
-`--eval`, `-p`, `--print`, and a preload given a value in none of the three forms below),
-spelled with `_` or after the files too. A
+`--eval`, `-p`, `--print`, and a preload given a URL of any scheme but `file:`), spelled with
+`_` or after the files too. A
 watch mode (jest's `--watch` and `--watchAll`, vitest's `-w`/`--watch`, node's `--watch` and
 `--watch-path`) never ends, so no report is ever finished: it is `not proven` (`never-ends`,
 naming the option), and a refusal in the same command wins. Where the command sets a watch mode
@@ -926,18 +926,15 @@ write in the tree; `--import` and `--require`; the files jest's `--setupFiles`, 
 `--projects` or `--rootDir` and vitest's `--root` or `--dir` name; and a reporter of jest's or
 vitest's own. The file `-c` or `--config` names (read from the directory the command runs in, and
 for vitest from its `--root` where the command gives one) is among the configuration files, by its
-realpath. A preload's value (`-r`, `--require`, `--import`, `--loader`, `--experimental-loader`) is
-read in exactly three forms: a path starting `/`, `./` or `../`, named among the configuration
-files by its realpath from the directory the command runs in (for `--import`, `--loader` and
-`--experimental-loader`, which node reads as a URL, a path is accepted only when every character
-of it is a letter, a digit or one of `. _ - / @ + ~`, since `%`, `?`, `#`, `\`, whitespace and
-the rest can change which file node names; `-r` and `--require` read it as spelled); a `file:` URL of this machine with an
-absolute path (`file:///x.mjs`, `file://localhost/x.mjs`), named by its percent-decoded path; and a
-package's bare name with an optional subpath (`tsx`, `@scope/name/esm`, `ts-node/register`), none
-of its segments `.` or `..`, which resolves through `node_modules` and is not named. Any other
-value (a `data:` URL or another scheme, a relative `file:` URL or another host's, a value with no
-`./` in front and a `.` or `..` segment, an empty one) is refused (`refused-option`, naming the
-option, never its value). Their forging set is `NODE_OPTIONS`, and for `node --test`
+realpath. A preload (`-r`, `--require`, `--import`, `--loader`, `--experimental-loader`) given a
+URL of any scheme but `file:`, a `data:` URL among them, is code the command spells, and is refused
+(`refused-option`, naming the option, never its value). Every other value runs as it is. The file it
+names is among the configuration files where its reading is not in doubt: a path starting `/`, `./`
+or `../` with no `%`, `?`, `#`, `\` or control character in it, by its realpath from the directory
+the command runs in, and an absolute `file:` URL of this machine, by its percent-decoded path. A
+package's name (`tsx`, `ts-node/register`) and any value whose file is in doubt (a relative
+`file:` URL, another host's, a path holding one of those characters, which node may read as a
+URL) are not named: the name is the receipt's convenience, never an input to the verdict. Their forging set is `NODE_OPTIONS`, and for `node --test`
 also `NODE_TEST_CONTEXT`, an inherited one removed from the run's environment (the line and the
 receipt say so). To give Node a flag, put it in front of the runner's entry instead:
 `stayfixed prove -- node --experimental-vm-modules node_modules/jest/bin/jest.js`, jest's
@@ -955,7 +952,7 @@ proven`): node would read the entry as that option's value and run the word afte
 (`refused-option`, naming the option, never its value): the options that load a file
 (`--env-file`, `--env-file-if-exists`, the configuration file options), the test runner's (any
 `--test…`), and code the command spells (`-e`, `--eval`, `-p`, `--print`, and a preload given a
-value in none of the three forms above); `--watch` and `--watch-path` never end. A file a preload
+URL of any scheme but `file:`); `--watch` and `--watch-path` never end. A file a preload
 names there is among the configuration files. Their configuration
 files are `package.json`, `.npmrc`, `jest.config.*`, `vitest.config.*` and `vite.config.*`.
 

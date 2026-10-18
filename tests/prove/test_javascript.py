@@ -33,16 +33,13 @@ from stayfixed.profiles.javascript.adapters import (
     NODE_REPORT,
     NODE_TEST_FORGING,
     NOT_THE_ENTRY,
-    PRELOAD_FILE_URL,
-    PRELOAD_PACKAGE,
-    PRELOAD_PATH,
     UNRESOLVED,
     VITEST_DISCOVERY,
     VITEST_REPORT,
     JestAdapter,
     NodeTestAdapter,
     VitestAdapter,
-    preload_form,
+    inline_preload,
     whole_file,
 )
 from stayfixed.profiles.runners import (
@@ -403,96 +400,79 @@ def test_a_preload_of_a_file_or_a_package_is_free_in_front_of_the_entry(
     assert isinstance(planned(JEST, command, project, path=str(node.parent)), Plan)
 
 
-# The values a preload is refused for: in none of the three forms `preload_form` reads.
+# The preloads that are code the command spells: a URL of any scheme but `file:`. The only
+# preload refusal.
 PRELOADS_REFUSED = [
-    "pkg/../../evil.mjs",
-    "@s/p/./x.cjs",
-    "a/..",
-    ".pnp.cjs",
-    "file:rel.mjs",
-    "file:../up/u.mjs",
-    "file://elsewhere/abs/no.mjs",
-    "data:text/javascript,x/../y",
     "data:text/javascript,process.exit(0)",
+    "data:text/javascript,x/../y",
     "node:fs",
     "https://example.com/l.mjs",
-    "",
 ]
 
 
-@pytest.mark.parametrize("value", PRELOADS_REFUSED, ids=[v or "empty" for v in PRELOADS_REFUSED])
-def test_a_preload_in_none_of_the_three_forms_is_refused(tmp_path: Path, value: str) -> None:
-    # Code of the command's own, or a file read in a way the reader does not follow: refused, the
-    # option named and never its value, in front of an entry and under `node --test` alike.
-    # Mutations (declared): one per arm of `preload_form`.
-    assert preload_form(value, "--import") is None
+@pytest.mark.parametrize("value", PRELOADS_REFUSED)
+def test_a_preload_of_code_the_command_spells_is_refused(tmp_path: Path, value: str) -> None:
+    # Refused, the option named and never its value, in front of an entry and under `node --test`
+    # alike. Mutation (declared): a URL of another scheme read as any other value -> it runs.
+    assert inline_preload(value)
     entry = planned(JEST, ["node", f"--import={value}", "node_modules/jest/bin/jest.js"], tmp_path)
     assert entry == Refused(REFUSED_OPTION, "--import")
     tested = planned(NODE_TEST, ["node", "--test", "-r", value], tmp_path)
     assert tested == Refused(REFUSED_OPTION, "-r")
 
 
-@pytest.mark.parametrize(
-    ("value", "form"),
-    [
-        ("/abs/x.mjs", PRELOAD_PATH),
-        ("./setup.cjs", PRELOAD_PATH),
-        ("../shared/s.cjs", PRELOAD_PATH),
-        ("file:///abs/y.mjs", PRELOAD_FILE_URL),
-        ("file://localhost/abs/z%20q.mjs", PRELOAD_FILE_URL),
-        ("tsx", PRELOAD_PACKAGE),
-        ("ts-node/register", PRELOAD_PACKAGE),
-        ("@swc-node/register/esm", PRELOAD_PACKAGE),
-        ("pkg.js/sub.path", PRELOAD_PACKAGE),
-    ],
-)
-def test_each_of_the_three_preload_forms_is_read(value: str, form: str) -> None:
-    assert preload_form(value, "--import") == form == preload_form(value, "-r")
-
-
-# One value for each class of character outside the closed list an ES module preload's path is
-# accepted with: a URL's escape, query and fragment, a backslash, whitespace, a control
-# character, and any other punctuation or non-ASCII letter.
-ESM_PATHS_REFUSED = [
+# The values a preload runs with, unnamed: a package's name, and a file whose reading is in doubt
+# -- a schemeless value with a `.` or `..` segment, a relative `file:` URL or another host's, and
+# a path holding a character node may read otherwise (`%`, `?` and `#` in a URL, a `\`, a control
+# character).
+PRELOADS_UNNAMED = [
+    "tsx",
+    "ts-node/register",
+    "@swc-node/register/esm",
+    "pkg/../../evil.mjs",
+    "a/..",
+    ".pnp.cjs",
+    "file:rel.mjs",
+    "file:../up/u.mjs",
+    "file://elsewhere/abs/no.mjs",
     "./a%20b.mjs",
     "./x.mjs?v=1",
     "../y.mjs#h",
     "./back\\slash.mjs",
     "./tab\tname.mjs",
     "./line\nbreak.mjs",
-    "./carriage\rreturn.mjs",
-    "./space name.mjs",
-    "./bell\x07.mjs",
-    "./semi;colon.mjs",
-    "./caf\u00e9.mjs",
+    "",
 ]
 
 
-@pytest.mark.parametrize("value", ESM_PATHS_REFUSED, ids=[repr(v) for v in ESM_PATHS_REFUSED])
-def test_an_esm_preload_s_path_holding_url_characters_is_refused(
-    tmp_path: Path, value: str
-) -> None:
-    # node reads an ES module preload's path as a URL relative to the run's directory, so `%`,
-    # `?`, `#`, `\\` and control characters change which file it names; the reader accepts such a
-    # path only from a closed list of characters rather than resolve URLs. `-r` and `--require`
-    # read the path as spelled, and keep it. Mutation (declared): the list not read -> each is a
-    # path.
-    for option in ("--import", "--loader", "--experimental-loader"):
-        assert preload_form(value, option) is None
-    assert preload_form(value, "-r") == preload_form(value, "--require") == PRELOAD_PATH
-    entry = planned(JEST, ["node", f"--loader={value}", "node_modules/jest/bin/jest.js"], tmp_path)
-    assert entry == Refused(REFUSED_OPTION, "--loader")
-    tested = planned(NODE_TEST, ["node", "--test", "--import", value], tmp_path)
-    assert tested == Refused(REFUSED_OPTION, "--import")
+@pytest.mark.parametrize("value", PRELOADS_UNNAMED, ids=[repr(v) for v in PRELOADS_UNNAMED])
+def test_a_preload_whose_file_is_in_doubt_runs_unnamed(tmp_path: Path, value: str) -> None:
+    # Naming a preloaded file is the receipt's convenience: no verdict reads it, and a file in the
+    # tree is the bound's. So a value whose file is in doubt is never refused for it; it runs as it
+    # is, and the receipt names nothing. Mutations (declared): a path holding `%`, `?` or `#`
+    # named; a relative `file:` URL named; another host's named.
+    assert not inline_preload(value)
+    project = tmp_path / "project"
+    _, _, node = installed(project)
+    path = str(node.parent)
+    for option in ("--import", "--loader", "-r"):
+        word = f"{option}={value}" if option != "-r" else None
+        words = [word] if word else [option, value]
+        entry = plan_of(JEST, ["node", *words, "node_modules/jest/bin/jest.js"], project, path=path)
+        assert entry.configs == CONFIGS
+        tested = plan_of(NODE_TEST, ["node", "--test", *words], project, path=path)
+        assert tested.configs == CONFIGS
 
 
-def test_an_esm_preload_s_path_of_the_listed_characters_is_kept(tmp_path: Path) -> None:
-    value = "./A-z_0.9/@scope+x~/setup.mjs"
-    for option in ("--import", "--loader", "--experimental-loader"):
-        assert preload_form(value, option) == PRELOAD_PATH
+@pytest.mark.parametrize(
+    "value",
+    ["/abs/x.mjs", "./setup.cjs", "../shared/s.cjs", "./A-z_0.9/@scope+x~/s p.mjs"],
+)
+def test_a_preload_path_whose_reading_is_plain_is_named(tmp_path: Path, value: str) -> None:
+    # Mutation (declared): a path not named -> the receipt names nothing.
     node = node_on_path(tmp_path / "bin")
-    kept = plan_of(NODE_TEST, ["node", "--test", "-r", value], tmp_path, path=str(node.parent))
-    assert kept.configs[-1] == os.path.realpath(tmp_path / value)
+    got = plan_of(NODE_TEST, ["node", "--test", "--import", value], tmp_path, path=str(node.parent))
+    assert got.configs == (*CONFIGS, os.path.realpath(tmp_path / value))
 
 
 @pytest.mark.parametrize(
@@ -1773,9 +1753,9 @@ def test_vitest_reads_each_form_as_its_parser_does(
 
 
 def test_a_preloaded_file_is_named_and_a_package_is_not(tmp_path: Path) -> None:
-    # A preload's value is read in one of three forms (`preload_form`): a path starting `/`, `./`
-    # or `../`, named by its realpath from the run's directory; a `file:` URL of this machine with
-    # an absolute path, named by its path, percent-decoded; a package's bare name, not named.
+    # A preload's file is named where its reading is not in doubt: a plain path starting `/`, `./`
+    # or `../`, by its realpath from the run's directory; an absolute `file:` URL of this machine,
+    # by its path, percent-decoded. A package's name, and a file in doubt, run unnamed.
     # `-r=x` is a bad option to node, and a word after `--` is none of node's. Mutations
     # (declared): the preloaded files left out; a `file:` URL's escapes kept.
     node = node_on_path(tmp_path / "bin")
@@ -1795,6 +1775,9 @@ def test_a_preloaded_file_is_named_and_a_package_is_not(tmp_path: Path) -> None:
             "--import=file://localhost/abs/z%20q.mjs",
             "--import=file:/abs/w.mjs",
             "--import=@scope/pkg/esm",
+            "--import=file://elsewhere/abs/no.mjs",
+            "--import=file:rel.mjs",
+            "--loader=./q%3F.mjs",
             "-r=./bad.cjs",
             "--test",
             "a.test.mjs",

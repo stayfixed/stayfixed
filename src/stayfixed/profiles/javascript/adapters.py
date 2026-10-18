@@ -59,10 +59,9 @@ appended, and every other option is free. `REFUSED_OPTION`, naming the option:
 - `node --test` on Node 26.12.0: any `--test-reporter…` of the command's own; `--env-file`,
   `--env-file-if-exists` and the configuration file options (`--config-file`,
   `--experimental-config-file`, `--experimental-default-config-file`), which load what the run
-  reads; code the command spells, `-e`/`--eval`, `-p`/`--print`, and a preload given a value in
-  none of the three forms `preload_form` accepts (a path starting `/`, `./` or `../`; a `file:`
-  URL with an absolute path; a package's bare name), a `data:` URL among them, which runs before
-  the tests and can write the report, as jest's `--config` given JSON text is;
+  reads; code the command spells, `-e`/`--eval`, `-p`/`--print`, and a preload given a URL of any
+  scheme but `file:` (`inline_preload`), a `data:` URL among them, which runs before the tests and
+  can write the report, as jest's `--config` given JSON text is;
   `--test-update-snapshots` (which rewrites a failing snapshot so that it passes); and
   `--test-rerun-failures` (which reports as passed, unrun, every test the state file it names says
   passed before). Node reads an option written with `_` as with `-`, and after the files under
@@ -75,9 +74,10 @@ steers the report; it is `NEVER_ENDS` (`not proven`), naming the option, read as
 are, and a refusal in the same command wins.
 
 `-r`/`--require`, `--import` and `--loader` are free (TypeScript through `tsx`, Plug'n'Play's
-`.pnp.cjs`) for a value in one of the three forms `preload_form` reads; where one is given a path
-or a `file:` URL rather than a package's name, that file is named among the receipt's
-configuration files by its realpath.
+`.pnp.cjs`) but for code the command spells, above; where one is given a path or an absolute
+`file:` URL whose reading is not in doubt, that file is named among the receipt's configuration
+files by its realpath (`_preloaded_file`), and any other value runs as it is, unnamed: the name is
+the receipt's convenience, and a file in the tree is the bound's.
 
 Each reader follows the runner's own parser, measured on the pinned version: jest's yargs (a short
 option in a cluster takes the rest of the word as its value after a `=`, a character other than a
@@ -876,7 +876,7 @@ def _node_entry_refused(options: Sequence[str]) -> str | None:
         if name in _NODE_INLINE_CODE or name.startswith(_NODE_TEST_RUNNER) or name in _NODE_REFUSED:
             return name
         preload = name in _NODE_PRELOADS or name == _NODE_PRELOAD_LETTER
-        if preload and value is not None and preload_form(value, name) is None:
+        if preload and value is not None and inline_preload(value):
             return name
     return None
 
@@ -1083,58 +1083,37 @@ _FILE_SCHEME = "file"
 # path starts.
 _LOCAL_HOSTS = frozenset({"", "localhost"})
 _ROOT = "/"
-# A package's bare name with an optional subpath, as npm spells one (`tsx`, `@scope/name`,
-# `ts-node/register`), none of whose segments is `.` or `..` (`_DOT_SEGMENTS`).
-_PACKAGE_NAME = re.compile(r"(@[A-Za-z0-9~][\w.~-]*/)?[A-Za-z0-9~][\w.~-]*(/[\w.~@-]+)*")
-_DOT_SEGMENTS = frozenset({".", ".."})
-# The three forms a preload option's value is accepted in (`preload_form`).
-PRELOAD_PATH = "path"
-PRELOAD_FILE_URL = "file-url"
-PRELOAD_PACKAGE = "package"
-# The preloads node reads as ES modules, whose path form it reads as a URL relative to the run's
-# directory, so that a `%` escape, a `?`, a `#`, a `\\` or a control character changes which
-# file it names; and the only characters such a path is accepted with, a closed list.
-_ESM_PRELOADS = frozenset({"--import", "--loader", "--experimental-loader"})
-_ESM_PATH_CHARACTERS = frozenset(
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-/@+~"
-)
+# The characters that make a path's reading ambiguous: node reads an ES module preload's path as a
+# URL, where `%`, `?` and `#` change the file it names, and a `\\` or a control character is read
+# differently again. A path holding one is not named; it runs as it is.
+_AMBIGUOUS = frozenset("%?#\\") | frozenset(map(chr, range(32))) | {chr(127)}
 
 
-def preload_form(value: str, option: str) -> str | None:
-    """Which of the three forms a preload option's value (`-r`, `--require`, `--import`,
-    `--loader`, `--experimental-loader`) is in, the one closed reader of it: a path node reads as a
-    file, starting `/`, `./` or `../` (`PRELOAD_PATH`); a `file:` URL of this machine with an
-    absolute path (`PRELOAD_FILE_URL`); or a package's bare name with an optional subpath, no
-    segment of it `.` or `..` (`PRELOAD_PACKAGE`), which resolves through `node_modules`, the
-    bound's. `None` for any other value -- a schemeless one with a `.` or `..` segment, a
-    relative `file:` URL or another host's, `data:` or any other scheme, an empty one -- which is
-    refused: it is code of the command's own, or a file read in a way this reader does not
-    follow. So is a path form given to `option`, an ES module preload (`--import`, `--loader`,
-    `--experimental-loader`), which node reads as a URL, that holds a character outside
-    `A-Za-z0-9 . _ - / @ + ~`; `-r` and `--require` read the path as it is spelled, and keep it."""
-    if value.startswith(_PATH_STARTS):
-        if option in _ESM_PRELOADS and not set(value) <= _ESM_PATH_CHARACTERS:
-            return None
-        return PRELOAD_PATH
-    url = urlsplit(value)
-    if url.scheme == _FILE_SCHEME:
-        local = url.netloc in _LOCAL_HOSTS
-        return PRELOAD_FILE_URL if local and url.path.startswith(_ROOT) else None
-    if _PACKAGE_NAME.fullmatch(value) and not _DOT_SEGMENTS & set(value.split("/")):
-        return PRELOAD_PACKAGE
-    return None
+def inline_preload(value: str) -> bool:
+    """Whether a preload option's value (`-r`, `--require`, `--import`, `--loader`,
+    `--experimental-loader`) is code the command spells: a URL of any scheme but `file:`, a
+    `data:` URL among them, which node runs before the tests and which can write the report, as
+    jest's `--config` given JSON text can. The only refusal of a preload: every other value runs
+    as it is."""
+    scheme = urlsplit(value).scheme
+    return bool(scheme) and scheme != _FILE_SCHEME
 
 
-def _preloaded_file(given: str, option: str, cwd: Path) -> str | None:
-    """The realpath of the file a preload option's value names: a path, read from `cwd`, or a
-    `file:` URL's path, percent-decoded as `url2pathname` reads one on POSIX; `None` for a
-    package's name, and for a value `preload_form` refuses."""
-    form = preload_form(given, option)
-    if form == PRELOAD_PATH:
-        return os.path.realpath(cwd / given)
-    if form == PRELOAD_FILE_URL:
-        return os.path.realpath(unquote(urlsplit(given).path))
-    return None
+def _preloaded_file(given: str, cwd: Path) -> str | None:
+    """The realpath of the file a preload option's value names, where its reading is not in
+    doubt: a path starting `/`, `./` or `../` with none of `_AMBIGUOUS` in it, read from `cwd`;
+    an absolute `file:` URL of this machine, its path percent-decoded. `None` for anything else
+    -- a package's name, a relative `file:` URL or another host's, a path holding `%`, `?`, `#`,
+    `\\` or a control character -- which is not named: naming is the receipt's convenience, no
+    verdict reads it, and a file in the tree is the bound's."""
+    if given.startswith(_PATH_STARTS):
+        return None if _AMBIGUOUS & set(given) else os.path.realpath(cwd / given)
+    url = urlsplit(given)
+    if url.scheme != _FILE_SCHEME or url.netloc not in _LOCAL_HOSTS:
+        return None
+    if not url.path.startswith(_ROOT):
+        return None
+    return os.path.realpath(unquote(url.path))
 
 
 def node_preloaded(words: Sequence[str], cwd: Path) -> tuple[str, ...]:
@@ -1152,7 +1131,7 @@ def node_preloaded(words: Sequence[str], cwd: Path) -> tuple[str, ...]:
             given = value if equals else _next(options, index)
         else:
             continue
-        named = _preloaded_file(given, name, cwd) if given is not None else None
+        named = _preloaded_file(given, cwd) if given is not None else None
         if named is not None:
             found.append(named)
     return tuple(found)
@@ -1161,10 +1140,9 @@ def node_preloaded(words: Sequence[str], cwd: Path) -> tuple[str, ...]:
 def node_refused(words: Sequence[str]) -> str | None:
     """The first word of `words` (the words after `node`) on node's closed list, by its name,
     never its value; `None` where none is: the reporters, the file loaders, code the command
-    spells (`-e`, `-p`), and a preload given a value in none of `preload_form`'s forms. Every
-    word before a
-    `--` is read, a file's name among them: under `--test` node reads an option written after the
-    files too."""
+    spells (`-e`, `-p`, and a preload given a URL of a scheme but `file:`, `inline_preload`).
+    Every word before a `--` is read, a file's name among them: under `--test` node reads an
+    option written after the files too."""
     options = _options(words)
     for index, word in enumerate(options):
         name = _node_name(word)
@@ -1173,7 +1151,7 @@ def node_refused(words: Sequence[str]) -> str | None:
         if name in _NODE_PRELOADS or name == _NODE_PRELOAD_LETTER:
             _, equals, value = word.partition("=")
             given = value if equals else _next(options, index)
-            if given is not None and preload_form(given, name) is None:
+            if given is not None and inline_preload(given):
                 return name
     return None
 
