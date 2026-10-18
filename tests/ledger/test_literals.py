@@ -113,9 +113,13 @@ def test_the_ledger_prints_what_it_printed_before_the_list_field(
     argv: list[str],
     json_output: bool,
 ) -> None:
-    # Mutation (oracle): `mutations/`'s "the stale index's finding drops its remedy" ->
-    # check-broken's `--json` case, whose detail carries the remedy; the text line carries labels
-    # only.
+    # Mutations (oracle), one or two cases each: `mutations/`'s "the stale index's finding drops its
+    # remedy" -> check-broken's `--json` case, whose detail carries the remedy, the text line
+    # carrying labels only; "bugs new names its entry by its absolute path" -> new's text cases;
+    # "bugs new's --json drops its warning" -> new's `--json` cases; "bugs check's clean line says
+    # less" -> check-clean; "bugs check passes a ledger with findings" -> check-broken's exit code;
+    # "bugs renumber's line names no void pointer" -> renumber's text; "bugs renumber's --json
+    # drops its unswept files" -> renumber's `--json`.
     stem = f"{case}.json" if json_output else case
     _, today, (code, out, err) = on_one_day(
         tmp_path, variant, [*argv, "--json"] if json_output else argv
@@ -139,7 +143,8 @@ def test_new_writes_the_entry_it_wrote(tmp_path: Path, case: str) -> None:
 @needs_git
 def test_renumber_leaves_the_files_it_left(tmp_path: Path) -> None:
     # The moved entry, the void pointer left at its old number, and the one entry the sweep
-    # rewrites: BR-003 names BR-002 in its title, its `related` list and its body.
+    # rewrites: BR-003 names BR-002 in its title, its `related` list and its body. Mutation
+    # (oracle): `mutations/`'s "renumber's void pointer relates to nothing" -> the void literal.
     root, today, _ = on_one_day(tmp_path, "clean", ARGV["renumber"])
     bugs = root / "docs" / "bugs"
     for name, expected in (
@@ -152,6 +157,7 @@ def test_renumber_leaves_the_files_it_left(tmp_path: Path) -> None:
 
 @needs_git
 def test_the_index_is_the_one_it_rendered(tmp_path: Path) -> None:
+    # Mutation (oracle): `mutations/`'s "the index stops counting a section's entries".
     root, today, _ = on_one_day(tmp_path, "clean", ARGV["new"])
     index = (root / "docs" / "bug-reports.md").read_text(encoding="utf-8")
     assert index == literal("index.md", today)

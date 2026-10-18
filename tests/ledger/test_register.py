@@ -546,7 +546,9 @@ def test_what_new_writes_and_renumber_leaves_reads_back_through_the_entry_reader
         assert entry.value(key), key
     assert {key: entry.value(key) for key in values} == values
     # No writer writes a list: the scaffold reads each one empty, and reads one back once a line
-    # for it is added to the frontmatter.
+    # for it is added to the frontmatter. Mutations (oracle): `mutations/`'s "an entry carries
+    # none of its lists" -> no list read; "the list reader ends an item at a comma inside its
+    # quotes" -> the read-back refused.
     assert entry.lists == {key: () for key in schema.lists}
     head, separator, body = scaffold.partition("\n---\n")
     argv = ("a: b", "c, d")

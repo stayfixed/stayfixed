@@ -67,17 +67,24 @@ def test_a_regression_reads_as_its_argv() -> None:
         entry.value("regression")
 
 
-@pytest.mark.parametrize("raw", ["", "[]", "[ ]"])
+@pytest.mark.parametrize("raw", ["", "[]", "[ ]"], ids=["bare", "brackets", "spaced"])
 def test_an_empty_regression_is_no_regression(raw: str) -> None:
+    # Mutations (oracle): `mutations/`'s "the list reader refuses an empty value" -> `bare`;
+    # "the list reader refuses an empty list" -> `brackets` and `spaced`; "the list reader takes no
+    # space after its opening bracket" -> `spaced`.
     assert parse(ENTRY.format(regression=raw)).lists == {"regression": ()}
 
 
 def test_a_regression_left_out_is_no_regression() -> None:
+    # Mutations (oracle): `mutations/`'s "the list reader refuses an empty value" -> refused as a
+    # shape; "an entry carries none of its lists" -> the mapping is empty, not one empty list.
     assert parse(ENTRY.replace("regression: {regression}\n", "")).lists == {"regression": ()}
 
 
 def test_escapes_read_as_titles_read_them() -> None:
     # The items go through the reader a quoted title goes through, so the two escapes are one rule.
+    # Mutation (oracle): `mutations/`'s "the list reader skips one character after a backslash" ->
+    # the escaped quote closes the first item.
     entry = parse(ENTRY.format(regression='["a\\"b", "c\\\\"]'))
     assert entry.lists["regression"] == ('a"b', "c\\")
 
@@ -106,12 +113,15 @@ def test_two_entries_that_differ_only_in_their_regression_are_two_values() -> No
 )
 def test_a_malformed_regression_is_refused_in_its_own_words(raw: str, constant: str) -> None:
     """Measured against PyYAML 6.0.2 on 2026-10-18, since the frontmatter promises a subset of
-    YAML and the repository carries no YAML parser, so the measurement is the record: it reads
-    every list this grammar accepts to the same items (a bare `regression:` to null, which this
-    reader takes for the empty list), and refuses the tab separator, the control character and
-    DEL, the text after `]`, the unclosed list and the unescaped quote. The bare item, the trailing
-    comma, the quoted scalar and the empty item it reads; this grammar refuses them, because an
-    argv written any of those ways is one a reader could take for another.
+    YAML and the repository carries no YAML parser, so the measurement is the record. Of the
+    cases measured, it reads the argv, the empty and spaced lists and the escapes in this file to
+    the same items (a bare `regression:` to null, which this reader takes for the empty list), and
+    refuses the tab separator, a control character below U+0020 and DEL, the text after `]`, the
+    unclosed list and the unescaped quote. The bare item, the trailing comma, the quoted scalar
+    and the empty item it reads; this grammar refuses them, because an argv written any of those
+    ways is one a reader could take for another. A control character from U+0080 to U+009F
+    (`\x80`, `\x9b`) passes this grammar, which refuses only those below U+0020 and DEL, and
+    PyYAML refuses it.
     """
     # Mutations (oracle): `mutations/`'s "the list reader takes a tab for a separator" -> the tab
     # case reads; "the list reader accepts an empty item" -> `empty-item` reads; "the list reader
@@ -119,7 +129,9 @@ def test_a_malformed_regression_is_refused_in_its_own_words(raw: str, constant: 
     # after its closing bracket" -> `text-after`, `unclosed-list` and `unescaped-quote` read; "the
     # list reader takes a bare item" -> `bare-item` reads; "the list reader takes a value with no
     # opening bracket" -> `wrong-opening-bracket` reads; "the list reader reads an unterminated
-    # item as an empty one" -> `unterminated-item` says `EMPTY_ITEM`.
+    # item as an empty one" -> `unterminated-item` says `EMPTY_ITEM`; "the list reader takes a
+    # trailing comma" -> `trailing-comma` reads; "the list reader reads a lone quoted value as one
+    # item" -> `no-brackets` reads.
     with pytest.raises(LedgerError) as caught:
         parse(ENTRY.format(regression=raw))
     assert str(caught.value) == constant.format(where=quoted(PATH.as_posix()), key="regression")
@@ -136,6 +148,7 @@ def with_regression(root: Path, name: str, regression: str) -> str:
 
 @needs_git
 def test_bugs_check_reports_a_malformed_regression_as_unreadable(tmp_path: Path) -> None:
+    # Mutation (oracle): `mutations/`'s "the list reader takes a bare item" -> the check passes.
     root = ledger_copy(tmp_path)
     with_regression(root, "BR-004.md", "[pytest]")
     code, out, _ = cli(root, tmp_path, "bugs", "check")
@@ -156,6 +169,7 @@ def test_bugs_check_reports_a_malformed_regression_as_unreadable(tmp_path: Path)
 
 @needs_git
 def test_an_entry_with_a_regression_passes_bugs_check(tmp_path: Path) -> None:
+    # Mutation (oracle): `mutations/`'s "the bug ledger declares no list" -> `unreadable-entry`.
     root = ledger_copy(tmp_path)
     with_regression(root, "BR-001.md", '["pytest", "-k", "total and not slow"]')
     assert cli(root, tmp_path, "bugs", "check") == (
@@ -167,6 +181,8 @@ def test_an_entry_with_a_regression_passes_bugs_check(tmp_path: Path) -> None:
 
 @needs_git
 def test_renumber_carries_a_regression_byte_for_byte(tmp_path: Path) -> None:
+    # Mutation (oracle): `mutations/`'s "the bug ledger declares no list" -> the move refuses the
+    # entry.
     root = ledger_copy(tmp_path)
     text = with_regression(root, "BR-002.md", '["pytest", "tests/t.py::test[1,2]", "-k", "a, b"]')
     code, _, _ = cli(root, tmp_path, "bugs", "renumber", "BR-002", "BR-009")
@@ -253,6 +269,9 @@ def test_a_list_key_is_held_to_what_reads_it(changes: dict[str, Any], problem: s
 
 
 def test_the_bug_ledger_declares_regression_as_its_one_list() -> None:
+    # Mutations (oracle): `mutations/`'s "the bug ledger declares no list" -> the first
+    # assertion; "the bug ledger's regression key comes before related" -> the second; "a list
+    # key is read as a scalar again" -> the last two.
     assert BUG_SCHEMA.lists == ("regression",)
     assert BUG_SCHEMA.keys[-2:] == ("related", "regression")
     assert "regression" not in BUG_SCHEMA.scalar_keys

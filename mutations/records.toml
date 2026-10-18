@@ -3622,7 +3622,10 @@ name = "the list reader ends an item at a comma inside its quotes"
 file = "src/stayfixed/ledger/entries.py"
 before = '''        if raw[index] == '"':'''
 after = '''        if raw[index] in '",':'''
-reddens = ["tests/ledger/test_list_field.py::test_a_regression_reads_as_its_argv"]
+reddens = [
+  "tests/ledger/test_list_field.py::test_a_regression_reads_as_its_argv",
+  "tests/ledger/test_register.py::test_what_new_writes_and_renumber_leaves_reads_back_through_the_entry_reader[default-bug_register]",
+]
 
 [[mutation]]
 name = "the list reader takes a tab for a separator"
@@ -3674,6 +3677,7 @@ after = '''        if raw[index : index + 1] != '"':
             raw = f'{raw[:index]}"{raw[index:end]}"{raw[end:]}''''
 reddens = [
   "tests/ledger/test_list_field.py::test_a_malformed_regression_is_refused_in_its_own_words[bare-item]",
+  "tests/ledger/test_list_field.py::test_bugs_check_reports_a_malformed_regression_as_unreadable",
 ]
 
 [[mutation]]
@@ -3718,6 +3722,7 @@ after = "        return self.keys"
 reddens = [
   "tests/ledger/test_list_field.py::test_a_regression_reads_as_its_argv",
   "tests/ledger/test_register.py::test_what_new_writes_and_renumber_leaves_reads_back_through_the_entry_reader[default-bug_register]",
+  "tests/ledger/test_list_field.py::test_the_bug_ledger_declares_regression_as_its_one_list",
 ]
 
 [[mutation]]
@@ -3728,6 +3733,9 @@ after = "    lists=(),"
 reddens = [
   "tests/ledger/test_list_field.py::test_a_regression_reads_as_its_argv",
   "tests/ledger/test_list_field.py::test_the_bug_ledger_declares_regression_as_its_one_list",
+  "tests/ledger/test_list_field.py::test_an_entry_with_a_regression_passes_bugs_check",
+  "tests/ledger/test_list_field.py::test_renumber_carries_a_regression_byte_for_byte",
+  "tests/ledger/test_entries.py::test_the_writers_and_the_reader_agree_on_the_key_set",
 ]
 
 [[mutation]]
@@ -3791,3 +3799,171 @@ file = "src/stayfixed/ledger/register.py"
 before = "        if key in shown:"
 after = "        if False:"
 reddens = ["tests/ledger/test_list_field.py::test_a_list_key_is_held_to_what_reads_it[column]"]
+
+# The list reader's empty and escape paths, and the bug ledger's declaration of its list.
+[[mutation]]
+name = "the list reader skips one character after a backslash"
+file = "src/stayfixed/ledger/entries.py"
+before = '''
+        if raw[index] == "\\":
+            index += 2'''
+after = '''
+        if raw[index] == "\\":
+            index += 1'''
+reddens = [
+  "tests/ledger/test_list_field.py::test_escapes_read_as_titles_read_them",
+  "tests/ledger/test_entries.py::test_parse_entry_reads_every_field",
+]
+
+[[mutation]]
+name = "the list reader refuses an empty value"
+file = "src/stayfixed/ledger/entries.py"
+before = """
+    if not raw:
+        return ()
+    if not raw.startswith("["):"""
+after = """
+    if not raw.startswith("["):"""
+reddens = [
+  "tests/ledger/test_list_field.py::test_an_empty_regression_is_no_regression[bare]",
+  "tests/ledger/test_list_field.py::test_a_regression_left_out_is_no_regression",
+]
+
+[[mutation]]
+name = "the list reader takes no space after its opening bracket"
+file = "src/stayfixed/ledger/entries.py"
+before = "    index = _past_spaces(raw, 1)"
+after = "    index = 1"
+reddens = ["tests/ledger/test_list_field.py::test_an_empty_regression_is_no_regression[spaced]"]
+
+[[mutation]]
+name = "the list reader refuses an empty list"
+file = "src/stayfixed/ledger/entries.py"
+before = '    more = raw[index : index + 1] != "]"'
+after = "    more = True"
+reddens = [
+  "tests/ledger/test_list_field.py::test_an_empty_regression_is_no_regression[brackets]",
+  "tests/ledger/test_list_field.py::test_an_empty_regression_is_no_regression[spaced]",
+]
+
+# A YAML reader takes `["a",]`; this one stops at the `]` after the comma.
+[[mutation]]
+name = "the list reader takes a trailing comma"
+file = "src/stayfixed/ledger/entries.py"
+before = """
+        if more:
+            index = _past_spaces(raw, index + 1)"""
+after = """
+        if more:
+            index = _past_spaces(raw, index + 1)
+            more = raw[index : index + 1] != "]\""""
+reddens = [
+  "tests/ledger/test_list_field.py::test_a_malformed_regression_is_refused_in_its_own_words[trailing-comma]",
+]
+
+# A YAML reader takes `"a"` as a string; this one takes it for a list of that one item.
+[[mutation]]
+name = "the list reader reads a lone quoted value as one item"
+file = "src/stayfixed/ledger/entries.py"
+before = """
+    if not raw.startswith("["):
+        raise shape"""
+after = """
+    if not raw.startswith("["):
+        return (_unquote(raw, key=key, where=where),)"""
+reddens = [
+  "tests/ledger/test_list_field.py::test_a_malformed_regression_is_refused_in_its_own_words[no-brackets]",
+]
+
+[[mutation]]
+name = "an entry carries none of its lists"
+file = "src/stayfixed/ledger/entries.py"
+before = "        lists=lists,"
+after = ""
+reddens = [
+  "tests/ledger/test_list_field.py::test_a_regression_left_out_is_no_regression",
+  "tests/ledger/test_register.py::test_what_new_writes_and_renumber_leaves_reads_back_through_the_entry_reader[default-bug_register]",
+]
+
+[[mutation]]
+name = "the bug ledger's regression key comes before related"
+file = "src/stayfixed/ledger/register.py"
+before = """
+        "related",
+        "regression","""
+after = """
+        "regression",
+        "related","""
+reddens = ["tests/ledger/test_list_field.py::test_the_bug_ledger_declares_regression_as_its_one_list"]
+
+# Each case of the ledger's literals, by a line that prints or writes its bytes.
+[[mutation]]
+name = "bugs new names its entry by its absolute path"
+file = "src/stayfixed/ledger/commands.py"
+before = '    summary = f"filed {relative}" + (f"; {filed.warning}" if filed.warning else "")'
+after = '    summary = f"filed {filed.path}" + (f"; {filed.warning}" if filed.warning else "")'
+reddens = [
+  "tests/ledger/test_literals.py::test_the_ledger_prints_what_it_printed_before_the_list_field[text-new]",
+  "tests/ledger/test_literals.py::test_the_ledger_prints_what_it_printed_before_the_list_field[text-new-bare]",
+]
+
+[[mutation]]
+name = "bugs new's --json drops its warning"
+file = "src/stayfixed/ledger/commands.py"
+before = '    return Result(summary, {"id": filed.identifier, "path": relative, "warning": filed.warning})'
+after = '    return Result(summary, {"id": filed.identifier, "path": relative})'
+reddens = [
+  "tests/ledger/test_literals.py::test_the_ledger_prints_what_it_printed_before_the_list_field[json-new]",
+  "tests/ledger/test_literals.py::test_the_ledger_prints_what_it_printed_before_the_list_field[json-new-bare]",
+]
+
+[[mutation]]
+name = "bugs check's clean line says less"
+file = "src/stayfixed/ledger/commands.py"
+before = '_OK = "OK: bug ledger entries, index freshness, and identifier references"'
+after = '_OK = "OK"'
+reddens = [
+  "tests/ledger/test_literals.py::test_the_ledger_prints_what_it_printed_before_the_list_field[text-check-clean]",
+  "tests/ledger/test_literals.py::test_the_ledger_prints_what_it_printed_before_the_list_field[json-check-clean]",
+]
+
+[[mutation]]
+name = "bugs check passes a ledger with findings"
+file = "src/stayfixed/ledger/commands.py"
+before = '    return Result(f"FAIL: {len(found)} ledger problem(s): {labels(found)}", data, exit_code=1)'
+after = '    return Result(f"FAIL: {len(found)} ledger problem(s): {labels(found)}", data)'
+reddens = [
+  "tests/ledger/test_literals.py::test_the_ledger_prints_what_it_printed_before_the_list_field[text-check-broken]",
+]
+
+[[mutation]]
+name = "bugs renumber's line names no void pointer"
+file = "src/stayfixed/ledger/commands.py"
+before = '    return Result(f"{args.old} -> {args.new}; a void pointer remains at {void}", data)'
+after = '    return Result(f"{args.old} -> {args.new}", data)'
+reddens = [
+  "tests/ledger/test_literals.py::test_the_ledger_prints_what_it_printed_before_the_list_field[text-renumber]",
+]
+
+[[mutation]]
+name = "bugs renumber's --json drops its unswept files"
+file = "src/stayfixed/ledger/commands.py"
+before = '        "unswept": [asdict(u) for u in result.unswept],'
+after = ""
+reddens = [
+  "tests/ledger/test_literals.py::test_the_ledger_prints_what_it_printed_before_the_list_field[json-renumber]",
+]
+
+[[mutation]]
+name = "renumber's void pointer relates to nothing"
+file = "src/stayfixed/ledger/write.py"
+before = '        "related": f"related: [{new}]",'
+after = '        "related": "related:",'
+reddens = ["tests/ledger/test_literals.py::test_renumber_leaves_the_files_it_left"]
+
+[[mutation]]
+name = "the index stops counting a section's entries"
+file = "src/stayfixed/ledger/index.py"
+before = '        parts.append(f"\n## {section.heading} ({len(selected)})\n\n")'
+after = '        parts.append(f"\n## {section.heading}\n\n")'
+reddens = ["tests/ledger/test_literals.py::test_the_index_is_the_one_it_rendered"]

@@ -248,9 +248,10 @@ def test_an_empty_optional_field_is_written_with_no_trailing_space() -> None:
 
 def test_the_writers_and_the_reader_agree_on_the_key_set() -> None:
     # The schema's keys are the reader's whole vocabulary; its statuses must each have an index
-    # section, which `Schema` refuses to be built without. No mutation: a key added to one side
-    # and not the other reddens `test_parse_entry_reads_every_field` or the render test, which is
-    # the point.
+    # section, which `Schema` refuses to be built without. No mutation for the key set: a key
+    # added to one side and not the other reddens `test_parse_entry_reads_every_field` or the
+    # render test, which is the point. Mutation (oracle) for the list: `mutations/`'s "the bug
+    # ledger declares no list".
     assert set(BUG_SCHEMA.keys) == {
         "id",
         "title",

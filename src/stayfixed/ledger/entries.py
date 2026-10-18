@@ -44,6 +44,9 @@ _CONTROL_CHARACTER = re.compile(r"[\x00-\x1f\x7f]")
 
 # The refusals of a list key's value. `{where}` is the entry's path as `_where` names it, `{key}`
 # the list key: both the reader's own, so nothing a repository wrote reaches the line unescaped.
+# Their anchor is the entry file, which anyone who can commit writes, and that author already
+# controls the whole argv, so these refusals and `_CONTROL_CHARACTER` report validity (an argv a
+# later runner can execute as written) and are no trust boundary.
 LIST_SHAPE = '{where}: `{key}` must be an inline list of double-quoted items, like `["a", "b"]`'
 EMPTY_ITEM = "{where}: `{key}` holds an empty item"
 CONTROL_IN_ITEM = "{where}: `{key}` holds an item with a control character"
