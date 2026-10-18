@@ -2318,7 +2318,10 @@ name = "a node that runs no script it is handed is read as running the runner's 
 file = "src/stayfixed/profiles/javascript/adapters.py"
 before = "    if any(_node_name(word) in _NODE_RUNS_NO_SCRIPT for word in options if word.startswith(\"-\")):"
 after = "    if False:"
-reddens = ["tests/prove/test_javascript.py::test_npm_test_is_not_recognised[command12]"]
+reddens = [
+  "tests/prove/test_javascript.py::test_npm_test_is_not_recognised[command13]",
+  "tests/prove/test_javascript.py::test_npm_test_is_not_recognised[command16]",
+]
 
 # The file node is handed must be the entry its package's `bin` names.
 [[mutation]]
