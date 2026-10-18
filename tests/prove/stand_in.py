@@ -69,7 +69,8 @@ _EVENTS = {
 class StandIn:
     """`RunnerAdapter` for the word `stand-in`. `seen` collects each `plan` call's `root` and
     `scratch`, so a test can ask what the run handed it and whether the scratch is gone,
-    `launches` each call's `launch`, and `environs` each call's `environ`."""
+    `launches` each call's `launch`, `environs` each call's `environ`, and `cwds` each call's
+    `cwd`."""
 
     name: str = NAME
     forging: frozenset[str] = frozenset({"FORGE"})
@@ -87,6 +88,7 @@ class StandIn:
     seen: list[tuple[Path, Path]] = field(default_factory=list)
     launches: list[tuple[str, ...]] = field(default_factory=list)
     environs: list[dict[str, str]] = field(default_factory=list)
+    cwds: list[Path] = field(default_factory=list)
 
     def recognises(self, command: Sequence[str]) -> bool:
         return bool(command) and Path(command[0]).name == NAME
@@ -104,6 +106,7 @@ class StandIn:
         self.seen.append((root, scratch))
         self.launches.append(tuple(launch))
         self.environs.append(dict(environ))
+        self.cwds.append(cwd)
         if self.refuse is not None:
             return Refused(self.refuse)
         if self.unresolved is not None:

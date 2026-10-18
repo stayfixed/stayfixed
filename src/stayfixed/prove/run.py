@@ -1,11 +1,13 @@
 """`stayfixed prove`: run a test command where it is typed, count only its runner's report, and
 say what that proves.
 
-What `prove` does, in order. The project it answers for is the git top-level of the directory the
-command is typed in, or that directory itself outside a repository; the command runs in the
-directory, never in the top-level. `guards.api.read_launch` reads the command past its
-assignments, `env` and `uv run …` (the launch), and the first runner adapter that recognises what
-is left plans the run. Every `NAME=value` the launch holds, wherever it stands, is an assignment
+What `prove` does, in order. `guards.api.read_launch` reads the command past its assignments,
+`env` and `uv run …` (the launch), and the first runner adapter that recognises what is left plans
+the run. The command is launched in the directory it is typed in, never in the top-level, and is
+judged in the directory it runs in (`moved`): the one its launcher moves it to (`uv run
+--directory`, `UV_WORKING_DIR`), else that same directory. The adapter plans from it, the project
+it answers for is its git top-level, or the directory itself outside a repository, and the
+receipt names it. Every `NAME=value` the launch holds, wherever it stands, is an assignment
 of the command: one of a variable in the adapter's `forging` set is `refused` before anything is
 planned. The run's environment is built once: the caller's, less every inherited variable of the
 adapter's `forging` set, then the command's own assignments in order, the last of two for one name
@@ -76,10 +78,10 @@ from typing import IO, BinaryIO, TextIO
 
 from stayfixed import fsops, processes
 from stayfixed.gitenv import checkout_root
-from stayfixed.guards.api import Launch, read_launch
+from stayfixed.guards.api import Launch, read_launch, run_directory
 from stayfixed.printed import clipped, printable
 from stayfixed.profiles.adapters import shipped_adapters
-from stayfixed.profiles.programs import launched
+from stayfixed.profiles.programs import found, launched
 from stayfixed.profiles.runners import (
     Plan,
     Refused,
@@ -186,8 +188,10 @@ class Receipt:
 
     `argv` is the command as given with every `NAME=value` and `--option=value` value replaced by
     `REDACTED`; a value passed as the word after its option is kept, since nothing tells it from an
-    operand. `detail` is where the step that stopped the run stopped: the variable assigned, the
-    option or word the runner's adapter refused, what the adapter looked for or was asked for
+    operand. `directory` is the directory the command was judged in: the one it runs in, where
+    its launcher moves it (`uv run --directory`), else the one it was typed in. `detail` is where
+    the step that stopped the run stopped: the variable assigned, the option or word the runner's
+    adapter refused, what the adapter looked for or was asked for
     where it could not plan the run, the `--junit` path the run did not write (`JUNIT_UNCHANGED`),
     or where a report stopped reading. `program` is the realpath of what ran, and `entry` the
     realpath of the file it ran as the runner where the program is an interpreter running one
@@ -205,6 +209,7 @@ class Receipt:
     reason: str
     detail: str
     argv: tuple[str, ...]
+    directory: str | None = None
     runner: str | None = None
     program: str | None = None
     entry: str | None = None
@@ -517,12 +522,14 @@ def _counted(plan: Plan) -> tuple[Counts | None, str | None, str, str | None]:
 @dataclass(frozen=True)
 class _Run:
     """One run of `prove` once its command is read and its environment built: the command as typed,
-    read into its parts and as the receipt shows it, where it runs and for which project, the run's
-    environment and the inherited variables it lost, and how it is run and counted."""
+    read into its parts and as the receipt shows it, where it was typed (where the launch is made),
+    the directory it is judged in (`moved`) and for which project, the run's environment and the
+    inherited variables it lost, and how it is run and counted."""
 
     typed: Launch
     shown: tuple[str, ...]
     cwd: Path
+    directory: Path
     root: Path
     env: Mapping[str, str]
     scrubbed: tuple[str, ...]
@@ -548,6 +555,24 @@ def environment(
     return env, tuple(sorted(frozenset(environ) & forging))
 
 
+def moved(launch: Launch, cwd: Path, environ: Mapping[str, str]) -> tuple[Launch, Path]:
+    """`launch`, typed in `cwd` under `environ` (the run's environment), as the adapter is handed
+    it, and the directory its command is judged in: the one its launcher runs it in
+    (`guards.api.run_directory`), by its realpath, where that is a directory and the launcher's
+    program is found from `cwd`, as a shell finds it there. The launcher's first word is then
+    handed by the path it was found at, so that nothing looks for it from the directory it moves
+    to. Else `launch` as typed and `cwd`: a launcher that names no directory there, or is not
+    there itself, runs nothing, and the run is not started or fails as uv does."""
+    target = run_directory(launch.launcher, cwd, environ)
+    if target == cwd or not fsops.is_dir(target):
+        return launch, cwd
+    program = found(launch.launcher[0], cwd, environ)
+    if program is None:
+        return launch, cwd
+    handed = launch._replace(launcher=(str(program), *launch.launcher[1:]))
+    return handed, Path(os.path.realpath(target))
+
+
 def prove(
     argv: Sequence[str],
     *,
@@ -564,9 +589,10 @@ def prove(
     standard output holds the one object); without it, the runner's standard output is the
     caller's.
 
-    Given `junit`, a path read from `cwd`, no adapter is consulted: the command runs as typed and
-    its report is the JUnit file at that path, counted only where the run created or rewrote it
-    as a regular file (`JUNIT_UNCHANGED`), its runner marked not verified.
+    Given `junit`, a path read from the directory the command runs in (`moved`), no adapter is
+    consulted: the command runs as typed and its report is the JUnit file at that path, counted
+    only where the run created or rewrote it as a regular file (`JUNIT_UNCHANGED`), its runner
+    marked not verified.
 
     An adapter whose plan's program is not an absolute path is a defect in stayfixed, as a module
     that does not import is, and raises `ValueError`: a bare name would be found from stayfixed's
@@ -576,7 +602,6 @@ def prove(
     """
     given = tuple(argv)
     shown = redacted(given)
-    root = checkout_root(cwd) or cwd
     # `uv run -m pytest` reads as the launcher `uv run -m` and the command `pytest`.
     launch = read_launch(given, modules_as_programs=True)
     command = launch.command
@@ -587,22 +612,27 @@ def prove(
         else None
     )
     verified = junit is None
-    if adapter is None and (junit is None or not command):
-        return _receipt(_Outcome(unproven=NOT_RECOGNISED), shown, verified=verified)
     runner = adapter.name if adapter is not None else None
     assigned = assignments(launch.assignments)
     forging = adapter.forging if adapter is not None else frozenset()
+    env, scrubbed = environment(environ, forging, assigned)
+    launch, directory = moved(launch, cwd, env)
+    root = checkout_root(directory) or directory
+    if adapter is None and (junit is None or not command):
+        return _receipt(
+            _Outcome(unproven=NOT_RECOGNISED), shown, directory=directory, verified=verified
+        )
     forged = sorted(name for name in assigned if name in forging)
     if forged:
         return _receipt(
             _Outcome(refused=ASSIGNED_FORGING),
             shown,
             runner,
+            directory=directory,
             detail=", ".join(forged),
             verified=verified,
         )
-    env, scrubbed = environment(environ, forging, assigned)
-    run = _Run(launch, shown, cwd, root, env, scrubbed, timeout, echo, junit)
+    run = _Run(launch, shown, cwd, directory, root, env, scrubbed, timeout, echo, junit)
     # A Ctrl-C or a terminating signal anywhere from here on, the tree's state, the plan or the
     # reap as much as the wait, ends the run `not proven`, its scratch directory removed, and the
     # caller still records it: never an internal error.
@@ -610,35 +640,52 @@ def prove(
         with _signals_end_the_run():
             return _planned_and_proved(adapter, run)
     except (KeyboardInterrupt, _Signalled):
-        return _receipt(_Outcome(unproven=INTERRUPTED), shown, runner, verified=verified)
+        return _receipt(
+            _Outcome(unproven=INTERRUPTED), shown, runner, directory=directory, verified=verified
+        )
 
 
 def _planned_and_proved(adapter: RunnerAdapter | None, run: _Run) -> Receipt:
     if adapter is None:
         junit = run.junit
         unverified = (
-            _unverified(run.typed, run.cwd / junit, run.cwd, run.env) if junit is not None else None
+            _unverified(run.typed, run.directory / junit, run.directory, run.env)
+            if junit is not None
+            else None
         )
         if unverified is None:
-            return _receipt(_Outcome(unproven=NOT_STARTED), run.shown, verified=run.verified)
+            return _receipt(
+                _Outcome(unproven=NOT_STARTED),
+                run.shown,
+                directory=run.directory,
+                verified=run.verified,
+            )
         return _proved(None, unverified, run)
     scratch = Path(tempfile.mkdtemp(prefix="stayfixed-prove-"))
     try:
         planned = adapter.plan(
             run.typed.launcher,
             run.typed.command,
-            cwd=run.cwd,
+            cwd=run.directory,
             root=run.root,
             scratch=scratch,
             environ=run.env,
         )
         if isinstance(planned, Refused):
             return _receipt(
-                _Outcome(refused=planned.reason), run.shown, adapter.name, detail=planned.detail
+                _Outcome(refused=planned.reason),
+                run.shown,
+                adapter.name,
+                directory=run.directory,
+                detail=planned.detail,
             )
         if isinstance(planned, Unresolved):
             return _receipt(
-                _Outcome(unproven=planned.reason), run.shown, adapter.name, detail=planned.detail
+                _Outcome(unproven=planned.reason),
+                run.shown,
+                adapter.name,
+                directory=run.directory,
+                detail=planned.detail,
             )
         if planned.source is ReportSource.FILE and scratch not in planned.report.parents:
             raise ValueError(
@@ -670,6 +717,7 @@ def _proved(runner: str | None, plan: Plan, run: _Run) -> Receipt:
         run.shown,
         runner,
         plan,
+        directory=run.directory,
         program=program,
         detail=detail,
         before=before,
@@ -686,6 +734,7 @@ def _receipt(
     runner: str | None = None,
     plan: Plan | None = None,
     *,
+    directory: Path | None = None,
     program: str | None = None,
     detail: str = "",
     before: tree.TreeState | None = None,
@@ -703,6 +752,7 @@ def _receipt(
         reason=reason,
         detail=detail,
         argv=shown,
+        directory=str(directory) if directory is not None else None,
         runner=runner,
         program=program,
         entry=str(plan.entry) if plan is not None and plan.entry is not None else None,

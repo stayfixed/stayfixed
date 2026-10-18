@@ -23,12 +23,13 @@ import time
 import types
 from collections.abc import Iterator, Sequence
 from pathlib import Path
-from typing import TextIO
+from typing import Any, TextIO
 
 import pytest
 
 from stayfixed import processes
 from stayfixed.profiles import adapters
+from stayfixed.profiles.python.adapters import PytestAdapter
 from stayfixed.profiles.runners import ReportSource
 from stayfixed.prove import counts as counts_module
 from stayfixed.prove import run as run_module
@@ -413,6 +414,168 @@ def test_a_launcher_s_variable_is_any_variable(tmp_path: Path) -> None:
     environ = {**os.environ, "UV_ENV_FILE": "inherited"}
     got = run(tmp_path, "uv", "run", NAME, "--expect-env", "UV_ENV_FILE=inherited", environ=environ)
     assert (got.verdict, got.scrubbed) == (PROVED, ())
+
+
+# A stand-in for `uv run`, for the cases that run what the launcher launches: `run` and its
+# options read past, the directory `--directory` (spaced or with `=`) or else `UV_WORKING_DIR`
+# names changed to, exit 2 where it names none, as uv does, then the program run.
+FAKE_UV = """#!/bin/sh
+[ "$1" = run ] && shift
+to="${UV_WORKING_DIR:-}"
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --directory) to="$2"; shift 2 ;;
+    --directory=*) to="${1#--directory=}"; shift ;;
+    --) shift; break ;;
+    -*) shift ;;
+    *) break ;;
+  esac
+done
+if [ -n "$to" ]; then cd "$to" || exit 2; fi
+exec "$@"
+"""
+
+
+def program(path: Path, text: str) -> Path:
+    """An executable script at `path` holding `text`."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+    path.chmod(0o755)
+    return path
+
+
+def fake_uv(where: Path) -> Path:
+    """`FAKE_UV` as the `uv` in `where`."""
+    return program(where / "uv", FAKE_UV)
+
+
+def with_uv(uv: Path) -> dict[str, str]:
+    """The suite's environment, `uv`'s directory first on its `PATH`."""
+    return {**os.environ, "PATH": os.pathsep.join([str(uv.parent), os.environ.get("PATH", "")])}
+
+
+@pytest.mark.parametrize(
+    ("words", "assigned", "inherited"),
+    [
+        (["uv", "run", "--directory", "../other"], [], {}),
+        (["uv", "run", "--directory=../other"], [], {}),
+        (["uv", "--directory", "../other", "run", "--locked"], [], {}),
+        (["uv", "run"], ["UV_WORKING_DIR=../other"], {}),
+        (["uv", "run"], [], {"UV_WORKING_DIR": "../other"}),
+        (["uv", "run", "--directory", "../other"], [], {"UV_WORKING_DIR": "nowhere"}),
+        (["uv", "run", "--directory", "..", "uv", "run", "--directory", "other"], [], {}),
+    ],
+    ids=["spaced", "equals", "global", "assigned", "inherited", "over-the-variable", "nested"],
+)
+def test_the_command_is_judged_where_its_launcher_runs_it(
+    tmp_path: Path, words: list[str], assigned: list[str], inherited: dict[str, str]
+) -> None:
+    # `uv run --directory` and `UV_WORKING_DIR` move where the program runs (measured on uv
+    # 0.12.19, the option winning, a nested `uv run` reading its own from where the outer moved):
+    # the adapter plans from there, the project is that directory's top-level, and the receipt
+    # names it. The launch is still made where the command was typed, uv moving itself, and the
+    # launcher is handed by the path it was found at from there. Mutations (declared): the
+    # adapter handed the typed directory, the project read from it, the receipt naming it, uv's
+    # `--directory` or its variable not read, the launch made in the moved directory, the
+    # launcher handed as typed -> each case differs.
+    typed = repository(tmp_path / "typed")
+    other = repository(tmp_path / "other")
+    (other / "stand-in.toml").write_text("", encoding="utf-8")
+    uv = fake_uv(tmp_path / "bin")
+    adapter = StandIn()
+    environ = {**with_uv(uv), **inherited}
+    argv = [*assigned, *words, NAME, "--expect-cwd", str(typed)]
+    got = run(typed, *argv, adapter=adapter, environ=environ)
+    real = Path(os.path.realpath(other))
+    assert got.verdict == PROVED, got
+    assert adapter.cwds == [real]
+    assert [seen_root for seen_root, _ in adapter.seen] == [real]
+    assert got.directory == str(real)
+    assert got.commit == git(other, "rev-parse", "HEAD").strip()
+    assert got.configs == ("stand-in.toml",)
+    assert adapter.launches == [(str(uv), *words[1:])]
+
+
+@pytest.mark.parametrize(
+    ("words", "assigned", "on_path"),
+    [
+        (["uv", "run"], [], True),
+        (["uv", "run", "--project", "../other"], ["UV_PROJECT=../other"], True),
+        (["uv", "run", "--directory", "."], [], True),
+        # uv runs nothing where the directory is not there, or is no directory (exit 2, measured).
+        (["uv", "run", "--directory", "nowhere"], [], True),
+        (["uv", "run", "--directory", "file"], [], True),
+        (["uv", "run"], ["UV_WORKING_DIR="], True),
+        # A launcher that is not there runs nothing wherever it would move.
+        (["uv", "run", "--directory", "../other"], [], False),
+    ],
+    ids=["none", "project", "dot", "nowhere", "a-file", "empty-variable", "no-launcher"],
+)
+def test_a_launcher_that_moves_nowhere_leaves_the_command_where_it_was_typed(
+    tmp_path: Path, words: list[str], assigned: list[str], on_path: bool
+) -> None:
+    # `--project` and `UV_PROJECT` move no directory (measured on uv 0.12.19); a directory that
+    # names none, or a launcher that is not there, leaves the command judged where it was typed,
+    # and its launcher handed as typed. Mutation (declared): a directory that names none taken
+    # as the one the command runs in -> the adapter plans from it.
+    typed = tmp_path / "typed"
+    typed.mkdir()
+    (typed / "file").write_text("", encoding="utf-8")
+    (tmp_path / "other").mkdir()
+    uv = fake_uv(tmp_path / "bin")
+    environ = with_uv(uv) if on_path else {**os.environ, "PATH": str(tmp_path / "empty")}
+    adapter = StandIn()
+    got = run(typed, *assigned, *words, NAME, adapter=adapter, environ=environ)
+    assert got.verdict == PROVED, got
+    assert adapter.cwds == [typed]
+    assert got.directory == str(typed)
+    assert adapter.launches == [tuple(words)]
+
+
+def test_a_pytest_plan_behind_uv_s_directory_is_made_there(tmp_path: Path) -> None:
+    # The real pytest adapter, a stand-in uv that changes to the directory and a stand-in pytest
+    # that writes a green report: the plan is made from `sub`, so the file `-c` names is read
+    # there, and the receipt names `sub`. Mutation (declared): the adapter handed the typed
+    # directory -> `ci.ini` is read from it.
+    project = repository(tmp_path / "project")
+    sub = project / "sub"
+    sub.mkdir()
+    (sub / "ci.ini").write_text("[pytest]\n", encoding="utf-8")
+    uv = fake_uv(tmp_path / "bin")
+    green = '<testsuite><testcase name="a"/></testsuite>'
+    pytest_script = (
+        "#!/bin/sh\n"
+        'for word in "$@"; do case "$word" in\n'
+        f"  --junitxml=*) printf '%s' '{green}' > \"${{word#--junitxml=}}\" ;;\n"
+        "esac; done\n"
+    )
+    program(tmp_path / "bin" / "pytest", pytest_script)
+
+    class Recording:
+        def __init__(self, inner: PytestAdapter) -> None:
+            self.inner, self.name, self.forging = inner, inner.name, inner.forging
+            self.cwds: list[Path] = []
+
+        def recognises(self, command: Sequence[str]) -> bool:
+            return self.inner.recognises(command)
+
+        def plan(self, launch: Sequence[str], command: Sequence[str], **kwargs: Any) -> object:
+            self.cwds.append(kwargs["cwd"])
+            return self.inner.plan(launch, command, **kwargs)
+
+    adapter = Recording(PytestAdapter())
+    got = prove(
+        ["uv", "run", "--directory", "sub", "pytest", "-c", "ci.ini"],
+        cwd=project,
+        environ=with_uv(uv),
+        timeout=60,
+        adapters=[adapter],  # type: ignore[list-item]
+    )
+    real = Path(os.path.realpath(sub))
+    assert (got.verdict, got.counts) == (PROVED, Counts(1, 0, 0)), got
+    assert adapter.cwds == [real]
+    assert got.directory == str(real)
+    assert got.configs == ("sub/ci.ini",)
 
 
 def test_a_value_never_reaches_the_receipt(tmp_path: Path) -> None:

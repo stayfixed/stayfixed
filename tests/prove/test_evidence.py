@@ -47,6 +47,7 @@ from tests.ownerhome import as_owner_home
 from tests.prove.stand_in import NAME
 from tests.prove.test_command import prove_cli
 from tests.prove.test_junit_flag import REPORT, writer
+from tests.prove.test_run import fake_uv, with_uv
 
 GATE_BASE = f"""[stayfixed]
 version = "{stayfixed.__version__}"
@@ -185,6 +186,26 @@ def test_a_run_from_a_subdirectory_keys_the_repository(
     prove_cli(project / "packages" / "web", monkeypatch, "--", NAME)
     assert files() == [f"{project_key(project)}.jsonl"]
     assert len(records()) == 2
+
+
+@needs_git
+def test_a_run_its_launcher_moves_keys_the_project_it_moved_to(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `uv run --directory ../other`: the command is judged in `other`, so its record is that
+    # project's, and names the directory. Mutation (declared): the record keyed by the directory
+    # the command was typed in -> it is `typed`'s.
+    typed, other = tmp_path / "typed", tmp_path / "other"
+    for directory in (typed, other):
+        directory.mkdir()
+        git(directory, "init", "-q")
+    uv = fake_uv(tmp_path / "bin")
+    monkeypatch.setenv("PATH", with_uv(uv)["PATH"])
+    code, _, _ = prove_cli(typed, monkeypatch, "--", "uv", "run", "--directory", "../other", NAME)
+    assert code == 0
+    assert files() == [f"{project_key(other)}.jsonl"]
+    (kept,) = records()
+    assert kept["directory"] == os.path.realpath(other)
 
 
 def test_the_record_lives_under_the_database_home(

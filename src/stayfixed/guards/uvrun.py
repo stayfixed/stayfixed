@@ -3,12 +3,14 @@
 uv is one stack's launcher, and this module is where the shared scanner keeps it, so the scanner
 itself names no stack: the background guard and every profile's red-run hint read commands through
 the same unwrap (`tests/test_language_neutral.py` pardons this file for that reason). What it reads
-is uv's own option grammar, measured against uv; it never runs uv.
+is uv's own option grammar, measured against uv; it never runs uv. The same grammar says where
+the program runs (`run_directory`), for `prove`, which judges a command in that directory.
 """
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
+from pathlib import Path
 
 # `uv run --locked pytest`, the shape the README and the `attribute-failure` skill recommend:
 # `uv`, uv's global options, the word `run`, `run`'s options, then the program. The five tables
@@ -20,6 +22,10 @@ from collections.abc import Sequence
 # tables move with uv, and an option uv adds is under-reported until it is added here.
 _UV = "uv"
 _UV_RUN = "run"
+# The global option that moves the directory uv runs the program in, and the variable it reads
+# where no option names one (`run_directory`).
+_DIRECTORY = "--directory"
+WORKING_DIR = "UV_WORKING_DIR"
 _UV_GLOBAL_FLAGS = frozenset(
     {
         "-q",
@@ -144,8 +150,18 @@ def past_run(segment: Sequence[str], index: int, *, modules_as_programs: bool) -
     Before `run` only uv's global options are skipped; after it `run`'s too, `--` ends them,
     and the first word that is not an option is the program.
     """
+    walked = _walked(segment, index, modules_as_programs=modules_as_programs)
+    return None if walked is None else walked[0]
+
+
+def _walked(
+    segment: Sequence[str], index: int, *, modules_as_programs: bool
+) -> tuple[int, str | None] | None:
+    """`past_run`'s answer, and the directory `--directory` names among the words it reads past
+    (`None` where none does; the last where two do, which uv refuses)."""
     flags, valued = _UV_GLOBAL_FLAGS, _UV_GLOBAL_VALUED
     running = False
+    directory = None
     while index < len(segment):
         word = segment[index]
         if not running and word == _UV_RUN:
@@ -155,14 +171,48 @@ def past_run(segment: Sequence[str], index: int, *, modules_as_programs: bool) -
             index += 1
             continue
         if running and word == "--":
-            return index + 1
+            return index + 1, directory
         if not word.startswith("-") or word == "-":
-            return index if running else None
+            return (index, directory) if running else None
         width = _uv_option_width(word, flags, valued)
         if width is None:
             return None
+        name, equals, value = word.partition("=")
+        if name == _DIRECTORY:
+            directory = value if equals else _value(segment, index)
         index += width
-    return min(index, len(segment)) if running else None
+    return (min(index, len(segment)), directory) if running else None
+
+
+def _value(segment: Sequence[str], index: int) -> str | None:
+    """The word after `segment[index]`, an option's spaced value; `None` at the end."""
+    return segment[index + 1] if index + 1 < len(segment) else None
+
+
+def run_directory(launcher: Sequence[str], cwd: Path, environ: Mapping[str, str]) -> Path:
+    """The directory the command behind `launcher` runs in, typed in `cwd` under `environ`.
+
+    `launcher` is the launcher's words a reading of a command found (`bashscan.Launch`): each
+    `uv`, its options, `run`, `run`'s options. Each `uv` in turn changes to the directory its
+    `--directory` names, else to the run's `UV_WORKING_DIR`, read from the directory the one
+    before it left (measured on uv 0.12.19: either moves the program's working directory, the
+    option winning over the variable, a relative one read from where uv starts, and a `uv run`
+    that a `uv run` launches reads its own from where the outer one moved to; `--project` and
+    `UV_PROJECT` move no directory). `cwd` where none moves it. The path is joined and never
+    looked at: whether it names a directory is the caller's to ask, and where it names none uv
+    runs nothing.
+    """
+    here = cwd
+    index = 0
+    while index < len(launcher):
+        walked = _walked(launcher, index + 1, modules_as_programs=True)
+        if walked is None:
+            break
+        index, directory = walked
+        moved = directory if directory is not None else environ.get(WORKING_DIR)
+        if moved is not None:
+            here = here / moved
+    return here
 
 
 def _uv_option_width(token: str, flags: frozenset[str], valued: frozenset[str]) -> int | None:

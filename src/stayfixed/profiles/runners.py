@@ -139,9 +139,11 @@ class RunnerAdapter(Protocol):
         scratch: Path,
         environ: Mapping[str, str],
     ) -> Plan | Refused | Unresolved:
-        """How to run `command`, typed in `cwd` after `launch`, in the project `root`, its report
+        """How to run `command`, run in `cwd` after `launch`, in the project `root`, its report
         put under `scratch`; or why not. A pure function of its arguments and of the filesystem it
-        reads: it runs nothing.
+        reads: it runs nothing. `cwd` is the directory the command runs in: the one it was typed
+        in, or the one its launcher moves it to (`uv run --directory`), whose first word the core
+        then hands by the path it was found at from where the command was typed.
 
         `launch` is the launcher's words alone (`uv run` and its options, and whatever launcher
         the core reads through): the core has taken every assignment and every `env` out of it.

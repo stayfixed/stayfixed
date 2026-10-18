@@ -812,7 +812,10 @@ stayfixed prove --junit target/surefire-reports/TEST-all.xml -- mvn -q test
 
 The command is everything after `--`, run as typed in the current directory, never through a
 shell. The project it answers for is that directory's git top-level, or the directory itself
-outside a repository; a command typed in `packages/web` runs in `packages/web`. `prove` reads no
+outside a repository; a command typed in `packages/web` runs in `packages/web`. Where its launcher
+runs it in another directory that is there (`uv run --directory sub`, or `UV_WORKING_DIR`, the
+option winning), the command is judged in that one: the adapter plans from it, the project is its
+top-level, and the receipt's `directory` names it; `--project` moves nothing. `prove` reads no
 configuration, needs no `stayfixed.toml`, and takes neither `--root` nor `--machine`. A line with
 no `--`, or nothing after it, is a usage error (2).
 
@@ -860,10 +863,10 @@ names, by its realpath, wherever it lies; its discovery set is `conftest.py`, `t
 `*_test.py` at any depth. A program the command names that is not where it would be found is
 `entry-not-found` (`not proven`).
 
-**The jest, vitest and `node --test` adapters** recognise `jest` and `vitest`, bare or after `npx`,
-`npx --no-install` or `npx --no`, or by their path (`./node_modules/.bin/jest`) where it is npm's
-link to the file the package's `bin` names; `node [Node's options] <entry>`, the entry a path into
-`node_modules/jest` (or `jest-cli`) or `node_modules/vitest`, or `node_modules/.bin/jest` or
+**The jest, vitest and `node --test` adapters** recognise `jest` and `vitest`, bare or after `npx`
+or `npx --no-install` (not `npx --no`, after which npm reads the runner's options as its own), or by
+their path (`./node_modules/.bin/jest`) where it is npm's link to the file the package's `bin`
+names; `node [Node's options] <entry>`, the entry a path into `node_modules/jest` (or `jest-cli`) or `node_modules/vitest`, or `node_modules/.bin/jest` or
 `.bin/vitest`, that is that file by its realpath; and `node` with `--test` among its options. `npm
 test`, `npm run`, `yarn` and `pnpm` are recognised by none, and `prove --junit` counts what they
 run. Each runs the command as typed, its first word found as a shell finds it (`npx`, `jest`,
@@ -875,8 +878,8 @@ bare `jest` on no `PATH` entry, whose detail names `npx jest` and `prove --junit
 that is no link (pnpm's shim, which may run anything) and a file `node` is given that is not the
 package's entry are `entry-not-found` (`not proven`). The receipt names the runner's entry by its
 realpath beside the program where it is not the program itself: the file `node` is given, and for
-`npx` the one in `node_modules/jest` (or `jest-cli`) or `node_modules/vitest` from the directory the
-command runs in up to the top-level, else a link to such a file on `PATH`. Node's options are read
+`npx` the `node_modules/.bin/jest` (or `.bin/vitest`) npx runs, the nearest from the directory the
+command runs in upward, as npm finds it. Node's options are read
 with no list of Node's: any option goes in front of the entry, which is the first word Node may run
 as its script that is the file the package's `bin` names (`node --inspect
 node_modules/jest/bin/jest.js`, `node --max-old-space-size=4096 …`).
@@ -1004,7 +1007,8 @@ tree's state is taken before the run and after it, and is information for you, n
 verdict. `--json` carries `verdict`, `reason`, `detail` (the variable a refused assignment named,
 the option or word the runner's adapter refused, the `--junit` path on `junit-unchanged`, or where a
 report stopped reading), `argv` (the command, every `NAME=value` and `--option=value` value replaced
-by `…`; a value passed as the word after its option is kept), `runner`, `program`, `entry`,
+by `…`; a value passed as the word after its option is kept), `directory` (where the command was
+judged), `runner`, `program`, `entry`,
 `verified` (false on a `--junit` run, and only there), `scrubbed` (those variables' names, sorted),
 `counts`, `exit_code`, `report_digest` (the SHA-256 of the report counted), `commit`,
 `dirty_before`, `dirty_after`, `untracked`, `untracked_more`, `configs`, `configs_more` and

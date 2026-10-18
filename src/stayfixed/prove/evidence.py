@@ -70,6 +70,7 @@ PROVE_KEYS = frozenset(
         "reason",
         "detail",
         "argv",
+        "directory",
         "runner",
         "program",
         "entry",

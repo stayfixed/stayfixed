@@ -36,6 +36,7 @@ from stayfixed.prove.run import (
 from tests.gitfixture import git
 from tests.prove.stand_in import JUNIT, NAME, PROGRAM, StandIn
 from tests.prove.test_command import prove_cli
+from tests.prove.test_run import fake_uv, with_uv
 
 PROVED, FAILED, NOT_PROVEN, REFUSED = (
     Verdict.PROVED,
@@ -195,6 +196,30 @@ def test_the_path_is_read_from_the_directory_the_command_is_typed_in(tmp_path: P
     got = run(root / "sub", writer("pass"))
     assert (root / "sub" / REPORT).exists()
     assert (got.verdict, got.counts) == (PROVED, Counts(2, 0, 0))
+
+
+def test_the_path_is_read_from_the_directory_the_launcher_runs_the_command_in(
+    tmp_path: Path,
+) -> None:
+    # `uv run --directory sub`: the command writes its report in `sub`, as its own relative paths
+    # are read there, and the path is read from there too. Mutation (declared): the path read
+    # from the directory the command was typed in -> no report there, `junit-unchanged`.
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    uv = fake_uv(tmp_path / "bin")
+    got = prove(
+        ["uv", "run", "--directory", "sub", *writer("pass")],
+        cwd=tmp_path,
+        environ=with_uv(uv),
+        timeout=600,
+        junit=Path(REPORT),
+    )
+    assert (sub / REPORT).exists()
+    assert (got.verdict, got.counts, got.directory) == (
+        PROVED,
+        Counts(2, 0, 0),
+        os.path.realpath(sub),
+    )
 
 
 def test_an_absolute_path_is_read_where_it_names(tmp_path: Path) -> None:
