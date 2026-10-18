@@ -6670,3 +6670,11 @@ file = "src/stayfixed/prove/run.py"
 before = "    ignored_configs: int = 0\n"
 after = "    ignored_configs: int = 0\n    extra: int = 0\n"
 reddens = ["tests/test_documents.py::test_the_json_keys_the_prove_section_lists_are_the_receipt_s_fields"]
+
+# A FIFO left at an appended file's path with no reader would make the open wait for one for ever.
+[[mutation]]
+name = "the appending write blocks on a FIFO at its path"
+file = "src/stayfixed/fsops.py"
+before = "    | os.O_CLOEXEC\n    | os.O_NONBLOCK\n)"
+after = "    | os.O_CLOEXEC\n)"
+reddens = ["tests/prove/test_evidence.py::test_a_fifo_at_the_record_is_a_warning_and_never_a_wait"]

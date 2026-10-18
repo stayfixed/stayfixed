@@ -14,6 +14,8 @@ import hashlib
 import json
 import os
 import re
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -567,3 +569,30 @@ def test_each_line_holds_its_version_s_keys() -> None:
         {}, mode="builtin", argv=[], commit=None, dirty=None, at="t", version="v"
     )
     assert set(gate) == evidence.GATE_KEYS
+
+
+def test_a_fifo_at_the_record_is_a_warning_and_never_a_wait(tmp_path: Path) -> None:
+    # A FIFO with no reader at the record's path: an open for writing would wait for a reader that
+    # never comes, and `prove` and `gate` with it. Opened without blocking it is `ENXIO`, the one
+    # warning. Run in a child under a timeout, so a regression fails this case rather than hanging
+    # the suite. Mutation (declared): `O_NONBLOCK` left off the append's flags -> the child waits.
+    home = tmp_path / "home"
+    record = home / evidence.STATE_DIR / evidence.EVIDENCE / "k.jsonl"
+    record.parent.mkdir(parents=True)
+    os.mkfifo(record)
+    probe = (
+        "import sys\n"
+        "from pathlib import Path\n"
+        "from stayfixed.prove import evidence\n"
+        "home = Path(sys.argv[2])\n"
+        "print(evidence.append(Path(sys.argv[1]), {'a': 1}, home=home))\n"
+    )
+    done = subprocess.run(
+        [sys.executable, "-c", probe, str(record), str(home)],
+        capture_output=True,
+        text=True,
+        timeout=20,
+        check=False,
+    )
+    assert done.stdout.startswith("stayfixed: the evidence record "), (done.stdout, done.stderr)
+    assert "was not written" in done.stdout
