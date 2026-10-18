@@ -6,12 +6,16 @@ reads it can word each one itself. A reader counts the tests the report lists an
 the report states: a total is the runner's claim about its tests, and the tests are what is counted.
 
 `within_cap` is the one size check. Each reader calls it before it reads a byte, so a report past
-`MAX_REPORT_BYTES` is refused the same way whichever reader is asked.
+`MAX_REPORT_BYTES` is refused the same way whichever reader is asked, and
+`stayfixed.prove.reports.read_report`, which picks the reader by the report's kind, checks nothing
+itself. `utf8` and `strict_json` are the two JSON readers' shared first steps.
 """
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
+from typing import Any
 
 # The report is larger than `MAX_REPORT_BYTES`.
 REPORT_TOO_LARGE = "report-too-large"
@@ -58,3 +62,40 @@ def within_cap(data: bytes) -> None:
     """Refuse `data` as `REPORT_TOO_LARGE` when it is longer than `MAX_REPORT_BYTES`."""
     if len(data) > MAX_REPORT_BYTES:
         raise ReportError(REPORT_TOO_LARGE, f"{len(data)} bytes, past {MAX_REPORT_BYTES}")
+
+
+def utf8(data: bytes) -> str:
+    """`data` decoded as UTF-8, or `REPORT_NOT_UTF8`."""
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise ReportError(REPORT_NOT_UTF8, f"byte {exc.start}") from None
+
+
+class _Duplicate(Exception):
+    """A key an object holds twice."""
+
+
+def _unique(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    document: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in document:
+            raise _Duplicate(key)
+        document[key] = value
+    return document
+
+
+def strict_json(text: str) -> Any:
+    """`text` parsed as JSON with every object's keys unique, or `REPORT_MALFORMED` when it does
+    not parse, holds a key twice, or is past what the parser follows. A plain parse keeps the last
+    of two equal keys, so the second could stand in for the first unseen."""
+    try:
+        return json.loads(text, object_pairs_hook=_unique)
+    except _Duplicate as exc:
+        raise ReportError(REPORT_MALFORMED, f"a key held twice: {exc.args[0]!r}") from None
+    except RecursionError:
+        raise ReportError(REPORT_MALFORMED, "nested deeper than this reader follows") from None
+    except ValueError as exc:
+        # `JSONDecodeError` is a `ValueError`, and so is an integer literal longer than the
+        # interpreter converts.
+        raise ReportError(REPORT_MALFORMED, type(exc).__name__) from None

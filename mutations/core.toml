@@ -5122,6 +5122,9 @@ before = '    if len(data) > MAX_REPORT_BYTES:'
 after = '    if False:'
 reddens = [
   "tests/prove/test_junit.py::test_past_the_cap_is_refused_before_parsing",
+  "tests/prove/test_results.py::test_past_the_cap_is_refused_before_decoding",
+  "tests/prove/test_results.py::test_read_report_caps_every_kind",
+  "tests/prove/test_events.py::test_past_the_cap_is_refused_before_decoding",
 ]
 
 # The cap is a length a report may have, not one past it.
@@ -5235,4 +5238,190 @@ after = "    except ReportError as exc:"
 reddens = [
   "tests/prove/test_junit.py::test_a_document_that_does_not_parse_is_malformed",
   "tests/prove/test_junit.py::test_an_undefined_entity_is_refused",
+]
+
+# The results reader and the event-stream reader ask the one size check before they decode.
+[[mutation]]
+name = "the results reader decodes a report past the cap"
+file = "src/stayfixed/prove/results.py"
+before = """    within_cap(data)
+    document = strict_json(utf8(data))"""
+after = """    document = strict_json(utf8(data))"""
+reddens = [
+  "tests/prove/test_results.py::test_past_the_cap_is_refused_before_decoding",
+  "tests/prove/test_results.py::test_read_report_caps_every_kind",
+]
+
+[[mutation]]
+name = "the event-stream reader decodes a report past the cap"
+file = "src/stayfixed/prove/events.py"
+before = """    within_cap(data)
+    passed = failed = skipped = 0"""
+after = """    passed = failed = skipped = 0"""
+reddens = [
+  "tests/prove/test_events.py::test_past_the_cap_is_refused_before_decoding",
+  "tests/prove/test_results.py::test_read_report_caps_every_kind",
+]
+
+# Bytes that are not UTF-8 are a refusal of their own, never replaced and read on.
+[[mutation]]
+name = "the JSON readers replace bytes that are not UTF-8"
+file = "src/stayfixed/prove/counts.py"
+before = '        return data.decode("utf-8")'
+after = '        return data.decode("utf-8", "replace")'
+reddens = [
+  "tests/prove/test_results.py::test_bytes_that_are_not_utf8_are_refused_as_such",
+  "tests/prove/test_events.py::test_bytes_that_are_not_utf8_are_refused_as_such",
+]
+
+# A plain parse keeps the last of two equal keys, so a second `status` could stand in for the first.
+[[mutation]]
+name = "the JSON readers keep the last of two duplicate keys"
+file = "src/stayfixed/prove/counts.py"
+before = "        return json.loads(text, object_pairs_hook=_unique)"
+after = "        return json.loads(text)"
+reddens = [
+  "tests/prove/test_results.py::test_a_duplicate_key_is_malformed",
+  "tests/prove/test_results.py::test_a_duplicate_key_anywhere_is_malformed",
+]
+
+# The `num*` totals are the runner's claim, and for a file that did not load they count it nowhere.
+[[mutation]]
+name = "the results reader reads numPassedTests"
+file = "src/stayfixed/prove/results.py"
+before = """    passed = failed = skipped = 0
+    for entry in"""
+after = """    passed = document.get("numPassedTests", 0)
+    failed = skipped = 0
+    for entry in"""
+reddens = [
+  "tests/prove/test_results.py::test_results_totals_are_never_read",
+]
+
+# A `todo` is a test nobody wrote yet, and it did not pass.
+[[mutation]]
+name = "the results reader counts a todo as passed"
+file = "src/stayfixed/prove/results.py"
+before = '_PASSED = frozenset({"passed"})'
+after = '_PASSED = frozenset({"passed", "todo"})'
+reddens = [
+  "tests/prove/test_results.py::test_results_count_assertions_by_status",
+  "tests/prove/test_results.py::test_each_assertion_status_counts_once",
+]
+
+# A status outside the closed set is a report this reader does not know how to count.
+[[mutation]]
+name = "the results reader counts an unknown status as skipped"
+file = "src/stayfixed/prove/results.py"
+before = """                raise ReportError(REPORT_MALFORMED, f"an assertion's status is {status!r}")"""
+after = """                skipped += 1"""
+reddens = [
+  "tests/prove/test_results.py::test_an_unknown_status_is_malformed",
+]
+
+# A report of another shape is refused, never counted around.
+[[mutation]]
+name = "the results reader takes any value as a list of objects"
+file = "src/stayfixed/prove/results.py"
+before = "    if not isinstance(value, list) or not all(isinstance(item, dict) for item in value):"
+after = "    if False:"
+reddens = [
+  "tests/prove/test_results.py::test_a_report_of_another_shape_is_malformed",
+]
+
+# A file that failed with no failed assertion did not load, and the totals count it nowhere.
+[[mutation]]
+name = "the results reader drops the load-failure rule"
+file = "src/stayfixed/prove/results.py"
+before = '        if entry.get("status") == _FILE_FAILED and failed_here == 0:'
+after = "        if False:"
+reddens = [
+  "tests/prove/test_results.py::test_a_file_that_does_not_load_is_one_failed",
+]
+
+# Only `pass`, `fail` and `skip` end a test; `run`, `output` and the rest say nothing of how.
+[[mutation]]
+name = "the event-stream reader counts every test-level action"
+file = "src/stayfixed/prove/events.py"
+before = """            elif action == _SKIPPED:
+                skipped += 1"""
+after = """            else:
+                skipped += 1"""
+reddens = [
+  "tests/prove/test_events.py::test_events_count_test_level_actions",
+  "tests/prove/test_events.py::test_printed_text_is_never_counted",
+]
+
+# A subtest is a test of its own.
+[[mutation]]
+name = "the event-stream reader counts no subtest"
+file = "src/stayfixed/prove/events.py"
+before = "        if test is not None:"
+after = '        if test is not None and "/" not in test:'
+reddens = [
+  "tests/prove/test_events.py::test_a_subtest_is_a_test_of_its_own",
+]
+
+# A package that failed with no failed test still fails the run.
+[[mutation]]
+name = "the event-stream reader ignores a package-level fail"
+file = "src/stayfixed/prove/events.py"
+before = """    failed += len(failed_whole - failed_a_test)
+"""
+after = ""
+reddens = [
+  "tests/prove/test_events.py::test_a_package_that_fails_with_no_failed_test_is_one_failed",
+  "tests/prove/test_events.py::test_a_build_failure_is_one_failed",
+]
+
+# A package's `fail` after its own failed test is that failure, not one more.
+[[mutation]]
+name = "the event-stream reader counts a package-level fail beside a failed test"
+file = "src/stayfixed/prove/events.py"
+before = "    failed += len(failed_whole - failed_a_test)"
+after = "    failed += len(failed_whole)"
+reddens = [
+  "tests/prove/test_events.py::test_events_count_test_level_actions",
+  "tests/prove/test_events.py::test_a_package_fail_after_its_failed_test_adds_nothing",
+]
+
+# A `build-fail` with no package-level `fail` for its package is still one package that did not
+# build. No recorded stream holds one alone, so an inline stream is what reddens.
+[[mutation]]
+name = "the event-stream reader ignores a build-fail event"
+file = "src/stayfixed/prove/events.py"
+before = "        elif action == _BUILD_FAIL:"
+after = "        elif False:"
+reddens = [
+  "tests/prove/test_events.py::test_a_build_failure_with_no_package_fail_is_one_failed",
+  "tests/prove/test_events.py::test_a_build_failure_beside_another_package_s_fail_still_counts",
+]
+
+# A `build-fail` followed by its package's own `fail` is one package that did not build.
+[[mutation]]
+name = "the event-stream reader counts a build failure twice"
+file = "src/stayfixed/prove/events.py"
+before = "    failed += sum(times for name, times in unbuilt.items() if name not in failed_whole)"
+after = "    failed += sum(unbuilt.values())"
+reddens = [
+  "tests/prove/test_events.py::test_a_build_failure_is_one_failed",
+]
+
+# `read_report` hands each kind to its own reader.
+[[mutation]]
+name = "read_report reads the event stream with the results reader"
+file = "src/stayfixed/prove/reports.py"
+before = "    return read_events(data)"
+after = "    return read_results(data)"
+reddens = [
+  "tests/prove/test_results.py::test_read_report_reads_each_kind_with_its_reader",
+]
+
+[[mutation]]
+name = "read_report keeps drop from the JUnit reader"
+file = "src/stayfixed/prove/reports.py"
+before = "        return read_junit(data, drop=drop)"
+after = "        return read_junit(data)"
+reddens = [
+  "tests/prove/test_results.py::test_read_report_hands_drop_to_the_junit_reader",
 ]
