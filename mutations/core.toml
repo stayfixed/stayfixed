@@ -6514,15 +6514,15 @@ reddens = ["tests/prove/test_evidence.py::test_no_home_warns_and_keeps_the_verdi
 [[mutation]]
 name = "the one appending write opens without O_APPEND"
 file = "src/stayfixed/fsops.py"
-before = "_APPEND_FLAGS = os.O_WRONLY | os.O_APPEND | os.O_CREAT"
-after = "_APPEND_FLAGS = os.O_WRONLY | os.O_CREAT"
+before = "    | os.O_APPEND\n"
+after = ""
 reddens = ["tests/test_fsops.py::test_an_append_adds_to_the_file_s_end_and_creates_it_for_its_owner_alone"]
 
 [[mutation]]
 name = "the one appending write follows a link"
 file = "src/stayfixed/fsops.py"
-before = '| getattr(os, "O_NOFOLLOW", 0) | os.O_CLOEXEC'
-after = "| os.O_CLOEXEC"
+before = "    | getattr(os, \"O_NOFOLLOW\", 0)\n"
+after = ""
 reddens = ["tests/test_fsops.py::test_an_append_never_writes_through_a_link"]
 
 [[mutation]]
