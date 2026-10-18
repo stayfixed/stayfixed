@@ -66,8 +66,13 @@ jobs:
     needs: changes
     if: ${{ !cancelled() }}
     runs-on: ${{ matrix.os }}
-    # A public repository: anyone can open a pull request, so no job runs unbounded.
-    timeout-minutes: 15
+    # A public repository: anyone can open a pull request, so no job runs unbounded. Twenty
+    # minutes, measured: the `prove` branch added about a thousand tests, many of them starting
+    # processes, and `checks (macos-latest, 3.13)` was cancelled at fifteen right after its pytest
+    # reported `7744 passed, 56 skipped in 876.84s` (738 s on the same leg before the branch;
+    # macOS runners vary). The `oracle` job's comment below already prices a hung pytest at
+    # twenty minutes, so this bound costs no more than that one does.
+    timeout-minutes: 20
     # Every step carries `if: env.FULL == 'true'`: on a change to docs alone one leg runs whole and
     # the others start, skip every step and report (`changes` above says why).
     env:
