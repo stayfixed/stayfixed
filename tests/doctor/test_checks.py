@@ -1,6 +1,6 @@
 """What `doctor` answers about an installation, and what it refuses to guess.
 
-One of the eighteen checks cannot be answered by this build and says so rather than guessing:
+One of the nineteen checks cannot be answered by this build and says so rather than guessing:
 `codex-hooks`, a platform question no measurement has answered yet, and a check that
 returned green because it could not look would be strictly worse than one that admits it.
 `ci-ref` used to be counted beside it; `init` writes `[ci] ref`, so its skip reports a state of
@@ -355,7 +355,7 @@ def test_a_configuration_holding_a_number_past_the_parser_does_not_load(tmp_path
     assert (row.status, row.detail) == (RED, cause(FALLBACK_WARNING))
 
 
-# The report's eighteen names in the report's order, written out rather than read back from the
+# The report's nineteen names in the report's order, written out rather than read back from the
 # registry: the core's own checks, then each delivery area's in area-name order — `attach`,
 # `memory`, `overlay`. `docs/cli.md`'s table is held to the same order.
 REPORT = (
@@ -371,6 +371,7 @@ REPORT = (
     "ci-ref",
     "diagnostics",
     "ignored-env",
+    "retired-deny",
     "attached",
     "bundles",
     "store-debris",
@@ -382,7 +383,7 @@ REPORT = (
 
 def test_every_check_has_one_row_in_one_report(tmp_path: Path) -> None:
     # Moving a check into its area must not cost it its row, nor give it a second one: the
-    # eighteen are the same eighteen, once each. A literal tuple and not the registry read back,
+    # nineteen are the same nineteen, once each. A literal tuple and not the registry read back,
     # so a check that dropped out of both the core and the areas reddens here. Mutation (oracle):
     # `mutations/`'s "doctor drops the checks an area contributes" -> the six delivery rows are
     # missing. The fixture is an initialised project with nothing else to look at -- no overlay,
@@ -1006,6 +1007,60 @@ def test_an_ignored_environment_variable_is_named(tmp_path: Path) -> None:
     assert check.status == "warn"
     assert "XDG_CONFIG_HOME" in check.detail
     assert "STAYFIXED_CONFIG" not in check.detail
+
+
+def _user_settings(home: Path, text: str) -> None:
+    path = home / CLAUDE.settings[0]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+
+
+def test_a_retired_deny_rule_left_in_the_user_settings_is_named_with_setup_as_its_remedy(
+    tmp_path: Path,
+) -> None:
+    # A machine an older `setup` configured keeps `Read(.env*)`, which refuses `.env.example`, and
+    # upgrading does not run `setup`, which is what takes it out. Named in the preset's words and
+    # by exact string, so the owner's own `Read(.env.*)` is not called retired.
+    # Mutation: `mutations/`'s "the retired-deny row names no retired rule" -> reddens.
+    home = tmp_path / "home"
+    rules = ["Read(./secrets/**)", "Read(.env*)", "Read(.env.*)", "Read(**/.env*)"]
+    _user_settings(home, json.dumps({"permissions": {"deny": rules}}))
+    row = _by_name(_checks(tmp_path, _initialised(tmp_path), home=home), "retired-deny")
+    assert row.status == WARN
+    assert row.detail.endswith(": `Read(.env*)`, `Read(**/.env*)`"), row.detail
+    assert "`Read(.env.*)`" not in row.detail
+    assert row.remedy == "run `stayfixed setup --preset recommended`, which takes them out"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        None,
+        "",
+        "﻿" + json.dumps({"permissions": {"deny": ["Read(**/.env)", "Read(.env.*)"]}}),
+        json.dumps({"permissions": {"deny": "Read(.env*)"}}),
+    ],
+    ids=["absent", "empty", "current-rules-past-a-mark", "deny-not-a-list"],
+)
+def test_user_settings_without_a_retired_rule_are_ok(tmp_path: Path, text: str | None) -> None:
+    # The vacuity guard for the case above: a row that warned whenever the file existed would pass
+    # it. A byte-order mark is read past, as Claude Code and `setup` read it.
+    home = tmp_path / "home"
+    if text is not None:
+        _user_settings(home, text)
+    row = _by_name(_checks(tmp_path, _initialised(tmp_path), home=home), "retired-deny")
+    assert row.status == OK, row
+
+
+def test_user_settings_that_do_not_parse_are_a_warning_and_not_a_crash(tmp_path: Path) -> None:
+    # The owner's file, which the owner edits by hand: a typo in it is something to fix, not a
+    # red row saying stayfixed broke. Mutation: `mutations/`'s "the retired-deny row raises on
+    # user settings that are not JSON" -> the guard's red row.
+    home = tmp_path / "home"
+    _user_settings(home, '{"permissions": {"deny": [')
+    row = _by_name(_checks(tmp_path, _initialised(tmp_path), home=home), "retired-deny")
+    assert row.status == WARN, row
+    assert "could not be read" in row.detail
 
 
 def test_neither_variable_set_is_not_a_finding(tmp_path: Path) -> None:
@@ -2969,7 +3024,7 @@ def test_every_registry_name_is_spelled_exactly_once_in_the_module() -> None:
         return {name: literals.count(name) for name in names}
 
     names = [name for name, _ in module.CHECKS]
-    assert len(names) == 12
+    assert len(names) == 13
     core = [module, *{sys.modules[check.__module__] for _, check in module.CHECKS} - {module}]
     # `hook-entries` is defined outside `checks.py`, so the walk reads more than the registry.
     assert "stayfixed.doctor.entries" in [each.__name__ for each in core]

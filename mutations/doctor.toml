@@ -3063,3 +3063,23 @@ file = "src/stayfixed/doctor/checks.py"
 before = "    return Row(OK, f\"{WRAPPER} reached stayfixed and exited 0; {UNMEASURED_ON_FAILURE}\", \"\")"
 after = "    return Row(OK, f\"{WRAPPER} reached stayfixed and exited 0\", \"\")"
 reddens = ["tests/doctor/test_checks.py::test_a_wrapper_that_runs_is_reported_green"]
+
+# `retired-deny`: a deny rule an earlier preset wrote and its successor retired is named while it is
+# still in the user settings file, and a file the owner left unparseable is a warning, not a red row.
+[[mutation]]
+name = "the retired-deny row names no retired rule"
+file = "src/stayfixed/doctor/checks.py"
+before = "    found = [rule for rule in retired if isinstance(rule, str) and rule in held]"
+after = "    found = [rule for rule in retired if isinstance(rule, str) and rule in ()]"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_retired_deny_rule_left_in_the_user_settings_is_named_with_setup_as_its_remedy",
+]
+
+[[mutation]]
+name = "the retired-deny row raises on user settings that are not JSON"
+file = "src/stayfixed/doctor/checks.py"
+before = "    except (OSError, ValueError):"
+after = "    except OSError:"
+reddens = [
+  "tests/doctor/test_checks.py::test_user_settings_that_do_not_parse_are_a_warning_and_not_a_crash",
+]

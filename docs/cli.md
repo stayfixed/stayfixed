@@ -3085,7 +3085,14 @@ Configures this machine from a preset, `recommended` unless `--preset` names ano
 machine configuration file's `[personal]` and `[machine]` tables, the deny rules and personal
 values in `<home>/.claude/settings.json`, and the preset's plugins, one install per plugin per
 configured harness. That file is read as Claude Code reads it, past a leading byte-order mark,
-which a rewrite keeps. `--home` and `--machine` default to the home directory and to
+which a rewrite keeps. The deny rules are merged in beside the owner's own, with one removal: a
+rule an earlier preset wrote and this one retired (its `[deny] retired`) is taken out where it
+stands verbatim. `recommended` retired the masks `Read(.env*)` and `Read(**/.env*)`, which also
+refused the templates a project commits (`.env.example`, `.env.dist` and the rest), for the env
+files by name: `.env`, `.env.local`, `.env.*.local`, `.env.dev`, `.env.development`, `.env.prod`,
+`.env.production`, `.env.stage`, `.env.staging` and `.env.test`, each as `Read(**/<name>)`. An env
+file under another name stays readable; `stayfixed doctor`'s `retired-deny` row reports a retired
+rule still in the file. `--home` and `--machine` default to the home directory and to
 `~/.config/stayfixed/config.toml` — the file every reader reads, and not whatever
 `XDG_CONFIG_HOME` or `STAYFIXED_CONFIG` names, because a machine file half the installation
 cannot find is not a machine file. Both flags exist so this command can be pointed at a
@@ -3374,10 +3381,10 @@ machine whose password database lists no home with no `--machine`.
 
 ## `stayfixed doctor [--json] [--root PATH] [--home PATH] [--machine PATH]`
 
-Eighteen checks over one installation. It **reports and never repairs**: every finding
+Nineteen checks over one installation. It **reports and never repairs**: every finding
 carries the command that would fix it, and not one of them is run for you. Nothing is written.
 
-The rows come in a fixed order: the installation's own twelve first, then the six about the
+The rows come in a fixed order: the installation's own thirteen first, then the six about the
 private layer — the binding's (`attached`), the note store's (`bundles`, `store-debris`,
 `harness-link`) and the private overlay's (`pre-commit`, `overlay-requires`). Match a row by its `name`, never by its
 position.
@@ -3429,6 +3436,7 @@ check with `name`, `status`, `detail` and `remedy`, so every remedy is there.
 | `ci-ref` | whether `[ci] ref` is the commit of a released stayfixed tag (or the `v1` alias: a warning, as mutable, once a `1.x` release creates it, and red until then), and whether the rendered workflow pins the same ref — under `[ci] mode = "reusable"`, a workflow that is not there at all is a warning and never a green row, and so are a path that is there and is not a regular file and a file past the 256 KiB bound on the read | `git ls-remote --exit-code` over the public repository's tags, bounded at 30 seconds; *.github/workflows/stayfixed.yml*, read as a regular file and to a bound |
 | `diagnostics` | how many reasons the hook sink recorded — a count, never a line of the file | `${CLAUDE_PLUGIN_DATA}/stayfixed/diagnostics.jsonl` |
 | `ignored-env` | `STAYFIXED_CONFIG` or `XDG_CONFIG_HOME` set and not honoured, and a `HOME` that is not the home the password database records for this user, with the directory stayfixed's machine files are under instead, or that it records none; from a terminal, the remedy says to move files of your own there first | the environment, the password database |
+| `retired-deny` | whether `~/.claude/settings.json` still holds a deny rule an earlier `stayfixed setup` wrote and the machine's preset retired (its `[deny] retired`), such as `Read(.env*)`, which refuses `.env.example` too; matched by exact string, as `setup` removes them, and named in the preset's words | `~/.claude/settings.json`, the preset |
 | `attached` | the overlay binding, and the harness memory path's shape, judged off a terminal only where `HOME` is the database's home and read alike from every checkout (the states are below the table) | `.stayfixed/local/attach.json`, `~/.claude/projects/<slug>/memory`, `.claude/settings.local.json`, the link tree |
 | `bundles` | a bundle that does not fit its slots, and one whose part reaches the cap | the note store |
 | `store-debris` | files in the note store that are not notes (at most 500,000 entries) | the note store |

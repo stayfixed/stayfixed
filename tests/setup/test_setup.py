@@ -128,6 +128,33 @@ def test_setup_writes_the_machine_file_and_the_deny_rules(tmp_path: Path) -> Non
     assert "allow" not in settings.get("permissions", {})
 
 
+def test_setup_takes_the_retired_env_masks_back_out_and_keeps_the_owners_rules(
+    tmp_path: Path,
+) -> None:
+    # A machine an older `setup` configured holds `Read(.env*)` and `Read(**/.env*)`, which refuse
+    # `.env.example` too, and no allow rule can let it through: the masks have to leave the file,
+    # or an upgrade fixes nothing. Removed by their exact strings and nothing else, so the owner's
+    # own rules, a near miss among them, stay where they stood.
+    # Mutation: `mutations/`'s "setup leaves the retired deny rules in place" -> reddens.
+    home = tmp_path / "home"
+    path = home / USER_SETTINGS
+    path.parent.mkdir(parents=True)
+    owners = ["Read(./secrets/**)", "Read(.env*)", "Read(.env.*)", "Read(**/.env*)", "Bash(rm:*)"]
+    path.write_text(json.dumps({"permissions": {"deny": owners}}), encoding="utf-8")
+    setup(
+        "recommended",
+        home=home,
+        machine=tmp_path / "config.toml",
+        runner=Recorder(),
+        yes=True,
+        overlay=None,
+        project_root=tmp_path / "project",
+    )
+    deny = json.loads(path.read_text(encoding="utf-8"))["permissions"]["deny"]
+    preset = load_preset("recommended")["deny"]
+    assert deny == ["Read(./secrets/**)", "Read(.env.*)", "Bash(rm:*)", *preset["global"]]
+
+
 def test_a_mistyped_preset_names_the_flag_and_never_quotes_it(tmp_path: Path) -> None:
     # `setup` is told which flag to fix rather than pointed at a `[stayfixed] preset` in a
     # `stayfixed.toml` it never read, and the value the person typed — ESC and a line break
@@ -3281,7 +3308,7 @@ def test_a_per_file_settings_link_is_written_through_settings_and_not_under_home
     # inventory below is unchanged — and the dotfiles file is still the empty `{}` it started
     # as. That silence is the whole defect, and this sentence is what names it.
     deny = written.get("permissions", {}).get("deny", [])
-    assert "Read(.env*)" in deny, f"the file --settings named was not written: {written}"
+    assert "Read(**/.env)" in deny, f"the file --settings named was not written: {written}"
     assert sorted(str(p.relative_to(home)) for p in home.rglob("*")) == before
 
 
