@@ -2626,15 +2626,6 @@ reddens = [
 ]
 
 [[mutation]]
-name = "a package's bin may name a file outside the package"
-file = "src/stayfixed/profiles/javascript/adapters.py"
-before = "    if home not in entry.parents or not fsops.is_file(entry):"
-after = "    if not fsops.is_file(entry):"
-reddens = [
-  "tests/prove/test_javascript.py::test_a_package_whose_bin_names_no_entry_of_its_own_does_not_resolve[a-file-outside-the-package]",
-]
-
-[[mutation]]
 name = "a package's manifest is read past its cap"
 file = "src/stayfixed/profiles/javascript/adapters.py"
 before = """    if more:

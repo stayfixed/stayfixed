@@ -2212,4 +2212,5 @@ def test_a_bin_holding_a_nul_does_not_resolve(tmp_path: Path) -> None:
     project = tmp_path / "project"
     package(project / "node_modules" / "jest", "jest", "./bin/je\u0000st.js", "bin/jest.js")
     node = node_on_path(project / ".tools")
-    assert entry_of(["npx", "jest"], project, path=str(node.parent)) is None
+    got = planned(JEST, ["node", "node_modules/jest/bin/jest.js"], project, path=str(node.parent))
+    assert got == Unresolved(ENTRY_NOT_FOUND, NOT_THE_ENTRY.format(package="jest"))

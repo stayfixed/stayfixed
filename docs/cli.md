@@ -866,10 +866,10 @@ names, by its realpath, wherever it lies; its discovery set is `conftest.py`, `t
 **The jest, vitest and `node --test` adapters** recognise `jest` and `vitest`, bare or after `npx`
 or `npx --no-install` (not `npx --no`, after which npm reads the runner's options as its own), or by
 their path (`./node_modules/.bin/jest`) where it is npm's link to the file the package's `bin`
-names; `node [Node's options] <entry>`, the entry a path into `node_modules/jest` (or `jest-cli`) or `node_modules/vitest`, or `node_modules/.bin/jest` or
-`.bin/vitest`, that is that file by its realpath; and `node` with `--test` among its options. `npm
-test`, `npm run`, `yarn` and `pnpm` are recognised by none, and `prove --junit` counts what they
-run. Each runs the command as typed, its first word found as a shell finds it (`npx`, `jest`,
+names; `node [Node's options] <entry>`, the entry a path into `node_modules/jest` (or `jest-cli`)
+or `node_modules/vitest`, or `node_modules/.bin/jest` or `.bin/vitest`, that is that file by its
+realpath; and `node` with `--test` among its options. `npm test`, `npm run`, `yarn` and `pnpm` are
+recognised by none, and `prove --junit` counts what they run. Each runs the command as typed, its first word found as a shell finds it (`npx`, `jest`,
 `node`, the `.bin` link) and the report's options added: `npx` reads `.npmrc` and puts every
 `node_modules/.bin` above the directory on `PATH`, as outside `prove`, and given a runner no
 `node_modules` holds it may install one, as the typed command would. Behind a launcher (`uv run npx
@@ -879,10 +879,10 @@ that is no link (pnpm's shim, which may run anything) and a file `node` is given
 package's entry are `entry-not-found` (`not proven`). The receipt names the runner's entry by its
 realpath beside the program where it is not the program itself: the file `node` is given, and for
 `npx` the `node_modules/.bin/jest` (or `.bin/vitest`) npx runs, the nearest from the directory the
-command runs in upward, as npm finds it. Node's options are read
-with no list of Node's: any option goes in front of the entry, which is the first word Node may run
-as its script that is the file the package's `bin` names (`node --inspect
-node_modules/jest/bin/jest.js`, `node --max-old-space-size=4096 …`).
+command runs in upward, as npm finds it. Node's options are read with no list of Node's: any option
+goes in front of the entry, which is the first word Node may run as its script that is the file the
+package's `bin` names (`node --inspect node_modules/jest/bin/jest.js`, `node
+--max-old-space-size=4096 …`).
 
 jest is run with `--json --outputFile=<report>` (jest 30.5.2's run of no test writes no report
 where its standard error is a pipe, as in most CI jobs, so it is `not proven` there and `failed` at

@@ -229,7 +229,9 @@ def _launched(
 
 def _manifest_bin(package: Path, name: str) -> Path | None:
     """The realpath of the file the `bin` of `package`'s `package.json` names for `name` (a
-    string, or a mapping holding `name`), where it is a file inside the package; else `None`."""
+    string, or a mapping holding `name`), where it is a file; else `None`. Its one reader,
+    `package_entry`, takes it only where it is the file it started from, which lies under
+    `package`, so a `bin` naming a file outside the package is never the entry."""
     try:
         data, more = fsops.read_bounded(package / _MANIFEST, _MANIFEST_BYTES)
     except OSError:
@@ -247,10 +249,7 @@ def _manifest_bin(package: Path, name: str) -> Path | None:
     if not isinstance(declared, str) or not declared or "\0" in declared:
         return None
     entry = Path(os.path.realpath(package / declared))
-    home = Path(os.path.realpath(package))
-    if home not in entry.parents or not fsops.is_file(entry):
-        return None
-    return entry
+    return entry if fsops.is_file(entry) else None
 
 
 def _linked(word: str, name: str, cwd: Path, environ: Mapping[str, str]) -> Path | None:
