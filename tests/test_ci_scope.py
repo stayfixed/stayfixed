@@ -201,4 +201,6 @@ def test_the_leg_that_runs_on_a_change_to_docs_is_a_leg_of_the_matrix() -> None:
     assert isinstance(strategy, dict), strategy
     matrix = strategy["matrix"]
     assert isinstance(matrix, dict), matrix
-    assert {"os": "ubuntu-latest", "python": "3.13"} in matrix["include"], matrix
+    legs = matrix["include"]
+    assert isinstance(legs, list), legs
+    assert {"os": "ubuntu-latest", "python": "3.13"} in legs, legs

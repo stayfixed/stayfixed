@@ -343,6 +343,8 @@ def test_the_release_is_cut_on_origin_main_whatever_the_local_main_holds() -> No
 
 ORACLE_COMMAND = "scripts/mutation_oracle.py"
 ORACLE_JOB = "oracle"
+# The one condition the oracle's job may carry, as the line reads in `ci.yml`.
+ORACLE_CONDITION = "    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}"
 # Measured on the `oracle` job's own run of 2026-10-14: 1,186 s for the 2,606 entries `mutations/`
 # held that day, four jobs on `ubuntu-latest` against a warm bytecode cache. It was 719 s for
 # 1,869 on 2026-10-08, 0.385 s an entry, 173 s for 566 on an earlier run, 0.31 s, and 751 s for 372
@@ -401,10 +403,13 @@ def test_the_mutation_oracle_has_a_job_of_its_own_with_a_budget_that_fits() -> N
 
     **Three things are asserted, and each is a way this has already gone wrong or could go
     quiet.** That exactly one job runs the oracle, because a second copy would pay twice again
-    and a zeroth would be the set silently switched off. That the job carries no `if:` and no
-    `strategy:`, because a skipped job reports as green — the "reads as coverage" failure in the
-    costume of a condition — and because a matrix would reintroduce the multiplication. And that
-    the budget still fits the set it has to prove.
+    and a zeroth would be the set silently switched off. That the job carries no `strategy:`,
+    because a matrix would reintroduce the multiplication, and no `if:` but the one that skips it
+    on a pull request changing nothing outside `docs/`, because a skipped job reports as green —
+    the "reads as coverage" failure in the costume of a condition. That one condition runs the job
+    on any answer from `changes` but an explicit `false`, which `tests/test_ci_scope.py` holds; a
+    documents-only change still runs the suite on one leg, and gives a mutation nothing new to
+    catch. And that the budget still fits the set it has to prove.
 
     **The budget assertion is the one that earns its place.** The oracle grows by construction:
     the rule is that every new assertion ships with the mutation that reddens it, so the entry
@@ -428,7 +433,7 @@ def test_the_mutation_oracle_has_a_job_of_its_own_with_a_budget_that_fits() -> N
 
     body = jobs[ORACLE_JOB]
     skippable = [x for x in body if x.strip().startswith("if:")]
-    assert skippable == [], (
+    assert skippable == [ORACLE_CONDITION], (
         f"the {ORACLE_JOB!r} job can be skipped, and a skipped job reports as a green check",
         skippable,
     )

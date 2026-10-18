@@ -270,10 +270,12 @@ reddens = [
 name = "the smoke's hook entries take the checkout as the installed tree"
 file = ".github/workflows/smoke.yml"
 before = '''      - name: Every hook entry, fed its sample event through the installed wrapper
+        if: env.FULL == 'true'
         env:
           INSTALLED: ${{ steps.install.outputs.root }}
 '''
 after = '''      - name: Every hook entry, fed its sample event through the installed wrapper
+        if: env.FULL == 'true'
         env:
           INSTALLED: ${{ github.workspace }}
 '''
@@ -285,10 +287,12 @@ reddens = [
 name = "the smoke's exfiltration scenario takes the checkout as the installed tree"
 file = ".github/workflows/smoke.yml"
 before = '''      - name: The clone-to-exfiltration scenario
+        if: env.FULL == 'true'
         env:
           INSTALLED: ${{ steps.install.outputs.root }}
 '''
 after = '''      - name: The clone-to-exfiltration scenario
+        if: env.FULL == 'true'
         env:
           INSTALLED: ${{ github.workspace }}
 '''
@@ -1104,8 +1108,8 @@ reddens = [
 [[mutation]]
 name = "the oracle's job becomes one a condition can skip"
 file = ".github/workflows/ci.yml"
-before = "  oracle:\n    runs-on: ubuntu-latest"
-after = "  oracle:\n    if: github.event_name == 'push'\n    runs-on: ubuntu-latest"
+before = "  oracle:\n    needs: changes\n    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}"
+after = "  oracle:\n    needs: changes\n    if: github.event_name == 'push'"
 reddens = [
   "tests/test_fixtures.py::test_the_mutation_oracle_has_a_job_of_its_own_with_a_budget_that_fits",
 ]
