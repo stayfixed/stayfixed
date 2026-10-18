@@ -879,8 +879,8 @@ reddens = [
 [[mutation]]
 name = "setup mirrors only the values this run itself added"
 file = "src/stayfixed/setup/run.py"
-before = "    deny_written = _write_user_settings(home, deny_rules, read_personal(machine), settings=settings)"
-after = "    deny_written = _write_user_settings(home, deny_rules, personal, settings=settings)"
+before = "        home, deny_rules, read_personal(machine), settings=settings, retired=retired"
+after = "        home, deny_rules, personal, settings=settings, retired=retired"
 reddens = ["tests/setup/test_setup.py::test_the_plugin_config_mirror_follows_the_machine_file"]
 
 # A remedy is held to the standard of the refusal that carries it. `stow` folds a package as far
@@ -2395,3 +2395,12 @@ file = "src/stayfixed/setup/commands.py"
 before = "        rules = record_deny_rules(record)\n    except OSError as exc:"
 after = "        rules = record_deny_rules(record)\n    except LookupError as exc:"
 reddens = ["tests/setup/test_approval_boundary.py::test_a_looping_machine_directory_is_refused_by_name"]
+
+# `setup` takes the deny masks an earlier preset wrote back out of the user settings file, or a
+# machine that ran an older `setup` keeps refusing `.env.example` after an upgrade.
+[[mutation]]
+name = "setup leaves the retired deny rules in place"
+file = "src/stayfixed/setup/run.py"
+before = "    existing_deny = [r for r in existing_deny if r not in retired]"
+after = "    existing_deny = list(existing_deny)"
+reddens = ["tests/setup/test_setup.py::test_setup_takes_the_retired_env_masks_back_out_and_keeps_the_owners_rules"]

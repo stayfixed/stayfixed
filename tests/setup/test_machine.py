@@ -1,6 +1,7 @@
 # tests/setup/test_machine.py
 from __future__ import annotations
 
+import fnmatch
 import tomllib
 from pathlib import Path
 
@@ -112,12 +113,41 @@ def test_the_preset_denies_reading_env_files_by_value() -> None:
     # By value and not `any(".env" in rule)`, which the case above already does: `["Read(.env)"]`
     # satisfies a substring test and leaves `.env.local` and every nested `.env` readable.
     #
+    # By name and never by a mask: a deny rule outranks every allow rule, so `.env*` refused the
+    # `.env.example` a project commits for an agent to edit, with no way to let it through. The
+    # `env-reads` session guard refuses the names this list does not hold.
+    #
     # Mutation: `mutations/`'s "the preset stops denying the env files".
-    assert load_preset("recommended")["deny"]["global"] == [
-        "Read(.env*)",
-        "Read(**/.env*)",
-        "Read(**/.env)",
+    names = [
+        ".env",
+        ".env.local",
+        ".env.*.local",
+        ".env.dev",
+        ".env.development",
+        ".env.prod",
+        ".env.production",
+        ".env.stage",
+        ".env.staging",
+        ".env.test",
     ]
+    deny = load_preset("recommended")["deny"]
+    # One spelling per name: a bare name matches at any depth in Claude Code's rules, so
+    # `Read(.env)` beside `Read(**/.env)` was a second line saying the same thing.
+    assert deny["global"] == [f"Read(**/{n})" for n in names]
+    assert deny["retired"] == ["Read(.env*)", "Read(**/.env*)"]
+
+
+@pytest.mark.parametrize(
+    "template",
+    [".env.example", ".env.prod.example", ".env.sample", ".env.dist", ".env.defaults", ".env.tpl"],
+)
+def test_no_preset_deny_rule_reaches_a_template(template: str) -> None:
+    # The defect this list was rewritten for, read the way the rules are written: a `*` is any run
+    # of characters inside one name. A rule that matches a template refuses it for good.
+    # Mutation: `mutations/`'s "the preset denies the env files by a mask again" -> reddens.
+    for rule in load_preset("recommended")["deny"]["global"]:
+        pattern = rule.removeprefix("Read(").removesuffix(")").removeprefix("**/")
+        assert not fnmatch.fnmatchcase(template, pattern), rule
 
 
 # --- the file this writer shares with a human ---

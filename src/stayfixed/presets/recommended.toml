@@ -126,4 +126,27 @@ source = "anthropics/claude-plugins-official"
 [deny]
 # Machine-level deny rules, written into the user-scope settings. Deny only, always: the
 # plugin author may never ship an allow rule, and a preset is a template by another name.
-global = ["Read(.env*)", "Read(**/.env*)", "Read(**/.env)"]
+#
+# The env files by name, never by a mask. A deny rule outranks every allow rule, so the mask this
+# list used to hold, `.env*`, also refused `.env.example`, `.env.dist` and every other template a
+# project commits for an agent to read and edit, and no rule anywhere could let one through. The
+# names are the ones the common toolchains read; an env file under another name stays readable,
+# because keeping secrets from an agent is the sandbox's job and the harness's, and a list that
+# refuses a template is the defect this one replaced. A bare name matches at any depth in Claude
+# Code's rules, so `**/` adds nothing but the spelling an earlier `setup` already wrote.
+global = [
+  "Read(**/.env)",
+  "Read(**/.env.local)",
+  "Read(**/.env.*.local)",
+  "Read(**/.env.dev)",
+  "Read(**/.env.development)",
+  "Read(**/.env.prod)",
+  "Read(**/.env.production)",
+  "Read(**/.env.stage)",
+  "Read(**/.env.staging)",
+  "Read(**/.env.test)",
+]
+# What earlier presets wrote under `global`, which `stayfixed setup` takes back out of the user
+# settings file when it finds it there, and `stayfixed doctor`'s `retired-deny` row reports while
+# it is still there: the mask is what refused the templates.
+retired = ["Read(.env*)", "Read(**/.env*)"]

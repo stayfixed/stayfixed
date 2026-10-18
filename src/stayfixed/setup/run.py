@@ -281,6 +281,7 @@ def _write_user_settings(
     personal: Mapping[str, Any],
     *,
     settings: Path | None = None,
+    retired: Sequence[str] = (),
 ) -> bool:
     """Merge the preset's deny rules and the personal values into `<home>/<USER_SETTINGS>`.
 
@@ -294,6 +295,12 @@ def _write_user_settings(
     `~/.claude/settings.json` into a dotfiles tree, and `--home <dotfiles>/claude` writes
     `<dotfiles>/claude/.claude/settings.json` — a file no reader reads. When it is given, the
     root of the write is the named file's own directory and the walk is one component deep.
+
+    `retired` is the one removal: rules an earlier preset wrote under the same table and this one
+    took back (the preset's `[deny] retired`), each removed where it stands verbatim. A rule the
+    owner wrote is kept unless it is one of those exact strings, which is the rule an earlier
+    `setup` would have written in any case. A rule a preset both retires and lists is removed and
+    then added back at the end, so a contradictory preset still leaves it denied.
     """
     path = settings if settings is not None else home / USER_SETTINGS
     document, text = _read_document(path)
@@ -304,6 +311,7 @@ def _write_user_settings(
     existing_deny = (
         [r for r in raw_deny if isinstance(r, str)] if isinstance(raw_deny, list) else []
     )
+    existing_deny = [r for r in existing_deny if r not in retired]
     permissions["deny"] = existing_deny + [r for r in deny_rules if r not in existing_deny]
     document["permissions"] = permissions
 
@@ -1327,6 +1335,7 @@ def setup(
     write_machine(machine, personal=personal, overlay_root=None, machine=machine_table)
 
     deny_rules = [r for r in data.get("deny", {}).get("global", []) if isinstance(r, str)]
+    retired = [r for r in data.get("deny", {}).get("retired", []) if isinstance(r, str)]
     # **The `pluginConfigs` mirror is recomputed from the machine file, not from this run's own
     # new keys.** `personal` above is empty on every run after the first, so the mirror was
     # write-once: an owner who edited `reply_language` in the machine file — the documented way,
@@ -1338,7 +1347,9 @@ def setup(
     # is stated where a reader will meet it: a value set in Claude Code's plugin-config UI is
     # overwritten by the machine file on the next `setup`, because one file has to win and the
     # machine file is the one every stayfixed reader reads.
-    deny_written = _write_user_settings(home, deny_rules, read_personal(machine), settings=settings)
+    deny_written = _write_user_settings(
+        home, deny_rules, read_personal(machine), settings=settings, retired=retired
+    )
 
     installed, install_notes = _install_plugins(data, _agents(data), home=home, runner=runner)
     notes = list(install_notes)
