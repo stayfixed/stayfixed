@@ -3477,7 +3477,7 @@ reddens = ["tests/prove/test_javascript.py::test_a_preload_in_none_of_the_three_
 [[mutation]]
 name = "a preload a reader refuses is free in front of an entry"
 file = "src/stayfixed/profiles/javascript/adapters.py"
-before = "        if preload and value is not None and preload_form(value) is None:"
+before = "        if preload and value is not None and preload_form(value, name) is None:"
 after = "        if False:"
 reddens = ["tests/prove/test_javascript.py::test_a_preload_in_none_of_the_three_forms_is_refused[node:fs]"]
 
