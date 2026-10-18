@@ -17,8 +17,11 @@ found is `ENTRY_NOT_FOUND`, whose detail names `prove --junit` as the way on. Th
 <entry's realpath>, …]`, `<node>` the first `node` on `PATH`; `--test` runs that `node` too, or the
 one the command names by its path.
 
-**The report.** jest: `--json --outputFile=<report>`. vitest: `run` first where the command does
-not start with it, so it runs once; then `--reporter=json --outputFile=<report>`, and
+**The report.** jest: `--json --outputFile=<report>`. vitest: `run` first where the command's
+first word is none of vitest's subcommands, so it runs once; `related` kept, with `--run` where the
+command does not set it; `watch` and `dev` are `NEVER_ENDS`, and `bench`, `list`, `init` and
+`doctor`, which run no test suite that reports, `NO_TEST_RUN` (`vitest_unplanned`); then
+`--reporter=json --outputFile=<report>`, and
 `--reporter=default` where the command names no reporter of its own; the string form of
 `--outputFile` wins over a configuration's `outputFile` in either form, and a configuration's
 reporter that carries its own `outputFile` wins over it, so that report never arrives
@@ -120,6 +123,11 @@ NEVER_ENDS_DETAIL = (
     "{option} watches for changes and never ends, so no report is ever finished; "
     "prove one run without it"
 )
+# The reason a vitest subcommand that runs no test suite is not proven, and its detail.
+NO_TEST_RUN = "no-test-run"
+NO_TEST_RUN_DETAIL = (
+    "vitest {subcommand} runs no test suite that reports; prove `vitest run` instead"
+)
 FORGING = frozenset({"NODE_OPTIONS"})
 NODE_TEST_FORGING = FORGING | {"NODE_TEST_CONTEXT"}
 CONFIGS = ("package.json", ".npmrc", "jest.config.*", "vitest.config.*", "vite.config.*")
@@ -144,6 +152,14 @@ _SEPARATOR = "--"
 _TEST = "--test"
 _RUN = "run"
 _REPORTER = "reporter"
+# vitest 5.0.5's subcommands, which its parser reads in the first positional word: `run` runs
+# once; `related` runs the tests that import the files it names, once under `--run`; `watch` and
+# `dev` watch; `bench`, `list`, `init` and `doctor` run no test suite that reports (benchmarks; a
+# list of the tests collected; a project scaffold; the suite timed under each pool, no report).
+_VITEST_RELATED = "related"
+_VITEST_WATCHING = frozenset({"watch", "dev"})
+_VITEST_NO_TEST_RUN = frozenset({"bench", "list", "init", "doctor"})
+_VITEST_SUBCOMMANDS = frozenset({_RUN, _VITEST_RELATED, *_VITEST_WATCHING, *_VITEST_NO_TEST_RUN})
 
 _UNRESOLVED = (
     "no node_modules/{package} from here up to the project's top-level, and no {bin} on PATH "
@@ -221,6 +237,7 @@ class _Runner:
     report_name: str
     refused: Callable[[Sequence[str], Path, Path], str | None]
     never_ends: Callable[[Sequence[str]], str | None]
+    unplanned: Callable[[Sequence[str]], Unresolved | None]
     configs: Callable[[Sequence[str], Path], tuple[str, ...]]
     ours: Callable[[Sequence[str], Path], tuple[str, ...]]
     words: Callable[[Sequence[str]], tuple[str, ...]]
@@ -568,9 +585,14 @@ def _jest_ours(args: Sequence[str], report: Path) -> tuple[str, ...]:
 
 
 def _vitest_ours(args: Sequence[str], report: Path) -> tuple[str, ...]:
-    ours = ("--reporter=json", f"--outputFile={report}")
-    named = any(setting.name == _REPORTER for _, setting in _settings(vitest_settings, args))
-    return ours if named else (*ours, "--reporter=default")
+    settings = _settings(vitest_settings, args)
+    ours: tuple[str, ...] = ("--reporter=json", f"--outputFile={report}")
+    if not any(setting.name == _REPORTER for _, setting in settings):
+        ours = (*ours, "--reporter=default")
+    # `related` runs once under `--run`; vitest refuses a second setting of it before any run.
+    if args[:1] == (_VITEST_RELATED,) and not any(setting.name == _RUN for _, setting in settings):
+        ours = ("--run", *ours)
+    return ours
 
 
 def _jest_words(args: Sequence[str]) -> tuple[str, ...]:
@@ -578,8 +600,29 @@ def _jest_words(args: Sequence[str]) -> tuple[str, ...]:
 
 
 def _vitest_words(args: Sequence[str]) -> tuple[str, ...]:
-    """vitest's arguments, `run` first, so that it runs once and never watches."""
-    return tuple(args) if args[:1] == (_RUN,) else (_RUN, *args)
+    """vitest's arguments, `run` first where the first word is no subcommand of vitest's, so that
+    it runs once and never watches; a subcommand stays its own (`related` gets `--run`,
+    `_vitest_ours`)."""
+    return tuple(args) if args[:1] and args[0] in _VITEST_SUBCOMMANDS else (_RUN, *args)
+
+
+def _jest_unplanned(args: Sequence[str]) -> Unresolved | None:
+    return None
+
+
+def vitest_unplanned(args: Sequence[str]) -> Unresolved | None:
+    """Why vitest's subcommand in the first word of `args` cannot be proved: a watching one never
+    ends (`NEVER_ENDS`), and one that runs no test suite has no report (`NO_TEST_RUN`); `None`
+    for `run`, `related` and a first word that is no subcommand. Only the first word is read:
+    vitest reads the first positional word, past its options, and a word after an option may be
+    that option's value, so `vitest --globals watch` is planned as `run` with `watch` a filter,
+    which counts no test (`failed`), never `proved`."""
+    first = args[0] if args else None
+    if first in _VITEST_WATCHING:
+        return Unresolved(NEVER_ENDS, NEVER_ENDS_DETAIL.format(option=f"vitest {first}"))
+    if first in _VITEST_NO_TEST_RUN:
+        return Unresolved(NO_TEST_RUN, NO_TEST_RUN_DETAIL.format(subcommand=first))
+    return None
 
 
 _JEST = _Runner(
@@ -589,6 +632,7 @@ _JEST = _Runner(
     report_name=JEST_REPORT,
     refused=jest_refused,
     never_ends=jest_never_ends,
+    unplanned=_jest_unplanned,
     configs=_jest_configs,
     ours=_jest_ours,
     words=_jest_words,
@@ -600,6 +644,7 @@ _VITEST = _Runner(
     report_name=VITEST_REPORT,
     refused=vitest_refused,
     never_ends=vitest_never_ends,
+    unplanned=vitest_unplanned,
     configs=_vitest_configs,
     ours=_vitest_ours,
     words=_vitest_words,
@@ -657,6 +702,9 @@ class _PackageRunner:
         never = runner.never_ends(args)
         if never is not None:
             return Unresolved(NEVER_ENDS, NEVER_ENDS_DETAIL.format(option=never))
+        unplanned = runner.unplanned(args)
+        if unplanned is not None:
+            return unplanned
         path = environ.get("PATH", os.defpath)
         entry = entry_point(runner.name, runner.packages, cwd, root, path)
         if entry is None:

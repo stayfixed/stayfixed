@@ -44,7 +44,10 @@ is read as the runner's own parser reads it; every other option is free, `-c`/`-
 file among them, and the file it names, like a file node's `--require` or `--import` names by its
 path, is named among the files that can shape the report. A watch mode of any of the three never
 ends, and is `not proven` (`never-ends`), read from its last setting as the runner reads it (jest's
-`--watch --watchAll=false`, which ends, excepted: it is not proven either way).
+`--watch --watchAll=false`, which ends, excepted: it is not proven either way). vitest's
+subcommand in the command's first word is its own: `related` gets `--run`, `watch` and `dev` never
+end, and `bench`, `list`, `init` and `doctor`, which run no test suite that reports, are
+`not proven` (`no-test-run`).
 The `go test` adapter runs the `go` on `PATH` as `go test -json`, counting only the events of its
 standard output, with `GOENV=off`, `GOFLAGS=` and `GOTOOLCHAIN=local` set and an inherited `GOROOT`,
 `GOOS` or `GOARCH` removed; it refuses `-exec`, `-toolexec`, `-overlay`, `-o`, `-c` and a false

@@ -879,9 +879,15 @@ file; a file there that is not a link is never read. The run is the `node` on `P
 and nothing found is `entry-not-found` (`not proven`), whose detail names `prove --junit` as the way
 on. jest is run with `--json --outputFile=<report>` (jest 30.5.2's run of no test writes no report
 where its standard error is a pipe, as in most CI jobs, so it is `not proven` there and `failed`
-at a terminal: never `proved`); vitest with `run` first where the command does
-not start with it, `--reporter=json --outputFile=<report>`, and `--reporter=default` where the
-command names no reporter; `node --test` with a junit reporter to `<report>` and the spec reporter
+at a terminal: never `proved`); vitest with `run` first where the command's first word is
+none of its subcommands, `--reporter=json --outputFile=<report>`, and `--reporter=default` where
+the command names no reporter. vitest 5.0.5's subcommands, read in the command's first word:
+`run` is kept; `related` is kept and gets `--run` where the command does not set it; `watch` and
+`dev` never end (`never-ends`); `bench`, `list`, `init` and `doctor` run no test suite that
+reports, and are `not proven` (`no-test-run`), whose detail names `vitest run`. vitest itself
+reads the first word that is no option as the subcommand, so a subcommand after an option
+(`vitest --globals related a.js`) is planned as `run` with it a name filter, which `prove` counts
+as the run of the tests it names: `failed` where none, never `proved`; `node --test` with a junit reporter to `<report>` and the spec reporter
 to standard output, and a testcase node writes for a whole file that ran no test is not counted
 unless it failed. Each refuses (`refused-option`, naming the option) a closed list drawn by running
 every option the pinned runner registers over a failing test: jest's `--json`, `--outputFile`,
@@ -967,7 +973,7 @@ verified`.
 | Row | Verdict | Exit | Reason |
 |---|---|---|---|
 | the runner's adapter refuses the command, the command assigns a variable in the adapter's forging set or one `uv` loads a file from, it gives `uv` an option that loads a file, the program changed between the plan and the launch, or `--junit` names the report of a command an adapter recognises | `refused` | 2 | the adapter's own (`refused-option`), `assigned-forging`, `launcher-option`, `resolved-elsewhere`, `junit-beside-adapter` |
-| no adapter recognises the command, its entry point does not resolve, it asks for a run that never ends, it could not start, it was interrupted or passed its time limit, it wrote no report, the run did not write the `--junit` report, or the report does not read | `not proven` | 1 | `not-recognised`, the adapter's own (`entry-not-found`, `never-ends`), `not-started`, `interrupted`, `timed-out`, `no-report`, `junit-unchanged`, a report's own |
+| no adapter recognises the command, its entry point does not resolve, it asks for a run that never ends or one that runs no test suite, it could not start, it was interrupted or passed its time limit, it wrote no report, the run did not write the `--junit` report, or the report does not read | `not proven` | 1 | `not-recognised`, the adapter's own (`entry-not-found`, `never-ends`, `no-test-run`), `not-started`, `interrupted`, `timed-out`, `no-report`, `junit-unchanged`, a report's own |
 | the report holds a failed test | `failed` | 1 | `failing` |
 | the report holds no test | `failed` | 1 | `none-ran` |
 | every test the report holds was skipped | `failed` | 1 | `all-skipped` |

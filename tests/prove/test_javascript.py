@@ -29,6 +29,8 @@ from stayfixed.profiles.javascript.adapters import (
     JEST_REPORT,
     NEVER_ENDS,
     NEVER_ENDS_DETAIL,
+    NO_TEST_RUN,
+    NO_TEST_RUN_DETAIL,
     NODE_DISCOVERY,
     NODE_REPORT,
     NODE_TEST_FORGING,
@@ -248,6 +250,61 @@ def test_vitest_without_run_runs_once(tmp_path: Path) -> None:
     assert again.argv == (str(node), str(entry), "run", "a", *ours, "--reporter=default")
     named = plan_of(VITEST, ["vitest", "run", "--reporter", "dot"], project, path=path)
     assert named.argv == (str(node), str(entry), "run", "--reporter", "dot", *ours)
+
+
+def test_vitest_related_keeps_its_subcommand_and_runs_once(tmp_path: Path) -> None:
+    # vitest reads its first positional word as a subcommand (measured on 5.0.5): `run` put in
+    # front of `related` made it a name filter, and a run that passes directly `failed`. So `run`
+    # is added only where the command's first word is no subcommand, and `related` gets `--run`,
+    # unless the command sets it (vitest refuses two settings of it before any run). Mutation
+    # (declared): `run` added in front of every command -> the first plan starts `run related`.
+    project = tmp_path / "project"
+    _, entry, node = installed(project)
+    path = str(node.parent)
+    report = project / "scratch" / VITEST_REPORT
+    ours = ("--reporter=json", f"--outputFile={report}", "--reporter=default")
+    got = plan_of(VITEST, ["npx", "vitest", "related", "src/a.js"], project, path=path)
+    assert got.argv == (str(node), str(entry), "related", "src/a.js", "--run", *ours)
+    given = plan_of(VITEST, ["vitest", "related", "--run", "src/a.js"], project, path=path)
+    assert given.argv == (str(node), str(entry), "related", "--run", "src/a.js", *ours)
+    off = plan_of(VITEST, ["vitest", "related", "--no-run", "src/a.js"], project, path=path)
+    assert off.argv == (str(node), str(entry), "related", "--no-run", "src/a.js", *ours)
+
+
+@pytest.mark.parametrize("subcommand", ["watch", "dev"])
+def test_vitest_s_watching_subcommands_are_not_proven(tmp_path: Path, subcommand: str) -> None:
+    # Measured on 5.0.5: `vitest watch` and `vitest dev` run, then wait for changes past any time
+    # limit. Mutation (declared): the watching subcommands planned -> each is a plan.
+    assert planned(VITEST, ["vitest", subcommand, "a"], tmp_path) == Unresolved(
+        NEVER_ENDS, NEVER_ENDS_DETAIL.format(option=f"vitest {subcommand}")
+    )
+
+
+@pytest.mark.parametrize("subcommand", ["bench", "list", "init", "doctor"])
+def test_vitest_s_subcommands_that_run_no_test_are_not_proven(
+    tmp_path: Path, subcommand: str
+) -> None:
+    # Measured on 5.0.5, each with the report options: `bench` runs benchmarks (exit 1 with no
+    # benchmark file, a report of no test); `list` prints the tests it collects and writes no
+    # report (exit 0); `init` asks for a project to scaffold; `doctor` runs the suite under each
+    # pool to time it and writes no report (exit 0). Mutation (declared): those subcommands
+    # planned -> each is a plan, `run` in front.
+    detail = NO_TEST_RUN_DETAIL.format(subcommand=subcommand)
+    assert planned(VITEST, ["npx", "vitest", subcommand], tmp_path) == Unresolved(
+        NO_TEST_RUN, detail
+    )
+    assert len(detail) <= CLIPPED_CHARS
+
+
+def test_a_vitest_subcommand_after_an_option_is_read_as_a_name_filter(tmp_path: Path) -> None:
+    # Only the first word is read as a subcommand: vitest itself reads the first positional word
+    # (measured: `vitest --globals related a.js` runs `related`), and a word after an option may
+    # be that option's value, so the plan stays `run` with the word as a filter: `failed` where it
+    # names no test, never `proved`.
+    project = tmp_path / "project"
+    _, _, node = installed(project)
+    got = plan_of(VITEST, ["vitest", "--globals", "watch"], project, path=str(node.parent))
+    assert got.argv[2:5] == ("run", "--globals", "watch")
 
 
 def test_the_report_options_go_before_a_separator(tmp_path: Path) -> None:
@@ -1059,6 +1116,24 @@ def test_a_genuine_passing_run_is_proved(tmp_path: Path, runner: str) -> None:
     assert (got.verdict, got.reason, got.counts, got.exit_code) == (PROVED, "", Counts(1, 0, 1), 0)
     assert got.runner == runner
     assert got.program == os.path.realpath(runner_directory("node") / "node")
+
+
+@needs_packages
+def test_vitest_related_is_proved(tmp_path: Path) -> None:
+    # The reviewer's case: `vitest related` passes directly and was `failed` under `prove`.
+    project = js_project(tmp_path / "p", "vitest")
+    (project / "src").mkdir()
+    (project / "src" / "a.js").write_text("export const one = () => 1;\n", encoding="utf-8")
+    (project / "a.test.js").write_text(
+        VITEST_HEAD
+        + 'import { one } from "./src/a.js";\ntest("one", () => expect(one()).toBe(1));\n',
+        encoding="utf-8",
+    )
+    (project / "b.test.js").write_text(
+        VITEST_HEAD + 'test("other", () => expect(2).toBe(2));\n', encoding="utf-8"
+    )
+    got = real(project, "npx", "vitest", "related", "src/a.js")
+    assert (got.verdict, got.reason, got.counts, got.exit_code) == (PROVED, "", Counts(1, 0, 0), 0)
 
 
 @needs_packages

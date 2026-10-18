@@ -2236,6 +2236,54 @@ before = "        elif word in _VALUED_INTERPRETER_OPTIONS:\n            value =
 after = "        elif word in _VALUED_INTERPRETER_OPTIONS:\n            value = False\n"
 reddens = ["tests/prove/test_pytest.py::test_a_warning_filter_or_x_option_is_no_optimization[W_-O]"]
 
+# vitest reads its first positional word as a subcommand: `run` put in front of `related` makes
+# `related` a name filter, and a passing run `failed`.
+[[mutation]]
+name = "the vitest adapter puts run in front of every command"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = "    return tuple(args) if args[:1] and args[0] in _VITEST_SUBCOMMANDS else (_RUN, *args)"
+after = "    return tuple(args) if args[:1] == (_RUN,) else (_RUN, *args)"
+reddens = [
+  "tests/prove/test_javascript.py::test_vitest_related_keeps_its_subcommand_and_runs_once",
+  "tests/prove/test_javascript.py::test_vitest_related_is_proved",
+]
+
+[[mutation]]
+name = "the vitest adapter adds no --run to related"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = '        ours = ("--run", *ours)'
+after = "        ours = ours"
+reddens = ["tests/prove/test_javascript.py::test_vitest_related_keeps_its_subcommand_and_runs_once"]
+
+[[mutation]]
+name = "the vitest adapter adds --run to related beside the command's own"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = "    if args[:1] == (_VITEST_RELATED,) and not any(setting.name == _RUN for _, setting in settings):"
+after = "    if args[:1] == (_VITEST_RELATED,):"
+reddens = ["tests/prove/test_javascript.py::test_vitest_related_keeps_its_subcommand_and_runs_once"]
+
+# `vitest watch` and `vitest dev` wait for changes past any time limit.
+[[mutation]]
+name = "the vitest adapter plans its watching subcommands"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = "    if first in _VITEST_WATCHING:"
+after = "    if False:"
+reddens = [
+  "tests/prove/test_javascript.py::test_vitest_s_watching_subcommands_are_not_proven[watch]",
+  "tests/prove/test_javascript.py::test_vitest_s_watching_subcommands_are_not_proven[dev]",
+]
+
+# `bench`, `list`, `init` and `doctor` run no test suite that reports.
+[[mutation]]
+name = "the vitest adapter plans its subcommands that run no test"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = "    if first in _VITEST_NO_TEST_RUN:"
+after = "    if False:"
+reddens = [
+  "tests/prove/test_javascript.py::test_vitest_s_subcommands_that_run_no_test_are_not_proven[bench]",
+  "tests/prove/test_javascript.py::test_vitest_s_subcommands_that_run_no_test_are_not_proven[list]",
+]
+
 # `--setup-plan` exits 0 and reports a failing test as passed: the refusal is load-bearing.
 [[mutation]]
 name = "the pytest adapter leaves --setup-plan off its refusals"
@@ -2574,15 +2622,15 @@ reddens = ["tests/prove/test_javascript.py::test_an_unresolvable_entry_installs_
 [[mutation]]
 name = "vitest runs without run"
 file = "src/stayfixed/profiles/javascript/adapters.py"
-before = "    return tuple(args) if args[:1] == (_RUN,) else (_RUN, *args)"
+before = "    return tuple(args) if args[:1] and args[0] in _VITEST_SUBCOMMANDS else (_RUN, *args)"
 after = "    return tuple(args)"
 reddens = ["tests/prove/test_javascript.py::test_vitest_without_run_runs_once"]
 
 [[mutation]]
 name = "vitest's default reporter is added beside the command's own"
 file = "src/stayfixed/profiles/javascript/adapters.py"
-before = '    return ours if named else (*ours, "--reporter=default")'
-after = '    return (*ours, "--reporter=default")'
+before = "    if not any(setting.name == _REPORTER for _, setting in settings):"
+after = "    if True:"
 reddens = ["tests/prove/test_javascript.py::test_vitest_without_run_runs_once"]
 
 [[mutation]]
