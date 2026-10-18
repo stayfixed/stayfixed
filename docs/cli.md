@@ -818,27 +818,25 @@ no `--`, or nothing after it, is a usage error (2).
 
 The command is read past its `NAME=value` assignments, `env` and `uv run …` (`uv run -m` too), as
 the session guard reads a command, and the first runner adapter that recognises what is left plans
-the run: the argv to execute, where the runner's report arrives and in which format, and which
-files in the tree can shape it. A command no adapter recognises, an `env` given an option among
-them, is `not proven`. The run is the command as typed, the launcher's words (`uv run` and its
-options, whatever they are) kept in front, with only the adapter's report options added; the
-receipt names the realpath of the program that ran. Every `NAME=value` the command spells before
-what runs is one of its assignments, wherever it stands: before `uv run` or after it, bare or
-after `env`. An assignment of a variable in the adapter's forging set is refused
-(`assigned-forging`, naming the variable). The run's environment is built once, as a shell builds
-it: yours, less every inherited variable of the adapter's forging set, then the command's own
-assignments, in order, the last of two for one name winning, and never in its argv. The adapter
-finds its program in that environment: a word holding a `/` from the directory the command runs
-in, a bare name on its `PATH`, so `PATH=.venv/bin:$PATH pytest` runs the `pytest` it names. The
-environment is the whole launched process's, the launcher's included: `uv run TYPED=yes pytest`,
-which `uv` itself would not run, runs with `TYPED` set. A
-report the runner writes to a file is read from a scratch directory outside the project;A
-report the runner writes to a file is read from a scratch directory outside the project; a report
-that is the runner's own standard output (a test event stream) is copied to yours as it arrives,
-every byte, and only the format's own events are counted. Under `--json` the runner's standard
-output, whatever the report's source, goes to standard error instead, every byte, so that standard
-output holds the one JSON object; without `--json` it is yours. The runner's standard input is
-`/dev/null`, never yours, so nothing piped into `prove` reaches the run and a test that reads it
+the run: the argv to execute, where the runner's report arrives and in which format, and which files
+in the tree can shape it. A command no adapter recognises, an `env` given an option among them, is
+`not proven`. The run is the command as typed, the launcher's words (`uv run` and its options,
+whatever they are) kept in front, with only the adapter's report options added; the receipt names
+the realpath of the program that ran. Every `NAME=value` the command spells before what runs is one
+of its assignments, wherever it stands: before `uv run` or after it, bare or after `env`. An
+assignment of a variable in the adapter's forging set is refused (`assigned-forging`, naming the
+variable). The run's environment is built once, as a shell builds it: yours, less every inherited
+variable of the adapter's forging set, then the command's own assignments, in order, the last of two
+for one name winning, and never in its argv. The adapter finds its program in that environment: a
+word holding a `/` from the directory the command runs in, a bare name on its `PATH`, so
+`PATH=.venv/bin:$PATH pytest` runs the `pytest` it names. The environment is the whole launched
+process's, the launcher's included: `uv run TYPED=yes pytest`, which `uv` itself would not run, runs
+with `TYPED` set. A report the runner writes to a file is read from a scratch directory outside the
+project; a report that is the runner's own standard output (a test event stream) is copied to yours
+as it arrives, every byte, and only the format's own events are counted. Under `--json` the runner's
+standard output, whatever the report's source, goes to standard error instead, every byte, so that
+standard output holds the one JSON object; without `--json` it is yours. The runner's standard input
+is `/dev/null`, never yours, so nothing piped into `prove` reaches the run and a test that reads it
 sees its end; its standard error is yours. Text a command prints is never counted.
 
 **The pytest adapter** recognises `pytest`, `py.test` and `python… -m pytest` (the interpreter's own
@@ -971,7 +969,7 @@ has a Go case of its own: a test, or a `TestMain`, that prints test2json's own f
 PASS: TestX`) gets a `pass` event for a test that never ran, and that is the code under test shaping
 its report.
 
-**`--junit PATH`** is for a runner no adapter knows: no adapter is consulted, and the command runs
+**`--junit PATH`** is for a runner no adapter knows: no adapter is consulted, the command runs
 as typed (its assignments, `env` and `uv run …` read as above, its program found as above, nothing
 refused or removed), and its report is the JUnit file at `PATH`, read from the directory the command
 runs in and allowed anywhere, inside the project too. Before the run `prove` notes what is at
@@ -1014,23 +1012,22 @@ directory is removed, and the run's evidence record is still written.
 
 **The line** says the verdict and its reason in words, the counts (passed, failed, skipped), the
 runner and the realpath of the program that ran (and of the entry it runs, where it is `node`
-running jest's or vitest's), each variable of your environment the run did not get
-(`removed from the run's environment: NODE_OPTIONS`: one of the adapter's forging set), and the
-files that can shape the report: the
-runner's configuration files that exist and that git tracks or does not ignore, with a count of the
-ignored ones (`and N ignored`), then any file the command itself named as its configuration, from
-the top-level where it lies there and whole where it does not (outside a repository too, where git
-names nothing else), and the untracked files in its
-discovery set, those git does not ignore first and then the ignored ones; twenty of each and a count
-of the rest. The tree's state is taken before the run and after it, and is information for you,
-never an input to the verdict. `--json` carries `verdict`, `reason`, `detail` (the variable a
-refused assignment named, the option or word the runner's adapter refused, the `--junit` path on `junit-unchanged`, or where a report stopped reading), `argv` (the
-command, every `NAME=value` and `--option=value` value replaced by `…`; a value passed as the word
-after its option is kept), `runner`, `program`, `entry`, `verified` (false on a `--junit` run, and
-only there), `scrubbed` (those variables'
-names, sorted), `counts`, `exit_code`, `report_digest`
-(the SHA-256 of the report counted), `commit`, `dirty_before`, `dirty_after`, `untracked`,
-`untracked_more`, `configs`, `configs_more` and `ignored_configs`.
+running jest's or vitest's), each variable of your environment the run did not get (`removed from
+the run's environment: NODE_OPTIONS`: one of the adapter's forging set), and the files that can
+shape the report: the runner's configuration files that exist and that git tracks or does not
+ignore, with a count of the ignored ones (`and N ignored`), then any file the command itself named
+as its configuration, from the top-level where it lies there and whole where it does not (outside a
+repository too, where git names nothing else), and the untracked files in its discovery set, those
+git does not ignore first and then the ignored ones; twenty of each and a count of the rest. The
+tree's state is taken before the run and after it, and is information for you, never an input to the
+verdict. `--json` carries `verdict`, `reason`, `detail` (the variable a refused assignment named,
+the option or word the runner's adapter refused, the `--junit` path on `junit-unchanged`, or where a
+report stopped reading), `argv` (the command, every `NAME=value` and `--option=value` value replaced
+by `…`; a value passed as the word after its option is kept), `runner`, `program`, `entry`,
+`verified` (false on a `--junit` run, and only there), `scrubbed` (those variables' names, sorted),
+`counts`, `exit_code`, `report_digest` (the SHA-256 of the report counted), `commit`,
+`dirty_before`, `dirty_after`, `untracked`, `untracked_more`, `configs`, `configs_more` and
+`ignored_configs`.
 
 **The evidence record.** Every run appends one JSON line to
 `~/.local/state/stayfixed/evidence/<key>.jsonl`, `~` being your entry in the password database:
