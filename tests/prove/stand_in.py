@@ -20,8 +20,8 @@ The program's options, all after the word `stand-in`:
 - `--report-from-stdin`: the report's shape is the first line standard input holds, where it holds
   one, as a runner a debugger drives takes its commands there;
 - `--pad N`: `N` bytes of whitespace after the report's last element, or after its last event;
-- `--hang STARTED LATE`: write `STARTED`, leave a child that writes `LATE` a few seconds later,
-  and never exit;
+- `--hang STARTED LATE`: leave a child that holds a lock on `held(LATE)` for as long as it lives,
+  writes `STARTED` once it holds it, and writes `LATE` a few seconds later; and never exit;
 - `--escape PIDFILE` and `--escape-quiet PIDFILE`: leave a child in a session of its own, out of
   the run's process group, that holds standard output open for as long as it lives and writes to
   it without pause, or writes nothing, and exit once the child has written its pid in `PIDFILE`,
@@ -168,12 +168,22 @@ def _holds(options: dict[str, list[str]]) -> bool:
     return all(os.getcwd() == where for where in options.get("--expect-cwd", []))
 
 
+def held(late: Path) -> Path:
+    """The file `--hang`'s child holds a lock on for as long as it lives: the kernel lets go of it
+    the moment the child ends, so a test sees that it has ended without waiting for `LATE`."""
+    return late.with_name(f"{late.name}.held")
+
+
 def _hang(started: str, late: str) -> None:
     child = (
-        f"import time, pathlib; time.sleep({LATE_AFTER_SECONDS}); pathlib.Path({late!r}).touch()"
+        "import fcntl, time, pathlib\n"
+        f"lock = open({str(held(Path(late)))!r}, 'w')\n"
+        "fcntl.flock(lock, fcntl.LOCK_EX)\n"
+        f"pathlib.Path({started!r}).touch()\n"
+        f"time.sleep({LATE_AFTER_SECONDS})\n"
+        f"pathlib.Path({late!r}).touch()\n"
     )
     subprocess.Popen([sys.executable, "-c", child])
-    Path(started).touch()
     while True:
         time.sleep(1)
 

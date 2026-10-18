@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import contextlib
 import dataclasses
+import fcntl
 import hashlib
 import io
 import json
@@ -54,7 +55,7 @@ from stayfixed.prove.run import (
     prove,
 )
 from tests.gitfixture import git
-from tests.prove.stand_in import JUNIT, LATE_AFTER_SECONDS, NAME, StandIn
+from tests.prove.stand_in import JUNIT, LATE_AFTER_SECONDS, NAME, StandIn, held
 
 PROVED, FAILED, NOT_PROVEN, REFUSED = (
     Verdict.PROVED,
@@ -475,6 +476,23 @@ def test_a_value_never_reaches_the_receipt(tmp_path: Path) -> None:
     assert got.verdict == PROVED
 
 
+def ended_before_late(late: Path) -> bool:
+    """Whether `--hang`'s child has ended without writing `late`: its lock is free at once where
+    its group was ended, and only once it has written `late` and exited where it was not, which
+    the wait, past the child's own delay, covers."""
+    deadline = time.monotonic() + LATE_AFTER_SECONDS + 1
+    with held(late).open("w") as lock:
+        while True:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.monotonic() > deadline:
+                    return False
+                time.sleep(0.02)
+    return not late.exists()
+
+
 class _Ending:
     """A stand-in for `processes.exited` that ends the run once the runner has said it started,
     the way `ending` names, and records the bound it was asked to wait under."""
@@ -529,8 +547,7 @@ def test_an_ended_run_is_not_proven_and_leaves_no_scratch(
     assert started.exists()
     [(_, scratch)] = adapter.seen
     assert not scratch.exists()
-    time.sleep(LATE_AFTER_SECONDS + 1)
-    assert not late.exists()
+    assert ended_before_late(late)
 
 
 def test_a_fault_in_the_wait_still_ends_the_group_and_reaches_the_caller(
@@ -545,8 +562,7 @@ def test_a_fault_in_the_wait_still_ends_the_group_and_reaches_the_caller(
         run(tmp_path, NAME, "--hang", str(started), str(late), adapter=adapter)
     [(_, scratch)] = adapter.seen
     assert not scratch.exists()
-    time.sleep(LATE_AFTER_SECONDS + 1)
-    assert not late.exists()
+    assert ended_before_late(late)
 
 
 def test_a_run_outside_the_main_thread_sets_no_signal_handler(tmp_path: Path) -> None:
