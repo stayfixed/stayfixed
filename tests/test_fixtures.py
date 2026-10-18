@@ -503,6 +503,41 @@ def test_no_workflow_splices_an_expression_into_a_shell() -> None:
         assert spliced(text) == [], (workflow.name, spliced(text))
 
 
+# An action a step uses, by a full commit sha: a tag or a branch can be moved to other code after
+# the pin was reviewed. A step's `./` action is this repository's own; a job's `uses:` is a call of
+# a reusable workflow, whose ref `smoke-release.yml` names on purpose (`@dev`, a release tag).
+_PINNED_ACTION = re.compile(r"[\w.-]+/[\w./-]+@[0-9a-f]{40}")
+
+
+@needs_workflows_dir
+def test_every_action_a_step_uses_is_pinned_by_a_commit_sha() -> None:
+    # Every workflow, every job, every step: one sweep, so a step added to any job is held.
+    # Mutations (declared): `mutations/`'s "the runners job takes an action by its tag" and "the
+    # evidence upload takes its action by a tag" -> each step is found unpinned.
+    unpinned: list[tuple[str, str, object]] = []
+    seen = 0
+    for workflow in sorted(WORKFLOWS.glob("*.y*ml")):
+        document = load(workflow.read_text(encoding="utf-8"))
+        assert isinstance(document, dict), workflow.name
+        jobs = document.get("jobs")
+        assert isinstance(jobs, dict), workflow.name
+        for name, job in jobs.items():
+            assert isinstance(job, dict), (workflow.name, name)
+            steps = job.get("steps") or []
+            assert isinstance(steps, list), (workflow.name, name)
+            for step in steps:
+                uses = step.get("uses") if isinstance(step, dict) else None
+                if uses is None:
+                    continue
+                seen += 1
+                local = isinstance(uses, str) and uses.startswith("./")
+                if not local and not (isinstance(uses, str) and _PINNED_ACTION.fullmatch(uses)):
+                    unpinned.append((workflow.name, name, uses))
+    # The walk's floor: a reader that found no step would pass with nothing held.
+    assert seen >= 10, seen
+    assert unpinned == []
+
+
 def test_an_expression_is_found_in_every_spelling_of_a_script(tmp_path: Path) -> None:
     # The check above is only as good as what it reads: a script in each spelling the reader
     # takes, each carrying an expression, is found, and one kept in `env:` is not. Mutation

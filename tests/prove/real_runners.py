@@ -7,10 +7,14 @@ on one: every mutation is reddened by a test that runs no real runner. Where the
 runner fails the test instead, so a job that meant to run them cannot pass by skipping them all.
 
 pytest comes from the project's own environment, the one running the suite: its console script
-stands beside the interpreter (`sys.executable`'s directory), and nothing is installed for it.
-`node` and `go` are the ones on `PATH`. jest and vitest are the packages an `npm ci` of
-`tests/fixtures/prove/node/` installed, at the versions its lockfile pins, in the `node_modules`
-directory `STAYFIXED_NODE_MODULES` names; a test links its scratch project's `node_modules` to it.
+stands beside the interpreter (`sys.executable`'s directory), and nothing is installed for it, so
+its tests run wherever the suite does. `node` and `go` are the ones on `PATH`, and only where
+`STAYFIXED_RUNNERS_ON_PATH` is `1`, as the CI job that installs the pinned ones sets it: GitHub's
+hosted images ship a `node` and a `go` of their own, at versions nothing here pins, and every other
+job leaves the variable unset, so there their tests skip. jest and vitest are the packages an
+`npm ci` of `tests/fixtures/prove/node/` installed, at the versions its lockfile pins, in the
+`node_modules` directory `STAYFIXED_NODE_MODULES` names; a test links its scratch project's
+`node_modules` to it. `tests/fixtures/prove/README.md` says how to run them all locally.
 """
 
 from __future__ import annotations
@@ -27,6 +31,9 @@ import pytest
 MARK = "runners"
 REQUIRE = "STAYFIXED_REQUIRE_RUNNERS"
 NODE_MODULES = "STAYFIXED_NODE_MODULES"
+# Where `1`, a runner not beside the interpreter (`node`, `go`) is taken from `PATH`; elsewhere it
+# is not installed as far as these tests are concerned.
+ON_PATH = "STAYFIXED_RUNNERS_ON_PATH"
 # What the fixture's lockfile installs that the tests run.
 PACKAGES = ("jest", "vitest")
 
@@ -35,10 +42,12 @@ _Test = TypeVar("_Test", bound=Callable[..., object])
 
 def where(name: str) -> Path | None:
     """The directory that holds the runner `name`'s program: the running interpreter's own first,
-    then the first on `PATH`; `None` where neither does."""
+    then, where `ON_PATH` is `1`, the first on `PATH`; `None` where neither does."""
     beside = Path(sys.executable).parent / name
     if beside.is_file() and os.access(beside, os.X_OK):
         return beside.parent
+    if os.environ.get(ON_PATH) != "1":
+        return None
     found = shutil.which(name)
     return Path(found).parent if found is not None else None
 
@@ -65,7 +74,7 @@ def runner_directory(name: str) -> Path:
     test `needs_runner` did not skip can reach."""
     found = where(name)
     if found is None:
-        pytest.fail(f"{name} is not installed and {REQUIRE}=1 requires it")
+        pytest.fail(f"{name} is not installed (or {ON_PATH} is not 1) and {REQUIRE}=1 requires it")
     return found
 
 

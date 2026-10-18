@@ -3685,22 +3685,22 @@ as the check is required on the gate branch only.
 | `python-version` | `"3.13"` | the interpreter stayfixed runs on; 3.11 is the floor |
 | `only` | `""` | the checks to run, space-separated: `config` and any configured gate name. Empty runs the configuration check and every configured gate, and the configuration check runs whatever this names |
 | `timeout-minutes` | `15` | the job's time limit, a whole number of minutes from 5 to 60; any value the runner does not render as a whole number from 5 to 60 fails the job in its first step, before anything is checked out |
-| `evidence` | `false` | upload the [evidence records](#stayfixed-prove---timeout-seconds---junit-path----command-) the two gate steps appended, as an artifact named for the job, `only:` and the run attempt (one per call: calls that share an `only:` share the name, and each upload after the first fails without failing the job); off unless the caller turns it on, since the artifact's one consumer is stayfixed's own metrics |
+| `evidence` | `false` | upload `~/.local/state/stayfixed/evidence/`, where the two gate steps append their [evidence records](#stayfixed-prove---timeout-seconds---junit-path----command-) on a runner that sets no `XDG_STATE_HOME`, as an artifact named for `only:` and the run attempt (one per call: calls that share an `only:` share the name, and each upload after the first fails without failing the job); off unless the caller turns it on, since an artifact is stored at the caller's cost |
 | `evidence-retention-days` | `14` | how many days that artifact is kept, where `evidence` is on |
 
-**The evidence upload.** Each of the two gate steps appends one line to the runner's
-`~/.local/state/stayfixed/evidence/<key>.jsonl`. With `evidence: true`, a last step uploads that
-directory with `actions/upload-artifact`, pinned by its sha, after both steps whatever they came
-to (`if: always()`), and an empty directory uploads nothing. It is the one step with an `if:` and
-the one that may fail (`continue-on-error`): a log may neither change the verdict nor be lost to
-one, so a name a caller repeats, or the artifact service failing, fails nothing. The artifact is
-named for the called job, `only:` and the run attempt, so there is one per call and attempt:
-`github.job` there is this workflow's own job, not the caller's, and a caller that makes several
-calls with one `only:` (a matrix, or two jobs) gets one name for all of them, so each upload after
-the first fails, silently; give each call its own `only:` to keep each one's records. The upload
-reads `~` from `HOME`, while the records follow the password database's home, as `prove` and
-`gate` always do; on GitHub's hosted runners the two are one directory. It runs no
-command and reads no secret, and what it uploads is bytes the pull request's own code can write (a
+**The evidence upload.** Each of the two gate steps appends one line to the runner's evidence
+record, `~/.local/state/stayfixed/evidence/<key>.jsonl` on a runner that sets no `XDG_STATE_HOME`,
+GitHub's hosted ones among them. With `evidence: true`, a last step uploads
+`~/.local/state/stayfixed/evidence/` with `actions/upload-artifact`, pinned by its sha, after both
+steps whatever they came to (`if: always()`); an empty or missing directory uploads nothing, which
+is what a runner that sets `XDG_STATE_HOME` gets. It is the one step with an `if:` and the one
+that may fail (`continue-on-error`): a log may neither change the verdict nor be lost to one, so a
+name a caller repeats, or the artifact service failing, fails nothing. The artifact is named for
+`only:` and the run attempt, so there is one per call and attempt; it names no job, since
+`github.job` in a called workflow is always this workflow's own `gates`. A caller that makes
+several calls with one `only:` (a matrix, or two jobs) gets one name for all of them, so each
+upload after the first fails, silently; give each call its own `only:` to keep each one's records.
+It runs no command and reads no secret, and what it uploads is bytes the pull request's own code can write (a
 custom gate runs in the same job and can append to the record), which is why a record is a log that
 no gate, verdict or trust decision reads.
 

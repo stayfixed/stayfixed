@@ -13,9 +13,10 @@ tests failed by the dozen on one machine and passed on the next.
 Here, rather than in the product, because the product's behaviour for a real user is right; it
 is the suite that must not depend on whose machine it runs on. `HOME` points at a fresh
 directory for each test and `XDG_CONFIG_HOME`, which `git` reads before `HOME/.config`, is
-dropped, as is `XDG_STATE_HOME`, which the evidence records read before `HOME`. A test that needs a global configuration writes one into that directory. What `HOME`
-cannot seal is git's system configuration, which `scrubbed_env` gives no variable to redirect;
-no shipped system file carries an excludes rule.
+dropped, as is `XDG_STATE_HOME`, which the evidence records read before `HOME`. A test that
+needs a global configuration writes one into that directory. What `HOME` cannot seal is git's
+system configuration, which `scrubbed_env` gives no variable to redirect; no shipped system file
+carries an excludes rule.
 
 The directory is empty but for one file: a `.gitconfig` that turns git's automatic maintenance
 off, with the two keys and for the reason `tests/gitfixture.py` gives the fixture's `git`.

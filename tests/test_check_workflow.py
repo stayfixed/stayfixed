@@ -150,9 +150,7 @@ STEPS: list[dict[str, Node]] = [
         "continue-on-error": "true",
         "uses": "actions/upload-artifact",
         "with": {
-            "name": (
-                "stayfixed-evidence-${{ github.job }}-${{ inputs.only }}-${{ github.run_attempt }}"
-            ),
+            "name": "stayfixed-evidence-${{ inputs.only }}-${{ github.run_attempt }}",
             "path": "~/.local/state/stayfixed/evidence/",
             "if-no-files-found": "ignore",
             "retention-days": "${{ inputs.evidence-retention-days }}",
@@ -482,54 +480,24 @@ def _inputs() -> dict[str, Node]:
 
 
 @needs_workflow
-def test_the_upload_is_last_and_the_only_step_with_an_if() -> None:
-    # The evidence records the gate steps appended are uploaded after both, whatever they came
-    # to, and a failed upload (a name a caller's matrix repeats, an outage) fails nothing.
-    # Mutations (declared): the upload's `if: always()` dropped -> a failed run uploads no record;
-    # its `continue-on-error` dropped -> a failed upload fails the job; a judging step given an
-    # `if:` -> it is no longer the only one.
-    steps = _steps()
-    assert _name(steps[-1]) == UPLOAD
-    upload = steps[-1]
-    assert upload["if"] == "always() && inputs.evidence", upload
-    assert upload["continue-on-error"] == "true", upload
-    assert [_name(step) for step in steps if "if" in step or "continue-on-error" in step] == [
-        UPLOAD
-    ]
-
-
-@needs_workflow
-def test_the_upload_runs_no_command_and_reads_no_secret() -> None:
-    # The step runs no command, reads no secret, and uploads bytes the pull request's own code
-    # can write (a custom gate runs in the job and can append to the record), which is why a
-    # record is a log that no gate, verdict or trust decision reads. Mutations (declared): the
-    # upload gains a `run:` -> its keys differ; its `with:` reads a secret -> the expression is
-    # in it.
-    upload = _step(UPLOAD)
-    assert set(upload) == {"name", "if", "continue-on-error", "uses", "with"}, upload
-    assert "secrets." not in json.dumps(upload)
-
-
-_PINNED = re.compile(r"actions/upload-artifact@[0-9a-f]{40}")
-
-
-@needs_workflow
-def test_the_upload_is_pinned_by_sha_and_named_per_leg() -> None:
-    # A caller's matrix calls the job once a leg, and two uploads of one name in one run collide.
-    # Mutation (declared): the artifact's name made constant -> it names no leg.
-    upload = _step(UPLOAD)
-    assert isinstance(upload["uses"], str) and _PINNED.fullmatch(upload["uses"]), upload
-    given = upload["with"]
+def test_the_upload_is_named_for_only_and_the_attempt() -> None:
+    # A caller's matrix calls the job once a leg, and two uploads of one name in one run collide:
+    # the name carries `only:`, which each leg sets, and the attempt, so a re-run is its own. No
+    # job name: `github.job` in a called workflow is always `gates`. Mutation (declared): the
+    # artifact's name made constant -> it names no call.
+    given = _step(UPLOAD)["with"]
     assert isinstance(given, dict) and isinstance(given["name"], str), given
-    assert "${{ github.job }}" in given["name"] and "${{ inputs.only }}" in given["name"], given
-    assert given["if-no-files-found"] == "ignore", given
+    assert "${{ inputs.only }}" in given["name"], given
+    assert "${{ github.run_attempt }}" in given["name"], given
+    assert "github.job" not in given["name"], given
 
 
 @needs_workflow
 @needs_smoke_workflow
 def test_the_upload_is_off_unless_a_caller_turns_it_on() -> None:
-    # The artifact's one consumer is stayfixed's own metrics, so its own smoke call turns it on
-    # and no other caller pays for it. Mutation (declared): the input defaults on.
+    # An artifact is stored at the caller's cost, so the upload is off unless a caller turns it
+    # on, and stayfixed's own smoke call does, so the step runs on a real runner. Mutation
+    # (declared): the input defaults on.
     inputs = _inputs()
     declared = inputs["evidence"]
     assert isinstance(declared, dict), declared
@@ -550,7 +518,8 @@ def test_the_upload_is_off_unless_a_caller_turns_it_on() -> None:
 
 @needs_workflow
 def test_the_uploaded_directory_is_the_one_evidence_writes() -> None:
-    # The records are written under the password database's home, which is the runner's `~`.
+    # The records are written under `HOME`'s `.local/state` where `XDG_STATE_HOME` is unset, as
+    # on hosted runners, and the action reads `~` from `HOME`.
     given = _step(UPLOAD)["with"]
     assert isinstance(given, dict), given
     assert given["path"] == f"~/{evidence.HOME_STATE}/{evidence.EVIDENCE_DIR}/", given

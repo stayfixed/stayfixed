@@ -3666,7 +3666,7 @@ after = '''      - uses: actions/setup-go@v6
         with:
           go-version: "1.27.2"
       - name: Go 1.27.2, the toolchain module, checked against its digest'''
-reddens = ["tests/test_runners_job.py::test_every_action_the_job_uses_is_pinned_by_sha"]
+reddens = ["tests/test_fixtures.py::test_every_action_a_step_uses_is_pinned_by_a_commit_sha"]
 
 # The digest is the pin, recorded with its provenance in the fixtures' README.
 [[mutation]]
@@ -3708,13 +3708,14 @@ reddens = [
 ]
 
 # The evidence records' upload: last, the one step with an `if:`, on only where a caller turns it
-# on, and named per leg.
+# on, and named for `only:` and the attempt. The step's whole shape is held with every other
+# step's.
 [[mutation]]
 name = "the evidence upload runs only after a passing run"
 file = ".github/workflows/check.yml"
 before = "        if: always() && inputs.evidence"
 after = "        if: inputs.evidence"
-reddens = ["tests/test_check_workflow.py::test_the_upload_is_last_and_the_only_step_with_an_if"]
+reddens = ["tests/test_check_workflow.py::test_the_verdict_s_process_gets_only_the_environment_its_step_names"]
 
 [[mutation]]
 name = "a failed evidence upload fails the job"
@@ -3722,7 +3723,7 @@ file = ".github/workflows/check.yml"
 before = """        if: always() && inputs.evidence
         continue-on-error: true"""
 after = "        if: always() && inputs.evidence"
-reddens = ["tests/test_check_workflow.py::test_the_upload_is_last_and_the_only_step_with_an_if"]
+reddens = ["tests/test_check_workflow.py::test_the_verdict_s_process_gets_only_the_environment_its_step_names"]
 
 [[mutation]]
 name = "the evidence upload runs a command"
@@ -3732,7 +3733,7 @@ before = """        continue-on-error: true
 after = """        continue-on-error: true
         run: ls ~/.local/state/stayfixed/evidence/
         uses: actions/upload-artifact"""
-reddens = ["tests/test_check_workflow.py::test_the_upload_runs_no_command_and_reads_no_secret"]
+reddens = ["tests/test_check_workflow.py::test_the_verdict_s_process_gets_only_the_environment_its_step_names"]
 
 [[mutation]]
 name = "the evidence upload reads a secret"
@@ -3740,14 +3741,33 @@ file = ".github/workflows/check.yml"
 before = "          if-no-files-found: ignore"
 after = """          if-no-files-found: ignore
           github-token: ${{ secrets.GITHUB_TOKEN }}"""
-reddens = ["tests/test_check_workflow.py::test_the_upload_runs_no_command_and_reads_no_secret"]
+reddens = ["tests/test_check_workflow.py::test_the_verdict_s_process_gets_only_the_environment_its_step_names"]
 
 [[mutation]]
 name = "the evidence artifact's name is the same for every leg"
 file = ".github/workflows/check.yml"
-before = "          name: stayfixed-evidence-${{ github.job }}-${{ inputs.only }}-${{ github.run_attempt }}"
+before = "          name: stayfixed-evidence-${{ inputs.only }}-${{ github.run_attempt }}"
 after = "          name: stayfixed-evidence"
-reddens = ["tests/test_check_workflow.py::test_the_upload_is_pinned_by_sha_and_named_per_leg"]
+reddens = ["tests/test_check_workflow.py::test_the_upload_is_named_for_only_and_the_attempt"]
+
+[[mutation]]
+name = "the evidence upload takes its action by a tag"
+file = ".github/workflows/check.yml"
+before = """        continue-on-error: true
+        uses: actions/upload-artifact"""
+after = """        continue-on-error: true
+        uses: actions/upload-artifact@v7 #"""
+reddens = ["tests/test_fixtures.py::test_every_action_a_step_uses_is_pinned_by_a_commit_sha"]
+
+# Only the runners job opts the real-runner tests into the `node` and `go` on `PATH`.
+[[mutation]]
+name = "the runners job leaves the runners on PATH unused"
+file = ".github/workflows/ci.yml"
+before = '''          STAYFIXED_RUNNERS_ON_PATH: "1"'''
+after = '''          STAYFIXED_RUNNERS_ON_PATH: "0"'''
+reddens = [
+  "tests/test_runners_job.py::test_the_runners_job_runs_the_runner_tests_with_a_missing_runner_failing",
+]
 
 [[mutation]]
 name = "the judging step may be skipped"
@@ -3758,8 +3778,8 @@ after = """      - name: The configuration and the built-in gates
         if: always()
         env:"""
 reddens = [
-  "tests/test_check_workflow.py::test_the_upload_is_last_and_the_only_step_with_an_if",
   "tests/test_check_workflow.py::test_one_job_whose_judging_steps_may_not_fail_and_run_in_order",
+  "tests/test_check_workflow.py::test_the_verdict_s_process_gets_only_the_environment_its_step_names",
 ]
 
 [[mutation]]

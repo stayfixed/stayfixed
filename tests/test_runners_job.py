@@ -23,8 +23,6 @@ JOB = "runners"
 NODE_VERSION = "26.12.0"
 GO_VERSION = "1.27.2"
 PINS = {"jest": "30.5.2", "vitest": "5.0.5"}
-# An action pinned the way every other `uses:` in the file is: by a full commit sha.
-_PINNED = re.compile(r"^[\w.-]+/[\w.-]+@[0-9a-f]{40}$")
 
 
 def _job() -> dict[str, Node]:
@@ -52,22 +50,13 @@ def test_the_runners_job_runs_the_runner_tests_with_a_missing_runner_failing() -
     env = last["env"]
     assert isinstance(env, dict), last
     assert env["STAYFIXED_REQUIRE_RUNNERS"] == "1"
+    # And the one job that opts the tests into the `node` and `go` on `PATH`, the pinned ones it
+    # installed (`tests/prove/real_runners.py`).
+    assert env["STAYFIXED_RUNNERS_ON_PATH"] == "1"
     assert env["STAYFIXED_NODE_MODULES"] == "${{ runner.temp }}/node/node_modules"
     assert "uv run pytest -n auto -m runners" in str(last["run"]).splitlines()
     # The job's last step, so nothing after it can end the job's answer otherwise.
     assert _steps()[-1] == last
-
-
-@needs_ci_workflow
-def test_every_action_the_job_uses_is_pinned_by_sha() -> None:
-    # Mutation (declared): `mutations/`'s "the runners job takes an action by its tag".
-    uses = [str(step["uses"]) for step in _steps() if "uses" in step]
-    assert [use.split("@")[0] for use in uses] == [
-        "actions/checkout",
-        "astral-sh/setup-uv",
-        "actions/setup-node",
-    ]
-    assert all(_PINNED.match(use) for use in uses), uses
 
 
 @needs_ci_workflow

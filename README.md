@@ -320,8 +320,8 @@ The **Run by**, **Talks to** and **When** columns are kept by hand. The hook wra
 6. **`stayfixed.yml`** calls stayfixed's reusable workflow at the commit it pins, which checks out
    your repository and stayfixed, may download a Python, on a pull request that moves `[ci] ref`
    lists stayfixed's release tags, and, once the configuration and built-in gates pass, runs the
-   commands `[gates.custom]` names (that row above). With its `evidence:` input on, which only
-   stayfixed's own smoke workflow turns on, a last step uploads the job's evidence records to
+   commands `[gates.custom]` names (that row above). With its `evidence:` input on, which a
+   caller turns on and stayfixed's own smoke workflow does, a last step uploads the job's evidence records to
    GitHub as an artifact through `actions/upload-artifact`, pinned by its sha; it runs no command
    and reads no secret.
 7. **`scan.yml`** is written by `stayfixed overlay create --local`, `stayfixed overlay upgrade`

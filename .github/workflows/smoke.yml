@@ -273,6 +273,6 @@ jobs:
       path: tests/fixtures/smoke-project
       base: ${{ github.base_ref || 'main' }}
       timeout-minutes: 25
-      # The one caller that uploads the evidence records: stayfixed's own metrics read them, and
-      # no other caller pays for the artifact.
+      # The one caller that uploads the evidence records, so the upload step runs on a real
+      # runner on every change to it; no other caller pays for the artifact.
       evidence: true
