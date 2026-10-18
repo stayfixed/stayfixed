@@ -902,7 +902,9 @@ with `{` and ends with `}`, which jest reads as JSON), `-u`/`--updateSnapshot` a
 `--no-update` and `--update=new` (`--update=false` is the text `false`, which rewrites
 snapshots), `--mergeReports` and `--dangerouslyIgnoreUnhandledErrors`; and node's own
 `--test-reporter…`, `--env-file`, `--env-file-if-exists`, its configuration file options,
-`--test-update-snapshots` and `--test-rerun-failures`, spelled with `_` or after the files too. A
+`--test-update-snapshots` and `--test-rerun-failures`, and code the command spells (`-e`,
+`--eval`, `-p`, `--print`, and a preload given a `data:` URL or another specifier that is neither a
+file's path nor a package's name), spelled with `_` or after the files too. A
 watch mode (jest's `--watch` and `--watchAll`, vitest's `-w`/`--watch`, node's `--watch` and
 `--watch-path`) never ends, so no report is ever finished: it is `not proven` (`never-ends`,
 naming the option), and a refusal in the same command wins. Where the command sets a watch mode
@@ -929,11 +931,20 @@ receipt say so). To give Node a flag, put it in front of the runner's entry inst
 `stayfixed prove -- node --experimental-vm-modules node_modules/jest/bin/jest.js`, jest's
 recipe for ES modules. That entry must be the file its package's `bin` names (by its realpath, so a
 `.bin` link npm made is read through and pnpm's `.bin` shim is not: `entry-not-found`), the
-`node` is the one the command names, and Node's options there are free but those that load a file
-(`--env-file`, `--env-file-if-exists`, its configuration file options) and its test runner's (any
-`--test…`), refused (`refused-option`), and `--watch` and `--watch-path`, which never end; a node
-given `-e`, `-p`, `--check`, `--run` or another option under which it runs no script is recognised
-by none. A file `-r`, `--require` or `--import` names there is among the configuration files. Their configuration
+`node` is the one the command names. Node's options there are read from a closed list drawn from
+`node --help` on Node 26.12.0: switches that change how the code runs and never what node runs
+(`--experimental-vm-modules`, `--no-warnings`, `--enable-source-maps`, `--trace-warnings`,
+`--expose-gc`, `--preserve-symlinks`, …), a few that take a value given it with `=` only
+(`--max-old-space-size=`, `--conditions=`, `--disable-warning=`, `--unhandled-rejections=`, …), and
+the preloads `-r`, `--require`, `--import` and `--loader`. Any other option, or one of those that
+take a value given it as the next word, makes the command one no adapter recognises (`not
+proven`): node would read the entry as that option's value and run the word after it (measured:
+`node --disable-warning node_modules/jest/bin/jest.js evil.js` runs `evil.js`). Refused there
+(`refused-option`, naming the option, never its value): the options that load a file
+(`--env-file`, `--env-file-if-exists`, the configuration file options), the test runner's (any
+`--test…`), and code the command spells (`-e`, `--eval`, `-p`, `--print`, and a preload given a
+`data:` URL or any specifier that is neither a file's path nor a package's name); `--watch` and
+`--watch-path` never end. A file a preload names there is among the configuration files. Their configuration
 files are `package.json`, `.npmrc`, `jest.config.*`, `vitest.config.*` and `vite.config.*`.
 
 **The `go test` adapter** recognises `go test …` and runs the `go` on `PATH` as `go test -json …`,

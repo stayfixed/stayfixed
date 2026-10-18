@@ -2312,17 +2312,6 @@ before = "        never = node_never_ends(node_words) or runner.never_ends(args)
 after = "        never = runner.never_ends(args)"
 reddens = ["tests/prove/test_javascript.py::test_node_s_watch_mode_in_front_of_the_entry_never_ends"]
 
-# `node -e <code> node_modules/jest/bin/jest.js` runs the code, never jest.
-[[mutation]]
-name = "a node that runs no script it is handed is read as running the runner's entry"
-file = "src/stayfixed/profiles/javascript/adapters.py"
-before = "    if any(_node_name(word) in _NODE_RUNS_NO_SCRIPT for word in options if word.startswith(\"-\")):"
-after = "    if False:"
-reddens = [
-  "tests/prove/test_javascript.py::test_npm_test_is_not_recognised[command13]",
-  "tests/prove/test_javascript.py::test_npm_test_is_not_recognised[command16]",
-]
-
 # The file node is handed must be the entry its package's `bin` names.
 [[mutation]]
 name = "an entry is not checked against its package's bin"
@@ -2348,6 +2337,47 @@ file = "src/stayfixed/profiles/go/adapters.py"
 before = "        if launch:\n            launcher ="
 after = "        if False:\n            launcher ="
 reddens = ["tests/prove/test_go.py::test_a_launcher_is_kept_in_front_of_the_go_on_path"]
+
+# In front of a runner's entry only node's closed list is read: an option outside it, or a valued
+# one given its value as the next word, could make the entry its value and the next word the
+# script node runs (measured: `node --disable-warning node_modules/jest/bin/jest.js evil.js`).
+[[mutation]]
+name = "node's options in front of a runner's entry are read whatever they are"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = "        elif not equals and (name in _ENTRY_SWITCHES or refused):"
+after = "        elif not equals:"
+reddens = [
+  "tests/prove/test_javascript.py::test_npm_test_is_not_recognised[command16]",
+  "tests/prove/test_javascript.py::test_npm_test_is_not_recognised[command17]",
+]
+
+# Code the command spells is refused, as jest's `--config` given JSON text is: `-e`, `-p`, and a
+# preload given a `data:` URL or another specifier that is neither a file nor a package.
+[[mutation]]
+name = "node's inline code options in front of a runner's entry are free"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = "        if name in _NODE_INLINE_CODE or name.startswith(_NODE_TEST_RUNNER) or name in _NODE_REFUSED:"
+after = "        if name.startswith(_NODE_TEST_RUNNER) or name in _NODE_REFUSED:"
+reddens = [
+  "tests/prove/test_javascript.py::test_node_s_options_that_load_a_file_or_run_its_test_runner_are_refused[node_options7--e]",
+]
+
+[[mutation]]
+name = "a preload of inline code is read as a package"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = "    return _PACKAGE_NAME.fullmatch(value) is None"
+after = "    return False"
+reddens = [
+  "tests/prove/test_javascript.py::test_node_s_options_that_load_a_file_or_run_its_test_runner_are_refused[node_options11---import]",
+  "tests/prove/test_javascript.py::test_node_test_refuses_code_the_command_spells[words0---import]",
+]
+
+[[mutation]]
+name = "node --test leaves code the command spells free"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = "        if name.startswith(_NODE_REPORTERS) or name in _NODE_REFUSED or name in _NODE_INLINE_CODE:"
+after = "        if name.startswith(_NODE_REPORTERS) or name in _NODE_REFUSED:"
+reddens = ["tests/prove/test_javascript.py::test_node_test_refuses_code_the_command_spells[words2---eval]"]
 
 # `--setup-plan` exits 0 and reports a failing test as passed: the refusal is load-bearing.
 [[mutation]]

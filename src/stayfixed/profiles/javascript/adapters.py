@@ -59,7 +59,10 @@ appended, and every other option is free. `REFUSED_OPTION`, naming the option:
 - `node --test` on Node 26.12.0: any `--test-reporter…` of the command's own; `--env-file`,
   `--env-file-if-exists` and the configuration file options (`--config-file`,
   `--experimental-config-file`, `--experimental-default-config-file`), which load what the run
-  reads; `--test-update-snapshots` (which rewrites a failing snapshot so that it passes); and
+  reads; code the command spells, `-e`/`--eval`, `-p`/`--print` and a preload given a `data:` URL
+  or any specifier that is neither a file's path nor a package's name (`inline_preload`), which
+  runs before the tests and can write the report, as jest's `--config` given JSON text is;
+  `--test-update-snapshots` (which rewrites a failing snapshot so that it passes); and
   `--test-rerun-failures` (which reports as passed, unrun, every test the state file it names says
   passed before). Node reads an option written with `_` as with `-`, and after the files under
   `--test` as before them, and so are these.
@@ -96,12 +99,13 @@ reads as options of every run, `--require` and the reporters among them; for `no
 `NODE_TEST_CONTEXT`, under which it runs no file and exits 0 (measured on 26.12.0, any value). The
 scrub can turn a legitimate run red (jest's ES modules recipe sets `NODE_OPTIONS`), so the receipt
 names it, and node's flags are given in front of the entry instead (`node --experimental-vm-modules
-node_modules/jest/bin/jest.js`). There they are free, but for the same closed list `node --test`
-refuses that loads a file the command names (`--env-file`, `--env-file-if-exists`, the
-configuration file options) and node's test runner's own (any `--test…`), `REFUSED_OPTION`; its
-watch modes, `NEVER_ENDS`; and a node that runs no script it is handed (`-e`, `-p`, `--check`,
-`--run`), which is recognised by none. The adversary is the agent typing the command, the anchor
-its words, as for every list here.
+node_modules/jest/bin/jest.js`). There node's options are read from a closed list of its own,
+drawn from `node --help` on Node 26.12.0 (`_entry_options`): an option outside it, or a valued one
+given its value as the next word, would make the entry that option's value and the next word the
+script node runs, so the command is recognised by none rather than guessed. Of the list, the same
+options `node --test` refuses (files loaded, code spelled) and node's test runner's own (any
+`--test…`) are `REFUSED_OPTION`, and its watch modes `NEVER_ENDS`. The adversary is the agent
+typing the command, the anchor its words, as for every list here.
 
 What a file in the tree can do -- a configuration's reporters, `testResultsProcessor` or setup
 files, a test that writes the report, a `package.json` that points `bin` elsewhere -- is the
@@ -711,32 +715,126 @@ def entry_point(
     return _linked(name, cwd, path)
 
 
-# node's options under which it runs no script it is given: code of the command's own (`-e`,
-# `-p`), a check of the script's syntax, a prompt, a `package.json` script (`--run`), or help.
-_NODE_RUNS_NO_SCRIPT = frozenset(
+_BIN_LINKS = ".bin"
+# node's test runner's options, refused in front of a runner's entry: any `--test…`.
+_NODE_TEST_RUNNER = "--test"
+# node's options that run code the command spells, never the script: refused wherever node reads
+# them, as jest's `--config` given a configuration's own text is.
+_NODE_INLINE_CODE = frozenset({"-e", "--eval", "-p", "--print", "-pe"})
+# The options node may be given in front of a runner's entry: a closed list, drawn from
+# `node --help` on Node 26.12.0, of the switches that change how the code under test runs and
+# never what node runs. A word outside it, or one of `_ENTRY_VALUED` spelled with its value as the
+# next word, makes the command one no adapter recognises: an option node takes a value for, read as
+# a switch, would make the entry its value and the next word the script node runs.
+_ENTRY_SWITCHES = frozenset(
     {
-        "-e",
-        "--eval",
-        "-p",
-        "-pe",
-        "--print",
-        "-c",
-        "--check",
-        "-i",
-        "--interactive",
-        "--run",
-        "-h",
-        "--help",
-        "-v",
-        "--version",
-        "--v8-options",
-        "--completion-bash",
+        "--abort-on-uncaught-exception",
+        "--disallow-code-generation-from-strings",
+        "--enable-source-maps",
+        "--experimental-import-meta-resolve",
+        "--experimental-strip-types",
+        "--experimental-vm-modules",
+        "--expose-gc",
+        "--frozen-intrinsics",
+        "--jitless",
+        "--no-addons",
+        "--no-deprecation",
+        "--no-experimental-detect-module",
+        "--no-experimental-require-module",
+        "--no-experimental-strip-types",
+        "--no-global-search-paths",
+        "--no-require-module",
+        "--no-warnings",
+        "--openssl-legacy-provider",
+        "--pending-deprecation",
+        "--preserve-symlinks",
+        "--preserve-symlinks-main",
+        "--require-module",
+        "--throw-deprecation",
+        "--trace-deprecation",
+        "--trace-exit",
+        "--trace-promises",
+        "--trace-sigint",
+        "--trace-uncaught",
+        "--trace-warnings",
+        "--use-bundled-ca",
+        "--use-openssl-ca",
+        "--use-system-ca",
+        "--zero-fill-buffers",
+        # The watch modes, which never end (`node_never_ends`): read, so as to be said, as the
+        # test runner's switches and the file loaders are, which are refused.
+        "--watch",
+        "--no-watch",
     }
 )
-_BIN_LINKS = ".bin"
-# node's options refused in front of a runner's entry: those that load a file the command names
-# (`_NODE_REFUSED`, a configuration file among them) and its test runner's, any `--test…`.
-_NODE_TEST_RUNNER = "--test"
+# node's options in front of a runner's entry that take a value, accepted given it with `=` only.
+_ENTRY_VALUED = frozenset(
+    {
+        "--conditions",
+        "--disable-proto",
+        "--disable-warning",
+        "--dns-result-order",
+        "--max-http-header-size",
+        "--max-old-space-size",
+        "--max-old-space-size-percentage",
+        "--title",
+        "--unhandled-rejections",
+    }
+)
+# What a preload option's value may be and still not be code of the command's own: a package's
+# name (`tsx`, `@scope/name`, `ts-node/register`), as npm spells one; a path or a `file:` URL is
+# a file (`_preloaded_file`).
+_PACKAGE_NAME = re.compile(r"(@[A-Za-z0-9~][\w.~-]*/)?[A-Za-z0-9~][\w.~-]*(/[\w.~@-]+)*")
+
+
+def inline_preload(value: str) -> bool:
+    """Whether a preload option's value is code of the command's own, or any specifier that is
+    neither a file's path (`/`, `./`, `../`, `file:`) nor a package's bare name: a `data:` URL,
+    `node:`, `https:`."""
+    if value.startswith(_PATH_STARTS) or urlsplit(value).scheme == _FILE_SCHEME:
+        return False
+    return _PACKAGE_NAME.fullmatch(value) is None
+
+
+def _entry_options(words: Sequence[str]) -> tuple[list[tuple[str, str | None]], int] | None:
+    """node's options at the start of `words` (the words after `node`), each by its name and its
+    value, and how many words they take; `None` where one is outside the closed list node may be
+    given in front of a runner's entry, or is a valued one spelled with its value as the next word
+    that the list does not take that way. The preloads, the inline code options and those node
+    refuses to load a file or run its test runner with take their value either way, as node reads
+    them."""
+    read: list[tuple[str, str | None]] = []
+    index = 0
+    while index < len(words):
+        word = words[index]
+        if word in (_SEPARATOR, "-") or not word.startswith("-"):
+            break
+        name, equals, value = word.partition("=")
+        name = name.replace("_", "-")
+        spaced = (
+            name in _NODE_PRELOADS
+            or name in (_NODE_PRELOAD_LETTER, _NODE_WATCH_PATH)
+            or name in _NODE_INLINE_CODE
+            or (
+                name in _NODE_VALUED
+                and (name in _NODE_REFUSED or name.startswith(_NODE_TEST_RUNNER))
+            )
+        )
+        refused = name in _NODE_REFUSED or name.startswith(_NODE_TEST_RUNNER)
+        if equals and (name in _ENTRY_VALUED or spaced):
+            read.append((name, value))
+            index += 1
+        elif not equals and spaced:
+            if index + 1 >= len(words):
+                return None
+            read.append((name, words[index + 1]))
+            index += 2
+        elif not equals and (name in _ENTRY_SWITCHES or refused):
+            read.append((name, None))
+            index += 1
+        else:
+            return None
+    return read, index
 
 
 def node_entry(
@@ -745,25 +843,17 @@ def node_entry(
     """`command` read as `node [node's options] <entry> [the runner's arguments]`, where the entry
     is a path into `node_modules/<package>` (a package of `packages`) or `node_modules/.bin/<name>`:
     node's options, the entry as given, and the runner's arguments; `None` for any other command,
-    and for a node that runs no script it is given (`-e`, `--run`, `--check`, …). Whether the path
-    is the entry the package's `bin` names is the plan's to check, from where the command runs."""
+    and for one whose node options are not all on the closed list `_entry_options` reads. Whether
+    the path is the entry the package's `bin` names is the plan's to check, from where the command
+    runs."""
     if not command or Path(command[0]).name != _NODE:
         return None
     words = tuple(command[1:])
-    index, valued = 0, False
-    while index < len(words):
-        word = words[index]
-        if valued:
-            valued = False
-        elif word == _SEPARATOR or word == "-" or not word.startswith("-"):
-            break
-        else:
-            valued = "=" not in word and _node_name(word) in _NODE_VALUED
-        index += 1
-    options = words[:index]
-    if index >= len(words) or words[index] in (_SEPARATOR, "-"):
+    parsed = _entry_options(words)
+    if parsed is None:
         return None
-    if any(_node_name(word) in _NODE_RUNS_NO_SCRIPT for word in options if word.startswith("-")):
+    _, index = parsed
+    if index >= len(words) or words[index] in (_SEPARATOR, "-"):
         return None
     script = words[index]
     parts = Path(script).parts
@@ -772,20 +862,22 @@ def node_entry(
             continue
         after = parts[at + 1 :]
         if after[0] in packages and len(after) > 1:
-            return options, script, words[index + 1 :]
+            return words[:index], script, words[index + 1 :]
         if after == (_BIN_LINKS, name):
-            return options, script, words[index + 1 :]
+            return words[:index], script, words[index + 1 :]
     return None
 
 
 def _node_entry_refused(options: Sequence[str]) -> str | None:
-    """The first of node's options in front of a runner's entry that loads a file the command
-    names or runs node's test runner, by its name; `None` where none does."""
-    for word in options:
-        if not word.startswith("-"):
-            continue
-        name = _node_name(word)
-        if name.startswith(_NODE_TEST_RUNNER) or name in _NODE_REFUSED:
+    """The first of node's options in front of a runner's entry that runs code the command spells
+    (`-e`, a preload of inline code), loads a file the command names, or runs node's test runner,
+    by its name, never its value; `None` where none does."""
+    parsed = _entry_options(options)
+    for name, value in parsed[0] if parsed is not None else []:
+        if name in _NODE_INLINE_CODE or name.startswith(_NODE_TEST_RUNNER) or name in _NODE_REFUSED:
+            return name
+        preload = name in _NODE_PRELOADS or name == _NODE_PRELOAD_LETTER
+        if preload and value is not None and inline_preload(value):
             return name
     return None
 
@@ -913,6 +1005,10 @@ _NODE_VALUED = frozenset(
         "--env-file-if-exists",
         "--config-file",
         "--experimental-config-file",
+        "-e",
+        "--eval",
+        "-p",
+        "--print",
         "--test-reporter",
         "--test-reporter-destination",
         "--test-name-pattern",
@@ -1025,13 +1121,21 @@ def node_preloaded(words: Sequence[str], cwd: Path) -> tuple[str, ...]:
 
 
 def node_refused(words: Sequence[str]) -> str | None:
-    """The first word of `words` (the words after `node`) on node's closed list, by its name;
-    `None` where none is. Every word before a `--` is read, a file's name among them: under
-    `--test` node reads an option written after the files too."""
-    for word in _options(words):
+    """The first word of `words` (the words after `node`) on node's closed list, by its name,
+    never its value; `None` where none is: the reporters, the file loaders, code the command
+    spells (`-e`, `-p`, and a preload given inline code, `inline_preload`). Every word before a
+    `--` is read, a file's name among them: under `--test` node reads an option written after the
+    files too."""
+    options = _options(words)
+    for index, word in enumerate(options):
         name = _node_name(word)
-        if name.startswith(_NODE_REPORTERS) or name in _NODE_REFUSED:
+        if name.startswith(_NODE_REPORTERS) or name in _NODE_REFUSED or name in _NODE_INLINE_CODE:
             return name
+        if name in _NODE_PRELOADS or name == _NODE_PRELOAD_LETTER:
+            _, equals, value = word.partition("=")
+            given = value if equals else _next(options, index)
+            if given is not None and inline_preload(given):
+                return name
     return None
 
 

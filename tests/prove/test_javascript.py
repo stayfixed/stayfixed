@@ -193,13 +193,18 @@ def test_each_runner_s_commands_are_recognised(command: list[str], adapter: Adap
         ["node", "--import", "tsx", "app.js"],
         # A script of the project's own, which may run anything, and a node that runs no script.
         ["node", "scripts/jest.js"],
-        ["node", "-e", "x", "node_modules/jest/bin/jest.js"],
-        ["node", "--eval=x", "node_modules/jest/bin/jest.js"],
-        ["node", "-p", "1", "node_modules/vitest/vitest.mjs"],
         ["node", "--run=test", "node_modules/jest/bin/jest.js"],
         ["node", "--check", "node_modules/jest/bin/jest.js"],
         ["node", "-", "node_modules/jest/bin/jest.js"],
         ["node", "node_modules/jest"],
+        # In front of the entry only the closed list is read: an option outside it, or one that
+        # takes a value given it as the next word, could make the entry its value and the next
+        # word the script node runs (measured on Node 26.12.0: `node --disable-warning
+        # node_modules/jest/bin/jest.js evil.js` runs `evil.js`).
+        ["node", "--frobnicate", "node_modules/jest/bin/jest.js"],
+        ["node", "--disable-warning", "node_modules/jest/bin/jest.js", "evil.js"],
+        ["node", "--title", "node_modules/vitest/vitest.mjs", "evil.js"],
+        ["node", "--inspect-brk", "node_modules/jest/bin/jest.js"],
         ["node"],
         ["npx"],
         [],
@@ -329,6 +334,18 @@ def test_a_node_named_by_its_path_runs_the_runner_s_entry(tmp_path: Path) -> Non
         (("--test",), "--test"),
         (("--test-reporter=dot",), "--test-reporter"),
         (("--test_update_snapshots",), "--test-update-snapshots"),
+        # Code the command spells, never the script, as jest's `--config` given JSON text is
+        # (measured on Node 26.12.0: `node -e <code> <entry>` and `node --import data:… <entry>`
+        # run the code): the option is named, never its value.
+        (("-e", "require('fs')"), "-e"),
+        (("--eval=x",), "--eval"),
+        (("-p", "1"), "-p"),
+        (("--print=1",), "--print"),
+        (("--import=data:text/javascript,process.exit(0)",), "--import"),
+        (("--import", "data:text/javascript,x"), "--import"),
+        (("-r", "node:fs"), "-r"),
+        (("--loader=https://example.com/l.mjs",), "--loader"),
+        (("--experimental-loader", "data:text/javascript,x"), "--experimental-loader"),
     ],
 )
 def test_node_s_options_that_load_a_file_or_run_its_test_runner_are_refused(
@@ -353,6 +370,43 @@ def test_node_s_test_runner_in_front_of_jest_s_entry_is_jest_s_to_refuse(tmp_pat
         "--test",
         "jest",
     )
+
+
+@pytest.mark.parametrize(
+    "preload",
+    [
+        ("-r", "./setup.cjs"),
+        ("--require=../shared/setup.cjs",),
+        ("--import", "tsx"),
+        ("--import=@swc-node/register/esm",),
+        ("-r", "ts-node/register"),
+        ("--import=file:///opt/hooks.mjs",),
+    ],
+)
+def test_a_preload_of_a_file_or_a_package_is_free_in_front_of_the_entry(
+    tmp_path: Path, preload: tuple[str, ...]
+) -> None:
+    project = tmp_path / "project"
+    _, _, node = installed(project)
+    command = ["node", *preload, "--max-old-space-size=4096", "node_modules/jest/bin/jest.js"]
+    assert isinstance(planned(JEST, command, project, path=str(node.parent)), Plan)
+
+
+@pytest.mark.parametrize(
+    ("words", "named"),
+    [
+        (("--test", "--import=data:text/javascript,x"), "--import"),
+        (("--test", "-r", "data:text/javascript,x"), "-r"),
+        (("--eval=x", "--test"), "--eval"),
+        (("--test", "-p", "1"), "-p"),
+    ],
+)
+def test_node_test_refuses_code_the_command_spells(
+    tmp_path: Path, words: tuple[str, ...], named: str
+) -> None:
+    command = ["node", *words]
+    assert NODE_TEST.recognises(command)
+    assert planned(NODE_TEST, command, tmp_path) == Refused(REFUSED_OPTION, named)
 
 
 def test_node_s_watch_mode_in_front_of_the_entry_never_ends(tmp_path: Path) -> None:
@@ -1612,13 +1666,14 @@ def test_vitest_reads_each_form_as_its_parser_does(
 
 
 def test_a_preloaded_file_is_named_and_a_package_is_not(tmp_path: Path) -> None:
-    # `-r`, `--require`, `--import` and `--loader` are free; the file a path or a `file:` URL of
-    # this machine names is among the configuration files, percent-decoded; a package's name, a
-    # `data:` or `node:` specifier and another host's URL are not; `-r=x` is a bad option to node,
+    # `-r`, `--require`, `--import` and `--loader` are free, but for code of the command's own
+    # (`test_node_test_refuses_code_the_command_spells`); the file a path or a `file:` URL of
+    # this machine names is among the configuration files, percent-decoded; a package's name and
+    # another host's URL are not; `-r=x` is a bad option to node,
     # and a word after `--` is none of node's. A `file:` URL's path is read as WHATWG reads it, from
     # the root (measured on Node 26.12.0: `--import=file:x.mjs` loads `/x.mjs`). Mutations
     # (declared): the preloaded files left out; a `file:` URL's escapes kept; another host's URL
-    # named; a `data:` specifier named; a relative `file:` URL read from the run's directory.
+    # named; a relative `file:` URL read from the run's directory.
     node = node_on_path(tmp_path / "bin")
     got = plan_of(
         NODE_TEST,
@@ -1637,9 +1692,6 @@ def test_a_preloaded_file_is_named_and_a_package_is_not(tmp_path: Path) -> None:
             "--import=file://elsewhere/abs/no.mjs",
             "--import=file:rel.mjs",
             "--import=file:../up/u.mjs",
-            "--import",
-            "data:text/javascript,0",
-            "--import=node:fs",
             "-r=./bad.cjs",
             "--test",
             "a.test.mjs",
