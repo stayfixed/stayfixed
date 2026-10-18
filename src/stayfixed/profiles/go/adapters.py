@@ -24,12 +24,19 @@ command; the anchor of each refusal is the command's own words.
   on Go 1.27.2 it still runs the tests), and a `-json=` of a false value (which turns the report
   off). Each is read as the go command reads it: spaced or with `=`, with one dash or two, before
   the packages or after them, a boolean's `=` value as `strconv.ParseBool` reads it, a word that is
-  a flag's value never as a flag, and nothing past `-args`, which is the test binary's. The list
-  is closed, drawn by running every flag `go test` and `go build` register over a failing test
-  with `-json` added, and every other flag is free.
+  a flag's value never as a flag, and nothing past a bare `-args` or `--args`, which is the test
+  binary's. The list is closed, drawn by running every flag `go test` and `go build` register over
+  a failing test with `-json` added, and every other flag is free.
 - `FORGING`, assigned in the command (refused): `GOFLAGS`, `GOENV` and `GOTOOLCHAIN`, the three
-  `SET_ENV` sets, and `GOROOT`, which names the standard library and the tools the run builds with,
-  `testing` among them; an inherited `GOROOT` is scrubbed, and the `go` that runs finds its own.
+  `SET_ENV` sets; `GOROOT`, which names the standard library and the tools the run builds with,
+  `testing` among them; and `GOOS` and `GOARCH`, under which a target the host cannot run has the
+  go command run the test binary under the `go_$GOOS_$GOARCH_exec` it finds on `PATH` (measured:
+  `GOOS=js GOARCH=wasm` and a `go_js_wasm_exec` that prints a pass exit 0, the failing test never
+  run). An inherited one of these four is scrubbed, so the `go` that runs finds its own root and
+  builds for the host.
+- `CC`, `CXX`, the `CGO_*` variables, `-ldflags` and `-gcflags` (`-extld` among their values) and
+  `-compiler` are free: they shape how the code under test is built, and a built test binary can
+  already print test2json's framing, which is the bound's Go case below.
 - The `go` is the one on `PATH`, and the receipt carries its realpath.
 
 What a file in the tree can do -- a test that prints test2json's own framing (`\\x16--- PASS:`),
@@ -52,8 +59,8 @@ NAME = "go-test"
 REFUSED_OPTION = "refused-option"
 ENTRY_NOT_FOUND = "entry-not-found"
 SET_ENV: Mapping[str, str] = {"GOENV": "off", "GOFLAGS": "", "GOTOOLCHAIN": "local"}
-FORGING = frozenset({*SET_ENV, "GOROOT"})
-SCRUB = frozenset({"GOROOT"})
+SCRUB = frozenset({"GOROOT", "GOOS", "GOARCH"})
+FORGING = frozenset({*SET_ENV, *SCRUB})
 DISCOVERY = ("*_test.go",)
 CONFIGS = ("go.mod", "go.work")
 REPORT_NAME = "events.jsonl"
@@ -61,7 +68,10 @@ REPORT_NAME = "events.jsonl"
 _GO = "go"
 _TEST = "test"
 _JSON = "json"
-_ARGS = "args"
+# The words that end the go command's own flags: `-args` and `--args` bare. Measured on Go
+# 1.27.2: `-args=x`, `-args=false` and `-test.args` end nothing, and a refused flag after one
+# runs.
+_ARGS = frozenset({"-args", "--args"})
 _CHANGE_DIRECTORY = "C"
 _MODFILE = "modfile"
 _NO_GO = "no go on PATH"
@@ -152,7 +162,7 @@ def _flags(args: Sequence[str]) -> list[tuple[int, str, str | None]]:
         if read is None:
             continue
         name, value = read
-        if name == _ARGS:
+        if word in _ARGS:
             break
         if value is None and f"-{name.removeprefix(_TEST_PREFIX)}" in _VALUED:
             value = args[index + 1] if index + 1 < len(args) else None

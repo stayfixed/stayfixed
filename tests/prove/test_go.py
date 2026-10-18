@@ -95,7 +95,8 @@ def test_go_test_is_recognised(command: list[str], recognised: bool) -> None:
 
 def test_the_adapters_this_stack_ships() -> None:
     assert [adapter.name for adapter in ADAPTERS] == [NAME] == ["go-test"]
-    assert GO.forging == FORGING == frozenset({"GOFLAGS", "GOENV", "GOTOOLCHAIN", "GOROOT"})
+    assert GO.forging == FORGING
+    assert frozenset({"GOFLAGS", "GOENV", "GOTOOLCHAIN", "GOROOT", "GOOS", "GOARCH"}) == FORGING
 
 
 # --- How a run is planned -------------------------------------------------------------------
@@ -115,7 +116,7 @@ def test_the_plan_neutralises_the_go_environment(tmp_path: Path) -> None:
         source=ReportSource.STDOUT,
         report=tmp_path / "scratch" / "events.jsonl",
         set_env={"GOENV": "off", "GOFLAGS": "", "GOTOOLCHAIN": "local"},
-        scrub=frozenset({"GOROOT"}),
+        scrub=frozenset({"GOROOT", "GOOS", "GOARCH"}),
         discovery=("*_test.go",),
         configs=("go.mod", "go.work"),
     )
@@ -235,6 +236,12 @@ def test_the_file_modfile_names_is_among_the_configs(tmp_path: Path) -> None:
         (("--json=0",), "-json"),
         (("-json=F",), "-json"),
         (("./...", "-exec=echo"), "-exec"),
+        # Only a bare `-args` or `--args` ends the go command's flags (measured on Go 1.27.2:
+        # past these a refused flag runs).
+        (("-args=x", "-toolexec=y"), "-toolexec"),
+        (("-args=true", "-exec=x"), "-exec"),
+        (("-args=false", "-exec=x"), "-exec"),
+        (("-test.args", "-exec=x"), "-exec"),
     ],
     ids=lambda value: "_".join(value) if isinstance(value, tuple) else value,
 )
@@ -254,6 +261,8 @@ def test_each_forging_flag_is_refused(tmp_path: Path, flag: tuple[str, ...], nam
         ("-run", "-c"),
         ("-run=TestX", "-skip", "-exec"),
         ("-args", "-c", "-o", "x", "-exec=y"),
+        ("--args", "-toolexec=y"),
+        ("-run", "X", "-args", "-exec=y"),
         ("-tags", "integration", "-vet=off", "-n", "-list", "."),
         ("-modfile=alt.mod", "-ldflags=-s", "-gcflags", "-N"),
         ("-json",),
@@ -338,6 +347,8 @@ def test_the_run_s_environment_is_pinned_whatever_it_inherits(tmp_path: Path) ->
         GOENV=str(tmp_path / "goenv"),
         GOTOOLCHAIN="go1.99.0",
         GOROOT=str(tmp_path / "forged-root"),
+        GOOS="js",
+        GOARCH="wasm",
     )
     assert got.verdict == PROVED
     env = dict(
@@ -346,14 +357,15 @@ def test_the_run_s_environment_is_pinned_whatever_it_inherits(tmp_path: Path) ->
         if "=" in line
     )
     assert (env["GOENV"], env["GOFLAGS"], env["GOTOOLCHAIN"]) == ("off", "", "local")
-    assert "GOROOT" not in env
+    assert not {"GOROOT", "GOOS", "GOARCH"} & set(env)
     argv = (tmp_path / "seen" / "argv").read_text(encoding="utf-8").splitlines()
     assert argv == ["test", "-json", "./..."]
 
 
-@pytest.mark.parametrize("name", ["GOFLAGS", "GOENV", "GOTOOLCHAIN", "GOROOT"])
+@pytest.mark.parametrize("name", ["GOFLAGS", "GOENV", "GOTOOLCHAIN", "GOROOT", "GOOS", "GOARCH"])
 def test_an_assigned_goflags_is_refused(tmp_path: Path, name: str) -> None:
-    # Mutation (declared): `GOROOT` left out of the forging set -> its case runs.
+    # Mutations (declared): `GOROOT` left out of the forging set; `GOOS` and `GOARCH` left out of
+    # it -> each one's case runs.
     go = fake_go(tmp_path / "bin")
     for argv in ([f"{name}=x", "go", "test"], ["env", f"{name}=-exec=x", "go", "test"]):
         got = prove(argv, cwd=tmp_path, environ={"PATH": str(go.parent)}, timeout=60)
@@ -452,4 +464,21 @@ def test_a_user_env_file_cannot_add_toolexec(tmp_path: Path) -> None:
     env_file.write_text(f"GOFLAGS=-toolexec={script}\n", encoding="utf-8")
     got = real(module(tmp_path), "go", "test", "./passing/", GOENV=str(env_file))
     assert (got.verdict, got.counts) == (PROVED, Counts(1, 0, 1))
+    assert not marker.exists()
+
+
+@needs_runner("go")
+def test_an_inherited_cross_target_runs_no_exec_wrapper(tmp_path: Path) -> None:
+    # Under `GOOS=js GOARCH=wasm` the go command runs the test binary under the
+    # `go_js_wasm_exec` it finds on `PATH`, which here prints a pass; scrubbed, the run builds
+    # for the host and the failing test fails.
+    marker = tmp_path / "wrapper-ran"
+    shim = executable(
+        tmp_path / "wrap" / "go_js_wasm_exec",
+        f'#!/bin/sh\ntouch "{marker}"\necho "--- PASS: TestForged (0.00s)"\nexit 0\n',
+    )
+    go = runner_directory("go")
+    path = os.pathsep.join([str(shim.parent), str(go), os.environ.get("PATH", "")])
+    got = real(module(tmp_path), "go", "test", "./three/", GOOS="js", GOARCH="wasm", PATH=path)
+    assert (got.verdict, got.reason, got.counts) == (FAILED, FAILING, Counts(1, 1, 1))
     assert not marker.exists()

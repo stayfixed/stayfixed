@@ -2926,8 +2926,8 @@ reddens = [
 [[mutation]]
 name = "the go test adapter hands the run an inherited GOROOT"
 file = "src/stayfixed/profiles/go/adapters.py"
-before = 'SCRUB = frozenset({"GOROOT"})'
-after = "SCRUB: frozenset[str] = frozenset()"
+before = 'SCRUB = frozenset({"GOROOT", "GOOS", "GOARCH"})'
+after = 'SCRUB = frozenset({"GOOS", "GOARCH"})'
 reddens = [
   "tests/prove/test_go.py::test_the_plan_neutralises_the_go_environment",
   "tests/prove/test_go.py::test_the_run_s_environment_is_pinned_whatever_it_inherits",
@@ -2936,8 +2936,8 @@ reddens = [
 [[mutation]]
 name = "the go test adapter leaves GOROOT out of its forging set"
 file = "src/stayfixed/profiles/go/adapters.py"
-before = 'FORGING = frozenset({*SET_ENV, "GOROOT"})'
-after = "FORGING = frozenset(SET_ENV)"
+before = "FORGING = frozenset({*SET_ENV, *SCRUB})"
+after = 'FORGING = frozenset({*SET_ENV, "GOOS", "GOARCH"})'
 reddens = ["tests/prove/test_go.py::test_an_assigned_goflags_is_refused[GOROOT]"]
 
 [[mutation]]
@@ -2983,9 +2983,9 @@ reddens = [
 [[mutation]]
 name = "the test binary's words past -args are read as go's"
 file = "src/stayfixed/profiles/go/adapters.py"
-before = """        if name == _ARGS:
+before = """        if word in _ARGS:
             break"""
-after = """        if name == _ARGS:
+after = """        if word in _ARGS:
             continue"""
 reddens = ["tests/prove/test_go.py::test_every_other_flag_is_free[-args_-c_-o_x_-exec=y]"]
 
@@ -3042,3 +3042,27 @@ file = "src/stayfixed/profiles/go/adapters.py"
 before = "        return list(command[:2]) == [_GO, _TEST]"
 after = "        return list(command[:1]) == [_GO]"
 reddens = ["tests/prove/test_go.py::test_go_test_is_recognised[command2-False]"]
+
+[[mutation]]
+name = "an -args with a value is read as the end of go's flags"
+file = "src/stayfixed/profiles/go/adapters.py"
+before = "        if word in _ARGS:"
+after = '        if name == "args":'
+reddens = [
+  "tests/prove/test_go.py::test_each_forging_flag_is_refused[-args=x_-toolexec=y--toolexec]",
+  "tests/prove/test_go.py::test_each_forging_flag_is_refused[-args=false_-exec=x--exec]",
+]
+
+# A target the host cannot run has the go command run the test binary under the
+# `go_$GOOS_$GOARCH_exec` it finds on `PATH`.
+[[mutation]]
+name = "the go test adapter leaves GOOS and GOARCH to the run"
+file = "src/stayfixed/profiles/go/adapters.py"
+before = 'SCRUB = frozenset({"GOROOT", "GOOS", "GOARCH"})'
+after = 'SCRUB = frozenset({"GOROOT"})'
+reddens = [
+  "tests/prove/test_go.py::test_an_assigned_goflags_is_refused[GOOS]",
+  "tests/prove/test_go.py::test_an_assigned_goflags_is_refused[GOARCH]",
+  "tests/prove/test_go.py::test_the_run_s_environment_is_pinned_whatever_it_inherits",
+]
+
