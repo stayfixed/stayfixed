@@ -1100,3 +1100,44 @@ def test_the_cli_reference_contents_lists_every_section_in_order() -> None:
     headings = re.findall(r"^## (.+)$", "## " + rest, re.MULTILINE)
     assert len(headings) >= 39, len(headings)
     assert listed == [(heading, _anchor(heading)) for heading in headings]
+
+
+# The `prove` section of `docs/cli.md`: its heading to the next `## ` heading.
+_PROVE_SECTION = re.compile(r"^## `stayfixed prove .*?\n(.*?)(?=^## )", re.MULTILINE | re.DOTALL)
+
+
+def _prove_section() -> str:
+    section = _PROVE_SECTION.search(CLI_REFERENCE.read_text(encoding="utf-8"))
+    assert section is not None, "docs/cli.md has no `stayfixed prove` section"
+    return section.group(1)
+
+
+def test_the_prove_section_states_the_bound_word_for_word() -> None:
+    # One source for the bound, which the section quotes as it is. Mutation (declared): the
+    # bound's text changed in `run.py` -> the section no longer holds it.
+    from stayfixed.prove.run import BOUND
+
+    assert f"**What `proved` means.** {BOUND}\n" in _prove_section()
+
+
+def test_every_reason_constant_is_documented() -> None:
+    # Every reason a receipt can carry, the run's, the readers' and each shipped adapter's, is
+    # named in the section as its code span, and so is the warning an unwritten record says.
+    from stayfixed.profiles.go import adapters as go
+    from stayfixed.profiles.javascript import adapters as javascript
+    from stayfixed.profiles.python import adapters as python
+    from stayfixed.prove.evidence import NOT_RECORDED
+    from stayfixed.prove.run import WORDS
+
+    reasons = {reason for reason in WORDS if reason}
+    for module in (python, javascript, go):
+        reasons |= {
+            getattr(module, name)
+            for name in ("REFUSED_OPTION", "ENTRY_NOT_FOUND", "NEVER_ENDS")
+            if hasattr(module, name)
+        }
+    section = _prove_section()
+    assert len(reasons) == 22, sorted(reasons)
+    assert [reason for reason in sorted(reasons) if f"`{reason}`" not in section] == []
+    warning = NOT_RECORDED.format(record="<record>", why="<why>")
+    assert f"`{warning}`" in section, warning

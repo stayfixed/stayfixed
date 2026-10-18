@@ -18,11 +18,10 @@ is counted, the tree's state is taken again, and `CASCADE` says what the run pro
 scratch directory, made outside the project and readable by its owner alone, is removed on every
 path.
 
-The bound, which `docs/cli.md` states word for word: "The code under test, any file in the
-runner's load path, tracked or not, and the environment the runner reads can shape its report, so
-`proved` means the runner reported green on this tree, for the tests this command selected." So
-the tree's state is information for a reader of the receipt and never an input to the verdict:
-everything it reads, the agent that typed the command can write.
+The bound, `BOUND`, which `docs/cli.md` states word for word: what a file in the tree, and the
+environment, can do to the report is conceded, never checked. So the tree's state is information
+for a reader of the receipt and never an input to the verdict: everything it reads, the agent that
+typed the command can write.
 
 **Every control here, with its adversary and its anchor.**
 
@@ -126,6 +125,13 @@ class Verdict(StrEnum):
     NOT_PROVEN = "not proven"
     REFUSED = "refused"
 
+
+# What `proved` means, in the one sentence `docs/cli.md` quotes word for word.
+BOUND = (
+    "The code under test, any file in the runner's load path, tracked or not, and the environment "
+    "the runner reads can shape its report, so `proved` means the runner reported green on this "
+    "tree, for the tests this command selected."
+)
 
 # The exit code of each verdict: a refusal is the 2 every refusal exits with, so a caller never
 # reads it as a run that failed.

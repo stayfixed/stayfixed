@@ -6486,3 +6486,11 @@ file = "src/stayfixed/prove/run.py"
 before = "        entry=str(plan.entry) if plan is not None and plan.entry is not None else None,"
 after = "        entry=None,"
 reddens = ["tests/prove/test_javascript.py::test_an_npmrc_is_named_in_the_receipt"]
+
+# The bound has one source, which `docs/cli.md` quotes word for word.
+[[mutation]]
+name = "the bound's text drifts from the one docs/cli.md quotes"
+file = "src/stayfixed/prove/run.py"
+before = '''    "tree, for the tests this command selected."'''
+after = '''    "tree."'''
+reddens = ["tests/test_documents.py::test_the_prove_section_states_the_bound_word_for_word"]

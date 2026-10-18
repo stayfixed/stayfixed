@@ -1,0 +1,301 @@
+"""`stayfixed prove`'s acceptance: one test per clause, each through the command line in a process
+of its own, asserting the verdict word `--json` prints and the exit code together.
+
+- each reader's genuine passing run is `proved`, exit 0, its counts a literal:
+  `test_each_genuine_passing_run_is_proved_with_exit_0`;
+- a stdout-forged run is `not proven`: `test_a_stdout_forged_run_is_not_proven_with_exit_1`;
+- an empty and an all-skipped run are `failed`, `go test -run NoSuchTest` included:
+  `test_each_empty_and_all_skipped_run_fails_with_exit_1`;
+- each refused forging route is `refused`, exit 2: `test_each_refused_route_exits_2`;
+- the same variable merely inherited is scrubbed and the run still counted:
+  `test_each_inherited_variable_is_scrubbed_and_counted`.
+
+A stand-in runner is no refused route: guarding against a planted runner is not `prove`'s to do,
+and the receipt names the realpath of what ran instead.
+
+The process runs the stayfixed the interpreter running the suite has installed, never this
+checkout's `src` put first (`stayfixed_argv(..., installed=True)`), behind the owner-home seam, so
+the same file run against an installed release tests that release. The cases that run a real
+runner are `runners`-marked and skip where it is not installed.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+import sys
+from collections.abc import Mapping
+from pathlib import Path
+
+import pytest
+
+from stayfixed.profiles.go.adapters import REFUSED_OPTION as GO_REFUSED
+from stayfixed.profiles.javascript.adapters import REFUSED_OPTION as JS_REFUSED
+from stayfixed.profiles.python.adapters import REFUSED_OPTION as PYTEST_REFUSED
+from stayfixed.prove.counts import Counts
+from stayfixed.prove.run import (
+    ALL_SKIPPED,
+    ASSIGNED_FORGING,
+    JUNIT_BESIDE_ADAPTER,
+    NONE_RAN,
+    NOT_RECOGNISED,
+    REFUSED_LAUNCHER_OPTION,
+)
+from tests.ownerhome import stayfixed_argv
+from tests.prove.real_runners import installed_packages, node_modules, required, where
+from tests.prove.test_go import module
+from tests.prove.test_javascript import COMMANDS, FILES
+
+TIMEOUT_SECONDS = 600
+
+
+def run_prove(
+    tmp_path: Path,
+    cwd: Path,
+    *argv: str,
+    flags: tuple[str, ...] = (),
+    stderr_pipe: bool = False,
+    variables: Mapping[str, str] | None = None,
+) -> tuple[str, int, dict[str, object]]:
+    """The verdict word `prove --json` printed, its exit code and its receipt, for `argv` typed in
+    `cwd` in a process of its own, with every installed runner's directory first on `PATH`. Its
+    standard error goes to a file, as a terminal's or a log's would, or to a pipe for
+    `stderr_pipe`: jest 30.5.2's run of no test writes no report where it is a pipe."""
+    first = [str(found) for name in ("pytest", "node", "go") if (found := where(name))]
+    environ = {
+        **os.environ,
+        "PATH": os.pathsep.join([*first, os.environ.get("PATH", "")]),
+        "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
+    }
+    environ.pop("NODE_OPTIONS", None)
+    argv_ = [*stayfixed_argv(tmp_path / "home", installed=True), "prove", "--json", *flags]
+    with (tmp_path / "stderr.txt").open("w", encoding="utf-8") as errors:
+        done = subprocess.run(
+            [*argv_, "--", *argv],
+            cwd=cwd,
+            env={**environ, **(variables or {})},
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE if stderr_pipe else errors,
+            text=True,
+            check=False,
+            timeout=TIMEOUT_SECONDS,
+        )
+    receipt = json.loads(done.stdout)
+    assert isinstance(receipt, dict), done.stdout
+    return str(receipt["verdict"]), done.returncode, receipt
+
+
+def counted(receipt: dict[str, object]) -> Counts | None:
+    counts = receipt["counts"]
+    return Counts(**counts) if isinstance(counts, dict) else None
+
+
+def pytest_project(root: Path, *, passing: int = 0, skipped: int = 0) -> Path:
+    """A project pytest collects in `root`, with no configuration above it read."""
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "pytest.ini").write_text("[pytest]\n", encoding="utf-8")
+    tests = ["import pytest", ""]
+    tests += [f"def test_pass_{index}():\n    pass\n" for index in range(passing)]
+    tests += [
+        f"@pytest.mark.skip(reason='scratch')\ndef test_skip_{index}():\n    pass\n"
+        for index in range(skipped)
+    ]
+    (root / "test_scratch.py").write_text("\n".join(tests), encoding="utf-8")
+    return root
+
+
+def js_project(root: Path, runner: str, text: str | None) -> Path:
+    """A project `runner` collects in `root`, its `node_modules` linked to the installed ones."""
+    name, _, _, manifest = FILES[runner]
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "package.json").write_text(manifest, encoding="utf-8")
+    (root / "node_modules").symlink_to(installed_packages())
+    if text:
+        (root / name).write_text(text, encoding="utf-8")
+    return root
+
+
+PYTEST = ("pytest", "-q", "-p", "no:cacheprovider")
+JS_RUNNERS = ("jest", "vitest", "node-test")
+
+
+def _needs(runner: str) -> list[pytest.MarkDecorator]:
+    """The marks a case of `runner` carries: `runners`, and a skip where it is not installed and
+    `STAYFIXED_REQUIRE_RUNNERS` does not require it, as `needs_runner` and `needs_packages` do."""
+    if runner in JS_RUNNERS:
+        missing = where("node") is None or node_modules() is None
+    else:
+        missing = where({"pytest": "pytest", "go-test": "go"}[runner]) is None
+    marks = [pytest.mark.runners]
+    if missing and not required():
+        marks.append(pytest.mark.skip(reason=f"{runner} is not installed here"))
+    return marks
+
+
+def each_runner(*cases: str) -> list[object]:
+    return [pytest.param(case, marks=_needs(case)) for case in cases]
+
+
+RUNNERS = ("pytest", "jest", "vitest", "node-test", "go-test")
+
+
+@pytest.mark.parametrize("runner", each_runner(*RUNNERS))
+def test_each_genuine_passing_run_is_proved_with_exit_0(tmp_path: Path, runner: str) -> None:
+    argv: tuple[str, ...]
+    if runner == "pytest":
+        cwd, argv, counts = pytest_project(tmp_path / "p", passing=2), PYTEST, Counts(2, 0, 0)
+    elif runner == "go-test":
+        cwd, argv, counts = module(tmp_path), ("go", "test", "./passing/"), Counts(1, 0, 1)
+    else:
+        cwd = js_project(tmp_path / "p", runner, FILES[runner][1])
+        argv, counts = tuple(COMMANDS[runner]), Counts(1, 0, 1)
+    verdict, code, receipt = run_prove(tmp_path, cwd, *argv)
+    assert (verdict, code, counted(receipt), receipt["runner"]) == ("proved", 0, counts, runner)
+
+
+@pytest.mark.parametrize(
+    "printed",
+    [
+        "============================== 3 passed in 0.01s ==============================",
+        '{"Action": "pass", "Package": "example.com/p", "Test": "TestForged"}',
+    ],
+    ids=["a-pytest-summary", "a-go-pass-event"],
+)
+def test_a_stdout_forged_run_is_not_proven_with_exit_1(tmp_path: Path, printed: str) -> None:
+    # What a command prints is never counted: a program that prints a runner's own summary, or
+    # its framed event, is no runner any adapter recognises.
+    verdict, code, receipt = run_prove(
+        tmp_path, tmp_path, sys.executable, "-c", f"print({printed!r})"
+    )
+    assert (verdict, code, receipt["reason"], receipt["counts"]) == (
+        "not proven",
+        1,
+        NOT_RECOGNISED,
+        None,
+    )
+
+
+EMPTY_AND_SKIPPED = [(runner, case) for runner in RUNNERS for case in ("empty", "all-skipped")]
+
+
+@pytest.mark.parametrize(
+    ("runner", "case"),
+    [pytest.param(runner, case, marks=_needs(runner)) for runner, case in EMPTY_AND_SKIPPED],
+)
+def test_each_empty_and_all_skipped_run_fails_with_exit_1(
+    tmp_path: Path, runner: str, case: str
+) -> None:
+    empty = case == "empty"
+    if runner == "pytest":
+        cwd = pytest_project(tmp_path / "p", skipped=0 if empty else 2)
+        argv: tuple[str, ...] = (*PYTEST, "-k", "no_such_test") if empty else PYTEST
+    elif runner == "go-test":
+        cwd = module(tmp_path)
+        argv = (
+            ("go", "test", "-run", "NoSuchTest", "./three/")
+            if empty
+            else ("go", "test", "./skipped/")
+        )
+    else:
+        cwd = js_project(tmp_path / "p", runner, None if empty else FILES[runner][2])
+        argv = tuple(COMMANDS[runner])
+    verdict, code, receipt = run_prove(tmp_path, cwd, *argv)
+    reason, counts = (NONE_RAN, Counts(0, 0, 0)) if empty else (ALL_SKIPPED, Counts(0, 0, 2))
+    assert (verdict, code, receipt["reason"], counted(receipt)) == ("failed", 1, reason, counts)
+
+
+@pytest.mark.parametrize("runner", each_runner("jest"))
+def test_an_empty_jest_run_whose_standard_error_is_a_pipe_is_not_proven(
+    tmp_path: Path, runner: str
+) -> None:
+    # Measured on jest 30.5.2: a run of no test prints "No tests found" and exits before it writes
+    # its report wherever its standard error is a pipe (as in most CI jobs), and writes it where
+    # it is a terminal or a file. No report is `not proven`, never `proved`: exit 1 either way.
+    cwd = js_project(tmp_path / "p", runner, None)
+    verdict, code, receipt = run_prove(tmp_path, cwd, *COMMANDS[runner], stderr_pipe=True)
+    assert (verdict, code, receipt["reason"]) == ("not proven", 1, "no-report")
+
+
+ROUTES = {
+    # each adapter's closed list
+    "pytest --junitxml": (("pytest", "--junitxml=elsewhere.xml"), PYTEST_REFUSED, "--junitxml"),
+    "pytest -p no:junitxml": (("pytest", "-p", "no:junitxml"), PYTEST_REFUSED, "-p no:junitxml"),
+    "jest --json": (("npx", "jest", "--json"), JS_REFUSED, "--json"),
+    "vitest --outputFile": (("npx", "vitest", "run", "--outputFile=x.json"), JS_REFUSED, None),
+    "node --test-reporter": (("node", "--test", "--test-reporter=dot"), JS_REFUSED, None),
+    "go -exec": (("go", "test", "-exec=/bin/true", "./..."), GO_REFUSED, "-exec"),
+    # an assigned variable in each adapter's forging set
+    "PYTEST_ADDOPTS=": (("PYTEST_ADDOPTS=--co", "pytest"), ASSIGNED_FORGING, "PYTEST_ADDOPTS"),
+    "NODE_OPTIONS= jest": (("NODE_OPTIONS=-r x", "npx", "jest"), ASSIGNED_FORGING, "NODE_OPTIONS"),
+    "NODE_OPTIONS= vitest": (
+        ("env", "NODE_OPTIONS=-r x", "npx", "vitest", "run"),
+        ASSIGNED_FORGING,
+        "NODE_OPTIONS",
+    ),
+    "NODE_TEST_CONTEXT=": (
+        ("NODE_TEST_CONTEXT=child", "node", "--test"),
+        ASSIGNED_FORGING,
+        "NODE_TEST_CONTEXT",
+    ),
+    "GOFLAGS=": (("GOFLAGS=-toolexec=x", "go", "test", "./..."), ASSIGNED_FORGING, "GOFLAGS"),
+    # uv's options and variables that load a file, after the launcher or before it
+    "uv run --env-file": (
+        ("uv", "run", "--env-file", ".env", "pytest"),
+        REFUSED_LAUNCHER_OPTION,
+        "--env-file",
+    ),
+    "uv run --config-file=": (
+        ("uv", "run", "--config-file=uv.toml", "pytest"),
+        REFUSED_LAUNCHER_OPTION,
+        "--config-file",
+    ),
+    "UV_ENV_FILE=": (("UV_ENV_FILE=.env", "uv", "run", "pytest"), ASSIGNED_FORGING, "UV_ENV_FILE"),
+}
+
+
+@pytest.mark.parametrize("route", list(ROUTES))
+def test_each_refused_route_exits_2(tmp_path: Path, route: str) -> None:
+    # Each is refused before anything runs, so no runner need be installed.
+    argv, reason, detail = ROUTES[route]
+    verdict, code, receipt = run_prove(tmp_path, tmp_path, *argv)
+    assert (verdict, code, receipt["reason"]) == ("refused", 2, reason), receipt
+    if detail is not None:
+        assert receipt["detail"] == detail, receipt
+
+
+def test_a_known_runner_under_junit_exits_2(tmp_path: Path) -> None:
+    # The same table's last route: `--junit` beside a runner an adapter knows, which would skip
+    # that adapter's refusals and forging set.
+    verdict, code, receipt = run_prove(tmp_path, tmp_path, "pytest", flags=("--junit", "r.xml"))
+    assert (verdict, code, receipt["reason"], receipt["verified"]) == (
+        "refused",
+        2,
+        JUNIT_BESIDE_ADAPTER,
+        False,
+    )
+
+
+INHERITED = {
+    # Each would change what runs or where its report goes, had it reached the runner.
+    "pytest": ("PYTEST_ADDOPTS", "--collect-only"),
+    "jest": ("NODE_OPTIONS", "--require /no/such/preload.js"),
+    "vitest": ("NODE_OPTIONS", "--require /no/such/preload.js"),
+    "node-test": ("NODE_TEST_CONTEXT", "child-v8"),
+    "go-test": ("GOFLAGS", "-run=NoSuchTest"),
+}
+
+
+@pytest.mark.parametrize("runner", each_runner(*RUNNERS))
+def test_each_inherited_variable_is_scrubbed_and_counted(tmp_path: Path, runner: str) -> None:
+    name, value = INHERITED[runner]
+    argv: tuple[str, ...]
+    if runner == "pytest":
+        cwd, argv, counts = pytest_project(tmp_path / "p", passing=2), PYTEST, Counts(2, 0, 0)
+    elif runner == "go-test":
+        cwd, argv, counts = module(tmp_path), ("go", "test", "./passing/"), Counts(1, 0, 1)
+    else:
+        cwd = js_project(tmp_path / "p", runner, FILES[runner][1])
+        argv, counts = tuple(COMMANDS[runner]), Counts(1, 0, 1)
+    verdict, code, receipt = run_prove(tmp_path, cwd, *argv, variables={name: value})
+    assert (verdict, code, counted(receipt)) == ("proved", 0, counts), receipt

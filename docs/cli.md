@@ -829,7 +829,10 @@ An option with which `uv` loads a file the command names, `--env-file` or `--con
 `--name value` or `--name=value` and wherever it stands among `uv`'s words, is refused
 (`launcher-option`, naming the option). Every other assignment reaches the runner in its
 environment, in order, the last of two for one name winning, and never in its argv; the adapter is
-handed the launcher's own words (`uv run` and its options) and never an assignment or an `env`. A
+handed the launcher's own words (`uv run` and its options) and never an assignment or an `env`.
+The environment is the whole launched process's, the launcher's included: `uv run TYPED=yes
+pytest`, which `uv` itself would not run, runs with `TYPED` set, and an assigned `UV_*` variable
+other than the two above reaches `uv`. A
 report the runner writes to a file is read from a scratch directory outside the project; a report
 that is the runner's own standard output (a test event stream) is copied to yours as it arrives,
 every byte, and only the format's own events are counted. Under `--json` the runner's standard
@@ -866,7 +869,9 @@ package manager's shim is run: the entry point is the file the `bin` of `node_mo
 one above it up to the top-level, then the runner's name on `PATH` where it is a link to such a
 file; a file there that is not a link is never read. The run is the `node` on `PATH` and that entry,
 and nothing found is `entry-not-found` (`not proven`), whose detail names `prove --junit` as the way
-on. jest is run with `--json --outputFile=<report>`; vitest with `run` first where the command does
+on. jest is run with `--json --outputFile=<report>` (jest 30.5.2's run of no test writes no report
+where its standard error is a pipe, as in most CI jobs, so it is `not proven` there and `failed`
+at a terminal: never `proved`); vitest with `run` first where the command does
 not start with it, `--reporter=json --outputFile=<report>`, and `--reporter=default` where the
 command names no reporter; `node --test` with a junit reporter to `<report>` and the spec reporter
 to standard output, and a testcase node writes for a whole file that ran no test is not counted
@@ -940,8 +945,10 @@ after it, the file is counted only when it is a regular file, not a link, that t
 rewrote, and otherwise the run is `not proven` (`junit-unchanged`, naming the path), so a stale or
 committed report counts nothing. A program the command names that is not there is `not-started`. The
 verdict is the cascade's. Every `--junit` receipt carries `verified: false`, one refused or not
-started too, and the receipt of a command no adapter recognises `runner: null`; the line says
-`runner not verified` and names what ran.
+started too, and the receipt of a command no adapter recognises `runner: null`. The line of a
+command no adapter recognises says `runner not verified, ran <program>`; that of a command an adapter
+recognises, refused beside `--junit`, names the runner it is and says `runner <name>, not
+verified`.
 
 **What `proved` means.** The code under test, any file in the runner's load path, tracked or not, and the environment the runner reads can shape its report, so `proved` means the runner reported green on this tree, for the tests this command selected.
 
@@ -949,8 +956,8 @@ started too, and the receipt of a command no adapter recognises `runner: null`; 
 
 | Row | Verdict | Exit | Reason |
 |---|---|---|---|
-| the runner's adapter refuses the command, the command assigns a variable in the adapter's forging set or one `uv` loads a file from, it gives `uv` an option that loads a file, the program changed between the plan and the launch, or `--junit` names the report of a command an adapter recognises | `refused` | 2 | the adapter's own, `assigned-forging`, `launcher-option`, `resolved-elsewhere`, `junit-beside-adapter` |
-| no adapter recognises the command, its entry point does not resolve, it asks for a run that never ends, it could not start, it was interrupted or passed its time limit, it wrote no report, the run did not write the `--junit` report, or the report does not read | `not proven` | 1 | `not-recognised`, the adapter's own, `not-started`, `interrupted`, `timed-out`, `no-report`, `junit-unchanged`, a report's own |
+| the runner's adapter refuses the command, the command assigns a variable in the adapter's forging set or one `uv` loads a file from, it gives `uv` an option that loads a file, the program changed between the plan and the launch, or `--junit` names the report of a command an adapter recognises | `refused` | 2 | the adapter's own (`refused-option`), `assigned-forging`, `launcher-option`, `resolved-elsewhere`, `junit-beside-adapter` |
+| no adapter recognises the command, its entry point does not resolve, it asks for a run that never ends, it could not start, it was interrupted or passed its time limit, it wrote no report, the run did not write the `--junit` report, or the report does not read | `not proven` | 1 | `not-recognised`, the adapter's own (`entry-not-found`, `never-ends`), `not-started`, `interrupted`, `timed-out`, `no-report`, `junit-unchanged`, a report's own |
 | the report holds a failed test | `failed` | 1 | `failing` |
 | the report holds no test | `failed` | 1 | `none-ran` |
 | every test the report holds was skipped | `failed` | 1 | `all-skipped` |
@@ -999,7 +1006,16 @@ interrupted or timed-out run's says `not proven`. A record is a log: no gate, ve
 decision reads one. It is never written inside a repository (a dotfiles checkout at `~` gets none),
 nor through a link, and one that cannot be written, with no home, or a state directory that is not
 a directory or is a link, is one warning on standard error that names it, the verdict and the exit
-code unchanged. There is no rotation yet: each run adds its line.
+code unchanged. There is no rotation yet: each run adds its line. The warning reads
+`stayfixed: the evidence record <record> was not written: <why>`, `<record>` its path or `of this
+run` where there is no home. `stayfixed uninstall` leaves the records: they are the machine's, not
+the project's, and `~/.local/state/stayfixed/evidence/` is yours to remove.
+
+**The network.** `prove` itself reaches none; what runs may. `uv run` may sync the project's
+environment from its index first, as it does outside `prove`; `go test` may download the modules
+`go.mod` names, from the proxy your go environment names (`GOENV=off` drops a `go env -w` setting,
+so a private module's proxy must come from the environment); and nothing is installed through
+`npx`, which never runs: a runner that is not in `node_modules` is `entry-not-found`.
 
 **Reads** the command's report and git's answers about the tree. **Writes** nothing in the
 project: the scratch directory is under the system's temporary directory, is readable by you
@@ -2228,8 +2244,10 @@ finishes the run. A `CLAUDE.md` or `AGENTS.md` your own excludes ignore is taken
 other. Run it on a checkout you trust.
 
 **What stays on the machine.** `uninstall` takes back one repository's footprint, and what is the
-machine's stays: the deny rules `stayfixed setup` added to the user settings file, and every
-approval in `~/.config/stayfixed/trust.json`, this repository's store among them. Run `stayfixed
+machine's stays: the deny rules `stayfixed setup` added to the user settings file, every
+approval in `~/.config/stayfixed/trust.json`, this repository's store among them, and the evidence
+records of its `prove` and `gate` runs in `~/.local/state/stayfixed/evidence/`, which are yours to
+remove. Run `stayfixed
 trust revoke memory` before uninstalling to withdraw this repository's approval; afterwards, with no
 `stayfixed.toml` to describe the store, `trust revoke` says so and names `stayfixed trust revoke
 memory --subject KEY`, with a key `stayfixed trust list --all --json` prints.
@@ -3623,6 +3641,18 @@ as the check is required on the gate branch only.
 | `python-version` | `"3.13"` | the interpreter stayfixed runs on; 3.11 is the floor |
 | `only` | `""` | the checks to run, space-separated: `config` and any configured gate name. Empty runs the configuration check and every configured gate, and the configuration check runs whatever this names |
 | `timeout-minutes` | `15` | the job's time limit, a whole number of minutes from 5 to 60; any value the runner does not render as a whole number from 5 to 60 fails the job in its first step, before anything is checked out |
+| `evidence` | `false` | upload the [evidence records](#stayfixed-prove---timeout-seconds---junit-path----command-) the two gate steps appended, as an artifact named for the job, `only:` and the attempt; off unless the caller turns it on, since the artifact's one consumer is stayfixed's own metrics |
+| `evidence-retention-days` | `14` | how many days that artifact is kept, where `evidence` is on |
+
+**The evidence upload.** Each of the two gate steps appends one line to the runner's
+`~/.local/state/stayfixed/evidence/<key>.jsonl`. With `evidence: true`, a last step uploads that
+directory with `actions/upload-artifact`, pinned by its sha, after both steps whatever they came
+to (`if: always()`), and an empty directory uploads nothing. It is the one step with an `if:` and
+the one that may fail (`continue-on-error`): a log may neither change the verdict nor be lost to
+one, so a name a caller's matrix repeats, or the artifact service failing, fails nothing. It runs no
+command and reads no secret, and what it uploads is bytes the pull request's own code can write (a
+custom gate runs in the same job and can append to the record), which is why a record is a log that
+no gate, verdict or trust decision reads.
 
 The caller's job needs `contents: read`. That is the default, so the lines above are enough —
 but a caller that sets `permissions:` at workflow level replaces the default rather than adding

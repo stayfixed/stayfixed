@@ -3706,3 +3706,55 @@ after = '''      FULL: ${{ needs.changes.outputs.code == 'true' }}'''
 reddens = [
   "tests/test_ci_scope.py::test_every_job_that_reads_the_scope_runs_whole_on_any_answer_but_false",
 ]
+
+# The evidence records' upload: last, the one step with an `if:`, on only where a caller turns it
+# on, and named per leg.
+[[mutation]]
+name = "the evidence upload runs only after a passing run"
+file = ".github/workflows/check.yml"
+before = "        if: always() && inputs.evidence"
+after = "        if: inputs.evidence"
+reddens = ["tests/test_check_workflow.py::test_the_upload_is_last_and_the_only_step_with_an_if"]
+
+[[mutation]]
+name = "the evidence artifact's name is the same for every leg"
+file = ".github/workflows/check.yml"
+before = "          name: stayfixed-evidence-${{ github.job }}-${{ inputs.only }}-${{ github.run_attempt }}"
+after = "          name: stayfixed-evidence"
+reddens = ["tests/test_check_workflow.py::test_the_upload_is_pinned_by_sha_and_named_per_leg"]
+
+[[mutation]]
+name = "the judging step may be skipped"
+file = ".github/workflows/check.yml"
+before = """      - name: The configuration and the built-in gates
+        env:"""
+after = """      - name: The configuration and the built-in gates
+        if: always()
+        env:"""
+reddens = [
+  "tests/test_check_workflow.py::test_the_upload_is_last_and_the_only_step_with_an_if",
+  "tests/test_check_workflow.py::test_one_job_whose_judging_steps_may_not_fail_and_run_in_order",
+]
+
+[[mutation]]
+name = "every caller uploads the evidence records"
+file = ".github/workflows/check.yml"
+before = """        type: boolean
+        default: false"""
+after = """        type: boolean
+        default: true"""
+reddens = ["tests/test_check_workflow.py::test_the_upload_is_off_unless_a_caller_turns_it_on"]
+
+[[mutation]]
+name = "the smoke call leaves the evidence upload off"
+file = ".github/workflows/smoke.yml"
+before = "      evidence: true"
+after = "      evidence: false"
+reddens = ["tests/test_check_workflow.py::test_the_upload_is_off_unless_a_caller_turns_it_on"]
+
+[[mutation]]
+name = "the evidence upload reads another directory than the records'"
+file = ".github/workflows/check.yml"
+before = "          path: ~/.local/state/stayfixed/evidence/"
+after = "          path: ~/.local/state/stayfixed/"
+reddens = ["tests/test_check_workflow.py::test_the_uploaded_directory_is_the_one_evidence_writes"]

@@ -89,15 +89,19 @@ def as_owner_home(monkeypatch: pytest.MonkeyPatch, home: Path | str | None) -> N
     monkeypatch.setattr(pwd, "getpwuid", lookup)
 
 
-def stayfixed_argv(home: Path) -> list[str]:
+def stayfixed_argv(home: Path, *, installed: bool = False) -> list[str]:
     """The argv of a `stayfixed` run from this checkout with the database recording `home`, as
-    `scripts/stayfixed` runs it; the command's own arguments follow."""
+    `scripts/stayfixed` runs it; the command's own arguments follow. `installed` runs the
+    stayfixed the running interpreter has installed instead, never this checkout's `src` put
+    first, and keeps the directory the run starts in off the import path (`-P`): the acceptance
+    tests run so, and so test a release installed in place of the checkout."""
+    found = "" if installed else f"import sys\nsys.path.insert(0, {str(ROOT / 'src')!r})\n"
     bootstrap = (
         f"{_smoke_hooks().owner_home_prelude(home)}"
-        f"import sys\nsys.path.insert(0, {str(ROOT / 'src')!r})\n"
+        f"{found}"
         "from stayfixed.cli import main\nraise SystemExit(main())\n"
     )
-    return [sys.executable, "-c", bootstrap]
+    return [sys.executable, *(["-P"] if installed else []), "-c", bootstrap]
 
 
 def checkout_with_owner_home(into: Path, home: Path) -> Path:
