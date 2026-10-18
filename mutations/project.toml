@@ -3099,7 +3099,7 @@ reddens = ["tests/prove/test_javascript.py::test_a_preloaded_file_is_named_and_a
 [[mutation]]
 name = "a preloaded package's name is named as a file"
 file = "src/stayfixed/profiles/javascript/adapters.py"
-before = """    if given.startswith(_PATH_STARTS):
+before = """    if _path_like(given):
         return os.path.realpath(cwd / given)"""
 after = """    if not given.startswith(_FILE_SCHEME):
         return os.path.realpath(cwd / given)"""
@@ -3461,3 +3461,13 @@ file = "src/stayfixed/profiles/javascript/adapters.py"
 before = 'NEVER_ENDS = "never-ends"'
 after = 'NEVER_ENDS = "never-finishes"'
 reddens = ["tests/test_documents.py::test_every_reason_constant_is_documented"]
+
+# No package's name holds a `.` or `..` segment: `--import pkg/../../x` is a path, and is named.
+[[mutation]]
+name = "a preload with a dot segment is read as a package"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = '    return not urlsplit(value).scheme and any(part in (".", "..") for part in value.split("/"))'
+after = "    return False"
+reddens = [
+  "tests/prove/test_javascript.py::test_a_preload_with_a_dot_segment_is_a_path_named_on_the_receipt[pkg/../../evil.mjs]",
+]

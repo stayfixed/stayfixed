@@ -946,7 +946,8 @@ proven`): node would read the entry as that option's value and run the word afte
 (`refused-option`, naming the option, never its value): the options that load a file
 (`--env-file`, `--env-file-if-exists`, the configuration file options), the test runner's (any
 `--test…`), and code the command spells (`-e`, `--eval`, `-p`, `--print`, and a preload given a
-`data:` URL or any specifier that is neither a file's path nor a package's name); `--watch` and
+`data:` URL or any specifier that is neither a file's path nor a package's name, a value with a
+`.` or `..` segment being a path); `--watch` and
 `--watch-path` never end. A file a preload names there is among the configuration files. Their configuration
 files are `package.json`, `.npmrc`, `jest.config.*`, `vitest.config.*` and `vite.config.*`.
 

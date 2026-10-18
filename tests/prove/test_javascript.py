@@ -392,6 +392,34 @@ def test_a_preload_of_a_file_or_a_package_is_free_in_front_of_the_entry(
     assert isinstance(planned(JEST, command, project, path=str(node.parent)), Plan)
 
 
+@pytest.mark.parametrize("value", ["pkg/../../evil.mjs", "@s/p/./x.cjs", "a/.."])
+def test_a_preload_with_a_dot_segment_is_a_path_named_on_the_receipt(
+    tmp_path: Path, value: str
+) -> None:
+    # No package's name holds a `.` or `..` segment: the value is a path, read from the run's
+    # directory, and named among the configuration files, in front of an entry and under
+    # `--test` alike. Mutation (declared): such a value read as a package -> it is named nowhere.
+    project = tmp_path / "project"
+    _, _, node = installed(project)
+    named = os.path.realpath(project / value)
+    got = plan_of(
+        JEST,
+        ["node", "--import", value, "node_modules/jest/bin/jest.js"],
+        project,
+        path=str(node.parent),
+    )
+    assert got.configs[-1] == named
+    tested = plan_of(
+        NODE_TEST, ["node", f"--import={value}", "--test"], project, path=str(node.parent)
+    )
+    assert tested.configs[-1] == named
+
+
+def test_a_data_url_with_a_dot_segment_is_still_refused(tmp_path: Path) -> None:
+    got = planned(NODE_TEST, ["node", "--import=data:text/javascript,x/../y", "--test"], tmp_path)
+    assert got == Refused(REFUSED_OPTION, "--import")
+
+
 @pytest.mark.parametrize(
     ("words", "named"),
     [

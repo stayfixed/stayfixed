@@ -787,11 +787,19 @@ _ENTRY_VALUED = frozenset(
 _PACKAGE_NAME = re.compile(r"(@[A-Za-z0-9~][\w.~-]*/)?[A-Za-z0-9~][\w.~-]*(/[\w.~@-]+)*")
 
 
+def _path_like(value: str) -> bool:
+    """Whether a preload option's value is a path: it starts as one (`/`, `./`, `../`), or it has
+    no URL scheme and a `.` or `..` segment (`pkg/../../x`), which no package's name holds."""
+    if value.startswith(_PATH_STARTS):
+        return True
+    return not urlsplit(value).scheme and any(part in (".", "..") for part in value.split("/"))
+
+
 def inline_preload(value: str) -> bool:
     """Whether a preload option's value is code of the command's own, or any specifier that is
-    neither a file's path (`/`, `./`, `../`, `file:`) nor a package's bare name: a `data:` URL,
+    neither a file's path (`_path_like`, `file:`) nor a package's bare name: a `data:` URL,
     `node:`, `https:`."""
-    if value.startswith(_PATH_STARTS) or urlsplit(value).scheme == _FILE_SCHEME:
+    if _path_like(value) or urlsplit(value).scheme == _FILE_SCHEME:
         return False
     return _PACKAGE_NAME.fullmatch(value) is None
 
@@ -1090,8 +1098,9 @@ def _preloaded_file(given: str, cwd: Path) -> str | None:
     from `cwd`, or a `file:` URL of this machine, percent-decoded, as `url2pathname` reads one on
     POSIX, its path read from the root as WHATWG reads it (measured on Node 26.12.0:
     `--import=file:x.mjs` loads `/x.mjs`, never a file of the run's directory); `None` for a
-    package's name or any other specifier (`data:`, `node:`)."""
-    if given.startswith(_PATH_STARTS):
+    package's name or any other specifier (`data:`, `node:`). A value with no scheme and a `.` or
+    `..` segment (`pkg/../../x`) is a path too, read from `cwd`: no package's name holds one."""
+    if _path_like(given):
         return os.path.realpath(cwd / given)
     url = urlsplit(given)
     if url.scheme != _FILE_SCHEME or url.netloc not in _LOCAL_HOSTS or not url.path:
