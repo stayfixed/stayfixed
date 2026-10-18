@@ -16,8 +16,6 @@ def test_the_surface_is_what_consumers_reach_for() -> None:
         "Verdict",
         # what a receipt counts
         "Counts",
-        # which runners this stayfixed can count, by the discovery `prove` uses
-        "shipped_adapters",
         # `stayfixed gate`, which keeps its evidence record where `prove` keeps its own
         "record_gate",
     }

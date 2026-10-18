@@ -1141,7 +1141,7 @@ def test_every_reason_constant_is_documented() -> None:
     # warning's words changed -> the section quotes another.
     import sys
 
-    from stayfixed.prove.api import shipped_adapters
+    from stayfixed.profiles.adapters import shipped_adapters
     from stayfixed.prove.evidence import NOT_RECORDED
     from stayfixed.prove.run import WORDS
 

@@ -416,26 +416,23 @@ def test_a_launcher_option_that_loads_no_file_is_free(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize(
-    "argv",
+    ("command", "option"),
     [
-        ["uv", "run", "--directory", "../other", "pytest", "-q"],
-        ["uv", "run", "--project=../other", "npx", "jest"],
-        ["uv", "run", "--directory", "/elsewhere", "go", "test", "./..."],
+        (["uv", "run", "--directory", "../other", "pytest", "-q"], "--directory"),
+        (["uv", "run", "--project=../other", "npx", "jest"], "--project"),
+        (["uv", "run", "--directory", "/elsewhere", "go", "test", "./..."], "--directory"),
     ],
     ids=["pytest", "jest", "go"],
 )
 def test_a_launcher_that_runs_elsewhere_is_refused_for_every_adapter(
-    tmp_path: Path, argv: list[str]
+    tmp_path: Path, command: list[str], option: str
 ) -> None:
     # Through the adapters this stayfixed ships: the receipt's tree state, configuration files and
     # record describe the directory `prove` was typed in, and the run would be another tree's.
     # Mutation (declared): the launcher's directory options left free -> each is planned.
-    got = prove(argv, cwd=tmp_path, environ={"PATH": ""}, timeout=60)
-    assert (got.verdict, got.reason, got.detail) == (
-        REFUSED,
-        REFUSED_LAUNCHER_OPTION,
-        argv[2].partition("=")[0],
-    )
+    got = prove(command, cwd=tmp_path, environ={"PATH": ""}, timeout=60)
+    assert got.verdict == REFUSED
+    assert (got.reason, got.detail) == (REFUSED_LAUNCHER_OPTION, option)
     assert got.runner is not None
 
 
