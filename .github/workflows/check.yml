@@ -59,7 +59,7 @@ on:
         type: number
         default: 15
       evidence:
-        description: "upload the evidence records the run's two gate steps appended, as an artifact named for the job and `only:`; off unless a caller turns it on, since its one consumer is stayfixed's own metrics"
+        description: "upload the evidence records the run's two gate steps appended, as an artifact named for the job, `only:` and the run attempt (one per call: calls that share an `only:` share the name, and each upload after the first fails without failing the job); off unless a caller turns it on, since its one consumer is stayfixed's own metrics"
         type: boolean
         default: false
       evidence-retention-days:
@@ -259,15 +259,18 @@ jobs:
           set +f
           python3 -P -s -m stayfixed gate --custom --root "$ROOT" --base "$BASE_SHA" \
             --workflow-sha "$WORKFLOW_SHA" --annotate --summary "$GITHUB_STEP_SUMMARY" "${only[@]}"
-      # The evidence records the two gate steps appended to `~/.local/state/stayfixed/evidence/`
-      # (the runner user's home in the password database), uploaded after both whatever they came
-      # to, and only where the caller turns `evidence:` on. It is the one step with an `if:` and
+      # The evidence records the two gate steps appended to `~/.local/state/stayfixed/evidence/`,
+      # uploaded after both whatever they came to, and only where the caller turns `evidence:` on. It is the one step with an `if:` and
       # with `continue-on-error`: a log may neither change the verdict nor be lost to one, so a
       # name a caller's matrix repeats, or an artifact-service outage, fails nothing. It runs no
       # command and reads no secret, and it uploads bytes the pull request's own code can write
       # (a custom gate runs in this job and can append to the record), which is why a record is
-      # a log that no gate, verdict or trust decision reads. Named for the job, `only:` and the
-      # attempt, so the legs of a caller's matrix, and a re-run, each upload under their own.
+      # a log that no gate, verdict or trust decision reads. `~` here is read from `HOME`, and the
+      # records' home from the password database: the two are one directory on hosted runners.
+      # Named for the job, `only:` and the attempt: one artifact per call and attempt, a re-run
+      # its own. `github.job` is this workflow's job, not the caller's, so calls that share an
+      # `only:` (a caller's matrix, or two jobs calling it) share the name, and each upload after
+      # the first fails, silently under `continue-on-error`; give each call its own `only:`.
       - name: The evidence records
         if: always() && inputs.evidence
         continue-on-error: true
