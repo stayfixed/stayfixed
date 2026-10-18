@@ -1468,3 +1468,44 @@ owner ran `/login`, so a credential reached the isolated configuration from outs
 warned. It was repeated in a fresh session after `/login`. `codex exec` reported 2,603 tokens for the
 implicit prompt and 6,933 for `$canary`. No reserve run was needed: six runs in all, besides the
 first, discarded session.
+
+### Wave E (controller, 2026-10-18)
+
+Implementer about 490k tokens for the first pass; the fix round went to a fresh agent (about 340k).
+Built as planned, with these changes the review and the controller's rulings made:
+
+- Every `NAME=value` word the command spells, before or after a launcher, bare or after `env`, is
+  the command's assignment: a forging name is refused wherever it is spelled, and every assignment
+  goes into the run's environment. Adapters receive the launcher's words only. The first text
+  stopped at the launcher, so `uv run env PYTEST_ADDOPTS=… pytest` escaped the refusal.
+- uv's file-loading launcher options (`--env-file`, `--config-file`) and their variables
+  (`UV_ENV_FILE`, `UV_CONFIG_FILE`) are refused for every adapter, from a closed list in
+  `guards/uvrun.py`; an inherited variable is scrubbed under `uv run`.
+- `guards.api` publishes `read_launch`/`Launch`, not `command_words`: a positional split cannot tell
+  an assignment from a uv option's value.
+- `--json` is read only before the first `--`; under `--json` the runner's standard output goes to
+  standard error, so standard output is one JSON object.
+- Configuration files are listed from tracked and untracked-not-ignored files, capped, with a count
+  of ignored ones; untracked discovery files are listed before ignored ones.
+- `read_report` lives in `stayfixed.prove.reports` (Wave D).
+
+### Wave F (controller, 2026-10-18)
+
+Implementer about 420k tokens; the fix round went to a fresh agent (about 180k). Changes against the
+text:
+
+- The runner's standard input is `/dev/null` for every run (Task 7's steps said "stdin
+  inherited"): the review forged `proved` over a failing test by piping a debugger command into
+  `prove -- pytest --pdb`. Standard input is a channel stayfixed controls, so it is neutralised and
+  refuses no one.
+- pytest's closed list, swept once over every option pytest 9.1.1 registers: `--junitxml`,
+  `--junit-xml`, `-p no:junitxml`, `-o`/`--override-ini` setting a `junit_*` key or `addopts`,
+  `--setup-plan`, `--setup-only`, `--collect-only`, `--co` and the undashed aliases
+  `--setupplan`, `--setuponly`, `--collectonly`, `--trace`, and a word before `--` that starts with
+  `@` (pytest's argument file). pytest refuses abbreviations, so names match exactly. The file `-c`,
+  `--config-file` or `--inifile` names is listed on the receipt, not refused; `--rootdir` is free.
+  The list is knowledge of pytest 9.1.1; a later pytest can add an option it misses.
+- The interpreter follows the owner's no-stand-in ruling: the script's `#!` line, an `env` name on
+  `PATH`, the installer's trampoline, else `python3` or `python` on `PATH`.
+- `Refused` carries a `detail` (the refused option); an absolute `Plan.configs` entry names one
+  file.
