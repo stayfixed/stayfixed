@@ -6,8 +6,9 @@ interrupted or past `--timeout` (an hour by default), or a green report from a c
 non-zero, and `refused` (2) for a command its runner's adapter refuses (an option that moves,
 replaces or suppresses the report), one that assigns a variable its runner reads to shape the
 report, wherever it spells the assignment, before `uv run` or after it, one that gives `uv` an
-option that loads an environment or configuration file (`--env-file`, `--config-file`) or assigns
-`UV_ENV_FILE` or `UV_CONFIG_FILE`, and a program that changed between the plan and the launch
+option that loads an environment or configuration file (`--env-file`, `--config-file`) or runs the
+command in another directory or project (`--directory`, `--project`), or assigns `UV_ENV_FILE`,
+`UV_CONFIG_FILE`, `UV_WORKING_DIR` or `UV_PROJECT`, and a program that changed between the plan and the launch
 (`resolved-elsewhere`). It needs no `stayfixed.toml` and takes neither `--root` nor `--machine`.
 Its line names the counts, the runner and the realpath of what ran, each inherited variable the
 run did not get as it was (`removed from the run's environment: NODE_OPTIONS`), and the

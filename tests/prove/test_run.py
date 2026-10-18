@@ -383,6 +383,13 @@ def test_the_adapter_is_handed_the_launcher_s_words_alone(
         # option's value that starts with `-` (measured: it exits 2), so the spelling alone is
         # refused, and a table that has fallen behind uv cannot hide it.
         (["uv", "run", "--with", "--env-file", NAME], "--env-file"),
+        # The options with which uv runs the command in another tree, or discovers another
+        # project, than the one `prove` takes the state of (measured on uv 0.11.32: `uv run
+        # --directory <d> pwd` prints `<d>`).
+        (["uv", "run", "--directory", "../other", NAME], "--directory"),
+        (["uv", "--directory=../other", "run", NAME], "--directory"),
+        (["uv", "run", "--project", "../other", NAME], "--project"),
+        (["uv", "--project=/elsewhere", "run", "--locked", NAME], "--project"),
     ],
 )
 def test_a_launcher_option_that_loads_a_file_is_refused(
@@ -406,7 +413,39 @@ def test_a_launcher_option_that_loads_no_file_is_free(tmp_path: Path) -> None:
     assert run(tmp_path, "uv", "run", "--no-env-file", "--locked", NAME).verdict == PROVED
 
 
-@pytest.mark.parametrize("variable", ["UV_ENV_FILE", "UV_CONFIG_FILE"])
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["uv", "run", "--directory", "../other", "pytest", "-q"],
+        ["uv", "run", "--project=../other", "npx", "jest"],
+        ["uv", "run", "--directory", "/elsewhere", "go", "test", "./..."],
+    ],
+    ids=["pytest", "jest", "go"],
+)
+def test_a_launcher_that_runs_elsewhere_is_refused_for_every_adapter(
+    tmp_path: Path, argv: list[str]
+) -> None:
+    # Through the adapters this stayfixed ships: the receipt's tree state, configuration files and
+    # record describe the directory `prove` was typed in, and the run would be another tree's.
+    # Mutation (declared): the launcher's directory options left free -> each is planned.
+    got = prove(argv, cwd=tmp_path, environ={"PATH": ""}, timeout=60)
+    assert (got.verdict, got.reason, got.detail) == (
+        REFUSED,
+        REFUSED_LAUNCHER_OPTION,
+        argv[2].partition("=")[0],
+    )
+    assert got.runner is not None
+
+
+def test_a_launcher_s_other_options_stay_free(tmp_path: Path) -> None:
+    # They shape the environment the runner reads, which the bound concedes.
+    for words in (["--with", "x"], ["--python", "3.13"], ["--isolated"], ["--no-project"]):
+        assert run(tmp_path, "uv", "run", *words, NAME).verdict == PROVED
+
+
+@pytest.mark.parametrize(
+    "variable", ["UV_ENV_FILE", "UV_CONFIG_FILE", "UV_WORKING_DIR", "UV_PROJECT"]
+)
 def test_the_launcher_s_file_variables_are_forging_and_scrubbed_where_it_runs(
     tmp_path: Path, variable: str
 ) -> None:

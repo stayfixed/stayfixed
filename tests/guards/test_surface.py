@@ -43,6 +43,8 @@ def test_the_surface_carries_what_every_consumer_reaches_for() -> None:
         "read_launch",
         "Launch",
         # the launcher's options and variables that load a file, which prove refuses
+        "LAUNCHER_DIRECTORY_OPTIONS",
+        "LAUNCHER_DIRECTORY_VARIABLES",
         "LAUNCHER_FILE_OPTIONS",
         "LAUNCHER_FILE_VARIABLES",
     }

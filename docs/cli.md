@@ -823,11 +823,14 @@ which files in the tree can shape it. A command no adapter recognises, an `env` 
 among them, is `not proven`. Every `NAME=value` the command spells before what runs is one of its
 assignments, wherever it stands: before `uv run` or after it, bare or after `env`. An assignment of
 a variable in the adapter's forging set is refused, and so is an assignment of `UV_ENV_FILE` or
-`UV_CONFIG_FILE` where the command runs `uv` (`assigned-forging`, naming the variable); an inherited
-`UV_ENV_FILE` or `UV_CONFIG_FILE` is removed from the run's environment where the command runs `uv`.
-An option with which `uv` loads a file the command names, `--env-file` or `--config-file`, as
-`--name value` or `--name=value` and wherever it stands among `uv`'s words, is refused
-(`launcher-option`, naming the option). Every other assignment reaches the runner in its
+`UV_CONFIG_FILE`, or of `UV_WORKING_DIR` or `UV_PROJECT` (the variable spellings of `--directory`
+and `--project`), where the command runs `uv` (`assigned-forging`, naming the variable); an
+inherited one of the four is removed from the run's environment where the command runs `uv`.
+An option with which `uv` loads a file the command names, `--env-file` or `--config-file`, or runs
+the command in another directory or project than the one `prove` takes the state of, `--directory`
+or `--project`, as `--name value` or `--name=value` and wherever it stands among `uv`'s words, is
+refused (`launcher-option`, naming the option): to prove another directory's tests, run `prove`
+from that directory. `--with`, `--python`, `--isolated` and `uv`'s other options are free. Every other assignment reaches the runner in its
 environment, in order, the last of two for one name winning, and never in its argv; the adapter is
 handed the launcher's own words (`uv run` and its options) and never an assignment or an `env`.
 Every adapter keeps those words in front of the run it plans, so the launcher runs, its file
@@ -997,7 +1000,7 @@ verified`.
 
 | Row | Verdict | Exit | Reason |
 |---|---|---|---|
-| the runner's adapter refuses the command, the command assigns a variable in the adapter's forging set or one `uv` loads a file from, it gives `uv` an option that loads a file, the program changed between the plan and the launch, or `--junit` names the report of a command an adapter recognises | `refused` | 2 | the adapter's own (`refused-option`), `assigned-forging`, `launcher-option`, `resolved-elsewhere`, `junit-beside-adapter` |
+| the runner's adapter refuses the command, the command assigns a variable in the adapter's forging set or one `uv` loads a file or runs elsewhere from, it gives `uv` an option that loads a file or runs the command in another directory or project, the program changed between the plan and the launch, or `--junit` names the report of a command an adapter recognises | `refused` | 2 | the adapter's own (`refused-option`), `assigned-forging`, `launcher-option`, `resolved-elsewhere`, `junit-beside-adapter` |
 | no adapter recognises the command, its entry point does not resolve, it asks for a run that never ends or one that runs no test suite, it could not start, it was interrupted or passed its time limit, it wrote no report, the run did not write the `--junit` report, or the report does not read | `not proven` | 1 | `not-recognised`, the adapter's own (`entry-not-found`, `never-ends`, `no-test-run`), `not-started`, `interrupted`, `timed-out`, `no-report`, `junit-unchanged`, a report's own |
 | the report holds a failed test | `failed` | 1 | `failing` |
 | the report holds no test | `failed` | 1 | `none-ran` |

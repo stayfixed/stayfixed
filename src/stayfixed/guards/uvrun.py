@@ -139,6 +139,13 @@ _UV_RUN_VALUED = _UV_GLOBAL_VALUED | frozenset(
 # it never spells `uv`.
 FILE_OPTIONS = frozenset({"--env-file", "--config-file"})
 FILE_VARIABLES = frozenset({"UV_ENV_FILE", "UV_CONFIG_FILE"})
+# The options with which uv runs the command in another directory (`--directory`, which changes to
+# it first) or discovers another project's environment and configuration (`--project`), both
+# global, spelled as the two above are (measured on uv 0.11.32: `uv run --directory <d> pwd`
+# prints `<d>`), and the variables uv reads for the same two (`UV_WORKING_DIR`, `UV_PROJECT`). A
+# caller that judges the tree it was typed in, as `prove` does, reads them here.
+DIRECTORY_OPTIONS = frozenset({"--directory", "--project"})
+DIRECTORY_VARIABLES = frozenset({"UV_WORKING_DIR", "UV_PROJECT"})
 
 
 def is_launcher(name: str) -> bool:

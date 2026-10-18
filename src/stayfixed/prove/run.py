@@ -34,9 +34,13 @@ typed the command can write.
   scrubbed, which changes the run and refuses nothing.
 - `REFUSED_LAUNCHER_OPTION`: the same agent having the launcher load an environment or a
   configuration file it names (`guards.api.LAUNCHER_FILE_OPTIONS`), past every channel stayfixed
-  controls. The anchor is again the command's own words; the option's spelling is refused
-  wherever it stands among the launcher's words, which the launcher itself never reads as a
-  value, so it refuses no command the launcher would run.
+  controls, or run the command in another directory or project
+  (`guards.api.LAUNCHER_DIRECTORY_OPTIONS`), so that the tree whose state the receipt and the
+  record carry is not the tree that ran: the way on is to run `prove` from that directory. The
+  anchor is again the command's own words; the option's spelling is refused wherever it stands
+  among the launcher's words, which the launcher itself never reads as a value, so it refuses no
+  command the launcher would run. `--with`, `--python` and `--isolated` stay free: they shape the
+  environment the runner reads, which the bound concedes.
 - `RESOLVED_ELSEWHERE`: a program swapped between the plan and the launch, the anchor being the
   filesystem, which the agent can write. A run whose program did not move passes, so it refuses no
   legitimate user; it is a convenience that names the swap, not a guarantee against one.
@@ -88,6 +92,8 @@ from typing import IO, BinaryIO, TextIO
 from stayfixed import fsops, processes
 from stayfixed.gitenv import checkout_root
 from stayfixed.guards.api import (
+    LAUNCHER_DIRECTORY_OPTIONS,
+    LAUNCHER_DIRECTORY_VARIABLES,
     LAUNCHER_FILE_OPTIONS,
     LAUNCHER_FILE_VARIABLES,
     Launch,
@@ -170,7 +176,9 @@ WORDS: Mapping[str, str] = {
     "": "the runner reported every test it ran as passed",
     NOT_RECOGNISED: "no runner adapter recognises this command, so nothing can count its report",
     ASSIGNED_FORGING: "the command assigns a variable its runner reads to shape the report",
-    REFUSED_LAUNCHER_OPTION: "the command's launcher loads an environment or configuration file",
+    REFUSED_LAUNCHER_OPTION: (
+        "the command's launcher loads an environment or configuration file, or runs elsewhere"
+    ),
     RESOLVED_ELSEWHERE: "the program changed between the plan and the launch",
     NOT_STARTED: "the command could not be started",
     TIMED_OUT: "the run passed its time limit and was ended",
@@ -311,11 +319,19 @@ def assignments(words: Sequence[str]) -> dict[str, str]:
     return assigned
 
 
+# The launcher's options refused for every adapter: those that load a file of the command's
+# choosing, and those that run it in another directory or project than the one `prove` judges;
+# and their variables, refused assigned and removed inherited.
+_LAUNCHER_REFUSED = LAUNCHER_FILE_OPTIONS | LAUNCHER_DIRECTORY_OPTIONS
+_LAUNCHER_VARIABLES = LAUNCHER_FILE_VARIABLES | LAUNCHER_DIRECTORY_VARIABLES
+
+
 def file_option(launcher: Sequence[str]) -> str | None:
-    """The first of the launcher's options that loads a file which `launcher`'s words spell, as
-    `--name value` or `--name=value`, by its name; `None` where none does."""
+    """The first of the launcher's options that loads a file, or runs the command elsewhere,
+    which `launcher`'s words spell, as `--name value` or `--name=value`, by its name; `None` where
+    none does."""
     return next(
-        (name for word in launcher if (name := word.partition("=")[0]) in LAUNCHER_FILE_OPTIONS),
+        (name for word in launcher if (name := word.partition("=")[0]) in _LAUNCHER_REFUSED),
         None,
     )
 
@@ -592,7 +608,7 @@ def prove(
     runner = adapter.name if adapter is not None else None
     assigned = assignments(launch.assignments)
     # The launcher's own variables that load a file, where the launch runs one.
-    loaders = LAUNCHER_FILE_VARIABLES if launch.launcher else frozenset()
+    loaders = _LAUNCHER_VARIABLES if launch.launcher else frozenset()
     forging = adapter.forging if adapter is not None else frozenset()
     forged = sorted(name for name in assigned if name in forging | loaders)
     if forged:

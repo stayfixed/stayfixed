@@ -5757,8 +5757,8 @@ reddens = [
 [[mutation]]
 name = "prove reads a launcher option given its value with `=` as another"
 file = "src/stayfixed/prove/run.py"
-before = """        (name for word in launcher if (name := word.partition("=")[0]) in LAUNCHER_FILE_OPTIONS),"""
-after = """        (name for word in launcher if (name := word) in LAUNCHER_FILE_OPTIONS),"""
+before = """        (name for word in launcher if (name := word.partition("=")[0]) in _LAUNCHER_REFUSED),"""
+after = """        (name for word in launcher if (name := word) in _LAUNCHER_REFUSED),"""
 reddens = [
   "tests/prove/test_run.py::test_a_launcher_option_that_loads_a_file_is_refused[argv1---env-file]",
   "tests/prove/test_run.py::test_a_launcher_option_that_loads_a_file_is_refused[argv3---config-file]",
@@ -5786,8 +5786,8 @@ reddens = [
 [[mutation]]
 name = "prove treats the launcher's file variables as forging where nothing launches"
 file = "src/stayfixed/prove/run.py"
-before = "    loaders = LAUNCHER_FILE_VARIABLES if launch.launcher else frozenset()"
-after = "    loaders = LAUNCHER_FILE_VARIABLES"
+before = "    loaders = _LAUNCHER_VARIABLES if launch.launcher else frozenset()"
+after = "    loaders = _LAUNCHER_VARIABLES"
 reddens = [
   "tests/prove/test_run.py::test_the_launcher_s_file_variables_are_forging_and_scrubbed_where_it_runs[UV_ENV_FILE]",
 ]
@@ -6633,3 +6633,24 @@ file = "src/stayfixed/prove/run.py"
 before = "    if receipt.scrubbed:"
 after = "    if False:"
 reddens = ["tests/prove/test_run.py::test_an_inherited_scrubbed_variable_is_removed_and_counted"]
+
+# `uv run --directory <d>` (or `--project`) runs the tests in another tree while the receipt's tree
+# state, configuration files and record describe the directory `prove` was typed in.
+[[mutation]]
+name = "the launcher's directory options are free"
+file = "src/stayfixed/prove/run.py"
+before = "_LAUNCHER_REFUSED = LAUNCHER_FILE_OPTIONS | LAUNCHER_DIRECTORY_OPTIONS"
+after = "_LAUNCHER_REFUSED = LAUNCHER_FILE_OPTIONS"
+reddens = [
+  "tests/prove/test_run.py::test_a_launcher_that_runs_elsewhere_is_refused_for_every_adapter[pytest]",
+  "tests/prove/test_run.py::test_a_launcher_that_runs_elsewhere_is_refused_for_every_adapter[go]",
+]
+
+[[mutation]]
+name = "the launcher's directory variables are free"
+file = "src/stayfixed/prove/run.py"
+before = "_LAUNCHER_VARIABLES = LAUNCHER_FILE_VARIABLES | LAUNCHER_DIRECTORY_VARIABLES"
+after = "_LAUNCHER_VARIABLES = LAUNCHER_FILE_VARIABLES"
+reddens = [
+  "tests/prove/test_run.py::test_the_launcher_s_file_variables_are_forging_and_scrubbed_where_it_runs[UV_WORKING_DIR]",
+]

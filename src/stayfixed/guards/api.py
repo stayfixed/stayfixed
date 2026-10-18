@@ -31,9 +31,11 @@ one gate and the command reader:
   would name; a second reading of that launch would be a second answer. It runs the command, so
   it needs every part: the assignments wherever they stand, for the run's environment and its
   forging check, and the launcher's words apart from them, for the adapter. And it refuses a
-  launcher option that loads an environment or configuration file, and treats the variables
-  that do the same as forging (`LAUNCHER_FILE_OPTIONS`, `LAUNCHER_FILE_VARIABLES`): the
-  launcher's grammar is this area's, kept in the one module the core may spell it in.
+  launcher option that loads an environment or configuration file, or runs the command in
+  another directory or project than the one it judges, and treats the variables that do the same
+  as forging (`LAUNCHER_FILE_OPTIONS`, `LAUNCHER_FILE_VARIABLES`, `LAUNCHER_DIRECTORY_OPTIONS`,
+  `LAUNCHER_DIRECTORY_VARIABLES`): the launcher's grammar is this area's, kept in the one module
+  the core may spell it in.
 
 An area that needs something absent from this list grows it deliberately, in a commit that says
 which area and why.
@@ -60,12 +62,16 @@ from stayfixed.guards.githooks import (
     uninstall,
 )
 from stayfixed.guards.roots import contained_roots
+from stayfixed.guards.uvrun import DIRECTORY_OPTIONS as LAUNCHER_DIRECTORY_OPTIONS
+from stayfixed.guards.uvrun import DIRECTORY_VARIABLES as LAUNCHER_DIRECTORY_VARIABLES
 from stayfixed.guards.uvrun import FILE_OPTIONS as LAUNCHER_FILE_OPTIONS
 from stayfixed.guards.uvrun import FILE_VARIABLES as LAUNCHER_FILE_VARIABLES
 
 __all__ = [
     "HOOK_MARKER",
     "HOOK_NAME",
+    "LAUNCHER_DIRECTORY_OPTIONS",
+    "LAUNCHER_DIRECTORY_VARIABLES",
     "LAUNCHER_FILE_OPTIONS",
     "LAUNCHER_FILE_VARIABLES",
     "Found",
