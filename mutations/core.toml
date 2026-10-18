@@ -5129,8 +5129,15 @@ after = 'not folded.endswith(("never a suffix",))'
 reddens = ["tests/test_envfiles.py::test_a_template_or_another_file_is_not"]
 
 [[mutation]]
+name = "an env file's name is read without Windows' trailing dots, spaces and streams"
+file = "src/stayfixed/envfiles.py"
+before = 'name.partition(":")[0].rstrip(" .")'
+after = "name"
+reddens = ["tests/test_envfiles.py::test_an_env_file_is_one"]
+
+[[mutation]]
 name = "an env file is compared exactly, not case-folded"
 file = "src/stayfixed/envfiles.py"
-before = "    folded = name.casefold()"
-after = "    folded = name"
+before = '.rstrip(" .").casefold()'
+after = '.rstrip(" .")'
 reddens = ["tests/test_envfiles.py::test_an_env_file_is_one"]

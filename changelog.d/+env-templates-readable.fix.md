@@ -5,6 +5,6 @@ denies the common env file names one by one (`.env`, `.env.local`, `.env.*.local
 `.env.development`, `.env.prod`, `.env.production`, `.env.stage`, `.env.staging`, `.env.test`) and
 takes the old `Read(.env*)` and `Read(**/.env*)` masks back out of `~/.claude/settings.json`, so run
 `stayfixed setup` once after upgrading. A new session guard, `env-reads`, refuses a `Read` or `Grep`
-of an env file under any other name on Claude Code; `env_reads = false` under `[guards]` in the
+of an env file under any other name on Claude Code, and of a link to one; `env_reads = false` under `[guards]` in the
 machine file switches it off. Which names count as env files is the same for the guard and for the
 inventory's `tracked-env` item, which now matches them case-insensitively.

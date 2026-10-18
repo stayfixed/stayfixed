@@ -125,12 +125,20 @@ def _env_reads(event: HookEvent, session: SessionConfig) -> HookResult:
     path = file_read_path(event)
     if path is None:
         return HookResult()
+    import contextlib
+
+    from stayfixed import fsops
     from stayfixed.envfiles import is_env_file
 
     # The last component, split on both separators: a Windows path reaches this on a POSIX parser
     # too, and `PurePosixPath` would read `C:\app\.env` as one name.
-    name = path.replace("\\", "/").rstrip("/").rpartition("/")[2]
-    if is_env_file(name):
+    names = [path.replace("\\", "/").rstrip("/").rpartition("/")[2]]
+    # And the name it resolves to: a clone can commit `notes.txt` as a link to `.env.local`, and
+    # the tool reads the file the link names. A path that cannot be resolved -- a loop, a NUL --
+    # is judged by its own name alone, and the tool cannot read it either.
+    with contextlib.suppress(OSError, ValueError):
+        names.append(fsops.resolved(event.cwd / path).name)
+    if any(is_env_file(name) for name in names):
         return HookResult(decision=Decision.DENY, reason=ENV_READ_REFUSED)
     return HookResult()
 

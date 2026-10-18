@@ -1753,9 +1753,16 @@ reddens = [
 [[mutation]]
 name = "the env guard lets every env file through"
 file = "src/stayfixed/guards/hooks.py"
-before = "    if is_env_file(name):"
-after = "    if not name:"
+before = "    if any(is_env_file(name) for name in names):"
+after = "    if not names:"
 reddens = ["tests/guards/test_hooks.py::test_a_file_tool_that_names_an_env_file_is_denied"]
+
+[[mutation]]
+name = "the env guard judges a link by its own name"
+file = "src/stayfixed/guards/hooks.py"
+before = "        names.append(fsops.resolved(event.cwd / path).name)"
+after = "        fsops.resolved(event.cwd / path)"
+reddens = ["tests/guards/test_hooks.py::test_a_link_to_an_env_file_is_judged_by_what_it_names"]
 
 [[mutation]]
 name = "the env guard reads a path off every tool"

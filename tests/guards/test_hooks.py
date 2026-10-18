@@ -310,6 +310,33 @@ def test_a_template_and_any_other_file_are_let_through(
     assert result.decision is None and result.reason is None
 
 
+def test_a_link_to_an_env_file_is_judged_by_what_it_names(tmp_path: Path) -> None:
+    # A clone can commit an innocent name as a link to the env file beside it, and `Read` follows
+    # it. Relative to the session's working directory, as the tool reads a relative path.
+    # Mutation: `mutations/`'s "the env guard judges a link by its own name" -> the read passes.
+    (tmp_path / ".env.local").write_text("KEY=secret\n", encoding="utf-8")
+    (tmp_path / "notes.txt").symlink_to(".env.local")
+    (tmp_path / ".env.example").write_text("KEY=\n", encoding="utf-8")
+    (tmp_path / "keys.txt").symlink_to(".env.example")
+    guard = env_guard()
+    assert guard.run(file_event(tmp_path, "Read", "notes.txt"), NO_CONFIG).decision is Decision.DENY
+    absolute = str(tmp_path / "notes.txt")
+    assert guard.run(file_event(tmp_path, "Read", absolute), NO_CONFIG).decision is Decision.DENY
+    assert guard.run(file_event(tmp_path, "Read", "keys.txt"), NO_CONFIG).decision is None
+
+
+def test_a_path_that_cannot_be_resolved_is_judged_by_its_own_name(tmp_path: Path) -> None:
+    # A loop and a NUL both raise from the resolution; neither may end the call in a deny of a
+    # file that is not an env file, nor let one through.
+    (tmp_path / "loop").symlink_to("loop")
+    guard = env_guard()
+    assert guard.run(file_event(tmp_path, "Read", "loop"), NO_CONFIG).decision is None
+    assert guard.run(file_event(tmp_path, "Read", "a\0b"), NO_CONFIG).decision is None
+    nul = guard.run(file_event(tmp_path, "Read", ".env\0"), NO_CONFIG)
+    assert nul.decision is None  # the NUL is part of the name, which is not `.env`
+    assert guard.run(file_event(tmp_path, "Read", ".env"), NO_CONFIG).decision is Decision.DENY
+
+
 @pytest.mark.parametrize("tool", ["Edit", "Write", "Bash"])
 def test_the_env_guard_judges_no_other_tool(tmp_path: Path, tool: str) -> None:
     # An `Edit` of an env file is the owner's own deny rules' to refuse, if they want it, and a

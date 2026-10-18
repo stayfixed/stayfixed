@@ -20,6 +20,12 @@ from stayfixed.envfiles import is_env_file
         # Mutation: `mutations/`'s "an env file is compared exactly, not case-folded".
         ".ENV",
         ".Env.Prod",
+        # Read as Windows opens them, each of which is `.env` there.
+        # Mutation: `mutations/`'s "an env file's name is read without Windows' trailing dots,
+        # spaces and streams" -> the first two are let through.
+        ".env ",
+        ".env::$DATA",
+        ".env.",
     ],
 )
 def test_an_env_file_is_one(name: str) -> None:
@@ -38,6 +44,8 @@ def test_an_env_file_is_one(name: str) -> None:
         ".env.sample",
         ".env.template",
         ".ENV.EXAMPLE",
+        ".env.example.",
+        ".env.example ",
         # Names that only look like one.
         "env",
         ".envrc",

@@ -18,9 +18,11 @@ def is_env_file(name: str) -> bool:
 
     `.env` itself, and `.env.<anything>` unless it ends in a template suffix. Compared case-folded:
     on a file system that ignores case, which is macOS's and Windows' default, `.ENV` opens the
-    same file `.env` does, and a guard that compared exactly would let it through.
+    same file `.env` does, and a guard that compared exactly would let it through. And read as
+    Windows opens it: it drops the dots and spaces a name ends in, and a `:` names a stream of the
+    file before it, so `.env `, `.env.` and `.env::$DATA` all open `.env`.
     """
-    folded = name.casefold()
+    folded = name.partition(":")[0].rstrip(" .").casefold()
     return folded == ".env" or (
         folded.startswith(".env.") and not folded.endswith(TEMPLATE_SUFFIXES)
     )
