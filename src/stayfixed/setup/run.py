@@ -299,7 +299,8 @@ def _write_user_settings(
     `retired` is the one removal: rules an earlier preset wrote under the same table and this one
     took back (the preset's `[deny] retired`), each removed where it stands verbatim. A rule the
     owner wrote is kept unless it is one of those exact strings, which is the rule an earlier
-    `setup` would have written in any case.
+    `setup` would have written in any case. A rule a preset both retires and lists is removed and
+    then added back at the end, so a contradictory preset still leaves it denied.
     """
     path = settings if settings is not None else home / USER_SETTINGS
     document, text = _read_document(path)
@@ -310,7 +311,7 @@ def _write_user_settings(
     existing_deny = (
         [r for r in raw_deny if isinstance(r, str)] if isinstance(raw_deny, list) else []
     )
-    existing_deny = [r for r in existing_deny if r not in retired or r in deny_rules]
+    existing_deny = [r for r in existing_deny if r not in retired]
     permissions["deny"] = existing_deny + [r for r in deny_rules if r not in existing_deny]
     document["permissions"] = permissions
 

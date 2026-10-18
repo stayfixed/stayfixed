@@ -131,11 +131,16 @@ def test_the_preset_denies_reading_env_files_by_value() -> None:
         ".env.test",
     ]
     deny = load_preset("recommended")["deny"]
-    assert deny["global"] == [rule for n in names for rule in (f"Read({n})", f"Read(**/{n})")]
+    # One spelling per name: a bare name matches at any depth in Claude Code's rules, so
+    # `Read(.env)` beside `Read(**/.env)` was a second line saying the same thing.
+    assert deny["global"] == [f"Read(**/{n})" for n in names]
     assert deny["retired"] == ["Read(.env*)", "Read(**/.env*)"]
 
 
-@pytest.mark.parametrize("template", [".env.example", ".env.prod.example", ".env.sample"])
+@pytest.mark.parametrize(
+    "template",
+    [".env.example", ".env.prod.example", ".env.sample", ".env.dist", ".env.defaults", ".env.tpl"],
+)
 def test_no_preset_deny_rule_reaches_a_template(template: str) -> None:
     # The defect this list was rewritten for, read the way the rules are written: a `*` is any run
     # of characters inside one name. A rule that matches a template refuses it for good.

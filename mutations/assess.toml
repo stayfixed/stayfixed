@@ -112,8 +112,8 @@ reddens = [
 [[mutation]]
 name = "the tracked-env probe stops reporting a committed .env file"
 file = "src/stayfixed/assess/probes.py"
-before = 'if is_env_file(PurePosixPath(name).name)'
-after = 'if not is_env_file(PurePosixPath(name).name)'
+before = '                if (base := PurePosixPath(name).name) == ".env"'
+after = '                if (base := PurePosixPath(name).name) == ".nothing"'
 reddens = ["tests/assess/test_probes.py::test_a_tracked_env_file_is_a_warning_and_an_example_is_not"]
 
 [[mutation]]

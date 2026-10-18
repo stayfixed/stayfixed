@@ -2401,6 +2401,6 @@ reddens = ["tests/setup/test_approval_boundary.py::test_a_looping_machine_direct
 [[mutation]]
 name = "setup leaves the retired deny rules in place"
 file = "src/stayfixed/setup/run.py"
-before = "    existing_deny = [r for r in existing_deny if r not in retired or r in deny_rules]"
+before = "    existing_deny = [r for r in existing_deny if r not in retired]"
 after = "    existing_deny = list(existing_deny)"
 reddens = ["tests/setup/test_setup.py::test_setup_takes_the_retired_env_masks_back_out_and_keeps_the_owners_rules"]

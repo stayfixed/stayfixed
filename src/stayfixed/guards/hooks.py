@@ -6,17 +6,11 @@ interpreter imports neither the configuration layer nor the presets, and discove
 area's `hooks` module — so a module-level import here reddens a test that belongs to no area at
 all.
 
-`bg-cleanup` and `env-reads` are the plugin's `Policy.CLOSED` handlers. Neither catches its own
-exceptions: a guard for an action with a high cost of error fails closed (principle 6), and the
-dispatcher is what turns an exception from a CLOSED handler into exit 2 with a reason. `judge` and
-`is_env_file` return rather than raise on any string, so what reaches that policy is a genuine
-defect, not an unusual call.
-
-**`env-reads` is closed in the dispatcher and open in the wrapper**, and that split is chosen. Its
-entry in `hooks/hooks.json` is an `open` one matched on the file tools, so a wrapper that cannot
-start Python lets a read through rather than refusing every file the session opens; the preset's
-deny rules (`[deny] global`) still refuse the env files by their common names, which is what they
-are there for. A handler that raises is still a deny.
+`bg-cleanup` is the one `Policy.CLOSED` handler in the plugin. It does not catch its own exceptions:
+a guard for an action with a high cost of error fails closed (principle 6), and the dispatcher is
+what turns an exception from a CLOSED handler into exit 2 with a reason. `judge` itself returns
+rather than raises on any string, so what reaches that policy is a genuine defect, not an unusual
+command.
 
 Nothing a repository controls is put into `HookResult.context`. The restore hint is built from
 the command's own text — model- or user-authored, never repository bytes — and the hygiene
@@ -43,21 +37,6 @@ if TYPE_CHECKING:
 # spike record (`docs/plans/2026-09-05-agent-harness-p0-spikes.md`) measured in its *Codex plugin
 # hooks* trial, so this one name serves both harnesses.
 BASH = "Bash"
-
-# The file tools `env-reads` judges, and the matcher of its entry in `hooks/hooks.json`: Claude
-# Code's names. `Read` opens one file; `Grep` prints the lines of the file its `path` names. Codex
-# reports a file read as a `Bash` call, which this guard does not parse, so it judges nothing there.
-READ = "Read"
-GREP = "Grep"
-FILE_TOOLS = f"{READ}|{GREP}"
-
-# What `env-reads` refuses with. Fixed words, never the path: the path names a file the repository
-# chose, and the model that asked for it already has it.
-ENV_READ_REFUSED = (
-    "an env file may hold credentials, so stayfixed keeps it from the agent; its template "
-    "(`.env.example`, `.env.sample` or `.env.template`) stays readable. The machine owner switches "
-    "this guard off with `env_reads = false` under `[guards]` in the machine file"
-)
 
 # The dispatcher owns the once-per-context bookkeeping, so the handler declares the key
 # and stays pure. A red test run over a dirty tree is the normal state of TDD — every "run it to
@@ -100,56 +79,6 @@ def _bg_cleanup(event: HookEvent, session: SessionConfig) -> HookResult:
     return HookResult(context=verdict.hint)
 
 
-def file_read_path(event: HookEvent) -> str | None:
-    """The path a file tool names, or None for any other tool, no path, or a malformed input.
-
-    `Read` names its file in `file_path` and `Grep` its file or directory in `path`; a `Grep` with
-    no `path` searches the working directory, which this guard does not judge, and the preset's
-    deny rules are what keep a search there out of the env files they name.
-    """
-    if event.tool_name == READ:
-        key = "file_path"
-    elif event.tool_name == GREP:
-        key = "path"
-    else:
-        return None
-    path = event.tool_input.get(key)
-    return path if isinstance(path, str) else None
-
-
-def _env_reads(event: HookEvent, session: SessionConfig) -> HookResult:
-    """Refuse a file tool that names an env file, whatever the project's configuration, and none
-    at all included. The machine owner alone switches it off (`config.owner`)."""
-    if not session.owner.guards.env_reads:
-        return HookResult()
-    path = file_read_path(event)
-    if path is None:
-        return HookResult()
-    import contextlib
-    import os
-
-    from stayfixed import fsops
-    from stayfixed.envfiles import is_env_file
-
-    # The last component, split on both separators: a Windows path reaches this on a POSIX parser
-    # too, and `PurePosixPath` would read `C:\app\.env` as one name.
-    names = [path.replace("\\", "/").rstrip("/").rpartition("/")[2]]
-    # And the name it resolves to: a clone can commit `notes.txt` as a link to `.env.local`, and
-    # the tool reads the file the link names. A path that cannot be resolved -- a loop, a NUL --
-    # is judged by its own name alone, and the tool cannot read it either.
-    #
-    # Every reading of the path the tool might take, not a guess at the one it does: as written,
-    # under the working directory, and with a leading `~` expanded. Matching one tool's expansion
-    # rule exactly (`~`, `~/`, `~user/`) is a model of someone else's behaviour, and each guess at
-    # it left the other reading unjudged; judging both refuses whichever one names an env file.
-    for reading in {path, os.path.expanduser(path)}:
-        with contextlib.suppress(OSError, ValueError):
-            names.append(fsops.resolved(event.cwd / reading).name)
-    if any(is_env_file(name) for name in names):
-        return HookResult(decision=Decision.DENY, reason=ENV_READ_REFUSED)
-    return HookResult()
-
-
 def _test_hygiene(event: HookEvent, session: SessionConfig) -> HookResult:
     """Name what could have falsified a red test run, in the words of the profile whose runner
     failed. Never a decision: the tool has already run, and `Policy.OPEN` means a failure here
@@ -170,7 +99,6 @@ def _test_hygiene(event: HookEvent, session: SessionConfig) -> HookResult:
 def register() -> list[Handler]:
     return [
         Handler(name="bg-cleanup", event="PreToolUse", policy=Policy.CLOSED, run=_bg_cleanup),
-        Handler(name="env-reads", event="PreToolUse", policy=Policy.CLOSED, run=_env_reads),
         # The red-run note, on both events a failed command can arrive on. Claude Code delivers a
         # Bash command that exited non-zero to `PostToolUseFailure`, with `error` beginning
         # `Exit code N`, and never to `PostToolUse`. No measured harness delivers an exit code on

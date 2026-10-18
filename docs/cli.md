@@ -426,11 +426,7 @@ run-hook.sh <policy> <stayfixed args…>
 is handed to `stayfixed` untouched.
 
 `hooks/hooks.json` files its entries under four events: `SessionStart`, `PreToolUse`,
-`PostToolUse` and `PostToolUseFailure`, each tool event matched on `Bash`, and `PreToolUse` once
-more on the file tools, `Read|Grep`, for the `env-reads` guard. That second `PreToolUse` entry is
-`open`, so a wrapper that cannot start lets a read through rather than refusing every file the
-session opens, and the deny rules `stayfixed setup` writes still refuse the common env file names
-meanwhile; a handler's deny passes through it as through any entry. The last event is where Claude
+`PostToolUse` and `PostToolUseFailure`, each tool event matched on `Bash`. The last is where Claude
 Code delivers a `Bash` call that exited non-zero, and it carries the red-run note ([`stayfixed test
 hygiene`](#stayfixed-test-hygiene)); Codex reads the same file and ignores that key (measured on
 Codex CLI 0.162.0-alpha.17.2). `stayfixed hook` dispatches six events, those four and
@@ -2767,9 +2763,11 @@ configured harness. That file is read as Claude Code reads it, past a leading by
 which a rewrite keeps. The deny rules are merged in beside the owner's own, with one removal: a
 rule an earlier preset wrote and this one retired (its `[deny] retired`) is taken out where it
 stands verbatim. `recommended` retired the masks `Read(.env*)` and `Read(**/.env*)`, which also
-refused the templates a project commits (`.env.example`, `.env.sample`, `.env.template`), for the
-env files by name; the `env-reads` session guard ([`stayfixed hook`](#stayfixed-hook-event))
-refuses an env file under any other name. `--home` and `--machine` default to the home directory and to
+refused the templates a project commits (`.env.example`, `.env.dist` and the rest), for the env
+files by name: `.env`, `.env.local`, `.env.*.local`, `.env.dev`, `.env.development`, `.env.prod`,
+`.env.production`, `.env.stage`, `.env.staging` and `.env.test`, each as `Read(**/<name>)`. An env
+file under another name stays readable; `stayfixed doctor`'s `retired-deny` row reports a retired
+rule still in the file. `--home` and `--machine` default to the home directory and to
 `~/.config/stayfixed/config.toml` — the file every reader reads, and not whatever
 `XDG_CONFIG_HOME` or `STAYFIXED_CONFIG` names, because a machine file half the installation
 cannot find is not a machine file. Both flags exist so this command can be pointed at a
@@ -3860,7 +3858,6 @@ root = "~/stayfixed-overlay"   # only read in overlay mode
 
 [guards]
 bg_cleanup = true        # false switches the bg-cleanup session guard off on this machine
-env_reads = true         # false lets an agent read env files (.env, .env.<x>) on this machine
 
 [budgets]                # the session's budgets only, which win over a project's
 memory_index_words = 1200
@@ -3887,8 +3884,7 @@ refused by a command, as `[overlay] root`'s reader refuses it, before the comman
 else, and leaves a session on the preset's personal values and guards, with one warning naming
 this file when the session starts and `stayfixed doctor`'s `preferences` row red.
 With no `stayfixed.toml` in the repository a session still reads this file: `bg_cleanup = false`
-and `env_reads = false` turn their guards off there too. `env_reads = false` leaves the deny rules
-`stayfixed setup` wrote in `~/.claude/settings.json` in place; those are yours to edit.
+turns the guard off there too.
 
 `reply_language` and `artifact_language` are kept for you and read by nothing in this release:
 they meant something only through the `recommended` preset's standing rule about which language

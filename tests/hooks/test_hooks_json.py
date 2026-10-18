@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from stayfixed.cli import build_parser, discover_registrars
-from stayfixed.guards.hooks import BASH, FILE_TOOLS
+from stayfixed.guards.hooks import BASH
 from stayfixed.harnesses import CLAUDE
 from stayfixed.hooks.api import EVENTS
 from stayfixed.hooks.registry import discover
@@ -26,7 +26,7 @@ def _entries() -> list[tuple[str, str, dict[str, Any]]]:
 
     The matcher used to be dropped here, and `type` was read by nothing at all. Both are the
     entry's own fields and both decide whether it ever runs: the reviewer changed `"matcher":
-    "Bash"` to `"bash"` -- which retires `bg-cleanup`, a fail-closed guard --
+    "Bash"` to `"bash"` -- which retires `bg-cleanup`, the plugin's only fail-closed guard --
     and `"type": "command"` to `"commandd"`, and every one of the ten assertions below passed.
     A walk that discards a field is a walk that cannot be asked about it.
     """
@@ -47,7 +47,7 @@ SESSION_SOURCES = {"startup", "resume", "clear", "compact", "fork"}
 def test_there_are_entries_at_all() -> None:
     # The non-vacuity guard every walk-driven assertion below depends on: an empty `hooks`
     # object satisfies all six of them.
-    assert len(_entries()) == 11
+    assert len(_entries()) == 10
 
 
 def test_every_command_parses_against_the_real_parser() -> None:
@@ -177,12 +177,11 @@ def test_every_entry_is_a_command_entry() -> None:
         assert entry["type"] == "command", entry
 
 
-def test_every_tool_matched_entry_matches_the_names_the_handlers_filter_on() -> None:
+def test_every_tool_matched_entry_matches_the_name_both_handlers_filter_on() -> None:
     # `guards.hooks.BASH` is the name `bash_command` compares `event.tool_name` against, so the
-    # matcher in this file and that constant are two spellings of one thing, and `FILE_TOOLS` is
-    # the same for the file tools `file_read_path` reads. The matcher is a
+    # matcher in this file and that constant are two spellings of one thing. The matcher is a
     # case-sensitive regular expression: `"bash"` matches no tool Claude Code or Codex reports,
-    # which retires `bg-cleanup` -- a `Policy.CLOSED` handler -- and the
+    # which retires `bg-cleanup` -- the plugin's only `Policy.CLOSED` handler -- and the
     # `test-hygiene` notice with it, permanently and silently.
     #
     # Asserted from the constant rather than spelled here, for the reason
@@ -194,29 +193,7 @@ def test_every_tool_matched_entry_matches_the_names_the_handlers_filter_on() -> 
         for event, matcher, _ in _entries()
         if event in {"PreToolUse", "PostToolUse", "PostToolUseFailure"}
     }
-    assert matched == {BASH, FILE_TOOLS}
-
-
-def test_the_env_guard_has_an_open_entry_of_its_own_on_the_file_tools() -> None:
-    # Its own group, beside the closed `Bash` one, and open: a wrapper that cannot start Python
-    # must not refuse every file a session reads, and the preset's deny rules still hold the env
-    # files by name. Folded into the closed group's matcher, a missing interpreter would leave a
-    # session unable to read the files that would let it repair the plugin (`docs/cli.md`, under
-    # `stayfixed hook`, says the `Read` tool stays usable). Mutation: `mutations/`'s "the env
-    # guard's hooks entry is closed" -> reddens.
-    groups = [g for g in HOOKS["hooks"]["PreToolUse"] if g.get("matcher") == FILE_TOOLS]
-    assert groups == [
-        {
-            "matcher": FILE_TOOLS,
-            "hooks": [
-                {
-                    "type": "command",
-                    "timeout": 10,
-                    "command": f"{WRAPPER} open hook PreToolUse",
-                }
-            ],
-        }
-    ]
+    assert matched == {BASH}
 
 
 def test_the_session_start_matcher_carries_every_source_a_session_can_start_from() -> None:

@@ -5110,34 +5110,3 @@ reddens = [
   "tests/trust/test_record.py::test_a_refresh_to_the_digest_the_record_holds_writes_nothing",
   "tests/memory/test_commands.py::test_an_index_that_changes_nothing_writes_no_record_from_a_sandboxed_shell",
 ]
-
-# What an env file is, read by the `tracked-env` probe and the `env-reads` session guard alike: a
-# dotted name is one unless it ends in a template suffix, and the comparison is case-folded,
-# since `.ENV` opens `.env` on a file system that ignores case.
-[[mutation]]
-name = "nothing named .env.<x> is an env file"
-file = "src/stayfixed/envfiles.py"
-before = 'folded.startswith(".env.") and not'
-after = 'folded.startswith(".nothing.") and not'
-reddens = ["tests/test_envfiles.py::test_an_env_file_is_one"]
-
-[[mutation]]
-name = "a template is an env file"
-file = "src/stayfixed/envfiles.py"
-before = "not folded.endswith(TEMPLATE_SUFFIXES)"
-after = 'not folded.endswith(("never a suffix",))'
-reddens = ["tests/test_envfiles.py::test_a_template_or_another_file_is_not"]
-
-[[mutation]]
-name = "an env file's name is read without Windows' trailing dots, spaces and streams"
-file = "src/stayfixed/envfiles.py"
-before = 'name.partition(":")[0].rstrip(" .")'
-after = "name"
-reddens = ["tests/test_envfiles.py::test_an_env_file_is_one"]
-
-[[mutation]]
-name = "an env file is compared exactly, not case-folded"
-file = "src/stayfixed/envfiles.py"
-before = '.rstrip(" .").casefold()'
-after = '.rstrip(" .")'
-reddens = ["tests/test_envfiles.py::test_an_env_file_is_one"]

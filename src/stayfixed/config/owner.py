@@ -49,7 +49,6 @@ class Guards:
     """The session guards' switches. On unless the owner's machine file switches one off."""
 
     bg_cleanup: bool = True
-    env_reads: bool = True
 
 
 @dataclass(frozen=True)

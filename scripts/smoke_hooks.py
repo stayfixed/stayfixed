@@ -38,14 +38,12 @@ VOLATILE_NOTE = "SMOKE-VOLATILE-NOTE"
 # own bounds on `git` (`stayfixed.gitenv.FLOOR_VARIABLE`, which can only raise them). Spelled out
 # rather than imported, because this script runs without `stayfixed` importable.
 FLOOR_VARIABLE = "STAYFIXED_GIT_FLOOR_SECONDS"
-# Counted against the shipped `hooks/hooks.json` and this fixture: eleven entries, seventeen rows
-# (`PreToolUse` has two entries, the closed one on `Bash` and the open one on the file tools, and
-# carries four samples, each run through both: the matcher is the harness's to apply, and both
-# entries dispatch the same handlers, so each must answer every sample as the other does). Both
-# are asserted because a run that executes fewer rows prints an identically green summary — the
-# shape `unsampled` and `unentered` close for events and nothing closed for rows.
-EXPECTED_ENTRIES = 11
-EXPECTED_ROWS = 17
+# Counted against the shipped `hooks/hooks.json` and this fixture: ten entries, eleven rows
+# (`PreToolUse` carries two samples). Both are asserted because a run that executes fewer rows
+# prints an identically green summary — the shape `unsampled` and `unentered` close for events
+# and nothing closed for rows.
+EXPECTED_ENTRIES = 10
+EXPECTED_ROWS = 11
 # What the red-run note opens with, `stayfixed.guards.hygiene.LEAD`, spelled out for the reason
 # `FLOOR_VARIABLE` is. The note is all a `PostToolUseFailure` entry is for, so its row asks for it
 # by its words and not only for an envelope naming the event, which an entry whose handler said
@@ -94,22 +92,6 @@ SAMPLES: dict[str, tuple[Sample, ...]] = {
             0,
             False,
             "an ordinary command is allowed",
-            stderr_never=(FAULT,),
-        ),
-        # A relative path, which the guard reads by its last component as it does an absolute one.
-        Sample(
-            {"tool_name": "Read", "tool_input": {"file_path": ".env.preprod"}},
-            2,
-            True,
-            "an env file is refused with a reason",
-            stderr_says=("refused: env-reads",),
-            stderr_never=(FAULT,),
-        ),
-        Sample(
-            {"tool_name": "Read", "tool_input": {"file_path": ".env.preprod.example"}},
-            0,
-            False,
-            "an env file's template is let through",
             stderr_never=(FAULT,),
         ),
     ),

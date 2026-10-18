@@ -3308,7 +3308,7 @@ def test_a_per_file_settings_link_is_written_through_settings_and_not_under_home
     # inventory below is unchanged — and the dotfiles file is still the empty `{}` it started
     # as. That silence is the whole defect, and this sentence is what names it.
     deny = written.get("permissions", {}).get("deny", [])
-    assert "Read(.env)" in deny, f"the file --settings named was not written: {written}"
+    assert "Read(**/.env)" in deny, f"the file --settings named was not written: {written}"
     assert sorted(str(p.relative_to(home)) for p in home.rglob("*")) == before
 
 

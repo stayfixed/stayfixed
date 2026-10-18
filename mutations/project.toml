@@ -58,8 +58,8 @@ reddens = [
 [[mutation]]
 name = "the preset stops denying the env files"
 file = "src/stayfixed/presets/recommended.toml"
-before = '  "Read(.env.prod)",'
-after = '  "Read(.env.prd)",'
+before = '  "Read(**/.env.prod)",'
+after = '  "Read(**/.env.prd)",'
 reddens = ["tests/setup/test_machine.py::test_the_preset_denies_reading_env_files_by_value"]
 
 # And by name, never by a mask: a deny rule outranks every allow rule, so a mask that reaches
@@ -67,8 +67,8 @@ reddens = ["tests/setup/test_machine.py::test_the_preset_denies_reading_env_file
 [[mutation]]
 name = "the preset denies the env files by a mask again"
 file = "src/stayfixed/presets/recommended.toml"
-before = '  "Read(.env.test)",'
-after = '  "Read(.env.*)",'
+before = '  "Read(**/.env.test)",'
+after = '  "Read(**/.env.*)",'
 reddens = ["tests/setup/test_machine.py::test_no_preset_deny_rule_reaches_a_template"]
 
 # The cheap half of the promise that the overlay never holds a credential. The assertion was `".env"
