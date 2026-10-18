@@ -73,9 +73,10 @@ def run_prove(args: argparse.Namespace) -> Result:
         echo=echo,
         junit=args.junit,
     )
-    # One record a run, on the machine and never in the project; a record that cannot be written
-    # is a warning on standard error, and the verdict and the exit code stand.
-    record_prove(cwd, receipt)
+    # One record a run, on the machine and never in the project, for the project of the directory
+    # the command was judged in; a record that cannot be written is a warning on standard error,
+    # and the verdict and the exit code stand.
+    record_prove(Path(receipt.directory or cwd), receipt)
     return Result(line(receipt), dataclasses.asdict(receipt), exit_code=EXIT[receipt.verdict])
 
 

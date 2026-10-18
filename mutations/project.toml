@@ -2267,7 +2267,7 @@ file = "src/stayfixed/profiles/javascript/adapters.py"
 before = "            or bool(node_entry(command, runner.name, runner.packages))"
 after = "            or False"
 reddens = [
-  "tests/prove/test_javascript.py::test_each_runner_s_commands_are_recognised[command11-adapter11]",
+  "tests/prove/test_javascript.py::test_each_runner_s_commands_are_recognised[command10-adapter10]",
 ]
 
 [[mutation]]
@@ -2362,7 +2362,7 @@ before = """        if before is None or not _option(before) or "=" in before:
 after = """        if True:
             break"""
 reddens = [
-  "tests/prove/test_javascript.py::test_each_runner_s_commands_are_recognised[command16-adapter16]",
+  "tests/prove/test_javascript.py::test_each_runner_s_commands_are_recognised[command15-adapter15]",
   "tests/prove/test_javascript.py::test_node_s_options_in_front_of_the_entry_run_as_typed[node_words0]",
   "tests/prove/test_javascript.py::test_the_entry_is_the_first_word_that_is_the_package_s_bin",
 ]
@@ -2376,9 +2376,9 @@ before = """        if before is None or not _option(before) or "=" in before:
 after = """        if False:
             break"""
 reddens = [
-  "tests/prove/test_javascript.py::test_npm_test_is_not_recognised[command10]",
-  "tests/prove/test_javascript.py::test_npm_test_is_not_recognised[command14]",
+  "tests/prove/test_javascript.py::test_npm_test_is_not_recognised[command12]",
   "tests/prove/test_javascript.py::test_npm_test_is_not_recognised[command16]",
+  "tests/prove/test_javascript.py::test_npm_test_is_not_recognised[command18]",
 ]
 
 # The entry is the first word node may run as its script that is the file the package's `bin`
@@ -2398,7 +2398,7 @@ before = """    if _TEST in options:
         return []"""
 after = """    if False:
         return []"""
-reddens = ["tests/prove/test_javascript.py::test_each_runner_s_commands_are_recognised[command20-adapter20]"]
+reddens = ["tests/prove/test_javascript.py::test_each_runner_s_commands_are_recognised[command19-adapter19]"]
 
 # A path to the runner as the command's first word is run where it is a link to its entry.
 [[mutation]]
@@ -2409,7 +2409,7 @@ before = """    if not command or os.sep not in command[0] or Path(command[0]).n
     return tuple(command[1:])"""
 after = """    return None"""
 reddens = [
-  "tests/prove/test_javascript.py::test_each_runner_s_commands_are_recognised[command9-adapter9]",
+  "tests/prove/test_javascript.py::test_each_runner_s_commands_are_recognised[command8-adapter8]",
   "tests/prove/test_javascript.py::test_a_runner_named_by_its_link_runs_as_typed",
 ]
 
@@ -2658,17 +2658,10 @@ after = "        head = (runner.name,)"
 reddens = ["tests/prove/test_javascript.py::test_npx_runs_as_typed"]
 
 [[mutation]]
-name = "the entry npx runs is read from the caller's PATH behind a launcher"
-file = "src/stayfixed/profiles/javascript/adapters.py"
-before = "            on_path = None if launch else environ"
-after = "            on_path = environ"
-reddens = ["tests/prove/test_javascript.py::test_a_runner_on_path_linked_into_its_package_resolves"]
-
-[[mutation]]
 name = "the entry npx runs is left off the receipt"
 file = "src/stayfixed/profiles/javascript/adapters.py"
-before = "            entry = entry_point(runner.name, runner.packages, cwd, root, on_path)"
-after = "            entry = None"
+before = "        entry = npx_bin(runner.name, cwd) if head[0] == _NPX else None"
+after = "        entry = None"
 reddens = ["tests/prove/test_javascript.py::test_npx_runs_as_typed"]
 
 # Behind a launcher the command's words are handed to it as typed, for it to resolve on its own
@@ -2692,7 +2685,9 @@ name = "a runner on PATH resolves to any file its link reaches"
 file = "src/stayfixed/profiles/javascript/adapters.py"
 before = "    if package is None or _manifest_bin(package, name) != target:"
 after = "    if package is None:"
-reddens = ["tests/prove/test_javascript.py::test_a_runner_on_path_linked_into_its_package_resolves"]
+reddens = [
+  "tests/prove/test_javascript.py::test_a_runner_named_by_a_path_that_is_no_link_is_never_run",
+]
 
 [[mutation]]
 name = "a runner on PATH that is no link is followed as one"
@@ -2702,15 +2697,6 @@ after = "    if on_path is None:"
 reddens = [
   "tests/prove/test_javascript.py::test_a_runner_on_path_that_is_no_link_runs_unnamed",
   "tests/prove/test_javascript.py::test_a_runner_named_by_a_path_that_is_no_link_is_never_run",
-]
-
-[[mutation]]
-name = "a package's bin may name a file outside the package"
-file = "src/stayfixed/profiles/javascript/adapters.py"
-before = "    if home not in entry.parents or not fsops.is_file(entry):"
-after = "    if not fsops.is_file(entry):"
-reddens = [
-  "tests/prove/test_javascript.py::test_a_package_whose_bin_names_no_entry_of_its_own_does_not_resolve[a-file-outside-the-package]",
 ]
 
 [[mutation]]
@@ -2727,35 +2713,25 @@ reddens = [
 [[mutation]]
 name = "the entry-point search reads the directory the command runs in alone"
 file = "src/stayfixed/profiles/javascript/adapters.py"
-before = "    for directory in _upward(cwd, root):"
-after = "    for directory in [cwd]:"
-reddens = ["tests/prove/test_javascript.py::test_a_nested_workspace_resolves_from_the_root"]
-
-[[mutation]]
-name = "the entry-point search runs past the project's top-level"
-file = "src/stayfixed/profiles/javascript/adapters.py"
-before = "    above = [parent for parent in here.parents if parent == top or top in parent.parents]"
-after = "    above = list(here.parents)"
-reddens = ["tests/prove/test_javascript.py::test_the_search_stops_at_the_project_s_top_level"]
+before = "    for directory in (here, *here.parents):"
+after = "    for directory in (here,):"
+reddens = [
+  "tests/prove/test_javascript.py::test_npx_s_bin_is_found_from_where_the_command_runs_upward",
+]
 
 [[mutation]]
 name = "the entry-point search reads from the top-level down"
 file = "src/stayfixed/profiles/javascript/adapters.py"
-before = "    return [here, *above] if top == here or top in here.parents else [here]"
-after = "    return [*reversed(above), here] if top == here or top in here.parents else [here]"
-reddens = ["tests/prove/test_javascript.py::test_the_nearest_package_wins_and_jest_before_jest_cli"]
-
-[[mutation]]
-name = "jest-cli is looked for before jest"
-file = "src/stayfixed/profiles/javascript/adapters.py"
-before = '    packages=("jest", "jest-cli"),'
-after = '    packages=("jest-cli", "jest"),'
-reddens = ["tests/prove/test_javascript.py::test_the_nearest_package_wins_and_jest_before_jest_cli"]
+before = "    for directory in (here, *here.parents):"
+after = "    for directory in (*reversed(here.parents), here):"
+reddens = [
+  "tests/prove/test_javascript.py::test_npx_s_bin_is_found_from_where_the_command_runs_upward",
+]
 
 [[mutation]]
 name = "a bare runner on no PATH entry names no way on"
 file = "src/stayfixed/profiles/javascript/adapters.py"
-before = "        missing = UNRESOLVED.format(bin=runner.name) if typed.head == (runner.name,) else None"
+before = "        missing = UNRESOLVED.format(bin=runner.name) if bare else None"
 after = "        missing = None"
 reddens = ["tests/prove/test_javascript.py::test_a_bare_runner_on_no_path_entry_is_not_found"]
 
@@ -2874,12 +2850,14 @@ reddens = [
 [[mutation]]
 name = "jest's and vitest's watch modes are refused"
 file = "src/stayfixed/profiles/javascript/adapters.py"
-before = """        never = node_never_ends(node_words) or runner.never_ends(args)
+before = '''
+        never = node_never_ends(node_words) or runner.never_ends(args)
         if never is not None:
-            return Unresolved(NEVER_ENDS, NEVER_ENDS_DETAIL.format(option=never))"""
-after = """        never = node_never_ends(node_words) or runner.never_ends(args)
+            return never_ends(never)'''
+after = '''
+        never = node_never_ends(node_words) or runner.never_ends(args)
         if never is not None:
-            return Refused(REFUSED_OPTION, never)"""
+            return Refused(REFUSED_OPTION, never)'''
 reddens = [
   "tests/prove/test_javascript.py::test_a_watch_mode_is_not_proven_for_it_never_ends[jest:--watch]",
   "tests/prove/test_javascript.py::test_a_watch_mode_is_not_proven_for_it_never_ends[vitest:--watch]",
@@ -2889,12 +2867,14 @@ reddens = [
 [[mutation]]
 name = "node's watch modes are refused"
 file = "src/stayfixed/profiles/javascript/adapters.py"
-before = """        never = node_never_ends(command[1:])
+before = '''
+        never = node_never_ends(command[1:])
         if never is not None:
-            return Unresolved(NEVER_ENDS, NEVER_ENDS_DETAIL.format(option=never))"""
-after = """        never = node_never_ends(command[1:])
+            return never_ends(never)'''
+after = '''
+        never = node_never_ends(command[1:])
         if never is not None:
-            return Refused(REFUSED_OPTION, never)"""
+            return Refused(REFUSED_OPTION, never)'''
 reddens = [
   "tests/prove/test_javascript.py::test_a_watch_mode_is_not_proven_for_it_never_ends[node-test:--watch_--test]",
 ]
@@ -2902,18 +2882,20 @@ reddens = [
 [[mutation]]
 name = "a watch mode wins over a refusal in the same command"
 file = "src/stayfixed/profiles/javascript/adapters.py"
-before = """        refused = runner.refused(args)
+before = '''
+        refused = runner.refused(args)
         if refused is not None:
             return Refused(REFUSED_OPTION, refused)
         never = node_never_ends(node_words) or runner.never_ends(args)
         if never is not None:
-            return Unresolved(NEVER_ENDS, NEVER_ENDS_DETAIL.format(option=never))"""
-after = """        never = node_never_ends(node_words) or runner.never_ends(args)
+            return never_ends(never)'''
+after = '''
+        never = node_never_ends(node_words) or runner.never_ends(args)
         if never is not None:
-            return Unresolved(NEVER_ENDS, NEVER_ENDS_DETAIL.format(option=never))
+            return never_ends(never)
         refused = runner.refused(args)
         if refused is not None:
-            return Refused(REFUSED_OPTION, refused)"""
+            return Refused(REFUSED_OPTION, refused)'''
 reddens = [
   "tests/prove/test_javascript.py::test_a_refusal_wins_over_a_watch_mode[jest]",
   "tests/prove/test_javascript.py::test_a_refusal_wins_over_a_watch_mode[vitest]",
@@ -3550,3 +3532,51 @@ file = "src/stayfixed/profiles/javascript/adapters.py"
 before = '    if not isinstance(declared, str) or not declared or "\0" in declared:'
 after = "    if not isinstance(declared, str) or not declared:"
 reddens = ["tests/prove/test_javascript.py::test_a_bin_holding_a_nul_does_not_resolve"]
+
+# npm 11.6.0 reads the runner's options after `npx --no` as its own: recognised, the report's
+# options never reach the runner.
+[[mutation]]
+name = "`npx --no` is read as `npx --no-install`"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = "        if words[:1] == [_NPX_NO_INSTALL]:"
+after = '        if words[:1] and words[0] in (_NPX_NO_INSTALL, "--no"):'
+reddens = [
+  "tests/prove/test_javascript.py::test_npm_test_is_not_recognised[command7]",
+  "tests/prove/test_javascript.py::test_npm_test_is_not_recognised[command8]",
+]
+
+# npx runs `node_modules/.bin/<runner>`, so the receipt names where that leads, not the file the
+# package's `bin` names.
+[[mutation]]
+name = "the entry npx runs is read from the package's bin"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = "            return Path(os.path.realpath(candidate))"
+after = "            return package_entry(Path(os.path.realpath(candidate)), name)"
+reddens = [
+  "tests/prove/test_javascript.py::test_npx_names_the_bin_link_it_runs_not_the_package_s_bin",
+]
+
+[[mutation]]
+name = "a `.bin` entry that reaches no file is named"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = "        if fsops.is_file(candidate):"
+after = "        if fsops.is_symlink(candidate) or fsops.is_file(candidate):"
+reddens = ["tests/prove/test_javascript.py::test_npx_names_nothing_where_no_bin_link_is"]
+
+# Behind a launcher what is missing is the launcher: its name, never the bare runner's detail.
+[[mutation]]
+name = "the bare runner's detail is given behind a launcher"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = "        bare = typed.head == (runner.name,) and not launch"
+after = "        bare = typed.head == (runner.name,)"
+reddens = ["tests/prove/test_javascript.py::test_a_launcher_is_handed_the_command_as_typed"]
+
+# `--inspect-brk` and `--inspect-wait` watch nothing: they wait for a debugger.
+[[mutation]]
+name = "a debugger wait gets the watch modes' detail"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = "    detail = WAITS_DETAIL if option in _NODE_INSPECT_WAITS else NEVER_ENDS_DETAIL"
+after = "    detail = NEVER_ENDS_DETAIL"
+reddens = [
+  "tests/prove/test_javascript.py::test_a_debugger_wait_s_detail_says_it_waits_for_a_debugger",
+]

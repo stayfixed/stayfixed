@@ -5762,8 +5762,8 @@ reddens = [
 [[mutation]]
 name = "prove calls a command nothing can count refused"
 file = "src/stayfixed/prove/run.py"
-before = "        return _receipt(_Outcome(unproven=NOT_RECOGNISED), shown, verified=verified)"
-after = "        return _receipt(_Outcome(refused=NOT_RECOGNISED), shown, verified=verified)"
+before = "            _Outcome(unproven=NOT_RECOGNISED), shown, directory=directory, verified=verified"
+after = "            _Outcome(refused=NOT_RECOGNISED), shown, directory=directory, verified=verified"
 reddens = [
   "tests/prove/test_run.py::test_an_unrecognised_command_is_not_proven[argv0]",
   "tests/prove/test_run.py::test_an_unrecognised_command_is_not_proven[argv1]",
@@ -5772,12 +5772,12 @@ reddens = [
 [[mutation]]
 name = "prove reads an adapter's refusal as an entry point that did not resolve"
 file = "src/stayfixed/prove/run.py"
-before = """            return _receipt(
-                _Outcome(refused=planned.reason), run.shown, adapter.name, detail=planned.detail
-            )"""
-after = """            return _receipt(
-                _Outcome(unproven=planned.reason), run.shown, adapter.name, detail=planned.detail
-            )"""
+before = '''
+                _Outcome(refused=planned.reason),
+'''
+after = '''
+                _Outcome(unproven=planned.reason),
+'''
 reddens = [
   "tests/prove/test_run.py::test_an_adapter_s_own_answer_is_the_verdict[adapter0-refused-stand-in-moves-the-report]",
 ]
@@ -5785,12 +5785,12 @@ reddens = [
 [[mutation]]
 name = "prove refuses an entry point that did not resolve"
 file = "src/stayfixed/prove/run.py"
-before = """            return _receipt(
-                _Outcome(unproven=planned.reason), run.shown, adapter.name, detail=planned.detail
-            )"""
-after = """            return _receipt(
-                _Outcome(refused=planned.reason), run.shown, adapter.name, detail=planned.detail
-            )"""
+before = '''
+                _Outcome(unproven=planned.reason),
+'''
+after = '''
+                _Outcome(refused=planned.reason),
+'''
 reddens = [
   "tests/prove/test_run.py::test_an_adapter_s_own_answer_is_the_verdict[adapter1-not proven-stand-in-not-found]",
 ]
@@ -5800,10 +5800,19 @@ reddens = [
 [[mutation]]
 name = "prove leaves an unresolved entry point's detail off the receipt"
 file = "src/stayfixed/prove/run.py"
-before = """            return _receipt(
-                _Outcome(unproven=planned.reason), run.shown, adapter.name, detail=planned.detail
-            )"""
-after = "            return _receipt(_Outcome(unproven=planned.reason), run.shown, adapter.name)"
+before = '''
+                _Outcome(unproven=planned.reason),
+                run.shown,
+                adapter.name,
+                directory=run.directory,
+                detail=planned.detail,
+'''
+after = '''
+                _Outcome(unproven=planned.reason),
+                run.shown,
+                adapter.name,
+                directory=run.directory,
+'''
 reddens = [
   "tests/prove/test_javascript.py::test_an_unresolved_entry_s_detail_is_on_the_receipt",
 ]
@@ -5930,8 +5939,8 @@ reddens = ["tests/prove/test_run.py::test_the_run_is_in_cwd_and_the_project_is_i
 [[mutation]]
 name = "prove answers for the directory typed in rather than its repository"
 file = "src/stayfixed/prove/run.py"
-before = "    root = checkout_root(cwd) or cwd"
-after = "    root = cwd"
+before = "    root = checkout_root(directory) or directory"
+after = "    root = directory"
 reddens = ["tests/prove/test_run.py::test_the_run_is_in_cwd_and_the_project_is_its_toplevel"]
 
 # A value in the command is a secret as often as not: the receipt names it and never shows it.
@@ -6366,10 +6375,19 @@ reddens = ["tests/prove/test_junit.py::test_a_refusal_quotes_nothing_the_documen
 [[mutation]]
 name = "prove drops the adapter's refusal detail"
 file = "src/stayfixed/prove/run.py"
-before = """            return _receipt(
-                _Outcome(refused=planned.reason), run.shown, adapter.name, detail=planned.detail
-            )"""
-after = "            return _receipt(_Outcome(refused=planned.reason), run.shown, adapter.name)"
+before = '''
+                _Outcome(refused=planned.reason),
+                run.shown,
+                adapter.name,
+                directory=run.directory,
+                detail=planned.detail,
+'''
+after = '''
+                _Outcome(refused=planned.reason),
+                run.shown,
+                adapter.name,
+                directory=run.directory,
+'''
 reddens = ["tests/prove/test_pytest.py::test_a_refused_option_is_named_on_the_receipt"]
 
 # An absolute configuration entry names the one file a command chose, wherever it lies: read as a
@@ -6478,8 +6496,8 @@ reddens = ["tests/prove/test_junit_flag.py::test_with_junit_no_adapter_is_consul
 [[mutation]]
 name = "prove --junit reads its path from the project's top-level"
 file = "src/stayfixed/prove/run.py"
-before = "            _unverified(run.typed, run.cwd / junit, run.cwd, run.env)"
-after = "            _unverified(run.typed, run.root / junit, run.cwd, run.env)"
+before = "            _unverified(run.typed, run.directory / junit, run.directory, run.env)"
+after = "            _unverified(run.typed, run.root / junit, run.directory, run.env)"
 reddens = ["tests/prove/test_junit_flag.py::test_the_path_is_read_from_the_directory_the_command_is_typed_in"]
 
 [[mutation]]
@@ -6494,18 +6512,22 @@ reddens = ["tests/prove/test_junit_flag.py::test_the_command_takes_junit_and_say
 [[mutation]]
 name = "prove keeps no evidence record"
 file = "src/stayfixed/prove/commands.py"
-before = "    record_prove(cwd, receipt)\n"
+before = '''
+    record_prove(Path(receipt.directory or cwd), receipt)
+'''
 after = ""
 reddens = ["tests/prove/test_evidence.py::test_prove_appends_one_line_per_run"]
 
 [[mutation]]
 name = "a record that cannot be written turns prove's exit 1"
 file = "src/stayfixed/prove/commands.py"
-before = """    record_prove(cwd, receipt)
-    return Result(line(receipt), dataclasses.asdict(receipt), exit_code=EXIT[receipt.verdict])"""
-after = """    warned = record_prove(cwd, receipt)
+before = '''
+    record_prove(Path(receipt.directory or cwd), receipt)
+    return Result(line(receipt), dataclasses.asdict(receipt), exit_code=EXIT[receipt.verdict])'''
+after = '''
+    warned = record_prove(Path(receipt.directory or cwd), receipt)
     code = 1 if warned else EXIT[receipt.verdict]
-    return Result(line(receipt), dataclasses.asdict(receipt), exit_code=code)"""
+    return Result(line(receipt), dataclasses.asdict(receipt), exit_code=code)'''
 reddens = ["tests/prove/test_evidence.py::test_an_unwritable_state_directory_warns_and_keeps_the_verdict[proved-argv0-0]"]
 
 [[mutation]]
@@ -6827,8 +6849,14 @@ reddens = ["tests/prove/test_evidence.py::test_a_fifo_at_the_record_is_a_warning
 [[mutation]]
 name = "an interrupt outside the wait escapes prove"
 file = "src/stayfixed/prove/run.py"
-before = "    except (KeyboardInterrupt, _Signalled):\n        return _receipt(_Outcome(unproven=INTERRUPTED), shown, runner, verified=verified)"
-after = "    except (KeyboardInterrupt, _Signalled):\n        raise"
+before = '''
+    except (KeyboardInterrupt, _Signalled):
+        return _receipt(
+            _Outcome(unproven=INTERRUPTED), shown, runner, directory=directory, verified=verified
+        )'''
+after = '''
+    except (KeyboardInterrupt, _Signalled):
+        raise'''
 reddens = [
   "tests/prove/test_run.py::test_an_interrupt_anywhere_in_the_run_ends_it_not_proven[interrupt-tree-state]",
   "tests/prove/test_evidence.py::test_a_run_interrupted_before_its_command_starts_is_recorded_not_proven",
@@ -6880,3 +6908,110 @@ file = "src/stayfixed/prove/tree.py"
 before = "    elif chosen := _chosen(root, configs):"
 after = "    elif False:"
 reddens = ["tests/prove/test_run.py::test_outside_a_repository_a_file_the_command_chose_is_named_still"]
+
+# The command is judged in the directory its launcher runs it in (`uv run --directory`,
+# `UV_WORKING_DIR`): judged where it was typed, node's whole-file testcase is read from the
+# wrong directory and a run of no test is `proved`.
+[[mutation]]
+name = "prove hands the adapter the directory the command was typed in"
+file = "src/stayfixed/prove/run.py"
+before = '''
+            cwd=run.directory,
+'''
+after = '''
+            cwd=run.cwd,
+'''
+reddens = [
+  "tests/prove/test_run.py::test_the_command_is_judged_where_its_launcher_runs_it[spaced]",
+  "tests/prove/test_javascript.py::test_a_whole_file_testcase_behind_uv_s_directory_is_dropped_where_node_ran[node24]",
+  "tests/prove/test_run.py::test_a_pytest_plan_behind_uv_s_directory_is_made_there",
+]
+
+[[mutation]]
+name = "prove answers for the project of the directory the command was typed in"
+file = "src/stayfixed/prove/run.py"
+before = "    root = checkout_root(directory) or directory"
+after = "    root = checkout_root(cwd) or cwd"
+reddens = [
+  "tests/prove/test_run.py::test_the_command_is_judged_where_its_launcher_runs_it[spaced]",
+]
+
+[[mutation]]
+name = "the receipt names the directory the command was typed in"
+file = "src/stayfixed/prove/run.py"
+before = '''
+        directory=run.directory,
+        program=program,
+'''
+after = '''
+        directory=run.cwd,
+        program=program,
+'''
+reddens = [
+  "tests/prove/test_run.py::test_the_command_is_judged_where_its_launcher_runs_it[spaced]",
+]
+
+# uv changes to the directory itself: launched there, a relative `--directory` would be read
+# twice.
+[[mutation]]
+name = "prove launches the command in the directory its launcher moves to"
+file = "src/stayfixed/prove/run.py"
+before = "    ran = _run(plan, run.cwd, run.env, run.timeout, run.echo)"
+after = "    ran = _run(plan, run.directory, run.env, run.timeout, run.echo)"
+reddens = [
+  "tests/prove/test_run.py::test_the_command_is_judged_where_its_launcher_runs_it[spaced]",
+]
+
+[[mutation]]
+name = "a launcher's directory that names none is the one the command is judged in"
+file = "src/stayfixed/prove/run.py"
+before = "    if target == cwd or not fsops.is_dir(target):"
+after = "    if target == cwd:"
+reddens = [
+  "tests/prove/test_run.py::test_a_launcher_that_moves_nowhere_leaves_the_command_where_it_was_typed[nowhere]",
+  "tests/prove/test_run.py::test_a_launcher_that_moves_nowhere_leaves_the_command_where_it_was_typed[a-file]",
+]
+
+[[mutation]]
+name = "a launcher that is not there still moves the directory"
+file = "src/stayfixed/prove/run.py"
+before = '''
+    if program is None:
+        return launch, cwd
+'''
+after = '''
+    if program is None:
+        return launch, Path(os.path.realpath(target))
+'''
+reddens = [
+  "tests/prove/test_run.py::test_a_launcher_that_moves_nowhere_leaves_the_command_where_it_was_typed[no-launcher]",
+]
+
+# The launcher is found where the command was typed, as a shell finds it, and handed by that
+# path, so the adapter, planning from the moved directory, never looks for it there.
+[[mutation]]
+name = "the launcher is handed as typed to an adapter planning from the moved directory"
+file = "src/stayfixed/prove/run.py"
+before = "    handed = launch._replace(launcher=(str(program), *launch.launcher[1:]))"
+after = "    handed = launch"
+reddens = [
+  "tests/prove/test_run.py::test_the_command_is_judged_where_its_launcher_runs_it[spaced]",
+]
+
+[[mutation]]
+name = "prove keeps the record of the project the command was typed in"
+file = "src/stayfixed/prove/commands.py"
+before = "    record_prove(Path(receipt.directory or cwd), receipt)"
+after = "    record_prove(cwd, receipt)"
+reddens = [
+  "tests/prove/test_evidence.py::test_a_run_its_launcher_moves_keys_the_project_it_moved_to",
+]
+
+[[mutation]]
+name = "prove --junit reads its path from the directory the command was typed in"
+file = "src/stayfixed/prove/run.py"
+before = "            _unverified(run.typed, run.directory / junit, run.directory, run.env)"
+after = "            _unverified(run.typed, run.cwd / junit, run.directory, run.env)"
+reddens = [
+  "tests/prove/test_junit_flag.py::test_the_path_is_read_from_the_directory_the_launcher_runs_the_command_in",
+]

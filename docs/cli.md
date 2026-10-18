@@ -829,11 +829,11 @@ it in the run's environment: a word holding a `/` from the directory the command
 name on its `PATH`, so `PATH=.venv/bin:$PATH pytest` runs the `pytest` it names. The receipt names
 the realpath of the program that ran.
 
-The command runs in the directory `prove` is typed in, or in the one its launcher is told to run
-it in (`uv run --directory DIR`, `UV_WORKING_DIR`), and that directory is the one judged: the plan
-is made there, and the project the receipt answers for, whose tree's state it names, is its git
-top-level, or the directory itself outside a repository. A command typed in `packages/web` runs in
-`packages/web`.
+The command runs in the directory `prove` is typed in, or in the one its launcher is told to run it
+in (`uv run --directory DIR`, or `UV_WORKING_DIR`, the option winning; `--project` moves nothing),
+and that directory is the one judged: the plan is made there, and the project the receipt answers
+for, whose tree's state it names, is its git top-level, or the directory itself outside a
+repository. A command typed in `packages/web` runs in `packages/web`.
 
 **The environment** is built once, as a shell builds it: yours, then each `NAME=value` the command
 spells before what runs, in order, before the launcher or after it, bare or after `env`, the last
@@ -962,7 +962,8 @@ count of the rest. The tree's state is taken before the run and after it, and is
 you, never an input to the verdict. `--json` carries `verdict`, `reason`, `detail` (the variable a refused assignment named,
 the option or word the runner's adapter refused, the `--junit` path on `junit-unchanged`, or where a
 report stopped reading), `argv` (the command, every `NAME=value` and `--option=value` value replaced
-by `…`; a value passed as the word after its option is kept), `runner`, `program`, `entry`,
+by `…`; a value passed as the word after its option is kept), `directory` (where the command was
+judged), `runner`, `program`, `entry`,
 `verified` (false on a `--junit` run, and only there), `scrubbed` (those variables' names, sorted),
 `counts`, `exit_code`, `report_digest` (the SHA-256 of the report counted: of a test event stream,
 the lines kept, never the output printed), `commit`, `dirty_before`, `dirty_after`, `untracked`,
