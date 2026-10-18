@@ -133,10 +133,11 @@ _UV_RUN_VALUED = _UV_GLOBAL_VALUED | frozenset(
 # The options with which uv loads a file of the command's choosing into what it runs: an
 # environment (`run`'s `--env-file`) or a configuration (the global `--config-file`), each spelled
 # `--name value` or `--name=value` (measured on uv 0.11.32: no abbreviation and no short form is
-# accepted), and the variables uv reads for the same two (`UV_ENV_FILE`, `UV_CONFIG_FILE`). A
-# caller that runs the command, as `prove` does, reads them here so that it never spells `uv`.
+# accepted), and the variable uv reads for the environment file (`UV_ENV_FILE`). A closed list, the
+# owner's: no other uv option or variable is read here. A caller that runs the command, as
+# `prove` does, reads them here so that it never spells `uv`.
 FILE_OPTIONS = frozenset({"--env-file", "--config-file"})
-FILE_VARIABLES = frozenset({"UV_ENV_FILE", "UV_CONFIG_FILE"})
+FILE_VARIABLES = frozenset({"UV_ENV_FILE"})
 
 
 def is_launcher(name: str) -> bool:

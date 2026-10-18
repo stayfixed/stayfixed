@@ -176,8 +176,8 @@ class Receipt:
     where the plan said its runner is not one an adapter resolved. `commit` and `dirty_before` are
     the tree's state before the run, `dirty_after` after it, and `untracked` (at most
     `tree.UNTRACKED_LISTED`, `untracked_more` past it) and `configs` (at most as many,
-    `configs_more` past it) after it, or before it where git could not answer after: none of them
-    is an input to the verdict.
+    `configs_more` past it, and `ignored_configs` the count of those git ignores) after it, or
+    before it where git could not answer after: none of them is an input to the verdict.
     """
 
     verdict: Verdict
@@ -197,6 +197,7 @@ class Receipt:
     untracked_more: int = 0
     configs: tuple[str, ...] = ()
     configs_more: int = 0
+    ignored_configs: int = 0
 
 
 _NO_COUNTS = Counts(0, 0, 0)
@@ -569,6 +570,7 @@ def _receipt(
         untracked_more=files.more if files is not None else 0,
         configs=(configs.configs or ()) if configs is not None else (),
         configs_more=configs.configs_more if configs is not None else 0,
+        ignored_configs=configs.ignored_configs if configs is not None else 0,
     )
 
 
@@ -595,10 +597,14 @@ def line(receipt: Receipt) -> str:
         if not receipt.verified:
             runner += ", not verified"
         parts.append(runner)
-    if receipt.configs:
+    if receipt.configs or receipt.ignored_configs:
         listed = ", ".join(printable(name) for name in receipt.configs)
         more = f" and {receipt.configs_more} more" if receipt.configs_more else ""
-        parts.append(f"configuration: {listed}{more}")
+        named = f"{listed}{more}"
+        if receipt.ignored_configs:
+            ignored = f"{receipt.ignored_configs} ignored"
+            named = f"{named} and {ignored}" if named else ignored
+        parts.append(f"configuration: {named}")
     if receipt.untracked:
         listed = ", ".join(printable(name) for name in receipt.untracked)
         more = f" and {receipt.untracked_more} more" if receipt.untracked_more else ""

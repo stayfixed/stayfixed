@@ -364,12 +364,13 @@ def test_a_launcher_option_that_loads_no_file_is_free(tmp_path: Path) -> None:
     assert run(tmp_path, "uv", "run", "--no-env-file", "--locked", NAME).verdict == PROVED
 
 
-@pytest.mark.parametrize("variable", ["UV_ENV_FILE", "UV_CONFIG_FILE"])
+@pytest.mark.parametrize("variable", ["UV_ENV_FILE"])
 def test_the_launcher_s_file_variables_are_forging_and_scrubbed_where_it_runs(
     tmp_path: Path, variable: str
 ) -> None:
-    # The variable spelling of the same two options: assigned in a launch that runs the launcher,
-    # it is refused; inherited, it is removed. Where nothing launches, it is any variable.
+    # The variable spelling of the environment-file option: assigned in a launch that runs the
+    # launcher, it is refused; inherited, it is removed. Where nothing launches, it is any
+    # variable.
     # Mutations (declared): the launcher's variables left out of the forging set, and an
     # inherited one kept -> each run is `proved` with the variable in place.
     for argv in ([f"{variable}=x", "uv", "run", NAME], ["uv", "run", "env", f"{variable}=x", NAME]):
@@ -692,6 +693,23 @@ def test_a_configuration_file_git_ignores_is_never_named(tmp_path: Path) -> None
     assert (state.configs, state.configs_more) == (("stand-in.toml", "sub/stand-in.toml"), 0)
 
 
+def test_the_ignored_configuration_files_are_counted_and_never_named(tmp_path: Path) -> None:
+    # Left out of the list, they are still said to be there: an ignored file in the runner's load
+    # path can shape the report as well as any. Mutations (declared): the count dropped from the
+    # tree's state, and from the line -> neither says so.
+    root = repository(tmp_path / "repo")
+    (root / ".gitignore").write_text("deps/\n", encoding="utf-8")
+    (root / "stand-in.toml").write_text("", encoding="utf-8")
+    for index in range(3):
+        (root / "deps" / f"p{index}").mkdir(parents=True)
+        (root / "deps" / f"p{index}" / "stand-in.toml").write_text("", encoding="utf-8")
+    got = run(root, NAME)
+    assert (got.configs, got.configs_more, got.ignored_configs) == (("stand-in.toml",), 0, 3)
+    assert "; configuration: stand-in.toml and 3 ignored" in line(got)
+    (root / "stand-in.toml").unlink()
+    assert "; configuration: 3 ignored" in line(run(root, NAME))
+
+
 def test_the_configuration_list_stops_at_its_cap_and_counts_the_rest(tmp_path: Path) -> None:
     # Mutation (declared): the configuration list uncapped -> every one named.
     root = repository(tmp_path / "repo")
@@ -738,7 +756,7 @@ def test_tree_state_is_taken_before_and_after(tmp_path: Path) -> None:
 
 def test_tree_state_outside_git_is_unknown_and_never_a_refusal(tmp_path: Path) -> None:
     state = tree.state(tmp_path, ("*",), ("*",))
-    assert state == tree.TreeState(None, None, None, 0, None, 0)
+    assert state == tree.TreeState(None, None, None, 0, None, 0, 0)
 
 
 def test_prove_needs_no_stayfixed_toml(tmp_path: Path) -> None:

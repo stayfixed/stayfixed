@@ -821,12 +821,12 @@ argv to execute, the realpath of its program, where the runner's report arrives 
 format, and which files in the tree can shape it. A command no adapter recognises, an `env` given
 an option among them, is `not proven`. Every `NAME=value` the command spells before what runs is
 one of its assignments, wherever it stands: before `uv run` or after it, bare or after `env`. An
-assignment of a variable in the adapter's forging set is refused, and so, where the command runs
-`uv`, is one of `UV_ENV_FILE` or `UV_CONFIG_FILE` (`assigned-forging`, naming the variable); an
-inherited `UV_ENV_FILE` or `UV_CONFIG_FILE` is removed from the run's environment where the
-command runs `uv`. An option with which `uv` loads a file the command names, `--env-file` or
-`--config-file`, as `--name value` or `--name=value` and wherever it stands among `uv`'s words,
-is refused (`launcher-option`, naming the option). Every other assignment reaches the runner in
+assignment of a variable in the adapter's forging set is refused, and so is an assignment of
+`UV_ENV_FILE` where the command runs `uv` (`assigned-forging`, naming the variable); an inherited
+`UV_ENV_FILE` is removed from the run's environment where the command runs `uv`. An option with
+which `uv` loads a file the command names, `--env-file` or `--config-file`, as `--name value` or
+`--name=value` and wherever it stands among `uv`'s words, is refused (`launcher-option`, naming
+the option). Every other assignment reaches the runner in
 its environment, in order, the last of two for one name winning, and never in its argv; the
 adapter is handed the launcher's own words (`uv run` and its options) and never an assignment or
 an `env`. A report the runner writes to a file is read from a scratch directory outside the
@@ -862,16 +862,16 @@ process group is ended with it.
 
 **The line** says the verdict and its reason in words, the counts (passed, failed, skipped), the
 runner and the realpath of the program that ran, and the files that can shape the report: the
-runner's configuration files that exist and that git tracks or does not ignore, and the untracked
-files in its discovery set, those git does not ignore first and then the ignored ones; twenty of
-each and a count of the rest. The tree's state is taken before the run and after it, and is
+runner's configuration files that exist and that git tracks or does not ignore, with a count of
+the ignored ones (`and N ignored`), and the untracked files in its discovery set, those git does
+not ignore first and then the ignored ones; twenty of each and a count of the rest. The tree's state is taken before the run and after it, and is
 information for you, never an input to the verdict. `--json` carries `verdict`, `reason`,
 `detail` (the variable a refused assignment named, the launcher option refused, or where a report
 stopped reading), `argv` (the
 command, every `NAME=value` and `--option=value` value replaced by `…`; a value passed as the word
 after its option is kept), `runner`, `program`, `verified`, `counts`, `exit_code`, `report_digest`
 (the SHA-256 of the report counted), `commit`, `dirty_before`, `dirty_after`, `untracked`,
-`untracked_more`, `configs` and `configs_more`.
+`untracked_more`, `configs`, `configs_more` and `ignored_configs`.
 
 **Reads** the command's report and git's answers about the tree. **Writes** nothing in the
 project: the scratch directory is under the system's temporary directory, is readable by you

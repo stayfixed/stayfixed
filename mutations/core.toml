@@ -5741,7 +5741,6 @@ before = "    forged = sorted(name for name in assigned if name in adapter.forgi
 after = "    forged = sorted(name for name in assigned if name in adapter.forging)"
 reddens = [
   "tests/prove/test_run.py::test_the_launcher_s_file_variables_are_forging_and_scrubbed_where_it_runs[UV_ENV_FILE]",
-  "tests/prove/test_run.py::test_the_launcher_s_file_variables_are_forging_and_scrubbed_where_it_runs[UV_CONFIG_FILE]",
 ]
 
 [[mutation]]
@@ -6041,7 +6040,7 @@ reddens = ["tests/prove/test_run.py::test_tree_state_is_taken_before_and_after"]
 [[mutation]]
 name = "prove's line leaves out the configuration files"
 file = "src/stayfixed/prove/run.py"
-before = '        parts.append(f"configuration: {listed}{more}")'
+before = '        parts.append(f"configuration: {named}")'
 after = "        pass"
 reddens = [
   "tests/prove/test_command.py::test_the_line_names_the_counts_the_runner_and_the_files_that_shape_the_report",
@@ -6104,6 +6103,20 @@ file = "src/stayfixed/prove/tree.py"
 before = "        configured, configs_more = _capped([name for name in named if fsops.exists(root / name)])"
 after = "        configured, configs_more = _capped(named)"
 reddens = ["tests/prove/test_run.py::test_a_configuration_file_is_named_only_where_it_exists"]
+
+[[mutation]]
+name = "prove's tree state counts no ignored configuration file"
+file = "src/stayfixed/prove/tree.py"
+before = "    ignored_configs = len(_matching(ignored, configs)) if ignored is not None else 0"
+after = "    ignored_configs = 0"
+reddens = ["tests/prove/test_run.py::test_the_ignored_configuration_files_are_counted_and_never_named"]
+
+[[mutation]]
+name = "prove's line keeps the ignored configuration files' count to itself"
+file = "src/stayfixed/prove/run.py"
+before = "        if receipt.ignored_configs:"
+after = "        if False:"
+reddens = ["tests/prove/test_run.py::test_the_ignored_configuration_files_are_counted_and_never_named"]
 
 [[mutation]]
 name = "prove's line names no configuration file past the cap"

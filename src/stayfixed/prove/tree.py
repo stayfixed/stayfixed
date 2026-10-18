@@ -7,7 +7,8 @@ answer, outside a repository among them, and never a refusal. The untracked file
 ignored are listed before the ignored ones, so a file a change added is never hidden behind a count
 of an ignored dependency tree's; a configuration file is one git tracks, or one it does not and
 does not ignore, since an ignored dependency tree holds configuration-named files by the dozen
-and none of them is the project's. Both lists stop at `UNTRACKED_LISTED` and count the rest.
+and none of them is the project's; the ignored ones are counted, never dropped unsaid. Both lists
+stop at `UNTRACKED_LISTED` and count the rest.
 
 Information and never an input to the verdict: everything it reads, the agent that typed the
 command can write, and a file in the runner's load path, tracked or not, is what the bound concedes.
@@ -39,7 +40,8 @@ class TreeState:
     included. `untracked`: the untracked files a discovery glob matches and then the ignored ones,
     each in path order, at most `UNTRACKED_LISTED`, and `more` the count past them. `configs`: the
     files a configuration glob matches that exist and that git tracks or does not ignore, in path
-    order, at most `UNTRACKED_LISTED`, and `configs_more` the count past them."""
+    order, at most `UNTRACKED_LISTED`, and `configs_more` the count past them. `ignored_configs`:
+    how many files git ignores that a configuration glob matches, named nowhere."""
 
     commit: str | None
     dirty: bool | None
@@ -47,6 +49,7 @@ class TreeState:
     more: int
     configs: tuple[str, ...] | None
     configs_more: int
+    ignored_configs: int
 
 
 def _capped(found: Sequence[str]) -> tuple[tuple[str, ...], int]:
@@ -79,6 +82,7 @@ def state(root: Path, discovery: Sequence[str], configs: Sequence[str]) -> TreeS
         untracked, more = _capped(_matching(others, discovery) + _matching(ignored, discovery))
     configured: tuple[str, ...] | None = None
     configs_more = 0
+    ignored_configs = len(_matching(ignored, configs)) if ignored is not None else 0
     if others is not None and tracked is not None:
         named = _matching([*tracked, *others], configs)
         configured, configs_more = _capped([name for name in named if fsops.exists(root / name)])
@@ -89,4 +93,5 @@ def state(root: Path, discovery: Sequence[str], configs: Sequence[str]) -> TreeS
         more=more,
         configs=configured,
         configs_more=configs_more,
+        ignored_configs=ignored_configs,
     )
