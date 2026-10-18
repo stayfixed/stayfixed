@@ -812,12 +812,13 @@ can be written, not `bugs new` again, which would file it twice.
 The entry carries the keys `id`, `title`, `status`, `severity`, `area`, `found`, `source`,
 `fixed_in` and `related`. An entry may also carry `regression`, the argv that reproduces the bug:
 an inline list of double-quoted items, like `regression: ["pytest", "-k", "total and not slow"]`,
-each item read with the two escapes a quoted title takes (`\"` and `\\`), separated by a comma
-and spaces. `regression:` and `regression: []` are the empty list. `bugs check` reports any other
-shape as `unreadable-entry`, as it does an empty item and an item holding a control character
-below U+0020, or DEL. `bugs renumber` leaves a `regression` exactly as written, while its sweep
-renames a test whose name carries the old identifier in a scanned file, so an argv naming the old
-identifier may need editing by hand. `bugs new` does not write one yet.
+each item read with the two escapes a quoted title takes (`\"` and `\\`), separated by a comma.
+Spaces may surround each item and each comma; a tab may not. `regression:`, `regression: []` and
+`regression: [ ]` are the empty list. `bugs check` reports any other shape as `unreadable-entry`,
+as it does an empty item and an item holding a control character below U+0020, or DEL.
+`bugs renumber` leaves a `regression` exactly as written, while its sweep renames a test whose name
+carries the old identifier in a scanned file, so an argv naming the old identifier may need editing
+by hand. `bugs new` does not write one yet.
 
 **Writes** the entry file (creating `<paths.bugs>` for the first entry) and `<paths.bug_index>`;
 and, unless `--no-fetch`, whatever the `git fetch --quiet --no-recurse-submodules origin` it runs

@@ -1037,8 +1037,8 @@ reddens = [
 [[mutation]]
 name = "a schema may list a key twice"
 file = "src/stayfixed/ledger/register.py"
-before = '    for key in duplicated:'
-after = "    for key in ():"
+before = '    for name, named in (("key", schema.keys), ("list", schema.lists)):'
+after = '    for name, named in (("list", schema.lists),):'
 reddens = [
   "tests/ledger/test_register.py::test_a_schema_built_wrong_is_refused_at_construction[key-listed-twice]",
 ]
@@ -3611,17 +3611,17 @@ file = "src/stayfixed/ledger/check.py"
 before = "    return f\"is stale; run: {commands[0] if commands else f'stayfixed {register.name} index'}\""
 after = '    return "is stale"'
 reddens = [
-  "tests/ledger/test_literals.py::test_the_ledger_prints_what_it_printed_before_the_list_field[json-check-broken]",
+  "tests/ledger/test_literals.py::test_the_ledger_prints_its_captured_output[json-check-broken]",
 ]
 
 # The register engine's list field, read-only: the bug entry's `regression`, an inline list of
 # double-quoted argv items (`tests/ledger/test_list_field.py`). Each refusal of the reader is its own
 # entry, so a grammar relaxed toward what a YAML reader also takes reddens the case it lets through.
 [[mutation]]
-name = "the list reader ends an item at a comma inside its quotes"
+name = "a quoted item cannot hold a comma"
 file = "src/stayfixed/ledger/entries.py"
-before = '''        if raw[index] == '"':'''
-after = '''        if raw[index] in '",':'''
+before = '''_QUOTED = r'"(?:[^"\\]|\\.)*"''''
+after = '''_QUOTED = r'"(?:[^"\\,]|\\.)*"''''
 reddens = [
   "tests/ledger/test_list_field.py::test_a_regression_reads_as_its_argv",
   "tests/ledger/test_register.py::test_what_new_writes_and_renumber_leaves_reads_back_through_the_entry_reader[default-bug_register]",
@@ -3630,8 +3630,8 @@ reddens = [
 [[mutation]]
 name = "the list reader takes a tab for a separator"
 file = "src/stayfixed/ledger/entries.py"
-before = '    while raw[index : index + 1] == " ":'
-after = '    while raw[index : index + 1] in (" ", "\t"):'
+before = '_QUOTED_LIST = re.compile(rf"\[ *(?:{_QUOTED}(?: *, *{_QUOTED})* *)?\]", re.DOTALL)'
+after = '_QUOTED_LIST = re.compile(rf"\[ *(?:{_QUOTED}(?: *,[ \t]*{_QUOTED})* *)?\]", re.DOTALL)'
 reddens = [
   "tests/ledger/test_list_field.py::test_a_malformed_regression_is_refused_in_its_own_words[tab-separator]",
 ]
@@ -3658,23 +3658,18 @@ reddens = [
 [[mutation]]
 name = "the list reader takes text after its closing bracket"
 file = "src/stayfixed/ledger/entries.py"
-before = '    if raw[index:] != "]":'
-after = "    if False:"
+before = '    if not _QUOTED_LIST.fullmatch(raw):'
+after = '    if not _QUOTED_LIST.match(raw):'
 reddens = [
   "tests/ledger/test_list_field.py::test_a_malformed_regression_is_refused_in_its_own_words[text-after]",
-  "tests/ledger/test_list_field.py::test_a_malformed_regression_is_refused_in_its_own_words[unclosed-list]",
-  "tests/ledger/test_list_field.py::test_a_malformed_regression_is_refused_in_its_own_words[unescaped-quote]",
 ]
 
 # A YAML reader takes `[pytest]`; this one quotes the bare item in place and reads on.
 [[mutation]]
 name = "the list reader takes a bare item"
 file = "src/stayfixed/ledger/entries.py"
-before = '''        if raw[index : index + 1] != '"':
-            raise shape'''
-after = '''        if raw[index : index + 1] != '"':
-            end = min(raw.find(c, index) % (len(raw) + 1) for c in ",]")
-            raw = f'{raw[:index]}"{raw[index:end]}"{raw[end:]}''''
+before = '''_QUOTED = r'"(?:[^"\\]|\\.)*"''''
+after = '''_QUOTED = r'"(?:[^"\\]|\\.)*"|\w+''''
 reddens = [
   "tests/ledger/test_list_field.py::test_a_malformed_regression_is_refused_in_its_own_words[bare-item]",
   "tests/ledger/test_list_field.py::test_bugs_check_reports_a_malformed_regression_as_unreadable",
@@ -3684,17 +3679,17 @@ reddens = [
 [[mutation]]
 name = "the list reader takes a value with no opening bracket"
 file = "src/stayfixed/ledger/entries.py"
-before = '    if not raw.startswith("["):'
-after = "    if False:"
+before = '_QUOTED_LIST = re.compile(rf"\[ *(?:{_QUOTED}(?: *, *{_QUOTED})* *)?\]", re.DOTALL)'
+after = '_QUOTED_LIST = re.compile(rf"[\[(] *(?:{_QUOTED}(?: *, *{_QUOTED})* *)?\]", re.DOTALL)'
 reddens = [
   "tests/ledger/test_list_field.py::test_a_malformed_regression_is_refused_in_its_own_words[wrong-opening-bracket]",
 ]
 
 [[mutation]]
-name = "the list reader reads an unterminated item as an empty one"
+name = "the list reader takes an item with no closing quote"
 file = "src/stayfixed/ledger/entries.py"
-before = "        if closing < 0:"
-after = "        if False:"
+before = '''_QUOTED = r'"(?:[^"\\]|\\.)*"''''
+after = '''_QUOTED = r'"(?:[^"\\]|\\.)*"?''''
 reddens = [
   "tests/ledger/test_list_field.py::test_a_malformed_regression_is_refused_in_its_own_words[unterminated-item]",
 ]
@@ -3702,15 +3697,17 @@ reddens = [
 [[mutation]]
 name = "an entry hashes its lists mapping with the rest"
 file = "src/stayfixed/ledger/entries.py"
-before = "    lists: Mapping[str, tuple[str, ...]] = field(default_factory=dict, hash=False, compare=True)"
-after = "    lists: Mapping[str, tuple[str, ...]] = field(default_factory=dict, compare=True)"
-reddens = ["tests/ledger/test_entries.py::test_an_entry_is_a_hashable_value"]
+before = '    lists: Mapping[str, tuple[str, ...]] = field(default_factory=dict, hash=False)'
+after = '    lists: Mapping[str, tuple[str, ...]] = field(default_factory=dict)'
+reddens = [
+  "tests/ledger/test_entries.py::test_an_entry_is_a_hashable_value",
+]
 
 [[mutation]]
 name = "an entry leaves its lists out of its equality"
 file = "src/stayfixed/ledger/entries.py"
-before = "    lists: Mapping[str, tuple[str, ...]] = field(default_factory=dict, hash=False, compare=True)"
-after = "    lists: Mapping[str, tuple[str, ...]] = field(default_factory=dict, hash=False, compare=False)"
+before = '    lists: Mapping[str, tuple[str, ...]] = field(default_factory=dict, hash=False)'
+after = '    lists: Mapping[str, tuple[str, ...]] = field(default_factory=dict, hash=False, compare=False)'
 reddens = [
   "tests/ledger/test_list_field.py::test_two_entries_that_differ_only_in_their_regression_are_two_values",
 ]
@@ -3743,11 +3740,10 @@ reddens = [
 [[mutation]]
 name = "the sweep rewrites an argv inside a list value"
 file = "src/stayfixed/ledger/write.py"
-before = "            kept = list_value_spans(item.text, register.schema.lists)"
-after = "            kept = []"
+before = '        lambda match: match[0] if any(b <= match.start() < e for b, e in kept) else new, text'
+after = '        lambda match: new, text'
 reddens = [
   "tests/ledger/test_list_field.py::test_renumber_leaves_an_argv_naming_the_old_identifier",
-  "tests/ledger/test_list_field.py::test_renumber_leaves_an_argv_naming_the_old_identifier_whatever_the_line_endings",
   "tests/ledger/test_list_field.py::test_a_renumber_killed_after_its_pointer_finishes_the_tree_with_its_argvs",
 ]
 
@@ -3759,7 +3755,8 @@ file = "src/stayfixed/ledger/entries.py"
 before = '_BREAK = r"(?:\r\n|\r(?!\n)|\n)"'
 after = '_BREAK = r"\n"'
 reddens = [
-  "tests/ledger/test_list_field.py::test_renumber_leaves_an_argv_naming_the_old_identifier_whatever_the_line_endings",
+  "tests/ledger/test_list_field.py::test_renumber_leaves_an_argv_naming_the_old_identifier[crlf]",
+  "tests/ledger/test_list_field.py::test_renumber_leaves_an_argv_naming_the_old_identifier[cr]",
   "tests/ledger/test_list_field.py::test_a_list_value_lies_where_the_reader_reads_it_whatever_the_endings",
 ]
 
@@ -3788,7 +3785,10 @@ file = "src/stayfixed/ledger/entries.py"
 before = '        raw = raw.strip(" \t") if key in schema.lists else raw.strip()'
 after = '        raw = raw.strip()'
 reddens = [
-  "tests/ledger/test_list_field.py::test_only_spaces_and_tabs_pad_a_list",
+  "tests/ledger/test_list_field.py::test_a_malformed_regression_is_refused_in_its_own_words[no-break-space-before]",
+  "tests/ledger/test_list_field.py::test_a_malformed_regression_is_refused_in_its_own_words[no-break-space-after]",
+  "tests/ledger/test_list_field.py::test_a_malformed_regression_is_refused_in_its_own_words[ideographic-space-after]",
+  "tests/ledger/test_list_field.py::test_a_malformed_regression_is_refused_in_its_own_words[unit-separator-after]",
 ]
 
 [[mutation]]
@@ -3803,18 +3803,18 @@ reddens = [
 [[mutation]]
 name = "an unsupported escape names its character raw"
 file = "src/stayfixed/ledger/entries.py"
-before = 'uses an unsupported escape `\\{quoted(following)}`"'
-after = 'uses an unsupported escape `\\{following}`"'
+before = '            shown = following if following.isprintable() else quoted(following)'
+after = '            shown = following'
 reddens = [
-  "tests/ledger/test_list_field.py::test_an_unsupported_escape_is_named_without_driving_the_terminal",
+  "tests/ledger/test_list_field.py::test_an_unsupported_escape_is_named_without_driving_the_terminal[escape-character]",
 ]
 
 # Only an entry file keeps its list values from the sweep.
 [[mutation]]
 name = "the sweep keeps list values in every file it rewrites"
 file = "src/stayfixed/ledger/write.py"
-before = "        if item.path in entry_files:"
-after = "        if True:"
+before = '            list_value_spans(item.text, register.schema.lists) if item.path in entry_files else []'
+after = '            list_value_spans(item.text, register.schema.lists)'
 reddens = [
   "tests/ledger/test_list_field.py::test_renumber_sweeps_a_regression_line_in_a_file_that_is_no_entry",
 ]
@@ -3838,13 +3838,6 @@ reddens = [
 ]
 
 [[mutation]]
-name = "a list key may be the level"
-file = "src/stayfixed/ledger/register.py"
-before = "        if key == schema.level:"
-after = "        if False:"
-reddens = ["tests/ledger/test_list_field.py::test_a_list_key_is_held_to_what_reads_it[level]"]
-
-[[mutation]]
 name = "a list key may be a date"
 file = "src/stayfixed/ledger/register.py"
 before = "        if key in schema.dates:"
@@ -3854,9 +3847,11 @@ reddens = ["tests/ledger/test_list_field.py::test_a_list_key_is_held_to_what_rea
 [[mutation]]
 name = "a list key may be a placeholder of the template"
 file = "src/stayfixed/ledger/register.py"
-before = "        if key in placeholders:"
-after = "        if False:"
-reddens = ["tests/ledger/test_list_field.py::test_a_list_key_is_held_to_what_reads_it[placeholder]"]
+before = '        if key in schema.line_keys:'
+after = '        if False:'
+reddens = [
+  "tests/ledger/test_list_field.py::test_a_list_key_is_held_to_what_reads_it[placeholder]",
+]
 
 [[mutation]]
 name = "a list key may be related"
@@ -3876,12 +3871,8 @@ reddens = ["tests/ledger/test_list_field.py::test_a_list_key_is_held_to_what_rea
 [[mutation]]
 name = "the list reader skips one character after a backslash"
 file = "src/stayfixed/ledger/entries.py"
-before = '''
-        if raw[index] == "\\":
-            index += 2'''
-after = '''
-        if raw[index] == "\\":
-            index += 1'''
+before = '''_QUOTED = r'"(?:[^"\\]|\\.)*"''''
+after = '''_QUOTED = r'"(?:[^"\\]|\\)*"''''
 reddens = [
   "tests/ledger/test_list_field.py::test_escapes_read_as_titles_read_them",
   "tests/ledger/test_entries.py::test_parse_entry_reads_every_field",
@@ -3890,12 +3881,11 @@ reddens = [
 [[mutation]]
 name = "the list reader refuses an empty value"
 file = "src/stayfixed/ledger/entries.py"
-before = """
+before = '''
     if not raw:
         return ()
-    if not raw.startswith("["):"""
-after = """
-    if not raw.startswith("["):"""
+    if not _QUOTED_LIST.fullmatch(raw):'''
+after = '    if not _QUOTED_LIST.fullmatch(raw):'
 reddens = [
   "tests/ledger/test_list_field.py::test_an_empty_regression_is_no_regression[bare]",
   "tests/ledger/test_list_field.py::test_a_regression_left_out_is_no_regression",
@@ -3904,15 +3894,17 @@ reddens = [
 [[mutation]]
 name = "the list reader takes no space after its opening bracket"
 file = "src/stayfixed/ledger/entries.py"
-before = "    index = _past_spaces(raw, 1)"
-after = "    index = 1"
-reddens = ["tests/ledger/test_list_field.py::test_an_empty_regression_is_no_regression[spaced]"]
+before = '_QUOTED_LIST = re.compile(rf"\[ *(?:{_QUOTED}(?: *, *{_QUOTED})* *)?\]", re.DOTALL)'
+after = '_QUOTED_LIST = re.compile(rf"\[(?:{_QUOTED}(?: *, *{_QUOTED})* *)?\]", re.DOTALL)'
+reddens = [
+  "tests/ledger/test_list_field.py::test_an_empty_regression_is_no_regression[spaced]",
+]
 
 [[mutation]]
 name = "the list reader refuses an empty list"
 file = "src/stayfixed/ledger/entries.py"
-before = '    more = raw[index : index + 1] != "]"'
-after = "    more = True"
+before = '_QUOTED_LIST = re.compile(rf"\[ *(?:{_QUOTED}(?: *, *{_QUOTED})* *)?\]", re.DOTALL)'
+after = '_QUOTED_LIST = re.compile(rf"\[ *(?:{_QUOTED}(?: *, *{_QUOTED})* *)\]", re.DOTALL)'
 reddens = [
   "tests/ledger/test_list_field.py::test_an_empty_regression_is_no_regression[brackets]",
   "tests/ledger/test_list_field.py::test_an_empty_regression_is_no_regression[spaced]",
@@ -3922,13 +3914,8 @@ reddens = [
 [[mutation]]
 name = "the list reader takes a trailing comma"
 file = "src/stayfixed/ledger/entries.py"
-before = """
-        if more:
-            index = _past_spaces(raw, index + 1)"""
-after = """
-        if more:
-            index = _past_spaces(raw, index + 1)
-            more = raw[index : index + 1] != "]\""""
+before = '_QUOTED_LIST = re.compile(rf"\[ *(?:{_QUOTED}(?: *, *{_QUOTED})* *)?\]", re.DOTALL)'
+after = '_QUOTED_LIST = re.compile(rf"\[ *(?:{_QUOTED}(?: *, *{_QUOTED})* *,?)?\]", re.DOTALL)'
 reddens = [
   "tests/ledger/test_list_field.py::test_a_malformed_regression_is_refused_in_its_own_words[trailing-comma]",
 ]
@@ -3937,14 +3924,56 @@ reddens = [
 [[mutation]]
 name = "the list reader reads a lone quoted value as one item"
 file = "src/stayfixed/ledger/entries.py"
-before = """
-    if not raw.startswith("["):
-        raise shape"""
-after = """
-    if not raw.startswith("["):
-        return (_unquote(raw, key=key, where=where),)"""
+before = '_QUOTED_LIST = re.compile(rf"\[ *(?:{_QUOTED}(?: *, *{_QUOTED})* *)?\]", re.DOTALL)'
+after = '_QUOTED_LIST = re.compile(rf"\[? *(?:{_QUOTED}(?: *, *{_QUOTED})* *)?\]?", re.DOTALL)'
 reddens = [
   "tests/ledger/test_list_field.py::test_a_malformed_regression_is_refused_in_its_own_words[no-brackets]",
+]
+
+[[mutation]]
+name = "the list reader takes a list with no closing bracket"
+file = "src/stayfixed/ledger/entries.py"
+before = '_QUOTED_LIST = re.compile(rf"\[ *(?:{_QUOTED}(?: *, *{_QUOTED})* *)?\]", re.DOTALL)'
+after = '_QUOTED_LIST = re.compile(rf"\[ *(?:{_QUOTED}(?: *, *{_QUOTED})* *)?\]?", re.DOTALL)'
+reddens = [
+  "tests/ledger/test_list_field.py::test_a_malformed_regression_is_refused_in_its_own_words[unclosed-list]",
+]
+
+[[mutation]]
+name = "a quoted item takes an unescaped quote"
+file = "src/stayfixed/ledger/entries.py"
+before = '''_QUOTED = r'"(?:[^"\\]|\\.)*"''''
+after = '''_QUOTED = r'"(?:[^\\]|\\.)*"''''
+reddens = [
+  "tests/ledger/test_list_field.py::test_a_malformed_regression_is_refused_in_its_own_words[unescaped-quote]",
+]
+
+[[mutation]]
+name = "an unsupported escape quotes a printable character"
+file = "src/stayfixed/ledger/entries.py"
+before = '            shown = following if following.isprintable() else quoted(following)'
+after = '            shown = quoted(following)'
+reddens = [
+  "tests/ledger/test_list_field.py::test_an_unsupported_escape_is_named_without_driving_the_terminal[punctuation]",
+]
+
+[[mutation]]
+name = "a padded list reads as the empty list"
+file = "src/stayfixed/ledger/entries.py"
+before = '        raw = raw.strip(" \t") if key in schema.lists else raw.strip()'
+after = '        raw = ("[]" if raw != raw.rstrip(" \t") else raw) if key in schema.lists else raw.strip()'
+reddens = [
+  "tests/ledger/test_list_field.py::test_spaces_and_tabs_after_a_list_are_no_text[space]",
+  "tests/ledger/test_list_field.py::test_spaces_and_tabs_after_a_list_are_no_text[tab]",
+]
+
+[[mutation]]
+name = "a list may be listed twice"
+file = "src/stayfixed/ledger/register.py"
+before = '    for name, named in (("key", schema.keys), ("list", schema.lists)):'
+after = '    for name, named in (("key", schema.keys),):'
+reddens = [
+  "tests/ledger/test_list_field.py::test_a_list_key_is_held_to_what_reads_it[listed-twice]",
 ]
 
 [[mutation]]
@@ -3975,8 +4004,8 @@ file = "src/stayfixed/ledger/commands.py"
 before = '    summary = f"filed {relative}" + (f"; {filed.warning}" if filed.warning else "")'
 after = '    summary = f"filed {filed.path}" + (f"; {filed.warning}" if filed.warning else "")'
 reddens = [
-  "tests/ledger/test_literals.py::test_the_ledger_prints_what_it_printed_before_the_list_field[text-new]",
-  "tests/ledger/test_literals.py::test_the_ledger_prints_what_it_printed_before_the_list_field[text-new-bare]",
+  "tests/ledger/test_literals.py::test_the_ledger_prints_its_captured_output[text-new]",
+  "tests/ledger/test_literals.py::test_the_ledger_prints_its_captured_output[text-new-bare]",
 ]
 
 [[mutation]]
@@ -3985,8 +4014,8 @@ file = "src/stayfixed/ledger/commands.py"
 before = '    return Result(summary, {"id": filed.identifier, "path": relative, "warning": filed.warning})'
 after = '    return Result(summary, {"id": filed.identifier, "path": relative})'
 reddens = [
-  "tests/ledger/test_literals.py::test_the_ledger_prints_what_it_printed_before_the_list_field[json-new]",
-  "tests/ledger/test_literals.py::test_the_ledger_prints_what_it_printed_before_the_list_field[json-new-bare]",
+  "tests/ledger/test_literals.py::test_the_ledger_prints_its_captured_output[json-new]",
+  "tests/ledger/test_literals.py::test_the_ledger_prints_its_captured_output[json-new-bare]",
 ]
 
 [[mutation]]
@@ -3995,8 +4024,8 @@ file = "src/stayfixed/ledger/commands.py"
 before = '_OK = "OK: bug ledger entries, index freshness, and identifier references"'
 after = '_OK = "OK"'
 reddens = [
-  "tests/ledger/test_literals.py::test_the_ledger_prints_what_it_printed_before_the_list_field[text-check-clean]",
-  "tests/ledger/test_literals.py::test_the_ledger_prints_what_it_printed_before_the_list_field[json-check-clean]",
+  "tests/ledger/test_literals.py::test_the_ledger_prints_its_captured_output[text-check-clean]",
+  "tests/ledger/test_literals.py::test_the_ledger_prints_its_captured_output[json-check-clean]",
 ]
 
 [[mutation]]
@@ -4005,7 +4034,7 @@ file = "src/stayfixed/ledger/commands.py"
 before = '    return Result(f"FAIL: {len(found)} ledger problem(s): {labels(found)}", data, exit_code=1)'
 after = '    return Result(f"FAIL: {len(found)} ledger problem(s): {labels(found)}", data)'
 reddens = [
-  "tests/ledger/test_literals.py::test_the_ledger_prints_what_it_printed_before_the_list_field[text-check-broken]",
+  "tests/ledger/test_literals.py::test_the_ledger_prints_its_captured_output[text-check-broken]",
 ]
 
 [[mutation]]
@@ -4014,7 +4043,7 @@ file = "src/stayfixed/ledger/commands.py"
 before = '    return Result(f"{args.old} -> {args.new}; a void pointer remains at {void}", data)'
 after = '    return Result(f"{args.old} -> {args.new}", data)'
 reddens = [
-  "tests/ledger/test_literals.py::test_the_ledger_prints_what_it_printed_before_the_list_field[text-renumber]",
+  "tests/ledger/test_literals.py::test_the_ledger_prints_its_captured_output[text-renumber]",
 ]
 
 [[mutation]]
@@ -4023,7 +4052,7 @@ file = "src/stayfixed/ledger/commands.py"
 before = '        "unswept": [asdict(u) for u in result.unswept],'
 after = ""
 reddens = [
-  "tests/ledger/test_literals.py::test_the_ledger_prints_what_it_printed_before_the_list_field[json-renumber]",
+  "tests/ledger/test_literals.py::test_the_ledger_prints_its_captured_output[json-renumber]",
 ]
 
 [[mutation]]

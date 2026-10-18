@@ -78,8 +78,9 @@ class Schema:
     # one the template spells itself, as the bug ledger's does `found` and `fixed_in`.
     template: str
     sections: tuple[Section, ...]  # in the order the index reads
-    # Keys whose value is an inline list of double-quoted items, read and never written: `Entry`
-    # carries them in `lists`, and no writer, cell or presence check reads one.
+    # Keys whose value is an inline list of double-quoted items, which `Entry.lists` carries and
+    # no writer, cell or presence check reads. `related`, a list of bare identifiers with a reader
+    # of its own, is not one of them.
     lists: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
@@ -95,8 +96,8 @@ class Schema:
 
     @property
     def scalar_keys(self) -> tuple[str, ...]:
-        """`keys` without `lists`: the keys holding one value each. `related` is among them and
-        is read through `Entry.related`; every other one through `Entry.value`."""
+        """`keys` without `lists`: `related`, read through `Entry.related`, and the keys holding
+        one value each, read through `Entry.value`."""
         return tuple(key for key in self.keys if key not in self.lists)
 
 
@@ -107,10 +108,11 @@ def _placeholders(template: str) -> set[str]:
 def _inconsistencies(schema: Schema) -> Iterator[str]:
     """Every way one part of `schema` names what another part lacks."""
     keys = set(schema.keys)
-    # A key listed twice is written twice by `new` and read once.
-    duplicated = sorted({key for key in schema.keys if schema.keys.count(key) > 1})
-    for key in duplicated:
-        yield f"key `{key}` is listed more than once"
+    # A key listed twice is written twice by `new` and read once; a list listed twice is the same
+    # slip, which a writer of lists would repeat.
+    for name, named in (("key", schema.keys), ("list", schema.lists)):
+        for key in sorted({key for key in named if named.count(key) > 1}):
+            yield f"{name} `{key}` is listed more than once"
     # Every entry is read for its `id`, `title` and `status`; its `related` list may be empty.
     for key in ENGINE_KEYS:
         if key != "related" and key not in schema.required:
@@ -156,9 +158,9 @@ def _inconsistencies(schema: Schema) -> Iterator[str]:
     if "related" not in keys:
         yield "`related` is not a key, so `renumber`'s void entry cannot name the new number"
     # A list key is read by `Entry.lists` alone: every path that reads one value — the presence
-    # checks, the level, the date rule, the writer's template — would read the list's raw text, and
-    # `related` has a reader of its own, of bare identifiers.
-    placeholders = _placeholders(schema.template)
+    # checks, the date rule, an index cell, the writer's template — would read the list's raw text,
+    # and `related` has a reader of its own, of bare identifiers. The level is among the presence
+    # checks: it must be required or required_unless_void, so a list is never the level.
     shown = {key for section in schema.sections for _, key in section.columns}
     for key in schema.lists:
         for name, named in (
@@ -167,13 +169,11 @@ def _inconsistencies(schema: Schema) -> Iterator[str]:
         ):
             if key in named:
                 yield f"list `{key}` is {name}, and a list may be left out"
-        if key == schema.level:
-            yield f"list `{key}` is the level, which holds one value"
         if key in schema.dates:
             yield f"list `{key}` is a date, which holds one value"
         if key in shown:
             yield f"list `{key}` is shown in an index column, whose cell holds one value"
-        if key in placeholders:
+        if key in schema.line_keys:
             yield f"list `{key}` is a placeholder of the template, and nothing writes a list"
         if key == "related":
             yield f"list `{key}` is `related`, which the reader reads as identifiers"
@@ -286,8 +286,8 @@ BUG_SCHEMA = Schema(
         Section("Fixed", ("fixed",), (("ID", "id"), ("Title", "title"), ("Fixed in", "fixed_in"))),
         Section("Void identifiers", ("void",), (("ID", "id"), ("Why", "title"))),
     ),
-    # The argv that reproduces the bug, read and validated; nothing writes one yet, and
-    # `renumber`'s void entry carries none, being a pointer and not the entry.
+    # The argv that reproduces the bug. `renumber`'s void entry carries none, being a pointer and
+    # not the entry.
     lists=("regression",),
 )
 

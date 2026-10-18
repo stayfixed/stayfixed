@@ -2,7 +2,7 @@
 
 A `regression` is an argv: the items are the words a later command runs, so an item may hold a
 comma, a space or a bracket, and a reader that split on commas would hand back other words than the
-ones written. Nothing writes one yet, so the reader, `bugs check` and `renumber` are what hold it.
+ones written.
 
 stayfixed:ledger:fixtures — the identifiers below are sample data, not claims about a ledger.
 """
@@ -32,8 +32,8 @@ from stayfixed.ledger.register import BUG_SCHEMA, Section, bug_register
 from stayfixed.printed import quoted
 from tests.cli import cli
 from tests.gitfixture import needs_git
+from tests.ledger.fixture import ARGV, ledger_copy, literal, on_one_day
 from tests.ledger.kills import killed_at
-from tests.ledger.test_literals import ARGV, ledger_copy, literal
 from tests.snapshot import assert_snapshot_unchanged, snapshot
 
 REGISTER = bug_register(preset_defaults("widget"))
@@ -61,8 +61,8 @@ def parse(text: str) -> Entry:
 
 
 def test_a_regression_reads_as_its_argv() -> None:
-    # Mutations (oracle): `mutations/`'s "the list reader ends an item at a comma inside its
-    # quotes" -> the two items holding a comma come back split; "a list key is read as a scalar
+    # Mutations (oracle): `mutations/`'s "a quoted item cannot hold a comma" -> the value is
+    # refused; "a list key is read as a scalar
     # again" and "the bug ledger declares no list" -> the value is refused for its leading `[`.
     entry = parse(ENTRY.format(regression='["pytest", "tests/t.py::test[1,2]", "-k", "a, b"]'))
     assert entry.lists["regression"] == ("pytest", "tests/t.py::test[1,2]", "-k", "a, b")
@@ -107,12 +107,18 @@ def test_two_entries_that_differ_only_in_their_regression_are_two_values() -> No
         pytest.param('"a"', LIST_SHAPE, id="no-brackets"),
         pytest.param('("a"]', LIST_SHAPE, id="wrong-opening-bracket"),
         pytest.param('["a"', LIST_SHAPE, id="unclosed-list"),
-        pytest.param('["a', LIST_SHAPE, id="unterminated-item"),
+        pytest.param('["a]', LIST_SHAPE, id="unterminated-item"),
         pytest.param('["a",\t"b"]', LIST_SHAPE, id="tab-separator"),
         pytest.param('["a"b"]', LIST_SHAPE, id="unescaped-quote"),
         pytest.param('[""]', EMPTY_ITEM, id="empty-item"),
         pytest.param('["a\x01"]', CONTROL_IN_ITEM, id="c0-control"),
         pytest.param('["a\x7f"]', CONTROL_IN_ITEM, id="del"),
+        # A list is padded only by spaces and tabs, so any other whitespace a scalar's value is
+        # stripped of is text outside the brackets.
+        pytest.param('\xa0["a"]', LIST_SHAPE, id="no-break-space-before"),
+        pytest.param('["a"]\xa0', LIST_SHAPE, id="no-break-space-after"),
+        pytest.param('["a"]\u3000', LIST_SHAPE, id="ideographic-space-after"),
+        pytest.param('["a"]\x1f', LIST_SHAPE, id="unit-separator-after"),
     ],
 )
 def test_a_malformed_regression_is_refused_in_its_own_words(raw: str, constant: str) -> None:
@@ -129,55 +135,49 @@ def test_a_malformed_regression_is_refused_in_its_own_words(raw: str, constant: 
     space, `['a ']`, an argv other than the one written; this entry reader splits its frontmatter
     lines at U+0085 too, so it refuses that entry before the grammar reads the item.
     """
-    # Mutations (oracle): `mutations/`'s "the list reader takes a tab for a separator" -> the tab
-    # case reads; "the list reader accepts an empty item" -> `empty-item` reads; "the list reader
-    # lets a control character into an item" -> both control cases read; "the list reader takes text
-    # after its closing bracket" -> `text-after`, `unclosed-list` and `unescaped-quote` read; "the
-    # list reader takes a bare item" -> `bare-item` reads; "the list reader takes a value with no
-    # opening bracket" -> `wrong-opening-bracket` reads; "the list reader reads an unterminated
-    # item as an empty one" -> `unterminated-item` says `EMPTY_ITEM`; "the list reader takes a
-    # trailing comma" -> `trailing-comma` reads; "the list reader reads a lone quoted value as one
-    # item" -> `no-brackets` reads.
+    # Mutations (oracle), each reading the case it names or refusing it in other words:
+    # `mutations/`'s "the list reader takes a tab for a separator" -> `tab-separator`; "the list
+    # reader accepts an empty item" -> `empty-item`; "the list reader lets a control character into
+    # an item" -> both control cases; "the list reader takes text after its closing bracket" ->
+    # `text-after`; "the list reader takes a list with no closing bracket" -> `unclosed-list`; "a
+    # quoted item takes an unescaped quote" -> `unescaped-quote`; "the list reader takes a bare
+    # item" -> `bare-item`; "the list reader takes a value with no opening bracket" ->
+    # `wrong-opening-bracket`; "the list reader takes an item with no closing quote" ->
+    # `unterminated-item`, which then says its item is unterminated; "the list reader takes a
+    # trailing comma" -> `trailing-comma`; "the list reader reads a lone quoted value as one item"
+    # -> `no-brackets`; "a list's value is stripped as a scalar's is" -> the four padded cases.
     with pytest.raises(LedgerError) as caught:
         parse(ENTRY.format(regression=raw))
     assert str(caught.value) == constant.format(where=quoted(PATH.as_posix()), key="regression")
 
 
 @pytest.mark.parametrize(
-    "raw",
-    ['\xa0["a"]', '["a"]\xa0', '["a"]\u3000', '["a"]\x1f'],
-    ids=["no-break-space-before", "no-break-space-after", "ideographic-space-after", "unit-sep"],
+    ("raw", "items"),
+    [('["a"] ', ("a",)), ('["a"]\t', ("a",)), ("[] \t", ())],
+    ids=["space", "tab", "both"],
 )
-def test_only_spaces_and_tabs_pad_a_list(raw: str) -> None:
-    # A scalar's value is stripped of every whitespace character Python knows; a list's only of
-    # the spaces and tabs YAML separates with, so any other character before `[` or after `]` is
-    # the text outside the brackets the grammar refuses. Mutation (oracle): `mutations/`'s "a
-    # list's value is stripped as a scalar's is" -> each value reads as `("a",)`.
-    with pytest.raises(LedgerError) as caught:
-        parse(ENTRY.format(regression=raw))
-    assert str(caught.value) == LIST_SHAPE.format(where=quoted(PATH.as_posix()), key="regression")
-
-
-@pytest.mark.parametrize("raw", ['["a"] ', '["a"]\t', "[] \t"], ids=["space", "tab", "both"])
-def test_spaces_and_tabs_after_a_list_are_no_text(raw: str) -> None:
-    # The other half of the rule above, so the stripping that refuses those still strips these.
-    # Mutation (oracle): `mutations/`'s "a list's value is stripped of nothing" -> each is refused.
-    assert parse(ENTRY.format(regression=raw)).lists["regression"] in (("a",), ())
+def test_spaces_and_tabs_after_a_list_are_no_text(raw: str, items: tuple[str, ...]) -> None:
+    # The other half of the padding rule, so the stripping that refuses the other whitespace still
+    # strips these. Mutations (oracle): `mutations/`'s "a list's value is stripped of nothing" ->
+    # each is refused; "a padded list reads as the empty list" -> `space` and `tab` read `()`.
+    assert parse(ENTRY.format(regression=raw)).lists["regression"] == items
 
 
 @pytest.mark.parametrize(
     ("raw", "escape"),
     [
         pytest.param('["\\q"]', "\\q", id="letter"),
+        pytest.param('["\\."]', "\\.", id="punctuation"),
         pytest.param('["\\\x1b[2J"]', "\\'\\x1b'", id="escape-character"),
     ],
 )
 def test_an_unsupported_escape_is_named_without_driving_the_terminal(raw: str, escape: str) -> None:
     # The character after the backslash is the repository's, and `bugs new`, `index` and
     # `renumber` print this refusal on stderr: an ESC there would start a sequence on the
-    # operator's terminal, so it prints as `printed.quoted` prints it, and a letter as itself.
-    # Mutation (oracle): `mutations/`'s "an unsupported escape names its character raw" -> the ESC
-    # reaches the message.
+    # operator's terminal, so it prints as `printed.quoted` prints it, and a character that prints
+    # as itself, as it always has. Mutations (oracle): `mutations/`'s "an unsupported escape names
+    # its character raw" -> the ESC reaches the message; "an unsupported escape quotes a printable
+    # character" -> `punctuation` says `\'.'`.
     with pytest.raises(LedgerError) as caught:
         parse(ENTRY.format(regression=raw))
     where = quoted(PATH.as_posix())
@@ -274,37 +274,18 @@ def test_renumber_carries_a_regression_byte_for_byte(tmp_path: Path) -> None:
 
 
 @needs_git
-def test_renumber_leaves_an_argv_naming_the_old_identifier(tmp_path: Path) -> None:
+@pytest.mark.parametrize("ending", ["\n", "\r\n", "\r"], ids=["lf", "crlf", "cr"])
+def test_renumber_leaves_an_argv_naming_the_old_identifier(tmp_path: Path, ending: str) -> None:
     # Renumber leaves a `regression` exactly as written. A test whose name carries BR-002 in a
     # scanned file is renamed by the same sweep, so an argv naming the old identifier may need
     # editing by hand; this pins only that the argv is not the sweep's to rewrite. BR-003 names
     # BR-002 in its title, its `related` list and its body too, all of which the sweep still
-    # rewrites; BR-004 names it in its argv alone. Mutation (oracle): `mutations/`'s "the sweep
-    # rewrites an argv inside a list value" -> both argvs name BR-009.
-    root = ledger_copy(tmp_path)
-    argv = '["pytest", "-k", "BR-002 and not slow"]'
-    with_regression(root, "BR-003.md", argv)
-    untouched = with_regression(root, "BR-004.md", argv)
-    code, out, _ = cli(root, tmp_path, "bugs", "renumber", "BR-002", "BR-009")
-    assert (code, out) == (0, "BR-002 -> BR-009; a void pointer remains at docs/bugs/BR-002.md\n")
-    bugs = root / "docs" / "bugs"
-    swept = literal("renumber.swept.md", "").replace(
-        "related: [BR-009]\n", f"related: [BR-009]\nregression: {argv}\n", 1
-    )
-    assert (bugs / "BR-003.md").read_text(encoding="utf-8") == swept
-    assert (bugs / "BR-004.md").read_text(encoding="utf-8") == untouched
-
-
-@needs_git
-@pytest.mark.parametrize("ending", ["\r\n", "\r"], ids=["crlf", "cr"])
-def test_renumber_leaves_an_argv_naming_the_old_identifier_whatever_the_line_endings(
-    tmp_path: Path, ending: str
-) -> None:
-    # A checkout under `core.autocrlf=true` holds every entry with CRLF endings. The reader reads
-    # such an entry with its endings translated, so it passes `bugs check`, and the sweep reads the
-    # file as it is on disk: its argv is found on the file's own endings, or renamed. Mutation
-    # (oracle): `mutations/`'s "the frontmatter reader knows only LF line endings" -> both argvs
-    # name BR-009.
+    # rewrites; BR-004 names it in its argv alone. A checkout under `core.autocrlf=true` holds
+    # every entry with CRLF endings: the reader reads it translated, so it passes `bugs check`,
+    # and the sweep reads the file as it is on disk, so its argv is found on the file's own
+    # endings or renamed. Mutations (oracle): `mutations/`'s "the sweep rewrites an argv inside a
+    # list value" -> both argvs name BR-009; "the frontmatter reader knows only LF line endings"
+    # -> both argvs name BR-009 in `crlf` and `cr`.
     root = ledger_copy(tmp_path)
     argv = '["pytest", "-k", "BR-002 and not slow"]'
     bugs = root / "docs" / "bugs"
@@ -352,18 +333,16 @@ def test_new_beside_an_entry_with_a_regression_writes_what_it_writes_beside_none
     tmp_path: Path,
 ) -> None:
     # The entry, the output and the index `bugs new` writes are `test_literals.py`'s literals
-    # whether or not a sibling carries a `regression`: the index has no column for one. A run
-    # across midnight is run once more, as the literals' own runs are. Mutation (oracle):
-    # `mutations/`'s "the bug ledger declares no list" -> the sibling is refused and nothing is
-    # filed.
-    for attempt in ("first", "again"):
-        today = date.today().isoformat()
-        root = ledger_copy(tmp_path / attempt)
-        with_regression(root, "BR-001.md", VALID_ARGV)
-        printed = cli(root, tmp_path, *ARGV["new"])
-        if date.today().isoformat() == today:
-            break
-    assert printed == (0, literal("new.out", today), literal("new.err", today))
+    # whether or not a sibling carries a `regression`: the index has no column for one. Mutation
+    # (oracle): `mutations/`'s "the bug ledger declares no list" -> the sibling is refused and
+    # nothing is filed.
+    root, today, printed = on_one_day(
+        tmp_path,
+        "clean",
+        ARGV["new"],
+        prepare=lambda root: with_regression(root, "BR-001.md", VALID_ARGV),
+    )
+    assert printed == (0, literal("new.out", today), "")
     bugs = root / "docs" / "bugs"
     assert (bugs / "BR-005.md").read_text(encoding="utf-8") == literal("new.entry.md", today)
     index = (root / "docs" / "bug-reports.md").read_text(encoding="utf-8")
@@ -442,6 +421,11 @@ AS_SECTION = (
             {"lists": ("regression", "argv")}, "lists names `argv`, which is not a key", id="key"
         ),
         pytest.param(
+            {"lists": ("regression", "regression")},
+            "list `regression` is listed more than once",
+            id="listed-twice",
+        ),
+        pytest.param(
             {"required": (*BUG_SCHEMA.required, "regression")},
             "list `regression` is required, and a list may be left out",
             id="required",
@@ -450,11 +434,6 @@ AS_SECTION = (
             {"required_unless_void": (*BUG_SCHEMA.required_unless_void, "regression")},
             "list `regression` is required_unless_void, and a list may be left out",
             id="required-unless-void",
-        ),
-        pytest.param(
-            {"level": "regression"},
-            "list `regression` is the level, which holds one value",
-            id="level",
         ),
         pytest.param(
             {"dates": (*BUG_SCHEMA.dates, "regression")},
@@ -479,9 +458,9 @@ AS_SECTION = (
     ],
 )
 def test_a_list_key_is_held_to_what_reads_it(changes: dict[str, Any], problem: str) -> None:
-    # Each rule keeps a list key off a path that reads one value: the presence checks, the level,
-    # the date rule, an index cell, the writer's template, and `related`'s own reader. Mutations
-    # (oracle): one per rule, each dropping its check -> its case constructs.
+    # Each rule keeps a list key off a path that reads one value: the presence checks, the date
+    # rule, an index cell, the writer's template, and `related`'s own reader; and a list listed
+    # twice. Mutations (oracle): one per rule, each dropping its check -> its case constructs.
     with pytest.raises(ValueError, match=re.escape(problem)):
         replace(BUG_SCHEMA, **changes)
 

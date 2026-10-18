@@ -18,6 +18,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
+from typing import NamedTuple
 
 from stayfixed.config.paths import contained
 from stayfixed.errors import Failure
@@ -46,12 +47,14 @@ _NEEDS_QUOTING = re.compile(r"\A[-?:,\[\]{}#&*!|>'\"%@`]|: | #|:\Z")
 # A C0 control character or DEL: an item a list key holds is an argv word, which a later command
 # hands to a process, so neither may reach one.
 _CONTROL_CHARACTER = re.compile(r"[\x00-\x1f\x7f]")
+# A double-quoted run, a backslash taking the next character along, and a list key's whole value:
+# `[`, such runs separated by a comma, spaces around any of it, `]`. Matched, never split on `,`:
+# an item is an argv word, and a comma or a bracket inside its quotes is part of it.
+_QUOTED = r'"(?:[^"\\]|\\.)*"'
+_QUOTED_LIST = re.compile(rf"\[ *(?:{_QUOTED}(?: *, *{_QUOTED})* *)?\]", re.DOTALL)
 
-# The refusals of a list key's value. `{where}` is the entry's path as `_where` names it, `{key}`
-# the list key: both the reader's own, so nothing a repository wrote reaches the line unescaped.
-# Their anchor is the entry file, which anyone who can commit writes, and that author already
-# controls the whole argv, so these refusals and `_CONTROL_CHARACTER` report validity (an argv a
-# later runner can execute as written) and are no trust boundary.
+# The refusals of a list key's value. They report validity, an argv a later runner can execute as
+# written, and are no trust boundary: whoever writes the entry already writes the whole argv.
 LIST_SHAPE = '{where}: `{key}` must be an inline list of double-quoted items, like `["a", "b"]`'
 EMPTY_ITEM = "{where}: `{key}` holds an empty item"
 CONTROL_IN_ITEM = "{where}: `{key}` holds an item with a control character"
@@ -94,7 +97,7 @@ class Entry:
     # Compared, not hashed: a dict has no hash, and the fields above already tell two entries
     # apart, so equal entries still hash equal.
     fields: Mapping[str, str] = field(hash=False)
-    lists: Mapping[str, tuple[str, ...]] = field(default_factory=dict, hash=False, compare=True)
+    lists: Mapping[str, tuple[str, ...]] = field(default_factory=dict, hash=False)
 
     def value(self, key: str) -> str:
         """The entry's value for one of its register's keys other than `related` and its lists;
@@ -136,11 +139,10 @@ def _unquote(raw: str, *, key: str, where: Path) -> str:
             continue
         following = body[index + 1 : index + 2]
         if following not in ('"', "\\"):
-            # The repository's character, so through `quoted`: a letter or a digit prints as
-            # itself, and an ESC or a line break escaped, never as a sequence on the terminal.
-            raise LedgerError(
-                f"{_where(where)}: `{key}` uses an unsupported escape `\\{quoted(following)}`"
-            )
+            # The repository's character: one that prints prints as itself, and any other, an ESC
+            # or a line break, through `quoted`, never as a sequence on the operator's terminal.
+            shown = following if following.isprintable() else quoted(following)
+            raise LedgerError(f"{_where(where)}: `{key}` uses an unsupported escape `\\{shown}`")
         out.append(following)
         index += 2
     return "".join(out)
@@ -169,68 +171,22 @@ def _require_iso_date(value: str, *, key: str, where: Path) -> str:
     return value
 
 
-def _past_spaces(raw: str, index: int) -> int:
-    """The first index from `index` on that is not a space: the one separator a list allows."""
-    while raw[index : index + 1] == " ":
-        index += 1
-    return index
-
-
-def _closing_quote(raw: str, opening: int) -> int:
-    """The index of the `"` that closes the quoted item opening at `opening`, or -1.
-
-    A backslash takes the character after it along, so an escaped quote never closes the item and
-    a quote after an escaped backslash does: the two escapes `_unquote` reads, which then reads the
-    item itself.
-    """
-    index = opening + 1
-    while index < len(raw):
-        if raw[index] == "\\":
-            index += 2
-            continue
-        if raw[index] == '"':
-            return index
-        index += 1
-    return -1
-
-
 def _parse_quoted_list(raw: str, *, key: str, where: Path) -> tuple[str, ...]:
-    """The items of a list key's value, or raise.
-
-    An empty value and `[]` are the empty list; otherwise `[`, double-quoted items separated by a
-    comma and spaces, and `]` ending the value. Scanned, never split on `,`: an item is an argv
-    word, and a comma or a bracket inside its quotes is part of it. Each quoted run goes to
-    `_unquote`, so an item's escapes are a title's.
-    """
-    shape = LedgerError(LIST_SHAPE.format(where=_where(where), key=key))
+    """The items of a list key's value, or raise: an empty value is the empty list, and each
+    quoted run goes to `_unquote`, so an item's escapes are a title's."""
     if not raw:
         return ()
-    if not raw.startswith("["):
-        raise shape
-    items: list[str] = []
-    index = _past_spaces(raw, 1)
-    more = raw[index : index + 1] != "]"
-    while more:
-        if raw[index : index + 1] != '"':
-            raise shape
-        closing = _closing_quote(raw, index)
-        if closing < 0:
-            raise shape
-        item = _unquote(raw[index : closing + 1], key=key, where=where)
+    if not _QUOTED_LIST.fullmatch(raw):
+        raise LedgerError(LIST_SHAPE.format(where=_where(where), key=key))
+    items = tuple(
+        _unquote(run, key=key, where=where) for run in re.findall(_QUOTED, raw, re.DOTALL)
+    )
+    for item in items:
         if not item:
             raise LedgerError(EMPTY_ITEM.format(where=_where(where), key=key))
         if _CONTROL_CHARACTER.search(item):
             raise LedgerError(CONTROL_IN_ITEM.format(where=_where(where), key=key))
-        items.append(item)
-        index = _past_spaces(raw, closing + 1)
-        more = raw[index : index + 1] == ","
-        if more:
-            index = _past_spaces(raw, index + 1)
-    # The `]` and nothing after it: anything else past the last item, or no `]` at all, is a list
-    # this reader would otherwise end early.
-    if raw[index:] != "]":
-        raise shape
-    return tuple(items)
+    return items
 
 
 def _parse_related(raw: str, *, where: Path, ids: Identifiers) -> tuple[str, ...]:
@@ -249,25 +205,30 @@ def _parse_related(raw: str, *, where: Path, ids: Identifiers) -> tuple[str, ...
     return tuple(items)
 
 
-def _frontmatter(text: str) -> tuple[list[tuple[int, int, str]], str] | None:
+class _Line(NamedTuple):
+    """One frontmatter line: its number in the file, the offset in the text it starts at, and the
+    line without its line break."""
+
+    number: int
+    offset: int
+    text: str
+
+
+def _frontmatter(text: str) -> tuple[list[_Line], str] | None:
     """The frontmatter lines of an entry's `text` and the body after them, or `None` for a file
     with no frontmatter block at its top.
 
-    Each line comes as its number in the file, the offset in `text` it starts at, and the line
-    without its line break. The one reader of where a value sits: `parse_entry` reads the text
-    `read_ledger_text` translated to LF, and `renumber`'s sweep the text on disk, CRLF where a
-    checkout's `core.autocrlf` wrote it so, and both must find a value on the same line. The fences
-    are found on the file's own endings (`_BREAK`); the lines are split as `str.splitlines` splits
-    them, so a frontmatter value holding U+0085, U+2028 or a vertical tab is cut into two lines
-    there, the second of which is no `key: value`, and the entry is refused.
+    The one reader of where a value sits, for the text `read_ledger_text` translated to LF and for
+    the text on disk alike: the fences are found on the file's own endings (`_BREAK`), and the
+    lines are split wherever `str.splitlines` splits them.
     """
     match = _FRONTMATTER.match(text)
     if match is None:
         return None
-    lines: list[tuple[int, int, str]] = []
+    lines: list[_Line] = []
     offset = match.start(1)
     for number, piece in enumerate(match.group(1).splitlines(keepends=True), start=2):
-        lines.append((number, offset, piece.splitlines()[0]))
+        lines.append(_Line(number, offset, piece.splitlines()[0]))
         offset += len(piece)
     return lines, match.group(2)
 
@@ -367,10 +328,10 @@ def list_value_spans(text: str, lists: tuple[str, ...]) -> list[tuple[int, int]]
     if frontmatter is None:
         return []
     spans: list[tuple[int, int]] = []
-    for _, offset, line in frontmatter[0]:
-        key_value = _KEY_VALUE.match(line)
+    for line in frontmatter[0]:
+        key_value = _KEY_VALUE.match(line.text)
         if key_value is not None and key_value.group(1) in lists:
-            spans.append((offset + key_value.start(2), offset + len(line)))
+            spans.append((line.offset + key_value.start(2), line.offset + len(line.text)))
     return spans
 
 

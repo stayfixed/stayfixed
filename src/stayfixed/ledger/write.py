@@ -150,7 +150,7 @@ def next_identifier(root: Path, register: Register, *, fetch: bool = True) -> Al
         numbers.update(entry.number for entry in load_entries(root, register))
         numbers.update(
             ids.number(path.stem)
-            for path in directory.glob(f"{ids.prefix}-*.md")
+            for path in entry_paths(root, register)
             if ids.is_identifier(path.stem)
         )
     # Built from the register's directory like every other path here: spelled literally, a
@@ -385,14 +385,11 @@ def _void_pointer(register: Register, *, old: str, new: str, title: str, today: 
 
 
 def _substituted(pattern: re.Pattern[str], new: str, text: str, kept: list[tuple[int, int]]) -> str:
-    """`text` with every match of `pattern` replaced by `new`, outside the spans in `kept`."""
-    pieces: list[str] = []
-    start = 0
-    for begin, end in kept:
-        pieces += [pattern.sub(new, text[start:begin]), text[begin:end]]
-        start = end
-    pieces.append(pattern.sub(new, text[start:]))
-    return "".join(pieces)
+    """`text` with every match of `pattern` replaced by `new`, except a match starting inside one
+    of the spans in `kept`; matched over the whole text, so a span's edge is no boundary."""
+    return pattern.sub(
+        lambda match: match[0] if any(b <= match.start() < e for b, e in kept) else new, text
+    )
 
 
 def renumber(
@@ -525,9 +522,9 @@ def renumber(
         # runs over every file in the tree to rewrite the handful that carry the identifier.
         if item.text is None or old not in item.text:
             continue
-        kept: list[tuple[int, int]] = []
-        if item.path in entry_files:
-            kept = list_value_spans(item.text, register.schema.lists)
+        kept = (
+            list_value_spans(item.text, register.schema.lists) if item.path in entry_files else []
+        )
         rewritten = _substituted(pattern, new, item.text, kept)
         if rewritten == item.text:
             continue
