@@ -9,8 +9,10 @@ from pathlib import Path
 import pytest
 
 from stayfixed.config.loader import CONFIG_FILE, load
+from stayfixed.config.owner import resolve_owner
+from stayfixed.config.session import SessionConfig
 from stayfixed.guards import bgcleanup
-from stayfixed.guards.hooks import register
+from stayfixed.guards.hooks import ENV_READ_REFUSED, register
 from stayfixed.harnesses import CLAUDE
 from stayfixed.hooks.api import EVENTS, Decision, Handler, HookEvent, Policy
 from stayfixed.hooks.dispatch import Recorder, dispatch
@@ -80,9 +82,8 @@ def test_every_handler_declares_a_known_event() -> None:
 
 
 def test_the_background_guard_is_the_closed_pre_tool_use_handler() -> None:
-    # A guard for an action with a high cost of error fails closed. This is the only
-    # CLOSED handler in the plugin, and the policy is the whole difference between "could not
-    # judge" and "permitted".
+    # A guard for an action with a high cost of error fails closed. The policy is the whole
+    # difference between "could not judge" and "permitted".
     handler = guard()
     assert handler.event == "PreToolUse"
     assert handler.policy is Policy.CLOSED
@@ -97,6 +98,7 @@ def test_no_config_silences_the_hygiene_note_and_never_the_guard(tmp_path: Path)
     verdicts = {
         handler.event: handler.run(bash_event(tmp_path, "sleep 300 &"), NO_CONFIG)
         for handler in register()
+        if handler.name != "env-reads"
     }
     assert verdicts["PreToolUse"].decision == Decision.DENY
     assert verdicts["PreToolUse"].reason == bgcleanup.SLEEP_REASON
@@ -239,6 +241,118 @@ def test_a_leaking_background_call_is_denied_through_the_real_dispatcher(tmp_pat
     assert "refused: bg-cleanup:" in completed.stderr
     allowed = dict(payload, tool_input={"command": "make && make test", "run_in_background": True})
     completed = hook("PreToolUse", json.dumps(allowed), root)
+    assert completed.returncode == 0, completed.stderr
+
+
+def file_event(root: Path, tool: str, path: object) -> HookEvent:
+    key = "file_path" if tool == "Read" else "path"
+    tool_input: dict[str, object] = {key: path}
+    return HookEvent(
+        name="PreToolUse",
+        session_id="s1",
+        agent_id=None,
+        tool_name=tool,
+        tool_input=tool_input,
+        cwd=root,
+        project_root=root,
+        raw={"tool_name": tool, "tool_input": tool_input},
+    )
+
+
+def env_guard() -> Handler:
+    return next(h for h in register() if h.name == "env-reads")
+
+
+def test_the_env_guard_is_a_closed_pre_tool_use_handler() -> None:
+    # Closed in the dispatcher, so a handler that raises refuses the read; its wrapper entry is
+    # the open one, which `tests/hooks/test_hooks_json.py` holds.
+    handler = env_guard()
+    assert handler.event == "PreToolUse"
+    assert handler.policy is Policy.CLOSED
+
+
+@pytest.mark.parametrize(
+    ("tool", "path"),
+    [
+        ("Read", "/work/app/.env"),
+        ("Read", ".env.prod"),
+        # A name the preset's deny rules do not list: what the guard is for.
+        ("Read", "/work/app/deploy/.env.preprod"),
+        ("Read", "C:\\work\\app\\.env.local"),
+        ("Grep", "/work/app/.env.staging"),
+    ],
+)
+def test_a_file_tool_that_names_an_env_file_is_denied(tmp_path: Path, tool: str, path: str) -> None:
+    # Mutation: `mutations/`'s "the env guard lets every env file through" -> the decision goes.
+    result = env_guard().run(file_event(tmp_path, tool, path), NO_CONFIG)
+    assert result.decision is Decision.DENY
+    assert result.reason == ENV_READ_REFUSED
+
+
+@pytest.mark.parametrize(
+    ("tool", "path"),
+    [
+        # The case the guard exists beside: the file the deny mask used to refuse.
+        ("Read", "/work/app/deploy/.env.prod.example"),
+        ("Read", ".env.sample"),
+        ("Read", ".env.template"),
+        ("Read", "/work/app/settings.env.md"),
+        ("Grep", "/work/app"),
+        # No `path`: a search of the working directory, which this guard does not judge.
+        ("Grep", None),
+        ("Read", 7),
+    ],
+)
+def test_a_template_and_any_other_file_are_let_through(
+    tmp_path: Path, tool: str, path: object
+) -> None:
+    result = env_guard().run(file_event(tmp_path, tool, path), NO_CONFIG)
+    assert result.decision is None and result.reason is None
+
+
+@pytest.mark.parametrize("tool", ["Edit", "Write", "Bash"])
+def test_the_env_guard_judges_no_other_tool(tmp_path: Path, tool: str) -> None:
+    # An `Edit` of an env file is the owner's own deny rules' to refuse, if they want it, and a
+    # `Bash` command is never parsed for a path here. Mutation: `mutations/`'s "the env guard
+    # reads a path off every tool" -> the `Edit` is refused.
+    tool_input: dict[str, object] = {"file_path": ".env", "path": ".env"}
+    event = HookEvent(
+        name="PreToolUse",
+        session_id="s1",
+        agent_id=None,
+        tool_name=tool,
+        tool_input=tool_input,
+        cwd=tmp_path,
+        project_root=tmp_path,
+        raw={"tool_name": tool, "tool_input": tool_input},
+    )
+    assert env_guard().run(event, NO_CONFIG).decision is None
+
+
+def test_the_machine_owner_switches_the_env_guard_off(tmp_path: Path) -> None:
+    # Mutation: `mutations/`'s "the env guard ignores the owner's switch" -> the deny stays.
+    machine = tmp_path / "machine.toml"
+    machine.write_text("[guards]\nenv_reads = false\n", encoding="utf-8")
+    session = SessionConfig(None, resolve_owner(machine), ())
+    assert env_guard().run(file_event(tmp_path, "Read", ".env"), session).decision is None
+
+
+def test_an_env_read_is_denied_through_the_real_dispatcher(tmp_path: Path) -> None:
+    # The production path end to end, with no project configuration at all: the guard reads none.
+    root = tmp_path / "project"
+    root.mkdir()
+    payload = {
+        "hook_event_name": "PreToolUse",
+        "session_id": "s",
+        "cwd": str(root),
+        "tool_name": "Read",
+        "tool_input": {"file_path": str(root / ".env.preprod")},
+    }
+    completed = hook("PreToolUse", json.dumps(payload), root)
+    assert completed.returncode == 2
+    assert "refused: env-reads:" in completed.stderr
+    template = dict(payload, tool_input={"file_path": str(root / ".env.preprod.example")})
+    completed = hook("PreToolUse", json.dumps(template), root)
     assert completed.returncode == 0, completed.stderr
 
 

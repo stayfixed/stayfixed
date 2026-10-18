@@ -109,7 +109,7 @@ class Rendition:
 class Surface(StrEnum):
     """Where stayfixed enforces something, by how it reaches a session."""
 
-    # A hook that refuses a command before it runs: `bg-cleanup`.
+    # A hook that refuses a call before it runs: `bg-cleanup` and `env-reads`.
     GUARDS = "session guards"
     # A hook that adds context and refuses nothing: the test-hygiene note, the standing rules,
     # the volatile notes.

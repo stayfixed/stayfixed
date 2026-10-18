@@ -159,7 +159,7 @@ def test_a_background_hidden_in_a_shell_fed_heredoc_is_denied(delimiter: str) ->
         # The same body with an UNQUOTED delimiter -- which is what a writer must use to get
         # `$VAR` expanded. Measured DENIED before `_scan` stopped reading bodies as grammar:
         # `prepare` re-inserts an unquoted body into the scanned text, so its `&` arrived as
-        # an async operator from the plugin's only `Policy.CLOSED` handler.
+        # an async operator from one of the plugin's `Policy.CLOSED` handlers.
         "cat > /tmp/x.sh <<EOF\nsleep 300 &\nEOF",
         # The cost in the shape a person actually hits: a README line carrying a URL's query
         # separator, written with expansion wanted. Measured DENIED as well.
@@ -464,7 +464,7 @@ def test_the_shell_c_flag_matches_exactly_what_the_backtracking_pattern_did() ->
 
 
 def test_a_long_option_cluster_does_not_hang_the_closed_handler() -> None:
-    """`judge` runs in the plugin's only `Policy.CLOSED` `PreToolUse` handler, so the time it
+    """`judge` runs in a `Policy.CLOSED` `PreToolUse` handler, so the time it
     takes is part of its contract: a handler that does not answer refuses the call. The old
     `-[A-Za-z]*c[A-Za-z]*` backtracked quadratically on a cluster of `c`s ending in a
     non-letter -- measured through `judge`, INSIDE `MAX_COMMAND_CHARS`, at 1.09 s / 4.44 s /

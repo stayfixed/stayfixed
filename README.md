@@ -87,7 +87,8 @@ later package.
 
 stayfixed reaches an agent in four ways, and they do not hold alike on every agent. The
 **session guards** refuse a command before it runs (the `bg-cleanup` handler, which
-`stayfixed hook PreToolUse` runs on every shell call); the **session notices** add context and
+`stayfixed hook PreToolUse` runs on every shell call, and `env-reads`, which it runs on every file
+read); the **session notices** add context and
 refuse nothing (the test-hygiene note, the standing rules, the volatile notes); the **repository
 gates** — the bug, documentation, plan, commit and trail checks — run in CI through the reusable
 workflow; and the **methodology** is the skills and the `AGENTS.md` region. Each column is an
@@ -101,8 +102,12 @@ Codex.
 | repository gates | CI only | CI only |
 | methodology | instructions only | instructions only |
 
-One session guard blocks, `bg-cleanup`, and it judges only a command the agent runs in the
-background: one that leaves an `&` job behind with no `trap … EXIT` to stop it, or that begins with
+Two session guards block. `env-reads` refuses a `Read` or `Grep` of an env file — `.env`, or
+`.env.<anything>` — unless the name ends in `.example`, `.sample` or `.template`, so the template a
+project commits stays readable and editable while the files that hold credentials do not. It
+stands beside the deny rules `stayfixed setup` writes for the common env file names, which hold
+where no hook runs; an agent that reads files through its shell, as Codex does, is not judged by
+it. `bg-cleanup` judges only a command the agent runs in the background: one that leaves an `&` job behind with no `trap … EXIT` to stop it, or that begins with
 `sleep` (directly, or behind `env` or `uv run` and uv's options), is refused before it starts, and
 the refusal names the remedy. Other wrappers, such as `nohup`, `timeout` or `bash -c`, are not
 read through ([`docs/cli.md`](https://github.com/stayfixed/stayfixed/blob/main/docs/cli.md#stayfixed-guard-bg-cleanup) lists them). The same

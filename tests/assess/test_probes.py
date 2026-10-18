@@ -128,7 +128,9 @@ def test_the_count_is_whole_past_the_cap(tmp_path: Path) -> None:
 
 
 def test_a_tracked_env_file_is_a_warning_and_an_example_is_not(tmp_path: Path) -> None:
-    # Mutation (declared): the predicate's `== ".env"` becomes `== ".nothing"` -> reddens.
+    # Mutation: `mutations/`'s "the tracked-env probe stops reporting a committed .env file"
+    # inverts the probe's reading of `envfiles.is_env_file` -> the example is reported -> reddens.
+    # What an env file is is held in `tests/test_envfiles.py`.
     root = _repo(tmp_path)
     _write(root, ".env.example", "KEY=\n")
     commit(root, "chore: the files")

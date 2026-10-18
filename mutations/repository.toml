@@ -1020,7 +1020,7 @@ after = '''    "PreToolUse": [
       {
         "matcher": "bash",'''
 reddens = [
-  "tests/hooks/test_hooks_json.py::test_every_tool_matched_entry_matches_the_name_both_handlers_filter_on",
+  "tests/hooks/test_hooks_json.py::test_every_tool_matched_entry_matches_the_names_the_handlers_filter_on",
 ]
 
 # `type` is what tells the harness the entry is a command to run at all, and nothing read it:
@@ -1650,8 +1650,8 @@ reddens = [
 [[mutation]]
 name = "the README stops saying the blocking guard judges only backgrounded commands"
 file = "README.md"
-before = "it judges only a command the agent runs in the"
-after = "it judges a command the agent runs in the"
+before = "judges only a command the agent"
+after = "judges a command the agent"
 reddens = [
   "tests/test_documents.py::test_the_readme_says_only_the_owner_switches_a_guard_off_and_how_to_pass_one",
 ]
@@ -3436,3 +3436,12 @@ after = '"onFailure": "continue",'
 reddens = [
   "tests/hooks/test_hooks_json.py::test_the_closed_entry_blocks_when_it_cannot_answer_and_no_open_one_does",
 ]
+
+# The `env-reads` guard's entry is open: a wrapper that cannot start Python must not refuse every
+# file a session reads, and the preset's deny rules hold the env files by name meanwhile.
+[[mutation]]
+name = "the env guard's hooks entry is closed"
+file = "hooks/hooks.json"
+before = 'open hook PreToolUse"'
+after = 'closed hook PreToolUse"'
+reddens = ["tests/hooks/test_hooks_json.py::test_the_env_guard_has_an_open_entry_of_its_own_on_the_file_tools"]
