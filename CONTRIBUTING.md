@@ -70,6 +70,14 @@ sequence drives the screen. So a name the repository chose — a file name, a no
 command's `--json` carries the name, and `quoted` in a refusal, where the message is the only
 place the name appears.
 
+**A control names its adversary and its anchor.** A refusal, an approval, a pin or a check says
+whom it stops and what it trusts: the bytes or state the decision rests on, and who can write them.
+If the party it stops can reach that anchor more easily than it can pass the control, the control is
+a convenience, and a convenience never refuses a legitimate user and never asks again about what has
+not changed: it hints, warns or reports. The base branch in CI, the home the password database
+names and the git common directory are anchors a repository cannot move; anything the agent in the
+session can write through its shell is not one against that agent.
+
 Two narrower rules follow from the same stance. The code cites each by name, and this is where
 the name is defined.
 

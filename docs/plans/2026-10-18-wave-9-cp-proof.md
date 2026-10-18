@@ -211,8 +211,8 @@ part into every brief.
 5. **The lifecycle matrix**, walked at pre-flight like a task and again by the lifecycle seat:
    every command the pull request adds or changes × every change of configuration — set a value,
    change it, unset it, move a path, a step that fails part-way, `uninstall` — and, from HS1 on, ×
-   every layer that can carry the value (preset, repository, the overlay's three scopes, the
-   machine file).
+   every layer that can carry a value the command reads (preset, repository, the overlay's three
+   scopes, the machine file); a command that reads no configuration walks no layer.
 6. **The parallelism map.** Read-only seats run beside each other and beside the implementer;
    writers of one worktree serialise; one heavy local run (the full suite, the mutation oracle) at
    a time per host; no local full run while the same branch's CI runs.
@@ -1194,7 +1194,7 @@ def test_each_inherited_variable_is_scrubbed_and_counted(runner): ...
   `STAYFIXED_REQUIRE_RUNNERS=1 uv run pytest -m runners` once with the pinned runners installed under
   the scratchpad; paste each.
 - [ ] **Step 2:** the four seats in parallel. The lifecycle seat walks `prove`, `prove --junit` and
-  `gate` × no `stayfixed.toml`, a refused one, a newer one × an inherited and an assigned forging
+  `gate` × (for `gate` only, which reads configuration) no `stayfixed.toml`, a refused one, a newer one × an inherited and an assigned forging
   variable × a run from the root and from a subdirectory × a checkout with and without `origin` × a
   home and none × an interrupted and a timed-out run × `uninstall` (which leaves the records, and the
   documents say so).
