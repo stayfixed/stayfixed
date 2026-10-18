@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -386,6 +387,19 @@ def _void_pointer(register: Register, *, old: str, new: str, title: str, today: 
     return f"---\n{frontmatter}\n---\n{_VOID_BODY.format(new=new)}"
 
 
+def _identity(path: Path) -> tuple[int, int] | None:
+    """The file `path` reaches, as `(st_dev, st_ino)`, or `None` for none.
+
+    What the sweep tells its own files by. The scan spells a path as git lists it and the move as
+    the register is configured, and where a filesystem folds case, `docs/Bugs` and `docs/bugs` are
+    one directory: compared by spelling, the sweep rewrote the void pointer it had just written."""
+    try:
+        status = os.lstat(path)
+    except OSError:
+        return None
+    return (status.st_dev, status.st_ino)
+
+
 def _names(pattern: re.Pattern[str], text: str, spans: list[tuple[int, int]]) -> bool:
     """Whether `pattern` matches inside one of `spans` of `text`, read over the whole text."""
     return any(b <= match.start() < e for match in pattern.finditer(text) for b, e in spans)
@@ -506,20 +520,23 @@ def renumber(
             raise unfinished(f"{directory}/{old}.md", error) from error
 
     pattern = re.compile(rf"\b{re.escape(old)}\b")
-    excluded = {source, target, index_path(root, register)}
+    excluded = {_identity(path) for path in (source, target, index_path(root, register))}
+    excluded.discard(None)
     # An entry's list values are left as they are written, and the rest of the entry is swept. A
     # test whose name carries `old` in a scanned file is renamed by this same sweep, but no file
     # is, so an argv naming `old` may select nothing now, or name a path that is still right, and
     # only its reader can tell: each entry whose list still names `old`, the moved one included,
     # is named for them. An entry is what `load_entries` reads (`entry_paths`); a `regression:`
     # line in any other file is text.
-    entry_files = set(entry_paths(root, register))
+    entry_files = {_identity(path) for path in entry_paths(root, register)}
+    entry_files.discard(None)
     naming: list[str] = []
     if _names(pattern, moved, list_value_spans(moved, register.schema.lists)):
         naming.append(f"{directory}/{new}.md")
     unswept: list[Unswept] = []
     for item in scannable(root, citation_roots(root, config)):
-        if item.path in excluded:
+        identity = _identity(item.path)
+        if identity in excluded:
             continue
         # Different from undecodable: the file may well be text this sweep must rewrite, and
         # there is no way to find out. Reported rather than assumed clean.
@@ -534,9 +551,7 @@ def renumber(
         # runs over every file in the tree to rewrite the handful that carry the identifier.
         if item.text is None or old not in item.text:
             continue
-        kept = (
-            list_value_spans(item.text, register.schema.lists) if item.path in entry_files else []
-        )
+        kept = list_value_spans(item.text, register.schema.lists) if identity in entry_files else []
         if _names(pattern, item.text, kept):
             naming.append(item.relative.as_posix())
         rewritten = _substituted(pattern, new, item.text, kept)

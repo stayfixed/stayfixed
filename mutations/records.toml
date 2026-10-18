@@ -3810,11 +3810,23 @@ reddens = [
 ]
 
 # Only an entry file keeps its list values from the sweep.
+# The sweep knows its own files by identity, not spelling. That the spelling would be wrong
+# shows only where case folds (`test_renumber_knows_its_files_by_identity_where_the_directory_
+# differs_in_case`, no entry); that the endpoints are left out at all shows everywhere.
+[[mutation]]
+name = "the sweep rewrites the move's own endpoints"
+file = "src/stayfixed/ledger/write.py"
+before = '        if identity in excluded:'
+after = '        if False:'
+reddens = [
+  "tests/ledger/test_literals.py::test_renumber_leaves_the_files_it_left",
+]
+
 [[mutation]]
 name = "the sweep keeps list values in every file it rewrites"
 file = "src/stayfixed/ledger/write.py"
-before = '            list_value_spans(item.text, register.schema.lists) if item.path in entry_files else []'
-after = '            list_value_spans(item.text, register.schema.lists)'
+before = '        kept = list_value_spans(item.text, register.schema.lists) if identity in entry_files else []'
+after = '        kept = list_value_spans(item.text, register.schema.lists)'
 reddens = [
   "tests/ledger/test_list_field.py::test_renumber_sweeps_a_regression_line_in_a_file_that_is_no_entry",
 ]

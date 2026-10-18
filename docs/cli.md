@@ -921,7 +921,9 @@ naming either, still names the renumber.
 Move an entry to a free identifier: `NEW` gets the entry with its `id:` rewritten, `OLD` becomes
 a `void` pointer at the new number, every scanned file that mentions `OLD` is rewritten, and the
 index is regenerated. Both endpoints are written first, then the sweep, so an interruption leaves
-`OLD` resolving to the pointer rather than to nothing.
+`OLD` resolving to the pointer rather than to nothing. The sweep knows the endpoints, the index
+and the entries by the file, not by how its path is spelt, so a ledger directory committed in
+another case than it is configured in, on a filesystem that folds case, is still one directory.
 
 A run that was killed part-way is finished by running the same move again. The re-run recognises
 the move's own half-done state: `NEW` holding exactly `OLD`'s text with the `id:` line rewritten,

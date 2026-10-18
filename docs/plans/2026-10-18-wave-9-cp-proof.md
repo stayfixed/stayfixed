@@ -1448,6 +1448,10 @@ naming a path is still right after the move, since the sweep renames no file, so
 the argv nor a `bugs check` finding against it could be right for both shapes; the reader of the
 argv decides.
 
-Still open, older than this branch: `renumber` deciding membership by path spelling rather than
-file identity, which corrupts a void pointer on a case-insensitive filesystem whose configured
-directory differs in case from the committed one.
+The owner then had the older defect the review found fixed here too: `renumber` told its own files
+from the rest by how a path was spelt, the scan's paths as git lists them and its own as
+configured, so on a filesystem that folds case, with the ledger committed as `docs/Bugs` and
+configured as `docs/bugs`, the sweep rewrote the void pointer's `id:`. It now compares
+`(st_dev, st_ino)`. The test reproducing it runs only where case folds, macOS's CI leg among
+them, and no mutation is declared for it, since the oracle runs on Linux; a spelling-based
+identity put in by hand reddens it.

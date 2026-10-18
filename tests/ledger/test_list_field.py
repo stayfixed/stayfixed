@@ -31,7 +31,7 @@ from stayfixed.ledger.entries import (
 from stayfixed.ledger.register import BUG_SCHEMA, Section, bug_register
 from stayfixed.printed import quoted
 from tests.cli import cli
-from tests.gitfixture import needs_git
+from tests.gitfixture import git, needs_git
 from tests.ledger.fixture import ARGV, ledger_copy, literal, on_one_day
 from tests.ledger.kills import killed_at
 from tests.snapshot import assert_snapshot_unchanged, snapshot
@@ -515,3 +515,33 @@ def test_the_bug_ledger_declares_regression_as_its_one_list() -> None:
     assert BUG_SCHEMA.keys[-2:] == ("related", "regression")
     assert "regression" not in BUG_SCHEMA.scalar_keys
     assert BUG_SCHEMA.scalar_keys == BUG_SCHEMA.keys[:-1]
+
+
+@needs_git
+def test_renumber_knows_its_files_by_identity_where_the_directory_differs_in_case(
+    tmp_path: Path,
+) -> None:
+    # The configuration names `docs/bugs` and git tracks `docs/Bugs`: on a filesystem that folds
+    # case the two are one directory, the scan lists each file as git spells it, and the move
+    # spells its own files as configured. Told apart by spelling, the sweep rewrote the void
+    # pointer it had just written, `id: BR-009` beside `BR-002.md`, and an argv naming BR-002 in
+    # an entry it did not know for one. No mutation is declared: the case exists only where case
+    # folds, and every declared entry must hold on Linux, where the oracle runs, as on macOS.
+    def committed_as_bugs_with_a_capital(root: Path) -> None:
+        with_regression(root, "BR-004.md", VALID_ARGV)
+        git(root, "mv", "docs/bugs", "docs/moving")
+        git(root, "mv", "docs/moving", "docs/Bugs")
+        git(root, "commit", "-qam", "the ledger directory, capitalised")
+
+    root, today, printed = on_one_day(
+        tmp_path,
+        "clean",
+        ["bugs", "renumber", "BR-002", "BR-009"],
+        prepare=committed_as_bugs_with_a_capital,
+    )
+    if not (root / "docs" / "bugs").exists():
+        pytest.skip("this filesystem keeps case apart, so docs/bugs is not docs/Bugs")
+    bugs = root / "docs" / "bugs"
+    assert printed[0] == 0, printed
+    assert (bugs / "BR-002.md").read_text(encoding="utf-8") == literal("renumber.void.md", today)
+    assert f"regression: {VALID_ARGV}\n" in (bugs / "BR-004.md").read_text(encoding="utf-8")
