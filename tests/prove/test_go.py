@@ -139,6 +139,8 @@ def test_the_plan_neutralises_the_go_environment(tmp_path: Path) -> None:
         (["go", "test", "-C=sub", "-json"], ("-C=sub", "-json")),
         (["go", "test", "./...", "-C", "sub"], ("-json", "./...", "-C", "sub")),
         (["go", "test", "-args", "-json"], ("-json", "-args", "-json")),
+        (["go", "test", "./...", "--", "-json"], ("-json", "./...", "--", "-json")),
+        (["go", "test", "-test.p", "-json", "./..."], ("-json", "-test.p", "./...")),
     ],
     ids=[
         "kept-once",
@@ -148,14 +150,17 @@ def test_the_plan_neutralises_the_go_environment(tmp_path: Path) -> None:
         "after-C-with-equals",
         "C-not-first",
         "args",
+        "terminator",
+        "test-prefixed-build-flag",
     ],
 )
 def test_one_json_after_a_leading_C(
     tmp_path: Path, command: list[str], args: tuple[str, ...]
 ) -> None:
-    # `-C` is read only as the first flag, and a word past `-args` is the test binary's.
-    # Mutations (declared): the command's own `-json` kept beside the report's -> `kept-once`
-    # holds two; `-json` put before a leading `-C` -> `after-C` starts with it.
+    # `-C` is read only as the first flag, a word past `-args` or `--` is the test binary's, and
+    # a build flag spelled `-test.` takes no value. Mutations (declared): the command's own
+    # `-json` kept beside the report's -> `kept-once` holds two; `-json` put before a leading `-C`
+    # -> `after-C` starts with it.
     assert argv_of(command, tmp_path) == args
 
 
@@ -204,13 +209,44 @@ def test_the_file_modfile_names_is_among_the_configs(tmp_path: Path) -> None:
     # Mutation (declared): the named file left out -> the adapter's own globs alone.
     go = executable(tmp_path / "bin" / "go")
     got = planned(
-        ["go", "test", "-modfile", "ci/go.mod", "--modfile=../alt.mod", "-args", "-modfile=x"],
+        [
+            *("go", "test", "-modfile", "ci/go.mod", "--modfile=../alt.mod"),
+            *("-test.tags", "-modfile=t.mod", "-args", "-modfile=x"),
+        ],
         tmp_path,
         path=str(go.parent),
     )
     assert isinstance(got, Plan), got
     real = Path(os.path.realpath(tmp_path))
-    assert got.configs == (*CONFIGS, str(real / "ci" / "go.mod"), str(real.parent / "alt.mod"))
+    assert got.configs == (
+        *CONFIGS,
+        str(real / "ci" / "go.mod"),
+        str(real.parent / "alt.mod"),
+        str(real / "t.mod"),
+    )
+
+
+@pytest.mark.parametrize(
+    ("command", "named"),
+    [
+        (["go", "test", "-C", "sub", "-modfile=alt.mod"], "sub/alt.mod"),
+        (["go", "test", "--C=sub", "-modfile", "alt.mod"], "sub/alt.mod"),
+        (["go", "test", "-modfile=alt.mod", "-C", "sub"], "alt.mod"),
+        (["go", "test", "./...", "--", "-modfile=x", "-modfile=alt.mod"], None),
+    ],
+    ids=["C", "C-with-equals", "C-not-first", "terminator"],
+)
+def test_the_file_modfile_names_is_read_from_where_go_reads_it(
+    tmp_path: Path, command: list[str], named: str | None
+) -> None:
+    # Measured on Go 1.27.2: under a leading `-C sub`, `-modfile=alt.mod` reads `sub/alt.mod`,
+    # and a word past `--` is the test binary's. Mutation (declared): `-modfile` read from the
+    # run's directory under a leading `-C` -> `C` names `alt.mod`.
+    go = executable(tmp_path / "bin" / "go")
+    got = planned(command, tmp_path, path=str(go.parent))
+    assert isinstance(got, Plan), got
+    real = Path(os.path.realpath(tmp_path))
+    assert got.configs == (*CONFIGS, *(() if named is None else (str(real / named),)))
 
 
 # --- What is refused ------------------------------------------------------------------------
@@ -242,6 +278,10 @@ def test_the_file_modfile_names_is_among_the_configs(tmp_path: Path) -> None:
         (("-args=true", "-exec=x"), "-exec"),
         (("-args=false", "-exec=x"), "-exec"),
         (("-test.args", "-exec=x"), "-exec"),
+        # A build flag spelled `-test.` is no flag of the go command's, so it takes no value
+        # (measured on Go 1.27.2: `./pkg -test.p -exec=X` runs X).
+        (("./...", "-test.p", "-exec=x"), "-exec"),
+        (("-test.tags", "x", "-toolexec=y"), "-toolexec"),
     ],
     ids=lambda value: "_".join(value) if isinstance(value, tuple) else value,
 )
@@ -277,6 +317,9 @@ def test_each_forging_flag_is_refused(tmp_path: Path, flag: tuple[str, ...], nam
         ("-test.c",),
         ("-test.exec=x",),
         ("-test.run", "-exec"),
+        # Nor is a word past a bare `--` (measured: `./pkg -- -exec=X` runs no X).
+        ("--", "-exec=y"),
+        ("./...", "--", "-c", "-o", "x", "-toolexec=y"),
     ],
     ids=lambda value: "_".join(value),
 )
@@ -286,6 +329,52 @@ def test_every_other_flag_is_free(tmp_path: Path, flags: tuple[str, ...]) -> Non
     # flag; `-args` read past; `-c=false` refused as `-c` is -> each one's case is refused.
     go = executable(tmp_path / "bin" / "go")
     assert isinstance(planned(["go", "test", *flags], tmp_path, path=str(go.parent)), Plan)
+
+
+# The go command's own flags that take a value (Go 1.27.2, `go help build` and `go help testflag`
+# with the hidden `-debug-*`), as it registers them: a build flag by its bare name only, a flag
+# the test binary takes by its bare name and by its `test.` name.
+BUILD_FLAGS_TAKING_A_VALUE = (
+    *("C", "p", "covermode", "coverpkg", "asmflags", "buildmode", "compiler", "gccgoflags"),
+    *("gcflags", "installsuffix", "ldflags", "mod", "modfile", "overlay", "pgo", "pkgdir"),
+    *("tags", "toolexec", "exec", "o", "vet"),
+    *("debug-actiongraph", "debug-runtime-trace", "debug-trace"),
+)
+TEST_FLAGS_TAKING_A_VALUE = (
+    *("bench", "benchtime", "blockprofile", "blockprofilerate", "count", "coverprofile", "cpu"),
+    *("cpuprofile", "fuzz", "fuzzminimizetime", "fuzztime", "list", "memprofile"),
+    *("memprofilerate", "mutexprofile", "mutexprofilefraction", "outputdir", "parallel"),
+    *("run", "shuffle", "skip", "timeout", "trace"),
+)
+
+
+@pytest.mark.parametrize("name", BUILD_FLAGS_TAKING_A_VALUE)
+def test_a_build_flag_spelled_test_takes_no_value(tmp_path: Path, name: str) -> None:
+    # Measured on Go 1.27.2 for each: `go test ./three/ -test.<name> -exec=X` runs X, and
+    # `-<name> -exec=X` runs none. Mutation (declared): a build flag's `test.` spelling read as
+    # taking a value -> each case is planned.
+    assert planned(["go", "test", "./...", f"-test.{name}", "-exec=x"], tmp_path) == Refused(
+        REFUSED_OPTION, "-exec"
+    )
+    go = executable(tmp_path / "bin" / "go")
+    got = planned(["go", "test", "./...", f"-{name}", "-exec=x"], tmp_path, path=str(go.parent))
+    if name in ("exec", "toolexec", "overlay", "o"):
+        assert got == Refused(REFUSED_OPTION, f"-{name}")
+    else:
+        assert isinstance(got, Plan), got
+
+
+@pytest.mark.parametrize("spelling", ["", "test."])
+@pytest.mark.parametrize("name", TEST_FLAGS_TAKING_A_VALUE)
+def test_a_test_binary_flag_takes_its_value_in_either_spelling(
+    tmp_path: Path, name: str, spelling: str
+) -> None:
+    # Measured on Go 1.27.2 for each: `-<name> -exec=X` and `-test.<name> -exec=X` run no X.
+    go = executable(tmp_path / "bin" / "go")
+    got = planned(
+        ["go", "test", "./...", f"-{spelling}{name}", "-exec=x"], tmp_path, path=str(go.parent)
+    )
+    assert isinstance(got, Plan), got
 
 
 # --- Through prove, with a go that prints a recorded stream ----------------------------------

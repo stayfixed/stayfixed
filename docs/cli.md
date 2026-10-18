@@ -901,13 +901,16 @@ the run's environment, so the `go` that runs finds its own root and builds for t
 refuses (`refused-option`, naming the flag) `-exec`, `-toolexec`, `-overlay`, `-o`, `-c` unless it
 is `-c=false`, and a `-json=` of a false value, each read as the go command reads it: spaced or with
 `=`, with one dash or two, before the packages or after them, a word that is a flag's value never as
-a flag, and nothing past a bare `-args` or `--args` (`-args=x` ends nothing). Every other flag is
+a flag, a build flag spelled `-test.` (`-test.p`, `-test.tags`), which the go command does not know
+and hands to the test binary, as taking no value, and nothing past a bare `-args`, `--args` or `--`
+(`-args=x` ends nothing). Every other flag is
 free, `-ldflags`, `-gcflags` and `-compiler` among them, as are `CC`, `CXX` and the `CGO_*`
 variables: they shape how the code under test is built, which the bound concedes. Its forging set is
 `GOFLAGS`, `GOENV`, `GOTOOLCHAIN`, `GOROOT`, which names the standard library the run builds
 against, and `GOOS` and `GOARCH`, under which a target this machine cannot run has the go command
 run the tests under the `go_$GOOS_$GOARCH_exec` it finds on `PATH`. Its configuration files are
-`go.mod` and `go.work`, and the file `-modfile` names; its discovery set is `*_test.go`. The bound
+`go.mod` and `go.work`, and the file `-modfile` names, read from the directory a leading `-C`
+names; its discovery set is `*_test.go`. The bound
 has a Go case of its own: a test, or a `TestMain`, that prints test2json's own framing (`\x16---
 PASS: TestX`) gets a `pass` event for a test that never ran, and that is the code under test shaping
 its report.

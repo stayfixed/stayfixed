@@ -2983,11 +2983,56 @@ reddens = [
 [[mutation]]
 name = "the test binary's words past -args are read as go's"
 file = "src/stayfixed/profiles/go/adapters.py"
-before = """        if word in _ARGS:
+before = """        if word in _ENDS:
             break"""
-after = """        if word in _ARGS:
+after = """        if word in _ENDS:
             continue"""
 reddens = ["tests/prove/test_go.py::test_every_other_flag_is_free[-args_-c_-o_x_-exec=y]"]
+
+[[mutation]]
+name = "a bare -- is read as no end of go's flags"
+file = "src/stayfixed/profiles/go/adapters.py"
+before = '_ENDS = frozenset({"-args", "--args", "--"})'
+after = '_ENDS = frozenset({"-args", "--args"})'
+reddens = [
+  "tests/prove/test_go.py::test_every_other_flag_is_free[--_-exec=y]",
+  "tests/prove/test_go.py::test_one_json_after_a_leading_C[terminator]",
+  "tests/prove/test_go.py::test_the_file_modfile_names_is_read_from_where_go_reads_it[terminator]",
+]
+
+# go registers a `test.` spelling for the test binary's flags only: a build flag spelled so is a
+# flag it does not know, which takes no value.
+[[mutation]]
+name = "a build flag's test. spelling is read as taking a value"
+file = "src/stayfixed/profiles/go/adapters.py"
+before = '    return f"-{name}" in _BUILD_VALUED or'
+after = '    return f"-{name.removeprefix(_TEST_PREFIX)}" in _BUILD_VALUED or'
+reddens = [
+  "tests/prove/test_go.py::test_each_forging_flag_is_refused[./..._-test.p_-exec=x--exec]",
+  "tests/prove/test_go.py::test_each_forging_flag_is_refused[-test.tags_x_-toolexec=y--toolexec]",
+  "tests/prove/test_go.py::test_a_build_flag_spelled_test_takes_no_value[p]",
+  "tests/prove/test_go.py::test_one_json_after_a_leading_C[test-prefixed-build-flag]",
+]
+
+[[mutation]]
+name = "a test binary flag's test. spelling is read as taking no value"
+file = "src/stayfixed/profiles/go/adapters.py"
+before = 'or f"-{name.removeprefix(_TEST_PREFIX)}" in _TEST_VALUED'
+after = 'or f"-{name}" in _TEST_VALUED'
+reddens = [
+  "tests/prove/test_go.py::test_every_other_flag_is_free[-test.run_-exec]",
+  "tests/prove/test_go.py::test_a_test_binary_flag_takes_its_value_in_either_spelling[run-test.]",
+]
+
+[[mutation]]
+name = "the go test adapter reads -modfile from the run's directory under a leading -C"
+file = "src/stayfixed/profiles/go/adapters.py"
+before = '    base = cwd / (_leading_directory(flags) or "")'
+after = "    base = cwd"
+reddens = [
+  "tests/prove/test_go.py::test_the_file_modfile_names_is_read_from_where_go_reads_it[C]",
+  "tests/prove/test_go.py::test_the_file_modfile_names_is_read_from_where_go_reads_it[C-with-equals]",
+]
 
 [[mutation]]
 name = "go's -c=false is refused as -c is"
@@ -3046,8 +3091,8 @@ reddens = ["tests/prove/test_go.py::test_go_test_is_recognised[command2-False]"]
 [[mutation]]
 name = "an -args with a value is read as the end of go's flags"
 file = "src/stayfixed/profiles/go/adapters.py"
-before = "        if word in _ARGS:"
-after = '        if name == "args":'
+before = "        if word in _ENDS:"
+after = '        if word.partition("=")[0] in _ENDS:'
 reddens = [
   "tests/prove/test_go.py::test_each_forging_flag_is_refused[-args=x_-toolexec=y--toolexec]",
   "tests/prove/test_go.py::test_each_forging_flag_is_refused[-args=false_-exec=x--exec]",

@@ -24,7 +24,8 @@ command; the anchor of each refusal is the command's own words.
   on Go 1.27.2 it still runs the tests), and a `-json=` of a false value (which turns the report
   off). Each is read as the go command reads it: spaced or with `=`, with one dash or two, before
   the packages or after them, a boolean's `=` value as `strconv.ParseBool` reads it, a word that is
-  a flag's value never as a flag, and nothing past a bare `-args` or `--args`, which is the test
+  a flag's value never as a flag (a build flag spelled `-test.`, which the go command does not
+  know, taking none), and nothing past a bare `-args`, `--args` or `--`, which is the test
   binary's. The list is closed, drawn by running every flag `go test` and `go build` register over
   a failing test with `-json` added, and every other flag is free.
 - `FORGING`, assigned in the command (refused): `GOFLAGS`, `GOENV` and `GOTOOLCHAIN`, the three
@@ -68,10 +69,11 @@ REPORT_NAME = "events.jsonl"
 _GO = "go"
 _TEST = "test"
 _JSON = "json"
-# The words that end the go command's own flags: `-args` and `--args` bare. Measured on Go
-# 1.27.2: `-args=x`, `-args=false` and `-test.args` end nothing, and a refused flag after one
-# runs.
-_ARGS = frozenset({"-args", "--args"})
+# The words that end the go command's own flags: `-args`, `--args` and the terminator `--`,
+# bare; every word after one is the test binary's. Measured on Go 1.27.2: `-args=x`,
+# `-args=false` and `-test.args` end nothing, and a refused flag after one runs; past `--` none
+# does.
+_ENDS = frozenset({"-args", "--args", "--"})
 _CHANGE_DIRECTORY = "C"
 _MODFILE = "modfile"
 _NO_GO = "no go on PATH"
@@ -82,15 +84,16 @@ _BUILD_ONLY = "c"
 # What the go command's flags read a boolean's `=` value as (`strconv.ParseBool`).
 _TRUE = frozenset({"1", "t", "T", "TRUE", "true", "True"})
 _FALSE = frozenset({"0", "f", "F", "FALSE", "false", "False"})
-# The prefix the go command reads a test flag by as well (`-test.run`); a build flag spelled with
-# it is no flag the go command takes (measured: `-test.exec`, `-test.c` and `-test.o` end the run
-# in an error before any test).
+# The prefix the go command reads a flag of the test binary's by as well (`-test.run`). It
+# registers no such spelling for a build flag: to it `-test.exec`, `-test.c` or `-test.p` is a flag
+# it does not know, handed to the test binary, which takes no value, so the next word is read as a
+# flag of the go command's (measured on Go 1.27.2: `./pkg -test.p -exec=X` runs X).
 _TEST_PREFIX = "test."
-# The flags of `go test` and `go build` that take their value as the next word where `=` does
-# not give it (Go 1.27.2's `go help testflag` and `go help build`), so that the word after one is
-# never read as a flag of its own. The `test.` spellings of the test flags among them are these
-# too.
-_VALUED = frozenset(
+# The go command's own flags that take their value as the next word where `=` does not give it,
+# as Go 1.27.2 registers them for `go test` (`go help build`, `go help testflag`, and the hidden
+# `-debug-*`), so that the word after one is never read as a flag of its own: the build flags, by
+# their bare name only, and the test binary's, by their bare name and their `test.` name.
+_BUILD_VALUED = frozenset(
     {
         "-C",
         "-p",
@@ -112,6 +115,14 @@ _VALUED = frozenset(
         "-toolexec",
         "-exec",
         "-o",
+        "-vet",
+        "-debug-actiongraph",
+        "-debug-runtime-trace",
+        "-debug-trace",
+    }
+)
+_TEST_VALUED = frozenset(
+    {
         "-bench",
         "-benchtime",
         "-count",
@@ -125,7 +136,6 @@ _VALUED = frozenset(
         "-run",
         "-skip",
         "-timeout",
-        "-vet",
         "-shuffle",
         "-blockprofile",
         "-blockprofilerate",
@@ -140,6 +150,11 @@ _VALUED = frozenset(
 )
 
 
+def _takes_value(name: str) -> bool:
+    """Whether the go command reads the flag `name` (past its dashes) as taking a value."""
+    return f"-{name}" in _BUILD_VALUED or f"-{name.removeprefix(_TEST_PREFIX)}" in _TEST_VALUED
+
+
 def _flag(word: str) -> tuple[str, str | None] | None:
     """A flag word's name, past one or two dashes, and its value where `=` gives one; `None` for
     a word that is no flag."""
@@ -151,20 +166,20 @@ def _flag(word: str) -> tuple[str, str | None] | None:
 
 def _flags(args: Sequence[str]) -> list[tuple[int, str, str | None]]:
     """`go test`'s own flags in `args`: each one's index, name and value (`=`'s, or the next
-    word's for a flag that takes one), up to an `-args`."""
+    word's for a flag that takes one), up to a bare `-args`, `--args` or `--`."""
     found: list[tuple[int, str, str | None]] = []
     skip = False
     for index, word in enumerate(args):
         if skip:
             skip = False
             continue
+        if word in _ENDS:
+            break
         read = _flag(word)
         if read is None:
             continue
         name, value = read
-        if word in _ARGS:
-            break
-        if value is None and f"-{name.removeprefix(_TEST_PREFIX)}" in _VALUED:
+        if value is None and _takes_value(name):
             value = args[index + 1] if index + 1 < len(args) else None
             skip = True
         found.append((index, name, value))
@@ -184,6 +199,14 @@ def refused_option(args: Sequence[str]) -> str | None:
     return None
 
 
+def _leading_directory(flags: Sequence[tuple[int, str, str | None]]) -> str | None:
+    """The directory a leading `-C` names, which the go command changes to before anything else
+    and reads only as the first word."""
+    if flags and flags[0][0] == 0 and flags[0][1] == _CHANGE_DIRECTORY:
+        return flags[0][2]
+    return None
+
+
 def _planned_args(args: Sequence[str]) -> tuple[str, ...]:
     """`args` with the report's `-json` added, after a leading `-C dir`, and the command's own
     `-json` dropped."""
@@ -197,12 +220,13 @@ def _planned_args(args: Sequence[str]) -> tuple[str, ...]:
 
 
 def _modfiles(args: Sequence[str], cwd: Path) -> tuple[str, ...]:
-    """The realpath of the file each `-modfile` names, read from `cwd`: an absolute entry of
-    `Plan.configs`, which names that one file."""
+    """The realpath of the file each `-modfile` names, read from the directory a leading `-C`
+    names, else from `cwd` (measured on Go 1.27.2: `-C sub -modfile=alt.mod` reads
+    `sub/alt.mod`): an absolute entry of `Plan.configs`, which names that one file."""
+    flags = _flags(args)
+    base = cwd / (_leading_directory(flags) or "")
     return tuple(
-        os.path.realpath(cwd / value)
-        for _, name, value in _flags(args)
-        if name == _MODFILE and value
+        os.path.realpath(base / value) for _, name, value in flags if name == _MODFILE and value
     )
 
 
