@@ -1331,7 +1331,7 @@ each yield **one whole-file testcase**: `name` equal to the basename of its `fil
 `classname="test"`, no child, reported as a pass. A file that fails to load (a syntax error, a throw)
 yields the same whole-file testcase **with a `failure` child** and a `failure` attribute, exit 1.
 
-**jest** (`30.5.2`, `bin` is the string `./bin/jest.js`; `jest-cli`'s is `{"jest": "./bin/jest.js"}`):
+**jest** (`30.5.2`, `bin` is the string ./bin/jest.js; `jest-cli`'s is {"jest": "./bin/jest.js"}):
 an empty run exits 1 ("No tests found") and with `--passWithNoTests` 0, both writing a report with an
 empty `testResults`; `test.todo` is `todo`, `test.skip` `pending`, and a file holding a `todo` has the
 file status `focused`; a file that fails to load has `status: "failed"`, an empty
@@ -1340,7 +1340,7 @@ file status `focused`; a file that fails to load has `status: "failed"`, an empt
 
 **vitest** (`5.0.5`, `bin` `{"vitest": "./vitest.mjs"}`): skip is `skipped`, todo `todo`; an empty run
 exits 1 with a report; a load failure as jest's. With `--reporter=json` and no output file, the
-report goes to `.vitest/json/output.json` **inside the project**. Precedence, measured case by case:
+report goes to .vitest/json/output.json **inside the project**. Precedence, measured case by case:
 
 | configuration | `--outputFile=<report>` | `--outputFile.json=<report>` |
 |---|---|---|
@@ -1480,7 +1480,7 @@ Built as planned, with these changes the review and the controller's rulings mad
   stopped at the launcher, so `uv run env PYTEST_ADDOPTS=… pytest` escaped the refusal.
 - uv's file-loading launcher options (`--env-file`, `--config-file`) and their variables
   (`UV_ENV_FILE`, `UV_CONFIG_FILE`) are refused for every adapter, from a closed list in
-  `guards/uvrun.py`; an inherited variable is scrubbed under `uv run`.
+  `src/stayfixed/guards/uvrun.py`; an inherited variable is scrubbed under `uv run`.
 - `guards.api` publishes `read_launch`/`Launch`, not `command_words`: a positional split cannot tell
   an assignment from a uv option's value.
 - `--json` is read only before the first `--`; under `--json` the runner's standard output goes to
@@ -1535,3 +1535,24 @@ record. Changes against the text:
 - Go in the `runners` job comes from the module proxy's toolchain zip checked against the SHA-256
   recorded in `tests/fixtures/prove/README.md`, since no pinned `actions/setup-go` sha is in the
   tree.
+
+### Wave H (controller, 2026-10-18)
+
+Implementer about 530k tokens; the fix round went to a fresh agent (about 260k). Changes against the
+text:
+
+- No record is written inside any git checkout, asked from the evidence directory's nearest
+  existing part (the first text asked only the run's repository, so a dotfiles checkout at `~`
+  took every nested project's records). A bare-repository dotfiles setup is out of reach, and the
+  documents say so. The password database's home is followed through a link before the walk.
+- `gate` writes one record when its configuration check produced a result, and none on a missing
+  configuration, a refused machine file or an unknown `--only`; argparse's usage errors never reach
+  it.
+- The upload step carries `continue-on-error: true` and the run attempt in the artifact's name.
+- The bound is one constant, `stayfixed.prove.run.BOUND`, that `docs/cli.md` quotes.
+- An empty jest run whose standard error is a pipe writes no report (measured on 30.5.2), so it is
+  `not proven`, not `failed`; it is never `proved`.
+- The receipt and the record name the runner's entry (`entry`) where the program is node.
+- The first CI run of the pull request found three test defects, fixed in the tests: a cleanup kill
+  of a child that had already ended, a `/etc` expectation macOS spells `/private/etc`, and a
+  `-n auto` check the new `runners` job's line satisfied.
