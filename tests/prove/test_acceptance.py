@@ -223,17 +223,6 @@ ROUTES = {
     "go -exec": (("go", "test", "-exec=/bin/true", "./..."), REFUSED_OPTION, "-exec"),
     # an assigned variable in each adapter's forging set
     "PYTHONOPTIMIZE=": (("PYTHONOPTIMIZE=1", "pytest"), ASSIGNED_FORGING, "PYTHONOPTIMIZE"),
-    "NODE_OPTIONS= jest": (("NODE_OPTIONS=-r x", "npx", "jest"), ASSIGNED_FORGING, "NODE_OPTIONS"),
-    "NODE_OPTIONS= vitest": (
-        ("env", "NODE_OPTIONS=-r x", "npx", "vitest", "run"),
-        ASSIGNED_FORGING,
-        "NODE_OPTIONS",
-    ),
-    "NODE_TEST_CONTEXT=": (
-        ("NODE_TEST_CONTEXT=child", "node", "--test"),
-        ASSIGNED_FORGING,
-        "NODE_TEST_CONTEXT",
-    ),
     "GOFLAGS=": (("GOFLAGS=-toolexec=x", "go", "test", "./..."), ASSIGNED_FORGING, "GOFLAGS"),
 }
 
@@ -251,14 +240,11 @@ def test_each_refused_route_exits_2(tmp_path: Path, route: str) -> None:
 INHERITED = {
     # Each would change what runs or where its report goes, had it reached the runner.
     "pytest": ("PYTHONOPTIMIZE", "1"),
-    "jest": ("NODE_OPTIONS", "--require /no/such/preload.js"),
-    "vitest": ("NODE_OPTIONS", "--require /no/such/preload.js"),
-    "node-test": ("NODE_TEST_CONTEXT", "child-v8"),
     "go-test": ("GOFLAGS", "-run=NoSuchTest"),
 }
 
 
-@pytest.mark.parametrize("runner", each_runner(*RUNNERS))
+@pytest.mark.parametrize("runner", each_runner(*INHERITED))
 def test_each_inherited_variable_is_scrubbed_and_counted(tmp_path: Path, runner: str) -> None:
     name, value = INHERITED[runner]
     argv: tuple[str, ...]
@@ -266,9 +252,6 @@ def test_each_inherited_variable_is_scrubbed_and_counted(tmp_path: Path, runner:
         cwd, argv, counts = pytest_project(tmp_path / "p", passing=2), PYTEST, Counts(2, 0, 0)
     elif runner == "go-test":
         cwd, argv, counts = module(tmp_path), ("go", "test", "./passing/"), Counts(1, 0, 1)
-    else:
-        cwd = js_project(tmp_path / "p", runner, FILES[runner][1])
-        argv, counts = tuple(COMMANDS[runner]), Counts(1, 0, 1)
     verdict, code, receipt = run_prove(tmp_path, cwd, *argv, variables={name: value})
     assert (verdict, code, counted(receipt)) == ("proved", 0, counts), receipt
     scrubbed = receipt["scrubbed"]
