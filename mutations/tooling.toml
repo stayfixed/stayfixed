@@ -2542,10 +2542,20 @@ reddens = ["tests/scripts/test_release.py::test_every_command_opens_its_own_help
 name = "the wheel need not carry the Python profile's hint"
 file = "scripts/check_artifacts.py"
 before = """    "stayfixed/profiles/python/hygiene.py",
+"""
+after = ""
+reddens = [
+  "tests/scripts/test_check_artifacts.py::test_a_wheel_without_the_python_profiles_code_is_named[stayfixed/profiles/python/hygiene.py]",
+]
+
+[[mutation]]
+name = "the wheel need not carry the Python profile's runner adapter"
+file = "scripts/check_artifacts.py"
+before = """    "stayfixed/profiles/python/adapters.py",
 )"""
 after = ")"
 reddens = [
-  "tests/scripts/test_check_artifacts.py::test_a_wheel_without_the_python_profiles_code_is_named[stayfixed/profiles/python/hygiene.py]",
+  "tests/scripts/test_check_artifacts.py::test_a_wheel_without_the_python_profiles_code_is_named[stayfixed/profiles/python/adapters.py]",
 ]
 
 [[mutation]]

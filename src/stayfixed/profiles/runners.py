@@ -78,9 +78,11 @@ class Plan:
 @dataclass(frozen=True)
 class Refused:
     """The command spells something that moves, replaces or suppresses the report. `reason` is a
-    constant of the adapter's module."""
+    constant of the adapter's module, and `detail` names what the command spelled, the option,
+    for the receipt."""
 
     reason: str
+    detail: str = ""
 
 
 @dataclass(frozen=True)

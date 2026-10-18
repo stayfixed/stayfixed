@@ -501,11 +501,16 @@ def test_only_contained_code_roots_are_scanned(tmp_path: Path) -> None:
         "uv run --python 3.11 pytest",
         "uv --quiet run -m pytest",
         "make lint && pytest",
+        "py.test -q",
+        "python -W error -m pytest",
+        "poetry run pytest",
+        "poetry run -- python3 -m pytest",
     ],
 )
 def test_a_real_pytest_invocation_is_recognised(command: str) -> None:
-    # Reddened by mutating `recognises`'s `if argv0 == _PYTEST: return True` to
-    # `return False`; measured.
+    # One reading with `prove`'s pytest adapter (`hygiene.pytest_command`). Oracle: `mutations/`'s
+    # "the pytest command reads py.test as no pytest" and "the pytest command reads no `poetry
+    # run`" redden the `py.test` and `poetry` shapes.
     assert runs_pytest(command)
 
 
@@ -518,6 +523,9 @@ def test_a_real_pytest_invocation_is_recognised(command: str) -> None:
         "uv run --with pytest echo done",
         "uv run --frobnicate pytest",
         "cargo test",
+        # The interpreter runs `script.py`, which is handed `-m pytest` as its own arguments.
+        "python script.py -m pytest",
+        "poetry install",
     ],
 )
 def test_a_mention_or_an_unrecognised_launcher_is_not_a_run(command: str) -> None:

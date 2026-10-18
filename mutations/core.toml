@@ -5675,8 +5675,12 @@ reddens = [
 [[mutation]]
 name = "prove reads an adapter's refusal as an entry point that did not resolve"
 file = "src/stayfixed/prove/run.py"
-before = "            return _receipt(_Outcome(refused=planned.reason), shown, adapter.name)"
-after = "            return _receipt(_Outcome(unproven=planned.reason), shown, adapter.name)"
+before = """            return _receipt(
+                _Outcome(refused=planned.reason), shown, adapter.name, detail=planned.detail
+            )"""
+after = """            return _receipt(
+                _Outcome(unproven=planned.reason), shown, adapter.name, detail=planned.detail
+            )"""
 reddens = [
   "tests/prove/test_run.py::test_an_adapter_s_own_answer_is_the_verdict[adapter0-refused-stand-in-moves-the-report]",
 ]
@@ -6242,3 +6246,13 @@ file = "src/stayfixed/prove/junit.py"
 before = '        raise ReportError(REPORT_MALFORMED, f"{expat.errors.messages[exc.code]}, {where}") from None'
 after = "        raise ReportError(REPORT_MALFORMED, str(exc)) from None"
 reddens = ["tests/prove/test_junit.py::test_a_refusal_quotes_nothing_the_document_holds"]
+
+# An adapter's refusal names what the command spelled, the option, on the receipt.
+[[mutation]]
+name = "prove drops the adapter's refusal detail"
+file = "src/stayfixed/prove/run.py"
+before = """            return _receipt(
+                _Outcome(refused=planned.reason), shown, adapter.name, detail=planned.detail
+            )"""
+after = """            return _receipt(_Outcome(refused=planned.reason), shown, adapter.name)"""
+reddens = ["tests/prove/test_pytest.py::test_a_refused_option_is_named_on_the_receipt"]

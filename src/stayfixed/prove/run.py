@@ -506,7 +506,9 @@ def prove(
             launch.launcher, command, cwd=cwd, root=root, scratch=scratch, environ=environ
         )
         if isinstance(planned, Refused):
-            return _receipt(_Outcome(refused=planned.reason), shown, adapter.name)
+            return _receipt(
+                _Outcome(refused=planned.reason), shown, adapter.name, detail=planned.detail
+            )
         if isinstance(planned, Unresolved):
             return _receipt(_Outcome(unproven=planned.reason), shown, adapter.name)
         # An inherited one goes from the run's environment as the plan's own scrub would go.

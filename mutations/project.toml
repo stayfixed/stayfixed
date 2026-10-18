@@ -2160,3 +2160,188 @@ file = "src/stayfixed/profiles/__init__.py"
 before = "            if entry.is_dir() and PROJECT_NAME.match(entry.name) and entry.joinpath(file).is_file()"
 after = "            if entry.is_dir() and PROJECT_NAME.match(entry.name) and entry.joinpath(file).is_file() and entry.joinpath(PROFILE_FILE).is_file()"
 reddens = ["tests/prove/test_run.py::test_shipped_adapters_reads_a_directory_without_a_profile"]
+
+# pytest's adapter runs `<interpreter> -P -m pytest`: `-P` keeps the directory the command runs in
+# off the import path, so a `pytest.py` planted at the root is never what the interpreter imports.
+[[mutation]]
+name = "the pytest adapter runs its interpreter without -P"
+file = "src/stayfixed/profiles/python/adapters.py"
+before = "        module = (_SAFE_PATH, *run.options, *_MODULE, *_with_report(run.args, report))"
+after = "        module = (*run.options, *_MODULE, *_with_report(run.args, report))"
+reddens = [
+  "tests/prove/test_pytest.py::test_the_plan_runs_the_script_s_interpreter_safe_path_first_with_a_report_of_its_own",
+]
+
+# `--setup-plan` exits 0 and reports a failing test as passed: the refusal is load-bearing.
+[[mutation]]
+name = "the pytest adapter leaves --setup-plan off its refusals"
+file = "src/stayfixed/profiles/python/adapters.py"
+before = '_RUNS_NO_TEST = frozenset({"--setup-plan", "--setup-only", "--collect-only", "--co"})'
+after = '_RUNS_NO_TEST = frozenset({"--setup-only", "--collect-only", "--co"})'
+reddens = ["tests/prove/test_pytest.py::test_each_report_steering_option_is_refused[--setup-plan]"]
+
+# `PYTHONPATH` is the project's: a run that removed it would fail a project that needs it.
+[[mutation]]
+name = "the pytest adapter scrubs PYTHONPATH"
+file = "src/stayfixed/profiles/python/adapters.py"
+before = "            scrub=FORGING,"
+after = '            scrub=FORGING | {"PYTHONPATH"},'
+reddens = [
+  "tests/prove/test_pytest.py::test_the_plan_runs_the_script_s_interpreter_safe_path_first_with_a_report_of_its_own",
+]
+
+# A virtual environment's `bin/python` is a link; the interpreter it names, run by its own path,
+# runs outside the environment, its packages gone.
+[[mutation]]
+name = "the pytest adapter runs the realpath of the script's interpreter"
+file = "src/stayfixed/profiles/python/adapters.py"
+before = "    return python, (str(python), *module)"
+after = "    return python, (os.path.realpath(python), *module)"
+reddens = [
+  "tests/prove/test_pytest.py::test_the_plan_runs_the_script_s_interpreter_safe_path_first_with_a_report_of_its_own",
+]
+
+# An installer writes a `#!/bin/sh` trampoline for an interpreter whose path is past what a `#!`
+# line holds; every virtual environment that deep would run the `PATH`'s Python instead.
+[[mutation]]
+name = "the pytest adapter reads no installer trampoline"
+file = "src/stayfixed/profiles/python/adapters.py"
+before = '    if program == "sh" and trampoline is not None:'
+after = "    if False:"
+reddens = ["tests/prove/test_pytest.py::test_the_installer_s_trampoline_names_the_interpreter"]
+
+[[mutation]]
+name = "the pytest adapter reads no env line"
+file = "src/stayfixed/profiles/python/adapters.py"
+before = '    if program == "env" and len(words) > 1 and words[1].startswith(_INTERPRETER_PREFIX):'
+after = "    if False:"
+reddens = ["tests/prove/test_pytest.py::test_an_env_line_names_the_interpreter_on_path"]
+
+[[mutation]]
+name = "the pytest adapter falls back to python before python3"
+file = "src/stayfixed/profiles/python/adapters.py"
+before = '_INTERPRETERS = ("python3", "python")'
+after = '_INTERPRETERS = ("python", "python3")'
+reddens = [
+  "tests/prove/test_pytest.py::test_a_shell_script_pytest_runs_the_python_on_path[names0-python3]",
+]
+
+[[mutation]]
+name = "the pytest adapter takes a file on PATH it cannot execute"
+file = "src/stayfixed/profiles/python/adapters.py"
+before = "        return fsops.is_file(path) and os.access(path, os.X_OK)"
+after = "        return fsops.is_file(path)"
+reddens = ["tests/prove/test_pytest.py::test_a_file_on_path_that_cannot_be_executed_is_passed_over"]
+
+# pytest reads `-p` before it parses anything, in every word and its value stripped, past `--`.
+[[mutation]]
+name = "the pytest adapter reads -p's value unstripped"
+file = "src/stayfixed/profiles/python/adapters.py"
+before = "        if plugin.strip() == _NO_REPORT:"
+after = "        if plugin == _NO_REPORT:"
+reddens = ["tests/prove/test_pytest.py::test_each_report_steering_option_is_refused[-p__no:junitxml_]"]
+
+[[mutation]]
+name = "the pytest adapter reads -p only before --"
+file = "src/stayfixed/profiles/python/adapters.py"
+before = """    for index, word in enumerate(args):
+        if word == _PLUGIN:"""
+after = """    for index, word in enumerate(args):
+        if word == _SEPARATOR:
+            break
+        if word == _PLUGIN:"""
+reddens = [
+  "tests/prove/test_pytest.py::test_each_report_steering_option_is_refused[tests_--_-pno:junitxml]",
+]
+
+# pytest's parser reads a short `-o` clustered behind its flags, `-qo junit_family=x`.
+[[mutation]]
+name = "the pytest adapter reads no -o clustered behind a flag"
+file = "src/stayfixed/profiles/python/adapters.py"
+before = "        if letter not in _PYTEST_FLAGS:"
+after = "        if True:"
+reddens = [
+  "tests/prove/test_pytest.py::test_each_report_steering_option_is_refused[-qo_junit_family=xunit1]",
+  "tests/prove/test_pytest.py::test_each_report_steering_option_is_refused[-vqojunit_family=xunit1]",
+]
+
+[[mutation]]
+name = "the pytest adapter reads -o=key as a key starting with ="
+file = "src/stayfixed/profiles/python/adapters.py"
+before = '            return _ini(f"-{_INI_LETTER}", rest.removeprefix("=") if rest else following)'
+after = '            return _ini(f"-{_INI_LETTER}", rest if rest else following)'
+reddens = ["tests/prove/test_pytest.py::test_each_report_steering_option_is_refused[-o=junit_logging=all]"]
+
+# After `--` pytest's parser reads every word as a path to collect, so none is an option to refuse.
+[[mutation]]
+name = "the pytest adapter refuses an option's spelling after --"
+file = "src/stayfixed/profiles/python/adapters.py"
+before = """        if word == _SEPARATOR:
+            return None"""
+after = """        if False:
+            return None"""
+reddens = [
+  "tests/prove/test_pytest.py::test_every_other_option_is_free[argv7]",
+  "tests/prove/test_pytest.py::test_every_other_option_is_free[argv8]",
+]
+
+[[mutation]]
+name = "the pytest adapter puts its report options after --"
+file = "src/stayfixed/profiles/python/adapters.py"
+before = "    cut = args.index(_SEPARATOR) if _SEPARATOR in args else len(args)"
+after = "    cut = len(args)"
+reddens = ["tests/prove/test_pytest.py::test_the_report_options_go_before_a_separator"]
+
+# Under a launcher the interpreter is the launcher's choice, but one the command names is kept.
+[[mutation]]
+name = "the pytest adapter hands a launcher python whatever the command named"
+file = "src/stayfixed/profiles/python/adapters.py"
+before = "        chosen = run.program if run.module else _LAUNCHED_INTERPRETER"
+after = "        chosen = _LAUNCHED_INTERPRETER"
+reddens = [
+  "tests/prove/test_pytest.py::test_a_launcher_is_kept_in_front_and_chooses_the_interpreter[launch1-command1-front1]",
+]
+
+# One reading of a pytest run, the hint's and the adapter's.
+[[mutation]]
+name = "the pytest command reads no `poetry run`"
+file = "src/stayfixed/profiles/python/hygiene.py"
+before = "    if len(words) > 1 and (Path(words[0]).name, words[1]) == _POETRY:"
+after = "    if False:"
+reddens = [
+  "tests/prove/test_pytest.py::test_python_m_pytest_poetry_run_and_uv_run_are_recognised[command6]",
+  "tests/prove/test_pytest.py::test_a_launcher_is_kept_in_front_and_chooses_the_interpreter[launch2-command2-front2]",
+  "tests/profiles/python/test_hygiene.py::test_a_real_pytest_invocation_is_recognised[poetry run pytest]",
+]
+
+[[mutation]]
+name = "the pytest command reads py.test as no pytest"
+file = "src/stayfixed/profiles/python/hygiene.py"
+before = '_PYTEST_SCRIPTS = frozenset({_PYTEST, "py.test"})'
+after = "_PYTEST_SCRIPTS = frozenset({_PYTEST})"
+reddens = [
+  "tests/prove/test_pytest.py::test_python_m_pytest_poetry_run_and_uv_run_are_recognised[command1]",
+  "tests/profiles/python/test_hygiene.py::test_a_real_pytest_invocation_is_recognised[py.test -q]",
+]
+
+# `python script.py -m pytest` runs `script.py`: read as pytest, `prove` would run something else.
+[[mutation]]
+name = "the pytest command reads any word before -m as an interpreter option"
+file = "src/stayfixed/profiles/python/hygiene.py"
+before = """        if not taken:
+            return None"""
+after = """        if not taken:
+            taken = 1"""
+reddens = [
+  "tests/prove/test_pytest.py::test_a_command_that_runs_no_pytest_is_not_recognised[command0]",
+  "tests/prove/test_pytest.py::test_a_command_that_runs_no_pytest_is_not_recognised[command1]",
+]
+
+[[mutation]]
+name = "the pytest command drops the interpreter's own options"
+file = "src/stayfixed/profiles/python/hygiene.py"
+before = "            return PytestCommand(launcher, words[0], True, words[1:index], words[index + 2 :])"
+after = "            return PytestCommand(launcher, words[0], True, (), words[index + 2 :])"
+reddens = [
+  "tests/prove/test_pytest.py::test_a_python_the_command_names_is_found_on_path_and_keeps_its_options",
+]

@@ -837,6 +837,21 @@ the runner's standard output, whatever the report's source, goes to standard err
 byte, so that standard output holds the one JSON object; without `--json` it is yours. Text a
 command prints is never counted.
 
+**The pytest adapter** recognises `pytest`, `py.test` and `python… -m pytest` (the interpreter's
+own options alone before `-m`), each also behind `poetry run` or `uv run`. It runs
+`<interpreter> -P -m pytest … --junitxml=<report> -o junit_family=xunit2`, never the console
+script: the interpreter is the one the script's first line names (or, under the installer's
+`#!/bin/sh` trampoline, its second line), else `python3`, else `python`, on `PATH`, by the path
+named; behind `uv run` or `poetry run` the launcher runs, kept in front, and chooses it. `-P` keeps
+the directory the command runs in off the import path and leaves every `PYTHON*` variable yours. It
+refuses `--junitxml` and `--junit-xml`, `-p no:junitxml`, `-o` or `--override-ini` setting a
+`junit_*` key, `--setup-plan`, `--setup-only`, `--collect-only` and `--co` (`refused-option`,
+naming the option); every other option is free. Its forging set is `PYTEST_ADDOPTS` and
+`PYTEST_PLUGINS`, an inherited one removed from the run's environment; `PYTHONPATH` and every
+other variable are yours. Its configuration files are `pytest.ini`, `pyproject.toml`, `setup.cfg`
+and `tox.ini`, and its discovery set `conftest.py`, `test_*.py` and `*_test.py` at any depth. A
+program the command names that is not where it would be found is `entry-not-found` (`not proven`).
+
 **What `proved` means.** The code under test, any file in the runner's load path, tracked or not, and the environment the runner reads can shape its report, so `proved` means the runner reported green on this tree, for the tests this command selected.
 
 **The verdict**, the first row that holds winning:

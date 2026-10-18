@@ -1,0 +1,657 @@
+"""The pytest adapter: what it recognises, how it plans a run, what it refuses, and what a real
+pytest run under it proves.
+
+The plan tests run no runner: `plan` is a pure function of its arguments and of the files it reads,
+so each builds the files a virtual environment holds (a `bin/python` linked to the interpreter
+running the suite, a `pytest` script whose first lines name one) and reads the plan. The tests
+marked `runners` run the real pytest of the project's own environment in a scratch project
+(`tests/prove/real_runners.py`), each through `prove` with the adapters this stayfixed ships.
+"""
+
+from __future__ import annotations
+
+import os
+import sys
+from collections.abc import Mapping, Sequence
+from pathlib import Path
+
+import pytest
+
+from stayfixed import fsops
+from stayfixed.guards.api import read_launch
+from stayfixed.profiles.python.adapters import (
+    ADAPTERS,
+    CONFIGS,
+    DISCOVERY,
+    ENTRY_NOT_FOUND,
+    FORGING,
+    NAME,
+    REFUSED_OPTION,
+    REPORT_NAME,
+    PytestAdapter,
+)
+from stayfixed.profiles.runners import Plan, Refused, ReportKind, ReportSource, Unresolved
+from stayfixed.prove.counts import Counts
+from stayfixed.prove.run import (
+    ALL_SKIPPED,
+    ASSIGNED_FORGING,
+    FAILING,
+    NONE_RAN,
+    REFUSED_LAUNCHER_OPTION,
+    Receipt,
+    Verdict,
+    line,
+    prove,
+)
+from tests.gitfixture import git
+from tests.prove.real_runners import needs_runner, runner_directory
+
+PROVED, FAILED, NOT_PROVEN, REFUSED = (
+    Verdict.PROVED,
+    Verdict.FAILED,
+    Verdict.NOT_PROVEN,
+    Verdict.REFUSED,
+)
+INTERPRETER = Path(os.path.realpath(sys.executable))
+
+
+def executable(path: Path, text: str = "#!/bin/sh\nexit 0\n") -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+    path.chmod(0o755)
+    return path
+
+
+def interpreter(path: Path) -> Path:
+    """A `python` at `path` the way a virtual environment holds one: a link to the interpreter."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.symlink_to(sys.executable)
+    return path
+
+
+def environment(root: Path, head: str | None = None) -> Path:
+    """A virtual environment's `bin`: its `python`, and a `pytest` script that opens with `head`,
+    by default the line an installer writes for a short path."""
+    bin_ = root / "bin"
+    python = interpreter(bin_ / "python")
+    executable(bin_ / "pytest", head if head is not None else f"#!{python}\nimport sys\n")
+    return bin_
+
+
+def planned(
+    command: Sequence[str],
+    cwd: Path,
+    *,
+    path: str = "",
+    launch: Sequence[str] = (),
+) -> Plan | Refused | Unresolved:
+    return PytestAdapter().plan(
+        launch, command, cwd=cwd, root=cwd, scratch=cwd / "scratch", environ={"PATH": path}
+    )
+
+
+def argv_of(command: Sequence[str], cwd: Path, **given: object) -> tuple[str, ...]:
+    got = planned(command, cwd, **given)  # type: ignore[arg-type]
+    assert isinstance(got, Plan), got
+    return got.argv
+
+
+def ours(cwd: Path) -> tuple[str, ...]:
+    """The report options the adapter adds, last, for a run planned in `cwd`."""
+    return (f"--junitxml={cwd / 'scratch' / REPORT_NAME}", "-o", "junit_family=xunit2")
+
+
+# --- What is recognised ---------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        ["pytest"],
+        ["py.test", "-q"],
+        [".venv/bin/pytest", "tests"],
+        ["python", "-m", "pytest"],
+        ["python3.13", "-mpytest", "-q"],
+        [".venv/bin/python", "-W", "error", "-Xdev", "-B", "-m", "pytest"],
+        ["poetry", "run", "pytest", "-q"],
+        ["poetry", "run", "--", "python", "-m", "pytest"],
+        ["poetry", "run", "py.test"],
+        # What `prove` hands an adapter of `uv run --locked pytest`, the launcher read past.
+        list(read_launch(("uv", "run", "--locked", "pytest", "-q")).command),
+        list(read_launch(("uv", "run", "python", "-m", "pytest")).command),
+    ],
+)
+def test_python_m_pytest_poetry_run_and_uv_run_are_recognised(command: list[str]) -> None:
+    # Mutation (declared): `poetry run` not read through -> the three `poetry` shapes are not.
+    assert PytestAdapter().recognises(command)
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        # The interpreter runs `script.py` and hands it `-m pytest`; `-c` runs its own text.
+        ["python", "script.py", "-m", "pytest"],
+        ["python", "-c", "pass", "-m", "pytest"],
+        ["python", "-m", "pytest_cov"],
+        ["python"],
+        ["grep", "-m", "pytest", "notes.txt"],
+        ["poetry", "install"],
+        ["poetry", "run", "black"],
+        ["poetry", "run"],
+        ["pytest-watch"],
+        [],
+    ],
+)
+def test_a_command_that_runs_no_pytest_is_not_recognised(command: list[str]) -> None:
+    # Mutation (declared): the interpreter's words before `-m` read as its options whatever they
+    # are -> `python script.py -m pytest` is planned as a pytest run, which runs no `script.py`.
+    assert not PytestAdapter().recognises(command)
+
+
+def test_the_adapters_this_stack_ships() -> None:
+    assert [adapter.name for adapter in ADAPTERS] == [NAME] == ["pytest"]
+    assert PytestAdapter().forging == FORGING == frozenset({"PYTEST_ADDOPTS", "PYTEST_PLUGINS"})
+
+
+# --- How a run is planned -------------------------------------------------------------------
+
+
+def test_the_plan_runs_the_script_s_interpreter_safe_path_first_with_a_report_of_its_own(
+    tmp_path: Path,
+) -> None:
+    # The run is the interpreter the script names, by the path the script names it, never the
+    # script and never that path's realpath: a virtual environment's `bin/python` is a link, and
+    # the interpreter it points at, run by its own path, runs outside the environment. `program`
+    # is the realpath, which the core checks again before the launch.
+    # Mutations (declared): `-P` dropped; `PYTHONPATH` added to the scrubbed variables; the
+    # interpreter planned by its realpath -> this plan differs.
+    bin_ = environment(tmp_path / "venv")
+    got = planned(["pytest", "-q", "tests"], tmp_path, path=str(bin_))
+    report = tmp_path / "scratch" / REPORT_NAME
+    assert got == Plan(
+        argv=(
+            str(bin_ / "python"),
+            "-P",
+            "-m",
+            "pytest",
+            "-q",
+            "tests",
+            f"--junitxml={report}",
+            "-o",
+            "junit_family=xunit2",
+        ),
+        program=INTERPRETER,
+        kind=ReportKind.JUNIT,
+        source=ReportSource.FILE,
+        report=report,
+        set_env={},
+        scrub=frozenset({"PYTEST_ADDOPTS", "PYTEST_PLUGINS"}),
+        discovery=(
+            "conftest.py",
+            "**/conftest.py",
+            "test_*.py",
+            "**/test_*.py",
+            "*_test.py",
+            "**/*_test.py",
+        ),
+        configs=("pytest.ini", "pyproject.toml", "setup.cfg", "tox.ini"),
+    )
+    assert (got.discovery, got.configs) == (DISCOVERY, CONFIGS)
+
+
+def test_the_installer_s_trampoline_names_the_interpreter(tmp_path: Path) -> None:
+    # A virtual environment whose path is past what a `#!` line holds gets a `#!/bin/sh` script
+    # whose second line `exec`s the interpreter. Nothing else on `PATH` holds an interpreter, so
+    # only the trampoline's line can name this one. Mutation (declared): the trampoline not read ->
+    # the plan falls back to `PATH`, which holds none.
+    deep = interpreter(tmp_path / ("d" * 120) / "bin" / "python3")
+    scripts = tmp_path / "scripts"
+    executable(
+        scripts / "pytest",
+        f"#!/bin/sh\n'''exec' '{deep}' \"$0\" \"$@\"\n' '''\nimport sys\n",
+    )
+    assert argv_of(["pytest"], tmp_path, path=str(scripts)) == (
+        str(deep),
+        "-P",
+        "-m",
+        "pytest",
+        *ours(tmp_path),
+    )
+
+
+def test_an_env_line_names_the_interpreter_on_path(tmp_path: Path) -> None:
+    # The line names `python3.13`, which `PATH` holds only past a `python`: the run is the one the
+    # line names, not the fallback's. Mutation (declared): the `env` line not read -> `python`.
+    bin_ = environment(tmp_path / "venv", "#!/usr/bin/env python3.13\n")
+    other = interpreter(tmp_path / "other" / "python3.13")
+    path = os.pathsep.join([str(bin_), str(other.parent)])
+    assert argv_of(["pytest"], tmp_path, path=path)[0] == str(other)
+
+
+def test_a_file_on_path_that_cannot_be_executed_is_passed_over(tmp_path: Path) -> None:
+    # As the run's own lookup passes it over. Mutation (declared): any file taken -> the first.
+    (tmp_path / "first").mkdir()
+    (tmp_path / "first" / "python").write_text("", encoding="utf-8")
+    bin_ = environment(tmp_path / "venv")
+    path = os.pathsep.join([str(tmp_path / "first"), str(bin_)])
+    assert argv_of(["python", "-m", "pytest"], tmp_path, path=path)[0] == str(bin_ / "python")
+
+
+@pytest.mark.parametrize(
+    ("names", "chosen"),
+    [(("python3", "python"), "python3"), (("python",), "python")],
+)
+def test_a_shell_script_pytest_runs_the_python_on_path(
+    tmp_path: Path, names: tuple[str, ...], chosen: str
+) -> None:
+    # A shim (pyenv's, asdf's, Nix's wrapper) names no interpreter: the run is `python3`, else
+    # `python`, on `PATH`, and still `-P -m pytest`, never the shim. Mutation (declared): the order
+    # of the two names turned round -> the first case plans `python`.
+    shims = tmp_path / "shims"
+    executable(shims / "pytest", '#!/usr/bin/env bash\nexec pyenv exec pytest "$@"\n')
+    for name in names:
+        interpreter(tmp_path / "base" / name)
+    path = os.pathsep.join([str(shims), str(tmp_path / "base")])
+    got = planned(["pytest", "-x"], tmp_path, path=path)
+    assert isinstance(got, Plan)
+    assert got.argv == (
+        str(tmp_path / "base" / chosen),
+        "-P",
+        "-m",
+        "pytest",
+        "-x",
+        *ours(tmp_path),
+    )
+    assert got.program == INTERPRETER
+
+
+def test_a_script_with_no_interpreter_line_runs_the_python_on_path(tmp_path: Path) -> None:
+    shims = tmp_path / "shims"
+    executable(shims / "pytest", "exec pytest\n")
+    base = interpreter(tmp_path / "base" / "python3")
+    path = os.pathsep.join([str(shims), str(base.parent)])
+    assert argv_of(["pytest"], tmp_path, path=path)[0] == str(base)
+
+
+def test_a_script_that_cannot_be_read_runs_the_python_on_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Root reads every file, so the fault is stood in for.
+    bin_ = environment(tmp_path / "venv")
+    base = interpreter(tmp_path / "base" / "python3")
+
+    def unreadable(path: Path, limit: int) -> tuple[bytes, bool]:
+        raise PermissionError(13, "denied", str(path))
+
+    monkeypatch.setattr(fsops, "read_bounded", unreadable)
+    path = os.pathsep.join([str(bin_), str(base.parent)])
+    assert argv_of(["pytest"], tmp_path, path=path)[0] == str(base)
+
+
+def test_a_path_entry_that_cannot_be_asked_about_is_passed_over(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bin_ = environment(tmp_path / "venv")
+    blind = tmp_path / "blind"
+    asked = fsops.is_file
+
+    def is_file(path: Path) -> bool:
+        if path.parent == blind:
+            raise PermissionError(13, "denied", str(path))
+        return asked(path)
+
+    monkeypatch.setattr(fsops, "is_file", is_file)
+    path = os.pathsep.join([str(blind), str(bin_)])
+    assert argv_of(["pytest"], tmp_path, path=path)[0] == str(bin_ / "python")
+
+
+def test_a_script_naming_no_interpreter_with_none_on_path_does_not_resolve(tmp_path: Path) -> None:
+    shims = tmp_path / "shims"
+    executable(shims / "pytest", "#!/bin/sh\nexec true\n")
+    assert planned(["pytest"], tmp_path, path=str(shims)) == Unresolved(ENTRY_NOT_FOUND)
+
+
+def test_a_command_it_does_not_recognise_has_no_plan(tmp_path: Path) -> None:
+    # The core asks `plan` only of a command `recognises` took; asked anyway, nothing resolves.
+    assert planned(["make", "test"], tmp_path) == Unresolved(ENTRY_NOT_FOUND)
+
+
+def test_a_python_the_command_names_is_found_on_path_and_keeps_its_options(
+    tmp_path: Path,
+) -> None:
+    bin_ = environment(tmp_path / "venv")
+    got = argv_of(
+        ["python", "-W", "error", "-Xdev", "-m", "pytest", "-q"], tmp_path, path=str(bin_)
+    )
+    assert got == (
+        str(bin_ / "python"),
+        "-P",
+        "-W",
+        "error",
+        "-Xdev",
+        "-m",
+        "pytest",
+        "-q",
+        *ours(tmp_path),
+    )
+
+
+def test_a_path_is_read_from_the_directory_the_command_is_typed_in(tmp_path: Path) -> None:
+    # A relative `PATH` entry and a relative program are where the command runs, and the plan's
+    # program is absolute, as the core requires.
+    environment(tmp_path / ".venv")
+    assert argv_of([".venv/bin/pytest"], tmp_path)[0] == str(tmp_path / ".venv" / "bin" / "python")
+    assert argv_of(["python", "-m", "pytest"], tmp_path, path=".venv/bin")[0] == str(
+        tmp_path / ".venv" / "bin" / "python"
+    )
+
+
+def test_the_report_options_go_before_a_separator(tmp_path: Path) -> None:
+    # pytest reads every word after `--` as a path to collect, its options included.
+    bin_ = environment(tmp_path / "venv")
+    got = argv_of(["pytest", "-q", "--", "tests"], tmp_path, path=str(bin_))
+    assert got[1:] == ("-P", "-m", "pytest", "-q", *ours(tmp_path), "--", "tests")
+
+
+@pytest.mark.parametrize(
+    ("launch", "command", "front"),
+    [
+        (("uv", "run", "--locked"), ("pytest", "-q"), ("run", "--locked", "python")),
+        (("uv", "run"), ("python3", "-m", "pytest", "-q"), ("run", "python3")),
+        ((), ("poetry", "run", "pytest", "-q"), ("run", "python")),
+        ((), ("poetry", "run", "--", "py.test", "-q"), ("run", "--", "python")),
+        (("uv", "run"), ("poetry", "run", "pytest", "-q"), ("run", "poetry", "run", "python")),
+    ],
+)
+def test_a_launcher_is_kept_in_front_and_chooses_the_interpreter(
+    tmp_path: Path, launch: tuple[str, ...], command: tuple[str, ...], front: tuple[str, ...]
+) -> None:
+    # Under `uv run` or `poetry run` the run is the launcher, which chooses the interpreter: the
+    # program is the launcher's realpath, which the bound concedes. Mutation (declared): `poetry
+    # run` not read through -> the `poetry` cases are no plan.
+    tools = tmp_path / "tools"
+    launcher = executable(tools / ("uv" if launch else "poetry"))
+    got = planned(command, tmp_path, path=str(tools), launch=launch)
+    assert isinstance(got, Plan)
+    assert got.argv == (str(launcher), *front, "-P", "-m", "pytest", "-q", *ours(tmp_path))
+    assert got.program == Path(os.path.realpath(launcher))
+
+
+@pytest.mark.parametrize(
+    ("command", "launch"),
+    [
+        (["pytest"], ()),
+        (["python", "-m", "pytest"], ()),
+        (["poetry", "run", "pytest"], ()),
+        (["pytest"], ("uv", "run")),
+    ],
+)
+def test_an_entry_point_not_on_path_does_not_resolve(
+    tmp_path: Path, command: list[str], launch: tuple[str, ...]
+) -> None:
+    assert planned(command, tmp_path, path=str(tmp_path / "empty"), launch=launch) == Unresolved(
+        ENTRY_NOT_FOUND
+    )
+
+
+# --- What is refused ------------------------------------------------------------------------
+
+
+REFUSALS = [
+    (("--junitxml=x",), "--junitxml"),
+    (("--junitxml", "x"), "--junitxml"),
+    (("--junit-xml", "x"), "--junit-xml"),
+    (("--junit-xml=x",), "--junit-xml"),
+    (("-p", "no:junitxml"), "-p no:junitxml"),
+    (("-pno:junitxml",), "-p no:junitxml"),
+    (("-p", " no:junitxml "), "-p no:junitxml"),
+    # pytest reads `-p` in every word before it parses any, past `--` too.
+    (("tests", "--", "-pno:junitxml"), "-p no:junitxml"),
+    (("-o", "junit_family=xunit1"), "-o junit_family"),
+    (("-ojunit_suite_name=x",), "-o junit_suite_name"),
+    (("-o=junit_logging=all",), "-o junit_logging"),
+    (("-qo", "junit_family=xunit1"), "-o junit_family"),
+    (("-vqojunit_family=xunit1",), "-o junit_family"),
+    (("--override-ini=junit_logging=all",), "--override-ini junit_logging"),
+    (("--override-ini", "junit_duration_report=call"), "--override-ini junit_duration_report"),
+    (("--setup-plan",), "--setup-plan"),
+    (("--setup-only",), "--setup-only"),
+    (("--collect-only",), "--collect-only"),
+    (("--co",), "--co"),
+]
+
+
+@pytest.mark.parametrize(
+    ("argv", "named"), REFUSALS, ids=[" ".join(argv).replace(" ", "_") for argv, _ in REFUSALS]
+)
+def test_each_report_steering_option_is_refused(
+    tmp_path: Path, argv: tuple[str, ...], named: str
+) -> None:
+    # Refused before anything is resolved: no `PATH` holds a pytest here. Mutation (declared):
+    # `--setup-plan` left off the list -> its case is planned, and `--setup-plan` reports a failing
+    # test as passed.
+    assert planned(["pytest", *argv], tmp_path) == Refused(REFUSED_OPTION, named)
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ("-o", "cache_dir=x"),
+        ("-o", "junitfamily=x"),
+        ("-p", "no:cacheprovider"),
+        ("-p", "no:_pytest.junitxml"),
+        ("--junit-prefix=x",),
+        ("-k", "junit_x"),
+        # A cluster `-p` stands in is not one pytest reads before its parse, and so blocks nothing.
+        ("-qpno:junitxml",),
+        # After `--` a word is a path to collect.
+        ("--", "--junitxml=x"),
+        ("--", "--setup-plan"),
+        # `-k` takes a value, so the `o` in its cluster is no `-o`.
+        ("-kojunit_x",),
+    ],
+)
+def test_every_other_option_is_free(tmp_path: Path, argv: tuple[str, ...]) -> None:
+    bin_ = environment(tmp_path / "venv")
+    assert isinstance(planned(["pytest", *argv], tmp_path, path=str(bin_)), Plan)
+
+
+def _proved_here(argv: Sequence[str], cwd: Path, environ: Mapping[str, str]) -> Receipt:
+    return prove(argv, cwd=cwd, environ=environ, timeout=600)
+
+
+def test_a_refused_option_is_named_on_the_receipt(tmp_path: Path) -> None:
+    # Through `prove` and the adapters this stayfixed ships. Mutation (declared, `core`): the
+    # adapter's detail left off the receipt -> `detail` is empty.
+    got = _proved_here(["pytest", "--junitxml=out.xml"], tmp_path, {"PATH": ""})
+    assert (got.verdict, got.reason, got.detail, got.runner) == (
+        REFUSED,
+        REFUSED_OPTION,
+        "--junitxml",
+        NAME,
+    )
+    assert line(got) == (
+        "refused: the runner's adapter refuses this command (refused-option): '--junitxml'; "
+        "runner pytest"
+    )
+
+
+def test_uv_run_env_file_is_refused(tmp_path: Path) -> None:
+    # The core refuses a launcher option that loads a file for every adapter; this one adds none.
+    got = _proved_here(["uv", "run", "--env-file", "e.env", "pytest"], tmp_path, {"PATH": ""})
+    assert got.verdict == REFUSED
+    assert got.reason == REFUSED_LAUNCHER_OPTION
+    assert (got.detail, got.runner) == ("--env-file", NAME)
+
+
+@pytest.mark.parametrize(
+    ("argv", "name"),
+    [
+        (["PYTEST_ADDOPTS=--junitxml=x", "pytest"], "PYTEST_ADDOPTS"),
+        (["env", "PYTEST_PLUGINS=forged", "python", "-m", "pytest"], "PYTEST_PLUGINS"),
+        # The core's own, where the command runs `uv`.
+        (["UV_ENV_FILE=e.env", "uv", "run", "pytest"], "UV_ENV_FILE"),
+    ],
+)
+def test_an_assigned_forging_variable_is_refused(
+    tmp_path: Path, argv: list[str], name: str
+) -> None:
+    got = _proved_here(argv, tmp_path, {"PATH": ""})
+    assert (got.verdict, got.reason, got.detail) == (REFUSED, ASSIGNED_FORGING, name)
+
+
+# --- Real pytest runs -----------------------------------------------------------------------
+
+
+def scratch_project(
+    root: Path,
+    *,
+    passing: int = 0,
+    failing: int = 0,
+    skipped: int = 0,
+    files: Mapping[str, str] | None = None,
+) -> Path:
+    """A project pytest collects in `root`: a `pytest.ini`, so no configuration above it is read,
+    and `test_scratch.py` with that many passing, failing and skipped tests."""
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "pytest.ini").write_text("[pytest]\n", encoding="utf-8")
+    tests = ["import pytest", ""]
+    tests += [f"def test_pass_{index}():\n    pass\n" for index in range(passing)]
+    tests += [f"def test_fail_{index}():\n    assert False\n" for index in range(failing)]
+    tests += [
+        f"@pytest.mark.skip(reason='scratch')\ndef test_skip_{index}():\n    pass\n"
+        for index in range(skipped)
+    ]
+    (root / "test_scratch.py").write_text("\n".join(tests), encoding="utf-8")
+    for name, text in (files or {}).items():
+        (root / name).parent.mkdir(parents=True, exist_ok=True)
+        (root / name).write_text(text, encoding="utf-8")
+    return root
+
+
+def real(cwd: Path, *argv: str, **variables: str) -> Receipt:
+    """`argv` proved in `cwd` with the project's own pytest first on `PATH`. Its entry-point
+    plugins are not loaded, so the suite's own (coverage, workers) never join the run."""
+    environ = {
+        **os.environ,
+        "PATH": os.pathsep.join([str(runner_directory("pytest")), os.environ.get("PATH", "")]),
+        "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
+        **variables,
+    }
+    return _proved_here(argv, cwd, environ)
+
+
+@needs_runner("pytest")
+def test_a_genuine_passing_run_is_proved(tmp_path: Path) -> None:
+    got = real(scratch_project(tmp_path / "p", passing=2, skipped=1), "pytest", "-q")
+    assert (got.verdict, got.reason, got.counts, got.exit_code) == (PROVED, "", Counts(2, 0, 1), 0)
+    assert (got.runner, got.program, got.verified) == (NAME, str(INTERPRETER), True)
+
+
+@needs_runner("pytest")
+def test_python_m_pytest_is_proved(tmp_path: Path) -> None:
+    got = real(scratch_project(tmp_path / "p", passing=1, failing=1), "python", "-m", "pytest")
+    assert (got.verdict, got.reason, got.counts) == (FAILED, FAILING, Counts(1, 1, 0))
+
+
+@needs_runner("pytest")
+def test_an_empty_run_fails(tmp_path: Path) -> None:
+    got = real(scratch_project(tmp_path / "p", passing=2), "pytest", "-q", "-k", "no_such_test")
+    assert (got.verdict, got.reason, got.counts, got.exit_code) == (
+        FAILED,
+        NONE_RAN,
+        Counts(0, 0, 0),
+        5,
+    )
+
+
+@needs_runner("pytest")
+def test_an_all_skipped_run_fails(tmp_path: Path) -> None:
+    got = real(scratch_project(tmp_path / "p", skipped=2), "pytest", "-q")
+    assert (got.verdict, got.reason, got.counts) == (FAILED, ALL_SKIPPED, Counts(0, 0, 2))
+
+
+@needs_runner("pytest")
+def test_an_inherited_pytest_addopts_is_scrubbed(tmp_path: Path) -> None:
+    project = scratch_project(tmp_path / "p", passing=2)
+    got = real(project, "pytest", "-q", PYTEST_ADDOPTS="-k nothing")
+    assert (got.verdict, got.counts) == (PROVED, Counts(2, 0, 0))
+
+
+@needs_runner("pytest")
+def test_pythonpath_src_is_the_projects(tmp_path: Path) -> None:
+    project = scratch_project(
+        tmp_path / "p",
+        files={
+            "src/under_test/__init__.py": "VALUE = 1\n",
+            "test_import.py": "from under_test import VALUE\n\ndef test_v():\n    assert VALUE\n",
+        },
+    )
+    assert real(project, "PYTHONPATH=src", "pytest", "-q").verdict == PROVED
+    assert real(project, "pytest", "-q").verdict == FAILED
+
+
+@needs_runner("pytest")
+def test_pythonwarnings_error_keeps_its_meaning(tmp_path: Path) -> None:
+    # `-I` would ignore every `PYTHON*` variable; `-P` leaves them the project's.
+    project = scratch_project(
+        tmp_path / "p",
+        files={"test_warns.py": "import warnings\n\ndef test_w():\n    warnings.warn('w')\n"},
+    )
+    assert real(project, "pytest", "-q").verdict == PROVED
+    got = real(project, "PYTHONWARNINGS=error", "pytest", "-q")
+    assert (got.verdict, got.reason, got.counts) == (FAILED, FAILING, Counts(0, 1, 0))
+
+
+_FORGED = '<testsuite><testcase name="forged"/></testsuite>'
+
+
+@needs_runner("pytest")
+def test_a_module_named_pytest_in_the_root_is_not_imported(tmp_path: Path) -> None:
+    # Run as `python -m pytest` the root is first on the import path, and a `pytest.py` there
+    # writes a green report wherever it is told to and exits 0; `-P` keeps the root off it.
+    planted = (
+        "import sys\n"
+        "for word in sys.argv:\n"
+        "    if word.startswith('--junitxml='):\n"
+        f"        open(word.split('=', 1)[1], 'w').write({_FORGED!r})\n"
+        "raise SystemExit(0)\n"
+    )
+    project = scratch_project(tmp_path / "p", failing=1, files={"pytest.py": planted})
+    got = real(project, "python", "-m", "pytest", "-q")
+    assert (got.verdict, got.reason, got.counts) == (FAILED, FAILING, Counts(0, 1, 0))
+
+
+@needs_runner("pytest")
+def test_an_atexit_rewrite_is_what_the_bound_concedes(tmp_path: Path) -> None:
+    # Code in the runner's load path runs inside it and can write the report it was handed, after
+    # pytest wrote it: `proved` here is the runner's own report, which the bound says the tree can
+    # shape.
+    conftest = (
+        "import atexit, os\n\n"
+        "def pytest_configure(config):\n"
+        "    path = config.option.xmlpath\n"
+        "    def forged():\n"
+        f"        open(path, 'w').write({_FORGED!r})\n"
+        "        os._exit(0)\n"
+        "    atexit.register(forged)\n"
+    )
+    project = scratch_project(tmp_path / "p", failing=1, files={"conftest.py": conftest})
+    got = real(project, "pytest", "-q")
+    assert (got.verdict, got.counts, got.exit_code) == (PROVED, Counts(1, 0, 0), 0)
+
+
+@needs_runner("pytest")
+def test_an_untracked_conftest_is_counted_and_named(tmp_path: Path) -> None:
+    project = scratch_project(tmp_path / "p", passing=1)
+    git(project, "init", "-q")
+    git(project, "add", "pytest.ini", "test_scratch.py")
+    git(project, "commit", "-q", "-m", "first")
+    (project / "conftest.py").write_text(
+        "import pytest\n\n@pytest.fixture\ndef extra():\n    return 1\n", encoding="utf-8"
+    )
+    got = real(project, "pytest", "-q")
+    assert (got.verdict, got.counts) == (PROVED, Counts(1, 0, 0))
+    assert got.untracked == ("conftest.py",)
+    assert got.configs == ("pytest.ini",)
+    assert "untracked in the discovery set: conftest.py" in line(got)

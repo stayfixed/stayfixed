@@ -1,0 +1,276 @@
+"""Python's runner adapter: a pytest run, proved from the JUnit report pytest writes, with the
+project's environment kept.
+
+What it recognises is what the red-run hint recognises, one reading (`hygiene.pytest_command`):
+pytest's console script (`pytest`, `py.test`), or `python* -m pytest`, either behind `poetry run`;
+`uv run` the core reads past and hands over as the launch.
+
+**The run.** Never the console script: `<interpreter> -P -m pytest <args> --junitxml=<report> -o
+junit_family=xunit2`, the report in the scratch directory `prove` made. `-P` keeps the directory
+the command runs in off the import path, so a `pytest.py` planted at the root is never what is
+imported; `-I` would also ignore every `PYTHON*` variable and the user's site-packages, which are
+the project's (`PYTHONWARNINGS`, `PYTHONHASHSEED`, `PYTHONPATH`). The interpreter is the one the
+console script's first line names (`#!<python>`, `#!/usr/bin/env python3`, or an installer's
+`#!/bin/sh` trampoline whose second line `exec`s `<python>`), by the path the line names it: a
+virtual environment's `bin/python` is a link, and the interpreter it points at, run by its own
+path, runs outside the environment. A script whose first line names no interpreter (a pyenv, asdf
+or Nix shim) runs as `python3`, else `python`, on `PATH`; a `python*` the command names is found on
+`PATH`. Under `uv run` or `poetry run` the launcher runs, kept in front, and its interpreter is its
+choice. The receipt carries the realpath of what ran.
+
+**Every control here, with its adversary and its anchor.**
+
+- `REFUSED_OPTION`: an agent typing an option that moves, replaces or suppresses the report, or
+  makes pytest report tests it never ran: `--junitxml`/`--junit-xml`, `-p no:junitxml`, `-o` or
+  `--override-ini` setting a `junit_*` key, `--setup-plan` (which reports a failing test as
+  passed), `--setup-only`, `--collect-only`, `--co`. The anchor is the command's own words; the
+  list is closed and every other option is free.
+- `FORGING`, assigned in the command (refused) or inherited (scrubbed): the same agent steering
+  the report through the two variables pytest reads its options and plugins from. `PYTHONPATH`
+  and every other variable are the project's.
+- `-P`: a module named `pytest` in the directory the command runs in, which the agent can write.
+  The anchor is the argv stayfixed runs.
+
+What a file in the tree can do -- a `conftest.py` that moves the report or rewrites it on the way
+out, a configuration file's `addopts`, a shim on `PATH`, the interpreter a script's first line
+names -- is the bound's: the receipt names the configuration files (`CONFIGS`) and the untracked
+files pytest collects from (`DISCOVERY`), and the realpath of the program that ran.
+"""
+
+from __future__ import annotations
+
+import os
+import re
+from collections.abc import Mapping, Sequence
+from pathlib import Path
+
+from stayfixed import fsops
+from stayfixed.profiles.python.hygiene import PytestCommand, pytest_command
+from stayfixed.profiles.runners import Plan, Refused, ReportKind, ReportSource, Unresolved
+
+NAME = "pytest"
+# The reasons this adapter names: an option the closed list refuses, and a program that is not
+# where the command would find it.
+REFUSED_OPTION = "refused-option"
+ENTRY_NOT_FOUND = "entry-not-found"
+FORGING = frozenset({"PYTEST_ADDOPTS", "PYTEST_PLUGINS"})
+DISCOVERY = (
+    "conftest.py",
+    "**/conftest.py",
+    "test_*.py",
+    "**/test_*.py",
+    "*_test.py",
+    "**/*_test.py",
+)
+CONFIGS = ("pytest.ini", "pyproject.toml", "setup.cfg", "tox.ini")
+REPORT_NAME = "junit.xml"
+
+_MODULE = ("-m", "pytest")
+_SAFE_PATH = "-P"
+_FAMILY = ("-o", "junit_family=xunit2")
+_SEPARATOR = "--"
+_INTERPRETERS = ("python3", "python")
+# What the program a `#!` line names is called, where it is an interpreter.
+_INTERPRETER_PREFIX = "python"
+# Under a launcher, the interpreter it chooses.
+_LAUNCHED_INTERPRETER = "python"
+
+# The closed list of what is refused.
+_REPORT_OPTIONS = frozenset({"--junitxml", "--junit-xml"})
+_RUNS_NO_TEST = frozenset({"--setup-plan", "--setup-only", "--collect-only", "--co"})
+_OVERRIDE_INI = "--override-ini"
+_JUNIT_KEY = "junit_"
+_PLUGIN = "-p"
+_NO_REPORT = "no:junitxml"
+# pytest's own short options that take no value, which its parser lets stand in one word before
+# `-o` (`-qo junit_family=x`): a cluster is read up to the first letter outside them, and an `o`
+# there takes the rest of the word, or the next word, as its value.
+_PYTEST_FLAGS = frozenset("hlqsvVx")
+_INI_LETTER = "o"
+
+# How much of a console script is read for the interpreter its first two lines name.
+_SCRIPT_HEAD_BYTES = 4096
+# The installer's trampoline for an interpreter path too long for a `#!` line, quoted either way.
+_TRAMPOLINE = re.compile(r"""'''exec' (['"])(?P<python>.+?)\1 "\$0" "\$@"\s*""")
+
+
+def _ini(option: str, value: str | None) -> str | None:
+    """`option` and the `junit_*` key `value` sets, where it sets one."""
+    if value is None or not value.startswith(_JUNIT_KEY):
+        return None
+    return f"{option} {value.partition('=')[0]}"
+
+
+def _clustered_ini(word: str, following: str | None) -> str | None:
+    """The `junit_*` key a short-option word (`-o`, `-ojunit_x=1`, `-qo`) sets with `-o`."""
+    for index, letter in enumerate(word[1:], start=1):
+        if letter == _INI_LETTER:
+            rest = word[index + 1 :]
+            return _ini(f"-{_INI_LETTER}", rest.removeprefix("=") if rest else following)
+        if letter not in _PYTEST_FLAGS:
+            return None
+    return None
+
+
+def refused_option(args: Sequence[str]) -> str | None:
+    """The first option of `args`, pytest's arguments, on the closed list, as it is named on the
+    receipt; `None` where none is."""
+    # pytest reads `-p` in every word, before it parses any and past a `--`, its value stripped.
+    for index, word in enumerate(args):
+        if word == _PLUGIN:
+            plugin = args[index + 1] if index + 1 < len(args) else ""
+        elif word.startswith(_PLUGIN):
+            plugin = word[len(_PLUGIN) :]
+        else:
+            continue
+        if plugin.strip() == _NO_REPORT:
+            return f"{_PLUGIN} {_NO_REPORT}"
+    # Every other option is the parser's, which reads none after `--`.
+    for index, word in enumerate(args):
+        if word == _SEPARATOR:
+            return None
+        following = args[index + 1] if index + 1 < len(args) else None
+        name, equals, value = word.partition("=")
+        if name in _REPORT_OPTIONS or name in _RUNS_NO_TEST:
+            return name
+        if name == _OVERRIDE_INI:
+            named = _ini(name, value if equals else following)
+        elif word.startswith("-") and not word.startswith(_SEPARATOR):
+            named = _clustered_ini(word, following)
+        else:
+            named = None
+        if named is not None:
+            return named
+    return None
+
+
+def _executable(path: Path) -> bool:
+    try:
+        return fsops.is_file(path) and os.access(path, os.X_OK)
+    except OSError:
+        return False
+
+
+def _found(word: str, cwd: Path, path: str) -> Path | None:
+    """The executable `word` names from `cwd`: a path, read from `cwd`; a bare name, the first on
+    `path`, a relative entry read from `cwd` too, as the run itself would read it."""
+    if os.sep in word:
+        candidates = [cwd / word]
+    else:
+        candidates = [cwd / directory / word for directory in path.split(os.pathsep)]
+    return next((candidate for candidate in candidates if _executable(candidate)), None)
+
+
+def _named_interpreter(script: Path, cwd: Path, path: str) -> Path | None:
+    """The interpreter the console script's first line names, or its second where the first is
+    the installer's `#!/bin/sh`; `None` where neither names one."""
+    try:
+        head, _ = fsops.read_bounded(script, _SCRIPT_HEAD_BYTES)
+    except OSError:
+        return None
+    first, _, rest = head.partition(b"\n")
+    if not first.startswith(b"#!"):
+        return None
+    words = os.fsdecode(first[2:]).split()
+    program = Path(words[0]).name if words else ""
+    if program.startswith(_INTERPRETER_PREFIX):
+        return cwd / words[0]
+    if program == "env" and len(words) > 1 and words[1].startswith(_INTERPRETER_PREFIX):
+        return _found(words[1], cwd, path)
+    trampoline = _TRAMPOLINE.fullmatch(os.fsdecode(rest.partition(b"\n")[0]))
+    if program == "sh" and trampoline is not None:
+        return cwd / trampoline["python"]
+    return None
+
+
+def _interpreter(script: Path, cwd: Path, path: str) -> Path | None:
+    """What runs `-m pytest` for the console script `script`: the interpreter it names, else
+    `python3`, else `python`, on `path`."""
+    named = _named_interpreter(script, cwd, path)
+    if named is not None:
+        return named
+    return next(
+        (found for name in _INTERPRETERS if (found := _found(name, cwd, path)) is not None), None
+    )
+
+
+def _with_report(args: Sequence[str], report: Path) -> tuple[str, ...]:
+    """pytest's arguments with the report's options added last, before a `--` where there is
+    one, since pytest reads every word after it as a path to collect."""
+    ours = (f"--junitxml={report}", *_FAMILY)
+    cut = args.index(_SEPARATOR) if _SEPARATOR in args else len(args)
+    return (*args[:cut], *ours, *args[cut:])
+
+
+def _argv(
+    launch: Sequence[str], run: PytestCommand, cwd: Path, path: str, module: tuple[str, ...]
+) -> tuple[Path, tuple[str, ...]] | None:
+    """The program and the argv that run `module` (`-P … -m pytest …`), or `None` where the
+    program is not where the command would find it."""
+    front = tuple(launch) or run.launcher
+    if front:
+        launcher = _found(front[0], cwd, path)
+        if launcher is None:
+            return None
+        words = (*launch[1:], *run.launcher) if launch else run.launcher[1:]
+        chosen = run.program if run.module else _LAUNCHED_INTERPRETER
+        return launcher, (str(launcher), *words, chosen, *module)
+    found = _found(run.program, cwd, path)
+    if found is None:
+        return None
+    python = found if run.module else _interpreter(found, cwd, path)
+    if python is None:
+        return None
+    return python, (str(python), *module)
+
+
+class PytestAdapter:
+    """`RunnerAdapter` for pytest."""
+
+    @property
+    def name(self) -> str:
+        return NAME
+
+    @property
+    def forging(self) -> frozenset[str]:
+        return FORGING
+
+    def recognises(self, command: Sequence[str]) -> bool:
+        return pytest_command(command) is not None
+
+    def plan(
+        self,
+        launch: Sequence[str],
+        command: Sequence[str],
+        *,
+        cwd: Path,
+        root: Path,
+        scratch: Path,
+        environ: Mapping[str, str],
+    ) -> Plan | Refused | Unresolved:
+        run = pytest_command(command)
+        if run is None:
+            return Unresolved(ENTRY_NOT_FOUND)
+        refused = refused_option(run.args)
+        if refused is not None:
+            return Refused(REFUSED_OPTION, refused)
+        report = scratch / REPORT_NAME
+        module = (_SAFE_PATH, *run.options, *_MODULE, *_with_report(run.args, report))
+        resolved = _argv(launch, run, cwd, environ.get("PATH", os.defpath), module)
+        if resolved is None:
+            return Unresolved(ENTRY_NOT_FOUND)
+        program, argv = resolved
+        return Plan(
+            argv=argv,
+            program=Path(os.path.realpath(program)),
+            kind=ReportKind.JUNIT,
+            source=ReportSource.FILE,
+            report=report,
+            set_env={},
+            scrub=FORGING,
+            discovery=DISCOVERY,
+            configs=CONFIGS,
+        )
+
+
+ADAPTERS = (PytestAdapter(),)
