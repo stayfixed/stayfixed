@@ -17,13 +17,13 @@ below. Behind a launcher the core read past (`uv run …`), the launcher is foun
 words are handed to it as typed, for it to resolve on its own `PATH`; nothing is looked for on the
 caller's. `npx` runs as it does outside `prove`: it reads `.npmrc` and puts every
 `node_modules/.bin` above the directory on `PATH` (measured with npm 11.6.0 on Node 24.10.0), and
-given a runner no `node_modules` holds it may install one, as the typed command would. What stays
-`ENTRY_NOT_FOUND`:
-a first word that names nothing there (a bare `jest` on no `PATH` entry, whose detail names `npx
-jest` and `prove --junit`: nothing the command names can run); a path to the runner that is no link
-to its package's entry (pnpm's `sh` shim, which may run anything, so nothing tells that it is
-jest's); and a file `node` is handed that is not that entry. A bare `jest` on `PATH` is the runner
-by its name, and runs whatever that file is.
+given a runner no `node_modules` holds it may install one, as the typed command would.
+
+What stays `ENTRY_NOT_FOUND`: a first word that names nothing there (a bare `jest` on no `PATH`
+entry, whose detail names `npx jest` and `prove --junit`: nothing the command names can run); a
+path to the runner that is no link to its package's entry (pnpm's `sh` shim, which may run
+anything, so nothing tells that it is jest's); and a file `node` is handed that is not that entry.
+A bare `jest` on `PATH` is the runner by its name, and runs whatever that file is.
 
 **The entry the receipt names** (`Plan.entry`), by its realpath, where it is not the program itself:
 the file `node` is handed; the link's target behind a launcher; and for `npx`, the one found the way
