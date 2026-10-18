@@ -8,8 +8,10 @@ and the verdict comes from the report the runner wrote and the code it exited wi
 
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import hashlib
+import io
 import json
 import os
 import signal
@@ -20,6 +22,7 @@ import time
 import types
 from collections.abc import Sequence
 from pathlib import Path
+from typing import TextIO
 
 import pytest
 
@@ -40,6 +43,7 @@ from stayfixed.prove.run import (
     NONE_RAN,
     NOT_RECOGNISED,
     NOT_STARTED,
+    REFUSED_LAUNCHER_OPTION,
     RESOLVED_ELSEWHERE,
     TIMED_OUT,
     WORDS,
@@ -72,6 +76,7 @@ def run(
     adapter: StandIn | None = None,
     environ: dict[str, str] | None = None,
     timeout: float = 600,
+    echo: TextIO | None = None,
 ) -> Receipt:
     return prove(
         argv,
@@ -79,6 +84,7 @@ def run(
         environ=dict(os.environ) if environ is None else environ,
         timeout=timeout,
         adapters=[adapter or StandIn()],
+        echo=echo,
     )
 
 
@@ -141,6 +147,8 @@ def test_printed_text_is_never_counted(tmp_path: Path) -> None:
         # An `env` option leaves the command unread rather than guessed at.
         ["env", "-i", NAME],
         ["env", "-u", "HOME", NAME],
+        ["env", "-S", f"FORGE=x {NAME}"],
+        ["uv", "run", "env", "-i", "FORGE=x", NAME],
         [],
     ],
 )
@@ -152,10 +160,23 @@ def test_an_unrecognised_command_is_not_proven(tmp_path: Path, argv: list[str]) 
     assert line(got) == f"not proven: {WORDS[NOT_RECOGNISED]}"
 
 
-@pytest.mark.parametrize("argv", [["env", "FORGE=x", NAME], ["FORGE=x", NAME]])
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["env", "FORGE=x", NAME],
+        ["FORGE=x", NAME],
+        # Wherever the command spells the assignment: before the launcher or after it, bare or
+        # after `env`.
+        ["uv", "run", "env", "FORGE=x", NAME],
+        ["env", "A=1", "uv", "run", "env", "FORGE=x", NAME],
+        ["FORGE=x", "uv", "run", NAME],
+        ["uv", "run", "FORGE=x", NAME],
+    ],
+)
 def test_an_assigned_forging_variable_is_refused(tmp_path: Path, argv: list[str]) -> None:
-    # Mutation (declared): the assigned name scrubbed from the run's environment instead of
-    # refused -> the run goes ahead and the stand-in's green report is `proved`.
+    # Mutations (declared): the assigned name scrubbed from the run's environment instead of
+    # refused -> the run goes ahead and the stand-in's green report is `proved`; the forging scan
+    # stopping at the launcher -> the shapes past `uv run` are `proved`.
     adapter = StandIn()
     got = run(tmp_path, *argv, adapter=adapter)
     assert (got.verdict, got.reason) == (REFUSED, ASSIGNED_FORGING)
@@ -164,12 +185,22 @@ def test_an_assigned_forging_variable_is_refused(tmp_path: Path, argv: list[str]
     assert adapter.seen == []  # refused before anything was planned or run
 
 
-def test_an_assigned_variable_outside_the_forging_set_reaches_the_runner(tmp_path: Path) -> None:
-    # `Popen` reads no shell assignment: the run hands it in the environment, and the word itself
-    # never reaches the argv.
-    got = run(tmp_path, "env", "TYPED=yes", NAME, "--expect-env", "TYPED=yes")
-    assert got.verdict == PROVED
-    got = run(tmp_path, "TYPED=yes", NAME, "--expect-env", "TYPED=yes")
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["env", "TYPED=yes", NAME],
+        ["TYPED=yes", NAME],
+        ["uv", "run", "env", "TYPED=yes", NAME],
+        ["TYPED=no", "uv", "run", "env", "TYPED=yes", NAME],
+    ],
+)
+def test_an_assigned_variable_outside_the_forging_set_reaches_the_runner(
+    tmp_path: Path, argv: list[str]
+) -> None:
+    # `Popen` reads no shell assignment: the run hands it in the environment, the last of two
+    # winning, and the word itself never reaches the argv. Mutation (declared): the assignments
+    # read only up to the launcher -> the one past `uv run` never reaches the runner.
+    got = run(tmp_path, *argv, "--expect-env", "TYPED=yes")
     assert got.verdict == PROVED
 
 
@@ -270,11 +301,87 @@ def test_outside_a_repository_the_project_is_the_directory_itself(tmp_path: Path
     assert (got.untracked, got.configs) == ((), ())
 
 
-def test_the_assignments_are_the_shell_s_and_env_s_and_stop_at_the_launcher() -> None:
-    # Words after `uv run` are uv's to read, never an assignment the shell or `env` makes.
-    # Mutation (declared): the read going on past the first other word -> `C` is assigned too.
-    launch = ["A=1", "env", "B=2", "A=3", "uv", "run", "C=4"]
-    assert assignments(launch) == {"A": "3", "B": "2"}
+def test_the_assignments_are_every_one_the_launch_makes_the_last_winning() -> None:
+    assert assignments(["A=1", "B=2", "A=3"]) == {"A": "3", "B": "2"}
+
+
+@pytest.mark.parametrize(
+    ("argv", "launch"),
+    [
+        (
+            ["A=1", "env", "B=2", "uv", "run", "--locked", "env", "C=3", NAME],
+            ("uv", "run", "--locked"),
+        ),
+        (["env", "A=1", NAME], ()),
+        (["uv", "--quiet", "run", "--", NAME], ("uv", "--quiet", "run", "--")),
+    ],
+)
+def test_the_adapter_is_handed_the_launcher_s_words_alone(
+    tmp_path: Path, argv: list[str], launch: tuple[str, ...]
+) -> None:
+    # The core takes every assignment and every `env` out of the launch: they reach the run's
+    # environment, and an adapter that keeps the launch in its argv keeps only the launcher.
+    # Mutation (declared): the launch handed whole -> the adapter sees the assignments too.
+    adapter = StandIn()
+    got = run(tmp_path, *argv, adapter=adapter)
+    assert got.verdict == PROVED
+    assert adapter.launches == [launch]
+
+
+@pytest.mark.parametrize(
+    ("argv", "option"),
+    [
+        (["uv", "run", "--env-file", ".env", NAME], "--env-file"),
+        (["uv", "run", "--env-file=.env", NAME], "--env-file"),
+        (["uv", "--config-file", "c.toml", "run", NAME], "--config-file"),
+        (["uv", "--config-file=c.toml", "run", NAME], "--config-file"),
+        (["uv", "run", "--locked", "--config-file", "c.toml", NAME], "--config-file"),
+        (["A=1", "env", "uv", "run", "--env-file", ".env", NAME], "--env-file"),
+        # Read where the tables would read it as another option's value: uv itself reads no
+        # option's value that starts with `-` (measured: it exits 2), so the spelling alone is
+        # refused, and a table that has fallen behind uv cannot hide it.
+        (["uv", "run", "--with", "--env-file", NAME], "--env-file"),
+    ],
+)
+def test_a_launcher_option_that_loads_a_file_is_refused(
+    tmp_path: Path, argv: list[str], option: str
+) -> None:
+    # The launcher would load an environment or a configuration the command names, past every
+    # channel stayfixed controls. Mutation (declared): the launcher's options never read -> the
+    # run goes ahead and is `proved`.
+    adapter = StandIn()
+    got = run(tmp_path, *argv, adapter=adapter)
+    assert got.verdict == REFUSED
+    assert got.reason == REFUSED_LAUNCHER_OPTION
+    assert got.detail == option
+    assert EXIT[got.verdict] == 2
+    assert adapter.seen == []
+    assert WORDS[REFUSED_LAUNCHER_OPTION] in line(got)
+
+
+def test_a_launcher_option_that_loads_no_file_is_free(tmp_path: Path) -> None:
+    # `--no-env-file` turns the loading off.
+    assert run(tmp_path, "uv", "run", "--no-env-file", "--locked", NAME).verdict == PROVED
+
+
+@pytest.mark.parametrize("variable", ["UV_ENV_FILE", "UV_CONFIG_FILE"])
+def test_the_launcher_s_file_variables_are_forging_and_scrubbed_where_it_runs(
+    tmp_path: Path, variable: str
+) -> None:
+    # The variable spelling of the same two options: assigned in a launch that runs the launcher,
+    # it is refused; inherited, it is removed. Where nothing launches, it is any variable.
+    # Mutations (declared): the launcher's variables left out of the forging set, and an
+    # inherited one kept -> each run is `proved` with the variable in place.
+    for argv in ([f"{variable}=x", "uv", "run", NAME], ["uv", "run", "env", f"{variable}=x", NAME]):
+        got = run(tmp_path, *argv)
+        assert (got.verdict, got.reason, got.detail) == (REFUSED, ASSIGNED_FORGING, variable)
+    environ = {**os.environ, variable: "inherited"}
+    got = run(tmp_path, "uv", "run", NAME, "--expect-unset", variable, environ=environ)
+    assert got.verdict == PROVED
+    got = run(tmp_path, NAME, "--expect-env", f"{variable}=inherited", environ=environ)
+    assert got.verdict == PROVED
+    got = run(tmp_path, f"{variable}=x", NAME, "--expect-env", f"{variable}=x")
+    assert got.verdict == PROVED
 
 
 def test_a_value_never_reaches_the_receipt(tmp_path: Path) -> None:
@@ -387,6 +494,60 @@ def test_a_command_that_cannot_start_is_not_proven(tmp_path: Path, source: Repor
     assert (got.verdict, got.reason) == (NOT_PROVEN, NOT_STARTED)
 
 
+def test_a_plan_whose_program_is_not_absolute_is_a_defect_and_raises(tmp_path: Path) -> None:
+    # A bare name would be resolved against stayfixed's own directory and `PATH`, never the
+    # adapter's: so it is a defect in the adapter, as a module that does not import is, and never
+    # a verdict. Mutation (declared): the check dropped -> the run goes ahead.
+    adapter = StandIn(relative=True)
+    with pytest.raises(ValueError, match="not absolute"):
+        run(tmp_path, NAME, adapter=adapter)
+    [(_, scratch)] = adapter.seen
+    assert not scratch.exists()
+
+
+def test_the_tee_decodes_a_character_cut_between_two_reads(tmp_path: Path) -> None:
+    # A caller's stream that takes text alone is handed whole characters: one cut between two
+    # reads off the pipe is held until its last byte arrives. Mutation (declared): each chunk
+    # decoded alone -> two replacement characters.
+    source_fd, writer = os.pipe()
+    report = os.open(tmp_path / "report", os.O_WRONLY | os.O_CREAT, 0o600)
+    caller = io.StringIO()
+    tee = run_module._Tee(os.fdopen(source_fd, "rb"), report, caller)
+    encoded = "é".encode()
+    tee._copy(encoded[:1])
+    tee._copy(encoded[1:])
+    os.close(writer)
+    tee.finish()
+    assert caller.getvalue() == "é"
+    assert (tmp_path / "report").read_bytes() == encoded
+
+
+def test_a_closed_caller_stream_stops_the_copy_to_it_and_the_report_still_fills(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `stayfixed prove -- … | head`: once the reader has gone, nothing more is written to it, no
+    # thread dies on the broken pipe, and the report is copied whole. Mutations (declared): the
+    # broken pipe let through -> the thread dies and the report is cut short; the copy stopped
+    # with it -> the same.
+    died: list[BaseException | None] = []
+    monkeypatch.setattr(threading, "excepthook", lambda args: died.append(args.exc_value))
+    reader, writer = os.pipe()
+    os.close(reader)
+    caller = io.TextIOWrapper(os.fdopen(writer, "wb"))
+    adapter = StandIn(source=ReportSource.STDOUT)
+    try:
+        # A first event longer than one read, so the report's count is in a later one.
+        printed = "x" * 100_000
+        got = run(
+            tmp_path, NAME, "--print", printed, "--report", "fail", adapter=adapter, echo=caller
+        )
+    finally:
+        with contextlib.suppress(OSError):
+            caller.close()
+    assert died == []
+    assert (got.verdict, got.reason, got.counts) == (FAILED, FAILING, Counts(0, 1, 0))
+
+
 def test_a_report_past_the_cap_is_refused_and_not_cut_to_fit(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsysbinary: pytest.CaptureFixture[bytes]
 ) -> None:
@@ -493,10 +654,55 @@ def test_the_receipt_names_untracked_ignored_and_config_files(tmp_path: Path) ->
     (root / "hidden" / "test_ignored.py").write_text("", encoding="utf-8")
     (root / "notes.txt").write_text("", encoding="utf-8")
     got = run(root, NAME)
-    assert got.untracked == ("hidden/test_ignored.py", "test_untracked.py")
+    assert got.untracked == ("test_untracked.py", "hidden/test_ignored.py")
     assert got.untracked_more == 0
     assert got.configs == ("stand-in.toml",)
     assert got.verdict == PROVED  # information for the reader, never an input to the verdict
+
+
+def test_an_untracked_file_is_listed_before_any_ignored_one(tmp_path: Path) -> None:
+    # A tree of ignored dependencies matching the discovery globs never hides the one untracked
+    # file a change added behind a count. Mutation (declared): the two lists sorted as one -> the
+    # untracked file is past the cap.
+    root = repository(tmp_path / "repo")
+    (root / ".gitignore").write_text("deps/\n", encoding="utf-8")
+    (root / "deps").mkdir()
+    for index in range(tree.UNTRACKED_LISTED + 5):
+        (root / "deps" / f"test_{index:02d}.py").write_text("", encoding="utf-8")
+    (root / "test_real.py").write_text("", encoding="utf-8")
+    state = tree.state(root, ("test_*.py",), ())
+    assert state.untracked is not None
+    assert state.untracked[0] == "test_real.py"
+    assert state.untracked[1] == "deps/test_00.py"
+    assert (len(state.untracked), state.more) == (tree.UNTRACKED_LISTED, 6)
+
+
+def test_a_configuration_file_git_ignores_is_never_named(tmp_path: Path) -> None:
+    # An ignored dependency tree holds configuration-named files of its own by the dozen, none of
+    # them the project's. Mutation (declared): the ignored files matched too -> every one named.
+    root = repository(tmp_path / "repo")
+    (root / ".gitignore").write_text("deps/\n", encoding="utf-8")
+    (root / "stand-in.toml").write_text("", encoding="utf-8")
+    for index in range(50):
+        (root / "deps" / f"p{index:02d}").mkdir(parents=True)
+        (root / "deps" / f"p{index:02d}" / "stand-in.toml").write_text("", encoding="utf-8")
+    (root / "sub").mkdir()
+    (root / "sub" / "stand-in.toml").write_text("", encoding="utf-8")
+    state = tree.state(root, (), ("stand-in.toml",))
+    assert (state.configs, state.configs_more) == (("stand-in.toml", "sub/stand-in.toml"), 0)
+
+
+def test_the_configuration_list_stops_at_its_cap_and_counts_the_rest(tmp_path: Path) -> None:
+    # Mutation (declared): the configuration list uncapped -> every one named.
+    root = repository(tmp_path / "repo")
+    for index in range(tree.UNTRACKED_LISTED + 3):
+        (root / f"c{index:02d}").mkdir()
+        (root / f"c{index:02d}" / "stand-in.toml").write_text("", encoding="utf-8")
+    got = run(root, NAME)
+    assert len(got.configs) == tree.UNTRACKED_LISTED
+    assert got.configs[0] == "c00/stand-in.toml"
+    assert got.configs_more == 3
+    assert "and 3 more" in line(got).split("; configuration: ")[1].split(";")[0]
 
 
 def test_a_configuration_file_is_named_only_where_it_exists(tmp_path: Path) -> None:
@@ -532,7 +738,7 @@ def test_tree_state_is_taken_before_and_after(tmp_path: Path) -> None:
 
 def test_tree_state_outside_git_is_unknown_and_never_a_refusal(tmp_path: Path) -> None:
     state = tree.state(tmp_path, ("*",), ("*",))
-    assert state == tree.TreeState(None, None, None, 0, None)
+    assert state == tree.TreeState(None, None, None, 0, None, 0)
 
 
 def test_prove_needs_no_stayfixed_toml(tmp_path: Path) -> None:

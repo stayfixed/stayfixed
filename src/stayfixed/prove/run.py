@@ -3,10 +3,14 @@ say what that proves.
 
 What `prove` does, in order. The project it answers for is the git top-level of the directory the
 command is typed in, or that directory itself outside a repository; the command runs in the
-directory, never in the top-level. `guards.api.command_words` reads the command past its leading
+directory, never in the top-level. `guards.api.read_launch` reads the command past its
 assignments, `env` and `uv run …` (the launch), and the first runner adapter that recognises what
-is left plans the run: an assignment in the launch of a variable in the adapter's `forging` set is
-`refused` before anything is planned. The plan names the argv to execute, the realpath of its
+is left plans the run. Every `NAME=value` the launch holds, wherever it stands, is an assignment
+of the command: one of a variable in the adapter's `forging` set, or in the launcher's own
+file-loading set where the launch runs a launcher, is `refused`, and so is a launcher option that
+loads a file, both before anything is planned; every other assignment goes into the run's
+environment. The adapter is handed the launcher's words alone, never an assignment or an `env`.
+The plan names the argv to execute, the realpath of its
 program, where the report arrives and in which format, what the run's environment gains and loses,
 and the globs of the files that shape the report. The tree's state is taken, the program is checked
 to be the file the adapter resolved, and the command runs in a session of its own; then the report
@@ -23,9 +27,17 @@ everything it reads, the agent that typed the command can write.
 **Every control here, with its adversary and its anchor.**
 
 - `ASSIGNED_FORGING`: an agent steering the report with a variable it assigns in the command
-  itself. The anchor is the command, which that agent writes, so the control is a closed list the
-  adapter names and refuses nothing outside it; a variable the run inherits is the adapter's to
-  scrub or set, which changes the run and refuses nothing.
+  itself, before a launcher or after it, bare or after `env`. The anchor is the command's own
+  words, which stayfixed reads before anything runs; the control is a closed list the adapter
+  names, and the launcher's variables that load a file (`guards.api.LAUNCHER_FILE_VARIABLES`)
+  where the launch runs a launcher, and refuses nothing outside them. A variable the run inherits
+  is the adapter's to scrub or set, and an inherited launcher variable that loads a file is
+  scrubbed, which changes the run and refuses nothing.
+- `REFUSED_LAUNCHER_OPTION`: the same agent having the launcher load an environment or a
+  configuration file it names (`guards.api.LAUNCHER_FILE_OPTIONS`), past every channel stayfixed
+  controls. The anchor is again the command's own words; the option's spelling is refused
+  wherever it stands among the launcher's words, which the launcher itself never reads as a
+  value, so it refuses no command the launcher would run.
 - `RESOLVED_ELSEWHERE`: a program swapped between the plan and the launch, the anchor being the
   filesystem, which the agent can write. A run whose program did not move passes, so it refuses no
   legitimate user; it is a convenience that names the swap, not a guarantee against one.
@@ -42,6 +54,7 @@ everything it reads, the agent that typed the command can write.
 
 from __future__ import annotations
 
+import codecs
 import contextlib
 import hashlib
 import os
@@ -57,11 +70,11 @@ from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import IO, BinaryIO
+from typing import IO, BinaryIO, TextIO
 
 from stayfixed import fsops, processes
 from stayfixed.gitenv import checkout_root
-from stayfixed.guards.api import command_words
+from stayfixed.guards.api import LAUNCHER_FILE_OPTIONS, LAUNCHER_FILE_VARIABLES, read_launch
 from stayfixed.printed import clipped, printable
 from stayfixed.profiles.runners import Plan, Refused, ReportSource, RunnerAdapter, Unresolved
 from stayfixed.prove import tree
@@ -107,6 +120,7 @@ PROVE_TIMEOUT_SECONDS = 3600
 # `stayfixed.prove.counts`'.
 NOT_RECOGNISED = "not-recognised"
 ASSIGNED_FORGING = "assigned-forging"
+REFUSED_LAUNCHER_OPTION = "launcher-option"
 RESOLVED_ELSEWHERE = "resolved-elsewhere"
 NOT_STARTED = "not-started"
 TIMED_OUT = "timed-out"
@@ -122,6 +136,7 @@ WORDS: Mapping[str, str] = {
     "": "the runner reported every test it ran as passed",
     NOT_RECOGNISED: "no runner adapter recognises this command, so nothing can count its report",
     ASSIGNED_FORGING: "the command assigns a variable its runner reads to shape the report",
+    REFUSED_LAUNCHER_OPTION: "the command's launcher loads an environment or configuration file",
     RESOLVED_ELSEWHERE: "the program changed between the plan and the launch",
     NOT_STARTED: "the command could not be started",
     TIMED_OUT: "the run passed its time limit and was ended",
@@ -147,7 +162,6 @@ _ADAPTER_WORDS: Mapping[Verdict, str] = {
 _ASSIGNMENT = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)=(.*)", re.DOTALL)
 # An option given its value in the same word, `--name=value`.
 _OPTION_VALUE = re.compile(r"(--[^=]+=).*", re.DOTALL)
-_ENV = "env"
 REDACTED = "…"
 
 
@@ -161,8 +175,9 @@ class Receipt:
     where a report stopped reading. `program` is the realpath of what ran; `verified` is false only
     where the plan said its runner is not one an adapter resolved. `commit` and `dirty_before` are
     the tree's state before the run, `dirty_after` after it, and `untracked` (at most
-    `tree.UNTRACKED_LISTED`, `untracked_more` past it) and `configs` after it, or before it where
-    git could not answer after: none of them is an input to the verdict.
+    `tree.UNTRACKED_LISTED`, `untracked_more` past it) and `configs` (at most as many,
+    `configs_more` past it) after it, or before it where git could not answer after: none of them
+    is an input to the verdict.
     """
 
     verdict: Verdict
@@ -181,6 +196,7 @@ class Receipt:
     untracked: tuple[str, ...] = ()
     untracked_more: int = 0
     configs: tuple[str, ...] = ()
+    configs_more: int = 0
 
 
 _NO_COUNTS = Counts(0, 0, 0)
@@ -239,16 +255,23 @@ def redacted(argv: Sequence[str]) -> tuple[str, ...]:
     return tuple(shown)
 
 
-def assignments(launch: Sequence[str]) -> dict[str, str]:
-    """The variables the launch assigns as the shell and `env` would: each `NAME=value` before the
-    command or after an `env`, up to the first other word, the last of two for one name winning."""
+def assignments(words: Sequence[str]) -> dict[str, str]:
+    """The variables `words`, a launch's assignments (`guards.api.Launch.assignments`, each a
+    `NAME=value`), assign, in order, the last of two for one name winning."""
     assigned: dict[str, str] = {}
-    for word in launch:
-        if assignment := _ASSIGNMENT.fullmatch(word):
-            assigned[assignment.group(1)] = assignment.group(2)
-        elif Path(word).name != _ENV:
-            break
+    for word in words:
+        name, _, value = word.partition("=")
+        assigned[name] = value
     return assigned
+
+
+def file_option(launcher: Sequence[str]) -> str | None:
+    """The first of the launcher's options that loads a file which `launcher`'s words spell, as
+    `--name value` or `--name=value`, by its name; `None` where none does."""
+    return next(
+        (name for word in launcher if (name := word.partition("=")[0]) in LAUNCHER_FILE_OPTIONS),
+        None,
+    )
 
 
 class _Signalled(Exception):
@@ -276,31 +299,44 @@ def _signals_end_the_run() -> Iterator[None]:
 
 
 class _Tee:
-    """The runner's standard output, copied as it arrives to the caller's and, up to one byte past
-    `MAX_REPORT_BYTES`, to the report, by a thread of its own that owns both descriptors.
+    """The runner's standard output, copied as it arrives to the caller's stream and, up to one
+    byte past `MAX_REPORT_BYTES`, to the report, by a thread of its own that owns both descriptors.
 
     The thread reads until the pipe ends; once `finish` is asked, it stops at the first moment the
     pipe holds nothing, or once it has copied `MAX_REPORT_BYTES` more, so a descendant that left the
-    process group and writes on cannot keep it.
+    process group and writes on cannot keep it. A caller's stream that takes text alone is handed
+    whole characters, decoded across reads. A caller that has gone (`| head`, a closed stream) is
+    written nothing more, and the report goes on filling.
     """
 
-    def __init__(self, source: IO[bytes], report: int) -> None:
+    def __init__(self, source: IO[bytes], report: int, caller: TextIO) -> None:
         self._source = source
         self._report = report
         self._room = MAX_REPORT_BYTES + 1
         self._stop = threading.Event()
-        stream = sys.stdout
-        self._out: BinaryIO | None = getattr(stream, "buffer", None)
-        self._text = stream
+        self._out: BinaryIO | None = getattr(caller, "buffer", None)
+        self._text = caller
+        self._decoder = codecs.getincrementaldecoder("utf-8")("replace")
+        self._gone = False
         self._thread = threading.Thread(target=self._pump, daemon=True)
         self._thread.start()
 
+    def _echo(self, chunk: bytes, *, final: bool = False) -> None:
+        if self._gone:
+            return
+        try:
+            if self._out is not None:
+                self._out.write(chunk)
+                self._out.flush()
+            else:
+                self._text.write(self._decoder.decode(chunk, final))
+        except (OSError, ValueError):
+            # The reader of the caller's stream went away, or the stream was closed: the run is
+            # not the caller's to end, and its report is not cut short.
+            self._gone = True
+
     def _copy(self, chunk: bytes) -> None:
-        if self._out is not None:
-            self._out.write(chunk)
-            self._out.flush()
-        else:
-            self._text.write(chunk.decode("utf-8", "replace"))
+        self._echo(chunk)
         share = chunk[: self._room]
         self._room -= len(share)
         while share:
@@ -326,6 +362,8 @@ class _Tee:
                         if after_stop > MAX_REPORT_BYTES:
                             return
         finally:
+            if self._out is None:
+                self._echo(b"", final=True)
             self._source.close()
             os.close(self._report)
 
@@ -361,18 +399,21 @@ class _Ran:
     exit_code: int | None
 
 
-def _run(plan: Plan, cwd: Path, env: Mapping[str, str], timeout: float) -> _Ran:
-    """Run `plan` in `cwd` under `env`, its process group ended however it finishes."""
+def _run(plan: Plan, cwd: Path, env: Mapping[str, str], timeout: float, echo: TextIO) -> _Ran:
+    """Run `plan` in `cwd` under `env`, its process group ended however it finishes, a report on
+    standard output teed to `echo`."""
     teed = plan.source is ReportSource.STDOUT
     report = _open_report(plan.report) if teed else None
     sys.stdout.flush()
+    with contextlib.suppress(OSError, ValueError):
+        echo.flush()
     try:
         process = _launch(plan, cwd, env, teed)
     except OSError:
         if report is not None:
             os.close(report)
         return _Ran(NOT_STARTED, None)
-    tee = None if report is None or process.stdout is None else _Tee(process.stdout, report)
+    tee = None if report is None or process.stdout is None else _Tee(process.stdout, report, echo)
     try:
         try:
             with _signals_end_the_run():
@@ -416,34 +457,51 @@ def prove(
     environ: Mapping[str, str],
     timeout: float,
     adapters: Sequence[RunnerAdapter] | None = None,
+    echo: TextIO | None = None,
 ) -> Receipt:
     """Run `argv` in `cwd` and say what its runner's report proves. `adapters` defaults to every
-    adapter this stayfixed ships (`shipped_adapters`)."""
+    adapter this stayfixed ships (`shipped_adapters`); `echo`, where a report on the runner's
+    standard output is teed, to the caller's standard output.
+
+    An adapter whose plan's program is not an absolute path is a defect in stayfixed, as a module
+    that does not import is, and raises `ValueError`: a bare name would be found from stayfixed's
+    own directory and `PATH`, never where the adapter looked.
+    """
     given = tuple(argv)
     shown = redacted(given)
     root = checkout_root(cwd) or cwd
-    command = tuple(command_words(list(given)))
-    launch = given[: len(given) - len(command)]
+    launch = read_launch(given)
+    command = launch.command
     known = shipped_adapters() if adapters is None else adapters
     adapter = next((each for each in known if command and each.recognises(command)), None)
     if adapter is None:
         return _receipt(_Outcome(unproven=NOT_RECOGNISED), shown)
-    assigned = assignments(launch)
-    forged = sorted(name for name in assigned if name in adapter.forging)
+    assigned = assignments(launch.assignments)
+    # The launcher's own variables that load a file, where the launch runs one.
+    loaders = LAUNCHER_FILE_VARIABLES if launch.launcher else frozenset()
+    forged = sorted(name for name in assigned if name in adapter.forging | loaders)
     if forged:
         return _receipt(
             _Outcome(refused=ASSIGNED_FORGING), shown, detail=", ".join(forged), runner=adapter.name
         )
+    loading = file_option(launch.launcher)
+    if loading is not None:
+        return _receipt(
+            _Outcome(refused=REFUSED_LAUNCHER_OPTION), shown, detail=loading, runner=adapter.name
+        )
     scratch = Path(tempfile.mkdtemp(prefix="stayfixed-prove-"))
     try:
         planned = adapter.plan(
-            launch, command, cwd=cwd, root=root, scratch=scratch, environ=environ
+            launch.launcher, command, cwd=cwd, root=root, scratch=scratch, environ=environ
         )
         if isinstance(planned, Refused):
             return _receipt(_Outcome(refused=planned.reason), shown, adapter.name)
         if isinstance(planned, Unresolved):
             return _receipt(_Outcome(unproven=planned.reason), shown, adapter.name)
-        return _proved(adapter.name, planned, assigned, shown, cwd, root, environ, timeout)
+        # An inherited one goes from the run's environment as the plan's own scrub would go.
+        kept = {name: value for name, value in environ.items() if name not in loaders}
+        caller = echo if echo is not None else sys.stdout
+        return _proved(adapter.name, planned, assigned, shown, cwd, root, kept, timeout, caller)
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 
@@ -457,14 +515,17 @@ def _proved(
     root: Path,
     environ: Mapping[str, str],
     timeout: float,
+    echo: TextIO,
 ) -> Receipt:
+    if not os.path.isabs(plan.argv[0]):
+        raise ValueError(f"the {runner} adapter planned a program that is not absolute")
     before = tree.state(root, plan.discovery, plan.configs)
     if Path(os.path.realpath(plan.argv[0])) != plan.program:
         return _receipt(_Outcome(refused=RESOLVED_ELSEWHERE), shown, runner, plan, before=before)
     env = {name: value for name, value in environ.items() if name not in plan.scrub}
     env |= assigned
     env |= plan.set_env
-    ran = _run(plan, cwd, env, timeout)
+    ran = _run(plan, cwd, env, timeout, echo)
     after = tree.state(root, plan.discovery, plan.configs)
     if ran.stopped is not None:
         outcome, detail, digest = _Outcome(unproven=ran.stopped), "", None
@@ -507,6 +568,7 @@ def _receipt(
         untracked=(files.untracked or ()) if files is not None else (),
         untracked_more=files.more if files is not None else 0,
         configs=(configs.configs or ()) if configs is not None else (),
+        configs_more=configs.configs_more if configs is not None else 0,
     )
 
 
@@ -534,7 +596,9 @@ def line(receipt: Receipt) -> str:
             runner += ", not verified"
         parts.append(runner)
     if receipt.configs:
-        parts.append("configuration: " + ", ".join(printable(name) for name in receipt.configs))
+        listed = ", ".join(printable(name) for name in receipt.configs)
+        more = f" and {receipt.configs_more} more" if receipt.configs_more else ""
+        parts.append(f"configuration: {listed}{more}")
     if receipt.untracked:
         listed = ", ".join(printable(name) for name in receipt.untracked)
         more = f" and {receipt.untracked_more} more" if receipt.untracked_more else ""

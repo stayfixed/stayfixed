@@ -51,8 +51,11 @@ class Plan:
     `argv` is what is executed, its first item absolute, and `program` the realpath the adapter
     resolved for it, which the core checks again just before the launch. `kind`, `source` and
     `report` say what the report is and where it arrives; `report` lies in the scratch directory
-    the core handed the plan. The run's environment is the caller's less every inherited variable
-    in `scrub`, plus the command's own assignments, plus `set_env`, the last winning. `discovery`
+    the core handed the plan. `argv` holds no assignment and no `env`: the core takes every
+    `NAME=value` the command spells, before its launcher or after it, out of the launch it hands
+    `plan`, and the run's environment is the caller's less every inherited variable in `scrub`,
+    plus those assignments in order, plus `set_env`, the last winning. `argv[0]` not absolute is a
+    defect in the adapter, and the core raises. `discovery`
     is the globs of the files the runner collects tests from, and `configs` of the files that
     configure it, both matched from the right (`stayfixed.prove.tree`). `drop` is the JUnit
     reader's (`stayfixed.prove.junit.read_junit`), for a testcase a runner writes that is no test.
@@ -106,8 +109,8 @@ class RunnerAdapter(Protocol):
         ...
 
     def recognises(self, command: Sequence[str]) -> bool:
-        """Whether `command` runs this runner. `command` is what is left once the leading
-        assignments, `env` and `uv run …` are read past (`guards.api.command_words`)."""
+        """Whether `command` runs this runner. `command` is what is left once the assignments,
+        `env` and `uv run …` are read past (`guards.api.read_launch`)."""
         ...
 
     def plan(
@@ -122,5 +125,11 @@ class RunnerAdapter(Protocol):
     ) -> Plan | Refused | Unresolved:
         """How to run `command`, typed in `cwd` after `launch`, in the project `root`, its report
         put under `scratch`; or why not. A pure function of its arguments and of the filesystem it
-        reads: it runs nothing."""
+        reads: it runs nothing.
+
+        `launch` is the launcher's words alone (`uv run` and its options, and whatever launcher
+        the core reads through): the core has taken every assignment and every `env` out of it,
+        and they reach the run in its environment. A launcher option that loads a file, and an
+        assignment of a variable in `forging` or of a launcher's own file variable, were refused
+        before `plan` is asked."""
         ...

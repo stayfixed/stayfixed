@@ -140,3 +140,37 @@ def test_a_report_on_standard_output_reaches_a_text_only_stream_before_the_line(
     event = json.dumps({"Action": "pass", "Package": "p", "Test": "TestA"})
     assert out.startswith(f"{event}\n")
     assert out.splitlines()[-1].startswith("proved: ")
+
+
+def test_a_json_flag_after_the_separator_is_the_command_s(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `--json` after `--` is a word of the command, handed to its runner, and the answer is the
+    # line. Mutation (declared): every `--json` on the line taken by the frame -> the runner never
+    # sees it and the answer is JSON.
+    asked: list[list[str]] = []
+    real = prove_run.prove
+
+    def spy(argv: list[str], **kwargs: object) -> object:
+        asked.append(list(argv))
+        return real(argv, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr("stayfixed.prove.commands.prove", spy)
+    code, out, _ = prove_cli(tmp_path, monkeypatch, "--", NAME, "--json")
+    assert code == 0
+    assert asked == [[NAME, "--json"]]
+    assert out.startswith("proved: ")
+
+
+def test_with_json_a_report_on_standard_output_is_teed_to_standard_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Standard output is the one JSON object `--json` promises; the runner's own bytes, every one,
+    # go to standard error instead. Mutation (declared): the tee writing to standard output under
+    # `--json` too -> the object no longer parses.
+    adapter = StandIn(source=ReportSource.STDOUT)
+    code, out, err = prove_cli(tmp_path, monkeypatch, "--json", "--", NAME, adapter=adapter)
+    assert code == 0
+    assert json.loads(out)["verdict"] == "proved"
+    event = json.dumps({"Action": "pass", "Package": "p", "Test": "TestA"})
+    assert err == f"{event}\n"

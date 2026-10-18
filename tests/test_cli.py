@@ -14,7 +14,15 @@ from typing import cast
 import pytest
 
 from stayfixed import __version__
-from stayfixed.cli import Registrar, SubParsers, build_parser, discover_registrars, main, run
+from stayfixed.cli import (
+    Registrar,
+    SubParsers,
+    build_parser,
+    discover_registrars,
+    main,
+    run,
+    split_json_flag,
+)
 from stayfixed.errors import Failure, Refusal
 from stayfixed.result import Result
 from tests.cli import subparsers
@@ -357,3 +365,22 @@ def test_a_base_exception_in_a_command_is_an_internal_error_not_the_interpreters
     parser = build_parser([_area("probe", interrupted)])
     assert run(["probe", "go"], parser=parser) == 2
     assert f"internal error: {type(raised).__name__}" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("argv", "kept", "as_json"),
+    [
+        (["doctor", "--json"], ["doctor"], True),
+        (["--json", "doctor"], ["doctor"], True),
+        (["prove", "--json", "--", "x", "--json"], ["prove", "--", "x", "--json"], True),
+        (["prove", "--", "x", "--json"], ["prove", "--", "x", "--json"], False),
+        (["prove", "--", "x", "--", "--json"], ["prove", "--", "x", "--", "--json"], False),
+    ],
+)
+def test_json_is_read_before_the_first_separator_and_never_after_it(
+    argv: list[str], kept: list[str], as_json: bool
+) -> None:
+    # The words after a bare `--` are a command's own, which another program reads: `prove --
+    # runner --json` hands `--json` to the runner. Mutation (declared): every `--json` on the
+    # line stripped -> the runner's is taken.
+    assert split_json_flag(argv) == (kept, as_json)

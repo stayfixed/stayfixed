@@ -36,8 +36,8 @@ def discover_registrars() -> list[Registrar]:
 # Named in every `--help` because the frame accepts it before argparse does (`split_json_flag`),
 # so no command declares it and no command's own help would otherwise mention it.
 JSON_EPILOG = (
-    "--json is accepted anywhere on the line and prints one machine-readable object instead "
-    "of one line."
+    "--json is accepted anywhere on the line before a bare `--` and prints one machine-readable "
+    "object instead of one line."
 )
 
 
@@ -83,8 +83,12 @@ def _finish(groups: SubParsers) -> None:
 
 
 def split_json_flag(argv: list[str]) -> tuple[list[str], bool]:
-    """`--json` is accepted anywhere, so every command carries it without declaring it."""
-    return [arg for arg in argv if arg != "--json"], "--json" in argv
+    """`--json` is accepted anywhere before the first bare `--`, so every command carries it
+    without declaring it. The words after that `--` are a command's own, which another program
+    reads (`stayfixed prove -- runner --json`), so none of them is read or taken here."""
+    cut = argv.index("--") if "--" in argv else len(argv)
+    head = argv[:cut]
+    return [arg for arg in head if arg != "--json"] + argv[cut:], "--json" in head
 
 
 def _report(kind: str, message: str, code: int, as_json: bool) -> int:
@@ -140,6 +144,9 @@ def run(argv: list[str] | None, *, parser: argparse.ArgumentParser) -> int:
     raw = list(sys.argv[1:] if argv is None else argv)
     args_in, as_json = split_json_flag(raw)
     args = parser.parse_args(args_in)
+    # A command whose own output reaches standard output besides its result (`prove`'s teed
+    # report) reads it, to keep standard output one object under `--json`.
+    args.as_json = as_json
     func = getattr(args, "func", None)
     if func is None:
         parser.print_help()

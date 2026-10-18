@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import os
+import sys
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -54,7 +55,12 @@ def _seconds(value: str) -> float:
 
 
 def run_prove(args: argparse.Namespace) -> Result:
-    receipt = prove(args.command, cwd=Path.cwd(), environ=os.environ, timeout=args.timeout)
+    # Under `--json` standard output is the one object the frame prints, so a report on the
+    # runner's standard output is teed, every byte of it, to standard error instead.
+    echo = sys.stderr if getattr(args, "as_json", False) else None
+    receipt = prove(
+        args.command, cwd=Path.cwd(), environ=os.environ, timeout=args.timeout, echo=echo
+    )
     return Result(line(receipt), dataclasses.asdict(receipt), exit_code=EXIT[receipt.verdict])
 
 

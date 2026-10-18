@@ -8,6 +8,8 @@ is uv's own option grammar, measured against uv; it never runs uv.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 # `uv run --locked pytest`, the shape the README and the `attribute-failure` skill recommend:
 # `uv`, uv's global options, the word `run`, `run`'s options, then the program. The five tables
 # are uv's own, read off `uv --help` and `uv run --help` (uv 0.12.19, measured): the global
@@ -128,13 +130,21 @@ _UV_RUN_VALUED = _UV_GLOBAL_VALUED | frozenset(
     }
 )
 
+# The options with which uv loads a file of the command's choosing into what it runs: an
+# environment (`run`'s `--env-file`) or a configuration (the global `--config-file`), each spelled
+# `--name value` or `--name=value` (measured on uv 0.11.32: no abbreviation and no short form is
+# accepted), and the variables uv reads for the same two (`UV_ENV_FILE`, `UV_CONFIG_FILE`). A
+# caller that runs the command, as `prove` does, reads them here so that it never spells `uv`.
+FILE_OPTIONS = frozenset({"--env-file", "--config-file"})
+FILE_VARIABLES = frozenset({"UV_ENV_FILE", "UV_CONFIG_FILE"})
+
 
 def is_launcher(name: str) -> bool:
     """Whether a command's program, by its bare name, is uv."""
     return name == _UV
 
 
-def past_run(segment: list[str], index: int, *, modules_as_programs: bool) -> int | None:
+def past_run(segment: Sequence[str], index: int, *, modules_as_programs: bool) -> int | None:
     """Where the program `uv run` launches starts in `segment`, read from `index`, just past
     the word `uv` (`is_launcher`); `None` when these words are not a `uv run` the tables can
     read whole. `modules_as_programs` reads the word after `-m` or `--script` as that program.

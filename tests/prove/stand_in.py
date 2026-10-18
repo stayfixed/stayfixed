@@ -65,7 +65,8 @@ _EVENTS = {
 @dataclass(frozen=True)
 class StandIn:
     """`RunnerAdapter` for the word `stand-in`. `seen` collects each `plan` call's `root` and
-    `scratch`, so a test can ask what the run handed it and whether the scratch is gone."""
+    `scratch`, so a test can ask what the run handed it and whether the scratch is gone, and
+    `launches` each call's `launch`."""
 
     name: str = NAME
     forging: frozenset[str] = frozenset({"FORGE"})
@@ -81,7 +82,10 @@ class StandIn:
     swap: bool = False
     # Plans a program that is a file and cannot be executed.
     unlaunchable: bool = False
+    # Plans its program by a bare name, as no adapter may.
+    relative: bool = False
     seen: list[tuple[Path, Path]] = field(default_factory=list)
+    launches: list[tuple[str, ...]] = field(default_factory=list)
 
     def recognises(self, command: Sequence[str]) -> bool:
         return bool(command) and Path(command[0]).name == NAME
@@ -97,6 +101,7 @@ class StandIn:
         environ: Mapping[str, str],
     ) -> Plan | Refused | Unresolved:
         self.seen.append((root, scratch))
+        self.launches.append(tuple(launch))
         if self.refuse is not None:
             return Refused(self.refuse)
         if self.unresolved is not None:
@@ -107,6 +112,8 @@ class StandIn:
             first = str(scratch / "runner")
             Path(first).write_text("not a program\n", encoding="utf-8")
             program = Path(os.path.realpath(first))
+        if self.relative:
+            first = Path(sys.executable).name
         if self.swap:
             link = scratch / "runner"
             link.symlink_to(sys.executable)

@@ -535,3 +535,49 @@ def test_command_words_leaves_a_uv_command_it_cannot_read_whole(command: str) ->
     command other than `run` is unwrapped", "a uv command that never reaches `run` is
     unwrapped"."""
     assert bashscan.command_words(command.split()) == command.split()
+
+
+# --- `read_launch`: the same walk, every word of the launch named by its part ------------------
+
+
+@pytest.mark.parametrize(
+    ("command", "assignments", "launcher", "program"),
+    [
+        ("A=1 env B=2 pytest -q", ["A=1", "B=2"], [], ["pytest", "-q"]),
+        # An assignment after the launcher is the command's all the same, bare or after `env`.
+        ("uv run env FORGE=x pytest", ["FORGE=x"], ["uv", "run"], ["pytest"]),
+        ("env A=1 uv run env B=2 pytest", ["A=1", "B=2"], ["uv", "run"], ["pytest"]),
+        # An option's value is the launcher's, whatever it looks like, and never an assignment.
+        (
+            "uv --config-file c.toml run --env-file=.env --with x==1 pytest",
+            [],
+            ["uv", "--config-file", "c.toml", "run", "--env-file=.env", "--with", "x==1"],
+            ["pytest"],
+        ),
+        ("uv run -- pytest", [], ["uv", "run", "--"], ["pytest"]),
+        # A launcher the tables cannot read whole is left in the command.
+        ("uv run --locked --frobnicate pytest", [], [], "uv run --locked --frobnicate pytest"),
+        ("env -i A=1 pytest", [], [], ["-i", "A=1", "pytest"]),
+    ],
+    ids=[
+        "assignments-and-env",
+        "uv-env-assignment",
+        "assignments-on-both-sides",
+        "option-values",
+        "separator",
+        "unread-launcher",
+        "env-option",
+    ],
+)
+def test_read_launch_names_each_word_of_the_launch_by_its_part(
+    command: str, assignments: list[str], launcher: list[str], program: list[str] | str
+) -> None:
+    """A caller that runs the command needs more than the program: every assignment the shell or
+    `env` would make, wherever it stands, and the launcher's own words apart from them.
+    `command_words` is the same walk's last part. Oracle: `mutations/`'s "the launch keeps no
+    assignment past the launcher", "the launch keeps no launcher's words"."""
+    words = command.split()
+    expected = program.split() if isinstance(program, str) else program
+    launch = bashscan.read_launch(words)
+    assert launch == bashscan.Launch(tuple(assignments), tuple(launcher), tuple(expected))
+    assert bashscan.command_words(words) == expected

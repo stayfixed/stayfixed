@@ -581,6 +581,10 @@ MACHINERY_IMPORTERS = (
     # Reads the running interpreter's bytecode magic, the first four bytes of every `.pyc` it would
     # open; it imports nothing.
     ("profiles/python/hygiene.py", "importlib.util", frozenset({"util.MAGIC_NUMBER"})),
+    # `prove`'s tee decodes a report on standard output across reads for a caller's stream that
+    # takes text alone: the codec of the literal "utf-8", the interpreter's own and already
+    # loaded, so the lookup imports nothing.
+    ("prove/run.py", "codecs", frozenset({"getincrementaldecoder"})),
 )
 
 

@@ -38,7 +38,12 @@ def test_the_surface_carries_what_every_consumer_reaches_for() -> None:
         "contained_roots",
         # the commit gate stayfixed.assess.gates runs
         "commit_gate",
-        # how a command reads past its launch, for prove to ask the adapters what it runs
-        "command_words",
+        # how a command reads past its launch, for prove to ask the adapters what it runs, to
+        # put its assignments in the run's environment and to hand an adapter the launcher alone
+        "read_launch",
+        "Launch",
+        # the launcher's options and variables that load a file, which prove refuses
+        "LAUNCHER_FILE_OPTIONS",
+        "LAUNCHER_FILE_VARIABLES",
     }
     assert required == set(guards.__all__)

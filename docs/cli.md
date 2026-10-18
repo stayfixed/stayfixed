@@ -5,8 +5,10 @@ gives you the one-line version; this is the rest.
 
 Three things hold everywhere:
 
-- **`--json` is accepted anywhere** and prints one machine-readable object instead of one line.
-  It is not declared per command — the frame strips it from `argv` before parsing. A command
+- **`--json` is accepted anywhere before `--`** and prints one machine-readable object instead of
+  one line. It is not declared per command — the frame strips it from `argv` before parsing. The
+  words after a bare `--` are a command's own and are never read for it: `stayfixed prove --
+  COMMAND --json` hands `--json` to `COMMAND` and prints the line. A command
   whose result is a list of findings carries it under **`findings`**, named after what the
   values are and spelled the same way by every command, whatever its summary line calls them.
   Four commands do: `bugs check`, `docs check`, `memory refs` and `plan check`. Every other
@@ -813,14 +815,24 @@ outside a repository; a command typed in `packages/web` runs in `packages/web`. 
 configuration, needs no `stayfixed.toml`, and takes neither `--root` nor `--machine`. A line with
 no `--`, or nothing after it, is a usage error (2).
 
-The command is read past its leading `NAME=value` assignments, `env` and `uv run …`, as the
-session guard reads a command, and the first runner adapter that recognises what is left plans
-the run: the argv to execute, the realpath of its program, where the runner's report arrives and
-in which format, and which files in the tree can shape it. A command no adapter recognises, an
-`env` given an option among them, is `not proven`. The assignments reach the runner in its
-environment, not its argv. A report the runner writes to a file is read from a scratch directory
-outside the project; a report that is the runner's own standard output (a test event stream) is
-copied to yours as it arrives, every byte, and only the format's own events are counted. Text a
+The command is read past its `NAME=value` assignments, `env` and `uv run …`, as the session guard
+reads a command, and the first runner adapter that recognises what is left plans the run: the
+argv to execute, the realpath of its program, where the runner's report arrives and in which
+format, and which files in the tree can shape it. A command no adapter recognises, an `env` given
+an option among them, is `not proven`. Every `NAME=value` the command spells before what runs is
+one of its assignments, wherever it stands: before `uv run` or after it, bare or after `env`. An
+assignment of a variable in the adapter's forging set is refused, and so, where the command runs
+`uv`, is one of `UV_ENV_FILE` or `UV_CONFIG_FILE` (`assigned-forging`, naming the variable); an
+inherited `UV_ENV_FILE` or `UV_CONFIG_FILE` is removed from the run's environment where the
+command runs `uv`. An option with which `uv` loads a file the command names, `--env-file` or
+`--config-file`, as `--name value` or `--name=value` and wherever it stands among `uv`'s words,
+is refused (`launcher-option`, naming the option). Every other assignment reaches the runner in
+its environment, in order, the last of two for one name winning, and never in its argv; the
+adapter is handed the launcher's own words (`uv run` and its options) and never an assignment or
+an `env`. A report the runner writes to a file is read from a scratch directory outside the
+project; a report that is the runner's own standard output (a test event stream) is copied to
+yours as it arrives, every byte, and only the format's own events are counted; under `--json` it
+is copied to standard error instead, so that standard output holds the one JSON object. Text a
 command prints is never counted.
 
 **What `proved` means.** The code under test, any file in the runner's load path, tracked or not, and the environment the runner reads can shape its report, so `proved` means the runner reported green on this tree, for the tests this command selected.
@@ -829,7 +841,7 @@ command prints is never counted.
 
 | Row | Verdict | Exit | Reason |
 |---|---|---|---|
-| the runner's adapter refuses the command, the command assigns a variable in the adapter's forging set, or the program changed between the plan and the launch | `refused` | 2 | the adapter's own, `assigned-forging`, `resolved-elsewhere` |
+| the runner's adapter refuses the command, the command assigns a variable in the adapter's forging set or one `uv` loads a file from, it gives `uv` an option that loads a file, or the program changed between the plan and the launch | `refused` | 2 | the adapter's own, `assigned-forging`, `launcher-option`, `resolved-elsewhere` |
 | no adapter recognises the command, its entry point does not resolve, it could not start, it was interrupted or passed its time limit, it wrote no report, or the report does not read | `not proven` | 1 | `not-recognised`, the adapter's own, `not-started`, `interrupted`, `timed-out`, `no-report`, a report's own |
 | the report holds a failed test | `failed` | 1 | `failing` |
 | the report holds no test | `failed` | 1 | `none-ran` |
@@ -850,14 +862,16 @@ process group is ended with it.
 
 **The line** says the verdict and its reason in words, the counts (passed, failed, skipped), the
 runner and the realpath of the program that ran, and the files that can shape the report: the
-runner's configuration files that exist, and the untracked and ignored files in its discovery set,
-twenty of them and a count of the rest. The tree's state is taken before the run and after it, and
-is information for you, never an input to the verdict. `--json` carries `verdict`, `reason`,
-`detail` (the variable a refused assignment named, or where a report stopped reading), `argv` (the
+runner's configuration files that exist and that git tracks or does not ignore, and the untracked
+files in its discovery set, those git does not ignore first and then the ignored ones; twenty of
+each and a count of the rest. The tree's state is taken before the run and after it, and is
+information for you, never an input to the verdict. `--json` carries `verdict`, `reason`,
+`detail` (the variable a refused assignment named, the launcher option refused, or where a report
+stopped reading), `argv` (the
 command, every `NAME=value` and `--option=value` value replaced by `…`; a value passed as the word
 after its option is kept), `runner`, `program`, `verified`, `counts`, `exit_code`, `report_digest`
 (the SHA-256 of the report counted), `commit`, `dirty_before`, `dirty_after`, `untracked`,
-`untracked_more` and `configs`.
+`untracked_more`, `configs` and `configs_more`.
 
 **Reads** the command's report and git's answers about the tree. **Writes** nothing in the
 project: the scratch directory is under the system's temporary directory, is readable by you

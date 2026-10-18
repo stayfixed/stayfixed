@@ -5690,17 +5690,85 @@ reddens = [
   "tests/prove/test_run.py::test_an_adapter_s_own_answer_is_the_verdict[adapter1-not proven-stand-in-not-found]",
 ]
 
-# The shell and `env` assign; the words after a launcher are the launcher's to read.
+# Every assignment the launch holds is the command's, the last of two winning; the adapter is
+# handed the launcher's own words and never an assignment or an `env`.
 [[mutation]]
-name = "prove reads an assignment past the launcher"
+name = "prove keeps the first of two assignments of one name"
 file = "src/stayfixed/prove/run.py"
-before = """        elif Path(word).name != _ENV:
-            break"""
-after = """        elif Path(word).name != _ENV:
-            continue"""
+before = "        assigned[name] = value"
+after = "        assigned.setdefault(name, value)"
 reddens = [
-  "tests/prove/test_run.py::test_the_assignments_are_the_shell_s_and_env_s_and_stop_at_the_launcher",
+  "tests/prove/test_run.py::test_the_assignments_are_every_one_the_launch_makes_the_last_winning",
+  "tests/prove/test_run.py::test_an_assigned_variable_outside_the_forging_set_reaches_the_runner[argv3]",
 ]
+
+[[mutation]]
+name = "prove hands the adapter the launch whole"
+file = "src/stayfixed/prove/run.py"
+before = "            launch.launcher, command, cwd=cwd, root=root, scratch=scratch, environ=environ"
+after = "            given[: len(given) - len(command)], command, cwd=cwd, root=root, scratch=scratch, environ=environ"
+reddens = [
+  "tests/prove/test_run.py::test_the_adapter_is_handed_the_launcher_s_words_alone[argv0-launch0]",
+  "tests/prove/test_run.py::test_the_adapter_is_handed_the_launcher_s_words_alone[argv1-launch1]",
+]
+
+# A launcher option that loads an environment or configuration file is refused, and the
+# launcher's variables that do the same are forging where the launch runs it, and scrubbed.
+[[mutation]]
+name = "prove never reads the launcher's options"
+file = "src/stayfixed/prove/run.py"
+before = "    loading = file_option(launch.launcher)"
+after = "    loading = None"
+reddens = [
+  "tests/prove/test_run.py::test_a_launcher_option_that_loads_a_file_is_refused[argv0---env-file]",
+  "tests/prove/test_run.py::test_a_launcher_option_that_loads_a_file_is_refused[argv2---config-file]",
+]
+
+[[mutation]]
+name = "prove reads a launcher option given its value with `=` as another"
+file = "src/stayfixed/prove/run.py"
+before = """        (name for word in launcher if (name := word.partition("=")[0]) in LAUNCHER_FILE_OPTIONS),"""
+after = """        (name for word in launcher if (name := word) in LAUNCHER_FILE_OPTIONS),"""
+reddens = [
+  "tests/prove/test_run.py::test_a_launcher_option_that_loads_a_file_is_refused[argv1---env-file]",
+  "tests/prove/test_run.py::test_a_launcher_option_that_loads_a_file_is_refused[argv3---config-file]",
+]
+
+[[mutation]]
+name = "prove leaves the launcher's file variables out of the forging set"
+file = "src/stayfixed/prove/run.py"
+before = "    forged = sorted(name for name in assigned if name in adapter.forging | loaders)"
+after = "    forged = sorted(name for name in assigned if name in adapter.forging)"
+reddens = [
+  "tests/prove/test_run.py::test_the_launcher_s_file_variables_are_forging_and_scrubbed_where_it_runs[UV_ENV_FILE]",
+  "tests/prove/test_run.py::test_the_launcher_s_file_variables_are_forging_and_scrubbed_where_it_runs[UV_CONFIG_FILE]",
+]
+
+[[mutation]]
+name = "prove hands the runner an inherited launcher file variable"
+file = "src/stayfixed/prove/run.py"
+before = "        kept = {name: value for name, value in environ.items() if name not in loaders}"
+after = "        kept = dict(environ)"
+reddens = [
+  "tests/prove/test_run.py::test_the_launcher_s_file_variables_are_forging_and_scrubbed_where_it_runs[UV_ENV_FILE]",
+]
+
+[[mutation]]
+name = "prove treats the launcher's file variables as forging where nothing launches"
+file = "src/stayfixed/prove/run.py"
+before = "    loaders = LAUNCHER_FILE_VARIABLES if launch.launcher else frozenset()"
+after = "    loaders = LAUNCHER_FILE_VARIABLES"
+reddens = [
+  "tests/prove/test_run.py::test_the_launcher_s_file_variables_are_forging_and_scrubbed_where_it_runs[UV_ENV_FILE]",
+]
+
+# An adapter that plans a program by a bare name is a defect in stayfixed, never a verdict.
+[[mutation]]
+name = "prove launches a program its adapter did not name absolutely"
+file = "src/stayfixed/prove/run.py"
+before = "    if not os.path.isabs(plan.argv[0]):"
+after = "    if False:"
+reddens = ["tests/prove/test_run.py::test_a_plan_whose_program_is_not_absolute_is_a_defect_and_raises"]
 
 # The run's environment: the caller's less the adapter's scrub, plus the command's assignments,
 # plus the adapter's own settings, the last winning.
@@ -5741,8 +5809,8 @@ reddens = ["tests/prove/test_run.py::test_a_program_resolved_elsewhere_is_refuse
 [[mutation]]
 name = "prove launches the command in the project's top-level"
 file = "src/stayfixed/prove/run.py"
-before = "    ran = _run(plan, cwd, env, timeout)"
-after = "    ran = _run(plan, root, env, timeout)"
+before = "    ran = _run(plan, cwd, env, timeout, echo)"
+after = "    ran = _run(plan, root, env, timeout, echo)"
 reddens = ["tests/prove/test_run.py::test_the_run_is_in_cwd_and_the_project_is_its_toplevel"]
 
 [[mutation]]
@@ -5771,18 +5839,45 @@ reddens = ["tests/prove/test_run.py::test_a_value_never_reaches_the_receipt"]
 [[mutation]]
 name = "prove's tee writes to the report alone"
 file = "src/stayfixed/prove/run.py"
-before = """            self._out.write(chunk)
-            self._out.flush()"""
-after = """            pass"""
+before = """                self._out.write(chunk)
+                self._out.flush()"""
+after = """                pass"""
 reddens = ["tests/prove/test_run.py::test_stdout_is_teed_and_only_the_events_count"]
 
 [[mutation]]
 name = "prove's tee writes nothing to a text-only stream"
 file = "src/stayfixed/prove/run.py"
-before = '            self._text.write(chunk.decode("utf-8", "replace"))'
-after = "            pass"
+before = "                self._text.write(self._decoder.decode(chunk, final))"
+after = "                pass"
 reddens = [
   "tests/prove/test_command.py::test_a_report_on_standard_output_reaches_a_text_only_stream_before_the_line",
+]
+
+[[mutation]]
+name = "prove's tee decodes each read alone"
+file = "src/stayfixed/prove/run.py"
+before = "                self._text.write(self._decoder.decode(chunk, final))"
+after = '                self._text.write(chunk.decode("utf-8", "replace"))'
+reddens = ["tests/prove/test_run.py::test_the_tee_decodes_a_character_cut_between_two_reads"]
+
+# A caller that has gone (`| head`) is written nothing more; the run and its report go on.
+[[mutation]]
+name = "prove's tee dies on a caller that has gone"
+file = "src/stayfixed/prove/run.py"
+before = "        except (OSError, ValueError):"
+after = "        except ValueError:"
+reddens = [
+  "tests/prove/test_run.py::test_a_closed_caller_stream_stops_the_copy_to_it_and_the_report_still_fills",
+]
+
+[[mutation]]
+name = "prove's report stops filling once the caller has gone"
+file = "src/stayfixed/prove/run.py"
+before = "            self._gone = True"
+after = """            self._gone = True
+            self._room = 0"""
+reddens = [
+  "tests/prove/test_run.py::test_a_closed_caller_stream_stops_the_copy_to_it_and_the_report_still_fills",
 ]
 
 # A report is read, or copied, to one byte past the cap, so the reader's own size check refuses
@@ -5946,7 +6041,7 @@ reddens = ["tests/prove/test_run.py::test_tree_state_is_taken_before_and_after"]
 [[mutation]]
 name = "prove's line leaves out the configuration files"
 file = "src/stayfixed/prove/run.py"
-before = '        parts.append("configuration: " + ", ".join(printable(name) for name in receipt.configs))'
+before = '        parts.append(f"configuration: {listed}{more}")'
 after = "        pass"
 reddens = [
   "tests/prove/test_command.py::test_the_line_names_the_counts_the_runner_and_the_files_that_shape_the_report",
@@ -5966,28 +6061,56 @@ before = '            runner += ", not verified"'
 after = "            pass"
 reddens = ["tests/prove/test_run.py::test_the_line_marks_a_runner_no_adapter_resolved"]
 
-# The tree's state: untracked and ignored files in the discovery set, the configuration files that
-# exist, a capped list, and no answer outside git.
+# The tree's state: untracked files in the discovery set before the ignored ones, the
+# configuration files that exist and that git tracks or does not ignore, two capped lists, and no
+# answer outside git.
 [[mutation]]
 name = "prove's tree state leaves the ignored files out"
 file = "src/stayfixed/prove/tree.py"
-before = "        found = _matching([*others, *ignored], discovery)"
-after = "        found = _matching(others, discovery)"
+before = "        untracked, more = _capped(_matching(others, discovery) + _matching(ignored, discovery))"
+after = "        untracked, more = _capped(_matching(others, discovery))"
 reddens = ["tests/prove/test_run.py::test_the_receipt_names_untracked_ignored_and_config_files"]
+
+[[mutation]]
+name = "prove's tree state sorts the untracked and the ignored files as one"
+file = "src/stayfixed/prove/tree.py"
+before = "        untracked, more = _capped(_matching(others, discovery) + _matching(ignored, discovery))"
+after = "        untracked, more = _capped(_matching([*others, *ignored], discovery))"
+reddens = [
+  "tests/prove/test_run.py::test_an_untracked_file_is_listed_before_any_ignored_one",
+  "tests/prove/test_run.py::test_the_receipt_names_untracked_ignored_and_config_files",
+]
 
 [[mutation]]
 name = "prove's tree state lists past its cap"
 file = "src/stayfixed/prove/tree.py"
-before = "        untracked, more = tuple(found[:UNTRACKED_LISTED]), max(len(found) - UNTRACKED_LISTED, 0)"
-after = "        untracked, more = tuple(found), 0"
-reddens = ["tests/prove/test_run.py::test_the_untracked_list_stops_at_its_cap_and_counts_the_rest"]
+before = "    return tuple(found[:UNTRACKED_LISTED]), max(len(found) - UNTRACKED_LISTED, 0)"
+after = "    return tuple(found), 0"
+reddens = [
+  "tests/prove/test_run.py::test_the_untracked_list_stops_at_its_cap_and_counts_the_rest",
+  "tests/prove/test_run.py::test_the_configuration_list_stops_at_its_cap_and_counts_the_rest",
+]
+
+[[mutation]]
+name = "prove's tree state names a configuration file git ignores"
+file = "src/stayfixed/prove/tree.py"
+before = "        named = _matching([*tracked, *others], configs)"
+after = "        named = _matching([*tracked, *others, *(ignored or [])], configs)"
+reddens = ["tests/prove/test_run.py::test_a_configuration_file_git_ignores_is_never_named"]
 
 [[mutation]]
 name = "prove's tree state names a configuration file the tree deleted"
 file = "src/stayfixed/prove/tree.py"
-before = "        present = [name for name in [*tracked, *others, *ignored] if fsops.exists(root / name)]"
-after = "        present = [*tracked, *others, *ignored]"
+before = "        configured, configs_more = _capped([name for name in named if fsops.exists(root / name)])"
+after = "        configured, configs_more = _capped(named)"
 reddens = ["tests/prove/test_run.py::test_a_configuration_file_is_named_only_where_it_exists"]
+
+[[mutation]]
+name = "prove's line names no configuration file past the cap"
+file = "src/stayfixed/prove/run.py"
+before = '        more = f" and {receipt.configs_more} more" if receipt.configs_more else ""'
+after = '        more = ""'
+reddens = ["tests/prove/test_run.py::test_the_configuration_list_stops_at_its_cap_and_counts_the_rest"]
 
 [[mutation]]
 name = "prove's tree state reads no answer as a clean tree"
@@ -6054,9 +6177,40 @@ reddens = [
 [[mutation]]
 name = "prove's command ignores --timeout"
 file = "src/stayfixed/prove/commands.py"
-before = "    receipt = prove(args.command, cwd=Path.cwd(), environ=os.environ, timeout=args.timeout)"
-after = "    receipt = prove(args.command, cwd=Path.cwd(), environ=os.environ, timeout=PROVE_TIMEOUT_SECONDS)"
+before = "        args.command, cwd=Path.cwd(), environ=os.environ, timeout=args.timeout, echo=echo"
+after = "        args.command, cwd=Path.cwd(), environ=os.environ, timeout=PROVE_TIMEOUT_SECONDS, echo=echo"
 reddens = ["tests/prove/test_command.py::test_the_timeout_reaches_the_run"]
+
+# Under `--json`, standard output is the one object: a report on it is teed to standard error.
+[[mutation]]
+name = "prove tees to standard output under --json"
+file = "src/stayfixed/prove/commands.py"
+before = '    echo = sys.stderr if getattr(args, "as_json", False) else None'
+after = "    echo = None"
+reddens = [
+  "tests/prove/test_command.py::test_with_json_a_report_on_standard_output_is_teed_to_standard_error",
+]
+
+[[mutation]]
+name = "the frame tells no command it was asked for --json"
+file = "src/stayfixed/cli.py"
+before = "    args.as_json = as_json"
+after = "    args.as_json = False"
+reddens = [
+  "tests/prove/test_command.py::test_with_json_a_report_on_standard_output_is_teed_to_standard_error",
+]
+
+# The words after a bare `--` are a command's own: `--json` is read before it alone.
+[[mutation]]
+name = "the frame takes a --json after the separator"
+file = "src/stayfixed/cli.py"
+before = '    cut = argv.index("--") if "--" in argv else len(argv)'
+after = "    cut = len(argv)"
+reddens = [
+  "tests/test_cli.py::test_json_is_read_before_the_first_separator_and_never_after_it[argv2-kept2-True]",
+  "tests/test_cli.py::test_json_is_read_before_the_first_separator_and_never_after_it[argv3-kept3-False]",
+  "tests/prove/test_command.py::test_a_json_flag_after_the_separator_is_the_command_s",
+]
 
 # The JUnit reader's refusal names expat's fixed-table message, never the exception's own text.
 [[mutation]]

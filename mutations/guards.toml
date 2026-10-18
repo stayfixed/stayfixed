@@ -223,6 +223,42 @@ reddens = [
   "tests/guards/test_bashscan.py::test_command_words_strips_a_leading_assignment_and_wrapper",
 ]
 
+# `read_launch` names every part of the launch: the assignments wherever they stand, which a
+# caller that runs the command hands its environment and checks for forging, and the launcher's
+# words apart from them. Stopping the assignments at the launcher is what let `uv run env
+# FORGE=x` through `prove`.
+[[mutation]]
+name = "the launch keeps no assignment past the launcher"
+file = "src/stayfixed/guards/bashscan.py"
+before = "            assigned.append(token)"
+after = "            assigned.extend([] if launcher else [token])"
+reddens = [
+  "tests/guards/test_bashscan.py::test_read_launch_names_each_word_of_the_launch_by_its_part[uv-env-assignment]",
+  "tests/prove/test_run.py::test_an_assigned_forging_variable_is_refused[argv2]",
+  "tests/prove/test_run.py::test_an_assigned_forging_variable_is_refused[argv3]",
+  "tests/prove/test_run.py::test_an_assigned_variable_outside_the_forging_set_reaches_the_runner[argv2]",
+]
+
+[[mutation]]
+name = "the launch keeps no launcher's words"
+file = "src/stayfixed/guards/bashscan.py"
+before = "            launcher.extend(segment[index:launched])"
+after = "            pass"
+reddens = [
+  "tests/guards/test_bashscan.py::test_read_launch_names_each_word_of_the_launch_by_its_part[uv-env-assignment]",
+  "tests/prove/test_run.py::test_a_launcher_option_that_loads_a_file_is_refused[argv0---env-file]",
+]
+
+# The options with which uv loads a file the command names; `prove` refuses each.
+[[mutation]]
+name = "uv's configuration file is no longer a file it loads"
+file = "src/stayfixed/guards/uvrun.py"
+before = 'FILE_OPTIONS = frozenset({"--env-file", "--config-file"})'
+after = 'FILE_OPTIONS = frozenset({"--env-file"})'
+reddens = [
+  "tests/prove/test_run.py::test_a_launcher_option_that_loads_a_file_is_refused[argv2---config-file]",
+]
+
 # `|&`, `;&` and `;;&` decompose to single characters by design, and each `&` there belongs to
 # a pipe or a case fall-through, never to the async operator.
 [[mutation]]
