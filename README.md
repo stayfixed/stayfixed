@@ -227,7 +227,6 @@ stayfixed writes files. Being specific about which is the point of this section.
 | `.stayfixed/local/artifacts/` | The artifacts `[artifacts] local` keeps out of git, at the path each would have in the repository — git-ignored, never recorded in the manifest | `stayfixed init` and `stayfixed upgrade`, when `[artifacts] local` lists them; `stayfixed uninstall` takes them back |
 | `.stayfixed/local/artifacts.json` | The record of the bytes stayfixed last wrote under `.stayfixed/local/artifacts/`, so an unedited copy is refreshed or retired and an edited one is left. Git-ignored and never committed. Deleted, later runs judge a copy at its artifact's own place by what they render, and no longer find a copy left at an earlier place at all | the scaffold engine; `stayfixed uninstall` removes it |
 | `~/.config/stayfixed/config.toml` | Machine-level settings: `[personal]`; `[guards]`, where `bg_cleanup = false` switches the background guard off on this machine; `[budgets]`, the four budgets that bound what a session loads; `[overlay]`; and `[machine]`. `~` is your home as the password database records it, never `HOME`, which direnv, mise or a devcontainer can set from a file the repository commits ([docs/cli.md](https://github.com/stayfixed/stayfixed/blob/main/docs/cli.md#configuration)) | you, or `stayfixed setup` |
-| `$XDG_STATE_HOME/stayfixed/evidence/<key>.jsonl`, else `~/.local/state/stayfixed/evidence/<key>.jsonl` | One evidence record per project, a JSON line per `stayfixed prove` and `stayfixed gate` run: a log nothing reads, under `XDG_STATE_HOME` where it is an absolute path and else under `HOME`, never written inside a git checkout that does not ignore it (a bare-repository dotfiles home, which git cannot see, excepted); `stayfixed uninstall` leaves it ([docs/cli.md](https://github.com/stayfixed/stayfixed/blob/main/docs/cli.md#stayfixed-prove---timeout-seconds---junit-path----command-)) | `stayfixed prove`, `stayfixed gate` |
 | `~/.config/stayfixed/trust.json` | Every approval you gave on this machine — today, which repositories' committed notes may reach the model — as a versioned record of kinds and subjects, under the same home | `stayfixed trust approve`, under either of its spellings, and `stayfixed trust revoke`; and `stayfixed memory index` and `stayfixed attach`, which carry an approval across a write of their own to the store and never give one |
 | `hooks/hooks.json` and `hooks/run-hook.sh` | The zero-config wiring both harnesses read, and the wrapper they execute. **Shipped in the plugin; never written into a project** | nothing — they are part of the plugin |
 | `${CLAUDE_PLUGIN_DATA}/stayfixed/` | Once-per-session markers and the hook diagnostics log. Deleted with the plugin | the hook dispatcher |
@@ -320,10 +319,7 @@ The **Run by**, **Talks to** and **When** columns are kept by hand. The hook wra
 6. **`stayfixed.yml`** calls stayfixed's reusable workflow at the commit it pins, which checks out
    your repository and stayfixed, may download a Python, on a pull request that moves `[ci] ref`
    lists stayfixed's release tags, and, once the configuration and built-in gates pass, runs the
-   commands `[gates.custom]` names (that row above). With its `evidence:` input on, which a
-   caller turns on and stayfixed's own smoke workflow does, a last step uploads the job's evidence records to
-   GitHub as an artifact through `actions/upload-artifact`, pinned by its sha; it runs no command
-   and reads no secret.
+   commands `[gates.custom]` names (that row above).
 7. **`scan.yml`** is written by `stayfixed overlay create --local`, `stayfixed overlay upgrade`
    and `stayfixed overlay publish-template`; an overlay made with `--template` gets it from the
    template repository. It checks out the overlay's whole history and runs

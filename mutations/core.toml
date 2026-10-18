@@ -5951,7 +5951,6 @@ before = '            shown.append(f"{assignment.group(1)}={REDACTED}")'
 after = "            shown.append(word)"
 reddens = [
   "tests/prove/test_run.py::test_a_value_never_reaches_the_receipt",
-  "tests/prove/test_evidence.py::test_no_value_reaches_the_record",
 ]
 
 [[mutation]]
@@ -5961,7 +5960,6 @@ before = '            shown.append(f"{option.group(1)}{REDACTED}")'
 after = "            shown.append(word)"
 reddens = [
   "tests/prove/test_run.py::test_a_value_never_reaches_the_receipt",
-  "tests/prove/test_evidence.py::test_no_value_reaches_the_record",
 ]
 
 # The report on standard output reaches the caller whole, to a binary stream or a text one.
@@ -6119,7 +6117,6 @@ before = "            return _Ran(TIMED_OUT, None)"
 after = "            return _Ran(INTERRUPTED, None)"
 reddens = [
   "tests/prove/test_run.py::test_an_ended_run_is_not_proven_and_leaves_no_scratch[timeout]",
-  "tests/prove/test_evidence.py::test_a_timed_out_run_is_recorded_not_proven",
 ]
 
 [[mutation]]
@@ -6127,7 +6124,7 @@ name = "an interrupted prove says it timed out"
 file = "src/stayfixed/prove/run.py"
 before = "            return _Ran(INTERRUPTED, None)"
 after = "            return _Ran(TIMED_OUT, None)"
-reddens = ["tests/prove/test_evidence.py::test_an_interrupted_run_is_recorded_not_proven"]
+reddens = ["tests/prove/test_run.py::test_an_ended_run_is_not_proven_and_leaves_no_scratch[interrupt]"]
 
 [[mutation]]
 name = "a fault in prove's wait leaves its command's group running"
@@ -6455,7 +6452,6 @@ after = """        scrubbed=run.scrubbed,
 reddens = [
   "tests/prove/test_junit_flag.py::test_a_report_the_run_wrote_is_counted_and_marked_unverified",
   "tests/prove/test_junit_flag.py::test_the_line_says_the_runner_is_not_verified",
-  "tests/prove/test_evidence.py::test_a_junit_record_marks_its_runner_not_verified",
 ]
 
 [[mutation]]
@@ -6506,177 +6502,6 @@ file = "src/stayfixed/prove/commands.py"
 before = "        junit=args.junit,"
 after = "        junit=None,"
 reddens = ["tests/prove/test_junit_flag.py::test_the_command_takes_junit_and_says_the_runner_is_not_verified"]
-
-# Evidence records: one line a `prove` and a `gate` run, under the state home and never where a
-# git checkout would carry it, and a warning in place of one that cannot be written.
-[[mutation]]
-name = "prove keeps no evidence record"
-file = "src/stayfixed/prove/commands.py"
-before = '''
-    record_prove(Path(receipt.directory or cwd), receipt)
-'''
-after = ""
-reddens = ["tests/prove/test_evidence.py::test_prove_appends_one_line_per_run"]
-
-[[mutation]]
-name = "a record that cannot be written turns prove's exit 1"
-file = "src/stayfixed/prove/commands.py"
-before = '''
-    record_prove(Path(receipt.directory or cwd), receipt)
-    return Result(line(receipt), dataclasses.asdict(receipt), exit_code=EXIT[receipt.verdict])'''
-after = '''
-    warned = record_prove(Path(receipt.directory or cwd), receipt)
-    code = 1 if warned else EXIT[receipt.verdict]
-    return Result(line(receipt), dataclasses.asdict(receipt), exit_code=code)'''
-reddens = ["tests/prove/test_evidence.py::test_an_unwritable_state_directory_warns_and_keeps_the_verdict[proved-argv0-0]"]
-
-[[mutation]]
-name = "a record's state home leaves XDG_STATE_HOME unread"
-file = "src/stayfixed/prove/evidence.py"
-before = """    if os.path.isabs(state):
-        return StateHome(Path(state), EVIDENCE_DIR)"""
-after = """    if False:
-        return StateHome(Path(state), EVIDENCE_DIR)"""
-reddens = ["tests/prove/test_evidence.py::test_the_record_lives_under_xdg_state_home"]
-
-# A relative `XDG_STATE_HOME` or `HOME` names no directory the specification reads: taken, it
-# would put the record under whatever directory the run was typed in.
-[[mutation]]
-name = "a record's state home takes a relative XDG_STATE_HOME"
-file = "src/stayfixed/prove/evidence.py"
-before = "    if os.path.isabs(state):"
-after = "    if state:"
-reddens = ["tests/prove/test_evidence.py::test_the_record_lives_under_home_where_xdg_state_home_is_not_absolute[relative]"]
-
-[[mutation]]
-name = "a record's state home takes a relative HOME"
-file = "src/stayfixed/prove/evidence.py"
-before = "    if os.path.isabs(home):"
-after = "    if home:"
-reddens = [
-  "tests/prove/test_evidence.py::test_no_absolute_variable_is_no_state_home[relative-home]",
-  "tests/prove/test_evidence.py::test_no_absolute_variable_is_no_state_home[both-relative]",
-]
-
-[[mutation]]
-name = "the origin's userinfo is kept in the key"
-file = "src/stayfixed/prove/evidence.py"
-before = "        return f\"ssh://{split.hostname.lower()}/{_bare(split.path).lstrip('/')}\""
-after = "        return f\"ssh://{split.netloc.lower()}/{_bare(split.path).lstrip('/')}\""
-reddens = ["tests/prove/test_evidence.py::test_one_repository_one_origin[https://u:t@GitHub.com/o/r/-ssh://github.com/o/r]"]
-
-[[mutation]]
-name = "a git that cannot be asked stops the record's key"
-file = "src/stayfixed/prove/evidence.py"
-before = "    except gitenv.GitUnavailable:"
-after = "    except ValueError:"
-reddens = ["tests/prove/test_evidence.py::test_a_git_that_cannot_be_asked_keys_by_the_path"]
-
-[[mutation]]
-name = "the path key is the directory the run was typed in"
-file = "src/stayfixed/prove/evidence.py"
-before = "    return f\"path-{_digest(os.fsencode(os.path.realpath(_top(root))))}\""
-after = "    return f\"path-{_digest(os.fsencode(os.path.realpath(root)))}\""
-reddens = [
-  "tests/prove/test_evidence.py::test_a_run_from_a_subdirectory_keys_the_repository",
-  "tests/prove/test_evidence.py::test_no_origin_keys_by_the_real_path",
-]
-
-[[mutation]]
-name = "a record is written inside a git checkout"
-file = "src/stayfixed/prove/evidence.py"
-before = """    if gitenv.checkout_root(asked) is None:
-        return None"""
-after = """    if True:
-        return None"""
-reddens = [
-  "tests/prove/test_evidence.py::test_no_record_under_the_repository[]",
-  "tests/prove/test_evidence.py::test_no_record_under_the_repository[sub]",
-  "tests/prove/test_evidence.py::test_no_prove_record_inside_a_home_repository_a_nested_project_does_not_answer_for",
-  "tests/prove/test_evidence.py::test_no_gate_record_inside_a_home_repository_a_nested_project_does_not_answer_for",
-]
-
-# A checkout that ignores the record would never carry it: a dotfiles repository at the home that
-# ignores `.local/state` gets its records, and no warning on every run.
-[[mutation]]
-name = "a record a checkout ignores is refused all the same"
-file = "src/stayfixed/prove/evidence.py"
-before = """    if code == 0:
-        return None"""
-after = """    if False:
-        return None"""
-reddens = [
-  "tests/prove/test_evidence.py::test_a_home_repository_that_ignores_the_state_directory_gets_its_record[.local/state/]",
-  "tests/prove/test_evidence.py::test_a_home_repository_that_ignores_the_state_directory_gets_its_record[.local/]",
-]
-
-# Fail closed: only `check-ignore`'s "ignored" lets a record into a checkout, and a `check-ignore`
-# that cannot say is said to be one.
-[[mutation]]
-name = "a check-ignore with no answer lets the record into the checkout"
-file = "src/stayfixed/prove/evidence.py"
-before = "    return INSIDE_REPOSITORY if code == 1 else UNASKED"
-after = "    return INSIDE_REPOSITORY if code == 1 else None"
-reddens = [
-  "tests/prove/test_evidence.py::test_a_check_ignore_that_cannot_answer_writes_no_record[no-answer]",
-  "tests/prove/test_evidence.py::test_a_check_ignore_that_cannot_answer_writes_no_record[an-error]",
-]
-
-[[mutation]]
-name = "a check-ignore with no answer is worded as one that answered"
-file = "src/stayfixed/prove/evidence.py"
-before = "    return INSIDE_REPOSITORY if code == 1 else UNASKED"
-after = "    return INSIDE_REPOSITORY"
-reddens = ["tests/prove/test_evidence.py::test_a_check_ignore_that_cannot_answer_writes_no_record[no-answer]"]
-
-# A dotfiles repository at the home holds the record whatever repository the run answers for:
-# asking only that one, as the record first did, writes a line into the dotfiles repository.
-[[mutation]]
-name = "a record asks only the repository the run answers for"
-file = "src/stayfixed/prove/evidence.py"
-before = "    why = carried(path)"
-after = """    top = gitenv.checkout_root(root)
-    inside = top is not None and start.is_relative_to(os.path.realpath(top))
-    why = INSIDE_REPOSITORY if inside else None"""
-reddens = [
-  "tests/prove/test_evidence.py::test_no_prove_record_inside_a_home_repository_a_nested_project_does_not_answer_for",
-  "tests/prove/test_evidence.py::test_no_gate_record_inside_a_home_repository_a_nested_project_does_not_answer_for",
-  "tests/prove/test_evidence.py::test_a_checkout_at_the_state_directory_is_asked_from_its_nearest_existing_part",
-]
-
-[[mutation]]
-name = "a record's checkout is asked from the home alone"
-file = "src/stayfixed/prove/evidence.py"
-before = "    asked = fsops.creation_directory(record)"
-after = "    asked = record.parents[4]"
-reddens = ["tests/prove/test_evidence.py::test_a_checkout_at_the_state_directory_is_asked_from_its_nearest_existing_part"]
-
-# A home that is a link (moved to another disk and linked back) is followed first: walked as
-# spelled, `O_NOFOLLOW` refuses the machine's own link and no record is ever written.
-[[mutation]]
-name = "a record's base is walked as HOME spells it"
-file = "src/stayfixed/prove/evidence.py"
-before = "    start = Path(os.path.realpath(there))"
-after = "    start = there"
-reddens = ["tests/prove/test_evidence.py::test_a_home_that_is_itself_a_link_records_where_it_leads"]
-
-# An `XDG_STATE_HOME` not made yet is made: the walk starts at the nearest directory above it that
-# is there.
-[[mutation]]
-name = "a record's walk starts at an XDG_STATE_HOME not made yet"
-file = "src/stayfixed/prove/evidence.py"
-before = "    while not fsops.exists(there) and there != there.parent:"
-after = "    while False:"
-reddens = ["tests/prove/test_evidence.py::test_the_record_lives_under_xdg_state_home"]
-
-[[mutation]]
-name = "a run with no home says nothing of the record it did not write"
-file = "src/stayfixed/prove/evidence.py"
-before = """    if home is None:
-        return _warned(UNNAMED, NO_HOME)"""
-after = """    if home is None:
-        return None"""
-reddens = ["tests/prove/test_evidence.py::test_no_home_warns_and_keeps_the_verdict[json_flag0]"]
 
 [[mutation]]
 name = "the one appending write opens without O_APPEND"
@@ -6753,46 +6578,8 @@ before = '''    "tree, for the tests this command selected."'''
 after = '''    "tree."'''
 reddens = ["tests/test_documents.py::test_the_prove_section_states_the_bound_word_for_word"]
 
-# Two clones of one repository, under two spellings of its origin, share one record.
-[[mutation]]
-name = "the origin keys the record as spelled"
-file = "src/stayfixed/prove/evidence.py"
-before = '        return f"origin-{_digest(normalised_origin(origin))}"'
-after = '        return f"origin-{_digest(origin)}"'
-reddens = ["tests/prove/test_evidence.py::test_a_checkout_with_an_origin_keys_by_it_wherever_it_lies"]
-
-# A run typed in the home outside any checkout answers for a directory that is no repository:
-# reading the run's directory as one would refuse the home's own record.
-[[mutation]]
-name = "a record is refused wherever the run's directory holds the home"
-file = "src/stayfixed/prove/evidence.py"
-before = "    why = carried(path)"
-after = "    why = INSIDE_REPOSITORY if start.is_relative_to(os.path.realpath(root)) else carried(path)"
-reddens = ["tests/prove/test_evidence.py::test_outside_a_repository_the_home_itself_records"]
-
-# The record is reached from its base by the contained walk, so a link planted at the state
-# directory redirects nothing.
-[[mutation]]
-name = "a record is written by its path, not by the contained walk"
-file = "src/stayfixed/prove/evidence.py"
-before = """        fsops.mkdirs_within(base, relative)
-        with fsops.open_within(base, relative) as (dir_fd, name):
-            fsops.append_at(dir_fd, name, payload)"""
-after = """        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("ab") as stream:
-            stream.write(payload)"""
-reddens = ["tests/prove/test_evidence.py::test_a_state_directory_that_is_a_symlink_is_refused_and_warns"]
-
-# The prove section names the warning an unwritten record says, word for word.
-[[mutation]]
-name = "the unwritten record's warning drifts from the prove section"
-file = "src/stayfixed/prove/evidence.py"
-before = 'NOT_RECORDED = "stayfixed: the evidence record {record} was not written: {why}"'
-after = 'NOT_RECORDED = "stayfixed: the evidence record {record} could not be written: {why}"'
-reddens = ["tests/test_documents.py::test_every_reason_constant_is_documented"]
-
-# A scrub can turn a legitimate run red (jest's ES modules recipe sets `NODE_OPTIONS`): the receipt,
-# the line and the record name each inherited variable the run did not get as it was.
+# A scrub can turn a legitimate run red (jest's ES modules recipe sets `NODE_OPTIONS`): the receipt
+# and the line name each inherited variable the run did not get as it was.
 [[mutation]]
 name = "the receipt names no variable the run's environment lost"
 file = "src/stayfixed/prove/run.py"
@@ -6819,16 +6606,6 @@ before = "        if planned.source is ReportSource.FILE and scratch not in plan
 after = "        if False:"
 reddens = ["tests/prove/test_run.py::test_a_plan_whose_report_lies_outside_its_scratch_is_a_defect_and_raises"]
 
-# A line holds version 1's keys, which the test that reads them holds beside `VERSION`: a key the
-# record gains or loses is a new version.
-[[mutation]]
-name = "the record's version 1 keys drift from what a line holds"
-file = "src/stayfixed/prove/evidence.py"
-before = """        "kind": "prove",
-"""
-after = ""
-reddens = ["tests/prove/test_evidence.py::test_each_line_holds_its_version_s_keys"]
-
 # The prove section lists `--json`'s keys as the receipt's fields, in order.
 [[mutation]]
 name = "the receipt gains a field the prove section does not list"
@@ -6843,9 +6620,9 @@ name = "the appending write blocks on a FIFO at its path"
 file = "src/stayfixed/fsops.py"
 before = "    | os.O_CLOEXEC\n    | os.O_NONBLOCK\n)"
 after = "    | os.O_CLOEXEC\n)"
-reddens = ["tests/prove/test_evidence.py::test_a_fifo_at_the_record_is_a_warning_and_never_a_wait"]
+reddens = ["tests/test_fsops.py::test_an_append_to_a_fifo_with_no_reader_is_refused_and_never_waits"]
 
-# An interrupt anywhere in the run, not only in the wait, ends it `not proven` and is recorded.
+# An interrupt anywhere in the run, not only in the wait, ends it `not proven`.
 [[mutation]]
 name = "an interrupt outside the wait escapes prove"
 file = "src/stayfixed/prove/run.py"
@@ -6859,7 +6636,6 @@ after = '''
         raise'''
 reddens = [
   "tests/prove/test_run.py::test_an_interrupt_anywhere_in_the_run_ends_it_not_proven[interrupt-tree-state]",
-  "tests/prove/test_evidence.py::test_a_run_interrupted_before_its_command_starts_is_recorded_not_proven",
 ]
 
 [[mutation]]
@@ -6996,15 +6772,6 @@ before = "    handed = launch._replace(launcher=(str(program), *launch.launcher[
 after = "    handed = launch"
 reddens = [
   "tests/prove/test_run.py::test_the_command_is_judged_where_its_launcher_runs_it[spaced]",
-]
-
-[[mutation]]
-name = "prove keeps the record of the project the command was typed in"
-file = "src/stayfixed/prove/commands.py"
-before = "    record_prove(Path(receipt.directory or cwd), receipt)"
-after = "    record_prove(cwd, receipt)"
-reddens = [
-  "tests/prove/test_evidence.py::test_a_run_its_launcher_moves_keys_the_project_it_moved_to",
 ]
 
 [[mutation]]

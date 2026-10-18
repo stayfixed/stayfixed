@@ -946,8 +946,8 @@ key held twice, it is escaped and, past 120 characters, cut to its start and its
 a suite that hangs and is no suite's budget). So does an interrupt (Ctrl-C) or a `SIGTERM` or
 `SIGHUP` to `prove`, at any point of the run (while the tree's state is taken or the run planned,
 as much as while the command runs): either way the run is `not proven` (`interrupted` or
-`timed-out`), what the command left running in its process group is ended with it, the scratch
-directory is removed, and the run's evidence record is still written.
+`timed-out`), what the command left running in its process group is ended with it, and the
+scratch directory is removed.
 
 **The line** says the verdict and its reason in words, the counts (passed, failed, skipped), the
 runner and the realpath of the program that ran (and of the entry it runs, where it is `node` or
@@ -969,34 +969,6 @@ judged), `runner`, `program`, `entry`,
 the lines kept, never the output printed), `commit`, `dirty_before`, `dirty_after`, `untracked`,
 `untracked_more`, `configs`, `configs_more` and `ignored_configs`.
 
-**The evidence record.** Every run appends one JSON line to
-`$XDG_STATE_HOME/stayfixed/evidence/<key>.jsonl` where `XDG_STATE_HOME` is an absolute path, and
-else to `~/.local/state/stayfixed/evidence/<key>.jsonl`, `~` being `HOME`; where neither is an
-absolute path, no record is written. `<key>` is `origin-` and a digest of the repository's
-`origin` URL, read one way for every spelling of it (userinfo, port, a trailing `/` and `.git`
-dropped, the scheme and host lower-cased, `user@host:path` and the `ssh`, `https`, `http` and
-`git` URLs of one host and path read as one), so every clone of one repository shares a file;
-without an `origin`, or where git cannot be asked, `path-` and a digest of the real path of the
-top-level, so a run typed in a subdirectory keys the repository. The line holds `version` (the
-record's format, 1), `kind` (`prove`), `at` (UTC, to the second), `stayfixed` (the version that
-ran) and every key of the receipt `--json` prints, the argv as redacted there, so a value never
-reaches it. A `--junit` run's line carries `runner: null` and `verified: false`; an interrupted or
-timed-out run's says `not proven`. A record is a log: no gate, verdict or trust decision reads one.
-It is never written where a git checkout would carry it: asked from the nearest part of the
-evidence directory that exists, a checkout there gets the record only where `git check-ignore`
-answers that it ignores it, so a dotfiles repository at `~` that ignores `.local/state` gets its
-records, and one that does not gets none, whether the run answers for it or for a project nested
-in it. A bare-repository dotfiles home (`git --git-dir=~/.dotfiles --work-tree=~`, no `.git` in
-`~`) is out of its reach, since git names no checkout there unless told where its directory is,
-so the record is written there. Nor is it written through a link below the state home's base (a
-base that is itself a link is followed first). One that cannot be written, with no state home, a
-checkout that does not ignore it or a `check-ignore` that gives no answer, or a state directory
-that is not a directory or is a link, is one warning on standard error that names it, the verdict
-and the exit code unchanged. There is no rotation yet: each run adds its line. The warning reads
-`stayfixed: the evidence record <record> was not written: <why>`, `<record>` its path or `of this
-run` where there is no state home. `stayfixed uninstall` leaves the records: they are the
-machine's, not the project's, and the evidence directory is yours to remove.
-
 **The network.** `prove` itself reaches none; what runs may. `uv run` may sync the project's
 environment from its index first, as it does outside `prove`; `go test` may download the modules
 `go.mod` names, from the proxy your go environment names, a `go env -w` setting included; and
@@ -1005,8 +977,7 @@ does outside `prove`.
 
 **Reads** the command's report and git's answers about the tree. **Writes** nothing in the
 project: the scratch directory is under the system's temporary directory, is readable by you
-alone, and is removed on every path; and one line to the run's evidence record (above). What the
-command itself writes, it writes. **Runs** the command, as the
+alone, and is removed on every path. What the command itself writes, it writes. **Runs** the command, as the
 [What stayfixed sends where](https://github.com/stayfixed/stayfixed/blob/main/README.md#what-stayfixed-sends-where)
 row says.
 
@@ -1541,16 +1512,7 @@ where findings are serialised.
 **Reads** `stayfixed.toml`, the base's copy through git, every file a gate reads, and — only when
 `--workflow-sha` matches a moved `[ci] ref` — the public repository's tags.
 
-**Writes** the file `--summary` names, and one line to the project's evidence record,
-`$XDG_STATE_HOME/stayfixed/evidence/<key>.jsonl` or `~/.local/state/stayfixed/evidence/<key>.jsonl`,
-as [`stayfixed prove`](#stayfixed-prove---timeout-seconds---junit-path----command-) does, for every run
-that judged the configuration or ran a gate (`nothing to run` included, and no line for a refusal
-before either: no tree `stayfixed.toml`, one the loader refuses, a refused machine file, an
-unknown `--only`; nor for a run interrupted before it finished, which judged nothing whole): its `mode` (`builtin`, `custom` or `all`), its flags, the commit and whether the tree
-differed from it, and each gate's verdict word (`passes`, `fails`, `would fail`, `could not run`,
-`not run`, `waiting`, and `refused` for the configuration check). A record that cannot be written
-is a warning on standard error and changes no exit code. A custom gate writes whatever its command
-writes.
+**Writes** nothing but the file `--summary` names; a custom gate writes whatever its command writes.
 
 A pull request that removes `stayfixed.toml` — `stayfixed uninstall` among them — fails the run:
 nothing says which gates run, and a run that cannot judge a change does not pass it. Such a
@@ -2249,10 +2211,8 @@ finishes the run. A `CLAUDE.md` or `AGENTS.md` your own excludes ignore is taken
 other. Run it on a checkout you trust.
 
 **What stays on the machine.** `uninstall` takes back one repository's footprint, and what is the
-machine's stays: the deny rules `stayfixed setup` added to the user settings file, every
-approval in `~/.config/stayfixed/trust.json`, this repository's store among them, and the evidence
-records of its `prove` and `gate` runs in `$XDG_STATE_HOME/stayfixed/evidence/` or
-`~/.local/state/stayfixed/evidence/`, which are yours to remove. Run `stayfixed
+machine's stays: the deny rules `stayfixed setup` added to the user settings file, and every
+approval in `~/.config/stayfixed/trust.json`, this repository's store among them. Run `stayfixed
 trust revoke memory` before uninstalling to withdraw this repository's approval; afterwards, with no
 `stayfixed.toml` to describe the store, `trust revoke` says so and names `stayfixed trust revoke
 memory --subject KEY`, with a key `stayfixed trust list --all --json` prints.
@@ -3654,24 +3614,6 @@ as the check is required on the gate branch only.
 | `python-version` | `"3.13"` | the interpreter stayfixed runs on; 3.11 is the floor |
 | `only` | `""` | the checks to run, space-separated: `config` and any configured gate name. Empty runs the configuration check and every configured gate, and the configuration check runs whatever this names |
 | `timeout-minutes` | `15` | the job's time limit, a whole number of minutes from 5 to 60; any value the runner does not render as a whole number from 5 to 60 fails the job in its first step, before anything is checked out |
-| `evidence` | `false` | upload `~/.local/state/stayfixed/evidence/`, where the two gate steps append their [evidence records](#stayfixed-prove---timeout-seconds---junit-path----command-) on a runner that sets no `XDG_STATE_HOME`, as an artifact named for `only:` and the run attempt (one per call: calls that share an `only:` share the name, and each upload after the first fails without failing the job); off unless the caller turns it on, since an artifact is stored at the caller's cost |
-| `evidence-retention-days` | `14` | how many days that artifact is kept, where `evidence` is on |
-
-**The evidence upload.** Each of the two gate steps appends one line to the runner's evidence
-record, `~/.local/state/stayfixed/evidence/<key>.jsonl` on a runner that sets no `XDG_STATE_HOME`,
-GitHub's hosted ones among them. With `evidence: true`, a last step uploads
-`~/.local/state/stayfixed/evidence/` with `actions/upload-artifact`, pinned by its sha, after both
-steps whatever they came to (`if: always()`); an empty or missing directory uploads nothing, which
-is what a runner that sets `XDG_STATE_HOME` gets. It is the one step with an `if:` and the one
-that may fail (`continue-on-error`): a log may neither change the verdict nor be lost to one, so a
-name a caller repeats, or the artifact service failing, fails nothing. The artifact is named for
-`only:` and the run attempt, so there is one per call and attempt; it names no job, since
-`github.job` in a called workflow is always this workflow's own `gates`. A caller that makes
-several calls with one `only:` (a matrix, or two jobs) gets one name for all of them, so each
-upload after the first fails, silently; give each call its own `only:` to keep each one's records.
-It runs no command and reads no secret, and what it uploads is bytes the pull request's own code can write (a
-custom gate runs in the same job and can append to the record), which is why a record is a log that
-no gate, verdict or trust decision reads.
 
 The caller's job needs `contents: read`. That is the default, so the lines above are enough —
 but a caller that sets `permissions:` at workflow level replaces the default rather than adding

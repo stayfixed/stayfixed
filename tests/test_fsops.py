@@ -1054,8 +1054,8 @@ def test_a_directory_that_can_be_written_but_not_searched_cannot_take_a_new_file
 def test_an_append_adds_to_the_file_s_end_and_creates_it_for_its_owner_alone(
     tmp_path: Path,
 ) -> None:
-    # The one appending write, the hook sink's and the evidence records'. Mutation (declared):
-    # the write opened without `O_APPEND` -> the second line overwrites the first.
+    # The one appending write, the hook sink's. Mutation (declared): the write opened without
+    # `O_APPEND` -> the second line overwrites the first.
     with fsops.open_within(tmp_path, "log.jsonl") as (dir_fd, name):
         fsops.append_at(dir_fd, name, b"one\n")
         fsops.append_at(dir_fd, name, b"two\n")
@@ -1075,3 +1075,29 @@ def test_an_append_never_writes_through_a_link(tmp_path: Path) -> None:
         fsops.append_at(dir_fd, name, b"line\n")
     assert raised.value.errno == errno.ELOOP
     assert target.read_bytes() == b""
+
+
+def test_an_append_to_a_fifo_with_no_reader_is_refused_and_never_waits(tmp_path: Path) -> None:
+    # A FIFO with no reader where the file goes: an open for writing would wait for a reader that
+    # never comes, and the hook with it. Opened without blocking it is `ENXIO`. Run in a child
+    # under a timeout, so a regression fails this case rather than hanging the suite. Mutation
+    # (declared): `O_NONBLOCK` left off the append's flags -> the child waits.
+    os.mkfifo(tmp_path / "log.jsonl")
+    probe = (
+        "import errno, sys\n"
+        "from pathlib import Path\n"
+        "from stayfixed import fsops\n"
+        "try:\n"
+        "    with fsops.open_within(Path(sys.argv[1]), 'log.jsonl') as (dir_fd, name):\n"
+        "        fsops.append_at(dir_fd, name, b'line\\n')\n"
+        "except OSError as exc:\n"
+        "    print(errno.errorcode[exc.errno])\n"
+    )
+    done = subprocess.run(
+        [sys.executable, "-c", probe, str(tmp_path)],
+        capture_output=True,
+        text=True,
+        timeout=20,
+        check=False,
+    )
+    assert done.stdout == "ENXIO\n", (done.stdout, done.stderr)
