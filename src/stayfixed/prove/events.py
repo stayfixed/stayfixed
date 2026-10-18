@@ -33,9 +33,12 @@ one case alone: a key an object holds twice, which `counts.strict_json` names th
 `printed.clipped`, escaped and bounded in length.
 
 `read_line` says which lines of a stream this reader reads anything from: every one but an
-`output` event it would read whole, which counts nothing. `prove`'s tee keeps only those in the
-report, so the size cap counts the events and never the text a test printed; every byte still
-reaches the caller.
+`output` event it would read whole, which counts nothing; an `output` line it cannot read whole is
+kept, so its refusal stands. `prove`'s tee keeps only those in the report, so the size cap counts
+the events and never the text a test printed; every byte still reaches the caller. What this
+reader is handed under `prove` is that kept stream, not the standard output printed: a refusal's
+line number counts the kept lines alone, every `output` event left out before it uncounted, and
+the size a refusal names and the receipt's `report_digest` are the kept stream's too.
 """
 
 from __future__ import annotations

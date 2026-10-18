@@ -943,19 +943,23 @@ names there is among the configuration files. Their configuration
 files are `package.json`, `.npmrc`, `jest.config.*`, `vitest.config.*` and `vite.config.*`.
 
 **The `go test` adapter** recognises `go test …`, the `go` a bare name found on `PATH` or a path to
-one (`/usr/local/go/bin/go test ./...`), and runs the command as typed with `-json` added: after a
-leading `-C dir`, which the go command reads only first, and otherwise first. The report is the
-run's standard output, copied to yours whole; only its events are counted, so a line a test prints
-is an `output` event and never a result, and the 64 MiB cap counts the events alone, every `output`
-event left out of the report. Nothing is refused and nothing removed: `GOFLAGS`, `GOENV` (and the
-`go env -w` settings its file holds), `GOTOOLCHAIN`, `GOROOT`, `GOOS`, `GOARCH` and every flag are
-yours, read by the go command as outside `prove`. A flag that ends the run with no event stream is
-never `proved`: `-c` builds the test binary and runs nothing (`none-ran`), and a `-json=false` of
-the command's own turns the stream into text (`report-malformed`). Its configuration files are
-`go.mod` and `go.work`, and the file `-modfile` names, read from the directory a leading `-C`
-names; its discovery set is `*_test.go`. The bound has a Go case of its own: a test, or a
-`TestMain`, that prints test2json's own framing (`\x16--- PASS: TestX`) gets a `pass` event for a
-test that never ran, and that is the code under test shaping its report.
+one (`/usr/local/go/bin/go test ./...`); behind `uv run` it is handed to uv as typed and is the `go`
+uv finds, its environment's `bin` first, and the receipt names uv. It runs the command as typed with
+`-json` added: after a leading `-C dir`, which the go command reads only first, and otherwise first.
+The report is the run's standard output, copied to yours whole; only its events are counted, so a
+line a test prints is an `output` event and never a result, and the 64 MiB cap counts the events
+alone: every `output` event read whole is left out of the report, and an `output` line that does not
+parse is kept, so its refusal stands. A refusal's line number, the size it names and `report_digest`
+are of that kept stream, not of the output printed. Nothing is refused and nothing removed:
+`GOFLAGS`, `GOENV` (and the `go env -w` settings its file holds), `GOTOOLCHAIN`, `GOROOT`, `GOOS`,
+`GOARCH` and every flag are yours, read by the go command as outside `prove`. A flag that ends the
+run with no event stream is never `proved`: `-c` builds the test binary and runs nothing
+(`none-ran`), and a `-json=false` of the command's own turns the stream into text
+(`report-malformed`). Its configuration files are `go.mod` and `go.work`, and the file `-modfile`
+names, read from the directory a leading `-C` names; its discovery set is `*_test.go`. The bound has
+a Go case of its own: a test, or a `TestMain`, that prints test2json's own framing
+(`\x16--- PASS: TestX`) gets a `pass` event for a test that never ran, and that is the code under
+test shaping its report.
 
 **`--junit PATH`** is for a runner no adapter knows: no adapter is consulted, the command runs
 as typed (its assignments, `env` and `uv run …` read as above, its program found as above, nothing
@@ -1013,9 +1017,9 @@ the option or word the runner's adapter refused, the `--junit` path on `junit-un
 report stopped reading), `argv` (the command, every `NAME=value` and `--option=value` value replaced
 by `…`; a value passed as the word after its option is kept), `runner`, `program`, `entry`,
 `verified` (false on a `--junit` run, and only there), `scrubbed` (those variables' names, sorted),
-`counts`, `exit_code`, `report_digest` (the SHA-256 of the report counted), `commit`,
-`dirty_before`, `dirty_after`, `untracked`, `untracked_more`, `configs`, `configs_more` and
-`ignored_configs`.
+`counts`, `exit_code`, `report_digest` (the SHA-256 of the report counted: of a test event stream,
+the lines kept, never the output printed), `commit`, `dirty_before`, `dirty_after`, `untracked`,
+`untracked_more`, `configs`, `configs_more` and `ignored_configs`.
 
 **The evidence record.** Every run appends one JSON line to
 `~/.local/state/stayfixed/evidence/<key>.jsonl`, `~` being your entry in the password database:

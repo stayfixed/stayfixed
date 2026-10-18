@@ -213,6 +213,7 @@ def test_an_output_event_is_the_one_line_left_unread(separators: tuple[str, str]
         b'[{"Action":"output"}]',
         b'"output"',
         b'{"Action":"output"',
+        b"./x_test.go:3:1: syntax error",
     ],
     ids=[
         "empty-test",
@@ -222,10 +223,12 @@ def test_an_output_event_is_the_one_line_left_unread(separators: tuple[str, str]
         "not-an-object",
         "a-string",
         "cut",
+        "text",
     ],
 )
 def test_a_line_the_reader_refuses_is_read_so_the_refusal_stands(line: bytes) -> None:
-    # Mutation (declared): a refused line left unread -> each case reads as an output event's.
+    # Mutations (declared): a refused line left unread -> each case reads as an output event's; a
+    # line without the word `"output"` left unread -> `text`, a line go prints as text, is.
     assert read_line(line) is True
     with pytest.raises(ReportError):
         read_events(line)

@@ -5457,6 +5457,20 @@ reddens = [
   "tests/prove/test_events.py::test_the_lines_left_unread_change_no_count[go.jsonl]",
 ]
 
+# A line without the word `"output"` is no `output` event, so it is read without the parse.
+[[mutation]]
+name = "the event-stream reader's line test leaves a line without the word output unread"
+file = "src/stayfixed/prove/events.py"
+before = """    if _OUTPUT_WORD not in line:
+        return True"""
+after = """    if _OUTPUT_WORD not in line:
+        return False"""
+reddens = [
+  "tests/prove/test_events.py::test_a_line_the_reader_refuses_is_read_so_the_refusal_stands[text]",
+  "tests/prove/test_events.py::test_an_output_event_is_the_one_line_left_unread[compact]",
+  "tests/prove/test_events.py::test_the_lines_left_unread_change_no_count[go.jsonl]",
+]
+
 [[mutation]]
 name = "the event-stream reader's line test leaves a line it refuses unread"
 file = "src/stayfixed/prove/events.py"

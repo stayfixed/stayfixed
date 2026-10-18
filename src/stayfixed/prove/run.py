@@ -321,9 +321,11 @@ class _Tee:
     Given `read`, the report's reader's test of a line (`reports.read_lines`), only the lines it
     reads anything from are copied to the report, so the cap counts what the reader needs and never
     the text a test printed; the caller still gets every byte. A line is held until its line break
-    arrives, and the last one, cut short, when the pipe ends; one longer than `MAX_REPORT_BYTES` is
-    copied as it stands, its rest and every byte after it with it, since no report holding it fits
-    under the cap.
+    arrives, and the last one, cut short, when the pipe ends. The held part is weighed after each
+    read: a line whose break arrives in the read that takes it past `MAX_REPORT_BYTES` is still
+    judged whole, so a line the reader reads nothing from is left out up to a read (64 KiB) past
+    the cap; once the held part alone is past the cap, with no break yet, it is copied as it
+    stands, its rest and every byte after it with it, and the report is then past the cap.
 
     The thread reads until the pipe ends; once `finish` is asked, it stops at the first moment the
     pipe holds nothing, or once it has copied `MAX_REPORT_BYTES` more, so a descendant that left the
