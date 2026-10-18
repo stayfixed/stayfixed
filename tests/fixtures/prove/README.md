@@ -16,7 +16,10 @@ How they were recorded:
   option that keeps a non-ASCII test id unescaped.
 - `node --test` ran with two reporters, junit to `<report>` and spec to stdout:
   `--test-reporter=junit --test-reporter-destination=<report> --test-reporter=spec
-  --test-reporter-destination=stdout`, written `<junit+spec>` below.
+  --test-reporter-destination=stdout`, written `<junit+spec>` below. The `node24-` files were
+  recorded the same way with Node 24.10.0, the active LTS, which writes no `file` attribute and
+  names a whole-file testcase by the file's path from the directory node ran in; each ran in the
+  directory of its own case, as the `node-` files did.
 - vitest ran `vitest run --reporter=json --outputFile.json=<report> --reporter=default`, written
   `<json+default>` below.
 - `go test` ran with `GOENV=off GOFLAGS= GOTOOLCHAIN=local`; the report is the command's stdout.
@@ -36,6 +39,12 @@ How they were recorded:
 | `node-no-tests.xml` | node --test | 26.12.0 | `node --test <junit+spec>` over a test file that defines no test: one whole-file testcase, exit 0 | 2026-10-18 |
 | `node-exit0.xml` | node --test | 26.12.0 | `node --test <junit+spec>` over a test file calling `process.exit(0)` before its test: one whole-file testcase, exit 0 | 2026-10-18 |
 | `node-load-failure.xml` | node --test | 26.12.0 | `node --test <junit+spec>` over one passing file, one with a syntax error and one that throws on load: two whole-file testcases with a `failure` child, exit 1 | 2026-10-18 |
+| `node24-name-pattern.xml` | node --test | 24.10.0 | as `node-name-pattern.xml`, the three tests' file at the top: one whole-file testcase named `three.test.mjs`, no `file` attribute, exit 0 | 2026-10-18 |
+| `node24-nested-pattern.xml` | node --test | 24.10.0 | as `node24-name-pattern.xml`, the file at `test/deep/three.test.mjs`: the whole-file testcase named by that path, exit 0 | 2026-10-18 |
+| `node24-no-tests.xml` | node --test | 24.10.0 | as `node-no-tests.xml`: one whole-file testcase named `notests.test.mjs`, no `file` attribute, exit 0 | 2026-10-18 |
+| `node24-nested.xml` | node --test | 24.10.0 | `node --test <junit+spec>` over `test/real.test.mjs` (one passing test) and `test/deep/empty.test.mjs` (no test): the whole-file testcase named `test/deep/empty.test.mjs`, exit 0 | 2026-10-18 |
+| `node24-exit0.xml` | node --test | 24.10.0 | as `node-exit0.xml`: one whole-file testcase named `exit0.test.mjs`, exit 0 | 2026-10-18 |
+| `node24-load-failure.xml` | node --test | 24.10.0 | as `node-load-failure.xml`, the file with a syntax error at `test/broken.test.mjs`: two whole-file testcases, named by their paths, each with a `failure` attribute and child, exit 1 | 2026-10-18 |
 | `jest.json` | jest | 30.5.2 | `node node_modules/jest/bin/jest.js --ci --json --outputFile=<report>`, three tests, exit 1 | 2026-10-18 |
 | `jest-todo.json` | jest | 30.5.2 | as `jest.json` over one passing test, one `test.todo` and one `test.skip`, exit 0 | 2026-10-18 |
 | `jest-empty.json` | jest | 30.5.2 | as `jest.json` in a project with no test file, exit 1 | 2026-10-18 |

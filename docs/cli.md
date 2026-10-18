@@ -861,86 +861,67 @@ names, by its realpath, wherever it lies; its discovery set is `conftest.py`, `t
 `entry-not-found` (`not proven`).
 
 **The jest, vitest and `node --test` adapters** recognise `jest` and `vitest`, bare or after `npx`,
-`npx --no-install` or `npx --no`, or as `node [Node's options] <entry>`, the entry a path into
+`npx --no-install` or `npx --no`, or by their path (`./node_modules/.bin/jest`) where it is npm's
+link to the file the package's `bin` names; `node [Node's options] <entry>`, the entry a path into
 `node_modules/jest` (or `jest-cli`) or `node_modules/vitest`, or `node_modules/.bin/jest` or
-`.bin/vitest`; and `node` with `--test` among its options; `npm test`, `npm run`,
-`yarn` and `pnpm` are recognised by none, and `prove --junit` counts what they run. No `npx` and no
-package manager's shim is run: the entry point is the file the `bin` of `node_modules/jest` (or
-`jest-cli`) or `node_modules/vitest` names, looked for in the directory the command runs in and each
-one above it up to the top-level, then the runner's name on `PATH` where it is a link to such a
-file; a file there that is not a link is never read. The run is the `node` on `PATH` and that entry,
-and nothing found is `entry-not-found` (`not proven`), whose detail names `prove --junit` as the way
-on. jest is run with `--json --outputFile=<report>` (jest 30.5.2's run of no test writes no report
-where its standard error is a pipe, as in most CI jobs, so it is `not proven` there and `failed`
-at a terminal: never `proved`); vitest with `run` first where the command's first word is
-none of its subcommands, `--reporter=json --outputFile=<report>`, and `--reporter=default` where
-the command names no reporter. vitest 5.0.5's subcommands, read in the command's first word:
-`run` is kept; `related` is kept and gets `--run` where the command does not set it; `watch` and
-`dev` never end (`never-ends`); `bench`, `list`, `init` and `doctor` run no test suite that
-reports, and are `not proven` (`no-test-run`), whose detail names `vitest run`. vitest itself
-reads the first word that is no option as the subcommand, so a subcommand after an option
-(`vitest --globals related a.js`) is planned as `run` with it a name filter, which `prove` counts
-as the run of the tests whose paths hold it, as `vitest run related a.js` would be: `failed` where
-none does; `node --test` with a junit reporter to `<report>` and the spec reporter
-to standard output, and a testcase node writes for a whole file that ran no test is not counted
-unless it failed. Each refuses (`refused-option`, naming the option) a closed list drawn by running
-every option the pinned runner registers over a failing test: jest's `--json`, `--outputFile`,
-`--testResultsProcessor`, a `-c`/`--config` given a configuration's own text (a value that starts
-with `{` and ends with `}`, which jest reads as JSON), `-u`/`--updateSnapshot` and
-`--collectTests`; vitest's `--outputFile` in any form, `-u`/`--update` but `--update=none`,
-`--no-update` and `--update=new` (`--update=false` is the text `false`, which rewrites
-snapshots), `--mergeReports` and `--dangerouslyIgnoreUnhandledErrors`; and node's own
-`--test-reporter…`, `--env-file`, `--env-file-if-exists`, its configuration file options,
-`--test-update-snapshots` and `--test-rerun-failures`, and code the command spells (`-e`,
-`--eval`, `-p`, `--print`, and a preload given a URL of any scheme but `file:`), spelled with
-`_` or after the files too. A
-watch mode (jest's `--watch` and `--watchAll`, vitest's `-w`/`--watch`, node's `--watch` and
-`--watch-path`) never ends, so no report is ever finished: it is `not proven` (`never-ends`,
-naming the option), and a refusal in the same command wins. Where the command sets a watch mode
-more than once, it is read as the runner reads it: the last setting wins (`node --watch --no-watch
---test` and `jest --watch --no-watch` are planned), with one measured exception, jest's `--watch
---watchAll=false`, which ends (exit 0, no test related to a change) where the reading says
-`never-ends`, and is not proven either way; vitest's `--no-watch` replaces what came
-before it and two settings of its watch mode are refused by vitest before any run, and node's
-`--watch-path` never runs under `--test`. Each option is read as the runner's
-own parser reads it on the pinned version: jest's `-u false` is off, vitest's `-t.u` sets `-u`.
-jest's `--ci=false` and `--no-ci` and vitest's `--update=new` are free: each writes a snapshot that
-is missing and passes it, as each runner does by default where `CI` is unset, and a snapshot the
-run writes is the code under test's, which the bound concedes. Every other option is free:
-`-c`/`--config` naming a file, which, inside the project or outside it, is one the same agent could
-write in the tree; `--import` and `--require`; the files jest's `--setupFiles`, `--testRunner`,
-`--projects` or `--rootDir` and vitest's `--root` or `--dir` name; and a reporter of jest's or
-vitest's own. The file `-c` or `--config` names (read from the directory the command runs in, and
-for vitest from its `--root` where the command gives one) is among the configuration files, by its
-realpath. A preload (`-r`, `--require`, `--import`, `--loader`, `--experimental-loader`) given a
-URL of any scheme but `file:`, a `data:` URL among them, is code the command spells, and is refused
-(`refused-option`, naming the option, never its value). Every other value runs as it is. The file it
-names is among the configuration files where its reading is not in doubt: a path starting `/`, `./`
-or `../` with no `%`, `?`, `#`, `\` or control character in it, by its realpath from the directory
-the command runs in, and an absolute `file:` URL of this machine, by its percent-decoded path. A
-package's name (`tsx`, `ts-node/register`) and any value whose file is in doubt (a relative
-`file:` URL, another host's, a path holding one of those characters, which node may read as a
-URL) are not named: the name is the receipt's convenience, never an input to the verdict. Their forging set is `NODE_OPTIONS`, and for `node --test`
-also `NODE_TEST_CONTEXT`, an inherited one removed from the run's environment (the line and the
-receipt say so). To give Node a flag, put it in front of the runner's entry instead:
-`stayfixed prove -- node --experimental-vm-modules node_modules/jest/bin/jest.js`, jest's
-recipe for ES modules. That entry must be the file its package's `bin` names (by its realpath, so a
-`.bin` link npm made is read through and pnpm's `.bin` shim is not: `entry-not-found`), the
-`node` is the one the command names. Node's options there are read from a closed list drawn from
-`node --help` on Node 26.12.0: switches that change how the code runs and never what node runs
-(`--experimental-vm-modules`, `--no-warnings`, `--enable-source-maps`, `--trace-warnings`,
-`--expose-gc`, `--preserve-symlinks`, …), a few that take a value given it with `=` only
-(`--max-old-space-size=`, `--conditions=`, `--disable-warning=`, `--unhandled-rejections=`, …), and
-the preloads `-r`, `--require`, `--import` and `--loader`. Any other option, or one of those that
-take a value given it as the next word, makes the command one no adapter recognises (`not
-proven`): node would read the entry as that option's value and run the word after it (measured:
-`node --disable-warning node_modules/jest/bin/jest.js evil.js` runs `evil.js`). Refused there
-(`refused-option`, naming the option, never its value): the options that load a file
-(`--env-file`, `--env-file-if-exists`, the configuration file options), the test runner's (any
-`--test…`), and code the command spells (`-e`, `--eval`, `-p`, `--print`, and a preload given a
-URL of any scheme but `file:`); `--watch` and `--watch-path` never end. A file a preload
-names there is among the configuration files. Their configuration
-files are `package.json`, `.npmrc`, `jest.config.*`, `vitest.config.*` and `vite.config.*`.
+`.bin/vitest`, that is that file by its realpath; and `node` with `--test` among its options. `npm
+test`, `npm run`, `yarn` and `pnpm` are recognised by none, and `prove --junit` counts what they
+run. Each runs the command as typed, its first word found as a shell finds it (`npx`, `jest`,
+`node`, the `.bin` link) and the report's options added: `npx` reads `.npmrc` and puts every
+`node_modules/.bin` above the directory on `PATH`, as outside `prove`, and given a runner no
+`node_modules` holds it may install one, as the typed command would. Behind a launcher (`uv run npx
+jest`) the command's words are handed to the launcher as typed. A first word that names nothing (a
+bare `jest` on no `PATH` entry, whose detail names `npx jest` and `prove --junit`), a `.bin` path
+that is no link (pnpm's shim, which may run anything) and a file `node` is given that is not the
+package's entry are `entry-not-found` (`not proven`). The receipt names the runner's entry by its
+realpath beside the program where it is not the program itself: the file `node` is given, and for
+`npx` the one in `node_modules/jest` (or `jest-cli`) or `node_modules/vitest` from the directory the
+command runs in up to the top-level, else a link to such a file on `PATH`. Node's options are read
+with no list of Node's: any option goes in front of the entry, which is the first word Node may run
+as its script that is the file the package's `bin` names (`node --inspect
+node_modules/jest/bin/jest.js`, `node --max-old-space-size=4096 …`).
+
+jest is run with `--json --outputFile=<report>` (jest 30.5.2's run of no test writes no report
+where its standard error is a pipe, as in most CI jobs, so it is `not proven` there and `failed` at
+a terminal: never `proved`). vitest is run with `run` first where the command's first word is none
+of its subcommands, `--reporter=json --outputFile=<report>`, and `--reporter=default` where the
+command names no reporter. vitest 5.0.5's subcommands, read in the command's first word: `run` is
+kept; `related` is kept and gets `--run` where the command does not set it; `watch` and `dev` never
+end (`never-ends`); `bench`, `list`, `init` and `doctor` run no test suite that reports, and are
+`not proven` (`no-test-run`), whose detail names `vitest run`. A subcommand after an option
+(`vitest --globals related a.js`) is a name filter of `run`, as vitest reads it. `node --test` is
+run with a junit reporter to `<report>` and the spec reporter to standard output, in front of the
+command's own options; a testcase Node writes for a whole file that ran no test (named by the
+file's path from the directory it runs in, on Node 24 and 26 alike) is not counted unless it
+failed.
+
+Each refuses (`refused-option`, naming the option) only what you could type by mistake and get a
+green report for tests that never ran or never checked anything: jest's `--json` and
+`--outputFile` (the report's own), `-u`/`--updateSnapshot`, and `--collectTests` (which exits 0
+reporting a failing test as passed); vitest's `--outputFile` in any form, `-u`/`--update` but
+`--update=none`, `--no-update` and `--update=new` (`--update=false` is the text `false`, which
+rewrites snapshots), `--mergeReports` (which runs nothing and reports an earlier run's blobs) and
+`--dangerouslyIgnoreUnhandledErrors` (which exits 0 past an error vitest itself fails the run
+for); and node's `--test-update-snapshots`, `--test-rerun-failures`, and a `--test-reporter`
+without a `--test-reporter-destination` of its own, or a destination without its reporter, on the
+command line or in `NODE_OPTIONS`: Node pairs them in order and, given more of one, stops before
+any test runs, so give each reporter of yours its destination (`--test-reporter=spec
+--test-reporter-destination=stdout`). Each option is read as the runner's own parser reads it on
+the pinned version (jest's `-u false` is off, vitest's `-t.u` sets `-u`; Node reads `_` as `-`).
+Node's options written after the files under `--test` are read too: Node 26.12.0 reads them there;
+Node 24.10.0 does not (measured: the run is as without them), so on 24 a refusal or `never-ends`
+there is only the safe side. A watch mode (jest's `--watch` and `--watchAll`, vitest's
+`-w`/`--watch`, Node's `--watch` and `--watch-path`) never ends, and nor does Node's `--inspect-brk`
+or `--inspect-wait` (jest's recipe for debugging), which waits for a debugger: no report is ever
+finished, so it is `not proven` (`never-ends`, naming the option), the last watch setting winning
+as the runner reads it, and a refusal in the same command wins. Every other option is free, and so
+is every variable: `NODE_OPTIONS=--experimental-vm-modules npx jest`, jest's recipe for ES modules,
+runs as typed, and an inherited `NODE_OPTIONS` reaches the run. The file `-c` or `--config` names
+(read from the directory the command runs in, and for vitest from its `--root`), and a file a
+preload (`-r`, `--require`, `--import`, `--loader`) names by a plain path or an absolute `file:`
+URL, are among the configuration files by their realpath; a package's name, code the command spells
+and a value whose file is in doubt run unnamed. Their configuration files are `package.json`,
+`.npmrc` (which npx reads), `jest.config.*`, `vitest.config.*` and `vite.config.*`.
 
 **The `go test` adapter** recognises `go test …`, the `go` a bare name found on `PATH` or a path to
 one (`/usr/local/go/bin/go test ./...`); behind `uv run` it is handed to uv as typed and is the `go`
@@ -1003,9 +984,9 @@ as much as while the command runs): either way the run is `not proven` (`interru
 directory is removed, and the run's evidence record is still written.
 
 **The line** says the verdict and its reason in words, the counts (passed, failed, skipped), the
-runner and the realpath of the program that ran (and of the entry it runs, where it is `node`
-running jest's or vitest's), each variable of your environment the run did not get (`removed from
-the run's environment: NODE_OPTIONS`: one of the adapter's forging set), and the files that can
+runner and the realpath of the program that ran (and of the entry it runs, where it is `node` or
+`npx` running jest's or vitest's), each variable of your environment the run did not get (`removed from
+the run's environment: PYTHONOPTIMIZE`: one of the adapter's forging set), and the files that can
 shape the report: the runner's configuration files that exist and that git tracks or does not
 ignore, with a count of the ignored ones (`and N ignored`), then any file the command itself named
 as its configuration, from the top-level where it lies there and whole where it does not (outside a
@@ -1049,8 +1030,8 @@ the project's, and `~/.local/state/stayfixed/evidence/` is yours to remove.
 **The network.** `prove` itself reaches none; what runs may. `uv run` may sync the project's
 environment from its index first, as it does outside `prove`; `go test` may download the modules
 `go.mod` names, from the proxy your go environment names, a `go env -w` setting included; and
-nothing is installed through `npx`, which never runs: a runner that is not in `node_modules` is
-`entry-not-found`.
+`npx` may install a runner no `node_modules` holds, from the registry your `.npmrc` names, as it
+does outside `prove`.
 
 **Reads** the command's report and git's answers about the tree. **Writes** nothing in the
 project: the scratch directory is under the system's temporary directory, is readable by you
