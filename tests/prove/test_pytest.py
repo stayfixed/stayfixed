@@ -443,28 +443,28 @@ def test_each_report_steering_option_is_refused(
     assert planned(["pytest", *argv], tmp_path) == Refused(REFUSED_OPTION, named)
 
 
-@pytest.mark.parametrize(
-    "argv",
-    [
-        ("-o", "cache_dir=x"),
-        ("-o", "junitfamily=x"),
-        ("-o", "addopts_extra=x"),
-        # An `-o` with no value is pytest's own usage error.
-        ("-o",),
-        ("-c", "ci.ini"),
-        ("-p", "no:cacheprovider"),
-        ("-p", "no:_pytest.junitxml"),
-        ("--junit-prefix=x",),
-        ("-k", "junit_x"),
-        # A cluster `-p` stands in is not one pytest reads before its parse, and so blocks nothing.
-        ("-qpno:junitxml",),
-        # After `--` a word is a path to collect.
-        ("--", "--junitxml=x"),
-        ("--", "--setup-plan"),
-        # `-k` takes a value, so the `o` in its cluster is no `-o`.
-        ("-kojunit_x",),
-    ],
-)
+FREE = [
+    ("-o", "cache_dir=x"),
+    ("-o", "junitfamily=x"),
+    ("-o", "addopts_extra=x"),
+    # An `-o` with no value is pytest's own usage error.
+    ("-o",),
+    ("-c", "ci.ini"),
+    ("-p", "no:cacheprovider"),
+    ("-p", "no:_pytest.junitxml"),
+    ("--junit-prefix=x",),
+    ("-k", "junit_x"),
+    # A cluster `-p` stands in is not one pytest reads before its parse, and so blocks nothing.
+    ("-qpno:junitxml",),
+    # After `--` a word is a path to collect.
+    ("--", "--junitxml=x"),
+    ("--", "--setup-plan"),
+    # `-k` takes a value, so the `o` in its cluster is no `-o`.
+    ("-kojunit_x",),
+]
+
+
+@pytest.mark.parametrize("argv", FREE, ids=["_".join(argv) or "none" for argv in FREE])
 def test_every_other_option_is_free(tmp_path: Path, argv: tuple[str, ...]) -> None:
     bin_ = environment(tmp_path / "venv")
     assert isinstance(planned(["pytest", *argv], tmp_path, path=str(bin_)), Plan)

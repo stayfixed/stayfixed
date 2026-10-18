@@ -2285,8 +2285,8 @@ before = """        if word == _SEPARATOR:
 after = """        if False:
             return None"""
 reddens = [
-  "tests/prove/test_pytest.py::test_every_other_option_is_free[argv7]",
-  "tests/prove/test_pytest.py::test_every_other_option_is_free[argv8]",
+  "tests/prove/test_pytest.py::test_every_other_option_is_free[--_--junitxml=x]",
+  "tests/prove/test_pytest.py::test_every_other_option_is_free[--_--setup-plan]",
 ]
 
 [[mutation]]
