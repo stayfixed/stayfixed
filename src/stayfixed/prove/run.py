@@ -50,6 +50,15 @@ everything it reads, the agent that typed the command can write.
   (`stayfixed.processes`); a descendant that leaves it is not reached, and the tee lets go of the
   pipe such a descendant holds once it has copied what is there.
 - `PROVE_TIMEOUT_SECONDS`: a suite that hangs. A named cap with its flag, `not proven` past it.
+- `--junit PATH` (`prove(junit=…)`), for a runner no adapter knows: the command runs as typed, no
+  adapter is asked to plan it, and the report is the file at `PATH`, read from the directory the
+  command runs in. `JUNIT_BESIDE_ADAPTER`: an agent routing a runner an adapter knows around that
+  adapter's refusals and forging set; the anchor is the command's own words, and the refusal costs
+  that runner nothing, since `prove` without `--junit` counts it. `JUNIT_UNCHANGED`: a stale or
+  committed report the run never wrote, or a link to one; the anchor is the file's state as the
+  run found it before it started (absent, or its inode, size and modification time), which the
+  agent can write too, so it is a convenience and never a guarantee. The receipt marks the runner
+  not verified, and the verdict is the cascade's as for any other run.
 """
 
 from __future__ import annotations
@@ -62,6 +71,7 @@ import re
 import selectors
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import tempfile
@@ -74,9 +84,21 @@ from typing import IO, BinaryIO, TextIO
 
 from stayfixed import fsops, processes
 from stayfixed.gitenv import checkout_root
-from stayfixed.guards.api import LAUNCHER_FILE_OPTIONS, LAUNCHER_FILE_VARIABLES, read_launch
+from stayfixed.guards.api import (
+    LAUNCHER_FILE_OPTIONS,
+    LAUNCHER_FILE_VARIABLES,
+    Launch,
+    read_launch,
+)
 from stayfixed.printed import clipped, printable
-from stayfixed.profiles.runners import Plan, Refused, ReportSource, RunnerAdapter, Unresolved
+from stayfixed.profiles.runners import (
+    Plan,
+    Refused,
+    ReportKind,
+    ReportSource,
+    RunnerAdapter,
+    Unresolved,
+)
 from stayfixed.prove import tree
 from stayfixed.prove.adapters import shipped_adapters
 from stayfixed.prove.counts import (
@@ -130,6 +152,8 @@ FAILING = "failing"
 NONE_RAN = "none-ran"
 ALL_SKIPPED = "all-skipped"
 GREEN_BUT_EXITED = "green-but-exited"
+JUNIT_BESIDE_ADAPTER = "junit-beside-adapter"
+JUNIT_UNCHANGED = "junit-unchanged"
 
 # What the receipt's line says for each reason, every arm in words of its own.
 WORDS: Mapping[str, str] = {
@@ -146,6 +170,8 @@ WORDS: Mapping[str, str] = {
     NONE_RAN: "the runner reported no test run",
     ALL_SKIPPED: "the runner reported every test skipped",
     GREEN_BUT_EXITED: "the runner reported green and the command exited non-zero",
+    JUNIT_BESIDE_ADAPTER: "a runner adapter knows this command, so `--junit` does not count it",
+    JUNIT_UNCHANGED: "the run did not write the `--junit` report as a file of its own",
     REPORT_TOO_LARGE: "the report is past the size `prove` reads",
     REPORT_NOT_UTF8: "the report is not UTF-8",
     REPORT_MALFORMED: "the report does not parse as its format",
@@ -446,6 +472,49 @@ def _run(
             tee.finish()
 
 
+def _state(path: Path) -> tuple[int, int, int, int] | None:
+    """What is at `path`, not followed through a link: its mode, inode, size and modification
+    time; `None` where nothing is."""
+    try:
+        found = os.lstat(path)
+    except OSError:
+        return None
+    return found.st_mode, found.st_ino, found.st_size, found.st_mtime_ns
+
+
+def _rewritten(before: tuple[int, int, int, int] | None, path: Path) -> bool:
+    """Whether `path` is now a regular file, not a link, that is not the one `before` found:
+    one the run created, or rewrote."""
+    after = _state(path)
+    return after is not None and stat.S_ISREG(after[0]) and after != before
+
+
+def _unverified(launch: Launch, report: Path, cwd: Path, environ: Mapping[str, str]) -> Plan | None:
+    """The plan of a command no adapter knows: its launcher's words and its command, run as typed,
+    the program found from `cwd` as the run would find it, and the report the file at `report`;
+    `None` where the program is not there."""
+    words = (*launch.launcher, *launch.command)
+    if os.sep in words[0]:
+        found = shutil.which(str(cwd / words[0]))
+    else:
+        path = environ.get("PATH", os.defpath).split(os.pathsep)
+        found = shutil.which(words[0], path=os.pathsep.join(str(cwd / entry) for entry in path))
+    if found is None:
+        return None
+    return Plan(
+        argv=(found, *words[1:]),
+        program=Path(os.path.realpath(found)),
+        kind=ReportKind.JUNIT,
+        source=ReportSource.FILE,
+        report=report,
+        set_env={},
+        scrub=frozenset(),
+        discovery=(),
+        configs=(),
+        verified=False,
+    )
+
+
 def _counted(plan: Plan) -> tuple[Counts | None, str | None, str, str | None]:
     """The report counted, or the reason it was not, its detail, and the digest of what was read."""
     try:
@@ -467,12 +536,18 @@ def prove(
     timeout: float,
     adapters: Sequence[RunnerAdapter] | None = None,
     echo: TextIO | None = None,
+    junit: Path | None = None,
 ) -> Receipt:
     """Run `argv` in `cwd` and say what its runner's report proves. `adapters` defaults to every
     adapter this stayfixed ships (`shipped_adapters`). Given `echo`, the runner's standard output,
     every byte, goes there whatever the report's source (`--json` hands standard error, so that
     standard output holds the one object); without it, the runner's standard output is the
     caller's.
+
+    Given `junit`, a path read from `cwd`, the command is one no adapter knows: one an adapter
+    recognises is refused (`JUNIT_BESIDE_ADAPTER`), and otherwise it runs as typed and its report is
+    the JUnit file at that path, counted only where the run created or rewrote it as a regular file
+    (`JUNIT_UNCHANGED`), its runner marked not verified.
 
     An adapter whose plan's program is not an absolute path is a defect in stayfixed, as a module
     that does not import is, and raises `ValueError`: a bare name would be found from stayfixed's
@@ -485,20 +560,33 @@ def prove(
     command = launch.command
     known = shipped_adapters() if adapters is None else adapters
     adapter = next((each for each in known if command and each.recognises(command)), None)
-    if adapter is None:
+    if junit is not None and adapter is not None:
+        return _receipt(_Outcome(refused=JUNIT_BESIDE_ADAPTER), shown, adapter.name)
+    if adapter is None and (junit is None or not command):
         return _receipt(_Outcome(unproven=NOT_RECOGNISED), shown)
+    runner = adapter.name if adapter is not None else None
     assigned = assignments(launch.assignments)
     # The launcher's own variables that load a file, where the launch runs one.
     loaders = LAUNCHER_FILE_VARIABLES if launch.launcher else frozenset()
-    forged = sorted(name for name in assigned if name in adapter.forging | loaders)
+    forging = adapter.forging if adapter is not None else frozenset()
+    forged = sorted(name for name in assigned if name in forging | loaders)
     if forged:
         return _receipt(
-            _Outcome(refused=ASSIGNED_FORGING), shown, detail=", ".join(forged), runner=adapter.name
+            _Outcome(refused=ASSIGNED_FORGING), shown, detail=", ".join(forged), runner=runner
         )
     loading = file_option(launch.launcher)
     if loading is not None:
         return _receipt(
-            _Outcome(refused=REFUSED_LAUNCHER_OPTION), shown, detail=loading, runner=adapter.name
+            _Outcome(refused=REFUSED_LAUNCHER_OPTION), shown, detail=loading, runner=runner
+        )
+    # An inherited one goes from the run's environment as the plan's own scrub would go.
+    kept = {name: value for name, value in environ.items() if name not in loaders}
+    if adapter is None:
+        unverified = _unverified(launch, cwd / junit, cwd, environ) if junit is not None else None
+        if unverified is None:
+            return _receipt(_Outcome(unproven=NOT_STARTED), shown)
+        return _proved(
+            None, unverified, assigned, shown, cwd, root, kept, timeout, echo, junit=junit
         )
     scratch = Path(tempfile.mkdtemp(prefix="stayfixed-prove-"))
     try:
@@ -511,15 +599,13 @@ def prove(
             )
         if isinstance(planned, Unresolved):
             return _receipt(_Outcome(unproven=planned.reason), shown, adapter.name)
-        # An inherited one goes from the run's environment as the plan's own scrub would go.
-        kept = {name: value for name, value in environ.items() if name not in loaders}
         return _proved(adapter.name, planned, assigned, shown, cwd, root, kept, timeout, echo)
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 
 
 def _proved(
-    runner: str,
+    runner: str | None,
     plan: Plan,
     assigned: Mapping[str, str],
     shown: tuple[str, ...],
@@ -528,6 +614,8 @@ def _proved(
     environ: Mapping[str, str],
     timeout: float,
     echo: TextIO | None,
+    *,
+    junit: Path | None = None,
 ) -> Receipt:
     if not os.path.isabs(plan.argv[0]):
         raise ValueError(f"the {runner} adapter planned a program that is not absolute")
@@ -537,10 +625,14 @@ def _proved(
     env = {name: value for name, value in environ.items() if name not in plan.scrub}
     env |= assigned
     env |= plan.set_env
+    found = _state(plan.report)
     ran = _run(plan, cwd, env, timeout, echo)
     after = tree.state(root, plan.discovery, plan.configs)
     if ran.stopped is not None:
         outcome, detail, digest = _Outcome(unproven=ran.stopped), "", None
+    elif junit is not None and not _rewritten(found, plan.report):
+        outcome = _Outcome(unproven=JUNIT_UNCHANGED, exit_code=ran.exit_code)
+        detail, digest = str(junit), None
     else:
         counts, unread, detail, digest = _counted(plan)
         outcome = _Outcome(unproven=unread, counts=counts, exit_code=ran.exit_code)
@@ -608,6 +700,9 @@ def line(receipt: Receipt) -> str:
         if not receipt.verified:
             runner += ", not verified"
         parts.append(runner)
+    elif not receipt.verified:
+        ran = f", ran {clipped(receipt.program)}" if receipt.program is not None else ""
+        parts.append(f"runner not verified{ran}")
     if receipt.configs or receipt.ignored_configs:
         listed = ", ".join(printable(name) for name in receipt.configs)
         more = f" and {receipt.configs_more} more" if receipt.configs_more else ""

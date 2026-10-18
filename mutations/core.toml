@@ -5741,8 +5741,8 @@ reddens = [
 [[mutation]]
 name = "prove leaves the launcher's file variables out of the forging set"
 file = "src/stayfixed/prove/run.py"
-before = "    forged = sorted(name for name in assigned if name in adapter.forging | loaders)"
-after = "    forged = sorted(name for name in assigned if name in adapter.forging)"
+before = "    forged = sorted(name for name in assigned if name in forging | loaders)"
+after = "    forged = sorted(name for name in assigned if name in forging)"
 reddens = [
   "tests/prove/test_run.py::test_the_launcher_s_file_variables_are_forging_and_scrubbed_where_it_runs[UV_ENV_FILE]",
   "tests/prove/test_run.py::test_the_launcher_s_file_variables_are_forging_and_scrubbed_where_it_runs[UV_CONFIG_FILE]",
@@ -5751,8 +5751,8 @@ reddens = [
 [[mutation]]
 name = "prove hands the runner an inherited launcher file variable"
 file = "src/stayfixed/prove/run.py"
-before = "        kept = {name: value for name, value in environ.items() if name not in loaders}"
-after = "        kept = dict(environ)"
+before = "    kept = {name: value for name, value in environ.items() if name not in loaders}"
+after = "    kept = dict(environ)"
 reddens = [
   "tests/prove/test_run.py::test_the_launcher_s_file_variables_are_forging_and_scrubbed_where_it_runs[UV_ENV_FILE]",
 ]
@@ -6195,8 +6195,8 @@ reddens = [
 [[mutation]]
 name = "prove's command ignores --timeout"
 file = "src/stayfixed/prove/commands.py"
-before = "        args.command, cwd=Path.cwd(), environ=os.environ, timeout=args.timeout, echo=echo"
-after = "        args.command, cwd=Path.cwd(), environ=os.environ, timeout=PROVE_TIMEOUT_SECONDS, echo=echo"
+before = "        timeout=args.timeout,"
+after = "        timeout=PROVE_TIMEOUT_SECONDS,"
 reddens = ["tests/prove/test_command.py::test_the_timeout_reaches_the_run"]
 
 # Under `--json`, standard output is the one object: a report on it is teed to standard error.
@@ -6284,3 +6284,69 @@ file = "src/stayfixed/prove/tree.py"
 before = "        if not path.is_absolute() or not fsops.exists(path):"
 after = "        if not path.is_absolute():"
 reddens = ["tests/prove/test_run.py::test_a_configuration_file_named_by_its_path_is_named_wherever_it_lies"]
+
+# `--junit PATH`: a report is counted only where the run created or rewrote it, so a stale or
+# committed one counts nothing.
+[[mutation]]
+name = "prove --junit counts a report the run never wrote"
+file = "src/stayfixed/prove/run.py"
+before = "    elif junit is not None and not _rewritten(found, plan.report):"
+after = "    elif False:"
+reddens = [
+  "tests/prove/test_junit_flag.py::test_a_report_older_than_the_run_is_not_proven",
+  "tests/prove/test_junit_flag.py::test_a_symlinked_report_is_not_proven[before]",
+]
+
+[[mutation]]
+name = "prove --junit reads a link the run made as its report"
+file = "src/stayfixed/prove/run.py"
+before = "    return after is not None and stat.S_ISREG(after[0]) and after != before"
+after = "    return after is not None and after != before"
+reddens = ["tests/prove/test_junit_flag.py::test_a_symlinked_report_is_not_proven[the run]"]
+
+[[mutation]]
+name = "prove --junit reads a report rewritten in place as unchanged"
+file = "src/stayfixed/prove/run.py"
+before = "    return found.st_mode, found.st_ino, found.st_size, found.st_mtime_ns"
+after = "    return found.st_mode, found.st_ino, 0, 0"
+reddens = ["tests/prove/test_junit_flag.py::test_a_report_rewritten_in_place_is_counted"]
+
+# The runner of a `--junit` run is one no adapter resolved, and the receipt says so.
+[[mutation]]
+name = "prove --junit marks its runner verified"
+file = "src/stayfixed/prove/run.py"
+before = "        verified=False,"
+after = "        verified=True,"
+reddens = [
+  "tests/prove/test_junit_flag.py::test_a_report_the_run_wrote_is_counted_and_marked_unverified",
+  "tests/prove/test_junit_flag.py::test_the_line_says_the_runner_is_not_verified",
+]
+
+[[mutation]]
+name = "prove's line says nothing of a runner no adapter resolved"
+file = "src/stayfixed/prove/run.py"
+before = '        parts.append(f"runner not verified{ran}")'
+after = "        pass"
+reddens = ["tests/prove/test_junit_flag.py::test_the_line_says_the_runner_is_not_verified"]
+
+# A runner an adapter knows always gets its adapter's refusals and forging set.
+[[mutation]]
+name = "prove --junit counts a command an adapter recognises"
+file = "src/stayfixed/prove/run.py"
+before = "    if junit is not None and adapter is not None:"
+after = "    if False:"
+reddens = ["tests/prove/test_junit_flag.py::test_a_known_runner_beside_junit_is_refused"]
+
+[[mutation]]
+name = "prove --junit reads its path from the project's top-level"
+file = "src/stayfixed/prove/run.py"
+before = "        unverified = _unverified(launch, cwd / junit, cwd, environ) if junit is not None else None"
+after = "        unverified = _unverified(launch, root / junit, cwd, environ) if junit is not None else None"
+reddens = ["tests/prove/test_junit_flag.py::test_the_path_is_read_from_the_directory_the_command_is_typed_in"]
+
+[[mutation]]
+name = "prove's command never hands --junit on"
+file = "src/stayfixed/prove/commands.py"
+before = "        junit=args.junit,"
+after = "        junit=None,"
+reddens = ["tests/prove/test_junit_flag.py::test_the_command_takes_junit_and_says_the_runner_is_not_verified"]

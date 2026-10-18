@@ -5,6 +5,7 @@ proves.
 directory it is typed in, and the project it answers for is that directory's git top-level, or the
 directory itself outside a repository. The command is everything after `--`, so no word of it is
 read as an option of `prove`'s; a line with no `--`, or nothing after it, is a usage error.
+`--junit PATH`, read from that directory, names the JUnit report of a runner no adapter knows.
 """
 
 from __future__ import annotations
@@ -22,7 +23,10 @@ from stayfixed.prove.run import EXIT, PROVE_TIMEOUT_SECONDS, line, prove
 from stayfixed.result import Result
 
 _SEPARATOR = "--"
-_NO_COMMAND = "the command to run goes after `--`: stayfixed prove [--timeout SECONDS] -- COMMAND …"
+_NO_COMMAND = (
+    "the command to run goes after `--`: "
+    "stayfixed prove [--timeout SECONDS] [--junit PATH] -- COMMAND …"
+)
 _NOT_SECONDS = "--timeout takes a number of seconds above 0"
 
 
@@ -59,7 +63,12 @@ def run_prove(args: argparse.Namespace) -> Result:
     # runner's standard output is teed, every byte of it, to standard error instead.
     echo = sys.stderr if getattr(args, "as_json", False) else None
     receipt = prove(
-        args.command, cwd=Path.cwd(), environ=os.environ, timeout=args.timeout, echo=echo
+        args.command,
+        cwd=Path.cwd(),
+        environ=os.environ,
+        timeout=args.timeout,
+        echo=echo,
+        junit=args.junit,
     )
     return Result(line(receipt), dataclasses.asdict(receipt), exit_code=EXIT[receipt.verdict])
 
@@ -74,6 +83,15 @@ def register(groups: SubParsers) -> None:
         default=PROVE_TIMEOUT_SECONDS,
         metavar="SECONDS",
         help=f"end the run past this many seconds (default: {PROVE_TIMEOUT_SECONDS})",
+    )
+    parser.add_argument(
+        "--junit",
+        type=Path,
+        metavar="PATH",
+        help=(
+            "count the JUnit report the command writes at PATH, for a runner no adapter knows; "
+            "the runner is marked not verified"
+        ),
     )
     parser.add_argument(
         "command",

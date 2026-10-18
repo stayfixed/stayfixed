@@ -49,7 +49,7 @@ Three things hold everywhere:
 - [`stayfixed commit strip FILE`](#stayfixed-commit-strip-file)
 - [`stayfixed test hygiene`](#stayfixed-test-hygiene)
 - [`stayfixed test attribute --command CMD [--base REF]`](#stayfixed-test-attribute---command-cmd---base-ref)
-- [`stayfixed prove [--timeout SECONDS] -- COMMAND …`](#stayfixed-prove---timeout-seconds----command-)
+- [`stayfixed prove [--timeout SECONDS] [--junit PATH] -- COMMAND …`](#stayfixed-prove---timeout-seconds---junit-path----command-)
 - [`stayfixed bugs new TITLE --severity S --area A [--source S] [--related ID …] [--no-fetch]`](#stayfixed-bugs-new-title---severity-s---area-a---source-s---related-id----no-fetch)
 - [`stayfixed bugs index [--check]`](#stayfixed-bugs-index---check)
 - [`stayfixed bugs check [--base REF]`](#stayfixed-bugs-check---base-ref)
@@ -799,7 +799,7 @@ files because the archived tree's own `.gitattributes` excluded them, and `2` wh
 shaped like an option, which is refused above the first subprocess rather than handed to `git` as
 one.
 
-## `stayfixed prove [--timeout SECONDS] -- COMMAND …`
+## `stayfixed prove [--timeout SECONDS] [--junit PATH] -- COMMAND …`
 
 Run a test command where it is typed, count only what its runner reported, and say what that
 proves: `proved`, `failed`, `not proven` or `refused`.
@@ -807,6 +807,7 @@ proves: `proved`, `failed`, `not proven` or `refused`.
 ```bash
 stayfixed prove -- uv run --locked pytest tests/test_x.py
 stayfixed prove --timeout 600 -- uv run --locked pytest
+stayfixed prove --junit target/surefire-reports/TEST-all.xml -- mvn -q test
 ```
 
 The command is everything after `--`, run as typed in the current directory, never through a
@@ -856,14 +857,26 @@ file `-c` or `--config-file` names, by its realpath, wherever it lies; its disco
 `conftest.py`, `test_*.py` and `*_test.py` at any depth. A
 program the command names that is not where it would be found is `entry-not-found` (`not proven`).
 
+**`--junit PATH`** is for a runner no adapter knows: the command runs as typed (its assignments,
+`env` and `uv run …` read as above, the launcher's file options and variables refused as above),
+no adapter plans it, and its report is the JUnit file at `PATH`, read from the directory the
+command runs in and allowed anywhere, inside the project too. A command an adapter recognises is
+refused (`junit-beside-adapter`, naming the runner), so a known runner always gets its adapter's
+checks. Before the run `prove` notes what is at `PATH` (nothing, or its inode, size and
+modification time); after it, the file is counted only when it is a regular file, not a link,
+that the run created or rewrote, and otherwise the run is `not proven` (`junit-unchanged`, naming
+the path), so a stale or committed report counts nothing. A program the command names that is not
+there is `not-started`. The verdict is the cascade's, and the receipt carries `runner: null` and
+`verified: false`; the line says `runner not verified` and names what ran.
+
 **What `proved` means.** The code under test, any file in the runner's load path, tracked or not, and the environment the runner reads can shape its report, so `proved` means the runner reported green on this tree, for the tests this command selected.
 
 **The verdict**, the first row that holds winning:
 
 | Row | Verdict | Exit | Reason |
 |---|---|---|---|
-| the runner's adapter refuses the command, the command assigns a variable in the adapter's forging set or one `uv` loads a file from, it gives `uv` an option that loads a file, or the program changed between the plan and the launch | `refused` | 2 | the adapter's own, `assigned-forging`, `launcher-option`, `resolved-elsewhere` |
-| no adapter recognises the command, its entry point does not resolve, it could not start, it was interrupted or passed its time limit, it wrote no report, or the report does not read | `not proven` | 1 | `not-recognised`, the adapter's own, `not-started`, `interrupted`, `timed-out`, `no-report`, a report's own |
+| the runner's adapter refuses the command, the command assigns a variable in the adapter's forging set or one `uv` loads a file from, it gives `uv` an option that loads a file, the program changed between the plan and the launch, or `--junit` names the report of a command an adapter recognises | `refused` | 2 | the adapter's own, `assigned-forging`, `launcher-option`, `resolved-elsewhere`, `junit-beside-adapter` |
+| no adapter recognises the command, its entry point does not resolve, it could not start, it was interrupted or passed its time limit, it wrote no report, the run did not write the `--junit` report, or the report does not read | `not proven` | 1 | `not-recognised`, the adapter's own, `not-started`, `interrupted`, `timed-out`, `no-report`, `junit-unchanged`, a report's own |
 | the report holds a failed test | `failed` | 1 | `failing` |
 | the report holds no test | `failed` | 1 | `none-ran` |
 | every test the report holds was skipped | `failed` | 1 | `all-skipped` |

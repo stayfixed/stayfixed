@@ -23,3 +23,7 @@ and `-o addopts`, `--setup-plan`, `--setup-only` and `--collect-only` and their 
 aliases, `--trace`, an `@file` word, and an assigned `PYTEST_ADDOPTS` or `PYTEST_PLUGINS`, and
 names the configuration file `-c` names, wherever it lies, among the files that can shape the
 report.
+`stayfixed prove --junit PATH -- COMMAND` counts the JUnit report of a runner no adapter knows,
+read from the directory the command runs in, only where the run created or rewrote it as a regular
+file (`junit-unchanged` otherwise); a command an adapter recognises is refused
+(`junit-beside-adapter`), and the receipt marks the runner not verified.
