@@ -3613,3 +3613,181 @@ after = '    return "is stale"'
 reddens = [
   "tests/ledger/test_literals.py::test_the_ledger_prints_what_it_printed_before_the_list_field[json-check-broken]",
 ]
+
+# The register engine's list field, read-only: the bug entry's `regression`, an inline list of
+# double-quoted argv items (`tests/ledger/test_list_field.py`). Each refusal of the reader is its own
+# entry, so a grammar relaxed toward what a YAML reader also takes reddens the case it lets through.
+[[mutation]]
+name = "the list reader ends an item at a comma inside its quotes"
+file = "src/stayfixed/ledger/entries.py"
+before = '''        if raw[index] == '"':'''
+after = '''        if raw[index] in '",':'''
+reddens = ["tests/ledger/test_list_field.py::test_a_regression_reads_as_its_argv"]
+
+[[mutation]]
+name = "the list reader takes a tab for a separator"
+file = "src/stayfixed/ledger/entries.py"
+before = '    while raw[index : index + 1] == " ":'
+after = '    while raw[index : index + 1] in (" ", "\t"):'
+reddens = [
+  "tests/ledger/test_list_field.py::test_a_malformed_regression_is_refused_in_its_own_words[tab-separator]",
+]
+
+[[mutation]]
+name = "the list reader accepts an empty item"
+file = "src/stayfixed/ledger/entries.py"
+before = "        if not item:"
+after = "        if False:"
+reddens = [
+  "tests/ledger/test_list_field.py::test_a_malformed_regression_is_refused_in_its_own_words[empty-item]",
+]
+
+[[mutation]]
+name = "the list reader lets a control character into an item"
+file = "src/stayfixed/ledger/entries.py"
+before = "        if _CONTROL_CHARACTER.search(item):"
+after = "        if False:"
+reddens = [
+  "tests/ledger/test_list_field.py::test_a_malformed_regression_is_refused_in_its_own_words[c0-control]",
+  "tests/ledger/test_list_field.py::test_a_malformed_regression_is_refused_in_its_own_words[del]",
+]
+
+[[mutation]]
+name = "the list reader takes text after its closing bracket"
+file = "src/stayfixed/ledger/entries.py"
+before = '    if raw[index:] != "]":'
+after = "    if False:"
+reddens = [
+  "tests/ledger/test_list_field.py::test_a_malformed_regression_is_refused_in_its_own_words[text-after]",
+  "tests/ledger/test_list_field.py::test_a_malformed_regression_is_refused_in_its_own_words[unclosed-list]",
+  "tests/ledger/test_list_field.py::test_a_malformed_regression_is_refused_in_its_own_words[unescaped-quote]",
+]
+
+# A YAML reader takes `[pytest]`; this one quotes the bare item in place and reads on.
+[[mutation]]
+name = "the list reader takes a bare item"
+file = "src/stayfixed/ledger/entries.py"
+before = '''        if raw[index : index + 1] != '"':
+            raise shape'''
+after = '''        if raw[index : index + 1] != '"':
+            end = min(raw.find(c, index) % (len(raw) + 1) for c in ",]")
+            raw = f'{raw[:index]}"{raw[index:end]}"{raw[end:]}''''
+reddens = [
+  "tests/ledger/test_list_field.py::test_a_malformed_regression_is_refused_in_its_own_words[bare-item]",
+]
+
+[[mutation]]
+name = "the list reader takes a value with no opening bracket"
+file = "src/stayfixed/ledger/entries.py"
+before = '    if not raw.startswith("["):'
+after = "    if False:"
+reddens = [
+  "tests/ledger/test_list_field.py::test_a_malformed_regression_is_refused_in_its_own_words[wrong-opening-bracket]",
+]
+
+[[mutation]]
+name = "the list reader reads an unterminated item as an empty one"
+file = "src/stayfixed/ledger/entries.py"
+before = "        if closing < 0:"
+after = "        if False:"
+reddens = [
+  "tests/ledger/test_list_field.py::test_a_malformed_regression_is_refused_in_its_own_words[unterminated-item]",
+]
+
+[[mutation]]
+name = "an entry hashes its lists mapping with the rest"
+file = "src/stayfixed/ledger/entries.py"
+before = "    lists: Mapping[str, tuple[str, ...]] = field(default_factory=dict, hash=False, compare=True)"
+after = "    lists: Mapping[str, tuple[str, ...]] = field(default_factory=dict, compare=True)"
+reddens = ["tests/ledger/test_entries.py::test_an_entry_is_a_hashable_value"]
+
+[[mutation]]
+name = "an entry leaves its lists out of its equality"
+file = "src/stayfixed/ledger/entries.py"
+before = "    lists: Mapping[str, tuple[str, ...]] = field(default_factory=dict, hash=False, compare=True)"
+after = "    lists: Mapping[str, tuple[str, ...]] = field(default_factory=dict, hash=False, compare=False)"
+reddens = [
+  "tests/ledger/test_list_field.py::test_two_entries_that_differ_only_in_their_regression_are_two_values",
+]
+
+[[mutation]]
+name = "a list key is read as a scalar again"
+file = "src/stayfixed/ledger/register.py"
+before = "        return tuple(key for key in self.keys if key not in self.lists)"
+after = "        return self.keys"
+reddens = [
+  "tests/ledger/test_list_field.py::test_a_regression_reads_as_its_argv",
+  "tests/ledger/test_register.py::test_what_new_writes_and_renumber_leaves_reads_back_through_the_entry_reader[default-bug_register]",
+]
+
+[[mutation]]
+name = "the bug ledger declares no list"
+file = "src/stayfixed/ledger/register.py"
+before = '    lists=("regression",),'
+after = "    lists=(),"
+reddens = [
+  "tests/ledger/test_list_field.py::test_a_regression_reads_as_its_argv",
+  "tests/ledger/test_list_field.py::test_the_bug_ledger_declares_regression_as_its_one_list",
+]
+
+[[mutation]]
+name = "the sweep rewrites an argv inside a list value"
+file = "src/stayfixed/ledger/write.py"
+before = "            kept = list_value_spans(item.text, register.schema.lists)"
+after = "            kept = []"
+reddens = [
+  "tests/ledger/test_list_field.py::test_renumber_leaves_an_argv_naming_the_old_identifier",
+]
+
+# The schema's rules for a list key, one entry per rule, each dropping its check.
+[[mutation]]
+name = "a list key need not be a key"
+file = "src/stayfixed/ledger/register.py"
+before = '        ("lists", schema.lists),'
+after = ""
+reddens = ["tests/ledger/test_list_field.py::test_a_list_key_is_held_to_what_reads_it[key]"]
+
+[[mutation]]
+name = "a list key may be required"
+file = "src/stayfixed/ledger/register.py"
+before = '                yield f"list `{key}` is {name}, and a list may be left out"'
+after = "                pass"
+reddens = [
+  "tests/ledger/test_list_field.py::test_a_list_key_is_held_to_what_reads_it[required]",
+  "tests/ledger/test_list_field.py::test_a_list_key_is_held_to_what_reads_it[required-unless-void]",
+]
+
+[[mutation]]
+name = "a list key may be the level"
+file = "src/stayfixed/ledger/register.py"
+before = "        if key == schema.level:"
+after = "        if False:"
+reddens = ["tests/ledger/test_list_field.py::test_a_list_key_is_held_to_what_reads_it[level]"]
+
+[[mutation]]
+name = "a list key may be a date"
+file = "src/stayfixed/ledger/register.py"
+before = "        if key in schema.dates:"
+after = "        if False:"
+reddens = ["tests/ledger/test_list_field.py::test_a_list_key_is_held_to_what_reads_it[date]"]
+
+[[mutation]]
+name = "a list key may be a placeholder of the template"
+file = "src/stayfixed/ledger/register.py"
+before = "        if key in placeholders:"
+after = "        if False:"
+reddens = ["tests/ledger/test_list_field.py::test_a_list_key_is_held_to_what_reads_it[placeholder]"]
+
+[[mutation]]
+name = "a list key may be related"
+file = "src/stayfixed/ledger/register.py"
+before = '        if key == "related":'
+after = "        if False:"
+reddens = ["tests/ledger/test_list_field.py::test_a_list_key_is_held_to_what_reads_it[related]"]
+
+[[mutation]]
+name = "an index cell may show a list key"
+file = "src/stayfixed/ledger/register.py"
+before = "        if key in shown:"
+after = "        if False:"
+reddens = ["tests/ledger/test_list_field.py::test_a_list_key_is_held_to_what_reads_it[column]"]

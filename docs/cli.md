@@ -809,6 +809,14 @@ result line, not hidden. An index that cannot be written once the entry is filed
 naming the filed entry, the reason and any skipped fetch, and saying to run `bugs index` once it
 can be written, not `bugs new` again, which would file it twice.
 
+The entry carries the keys `id`, `title`, `status`, `severity`, `area`, `found`, `source`,
+`fixed_in` and `related`. An entry may also carry `regression`, the argv that reproduces the bug:
+an inline list of double-quoted items, like `regression: ["pytest", "-k", "total and not slow"]`,
+each item read with the two escapes a quoted title takes (`\"` and `\\`), separated by a comma
+and spaces. `regression:` and `regression: []` are the empty list. `bugs check` reports any other
+shape as `unreadable-entry`, as it does an empty item and an item holding a control character, and
+`bugs renumber` never rewrites a `regression`. `bugs new` does not write one yet.
+
 **Writes** the entry file (creating `<paths.bugs>` for the first entry) and `<paths.bug_index>`;
 and, unless `--no-fetch`, whatever the `git fetch --quiet --no-recurse-submodules origin` it runs
 before allocating writes into the repository — the remote-tracking refs, `FETCH_HEAD` and the
@@ -930,7 +938,8 @@ because once the pointer exists a stale mention in that file looks intentional t
 forever. The line counts them and names up to eight; `--json`'s `unswept` carries every one, each
 an object with `path` and `reason`. The path is relative to the root, and the reason is the error
 in words, naming no absolute path; a refusal of stayfixed's own may repeat the root-relative path.
-The moved entry's own body is the operator's to rewrite and is not swept. A write of the move's
+The moved entry's own body is the operator's to rewrite and is not swept, and neither is any
+entry's `regression`: an argv names the test it runs, and the test keeps its name. A write of the move's
 own that fails — `NEW`, the pointer at `OLD` or the index — exits `1` naming the file and the
 reason, and says that running the same move again once the file can be written finishes it.
 

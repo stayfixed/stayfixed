@@ -1,0 +1,259 @@
+"""The register engine's list field, and the bug entry's `regression` it carries, read-only.
+
+A `regression` is an argv: the items are the words a later command runs, so an item may hold a
+comma, a space or a bracket, and a reader that split on commas would hand back other words than the
+ones written. Nothing writes one yet, so the reader, `bugs check` and `renumber` are what hold it.
+
+stayfixed:ledger:fixtures — the identifiers below are sample data, not claims about a ledger.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+from dataclasses import replace
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+from stayfixed.config.loader import preset_defaults
+from stayfixed.ledger.entries import (
+    CONTROL_IN_ITEM,
+    EMPTY_ITEM,
+    LIST_SHAPE,
+    Entry,
+    LedgerError,
+    parse_entry,
+)
+from stayfixed.ledger.register import BUG_SCHEMA, Section, bug_register
+from stayfixed.printed import quoted
+from tests.cli import cli
+from tests.gitfixture import needs_git
+from tests.ledger.test_literals import ledger_copy, literal
+
+REGISTER = bug_register(preset_defaults("widget"))
+PATH = Path("docs/bugs/BR-042.md")
+
+ENTRY = """---
+id: BR-042
+title: a widget renders the wrong total
+status: open
+severity: low
+area: widget rendering
+found: 2026-10-18
+source:
+fixed_in:
+related:
+regression: {regression}
+---
+
+Body prose.
+"""
+
+
+def parse(text: str) -> Entry:
+    return parse_entry(text, path=PATH, register=REGISTER)
+
+
+def test_a_regression_reads_as_its_argv() -> None:
+    # Mutations (oracle): `mutations/`'s "the list reader ends an item at a comma inside its
+    # quotes" -> the two items holding a comma come back split; "a list key is read as a scalar
+    # again" and "the bug ledger declares no list" -> the value is refused for its leading `[`.
+    entry = parse(ENTRY.format(regression='["pytest", "tests/t.py::test[1,2]", "-k", "a, b"]'))
+    assert entry.lists["regression"] == ("pytest", "tests/t.py::test[1,2]", "-k", "a, b")
+    assert "regression" not in entry.fields
+    with pytest.raises(KeyError):
+        entry.value("regression")
+
+
+@pytest.mark.parametrize("raw", ["", "[]", "[ ]"])
+def test_an_empty_regression_is_no_regression(raw: str) -> None:
+    assert parse(ENTRY.format(regression=raw)).lists == {"regression": ()}
+
+
+def test_a_regression_left_out_is_no_regression() -> None:
+    assert parse(ENTRY.replace("regression: {regression}\n", "")).lists == {"regression": ()}
+
+
+def test_escapes_read_as_titles_read_them() -> None:
+    # The items go through the reader a quoted title goes through, so the two escapes are one rule.
+    entry = parse(ENTRY.format(regression='["a\\"b", "c\\\\"]'))
+    assert entry.lists["regression"] == ('a"b', "c\\")
+
+
+def test_two_entries_that_differ_only_in_their_regression_are_two_values() -> None:
+    # Mutation (oracle): `mutations/`'s "an entry leaves its lists out of its equality" -> equal.
+    assert parse(ENTRY.format(regression='["a"]')) != parse(ENTRY.format(regression='["b"]'))
+
+
+@pytest.mark.parametrize(
+    ("raw", "constant"),
+    [
+        pytest.param("[pytest]", LIST_SHAPE, id="bare-item"),
+        pytest.param('["a",]', LIST_SHAPE, id="trailing-comma"),
+        pytest.param('["a"] x', LIST_SHAPE, id="text-after"),
+        pytest.param('"a"', LIST_SHAPE, id="no-brackets"),
+        pytest.param('("a"]', LIST_SHAPE, id="wrong-opening-bracket"),
+        pytest.param('["a"', LIST_SHAPE, id="unclosed-list"),
+        pytest.param('["a', LIST_SHAPE, id="unterminated-item"),
+        pytest.param('["a",\t"b"]', LIST_SHAPE, id="tab-separator"),
+        pytest.param('["a"b"]', LIST_SHAPE, id="unescaped-quote"),
+        pytest.param('[""]', EMPTY_ITEM, id="empty-item"),
+        pytest.param('["a\x01"]', CONTROL_IN_ITEM, id="c0-control"),
+        pytest.param('["a\x7f"]', CONTROL_IN_ITEM, id="del"),
+    ],
+)
+def test_a_malformed_regression_is_refused_in_its_own_words(raw: str, constant: str) -> None:
+    """Measured against PyYAML 6.0.2 on 2026-10-18, since the frontmatter promises a subset of
+    YAML and the repository carries no YAML parser, so the measurement is the record: it reads
+    every list this grammar accepts to the same items (a bare `regression:` to null, which this
+    reader takes for the empty list), and refuses the tab separator, the control character and
+    DEL, the text after `]`, the unclosed list and the unescaped quote. The bare item, the trailing
+    comma, the quoted scalar and the empty item it reads; this grammar refuses them, because an
+    argv written any of those ways is one a reader could take for another.
+    """
+    # Mutations (oracle): `mutations/`'s "the list reader takes a tab for a separator" -> the tab
+    # case reads; "the list reader accepts an empty item" -> `empty-item` reads; "the list reader
+    # lets a control character into an item" -> both control cases read; "the list reader takes text
+    # after its closing bracket" -> `text-after`, `unclosed-list` and `unescaped-quote` read; "the
+    # list reader takes a bare item" -> `bare-item` reads; "the list reader takes a value with no
+    # opening bracket" -> `wrong-opening-bracket` reads; "the list reader reads an unterminated
+    # item as an empty one" -> `unterminated-item` says `EMPTY_ITEM`.
+    with pytest.raises(LedgerError) as caught:
+        parse(ENTRY.format(regression=raw))
+    assert str(caught.value) == constant.format(where=quoted(PATH.as_posix()), key="regression")
+
+
+def with_regression(root: Path, name: str, regression: str) -> str:
+    """Give the entry `name` a `regression:` line as the last of its frontmatter; its new text."""
+    path = root / "docs" / "bugs" / name
+    head, separator, body = path.read_text(encoding="utf-8").partition("\n---\n")
+    text = f"{head}\nregression: {regression}{separator}{body}"
+    path.write_text(text, encoding="utf-8")
+    return text
+
+
+@needs_git
+def test_bugs_check_reports_a_malformed_regression_as_unreadable(tmp_path: Path) -> None:
+    root = ledger_copy(tmp_path)
+    with_regression(root, "BR-004.md", "[pytest]")
+    code, out, _ = cli(root, tmp_path, "bugs", "check")
+    assert (code, out) == (
+        1,
+        "FAIL: 2 ledger problem(s): docs/bugs/BR-004.md [unreadable-entry], "
+        "docs/bug-reports.md [stale-index]\n",
+    )
+    code, out, _ = cli(root, tmp_path, "bugs", "check", "--json")
+    assert code == 1
+    assert json.loads(out)["findings"][0] == {
+        "rule": "unreadable-entry",
+        "path": "docs/bugs/BR-004.md",
+        "line": None,
+        "detail": LIST_SHAPE.format(where="docs/bugs/BR-004.md", key="regression"),
+    }
+
+
+@needs_git
+def test_an_entry_with_a_regression_passes_bugs_check(tmp_path: Path) -> None:
+    root = ledger_copy(tmp_path)
+    with_regression(root, "BR-001.md", '["pytest", "-k", "total and not slow"]')
+    assert cli(root, tmp_path, "bugs", "check") == (
+        0,
+        "OK: bug ledger entries, index freshness, and identifier references\n",
+        "",
+    )
+
+
+@needs_git
+def test_renumber_carries_a_regression_byte_for_byte(tmp_path: Path) -> None:
+    root = ledger_copy(tmp_path)
+    text = with_regression(root, "BR-002.md", '["pytest", "tests/t.py::test[1,2]", "-k", "a, b"]')
+    code, _, _ = cli(root, tmp_path, "bugs", "renumber", "BR-002", "BR-009")
+    assert code == 0
+    moved = (root / "docs" / "bugs" / "BR-009.md").read_text(encoding="utf-8")
+    assert moved == text.replace("id: BR-002\n", "id: BR-009\n", 1)
+
+
+@needs_git
+def test_renumber_leaves_an_argv_naming_the_old_identifier(tmp_path: Path) -> None:
+    # An argv names the test it runs, and a test is not renamed when its bug is renumbered. BR-003
+    # names BR-002 in its title, its `related` list and its body too, all of which the sweep still
+    # rewrites; BR-004 names it in its argv alone. Mutation (oracle): `mutations/`'s "the sweep
+    # rewrites an argv inside a list value" -> both argvs name BR-009.
+    root = ledger_copy(tmp_path)
+    argv = '["pytest", "-k", "BR-002 and not slow"]'
+    with_regression(root, "BR-003.md", argv)
+    untouched = with_regression(root, "BR-004.md", argv)
+    code, out, _ = cli(root, tmp_path, "bugs", "renumber", "BR-002", "BR-009")
+    assert (code, out) == (0, "BR-002 -> BR-009; a void pointer remains at docs/bugs/BR-002.md\n")
+    bugs = root / "docs" / "bugs"
+    swept = literal("renumber.swept.md", "").replace(
+        "related: [BR-009]\n", f"related: [BR-009]\nregression: {argv}\n", 1
+    )
+    assert (bugs / "BR-003.md").read_text(encoding="utf-8") == swept
+    assert (bugs / "BR-004.md").read_text(encoding="utf-8") == untouched
+
+
+AS_SECTION = (
+    Section("Open", ("open",), (("ID", "id"), ("Regression", "regression"))),
+    *BUG_SCHEMA.sections[1:],
+)
+
+
+@pytest.mark.parametrize(
+    ("changes", "problem"),
+    [
+        pytest.param(
+            {"lists": ("regression", "argv")}, "lists names `argv`, which is not a key", id="key"
+        ),
+        pytest.param(
+            {"required": (*BUG_SCHEMA.required, "regression")},
+            "list `regression` is required, and a list may be left out",
+            id="required",
+        ),
+        pytest.param(
+            {"required_unless_void": (*BUG_SCHEMA.required_unless_void, "regression")},
+            "list `regression` is required_unless_void, and a list may be left out",
+            id="required-unless-void",
+        ),
+        pytest.param(
+            {"level": "regression"},
+            "list `regression` is the level, which holds one value",
+            id="level",
+        ),
+        pytest.param(
+            {"dates": (*BUG_SCHEMA.dates, "regression")},
+            "list `regression` is a date, which holds one value",
+            id="date",
+        ),
+        pytest.param(
+            {"sections": AS_SECTION},
+            "list `regression` is shown in an index column, whose cell holds one value",
+            id="column",
+        ),
+        pytest.param(
+            {"template": BUG_SCHEMA.template.replace("{related}\n", "{related}\n{regression}\n")},
+            "list `regression` is a placeholder of the template, and nothing writes a list",
+            id="placeholder",
+        ),
+        pytest.param(
+            {"lists": ("regression", "related")},
+            "list `related` is `related`, which the reader reads as identifiers",
+            id="related",
+        ),
+    ],
+)
+def test_a_list_key_is_held_to_what_reads_it(changes: dict[str, Any], problem: str) -> None:
+    # Each rule keeps a list key off a path that reads one value: the presence checks, the level,
+    # the date rule, an index cell, the writer's template, and `related`'s own reader. Mutations
+    # (oracle): one per rule, each dropping its check -> its case constructs.
+    with pytest.raises(ValueError, match=re.escape(problem)):
+        replace(BUG_SCHEMA, **changes)
+
+
+def test_the_bug_ledger_declares_regression_as_its_one_list() -> None:
+    assert BUG_SCHEMA.lists == ("regression",)
+    assert BUG_SCHEMA.keys[-2:] == ("related", "regression")
+    assert "regression" not in BUG_SCHEMA.scalar_keys
+    assert BUG_SCHEMA.scalar_keys == BUG_SCHEMA.keys[:-1]

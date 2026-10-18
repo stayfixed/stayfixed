@@ -18,6 +18,7 @@ from stayfixed.ledger.entries import (
     LedgerError,
     entry_dir,
     field_line,
+    list_value_spans,
     load_entries,
     parse_entry,
     quote,
@@ -382,6 +383,17 @@ def _void_pointer(register: Register, *, old: str, new: str, title: str, today: 
     return f"---\n{frontmatter}\n---\n{_VOID_BODY.format(new=new)}"
 
 
+def _substituted(pattern: re.Pattern[str], new: str, text: str, kept: list[tuple[int, int]]) -> str:
+    """`text` with every match of `pattern` replaced by `new`, outside the spans in `kept`."""
+    pieces: list[str] = []
+    start = 0
+    for begin, end in kept:
+        pieces += [pattern.sub(new, text[start:begin]), text[begin:end]]
+        start = end
+    pieces.append(pattern.sub(new, text[start:]))
+    return "".join(pieces)
+
+
 def renumber(
     root: Path, config: Config, register: Register, old: str, new: str, *, today: str = ""
 ) -> Renumbered:
@@ -490,6 +502,10 @@ def renumber(
 
     pattern = re.compile(rf"\b{re.escape(old)}\b")
     excluded = {source, target, index_path(root, register)}
+    # An entry's list values are argvs: one names the test it runs, and a test is not renamed when
+    # its bug is renumbered, so the sweep leaves each as it is and rewrites the rest of the entry.
+    # An entry is what the register globs, `<prefix>-*.md` in its directory.
+    entries_dir, entry_prefix = root / directory, f"{ids.prefix}-"
     unswept: list[Unswept] = []
     for item in scannable(root, citation_roots(root, config)):
         if item.path in excluded:
@@ -507,7 +523,15 @@ def renumber(
         # runs over every file in the tree to rewrite the handful that carry the identifier.
         if item.text is None or old not in item.text:
             continue
-        rewritten = pattern.sub(new, item.text)
+        kept = []
+        path = item.path
+        if (
+            path.parent == entries_dir
+            and path.name.startswith(entry_prefix)
+            and path.suffix == ".md"
+        ):
+            kept = list_value_spans(item.text, register.schema.lists)
+        rewritten = _substituted(pattern, new, item.text, kept)
         if rewritten == item.text:
             continue
         try:

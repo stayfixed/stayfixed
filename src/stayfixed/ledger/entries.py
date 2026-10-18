@@ -5,9 +5,10 @@ are the truth, the index carries nothing of its own, so a conflict in it is alwa
 regenerating rather than by merging text.
 
 Frontmatter is a deliberately flat subset of YAML — `key: value` lines, an inline `[a, b]`
-list, no nesting — so this module reads it with the standard library alone. Anything outside
-the subset raises `LedgerError` rather than parsing to a default: a bug report that silently
-loses its status is worse than one that fails the guard.
+list of identifiers for `related`, an inline `["a", "b"]` list of double-quoted items for each
+of the register's lists, no nesting — so this module reads it with the standard library alone.
+Anything outside the subset raises `LedgerError` rather than parsing to a default: a bug report
+that silently loses its status is worse than one that fails the guard.
 """
 
 from __future__ import annotations
@@ -37,6 +38,15 @@ _ISO_DATE = re.compile(r"\A\d{4}-\d{2}-\d{2}\Z")
 # A value that *ends* in a colon is the same promise broken at the other end — `source: a:` is
 # a nested mapping to a real YAML reader — so it is quoted too.
 _NEEDS_QUOTING = re.compile(r"\A[-?:,\[\]{}#&*!|>'\"%@`]|: | #|:\Z")
+# A C0 control character or DEL: an item a list key holds is an argv word, which a later command
+# hands to a process, so neither may reach one.
+_CONTROL_CHARACTER = re.compile(r"[\x00-\x1f\x7f]")
+
+# The refusals of a list key's value. `{where}` is the entry's path as `_where` names it, `{key}`
+# the list key: both the reader's own, so nothing a repository wrote reaches the line unescaped.
+LIST_SHAPE = '{where}: `{key}` must be an inline list of double-quoted items, like `["a", "b"]`'
+EMPTY_ITEM = "{where}: `{key}` holds an empty item"
+CONTROL_IN_ITEM = "{where}: `{key}` holds an item with a control character"
 
 
 # An entry's `id:` line, whatever its spacing or quoting: what `renumber` rewrites to move an entry,
@@ -61,8 +71,9 @@ def _where(path: Path) -> str:
 
 @dataclass(frozen=True)
 class Entry:
-    """One parsed entry file. `fields` holds the register's keys outside `ENGINE_KEYS`, each one
-    the register declares, with `""` for a key the file leaves empty or out."""
+    """One parsed entry file. `fields` holds the register's keys outside `ENGINE_KEYS` and its
+    lists, each one the register declares, with `""` for a key the file leaves empty or out;
+    `lists` holds each of its lists, with `()` for one the file leaves empty or out."""
 
     id: str
     title: str
@@ -73,9 +84,11 @@ class Entry:
     # Compared, not hashed: a dict has no hash, and the fields above already tell two entries
     # apart, so equal entries still hash equal.
     fields: Mapping[str, str] = field(hash=False)
+    lists: Mapping[str, tuple[str, ...]] = field(default_factory=dict, hash=False, compare=True)
 
     def value(self, key: str) -> str:
-        """The entry's value for one of its register's keys other than `related`."""
+        """The entry's value for one of its register's keys other than `related` and its lists;
+        a `KeyError` for a list, which has no one value."""
         if key in ENGINE_KEYS and key != "related":
             return str(getattr(self, key))
         return self.fields[key]
@@ -142,6 +155,70 @@ def _require_iso_date(value: str, *, key: str, where: Path) -> str:
             f"{_where(where)}: `{key}` names a date that does not exist: {value!r}"
         ) from error
     return value
+
+
+def _past_spaces(raw: str, index: int) -> int:
+    """The first index from `index` on that is not a space: the one separator a list allows."""
+    while raw[index : index + 1] == " ":
+        index += 1
+    return index
+
+
+def _closing_quote(raw: str, opening: int) -> int:
+    """The index of the `"` that closes the quoted item opening at `opening`, or -1.
+
+    A backslash takes the character after it along, so an escaped quote never closes the item and
+    a quote after an escaped backslash does: the two escapes `_unquote` reads, which then reads the
+    item itself.
+    """
+    index = opening + 1
+    while index < len(raw):
+        if raw[index] == "\\":
+            index += 2
+            continue
+        if raw[index] == '"':
+            return index
+        index += 1
+    return -1
+
+
+def _parse_quoted_list(raw: str, *, key: str, where: Path) -> tuple[str, ...]:
+    """The items of a list key's value, or raise.
+
+    An empty value and `[]` are the empty list; otherwise `[`, double-quoted items separated by a
+    comma and spaces, and `]` ending the value. Scanned, never split on `,`: an item is an argv
+    word, and a comma or a bracket inside its quotes is part of it. Each quoted run goes to
+    `_unquote`, so an item's escapes are a title's.
+    """
+    shape = LedgerError(LIST_SHAPE.format(where=_where(where), key=key))
+    if not raw:
+        return ()
+    if not raw.startswith("["):
+        raise shape
+    items: list[str] = []
+    index = _past_spaces(raw, 1)
+    more = raw[index : index + 1] != "]"
+    while more:
+        if raw[index : index + 1] != '"':
+            raise shape
+        closing = _closing_quote(raw, index)
+        if closing < 0:
+            raise shape
+        item = _unquote(raw[index : closing + 1], key=key, where=where)
+        if not item:
+            raise LedgerError(EMPTY_ITEM.format(where=_where(where), key=key))
+        if _CONTROL_CHARACTER.search(item):
+            raise LedgerError(CONTROL_IN_ITEM.format(where=_where(where), key=key))
+        items.append(item)
+        index = _past_spaces(raw, closing + 1)
+        more = raw[index : index + 1] == ","
+        if more:
+            index = _past_spaces(raw, index + 1)
+    # The `]` and nothing after it: anything else past the last item, or no `]` at all, is a list
+    # this reader would otherwise end early.
+    if raw[index:] != "]":
+        raise shape
+    return tuple(items)
 
 
 def _parse_related(raw: str, *, where: Path, ids: Identifiers) -> tuple[str, ...]:
@@ -220,9 +297,12 @@ def parse_entry(text: str, *, path: Path, register: Register) -> Entry:
         if values[key] or key in schema.required:
             _require_iso_date(values[key], key=key, where=path)
     title = _unquote(fields["title"], key="title", where=path)
-    for key in schema.keys:
+    for key in schema.scalar_keys:
         if key not in ENGINE_KEYS and key not in values:
             values[key] = _unquote(fields.get(key, ""), key=key, where=path)
+    lists = {
+        key: _parse_quoted_list(fields.get(key, ""), key=key, where=path) for key in schema.lists
+    }
 
     return Entry(
         id=identifier,
@@ -232,7 +312,29 @@ def parse_entry(text: str, *, path: Path, register: Register) -> Entry:
         body=match.group(2),
         path=path,
         fields=values,
+        lists=lists,
     )
+
+
+def list_value_spans(text: str, lists: tuple[str, ...]) -> list[tuple[int, int]]:
+    """Where the value of each of `lists` lies in an entry's frontmatter, as `(start, end)`
+    offsets into `text`, in order: what `renumber`'s sweep leaves as it is.
+
+    Lines are split as `parse_entry` splits them, so a span is the value that reader reads, and a
+    file with no frontmatter block has none.
+    """
+    match = _FRONTMATTER.match(text)
+    if match is None:
+        return []
+    spans: list[tuple[int, int]] = []
+    offset = match.start(1)
+    for line in match.group(1).splitlines(keepends=True):
+        content = line.splitlines()[0]
+        key_value = _KEY_VALUE.match(content)
+        if key_value is not None and key_value.group(1) in lists:
+            spans.append((offset + key_value.start(2), offset + len(content)))
+        offset += len(line)
+    return spans
 
 
 def read_ledger_text(path: Path, *, where: Path) -> str:

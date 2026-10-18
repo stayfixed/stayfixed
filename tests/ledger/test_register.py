@@ -545,6 +545,14 @@ def test_what_new_writes_and_renumber_leaves_reads_back_through_the_entry_reader
     for key in (*schema.required, *schema.required_unless_void):
         assert entry.value(key), key
     assert {key: entry.value(key) for key in values} == values
+    # No writer writes a list: the scaffold reads each one empty, and reads one back once a line
+    # for it is added to the frontmatter.
+    assert entry.lists == {key: () for key in schema.lists}
+    head, separator, body = scaffold.partition("\n---\n")
+    argv = ("a: b", "c, d")
+    listed = "".join(f'\n{key}: ["a: b", "c, d"]' for key in schema.lists)
+    read_back = parse_entry(f"{head}{listed}{separator}{body}", path=path, register=register)
+    assert read_back.lists == {key: argv for key in schema.lists}
 
     void = write._void_pointer(
         register, old=first, new=second, title="renumbered", today="2026-10-05"
@@ -553,6 +561,7 @@ def test_what_new_writes_and_renumber_leaves_reads_back_through_the_entry_reader
     assert (pointer.id, pointer.status, pointer.related) == (first, schema.void, (second,))
     for key in schema.required:
         assert pointer.value(key), key
+    assert pointer.lists == {key: () for key in schema.lists}
 
 
 # The bug ledger's header and an entry's row on each `[paths]` layout the loader accepts, captured

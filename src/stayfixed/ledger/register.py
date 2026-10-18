@@ -77,6 +77,9 @@ class Schema:
     # one the template spells itself, as the bug ledger's does `found` and `fixed_in`.
     template: str
     sections: tuple[Section, ...]  # in the order the index reads
+    # Keys whose value is an inline list of double-quoted items, read and never written: `Entry`
+    # carries them in `lists`, and no writer, cell or presence check reads one.
+    lists: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         problems = list(_inconsistencies(self))
@@ -88,6 +91,11 @@ class Schema:
         """The keys the template leaves to a value the writer is handed, in the order of `keys`."""
         placeholders = _placeholders(self.template)
         return tuple(key for key in self.keys if key in placeholders and key not in ENGINE_KEYS)
+
+    @property
+    def scalar_keys(self) -> tuple[str, ...]:
+        """`keys` without `lists`: the keys whose value `Entry.value` reads."""
+        return tuple(key for key in self.keys if key not in self.lists)
 
 
 def _placeholders(template: str) -> set[str]:
@@ -109,6 +117,7 @@ def _inconsistencies(schema: Schema) -> Iterator[str]:
         ("required", schema.required),
         ("required_unless_void", schema.required_unless_void),
         ("dates", schema.dates),
+        ("lists", schema.lists),
     ):
         for key in named:
             if key not in keys:
@@ -144,6 +153,28 @@ def _inconsistencies(schema: Schema) -> Iterator[str]:
             yield f"required `{key}` is not a date, so `renumber`'s void entry cannot fill it"
     if "related" not in keys:
         yield "`related` is not a key, so `renumber`'s void entry cannot name the new number"
+    # A list key is read by `Entry.lists` alone: every path that reads one value — the presence
+    # checks, the level, the date rule, the writer's template — would read the list's raw text, and
+    # `related` has a reader of its own, of bare identifiers.
+    placeholders = _placeholders(schema.template)
+    shown = {key for section in schema.sections for _, key in section.columns}
+    for key in schema.lists:
+        for name, named in (
+            ("required", schema.required),
+            ("required_unless_void", schema.required_unless_void),
+        ):
+            if key in named:
+                yield f"list `{key}` is {name}, and a list may be left out"
+        if key == schema.level:
+            yield f"list `{key}` is the level, which holds one value"
+        if key in schema.dates:
+            yield f"list `{key}` is a date, which holds one value"
+        if key in shown:
+            yield f"list `{key}` is shown in an index column, whose cell holds one value"
+        if key in placeholders:
+            yield f"list `{key}` is a placeholder of the template, and nothing writes a list"
+        if key == "related":
+            yield f"list `{key}` is `related`, which the reader reads as identifiers"
 
 
 @dataclass(frozen=True)
@@ -224,7 +255,18 @@ _LIVE = (
 )
 
 BUG_SCHEMA = Schema(
-    keys=("id", "title", "status", "severity", "area", "found", "source", "fixed_in", "related"),
+    keys=(
+        "id",
+        "title",
+        "status",
+        "severity",
+        "area",
+        "found",
+        "source",
+        "fixed_in",
+        "related",
+        "regression",
+    ),
     required=("id", "title", "status", "found"),
     required_unless_void=("severity", "area"),
     statuses=("open", "partial", "fixed", "rejected", "void"),
@@ -242,6 +284,9 @@ BUG_SCHEMA = Schema(
         Section("Fixed", ("fixed",), (("ID", "id"), ("Title", "title"), ("Fixed in", "fixed_in"))),
         Section("Void identifiers", ("void",), (("ID", "id"), ("Why", "title"))),
     ),
+    # The argv that reproduces the bug, read and validated; nothing writes one yet, and
+    # `renumber`'s void entry carries none, being a pointer and not the entry.
+    lists=("regression",),
 )
 
 
