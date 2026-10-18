@@ -1024,8 +1024,10 @@ key held twice, it is escaped and, past 120 characters, cut to its start and its
 
 `--timeout` ends the run's whole process group past that many seconds (default: 3600, which bounds
 a suite that hangs and is no suite's budget). So does an interrupt (Ctrl-C) or a `SIGTERM` or
-`SIGHUP` to `prove`: either way the run is `not proven`, and what the command left running in its
-process group is ended with it.
+`SIGHUP` to `prove`, at any point of the run (while the tree's state is taken or the run planned,
+as much as while the command runs): either way the run is `not proven` (`interrupted` or
+`timed-out`), what the command left running in its process group is ended with it, the scratch
+directory is removed, and the run's evidence record is still written.
 
 **The line** says the verdict and its reason in words, the counts (passed, failed, skipped), the
 runner and the realpath of the program that ran (and of the entry it runs, where it is `node`

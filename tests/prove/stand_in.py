@@ -22,6 +22,7 @@ The program's options, all after the word `stand-in`:
 - `--pad N`: `N` bytes of whitespace after the report's last element, or after its last event;
 - `--hang STARTED LATE`: leave a child that holds a lock on `held(LATE)` for as long as it lives,
   writes `STARTED` once it holds it, and writes `LATE` a few seconds later; and never exit;
+- `--leave STARTED LATE`: leave the same child, and exit once it has written `STARTED`;
 - `--escape PIDFILE` and `--escape-quiet PIDFILE`: leave a child in a session of its own, out of
   the run's process group, that holds standard output open for as long as it lives and writes to
   it without pause, or writes nothing, and exit once the child has written its pid in `PIDFILE`,
@@ -147,7 +148,7 @@ def _options(argv: list[str]) -> dict[str, list[str]]:
     takes = {"--report-path": 1, "--source": 1, "--report": 1, "--code": 1, "--print": 1}
     takes |= {"--expect-env": 1, "--expect-unset": 1, "--expect-cwd": 1, "--touch": 1}
     takes |= {"--pad": 1, "--escape": 1, "--escape-quiet": 1, "--sleep": 1}
-    takes |= {"--hang": 2}
+    takes |= {"--hang": 2, "--leave": 2}
     index = 0
     while index < len(argv):
         word = argv[index]
@@ -176,7 +177,9 @@ def held(late: Path) -> Path:
     return late.with_name(f"{late.name}.held")
 
 
-def _hang(started: str, late: str) -> None:
+def _leave(started: str, late: str) -> None:
+    """Leave the child `--hang` and `--leave` describe, in the run's group, and return once it
+    holds its lock and has written `STARTED`."""
     child = (
         "import fcntl, time, pathlib\n"
         f"lock = open({str(held(Path(late)))!r}, 'w')\n"
@@ -186,6 +189,12 @@ def _hang(started: str, late: str) -> None:
         f"pathlib.Path({late!r}).touch()\n"
     )
     subprocess.Popen([sys.executable, "-c", child])
+    while not Path(started).exists():
+        time.sleep(0.01)
+
+
+def _hang(started: str, late: str) -> None:
+    _leave(started, late)
     while True:
         time.sleep(1)
 
@@ -253,6 +262,9 @@ def main(argv: list[str]) -> int:
     if "--hang" in options:
         started, late = options["--hang"]
         _hang(started, late)
+    if "--leave" in options:
+        started, late = options["--leave"]
+        _leave(started, late)
     return int((options.get("--code") or ["0"])[0])
 
 

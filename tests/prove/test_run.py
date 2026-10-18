@@ -566,6 +566,58 @@ def test_a_fault_in_the_wait_still_ends_the_group_and_reaches_the_caller(
     assert ended_before_late(late)
 
 
+@pytest.mark.parametrize("where", ["tree-state", "plan", "reap"])
+@pytest.mark.parametrize("how", ["interrupt", "terminate"])
+def test_an_interrupt_anywhere_in_the_run_ends_it_not_proven(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, where: str, how: str
+) -> None:
+    # Not only in the wait: a Ctrl-C or a `SIGTERM` while the tree's state is taken, while the
+    # adapter plans, or while the exited command's group is reaped ends the run `not proven`,
+    # `interrupted`, with its scratch directory removed, and never escapes as an internal error.
+    # Mutations (declared): the interrupt caught only in the wait -> the first two escape; the
+    # reap outside the wait's handling -> the child the runner left in its group lives on.
+    def stop() -> None:
+        if how == "interrupt":
+            raise KeyboardInterrupt
+        os.kill(os.getpid(), signal.SIGTERM)
+        time.sleep(STARTED_WAIT_SECONDS)
+
+    adapter = StandIn()
+    if where == "tree-state":
+        monkeypatch.setattr(tree, "state", lambda *args: stop())
+    elif where == "plan":
+        planned = StandIn.plan
+
+        def plan(self: StandIn, *args: object, **kwargs: object) -> object:
+            planned(self, *args, **kwargs)  # type: ignore[arg-type]
+            stop()
+            raise AssertionError("not reached")
+
+        monkeypatch.setattr(StandIn, "plan", plan)
+    else:
+        # The first reap is stopped; the one the interrupt's handling makes runs.
+        reap = processes.kill_group
+        calls: list[object] = []
+
+        def kill_group(process: subprocess.Popen[bytes]) -> None:
+            calls.append(process)
+            if len(calls) == 1:
+                stop()
+            reap(process)
+
+        monkeypatch.setattr(processes, "kill_group", kill_group)
+    before = signal.getsignal(signal.SIGTERM)
+    # The runner leaves a child in its group and exits: the reap is what ends that child.
+    started, late = tmp_path / "started", tmp_path / "late"
+    got = run(tmp_path, NAME, "--leave", str(started), str(late), adapter=adapter)
+    assert (got.verdict, got.reason) == (NOT_PROVEN, INTERRUPTED)
+    assert signal.getsignal(signal.SIGTERM) is before
+    [(_, scratch)] = adapter.seen
+    assert not scratch.exists()
+    if where == "reap":
+        assert ended_before_late(late)
+
+
 def test_a_run_outside_the_main_thread_sets_no_signal_handler(tmp_path: Path) -> None:
     # Python lets only the main thread set a handler; a caller running `prove` in a thread of its
     # own still gets its verdict. Mutation (declared): the main-thread guard dropped -> the

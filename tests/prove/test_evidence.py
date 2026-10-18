@@ -27,7 +27,7 @@ from stayfixed import gitenv, processes
 from stayfixed.assess.commands import NO_TREE_CONFIG, ONLY_UNKNOWN, _verdict_words
 from stayfixed.assess.report import GateRun
 from stayfixed.gitenv import GitUnavailable
-from stayfixed.prove import evidence
+from stayfixed.prove import evidence, tree
 from stayfixed.prove.evidence import (
     EVIDENCE,
     INSIDE_REPOSITORY,
@@ -396,6 +396,23 @@ def test_no_value_reaches_the_record(tmp_path: Path, monkeypatch: pytest.MonkeyP
     assert value not in text
     (kept,) = records()
     assert kept["argv"] == ["API_TOKEN=…", NAME, "--api-key=…"]
+
+
+def test_a_run_interrupted_before_its_command_starts_is_recorded_not_proven(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A Ctrl-C while the tree's state is taken, before the command runs: `not proven`, exit 1, and
+    # its record kept, never an internal error (exit 2) with no record.
+    def interrupted(*args: object) -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(tree, "state", interrupted)
+    project = tmp_path / "project"
+    project.mkdir()
+    code, _, _ = prove_cli(project, monkeypatch, "--", NAME)
+    assert code == 1
+    (kept,) = records()
+    assert (kept["verdict"], kept["reason"]) == (Verdict.NOT_PROVEN, INTERRUPTED)
 
 
 def test_a_timed_out_run_is_recorded_not_proven(

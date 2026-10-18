@@ -490,6 +490,10 @@ def _run(
         try:
             with _signals_end_the_run():
                 processes.exited(process, timeout)
+                # The command has exited; what it left in its group goes now, while its pid is
+                # unreaped. An interrupt here, as in the wait, ends the group the same way.
+                processes.kill_group(process)
+                code = process.wait()
         except subprocess.TimeoutExpired:
             processes.end(process)
             return _Ran(TIMED_OUT, None)
@@ -501,9 +505,7 @@ def _run(
         except BaseException:
             processes.end(process)
             raise
-        # The command has exited; what it left in its group goes now, while its pid is unreaped.
-        processes.kill_group(process)
-        return _Ran(None, process.wait())
+        return _Ran(None, code)
     finally:
         if tee is not None:
             tee.finish()
@@ -632,6 +634,48 @@ def prove(
     # An inherited one goes from the run's environment as the plan's own scrub would go.
     kept = {name: value for name, value in environ.items() if name not in loaders}
     removed = frozenset(environ) & loaders
+    # A Ctrl-C or a terminating signal anywhere from here on, the tree's state, the plan or the
+    # reap as much as the wait, ends the run `not proven`, its scratch directory removed, and the
+    # caller still records it: never an internal error.
+    try:
+        with _signals_end_the_run():
+            return _planned_and_proved(
+                adapter,
+                launch,
+                command,
+                assigned,
+                shown,
+                cwd,
+                root,
+                environ,
+                kept,
+                removed,
+                timeout,
+                echo,
+                junit=junit,
+                verified=verified,
+            )
+    except (KeyboardInterrupt, _Signalled):
+        return _receipt(_Outcome(unproven=INTERRUPTED), shown, runner, verified=verified)
+
+
+def _planned_and_proved(
+    adapter: RunnerAdapter | None,
+    launch: Launch,
+    command: Sequence[str],
+    assigned: Mapping[str, str],
+    shown: tuple[str, ...],
+    cwd: Path,
+    root: Path,
+    environ: Mapping[str, str],
+    kept: Mapping[str, str],
+    removed: frozenset[str],
+    timeout: float,
+    echo: TextIO | None,
+    *,
+    junit: Path | None,
+    verified: bool,
+) -> Receipt:
     if adapter is None:
         unverified = _unverified(launch, cwd / junit, cwd, environ) if junit is not None else None
         if unverified is None:

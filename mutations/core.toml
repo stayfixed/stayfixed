@@ -6678,3 +6678,49 @@ file = "src/stayfixed/fsops.py"
 before = "    | os.O_CLOEXEC\n    | os.O_NONBLOCK\n)"
 after = "    | os.O_CLOEXEC\n)"
 reddens = ["tests/prove/test_evidence.py::test_a_fifo_at_the_record_is_a_warning_and_never_a_wait"]
+
+# An interrupt anywhere in the run, not only in the wait, ends it `not proven` and is recorded.
+[[mutation]]
+name = "an interrupt outside the wait escapes prove"
+file = "src/stayfixed/prove/run.py"
+before = "    except (KeyboardInterrupt, _Signalled):\n        return _receipt(_Outcome(unproven=INTERRUPTED), shown, runner, verified=verified)"
+after = "    except (KeyboardInterrupt, _Signalled):\n        raise"
+reddens = [
+  "tests/prove/test_run.py::test_an_interrupt_anywhere_in_the_run_ends_it_not_proven[interrupt-tree-state]",
+  "tests/prove/test_evidence.py::test_a_run_interrupted_before_its_command_starts_is_recorded_not_proven",
+]
+
+[[mutation]]
+name = "an interrupt in the reap escapes the run's handling"
+file = "src/stayfixed/prove/run.py"
+before = """                processes.kill_group(process)
+                code = process.wait()
+        except subprocess.TimeoutExpired:
+            processes.end(process)
+            return _Ran(TIMED_OUT, None)
+        except (KeyboardInterrupt, _Signalled):
+            # A terminal's Ctrl-C reaches stayfixed's process group and not the command's session,
+            # so nothing but `prove` ends the command's group on the way out.
+            processes.end(process)
+            return _Ran(INTERRUPTED, None)
+        except BaseException:
+            processes.end(process)
+            raise
+        return _Ran(None, code)
+"""
+after = """                pass
+        except subprocess.TimeoutExpired:
+            processes.end(process)
+            return _Ran(TIMED_OUT, None)
+        except (KeyboardInterrupt, _Signalled):
+            # A terminal's Ctrl-C reaches stayfixed's process group and not the command's session,
+            # so nothing but `prove` ends the command's group on the way out.
+            processes.end(process)
+            return _Ran(INTERRUPTED, None)
+        except BaseException:
+            processes.end(process)
+            raise
+        processes.kill_group(process)
+        return _Ran(None, process.wait())
+"""
+reddens = ["tests/prove/test_run.py::test_an_interrupt_anywhere_in_the_run_ends_it_not_proven[interrupt-reap]"]
