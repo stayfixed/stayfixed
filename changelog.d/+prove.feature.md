@@ -25,6 +25,18 @@ and `-o addopts`, `--setup-plan`, `--setup-only` and `--collect-only` and their 
 aliases, `--trace`, an `@file` word, and an assigned `PYTEST_ADDOPTS` or `PYTEST_PLUGINS`, and
 names the configuration file `-c` names, wherever it lies, among the files that can shape the
 report; `--pdb` is free, its debugger quitting at the end of standard input with the failure kept.
+The jest, vitest and `node --test` adapters recognise `jest` and `vitest`, bare or after `npx`
+(which is never run), and `node --test`; each runs the `node` on `PATH` with the entry point the
+runner's own package names, found under `node_modules` from where the command runs up to the
+project's top-level, and with a report of `prove`'s own (`entry-not-found` where there is none,
+which names `prove --junit`; `npm test`, `yarn` and `pnpm` are recognised by none). They refuse
+the options that move, replace or suppress the report, or that report a test passed that failed or
+never ran: jest's `--json`, `--outputFile`, `--testResultsProcessor`, `-u`, `--no-ci`,
+`--collectTests` and watch modes; vitest's `--outputFile`, `-u`, `--mergeReports`,
+`--dangerouslyIgnoreUnhandledErrors` and `--watch`; node's own reporters, `--env-file`, its
+configuration file, `--test-update-snapshots`, `--test-rerun-failures` and `--watch`; a
+configuration file outside the project; and an assigned `NODE_OPTIONS` (or, for `node --test`,
+`NODE_TEST_CONTEXT`).
 `stayfixed prove --junit PATH -- COMMAND` counts the JUnit report of a runner no adapter knows,
 read from the directory the command runs in, only where the run created or rewrote it as a regular
 file (`junit-unchanged` otherwise); a command an adapter recognises is refused

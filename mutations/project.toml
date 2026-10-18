@@ -2417,3 +2417,350 @@ file = "src/stayfixed/profiles/python/adapters.py"
 before = "            found.append(os.path.realpath(cwd / named))"
 after = "            found.append(named)"
 reddens = ["tests/prove/test_pytest.py::test_the_configuration_file_the_command_names_is_among_the_configs"]
+
+# --- The JavaScript runner adapters (`profiles/javascript/adapters.py`) ---------------------------
+# Each reddens a test that runs no runner: a plan read from the files a test builds, a recorded
+# report, or a run through `prove` with a shell script standing in for `node`.
+
+[[mutation]]
+name = "the JavaScript adapters read npm test as their runner"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = "    if words[:1] == [_NPX]:"
+after = """    if words[:2] == ["npm", "test"]:
+        words = [name]
+    if words[:1] == [_NPX]:"""
+reddens = ["tests/prove/test_javascript.py::test_npm_test_is_not_recognised[command0]"]
+
+[[mutation]]
+name = "the jest and vitest adapters run npx"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = "            argv=(str(node), str(entry), *_with(words, runner.ours(words, report))),"
+after = "            argv=(str(node.parent / _NPX), runner.name, *_with(words, runner.ours(words, report))),"
+reddens = ["tests/prove/test_javascript.py::test_npx_is_never_executed"]
+
+[[mutation]]
+name = "a runner on PATH resolves to any file its link reaches"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = "    if package is None or _manifest_bin(package, name) != target:"
+after = "    if package is None:"
+reddens = ["tests/prove/test_javascript.py::test_a_runner_on_path_linked_into_its_package_resolves"]
+
+[[mutation]]
+name = "a runner on PATH that is no link is followed as one"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = "    if found is None or not fsops.is_symlink(found):"
+after = "    if found is None:"
+reddens = ["tests/prove/test_javascript.py::test_a_runner_on_path_that_is_no_link_is_never_run"]
+
+[[mutation]]
+name = "a package's bin may name a file outside the package"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = "    if home not in entry.parents or not fsops.is_file(entry):"
+after = "    if not fsops.is_file(entry):"
+reddens = [
+  "tests/prove/test_javascript.py::test_a_package_whose_bin_names_no_entry_of_its_own_does_not_resolve[a-file-outside-the-package]",
+]
+
+[[mutation]]
+name = "a package's manifest is read past its cap"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = """    if more:
+        return None
+"""
+after = ""
+reddens = [
+  "tests/prove/test_javascript.py::test_a_manifest_that_does_not_read_does_not_resolve[past-the-cap]",
+]
+
+[[mutation]]
+name = "the entry-point search reads the directory the command runs in alone"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = "    for directory in _upward(cwd, root):"
+after = "    for directory in [cwd]:"
+reddens = ["tests/prove/test_javascript.py::test_a_nested_workspace_resolves_from_the_root"]
+
+[[mutation]]
+name = "the entry-point search runs past the project's top-level"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = "    above = [parent for parent in here.parents if parent == top or top in parent.parents]"
+after = "    above = list(here.parents)"
+reddens = ["tests/prove/test_javascript.py::test_the_search_stops_at_the_project_s_top_level"]
+
+[[mutation]]
+name = "the entry-point search reads from the top-level down"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = "    return [here, *above] if top == here or top in here.parents else [here]"
+after = "    return [*reversed(above), here] if top == here or top in here.parents else [here]"
+reddens = ["tests/prove/test_javascript.py::test_the_nearest_package_wins_and_jest_before_jest_cli"]
+
+[[mutation]]
+name = "jest-cli is looked for before jest"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = '    packages=("jest", "jest-cli"),'
+after = '    packages=("jest-cli", "jest"),'
+reddens = ["tests/prove/test_javascript.py::test_the_nearest_package_wins_and_jest_before_jest_cli"]
+
+[[mutation]]
+name = "an unresolved entry point names no way on"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = "            return Unresolved(ENTRY_NOT_FOUND, detail)"
+after = "            return Unresolved(ENTRY_NOT_FOUND)"
+reddens = ["tests/prove/test_javascript.py::test_an_unresolvable_entry_installs_nothing"]
+
+[[mutation]]
+name = "vitest runs without run"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = "    return tuple(args) if args[:1] == (_RUN,) else (_RUN, *args)"
+after = "    return tuple(args)"
+reddens = ["tests/prove/test_javascript.py::test_vitest_without_run_runs_once"]
+
+[[mutation]]
+name = "vitest's default reporter is added beside the command's own"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = '    return ours if named else (*ours, "--reporter=default")'
+after = '    return (*ours, "--reporter=default")'
+reddens = ["tests/prove/test_javascript.py::test_vitest_without_run_runs_once"]
+
+[[mutation]]
+name = "the jest and vitest report options go after a separator"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = "    cut = list(args).index(_SEPARATOR) if _SEPARATOR in args else len(args)"
+after = "    cut = len(args)"
+reddens = ["tests/prove/test_javascript.py::test_the_report_options_go_before_a_separator"]
+
+[[mutation]]
+name = "the jest and vitest adapters hand the runner an inherited NODE_OPTIONS"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = "            scrub=FORGING,"
+after = "            scrub=frozenset(),"
+reddens = ["tests/prove/test_javascript.py::test_npx_is_never_executed"]
+
+[[mutation]]
+name = "the node --test adapter leaves NODE_TEST_CONTEXT out of its forging set"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = 'NODE_TEST_FORGING = FORGING | {"NODE_TEST_CONTEXT"}'
+after = "NODE_TEST_FORGING = FORGING"
+reddens = [
+  "tests/prove/test_javascript.py::test_an_assigned_node_options_is_refused[argv3-NODE_TEST_CONTEXT]",
+  "tests/prove/test_javascript.py::test_node_s_plan_puts_its_reporters_first",
+]
+
+# jest's closed list, each entry drawn from the sweep of jest 30.5.2's options.
+[[mutation]]
+name = "jest's --collectTests is left off its refusals"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = '_JEST_RUNS_NO_TEST = frozenset({"collectTests"})'
+after = "_JEST_RUNS_NO_TEST: frozenset[str] = frozenset()"
+reddens = ["tests/prove/test_javascript.py::test_each_report_steering_option_is_refused[jest:--collectTests]"]
+
+[[mutation]]
+name = "jest's -u in a cluster is read as no snapshot update"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = "            if _JEST_SNAPSHOT_LETTER in _short_letters(word):"
+after = '            if word == "-" + _JEST_SNAPSHOT_LETTER:'
+reddens = ["tests/prove/test_javascript.py::test_each_report_steering_option_is_refused[jest:-iu]"]
+
+[[mutation]]
+name = "jest's --updateSnapshot is left off its refusals"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = """        if long.name == _JEST_SNAPSHOTS and not _off(long):
+            return f"--{long.name}"
+"""
+after = ""
+reddens = [
+  "tests/prove/test_javascript.py::test_each_report_steering_option_is_refused[jest:--updateSnapshot]",
+  "tests/prove/test_javascript.py::test_each_report_steering_option_is_refused[jest:--update-snapshot]",
+]
+
+[[mutation]]
+name = "jest's --no-ci is left off its refusals"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = """        if long.name == _JEST_CI and _off(long):
+            return word
+"""
+after = ""
+reddens = [
+  "tests/prove/test_javascript.py::test_each_report_steering_option_is_refused[jest:--no-ci]",
+  "tests/prove/test_javascript.py::test_each_report_steering_option_is_refused[jest:--ci=false]",
+]
+
+[[mutation]]
+name = "jest's --ci is refused as --no-ci is"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = "        if long.name == _JEST_CI and _off(long):"
+after = "        if long.name == _JEST_CI:"
+reddens = ["tests/prove/test_javascript.py::test_every_other_option_is_free[jest:--ci]"]
+
+[[mutation]]
+name = "jest's watch modes are left off its refusals"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = '_JEST_NEVER_ENDS = frozenset({"watch", "watchAll"})'
+after = "_JEST_NEVER_ENDS: frozenset[str] = frozenset()"
+reddens = [
+  "tests/prove/test_javascript.py::test_each_report_steering_option_is_refused[jest:--watch]",
+  "tests/prove/test_javascript.py::test_each_report_steering_option_is_refused[jest:--watchAll]",
+]
+
+[[mutation]]
+name = "jest's --config given a JSON text is free"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = '        if (text and value.lstrip().startswith("{")) or _outside(value, cwd, root):'
+after = "        if _outside(value, cwd, root):"
+reddens = [
+  'tests/prove/test_javascript.py::test_each_report_steering_option_is_refused[jest:--config_{"testResultsProcessor": "./p.js"}]',
+]
+
+[[mutation]]
+name = "a configuration file outside the project is free"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = "    return named != top and top not in named.parents"
+after = "    return False"
+reddens = [
+  "tests/prove/test_javascript.py::test_each_report_steering_option_is_refused[jest:-c_../outside.config.js]",
+  "tests/prove/test_javascript.py::test_each_report_steering_option_is_refused[vitest:-c_../vitest.config.js]",
+]
+
+[[mutation]]
+name = "the jest and vitest adapters leave the configuration file the command names out"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = "            configs=(*CONFIGS, *runner.configs(args, cwd)),"
+after = "            configs=CONFIGS,"
+reddens = ["tests/prove/test_javascript.py::test_the_configuration_file_the_command_names_is_among_the_configs"]
+
+[[mutation]]
+name = "a long option's kebab spelling is read as another option"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = '    return head + "".join(part[:1].upper() + part[1:] for part in rest)'
+after = "    return name"
+reddens = [
+  "tests/prove/test_javascript.py::test_each_report_steering_option_is_refused[jest:--output-file_x]",
+  "tests/prove/test_javascript.py::test_each_report_steering_option_is_refused[vitest:--merge-reports=.vitest-reports]",
+]
+
+# vitest's closed list, drawn from the sweep of vitest 5.0.5's options.
+[[mutation]]
+name = "vitest's nested --outputFile.json is read as another option"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = '    name = _camel(name.removeprefix("no-")).partition(".")[0]'
+after = '    name = _camel(name.removeprefix("no-"))'
+reddens = [
+  "tests/prove/test_javascript.py::test_each_report_steering_option_is_refused[vitest:vitest_run_--outputFile.json=x]",
+]
+
+[[mutation]]
+name = "vitest's --mergeReports is left off its refusals"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = '_VITEST_REPORT_OPTIONS = frozenset({"outputFile", "mergeReports"})'
+after = '_VITEST_REPORT_OPTIONS = frozenset({"outputFile"})'
+reddens = ["tests/prove/test_javascript.py::test_each_report_steering_option_is_refused[vitest:--mergeReports]"]
+
+[[mutation]]
+name = "vitest's --dangerouslyIgnoreUnhandledErrors is left off its refusals"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = "        if long.name in (_VITEST_EXIT_PAST_ERRORS, _VITEST_NEVER_ENDS) and not _off(long):"
+after = "        if long.name == _VITEST_NEVER_ENDS and not _off(long):"
+reddens = [
+  "tests/prove/test_javascript.py::test_each_report_steering_option_is_refused[vitest:--dangerouslyIgnoreUnhandledErrors]",
+]
+
+[[mutation]]
+name = "vitest's --update=none is read as an update"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = '_VITEST_NO_UPDATE = frozenset({"none", "false"})'
+after = "_VITEST_NO_UPDATE: frozenset[str] = frozenset()"
+reddens = ["tests/prove/test_javascript.py::test_every_other_option_is_free[vitest:--update=none]"]
+
+# node's closed list, drawn from the sweep of Node 26.12.0's options.
+[[mutation]]
+name = "node --test's --env-file is left off its refusals"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = """    {
+        "--env-file",
+        "--env-file-if-exists",
+        "--config-file","""
+after = """    {
+        "--env-file-if-exists",
+        "--config-file","""
+reddens = [
+  "tests/prove/test_javascript.py::test_each_report_steering_option_is_refused[node-test:--test_--env-file=.env]",
+  "tests/prove/test_javascript.py::test_each_report_steering_option_is_refused[node-test:--env-file_.env_--test]",
+]
+
+[[mutation]]
+name = "node --test's --test-update-snapshots is left off its refusals"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = """        "--test-update-snapshots",
+"""
+after = ""
+reddens = [
+  "tests/prove/test_javascript.py::test_each_report_steering_option_is_refused[node-test:--test_--test-update-snapshots]",
+]
+
+[[mutation]]
+name = "node --test's --test-rerun-failures is left off its refusals"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = """        "--test-rerun-failures",
+        "--watch",
+"""
+after = """        "--watch",
+"""
+reddens = [
+  "tests/prove/test_javascript.py::test_each_report_steering_option_is_refused[node-test:--test_--test-rerun-failures=state.json]",
+]
+
+[[mutation]]
+name = "node's option written with _ is read as another option"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = '    return word.partition("=")[0].replace("_", "-")'
+after = '    return word.partition("=")[0]'
+reddens = [
+  "tests/prove/test_javascript.py::test_each_report_steering_option_is_refused[node-test:--test_--test_reporter=dot]",
+]
+
+[[mutation]]
+name = "node --test's refusals read only the options before its first file"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = "        refused = node_refused(command[1:])"
+after = "        refused = node_refused(node_options(command[1:]))"
+reddens = [
+  "tests/prove/test_javascript.py::test_each_report_steering_option_is_refused[node-test:--test_a.test.mjs_--test-reporter=dot]",
+]
+
+[[mutation]]
+name = "node --test's plan leaves drop unset"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = "            drop=whole_file,"
+after = "            drop=None,"
+reddens = [
+  "tests/prove/test_javascript.py::test_the_whole_file_testcase_is_dropped_unless_it_failed[node-name-pattern.xml-counts0]",
+  "tests/prove/test_javascript.py::test_the_whole_file_testcase_is_dropped_unless_it_failed[node-no-tests.xml-counts1]",
+  "tests/prove/test_javascript.py::test_the_whole_file_testcase_is_dropped_unless_it_failed[node-exit0.xml-counts2]",
+]
+
+[[mutation]]
+name = "node's whole-file testcase is dropped though it failed"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = """        and attributes.get("classname") == "test"
+        and "failure" not in attributes
+"""
+after = """        and attributes.get("classname") == "test"
+"""
+reddens = [
+  "tests/prove/test_javascript.py::test_the_whole_file_testcase_is_dropped_unless_it_failed[node-load-failure.xml-counts3]",
+  "tests/prove/test_javascript.py::test_whole_file_reads_the_attributes_alone[failed]",
+]
+
+[[mutation]]
+name = "node's whole-file testcase is any testcase of classname test"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = '        and attributes.get("name") == os.path.basename(file)'
+after = "        and True"
+reddens = ["tests/prove/test_javascript.py::test_whole_file_reads_the_attributes_alone[another-file]"]
+
+[[mutation]]
+name = "node's whole-file testcase is any classname's"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = """        and attributes.get("classname") == "test"
+        and "failure" not in attributes"""
+after = """        and "failure" not in attributes"""
+reddens = ["tests/prove/test_javascript.py::test_whole_file_reads_the_attributes_alone[another-classname]"]

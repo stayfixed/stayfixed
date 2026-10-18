@@ -1,0 +1,964 @@
+"""The JavaScript adapters: what jest's, vitest's and `node --test`'s recognise, how each finds its
+entry point and plans a run, what each refuses, and what a real run under each proves.
+
+The plan tests run no runner: `plan` is a pure function of its arguments and of the files it reads,
+so each builds the files a project holds (a `node_modules/<package>/package.json` and the entry its
+`bin` names, a `node` on `PATH`) and reads the plan. The tests that run through `prove` without a
+real runner use `fake_node`, a shell script standing in for `node` that writes the report it was
+told to. The tests marked `runners` run Node 26.12.0 and the jest and vitest an `npm ci` of
+`tests/fixtures/prove/node/` installed (`tests/prove/real_runners.py`).
+"""
+
+from __future__ import annotations
+
+import json
+import os
+from collections.abc import Callable, Mapping, Sequence
+from pathlib import Path
+
+import pytest
+
+from stayfixed import fsops
+from stayfixed.profiles.javascript.adapters import (
+    ADAPTERS,
+    CONFIGS,
+    ENTRY_NOT_FOUND,
+    FORGING,
+    JEST_DISCOVERY,
+    JEST_REPORT,
+    NODE_DISCOVERY,
+    NODE_REPORT,
+    NODE_TEST_FORGING,
+    REFUSED_OPTION,
+    VITEST_DISCOVERY,
+    VITEST_REPORT,
+    JestAdapter,
+    NodeTestAdapter,
+    VitestAdapter,
+    whole_file,
+)
+from stayfixed.profiles.runners import Plan, Refused, ReportKind, ReportSource, Unresolved
+from stayfixed.prove.counts import Counts
+from stayfixed.prove.junit import read_junit
+from stayfixed.prove.run import (
+    ALL_SKIPPED,
+    ASSIGNED_FORGING,
+    FAILING,
+    NONE_RAN,
+    NOT_RECOGNISED,
+    Receipt,
+    Verdict,
+    line,
+    prove,
+)
+from tests.gitfixture import git
+from tests.prove.real_runners import (
+    installed_packages,
+    needs_packages,
+    needs_runner,
+    runner_directory,
+)
+
+PROVED, FAILED, NOT_PROVEN, REFUSED = (
+    Verdict.PROVED,
+    Verdict.FAILED,
+    Verdict.NOT_PROVEN,
+    Verdict.REFUSED,
+)
+ROOT = Path(__file__).resolve().parents[2]
+FIXTURE = ROOT / "tests" / "fixtures" / "prove" / "node"
+REPORTS = ROOT / "tests" / "fixtures" / "prove" / "reports"
+JEST, VITEST, NODE_TEST = JestAdapter(), VitestAdapter(), NodeTestAdapter()
+Adapter = JestAdapter | VitestAdapter | NodeTestAdapter
+
+
+def executable(path: Path, text: str = "#!/bin/sh\nexit 0\n") -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+    path.chmod(0o755)
+    return path
+
+
+def package(directory: Path, name: str, bin_: object, entry: str) -> Path:
+    """A package at `directory` named `name`, whose `package.json` holds `bin_` and whose entry
+    file `entry` exists; the entry's realpath."""
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "package.json").write_text(
+        json.dumps({"name": name, "bin": bin_}), encoding="utf-8"
+    )
+    executable(directory / entry, "#!/usr/bin/env node\n")
+    return Path(os.path.realpath(directory / entry))
+
+
+def jest_package(modules: Path, name: str = "jest") -> Path:
+    if name == "jest-cli":
+        return package(modules / name, name, {"jest": "./bin/jest.js"}, "bin/jest.js")
+    return package(modules / name, name, "./bin/jest.js", "bin/jest.js")
+
+
+def vitest_package(modules: Path) -> Path:
+    return package(modules / "vitest", "vitest", {"vitest": "./vitest.mjs"}, "vitest.mjs")
+
+
+def node_on_path(where: Path) -> Path:
+    """A `node` the plan finds on `PATH`, in its own directory."""
+    return executable(where / "node")
+
+
+def planned(
+    adapter: Adapter,
+    command: Sequence[str],
+    cwd: Path,
+    *,
+    root: Path | None = None,
+    path: str = "",
+) -> Plan | Refused | Unresolved:
+    return adapter.plan(
+        (),
+        command,
+        cwd=cwd,
+        root=root if root is not None else cwd,
+        scratch=cwd / "scratch",
+        environ={"PATH": path},
+    )
+
+
+def plan_of(
+    adapter: Adapter,
+    command: Sequence[str],
+    cwd: Path,
+    *,
+    root: Path | None = None,
+    path: str = "",
+) -> Plan:
+    got = planned(adapter, command, cwd, root=root, path=path)
+    assert isinstance(got, Plan), got
+    return got
+
+
+def installed(project: Path) -> tuple[Path, Path, Path]:
+    """`project` with jest and vitest installed as npm installs them, and a `node` in a directory
+    of its own for `PATH`: the jest entry, the vitest entry and the `node`."""
+    modules = project / "node_modules"
+    return jest_package(modules), vitest_package(modules), node_on_path(project / ".tools")
+
+
+# --- What is recognised ---------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("command", "adapter"),
+    [
+        (["jest"], JEST),
+        (["npx", "jest", "-i"], JEST),
+        (["npx", "--no-install", "jest"], JEST),
+        (["npx", "--no", "jest"], JEST),
+        (["vitest"], VITEST),
+        (["npx", "vitest", "run"], VITEST),
+        (["node", "--test"], NODE_TEST),
+        (["node", "--import", "tsx", "--test", "src/"], NODE_TEST),
+        (["/usr/local/bin/node", "--test-only", "--test"], NODE_TEST),
+    ],
+)
+def test_each_runner_s_commands_are_recognised(command: list[str], adapter: Adapter) -> None:
+    assert [each.name for each in ADAPTERS if each.recognises(command)] == [adapter.name]
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        ["npm", "test"],
+        ["npm", "run", "test"],
+        ["npm", "exec", "jest"],
+        ["yarn", "jest"],
+        ["pnpm", "jest"],
+        ["pnpm", "exec", "vitest"],
+        ["npx", "--yes", "jest"],
+        ["npx", "jest@30"],
+        ["node_modules/.bin/jest"],
+        ["node", "script.js", "--test"],
+        ["node", "--import", "tsx", "app.js"],
+        ["node"],
+        ["npx"],
+        [],
+    ],
+)
+def test_npm_test_is_not_recognised(command: list[str]) -> None:
+    # What a script runs is the script's, and `npx` given anything but an option that installs
+    # nothing would install. Mutation (declared): `npm test` read as jest -> the first case is.
+    assert [each.name for each in ADAPTERS if each.recognises(command)] == []
+
+
+def test_the_adapters_this_stack_ships() -> None:
+    assert [adapter.name for adapter in ADAPTERS] == ["jest", "vitest", "node-test"]
+    assert JEST.forging == VITEST.forging == FORGING == frozenset({"NODE_OPTIONS"})
+    assert (
+        NODE_TEST.forging == NODE_TEST_FORGING == frozenset({"NODE_OPTIONS", "NODE_TEST_CONTEXT"})
+    )
+
+
+# --- How the entry point resolves -----------------------------------------------------------
+
+
+def test_npx_is_never_executed(tmp_path: Path) -> None:
+    # The run is the `node` on `PATH` and the entry the package's `bin` names, never `npx` and
+    # never the `.bin` link npm made. Mutation (declared): `npx` executed -> argv[0] is `npx`.
+    project = tmp_path / "project"
+    entry, _, node = installed(project)
+    executable(node.parent / "npx")
+    got = plan_of(JEST, ["npx", "jest", "-i"], project, path=str(node.parent))
+    report = project / "scratch" / JEST_REPORT
+    assert got == Plan(
+        argv=(str(node), str(entry), "-i", "--json", f"--outputFile={report}"),
+        program=Path(os.path.realpath(node)),
+        kind=ReportKind.RESULTS_JSON,
+        source=ReportSource.FILE,
+        report=report,
+        set_env={},
+        scrub=frozenset({"NODE_OPTIONS"}),
+        discovery=("*.test.*", "*.spec.*", "__tests__/*"),
+        configs=("package.json", ".npmrc", "jest.config.*", "vitest.config.*", "vite.config.*"),
+    )
+    assert (got.discovery, got.configs) == (JEST_DISCOVERY, CONFIGS)
+
+
+def test_vitest_without_run_runs_once(tmp_path: Path) -> None:
+    # `run` first, so it runs once and never watches; `--reporter=default` for the person where
+    # the command names no reporter of its own. Mutations (declared): `run` never added -> the
+    # first plan starts at `-t`; the default reporter added beside the command's own -> the third
+    # plan holds two.
+    project = tmp_path / "project"
+    _, entry, node = installed(project)
+    path = str(node.parent)
+    report = project / "scratch" / VITEST_REPORT
+    ours = ("--reporter=json", f"--outputFile={report}")
+    got = plan_of(VITEST, ["vitest", "-t", "x"], project, path=path)
+    assert got.argv == (str(node), str(entry), "run", "-t", "x", *ours, "--reporter=default")
+    assert (got.kind, got.source, got.report) == (
+        ReportKind.RESULTS_JSON,
+        ReportSource.FILE,
+        report,
+    )
+    assert (got.discovery, got.configs, got.drop) == (VITEST_DISCOVERY, CONFIGS, None)
+    again = plan_of(VITEST, ["npx", "vitest", "run", "a"], project, path=path)
+    assert again.argv == (str(node), str(entry), "run", "a", *ours, "--reporter=default")
+    named = plan_of(VITEST, ["vitest", "run", "--reporter", "dot"], project, path=path)
+    assert named.argv == (str(node), str(entry), "run", "--reporter", "dot", *ours)
+
+
+def test_the_report_options_go_before_a_separator(tmp_path: Path) -> None:
+    # Every word after `--` is a test path to jest and vitest. Mutation (declared): the report's
+    # options appended after `--` -> they are read as paths.
+    project = tmp_path / "project"
+    entry, _, node = installed(project)
+    got = plan_of(JEST, ["jest", "a", "--", "--b"], project, path=str(node.parent))
+    report = project / "scratch" / JEST_REPORT
+    assert got.argv == (str(node), str(entry), "a", "--json", f"--outputFile={report}", "--", "--b")
+
+
+def test_a_pnpm_layout_resolves(tmp_path: Path) -> None:
+    # pnpm links `node_modules/jest` into its store and writes `.bin/jest` as an `sh` shim, which
+    # is never read or run: the package's own `bin` names the entry, by its realpath in the store.
+    project = tmp_path / "project"
+    store = project / "node_modules" / ".pnpm" / "jest@30.5.2_x" / "node_modules" / "jest"
+    entry = jest_package(store.parent)
+    (project / "node_modules" / "jest").symlink_to(store)
+    executable(project / "node_modules" / ".bin" / "jest", "#!/bin/sh\nexec node ../.pnpm/x\n")
+    node = node_on_path(tmp_path / "bin")
+    got = plan_of(JEST, ["npx", "jest"], project, path=str(node.parent))
+    assert got.argv[:2] == (str(node), str(entry))
+    assert ".pnpm" in got.argv[1]
+
+
+def test_a_nested_workspace_resolves_from_the_root(tmp_path: Path) -> None:
+    # A monorepo: the command runs in `packages/web`, and the runner is installed at the
+    # project's top-level. Mutation (declared): the search stops at the directory the command runs
+    # in -> nothing resolves.
+    root = tmp_path / "repo"
+    web = root / "packages" / "web"
+    web.mkdir(parents=True)
+    entry, _, node = installed(root)
+    got = plan_of(JEST, ["jest"], web, root=root, path=str(node.parent))
+    assert got.argv[:2] == (str(node), str(entry))
+
+
+def test_the_nearest_package_wins_and_jest_before_jest_cli(tmp_path: Path) -> None:
+    # Mutation (declared): the directories searched from the top-level down -> the root's jest.
+    root = tmp_path / "repo"
+    web = root / "packages" / "web"
+    jest_package(root / "node_modules")
+    nearer = jest_package(web / "node_modules", "jest-cli")
+    node = node_on_path(tmp_path / "bin")
+    assert plan_of(JEST, ["jest"], web, root=root, path=str(node.parent)).argv[1] == str(nearer)
+    beside = jest_package(web / "node_modules")
+    assert plan_of(JEST, ["jest"], web, root=root, path=str(node.parent)).argv[1] == str(beside)
+
+
+def test_the_search_stops_at_the_project_s_top_level(tmp_path: Path) -> None:
+    # A `node_modules` above the project is another project's. Mutation (declared): the search
+    # runs past the top-level -> the outer jest resolves.
+    jest_package(tmp_path / "node_modules")
+    project = tmp_path / "project"
+    project.mkdir()
+    node = node_on_path(tmp_path / "bin")
+    got = planned(JEST, ["jest"], project, path=str(node.parent))
+    assert isinstance(got, Unresolved) and got.reason == ENTRY_NOT_FOUND
+
+
+def test_a_runner_on_path_linked_into_its_package_resolves(tmp_path: Path) -> None:
+    # A global install: `jest` on `PATH` is a link to the file its package's `bin` names.
+    # Mutation (declared): the link's target taken without its package's `bin` -> the second
+    # case, a link to a file no `bin` names, resolves.
+    entry = jest_package(tmp_path / "global" / "lib" / "node_modules")
+    bin_ = tmp_path / "global" / "bin"
+    bin_.mkdir(parents=True)
+    (bin_ / "jest").symlink_to(entry)
+    node = node_on_path(tmp_path / "bin")
+    project = tmp_path / "project"
+    project.mkdir()
+    path = os.pathsep.join([str(node.parent), str(bin_)])
+    assert plan_of(JEST, ["jest"], project, path=path).argv[1] == str(entry)
+    stray = executable(entry.parent / "other.js")
+    (bin_ / "jest").unlink()
+    (bin_ / "jest").symlink_to(stray)
+    got = planned(JEST, ["jest"], project, path=path)
+    assert isinstance(got, Unresolved) and got.reason == ENTRY_NOT_FOUND
+
+
+def test_a_runner_on_path_that_is_no_link_is_never_run(tmp_path: Path) -> None:
+    # A `jest` on `PATH` that is a file of its own (pnpm's `sh` shim, or the package's own `bin`
+    # directory put on `PATH`) is never read or run, though its package's `bin` names it.
+    # Mutation (declared): a file that is not a link followed as one -> it resolves.
+    home = tmp_path / "global" / "lib" / "node_modules" / "jest"
+    package(home, "jest", "./bin/jest", "bin/jest")
+    executable(tmp_path / "shims" / "jest", "#!/bin/sh\nexec node /x\n")
+    node = node_on_path(tmp_path / "bin")
+    project = tmp_path / "project"
+    project.mkdir()
+    for directory in (home / "bin", tmp_path / "shims"):
+        path = os.pathsep.join([str(node.parent), str(directory)])
+        got = planned(JEST, ["jest"], project, path=path)
+        assert isinstance(got, Unresolved) and got.reason == ENTRY_NOT_FOUND, directory
+
+
+def test_a_project_whose_top_level_is_not_above_the_directory_reads_that_directory_alone(
+    tmp_path: Path,
+) -> None:
+    entry, _, node = installed(tmp_path / "here")
+    got = plan_of(
+        JEST, ["jest"], tmp_path / "here", root=tmp_path / "elsewhere", path=str(node.parent)
+    )
+    assert got.argv[1] == str(entry)
+
+
+@pytest.mark.parametrize(
+    "bin_",
+    [
+        {"other": "./bin/jest.js"},
+        "../outside.js",
+        42,
+        "",
+    ],
+    ids=["a-mapping-without-the-runner", "a-file-outside-the-package", "not-text", "empty"],
+)
+def test_a_package_whose_bin_names_no_entry_of_its_own_does_not_resolve(
+    tmp_path: Path, bin_: object
+) -> None:
+    project = tmp_path / "project"
+    package(project / "node_modules" / "jest", "jest", bin_, "bin/jest.js")
+    executable(project / "node_modules" / "outside.js")
+    node = node_on_path(tmp_path / "bin")
+    got = planned(JEST, ["jest"], project, path=str(node.parent))
+    assert isinstance(got, Unresolved) and got.reason == ENTRY_NOT_FOUND
+
+
+# Each a `package.json` that does not read as an object with a `bin`, built in the test.
+MANIFESTS: dict[str, Callable[[], bytes]] = {
+    "not-json": lambda: b"{not json",
+    "not-an-object": lambda: b"[1]",
+    "nested-past-the-parser": lambda: b"[" * 100_000 + b"]" * 100_000,
+    "past-the-cap": lambda: b'{"bin": "./bin/jest.js"}' + b" " * (1024 * 1024),
+}
+
+
+@pytest.mark.parametrize("manifest", list(MANIFESTS))
+def test_a_manifest_that_does_not_read_does_not_resolve(tmp_path: Path, manifest: str) -> None:
+    project = tmp_path / "project"
+    (project / "node_modules" / "jest").mkdir(parents=True)
+    (project / "node_modules" / "jest" / "package.json").write_bytes(MANIFESTS[manifest]())
+    # The entry a manifest cut at the cap would name is there: only the cap refuses it.
+    executable(project / "node_modules" / "jest" / "bin" / "jest.js")
+    node = node_on_path(tmp_path / "bin")
+    got = planned(JEST, ["jest"], project, path=str(node.parent))
+    assert isinstance(got, Unresolved) and got.reason == ENTRY_NOT_FOUND
+
+
+def test_an_unresolvable_entry_installs_nothing(tmp_path: Path) -> None:
+    # A Yarn Plug'n'Play project has no `node_modules` at all. Nothing is run or installed, and
+    # the detail names what to do instead.
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / ".pnp.cjs").write_text("", encoding="utf-8")
+    node = node_on_path(tmp_path / "bin")
+    for adapter, command in ((JEST, ["npx", "jest"]), (VITEST, ["vitest"])):
+        got = planned(adapter, command, project, path=str(node.parent))
+        assert isinstance(got, Unresolved), got
+        assert got.reason == ENTRY_NOT_FOUND
+        assert "`prove --junit`" in got.detail and f"node_modules/{adapter.name}" in got.detail
+    assert sorted(path.name for path in project.iterdir()) == [".pnp.cjs"]
+
+
+def test_a_path_entry_that_cannot_be_asked_about_is_passed_over(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project = tmp_path / "project"
+    entry, _, node = installed(project)
+    blind = tmp_path / "blind"
+    asked = fsops.is_file
+
+    def is_file(path: Path) -> bool:
+        if path.parent == blind:
+            raise PermissionError(13, "denied", str(path))
+        return asked(path)
+
+    monkeypatch.setattr(fsops, "is_file", is_file)
+    path = os.pathsep.join([str(blind), str(node.parent)])
+    assert plan_of(JEST, ["jest"], project, path=path).argv[:2] == (str(node), str(entry))
+
+
+def test_a_command_the_adapter_does_not_recognise_has_no_plan(tmp_path: Path) -> None:
+    for adapter in (JEST, VITEST):
+        assert planned(adapter, ["npm", "test"], tmp_path) == Unresolved(ENTRY_NOT_FOUND)
+
+
+@pytest.mark.parametrize(
+    ("args", "named"),
+    [
+        (("-c=ci/a.js",), ("ci/a.js",)),
+        (("-ic", "ci/a.js"), ("ci/a.js",)),
+        # `c` inside a cluster takes no value, and a `-c` at the end of the command none either.
+        (("-ci",), ()),
+        (("-t", "x", "-c"), ()),
+        (("--config",), ()),
+    ],
+    ids=["equals", "closing-a-cluster", "inside-a-cluster", "last-word", "long-last-word"],
+)
+def test_the_configuration_a_short_option_names(
+    tmp_path: Path, args: tuple[str, ...], named: tuple[str, ...]
+) -> None:
+    _, _, node = installed(tmp_path)
+    got = plan_of(JEST, ["jest", *args], tmp_path, path=str(node.parent))
+    real = Path(os.path.realpath(tmp_path))
+    assert got.configs == (*CONFIGS, *(str(real / name) for name in named))
+
+
+def test_no_node_on_path_does_not_resolve(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    installed(project)
+    for adapter, command in ((JEST, ["jest"]), (NODE_TEST, ["node", "--test"])):
+        assert planned(adapter, command, project, path="") == Unresolved(
+            ENTRY_NOT_FOUND, "no node on PATH"
+        )
+
+
+def test_an_unresolved_entry_s_detail_is_on_the_receipt(tmp_path: Path) -> None:
+    # Through `prove` and the adapters this stayfixed ships. Mutation (declared, `core`): the
+    # adapter's detail left off the receipt -> `detail` is empty.
+    node = node_on_path(tmp_path / "bin")
+    project = tmp_path / "project"
+    project.mkdir()
+    got = prove(["npx", "jest"], cwd=project, environ={"PATH": str(node.parent)}, timeout=60)
+    assert (got.verdict, got.reason, got.runner) == (NOT_PROVEN, ENTRY_NOT_FOUND, "jest")
+    assert got.detail == (
+        "no node_modules/jest from here up to the project's top-level, and no jest on PATH "
+        "linked into one; `prove --junit` counts a report you name"
+    )
+    assert "`prove --junit`" in line(got)
+
+
+# --- node --test ----------------------------------------------------------------------------
+
+
+def test_node_s_plan_puts_its_reporters_first(tmp_path: Path) -> None:
+    node = node_on_path(tmp_path / "bin")
+    got = plan_of(NODE_TEST, ["node", "--test", "src/"], tmp_path, path=str(node.parent))
+    report = tmp_path / "scratch" / NODE_REPORT
+    assert got == Plan(
+        argv=(
+            str(node),
+            "--test-reporter=junit",
+            f"--test-reporter-destination={report}",
+            "--test-reporter=spec",
+            "--test-reporter-destination=stdout",
+            "--test",
+            "src/",
+        ),
+        program=Path(os.path.realpath(node)),
+        kind=ReportKind.JUNIT,
+        source=ReportSource.FILE,
+        report=report,
+        set_env={},
+        scrub=frozenset({"NODE_OPTIONS", "NODE_TEST_CONTEXT"}),
+        discovery=("*.test.*", "*-test.*", "*_test.*", "test-*.*", "test.*", "test/*"),
+        configs=CONFIGS,
+        drop=whole_file,
+    )
+    assert got.discovery == NODE_DISCOVERY
+
+
+def test_a_node_named_by_its_path_is_the_one_that_runs(tmp_path: Path) -> None:
+    node = executable(tmp_path / "tools" / "node")
+    got = plan_of(NODE_TEST, ["tools/node", "--test"], tmp_path, path="")
+    assert (got.argv[0], got.program) == (
+        str(tmp_path / "tools/node"),
+        Path(os.path.realpath(node)),
+    )
+    assert planned(NODE_TEST, ["tools/missing/node", "--test"], tmp_path) == Unresolved(
+        ENTRY_NOT_FOUND, "no node on PATH"
+    )
+
+
+@pytest.mark.parametrize(
+    ("report", "counts"),
+    [
+        ("node-name-pattern.xml", Counts(0, 0, 0)),
+        ("node-no-tests.xml", Counts(0, 0, 0)),
+        ("node-exit0.xml", Counts(0, 0, 0)),
+        ("node-load-failure.xml", Counts(1, 2, 0)),
+        ("node-junit.xml", Counts(1, 1, 1)),
+    ],
+)
+def test_the_whole_file_testcase_is_dropped_unless_it_failed(
+    tmp_path: Path, report: str, counts: Counts
+) -> None:
+    # node writes one testcase for a file that ran no test, named after the file and passed; one
+    # that failed is a file that did not load. Mutations (declared): `drop` left unset -> the
+    # first three count one passed; the failure kept out of the predicate -> the load failures
+    # are dropped and the run reads one passed, none failed.
+    node = node_on_path(tmp_path / "bin")
+    drop = plan_of(NODE_TEST, ["node", "--test"], tmp_path, path=str(node.parent)).drop
+    assert read_junit((REPORTS / report).read_bytes(), drop=drop) == counts
+
+
+@pytest.mark.parametrize(
+    ("attributes", "dropped"),
+    [
+        ({"name": "a.test.mjs", "classname": "test", "file": "/w/a.test.mjs"}, True),
+        ({"name": "a.test.mjs", "classname": "test", "file": "/w/b.test.mjs"}, False),
+        ({"name": "a.test.mjs", "classname": "suite", "file": "/w/a.test.mjs"}, False),
+        ({"name": "a.test.mjs", "classname": "test"}, False),
+        (
+            {"name": "a.test.mjs", "classname": "test", "file": "/w/a.test.mjs", "failure": "x"},
+            False,
+        ),
+    ],
+    ids=["whole-file", "another-file", "another-classname", "no-file", "failed"],
+)
+def test_whole_file_reads_the_attributes_alone(
+    attributes: Mapping[str, str], dropped: bool
+) -> None:
+    # Mutations (declared): the name check dropped -> another file's testcase is; the classname
+    # check dropped -> a suite's is.
+    assert whole_file(attributes) is dropped
+
+
+# --- What is refused ------------------------------------------------------------------------
+
+
+REFUSALS: list[tuple[Adapter, tuple[str, ...], str]] = [
+    # jest 30.5.2
+    (JEST, ("npx", "jest", "--outputFile=x"), "--outputFile"),
+    (JEST, ("jest", "--output-file", "x"), "--outputFile"),
+    (JEST, ("jest", "--json"), "--json"),
+    (JEST, ("jest", "--no-json"), "--json"),
+    (JEST, ("jest", "--testResultsProcessor=./p.js"), "--testResultsProcessor"),
+    (JEST, ("jest", "--test-results-processor", "./p.js"), "--testResultsProcessor"),
+    (JEST, ("npx", "jest", "-u"), "-u"),
+    (JEST, ("jest", "-iu"), "-iu"),
+    (JEST, ("jest", "--updateSnapshot"), "--updateSnapshot"),
+    (JEST, ("jest", "--update-snapshot"), "--updateSnapshot"),
+    (JEST, ("jest", "--no-ci"), "--no-ci"),
+    (JEST, ("jest", "--ci=false"), "--ci=false"),
+    (JEST, ("jest", "--collectTests"), "--collectTests"),
+    (JEST, ("jest", "--watch"), "--watch"),
+    (JEST, ("jest", "--watchAll"), "--watchAll"),
+    (JEST, ("jest", "--config", '{"testResultsProcessor": "./p.js"}'), "--config"),
+    (JEST, ("jest", "-c", "../outside.config.js"), "--config"),
+    (JEST, ("jest", "--config=/etc/jest.config.js"), "--config"),
+    # vitest 5.0.5
+    (VITEST, ("npx", "vitest", "run", "--outputFile.json=x"), "--outputFile"),
+    (VITEST, ("vitest", "run", "--outputFile=x"), "--outputFile"),
+    (VITEST, ("vitest", "--output-file.junit", "x"), "--outputFile"),
+    (VITEST, ("npx", "vitest", "run", "--update"), "--update"),
+    (VITEST, ("vitest", "-u"), "-u"),
+    (VITEST, ("vitest", "--update=new"), "--update"),
+    (VITEST, ("vitest", "--update=all"), "--update"),
+    (VITEST, ("vitest", "--watch"), "--watch"),
+    (VITEST, ("vitest", "-w"), "-w"),
+    (VITEST, ("vitest", "-tw", "x"), "-tw"),
+    (VITEST, ("vitest", "--mergeReports"), "--mergeReports"),
+    (VITEST, ("vitest", "--merge-reports=.vitest-reports"), "--mergeReports"),
+    (
+        VITEST,
+        ("vitest", "--dangerouslyIgnoreUnhandledErrors"),
+        "--dangerouslyIgnoreUnhandledErrors",
+    ),
+    (VITEST, ("vitest", "-c", "../vitest.config.js"), "--config"),
+    # node --test on Node 26.12.0
+    (NODE_TEST, ("node", "--test", "--test-reporter=dot"), "--test-reporter"),
+    (NODE_TEST, ("node", "--test-reporter", "tap", "--test"), "--test-reporter"),
+    (NODE_TEST, ("node", "--test", "--test-reporter-destination=x"), "--test-reporter-destination"),
+    (NODE_TEST, ("node", "--test", "--test_reporter=dot"), "--test-reporter"),
+    (NODE_TEST, ("node", "--test", "a.test.mjs", "--test-reporter=dot"), "--test-reporter"),
+    (NODE_TEST, ("node", "--test", "--env-file=.env"), "--env-file"),
+    (NODE_TEST, ("node", "--env-file", ".env", "--test"), "--env-file"),
+    (NODE_TEST, ("node", "--env-file-if-exists=.env", "--test"), "--env-file-if-exists"),
+    (NODE_TEST, ("node", "--config-file=c.json", "--test"), "--config-file"),
+    (
+        NODE_TEST,
+        ("node", "--experimental-config-file=c.json", "--test"),
+        "--experimental-config-file",
+    ),
+    (
+        NODE_TEST,
+        ("node", "--experimental-default-config-file", "--test"),
+        "--experimental-default-config-file",
+    ),
+    (NODE_TEST, ("node", "--test", "--test-update-snapshots"), "--test-update-snapshots"),
+    (NODE_TEST, ("node", "--test", "--test-rerun-failures=state.json"), "--test-rerun-failures"),
+    (NODE_TEST, ("node", "--watch", "--test"), "--watch"),
+    (NODE_TEST, ("node", "--test", "--watch-path=src"), "--watch-path"),
+]
+
+
+@pytest.mark.parametrize(
+    ("adapter", "argv", "named"),
+    REFUSALS,
+    ids=[f"{adapter.name}:{'_'.join(argv[1:])}" for adapter, argv, _ in REFUSALS],
+)
+def test_each_report_steering_option_is_refused(
+    tmp_path: Path, adapter: Adapter, argv: tuple[str, ...], named: str
+) -> None:
+    # Refused before anything is resolved: no `PATH` holds a runner here. Mutations (declared):
+    # `--env-file` allowed; `--collectTests`, `--mergeReports`, `--test-rerun-failures` and
+    # `--test-update-snapshots` each left off its list; node's `_` read as itself; node's words
+    # read only up to its first file -> each one's case is planned or unresolved.
+    assert planned(adapter, argv, tmp_path) == Refused(REFUSED_OPTION, named)
+
+
+FREE: list[tuple[Adapter, tuple[str, ...]]] = [
+    (JEST, ("jest", "--reporters=default")),
+    (JEST, ("jest", "--passWithNoTests")),
+    (JEST, ("jest", "--ci")),
+    (JEST, ("jest", "--no-watch")),
+    (JEST, ("jest", "--watchAll=false")),
+    (JEST, ("jest", "--updateSnapshot=false")),
+    (JEST, ("jest", "-t", "passes")),
+    (JEST, ("jest", "--testFailureExitCode=0")),
+    (JEST, ("jest", "-c", "ci/jest.config.js")),
+    (JEST, ("jest", "--", "--json")),
+    (VITEST, ("vitest", "run", "--reporter=verbose")),
+    (VITEST, ("vitest", "--update=none")),
+    (VITEST, ("vitest", "--no-update")),
+    (VITEST, ("vitest", "--no-watch")),
+    (VITEST, ("vitest", "--retry=2")),
+    (VITEST, ("vitest", "-t", "passes")),
+    (VITEST, ("vitest", "--passWithNoTests")),
+    (VITEST, ("vitest", "-c", "vitest.ci.config.js")),
+    (VITEST, ("vitest", "--", "--outputFile=x")),
+    (NODE_TEST, ("node", "--import=tsx", "--test")),
+    (NODE_TEST, ("node", "--import", "tsx", "--test")),
+    (NODE_TEST, ("node", "-r", "./.pnp.cjs", "--loader", "./l.mjs", "--test")),
+    (NODE_TEST, ("node", "--test", "--test-name-pattern=passes", "--test-only")),
+    (NODE_TEST, ("node", "--test", "--test-force-exit", "--test-isolation=none")),
+    (NODE_TEST, ("node", "--test", "--", "--watch")),
+]
+
+
+@pytest.mark.parametrize(
+    ("adapter", "argv"),
+    FREE,
+    ids=[f"{adapter.name}:{'_'.join(argv[1:])}" for adapter, argv in FREE],
+)
+def test_every_other_option_is_free(
+    tmp_path: Path, adapter: Adapter, argv: tuple[str, ...]
+) -> None:
+    # Mutations (declared): `--update=none` read as an update; `--ci` refused as `--no-ci` is;
+    # node's `--import` refused -> each one's case is refused.
+    _, _, node = installed(tmp_path)
+    (tmp_path / "ci").mkdir()
+    assert isinstance(planned(adapter, argv, tmp_path, path=str(node.parent)), Plan)
+
+
+def test_node_import_is_free(tmp_path: Path) -> None:
+    node = node_on_path(tmp_path / "bin")
+    got = plan_of(NODE_TEST, ["node", "--import=tsx", "--test"], tmp_path, path=str(node.parent))
+    assert got.argv[-2:] == ("--import=tsx", "--test")
+
+
+def test_the_configuration_file_the_command_names_is_among_the_configs(tmp_path: Path) -> None:
+    # A configuration file in the project is the bound's, as `jest.config.js` is: named by its
+    # realpath, read from the directory the command runs in. Mutation (declared): the named files
+    # left out -> the adapter's own globs alone.
+    root = tmp_path / "project"
+    web = root / "web"
+    web.mkdir(parents=True)
+    _, _, node = installed(root)
+    got = plan_of(
+        JEST,
+        ["jest", "-c", "ci/jest.config.js", "--config=../shared.config.js", "--", "-c", "x.js"],
+        web,
+        root=root,
+        path=str(node.parent),
+    )
+    real = Path(os.path.realpath(root))
+    assert got.configs == (
+        *CONFIGS,
+        str(real / "web" / "ci" / "jest.config.js"),
+        str(real / "shared.config.js"),
+    )
+    again = plan_of(VITEST, ["vitest", "-c", "vitest.ci.ts"], web, root=root, path=str(node.parent))
+    assert again.configs == (*CONFIGS, str(real / "web" / "vitest.ci.ts"))
+
+
+# --- Through prove, with a node that writes the report it is told to -------------------------
+
+GREEN_RESULTS = (
+    '{"testResults": [{"status": "passed", "assertionResults": [{"status": "passed"}]}]}'
+)
+GREEN_JUNIT = '<testsuites><testcase name="a" classname="test" file="/w/a.test.mjs"/></testsuites>'
+FAKE_NODE = f"""#!/bin/sh
+# A stand-in for node: write a green report where the run was told to, then exit 0.
+for word in "$@"; do
+  case "$word" in
+    --outputFile=*) printf '%s' '{GREEN_RESULTS}' > "${{word#--outputFile=}}" ;;
+    --test-reporter-destination=stdout) ;;
+    --test-reporter-destination=*)
+      printf '%s' '{GREEN_JUNIT}' > "${{word#--test-reporter-destination=}}" ;;
+  esac
+done
+exit 0
+"""
+
+
+def fake_node(where: Path) -> Path:
+    return executable(where / "node", FAKE_NODE)
+
+
+def through_prove(argv: Sequence[str], cwd: Path, environ: Mapping[str, str]) -> Receipt:
+    return prove(argv, cwd=cwd, environ=environ, timeout=60)
+
+
+def test_an_npmrc_is_named_in_the_receipt(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    jest_package(project / "node_modules")
+    node = fake_node(tmp_path / "bin")
+    for name in ("package.json", ".npmrc", "jest.config.js", "three.test.js"):
+        (project / name).write_text("{}\n", encoding="utf-8")
+    git(project, "init", "-q")
+    (project / ".gitignore").write_text("node_modules/\n", encoding="utf-8")
+    git(project, "add", ".gitignore", "package.json", ".npmrc", "jest.config.js")
+    git(project, "commit", "-q", "-m", "first")
+    got = through_prove(["npx", "jest"], project, {"PATH": str(node.parent)})
+    assert (got.verdict, got.counts, got.runner) == (PROVED, Counts(1, 0, 0), "jest")
+    assert got.program == os.path.realpath(node)
+    assert got.configs == (".npmrc", "jest.config.js", "package.json")
+    assert got.untracked == ("three.test.js",)
+
+
+@pytest.mark.parametrize(
+    ("argv", "name"),
+    [
+        (["env", "NODE_OPTIONS=--require=./forge.cjs", "node", "--test"], "NODE_OPTIONS"),
+        (["NODE_OPTIONS=--require=x", "npx", "jest"], "NODE_OPTIONS"),
+        (["NODE_OPTIONS=--require=x", "vitest"], "NODE_OPTIONS"),
+        (["NODE_TEST_CONTEXT=child", "node", "--test"], "NODE_TEST_CONTEXT"),
+    ],
+)
+def test_an_assigned_node_options_is_refused(tmp_path: Path, argv: list[str], name: str) -> None:
+    # Mutation (declared): `NODE_TEST_CONTEXT` left out of node's forging set -> its case runs.
+    node = fake_node(tmp_path / "bin")
+    got = through_prove(argv, tmp_path, {"PATH": str(node.parent)})
+    assert (got.verdict, got.reason, got.detail) == (REFUSED, ASSIGNED_FORGING, name)
+
+
+def test_npm_test_is_not_proven(tmp_path: Path) -> None:
+    got = through_prove(["npm", "test"], tmp_path, {"PATH": ""})
+    assert (got.verdict, got.reason, got.runner) == (NOT_PROVEN, NOT_RECOGNISED, None)
+
+
+# --- Real runs ------------------------------------------------------------------------------
+
+JEST_PASSING = 'test("passes", () => { expect(1).toBe(1); });\ntest.skip("skipped", () => {});\n'
+JEST_SKIPPED = 'test.skip("one", () => {});\ntest.skip("two", () => {});\n'
+VITEST_HEAD = 'import { test, expect } from "vitest";\n'
+NODE_HEAD = 'import { test } from "node:test";\nimport assert from "node:assert/strict";\n'
+NODE_PASSING = (
+    NODE_HEAD + 'test("passes", () => { assert.ok(true); });\n'
+    'test("skipped", { skip: true }, () => {});\n'
+)
+NODE_SKIPPED = (
+    NODE_HEAD + 'test("one", { skip: true }, () => {});\ntest("two", { skip: true }, () => {});\n'
+)
+# Each runner's test file, and its `package.json`.
+FILES = {
+    "jest": ("three.test.js", JEST_PASSING, JEST_SKIPPED, '{"name": "case", "private": true}'),
+    "vitest": (
+        "three.test.js",
+        VITEST_HEAD + JEST_PASSING,
+        VITEST_HEAD + JEST_SKIPPED,
+        '{"name": "case", "private": true, "type": "module"}',
+    ),
+    "node-test": (
+        "three.test.mjs",
+        NODE_PASSING,
+        NODE_SKIPPED,
+        '{"name": "case", "private": true}',
+    ),
+}
+FIXTURE_TESTS = {
+    "jest": FIXTURE / "jest" / "three.test.js",
+    "vitest": FIXTURE / "vitest" / "three.test.js",
+    "node-test": FIXTURE / "node-test" / "three.test.mjs",
+}
+COMMANDS = {
+    "jest": ["npx", "jest"],
+    "vitest": ["npx", "vitest", "run"],
+    "node-test": ["node", "--test"],
+}
+RUNNERS = list(COMMANDS)
+
+
+def js_project(root: Path, runner: str, text: str | None = None) -> Path:
+    """A project `runner` collects in `root`: its `package.json`, `node_modules` linked to the
+    installed packages, and its test file holding `text` (none where `text` is empty)."""
+    name, _, _, manifest = FILES[runner]
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "package.json").write_text(manifest, encoding="utf-8")
+    (root / "node_modules").symlink_to(installed_packages())
+    if text:
+        (root / name).write_text(text, encoding="utf-8")
+    return root
+
+
+def real(cwd: Path, *argv: str, **variables: str) -> Receipt:
+    """`argv` proved in `cwd` with the `node` on `PATH` first."""
+    node = runner_directory("node")
+    environ = {**os.environ, "PATH": os.pathsep.join([str(node), os.environ.get("PATH", "")])}
+    environ.pop("NODE_OPTIONS", None)
+    return through_prove(argv, cwd, {**environ, **variables})
+
+
+@needs_packages
+@pytest.mark.parametrize("runner", RUNNERS)
+def test_a_genuine_passing_run_is_proved(tmp_path: Path, runner: str) -> None:
+    project = js_project(tmp_path / "p", runner, FILES[runner][1])
+    got = real(project, *COMMANDS[runner])
+    assert (got.verdict, got.reason, got.counts, got.exit_code) == (PROVED, "", Counts(1, 0, 1), 0)
+    assert got.runner == runner
+    assert got.program == os.path.realpath(runner_directory("node") / "node")
+
+
+@needs_packages
+@pytest.mark.parametrize("runner", RUNNERS)
+def test_the_fixture_s_three_tests_fail(tmp_path: Path, runner: str) -> None:
+    project = js_project(tmp_path / "p", runner, FIXTURE_TESTS[runner].read_text(encoding="utf-8"))
+    got = real(project, *COMMANDS[runner])
+    assert (got.verdict, got.reason, got.counts) == (FAILED, FAILING, Counts(1, 1, 1))
+
+
+@needs_packages
+@pytest.mark.parametrize(("runner", "code"), [("jest", 1), ("vitest", 1), ("node-test", 0)])
+def test_an_empty_run_fails(tmp_path: Path, runner: str, code: int) -> None:
+    got = real(js_project(tmp_path / "p", runner), *COMMANDS[runner])
+    assert (got.verdict, got.reason, got.counts, got.exit_code) == (
+        FAILED,
+        NONE_RAN,
+        Counts(0, 0, 0),
+        code,
+    )
+
+
+@needs_packages
+@pytest.mark.parametrize("runner", RUNNERS)
+def test_an_all_skipped_run_fails(tmp_path: Path, runner: str) -> None:
+    got = real(js_project(tmp_path / "p", runner, FILES[runner][2]), *COMMANDS[runner])
+    assert (got.verdict, got.reason, got.counts) == (FAILED, ALL_SKIPPED, Counts(0, 0, 2))
+
+
+@needs_packages
+def test_a_non_matching_name_pattern_fails(tmp_path: Path) -> None:
+    # node reports the file as one passed testcase; the plan drops it.
+    project = js_project(tmp_path / "p", "node-test", NODE_PASSING)
+    got = real(project, "node", "--test", "--test-name-pattern=no_such_test")
+    assert (got.verdict, got.reason, got.counts, got.exit_code) == (
+        FAILED,
+        NONE_RAN,
+        Counts(0, 0, 0),
+        0,
+    )
+
+
+@needs_packages
+def test_a_monorepo_package_runs_where_it_is_typed(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    web = js_project(root / "packages" / "web", "jest", JEST_PASSING)
+    (web / "node_modules").unlink()
+    (root / "node_modules").symlink_to(installed_packages())
+    git(root, "init", "-q")
+    got = real(web, "npx", "jest")
+    assert (got.verdict, got.counts) == (PROVED, Counts(1, 0, 1))
+    assert got.untracked == ("packages/web/three.test.js",)
+
+
+_FORGE = """const fs = require("fs");
+for (const word of process.argv) {
+  if (word.startsWith("--outputFile=")) {
+    fs.writeFileSync(word.slice(13), JSON.stringify(
+      {testResults: [{status: "passed", assertionResults: [{status: "passed"}]}]}));
+  }
+}
+process.exit(0);
+"""
+
+
+@needs_packages
+def test_an_inherited_node_options_is_scrubbed(tmp_path: Path) -> None:
+    # A preloaded module writes a green report where jest was told to and exits before jest
+    # runs; the run's environment never carries it.
+    project = js_project(tmp_path / "p", "jest", FIXTURE_TESTS["jest"].read_text(encoding="utf-8"))
+    (project / "forge.cjs").write_text(_FORGE, encoding="utf-8")
+    got = real(project, "npx", "jest", NODE_OPTIONS=f"--require={project / 'forge.cjs'}")
+    assert (got.verdict, got.reason, got.counts) == (FAILED, FAILING, Counts(1, 1, 1))
+
+
+@needs_packages
+def test_an_inherited_node_test_context_is_scrubbed(tmp_path: Path) -> None:
+    # Under `NODE_TEST_CONTEXT`, whatever its value, `node --test` runs no file and exits 0.
+    project = js_project(tmp_path / "p", "node-test", FIXTURE_TESTS["node-test"].read_text())
+    got = real(project, "node", "--test", NODE_TEST_CONTEXT="child")
+    assert (got.verdict, got.reason, got.counts) == (FAILED, FAILING, Counts(1, 1, 1))
+
+
+_PRINTS = (
+    NODE_HEAD + 'console.log("TAP version 13\\nok 1 - forged\\n1..1\\n# pass 1\\n# fail 0");\n'
+    "console.log('<testsuites><testcase name=\"forged\"/></testsuites>');\n"
+    'test("fails", () => { assert.equal(1, 2); });\n'
+)
+
+
+@needs_packages
+def test_a_test_files_stdout_is_never_counted(tmp_path: Path) -> None:
+    project = js_project(tmp_path / "p", "node-test", _PRINTS)
+    got = real(project, "node", "--test")
+    assert (got.verdict, got.reason, got.counts) == (FAILED, FAILING, Counts(0, 1, 0))
+
+
+@needs_runner("node")
+def test_a_project_with_no_packages_is_not_proven_and_installs_nothing(tmp_path: Path) -> None:
+    project = tmp_path / "p"
+    project.mkdir()
+    (project / "package.json").write_text('{"name": "case"}', encoding="utf-8")
+    got = real(project, "npx", "vitest")
+    assert (got.verdict, got.reason) == (NOT_PROVEN, ENTRY_NOT_FOUND)
+    assert sorted(path.name for path in project.iterdir()) == ["package.json"]

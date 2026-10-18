@@ -2552,8 +2552,8 @@ reddens = [
 name = "the wheel need not carry the Python profile's runner adapter"
 file = "scripts/check_artifacts.py"
 before = """    "stayfixed/profiles/python/adapters.py",
-)"""
-after = ")"
+"""
+after = ""
 reddens = [
   "tests/scripts/test_check_artifacts.py::test_a_wheel_without_the_python_profiles_code_is_named[stayfixed/profiles/python/adapters.py]",
 ]
@@ -2570,6 +2570,27 @@ reddens = [
 
 # A `--root` that is no repository root is no version disagreeing: printed under "version drift:",
 # it read as one.
+# The JavaScript stack ships adapters and no profile; the same walk finds them.
+[[mutation]]
+name = "the wheel need not carry the JavaScript runner adapters"
+file = "scripts/check_artifacts.py"
+before = """    "stayfixed/profiles/javascript/adapters.py",
+"""
+after = ""
+reddens = [
+  "tests/scripts/test_check_artifacts.py::test_a_wheel_without_a_stack_s_runner_adapters_is_named[stayfixed/profiles/javascript/adapters.py]",
+]
+
+[[mutation]]
+name = "the wheel need not carry the JavaScript stack's package marker"
+file = "scripts/check_artifacts.py"
+before = """    "stayfixed/profiles/javascript/__init__.py",
+"""
+after = ""
+reddens = [
+  "tests/scripts/test_check_artifacts.py::test_a_wheel_without_a_stack_s_runner_adapters_is_named[stayfixed/profiles/javascript/__init__.py]",
+]
+
 [[mutation]]
 name = "a root the release check cannot read is reported as version drift"
 file = "scripts/release.py"
@@ -3592,6 +3613,49 @@ after = '''      FULL: ${{ needs.changes.outputs.code != 'false' }}'''
 reddens = [
   "tests/test_ci_scope.py::test_every_job_that_reads_the_scope_runs_whole_on_any_answer_but_false",
 ]
+
+[[mutation]]
+name = "a failed scope job skips the runners job"
+file = ".github/workflows/ci.yml"
+before = '''  runners:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}'''
+after = '''  runners:
+    needs: changes
+    if: ${{ needs.changes.outputs.code == 'true' }}'''
+reddens = [
+  "tests/test_ci_scope.py::test_every_job_that_reads_the_scope_runs_whole_on_any_answer_but_false",
+]
+
+# The `runners` job installs every real runner and is the one job where a missing one must fail:
+# a job that skipped them all would report green having run none.
+[[mutation]]
+name = "the runners job lets a missing runner skip"
+file = ".github/workflows/ci.yml"
+before = '''          STAYFIXED_REQUIRE_RUNNERS: "1"'''
+after = '''          STAYFIXED_REQUIRE_RUNNERS: "0"'''
+reddens = [
+  "tests/test_runners_job.py::test_the_runners_job_runs_the_runner_tests_with_a_missing_runner_failing",
+]
+
+[[mutation]]
+name = "the runners job takes an action by its tag"
+file = ".github/workflows/ci.yml"
+before = '''      - name: Go 1.27.2, the toolchain module, checked against its digest'''
+after = '''      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.27.2"
+      - name: Go 1.27.2, the toolchain module, checked against its digest'''
+reddens = ["tests/test_runners_job.py::test_every_action_the_job_uses_is_pinned_by_sha"]
+
+[[mutation]]
+name = "the runners job unpacks Go unchecked"
+file = ".github/workflows/ci.yml"
+before = '''          echo "$GO_ZIP_SHA256  $RUNNER_TEMP/go.zip" | sha256sum -c -
+          unzip -q "$RUNNER_TEMP/go.zip" -d "$RUNNER_TEMP/go"'''
+after = '''          unzip -q "$RUNNER_TEMP/go.zip" -d "$RUNNER_TEMP/go"
+          echo "$GO_ZIP_SHA256  $RUNNER_TEMP/go.zip" | sha256sum -c -'''
+reddens = ["tests/test_runners_job.py::test_the_job_installs_the_pinned_node_and_go"]
 
 [[mutation]]
 name = "a failed scope job skips the oracle"

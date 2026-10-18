@@ -849,6 +849,12 @@ def test_an_adapter_module_that_does_not_import_raises(tmp_path: Path) -> None:
         adapters.shipped_adapters(source=tmp_path)
 
 
-def test_this_stayfixed_ships_the_pytest_adapter() -> None:
-    # The stacks' own adapters are tested in their own files; this pins the default `source`.
-    assert [adapter.name for adapter in adapters.shipped_adapters()] == ["pytest"]
+def test_this_stayfixed_ships_the_stacks_adapters() -> None:
+    # The stacks' own adapters are tested in their own files; this pins the default `source`, the
+    # stacks in name order.
+    assert [adapter.name for adapter in adapters.shipped_adapters()] == [
+        "jest",
+        "vitest",
+        "node-test",
+        "pytest",
+    ]

@@ -64,6 +64,11 @@ WHEEL_MUST = (
     # imports it, so a build that dropped it would answer every `stayfixed prove -- pytest` with
     # `not proven`, no adapter recognising the command.
     "stayfixed/profiles/python/adapters.py",
+    # The JavaScript stack's runner adapters, jest's, vitest's and `node --test`'s, which ship no
+    # profile: found by the same walk, so a build that dropped them would answer every
+    # `stayfixed prove -- npx jest` with `not proven`. `__init__.py` with them, as above.
+    "stayfixed/profiles/javascript/__init__.py",
+    "stayfixed/profiles/javascript/adapters.py",
 )
 # What a downstream packager needs to verify the sdist, plus the three files the harness runs
 # without an interpreter of ours and the record they are checked against.

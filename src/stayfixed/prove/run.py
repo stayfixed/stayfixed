@@ -202,8 +202,9 @@ class Receipt:
     `argv` is the command as given with every `NAME=value` and `--option=value` value replaced by
     `REDACTED`; a value passed as the word after its option is kept, since nothing tells it from an
     operand. `detail` is where the step that stopped the run stopped: the variable assigned, the
-    launcher option refused, the option or word the runner's adapter refused, the `--junit` path
-    the run did not write (`JUNIT_UNCHANGED`), or where a report stopped reading. `program` is the
+    launcher option refused, the option or word the runner's adapter refused, what the adapter
+    looked for where the runner's entry point did not resolve, the `--junit` path the run did not
+    write (`JUNIT_UNCHANGED`), or where a report stopped reading. `program` is the
     realpath of what ran; `verified` is false on every `--junit` receipt, a plan made or not, and
     true on every other. `commit` and `dirty_before` are the tree's state before the run,
     `dirty_after` after it, and `untracked` (at most `tree.UNTRACKED_LISTED`, `untracked_more` past
@@ -618,7 +619,9 @@ def prove(
                 _Outcome(refused=planned.reason), shown, adapter.name, detail=planned.detail
             )
         if isinstance(planned, Unresolved):
-            return _receipt(_Outcome(unproven=planned.reason), shown, adapter.name)
+            return _receipt(
+                _Outcome(unproven=planned.reason), shown, adapter.name, detail=planned.detail
+            )
         return _proved(adapter.name, planned, assigned, shown, cwd, root, kept, timeout, echo)
     finally:
         shutil.rmtree(scratch, ignore_errors=True)

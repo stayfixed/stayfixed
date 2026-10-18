@@ -182,7 +182,7 @@ def test_every_job_that_reads_the_scope_runs_whole_on_any_answer_but_false() -> 
         "changes",
         "same-repository-form",
     ]
-    for job in (ci["oracle"], ci["plugin"]):
+    for job in (ci["oracle"], ci["plugin"], ci["runners"]):
         assert job["needs"] == "changes" and job["if"] == NARROWED, job
     for job, full in ((ci["checks"], CHECKS_FULL), (smoke["installed-plugin"], SMOKE_FULL)):
         assert job["needs"] == "changes", job

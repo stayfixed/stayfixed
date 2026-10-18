@@ -321,3 +321,54 @@ jobs:
         # `ref` equal to the other sources. So this is the tool `RELEASING.md` runs at the tag,
         # run on every change beside a `url` entry. A dry run creates nothing.
         run: claude plugin tag --dry-run .
+
+  # The real test runners `prove`'s adapters run, at the versions the adapters' closed lists were
+  # drawn from: Node 26.12.0, jest 30.5.2 and vitest 5.0.5 (`tests/fixtures/prove/node/`'s
+  # lockfile) and Go 1.27.2. Every other job leaves them uninstalled, so there the tests that need
+  # one skip (`tests/prove/real_runners.py`), and the mutation oracle never depends on one: every
+  # mutation is reddened by a test that runs no runner. Here `STAYFIXED_REQUIRE_RUNNERS=1` turns a
+  # missing runner into a failure, so this job cannot pass by skipping what it exists to run.
+  #
+  # Go comes from the Go module proxy as the toolchain module the `go` command itself switches to,
+  # checked against the SHA-256 of the zip recorded when the version was pinned, rather than from
+  # an action: the zip carries its files' modes, and the digest is the pin. jest and vitest come
+  # from the fixture's lockfile with `npm ci`, no package's install script run, into the runner's
+  # scratch directory and never into the checkout, which the tree's own walks read.
+  runners:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          enable-cache: true
+          python-version: "3.13"
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "26.12.0"
+      - name: Go 1.27.2, the toolchain module, checked against its digest
+        env:
+          GO_TOOLCHAIN: golang.org/toolchain@v0.0.1-go1.27.2.linux-amd64
+          GO_ZIP_SHA256: 3a467ed067f27cd55bf3a702f8e2bf12479f53c9d8ae0de548f48ebcb3c67796
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/go.zip" "https://proxy.golang.org/golang.org/toolchain/@v/v0.0.1-go1.27.2.linux-amd64.zip"
+          echo "$GO_ZIP_SHA256  $RUNNER_TEMP/go.zip" | sha256sum -c -
+          unzip -q "$RUNNER_TEMP/go.zip" -d "$RUNNER_TEMP/go"
+          echo "$RUNNER_TEMP/go/$GO_TOOLCHAIN/bin" >> "$GITHUB_PATH"
+      - name: Install
+        run: uv sync --locked
+      - name: jest and vitest, from the fixture's lockfile
+        run: |
+          mkdir -p "$RUNNER_TEMP/node"
+          cp tests/fixtures/prove/node/package.json tests/fixtures/prove/node/package-lock.json "$RUNNER_TEMP/node/"
+          npm ci --prefix "$RUNNER_TEMP/node" --ignore-scripts --no-audit --no-fund
+      - name: The tests that run a real runner
+        env:
+          STAYFIXED_REQUIRE_RUNNERS: "1"
+          STAYFIXED_NODE_MODULES: ${{ runner.temp }}/node/node_modules
+        run: |
+          node --version
+          go version
+          uv run pytest -n auto -m runners

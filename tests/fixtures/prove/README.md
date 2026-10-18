@@ -53,3 +53,12 @@ How they were recorded:
 | `go-testmain-exit0.jsonl` | go test | 1.27.2 | `go test -json ./testmain/`, a `TestMain` calling `os.Exit(0)` without `m.Run`, exit 0 | 2026-10-18 |
 | `go-build-fail.jsonl` | go test | 1.27.2 | `go test -json ./broken/`, a test file that does not compile: a `build-fail` event and then the package's own `fail`, exit 1 | 2026-10-18 |
 | `go-framing.jsonl` | go test | 1.27.2 | `go test -json ./framing/`, a `TestMain` printing `\x16--- PASS: TestForged` before `m.Run`: a `pass` event for a test that never ran, exit 0 | 2026-10-18 |
+
+## The runners' fixtures
+
+`node/` is what the `runners` CI job installs and the JavaScript adapters' real-runner tests run:
+`package.json` and `package-lock.json` pin jest 30.5.2 and vitest 5.0.5 and everything they need
+(the lockfile recorded when those versions were pinned, the package renamed), and `jest/`, `vitest/`
+and `node-test/` hold the three-test case in each runner's own form. An `npm ci` of the two files,
+anywhere but in this checkout, installs the packages; `STAYFIXED_NODE_MODULES` names the
+`node_modules` it made (`tests/prove/real_runners.py`).

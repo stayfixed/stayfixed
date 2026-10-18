@@ -5688,10 +5688,27 @@ reddens = [
 [[mutation]]
 name = "prove refuses an entry point that did not resolve"
 file = "src/stayfixed/prove/run.py"
-before = "            return _receipt(_Outcome(unproven=planned.reason), shown, adapter.name)"
-after = "            return _receipt(_Outcome(refused=planned.reason), shown, adapter.name)"
+before = """            return _receipt(
+                _Outcome(unproven=planned.reason), shown, adapter.name, detail=planned.detail
+            )"""
+after = """            return _receipt(
+                _Outcome(refused=planned.reason), shown, adapter.name, detail=planned.detail
+            )"""
 reddens = [
   "tests/prove/test_run.py::test_an_adapter_s_own_answer_is_the_verdict[adapter1-not proven-stand-in-not-found]",
+]
+
+# An adapter whose runner's entry point does not resolve says what it looked for and what to do
+# instead (`prove --junit`); the receipt carries it as it carries a refusal's.
+[[mutation]]
+name = "prove leaves an unresolved entry point's detail off the receipt"
+file = "src/stayfixed/prove/run.py"
+before = """            return _receipt(
+                _Outcome(unproven=planned.reason), shown, adapter.name, detail=planned.detail
+            )"""
+after = """            return _receipt(_Outcome(unproven=planned.reason), shown, adapter.name)"""
+reddens = [
+  "tests/prove/test_javascript.py::test_an_unresolved_entry_s_detail_is_on_the_receipt",
 ]
 
 # Every assignment the launch holds is the command's, the last of two winning; the adapter is

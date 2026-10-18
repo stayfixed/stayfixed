@@ -24,6 +24,11 @@ PROFILE_CODE = (
     "stayfixed/profiles/python/hygiene.py",
     "stayfixed/profiles/python/adapters.py",
 )
+# The stacks that ship runner adapters and no profile, each its package marker and its adapters.
+ADAPTER_CODE = (
+    "stayfixed/profiles/javascript/__init__.py",
+    "stayfixed/profiles/javascript/adapters.py",
+)
 
 
 def checker() -> ModuleType:
@@ -39,6 +44,7 @@ def _wheel(path: Path, *, without: str | None = None) -> Path:
         "stayfixed/profiles/python/profile.toml",
         "stayfixed/profiles/python/rules.md",
         *PROFILE_CODE,
+        *ADAPTER_CODE,
     ]
     with zipfile.ZipFile(path, "w") as archive:
         for name in names:
@@ -92,6 +98,17 @@ def test_a_wheel_without_the_python_profiles_code_is_named(tmp_path: Path, missi
     # `mutations/`'s "the wheel need not carry the Python profile's hint", "the wheel need not
     # carry the Python profile's runner adapter" and "the wheel need not carry the Python
     # profile's package marker".
+    module = checker()
+    findings = module.check_wheel(_wheel(tmp_path / "k.whl", without=missing))
+    assert findings == [f"wheel: missing {missing}"]
+
+
+@pytest.mark.parametrize("missing", ADAPTER_CODE)
+def test_a_wheel_without_a_stack_s_runner_adapters_is_named(tmp_path: Path, missing: str) -> None:
+    # `shipped_adapters` finds a stack's `adapters.py` through `importlib.resources`, profile or
+    # none, so a build that dropped one would answer every command of that stack's runners with
+    # `not proven`, silently. Oracle: `mutations/`'s "the wheel need not carry the JavaScript
+    # runner adapters" and "the wheel need not carry the JavaScript stack's package marker".
     module = checker()
     findings = module.check_wheel(_wheel(tmp_path / "k.whl", without=missing))
     assert findings == [f"wheel: missing {missing}"]

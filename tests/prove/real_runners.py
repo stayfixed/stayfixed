@@ -8,6 +8,9 @@ runner fails the test instead, so a job that meant to run them cannot pass by sk
 
 pytest comes from the project's own environment, the one running the suite: its console script
 stands beside the interpreter (`sys.executable`'s directory), and nothing is installed for it.
+`node` and `go` are the ones on `PATH`. jest and vitest are the packages an `npm ci` of
+`tests/fixtures/prove/node/` installed, at the versions its lockfile pins, in the `node_modules`
+directory `STAYFIXED_NODE_MODULES` names; a test links its scratch project's `node_modules` to it.
 """
 
 from __future__ import annotations
@@ -23,6 +26,9 @@ import pytest
 
 MARK = "runners"
 REQUIRE = "STAYFIXED_REQUIRE_RUNNERS"
+NODE_MODULES = "STAYFIXED_NODE_MODULES"
+# What the fixture's lockfile installs that the tests run.
+PACKAGES = ("jest", "vitest")
 
 _Test = TypeVar("_Test", bound=Callable[..., object])
 
@@ -60,4 +66,36 @@ def runner_directory(name: str) -> Path:
     found = where(name)
     if found is None:
         pytest.fail(f"{name} is not installed and {REQUIRE}=1 requires it")
+    return found
+
+
+def node_modules() -> Path | None:
+    """The `node_modules` directory `STAYFIXED_NODE_MODULES` names, where it holds every package
+    of `PACKAGES`; `None` where it is unset or does not."""
+    named = os.environ.get(NODE_MODULES)
+    if not named:
+        return None
+    found = Path(named)
+    return found if all((found / name / "package.json").is_file() for name in PACKAGES) else None
+
+
+def needs_packages(test: _Test) -> _Test:
+    """Mark a test `runners`, and skip it where `node` or the fixture's packages are not installed
+    and not `required()`."""
+    test = pytest.mark.runners(test)
+    if (where("node") is None or node_modules() is None) and not required():
+        test = pytest.mark.skip(reason=f"node or the packages {NODE_MODULES} names are not here")(
+            test
+        )
+    return test
+
+
+def installed_packages() -> Path:
+    """The directory `node_modules()` names; a missing one fails the test that asked, which only a
+    test `needs_packages` did not skip can reach."""
+    found = node_modules()
+    if found is None:
+        pytest.fail(
+            f"{NODE_MODULES} names no installed jest and vitest and {REQUIRE}=1 requires them"
+        )
     return found
