@@ -30,21 +30,55 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # What a change reaches: `ci.yml`'s job of the same name, byte for byte, which says why. Neither
+  # leg below has anything of its own to judge in a change to `docs/` alone, which ships in no
+  # plugin tree, so on one both legs start, skip every step and report.
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.scope.outputs.code }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Whether the change reaches outside docs
+        id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          code=true
+          if [ "$EVENT" = pull_request ]; then
+            changed="$(git diff --no-renames --name-only HEAD^1 HEAD)"
+            if [ -n "$changed" ] && ! printf '%s\n' "$changed" | grep -qv '^docs/'; then
+              code=false
+            fi
+          fi
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+
   installed-plugin:
+    needs: changes
     # A fork inherits the schedule; only this repository runs it weekly.
-    if: github.event_name != 'schedule' || github.repository == 'stayfixed/stayfixed'
+    if: ${{ !cancelled() && (github.event_name != 'schedule' || github.repository == 'stayfixed/stayfixed') }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
+    # Every step carries `if: env.FULL == 'true'`, and any answer from `changes` but `false` runs it.
+    env:
+      FULL: ${{ needs.changes.outputs.code != 'false' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        if: env.FULL == 'true'
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        if: env.FULL == 'true'
         with:
           node-version: "22"
       - name: The interpreter every step below runs on
+        if: env.FULL == 'true'
         # stayfixed's floor is 3.11 and `check.yml` pins with this action for the same reason:
         # the two smoke scripts and `python3 -m stayfixed doctor` all run the runner's bare
         # `python3`, and which interpreter that is on `macos-latest` is the image's business
@@ -55,16 +89,19 @@ jobs:
       # For the render: `plugin_tree.py` runs on the project's interpreter, as every script does.
       # The steps that run the installed plugin keep the bare `python3` above.
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        if: env.FULL == 'true'
         with:
           enable-cache: true
           python-version: "3.13"
       - name: The harness CLI, at the version ci.yml validates with
+        if: env.FULL == 'true'
         # One version in two files; RELEASING.md names both. Not Dependabot's: a global npm
         # install is not a manifest. The laptop measurement below was taken against 2.1.263;
         # this pin is the one ci.yml already validates with, and the first run of this job
         # is the measurement for it.
         run: npm install -g @anthropic-ai/claude-code@2.1.261
       - name: The plugin repository, its commit built from this one as the release builds it
+        if: env.FULL == 'true'
         id: plugin-repo
         # The directory and every user read the plugin repository's commit, the one the
         # marketplace entry pins by `sha`, and `scripts/plugin_tree.py commit` builds it from this
@@ -102,6 +139,7 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "commit=$commit" >> "$GITHUB_OUTPUT"
       - name: Install the plugin from that repository into a temporary configuration directory
+        if: env.FULL == 'true'
         id: install
         # Production's source type over another transport, with no network: the marketplace is
         # this repository's catalog with its one entry's `url` pointed at the repository above by
@@ -134,6 +172,7 @@ jobs:
           test -n "$root"
           echo "root=$root" >> "$GITHUB_OUTPUT"
       - name: The installed copy is the shipped one, and the wrapper can run
+        if: env.FULL == 'true'
         env:
           INSTALLED: ${{ steps.install.outputs.root }}
         run: |
@@ -141,6 +180,7 @@ jobs:
           diff scripts/stayfixed "$INSTALLED/scripts/stayfixed"
           test -x "$INSTALLED/hooks/run-hook.sh"
       - name: The installed tree is the rendered one, file for file
+        if: env.FULL == 'true'
         # The harness copies what the source names into its cache, and only a comparison says it
         # copied all of it and added nothing: the hooks, `doctor` and the scenario below read part
         # of the tree, and the skills, the agents, `README.md` and `LICENSE` have no reader in this
@@ -152,6 +192,7 @@ jobs:
           INSTALLED: ${{ steps.install.outputs.root }}
         run: diff -r -x .git -x .in_use "$RUNNER_TEMP/plugin-repo" "$INSTALLED"
       - name: Every hook entry, fed its sample event through the installed wrapper
+        if: env.FULL == 'true'
         env:
           INSTALLED: ${{ steps.install.outputs.root }}
         run: |
@@ -166,6 +207,7 @@ jobs:
           # `tests/test_check_workflow.py` derives this line from those constants.
           grep -qx "10 entries, 11 row(s), 0 failure(s)" "$RUNNER_TEMP/hooks.out"
       - name: doctor on the installed plugin reports no red row
+        if: env.FULL == 'true'
         env:
           CLAUDE_PLUGIN_ROOT: ${{ steps.install.outputs.root }}
           CLAUDE_PLUGIN_DATA: ${{ runner.temp }}/smoke/data
@@ -196,6 +238,7 @@ jobs:
           assert not red, red
           PY
       - name: The clone-to-exfiltration scenario
+        if: env.FULL == 'true'
         env:
           INSTALLED: ${{ steps.install.outputs.root }}
         run: |
