@@ -2,26 +2,36 @@
 runner writes to a file `prove` hands it, run as the command typed it.
 
 **What is recognised.** `jest` and `vitest`, bare or after `npx`, `npx --no-install` or `npx --no`;
-a path to one as the command's first word (`./node_modules/.bin/jest`); `node [node's options]
-<entry> …`, the entry a path into `node_modules/<package>` or `node_modules/.bin/<runner>`
-(`node_entry`); and `node` (or a path to one) with `--test` among its options. `npm test`, `npm
-run`, `yarn`, `pnpm` and every other package manager's script runner are recognised by none of
-them: what a script runs is the script's, never read here, and `prove --junit` counts its report.
+a path to one as the command's first word (`./node_modules/.bin/jest`), where it is a link to the
+file its package's `bin` names, as npm's is; `node [node's options] <entry> …`, the entry a path
+into `node_modules/<package>` or `node_modules/.bin/<runner>` (`node_entry`) that is, by its
+realpath, the file its package's `bin` names; and `node` (or a path to one) with `--test` among its
+options. `npm test`, `npm run`, `yarn`, `pnpm` and every other package manager's script runner are
+recognised by none of them: what a script runs is the script's, never read here, and `prove
+--junit` counts its report.
 
-**No `npx` is executed, and no package manager's shim is.** The entry point is found the way Node
-finds a package: `node_modules/<package>/package.json` in the directory the command runs in, then
-in each directory above it up to the project's top-level (`jest`, then `jest-cli`; `vitest`), its
-`bin` (a string, or a mapping holding the runner's name) naming the entry, a file inside the
-package. Then the runner's name on `PATH`, where the first one found is a symbolic link to a file a
-package's `bin` names, as npm links a global install. A runner the command names by its path must
-be such a link too, as npm's `node_modules/.bin/jest` is; the file `node` is handed must be, by its
-realpath, the one its package's `bin` names. A `.bin` file or a `PATH` entry that is not a link
-(pnpm's `sh` shim, Yarn Plug'n'Play's) is never read or run, and nothing is installed: no entry
-found is `ENTRY_NOT_FOUND`, whose detail names `prove --junit` as the way on. The run is `[<node>,
-<node's options>, <entry's realpath>, …]`, `<node>` the one the command names, or the first `node`
-on the run's `PATH` (`stayfixed.profiles.programs.found`); `--test` runs that `node` too. Behind a
-launcher the core read past (`uv run …`), its words are kept in front, and the `node` it is handed
-is the one found, by that path.
+**The run is the command as typed** (`stayfixed.profiles.programs.launched`): its first word
+(`npx`, `jest`, `node`, the `.bin` link) found as a shell finds it, on the run's `PATH` or from the
+directory the command runs in, every other word as typed, and the report's options in their place,
+below. Behind a launcher the core read past (`uv run …`), the launcher is found and the command's
+words are handed to it as typed, for it to resolve on its own `PATH`; nothing is looked for on the
+caller's. `npx` runs as it does outside `prove`: it reads `.npmrc` and puts every
+`node_modules/.bin` above the directory on `PATH` (measured with npm 11.6.0 on Node 24.10.0), and
+given a runner no `node_modules` holds it may install one, as the typed command would. What stays
+`ENTRY_NOT_FOUND`:
+a first word that names nothing there (a bare `jest` on no `PATH` entry, whose detail names `npx
+jest` and `prove --junit`: nothing the command names can run); a path to the runner that is no link
+to its package's entry (pnpm's `sh` shim, which may run anything, so nothing tells that it is
+jest's); and a file `node` is handed that is not that entry. A bare `jest` on `PATH` is the runner
+by its name, and runs whatever that file is.
+
+**The entry the receipt names** (`Plan.entry`), by its realpath, where it is not the program itself:
+the file `node` is handed; the link's target behind a launcher; and for `npx`, the one found the way
+Node finds a package, `node_modules/<package>/package.json` in the directory the command runs in,
+then in each directory above it up to the project's top-level (`jest`, then `jest-cli`; `vitest`),
+its `bin` (a string, or a mapping holding the runner's name) naming a file inside the package, else
+the runner's name on the caller's `PATH` where it is a symbolic link to such a file, as npm links a
+global install (not behind a launcher). Where none is found npx resolves it its own way, unnamed.
 
 **Node's options** are read with no table of node's (`_node_read`): a word starting with `-` is an
 option, and the word after one that gives itself no value with `=` may be that option's value. In
@@ -41,8 +51,9 @@ report never arrives (`no-report`). `node --test`: `--test-reporter=junit
 --test-reporter-destination=<report> --test-reporter=spec --test-reporter-destination=stdout`,
 right after `node`. Each is added before a `--`, which ends the options. node writes one testcase
 for a whole file when the file ran no test (a name pattern that matched nothing in it, no test
-defined, an early `process.exit`), named after the file, `classname` `test`, and passed: `drop`
-leaves it out, unless it carries a failure, which is a file that did not load and counts as failed.
+defined, an early `process.exit`), named by the file's path from the directory node runs in,
+`classname` `test`, and passed: `drop` (`whole_file`) leaves it out, unless it carries a failure,
+which is a file that did not load and counts as failed.
 
 **What is refused** (`REFUSED_OPTION`, naming the option): only what a person or an agent could
 type by mistake and get a green report for tests that never ran or never checked anything, each
@@ -61,18 +72,21 @@ option is free.
   vitest itself fails).
 - `node --test`: `--test-update-snapshots` (which rewrites a failing snapshot so that it passes);
   `--test-rerun-failures` (which reports as passed, unrun, every test the state file it names says
-  passed before); and a `--test-reporter` the command gives no `--test-reporter-destination` of
-  its own, or a destination it gives no reporter (`node_refused`): node pairs reporters with
-  destinations in order, and given more of one than of the other it stops before any test runs
-  (measured on Node 24.10.0), so the adapter's report is never written. A reporter with its own
-  destination is free, and the adapter's report is written beside it. Node reads an option
-  written with `_` as with `-`, and after the files under `--test` as before them, and so are
-  these.
+  passed before); and a `--test-reporter` the command and the run's `NODE_OPTIONS` give no
+  `--test-reporter-destination`, or a destination they give no reporter (`node_refused`): node
+  pairs reporters with destinations in order, those of `NODE_OPTIONS` among them, and given more of
+  one than of the other it stops before any test runs (measured on Node 24.10.0), so the adapter's
+  report is never written. A reporter with its own destination is free, and the adapter's report is
+  written beside it. Node reads an option written with `_` as with `-`, and so are these; and they
+  are read after the files under `--test` too, where Node 26.12.0 reads an option as before them
+  (Node 24.10.0 reads none there, measured, so on it a refusal there is only the safe side).
 
 A watch mode -- jest's `--watch` and `--watchAll`, vitest's `-w`/`--watch`, node's `--watch` and
 `--watch-path` -- moves no report and forges no pass, but it never ends: it waits for changes
-after the run, so no report is ever finished. It is not refused; it is `NEVER_ENDS` (`not
-proven`), naming the option, and a refusal in the same command wins.
+after the run, so no report is ever finished. Nor do node's `--inspect-brk` and `--inspect-wait`
+(jest's documented recipe for debugging), which hold the code until a debugger attaches, under
+`--test` too (measured on Node 24.10.0). Each is not refused; it is `NEVER_ENDS` (`not proven`),
+naming the option, and a refusal in the same command wins.
 
 Each reader follows the runner's own parser, measured on the pinned version: jest's yargs (a short
 option in a cluster takes the rest of the word as its value after a `=`, a character other than a
@@ -82,13 +96,13 @@ vitest's cac (every character of a short cluster up to a `=` is an option of its
 `-u`; a boolean is off only by `--no-` or `false`, and `--update=false` is the text `false`, which
 rewrites snapshots as `--update` does).
 
-**What the receipt names.** The file `-c`/`--config` names, by its realpath (`Plan.configs`), read
-from the directory the command runs in for jest, and from vitest's `--root` where the command gives
-one; a configuration's own text jest is given there names no file. A file node's `-r`,
+**What else the receipt names.** The file `-c`/`--config` names, by its realpath (`Plan.configs`),
+read from the directory the command runs in for jest, and from vitest's `--root` where the command
+gives one; a configuration's own text jest is given there names no file. A file node's `-r`,
 `--require`, `--import` or `--loader` names, where its reading is not in doubt
-(`_preloaded_file`); any other value runs as it is, unnamed. The configuration files (`CONFIGS`)
-and the untracked files each runner collects from (`*_DISCOVERY`), and the realpath of the `node`
-that ran.
+(`_preloaded_file`); any other value runs as it is, unnamed. The configuration files (`CONFIGS`,
+`.npmrc` among them, which npx reads) and the untracked files each runner collects from
+(`*_DISCOVERY`), and the realpath of the program that ran.
 
 No variable is refused or removed (`forging` is empty): `NODE_OPTIONS`, jest's documented recipe
 for ES modules among its uses, reaches the run as it reaches it outside `prove`. What the
@@ -170,13 +184,13 @@ _VITEST_WATCHING = frozenset({"watch", "dev"})
 _VITEST_NO_TEST_RUN = frozenset({"bench", "list", "init", "doctor"})
 _VITEST_SUBCOMMANDS = frozenset({_RUN, _VITEST_RELATED, *_VITEST_WATCHING, *_VITEST_NO_TEST_RUN})
 
-# Short enough for the receipt's line to carry whole (`printed.CLIPPED_CHARS`).
+# Where the runner the command names bare is on no `PATH` entry, so nothing the command names can
+# run. Short enough for the receipt's line to carry whole (`printed.CLIPPED_CHARS`).
 UNRESOLVED = (
-    "no node_modules/{package} up to the top-level, nor a {bin} on PATH linked into one; "
-    "`prove --junit` counts a report"
+    "no {bin} on PATH; `npx {bin}` runs a project's own, or `prove --junit` counts a report"
 )
-_NO_NODE = "no node on PATH"
-_NO_LAUNCHER = "no {launcher} on PATH"
+# Where the command's first word, or its launcher, names nothing there.
+_NO_PROGRAM = "no {program} on PATH"
 # Where `node` is handed a file that is not the entry its package's `bin` names.
 NOT_THE_ENTRY = (
     "the file node is given is not the entry a {package} package's bin names; "
@@ -190,13 +204,20 @@ NOT_A_LINK = (
 
 
 def _launched(
-    launch: Sequence[str], argv: tuple[str, ...], cwd: Path, environ: Mapping[str, str]
+    launch: Sequence[str],
+    argv: tuple[str, ...],
+    cwd: Path,
+    environ: Mapping[str, str],
+    missing: str | None = None,
 ) -> tuple[str, ...] | Unresolved:
-    """The argv that runs `argv`, its program a `node` already found, behind `launch`, the
-    launcher's words kept in front (`stayfixed.profiles.programs.launched`)."""
+    """The argv that runs `argv` as typed behind `launch` (`stayfixed.profiles.programs.launched`):
+    the first word found and named by that path, every other word as typed, so that a launcher
+    resolves the command's program as it does outside `prove`. `ENTRY_NOT_FOUND` where that first
+    word names nothing there, `missing` its detail where given."""
     planned = launched(launch, argv, cwd, environ)
     if planned is None:
-        return Unresolved(ENTRY_NOT_FOUND, _NO_LAUNCHER.format(launcher=Path(launch[0]).name))
+        first = (*launch, *argv)[0]
+        return Unresolved(ENTRY_NOT_FOUND, missing or _NO_PROGRAM.format(program=Path(first).name))
     return planned
 
 
@@ -680,17 +701,19 @@ _VITEST = _Runner(
 
 
 def entry_point(
-    name: str, packages: Sequence[str], cwd: Path, root: Path, environ: Mapping[str, str]
+    name: str, packages: Sequence[str], cwd: Path, root: Path, environ: Mapping[str, str] | None
 ) -> Path | None:
-    """The realpath of the runner `name`'s entry: a package of `packages` under `node_modules` from
-    `cwd` up to `root`, nearest first and each directory's packages in order; else the first `name`
-    on `environ`'s `PATH`, where it links to a file a package's `bin` names."""
+    """The realpath of the entry `npx name` runs, as far as it is named here: a package of
+    `packages` under `node_modules` from `cwd` up to `root`, nearest first and each directory's
+    packages in order; else the first `name` on `environ`'s `PATH`, where it links to a file a
+    package's `bin` names (none read where `environ` is `None`, a launcher's own `PATH` being
+    its own). `None` where neither is: npx resolves it its own way."""
     for directory in _upward(cwd, root):
         for package in packages:
             entry = _manifest_bin(directory / _MODULES / package, name)
             if entry is not None:
                 return entry
-    return _linked(name, name, cwd, environ)
+    return None if environ is None else _linked(name, name, cwd, environ)
 
 
 _BIN_LINKS = ".bin"
@@ -838,25 +861,33 @@ def node_preloaded(words: Sequence[str], cwd: Path) -> tuple[str, ...]:
 # node's closed list: the test runner's options that rewrite a failing snapshot, or report tests
 # that never ran as passed.
 _NODE_REFUSED = frozenset({"--test-update-snapshots", "--test-rerun-failures"})
-# node's reporter and its destination, which node pairs in order.
+# node's reporter and its destination, which node pairs in order, those `NODE_OPTIONS` gives
+# among them.
 _NODE_REPORTER = "--test-reporter"
 _NODE_DESTINATION = "--test-reporter-destination"
+_NODE_OPTIONS = "NODE_OPTIONS"
 # node's watch modes, not proven: they never end. `--no-watch` turns `--watch` off again.
 _NODE_WATCH = "--watch"
 _NODE_WATCH_PATH = "--watch-path"
 _NODE_NO_WATCH = "--no-watch"
+# node's options that hold the code until a debugger attaches, which under `prove` none does
+# (measured on Node 24.10.0, before a script and under `--test` alike: past any time limit):
+# jest's documented recipe for debugging, `node --inspect-brk node_modules/.bin/jest`.
+_NODE_INSPECT_WAITS = ("--inspect-brk", "--inspect-wait")
 
 
-def node_refused(words: Sequence[str]) -> str | None:
+def node_refused(words: Sequence[str], node_options: str = "") -> str | None:
     """The first of node's options in `words` (the words after `node`) on its closed list, by its
-    name, never its value; else the reporter or the destination the command gives more of than of
-    the other, which leaves node unable to pair the adapter's own; `None` where none is. Every
-    word before a `--` is read, a file's name among them: under `--test` node reads an option
-    written after the files too."""
+    name, never its value; else the reporter or the destination the command and `node_options`
+    (the run's `NODE_OPTIONS`) give more of than of the other, which leaves node unable to pair
+    the adapter's own; `None` where none is. Every word before a `--` is read, a file's name among
+    them: Node 26.12.0 reads an option written after the files under `--test` as before them
+    (Node 24.10.0 reads none there, measured, so there the refusal is only the safe side)."""
     names = [_node_name(word) for word in _options(words)]
     refused = next((name for name in names if name in _NODE_REFUSED), None)
     if refused is not None:
         return refused
+    names += [_node_name(word) for word in node_options.split()]
     reporters, destinations = names.count(_NODE_REPORTER), names.count(_NODE_DESTINATION)
     if reporters != destinations:
         return _NODE_REPORTER if reporters > destinations else _NODE_DESTINATION
@@ -864,57 +895,75 @@ def node_refused(words: Sequence[str]) -> str | None:
 
 
 def node_never_ends(words: Sequence[str]) -> str | None:
-    """node's watch mode among `words` (the words after `node`), by its name, read as
-    `node_refused` reads: `--watch-path` wherever it is (measured on 26.12.0: under `--test` node
-    refuses to run with it), else `--watch` where the last of `--watch` and `--no-watch` is it;
-    `None` where neither is."""
+    """node's option among `words` (the words after `node`) under which the run never ends, by
+    its name, read as `node_refused` reads: `--watch-path` wherever it is (measured on 26.12.0:
+    under `--test` node refuses to run with it), else `--inspect-brk` or `--inspect-wait`, else
+    `--watch` where the last of `--watch` and `--no-watch` is it; `None` where none is."""
     names = [_node_name(word) for word in _options(words)]
     if _NODE_WATCH_PATH in names:
         return _NODE_WATCH_PATH
+    waits = next((name for name in names if name in _NODE_INSPECT_WAITS), None)
+    if waits is not None:
+        return waits
     settings = [name for name in names if name in (_NODE_WATCH, _NODE_NO_WATCH)]
     return _NODE_WATCH if settings[-1:] == [_NODE_WATCH] else None
 
 
 @dataclass(frozen=True)
-class _Named:
-    """A run of a package's runner the command names by a path: the word `node` is found by,
-    node's own options, the runner's entry, and the runner's arguments."""
+class _Typed:
+    """A recognised run of a package's runner, as typed: the command's words up to the runner's
+    arguments (`npx --no jest`, `./node_modules/.bin/jest`, `node --inspect
+    node_modules/jest/bin/jest.js`), node's own options where node runs the entry, the runner's
+    arguments, and the realpath of the entry where it is named."""
 
-    node: str
+    head: tuple[str, ...]
     node_words: tuple[str, ...]
-    entry: Path
     args: tuple[str, ...]
+    entry: Path | None
 
 
-def _named(
-    command: Sequence[str], runner: _Runner, cwd: Path, environ: Mapping[str, str]
-) -> _Named | Unresolved | None:
-    """The run `command` names by a path to the runner's entry: a link to it as the first word,
-    run by the first `node` on the run's `PATH`, as the entry's own `#!` line runs it; or the
-    first word after `node` that may be its script and is, by its realpath, the entry
-    (`node_entry`). `ENTRY_NOT_FOUND` where none of them is the entry; `None` for a command that
-    names no path."""
+def _typed(
+    command: Sequence[str],
+    runner: _Runner,
+    launch: Sequence[str],
+    *,
+    cwd: Path,
+    root: Path,
+    environ: Mapping[str, str],
+) -> _Typed | Unresolved | None:
+    """`command` read as a run of `runner`: the runner bare or after `npx` (its entry what
+    `entry_point` names, for `npx`); a link to the entry as the first word; or the first word
+    after `node` that may be its script and is, by its realpath, the entry (`node_entry`).
+    `ENTRY_NOT_FOUND` where a path names no such entry, since nothing then tells that the file is
+    the runner's; `None` for a command that is none of them."""
+    args = runner_args(command, runner.name)
+    if args is not None:
+        head = tuple(command[: len(command) - len(args)])
+        entry = None
+        if head[0] == _NPX:
+            on_path = None if launch else environ
+            entry = entry_point(runner.name, runner.packages, cwd, root, on_path)
+        return _Typed(head, (), args, entry)
     args = linked_args(command, runner.name)
     if args is not None:
         entry = _linked(command[0], runner.name, cwd, environ)
         if entry is None:
             detail = NOT_A_LINK.format(bin=runner.name, package=runner.packages[0])
             return Unresolved(ENTRY_NOT_FOUND, detail)
-        return _Named(_NODE, (), entry, args)
+        return _Typed((command[0],), (), args, entry)
     ways = node_entry(command, runner.name, runner.packages)
     if not ways:
         return None
     for node_words, script, rest in ways:
         entry = package_entry(Path(os.path.realpath(cwd / script)), runner.name)
         if entry is not None:
-            return _Named(command[0], node_words, entry, rest)
+            return _Typed((command[0], *node_words, script), node_words, rest, entry)
     return Unresolved(ENTRY_NOT_FOUND, NOT_THE_ENTRY.format(package=runner.packages[0]))
 
 
 class _PackageRunner:
-    """`RunnerAdapter` for a runner a package ships, run by `node` from its entry point: found by
-    the search `entry_point` makes, or named by its path, bare or after `node` and node's own
-    options."""
+    """`RunnerAdapter` for a runner a package ships, run as the command types it (`_typed`): bare,
+    after `npx`, by its `.bin` link, or as the entry `node` is handed."""
 
     def __init__(self, runner: _Runner) -> None:
         self._runner = runner
@@ -946,14 +995,10 @@ class _PackageRunner:
         environ: Mapping[str, str],
     ) -> Plan | Refused | Unresolved:
         runner = self._runner
-        args = runner_args(command, runner.name)
-        named: _Named | None = None
-        if args is None:
-            by_path = _named(command, runner, cwd, environ)
-            if not isinstance(by_path, _Named):
-                return by_path or Unresolved(ENTRY_NOT_FOUND)
-            named, args = by_path, by_path.args
-        node_words = named.node_words if named is not None else ()
+        typed = _typed(command, runner, launch, cwd=cwd, root=root, environ=environ)
+        if not isinstance(typed, _Typed):
+            return typed or Unresolved(ENTRY_NOT_FOUND)
+        args, node_words = typed.args, typed.node_words
         refused = runner.refused(args)
         if refused is not None:
             return Refused(REFUSED_OPTION, refused)
@@ -963,22 +1008,18 @@ class _PackageRunner:
         unplanned = runner.unplanned(args)
         if unplanned is not None:
             return unplanned
-        if named is None:
-            entry = entry_point(runner.name, runner.packages, cwd, root, environ)
-            if entry is None:
-                detail = UNRESOLVED.format(package=runner.packages[0], bin=runner.name)
-                return Unresolved(ENTRY_NOT_FOUND, detail)
-        else:
-            entry = named.entry
-        node = found(named.node if named is not None else _NODE, cwd, environ)
-        if node is None:
-            return Unresolved(ENTRY_NOT_FOUND, _NO_NODE)
         report = scratch / runner.report_name
         words = runner.words(args)
         planned = before_separator(words, runner.ours(words, report))
-        argv = _launched(launch, (str(node), *node_words, str(entry), *planned), cwd, environ)
+        missing = UNRESOLVED.format(bin=runner.name) if typed.head == (runner.name,) else None
+        argv = _launched(launch, (*typed.head, *planned), cwd, environ, missing)
         if isinstance(argv, Unresolved):
             return argv
+        # The receipt names the program by its realpath; an entry that is the program is not
+        # named twice (a `.bin` link run as typed).
+        entry = typed.entry
+        if entry is not None and os.path.realpath(argv[0]) == str(entry):
+            entry = None
         return Plan(
             argv=argv,
             kind=ReportKind.RESULTS_JSON,
@@ -1004,17 +1045,28 @@ class VitestAdapter(_PackageRunner):
         super().__init__(_VITEST)
 
 
-def whole_file(attributes: Mapping[str, str]) -> bool:
-    """Whether a testcase is the one node writes for a whole file that ran no test: named after
-    its file, `classname` `test`, and carrying no failure. A whole-file testcase with a failure is
-    a file that did not load, and is counted."""
-    file = attributes.get("file")
-    return (
-        file is not None
-        and attributes.get("name") == os.path.basename(file)
-        and attributes.get("classname") == "test"
-        and "failure" not in attributes
-    )
+def whole_file(cwd: Path) -> Callable[[Mapping[str, str]], bool]:
+    """The JUnit reader's `drop` for a `node --test` run in `cwd`: whether a testcase is the one
+    node writes for a whole file that ran no test. Measured on Node 24.10.0 and 26.12.0, that one
+    is named by the file's path from the directory node runs in (`test/deep/a.test.mjs` for a
+    nested file), its `classname` is `test`, and it carries a `failure` attribute where it failed,
+    as every testcase node writes does: a file that did not load, which is counted. So a testcase
+    is dropped where its `classname` is `test`, it carries no `failure`, and its name, read from
+    `cwd`, is the run's file: the file its `file` attribute names, by realpath, where node writes
+    one (26.12.0), else a regular file there (24.10.0, which writes none). A test of the
+    project's own named after a file's path is dropped too, so its run reads `failed` (none ran),
+    never `proved`."""
+
+    def drop(attributes: Mapping[str, str]) -> bool:
+        name = attributes.get("name")
+        if not name or attributes.get("classname") != "test" or "failure" in attributes:
+            return False
+        file = attributes.get("file")
+        if file is None:
+            return fsops.is_file(cwd / name)
+        return os.path.realpath(cwd / name) == os.path.realpath(file)
+
+    return drop
 
 
 class NodeTestAdapter:
@@ -1043,15 +1095,12 @@ class NodeTestAdapter:
         scratch: Path,
         environ: Mapping[str, str],
     ) -> Plan | Refused | Unresolved:
-        refused = node_refused(command[1:])
+        refused = node_refused(command[1:], environ.get(_NODE_OPTIONS, ""))
         if refused is not None:
             return Refused(REFUSED_OPTION, refused)
         never = node_never_ends(command[1:])
         if never is not None:
             return Unresolved(NEVER_ENDS, NEVER_ENDS_DETAIL.format(option=never))
-        node = found(command[0], cwd, environ)
-        if node is None:
-            return Unresolved(ENTRY_NOT_FOUND, _NO_NODE)
         report = scratch / NODE_REPORT
         ours = (
             "--test-reporter=junit",
@@ -1059,7 +1108,7 @@ class NodeTestAdapter:
             "--test-reporter=spec",
             "--test-reporter-destination=stdout",
         )
-        argv = _launched(launch, (str(node), *ours, *command[1:]), cwd, environ)
+        argv = _launched(launch, (command[0], *ours, *command[1:]), cwd, environ)
         if isinstance(argv, Unresolved):
             return argv
         return Plan(
@@ -1069,7 +1118,7 @@ class NodeTestAdapter:
             report=report,
             discovery=NODE_DISCOVERY,
             configs=(*CONFIGS, *node_preloaded(command[1:], cwd)),
-            drop=whole_file,
+            drop=whole_file(cwd),
         )
 
 

@@ -2275,7 +2275,7 @@ name = "node's watch mode in front of a runner's entry is not read"
 file = "src/stayfixed/profiles/javascript/adapters.py"
 before = "        never = node_never_ends(node_words) or runner.never_ends(args)"
 after = "        never = runner.never_ends(args)"
-reddens = ["tests/prove/test_javascript.py::test_node_s_watch_mode_in_front_of_the_entry_never_ends"]
+reddens = ["tests/prove/test_javascript.py::test_node_s_watch_mode_in_front_of_the_entry_never_ends[watch]"]
 
 # The file node is handed must be the entry its package's `bin` names.
 [[mutation]]
@@ -2294,7 +2294,7 @@ name = "the jest and vitest adapters drop the launcher"
 file = "src/stayfixed/profiles/javascript/adapters.py"
 before = "    planned = launched(launch, argv, cwd, environ)"
 after = "    planned = launched((), argv, cwd, environ)"
-reddens = ["tests/prove/test_javascript.py::test_a_launcher_is_kept_in_front_of_the_node_on_path"]
+reddens = ["tests/prove/test_javascript.py::test_a_launcher_is_handed_the_command_as_typed"]
 
 [[mutation]]
 name = "the go adapter drops the launcher"
@@ -2361,7 +2361,7 @@ before = """    if not command or os.sep not in command[0] or Path(command[0]).n
 after = """    return None"""
 reddens = [
   "tests/prove/test_javascript.py::test_each_runner_s_commands_are_recognised[command9-adapter9]",
-  "tests/prove/test_javascript.py::test_a_runner_named_by_its_link_runs_the_entry_it_links_to",
+  "tests/prove/test_javascript.py::test_a_runner_named_by_its_link_runs_as_typed",
 ]
 
 # `--setup-plan` exits 0 and reports a failing test as passed: the refusal is load-bearing.
@@ -2575,12 +2575,43 @@ after = """    if words[:2] == ["npm", "test"]:
     if words[:1] == [_NPX]:"""
 reddens = ["tests/prove/test_javascript.py::test_npm_test_is_not_recognised[command0]"]
 
+# The run is the command as typed: `npx` and its option kept in front of the runner's name.
 [[mutation]]
-name = "the jest and vitest adapters run npx"
+name = "the jest and vitest adapters drop npx from the typed words"
 file = "src/stayfixed/profiles/javascript/adapters.py"
-before = "        argv = _launched(launch, (str(node), *node_words, str(entry), *planned), cwd, environ)"
-after = "        argv = _launched(launch, (str(node.parent / _NPX), runner.name, *planned), cwd, environ)"
-reddens = ["tests/prove/test_javascript.py::test_npx_is_never_executed"]
+before = "        head = tuple(command[: len(command) - len(args)])"
+after = "        head = (runner.name,)"
+reddens = ["tests/prove/test_javascript.py::test_npx_runs_as_typed"]
+
+[[mutation]]
+name = "the entry npx runs is read from the caller's PATH behind a launcher"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = "            on_path = None if launch else environ"
+after = "            on_path = environ"
+reddens = ["tests/prove/test_javascript.py::test_a_runner_on_path_linked_into_its_package_resolves"]
+
+[[mutation]]
+name = "the entry npx runs is left off the receipt"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = "            entry = entry_point(runner.name, runner.packages, cwd, root, on_path)"
+after = "            entry = None"
+reddens = ["tests/prove/test_javascript.py::test_npx_runs_as_typed"]
+
+# Behind a launcher the command's words are handed to it as typed, for it to resolve on its own
+# `PATH`: never a program found on the caller's.
+[[mutation]]
+name = "the JavaScript adapters hand a launcher the program found on the caller's PATH"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = "    planned = launched(launch, argv, cwd, environ)"
+after = "    planned = launched(launch, (str(found(argv[0], cwd, environ) or argv[0]), *argv[1:]), cwd, environ)"
+reddens = ["tests/prove/test_javascript.py::test_a_launcher_is_handed_the_command_as_typed"]
+
+[[mutation]]
+name = "the entry the program itself is, is named beside it"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = "        if entry is not None and os.path.realpath(argv[0]) == str(entry):"
+after = "        if False:"
+reddens = ["tests/prove/test_javascript.py::test_a_runner_named_by_its_link_runs_as_typed"]
 
 [[mutation]]
 name = "a runner on PATH resolves to any file its link reaches"
@@ -2595,7 +2626,7 @@ file = "src/stayfixed/profiles/javascript/adapters.py"
 before = "    if on_path is None or not fsops.is_symlink(on_path):"
 after = "    if on_path is None:"
 reddens = [
-  "tests/prove/test_javascript.py::test_a_runner_on_path_that_is_no_link_is_never_run",
+  "tests/prove/test_javascript.py::test_a_runner_on_path_that_is_no_link_runs_unnamed",
   "tests/prove/test_javascript.py::test_a_runner_named_by_a_path_that_is_no_link_is_never_run",
 ]
 
@@ -2648,12 +2679,11 @@ after = '    packages=("jest-cli", "jest"),'
 reddens = ["tests/prove/test_javascript.py::test_the_nearest_package_wins_and_jest_before_jest_cli"]
 
 [[mutation]]
-name = "an unresolved entry point names no way on"
+name = "a bare runner on no PATH entry names no way on"
 file = "src/stayfixed/profiles/javascript/adapters.py"
-before = """                detail = UNRESOLVED.format(package=runner.packages[0], bin=runner.name)
-                return Unresolved(ENTRY_NOT_FOUND, detail)"""
-after = """                return Unresolved(ENTRY_NOT_FOUND)"""
-reddens = ["tests/prove/test_javascript.py::test_an_unresolvable_entry_installs_nothing"]
+before = "        missing = UNRESOLVED.format(bin=runner.name) if typed.head == (runner.name,) else None"
+after = "        missing = None"
+reddens = ["tests/prove/test_javascript.py::test_a_bare_runner_on_no_path_entry_is_not_found"]
 
 [[mutation]]
 name = "vitest runs without run"
@@ -2930,50 +2960,120 @@ reddens = [
 [[mutation]]
 name = "node --test's refusals read only the options before its first file"
 file = "src/stayfixed/profiles/javascript/adapters.py"
-before = "        refused = node_refused(command[1:])"
-after = "        refused = node_refused(node_options(command[1:]))"
+before = '        refused = node_refused(command[1:], environ.get(_NODE_OPTIONS, ""))'
+after = '        refused = node_refused(node_options(command[1:]), environ.get(_NODE_OPTIONS, ""))'
 reddens = [
   "tests/prove/test_javascript.py::test_each_report_steering_option_is_refused[node-test:--test_a.test.mjs_b.test.mjs_--test-reporter=dot]",
+]
+
+# node pairs `NODE_OPTIONS`' reporters with the command's: an unpaired one there stops it as one on
+# the command line does.
+[[mutation]]
+name = "node --test's reporter count leaves NODE_OPTIONS out"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = "    names += [_node_name(word) for word in node_options.split()]"
+after = ""
+reddens = [
+  "tests/prove/test_javascript.py::test_an_unpaired_reporter_in_node_options_is_refused[--test-reporter=spec---test-reporter]",
+  "tests/prove/test_javascript.py::test_an_assigned_unpaired_reporter_in_node_options_is_refused",
+]
+
+[[mutation]]
+name = "node's options that wait for a debugger are planned"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = '_NODE_INSPECT_WAITS = ("--inspect-brk", "--inspect-wait")'
+after = "_NODE_INSPECT_WAITS: tuple[str, ...] = ()"
+reddens = [
+  "tests/prove/test_javascript.py::test_node_s_watch_mode_in_front_of_the_entry_never_ends[inspect-brk]",
+  "tests/prove/test_javascript.py::test_a_watch_mode_is_not_proven_for_it_never_ends[node-test:--inspect-brk_--test]",
 ]
 
 [[mutation]]
 name = "node --test's plan leaves drop unset"
 file = "src/stayfixed/profiles/javascript/adapters.py"
-before = "            drop=whole_file,"
+before = "            drop=whole_file(cwd),"
 after = "            drop=None,"
 reddens = [
-  "tests/prove/test_javascript.py::test_the_whole_file_testcase_is_dropped_unless_it_failed[node-name-pattern.xml-counts0]",
-  "tests/prove/test_javascript.py::test_the_whole_file_testcase_is_dropped_unless_it_failed[node-no-tests.xml-counts1]",
-  "tests/prove/test_javascript.py::test_the_whole_file_testcase_is_dropped_unless_it_failed[node-exit0.xml-counts2]",
+  "tests/prove/test_javascript.py::test_the_whole_file_testcase_is_dropped_unless_it_failed[node-name-pattern.xml]",
+  "tests/prove/test_javascript.py::test_the_whole_file_testcase_is_dropped_unless_it_failed[node24-name-pattern.xml]",
+  "tests/prove/test_javascript.py::test_the_whole_file_testcase_is_dropped_unless_it_failed[node24-nested.xml]",
 ]
 
 [[mutation]]
 name = "node's whole-file testcase is dropped though it failed"
 file = "src/stayfixed/profiles/javascript/adapters.py"
-before = """        and attributes.get("classname") == "test"
-        and "failure" not in attributes
-"""
-after = """        and attributes.get("classname") == "test"
-"""
+before = '        if not name or attributes.get("classname") != "test" or "failure" in attributes:'
+after = '        if not name or attributes.get("classname") != "test":'
 reddens = [
-  "tests/prove/test_javascript.py::test_the_whole_file_testcase_is_dropped_unless_it_failed[node-load-failure.xml-counts3]",
-  "tests/prove/test_javascript.py::test_whole_file_reads_the_attributes_alone[failed]",
+  "tests/prove/test_javascript.py::test_the_whole_file_testcase_is_dropped_unless_it_failed[node-load-failure.xml]",
+  "tests/prove/test_javascript.py::test_the_whole_file_testcase_is_dropped_unless_it_failed[node24-load-failure.xml]",
+  "tests/prove/test_javascript.py::test_whole_file_reads_the_attributes_and_the_run_s_directory[failed]",
+  "tests/prove/test_javascript.py::test_whole_file_reads_the_attributes_and_the_run_s_directory[no-file-attribute-failed]",
 ]
-
-[[mutation]]
-name = "node's whole-file testcase is any testcase of classname test"
-file = "src/stayfixed/profiles/javascript/adapters.py"
-before = '        and attributes.get("name") == os.path.basename(file)'
-after = "        and True"
-reddens = ["tests/prove/test_javascript.py::test_whole_file_reads_the_attributes_alone[another-file]"]
 
 [[mutation]]
 name = "node's whole-file testcase is any classname's"
 file = "src/stayfixed/profiles/javascript/adapters.py"
-before = """        and attributes.get("classname") == "test"
-        and "failure" not in attributes"""
-after = """        and "failure" not in attributes"""
-reddens = ["tests/prove/test_javascript.py::test_whole_file_reads_the_attributes_alone[another-classname]"]
+before = '        if not name or attributes.get("classname") != "test" or "failure" in attributes:'
+after = '        if not name or "failure" in attributes:'
+reddens = [
+  "tests/prove/test_javascript.py::test_whole_file_reads_the_attributes_and_the_run_s_directory[another-classname]",
+  "tests/prove/test_javascript.py::test_whole_file_reads_the_attributes_and_the_run_s_directory[no-file-attribute-another-classname]",
+]
+
+# Where node writes the file's path, the testcase's name must be that file, read from the run's
+# directory: a basename alone matches another directory's file.
+[[mutation]]
+name = "node's whole-file testcase with a file is any testcase of classname test"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = "        return os.path.realpath(cwd / name) == os.path.realpath(file)"
+after = "        return True"
+reddens = [
+  "tests/prove/test_javascript.py::test_whole_file_reads_the_attributes_and_the_run_s_directory[another-file]",
+  "tests/prove/test_javascript.py::test_whole_file_reads_the_attributes_and_the_run_s_directory[another-directory]",
+]
+
+[[mutation]]
+name = "node's whole-file testcase is matched by the file's name alone"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = "        return os.path.realpath(cwd / name) == os.path.realpath(file)"
+after = "        return name == os.path.basename(file)"
+reddens = [
+  "tests/prove/test_javascript.py::test_whole_file_reads_the_attributes_and_the_run_s_directory[whole-file-nested]",
+  "tests/prove/test_javascript.py::test_whole_file_reads_the_attributes_and_the_run_s_directory[another-directory]",
+]
+
+# Where node writes no `file` (Node 24.10.0), the name must be a regular file in the run's
+# directory.
+[[mutation]]
+name = "node's whole-file testcase without a file is never dropped"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = "            return fsops.is_file(cwd / name)"
+after = "            return False"
+reddens = [
+  "tests/prove/test_javascript.py::test_the_whole_file_testcase_is_dropped_unless_it_failed[node24-name-pattern.xml]",
+  "tests/prove/test_javascript.py::test_the_whole_file_testcase_is_dropped_unless_it_failed[node24-nested-pattern.xml]",
+  "tests/prove/test_javascript.py::test_whole_file_reads_the_attributes_and_the_run_s_directory[no-file-attribute]",
+]
+
+[[mutation]]
+name = "node's whole-file testcase without a file is any testcase of classname test"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = "            return fsops.is_file(cwd / name)"
+after = "            return True"
+reddens = [
+  "tests/prove/test_javascript.py::test_whole_file_reads_the_attributes_and_the_run_s_directory[a-test]",
+  "tests/prove/test_javascript.py::test_whole_file_reads_the_attributes_and_the_run_s_directory[no-such-file]",
+]
+
+[[mutation]]
+name = "a directory is taken for node's whole file"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = "            return fsops.is_file(cwd / name)"
+after = "            return (cwd / name).exists()"
+reddens = [
+  "tests/prove/test_javascript.py::test_whole_file_reads_the_attributes_and_the_run_s_directory[a-directory]",
+]
 
 # Each reader follows its runner's own parser, measured on the pinned version: jest's yargs,
 # vitest's cac.
@@ -3382,9 +3482,9 @@ reddens = ["tests/prove/test_pytest.py::test_an_entry_point_not_on_path_does_not
 [[mutation]]
 name = "the jest and vitest adapters' unresolved detail passes the line's clip"
 file = "src/stayfixed/profiles/javascript/adapters.py"
-before = '''    "`prove --junit` counts a report"
+before = '''    "no {bin} on PATH; `npx {bin}` runs a project's own, or `prove --junit` counts a report"
 )'''
-after = '''    "`prove --junit` counts a report you name, from the directory the command runs in"
+after = '''    "no {bin} on PATH; `npx {bin}` runs a project's own, or `prove --junit` counts a report you name"
 )'''
 reddens = ["tests/prove/test_javascript.py::test_an_unresolved_entry_s_detail_is_on_the_receipt"]
 

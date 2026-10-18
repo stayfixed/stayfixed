@@ -1,12 +1,14 @@
-"""The JavaScript adapters: what jest's, vitest's and `node --test`'s recognise, how each finds its
-entry point and plans a run, what each refuses, and what a real run under each proves.
+"""The JavaScript adapters: what jest's, vitest's and `node --test`'s recognise, how each plans the
+command as typed and names its entry, what each refuses, and what a real run under each proves.
 
 The plan tests run no runner: `plan` is a pure function of its arguments and of the files it reads,
 so each builds the files a project holds (a `node_modules/<package>/package.json` and the entry its
-`bin` names, a `node` on `PATH`) and reads the plan. The tests that run through `prove` without a
-real runner use `fake_node`, a shell script standing in for `node` that writes the report it was
-told to. The tests marked `runners` run Node 26.12.0 and the jest and vitest an `npm ci` of
-`tests/fixtures/prove/node/` installed (`tests/prove/real_runners.py`).
+`bin` names, a `node` and an `npx` on `PATH`) and reads the plan. The tests that run through
+`prove` without a real runner use `fake_node`, a shell script standing in for `node`, `npx`,
+`jest` and `vitest` that writes the report it was told to. The tests marked `runners` run the
+`node` and `npx` on `PATH` (Node 26.12.0 in CI's `runners` job, and also run on 24.10.0) and the
+jest and vitest an `npm ci` of `tests/fixtures/prove/node/` installed
+(`tests/prove/real_runners.py`).
 """
 
 from __future__ import annotations
@@ -14,6 +16,7 @@ from __future__ import annotations
 import json
 import os
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -111,7 +114,9 @@ def vitest_package(modules: Path) -> Path:
 
 
 def node_on_path(where: Path) -> Path:
-    """A `node` the plan finds on `PATH`, in its own directory."""
+    """A `node` the plan finds on `PATH`, in its own directory, and the `npx` Node ships beside
+    it."""
+    executable(where / "npx")
     return executable(where / "node")
 
 
@@ -123,6 +128,7 @@ def planned(
     root: Path | None = None,
     path: str = "",
     launch: Sequence[str] = (),
+    variables: Mapping[str, str] | None = None,
 ) -> Plan | Refused | Unresolved:
     return adapter.plan(
         launch,
@@ -130,7 +136,7 @@ def planned(
         cwd=cwd,
         root=root if root is not None else cwd,
         scratch=cwd / "scratch",
-        environ={"PATH": path},
+        environ={"PATH": path, **(variables or {})},
     )
 
 
@@ -148,10 +154,14 @@ def plan_of(
 
 
 def installed(project: Path) -> tuple[Path, Path, Path]:
-    """`project` with jest and vitest installed as npm installs them, and a `node` in a directory
-    of its own for `PATH`: the jest entry, the vitest entry and the `node`."""
+    """`project` with jest and vitest installed as npm installs them, and a `node`, an `npx`, a
+    `jest` and a `vitest` in a directory of its own for `PATH`: the jest entry, the vitest entry
+    and the `node`."""
     modules = project / "node_modules"
-    return jest_package(modules), vitest_package(modules), node_on_path(project / ".tools")
+    tools = project / ".tools"
+    executable(tools / "jest")
+    executable(tools / "vitest")
+    return jest_package(modules), vitest_package(modules), node_on_path(tools)
 
 
 # --- What is recognised ---------------------------------------------------------------------
@@ -222,8 +232,9 @@ def test_each_runner_s_commands_are_recognised(command: list[str], adapter: Adap
     ],
 )
 def test_npm_test_is_not_recognised(command: list[str]) -> None:
-    # What a script runs is the script's, and `npx` given anything but an option that installs
-    # nothing would install. Mutations (declared): `npm test` read as jest -> the first case is;
+    # What a script runs is the script's; `npx` is read only bare or with `--no-install` or
+    # `--no`, and with a runner's bare name. Mutations (declared): `npm test` read as jest -> the
+    # first case is;
     # a word that can only be node's script read past -> `node x.js <entry>` is.
     assert [each.name for each in ADAPTERS if each.recognises(command)] == []
 
@@ -237,16 +248,19 @@ def test_the_adapters_this_stack_ships() -> None:
 # --- How the entry point resolves -----------------------------------------------------------
 
 
-def test_npx_is_never_executed(tmp_path: Path) -> None:
-    # The run is the `node` on `PATH` and the entry the package's `bin` names, never `npx` and
-    # never the `.bin` link npm made. Mutation (declared): `npx` executed -> argv[0] is `npx`.
+def test_npx_runs_as_typed(tmp_path: Path) -> None:
+    # The run is the command as typed, `npx` and its option found on `PATH`, the report's options
+    # after the runner's arguments: npx puts every `node_modules/.bin` above the directory on
+    # `PATH`, which a test may need (measured: npm 11.6.0 on Node 24.10.0), and reads `.npmrc`.
+    # The entry npx finds is named on the receipt. Mutations (declared): `npx` dropped from the
+    # typed words -> the plan runs `jest` alone; the entry left unnamed -> `entry` is `None`.
     project = tmp_path / "project"
     entry, _, node = installed(project)
-    executable(node.parent / "npx")
+    npx = node.parent / "npx"
     got = plan_of(JEST, ["npx", "jest", "-i"], project, path=str(node.parent))
     report = project / "scratch" / JEST_REPORT
     assert got == Plan(
-        argv=(str(node), str(entry), "-i", "--json", f"--outputFile={report}"),
+        argv=(str(npx), "jest", "-i", "--json", f"--outputFile={report}"),
         kind=ReportKind.RESULTS_JSON,
         source=ReportSource.FILE,
         report=report,
@@ -255,6 +269,12 @@ def test_npx_is_never_executed(tmp_path: Path) -> None:
         entry=entry,
     )
     assert (got.discovery, got.configs) == (JEST_DISCOVERY, CONFIGS)
+    offline = plan_of(JEST, ["npx", "--no-install", "jest"], project, path=str(node.parent))
+    assert offline.argv == (str(npx), "--no-install", "jest", "--json", f"--outputFile={report}")
+    bare = plan_of(JEST, ["jest", "-i"], project, path=str(node.parent))
+    assert bare.argv == (str(node.parent / "jest"), "-i", "--json", f"--outputFile={report}")
+    # The program a bare runner on `PATH` is, is the receipt's to name: no entry beside it.
+    assert bare.entry is None
 
 
 def test_vitest_without_run_runs_once(tmp_path: Path) -> None:
@@ -265,10 +285,11 @@ def test_vitest_without_run_runs_once(tmp_path: Path) -> None:
     project = tmp_path / "project"
     _, entry, node = installed(project)
     path = str(node.parent)
+    vitest, npx = str(node.parent / "vitest"), str(node.parent / "npx")
     report = project / "scratch" / VITEST_REPORT
     ours = ("--reporter=json", f"--outputFile={report}")
     got = plan_of(VITEST, ["vitest", "-t", "x"], project, path=path)
-    assert got.argv == (str(node), str(entry), "run", "-t", "x", *ours, "--reporter=default")
+    assert got.argv == (vitest, "run", "-t", "x", *ours, "--reporter=default")
     assert (got.kind, got.source, got.report) == (
         ReportKind.RESULTS_JSON,
         ReportSource.FILE,
@@ -276,18 +297,20 @@ def test_vitest_without_run_runs_once(tmp_path: Path) -> None:
     )
     assert (got.discovery, got.configs, got.drop) == (VITEST_DISCOVERY, CONFIGS, None)
     again = plan_of(VITEST, ["npx", "vitest", "run", "a"], project, path=path)
-    assert again.argv == (str(node), str(entry), "run", "a", *ours, "--reporter=default")
+    assert again.argv == (npx, "vitest", "run", "a", *ours, "--reporter=default")
+    assert again.entry == entry
     named = plan_of(VITEST, ["vitest", "run", "--reporter", "dot"], project, path=path)
-    assert named.argv == (str(node), str(entry), "run", "--reporter", "dot", *ours)
+    assert named.argv == (vitest, "run", "--reporter", "dot", *ours)
 
 
 def test_node_s_own_options_go_in_front_of_the_runner_s_entry(tmp_path: Path) -> None:
     # jest's documented ESM recipe passes `--experimental-vm-modules` to node, here or in
-    # `NODE_OPTIONS`. The entry named must be the one its package's `bin` names, which the run
-    # runs by its realpath; node's preload of a file is named among the configuration files.
-    # Mutation (declared): the node shape not read -> no plan.
+    # `NODE_OPTIONS`. The entry named must be the one its package's `bin` names; the run is the
+    # words as typed, and the receipt names the entry by its realpath; node's preload of a file is
+    # named among the configuration files. Mutation (declared): the node shape not read -> no
+    # plan.
     project = tmp_path / "project"
-    jest_entry, vitest_entry, node = installed(project)
+    jest_entry, _, node = installed(project)
     path = str(node.parent)
     report = project / "scratch" / JEST_REPORT
     got = plan_of(
@@ -308,7 +331,7 @@ def test_node_s_own_options_go_in_front_of_the_runner_s_entry(tmp_path: Path) ->
         "--experimental-vm-modules",
         "-r",
         "./setup.cjs",
-        str(jest_entry),
+        "node_modules/jest/bin/jest.js",
         "-i",
         "--json",
         f"--outputFile={report}",
@@ -319,7 +342,7 @@ def test_node_s_own_options_go_in_front_of_the_runner_s_entry(tmp_path: Path) ->
     linked.mkdir()
     (linked / "vitest").symlink_to("../vitest/vitest.mjs")
     again = plan_of(VITEST, ["node", "node_modules/.bin/vitest"], project, path=path)
-    assert again.argv[:3] == (str(node), str(vitest_entry), "run")
+    assert again.argv[:3] == (str(node), "node_modules/.bin/vitest", "run")
 
 
 @pytest.mark.parametrize(
@@ -351,7 +374,8 @@ def test_node_s_options_in_front_of_the_entry_run_as_typed(
     entry, _, node = installed(project)
     command = ["node", *node_words, "node_modules/jest/bin/jest.js", "-i"]
     got = plan_of(JEST, command, project, path=str(node.parent))
-    assert got.argv[: len(node_words) + 3] == (str(node), *node_words, str(entry), "-i")
+    assert got.argv[: len(command)] == (str(node), *command[1:])
+    assert got.entry == entry
 
 
 def test_the_entry_is_the_first_word_that_is_the_package_s_bin(tmp_path: Path) -> None:
@@ -363,7 +387,8 @@ def test_the_entry_is_the_first_word_that_is_the_package_s_bin(tmp_path: Path) -
     executable(project / "node_modules" / "jest" / "setup.js")
     command = ["node", "-r", "node_modules/jest/setup.js", "node_modules/jest/bin/jest.js", "-i"]
     got = plan_of(JEST, command, project, path=str(node.parent))
-    assert got.argv[:5] == (str(node), "-r", "node_modules/jest/setup.js", str(entry), "-i")
+    assert got.argv[:5] == (str(node), *command[1:])
+    assert got.entry == entry
 
 
 def test_a_node_named_by_its_path_runs_the_runner_s_entry(tmp_path: Path) -> None:
@@ -371,7 +396,7 @@ def test_a_node_named_by_its_path_runs_the_runner_s_entry(tmp_path: Path) -> Non
     entry, _, _ = installed(project)
     node = executable(tmp_path / "opt" / "node")
     got = plan_of(JEST, [str(node), "node_modules/jest/bin/jest.js"], project)
-    assert got.argv[:2] == (str(node), str(entry))
+    assert (got.argv[:2], got.entry) == ((str(node), "node_modules/jest/bin/jest.js"), entry)
 
 
 @pytest.mark.parametrize(
@@ -453,12 +478,30 @@ def test_a_preload_path_whose_reading_is_plain_is_named(tmp_path: Path, value: s
     assert got.configs == (*CONFIGS, os.path.realpath(tmp_path / value))
 
 
-def test_node_s_watch_mode_in_front_of_the_entry_never_ends(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("words", "named"),
+    [
+        (("--watch",), "--watch"),
+        # jest's documented recipe for debugging: node holds the code until a debugger attaches,
+        # which under `prove` none does (measured on Node 24.10.0: past any time limit).
+        (("--inspect-brk",), "--inspect-brk"),
+        (("--inspect-brk=127.0.0.1:9229",), "--inspect-brk"),
+        (("--inspect_wait", "--no-warnings"), "--inspect-wait"),
+    ],
+    ids=["watch", "inspect-brk", "inspect-brk-port", "inspect-wait"],
+)
+def test_node_s_watch_mode_in_front_of_the_entry_never_ends(
+    tmp_path: Path, words: tuple[str, ...], named: str
+) -> None:
+    # Mutation (declared): `--inspect-brk` and `--inspect-wait` planned -> their cases are plans.
     project = tmp_path / "project"
     _, _, node = installed(project)
-    command = ["node", "--watch", "node_modules/vitest/vitest.mjs"]
+    command = ["node", *words, "node_modules/vitest/vitest.mjs"]
     got = planned(VITEST, command, project, path=str(node.parent))
-    assert got == Unresolved(NEVER_ENDS, NEVER_ENDS_DETAIL.format(option="--watch"))
+    assert got == Unresolved(NEVER_ENDS, NEVER_ENDS_DETAIL.format(option=named))
+    # `--inspect` alone waits for nobody: it runs as typed.
+    inspected = ["node", "--inspect", "node_modules/vitest/vitest.mjs"]
+    assert isinstance(planned(VITEST, inspected, project, path=str(node.parent)), Plan)
 
 
 def test_the_runner_s_own_refusals_hold_behind_node(tmp_path: Path) -> None:
@@ -486,22 +529,24 @@ def test_a_file_that_is_not_the_package_s_bin_does_not_resolve(tmp_path: Path, s
     assert len(NOT_THE_ENTRY.format(package="jest-cli")) <= CLIPPED_CHARS
 
 
-def test_a_runner_named_by_its_link_runs_the_entry_it_links_to(tmp_path: Path) -> None:
+def test_a_runner_named_by_its_link_runs_as_typed(tmp_path: Path) -> None:
     # npm's `node_modules/.bin/jest` is a link to the file the package's `bin` names: the run is
-    # the `node` on `PATH` and that entry, as the entry's own `#!/usr/bin/env node` runs it, the
-    # link never executed. Mutation (declared): a path to the runner not read -> no plan.
+    # that link, as typed, which its entry's own `#!/usr/bin/env node` runs; the program the
+    # receipt names is the entry, by its realpath, so no entry is named beside it. Mutation
+    # (declared): a path to the runner not read -> no plan.
     project = tmp_path / "project"
-    jest_entry, vitest_entry, node = installed(project)
+    installed(project)
+    node = node_on_path(tmp_path / "bin")
     linked = project / "node_modules" / ".bin"
     linked.mkdir()
     (linked / "jest").symlink_to("../jest/bin/jest.js")
     (linked / "vitest").symlink_to("../vitest/vitest.mjs")
     report = project / "scratch" / JEST_REPORT
     got = plan_of(JEST, ["./node_modules/.bin/jest", "-i"], project, path=str(node.parent))
-    assert got.argv == (str(node), str(jest_entry), "-i", "--json", f"--outputFile={report}")
-    assert got.entry == jest_entry
+    assert got.argv == (str(linked / "jest"), "-i", "--json", f"--outputFile={report}")
+    assert got.entry is None
     again = plan_of(VITEST, ["node_modules/.bin/vitest"], project, path=str(node.parent))
-    assert again.argv[:3] == (str(node), str(vitest_entry), "run")
+    assert again.argv[:2] == (str(linked / "vitest"), "run")
     # The runner's own refusals and watch modes hold there as anywhere.
     assert planned(JEST, ["./node_modules/.bin/jest", "-u"], project, path=str(node.parent)) == (
         Refused(REFUSED_OPTION, "-u")
@@ -509,8 +554,10 @@ def test_a_runner_named_by_its_link_runs_the_entry_it_links_to(tmp_path: Path) -
 
 
 def test_a_runner_named_by_a_path_that_is_no_link_is_never_run(tmp_path: Path) -> None:
-    # pnpm's `.bin/jest` is an `sh` shim, no link, and is never read or run, nor is the entry
-    # itself named by a path that is no link; nor a link to a file no package's `bin` names.
+    # pnpm's `.bin/jest` is an `sh` shim, no link, which may run anything: nothing tells that it is
+    # jest's, so it is never read or run, nor is the entry itself named by a path that is no link;
+    # nor a link to a file no package's `bin` names. A bare `jest` on `PATH` is the runner by its
+    # name, as a shell finds it, and runs as typed.
     # Mutation (declared): a file that is not a link followed as one -> the entry named by its own
     # path resolves.
     project = tmp_path / "project"
@@ -528,30 +575,46 @@ def test_a_runner_named_by_a_path_that_is_no_link_is_never_run(tmp_path: Path) -
     assert len(NOT_A_LINK.format(bin="vitest", package="jest-cli")) <= CLIPPED_CHARS
 
 
-def test_a_launcher_is_kept_in_front_of_the_node_on_path(tmp_path: Path) -> None:
-    # `uv run npx jest`: the launcher runs, its words kept in front, as every adapter keeps them;
-    # `node` is the run's `PATH`'s, by its path, and the program the launcher. Mutation
-    # (declared): the launcher dropped -> the plan runs `node` alone.
+def test_a_launcher_is_handed_the_command_as_typed(tmp_path: Path) -> None:
+    # `uv run npx jest`: the launcher is found and runs, its words kept in front, and the
+    # command's words are handed to it as typed, for it to resolve on its own `PATH` (uv puts the
+    # project's `.venv/bin` first): nothing is looked for on the caller's, so a `PATH` holding uv
+    # alone plans the run. Mutations (declared): the launcher dropped -> the plan runs `npx`
+    # alone; the command's program handed by the caller's path -> `npx` is absolute.
     project = tmp_path / "project"
     entry, _, node = installed(project)
     launcher = executable(tmp_path / "tools" / "uv")
+    # The caller's `PATH` holds `npx`, `node` and `jest` too: none of them is handed to uv.
     path = os.pathsep.join([str(launcher.parent), str(node.parent)])
+    alone = str(launcher.parent)
     report = project / "scratch" / JEST_REPORT
     got = planned(JEST, ["npx", "jest"], project, path=path, launch=("uv", "run"))
     assert isinstance(got, Plan), got
-    assert got.argv == (
-        str(launcher),
-        "run",
-        str(node),
-        str(entry),
-        "--json",
-        f"--outputFile={report}",
-    )
+    assert got.argv == (str(launcher), "run", "npx", "jest", "--json", f"--outputFile={report}")
     assert got.entry == entry
     tested = planned(NODE_TEST, ["node", "--test"], project, path=path, launch=("uv", "run"))
     assert isinstance(tested, Plan), tested
-    assert tested.argv[:3] == (str(launcher), "run", str(node))
-    missing = planned(JEST, ["npx", "jest"], project, path=str(node.parent), launch=("uv", "run"))
+    assert tested.argv[:4] == (str(launcher), "run", "node", "--test-reporter=junit")
+    assert tested.argv[-1] == "--test"
+    bare = planned(JEST, ["jest"], project, path=path, launch=("uv", "run", "--frozen"))
+    assert isinstance(bare, Plan), bare
+    assert bare.argv[:4] == (str(launcher), "run", "--frozen", "jest")
+    # A `.bin` link behind a launcher: the program is the launcher, so the entry is named.
+    (project / "node_modules" / ".bin").mkdir()
+    (project / "node_modules" / ".bin" / "jest").symlink_to("../jest/bin/jest.js")
+    linked = planned(JEST, ["node_modules/.bin/jest"], project, path=path, launch=("uv", "run"))
+    assert isinstance(linked, Plan), linked
+    assert (linked.argv[2], linked.entry) == ("node_modules/.bin/jest", entry)
+    # Nothing the launcher resolves is looked for on the caller's `PATH`: uv alone plans each.
+    for adapter, command in (
+        (JEST, ["npx", "jest"]),
+        (JEST, ["jest"]),
+        (NODE_TEST, ["node", "--test"]),
+    ):
+        alone_plan = planned(adapter, command, project, path=alone, launch=("uv", "run"))
+        assert isinstance(alone_plan, Plan), alone_plan
+        assert alone_plan.argv[2] == command[0]
+    missing = planned(JEST, ["npx", "jest"], project, path="", launch=("uv", "run"))
     assert missing == Unresolved(ENTRY_NOT_FOUND, "no uv on PATH")
 
 
@@ -562,16 +625,17 @@ def test_vitest_related_keeps_its_subcommand_and_runs_once(tmp_path: Path) -> No
     # unless the command sets it (vitest refuses two settings of it before any run). Mutation
     # (declared): `run` added in front of every command -> the first plan starts `run related`.
     project = tmp_path / "project"
-    _, entry, node = installed(project)
+    _, _, node = installed(project)
     path = str(node.parent)
+    vitest, npx = str(node.parent / "vitest"), str(node.parent / "npx")
     report = project / "scratch" / VITEST_REPORT
     ours = ("--reporter=json", f"--outputFile={report}", "--reporter=default")
     got = plan_of(VITEST, ["npx", "vitest", "related", "src/a.js"], project, path=path)
-    assert got.argv == (str(node), str(entry), "related", "src/a.js", "--run", *ours)
+    assert got.argv == (npx, "vitest", "related", "src/a.js", "--run", *ours)
     given = plan_of(VITEST, ["vitest", "related", "--run", "src/a.js"], project, path=path)
-    assert given.argv == (str(node), str(entry), "related", "--run", "src/a.js", *ours)
+    assert given.argv == (vitest, "related", "--run", "src/a.js", *ours)
     off = plan_of(VITEST, ["vitest", "related", "--no-run", "src/a.js"], project, path=path)
-    assert off.argv == (str(node), str(entry), "related", "--no-run", "src/a.js", *ours)
+    assert off.argv == (vitest, "related", "--no-run", "src/a.js", *ours)
 
 
 @pytest.mark.parametrize("subcommand", ["watch", "dev"])
@@ -607,43 +671,56 @@ def test_a_vitest_subcommand_after_an_option_is_read_as_a_name_filter(tmp_path: 
     project = tmp_path / "project"
     _, _, node = installed(project)
     got = plan_of(VITEST, ["vitest", "--globals", "watch"], project, path=str(node.parent))
-    assert got.argv[2:5] == ("run", "--globals", "watch")
+    assert got.argv[1:4] == ("run", "--globals", "watch")
 
 
 def test_the_report_options_go_before_a_separator(tmp_path: Path) -> None:
     # Every word after `--` is a test path to jest and vitest. Mutation (declared): the report's
     # options appended after `--` -> they are read as paths.
     project = tmp_path / "project"
-    entry, _, node = installed(project)
+    _, _, node = installed(project)
     got = plan_of(JEST, ["jest", "a", "--", "--b"], project, path=str(node.parent))
     report = project / "scratch" / JEST_REPORT
-    assert got.argv == (str(node), str(entry), "a", "--json", f"--outputFile={report}", "--", "--b")
+    jest = str(node.parent / "jest")
+    assert got.argv == (jest, "a", "--json", f"--outputFile={report}", "--", "--b")
+
+
+# The entry `npx` runs is named on the receipt where it is found here: a package under
+# `node_modules` from the directory the command runs in up to the top-level, then a link on
+# `PATH`. Naming is the receipt's: the run is `npx`'s either way, and one found nowhere is unnamed.
+
+
+def entry_of(
+    command: Sequence[str], cwd: Path, root: Path | None = None, path: str = ""
+) -> Path | None:
+    """The entry the plan of `command` names, the plan's `argv` checked to be `command` as typed."""
+    got = plan_of(JEST, command, cwd, root=root, path=path)
+    assert got.argv[1 : len(command)] == tuple(command[1:])
+    return got.entry
 
 
 def test_a_pnpm_layout_resolves(tmp_path: Path) -> None:
     # pnpm links `node_modules/jest` into its store and writes `.bin/jest` as an `sh` shim, which
-    # is never read or run: the package's own `bin` names the entry, by its realpath in the store.
+    # is never read: the package's own `bin` names the entry, by its realpath in the store.
     project = tmp_path / "project"
     store = project / "node_modules" / ".pnpm" / "jest@30.5.2_x" / "node_modules" / "jest"
     entry = jest_package(store.parent)
     (project / "node_modules" / "jest").symlink_to(store)
     executable(project / "node_modules" / ".bin" / "jest", "#!/bin/sh\nexec node ../.pnpm/x\n")
     node = node_on_path(tmp_path / "bin")
-    got = plan_of(JEST, ["npx", "jest"], project, path=str(node.parent))
-    assert got.argv[:2] == (str(node), str(entry))
-    assert ".pnpm" in got.argv[1]
+    assert entry_of(["npx", "jest"], project, path=str(node.parent)) == entry
+    assert ".pnpm" in str(entry)
 
 
 def test_a_nested_workspace_resolves_from_the_root(tmp_path: Path) -> None:
     # A monorepo: the command runs in `packages/web`, and the runner is installed at the
     # project's top-level. Mutation (declared): the search stops at the directory the command runs
-    # in -> nothing resolves.
+    # in -> nothing is named.
     root = tmp_path / "repo"
     web = root / "packages" / "web"
     web.mkdir(parents=True)
     entry, _, node = installed(root)
-    got = plan_of(JEST, ["jest"], web, root=root, path=str(node.parent))
-    assert got.argv[:2] == (str(node), str(entry))
+    assert entry_of(["npx", "jest"], web, root=root, path=str(node.parent)) == entry
 
 
 def test_the_nearest_package_wins_and_jest_before_jest_cli(tmp_path: Path) -> None:
@@ -652,27 +729,26 @@ def test_the_nearest_package_wins_and_jest_before_jest_cli(tmp_path: Path) -> No
     web = root / "packages" / "web"
     jest_package(root / "node_modules")
     nearer = jest_package(web / "node_modules", "jest-cli")
-    node = node_on_path(tmp_path / "bin")
-    assert plan_of(JEST, ["jest"], web, root=root, path=str(node.parent)).argv[1] == str(nearer)
+    path = str(node_on_path(tmp_path / "bin").parent)
+    assert entry_of(["npx", "jest"], web, root=root, path=path) == nearer
     beside = jest_package(web / "node_modules")
-    assert plan_of(JEST, ["jest"], web, root=root, path=str(node.parent)).argv[1] == str(beside)
+    assert entry_of(["npx", "jest"], web, root=root, path=path) == beside
 
 
 def test_the_search_stops_at_the_project_s_top_level(tmp_path: Path) -> None:
-    # A `node_modules` above the project is another project's. Mutation (declared): the search
-    # runs past the top-level -> the outer jest resolves.
+    # A `node_modules` above the project is another project's: npx runs as typed, nothing named.
+    # Mutation (declared): the search runs past the top-level -> the outer jest is named.
     jest_package(tmp_path / "node_modules")
     project = tmp_path / "project"
     project.mkdir()
     node = node_on_path(tmp_path / "bin")
-    got = planned(JEST, ["jest"], project, path=str(node.parent))
-    assert isinstance(got, Unresolved) and got.reason == ENTRY_NOT_FOUND
+    assert entry_of(["npx", "jest"], project, path=str(node.parent)) is None
 
 
 def test_a_runner_on_path_linked_into_its_package_resolves(tmp_path: Path) -> None:
     # A global install: `jest` on `PATH` is a link to the file its package's `bin` names.
     # Mutation (declared): the link's target taken without its package's `bin` -> the second
-    # case, a link to a file no `bin` names, resolves.
+    # case, a link to a file no `bin` names, is named.
     entry = jest_package(tmp_path / "global" / "lib" / "node_modules")
     bin_ = tmp_path / "global" / "bin"
     bin_.mkdir(parents=True)
@@ -681,18 +757,25 @@ def test_a_runner_on_path_linked_into_its_package_resolves(tmp_path: Path) -> No
     project = tmp_path / "project"
     project.mkdir()
     path = os.pathsep.join([str(node.parent), str(bin_)])
-    assert plan_of(JEST, ["jest"], project, path=path).argv[1] == str(entry)
+    assert entry_of(["npx", "jest"], project, path=path) == entry
+    # Behind a launcher the `PATH` npx is run under is the launcher's own, not the caller's: no
+    # link on the caller's is named. Mutation (declared): the caller's read behind a launcher ->
+    # the global entry is named.
+    uv = executable(tmp_path / "tools" / "uv")
+    launched_path = os.pathsep.join([str(uv.parent), path])
+    behind = planned(JEST, ["npx", "jest"], project, path=launched_path, launch=("uv", "run"))
+    assert isinstance(behind, Plan) and behind.entry is None, behind
     stray = executable(entry.parent / "other.js")
     (bin_ / "jest").unlink()
     (bin_ / "jest").symlink_to(stray)
-    got = planned(JEST, ["jest"], project, path=path)
-    assert isinstance(got, Unresolved) and got.reason == ENTRY_NOT_FOUND
+    assert entry_of(["npx", "jest"], project, path=path) is None
 
 
-def test_a_runner_on_path_that_is_no_link_is_never_run(tmp_path: Path) -> None:
+def test_a_runner_on_path_that_is_no_link_runs_unnamed(tmp_path: Path) -> None:
     # A `jest` on `PATH` that is a file of its own (pnpm's `sh` shim, or the package's own `bin`
-    # directory put on `PATH`) is never read or run, though its package's `bin` names it.
-    # Mutation (declared): a file that is not a link followed as one -> it resolves.
+    # directory put on `PATH`) is never read: typed bare, it runs as typed, as a shell runs it,
+    # and under `npx` it names no entry. Mutation (declared): a file that is not a link followed as
+    # one -> the package's own `bin` file is named.
     home = tmp_path / "global" / "lib" / "node_modules" / "jest"
     package(home, "jest", "./bin/jest", "bin/jest")
     executable(tmp_path / "shims" / "jest", "#!/bin/sh\nexec node /x\n")
@@ -701,18 +784,17 @@ def test_a_runner_on_path_that_is_no_link_is_never_run(tmp_path: Path) -> None:
     project.mkdir()
     for directory in (home / "bin", tmp_path / "shims"):
         path = os.pathsep.join([str(node.parent), str(directory)])
-        got = planned(JEST, ["jest"], project, path=path)
-        assert isinstance(got, Unresolved) and got.reason == ENTRY_NOT_FOUND, directory
+        assert entry_of(["npx", "jest"], project, path=path) is None, directory
+        bare = plan_of(JEST, ["jest"], project, path=path)
+        assert (bare.argv[0], bare.entry) == (str(directory / "jest"), None), directory
 
 
 def test_a_project_whose_top_level_is_not_above_the_directory_reads_that_directory_alone(
     tmp_path: Path,
 ) -> None:
     entry, _, node = installed(tmp_path / "here")
-    got = plan_of(
-        JEST, ["jest"], tmp_path / "here", root=tmp_path / "elsewhere", path=str(node.parent)
-    )
-    assert got.argv[1] == str(entry)
+    here, elsewhere = tmp_path / "here", tmp_path / "elsewhere"
+    assert entry_of(["npx", "jest"], here, root=elsewhere, path=str(node.parent)) == entry
 
 
 @pytest.mark.parametrize(
@@ -732,8 +814,9 @@ def test_a_package_whose_bin_names_no_entry_of_its_own_does_not_resolve(
     package(project / "node_modules" / "jest", "jest", bin_, "bin/jest.js")
     executable(project / "node_modules" / "outside.js")
     node = node_on_path(tmp_path / "bin")
-    got = planned(JEST, ["jest"], project, path=str(node.parent))
-    assert isinstance(got, Unresolved) and got.reason == ENTRY_NOT_FOUND
+    assert entry_of(["npx", "jest"], project, path=str(node.parent)) is None
+    got = planned(JEST, ["node", "node_modules/jest/bin/jest.js"], project, path=str(node.parent))
+    assert got == Unresolved(ENTRY_NOT_FOUND, NOT_THE_ENTRY.format(package="jest"))
 
 
 # Each a `package.json` that does not read as an object with a `bin`, built in the test.
@@ -753,23 +836,24 @@ def test_a_manifest_that_does_not_read_does_not_resolve(tmp_path: Path, manifest
     # The entry a manifest cut at the cap would name is there: only the cap refuses it.
     executable(project / "node_modules" / "jest" / "bin" / "jest.js")
     node = node_on_path(tmp_path / "bin")
-    got = planned(JEST, ["jest"], project, path=str(node.parent))
-    assert isinstance(got, Unresolved) and got.reason == ENTRY_NOT_FOUND
+    assert entry_of(["npx", "jest"], project, path=str(node.parent)) is None
 
 
-def test_an_unresolvable_entry_installs_nothing(tmp_path: Path) -> None:
-    # A Yarn Plug'n'Play project has no `node_modules` at all. Nothing is run or installed, and
-    # the detail names what to do instead.
+def test_a_bare_runner_on_no_path_entry_is_not_found(tmp_path: Path) -> None:
+    # Typed bare, the runner is the one a shell finds on `PATH`: where there is none, nothing the
+    # command names can run (a Yarn Plug'n'Play project, an install that never linked one). Nothing
+    # is run or installed, and the detail names what to do instead. Mutation (declared): the
+    # detail left off -> it names `jest` alone.
     project = tmp_path / "project"
     project.mkdir()
     (project / ".pnp.cjs").write_text("", encoding="utf-8")
+    jest_package(project / "node_modules")
     node = node_on_path(tmp_path / "bin")
-    for adapter, command in ((JEST, ["npx", "jest"]), (VITEST, ["vitest"])):
-        got = planned(adapter, command, project, path=str(node.parent))
-        assert isinstance(got, Unresolved), got
-        assert got.reason == ENTRY_NOT_FOUND
-        assert "`prove --junit`" in got.detail and f"node_modules/{adapter.name}" in got.detail
-    assert sorted(path.name for path in project.iterdir()) == [".pnp.cjs"]
+    for adapter in (JEST, VITEST):
+        got = planned(adapter, [adapter.name], project, path=str(node.parent))
+        assert got == Unresolved(ENTRY_NOT_FOUND, UNRESOLVED.format(bin=adapter.name)), got
+        assert f"`npx {adapter.name}`" in got.detail and "`prove --junit`" in got.detail
+    assert sorted(path.name for path in project.iterdir()) == [".pnp.cjs", "node_modules"]
 
 
 def test_a_command_the_adapter_does_not_recognise_has_no_plan(tmp_path: Path) -> None:
@@ -798,13 +882,25 @@ def test_the_configuration_a_short_option_names(
     assert got.configs == (*CONFIGS, *(str(real / name) for name in named))
 
 
-def test_no_node_on_path_does_not_resolve(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("adapter", "command", "program"),
+    [
+        (JEST, ["npx", "jest"], "npx"),
+        (VITEST, ["npx", "--no", "vitest"], "npx"),
+        (JEST, ["node", "node_modules/jest/bin/jest.js"], "node"),
+        (NODE_TEST, ["node", "--test"], "node"),
+        (NODE_TEST, ["tools/node", "--test"], "node"),
+    ],
+)
+def test_a_program_on_no_path_entry_is_not_found(
+    tmp_path: Path, adapter: Adapter, command: list[str], program: str
+) -> None:
+    # The command's first word is found as a shell finds it; where it names nothing, nothing can
+    # run, and the detail names it.
     project = tmp_path / "project"
     installed(project)
-    for adapter, command in ((JEST, ["jest"]), (NODE_TEST, ["node", "--test"])):
-        assert planned(adapter, command, project, path="") == Unresolved(
-            ENTRY_NOT_FOUND, "no node on PATH"
-        )
+    got = planned(adapter, command, project, path="")
+    assert got == Unresolved(ENTRY_NOT_FOUND, f"no {program} on PATH")
 
 
 def test_an_unresolved_entry_s_detail_is_on_the_receipt(tmp_path: Path) -> None:
@@ -813,16 +909,15 @@ def test_an_unresolved_entry_s_detail_is_on_the_receipt(tmp_path: Path) -> None:
     node = node_on_path(tmp_path / "bin")
     project = tmp_path / "project"
     project.mkdir()
-    got = prove(["npx", "jest"], cwd=project, environ={"PATH": str(node.parent)}, timeout=60)
+    got = prove(["jest"], cwd=project, environ={"PATH": str(node.parent)}, timeout=60)
     assert (got.verdict, got.reason, got.runner) == (NOT_PROVEN, ENTRY_NOT_FOUND, "jest")
     assert got.detail == (
-        "no node_modules/jest up to the top-level, nor a jest on PATH linked into one; "
-        "`prove --junit` counts a report"
+        "no jest on PATH; `npx jest` runs a project's own, or `prove --junit` counts a report"
     )
     # The receipt's line carries it whole. Mutation (declared): the detail lengthened past the
     # clip -> vitest's is cut.
     for name in ("jest", "vitest"):
-        assert len(UNRESOLVED.format(package=name, bin=name)) <= CLIPPED_CHARS
+        assert len(UNRESOLVED.format(bin=name)) <= CLIPPED_CHARS
     assert "`prove --junit`" in line(got)
 
 
@@ -833,7 +928,8 @@ def test_node_s_plan_puts_its_reporters_first(tmp_path: Path) -> None:
     node = node_on_path(tmp_path / "bin")
     got = plan_of(NODE_TEST, ["node", "--test", "src/"], tmp_path, path=str(node.parent))
     report = tmp_path / "scratch" / NODE_REPORT
-    assert got == Plan(
+    assert got.drop is not None
+    assert replace(got, drop=None) == Plan(
         argv=(
             str(node),
             "--test-reporter=junit",
@@ -848,7 +944,6 @@ def test_node_s_plan_puts_its_reporters_first(tmp_path: Path) -> None:
         report=report,
         discovery=("*.test.*", "*-test.*", "*_test.*", "test-*.*", "test.*", "test/*"),
         configs=CONFIGS,
-        drop=whole_file,
     )
     assert got.discovery == NODE_DISCOVERY
 
@@ -863,48 +958,117 @@ def test_a_node_named_by_its_path_is_the_one_that_runs(tmp_path: Path) -> None:
     )
 
 
+# Each recorded report, the directory node ran in when it was recorded (the `/work` the README
+# says each recording's scratch path was rewritten to), the files there that Node 24.10.0's names
+# read from it (a run of 24.10.0 writes no `file` attribute, so the drop finds each file there),
+# and its counts under the plan's drop.
+WHOLE_FILE_REPORTS = [
+    ("node-name-pattern.xml", "three", (), Counts(0, 0, 0)),
+    ("node-no-tests.xml", "notests", (), Counts(0, 0, 0)),
+    ("node-exit0.xml", "exit0", (), Counts(0, 0, 0)),
+    ("node-load-failure.xml", "loadfail", (), Counts(1, 2, 0)),
+    ("node-junit.xml", "three", (), Counts(1, 1, 1)),
+    ("node24-name-pattern.xml", "three", ("three.test.mjs",), Counts(0, 0, 0)),
+    ("node24-nested-pattern.xml", "nestedpattern", ("test/deep/three.test.mjs",), Counts(0, 0, 0)),
+    ("node24-no-tests.xml", "notests", ("notests.test.mjs",), Counts(0, 0, 0)),
+    ("node24-exit0.xml", "exit0", ("exit0.test.mjs",), Counts(0, 0, 0)),
+    (
+        "node24-nested.xml",
+        "nested",
+        ("test/real.test.mjs", "test/deep/empty.test.mjs"),
+        Counts(1, 0, 0),
+    ),
+    (
+        "node24-load-failure.xml",
+        "loadfail",
+        ("ok.test.mjs", "test/broken.test.mjs", "throws.test.mjs"),
+        Counts(1, 2, 0),
+    ),
+]
+
+
 @pytest.mark.parametrize(
-    ("report", "counts"),
-    [
-        ("node-name-pattern.xml", Counts(0, 0, 0)),
-        ("node-no-tests.xml", Counts(0, 0, 0)),
-        ("node-exit0.xml", Counts(0, 0, 0)),
-        ("node-load-failure.xml", Counts(1, 2, 0)),
-        ("node-junit.xml", Counts(1, 1, 1)),
-    ],
+    ("report", "directory", "files", "counts"),
+    WHOLE_FILE_REPORTS,
+    ids=[report for report, *_ in WHOLE_FILE_REPORTS],
 )
 def test_the_whole_file_testcase_is_dropped_unless_it_failed(
-    tmp_path: Path, report: str, counts: Counts
+    tmp_path: Path, report: str, directory: str, files: tuple[str, ...], counts: Counts
 ) -> None:
-    # node writes one testcase for a file that ran no test, named after the file and passed; one
-    # that failed is a file that did not load. Mutations (declared): `drop` left unset -> the
-    # first three count one passed; the failure kept out of the predicate -> the load failures
-    # are dropped and the run reads one passed, none failed.
+    # node writes one testcase for a file that ran no test, named by the file's path from the
+    # directory it runs in and passed; one that failed is a file that did not load. Node 24.10.0
+    # writes no `file` attribute, so its names are read from the run's directory, where the files
+    # are. Mutations (declared): `drop` left unset -> the whole-file cases count one passed; the
+    # failure kept out of the predicate -> the load failures are dropped and the run reads one
+    # passed, none failed; a testcase without `file` never dropped -> the Node 24 cases count one
+    # passed.
     node = node_on_path(tmp_path / "bin")
-    drop = plan_of(NODE_TEST, ["node", "--test"], tmp_path, path=str(node.parent)).drop
+    # Node 26.12.0's `file` attribute names `/work/nt/<case>/...`: the run's directory is that
+    # one, which exists nowhere here, and only Node 24.10.0's reports read the files there.
+    cwd = tmp_path / "work" / "nt" / directory if files else Path("/work/nt") / directory
+    for name in files:
+        executable(cwd / name)
+    drop = plan_of(NODE_TEST, ["node", "--test"], cwd, path=str(node.parent)).drop
     assert read_junit((REPORTS / report).read_bytes(), drop=drop) == counts
 
 
 @pytest.mark.parametrize(
     ("attributes", "dropped"),
     [
-        ({"name": "a.test.mjs", "classname": "test", "file": "/w/a.test.mjs"}, True),
-        ({"name": "a.test.mjs", "classname": "test", "file": "/w/b.test.mjs"}, False),
-        ({"name": "a.test.mjs", "classname": "suite", "file": "/w/a.test.mjs"}, False),
-        ({"name": "a.test.mjs", "classname": "test"}, False),
+        ({"name": "a.test.mjs", "classname": "test", "file": "{cwd}/a.test.mjs"}, True),
+        # Node 26's naming of a nested file, by its path from the run's directory as 24.10.0
+        # names it (no Node 26 here to record it).
         (
-            {"name": "a.test.mjs", "classname": "test", "file": "/w/a.test.mjs", "failure": "x"},
+            {
+                "name": "test/deep/a.test.mjs",
+                "classname": "test",
+                "file": "{cwd}/test/deep/a.test.mjs",
+            },
+            True,
+        ),
+        ({"name": "a.test.mjs", "classname": "test", "file": "{cwd}/b.test.mjs"}, False),
+        ({"name": "a.test.mjs", "classname": "test", "file": "{cwd}/sub/a.test.mjs"}, False),
+        ({"name": "a.test.mjs", "classname": "suite", "file": "{cwd}/a.test.mjs"}, False),
+        ({"name": "a.test.mjs", "classname": "test"}, True),
+        ({"name": "test/deep/a.test.mjs", "classname": "test"}, True),
+        ({"name": "adds", "classname": "test"}, False),
+        ({"name": "missing.test.mjs", "classname": "test"}, False),
+        ({"name": "test", "classname": "test"}, False),
+        ({"name": "", "classname": "test"}, False),
+        ({"name": "a.test.mjs", "classname": "suite"}, False),
+        (
+            {"name": "a.test.mjs", "classname": "test", "file": "{cwd}/a.test.mjs", "failure": "x"},
             False,
         ),
+        ({"name": "a.test.mjs", "classname": "test", "failure": "test failed"}, False),
     ],
-    ids=["whole-file", "another-file", "another-classname", "no-file", "failed"],
+    ids=[
+        "whole-file",
+        "whole-file-nested",
+        "another-file",
+        "another-directory",
+        "another-classname",
+        "no-file-attribute",
+        "no-file-attribute-nested",
+        "a-test",
+        "no-such-file",
+        "a-directory",
+        "no-name",
+        "no-file-attribute-another-classname",
+        "failed",
+        "no-file-attribute-failed",
+    ],
 )
-def test_whole_file_reads_the_attributes_alone(
-    attributes: Mapping[str, str], dropped: bool
+def test_whole_file_reads_the_attributes_and_the_run_s_directory(
+    tmp_path: Path, attributes: Mapping[str, str], dropped: bool
 ) -> None:
     # Mutations (declared): the name check dropped -> another file's testcase is; the classname
-    # check dropped -> a suite's is.
-    assert whole_file(attributes) is dropped
+    # check dropped -> a suite's is; a name with no `file` read without the file -> a test named
+    # `adds` is; a directory taken for the file -> `test` is.
+    executable(tmp_path / "a.test.mjs")
+    executable(tmp_path / "test" / "deep" / "a.test.mjs")
+    filled = {key: value.format(cwd=tmp_path) for key, value in attributes.items()}
+    assert whole_file(tmp_path)(filled) is dropped
 
 
 # --- What is refused ------------------------------------------------------------------------
@@ -961,6 +1125,13 @@ REFUSALS: list[tuple[Adapter, tuple[str, ...], str]] = [
     ),
     (NODE_TEST, ("node", "--test", "--test-update-snapshots"), "--test-update-snapshots"),
     (NODE_TEST, ("node", "--test", "--test-rerun-failures=state.json"), "--test-rerun-failures"),
+    # After the files: Node 26.12.0 reads an option there as before them; Node 24.10.0 reads none
+    # there (measured: the run as without it), so there the refusal is only the safe side.
+    (
+        NODE_TEST,
+        ("node", "--test", "a.test.mjs", "--test-update-snapshots"),
+        "--test-update-snapshots",
+    ),
 ]
 
 
@@ -1063,6 +1234,9 @@ NEVER_ENDING: list[tuple[Adapter, tuple[str, ...], str]] = [
     (NODE_TEST, ("node", "--watch", "--test"), "--watch"),
     (NODE_TEST, ("node", "--test", "--watch-path=src"), "--watch-path"),
     (NODE_TEST, ("node", "--test", "a.test.mjs", "--watch"), "--watch"),
+    # node holds the code until a debugger attaches (measured on Node 24.10.0, under `--test` too).
+    (NODE_TEST, ("node", "--inspect-brk", "--test"), "--inspect-brk"),
+    (NODE_TEST, ("node", "--inspect-wait=0", "--test"), "--inspect-wait"),
 ]
 
 
@@ -1156,6 +1330,50 @@ def test_a_watch_mode_s_detail_fits_the_line(
     got = planned(adapter, argv, tmp_path)
     assert isinstance(got, Unresolved)
     assert len(got.detail) <= CLIPPED_CHARS, got.detail
+
+
+@pytest.mark.parametrize(
+    ("node_options", "named"),
+    [
+        ("--test-reporter=spec", "--test-reporter"),
+        ("--max-old-space-size=4096 --test-reporter dot", "--test-reporter"),
+        ("--test-reporter-destination=x.txt", "--test-reporter-destination"),
+        ("--test_reporter=tap", "--test-reporter"),
+    ],
+)
+def test_an_unpaired_reporter_in_node_options_is_refused(
+    tmp_path: Path, node_options: str, named: str
+) -> None:
+    # node reads `NODE_OPTIONS`' reporters with the command's: an unpaired one there stops it
+    # before any test runs as one on the command line does (measured on Node 24.10.0:
+    # `ERR_INVALID_ARG_VALUE`, the adapter's report never written), so it is the same refusal,
+    # inherited or assigned. A pair of its own is free. Mutation (declared): `NODE_OPTIONS` not
+    # read -> each case is planned.
+    node = node_on_path(tmp_path / "bin")
+    path = str(node.parent)
+    variables = {"NODE_OPTIONS": node_options}
+    got = planned(NODE_TEST, ["node", "--test"], tmp_path, path=path, variables=variables)
+    assert got == Refused(REFUSED_OPTION, named)
+    paired = {"NODE_OPTIONS": "--test-reporter=dot --test-reporter-destination=stdout"}
+    free = planned(NODE_TEST, ["node", "--test"], tmp_path, path=path, variables=paired)
+    assert isinstance(free, Plan), free
+    # One in `NODE_OPTIONS`, its destination on the command line: node pairs them.
+    split = planned(
+        NODE_TEST,
+        ["node", "--test", "--test-reporter-destination=stdout"],
+        tmp_path,
+        path=path,
+        variables={"NODE_OPTIONS": "--test-reporter=dot"},
+    )
+    assert isinstance(split, Plan), split
+
+
+def test_an_assigned_unpaired_reporter_in_node_options_is_refused(tmp_path: Path) -> None:
+    # The command's own assignment is in the run's environment the plan reads.
+    node = node_on_path(tmp_path / "bin")
+    argv = ["NODE_OPTIONS=--test-reporter=dot", "node", "--test"]
+    got = prove(argv, cwd=tmp_path, environ={"PATH": str(node.parent)}, timeout=60)
+    assert (got.verdict, got.reason, got.detail) == (REFUSED, REFUSED_OPTION, "--test-reporter")
 
 
 @pytest.mark.parametrize(
@@ -1295,8 +1513,12 @@ exit 0
 """
 
 
-def fake_node(where: Path) -> Path:
-    return executable(where / "node", FAKE_NODE)
+def fake_node(where: Path, text: str = FAKE_NODE) -> Path:
+    """A stand-in `node` holding `text` in `where`, and the same script as the `npx`, `jest` and
+    `vitest` beside it, each run as typed; the `node`."""
+    for name in ("npx", "jest", "vitest"):
+        executable(where / name, text)
+    return executable(where / "node", text)
 
 
 def through_prove(argv: Sequence[str], cwd: Path, environ: Mapping[str, str]) -> Receipt:
@@ -1315,9 +1537,9 @@ def test_an_npmrc_is_named_in_the_receipt(tmp_path: Path) -> None:
     git(project, "commit", "-q", "-m", "first")
     got = through_prove(["npx", "jest"], project, {"PATH": str(node.parent)})
     assert (got.verdict, got.counts, got.runner) == (PROVED, Counts(1, 0, 0), "jest")
-    assert got.program == os.path.realpath(node)
-    # The program is node; the receipt names the runner's own entry beside it. Mutation
-    # (declared): the plan leaves its entry unnamed -> the receipt carries none.
+    assert got.program == os.path.realpath(node.parent / "npx")
+    # The program is npx, as typed; the receipt names the runner's own entry beside it, the one
+    # npx finds in `node_modules`.
     assert got.entry == os.path.realpath(entry)
     assert f"runner jest at {clipped(got.program)} running {clipped(got.entry)}" in line(got)
     assert got.configs == (".npmrc", "jest.config.js", "package.json")
@@ -1352,7 +1574,7 @@ def test_node_options_reaches_the_run(
     project = tmp_path / "project"
     jest_package(project / "node_modules")
     vitest_package(project / "node_modules")
-    node = executable(tmp_path / "bin" / "node", NODE_UNDER_OPTIONS)
+    node = fake_node(tmp_path / "bin", NODE_UNDER_OPTIONS)
     got = through_prove(argv, project, {"PATH": str(node.parent), **inherited})
     assert (got.verdict, got.reason, got.scrubbed, got.exit_code) == (PROVED, "", (), 0)
 
@@ -1431,7 +1653,34 @@ def test_a_genuine_passing_run_is_proved(tmp_path: Path, runner: str) -> None:
     got = real(project, *COMMANDS[runner])
     assert (got.verdict, got.reason, got.counts, got.exit_code) == (PROVED, "", Counts(1, 0, 1), 0)
     assert got.runner == runner
-    assert got.program == os.path.realpath(runner_directory("node") / "node")
+    # The command as typed: `npx` (which ships beside `node`) or `node`.
+    program = COMMANDS[runner][0]
+    assert got.program == os.path.realpath(runner_directory("node") / program)
+
+
+NPX_PATH_TEST = (
+    'test("node_modules/.bin is on PATH", () => {\n'
+    '  expect(process.env.PATH.split(":").some((p) => p.endsWith("node_modules/.bin")))'
+    ".toBe(true);\n"
+    "});\n"
+)
+
+
+@needs_packages
+@pytest.mark.parametrize(
+    "argv", [("npx", "jest"), ("npx", "--no-install", "jest")], ids=["npx", "npx-no-install"]
+)
+def test_npx_runs_as_typed_with_its_bin_directories_on_path(
+    tmp_path: Path, argv: tuple[str, ...]
+) -> None:
+    # npx puts every `node_modules/.bin` above the directory on `PATH` before it runs the runner,
+    # and a test may rely on it (measured with npm 11.6.0 on Node 24.10.0: it passes as typed);
+    # run as typed, it passes under `prove` too.
+    project = js_project(tmp_path / "p", "jest", NPX_PATH_TEST)
+    got = real(project, *argv)
+    assert (got.verdict, got.reason, got.counts, got.exit_code) == (PROVED, "", Counts(1, 0, 0), 0)
+    assert got.program == os.path.realpath(runner_directory("node") / "npx")
+    assert got.entry == os.path.realpath(project / "node_modules" / "jest" / "bin" / "jest.js")
 
 
 _ESM = (
@@ -1460,7 +1709,9 @@ def test_jest_s_esm_recipe_is_proved(
     got = real(project, *argv, **inherited)
     assert (got.verdict, got.reason, got.counts, got.exit_code) == (PROVED, "", Counts(1, 0, 0), 0)
     assert got.scrubbed == ()
-    assert got.entry == os.path.realpath(project / "node_modules" / "jest" / "bin" / "jest.js")
+    # jest's entry is named: beside `npx` and `node`, or as the program the `.bin` link is.
+    jest = os.path.realpath(project / "node_modules" / "jest" / "bin" / "jest.js")
+    assert jest in (got.entry, got.program)
 
 
 @needs_packages
@@ -1539,7 +1790,8 @@ def test_an_all_skipped_run_fails(tmp_path: Path, runner: str) -> None:
 
 @needs_packages
 def test_a_non_matching_name_pattern_fails(tmp_path: Path) -> None:
-    # node reports the file as one passed testcase; the plan drops it.
+    # node reports the file as one passed testcase; the plan drops it, whether node names the file
+    # (26.12.0) or not (24.10.0).
     project = js_project(tmp_path / "p", "node-test", NODE_PASSING)
     got = real(project, "node", "--test", "--test-name-pattern=no_such_test")
     assert (got.verdict, got.reason, got.counts, got.exit_code) == (
@@ -1548,6 +1800,32 @@ def test_a_non_matching_name_pattern_fails(tmp_path: Path) -> None:
         Counts(0, 0, 0),
         0,
     )
+
+
+@needs_packages
+@pytest.mark.parametrize(
+    ("argv", "counts"),
+    [
+        (("node", "--test"), Counts(1, 0, 0)),
+        (("node", "--test", "--test-name-pattern=no_such_test"), Counts(0, 0, 0)),
+        (("node", "--test", "test/deep/empty.test.mjs"), Counts(0, 0, 0)),
+    ],
+    ids=["both", "pattern", "the-empty-one"],
+)
+def test_a_nested_file_s_whole_file_testcase_is_not_counted(
+    tmp_path: Path, argv: tuple[str, ...], counts: Counts
+) -> None:
+    # A file in a subdirectory: node names its whole-file testcase by the path from the run's
+    # directory (`test/deep/empty.test.mjs`, measured on Node 24.10.0), not by the file's name.
+    project = js_project(tmp_path / "p", "node-test")
+    (project / "test" / "deep").mkdir(parents=True)
+    (project / "test" / "real.test.mjs").write_text(
+        NODE_HEAD + 'test("passes", () => { assert.ok(true); });\n', encoding="utf-8"
+    )
+    (project / "test" / "deep" / "empty.test.mjs").write_text("// no test\n", encoding="utf-8")
+    got = real(project, *argv)
+    assert got.counts == counts
+    assert got.verdict == (PROVED if counts.passed else FAILED)
 
 
 @needs_packages
@@ -1599,14 +1877,15 @@ def test_a_test_files_stdout_is_never_counted(tmp_path: Path) -> None:
 @needs_runner("node")
 def test_a_project_with_no_packages_is_not_proven_and_installs_nothing(tmp_path: Path) -> None:
     # `PATH` holds `node` alone, linked into a directory of its own: a vitest an `npm install -g`
-    # linked beside the machine's `node` would resolve, and this test would then prove nothing.
+    # linked beside the machine's `node` would be found, and this test would then prove nothing.
+    # A bare `vitest` on no `PATH` entry runs nothing, as in a shell.
     project = tmp_path / "p"
     project.mkdir()
     (project / "package.json").write_text('{"name": "case"}', encoding="utf-8")
     alone = tmp_path / "bin"
     alone.mkdir()
     (alone / "node").symlink_to(runner_directory("node") / "node")
-    got = through_prove(["npx", "vitest"], project, {**os.environ, "PATH": str(alone)})
+    got = through_prove(["vitest"], project, {**os.environ, "PATH": str(alone)})
     assert (got.verdict, got.reason) == (NOT_PROVEN, ENTRY_NOT_FOUND)
     assert sorted(path.name for path in project.iterdir()) == ["package.json"]
 
@@ -1849,6 +2128,4 @@ def test_a_bin_holding_a_nul_does_not_resolve(tmp_path: Path) -> None:
     project = tmp_path / "project"
     package(project / "node_modules" / "jest", "jest", "./bin/je\u0000st.js", "bin/jest.js")
     node = node_on_path(project / ".tools")
-    got = planned(JEST, ["npx", "jest"], project, path=str(node.parent))
-    assert isinstance(got, Unresolved)
-    assert got.reason == ENTRY_NOT_FOUND
+    assert entry_of(["npx", "jest"], project, path=str(node.parent)) is None
