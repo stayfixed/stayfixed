@@ -268,8 +268,8 @@ DISCOVERY_READS = (("area_modules", "import_module"), ("area_imports", "import_m
 # `stayfixed.profiles.<name>.<module>` for a `name` that `stack_directories` listed from this
 # package's own directories through `importlib.resources` — stack discovery, which CONTRIBUTING's
 # "Areas" describes beside area discovery, and the one import both a red-run hint
-# (`profiles/hints.py`) and a runner adapter (`prove/adapters.py`) are loaded through. It names no
-# area and no repository path, so it is pinned here rather than moved into `areas.py`, which knows
+# (`profiles/hints.py`) and a runner adapter (`profiles/adapters.py`) are loaded through. It names
+# no area and no repository path, so it is pinned here rather than moved into `areas.py`, which knows
 # nothing of profiles.
 DYNAMIC_IMPORTERS = (("profiles/__init__.py", "stack_module", "import_module"),)
 

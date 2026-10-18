@@ -3518,3 +3518,14 @@ before = '''    "`prove --junit` counts a report"
 after = '''    "`prove --junit` counts a report you name, from the directory the command runs in"
 )'''
 reddens = ["tests/prove/test_javascript.py::test_an_unresolved_entry_s_detail_is_on_the_receipt"]
+
+# An adapter module that does not import is a defect in stayfixed, never a runner to skip.
+[[mutation]]
+name = "shipped_adapters skips a module that does not import"
+file = "src/stayfixed/profiles/adapters.py"
+before = """        found.extend(stack_module(name, ADAPTER_FILE.removesuffix(".py")).ADAPTERS)"""
+after = """        try:
+            found.extend(stack_module(name, ADAPTER_FILE.removesuffix(".py")).ADAPTERS)
+        except Exception:
+            continue"""
+reddens = ["tests/prove/test_run.py::test_an_adapter_module_that_does_not_import_raises"]

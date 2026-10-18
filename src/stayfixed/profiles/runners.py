@@ -112,7 +112,7 @@ class Unresolved:
 
 class RunnerAdapter(Protocol):
     """One test runner, as `prove` asks about it. A stack ships its adapters as `ADAPTERS`, a
-    tuple, in `profiles/<stack>/adapters.py`, and `stayfixed.prove.adapters.shipped_adapters`
+    tuple, in `profiles/<stack>/adapters.py`, and `stayfixed.profiles.adapters.shipped_adapters`
     lists them."""
 
     @property

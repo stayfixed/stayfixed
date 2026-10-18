@@ -7,7 +7,8 @@ discovery imports a package before the submodule it wants, and the package stays
   way `stayfixed prove` does takes the receipt and its verdict from here, and the counts it
   carries.
 - `shipped_adapters`: a reader of which runners this stayfixed can count, through the same
-  discovery `prove` uses.
+  discovery `prove` uses; it lives beside the red-run hints' in `stayfixed.profiles.adapters`,
+  and is published here for the readers of `prove`.
 - `record_gate`: `stayfixed gate`, which keeps one evidence record a run beside `prove`'s, in the
   same directory under the same key.
 
@@ -15,7 +16,7 @@ The protocol an adapter implements is not here: it is `stayfixed.profiles.runner
 the adapters and this area import.
 """
 
-from stayfixed.prove.adapters import shipped_adapters
+from stayfixed.profiles.adapters import shipped_adapters
 from stayfixed.prove.counts import Counts
 from stayfixed.prove.evidence import record_gate
 from stayfixed.prove.run import Receipt, Verdict, prove

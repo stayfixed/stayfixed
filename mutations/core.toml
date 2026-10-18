@@ -6192,17 +6192,6 @@ reddens = [
   "tests/prove/test_run.py::test_outside_a_repository_the_project_is_the_directory_itself",
 ]
 
-# An adapter module that does not import is a defect in stayfixed, never a runner to skip.
-[[mutation]]
-name = "shipped_adapters skips a module that does not import"
-file = "src/stayfixed/prove/adapters.py"
-before = """        found.extend(stack_module(name, ADAPTER_FILE.removesuffix(".py")).ADAPTERS)"""
-after = """        try:
-            found.extend(stack_module(name, ADAPTER_FILE.removesuffix(".py")).ADAPTERS)
-        except Exception:
-            continue"""
-reddens = ["tests/prove/test_run.py::test_an_adapter_module_that_does_not_import_raises"]
-
 # The command: an exit code per verdict, the command after `--` and nowhere else, and the bound.
 [[mutation]]
 name = "prove's command exits 0 whatever the verdict"

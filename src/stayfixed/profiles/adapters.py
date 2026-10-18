@@ -1,4 +1,5 @@
-"""Every runner adapter this stayfixed ships, found by discovery and never by name.
+"""Every runner adapter this stayfixed ships, found by discovery and never by name, beside the
+red-run hints' discovery (`hints.py`): both walk the stacks this package ships.
 
 A stack ships its adapters as `ADAPTERS` in `profiles/<stack>/adapters.py`, with a profile beside
 them or without one, and `stayfixed.profiles.stack_directories` is the one walk that finds them,

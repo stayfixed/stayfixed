@@ -28,10 +28,11 @@ from typing import TextIO
 import pytest
 
 from stayfixed import processes
+from stayfixed.profiles import adapters
 from stayfixed.profiles.runners import ReportSource
-from stayfixed.prove import adapters, tree
 from stayfixed.prove import counts as counts_module
 from stayfixed.prove import run as run_module
+from stayfixed.prove import tree
 from stayfixed.prove.counts import REPORT_DOCTYPE, REPORT_TOO_LARGE, Counts
 from stayfixed.prove.run import (
     ALL_SKIPPED,

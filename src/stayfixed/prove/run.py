@@ -100,6 +100,7 @@ from stayfixed.guards.api import (
     read_launch,
 )
 from stayfixed.printed import clipped, printable
+from stayfixed.profiles.adapters import shipped_adapters
 from stayfixed.profiles.runners import (
     Plan,
     Refused,
@@ -109,7 +110,6 @@ from stayfixed.profiles.runners import (
     Unresolved,
 )
 from stayfixed.prove import tree
-from stayfixed.prove.adapters import shipped_adapters
 from stayfixed.prove.counts import (
     MAX_REPORT_BYTES,
     REPORT_DOCTYPE,
