@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from stayfixed.assess import gates
+from stayfixed import processes
 from stayfixed.assess.gates import (
     BASE,
     BUILTIN,
@@ -295,7 +295,7 @@ def test_a_custom_gate_past_its_time_limit_leaves_nothing_running(
     # start-ups and could give up before there was a descendant to end.
     command, started, late = delayed_writer(tmp_path)
     config = with_custom(fixture_config(tmp_path), command, seconds=600)
-    # The bound expires in the wait for the command's exit, `gates._exited`: patching
+    # The bound expires in the wait for the command's exit, `processes.exited`: patching
     # `Popen.wait` would instead fail the reap after the command's own exit, 30 s later.
     calls: list[int] = []
 
@@ -306,7 +306,7 @@ def test_a_custom_gate_past_its_time_limit_leaves_nothing_running(
             time.sleep(0.05)
         raise subprocess.TimeoutExpired(process.args, seconds)
 
-    monkeypatch.setattr(gates, "_exited", expired)
+    monkeypatch.setattr(processes, "exited", expired)
     [probe] = results(tmp_path, config)
     assert not probe.answered
     assert calls == [600]  # the configured bound is the one the gate waited under
@@ -324,7 +324,7 @@ def test_an_interrupted_custom_gate_leaves_nothing_running(
     # end; the wait for it is bounded, and a child that never starts fails the assertion below.
     command, started, late = delayed_writer(tmp_path)
     config = with_custom(fixture_config(tmp_path), command, seconds=600)
-    # The interrupt lands in the wait for the command's exit, which is `gates._exited` on every
+    # The interrupt lands in the wait for the command's exit, which is `processes.exited` on every
     # platform: `os.waitid` where there is one, `Popen.wait` where there is not.
 
     def interrupted(process: subprocess.Popen[bytes], seconds: int) -> None:
@@ -333,7 +333,7 @@ def test_an_interrupted_custom_gate_leaves_nothing_running(
             time.sleep(0.05)
         raise KeyboardInterrupt
 
-    monkeypatch.setattr(gates, "_exited", interrupted)
+    monkeypatch.setattr(processes, "exited", interrupted)
     with pytest.raises(KeyboardInterrupt):
         results(tmp_path, config)
     assert started.exists()
@@ -369,13 +369,13 @@ def test_the_group_is_ended_while_the_command_s_pid_is_still_held(
     # (declared): the exit waited for with `process.wait`, which reaps -> the command's
     # `returncode` is already set when the group is killed. The exit status still reads the same.
     killed_with: list[int | None] = []
-    kill = gates._kill_group
+    kill = processes.kill_group
 
     def spy(process: subprocess.Popen[bytes]) -> None:
         killed_with.append(process.returncode)
         kill(process)
 
-    monkeypatch.setattr(gates, "_kill_group", spy)
+    monkeypatch.setattr(processes, "kill_group", spy)
     [probe] = results(
         tmp_path, with_custom(fixture_config(tmp_path), [sys.executable, "-c", source])
     )

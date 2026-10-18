@@ -16,10 +16,10 @@ standard error as it ran and is read by nothing here, so none of it reaches a re
 
 **A custom gate's process group ends with it.** Its command runs in a session of its own, and
 that session's process group is ended however the command finishes — exit, timeout or
-interrupt — so nothing it left in the background in that group writes into the tree while a later
-gate runs or after the result is out. A descendant that leaves the command's process group (a
-new session, or a job-control shell's own group) is not reached, and nor is one stayfixed may not
-signal (a sudo or setuid descendant).
+interrupt, in the order `stayfixed.processes` keeps — so nothing it left in the background in
+that group writes into the tree while a later gate runs or after the result is out. A
+descendant that leaves the command's process group (a new session, or a job-control shell's own
+group) is not reached, and nor is one stayfixed may not signal (a sudo or setuid descendant).
 
 **Order.** The built-ins run first, in configured order: they execute nothing the repository
 wrote. Then the custom gates the caller names in `first`, then every other custom gate. A custom
@@ -33,16 +33,13 @@ turn the failure into a pass.
 
 from __future__ import annotations
 
-import contextlib
-import os
-import signal
 import subprocess
-import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from stayfixed import processes
 from stayfixed.docs.api import docs_gate, docs_reads, plan_gate, trail_gate, trail_reads
 from stayfixed.errors import StayfixedError
 from stayfixed.findings import Finding
@@ -64,10 +61,6 @@ CUSTOM_REMEDY = "fix what [gates.custom.{name}] run reports; its output is print
 # the verdict.
 ALREADY_FAILED = "the run had already failed"
 STOPPED = f"not run: {ALREADY_FAILED}"
-
-# Reaping a command whose group was sent SIGKILL. The signal cannot be caught or ignored, so this
-# is slack for the kernel, not a second bound on the command.
-KILL_WAIT_SECONDS = 5
 
 
 @dataclass(frozen=True)
@@ -163,50 +156,6 @@ class _NotAnswered(Exception):
         self.reason = reason
 
 
-def _kill_group(process: subprocess.Popen[bytes]) -> None:
-    """SIGKILL the command's whole process group; a group with nothing left to end is no fault.
-
-    Empty, the group answers `ProcessLookupError`; left with only the exited, unreaped command,
-    macOS answers `PermissionError` rather than nothing, as it does for any group of zombies. A
-    member stayfixed may not signal, a sudo or setuid descendant, answers `PermissionError` too,
-    and is not ended: the command's own exit still answers for the gate.
-    """
-    with contextlib.suppress(ProcessLookupError, PermissionError):
-        os.killpg(process.pid, signal.SIGKILL)
-
-
-def _exited(process: subprocess.Popen[bytes], seconds: int) -> None:
-    """Return once the command has exited, leaving it unreaped where the platform allows it.
-
-    The group's id is the command's pid, and a reaped pid is free for the system to hand to an
-    unrelated process that then leads a group of its own, which a later `killpg` would end. An
-    exited command that is not yet reaped keeps its pid taken, so `os.waitid` with `WNOWAIT`
-    watches for the exit without reaping, the group is ended, and only then is the command
-    reaped. Where `os.waitid` is missing (macOS before Python 3.13) the command is reaped here,
-    as `Popen.wait` does, and the group is ended just after.
-
-    Raises `subprocess.TimeoutExpired` past `seconds`, as `Popen.wait` does.
-    """
-    if not hasattr(os, "waitid"):
-        process.wait(timeout=seconds)
-        return
-    deadline = time.monotonic() + seconds
-    delay = 0.0005
-    flags = os.WEXITED | os.WNOHANG | os.WNOWAIT
-    while os.waitid(os.P_PID, process.pid, flags) is None:
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            raise subprocess.TimeoutExpired(process.args, seconds)
-        delay = min(delay * 2, remaining, 0.05)
-        time.sleep(delay)
-
-
-def _end(process: subprocess.Popen[bytes]) -> None:
-    """End the command's whole process group and reap it, within `KILL_WAIT_SECONDS`."""
-    _kill_group(process)
-    process.wait(timeout=KILL_WAIT_SECONDS)
-
-
 def _custom(name: str, argv: tuple[str, ...]) -> Callable[[Path, Config, str], list[Finding]]:
     def run(root: Path, config: Config, base: str) -> list[Finding]:
         seconds = config.gates.custom_timeout_seconds
@@ -231,20 +180,20 @@ def _custom(name: str, argv: tuple[str, ...]) -> Callable[[Path, Config, str], l
         except OSError:
             raise not_answered from None
         try:
-            _exited(process, seconds)
+            processes.exited(process, seconds)
         except subprocess.TimeoutExpired:
-            _end(process)
+            processes.end(process)
             raise not_answered from None
         except BaseException:
             # A terminal's Ctrl-C reaches stayfixed's process group, not the command's session,
             # so an interrupted run ends the command's process group itself before it leaves.
-            _end(process)  # on an interrupt or any other exit, as subprocess.run's own kill did
+            processes.end(process)  # on an interrupt or any other exit, as subprocess.run did
             raise
         # The command has exited, and what it started may still run: a watcher or a server left
         # in the background, still writing into the tree while a later gate runs. The exited
         # command is not reaped yet, so the group's id is still its own and reaches only its
         # descendants; then it is reaped, which reads the status it exited with.
-        _kill_group(process)  # after an exit of its own too
+        processes.kill_group(process)  # after an exit of its own too
         code = process.wait()
         if code == 0:
             return []

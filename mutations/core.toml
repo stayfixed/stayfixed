@@ -5557,3 +5557,41 @@ after = "    if True:"
 reddens = [
   "tests/prove/test_results.py::test_read_report_reads_no_kind_it_does_not_name",
 ]
+
+# --- ending a command's whole process group (`stayfixed.processes`), which `[gates.custom]`
+# gates and `prove` share; the gates' tests drive it ---
+
+[[mutation]]
+name = "a timed-out custom gate's children run on after it reported"
+file = "src/stayfixed/processes.py"
+before = "        os.killpg(process.pid, signal.SIGKILL)"
+after = "        process.kill()"
+reddens = ["tests/assess/test_gates.py::test_a_custom_gate_past_its_time_limit_leaves_nothing_running"]
+
+# A group the gate may not signal answers `PermissionError`: on macOS a group left with only the
+# exited, unreaped command, anywhere a sudo or setuid descendant. The command's exit still
+# answers for the gate; the error must not end the whole run.
+[[mutation]]
+name = "a group the gate may not signal ends the gate run"
+file = "src/stayfixed/processes.py"
+before = "    with contextlib.suppress(ProcessLookupError, PermissionError):"
+after = "    with contextlib.suppress(ProcessLookupError):"
+reddens = [
+  "tests/assess/test_gates.py::test_a_group_the_gate_may_not_signal_still_leaves_the_exit_status[pass]",
+  "tests/assess/test_gates.py::test_a_group_the_gate_may_not_signal_still_leaves_the_exit_status[raise SystemExit(3)]",
+]
+
+# Where `os.waitid` is missing (macOS before Python 3.13), the exit is waited for with
+# `Popen.wait`; without the fallback the gate raises AttributeError out of the run.
+[[mutation]]
+name = "a custom gate asks for os.waitid where the platform has none"
+file = "src/stayfixed/processes.py"
+before = '''    if not hasattr(os, "waitid"):
+        process.wait(timeout=seconds)
+        return'''
+after = '''    if False:
+        process.wait(timeout=seconds)
+        return'''
+reddens = [
+  "tests/assess/test_gates.py::test_without_waitid_a_custom_gate_still_answers_and_ends_its_group",
+]
