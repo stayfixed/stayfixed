@@ -294,7 +294,10 @@ def test_renumber_leaves_an_argv_naming_the_old_identifier(tmp_path: Path, endin
         (bugs / name).write_bytes(text.replace("\n", ending).encode("utf-8"))
     untouched = (bugs / "BR-004.md").read_bytes()
     code, out, _ = cli(root, tmp_path, "bugs", "renumber", "BR-002", "BR-009")
-    assert (code, out) == (0, "BR-002 -> BR-009; a void pointer remains at docs/bugs/BR-002.md\n")
+    assert (code, out) == (
+        0,
+        MOVED + f"; {NAMING}" + "(docs/bugs/BR-003.md, docs/bugs/BR-004.md)\n",
+    )
     swept = literal("renumber.swept.md", "").replace(
         "related: [BR-009]\n", f"related: [BR-009]\nregression: {argv}\n", 1
     )
@@ -318,11 +321,50 @@ def test_renumber_sweeps_a_regression_line_in_a_file_that_is_no_entry(
     root = ledger_copy(tmp_path)
     notes = root / relative
     notes.write_text('---\nregression: ["BR-002"]\n---\n\nAbout BR-002.\n', encoding="utf-8")
-    code, _, _ = cli(root, tmp_path, "bugs", "renumber", "BR-002", "BR-009")
-    assert code == 0
+    code, out, _ = cli(root, tmp_path, "bugs", "renumber", "BR-002", "BR-009", "--json")
+    assert (code, json.loads(out)["lists_naming_old"]) == (0, [])
     assert (
         notes.read_text(encoding="utf-8") == '---\nregression: ["BR-009"]\n---\n\nAbout BR-009.\n'
     )
+
+
+MOVED = "BR-002 -> BR-009; a void pointer remains at docs/bugs/BR-002.md"
+NAMING = (
+    "2 entry file(s) still name BR-002 in a list left as written, which may need editing by hand "
+)
+
+
+@needs_git
+@pytest.mark.parametrize(
+    ("argv", "named"),
+    [
+        ('["pytest", "-k", "BR-002"]', ["docs/bugs/BR-009.md"]),
+        ('["pytest", "tests/BR-002/test_total.py"]', ["docs/bugs/BR-009.md"]),
+        ('["pytest", "-k", "BR-0020 or xBR-002"]', []),
+    ],
+    ids=["by-name", "in-a-path", "no-word-boundary"],
+)
+def test_renumber_names_an_entry_whose_list_still_names_the_old_identifier(
+    tmp_path: Path, argv: str, named: list[str]
+) -> None:
+    # The argv is left as written, since the sweep renames a test carrying the old identifier but
+    # never a file: an argv selecting by name may then select nothing, one naming a path is still
+    # right, and only whoever reads the argv can tell which. So the move names each entry whose
+    # list still names `old`, the moved entry itself included, the sweep excludes it, and leaves
+    # the argv to them; a word that only contains `old` is not it. Mutations (oracle):
+    # `mutations/`'s "renumber names no entry whose list names the old identifier" -> `by-name`
+    # and `in-a-path`; "renumber leaves the moved entry out of the entries it names" -> the
+    # same; "renumber names a list holding the old identifier inside a word" ->
+    # `no-word-boundary`; "bugs renumber's line names no entry whose list names the old
+    # identifier" -> `by-name`'s summary; "bugs renumber's --json drops the entries naming the old
+    # identifier" -> `by-name`'s `lists_naming_old`.
+    root = ledger_copy(tmp_path)
+    with_regression(root, "BR-002.md", argv)
+    code, out, _ = cli(root, tmp_path, "bugs", "renumber", "BR-002", "BR-009", "--json")
+    data = json.loads(out)
+    assert (code, data["lists_naming_old"]) == (0, named)
+    named_in = f"; {NAMING.replace('2 ', '1 ', 1)}(docs/bugs/BR-009.md)" if named else ""
+    assert data["summary"] == MOVED + named_in
 
 
 VALID_ARGV = '["pytest", "-k", "BR-002 and not slow"]'

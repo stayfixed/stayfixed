@@ -103,6 +103,8 @@ class Renumbered:
     unswept: tuple[Unswept, ...]
     # False for a re-run of a move that had already finished, which wrote nothing.
     moved: bool = True
+    # The entry files, repo-relative and sorted, whose list values still name the old identifier.
+    lists_naming_old: tuple[str, ...] = ()
 
 
 def _fetch(root: Path) -> str | None:
@@ -384,6 +386,11 @@ def _void_pointer(register: Register, *, old: str, new: str, title: str, today: 
     return f"---\n{frontmatter}\n---\n{_VOID_BODY.format(new=new)}"
 
 
+def _names(pattern: re.Pattern[str], text: str, spans: list[tuple[int, int]]) -> bool:
+    """Whether `pattern` matches inside one of `spans` of `text`, read over the whole text."""
+    return any(b <= match.start() < e for match in pattern.finditer(text) for b, e in spans)
+
+
 def _substituted(pattern: re.Pattern[str], new: str, text: str, kept: list[tuple[int, int]]) -> str:
     """`text` with every match of `pattern` replaced by `new`, except a match starting inside one
     of the spans in `kept`; matched over the whole text, so a span's edge is no boundary."""
@@ -501,10 +508,15 @@ def renumber(
     pattern = re.compile(rf"\b{re.escape(old)}\b")
     excluded = {source, target, index_path(root, register)}
     # An entry's list values are left as they are written, and the rest of the entry is swept. A
-    # test whose name carries `old` in a scanned file is renamed by this same sweep, so an argv
-    # naming `old` may then name a test that no longer exists and need editing by hand. An entry is
-    # what `load_entries` reads (`entry_paths`); a `regression:` line in any other file is text.
+    # test whose name carries `old` in a scanned file is renamed by this same sweep, but no file
+    # is, so an argv naming `old` may select nothing now, or name a path that is still right, and
+    # only its reader can tell: each entry whose list still names `old`, the moved one included,
+    # is named for them. An entry is what `load_entries` reads (`entry_paths`); a `regression:`
+    # line in any other file is text.
     entry_files = set(entry_paths(root, register))
+    naming: list[str] = []
+    if _names(pattern, moved, list_value_spans(moved, register.schema.lists)):
+        naming.append(f"{directory}/{new}.md")
     unswept: list[Unswept] = []
     for item in scannable(root, citation_roots(root, config)):
         if item.path in excluded:
@@ -525,6 +537,8 @@ def renumber(
         kept = (
             list_value_spans(item.text, register.schema.lists) if item.path in entry_files else []
         )
+        if _names(pattern, item.text, kept):
+            naming.append(item.relative.as_posix())
         rewritten = _substituted(pattern, new, item.text, kept)
         if rewritten == item.text:
             continue
@@ -538,4 +552,4 @@ def renumber(
         _write_index(root, register)
     except OSError as error:
         raise unfinished(register.index, error) from error
-    return Renumbered(source, tuple(unswept))
+    return Renumbered(source, tuple(unswept), lists_naming_old=tuple(sorted(naming)))

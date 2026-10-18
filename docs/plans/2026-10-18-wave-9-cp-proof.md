@@ -1441,7 +1441,13 @@ Two were declined. The identical `new.out` and `new-bare.out` stay two files, be
 two cases' literals and only happen to agree. The broken variant stays as whole files, not a
 `str.replace` overlay, because the files show what the check reads.
 
-Still open: whether `renumber` should flag an argv naming the moved identifier, which is a
-question for the owner; and, older than this branch, `renumber` deciding membership by path
-spelling rather than file identity, which corrupts a void pointer on a case-insensitive
-filesystem whose configured directory differs in case from the committed one.
+The owner ruled on the review's design question, whether `renumber` should touch an argv naming
+the moved identifier: it leaves the argv as written and names each entry whose list still names the
+old identifier, on its line and in `--json`'s `lists_naming_old`, the moved entry included. An argv
+naming a path is still right after the move, since the sweep renames no file, so neither rewriting
+the argv nor a `bugs check` finding against it could be right for both shapes; the reader of the
+argv decides.
+
+Still open, older than this branch: `renumber` deciding membership by path spelling rather than
+file identity, which corrupts a void pointer on a case-insensitive filesystem whose configured
+directory differs in case from the committed one.

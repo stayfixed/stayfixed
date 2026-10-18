@@ -934,8 +934,8 @@ reddens = [
 [[mutation]]
 name = "renumber hands back its unswept files as a list"
 file = "src/stayfixed/ledger/write.py"
-before = "    return Renumbered(source, tuple(unswept))"
-after = "    return Renumbered(source, unswept)"
+before = "    return Renumbered(source, tuple(unswept), lists_naming_old=tuple(sorted(naming)))"
+after = "    return Renumbered(source, unswept, lists_naming_old=tuple(sorted(naming)))"
 reddens = [
   "tests/ledger/test_write.py::test_renumber_moves_the_entry_rewrites_every_reference_and_leaves_a_void_pointer",
 ]
@@ -3820,6 +3820,56 @@ reddens = [
 ]
 
 # The schema's rules for a list key, one entry per rule, each dropping its check.
+# `renumber` names each entry whose list still names the old identifier, and leaves the argv.
+[[mutation]]
+name = "renumber names no entry whose list names the old identifier"
+file = "src/stayfixed/ledger/write.py"
+before = '    return any(b <= match.start() < e for match in pattern.finditer(text) for b, e in spans)'
+after = '    return False'
+reddens = [
+  "tests/ledger/test_list_field.py::test_renumber_names_an_entry_whose_list_still_names_the_old_identifier[by-name]",
+  "tests/ledger/test_list_field.py::test_renumber_names_an_entry_whose_list_still_names_the_old_identifier[in-a-path]",
+  "tests/ledger/test_list_field.py::test_renumber_leaves_an_argv_naming_the_old_identifier[lf]",
+]
+
+[[mutation]]
+name = "renumber leaves the moved entry out of the entries it names"
+file = "src/stayfixed/ledger/write.py"
+before = '    if _names(pattern, moved, list_value_spans(moved, register.schema.lists)):'
+after = '    if False:'
+reddens = [
+  "tests/ledger/test_list_field.py::test_renumber_names_an_entry_whose_list_still_names_the_old_identifier[by-name]",
+  "tests/ledger/test_list_field.py::test_renumber_names_an_entry_whose_list_still_names_the_old_identifier[in-a-path]",
+]
+
+[[mutation]]
+name = "renumber names a list holding the old identifier inside a word"
+file = "src/stayfixed/ledger/write.py"
+before = '    return any(b <= match.start() < e for match in pattern.finditer(text) for b, e in spans)'
+after = '    return any(b <= match.start() < e for match in re.finditer(re.escape(pattern.pattern[2:-2].replace(chr(92), "")), text) for b, e in spans)'
+reddens = [
+  "tests/ledger/test_list_field.py::test_renumber_names_an_entry_whose_list_still_names_the_old_identifier[no-word-boundary]",
+]
+
+[[mutation]]
+name = "bugs renumber's line names no entry whose list names the old identifier"
+file = "src/stayfixed/ledger/commands.py"
+before = '    if result.lists_naming_old:'
+after = '    if False:'
+reddens = [
+  "tests/ledger/test_list_field.py::test_renumber_leaves_an_argv_naming_the_old_identifier[lf]",
+  "tests/ledger/test_list_field.py::test_renumber_names_an_entry_whose_list_still_names_the_old_identifier[by-name]",
+]
+
+[[mutation]]
+name = "bugs renumber's --json drops the entries naming the old identifier"
+file = "src/stayfixed/ledger/commands.py"
+before = '        "lists_naming_old": list(result.lists_naming_old),'
+after = '        "lists_naming_old": [],'
+reddens = [
+  "tests/ledger/test_list_field.py::test_renumber_names_an_entry_whose_list_still_names_the_old_identifier[by-name]",
+]
+
 [[mutation]]
 name = "a list key need not be a key"
 file = "src/stayfixed/ledger/register.py"
@@ -4040,8 +4090,8 @@ reddens = [
 [[mutation]]
 name = "bugs renumber's line names no void pointer"
 file = "src/stayfixed/ledger/commands.py"
-before = '    return Result(f"{args.old} -> {args.new}; a void pointer remains at {void}", data)'
-after = '    return Result(f"{args.old} -> {args.new}", data)'
+before = '    return Result(f"{args.old} -> {args.new}; a void pointer remains at {void}{naming}", data)'
+after = '    return Result(f"{args.old} -> {args.new}{naming}", data)'
 reddens = [
   "tests/ledger/test_literals.py::test_the_ledger_prints_its_captured_output[text-renumber]",
 ]
