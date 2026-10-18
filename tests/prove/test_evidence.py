@@ -509,7 +509,9 @@ def test_a_failing_gate_run_records_each_gate_s_word(tmp_path: Path) -> None:
 
 
 @needs_git
-@pytest.mark.parametrize("refusal", ["no-tree-config", "machine-file", "only-unknown"])
+@pytest.mark.parametrize(
+    "refusal", ["no-tree-config", "machine-file", "only-unknown", "loader-refused"]
+)
 def test_gate_appends_none_on_a_refusal_before_the_configuration_check(
     tmp_path: Path, refusal: str
 ) -> None:
@@ -532,11 +534,23 @@ def test_gate_appends_none_on_a_refusal_before_the_configuration_check(
             1,
             f"stayfixed: failed: {machine} is not valid TOML (at line 1, column 3)\n",
         )
+    elif refusal == "loader-refused":
+        # The tree's own `stayfixed.toml`, which the loader refuses: a key it does not know.
+        (project / "stayfixed.toml").write_text(
+            (project / "stayfixed.toml").read_text(encoding="utf-8") + "\n[nonsense]\nx = 1\n",
+            encoding="utf-8",
+        )
+        commit(project, "chore: a key the loader refuses")
+        exit_code, said = 1, None
     else:
         argv += ["--only", "no-such-gate"]
         exit_code, said = 2, f"stayfixed: refused: {ONLY_UNKNOWN.format(count=1)}\n"
     code, out, err = cli(project, tmp_path, *argv, machine=machine)
-    assert (code, out, err) == (exit_code, "", said)
+    if said is None:
+        assert (code, out) == (exit_code, ""), err
+        assert err.startswith("stayfixed: failed: "), err
+    else:
+        assert (code, out, err) == (exit_code, "", said)
     assert records() == []
 
 

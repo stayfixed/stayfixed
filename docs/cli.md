@@ -1603,7 +1603,8 @@ where findings are serialised.
 `~/.local/state/stayfixed/evidence/<key>.jsonl`, as
 [`stayfixed prove`](#stayfixed-prove---timeout-seconds---junit-path----command-) does, for every run
 that judged the configuration or ran a gate (`nothing to run` included, and no line for a refusal
-before either): its `mode` (`builtin`, `custom` or `all`), its flags, the commit and whether the tree
+before either: no tree `stayfixed.toml`, one the loader refuses, a refused machine file, an
+unknown `--only`; nor for a run interrupted before it finished, which judged nothing whole): its `mode` (`builtin`, `custom` or `all`), its flags, the commit and whether the tree
 differed from it, and each gate's verdict word (`passes`, `fails`, `would fail`, `could not run`,
 `not run`, `waiting`, and `refused` for the configuration check). A record that cannot be written
 is a warning on standard error and changes no exit code. A custom gate writes whatever its command
