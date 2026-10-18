@@ -1592,6 +1592,42 @@ parallel; one fresh agent took every Important finding and most Minors in one fi
   see it die by its lock (4.7 s to 0.7 s each), and the real `go test` runs share one build cache
   per worker (the suite went from 316 s to 262 s here); the `checks` job's bound is 20 minutes.
 
+### Run as typed (owner and controller, 2026-10-18/19)
+
+A five-seat review of the finished branch found three wrong verdicts, each caused by a hardening
+measure that changed what runs away from what was typed: the `-c` bootstrap tested an installed copy
+of the project instead of the tree (a false `proved`), an assigned `PATH` was ignored when finding the
+program, and Go's forced `GOTOOLCHAIN=local` and `GOENV=off` turned green code red and sent private
+module paths to the public proxy. It also found most refusals and scrubs guarding only against an agent
+forging the report, which the bound already concedes. **The owner ruled: run the command as typed, and
+keep only the guards against honest mistakes.** This supersedes the Rulings' `-P`, the bootstrap, the
+recorded costs of `assigned-forging`, `GOENV` and `GOTOOLCHAIN`, and the closed lists drawn by sweeping
+every option. Changes against the text:
+
+- The protocol lost `Plan.program`, `set_env` and `scrub` (the core derives the program and scrubs an
+  adapter's forging names) and `plan`'s `root`; one lookup rule serves every adapter and `--junit`.
+- The run's environment is built once, the command's own assignments included, and used to plan, to
+  find the program and to run it. A launcher is handed the command's words as typed, and the directory
+  a launcher runs the command in (`uv run --directory`, `UV_WORKING_DIR`) is the one judged.
+- Removed: `resolved-elsewhere`, `junit-beside-adapter` (under `--junit` no adapter is consulted), the
+  launcher refusals, the bootstrap, Go's set and scrubbed variables and every Go refusal, `NODE_OPTIONS`
+  and `NODE_TEST_CONTEXT` as forging, the Node option tables, the inline-code and config-file refusals,
+  and the refusals that only turned a `not proven` into a `refused`. npx runs as typed and may install.
+- Kept: what an honest mistake typed in the command (or set by an honest environment) turns into a
+  `proved` the tests did not earn — snapshot rewriting (`UPDATE_SNAPSHOT` included), a rerun of
+  failures, `--setup-plan`/`--setup-only`, `--trace`, an optimised interpreter, jest's `--collectTests`,
+  vitest's `--mergeReports` and `--dangerouslyIgnoreUnhandledErrors` — and the runs that never end.
+- Found on the way and fixed: Node 24's whole-file testcase carries no `file` attribute and was counted
+  as a pass (a false `proved` on the active LTS); a failing `todo` test read `failed`; the 64 MiB cap
+  covered a Go suite's own output; a gate that timed out left `prove`'s runner running.
+- The evidence records are deferred until a report reads them (owner, 2026-10-19): a log nothing reads,
+  a file in every user's home, and a public input of the reusable workflow that would be a breaking
+  change to remove.
+- A review of the wave's planning (owner, 2026-10-19) made three working rules binding here: a bypass
+  through an anchor the agent can write is no control, never a new refusal; a refusal exists only where
+  an honest mistake would otherwise read `proved`; mutation entries cover verdict-bearing branches, not
+  wording.
+
 ### Wave B and Task 4 — RC1
 
 **Wave B.** One implementer on Opus took Tasks 2 and 3: `test(ledger): hold new, check and renumber
