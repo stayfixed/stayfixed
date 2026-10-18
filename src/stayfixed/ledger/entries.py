@@ -26,7 +26,12 @@ from stayfixed.identifiers import Identifiers
 from stayfixed.ledger.register import ENGINE_KEYS, Register
 from stayfixed.printed import quoted
 
-_FRONTMATTER = re.compile(r"\A---\n(.*?)\n---\n\n?(.*)\Z", re.DOTALL)
+# A line break on the file's own endings: LF, CRLF or a lone CR, the three `read_ledger_text`
+# translates to LF. A CR is a break of its own only where no LF follows, so a CRLF is never read as
+# two: read as `\r` and then `\n`, `---` CRLF `---` CRLF would close a block it never opened.
+_BREAK = r"(?:\r\n|\r(?!\n)|\n)"
+# The frontmatter block between its two `---` fences, then the body after one optional blank line.
+_FRONTMATTER = re.compile(rf"\A---{_BREAK}(.*?){_BREAK}---{_BREAK}{_BREAK}?(.*)\Z", re.DOTALL)
 _KEY_VALUE = re.compile(r"\A([a-z_]+):[ \t]*(.*)\Z")
 _ISO_DATE = re.compile(r"\A\d{4}-\d{2}-\d{2}\Z")
 # A value that would parse as something other than a plain string in real YAML. The subset
@@ -240,6 +245,29 @@ def _parse_related(raw: str, *, where: Path, ids: Identifiers) -> tuple[str, ...
     return tuple(items)
 
 
+def _frontmatter(text: str) -> tuple[list[tuple[int, int, str]], str] | None:
+    """The frontmatter lines of an entry's `text` and the body after them, or `None` for a file
+    with no frontmatter block at its top.
+
+    Each line comes as its number in the file, the offset in `text` it starts at, and the line
+    without its line break. The one reader of where a value sits: `parse_entry` reads the text
+    `read_ledger_text` translated to LF, and `renumber`'s sweep the text on disk, CRLF where a
+    checkout's `core.autocrlf` wrote it so, and both must find a value on the same line. The fences
+    are found on the file's own endings (`_BREAK`); the lines are split as `str.splitlines` splits
+    them, so a frontmatter value holding U+0085, U+2028 or a vertical tab is cut into two lines
+    there, the second of which is no `key: value`, and the entry is refused.
+    """
+    match = _FRONTMATTER.match(text)
+    if match is None:
+        return None
+    lines: list[tuple[int, int, str]] = []
+    offset = match.start(1)
+    for number, piece in enumerate(match.group(1).splitlines(keepends=True), start=2):
+        lines.append((number, offset, piece.splitlines()[0]))
+        offset += len(piece)
+    return lines, match.group(2)
+
+
 def parse_entry(text: str, *, path: Path, register: Register) -> Entry:
     """Parse one entry file's text, raising `LedgerError` on anything ambiguous.
 
@@ -249,11 +277,12 @@ def parse_entry(text: str, *, path: Path, register: Register) -> Entry:
     path is a runner's scratch directory nobody can act on.
     """
     ids, schema = register.ids, register.schema
-    match = _FRONTMATTER.match(text)
-    if match is None:
+    frontmatter = _frontmatter(text)
+    if frontmatter is None:
         raise LedgerError(f"{_where(path)}: no `---` frontmatter block at the top of the file")
+    lines, body = frontmatter
     fields: dict[str, str] = {}
-    for number, line in enumerate(match.group(1).splitlines(), start=2):
+    for number, _, line in lines:
         if not line.strip():
             continue
         if line[:1] in (" ", "\t"):
@@ -312,7 +341,7 @@ def parse_entry(text: str, *, path: Path, register: Register) -> Entry:
         title=title,
         status=status,
         related=_parse_related(fields.get("related", ""), where=path, ids=ids),
-        body=match.group(2),
+        body=body,
         path=path,
         fields=values,
         lists=lists,
@@ -323,20 +352,17 @@ def list_value_spans(text: str, lists: tuple[str, ...]) -> list[tuple[int, int]]
     """Where the value of each of `lists` lies in an entry's frontmatter, as `(start, end)`
     offsets into `text`, in order: what `renumber`'s sweep leaves as it is.
 
-    Lines are split as `parse_entry` splits them, so a span is the value that reader reads, and a
-    file with no frontmatter block has none.
+    The lines are `parse_entry`'s own (`_frontmatter`), on the file's own line endings, so a span
+    is the value that reader reads, and a file with no frontmatter block has none.
     """
-    match = _FRONTMATTER.match(text)
-    if match is None:
+    frontmatter = _frontmatter(text)
+    if frontmatter is None:
         return []
     spans: list[tuple[int, int]] = []
-    offset = match.start(1)
-    for line in match.group(1).splitlines(keepends=True):
-        content = line.splitlines()[0]
-        key_value = _KEY_VALUE.match(content)
+    for _, offset, line in frontmatter[0]:
+        key_value = _KEY_VALUE.match(line)
         if key_value is not None and key_value.group(1) in lists:
-            spans.append((offset + key_value.start(2), offset + len(content)))
-        offset += len(line)
+            spans.append((offset + key_value.start(2), offset + len(line)))
     return spans
 
 
@@ -366,6 +392,16 @@ def entry_dir(root: Path, register: Register) -> Path:
     return contained(root, register.directory)
 
 
+def entry_paths(root: Path, register: Register) -> list[Path]:
+    """The register's entry files, sorted: every `<prefix>-*.md` in its directory.
+
+    The one statement of which files are entries. `load_entries` parses these, and `renumber`'s
+    sweep keeps the list values of these and of no other file, so a file the register does not
+    read — a note beside the ledger, a `.txt` named like an entry — is swept like any text.
+    """
+    return sorted(entry_dir(root, register).glob(f"{register.ids.prefix}-*.md"))
+
+
 def load_entries(root: Path, register: Register) -> list[Entry]:
     """Every entry under the register's directory, ordered by identifier number.
 
@@ -374,14 +410,13 @@ def load_entries(root: Path, register: Register) -> list[Entry]:
     path under a temporary directory while `check` described the same file repo-relatively —
     and on CI the absolute form names a runner's scratch directory nobody can act on.
     """
-    directory = entry_dir(root, register)
     entries = [
         parse_entry(
             read_ledger_text(path, where=path.relative_to(root)),
             path=path.relative_to(root),
             register=register,
         )
-        for path in sorted(directory.glob(f"{register.ids.prefix}-*.md"))
+        for path in entry_paths(root, register)
     ]
     return sorted(entries, key=lambda entry: entry.number)
 

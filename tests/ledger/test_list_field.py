@@ -24,6 +24,7 @@ from stayfixed.ledger.entries import (
     LIST_SHAPE,
     Entry,
     LedgerError,
+    list_value_spans,
     parse_entry,
 )
 from stayfixed.ledger.register import BUG_SCHEMA, Section, bug_register
@@ -139,6 +140,41 @@ def test_a_malformed_regression_is_refused_in_its_own_words(raw: str, constant: 
     assert str(caught.value) == constant.format(where=quoted(PATH.as_posix()), key="regression")
 
 
+@pytest.mark.parametrize(
+    "separator", ["\x85", "\u2028", "\x0b"], ids=["next-line", "line-separator", "vertical-tab"]
+)
+def test_a_line_break_inside_an_item_refuses_the_entry(separator: str) -> None:
+    # The frontmatter's lines are split where `str.splitlines` splits them, so a line separator
+    # inside an item cuts the line in two, and the second half is no `key: value`. PyYAML reads
+    # U+0085 inside the item as a space, `['a ']`, an argv other than the one written, so the
+    # refusal is the reading this reader may give. Mutation (oracle): `mutations/`'s "the
+    # frontmatter reader reads a line separator as part of a line" -> the item reads.
+    with pytest.raises(LedgerError) as caught:
+        parse(ENTRY.format(regression=f'["a{separator}"]'))
+    assert str(caught.value) == f"{quoted(PATH.as_posix())}:12: expected `key: value`, got '\"]'"
+
+
+@pytest.mark.parametrize("ending", ["\n", "\r\n", "\r"], ids=["lf", "crlf", "cr"])
+def test_a_list_value_lies_where_the_reader_reads_it_whatever_the_endings(ending: str) -> None:
+    # `---` then `---` opens a block the first line of which is the second fence, closed only by a
+    # later one, so the list is inside it on every ending. Mutation (oracle): `mutations/`'s "the
+    # frontmatter reader knows only LF line endings" -> `crlf` and `cr` find no block, so no span.
+    text = '---\n---\nregression: ["BR-002"]\n---\n'.replace("\n", ending)
+    spans = list_value_spans(text, ("regression",))
+    assert [text[start:end] for start, end in spans] == ['["BR-002"]']
+
+
+def test_a_crlf_is_one_line_break_to_the_reader() -> None:
+    # Translated to LF, `---` CRLF `---` CRLF is `---\n---\n`, which opens no block, and the reader
+    # handed the CRLF text says the same. Read as a lone CR and then an LF, the CRLF would end an
+    # empty block on the second line. Mutation (oracle): `mutations/`'s "the frontmatter reader
+    # takes a CRLF for two line breaks" -> the entry is refused for a missing `id` instead.
+    with pytest.raises(LedgerError) as caught:
+        parse("---\r\n---\r\n")
+    where = quoted(PATH.as_posix())
+    assert str(caught.value) == f"{where}: no `---` frontmatter block at the top of the file"
+
+
 def with_regression(root: Path, name: str, regression: str) -> str:
     """Give the entry `name` a `regression:` line as the last of its frontmatter; its new text."""
     path = root / "docs" / "bugs" / name
@@ -211,6 +247,55 @@ def test_renumber_leaves_an_argv_naming_the_old_identifier(tmp_path: Path) -> No
     )
     assert (bugs / "BR-003.md").read_text(encoding="utf-8") == swept
     assert (bugs / "BR-004.md").read_text(encoding="utf-8") == untouched
+
+
+@needs_git
+@pytest.mark.parametrize("ending", ["\r\n", "\r"], ids=["crlf", "cr"])
+def test_renumber_leaves_an_argv_naming_the_old_identifier_whatever_the_line_endings(
+    tmp_path: Path, ending: str
+) -> None:
+    # A checkout under `core.autocrlf=true` holds every entry with CRLF endings. The reader reads
+    # such an entry with its endings translated, so it passes `bugs check`, and the sweep reads the
+    # file as it is on disk: its argv is found on the file's own endings, or renamed. Mutation
+    # (oracle): `mutations/`'s "the frontmatter reader knows only LF line endings" -> both argvs
+    # name BR-009.
+    root = ledger_copy(tmp_path)
+    argv = '["pytest", "-k", "BR-002 and not slow"]'
+    bugs = root / "docs" / "bugs"
+    for name in ("BR-003.md", "BR-004.md"):
+        text = with_regression(root, name, argv)
+        (bugs / name).write_bytes(text.replace("\n", ending).encode("utf-8"))
+    untouched = (bugs / "BR-004.md").read_bytes()
+    code, out, _ = cli(root, tmp_path, "bugs", "renumber", "BR-002", "BR-009")
+    assert (code, out) == (0, "BR-002 -> BR-009; a void pointer remains at docs/bugs/BR-002.md\n")
+    swept = literal("renumber.swept.md", "").replace(
+        "related: [BR-009]\n", f"related: [BR-009]\nregression: {argv}\n", 1
+    )
+    assert (bugs / "BR-003.md").read_bytes() == swept.replace("\n", ending).encode("utf-8")
+    assert (bugs / "BR-004.md").read_bytes() == untouched
+
+
+@needs_git
+@pytest.mark.parametrize(
+    "relative",
+    ["docs/notes.md", "docs/bugs/notes.md", "docs/bugs/BR-005.txt"],
+    ids=["outside-the-ledger", "in-the-ledger-unprefixed", "prefixed-not-markdown"],
+)
+def test_renumber_sweeps_a_regression_line_in_a_file_that_is_no_entry(
+    tmp_path: Path, relative: str
+) -> None:
+    # Only an entry, a file the register reads, carries a `regression`; in any other file the
+    # same line is text like the rest, and the sweep rewrites it. Mutation (oracle):
+    # `mutations/`'s "the sweep keeps list values in every file it rewrites" -> each file keeps
+    # BR-002.
+    root = ledger_copy(tmp_path)
+    notes = root / relative
+    notes.write_text('---\nregression: ["BR-002"]\n---\n\nAbout BR-002.\n', encoding="utf-8")
+    code, _, _ = cli(root, tmp_path, "bugs", "renumber", "BR-002", "BR-009")
+    assert code == 0
+    assert (
+        notes.read_text(encoding="utf-8") == '---\nregression: ["BR-009"]\n---\n\nAbout BR-009.\n'
+    )
 
 
 AS_SECTION = (

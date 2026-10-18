@@ -17,6 +17,7 @@ from stayfixed.ledger.entries import (
     Entry,
     LedgerError,
     entry_dir,
+    entry_paths,
     field_line,
     list_value_spans,
     load_entries,
@@ -502,10 +503,11 @@ def renumber(
 
     pattern = re.compile(rf"\b{re.escape(old)}\b")
     excluded = {source, target, index_path(root, register)}
-    # An entry's list values are argvs: one names the test it runs, and a test is not renamed when
-    # its bug is renumbered, so the sweep leaves each as it is and rewrites the rest of the entry.
-    # An entry is what the register globs, `<prefix>-*.md` in its directory.
-    entries_dir, entry_prefix = root / directory, f"{ids.prefix}-"
+    # An entry's list values are left as they are written, and the rest of the entry is swept. A
+    # test whose name carries `old` in a scanned file is renamed by this same sweep, so an argv
+    # naming `old` may then name a test that no longer exists and need editing by hand. An entry is
+    # what `load_entries` reads (`entry_paths`); a `regression:` line in any other file is text.
+    entry_files = set(entry_paths(root, register))
     unswept: list[Unswept] = []
     for item in scannable(root, citation_roots(root, config)):
         if item.path in excluded:
@@ -523,13 +525,8 @@ def renumber(
         # runs over every file in the tree to rewrite the handful that carry the identifier.
         if item.text is None or old not in item.text:
             continue
-        kept = []
-        path = item.path
-        if (
-            path.parent == entries_dir
-            and path.name.startswith(entry_prefix)
-            and path.suffix == ".md"
-        ):
+        kept: list[tuple[int, int]] = []
+        if item.path in entry_files:
             kept = list_value_spans(item.text, register.schema.lists)
         rewritten = _substituted(pattern, new, item.text, kept)
         if rewritten == item.text:
