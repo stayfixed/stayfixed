@@ -1,0 +1,199 @@
+"""The JUnit reader counts what a runner's report holds, one `testcase` at a time.
+
+Every dialect the recorded runners write is read the same way: each `testcase` at any depth is one
+test, failed with a `failure` or `error` child, skipped with a `skipped` child, passed otherwise. A
+suite's own totals are a claim about its testcases, so they are never read. The document is
+streamed, and one that declares a doctype is refused before anything in it is read, because that
+is where every entity declaration, and so every entity-expansion bomb, has to stand.
+"""
+
+from __future__ import annotations
+
+import tracemalloc
+from collections.abc import Mapping
+
+import pytest
+
+from stayfixed.prove.counts import (
+    MAX_REPORT_BYTES,
+    REPORT_DOCTYPE,
+    REPORT_ENTITY,
+    REPORT_MALFORMED,
+    REPORT_TOO_LARGE,
+    Counts,
+    ReportError,
+)
+from stayfixed.prove.junit import read_junit
+from tests.prove.test_fixtures import REPORTS
+
+
+def fixture(name: str) -> bytes:
+    return (REPORTS / name).read_bytes()
+
+
+def refusal(data: bytes) -> str:
+    with pytest.raises(ReportError) as caught:
+        read_junit(data)
+    return caught.value.reason
+
+
+@pytest.mark.parametrize(
+    ("report", "expected"),
+    [
+        ("pytest-xunit1.xml", Counts(1, 1, 1)),
+        ("pytest-xunit2.xml", Counts(1, 1, 1)),
+        ("pytest-record-xml-attribute.xml", Counts(1, 1, 1)),
+        ("node-junit.xml", Counts(1, 1, 1)),
+    ],
+)
+def test_each_dialect_counts_its_testcases(report: str, expected: Counts) -> None:
+    assert read_junit(fixture(report)) == expected
+
+
+@pytest.mark.parametrize("report", ["pytest-empty.xml", "node-empty.xml"])
+def test_an_empty_run_counts_nothing(report: str) -> None:
+    assert read_junit(fixture(report)).total == 0
+
+
+@pytest.mark.parametrize(
+    ("report", "skipped"), [("pytest-all-skipped.xml", 1), ("node-all-skipped.xml", 2)]
+)
+def test_an_all_skipped_run_counts_only_skips(report: str, skipped: int) -> None:
+    assert read_junit(fixture(report)) == Counts(0, 0, skipped)
+
+
+def test_the_whole_file_testcases_are_testcases_like_any_other() -> None:
+    # Two files that did not load, beside one passing test: without a `drop`, the reader has no
+    # notion of a whole-file testcase, and a failed one is a failure.
+    assert read_junit(fixture("node-load-failure.xml")) == Counts(1, 2, 0)
+
+
+def test_total_is_the_sum_of_the_three() -> None:
+    assert Counts(2, 3, 4).total == 9
+
+
+def test_suite_attributes_are_never_read() -> None:
+    report = (
+        b'<testsuites tests="99" failures="0"><testsuite tests="99" failures="0" errors="0" '
+        b'skipped="7"><testcase name="t"><failure message="no"/></testcase></testsuite>'
+        b"</testsuites>"
+    )
+    assert read_junit(report) == Counts(0, 1, 0)
+
+
+def test_an_error_child_is_failed() -> None:
+    report = (
+        b'<testsuite><testcase name="setup broke"><error message="fixture"/></testcase>'
+        b'<testcase name="ok"/></testsuite>'
+    )
+    assert read_junit(report) == Counts(1, 1, 0)
+
+
+@pytest.mark.parametrize(
+    "inside", [b'<skipped/><failure message="no"/>', b'<error message="no"/><skipped/>']
+)
+def test_a_failure_beside_a_skip_is_failed(inside: bytes) -> None:
+    # Both orders: a skip met after the failure must not take its place.
+    report = b'<testsuite><testcase name="t">' + inside + b"</testcase></testsuite>"
+    assert read_junit(report) == Counts(0, 1, 0)
+
+
+def test_a_testcase_at_any_depth_is_one_test() -> None:
+    report = (
+        b'<testsuites><testsuite name="outer"><testsuite name="inner">'
+        b'<testcase name="deep"><skipped/></testcase></testsuite>'
+        b'<testcase name="shallow"/></testsuite><testcase name="loose"/></testsuites>'
+    )
+    assert read_junit(report) == Counts(2, 0, 1)
+
+
+def test_predefined_entities_and_character_references_read() -> None:
+    seen: list[str] = []
+
+    def keep(attributes: Mapping[str, str]) -> bool:
+        seen.append(attributes["name"])
+        return False
+
+    report = b'<testsuite><testcase name="&lt;&gt;&amp;&apos;&quot; &#233;&#x41;"/></testsuite>'
+    assert read_junit(report, drop=keep) == Counts(1, 0, 0)
+    assert seen == ["<>&'\" éA"]
+
+
+def test_a_billion_laughs_document_stops_at_its_doctype() -> None:
+    entities = b"".join(
+        b'<!ENTITY lol%d "%s">' % (level, b"&lol%d;" % (level - 1) * 10) for level in range(1, 10)
+    )
+    report = (
+        b'<?xml version="1.0"?><!DOCTYPE lolz [<!ENTITY lol0 "lol">'
+        + entities
+        + b']><testsuite><testcase name="&lol9;"/></testsuite>'
+    )
+    assert refusal(report) == REPORT_DOCTYPE
+
+
+def test_a_doctype_with_nothing_in_it_is_refused_too() -> None:
+    assert refusal(b"<!DOCTYPE testsuite><testsuite/>") == REPORT_DOCTYPE
+
+
+def test_an_undefined_entity_is_refused() -> None:
+    assert refusal(b"<testsuite>&foo;</testsuite>") == REPORT_ENTITY
+
+
+@pytest.mark.parametrize(
+    "report",
+    [b"", b"<testsuite>", b"<testsuite></testcase>", b"not xml at all", b"<a/><b/>"],
+)
+def test_a_document_that_does_not_parse_is_malformed(report: bytes) -> None:
+    assert refusal(report) == REPORT_MALFORMED
+
+
+def test_past_the_cap_is_refused_before_parsing() -> None:
+    # One byte past the cap and not XML at all: the refusal is the cap's, so the length was asked
+    # before the parser was.
+    assert refusal(b"x" * (MAX_REPORT_BYTES + 1)) == REPORT_TOO_LARGE
+
+
+def test_at_the_cap_is_read() -> None:
+    head, tail = b"<testsuite><testcase/>", b"</testsuite>"
+    padding = b" " * (MAX_REPORT_BYTES - len(head) - len(tail))
+    assert read_junit(head + padding + tail) == Counts(1, 0, 0)
+
+
+def test_drop_counts_a_testcase_nowhere() -> None:
+    report = (
+        b'<testsuite><testcase name="whole.mjs" classname="test"/>'
+        b'<testcase name="whole.mjs" classname="test"><failure/></testcase>'
+        b'<testcase name="kept"><skipped/></testcase></testsuite>'
+    )
+    asked: list[dict[str, str]] = []
+
+    def whole_file(attributes: Mapping[str, str]) -> bool:
+        asked.append(dict(attributes))
+        return attributes.get("name") == "whole.mjs"
+
+    assert read_junit(report, drop=whole_file) == Counts(0, 0, 1)
+    assert asked == [
+        {"name": "whole.mjs", "classname": "test"},
+        {"name": "whole.mjs", "classname": "test"},
+        {"name": "kept"},
+    ]
+
+
+def test_a_hundred_thousand_cases_count_in_bounded_memory() -> None:
+    cases = 100_000
+    report = (
+        b'<?xml version="1.0" encoding="utf-8"?><testsuites><testsuite name="big">'
+        + b"".join(
+            b'<testcase classname="suite.module" name="test_case_%d" time="0.001"/>' % index
+            for index in range(cases)
+        )
+        + b"</testsuite></testsuites>"
+    )
+    tracemalloc.start()
+    try:
+        counted = read_junit(report)
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    assert counted == Counts(cases, 0, 0)
+    assert peak < 8 * 1024 * 1024, f"peak {peak} bytes while reading {len(report)} bytes"

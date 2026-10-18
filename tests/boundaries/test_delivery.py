@@ -548,6 +548,7 @@ STANDARD_IMPORTS = frozenset(
         "typing",
         "unicodedata",
         "urllib.parse",
+        "xml.parsers.expat",
     }
 )
 # `importlib.resources` reads package data, and imports a module only as the anchor `files` is

@@ -5110,3 +5110,129 @@ reddens = [
   "tests/trust/test_record.py::test_a_refresh_to_the_digest_the_record_holds_writes_nothing",
   "tests/memory/test_commands.py::test_an_index_that_changes_nothing_writes_no_record_from_a_sandboxed_shell",
 ]
+
+# --- the report readers under `stayfixed.prove` ---
+
+# One size check for every reader: a report past the cap is refused before a parser sees a byte,
+# so its length bounds what one run makes `prove` hold.
+[[mutation]]
+name = "the report size cap stops refusing"
+file = "src/stayfixed/prove/counts.py"
+before = '    if len(data) > MAX_REPORT_BYTES:'
+after = '    if False:'
+reddens = [
+  "tests/prove/test_junit.py::test_past_the_cap_is_refused_before_parsing",
+]
+
+# The cap is a length a report may have, not one past it.
+[[mutation]]
+name = "the report size cap refuses a report of exactly its length"
+file = "src/stayfixed/prove/counts.py"
+before = '    if len(data) > MAX_REPORT_BYTES:'
+after = '    if len(data) >= MAX_REPORT_BYTES:'
+reddens = [
+  "tests/prove/test_junit.py::test_at_the_cap_is_read",
+]
+
+# The JUnit reader asks the one size check before it parses.
+[[mutation]]
+name = "the JUnit reader parses a report past the cap"
+file = "src/stayfixed/prove/junit.py"
+before = """    within_cap(data)
+    tally = _Tally(drop)"""
+after = """    tally = _Tally(drop)"""
+reddens = [
+  "tests/prove/test_junit.py::test_past_the_cap_is_refused_before_parsing",
+]
+
+# Every entity declaration stands in a doctype, so refusing the doctype stops an expansion bomb
+# before it declares anything. Without the handler the parser's own amplification limit still
+# stops the classic bomb, as a malformed document rather than as the doctype it is.
+[[mutation]]
+name = "the JUnit reader stops refusing a doctype"
+file = "src/stayfixed/prove/junit.py"
+before = """    parser.StartDoctypeDeclHandler = _refuse_doctype
+"""
+after = ""
+reddens = [
+  "tests/prove/test_junit.py::test_a_billion_laughs_document_stops_at_its_doctype",
+  "tests/prove/test_junit.py::test_a_doctype_with_nothing_in_it_is_refused_too",
+]
+
+# A suite's totals are its writer's claim about its testcases; the testcases are counted.
+[[mutation]]
+name = "the JUnit reader reads a suite's tests attribute"
+file = "src/stayfixed/prove/junit.py"
+before = """        if name == _TESTCASE:
+            dropped"""
+after = '''        if name == "testsuite" and "tests" in attributes:
+            self.passed += int(attributes["tests"])
+        if name == _TESTCASE:
+            dropped'''
+reddens = [
+  "tests/prove/test_junit.py::test_suite_attributes_are_never_read",
+]
+
+# A testcase whose setup or teardown broke carries an `error` child, and it did not pass.
+[[mutation]]
+name = "the JUnit reader counts an error child as passed"
+file = "src/stayfixed/prove/junit.py"
+before = '_FAILED_BY = frozenset({"failure", "error"})'
+after = '_FAILED_BY = frozenset({"failure"})'
+reddens = [
+  "tests/prove/test_junit.py::test_an_error_child_is_failed",
+]
+
+# A failure beside a skip is a failure, whichever stands first.
+[[mutation]]
+name = "the JUnit reader lets a skipped child hide a failure"
+file = "src/stayfixed/prove/junit.py"
+before = "        elif name == _SKIPPED_BY and self._open[-1] == _PASSED:"
+after = "        elif name == _SKIPPED_BY:"
+reddens = [
+  "tests/prove/test_junit.py::test_a_failure_beside_a_skip_is_failed",
+]
+
+# The reader keeps one byte per open testcase, never the testcases themselves, so a report of a
+# hundred thousand cases is counted in the memory of a few.
+[[mutation]]
+name = "the JUnit reader keeps every testcase before counting"
+file = "src/stayfixed/prove/junit.py"
+before = "            self._open.append(_DROPPED if dropped else _PASSED)"
+after = """            self.__dict__.setdefault("kept", []).append(dict(attributes))
+            self._open.append(_DROPPED if dropped else _PASSED)"""
+reddens = [
+  "tests/prove/test_junit.py::test_a_hundred_thousand_cases_count_in_bounded_memory",
+]
+
+# `drop` is asked each testcase's attributes, and a true answer counts it nowhere.
+[[mutation]]
+name = "the JUnit reader never asks drop"
+file = "src/stayfixed/prove/junit.py"
+before = "            dropped = self._drop is not None and self._drop(attributes)"
+after = "            dropped = False"
+reddens = [
+  "tests/prove/test_junit.py::test_drop_counts_a_testcase_nowhere",
+  "tests/prove/test_junit.py::test_predefined_entities_and_character_references_read",
+]
+
+# An entity the document never declared is a refusal of its own, not a malformed document.
+[[mutation]]
+name = "the JUnit reader calls an undefined entity malformed"
+file = "src/stayfixed/prove/junit.py"
+before = "        if exc.code == expat.errors.codes[expat.errors.XML_ERROR_UNDEFINED_ENTITY]:"
+after = "        if False:"
+reddens = [
+  "tests/prove/test_junit.py::test_an_undefined_entity_is_refused",
+]
+
+# A document that does not parse is a `ReportError`, never the parser's own exception.
+[[mutation]]
+name = "the JUnit reader lets the parser's exception escape"
+file = "src/stayfixed/prove/junit.py"
+before = "    except expat.ExpatError as exc:"
+after = "    except ReportError as exc:"
+reddens = [
+  "tests/prove/test_junit.py::test_a_document_that_does_not_parse_is_malformed",
+  "tests/prove/test_junit.py::test_an_undefined_entity_is_refused",
+]
