@@ -1400,3 +1400,27 @@ measurement):
   whose `classname` is `test`, and that has **no `failure` or `error` child**; a whole-file testcase
   with a failure is a file that did not load and counts as failed. Cost if wrong: a broken test file
   beside a passing one would be dropped and the run `proved`.
+
+### Owner's ruling: no stand-in refusal (2026-10-18)
+
+Asked whether `STAND_IN` (a `pytest` script whose first line names no interpreter, a `go` outside a
+Go root, a `.bin` entry in a package not named after the runner) should refuse, mark or resolve
+shims, the owner answered that guarding against a planted runner is not `prove`'s responsibility:
+the anchor of each check (a script's first line, a Go root's layout, a `package.json` name) is one
+the agent in the session writes, so the sandbox or CI is that adversary's control, and the bound
+already concedes "any file in the runner's load path". So no adapter refuses or marks a stand-in:
+the pytest interpreter is the one the script names (its first line, or the installer's
+`#!/bin/sh` + `'''exec'` second line), else the `python` on `PATH`; `go` is the one on `PATH`; jest
+and vitest keep only the entry-point search, whose failure is `Unresolved(ENTRY_NOT_FOUND)`. The
+receipt and the record carry the realpath of what ran. "Runner not verified" stays the mark of
+`--junit` alone. The acceptance clause "a stand-in runner … refused" leaves
+`test_each_refused_route_exits_2`; its other routes are unchanged. This supersedes Task 1's ruling
+for Task 8 and the package-name half of its ruling for Task 10.
+
+### Wave D (controller, 2026-10-18)
+
+Implementer about 260k tokens over the first pass and one fix round; commits `1d54f00b`,
+`e7feaac9`, `dc3c2230`. `read_report` lives in `src/stayfixed/prove/reports.py`, not `counts.py`:
+the readers import `counts`, and the layering test refuses the cycle. Review: spec compliant; one
+Important finding (a reader's refusal carried report-written text unbounded), fixed with
+`printed.clipped`. CPython 3.11.17 runs `tests/prove` green.
