@@ -191,7 +191,8 @@ part into every brief.
    command and paste what it printed before writing any claim about it; focused runs while
    iterating, and before the commit one full run of `uv run pytest -n auto --cov
    --cov-fail-under=92` with `uv run python scripts/release.py check`; before a push, the suite
-   again on Python 3.13 and 3.11.4 (`uv run --python <version> pytest -n auto`); a plan's predicted
+   again on Python 3.13 (`uv run --python 3.13 pytest -n auto`), CI's newest, since a local uv
+   Python is often newer than any CI leg (CI holds 3.11.4 and the rest); a plan's predicted
    mutation outcome is a hypothesis — design your own if it does not redden, and paste the raw
    output either way; no line numbers from the plan; this brief is a message, not a file, so cite
    only the plan; write nothing under the repository but the task's files, use
@@ -226,9 +227,9 @@ part into every brief.
 9. **Second finding at one seam.** At the second review finding that points at the same function,
    reader or boundary, the next step is a redesign of that seam put to the owner, not a third patch.
 
-This plan adds to item 2: run the 3.13 and 3.11.4 suites with
-`UV_PROJECT_ENVIRONMENT=<scratchpad>/venv-<version>`, so they never rebuild the worktree's `.venv`
-under a read-only seat.
+This plan adds to item 2: run the 3.13 suite with `UV_PROJECT_ENVIRONMENT=<scratchpad>/venv-3.13`,
+so it never rebuilds the worktree's `.venv` under a read-only seat. Every control this plan adds
+names its adversary and anchor (the umbrella plan's Design rule).
 
 ## Open questions for the owner
 
@@ -535,7 +536,7 @@ def test_a_list_key_is_held_to_what_reads_it(schema): ...              # Schema(
 #### Task 4: RC1's final review and pull request
 
 - [ ] **Step 1:** on the branch's head: `uv run pytest -n auto --cov --cov-fail-under=92`, the
-  same suite on `--python 3.13` and `--python 3.11.4`, `uv run ruff check .`,
+  same suite on `--python 3.13`, `uv run ruff check .`,
   `uv run ruff format --check .`, `uv run mypy`, `uv run python scripts/mutation_oracle.py`,
   `uv run python scripts/release.py check`, and `uv run stayfixed plan check`, the last in the
   owner's attached checkout or in a scratch worktree holding a copy of the owner's
@@ -1127,7 +1128,8 @@ def test_no_value_reaches_the_record(tmp_path): ...             # NAME=value and
 #### Task 13: The upload in CI, the documents and the acceptance file
 
 **Files:**
-- Modify: `.github/workflows/check.yml` (the upload step, two inputs), `tests/test_check_workflow.py`,
+- Modify: `.github/workflows/check.yml` (the upload step, two inputs), `.github/workflows/smoke.yml`
+  (its call turns the upload on), `tests/test_check_workflow.py`,
   `docs/cli.md` (the `prove` section completed; `gate`: its record; the reusable workflow's inputs),
   `README.md` ("What stayfixed sends where": `prove --`'s row and the upload; the machine-files
   table: the evidence directory), `mutations/tooling.toml`
@@ -1138,11 +1140,13 @@ def test_no_value_reaches_the_record(tmp_path): ...             # NAME=value and
 **Interfaces:**
 - Consumes: Task 12's directory; every reason constant of Tasks 7–11.
 - Produces:
-  - A last step of `check.yml`'s job, after the custom-gates step, `if: always()`, uploading
+  - A last step of `check.yml`'s job, after the custom-gates step, `if: always() && inputs.evidence`, uploading
     `~/.local/state/stayfixed/evidence/` with `actions/upload-artifact` pinned by sha,
     `if-no-files-found: ignore`, the artifact named per leg from `github.job` and the `only` input so a
-    caller's matrix never repeats a name [review S-4]. Two inputs: `evidence` (boolean, default `true`; a
-    caller may turn the upload off) and `evidence-retention-days` (default 14) [review D-8]. The step runs
+    caller's matrix never repeats a name [review S-4]. Two inputs: `evidence` (boolean, default
+    `false`: the artifact's one consumer is stayfixed's own metrics, so `.github/workflows/smoke.yml`'s
+    call sets it `true` and no other caller pays for it) and `evidence-retention-days` (default 14)
+    [review D-8; the umbrella's Design rule]. The step runs
     no command, reads no secret, and uploads bytes the pull request's own code can write, which is
     why a record is a log nothing reads [review S-1, B-3]; that sentence is the pinned test's written reason.
   - The `prove` section: the cascade table with exits and reasons; the bound, word for word; each
@@ -1160,7 +1164,7 @@ def test_no_value_reaches_the_record(tmp_path): ...             # NAME=value and
 def test_the_upload_is_last_and_the_only_step_with_an_if(): ...   # names[-3:] == [JUDGE, CUSTOM, UPLOAD]
 def test_the_upload_runs_no_command_and_reads_no_secret(): ...
 def test_the_upload_is_pinned_by_sha_and_named_per_leg(): ...
-def test_a_caller_can_turn_the_upload_off(): ...
+def test_the_upload_is_off_unless_a_caller_turns_it_on(): ...   # smoke.yml turns it on
 def test_the_uploaded_directory_is_the_one_evidence_writes(): ...  # evidence.STATE_DIR in check.yml [review D-7]
 def test_the_prove_section_states_the_bound_word_for_word(): ...
 def test_every_reason_constant_is_documented(): ...
@@ -1265,7 +1269,7 @@ finding changed the plan as below; a finding not named was fixed in the task it 
 | O-1 (the cascade) | Global Constraints' cascade; Task 7's rows `("empty", 5)`, `("empty", 1)` and its mutation |
 | P-1 (a package cycle) | the protocol in the leaf `stayfixed.profiles.runners` (Tasks 6, 7) |
 | P-2 (Go's report on stdout) | `ReportSource.STDOUT` and the tee (Task 7); `build-fail` (Task 6) |
-| S-1, S-4, D-8 (the upload) | Task 13: last, `if: always()`, the pinned test's written reason, a name per leg, an opt-out input |
+| S-1, S-4, D-8 (the upload) | Task 13: last, `if: always()`, the pinned test's written reason, a name per leg, an input off by default |
 | D-1, B-2, B-4, D-3, D-4 (refusals, realpath, Go, other stacks, `-I`) | the owner's rulings; Tasks 8–11; `--junit` is Task 9 |
 | P-3, P-4, P-10 (surfaces, pins, the unwrap) | Task 7's Files; `guards.api.command_words`; `processes.kill_group` |
 | P-5, P-11, P-12, P-13, O-3, O-8 (the readers) | Tasks 5, 6 and 10 |

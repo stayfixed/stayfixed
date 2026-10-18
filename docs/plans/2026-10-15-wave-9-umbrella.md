@@ -199,6 +199,36 @@ removes the old spelling in the same pull request. `memory trust`, which HS1 kep
 shipped, goes in HS3; `overlay create`, `overlay init` and the `footprint` category go in HS4, which
 replaces them; `profile` becomes `profiles` in PF1.
 
+## Design rule (owner, 2026-10-18)
+
+stayfixed is a tool developers install, set up quickly and then shape to their own work, usually
+through their own agents; it leaves them room rather than covering every branch for them. So every
+control a lane plan adds or keeps names **the adversary it stops and the anchor it trusts** (the
+bytes or state the decision rests on, and who can write them). Where the adversary can write the
+anchor, the control is a convenience, and a convenience never refuses a legitimate user and never
+asks again about what has not changed. Each lane plan's final review applies the rule to every
+control its diff adds or keeps.
+
+Controls with a real anchor, kept: the gates' ratchet against a pull request in CI; the machine's
+home from the password database; the binding id in the git common directory; path containment;
+pins on what bypasses the permission layer; the value floor.
+
+Applied on 2026-10-18 (the owner's review "locks and redundancy"), as lane-plan items below:
+
+| Control | Why it is a convenience | Becomes | Lane |
+|---|---|---|---|
+| `trust approve regressions` before a local regressions run, its digest holding the commit | a local `stayfixed gate` already runs the base's `[gates.custom]` with no approval, and the test runner executes the tree's own `conftest.py` | regressions run locally as custom gates do, with no approval and no `regressions` kind (d36 amended) | CP2 |
+| the digest approval before in-repo notes reach the model | the harness loads the same repository's `CLAUDE.md` and `.claude/rules/` with no approval, and any commit to a shared note would unapprove every teammate | in-repo notes are delivered as the harness delivers `CLAUDE.md`, still as data (d24 and d26 amended) | HS3 |
+| `trust approve`'s terminal check | an agent passes it through `script -q`, as the HS1 plan records; it refuses only legitimate automation (a second machine's bootstrap, a devcontainer) | removed; the record keeps who approved and when | HS2 |
+| `guards.*` as `MACHINE_ONLY` | a repository can already switch a plugin's hooks off through its own settings | a preference: a repository may set the default, the machine owner's layers have the last word (d5 amended) | HS2 |
+| the overlay's node id re-checked whenever its `HEAD` moves | identity is the remote's, not `HEAD`'s, and agents commit to the overlay all the time, so the line would fire in nearly every session | re-checked when the remote changes, not `HEAD` | HS2 |
+| pins on whole skills | a skill's body is an instruction like the overlay's unpinned rules | pins only on what bypasses the permission layer: hooks, MCP servers, settings keys that launch programs, allow rules, and the hooks in a skill's frontmatter (d10 and d19 amended) | HS2 |
+| `attach` refusing a `settings.local.json` with allow rules it did not write | the merge goes by stayfixed's marker, so no foreign entry is at risk; Claude Code may write its own "don't ask again" answers there, which HS2 measures first | merged by marker, never refused for foreign entries | HS2 |
+| `prove`'s per-adapter refusal lists and `-I` beside a `PYTHON*` scrub | measured: nine bypasses through every list, and refusals of TypeScript, Plug'n'Play and `PYTHONPATH=src` | a short closed list of what the command spells, the channels stayfixed controls neutralised, `-P` | CP1 (done) |
+| the evidence artifact uploaded in every caller's CI | its one consumer is stayfixed's own metrics | an input, off by default, turned on by stayfixed's own calls | CP1 |
+| the local suite on 3.11.4 before every push | CI runs it on every pull request | dropped from the execution contract; the local run before a push stays on 3.13 | all lanes |
+| stacked controls against one threat (the rendered plugin's layers, the approvals' speed bumps) | each layer the adversary passes as easily as the first adds nothing | each owning lane's plan names each layer's adversary and anchor and keeps one per threat | HS2 |
+
 ## Lane-plan items
 
 What the wave's two reviews found that a lane plan must carry and §15.8 does not spell out. Each
@@ -207,12 +237,12 @@ lane plan cites the ids it takes.
 | Lane | Items |
 |---|---|
 | HS1 | Carried in the HS1 plan. |
-| HS2 | Measure before fixing tasks: copy or in place [P-HS-1]; an absolute `autoMemoryDirectory` in a main checkout and its worktrees [F5, N4]; worktree and desktop worktree sessions [P-HS-22]; a committed `enabledPlugins` for a directory marketplace [O-7]. Then: `attach` refuses a tracked or foreign-written `settings.local.json` [B-7]; the exclusion in `.git/info/exclude`, written before `plugin install` [P-HS-15, C-40]; `detach` versus a shared slug [BR-027, P-HS-21]; the path-rule handler on `Read\|Edit\|Write`, once per file per session [U-9]; `attach` shows the binding and the diff on one screen, and `common/` pins are approved once per machine [U-17]; `attach --trust-remote` retires into `trust approve checkout`, with no alias [X-24]; the `overlay` kind takes one subject per pinned part and one for the rule set [N-21]; the overlay's node id is re-checked by `attach` and `doctor` when its `HEAD` moved, with one `SessionStart` line until then (D-1). |
-| HS3 | The expected digest set comes from an independent `os.walk` (nested, non-`.md`, dotfiles, symlinks) [O-20]; worktree-link fixtures with differing stores and the bare-repository "cannot tell" case [O-19]; one fixture with both kinds of index line [O-21]; native top-level topic files indexed and their pointer lines kept [N3]; the reviewed-record tests: a note written through the shell is unreviewed, promote marks it, a killed session leaves it unreviewed [F2, O-22]; the loader keeps `local-only` for a `stayfixed.toml` older than `0.5.0` [N-4]; remove the `memory trust` alias. |
+| HS2 | The Design rule's HS2 rows: no terminal check in `trust approve`, `guards.*` a preference, the node id re-checked on a remote change, pins only on what bypasses the permission layer, `attach` merging by marker. Measure before fixing tasks: whether Claude Code writes its own allow rules into `settings.local.json`; copy or in place [P-HS-1]; an absolute `autoMemoryDirectory` in a main checkout and its worktrees [F5, N4]; worktree and desktop worktree sessions [P-HS-22]; a committed `enabledPlugins` for a directory marketplace [O-7]. Then: `attach` refuses a tracked or foreign-written `settings.local.json` only when it is tracked [B-7, narrowed by the Design rule]; the exclusion in `.git/info/exclude`, written before `plugin install` [P-HS-15, C-40]; `detach` versus a shared slug [BR-027, P-HS-21]; the path-rule handler on `Read\|Edit\|Write`, once per file per session [U-9]; `attach` shows the binding and the diff on one screen, and `common/` pins are approved once per machine [U-17]; `attach --trust-remote` retires into `trust approve checkout`, with no alias [X-24]; the `overlay` kind takes one subject per pinned part and one for the rule set [N-21]; the overlay's node id is re-checked by `attach` and `doctor` when its remote changes (D-1, narrowed by the Design rule). |
+| HS3 | In-repo notes delivered with no digest approval (Design rule); the expected digest set comes from an independent `os.walk` (nested, non-`.md`, dotfiles, symlinks) [O-20]; worktree-link fixtures with differing stores and the bare-repository "cannot tell" case [O-19]; one fixture with both kinds of index line [O-21]; native top-level topic files indexed and their pointer lines kept [N3]; the reviewed-record tests: a note written through the shell is unreviewed, promote marks it, a killed session leaves it unreviewed [F2, O-22]; the loader keeps `local-only` for a `stayfixed.toml` older than `0.5.0` [N-4]; remove the `memory trust` alias. |
 | HS4 | BR-018's three cases and `_populated`'s replacement [P-HS-18]; map the overlay's `machine/` to `machines/<name>/` [P-HS-19]; remove the old overlay plugin and its marketplace [C-41]; one user entry for creating an overlay [U-18 of the first review]; the README outbound row for `gh` [P-HS-20]; the guided walk's four-line texts in `init --questions --json`, `agents` detected, `attribution_check` and commit types asked, `setup`'s plugin installs opt-in, nothing of the user's `pluginConfigs` or comments overwritten [N5]; the skip path's defaults: attribution check off, the conventional commit types, no recommended plugins [N-18]; the scaffold rename [O-8]. |
 | RC1 | Capture literals for `bugs new`'s entry, `bugs check` (text and `--json`) and `renumber` before touching the engine, from the tree rather than the `v0.3.0` tag (owner, 2026-10-18) [O-23]; quoted list items for `regression` [P-CP-17]. |
 | CP1 | The JUnit reader counts testcases (the node dialect; predefined entities allowed; `record_xml_attribute`) [P-CP-6]; vitest's default output lies inside the repository, and its configuration-against-CLI precedence is measured [P-CP-7]; recognition of `npx` and `poetry run`, with `npm test` → `not proven` [P-CP-8]; the `jest`/`vitest` words against `tests/test_language_neutral.py` [P-CP-9]; per-reader empty and all-skipped fixtures, including `go test -run NoSuchTest` [O-13]; each forging route as a test (test2json framing, `TestMain` with `os.Exit(0)`, an `atexit` rewrite, an untracked `conftest.py`, `-exec`, environment injection, a realpath that differs); an argv or variable the run's own invocation sets explicitly is `refused`, one merely inherited is scrubbed [N-13]; the evidence record's `0.4.0` key; jest's `--passWithNoTests` and vitest's reporter precedence measured first. |
-| CP2 | The evidence upload needs `if: always()`, an explicit exception to the judging step's rule [P-CP-11] (built by CP1, which CP2 inherits); regressions in the project's-own-gates step [F9]; the project key for an unbound checkout [C-39]; the merge-base control fixture commits before the branch point [N-23]; `regressions` is not added to the preset's default `builtin`. |
+| CP2 | Regressions run locally with no approval and no `regressions` kind (Design rule); the evidence upload needs `if: always()`, an explicit exception to the judging step's rule [P-CP-11] (built by CP1, which CP2 inherits); regressions in the project's-own-gates step [F9]; the project key for an unbound checkout [C-39]; the merge-base control fixture commits before the branch point [N-23]; `regressions` is not added to the preset's default `builtin`. |
 | CP3 | The `adopt` skill as the last step of the full `init` walk [O-3d]; BR-010. |
 | PF1 | Profiles as a layered list with detection, the union merge in `resolve`; committed rules files released from the manifest, which `upgrade` owns today; detection picks several, not one [P-CP-20]; `profile` renamed with no alias. |
 | PF2 | Profile context through `SessionStart` and the path-rule handler. |
@@ -235,7 +265,8 @@ relevant part into every brief, post-pull-request dispatches included.
    command and paste what it printed before writing any claim about it; focused runs while
    iterating, and before the commit one full run of `uv run pytest -n auto --cov
    --cov-fail-under=92` with `uv run python scripts/release.py check`; before a push, the suite
-   again on Python 3.13 and 3.11.4 (`uv run --python <version> pytest -n auto`); a plan's predicted
+   again on Python 3.13 (`uv run --python 3.13 pytest -n auto`), CI's newest, since a local uv
+   Python is often newer than any CI leg (CI holds 3.11.4 and the rest); a plan's predicted
    mutation outcome is a hypothesis — design your own if it does not redden, and paste the raw
    output either way; no line numbers from the plan; this brief is a message, not a file, so cite
    only the plan; write nothing under the repository but the task's files, use
