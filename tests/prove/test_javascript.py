@@ -441,6 +441,8 @@ PRELOADS_UNNAMED = [
     "./back\\slash.mjs",
     "./tab\tname.mjs",
     "./line\nbreak.mjs",
+    "x://]",
+    "http://[x",
     "",
 ]
 
@@ -594,8 +596,8 @@ def test_vitest_s_subcommands_that_run_no_test_are_not_proven(
 def test_a_vitest_subcommand_after_an_option_is_read_as_a_name_filter(tmp_path: Path) -> None:
     # Only the first word is read as a subcommand: vitest itself reads the first positional word
     # (measured: `vitest --globals related a.js` runs `related`), and a word after an option may
-    # be that option's value, so the plan stays `run` with the word as a filter: `failed` where it
-    # names no test, never `proved`.
+    # be that option's value, so the plan stays `run` with the word as a filter: the tests whose
+    # paths hold it run, as under `vitest run watch`, and `failed` where none does.
     project = tmp_path / "project"
     _, _, node = installed(project)
     got = plan_of(VITEST, ["vitest", "--globals", "watch"], project, path=str(node.parent))

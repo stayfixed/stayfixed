@@ -499,8 +499,10 @@ def _run(
             return _Ran(TIMED_OUT, None)
         except (KeyboardInterrupt, _Signalled):
             # A terminal's Ctrl-C reaches stayfixed's process group and not the command's session,
-            # so nothing but `prove` ends the command's group on the way out.
-            processes.end(process)
+            # so nothing but `prove` ends the command's group on the way out. One that landed after
+            # the wait reaped the command leaves no group to end: its pid may be another's by now.
+            if process.returncode is None:
+                processes.end(process)
             return _Ran(INTERRUPTED, None)
         except BaseException:
             processes.end(process)

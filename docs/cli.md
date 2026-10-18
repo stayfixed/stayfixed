@@ -895,7 +895,8 @@ the command names no reporter. vitest 5.0.5's subcommands, read in the command's
 reports, and are `not proven` (`no-test-run`), whose detail names `vitest run`. vitest itself
 reads the first word that is no option as the subcommand, so a subcommand after an option
 (`vitest --globals related a.js`) is planned as `run` with it a name filter, which `prove` counts
-as the run of the tests it names: `failed` where none, never `proved`; `node --test` with a junit reporter to `<report>` and the spec reporter
+as the run of the tests whose paths hold it, as `vitest run related a.js` would be: `failed` where
+none does; `node --test` with a junit reporter to `<report>` and the spec reporter
 to standard output, and a testcase node writes for a whole file that ran no test is not counted
 unless it failed. Each refuses (`refused-option`, naming the option) a closed list drawn by running
 every option the pinned runner registers over a failing test: jest's `--json`, `--outputFile`,

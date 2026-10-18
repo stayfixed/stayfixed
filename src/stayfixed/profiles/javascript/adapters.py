@@ -124,7 +124,7 @@ import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from urllib.parse import unquote, urlsplit
+from urllib.parse import SplitResult, unquote, urlsplit
 
 from stayfixed import fsops
 from stayfixed.profiles.runners import (
@@ -678,8 +678,9 @@ def vitest_unplanned(args: Sequence[str]) -> Unresolved | None:
     ends (`NEVER_ENDS`), and one that runs no test suite has no report (`NO_TEST_RUN`); `None`
     for `run`, `related` and a first word that is no subcommand. Only the first word is read:
     vitest reads the first positional word, past its options, and a word after an option may be
-    that option's value, so `vitest --globals watch` is planned as `run` with `watch` a filter,
-    which counts no test (`failed`), never `proved`."""
+    that option's value, so `vitest --globals watch` is planned as `run` with `watch` a filter:
+    the run of the tests whose paths hold it, as `vitest run watch` would be, `failed` where none
+    does."""
     first = args[0] if args else None
     if first in _VITEST_WATCHING:
         return Unresolved(NEVER_ENDS, NEVER_ENDS_DETAIL.format(option=f"vitest {first}"))
@@ -1095,9 +1096,17 @@ def inline_preload(value: str) -> bool:
     `--experimental-loader`) is code the command spells: a URL of any scheme but `file:`, a
     `data:` URL among them, which node runs before the tests and which can write the report, as
     jest's `--config` given JSON text can. The only refusal of a preload: every other value runs
-    as it is."""
-    scheme = urlsplit(value).scheme
-    return bool(scheme) and scheme != _FILE_SCHEME
+    as it is. A value no URL parser reads (`x://]`) is no URL: node cannot load it either."""
+    url = _url(value)
+    return url is not None and bool(url.scheme) and url.scheme != _FILE_SCHEME
+
+
+def _url(value: str) -> SplitResult | None:
+    """`value` split as a URL, `None` where it is none (`urlsplit` refuses `http://[x`)."""
+    try:
+        return urlsplit(value)
+    except ValueError:
+        return None
 
 
 def _preloaded_file(given: str, cwd: Path) -> str | None:
@@ -1109,8 +1118,8 @@ def _preloaded_file(given: str, cwd: Path) -> str | None:
     verdict reads it, and a file in the tree is the bound's."""
     if given.startswith(_PATH_STARTS):
         return None if _AMBIGUOUS & set(given) else os.path.realpath(cwd / given)
-    url = urlsplit(given)
-    if url.scheme != _FILE_SCHEME or url.netloc not in _LOCAL_HOSTS:
+    url = _url(given)
+    if url is None or url.scheme != _FILE_SCHEME or url.netloc not in _LOCAL_HOSTS:
         return None
     if not url.path.startswith(_ROOT):
         return None
