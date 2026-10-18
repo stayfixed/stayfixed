@@ -1,11 +1,11 @@
 """The `changes` job of `ci.yml` and `smoke.yml`: what a change reaches, and the jobs that read it.
 
 A pull request that changes nothing outside `docs/` runs the suite on one leg and skips the other
-legs, the oracle, the plugin validator and the install smoke. That is a narrowing, so it must be
-said in so many words: the scope step answers `false` only when every path the merge commit changes
-against its first parent begins `docs/`, and every job that reads it treats any other answer, or
-none, as a change to code. The step runs here as shipped, under `bash -e`, against a real merge
-commit; the wiring is read by `tests.workflow_yaml`'s strict reader.
+legs, the oracle, the real runners, the plugin validator and the install smoke. That is a narrowing,
+so it must be said in so many words: the scope step answers `false` only when every path the merge
+commit changes against its first parent begins `docs/`, and every job that reads it treats any
+other answer, or none, as a change to code. The step runs here as shipped, under `bash -e`, against
+a real merge commit; the wiring is read by `tests.workflow_yaml`'s strict reader.
 """
 
 from __future__ import annotations

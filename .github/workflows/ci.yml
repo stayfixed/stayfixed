@@ -25,11 +25,11 @@ jobs:
   # documents ship in no artifact and no plugin tree (`scripts/plugin_tree.py`'s `PLUGIN_PATHS`),
   # yet tests read them — `docs/cli.md` is held to the parser, and every tracked file to the
   # neutrality and anchor guards — so one leg of the suite still runs, and the other legs, the
-  # oracle and the plugin validator have nothing of theirs to judge.
+  # oracle, the real runners and the plugin validator have nothing of theirs to judge.
   #
   # Skipped by step and not by job wherever a check is a matrix leg: branch protection requires
   # each leg by its full name, and every leg here still starts and reports under it. A job skipped
-  # by its `if:` reports success, so `oracle` and `plugin` skip whole. Every job that reads this
+  # by its `if:` reports success, so `oracle`, `runners` and `plugin` skip whole. Every job that reads this
   # one runs unless the run was cancelled and treats any answer but `false` as a change to code, so this
   # job failing, or answering nothing, runs everything: it can only narrow a run when it says,
   # in so many words, that nothing outside `docs/` changed.

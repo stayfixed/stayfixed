@@ -21,9 +21,12 @@ floor, ruff, mypy and `scripts/release.py check`), run on Linux for Python 3.11,
 and a red pull request. The mutation oracle, which is this project's headline obligation and not
 an optional extra, runs in a job of its own on Linux under 3.13 (see [Tests](#tests)). CI runs
 three more steps you can reproduce only from a build (`uv build`, then
-`scripts/check_artifacts.py dist` and an installed-wheel render) and one job you cannot
-reproduce without a global install of the harness CLI, the plugin-manifest validator; a failure
-in either is ours to diagnose, not yours.
+`scripts/check_artifacts.py dist` and an installed-wheel render), one job you cannot reproduce
+without a global install of the harness CLI, the plugin-manifest validator, and one that installs
+the real test runners `stayfixed prove`'s adapters run and runs `-m runners` under
+`STAYFIXED_REQUIRE_RUNNERS=1` (Node, jest, vitest and Go at the versions `ci.yml` pins); a failure
+in the first two is ours to diagnose, not yours, and the third you can reproduce with those runners
+on your `PATH`.
 
 ## What this project is, and what that costs a change
 
