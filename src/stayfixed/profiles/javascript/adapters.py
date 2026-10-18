@@ -295,7 +295,7 @@ class _Runner:
     packages: tuple[str, ...]
     discovery: tuple[str, ...]
     report_name: str
-    refused: Callable[[Sequence[str], Path, Path], str | None]
+    refused: Callable[[Sequence[str]], str | None]
     never_ends: Callable[[Sequence[str]], str | None]
     unplanned: Callable[[Sequence[str]], Unresolved | None]
     configs: Callable[[Sequence[str], Path], tuple[str, ...]]
@@ -551,7 +551,7 @@ _JEST_SNAPSHOTS = frozenset({"updateSnapshot", "u"})
 _JEST_NEVER_ENDS = frozenset({"watch", "watchAll"})
 
 
-def jest_refused(args: Sequence[str], cwd: Path, root: Path) -> str | None:
+def jest_refused(args: Sequence[str]) -> str | None:
     """The first word of jest's `args` that sets an option on its closed list, as the receipt
     names it; `None` where none does."""
     settings = _settings(jest_settings, args)
@@ -597,7 +597,7 @@ _VITEST_NEW_ONLY = "new"
 _VITEST_NEVER_ENDS = frozenset({"watch", "w"})
 
 
-def vitest_refused(args: Sequence[str], cwd: Path, root: Path) -> str | None:
+def vitest_refused(args: Sequence[str]) -> str | None:
     """The first word of vitest's `args` that sets an option on its closed list, as the receipt
     names it; `None` where none does."""
     settings = _settings(vitest_settings, args)
@@ -923,7 +923,7 @@ class _PackageRunner:
             refused_by_node = _node_entry_refused(node_words)
             if refused_by_node is not None:
                 return Refused(REFUSED_OPTION, refused_by_node)
-        refused = runner.refused(args, cwd, root)
+        refused = runner.refused(args)
         if refused is not None:
             return Refused(REFUSED_OPTION, refused)
         never = node_never_ends(node_words) or runner.never_ends(args)

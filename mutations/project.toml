@@ -2837,7 +2837,7 @@ reddens = [
 [[mutation]]
 name = "a watch mode wins over a refusal in the same command"
 file = "src/stayfixed/profiles/javascript/adapters.py"
-before = """        refused = runner.refused(args, cwd, root)
+before = """        refused = runner.refused(args)
         if refused is not None:
             return Refused(REFUSED_OPTION, refused)
         never = node_never_ends(node_words) or runner.never_ends(args)
@@ -2846,7 +2846,7 @@ before = """        refused = runner.refused(args, cwd, root)
 after = """        never = node_never_ends(node_words) or runner.never_ends(args)
         if never is not None:
             return Unresolved(NEVER_ENDS, NEVER_ENDS_DETAIL.format(option=never))
-        refused = runner.refused(args, cwd, root)
+        refused = runner.refused(args)
         if refused is not None:
             return Refused(REFUSED_OPTION, refused)"""
 reddens = [
