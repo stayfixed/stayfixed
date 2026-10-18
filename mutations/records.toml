@@ -3580,3 +3580,36 @@ after = "    except FileNotFoundError:\n        return None"
 reddens = [
   "tests/hooks/test_floor.py::test_memory_session_context_reads_past_a_broken_machine_file",
 ]
+
+# The bug ledger held to its bytes before the register engine learnt a list field
+# (`tests/ledger/test_literals.py`): a writer that changes one byte of an entry, or a finding that
+# drops a word of its detail, reddens the literal it moved.
+[[mutation]]
+name = "an empty field is written with a trailing space"
+file = "src/stayfixed/ledger/entries.py"
+before = '    return f"{key}: {written}" if written else f"{key}:"'
+after = '    return f"{key}: {written}"'
+reddens = [
+  "tests/ledger/test_literals.py::test_new_writes_the_entry_it_wrote[new-bare]",
+]
+
+[[mutation]]
+name = "every frontmatter value is quoted"
+file = "src/stayfixed/ledger/entries.py"
+before = "    return quote(value) if _NEEDS_QUOTING.search(value) else value"
+after = "    return quote(value)"
+reddens = [
+  "tests/ledger/test_literals.py::test_new_writes_the_entry_it_wrote[new]",
+  "tests/ledger/test_literals.py::test_new_writes_the_entry_it_wrote[new-bare]",
+]
+
+# `_stale`'s line, not the `bugs index --check` line in `commands.py` that also says "is stale;
+# run:": the `--json` detail carries the remedy, the text line labels only.
+[[mutation]]
+name = "the stale index's finding drops its remedy"
+file = "src/stayfixed/ledger/check.py"
+before = "    return f\"is stale; run: {commands[0] if commands else f'stayfixed {register.name} index'}\""
+after = '    return "is stale"'
+reddens = [
+  "tests/ledger/test_literals.py::test_the_ledger_prints_what_it_printed_before_the_list_field[json-check-broken]",
+]
