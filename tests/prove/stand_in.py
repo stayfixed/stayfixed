@@ -17,6 +17,8 @@ The program's options, all after the word `stand-in`:
   every test into a failure when it does not hold, so the verdict says what the runner saw;
 - `--touch NAME`: a file written in the directory it runs in, before the report;
 - `--sleep SECONDS`: a silence before anything is printed or written;
+- `--report-from-stdin`: the report's shape is the first line standard input holds, where it holds
+  one, as a runner a debugger drives takes its commands there;
 - `--pad N`: `N` bytes of whitespace after the report's last element, or after its last event;
 - `--hang STARTED LATE`: write `STARTED`, leave a child that writes `LATE` a few seconds later,
   and never exit;
@@ -190,6 +192,8 @@ def main(argv: list[str]) -> int:
     shape = (options.get("--report") or ["pass"])[0]
     if shape not in ("none", "doctype") and not _holds(options):
         shape = "fail"
+    if "--report-from-stdin" in argv:
+        shape = sys.stdin.buffer.readline().decode().strip() or shape
     time.sleep(float((options.get("--sleep") or ["0"])[0]))
     for name in options.get("--touch", []):
         Path(name).write_text("touched\n", encoding="utf-8")

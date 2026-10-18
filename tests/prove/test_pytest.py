@@ -45,6 +45,7 @@ from stayfixed.prove.run import (
 )
 from tests.gitfixture import git
 from tests.prove.real_runners import needs_runner, runner_directory
+from tests.prove.test_run import standard_input
 
 PROVED, FAILED, NOT_PROVEN, REFUSED = (
     Verdict.PROVED,
@@ -701,6 +702,31 @@ def test_an_atexit_rewrite_is_what_the_bound_concedes(tmp_path: Path) -> None:
     project = scratch_project(tmp_path / "p", failing=1, files={"conftest.py": conftest})
     got = real(project, "pytest", "-q")
     assert (got.verdict, got.counts, got.exit_code) == (PROVED, Counts(1, 0, 0), 0)
+
+
+# One debugger command, piped into `prove`, that writes a green report where pytest was told to
+# write its own, and leaves at once.
+_DEBUGGER_FORGE = (
+    "!import sys, os; "
+    "path = [word.split('=', 1)[1] for word in sys.argv if word.startswith('--junitxml=')][0]; "
+    f"open(path, 'w').write({_FORGED!r}); os._exit(0)\n"
+)
+
+
+@needs_runner("pytest")
+def test_a_debugger_driven_through_prove_s_standard_input_forges_nothing(tmp_path: Path) -> None:
+    # `--pdb` is free: the runner's standard input is `/dev/null`, so the debugger reads its end,
+    # quits, and pytest exits 2 with the failure in its report. Had it the caller's, the command
+    # piped in would write a green report and exit 0: `proved`.
+    project = scratch_project(tmp_path / "p", failing=1)
+    with standard_input(_DEBUGGER_FORGE.encode()):
+        got = real(project, "pytest", "-q", "-p", "no:cacheprovider", "--pdb")
+    assert (got.verdict, got.reason, got.counts, got.exit_code) == (
+        FAILED,
+        FAILING,
+        Counts(0, 1, 0),
+        2,
+    )
 
 
 @needs_runner("pytest")

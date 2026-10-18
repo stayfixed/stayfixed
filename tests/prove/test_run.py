@@ -20,7 +20,7 @@ import sys
 import threading
 import time
 import types
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from pathlib import Path
 from typing import TextIO
 
@@ -88,6 +88,23 @@ def run(
     )
 
 
+@contextlib.contextmanager
+def standard_input(data: bytes) -> Iterator[None]:
+    """This process's standard input, the descriptor a launch inherits, a pipe that holds `data`
+    and then ends, for as long as the block runs."""
+    reader, writer = os.pipe()
+    os.write(writer, data)
+    os.close(writer)
+    saved = os.dup(0)
+    try:
+        os.dup2(reader, 0)
+        yield
+    finally:
+        os.dup2(saved, 0)
+        for descriptor in (reader, saved):
+            os.close(descriptor)
+
+
 def repository(root: Path) -> Path:
     root.mkdir(parents=True, exist_ok=True)
     git(root, "init", "-q")
@@ -138,6 +155,17 @@ def test_printed_text_is_never_counted(tmp_path: Path) -> None:
     # mutation would have to add a reader; the tee's own entries cover the standard-output case.
     got = run(tmp_path, NAME, "--print", "3 passed", "--report", "fail")
     assert (got.verdict, got.reason) == (FAILED, FAILING)
+
+
+def test_the_runner_reads_nothing_piped_into_prove(tmp_path: Path) -> None:
+    # Standard input is a channel stayfixed controls: whatever feeds `prove`'s, the agent or a pipe
+    # upstream, could drive the runner (pytest's `--pdb` takes debugger commands there), so the
+    # run's is `/dev/null` and a runner that reads it sees its end. Mutation (declared): the
+    # caller's standard input inherited -> the runner reads `pass` and reports its failing tests
+    # as passed.
+    with standard_input(b"pass\n"):
+        got = run(tmp_path, NAME, "--report", "fail", "--report-from-stdin")
+    assert (got.verdict, got.reason, got.counts) == (FAILED, FAILING, Counts(1, 1, 0))
 
 
 @pytest.mark.parametrize(

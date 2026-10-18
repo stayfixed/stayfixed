@@ -5665,8 +5665,8 @@ reddens = [
 [[mutation]]
 name = "prove calls a command nothing can count refused"
 file = "src/stayfixed/prove/run.py"
-before = "        return _receipt(_Outcome(unproven=NOT_RECOGNISED), shown)"
-after = "        return _receipt(_Outcome(refused=NOT_RECOGNISED), shown)"
+before = "        return _receipt(_Outcome(unproven=NOT_RECOGNISED), shown, verified=verified)"
+after = "        return _receipt(_Outcome(refused=NOT_RECOGNISED), shown, verified=verified)"
 reddens = [
   "tests/prove/test_run.py::test_an_unrecognised_command_is_not_proven[argv0]",
   "tests/prove/test_run.py::test_an_unrecognised_command_is_not_proven[argv1]",
@@ -5808,6 +5808,16 @@ file = "src/stayfixed/prove/run.py"
 before = "    if Path(os.path.realpath(plan.argv[0])) != plan.program:"
 after = "    if False:"
 reddens = ["tests/prove/test_run.py::test_a_program_resolved_elsewhere_is_refused"]
+
+# The runner's standard input is `/dev/null`: what feeds `prove`'s, an agent or a pipe upstream,
+# never reaches the run, so it cannot drive the runner (pytest's `--pdb` takes debugger commands
+# there and can be told to write a green report).
+[[mutation]]
+name = "prove hands the runner the caller's standard input"
+file = "src/stayfixed/prove/run.py"
+before = "        stdin=subprocess.DEVNULL,"
+after = ""
+reddens = ["tests/prove/test_run.py::test_the_runner_reads_nothing_piped_into_prove"]
 
 # The command runs where it is typed; the project it answers for is that directory's top-level.
 [[mutation]]
@@ -6320,6 +6330,20 @@ after = "        verified=True,"
 reddens = [
   "tests/prove/test_junit_flag.py::test_a_report_the_run_wrote_is_counted_and_marked_unverified",
   "tests/prove/test_junit_flag.py::test_the_line_says_the_runner_is_not_verified",
+]
+
+# Every `--junit` receipt says so, a run that never started or was refused before a plan as well.
+[[mutation]]
+name = "prove --junit marks the runner of a receipt with no plan verified"
+file = "src/stayfixed/prove/run.py"
+before = "    verified = junit is None"
+after = "    verified = True"
+reddens = [
+  "tests/prove/test_junit_flag.py::test_a_program_that_is_not_there_is_not_started",
+  "tests/prove/test_junit_flag.py::test_a_known_runner_beside_junit_is_refused",
+  "tests/prove/test_junit_flag.py::test_a_command_of_assignments_alone_is_not_recognised",
+  "tests/prove/test_junit_flag.py::test_the_launcher_s_file_options_are_refused_under_junit_too[argv0-assigned-forging]",
+  "tests/prove/test_junit_flag.py::test_the_launcher_s_file_options_are_refused_under_junit_too[argv1-launcher-option]",
 ]
 
 [[mutation]]

@@ -131,7 +131,12 @@ def test_a_known_runner_beside_junit_is_refused(tmp_path: Path) -> None:
     # refusal dropped -> the stand-in runs and its green report is `proved`.
     adapter = StandIn()
     got = run(tmp_path, [NAME, "--report-path", REPORT, "--source", "file"], adapters=[adapter])
-    assert (got.verdict, got.reason, got.runner) == (REFUSED, JUNIT_BESIDE_ADAPTER, NAME)
+    assert (got.verdict, got.reason, got.runner, got.verified) == (
+        REFUSED,
+        JUNIT_BESIDE_ADAPTER,
+        NAME,
+        False,
+    )
     assert adapter.seen == []  # nothing was planned or run
     assert not (tmp_path / REPORT).exists()
     # And through the adapters this stayfixed ships.
@@ -204,13 +209,14 @@ def test_an_interrupted_junit_run_is_not_proven(
 
 
 def test_a_program_that_is_not_there_is_not_started(tmp_path: Path) -> None:
+    # Mutation (declared): a receipt with no plan marked verified -> `verified` is true.
     got = run(tmp_path, ["no-such-program-for-prove"])
-    assert (got.verdict, got.reason) == (NOT_PROVEN, NOT_STARTED)
+    assert (got.verdict, got.reason, got.verified) == (NOT_PROVEN, NOT_STARTED, False)
 
 
 def test_a_command_of_assignments_alone_is_not_recognised(tmp_path: Path) -> None:
     got = run(tmp_path, ["A=1"])
-    assert (got.verdict, got.reason) == (NOT_PROVEN, NOT_RECOGNISED)
+    assert (got.verdict, got.reason, got.verified) == (NOT_PROVEN, NOT_RECOGNISED, False)
 
 
 @pytest.mark.parametrize(
@@ -226,6 +232,7 @@ def test_the_launcher_s_file_options_are_refused_under_junit_too(
     got = run(tmp_path, argv)
     assert got.verdict == REFUSED
     assert got.reason == reason
+    assert got.verified is False
 
 
 def test_the_command_takes_junit_and_says_the_runner_is_not_verified(

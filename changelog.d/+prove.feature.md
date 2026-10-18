@@ -13,17 +13,20 @@ Its line names the counts, the runner and the realpath of what ran, and the conf
 untracked files that can shape the report, twenty of each and a count of the rest, with a count of
 the configuration files git ignores; `--json` carries the whole receipt, with every `NAME=value`
 and `--option=value` value in the command replaced by `…`, and sends the runner's standard output
-to standard error, so that standard output holds the one object. `proved` means the runner reported
-green on this tree, for the tests this command selected: the code under test, any file in the
-runner's load path and the environment the runner reads can shape its report.
+to standard error, so that standard output holds the one object. The runner's standard input is
+`/dev/null`, so nothing piped into `prove` reaches the run; a test that reads it sees its end.
+`proved` means the runner reported green on this tree, for the tests this command selected: the
+code under test, any file in the runner's load path and the environment the runner reads can shape
+its report.
 The first runner adapter is pytest's: `pytest`, `py.test` and `python -m pytest`, also behind
 `poetry run` or `uv run`, run as `<interpreter> -P -m pytest` with a JUnit report of `prove`'s own,
 the project's `PYTHON*` variables kept; it refuses `--junitxml`, `-p no:junitxml`, `-o junit_*`
 and `-o addopts`, `--setup-plan`, `--setup-only` and `--collect-only` and their undashed
 aliases, `--trace`, an `@file` word, and an assigned `PYTEST_ADDOPTS` or `PYTEST_PLUGINS`, and
 names the configuration file `-c` names, wherever it lies, among the files that can shape the
-report.
+report; `--pdb` is free, its debugger quitting at the end of standard input with the failure kept.
 `stayfixed prove --junit PATH -- COMMAND` counts the JUnit report of a runner no adapter knows,
 read from the directory the command runs in, only where the run created or rewrote it as a regular
 file (`junit-unchanged` otherwise); a command an adapter recognises is refused
-(`junit-beside-adapter`), and the receipt marks the runner not verified.
+(`junit-beside-adapter`), and every `--junit` receipt, one refused or not started too, marks the
+runner not verified.

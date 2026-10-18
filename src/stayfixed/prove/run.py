@@ -49,6 +49,10 @@ everything it reads, the agent that typed the command can write.
   after the verdict. The group is stayfixed's own anchor and is ended however the run finishes
   (`stayfixed.processes`); a descendant that leaves it is not reached, and the tee lets go of the
   pipe such a descendant holds once it has copied what is there.
+- The runner's standard input: the agent, or anything upstream of `prove`, feeding it what drives
+  the runner, such as the commands of pytest's debugger. The anchor is the launch stayfixed makes,
+  which no one else writes: the run's standard input is `/dev/null`. It refuses no one; a test that
+  reads standard input sees its end.
 - `PROVE_TIMEOUT_SECONDS`: a suite that hangs. A named cap with its flag, `not proven` past it.
 - `--junit PATH` (`prove(junit=…)`), for a runner no adapter knows: the command runs as typed, no
   adapter is asked to plan it, and the report is the file at `PATH`, read from the directory the
@@ -197,13 +201,15 @@ class Receipt:
 
     `argv` is the command as given with every `NAME=value` and `--option=value` value replaced by
     `REDACTED`; a value passed as the word after its option is kept, since nothing tells it from an
-    operand. `detail` is where the step that stopped the run stopped: the variable assigned, or
-    where a report stopped reading. `program` is the realpath of what ran; `verified` is false only
-    where the plan said its runner is not one an adapter resolved. `commit` and `dirty_before` are
-    the tree's state before the run, `dirty_after` after it, and `untracked` (at most
-    `tree.UNTRACKED_LISTED`, `untracked_more` past it) and `configs` (at most as many,
-    `configs_more` past it, and `ignored_configs` the count of those git ignores) after it, or
-    before it where git could not answer after: none of them is an input to the verdict.
+    operand. `detail` is where the step that stopped the run stopped: the variable assigned, the
+    launcher option refused, the option or word the runner's adapter refused, the `--junit` path
+    the run did not write (`JUNIT_UNCHANGED`), or where a report stopped reading. `program` is the
+    realpath of what ran; `verified` is false on every `--junit` receipt, a plan made or not, and
+    true on every other. `commit` and `dirty_before` are the tree's state before the run,
+    `dirty_after` after it, and `untracked` (at most `tree.UNTRACKED_LISTED`, `untracked_more` past
+    it) and `configs` (at most as many, `configs_more` past it, and `ignored_configs` the count of
+    those git ignores) after it, or before it where git could not answer after: none of them is an
+    input to the verdict.
     """
 
     verdict: Verdict
@@ -411,13 +417,15 @@ def _open_report(path: Path) -> int:
 def _launch(plan: Plan, cwd: Path, env: Mapping[str, str], piped: bool) -> subprocess.Popen[bytes]:
     # S603: the adapter's plan of the command the caller typed, list form, never a shell. A
     # session of its own puts what it starts in one process group, which is ended however it
-    # finishes. Standard input and standard error are the caller's; standard output is too, or
-    # a pipe the tee copies whole to the caller's stream, when it is the report or the caller
-    # named a stream of its own.
+    # finishes. Standard input is `/dev/null`, never the caller's: what feeds `prove`'s could
+    # drive the runner (a debugger takes its commands there), and a test that reads it sees its
+    # end. Standard error is the caller's; standard output is too, or a pipe the tee copies whole
+    # to the caller's stream, when it is the report or the caller named a stream of its own.
     return subprocess.Popen(  # noqa: S603
         list(plan.argv),
         cwd=cwd,
         env=dict(env),
+        stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE if piped else None,
         start_new_session=True,
     )
@@ -560,10 +568,14 @@ def prove(
     command = launch.command
     known = shipped_adapters() if adapters is None else adapters
     adapter = next((each for each in known if command and each.recognises(command)), None)
+    # A `--junit` receipt says its runner is not verified on every path, a plan made or not.
+    verified = junit is None
     if junit is not None and adapter is not None:
-        return _receipt(_Outcome(refused=JUNIT_BESIDE_ADAPTER), shown, adapter.name)
+        return _receipt(
+            _Outcome(refused=JUNIT_BESIDE_ADAPTER), shown, adapter.name, verified=verified
+        )
     if adapter is None and (junit is None or not command):
-        return _receipt(_Outcome(unproven=NOT_RECOGNISED), shown)
+        return _receipt(_Outcome(unproven=NOT_RECOGNISED), shown, verified=verified)
     runner = adapter.name if adapter is not None else None
     assigned = assignments(launch.assignments)
     # The launcher's own variables that load a file, where the launch runs one.
@@ -572,19 +584,27 @@ def prove(
     forged = sorted(name for name in assigned if name in forging | loaders)
     if forged:
         return _receipt(
-            _Outcome(refused=ASSIGNED_FORGING), shown, detail=", ".join(forged), runner=runner
+            _Outcome(refused=ASSIGNED_FORGING),
+            shown,
+            runner,
+            detail=", ".join(forged),
+            verified=verified,
         )
     loading = file_option(launch.launcher)
     if loading is not None:
         return _receipt(
-            _Outcome(refused=REFUSED_LAUNCHER_OPTION), shown, detail=loading, runner=runner
+            _Outcome(refused=REFUSED_LAUNCHER_OPTION),
+            shown,
+            runner,
+            detail=loading,
+            verified=verified,
         )
     # An inherited one goes from the run's environment as the plan's own scrub would go.
     kept = {name: value for name, value in environ.items() if name not in loaders}
     if adapter is None:
         unverified = _unverified(launch, cwd / junit, cwd, environ) if junit is not None else None
         if unverified is None:
-            return _receipt(_Outcome(unproven=NOT_STARTED), shown)
+            return _receipt(_Outcome(unproven=NOT_STARTED), shown, verified=verified)
         return _proved(
             None, unverified, assigned, shown, cwd, root, kept, timeout, echo, junit=junit
         )
@@ -651,7 +671,9 @@ def _receipt(
     before: tree.TreeState | None = None,
     after: tree.TreeState | None = None,
     digest: str | None = None,
+    verified: bool = True,
 ) -> Receipt:
+    """The receipt of `outcome`; `verified` is the plan's where there is one, else the one given."""
     verdict, reason = judged(outcome)
     files = after if after is not None and after.untracked is not None else before
     configs = after if after is not None and after.configs is not None else before
@@ -662,7 +684,7 @@ def _receipt(
         argv=shown,
         runner=runner,
         program=str(plan.program) if plan is not None else None,
-        verified=plan.verified if plan is not None else True,
+        verified=plan.verified if plan is not None else verified,
         counts=outcome.counts,
         exit_code=outcome.exit_code,
         report_digest=digest,

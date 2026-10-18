@@ -28,7 +28,9 @@ choice. The receipt carries the realpath of what ran.
   `--collectonly`; `--trace`, which over a standard input that ends reports a failing test as
   passed; and an `@file` word, whose options pytest reads from that file, never read here. The
   anchor is the command's own words; the list is closed, every option pytest 9.1.1 registers was
-  run over a failing test to draw it, and every other option is free.
+  run over a failing test to draw it, and every other option is free. `--pdb` is among them: the
+  run's standard input is `/dev/null` (`stayfixed.prove.run`), so its debugger reads the end and
+  quits, pytest exiting 2 with the failure in its report.
 - `FORGING`, assigned in the command (refused) or inherited (scrubbed): the same agent steering
   the report through the two variables pytest reads its options and plugins from. `PYTHONPATH`
   and every other variable are the project's.
