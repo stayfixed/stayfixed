@@ -119,9 +119,11 @@ def test_a_malformed_regression_is_refused_in_its_own_words(raw: str, constant: 
     refuses the tab separator, a control character below U+0020 and DEL, the text after `]`, the
     unclosed list and the unescaped quote. The bare item, the trailing comma, the quoted scalar
     and the empty item it reads; this grammar refuses them, because an argv written any of those
-    ways is one a reader could take for another. A control character from U+0080 to U+009F
-    (`\x80`, `\x9b`) passes this grammar, which refuses only those below U+0020 and DEL, and
-    PyYAML refuses it.
+    ways is one a reader could take for another. This grammar refuses a control character only
+    below U+0020 and DEL, so it passes every code point from U+0080 to U+009F. Of those, PyYAML
+    refuses `\x80` and `\x9b` with a ReaderError, and reads U+0085 as a line break folded to a
+    space, `['a ']`, an argv other than the one written; this entry reader splits its frontmatter
+    lines at U+0085 too, so it refuses that entry before the grammar reads the item.
     """
     # Mutations (oracle): `mutations/`'s "the list reader takes a tab for a separator" -> the tab
     # case reads; "the list reader accepts an empty item" -> `empty-item` reads; "the list reader
