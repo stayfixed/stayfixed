@@ -2605,25 +2605,6 @@ reddens = [
 ]
 
 [[mutation]]
-name = "jest's --config given a JSON text is free"
-file = "src/stayfixed/profiles/javascript/adapters.py"
-before = '        if (text and value.lstrip().startswith("{")) or _outside(value, cwd, root):'
-after = "        if _outside(value, cwd, root):"
-reddens = [
-  'tests/prove/test_javascript.py::test_each_report_steering_option_is_refused[jest:--config_{"testResultsProcessor": "./p.js"}]',
-]
-
-[[mutation]]
-name = "a configuration file outside the project is free"
-file = "src/stayfixed/profiles/javascript/adapters.py"
-before = "    return named != top and top not in named.parents"
-after = "    return False"
-reddens = [
-  "tests/prove/test_javascript.py::test_each_report_steering_option_is_refused[jest:-c_../outside.config.js]",
-  "tests/prove/test_javascript.py::test_each_report_steering_option_is_refused[vitest:-c_../vitest.config.js]",
-]
-
-[[mutation]]
 name = "the jest and vitest adapters leave the configuration file the command names out"
 file = "src/stayfixed/profiles/javascript/adapters.py"
 before = "            configs=(*CONFIGS, *runner.configs(args, cwd)),"
@@ -2845,6 +2826,48 @@ reddens = ["tests/prove/test_javascript.py::test_a_preloaded_file_is_named_and_a
 [[mutation]]
 name = "a preloaded package's name is named as a file"
 file = "src/stayfixed/profiles/javascript/adapters.py"
-before = "        if given is not None and given.startswith(_PATH_STARTS):"
-after = "        if given is not None:"
+before = """    if given.startswith(_PATH_STARTS):
+        return os.path.realpath(cwd / given)"""
+after = """    if not given.startswith(_FILE_SCHEME):
+        return os.path.realpath(cwd / given)"""
 reddens = ["tests/prove/test_javascript.py::test_a_preloaded_file_is_named_and_a_package_is_not"]
+
+# `-c`/`--config` is free: the file it names is named, read as the runner reads it.
+[[mutation]]
+name = "jest's JSON configuration text is named as a file"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = "        if not value.lstrip().startswith(_CONFIG_TEXT)"
+after = "        if value"
+reddens = ["tests/prove/test_javascript.py::test_the_configuration_file_the_command_names_is_among_the_configs"]
+
+[[mutation]]
+name = "vitest's configuration is read from the run's directory whatever --root says"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = "    base = cwd / roots[-1] if roots and roots[-1] else cwd"
+after = "    base = cwd"
+reddens = [
+  "tests/prove/test_javascript.py::test_vitest_reads_its_configuration_from_its_root[root-first]",
+  "tests/prove/test_javascript.py::test_vitest_reads_its_configuration_from_its_root[config-first]",
+]
+
+[[mutation]]
+name = "vitest's configuration is read from its first --root"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = "    base = cwd / roots[-1] if roots and roots[-1] else cwd"
+after = "    base = cwd / roots[0] if roots and roots[0] else cwd"
+reddens = ["tests/prove/test_javascript.py::test_vitest_reads_its_configuration_from_its_root[the-last-root]"]
+
+[[mutation]]
+name = "a preloaded file URL keeps its escapes"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = "    return os.path.realpath(unquote(url.path))"
+after = "    return os.path.realpath(url.path)"
+reddens = ["tests/prove/test_javascript.py::test_a_preloaded_file_is_named_and_a_package_is_not"]
+
+[[mutation]]
+name = "a preloaded URL of another host or scheme is named"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = "    if url.scheme != _FILE_SCHEME or url.netloc not in _LOCAL_HOSTS or not url.path:"
+after = "    if not url.path:"
+reddens = ["tests/prove/test_javascript.py::test_a_preloaded_file_is_named_and_a_package_is_not"]
+

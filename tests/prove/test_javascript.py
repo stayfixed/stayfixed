@@ -582,9 +582,6 @@ REFUSALS: list[tuple[Adapter, tuple[str, ...], str]] = [
     (JEST, ("jest", "--collectTests"), "--collectTests"),
     (JEST, ("jest", "--watch"), "--watch"),
     (JEST, ("jest", "--watchAll"), "--watchAll"),
-    (JEST, ("jest", "--config", '{"testResultsProcessor": "./p.js"}'), "--config"),
-    (JEST, ("jest", "-c", "../outside.config.js"), "--config"),
-    (JEST, ("jest", "--config=/etc/jest.config.js"), "--config"),
     # vitest 5.0.5
     (VITEST, ("npx", "vitest", "run", "--outputFile.json=x"), "--outputFile"),
     (VITEST, ("vitest", "run", "--outputFile=x"), "--outputFile"),
@@ -603,7 +600,6 @@ REFUSALS: list[tuple[Adapter, tuple[str, ...], str]] = [
         ("vitest", "--dangerouslyIgnoreUnhandledErrors"),
         "--dangerouslyIgnoreUnhandledErrors",
     ),
-    (VITEST, ("vitest", "-c", "../vitest.config.js"), "--config"),
     # node --test on Node 26.12.0
     (NODE_TEST, ("node", "--test", "--test-reporter=dot"), "--test-reporter"),
     (NODE_TEST, ("node", "--test-reporter", "tap", "--test"), "--test-reporter"),
@@ -697,16 +693,30 @@ def test_node_import_is_free(tmp_path: Path) -> None:
 
 
 def test_the_configuration_file_the_command_names_is_among_the_configs(tmp_path: Path) -> None:
-    # A configuration file in the project is the bound's, as `jest.config.js` is: named by its
-    # realpath, read from the directory the command runs in. Mutation (declared): the named files
-    # left out -> the adapter's own globs alone.
+    # A configuration file the command names is the bound's, as `jest.config.js` is, inside the
+    # project or outside it, since the same agent could write either: never refused, named by its
+    # realpath, read from the directory the command runs in. A JSON object jest is given is no
+    # file. Mutations (declared): the named files left out -> the adapter's own globs alone; the
+    # JSON text named as a file -> it is among them.
     root = tmp_path / "project"
     web = root / "web"
     web.mkdir(parents=True)
     _, _, node = installed(root)
     got = plan_of(
         JEST,
-        ["jest", "-c", "ci/jest.config.js", "--config=../shared.config.js", "--", "-c", "x.js"],
+        [
+            "jest",
+            "-c",
+            "ci/jest.config.js",
+            "--config=../shared.config.js",
+            "--config",
+            '{"testResultsProcessor": "./p.js"}',
+            "--rootDir",
+            "elsewhere",
+            "--",
+            "-c",
+            "x.js",
+        ],
         web,
         root=root,
         path=str(node.parent),
@@ -719,6 +729,30 @@ def test_the_configuration_file_the_command_names_is_among_the_configs(tmp_path:
     )
     again = plan_of(VITEST, ["vitest", "-c", "vitest.ci.ts"], web, root=root, path=str(node.parent))
     assert again.configs == (*CONFIGS, str(real / "web" / "vitest.ci.ts"))
+    outside = plan_of(
+        JEST, ["jest", "-c", "../../outside.js"], web, root=root, path=str(node.parent)
+    )
+    assert outside.configs == (*CONFIGS, str(real.parent / "outside.js"))
+
+
+@pytest.mark.parametrize(
+    ("args", "named"),
+    [
+        (("-c", "c.js"), "c.js"),
+        (("--root", "sub", "--config", "c.js"), "sub/c.js"),
+        (("-r", "sub", "-c", "c.js"), "sub/c.js"),
+        (("--config", "./c.js", "--root=sub"), "sub/c.js"),
+        (("--root", "a", "--root", "sub", "-c", "c.js"), "sub/c.js"),
+    ],
+    ids=["no-root", "root-first", "short", "config-first", "the-last-root"],
+)
+def test_vitest_reads_its_configuration_from_its_root(
+    tmp_path: Path, args: tuple[str, ...], named: str
+) -> None:
+    # Measured on vitest 5.0.5: a relative `--config` is read from `--root`, in either order.
+    # Mutation (declared): the configuration read from the run's directory whatever `--root` says
+    # -> the cases with a root name `c.js`.
+    assert outcome(VITEST, ("run", *args), tmp_path) == f"named {named}"
 
 
 # --- Through prove, with a node that writes the report it is told to -------------------------
@@ -978,7 +1012,11 @@ def outcome(adapter: Adapter, args: Sequence[str], root: Path) -> str:
         return f"refused {got.detail}"
     assert isinstance(got, Plan), got
     real = Path(os.path.realpath(root))
-    named = [os.path.relpath(entry, real) for entry in got.configs if os.path.isabs(entry)]
+    named = [
+        os.path.relpath(entry, real) if real in Path(entry).parents else entry
+        for entry in got.configs
+        if os.path.isabs(entry)
+    ]
     return f"named {' '.join(named)}" if named else "free"
 
 
@@ -989,8 +1027,8 @@ JEST_FORMS = [
     (("-c=a.js",), "named a.js"),
     (("-ic", "a.js"), "named a.js"),
     (("-ic=a.js",), "named a.js"),
-    (("-c/etc/jest.config.js",), "refused --config"),
-    (("-ic/etc/jest.config.js",), "refused --config"),
+    (("-c/etc/jest.config.js",), "named /etc/jest.config.js"),
+    (("-ic/etc/jest.config.js",), "named /etc/jest.config.js"),
     (("-ic.a.js",), "named .a.js"),
     # `-c` given the empty text, or an object, names no file.
     (("-ca.js",), "free"),
@@ -1055,7 +1093,7 @@ def test_jest_reads_each_form_as_yargs_does(
 VITEST_FORMS = [
     (("-c", "a.js"), "named a.js"),
     (("-c=a.js",), "named a.js"),
-    (("-c", "../outside.js"), "refused --config"),
+    (("-c", "/etc/vitest.config.js"), "named /etc/vitest.config.js"),
     # Every character of a cluster is an option of its own, the last taking the value.
     (("-ca.js",), "free"),
     (("-c/abs/a.js",), "free"),
@@ -1111,10 +1149,11 @@ def test_vitest_reads_each_form_as_its_parser_does(
 
 
 def test_a_preloaded_file_is_named_and_a_package_is_not(tmp_path: Path) -> None:
-    # `-r`, `--require`, `--import` and `--loader` are free; the file a path names is among the
-    # configuration files, a package's name is not, `-r=x` is a bad option to node, and a word
-    # after `--` is none of node's. Mutation (declared): the preloaded files left out -> the
-    # adapter's own globs alone.
+    # `-r`, `--require`, `--import` and `--loader` are free; the file a path or a `file:` URL of
+    # this machine names is among the configuration files, percent-decoded; a package's name, a
+    # `data:` or `node:` specifier and another host's URL are not; `-r=x` is a bad option to node,
+    # and a word after `--` is none of node's. Mutations (declared): the preloaded files left out;
+    # a `file:` URL's escapes kept; another host's URL named; a `data:` specifier named.
     node = node_on_path(tmp_path / "bin")
     got = plan_of(
         NODE_TEST,
@@ -1129,6 +1168,11 @@ def test_a_preloaded_file_is_named_and_a_package_is_not(tmp_path: Path) -> None:
             "--experimental_loader",
             "/abs/x.mjs",
             "--import=file:///abs/y.mjs",
+            "--import=file://localhost/abs/z%20q.mjs",
+            "--import=file://elsewhere/abs/no.mjs",
+            "--import",
+            "data:text/javascript,0",
+            "--import=node:fs",
             "-r=./bad.cjs",
             "--test",
             "a.test.mjs",
@@ -1147,6 +1191,7 @@ def test_a_preloaded_file_is_named_and_a_package_is_not(tmp_path: Path) -> None:
         str(real.parent / "l.mjs"),
         "/abs/x.mjs",
         "/abs/y.mjs",
+        "/abs/z q.mjs",
         str(real / "after.cjs"),
     )
     last = plan_of(NODE_TEST, ["node", "--test", "-r"], tmp_path, path=str(node.parent))

@@ -33,12 +33,12 @@ which names `prove --junit`; `npm test`, `yarn` and `pnpm` are recognised by non
 the options that move, replace or suppress the report, or that report a test passed that failed or
 never ran: jest's `--json`, `--outputFile`, `--testResultsProcessor`, `-u`, `--no-ci`,
 `--collectTests` and watch modes; vitest's `--outputFile`, `-u` (`--update=false` among them),
-`--mergeReports`,
-`--dangerouslyIgnoreUnhandledErrors` and `--watch`; node's own reporters, `--env-file`, its
-configuration file, `--test-update-snapshots`, `--test-rerun-failures` and `--watch`; a
-configuration file outside the project; and an assigned `NODE_OPTIONS` (or, for `node --test`,
-`NODE_TEST_CONTEXT`). Each option is read as the runner's own parser reads it, and a file node's
-`--require` or `--import` names by its path is named among the files that can shape the report.
+`--mergeReports`, `--dangerouslyIgnoreUnhandledErrors` and `--watch`; node's own reporters, `--env-file`, its
+configuration file, `--test-update-snapshots`, `--test-rerun-failures` and `--watch`; and an
+assigned `NODE_OPTIONS` (or, for `node --test`, `NODE_TEST_CONTEXT`). Each option is read as the
+runner's own parser reads it; every other option is free, `-c`/`--config` among them, and the file
+it names, like a file node's `--require` or `--import` names by its path, is named among the files
+that can shape the report.
 `stayfixed prove --junit PATH -- COMMAND` counts the JUnit report of a runner no adapter knows,
 read from the directory the command runs in, only where the run created or rewrote it as a regular
 file (`junit-unchanged` otherwise); a command an adapter recognises is refused

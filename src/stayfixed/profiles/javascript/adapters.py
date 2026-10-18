@@ -38,15 +38,12 @@ appended, and every other option is free. `REFUSED_OPTION`, naming the option:
   rewrites the results before they are written), `-u`/`--updateSnapshot` (which rewrites a failing
   snapshot so that it passes), `--ci=false`/`--no-ci` (which writes a missing snapshot rather than
   failing it), `--collectTests` (which exits 0 reporting a failing test as passed), `--watch` and
-  `--watchAll` (which never end), and `-c`/`--config` given a JSON text or naming a file outside the
-  project. A configuration file inside the project is named among the receipt's configuration
-  files by its realpath (`Plan.configs`).
+  `--watchAll` (which never end).
 - vitest 5.0.5: `--outputFile` in any form, `-u`/`--update` but `--update=none` and
   `--no-update` (each other rewrites a failing or missing snapshot so that it passes),
   `--mergeReports` (which runs nothing and reports the blob files it reads as results),
   `--dangerouslyIgnoreUnhandledErrors` (which exits 0 past an error no test reported),
-  `-w`/`--watch` (which never ends), and `-c`/`--config` naming a file outside the project, one
-  inside it named as jest's is.
+  and `-w`/`--watch` (which never ends).
 - `node --test` on Node 26.12.0: any `--test-reporter…` of the command's own; `--env-file`,
   `--env-file-if-exists` and the configuration file options (`--config-file`,
   `--experimental-config-file`, `--experimental-default-config-file`), which load what the run
@@ -64,10 +61,17 @@ letter, digit or `_`, or a number, so `-c/etc/x.js` names `/etc/x.js`; a boolean
 `false` as its next word, so `--ci false` is `--no-ci`, and any `=` value but `true` turns it off);
 vitest's cac (every character of a short cluster up to a `=` is an option of its own, so `-t.u` sets
 `-u`; a boolean is off only by `--no-` or `false`, and `--update=false` is the text `false`, which
-rewrites snapshots as `--update` does). Every other option that names code to load or where to look
--- jest's `--setupFiles`, `--globalSetup`, `--testRunner`, `--testEnvironment`, `--projects`,
-`--rootDir`, `--roots` and `--reporters`, vitest's `--root`, `--dir` and `--setupFiles` -- is free,
-since the code it loads is the bound's and the lists stay closed.
+rewrites snapshots as `--update` does).
+
+`-c`/`--config` is free for both: a configuration the command names outside the project is one
+the same agent could write inside it, which is the bound's, so a refusal of it would stop nobody.
+The file it names is named among the receipt's configuration files by its realpath
+(`Plan.configs`), read from the directory the command runs in for jest, and from vitest's `--root`
+where the command gives one; a JSON object jest is given there is no file. Every other option that
+names code to load or where to look -- jest's `--setupFiles`, `--globalSetup`, `--testRunner`,
+`--testEnvironment`, `--projects`, `--rootDir`, `--roots` and `--reporters`, vitest's `--root`,
+`--dir` and `--setupFiles` -- is free too, since the code it loads is the bound's and the lists
+stay closed.
 
 `FORGING`, assigned in the command (refused) or inherited (scrubbed): `NODE_OPTIONS`, which Node
 reads as options of every run, `--require` and the reporters among them; for `node --test` also
@@ -87,6 +91,7 @@ import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import unquote, urlsplit
 
 from stayfixed import fsops
 from stayfixed.profiles.runners import Plan, Refused, ReportKind, ReportSource, Unresolved
@@ -332,7 +337,7 @@ def jest_settings(word: str, following: str | None) -> list[Setting]:
 # is optional); every other letter is a boolean.
 _VITEST_VALUED_LETTERS = frozenset("ctrpu")
 # vitest's options this reader reads a value for.
-_VITEST_VALUED = frozenset({"config", "update", "mergeReports", "outputFile"})
+_VITEST_VALUED = frozenset({"config", "root", "update", "mergeReports", "outputFile"})
 
 
 def vitest_settings(word: str, following: str | None) -> list[Setting]:
@@ -387,13 +392,6 @@ def _next(words: Sequence[str], index: int) -> str | None:
     return words[index + 1] if index + 1 < len(words) else None
 
 
-def _outside(value: str, cwd: Path, root: Path) -> bool:
-    """Whether the file `value` names, read from `cwd`, lies outside the project `root`."""
-    named = Path(os.path.realpath(cwd / value))
-    top = Path(os.path.realpath(root))
-    return named != top and top not in named.parents
-
-
 def _config_values(settings: Sequence[tuple[str, Setting]]) -> list[str]:
     """Every configuration file `-c` or `--config` names among `settings`."""
     return [
@@ -406,25 +404,35 @@ def _config_values(settings: Sequence[tuple[str, Setting]]) -> list[str]:
     ]
 
 
-def _config_refused(values: Sequence[str], cwd: Path, root: Path, *, text: bool) -> str | None:
-    """`--config` where its value is a configuration's own text (jest reads a JSON object given
-    there) or names a file outside the project."""
-    for value in values:
-        if (text and value.lstrip().startswith("{")) or _outside(value, cwd, root):
-            return "--config"
-    return None
+# What jest reads as a configuration's own text rather than a file's name (a JSON object): no
+# file, and so none to name.
+_CONFIG_TEXT = "{"
 
 
 def _jest_configs(args: Sequence[str], cwd: Path) -> tuple[str, ...]:
-    """The realpath of each configuration file jest's `-c` or `--config` names: an absolute
-    entry of `Plan.configs`, which names that one file."""
+    """The realpath of each configuration file jest's `-c` or `--config` names, read from `cwd`
+    (measured on 30.5.2: whatever `--rootDir` says): an absolute entry of `Plan.configs`, which
+    names that one file. A JSON object given there is no file."""
     values = _config_values(_settings(jest_settings, args))
-    return tuple(os.path.realpath(cwd / value) for value in values)
+    return tuple(
+        os.path.realpath(cwd / value)
+        for value in values
+        if not value.lstrip().startswith(_CONFIG_TEXT)
+    )
+
+
+# vitest's options that name the directory its configuration file is read from.
+_VITEST_ROOT = frozenset({"root", "r"})
 
 
 def _vitest_configs(args: Sequence[str], cwd: Path) -> tuple[str, ...]:
-    values = _config_values(_settings(vitest_settings, args))
-    return tuple(os.path.realpath(cwd / value) for value in values)
+    """The realpath of each configuration file vitest's `-c` or `--config` names, read from the
+    directory the last `-r` or `--root` names where the command gives one, itself read from
+    `cwd` (measured on 5.0.5, in either order), else from `cwd`."""
+    settings = _settings(vitest_settings, args)
+    roots = [setting.value for _, setting in settings if setting.name in _VITEST_ROOT]
+    base = cwd / roots[-1] if roots and roots[-1] else cwd
+    return tuple(os.path.realpath(base / value) for value in _config_values(settings))
 
 
 # jest's closed list, each a name as yargs reads it, past `--no-` and camel-casing.
@@ -451,7 +459,7 @@ def jest_refused(args: Sequence[str], cwd: Path, root: Path) -> str | None:
             return word if len(name) == 1 else f"--{name}"
         if name == _JEST_CI and not _yargs_on(setting):
             return word
-    return _config_refused(_config_values(settings), cwd, root, text=True)
+    return None
 
 
 # vitest's closed list.
@@ -479,7 +487,7 @@ def vitest_refused(args: Sequence[str], cwd: Path, root: Path) -> str | None:
             return word if len(name) == 1 else f"--{name}"
         if name in _VITEST_EXIT_PAST_ERRORS | _VITEST_NEVER_ENDS and _mri_on(setting):
             return word if len(name) == 1 else f"--{name}"
-    return _config_refused(_config_values(settings), cwd, root, text=False)
+    return None
 
 
 def _jest_ours(args: Sequence[str], report: Path) -> tuple[str, ...]:
@@ -689,11 +697,25 @@ def node_options(words: Sequence[str]) -> list[str]:
 # node's options that load a module before the tests run: free (TypeScript through `tsx`,
 # Plug'n'Play's `.pnp.cjs`), and where the value is a path rather than a package's name, the file
 # is named among the configuration files. Measured on 26.12.0: `-r` takes its value as the next
-# word only (`-r=x` is a bad option); the others take it either way; a `file:` URL is a path.
+# word only (`-r=x` is a bad option); the others take it either way; a `file:` URL names a file.
 _NODE_PRELOADS = frozenset({"--require", "--import", "--loader", "--experimental-loader"})
 _NODE_PRELOAD_LETTER = "-r"
 _PATH_STARTS = ("/", "./", "../")
-_FILE_URL = "file://"
+_FILE_SCHEME = "file"
+# The hosts a `file:` URL may name and still name a file here.
+_LOCAL_HOSTS = frozenset({"", "localhost"})
+
+
+def _preloaded_file(given: str, cwd: Path) -> str | None:
+    """The realpath of the file a preload option's value names: a path (`/`, `./`, `../`) read
+    from `cwd`, or a `file:` URL of this machine, percent-decoded, as `url2pathname` reads one on
+    POSIX; `None` for a package's name or any other specifier (`data:`, `node:`)."""
+    if given.startswith(_PATH_STARTS):
+        return os.path.realpath(cwd / given)
+    url = urlsplit(given)
+    if url.scheme != _FILE_SCHEME or url.netloc not in _LOCAL_HOSTS or not url.path:
+        return None
+    return os.path.realpath(unquote(url.path))
 
 
 def node_preloaded(words: Sequence[str], cwd: Path) -> tuple[str, ...]:
@@ -711,10 +733,9 @@ def node_preloaded(words: Sequence[str], cwd: Path) -> tuple[str, ...]:
             given = value if equals else _next(options, index)
         else:
             continue
-        if given is not None and given.startswith(_FILE_URL):
-            given = given.removeprefix(_FILE_URL)
-        if given is not None and given.startswith(_PATH_STARTS):
-            found.append(os.path.realpath(cwd / given))
+        named = _preloaded_file(given, cwd) if given is not None else None
+        if named is not None:
+            found.append(named)
     return tuple(found)
 
 
