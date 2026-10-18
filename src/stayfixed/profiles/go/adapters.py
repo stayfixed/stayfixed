@@ -25,9 +25,13 @@ command; the anchor of each refusal is the command's own words.
   off). Each is read as the go command reads it: spaced or with `=`, with one dash or two, before
   the packages or after them, a boolean's `=` value as `strconv.ParseBool` reads it, a word that is
   a flag's value never as a flag (a build flag spelled `-test.`, which the go command does not
-  know, taking none), and nothing past a bare `-args`, `--args` or `--`, which is the test
-  binary's. The list is closed, drawn by running every flag `go test` and `go build` register over
-  a failing test with `-json` added, and every other flag is free.
+  know, taking none), and nothing past a bare `-args`, `--args` or `--`, or past a word that is no
+  flag once the package list is behind it, which are the test binary's: as `testFlags` reads them,
+  such a word ends the go command's flags unless the word before it is a flag the go command does
+  not know given no value, whose value it then is (measured on Go 1.27.2 and 1.24.7: `./pkg -v foo
+  -exec=X` runs no X, `./pkg -update foo -exec=X` runs X). The list is closed, drawn by running
+  every flag `go test` and `go build` register over a failing test with `-json` added, and every
+  other flag is free.
 - `FORGING`, assigned in the command (refused): `GOFLAGS`, `GOENV` and `GOTOOLCHAIN`, the three
   `SET_ENV` sets; `GOROOT`, which names the standard library and the tools the run builds with,
   `testing` among them; and `GOOS` and `GOARCH`, under which a target the host cannot run has the
@@ -150,6 +154,21 @@ _TEST_VALUED = frozenset(
 )
 
 
+# The go command's own boolean flags, as Go 1.24.7 and Go 1.27.2 both register them for `go test`,
+# so that the word after one is never read as its value: the build flags by their bare name, the
+# test binary's by their bare name and their `test.` name. `-artifacts`, which Go 1.27.2 registers
+# and Go 1.24.7 does not, is left out, so it is read as a flag the go command does not know, after
+# which the next word is a value and its flags go on (measured: on Go 1.24.7 `./three/ -artifacts
+# foo -exec=X` runs X).
+_BUILD_BOOLEANS = frozenset(
+    {
+        *("-a", "-asan", "-buildvcs", "-c", "-cover", "-json", "-linkshared", "-modcacherw"),
+        *("-msan", "-n", "-race", "-trimpath", "-work", "-x"),
+    }
+)
+_TEST_BOOLEANS = frozenset({"-benchmem", "-failfast", "-fullpath", "-short", "-v"})
+
+
 def _takes_value(name: str) -> bool:
     """Whether the go command reads the flag `name` (past its dashes) as taking a value."""
     return f"-{name}" in _BUILD_VALUED or f"-{name.removeprefix(_TEST_PREFIX)}" in _TEST_VALUED
@@ -164,25 +183,55 @@ def _flag(word: str) -> tuple[str, str | None] | None:
     return name, value if equals else None
 
 
+def _known(name: str) -> bool:
+    """Whether the go command knows the flag `name` (past its dashes) as one of its own."""
+    return (
+        _takes_value(name)
+        or f"-{name}" in _BUILD_BOOLEANS
+        or (f"-{name.removeprefix(_TEST_PREFIX)}" in _TEST_BOOLEANS)
+    )
+
+
 def _flags(args: Sequence[str]) -> list[tuple[int, str, str | None]]:
-    """`go test`'s own flags in `args`: each one's index, name and value (`=`'s, or the next
-    word's for a flag that takes one), up to a bare `-args`, `--args` or `--`."""
+    """`go test`'s own flags in `args`, as its `testFlags` reads them: each one's index, name and
+    value (`=`'s, or the next word's for a flag that takes one), up to a bare `-args`, `--args` or
+    `--`, or a word that is no flag once the package list is past and the word before it is no
+    flag the go command does not know given no value; that word and every one after it are the
+    test binary's. A flag the go command does not know is no flag of its own and is not among
+    them."""
     found: list[tuple[int, str, str | None]] = []
-    skip = False
-    for index, word in enumerate(args):
-        if skip:
-            skip = False
-            continue
+    listing = False  # within the package list
+    past = False  # a package was named, or a flag the go command does not know
+    bare = False  # the word before is a flag the go command does not know, given no value
+    index = 0
+    while index < len(args):
+        word = args[index]
+        after_bare, bare = bare, False
         if word in _ENDS:
             break
         read = _flag(word)
         if read is None:
+            if past and not listing:
+                if not after_bare:
+                    break
+            else:
+                listing = past = True
+            index += 1
             continue
+        listing = False
         name, value = read
+        if not _known(name):
+            past = True
+            bare = value is None
+            index += 1
+            continue
         if value is None and _takes_value(name):
             value = args[index + 1] if index + 1 < len(args) else None
-            skip = True
+            found.append((index, name, value))
+            index += 2
+            continue
         found.append((index, name, value))
+        index += 1
     return found
 
 

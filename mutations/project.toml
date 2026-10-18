@@ -2599,8 +2599,10 @@ reddens = [
 [[mutation]]
 name = "node's watch modes are planned"
 file = "src/stayfixed/profiles/javascript/adapters.py"
-before = '_NODE_NEVER_ENDS = frozenset({"--watch", "--watch-path"})'
-after = "_NODE_NEVER_ENDS: frozenset[str] = frozenset()"
+before = """_NODE_WATCH = "--watch"
+_NODE_WATCH_PATH = "--watch-path""""
+after = """_NODE_WATCH = "--no-such-watch"
+_NODE_WATCH_PATH = "--no-such-watch-path""""
 reddens = [
   "tests/prove/test_javascript.py::test_a_watch_mode_is_not_proven_for_it_never_ends[node-test:--watch_--test]",
   "tests/prove/test_javascript.py::test_a_watch_mode_is_not_proven_for_it_never_ends[node-test:--test_--watch-path=src]",
@@ -3045,8 +3047,8 @@ reddens = [
 [[mutation]]
 name = "a go flag's value is read as a flag"
 file = "src/stayfixed/profiles/go/adapters.py"
-before = "            skip = True"
-after = "            skip = False"
+before = "            index += 2"
+after = "            index += 1"
 reddens = [
   "tests/prove/test_go.py::test_every_other_flag_is_free[-run_-c]",
   "tests/prove/test_go.py::test_every_other_flag_is_free[-test.run_-exec]",
@@ -3058,6 +3060,7 @@ file = "src/stayfixed/profiles/go/adapters.py"
 before = """        if word in _ENDS:
             break"""
 after = """        if word in _ENDS:
+            index += 1
             continue"""
 reddens = ["tests/prove/test_go.py::test_every_other_flag_is_free[-args_-c_-o_x_-exec=y]"]
 
@@ -3183,3 +3186,107 @@ reddens = [
   "tests/prove/test_go.py::test_the_run_s_environment_is_pinned_whatever_it_inherits",
 ]
 
+# The last of a watch mode's settings is the one each runner applies, so a watch mode the command
+# turns off again is planned, and one it turns on again is not proven.
+[[mutation]]
+name = "jest's watch reader keeps the first setting of a watch mode"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = "            last[setting.name] = (index, setting)"
+after = "            last.setdefault(setting.name, (index, setting))"
+reddens = [
+  "tests/prove/test_javascript.py::test_a_watch_mode_the_command_turns_off_again_is_planned[jest:--watch_--no-watch]",
+  "tests/prove/test_javascript.py::test_the_last_watch_setting_decides[jest:--no-watch_--watch]",
+]
+
+[[mutation]]
+name = "vitest's watch reader keeps the first of two settings as the one setting"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = "            held[setting.name].append((word, setting))"
+after = "            pass"
+reddens = [
+  "tests/prove/test_javascript.py::test_a_watch_mode_the_command_turns_off_again_is_planned[vitest:--watch_--watch=false]",
+]
+
+[[mutation]]
+name = "vitest's watch reader copies -w and --watch onto each other last set first"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = "    for name in list(held):"
+after = "    for name in reversed(list(held)):"
+reddens = [
+  "tests/prove/test_javascript.py::test_a_watch_mode_the_command_turns_off_again_is_planned[vitest:--no-watch_-w]",
+  "tests/prove/test_javascript.py::test_the_last_watch_setting_decides[vitest:-w_--no-watch]",
+]
+
+[[mutation]]
+name = "node's watch reader keeps the first of --watch and --no-watch"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = "    return _NODE_WATCH if settings[-1:] == [_NODE_WATCH] else None"
+after = "    return _NODE_WATCH if settings[:1] == [_NODE_WATCH] else None"
+reddens = [
+  "tests/prove/test_javascript.py::test_a_watch_mode_the_command_turns_off_again_is_planned[node-test:--watch_--no-watch_--test]",
+  "tests/prove/test_javascript.py::test_the_last_watch_setting_decides[node-test:--no-watch_--watch_--test]",
+]
+
+# The receipt's line clips a detail past `printed.CLIPPED_CHARS`; a watch mode's fits it whole.
+[[mutation]]
+name = "a watch mode's detail is past the line's clip"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = """    "{option} watches for changes and never ends, so no report is ever finished; "
+    "prove one run without it""""
+after = """    "{option} watches for changes and never ends under prove, so no report is ever finished; "
+    "prove a single run without it""""
+reddens = [
+  "tests/prove/test_javascript.py::test_a_watch_mode_s_detail_fits_the_line[node-test:--test_--watch-path=src]",
+]
+
+# Past the package list a word that is no flag ends the go command's own flags, unless it is the
+# value of a flag the go command does not know (`testFlags`, measured on Go 1.27.2 and 1.24.7).
+[[mutation]]
+name = "a word past the package list is read as no end of go's flags"
+file = "src/stayfixed/profiles/go/adapters.py"
+before = """                if not after_bare:
+                    break"""
+after = """                if not after_bare:
+                    pass"""
+reddens = [
+  "tests/prove/test_go.py::test_a_word_past_the_package_list_ends_go_s_flags[./..._-v_foo_-exec=x]",
+  "tests/prove/test_go.py::test_a_word_past_the_package_list_ends_go_s_flags[./..._-run_X_foo_-exec=x]",
+]
+
+[[mutation]]
+name = "a word after a flag go does not know, given no value, is read as the end of its flags"
+file = "src/stayfixed/profiles/go/adapters.py"
+before = "            bare = value is None"
+after = "            bare = False"
+reddens = [
+  "tests/prove/test_go.py::test_a_word_go_reads_as_a_package_or_a_value_ends_nothing[./..._-update_foo_-exec=x--exec]",
+  "tests/prove/test_go.py::test_a_word_go_reads_as_a_package_or_a_value_ends_nothing[-update_./..._-exec=x--exec]",
+]
+
+[[mutation]]
+name = "a second package is read as the end of go's flags"
+file = "src/stayfixed/profiles/go/adapters.py"
+before = "            if past and not listing:"
+after = "            if past:"
+reddens = [
+  "tests/prove/test_go.py::test_a_word_go_reads_as_a_package_or_a_value_ends_nothing[./a_./b_-exec=x--exec]",
+]
+
+[[mutation]]
+name = "a flag Go 1.24.7 does not know is read as a boolean of go's own"
+file = "src/stayfixed/profiles/go/adapters.py"
+before = '_TEST_BOOLEANS = frozenset({"-benchmem", "-failfast", "-fullpath", "-short", "-v"})'
+after = '_TEST_BOOLEANS = frozenset({"-artifacts", "-benchmem", "-failfast", "-fullpath", "-short", "-v"})'
+reddens = [
+  "tests/prove/test_go.py::test_a_word_go_reads_as_a_package_or_a_value_ends_nothing[./..._-artifacts_foo_-exec=x--exec]",
+]
+
+[[mutation]]
+name = "a boolean of go's own is read as a flag it does not know"
+file = "src/stayfixed/profiles/go/adapters.py"
+before = '_TEST_BOOLEANS = frozenset({"-benchmem", "-failfast", "-fullpath", "-short", "-v"})'
+after = '_TEST_BOOLEANS = frozenset({"-benchmem", "-failfast", "-fullpath", "-short"})'
+reddens = [
+  "tests/prove/test_go.py::test_a_word_past_the_package_list_ends_go_s_flags[./..._-v_foo_-exec=x]",
+  "tests/prove/test_go.py::test_a_word_past_the_package_list_ends_go_s_flags[./a_-v_./b_-exec=x]",
+]

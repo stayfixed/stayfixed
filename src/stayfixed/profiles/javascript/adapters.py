@@ -114,9 +114,11 @@ REFUSED_OPTION = "refused-option"
 ENTRY_NOT_FOUND = "entry-not-found"
 # The reason a watch mode is not proven, and its detail, which names the option.
 NEVER_ENDS = "never-ends"
+# Short enough for the receipt's line to carry whole beside the longest option it names
+# (`printed.CLIPPED_CHARS`).
 NEVER_ENDS_DETAIL = (
-    "{option} watches for changes and never ends under prove, so no report is ever finished; "
-    "prove a single run without it"
+    "{option} watches for changes and never ends, so no report is ever finished; "
+    "prove one run without it"
 )
 FORGING = frozenset({"NODE_OPTIONS"})
 NODE_TEST_FORGING = FORGING | {"NODE_TEST_CONTEXT"}
@@ -490,12 +492,16 @@ def jest_refused(args: Sequence[str], cwd: Path, root: Path) -> str | None:
 
 
 def jest_never_ends(args: Sequence[str]) -> str | None:
-    """The first of jest's watch modes `args` turns on, as the receipt names it; `None` where
-    none is."""
-    for _, setting in _settings(jest_settings, args):
-        if setting.name in _JEST_NEVER_ENDS and _yargs_on(setting):
-            return f"--{setting.name}"
-    return None
+    """The watch mode of jest's whose last setting in `args` turns it on, the later of the two
+    where both are, as the receipt names it; `None` where none is. yargs keeps the last setting
+    of an option, and each of the two watch modes is an option of its own (measured on 30.5.2:
+    `--watch --no-watch` runs once, `--watchAll --watch=false` watches)."""
+    last: dict[str, tuple[int, Setting]] = {}
+    for index, (_, setting) in enumerate(_settings(jest_settings, args)):
+        if setting.name in _JEST_NEVER_ENDS:
+            last[setting.name] = (index, setting)
+    on = [(index, name) for name, (index, setting) in last.items() if _yargs_on(setting)]
+    return f"--{max(on)[1]}" if on else None
 
 
 # vitest's closed list.
@@ -531,12 +537,28 @@ def vitest_refused(args: Sequence[str], cwd: Path, root: Path) -> str | None:
 
 
 def vitest_never_ends(args: Sequence[str]) -> str | None:
-    """The first word of vitest's `args` that turns its watch mode on, as the receipt names it;
-    `None` where none does."""
+    """`-w` or `--watch`, as the receipt names the one whose setting turns vitest's watch mode on
+    as its parser reads `args`; `None` where none does. Measured on vitest 5.0.5, as its mri reads
+    them: a `--no-` setting replaces what came before it, a second setting after one makes two
+    values, which vitest refuses before any run ("Expected a single value"), and `-w` and
+    `--watch` are copied onto each other in the order they were first set, so `-w --no-watch`
+    watches and `--no-watch -w` does not."""
+    held: dict[str, list[tuple[str, Setting]]] = {}
     for word, setting in _settings(vitest_settings, args):
-        if setting.name in _VITEST_NEVER_ENDS and _mri_on(setting):
-            return word if len(setting.name) == 1 else f"--{setting.name}"
-    return None
+        if setting.name not in _VITEST_NEVER_ENDS:
+            continue
+        if setting.negated or setting.name not in held:
+            held[setting.name] = [(word, setting)]
+        else:
+            held[setting.name].append((word, setting))
+    final: list[tuple[str, Setting]] = []
+    for name in list(held):
+        for alias in _VITEST_NEVER_ENDS - {name}:
+            held[alias] = final = held[name]
+    if len(final) != 1 or not _mri_on(final[0][1]):
+        return None
+    name = final[0][1].name
+    return f"-{name}" if len(name) == 1 else f"--{name}"
 
 
 def _jest_ours(args: Sequence[str], report: Path) -> tuple[str, ...]:
@@ -723,8 +745,10 @@ _NODE_REFUSED = frozenset(
         "--test-rerun-failures",
     }
 )
-# node's watch modes, not proven: they never end.
-_NODE_NEVER_ENDS = frozenset({"--watch", "--watch-path"})
+# node's watch modes, not proven: they never end. `--no-watch` turns `--watch` off again.
+_NODE_WATCH = "--watch"
+_NODE_WATCH_PATH = "--watch-path"
+_NODE_NO_WATCH = "--no-watch"
 
 
 def _node_name(word: str) -> str:
@@ -808,12 +832,15 @@ def node_refused(words: Sequence[str]) -> str | None:
 
 
 def node_never_ends(words: Sequence[str]) -> str | None:
-    """The first of node's watch modes among `words` (the words after `node`), by its name, read
-    as `node_refused` reads; `None` where none is."""
-    return next(
-        (_node_name(word) for word in _options(words) if _node_name(word) in _NODE_NEVER_ENDS),
-        None,
-    )
+    """node's watch mode among `words` (the words after `node`), by its name, read as
+    `node_refused` reads: `--watch-path` wherever it is (measured on 26.12.0: under `--test` node
+    refuses to run with it), else `--watch` where the last of `--watch` and `--no-watch` is it;
+    `None` where neither is."""
+    names = [_node_name(word) for word in _options(words)]
+    if _NODE_WATCH_PATH in names:
+        return _NODE_WATCH_PATH
+    settings = [name for name in names if name in (_NODE_WATCH, _NODE_NO_WATCH)]
+    return _NODE_WATCH if settings[-1:] == [_NODE_WATCH] else None
 
 
 def whole_file(attributes: Mapping[str, str]) -> bool:

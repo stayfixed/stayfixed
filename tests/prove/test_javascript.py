@@ -19,6 +19,7 @@ from pathlib import Path
 import pytest
 
 from stayfixed import fsops
+from stayfixed.printed import CLIPPED_CHARS
 from stayfixed.profiles.javascript.adapters import (
     ADAPTERS,
     CONFIGS,
@@ -703,7 +704,9 @@ NEVER_ENDING: list[tuple[Adapter, tuple[str, ...], str]] = [
     (JEST, ("jest", "--watch", "0"), "--watch"),
     (VITEST, ("vitest", "--watch"), "--watch"),
     (VITEST, ("vitest", "run", "-w"), "-w"),
-    (VITEST, ("vitest", "-tw", "x"), "-tw"),
+    (VITEST, ("vitest", "-tw", "x"), "-w"),
+    # A cluster names its watch letter, never the word, so the detail fits the line.
+    (VITEST, ("vitest", "-" + "s" * 40 + "w"), "-w"),
     (NODE_TEST, ("node", "--watch", "--test"), "--watch"),
     (NODE_TEST, ("node", "--test", "--watch-path=src"), "--watch-path"),
     (NODE_TEST, ("node", "--test", "a.test.mjs", "--watch"), "--watch"),
@@ -725,6 +728,81 @@ def test_a_watch_mode_is_not_proven_for_it_never_ends(
     assert planned(adapter, argv, tmp_path) == Unresolved(
         NEVER_ENDS, NEVER_ENDS_DETAIL.format(option=named)
     )
+
+
+# The last of a watch mode's settings is the one each runner applies (measured: jest 30.5.2's
+# `--watch --no-watch` runs once and `--no-watch --watch` watches, each of its two watch modes on
+# its own; vitest 5.0.5's `--no-watch` overwrites what came before it, a second setting after one
+# is refused before any run ("Expected a single value"), and `-w` and `--watch` are copied onto each
+# other in the order they were first set, so `-w --no-watch` watches and `--no-watch -w` does not;
+# Node 26.12.0's last `--watch` or `--no-watch` wins, `_` spelling `-`, and `--watch-path` cannot
+# run under `--test` at all).
+LAST_SETTING_PLANNED: list[tuple[Adapter, tuple[str, ...]]] = [
+    (JEST, ("jest", "--watch", "--no-watch")),
+    (JEST, ("jest", "--watchAll", "--no-watchAll")),
+    (JEST, ("jest", "--watchAll", "--watchAll", "false")),
+    (VITEST, ("vitest", "--watch", "--no-watch")),
+    (VITEST, ("vitest", "--no-watch", "-w")),
+    (VITEST, ("vitest", "--no-watch", "--watch")),
+    (VITEST, ("vitest", "--watch", "--watch=false")),
+    (NODE_TEST, ("node", "--watch", "--no-watch", "--test")),
+    (NODE_TEST, ("node", "--test", "--watch", "--no_watch", "a.test.mjs")),
+    (NODE_TEST, ("node", "--test", "a.test.mjs", "--watch", "--no-watch")),
+]
+LAST_SETTING_NEVER_ENDS: list[tuple[Adapter, tuple[str, ...], str]] = [
+    (JEST, ("jest", "--no-watch", "--watch"), "--watch"),
+    (JEST, ("jest", "--watchAll", "--watch=false"), "--watchAll"),
+    (JEST, ("jest", "--watchAll=false", "--watchAll"), "--watchAll"),
+    (VITEST, ("vitest", "-w", "--no-watch"), "-w"),
+    (NODE_TEST, ("node", "--no-watch", "--watch", "--test"), "--watch"),
+    (NODE_TEST, ("node", "--test", "--no_watch", "--watch", "a.test.mjs"), "--watch"),
+    (NODE_TEST, ("node", "--watch-path=.", "--no-watch", "--test"), "--watch-path"),
+]
+
+
+@pytest.mark.parametrize(
+    ("adapter", "argv"),
+    LAST_SETTING_PLANNED,
+    ids=[f"{adapter.name}:{'_'.join(argv[1:])}" for adapter, argv in LAST_SETTING_PLANNED],
+)
+def test_a_watch_mode_the_command_turns_off_again_is_planned(
+    tmp_path: Path, adapter: Adapter, argv: tuple[str, ...]
+) -> None:
+    # Mutation (declared): each runner's watch reader stops at the first watch setting -> each
+    # case is not proven.
+    _, _, node = installed(tmp_path)
+    assert isinstance(planned(adapter, argv, tmp_path, path=str(node.parent)), Plan)
+
+
+@pytest.mark.parametrize(
+    ("adapter", "argv", "named"),
+    LAST_SETTING_NEVER_ENDS,
+    ids=[f"{adapter.name}:{'_'.join(argv[1:])}" for adapter, argv, _ in LAST_SETTING_NEVER_ENDS],
+)
+def test_the_last_watch_setting_decides(
+    tmp_path: Path, adapter: Adapter, argv: tuple[str, ...], named: str
+) -> None:
+    assert planned(adapter, argv, tmp_path) == Unresolved(
+        NEVER_ENDS, NEVER_ENDS_DETAIL.format(option=named)
+    )
+
+
+@pytest.mark.parametrize(
+    ("adapter", "argv", "named"),
+    [*NEVER_ENDING, *LAST_SETTING_NEVER_ENDS],
+    ids=[
+        f"{adapter.name}:{'_'.join(argv[1:])[:40]}"
+        for adapter, argv, _ in [*NEVER_ENDING, *LAST_SETTING_NEVER_ENDS]
+    ],
+)
+def test_a_watch_mode_s_detail_fits_the_line(
+    tmp_path: Path, adapter: Adapter, argv: tuple[str, ...], named: str
+) -> None:
+    # The receipt's line clips a detail past `CLIPPED_CHARS`; a watch mode's is never cut.
+    # Mutation (declared): the detail lengthened past the clip -> `--watch-path`'s is cut.
+    got = planned(adapter, argv, tmp_path)
+    assert isinstance(got, Unresolved)
+    assert len(got.detail) <= CLIPPED_CHARS, got.detail
 
 
 @pytest.mark.parametrize(
@@ -1226,8 +1304,8 @@ VITEST_FORMS = [
     (("-t.u",), "refused -t.u"),
     (("-tu",), "refused -tu"),
     (("-tfoo",), "free"),
-    (("-wc", "a.js"), ends("-wc")),
-    (("-cw", "a.js"), ends("-cw")),
+    (("-wc", "a.js"), ends("-w")),
+    (("-cw", "a.js"), ends("-w")),
     (("-uc", "a.js"), "refused -uc"),
     (("-cu", "a.js"), "refused -cu"),
     (("-uw", "false"), "refused -uw"),

@@ -881,7 +881,11 @@ snapshots), `--mergeReports` and `--dangerouslyIgnoreUnhandledErrors`; and node'
 `--test-update-snapshots` and `--test-rerun-failures`, spelled with `_` or after the files too. A
 watch mode (jest's `--watch` and `--watchAll`, vitest's `-w`/`--watch`, node's `--watch` and
 `--watch-path`) never ends, so no report is ever finished: it is `not proven` (`never-ends`,
-naming the option), and a refusal in the same command wins. Each option is read as the runner's
+naming the option), and a refusal in the same command wins. Where the command sets a watch mode
+more than once, it is read as the runner reads it: the last setting wins (`node --watch --no-watch
+--test` and `jest --watch --no-watch` are planned), vitest's `--no-watch` replaces what came
+before it and two settings of its watch mode are refused by vitest before any run, and node's
+`--watch-path` never runs under `--test`. Each option is read as the runner's
 own parser reads it on the pinned version: jest's `-u false` is off, vitest's `-t.u` sets `-u`.
 jest's `--ci=false` and `--no-ci` and vitest's `--update=new` are free: each writes a snapshot that
 is missing and passes it, as each runner does by default where `CI` is unset, and a snapshot the
@@ -909,8 +913,10 @@ is `-c=false`, and a `-json=` of a false value, each read as the go command read
 `=`, with one dash or two, before the packages or after them, a word that is a flag's value never as
 a flag, a build flag spelled `-test.` (`-test.p`, `-test.tags`), which the go command does not know
 and hands to the test binary, as taking no value, and nothing past a bare `-args`, `--args` or `--`
-(`-args=x` ends nothing). Every other flag is
-free, `-ldflags`, `-gcflags` and `-compiler` among them, as are `CC`, `CXX` and the `CGO_*`
+(`-args=x` ends nothing), nor past a word that is no flag once the package list is behind it, unless
+the word before it is a flag the go command does not know given no value, whose value it then is
+(`./pkg -v foo -exec=x` hands `-exec=x` to the test binary; `./pkg -update foo -exec=x` does not).
+Every other flag is free, `-ldflags`, `-gcflags` and `-compiler` among them, as are `CC`, `CXX` and the `CGO_*`
 variables: they shape how the code under test is built, which the bound concedes. Its forging set is
 `GOFLAGS`, `GOENV`, `GOTOOLCHAIN`, `GOROOT`, which names the standard library the run builds
 against, and `GOOS` and `GOARCH`, under which a target this machine cannot run has the go command

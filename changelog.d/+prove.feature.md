@@ -39,12 +39,13 @@ assigned `NODE_OPTIONS` (or, for `node --test`, `NODE_TEST_CONTEXT`). Each optio
 is read as the runner's own parser reads it; every other option is free, `-c`/`--config` naming a
 file among them, and the file it names, like a file node's `--require` or `--import` names by its
 path, is named among the files that can shape the report. A watch mode of any of the three never
-ends, and is `not proven` (`never-ends`).
+ends, and is `not proven` (`never-ends`), read from its last setting as the runner reads it.
 The `go test` adapter runs the `go` on `PATH` as `go test -json`, counting only the events of its
 standard output, with `GOENV=off`, `GOFLAGS=` and `GOTOOLCHAIN=local` set and an inherited `GOROOT`,
 `GOOS` or `GOARCH` removed; it refuses `-exec`, `-toolexec`, `-overlay`, `-o`, `-c` and a false
 `-json=`, read as the go command reads them (a build flag spelled `-test.` taking no value, and
-nothing past a bare `-args`, `--args` or `--`), and an assigned `GOFLAGS`, `GOENV`, `GOTOOLCHAIN`,
+nothing past a bare `-args`, `--args` or `--`, nor past a word that is no flag once the package
+list is behind it), and an assigned `GOFLAGS`, `GOENV`, `GOTOOLCHAIN`,
 `GOROOT`, `GOOS` or `GOARCH`.
 `stayfixed prove --junit PATH -- COMMAND` counts the JUnit report of a runner no adapter knows,
 read from the directory the command runs in, only where the run created or rewrote it as a regular
