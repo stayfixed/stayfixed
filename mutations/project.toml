@@ -2258,18 +2258,22 @@ reddens = [
 [[mutation]]
 name = "the pytest adapter reads no -o clustered behind a flag"
 file = "src/stayfixed/profiles/python/adapters.py"
-before = "        if letter not in _PYTEST_FLAGS:"
-after = "        if True:"
+before = """        if letter in _PYTEST_FLAGS:
+            continue"""
+after = """        if False:
+            continue"""
 reddens = [
   "tests/prove/test_pytest.py::test_each_report_steering_option_is_refused[-qo_junit_family=xunit1]",
   "tests/prove/test_pytest.py::test_each_report_steering_option_is_refused[-vqojunit_family=xunit1]",
+  "tests/prove/test_pytest.py::test_each_report_steering_option_is_refused[-qo_addopts=--co]",
+  "tests/prove/test_pytest.py::test_the_configuration_file_the_command_names_is_among_the_configs",
 ]
 
 [[mutation]]
 name = "the pytest adapter reads -o=key as a key starting with ="
 file = "src/stayfixed/profiles/python/adapters.py"
-before = '            return _ini(f"-{_INI_LETTER}", rest.removeprefix("=") if rest else following)'
-after = '            return _ini(f"-{_INI_LETTER}", rest if rest else following)'
+before = '        return letter, rest.removeprefix("=") if rest else following'
+after = "        return letter, rest if rest else following"
 reddens = ["tests/prove/test_pytest.py::test_each_report_steering_option_is_refused[-o=junit_logging=all]"]
 
 # After `--` pytest's parser reads every word as a path to collect, so none is an option to refuse.
@@ -2345,3 +2349,56 @@ after = "            return PytestCommand(launcher, words[0], True, (), words[in
 reddens = [
   "tests/prove/test_pytest.py::test_a_python_the_command_names_is_found_on_path_and_keeps_its_options",
 ]
+
+# pytest registers `--setupplan`, `--setuponly` and `--collectonly` beside the dashed forms, and
+# each exits 0 over a failing test as they do.
+[[mutation]]
+name = "the pytest adapter leaves pytest's undashed aliases off its refusals"
+file = "src/stayfixed/profiles/python/adapters.py"
+before = "        if name in _REPORT_OPTIONS or name in _RUNS_NO_TEST or name in _RUNS_NO_TEST_ALIASES:"
+after = "        if name in _REPORT_OPTIONS or name in _RUNS_NO_TEST:"
+reddens = [
+  "tests/prove/test_pytest.py::test_each_report_steering_option_is_refused[--setupplan]",
+  "tests/prove/test_pytest.py::test_each_report_steering_option_is_refused[--setuponly]",
+  "tests/prove/test_pytest.py::test_each_report_steering_option_is_refused[--collectonly]",
+]
+
+# `-o addopts=--setup-plan` is read as options typed on the command line: every refusal above,
+# passed through an ini override.
+[[mutation]]
+name = "the pytest adapter lets -o set addopts"
+file = "src/stayfixed/profiles/python/adapters.py"
+before = "    if not key.startswith(_JUNIT_KEY) and key != _ADDOPTS:"
+after = "    if not key.startswith(_JUNIT_KEY):"
+reddens = [
+  "tests/prove/test_pytest.py::test_each_report_steering_option_is_refused[-o_addopts=--setup-plan]",
+  "tests/prove/test_pytest.py::test_each_report_steering_option_is_refused[-oaddopts=--co]",
+  "tests/prove/test_pytest.py::test_each_report_steering_option_is_refused[--override-ini=addopts=--setup-plan]",
+  "tests/prove/test_pytest.py::test_each_report_steering_option_is_refused[--override-ini_addopts=--co]",
+]
+
+# The configuration file the command names is one the receipt names.
+[[mutation]]
+name = "the pytest adapter names no configuration file the command names"
+file = "src/stayfixed/profiles/python/adapters.py"
+before = "            configs=(*CONFIGS, *_configuration_files(run.args, cwd, root)),"
+after = "            configs=CONFIGS,"
+reddens = ["tests/prove/test_pytest.py::test_the_configuration_file_the_command_names_is_among_the_configs"]
+
+[[mutation]]
+name = "the pytest adapter names a configuration file past --"
+file = "src/stayfixed/profiles/python/adapters.py"
+before = """        if word == _SEPARATOR:
+            break
+        following"""
+after = """        if False:
+            break
+        following"""
+reddens = ["tests/prove/test_pytest.py::test_the_configuration_file_the_command_names_is_among_the_configs"]
+
+[[mutation]]
+name = "the pytest adapter names a configuration file's glob characters unescaped"
+file = "src/stayfixed/profiles/python/adapters.py"
+before = '            found.append(_GLOB_SPECIAL.sub(r"[\1]", where.relative_to(project).as_posix()))'
+after = "            found.append(where.relative_to(project).as_posix())"
+reddens = ["tests/prove/test_pytest.py::test_the_configuration_file_the_command_names_is_among_the_configs"]

@@ -18,6 +18,7 @@ green on this tree, for the tests this command selected: the code under test, an
 runner's load path and the environment the runner reads can shape its report.
 The first runner adapter is pytest's: `pytest`, `py.test` and `python -m pytest`, also behind
 `poetry run` or `uv run`, run as `<interpreter> -P -m pytest` with a JUnit report of `prove`'s own,
-the project's `PYTHON*` variables kept; it refuses `--junitxml`, `-p no:junitxml`, `-o junit_*`,
-`--setup-plan`, `--setup-only` and `--collect-only`, and an assigned `PYTEST_ADDOPTS` or
-`PYTEST_PLUGINS`.
+the project's `PYTHON*` variables kept; it refuses `--junitxml`, `-p no:junitxml`, `-o junit_*`
+and `-o addopts`, `--setup-plan`, `--setup-only` and `--collect-only` and their undashed
+aliases, and an assigned `PYTEST_ADDOPTS` or `PYTEST_PLUGINS`, and names the configuration file
+`-c` names among the files that can shape the report.

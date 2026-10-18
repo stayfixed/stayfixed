@@ -22,14 +22,21 @@ choice. The receipt carries the realpath of what ran.
 
 - `REFUSED_OPTION`: an agent typing an option that moves, replaces or suppresses the report, or
   makes pytest report tests it never ran: `--junitxml`/`--junit-xml`, `-p no:junitxml`, `-o` or
-  `--override-ini` setting a `junit_*` key, `--setup-plan` (which reports a failing test as
-  passed), `--setup-only`, `--collect-only`, `--co`. The anchor is the command's own words; the
-  list is closed and every other option is free.
+  `--override-ini` setting a `junit_*` key or `addopts` (whose options pytest reads as typed),
+  `--setup-plan` (which reports a failing test as passed), `--setup-only`, `--collect-only`,
+  `--co`, and the undashed aliases pytest registers, `--setupplan`, `--setuponly` and
+  `--collectonly`. The anchor is the command's own words; the list is closed and every other
+  option is free.
 - `FORGING`, assigned in the command (refused) or inherited (scrubbed): the same agent steering
   the report through the two variables pytest reads its options and plugins from. `PYTHONPATH`
   and every other variable are the project's.
 - `-P`: a module named `pytest` in the directory the command runs in, which the agent can write.
-  The anchor is the argv stayfixed runs.
+  The anchor is the argv stayfixed runs. A `pytest.py` the project's own `PYTHONPATH` reaches is
+  the bound's, since `PYTHONPATH` is the project's.
+- The file `-c`/`--config-file` (or the older `--inifile`) names: the same agent pointing pytest
+  at a configuration of its choosing. Not refused, since a configuration file in the tree is the
+  bound's as `pytest.ini` is, but named among the receipt's configuration files (`Plan.configs`)
+  where it lies in the project; the anchor is the command's own words.
 
 What a file in the tree can do -- a `conftest.py` that moves the report or rewrites it on the way
 out, a configuration file's `addopts`, a shim on `PATH`, the interpreter a script's first line
@@ -78,15 +85,23 @@ _LAUNCHED_INTERPRETER = "python"
 # The closed list of what is refused.
 _REPORT_OPTIONS = frozenset({"--junitxml", "--junit-xml"})
 _RUNS_NO_TEST = frozenset({"--setup-plan", "--setup-only", "--collect-only", "--co"})
+# The aliases pytest registers beside them, which run as they do.
+_RUNS_NO_TEST_ALIASES = frozenset({"--setupplan", "--setuponly", "--collectonly"})
 _OVERRIDE_INI = "--override-ini"
 _JUNIT_KEY = "junit_"
+_ADDOPTS = "addopts"
+# The options that name the configuration file pytest reads, its short one `-c`.
+_CONFIG_OPTIONS = frozenset({"--config-file", "--inifile"})
+_CONFIG_LETTER = "c"
 _PLUGIN = "-p"
 _NO_REPORT = "no:junitxml"
 # pytest's own short options that take no value, which its parser lets stand in one word before
-# `-o` (`-qo junit_family=x`): a cluster is read up to the first letter outside them, and an `o`
-# there takes the rest of the word, or the next word, as its value.
+# one that takes a value (`-qo junit_family=x`, `-qc ci.ini`): a cluster is read up to the first
+# letter outside them, which takes the rest of the word, or the next word, as its value.
 _PYTEST_FLAGS = frozenset("hlqsvVx")
 _INI_LETTER = "o"
+# What a configuration glob escapes in a file name, so the name matches itself alone.
+_GLOB_SPECIAL = re.compile(r"([*?[])")
 
 # How much of a console script is read for the interpreter its first two lines name.
 _SCRIPT_HEAD_BYTES = 4096
@@ -95,21 +110,29 @@ _TRAMPOLINE = re.compile(r"""'''exec' (['"])(?P<python>.+?)\1 "\$0" "\$@"\s*""")
 
 
 def _ini(option: str, value: str | None) -> str | None:
-    """`option` and the `junit_*` key `value` sets, where it sets one."""
-    if value is None or not value.startswith(_JUNIT_KEY):
+    """`option` and the key `value` sets, where it sets a `junit_*` key or `addopts`."""
+    if value is None:
         return None
-    return f"{option} {value.partition('=')[0]}"
+    key = value.partition("=")[0]
+    if not key.startswith(_JUNIT_KEY) and key != _ADDOPTS:
+        return None
+    return f"{option} {key}"
 
 
-def _clustered_ini(word: str, following: str | None) -> str | None:
-    """The `junit_*` key a short-option word (`-o`, `-ojunit_x=1`, `-qo`) sets with `-o`."""
+def _short(word: str, following: str | None) -> tuple[str, str | None] | None:
+    """The short option a single-dash word (`-o`, `-ojunit_x=1`, `-qo`, `-c=x`) ends in after
+    pytest's flags, and its value: the rest of the word past one `=`, or else the next word;
+    `None` where the word is flags alone."""
     for index, letter in enumerate(word[1:], start=1):
-        if letter == _INI_LETTER:
-            rest = word[index + 1 :]
-            return _ini(f"-{_INI_LETTER}", rest.removeprefix("=") if rest else following)
-        if letter not in _PYTEST_FLAGS:
-            return None
+        if letter in _PYTEST_FLAGS:
+            continue
+        rest = word[index + 1 :]
+        return letter, rest.removeprefix("=") if rest else following
     return None
+
+
+def _single_dash(word: str) -> bool:
+    return word.startswith("-") and not word.startswith(_SEPARATOR)
 
 
 def refused_option(args: Sequence[str]) -> str | None:
@@ -131,17 +154,42 @@ def refused_option(args: Sequence[str]) -> str | None:
             return None
         following = args[index + 1] if index + 1 < len(args) else None
         name, equals, value = word.partition("=")
-        if name in _REPORT_OPTIONS or name in _RUNS_NO_TEST:
+        if name in _REPORT_OPTIONS or name in _RUNS_NO_TEST or name in _RUNS_NO_TEST_ALIASES:
             return name
+        named = None
         if name == _OVERRIDE_INI:
             named = _ini(name, value if equals else following)
-        elif word.startswith("-") and not word.startswith(_SEPARATOR):
-            named = _clustered_ini(word, following)
-        else:
-            named = None
+        elif _single_dash(word) and (short := _short(word, following)) is not None:
+            letter, setting = short
+            named = _ini(f"-{letter}", setting) if letter == _INI_LETTER else None
         if named is not None:
             return named
     return None
+
+
+def _configuration_files(args: Sequence[str], cwd: Path, root: Path) -> tuple[str, ...]:
+    """A configuration glob for each file `-c`, `--config-file` or `--inifile` names in `args`,
+    read from `cwd`, that lies in `root`, its name matching itself alone; one outside the project
+    is no file the tree's state lists, and is not named."""
+    found: list[str] = []
+    for index, word in enumerate(args):
+        if word == _SEPARATOR:
+            break
+        following = args[index + 1] if index + 1 < len(args) else None
+        name, equals, value = word.partition("=")
+        named: str | None = None
+        if name in _CONFIG_OPTIONS:
+            named = value if equals else following
+        elif _single_dash(word) and (short := _short(word, following)) is not None:
+            letter, setting = short
+            named = setting if letter == _CONFIG_LETTER else None
+        if not named:
+            continue
+        where = Path(os.path.realpath(cwd / named))
+        project = Path(os.path.realpath(root))
+        if where.is_relative_to(project):
+            found.append(_GLOB_SPECIAL.sub(r"[\1]", where.relative_to(project).as_posix()))
+    return tuple(found)
 
 
 def _executable(path: Path) -> bool:
@@ -269,7 +317,7 @@ class PytestAdapter:
             set_env={},
             scrub=FORGING,
             discovery=DISCOVERY,
-            configs=CONFIGS,
+            configs=(*CONFIGS, *_configuration_files(run.args, cwd, root)),
         )
 
 

@@ -418,6 +418,16 @@ REFUSALS = [
     (("--setup-only",), "--setup-only"),
     (("--collect-only",), "--collect-only"),
     (("--co",), "--co"),
+    # The undashed aliases pytest registers, which run as the dashed forms do.
+    (("--setupplan",), "--setupplan"),
+    (("--setuponly",), "--setuponly"),
+    (("--collectonly",), "--collectonly"),
+    # `addopts` set from the command line is read as options typed there.
+    (("-o", "addopts=--setup-plan"), "-o addopts"),
+    (("-oaddopts=--co",), "-o addopts"),
+    (("-qo", "addopts=--co"), "-o addopts"),
+    (("--override-ini=addopts=--setup-plan",), "--override-ini addopts"),
+    (("--override-ini", "addopts=--co"), "--override-ini addopts"),
 ]
 
 
@@ -438,6 +448,10 @@ def test_each_report_steering_option_is_refused(
     [
         ("-o", "cache_dir=x"),
         ("-o", "junitfamily=x"),
+        ("-o", "addopts_extra=x"),
+        # An `-o` with no value is pytest's own usage error.
+        ("-o",),
+        ("-c", "ci.ini"),
         ("-p", "no:cacheprovider"),
         ("-p", "no:_pytest.junitxml"),
         ("--junit-prefix=x",),
@@ -454,6 +468,45 @@ def test_each_report_steering_option_is_refused(
 def test_every_other_option_is_free(tmp_path: Path, argv: tuple[str, ...]) -> None:
     bin_ = environment(tmp_path / "venv")
     assert isinstance(planned(["pytest", *argv], tmp_path, path=str(bin_)), Plan)
+
+
+def test_the_configuration_file_the_command_names_is_among_the_configs(tmp_path: Path) -> None:
+    # Not refused: a configuration file in the tree is the bound's, as `pytest.ini` is. Named,
+    # read from the directory the command runs in, where it lies in the project, its name escaped
+    # so that it matches itself alone. Mutation (declared): the named files left out -> the
+    # adapter's own globs alone.
+    root = tmp_path / "project"
+    bin_ = environment(tmp_path / "venv")
+    (root / "sub").mkdir(parents=True)
+    args = (
+        "-c",
+        "ci/pytest-ci.ini",
+        "--config-file=../other.toml",
+        "-qc",
+        "x[1].ini",
+        "--inifile",
+        "old.ini",
+        "-c=../../outside.ini",
+        "--",
+        "-c",
+        "after.ini",
+    )
+    got = PytestAdapter().plan(
+        (),
+        ("pytest", *args),
+        cwd=root / "sub",
+        root=root,
+        scratch=tmp_path / "scratch",
+        environ={"PATH": str(bin_)},
+    )
+    assert isinstance(got, Plan)
+    assert got.configs == (
+        *CONFIGS,
+        "sub/ci/pytest-ci.ini",
+        "other.toml",
+        "sub/x[[]1].ini",
+        "sub/old.ini",
+    )
 
 
 def _proved_here(argv: Sequence[str], cwd: Path, environ: Mapping[str, str]) -> Receipt:
@@ -639,6 +692,17 @@ def test_an_atexit_rewrite_is_what_the_bound_concedes(tmp_path: Path) -> None:
     project = scratch_project(tmp_path / "p", failing=1, files={"conftest.py": conftest})
     got = real(project, "pytest", "-q")
     assert (got.verdict, got.counts, got.exit_code) == (PROVED, Counts(1, 0, 0), 0)
+
+
+@needs_runner("pytest")
+def test_a_configuration_file_the_command_names_is_named_on_the_receipt(tmp_path: Path) -> None:
+    project = scratch_project(tmp_path / "p", passing=1, files={"ci/ci.ini": "[pytest]\n"})
+    git(project, "init", "-q")
+    git(project, "add", ".")
+    git(project, "commit", "-q", "-m", "first")
+    got = real(project, "pytest", "-q", "-c", "ci/ci.ini", "--rootdir", ".")
+    assert (got.verdict, got.counts) == (PROVED, Counts(1, 0, 0))
+    assert got.configs == ("ci/ci.ini", "pytest.ini")
 
 
 @needs_runner("pytest")

@@ -845,11 +845,13 @@ script: the interpreter is the one the script's first line names (or, under the 
 named; behind `uv run` or `poetry run` the launcher runs, kept in front, and chooses it. `-P` keeps
 the directory the command runs in off the import path and leaves every `PYTHON*` variable yours. It
 refuses `--junitxml` and `--junit-xml`, `-p no:junitxml`, `-o` or `--override-ini` setting a
-`junit_*` key, `--setup-plan`, `--setup-only`, `--collect-only` and `--co` (`refused-option`,
-naming the option); every other option is free. Its forging set is `PYTEST_ADDOPTS` and
-`PYTEST_PLUGINS`, an inherited one removed from the run's environment; `PYTHONPATH` and every
-other variable are yours. Its configuration files are `pytest.ini`, `pyproject.toml`, `setup.cfg`
-and `tox.ini`, and its discovery set `conftest.py`, `test_*.py` and `*_test.py` at any depth. A
+`junit_*` key or `addopts`, `--setup-plan`, `--setup-only`, `--collect-only` and `--co`, and
+pytest's aliases `--setupplan`, `--setuponly` and `--collectonly` (`refused-option`, naming the
+option); every other option is free. Its forging set is `PYTEST_ADDOPTS` and `PYTEST_PLUGINS`, an
+inherited one removed from the run's environment; `PYTHONPATH` and every other variable are yours.
+Its configuration files are `pytest.ini`, `pyproject.toml`, `setup.cfg` and `tox.ini`, and the
+file `-c` or `--config-file` names where it lies in the project; its discovery set is
+`conftest.py`, `test_*.py` and `*_test.py` at any depth. A
 program the command names that is not where it would be found is `entry-not-found` (`not proven`).
 
 **What `proved` means.** The code under test, any file in the runner's load path, tracked or not, and the environment the runner reads can shape its report, so `proved` means the runner reported green on this tree, for the tests this command selected.
