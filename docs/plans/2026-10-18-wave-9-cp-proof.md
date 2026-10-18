@@ -1288,3 +1288,115 @@ finding changed the plan as below; a finding not named was fixed in the task it 
 
 Written by Tasks 1, 4, 14 and 15, and by the controller when a wave's implementer reports (its token
 total, its fix rounds) and when the owner answers an open question.
+
+### Open questions, taken on their defaults (controller, 2026-10-18)
+
+The owner's brief for CP1: proceed on each open question's stated default and record it here.
+
+1. **How the real runners run in CI:** the default, a `runners` job in `ci.yml` (Task 10), at the
+   pins below.
+2. **Origin normalisation:** the default rule (Task 12).
+3. **`--junit` inside the repository:** the default; the file may lie anywhere and counts only when
+   the run created or rewrote it (Task 9).
+
+### Task 1 (controller, 2026-10-18)
+
+Every probe ran under the session scratchpad's `a1/`; the network reached was the npm registry
+(Node, jest, vitest, pnpm) and the Go module proxy (the Go toolchain). Reports are in
+`tests/fixtures/prove/reports/`, the scratch prefix rewritten to `/work`; the README names each
+one's command, version and exit code.
+
+**Pins** (the `runners` job installs these): Node `26.12.0` (npm's `latest`), Go `1.27.2` (the
+proxy's newest), jest `30.5.2`, vitest `5.0.5`; pytest `9.1.1` is the project's own lock. Locally
+also measured: Go `1.24.7` (the image's), same events.
+
+**pytest** (`9.1.1`, CPython 3.13.16, `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1`):
+- xunit1 and xunit2 both write one `testcase` per test; `record_xml_attribute` adds attributes to the
+  `testcase` (xunit1; an experimental-API warning), `record_property` a `properties` child. `&amp;`
+  in an id is written `&amp;amp;`; a non-ASCII id is escaped (`caf\xe9`) unless the project sets the
+  id-escaping ini option.
+- `-k no_such_test`: exit 5, a `testsuite` with `tests="0"` and no `testcase`.
+- `--setup-plan`: **exit 0, and the failing test is reported as passed** (no `failure` child), so the
+  refusal is load-bearing.
+- A `conftest.py` `pytest_configure` setting `config.option.xmlpath` moves the report: the handed
+  path receives nothing and `elsewhere.xml` appears (with and without `tryfirst`) → `NO_REPORT`.
+- **A console script's first line:** `#!<venv>/bin/python` while the interpreter path is short; for a
+  path over 127 bytes (measured: 184) the installer writes `#!/bin/sh` and, on line 2,
+  `'''exec' '<venv>/bin/python3' "$0" "$@"`. Ruling for Task 8 below.
+
+**node --test** (`26.12.0`): the junit reporter writes flat `testcase` elements, `classname="test"`,
+an absolute `file`, and comment totals. An empty directory exits 0 with no `testcase`. A
+non-matching `--test-name-pattern`, a file with no tests and a file calling `process.exit(0)` early
+each yield **one whole-file testcase**: `name` equal to the basename of its `file` attribute,
+`classname="test"`, no child, reported as a pass. A file that fails to load (a syntax error, a throw)
+yields the same whole-file testcase **with a `failure` child** and a `failure` attribute, exit 1.
+
+**jest** (`30.5.2`, `bin` is the string `./bin/jest.js`; `jest-cli`'s is `{"jest": "./bin/jest.js"}`):
+an empty run exits 1 ("No tests found") and with `--passWithNoTests` 0, both writing a report with an
+empty `testResults`; `test.todo` is `todo`, `test.skip` `pending`, and a file holding a `todo` has the
+file status `focused`; a file that fails to load has `status: "failed"`, an empty
+`assertionResults`, and the totals `numPassedTests: 1, numFailedTests: 0`. The rootDir is the nearest
+`package.json`.
+
+**vitest** (`5.0.5`, `bin` `{"vitest": "./vitest.mjs"}`): skip is `skipped`, todo `todo`; an empty run
+exits 1 with a report; a load failure as jest's. With `--reporter=json` and no output file, the
+report goes to `.vitest/json/output.json` **inside the project**. Precedence, measured case by case:
+
+| configuration | `--outputFile=<report>` | `--outputFile.json=<report>` |
+|---|---|---|
+| `outputFile: "x"` | the command line's | **the configuration's** |
+| `outputFile: {json: "x"}` | the command line's | the command line's |
+| `reporters: [["json", {outputFile: "x"}]]` | **the configuration's** | **the configuration's** |
+| `reporters: ["./custom.js"]` | the command line's | the command line's |
+
+So the command line does not always win (Premise's "the command line's reporter and output file win"
+holds for the object form only). Ruling for Task 10 below.
+
+**go test** (`1.27.2`; `1.24.7` the same): events on stdout only; a subtest is its own `pass`;
+`-run NoSuchTest` and a `TestMain` with `os.Exit(0)` give a package-level `pass` and no test event,
+exit 0; a `TestMain` printing `\x16--- PASS: TestForged` gives a real `pass` event for `TestForged`.
+**A build failure gives a `build-fail` event (no `Package`, an `ImportPath` like `p [p.test]`) and
+then the package's own `fail` event with no failed test**; so does a dependency that does not build
+(every dependent package gets its `fail`) and a vet failure. Ruling for Task 6 below. With `GOENV`
+naming a file holding `GOFLAGS=-toolexec=<script>`, the script runs; with `GOENV=off` it does not. A
+`go.mod` asking a newer `go` under `GOTOOLCHAIN=local` stops before any event. A Go root is
+`<root>/bin/go` beside `<root>/src/runtime`, for the image's `/usr/local/go1.24.7` and for the
+module-cache toolchain alike.
+
+**Entry points.** npm: `node_modules/.bin/jest` and `.bin/vitest` are symlinks to
+`../jest/bin/jest.js` and `../vitest/vitest.mjs`. **pnpm (`12.14.0`): `node_modules/.bin/jest` is a
+4 KB `sh` shim, not a symlink**, whose `exec` line names
+`../.pnpm/jest@30.5.2_…/node_modules/jest/bin/jest.js`; `node_modules/jest` and `node_modules/vitest`
+are symlinks into `.pnpm/`. `node <realpath of node_modules/jest>/bin/jest.js` and the vitest
+equivalent run and report three tests with no `NODE_PATH` set. Ruling for Task 10 below.
+
+**Rulings this task makes for later waves** (the plan's intent kept, its mechanism corrected to the
+measurement):
+
+- Ruling (Task 6): a package-level `fail` with no failed test in it adds one failed; a `build-fail`
+  adds one only when no package-level `fail` names the package its `ImportPath` starts with. So
+  `go-build-fail.jsonl` is `Counts(0, 1, 0)`, and a stream with a lone `build-fail` (an inline test
+  input, since no recorded Go writes one) still counts it. Cost if wrong: a build failure counts
+  twice, which changes a count and never a verdict.
+- Ruling (Task 8): a console script whose first line is `#!/bin/sh` and whose second is the
+  installer's `'''exec' '<python>' "$0" "$@"` names `<python>`; `STAND_IN` stays for any other first
+  line that names no Python interpreter. The plan's rule would refuse every legitimate virtual
+  environment deeper than 127 bytes, and the interpreter is the only thing the line chooses (the run
+  is `<python> -P -m pytest`, never the script). Cost if wrong: none for security; the script's
+  bytes were never the anchor.
+- Ruling (Task 10): the entry point is resolved as Node resolves the package: `node_modules/<package>`
+  (`jest`, `jest-cli`; `vitest`) from the run's directory up to the root, its `package.json` `name`
+  the runner's and its `bin` (a string, or a mapping holding the runner's name) the entry; then
+  `<bin>` on `PATH`, whose realpath must lie in such a package. A `.bin` file that is not a symlink is
+  never read. The plan's `.bin/<bin>` realpath rule refuses every pnpm project, which its own
+  `test_a_pnpm_layout_resolves` forbids. Cost if wrong: a project whose runner is reachable only
+  through a `.bin` shim is `Unresolved(ENTRY_NOT_FOUND)`, and `--junit` is the way on.
+- Ruling (Task 10): vitest is planned with `--outputFile=<report>` (the string form), which wins over
+  both configuration forms of `outputFile`; a configuration reporter tuple carrying its own
+  `outputFile` still wins, and the report that does not arrive is `NO_REPORT`, as the plan says. The
+  refusal of the command's own `--outputFile` in any form is unchanged. Cost if wrong: a vitest
+  project configured with `outputFile: "x"` is `not proven` on every run.
+- Ruling (Task 10): `Plan.drop` matches a `testcase` whose `name` equals the basename of its `file`,
+  whose `classname` is `test`, and that has **no `failure` or `error` child**; a whole-file testcase
+  with a failure is a file that did not load and counts as failed. Cost if wrong: a broken test file
+  beside a passing one would be dropped and the run `proved`.
