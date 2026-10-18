@@ -120,7 +120,8 @@ def test_the_plan_runs_go_test_with_json(tmp_path: Path) -> None:
 @pytest.mark.parametrize("named", ["absolute", "relative"])
 def test_a_path_to_go_is_the_program(tmp_path: Path, named: str) -> None:
     # The path the command gives is the `go` that runs, read from the directory the command runs
-    # in, whatever `PATH` holds.
+    # in, whatever `PATH` holds. Mutation (declared): the word `go` run for it -> the `go` on
+    # `PATH` runs.
     go = executable(tmp_path / "bin" / "go")
     executable(tmp_path / "elsewhere" / "go")
     word = str(go) if named == "absolute" else "./bin/go"
@@ -133,7 +134,10 @@ def test_a_path_to_go_is_the_program(tmp_path: Path, named: str) -> None:
 def test_a_path_to_no_go_does_not_resolve(tmp_path: Path) -> None:
     executable(tmp_path / "go")
     got = planned(["./bin/go", "test"], tmp_path, path=str(tmp_path))
-    assert got == Unresolved(ENTRY_NOT_FOUND, "no ./bin/go on PATH")
+    # A path is read from the directory the command runs in, never looked up on `PATH`, and the
+    # detail says so. Mutation (declared): every word named as looked up on `PATH` -> it names
+    # `PATH`.
+    assert got == Unresolved(ENTRY_NOT_FOUND, "no executable file at ./bin/go")
 
 
 @pytest.mark.parametrize(
@@ -196,36 +200,62 @@ def test_the_go_on_path_runs_wherever_it_lies(tmp_path: Path, where: str) -> Non
     assert got.argv[0] == str(go)
 
 
-def test_a_launcher_is_kept_in_front_of_the_go_on_path(tmp_path: Path) -> None:
-    # `uv run go test ./...`: the launcher runs, its words kept in front, as every adapter keeps
-    # them; the `go` it is handed is the run's `PATH`'s, by its path. Mutation (declared): the
-    # launcher dropped -> the plan runs `go` alone.
-    tools = tmp_path / "tools"
-    launcher = executable(tools / "uv")
-    go = executable(tmp_path / "bin" / "go")
+def launched_plan(launch: tuple[str, ...], command: list[str], cwd: Path, path: str) -> Plan:
     got = GO.plan(
-        ("uv", "run", "--locked"),
-        ["go", "test", "./..."],
-        cwd=tmp_path,
-        root=tmp_path,
-        scratch=tmp_path / "scratch",
-        environ={"PATH": os.pathsep.join([str(tools), str(go.parent)])},
+        launch, command, cwd=cwd, root=cwd, scratch=cwd / "scratch", environ={"PATH": path}
     )
     assert isinstance(got, Plan), got
-    assert got.argv == (str(launcher), "run", "--locked", str(go), "test", "-json", "./...")
+    return got
 
 
-def test_a_launcher_not_on_path_does_not_resolve(tmp_path: Path) -> None:
+@pytest.mark.parametrize("word", ["go", "./bin/go"])
+def test_a_launcher_is_handed_the_go_as_typed(tmp_path: Path, word: str) -> None:
+    # `uv run go test ./...`: the launcher is the program, its words kept in front, and the
+    # command's words are handed to it as typed, so the `go` that runs is the one the launcher
+    # finds (`uv run` puts its environment's `bin` first), not the caller's `PATH`'s. Mutations
+    # (declared): the launcher dropped -> the plan runs `go` alone; the `go` on the caller's
+    # `PATH` handed by its path -> the plan names it.
+    tools = tmp_path / "tools"
+    launcher = executable(tools / "uv")
+    executable(tmp_path / "bin" / "go")
+    got = launched_plan(
+        ("uv", "run", "--locked"),
+        [word, "test", "./..."],
+        tmp_path,
+        os.pathsep.join([str(tools), str(tmp_path / "bin")]),
+    )
+    assert got.argv == (str(launcher), "run", "--locked", word, "test", "-json", "./...")
+
+
+def test_a_go_only_the_launcher_finds_is_planned(tmp_path: Path) -> None:
+    # A `go` only in the virtual environment `uv run` puts first, none on the caller's `PATH`:
+    # the run is planned, the launcher finding its `go` as it does outside `prove`. Mutation
+    # (declared): the `go` looked up on the caller's `PATH` behind a launcher -> `entry-not-found`.
+    tools = tmp_path / "tools"
+    launcher = executable(tools / "uv")
+    executable(tmp_path / ".venv" / "bin" / "go")
+    got = launched_plan(("uv", "run"), ["go", "test", "./q/"], tmp_path, str(tools))
+    assert got.argv == (str(launcher), "run", "go", "test", "-json", "./q/")
+
+
+@pytest.mark.parametrize(
+    ("word", "detail"),
+    [("uv", "no uv on PATH"), ("./tools/uv", "no executable file at ./tools/uv")],
+    ids=["bare", "path"],
+)
+def test_a_launcher_that_names_nothing_does_not_resolve(
+    tmp_path: Path, word: str, detail: str
+) -> None:
     go = executable(tmp_path / "bin" / "go")
     got = GO.plan(
-        ("uv", "run"),
+        (word, "run"),
         ["go", "test"],
         cwd=tmp_path,
         root=tmp_path,
         scratch=tmp_path / "scratch",
         environ={"PATH": str(go.parent)},
     )
-    assert got == Unresolved(ENTRY_NOT_FOUND, "no uv on PATH")
+    assert got == Unresolved(ENTRY_NOT_FOUND, detail)
 
 
 def test_the_file_modfile_names_is_among_the_configs(tmp_path: Path) -> None:

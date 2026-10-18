@@ -2309,9 +2309,58 @@ reddens = ["tests/prove/test_javascript.py::test_a_launcher_is_kept_in_front_of_
 [[mutation]]
 name = "the go adapter drops the launcher"
 file = "src/stayfixed/profiles/go/adapters.py"
-before = "        argv = launched(launch, (str(go), _TEST, *_planned_args(args)), cwd, environ)"
-after = "        argv = launched((), (str(go), _TEST, *_planned_args(args)), cwd, environ)"
-reddens = ["tests/prove/test_go.py::test_a_launcher_is_kept_in_front_of_the_go_on_path"]
+before = "        argv = launched(launch, (command[0], _TEST, *_planned_args(args)), cwd, environ)"
+after = "        argv = launched((), (command[0], _TEST, *_planned_args(args)), cwd, environ)"
+reddens = [
+  "tests/prove/test_go.py::test_a_launcher_is_handed_the_go_as_typed[go]",
+  "tests/prove/test_go.py::test_a_launcher_is_handed_the_go_as_typed[./bin/go]",
+  "tests/prove/test_go.py::test_a_go_only_the_launcher_finds_is_planned",
+]
+
+# Behind a launcher the command's words are handed to it as typed: the `go` that runs is the one
+# the launcher finds, never one looked up on the caller's `PATH`.
+[[mutation]]
+name = "the go adapter hands a launcher the go on the caller's PATH by its path"
+file = "src/stayfixed/profiles/go/adapters.py"
+before = "        argv = launched(launch, (command[0], _TEST, *_planned_args(args)), cwd, environ)"
+after = """        typed = launched((), command[:1], cwd, environ) or command[:1]
+        argv = launched(launch, (typed[0], _TEST, *_planned_args(args)), cwd, environ)"""
+reddens = [
+  "tests/prove/test_go.py::test_a_launcher_is_handed_the_go_as_typed[go]",
+  "tests/prove/test_go.py::test_a_launcher_is_handed_the_go_as_typed[./bin/go]",
+]
+
+[[mutation]]
+name = "the go adapter looks the go up on the caller's PATH behind a launcher"
+file = "src/stayfixed/profiles/go/adapters.py"
+before = "        argv = launched(launch, (command[0], _TEST, *_planned_args(args)), cwd, environ)"
+after = """        argv = launched(launch, (command[0], _TEST, *_planned_args(args)), cwd, environ)
+        if launched((), command[:1], cwd, environ) is None:
+            argv = None"""
+reddens = ["tests/prove/test_go.py::test_a_go_only_the_launcher_finds_is_planned"]
+
+# The go a command names by its path is the program, whatever `PATH` holds.
+[[mutation]]
+name = "the go adapter runs the go on PATH for a path to go"
+file = "src/stayfixed/profiles/go/adapters.py"
+before = "        argv = launched(launch, (command[0], _TEST, *_planned_args(args)), cwd, environ)"
+after = "        argv = launched(launch, (_GO, _TEST, *_planned_args(args)), cwd, environ)"
+reddens = [
+  "tests/prove/test_go.py::test_a_path_to_go_is_the_program[absolute]",
+  "tests/prove/test_go.py::test_a_path_to_go_is_the_program[relative]",
+  "tests/prove/test_go.py::test_a_launcher_is_handed_the_go_as_typed[./bin/go]",
+]
+
+# A word holding a `/` is read as a path, never looked up on `PATH`, and the detail says so.
+[[mutation]]
+name = "the go adapter names a path that names nothing as looked up on PATH"
+file = "src/stayfixed/profiles/go/adapters.py"
+before = "    template = _NO_FILE if os.sep in word else _NOT_ON_PATH"
+after = "    template = _NOT_ON_PATH"
+reddens = [
+  "tests/prove/test_go.py::test_a_path_to_no_go_does_not_resolve",
+  "tests/prove/test_go.py::test_a_launcher_that_names_nothing_does_not_resolve[path]",
+]
 
 # In front of a runner's entry only node's closed list is read: an option outside it, or a valued
 # one given its value as the next word, could make the entry its value and the next word the

@@ -1,9 +1,11 @@
 """Go's runner adapter: a `go test` run, proved from the test event stream `go test -json` prints.
 
 **What is recognised.** `go test …`, the `go` a bare name or a path to one (`/usr/local/go/bin/go
-test`), found as the shell running the command finds it (`stayfixed.profiles.programs.found`); the
-receipt carries its realpath. Behind a launcher the core read past (`uv run …`), the launcher's
-words are kept in front and the `go` it is handed is the one found, by its path.
+test`). Without a launcher that `go` is the program, found as the shell running the command finds
+it (`stayfixed.profiles.programs.found`), and the receipt carries its realpath. Behind a launcher
+the core read past (`uv run …`) the launcher is the program, and the command's words are handed to
+it as typed: the `go` that runs is the one the launcher finds (`uv run` puts its environment's
+`bin` first), never looked up on the caller's `PATH`.
 
 **The run** is the command as typed with `-json` added: after a leading `-C dir`, which the go
 command reads only as its first flag, and otherwise first. The report is the run's standard
@@ -28,7 +30,7 @@ import os
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
-from stayfixed.profiles.programs import found, launched
+from stayfixed.profiles.programs import launched
 from stayfixed.profiles.runners import (
     ENTRY_NOT_FOUND,
     Plan,
@@ -55,6 +57,7 @@ _ENDS = frozenset({"-args", "--args", "--"})
 _CHANGE_DIRECTORY = "C"
 _MODFILE = "modfile"
 _NOT_ON_PATH = "no {program} on PATH"
+_NO_FILE = "no executable file at {program}"
 
 
 def _flag(word: str) -> tuple[str, str | None] | None:
@@ -107,6 +110,13 @@ def _modfiles(args: Sequence[str], cwd: Path) -> tuple[str, ...]:
     return tuple(named)
 
 
+def _not_found(word: str) -> str:
+    """What a run's first word that names nothing was looked up as: a word holding a `/` is read
+    as a path, never looked up on `PATH`."""
+    template = _NO_FILE if os.sep in word else _NOT_ON_PATH
+    return template.format(program=word)
+
+
 class GoTestAdapter:
     """`RunnerAdapter` for `go test`."""
 
@@ -132,12 +142,9 @@ class GoTestAdapter:
         environ: Mapping[str, str],
     ) -> Plan | Refused | Unresolved:
         args = command[2:]
-        go = found(command[0], cwd, environ)
-        if go is None:
-            return Unresolved(ENTRY_NOT_FOUND, _NOT_ON_PATH.format(program=command[0]))
-        argv = launched(launch, (str(go), _TEST, *_planned_args(args)), cwd, environ)
+        argv = launched(launch, (command[0], _TEST, *_planned_args(args)), cwd, environ)
         if argv is None:
-            return Unresolved(ENTRY_NOT_FOUND, _NOT_ON_PATH.format(program=launch[0]))
+            return Unresolved(ENTRY_NOT_FOUND, _not_found((launch or command)[0]))
         return Plan(
             argv=argv,
             kind=ReportKind.EVENTS,
