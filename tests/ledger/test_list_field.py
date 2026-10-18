@@ -141,6 +141,47 @@ def test_a_malformed_regression_is_refused_in_its_own_words(raw: str, constant: 
 
 
 @pytest.mark.parametrize(
+    "raw",
+    ['\xa0["a"]', '["a"]\xa0', '["a"]\u3000', '["a"]\x1f'],
+    ids=["no-break-space-before", "no-break-space-after", "ideographic-space-after", "unit-sep"],
+)
+def test_only_spaces_and_tabs_pad_a_list(raw: str) -> None:
+    # A scalar's value is stripped of every whitespace character Python knows; a list's only of
+    # the spaces and tabs YAML separates with, so any other character before `[` or after `]` is
+    # the text outside the brackets the grammar refuses. Mutation (oracle): `mutations/`'s "a
+    # list's value is stripped as a scalar's is" -> each value reads as `("a",)`.
+    with pytest.raises(LedgerError) as caught:
+        parse(ENTRY.format(regression=raw))
+    assert str(caught.value) == LIST_SHAPE.format(where=quoted(PATH.as_posix()), key="regression")
+
+
+@pytest.mark.parametrize("raw", ['["a"] ', '["a"]\t', "[] \t"], ids=["space", "tab", "both"])
+def test_spaces_and_tabs_after_a_list_are_no_text(raw: str) -> None:
+    # The other half of the rule above, so the stripping that refuses those still strips these.
+    # Mutation (oracle): `mutations/`'s "a list's value is stripped of nothing" -> each is refused.
+    assert parse(ENTRY.format(regression=raw)).lists["regression"] in (("a",), ())
+
+
+@pytest.mark.parametrize(
+    ("raw", "escape"),
+    [
+        pytest.param('["\\q"]', "\\q", id="letter"),
+        pytest.param('["\\\x1b[2J"]', "\\'\\x1b'", id="escape-character"),
+    ],
+)
+def test_an_unsupported_escape_is_named_without_driving_the_terminal(raw: str, escape: str) -> None:
+    # The character after the backslash is the repository's, and `bugs new`, `index` and
+    # `renumber` print this refusal on stderr: an ESC there would start a sequence on the
+    # operator's terminal, so it prints as `printed.quoted` prints it, and a letter as itself.
+    # Mutation (oracle): `mutations/`'s "an unsupported escape names its character raw" -> the ESC
+    # reaches the message.
+    with pytest.raises(LedgerError) as caught:
+        parse(ENTRY.format(regression=raw))
+    where = quoted(PATH.as_posix())
+    assert str(caught.value) == f"{where}: `regression` uses an unsupported escape `{escape}`"
+
+
+@pytest.mark.parametrize(
     "separator", ["\x85", "\u2028", "\x0b"], ids=["next-line", "line-separator", "vertical-tab"]
 )
 def test_a_line_break_inside_an_item_refuses_the_entry(separator: str) -> None:

@@ -134,8 +134,10 @@ def _unquote(raw: str, *, key: str, where: Path) -> str:
             continue
         following = body[index + 1 : index + 2]
         if following not in ('"', "\\"):
+            # The repository's character, so through `quoted`: a letter or a digit prints as
+            # itself, and an ESC or a line break escaped, never as a sequence on the terminal.
             raise LedgerError(
-                f"{_where(where)}: `{key}` uses an unsupported escape `\\{following}`"
+                f"{_where(where)}: `{key}` uses an unsupported escape `\\{quoted(following)}`"
             )
         out.append(following)
         index += 2
@@ -290,7 +292,11 @@ def parse_entry(text: str, *, path: Path, register: Register) -> Entry:
         key_value = _KEY_VALUE.match(line)
         if key_value is None:
             raise LedgerError(f"{_where(path)}:{number}: expected `key: value`, got {line!r}")
-        key, raw = key_value.group(1), key_value.group(2).strip()
+        key, raw = key_value.group(1), key_value.group(2)
+        # A list is padded only by the spaces and tabs YAML separates with: any other whitespace
+        # `str.strip` takes, a no-break space or U+001F, is text outside the brackets, which the
+        # list reader refuses. A scalar keeps the stripping it has always had.
+        raw = raw.strip(" \t") if key in schema.lists else raw.strip()
         if key not in schema.keys:
             raise LedgerError(f"{_where(path)}:{number}: unknown frontmatter key `{key}`")
         if key in fields:

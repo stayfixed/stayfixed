@@ -3778,6 +3778,34 @@ reddens = [
   "tests/ledger/test_list_field.py::test_a_line_break_inside_an_item_refuses_the_entry",
 ]
 
+# A list is padded by spaces and tabs alone; a scalar keeps `str.strip`.
+[[mutation]]
+name = "a list's value is stripped as a scalar's is"
+file = "src/stayfixed/ledger/entries.py"
+before = '        raw = raw.strip(" \t") if key in schema.lists else raw.strip()'
+after = '        raw = raw.strip()'
+reddens = [
+  "tests/ledger/test_list_field.py::test_only_spaces_and_tabs_pad_a_list",
+]
+
+[[mutation]]
+name = "a list's value is stripped of nothing"
+file = "src/stayfixed/ledger/entries.py"
+before = '        raw = raw.strip(" \t") if key in schema.lists else raw.strip()'
+after = '        raw = raw if key in schema.lists else raw.strip()'
+reddens = [
+  "tests/ledger/test_list_field.py::test_spaces_and_tabs_after_a_list_are_no_text",
+]
+
+[[mutation]]
+name = "an unsupported escape names its character raw"
+file = "src/stayfixed/ledger/entries.py"
+before = 'uses an unsupported escape `\\{quoted(following)}`"'
+after = 'uses an unsupported escape `\\{following}`"'
+reddens = [
+  "tests/ledger/test_list_field.py::test_an_unsupported_escape_is_named_without_driving_the_terminal",
+]
+
 # Only an entry file keeps its list values from the sweep.
 [[mutation]]
 name = "the sweep keeps list values in every file it rewrites"
