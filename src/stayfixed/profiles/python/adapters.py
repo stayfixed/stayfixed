@@ -5,11 +5,16 @@ What it recognises is what the red-run hint recognises, one reading (`hygiene.py
 pytest's console script (`pytest`, `py.test`), or `python* -m pytest`, either behind `poetry run`;
 `uv run` the core reads past and hands over as the launch.
 
-**The run.** Never the console script: `<interpreter> -P -m pytest <args> --junitxml=<report> -o
-junit_family=xunit2`, the report in the scratch directory `prove` made. `-P` keeps the directory
-the command runs in off the import path, so a `pytest.py` planted at the root is never what is
-imported; `-I` would also ignore every `PYTHON*` variable and the user's site-packages, which are
-the project's (`PYTHONWARNINGS`, `PYTHONHASHSEED`, `PYTHONPATH`). The interpreter is the one the
+**The run.** Never the console script: `<interpreter> [its options] -c <bootstrap> <args>
+--junitxml=<report> -o junit_family=xunit2`, the report in the scratch directory `prove` made. The
+run directory never shadows an installed module: the bootstrap takes it off the front of the
+import path before anything is imported, so a `pytest.py` planted at the root is never what is
+imported, and runs pytest as `-m pytest` would; for `python -m pytest`, which puts the run
+directory first, it puts it back last, after the installed packages, so the project's own
+packages import from it as they would. `-I` would also ignore every `PYTHON*` variable and the
+user's site-packages, which are the project's (`PYTHONWARNINGS`, `PYTHONHASHSEED`, `PYTHONPATH`),
+and `-P` is unknown to Python 3.10 and older and keeps the run directory off the path whole. The
+interpreter is the one the
 console script's first line names (`#!<python>`, `#!/usr/bin/env python3`, or an installer's
 `#!/bin/sh` trampoline whose second line `exec`s `<python>`), by the path the line names it: a
 virtual environment's `bin/python` is a link, and the interpreter it points at, run by its own
@@ -39,9 +44,11 @@ choice. The receipt carries the realpath of what ran.
 - `FORGING`, assigned in the command (refused) or inherited (scrubbed): the same agent steering
   the report through the two variables pytest reads its options and plugins from, and through
   `PYTHONOPTIMIZE`, which is `-O`. `PYTHONPATH` and every other variable are the project's.
-- `-P`: a module named `pytest` in the directory the command runs in, which the agent can write.
-  The anchor is the argv stayfixed runs. A `pytest.py` the project's own `PYTHONPATH` reaches is
-  the bound's, since `PYTHONPATH` is the project's.
+- The bootstrap: a module named `pytest` (or `runpy`, which it imports) in the directory the
+  command runs in, which the agent can write. The anchor is the argv stayfixed runs. A module the
+  project's own `PYTHONPATH` reaches is the bound's, since `PYTHONPATH` is the project's, and so
+  is a package of the run directory's that `python -m pytest`'s tests import, which comes after
+  every installed one.
 - The file `-c`/`--config-file` (or the older `--inifile`) names: the same agent pointing pytest
   at a configuration of its choosing. Not refused, since a configuration file is the bound's as
   `pytest.ini` is, but named among the receipt's configuration files by its realpath
@@ -81,8 +88,25 @@ DISCOVERY = (
 CONFIGS = ("pytest.ini", "pyproject.toml", "setup.cfg", "tox.ini")
 REPORT_NAME = "junit.xml"
 
-_MODULE = ("-m", "pytest")
-_SAFE_PATH = "-P"
+# What the interpreter runs in place of `-m pytest`: `-c` and a bootstrap that takes the run
+# directory off the front of the import path, where `-c` put it, before anything is imported from
+# there, then runs pytest as `-m` would, `sys.argv` and `__main__` as `-m pytest` sets them. Where
+# the command spelled `python -m pytest`, which puts the run directory first, it is put back last,
+# after the installed packages, so the project's own packages still import from it and none of them
+# shadows an installed one. Where the interpreter put nothing there (`-P`, `-I`, `PYTHONSAFEPATH`),
+# nothing is taken or put back. Every interpreter `prove` may run, any Python 3, reads it: no `-P`,
+# which Python 3.10 and older do not know.
+_BOOTSTRAP = (
+    "import sys\n"
+    "if sys.path and sys.path[0] == '':\n"
+    "    del sys.path[0]\n"
+    "{put_back}"
+    "import runpy\n"
+    "runpy.run_module('pytest', run_name='__main__', alter_sys=True)\n"
+)
+SCRIPT_BOOTSTRAP = _BOOTSTRAP.format(put_back="")
+MODULE_BOOTSTRAP = _BOOTSTRAP.format(put_back="    import os\n    sys.path.append(os.getcwd())\n")
+_RUN_TEXT = "-c"
 _FAMILY = ("-o", "junit_family=xunit2")
 _SEPARATOR = "--"
 _INTERPRETERS = ("python3", "python")
@@ -284,7 +308,7 @@ def _with_report(args: Sequence[str], report: Path) -> tuple[str, ...]:
 def _argv(
     launch: Sequence[str], run: PytestCommand, cwd: Path, path: str, module: tuple[str, ...]
 ) -> tuple[Path, tuple[str, ...]] | None:
-    """The program and the argv that run `module` (`-P … -m pytest …`), or `None` where the
+    """The program and the argv that run `module` (`… -c <bootstrap> …`), or `None` where the
     program is not where the command would find it."""
     front = tuple(launch) or run.launcher
     if front:
@@ -334,7 +358,8 @@ class PytestAdapter:
         if refused is not None:
             return Refused(REFUSED_OPTION, refused)
         report = scratch / REPORT_NAME
-        module = (_SAFE_PATH, *run.options, *_MODULE, *_with_report(run.args, report))
+        bootstrap = MODULE_BOOTSTRAP if run.module else SCRIPT_BOOTSTRAP
+        module = (*run.options, _RUN_TEXT, bootstrap, *_with_report(run.args, report))
         resolved = _argv(launch, run, cwd, environ.get("PATH", os.defpath), module)
         if resolved is None:
             return Unresolved(ENTRY_NOT_FOUND)

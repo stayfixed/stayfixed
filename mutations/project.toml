@@ -2161,15 +2161,48 @@ before = "            if entry.is_dir() and PROJECT_NAME.match(entry.name) and e
 after = "            if entry.is_dir() and PROJECT_NAME.match(entry.name) and entry.joinpath(file).is_file() and entry.joinpath(PROFILE_FILE).is_file()"
 reddens = ["tests/prove/test_run.py::test_shipped_adapters_reads_a_directory_without_a_profile"]
 
-# pytest's adapter runs `<interpreter> -P -m pytest`: `-P` keeps the directory the command runs in
-# off the import path, so a `pytest.py` planted at the root is never what the interpreter imports.
+# pytest's adapter runs `<interpreter> -c <bootstrap>`: the bootstrap takes the run directory off
+# the front of the import path, where `-c` put it, so a `pytest.py` planted at the root is never
+# what the interpreter imports.
 [[mutation]]
-name = "the pytest adapter runs its interpreter without -P"
+name = "the pytest adapter's bootstrap keeps the run directory first on the import path"
 file = "src/stayfixed/profiles/python/adapters.py"
-before = "        module = (_SAFE_PATH, *run.options, *_MODULE, *_with_report(run.args, report))"
-after = "        module = (*run.options, *_MODULE, *_with_report(run.args, report))"
+before = '    "    del sys.path[0]\n"'
+after = '    "    pass\n"'
 reddens = [
-  "tests/prove/test_pytest.py::test_the_plan_runs_the_script_s_interpreter_safe_path_first_with_a_report_of_its_own",
+  "tests/prove/test_pytest.py::test_a_module_named_pytest_in_the_root_is_not_imported[module]",
+  "tests/prove/test_pytest.py::test_a_module_named_pytest_in_the_root_is_not_imported[script]",
+]
+
+# `python -m pytest` puts the run directory on the import path, and a project's tests import its
+# own packages from it: the bootstrap puts it back, last.
+[[mutation]]
+name = "the pytest adapter's module bootstrap puts the run directory back nowhere"
+file = "src/stayfixed/profiles/python/adapters.py"
+before = 'MODULE_BOOTSTRAP = _BOOTSTRAP.format(put_back="    import os\n    sys.path.append(os.getcwd())\n")'
+after = 'MODULE_BOOTSTRAP = _BOOTSTRAP.format(put_back="")'
+reddens = [
+  "tests/prove/test_pytest.py::test_python_m_pytest_imports_the_project_s_own_package_from_the_run_directory",
+]
+
+# Where `runpy` is not frozen, a `runpy.py` in the run directory is what an import of it finds
+# while the run directory is first.
+[[mutation]]
+name = "the pytest adapter's bootstrap imports runpy before it takes the run directory off"
+file = "src/stayfixed/profiles/python/adapters.py"
+before = '    "import sys\n"'
+after = '    "import sys, runpy\n"'
+reddens = ["tests/prove/test_pytest.py::test_a_module_named_runpy_in_the_root_is_not_imported"]
+
+# The console script's run never had the run directory on its import path, and `pytest -q`
+# keeps it off.
+[[mutation]]
+name = "the pytest adapter plans the module's bootstrap for a console script"
+file = "src/stayfixed/profiles/python/adapters.py"
+before = "        bootstrap = MODULE_BOOTSTRAP if run.module else SCRIPT_BOOTSTRAP"
+after = "        bootstrap = MODULE_BOOTSTRAP"
+reddens = [
+  "tests/prove/test_pytest.py::test_the_plan_runs_the_script_s_interpreter_through_the_bootstrap_with_a_report_of_its_own",
 ]
 
 # `python -O -m pytest` compiles out every assert pytest does not rewrite: a failing helper's
@@ -2218,7 +2251,7 @@ file = "src/stayfixed/profiles/python/adapters.py"
 before = "            scrub=FORGING,"
 after = '            scrub=FORGING | {"PYTHONPATH"},'
 reddens = [
-  "tests/prove/test_pytest.py::test_the_plan_runs_the_script_s_interpreter_safe_path_first_with_a_report_of_its_own",
+  "tests/prove/test_pytest.py::test_the_plan_runs_the_script_s_interpreter_through_the_bootstrap_with_a_report_of_its_own",
 ]
 
 # A virtual environment's `bin/python` is a link; the interpreter it names, run by its own path,
@@ -2229,7 +2262,7 @@ file = "src/stayfixed/profiles/python/adapters.py"
 before = "    return python, (str(python), *module)"
 after = "    return python, (os.path.realpath(python), *module)"
 reddens = [
-  "tests/prove/test_pytest.py::test_the_plan_runs_the_script_s_interpreter_safe_path_first_with_a_report_of_its_own",
+  "tests/prove/test_pytest.py::test_the_plan_runs_the_script_s_interpreter_through_the_bootstrap_with_a_report_of_its_own",
 ]
 
 # An installer writes a `#!/bin/sh` trampoline for an interpreter whose path is past what a `#!`

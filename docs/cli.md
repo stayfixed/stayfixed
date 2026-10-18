@@ -843,11 +843,16 @@ sees its end; its standard error is yours. Text a command prints is never counte
 
 **The pytest adapter** recognises `pytest`, `py.test` and `python… -m pytest` (the interpreter's own
 options alone before `-m`), each also behind `poetry run` or `uv run`. It runs
-`<interpreter> -P -m pytest … --junitxml=<report> -o junit_family=xunit2`, never the console script:
-the interpreter is the one the script's first line names (or, under the installer's `#!/bin/sh`
-trampoline, its second line), else `python3`, else `python`, on `PATH`, by the path named; behind
-`uv run` or `poetry run` the launcher runs, kept in front, and chooses it. `-P` keeps the directory
-the command runs in off the import path and leaves every `PYTHON*` variable yours. It refuses
+`<interpreter> [its options] -c <bootstrap> … --junitxml=<report> -o junit_family=xunit2`, never the
+console script: the interpreter is the one the script's first line names (or, under the
+installer's `#!/bin/sh` trampoline, its second line), else `python3`, else `python`, on `PATH`, by
+the path named; behind `uv run` or `poetry run` the launcher runs, kept in front, and chooses it.
+The run directory never shadows an installed module: the bootstrap takes the directory the command
+runs in off the front of the import path before anything is imported from it, so a `pytest.py` (or
+`runpy.py`) there is never what runs, and runs pytest as `-m pytest` would; for `python -m pytest`,
+which puts that directory first, it puts it back last, after the installed packages, so your
+tests still import your own packages from it. Every `PYTHON*` variable stays yours, and any Python
+3 runs it (`-P` would not: Python 3.10 and older do not know it). It refuses
 `--junitxml` and `--junit-xml`, `-p no:junitxml`, `-o` or `--override-ini` setting a `junit_*` key
 or `addopts`, `--setup-plan`, `--setup-only`, `--collect-only` and `--co`, pytest's aliases
 `--setupplan`, `--setuponly` and `--collectonly`, `--trace` (which, its standard input at its end as

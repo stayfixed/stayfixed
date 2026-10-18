@@ -25,9 +25,11 @@ from stayfixed.profiles.python.adapters import (
     DISCOVERY,
     ENTRY_NOT_FOUND,
     FORGING,
+    MODULE_BOOTSTRAP,
     NAME,
     REFUSED_OPTION,
     REPORT_NAME,
+    SCRIPT_BOOTSTRAP,
     PytestAdapter,
 )
 from stayfixed.profiles.runners import Plan, Refused, ReportKind, ReportSource, Unresolved
@@ -161,24 +163,24 @@ def test_the_adapters_this_stack_ships() -> None:
 # --- How a run is planned -------------------------------------------------------------------
 
 
-def test_the_plan_runs_the_script_s_interpreter_safe_path_first_with_a_report_of_its_own(
+def test_the_plan_runs_the_script_s_interpreter_through_the_bootstrap_with_a_report_of_its_own(
     tmp_path: Path,
 ) -> None:
     # The run is the interpreter the script names, by the path the script names it, never the
     # script and never that path's realpath: a virtual environment's `bin/python` is a link, and
     # the interpreter it points at, run by its own path, runs outside the environment. `program`
-    # is the realpath, which the core checks again before the launch.
-    # Mutations (declared): `-P` dropped; `PYTHONPATH` added to the scrubbed variables; the
-    # interpreter planned by its realpath -> this plan differs.
+    # is the realpath, which the core checks again before the launch. The interpreter runs
+    # pytest through the bootstrap, which keeps the run directory from shadowing it.
+    # Mutations (declared): the module's bootstrap planned for a script; `PYTHONPATH` added to
+    # the scrubbed variables; the interpreter planned by its realpath -> this plan differs.
     bin_ = environment(tmp_path / "venv")
     got = planned(["pytest", "-q", "tests"], tmp_path, path=str(bin_))
     report = tmp_path / "scratch" / REPORT_NAME
     assert got == Plan(
         argv=(
             str(bin_ / "python"),
-            "-P",
-            "-m",
-            "pytest",
+            "-c",
+            SCRIPT_BOOTSTRAP,
             "-q",
             "tests",
             f"--junitxml={report}",
@@ -217,9 +219,8 @@ def test_the_installer_s_trampoline_names_the_interpreter(tmp_path: Path) -> Non
     )
     assert argv_of(["pytest"], tmp_path, path=str(scripts)) == (
         str(deep),
-        "-P",
-        "-m",
-        "pytest",
+        "-c",
+        SCRIPT_BOOTSTRAP,
         *ours(tmp_path),
     )
 
@@ -250,8 +251,8 @@ def test_a_shell_script_pytest_runs_the_python_on_path(
     tmp_path: Path, names: tuple[str, ...], chosen: str
 ) -> None:
     # A shim (pyenv's, asdf's, Nix's wrapper) names no interpreter: the run is `python3`, else
-    # `python`, on `PATH`, and still `-P -m pytest`, never the shim. Mutation (declared): the order
-    # of the two names turned round -> the first case plans `python`.
+    # `python`, on `PATH`, running pytest through the bootstrap, never the shim. Mutation
+    # (declared): the order of the two names turned round -> the first case plans `python`.
     shims = tmp_path / "shims"
     executable(shims / "pytest", '#!/usr/bin/env bash\nexec pyenv exec pytest "$@"\n')
     for name in names:
@@ -261,9 +262,8 @@ def test_a_shell_script_pytest_runs_the_python_on_path(
     assert isinstance(got, Plan)
     assert got.argv == (
         str(tmp_path / "base" / chosen),
-        "-P",
-        "-m",
-        "pytest",
+        "-c",
+        SCRIPT_BOOTSTRAP,
         "-x",
         *ours(tmp_path),
     )
@@ -330,12 +330,11 @@ def test_a_python_the_command_names_is_found_on_path_and_keeps_its_options(
     )
     assert got == (
         str(bin_ / "python"),
-        "-P",
         "-W",
         "error",
         "-Xdev",
-        "-m",
-        "pytest",
+        "-c",
+        MODULE_BOOTSTRAP,
         "-q",
         *ours(tmp_path),
     )
@@ -355,17 +354,33 @@ def test_the_report_options_go_before_a_separator(tmp_path: Path) -> None:
     # pytest reads every word after `--` as a path to collect, its options included.
     bin_ = environment(tmp_path / "venv")
     got = argv_of(["pytest", "-q", "--", "tests"], tmp_path, path=str(bin_))
-    assert got[1:] == ("-P", "-m", "pytest", "-q", *ours(tmp_path), "--", "tests")
+    assert got[1:] == ("-c", SCRIPT_BOOTSTRAP, "-q", *ours(tmp_path), "--", "tests")
 
 
 @pytest.mark.parametrize(
     ("launch", "command", "front"),
     [
-        (("uv", "run", "--locked"), ("pytest", "-q"), ("run", "--locked", "python")),
-        (("uv", "run"), ("python3", "-m", "pytest", "-q"), ("run", "python3")),
-        ((), ("poetry", "run", "pytest", "-q"), ("run", "python")),
-        ((), ("poetry", "run", "--", "py.test", "-q"), ("run", "--", "python")),
-        (("uv", "run"), ("poetry", "run", "pytest", "-q"), ("run", "poetry", "run", "python")),
+        (
+            ("uv", "run", "--locked"),
+            ("pytest", "-q"),
+            ("run", "--locked", "python", "-c", SCRIPT_BOOTSTRAP),
+        ),
+        (
+            ("uv", "run"),
+            ("python3", "-m", "pytest", "-q"),
+            ("run", "python3", "-c", MODULE_BOOTSTRAP),
+        ),
+        ((), ("poetry", "run", "pytest", "-q"), ("run", "python", "-c", SCRIPT_BOOTSTRAP)),
+        (
+            (),
+            ("poetry", "run", "--", "py.test", "-q"),
+            ("run", "--", "python", "-c", SCRIPT_BOOTSTRAP),
+        ),
+        (
+            ("uv", "run"),
+            ("poetry", "run", "pytest", "-q"),
+            ("run", "poetry", "run", "python", "-c", SCRIPT_BOOTSTRAP),
+        ),
     ],
 )
 def test_a_launcher_is_kept_in_front_and_chooses_the_interpreter(
@@ -378,7 +393,7 @@ def test_a_launcher_is_kept_in_front_and_chooses_the_interpreter(
     launcher = executable(tools / ("uv" if launch else "poetry"))
     got = planned(command, tmp_path, path=str(tools), launch=launch)
     assert isinstance(got, Plan)
-    assert got.argv == (str(launcher), *front, "-P", "-m", "pytest", "-q", *ours(tmp_path))
+    assert got.argv == (str(launcher), *front, "-q", *ours(tmp_path))
     assert got.program == Path(os.path.realpath(launcher))
 
 
@@ -660,8 +675,40 @@ def test_a_genuine_passing_run_is_proved(tmp_path: Path) -> None:
 
 @needs_runner("pytest")
 def test_python_m_pytest_is_proved(tmp_path: Path) -> None:
+    got = real(scratch_project(tmp_path / "p", passing=2), "python", "-m", "pytest", "-q")
+    assert (got.verdict, got.reason, got.counts, got.exit_code) == (PROVED, "", Counts(2, 0, 0), 0)
+
+
+@needs_runner("pytest")
+def test_python_m_pytest_counts_a_failing_test(tmp_path: Path) -> None:
     got = real(scratch_project(tmp_path / "p", passing=1, failing=1), "python", "-m", "pytest")
     assert (got.verdict, got.reason, got.counts) == (FAILED, FAILING, Counts(1, 1, 0))
+
+
+# A project whose tests import its own package from the directory the command runs in, which
+# `python -m pytest` puts on the import path and the console script does not.
+_OWN_PACKAGE = {
+    "mypkg/__init__.py": "X = 1\n",
+    "tests/test_own.py": "import mypkg\n\ndef test_own():\n    assert mypkg.X == 1\n",
+}
+
+
+@needs_runner("pytest")
+def test_python_m_pytest_imports_the_project_s_own_package_from_the_run_directory(
+    tmp_path: Path,
+) -> None:
+    # The bootstrap puts the run directory last on the import path, after the installed packages,
+    # as `-m` would put it first: the project's own package imports, and `pytest -q` stays the
+    # console script's run, which never had it. Mutation (declared): the module's bootstrap
+    # appends nothing -> the import fails, a collection error.
+    # No test file at the root, which pytest would put on the import path itself.
+    project = tmp_path / "p"
+    for name, text in {"pytest.ini": "[pytest]\n", **_OWN_PACKAGE}.items():
+        (project / name).parent.mkdir(parents=True, exist_ok=True)
+        (project / name).write_text(text, encoding="utf-8")
+    got = real(project, "python", "-m", "pytest", "-q")
+    assert (got.verdict, got.reason, got.counts, got.exit_code) == (PROVED, "", Counts(1, 0, 0), 0)
+    assert real(project, "pytest", "-q").verdict == FAILED
 
 
 @needs_runner("pytest")
@@ -738,19 +785,40 @@ def test_pythonwarnings_error_keeps_its_meaning(tmp_path: Path) -> None:
 _FORGED = '<testsuite><testcase name="forged"/></testsuite>'
 
 
+# A module that writes a green report wherever pytest was told to write its own and exits 0.
+_PLANTED = (
+    "import sys\n"
+    "for word in sys.argv:\n"
+    "    if word.startswith('--junitxml='):\n"
+    f"        open(word.split('=', 1)[1], 'w').write({_FORGED!r})\n"
+    "raise SystemExit(0)\n"
+)
+
+
 @needs_runner("pytest")
-def test_a_module_named_pytest_in_the_root_is_not_imported(tmp_path: Path) -> None:
-    # Run as `python -m pytest` the root is first on the import path, and a `pytest.py` there
-    # writes a green report wherever it is told to and exits 0; `-P` keeps the root off it.
-    planted = (
-        "import sys\n"
-        "for word in sys.argv:\n"
-        "    if word.startswith('--junitxml='):\n"
-        f"        open(word.split('=', 1)[1], 'w').write({_FORGED!r})\n"
-        "raise SystemExit(0)\n"
-    )
-    project = scratch_project(tmp_path / "p", failing=1, files={"pytest.py": planted})
-    got = real(project, "python", "-m", "pytest", "-q")
+@pytest.mark.parametrize(
+    "command", [("python", "-m", "pytest", "-q"), ("pytest", "-q")], ids=["module", "script"]
+)
+def test_a_module_named_pytest_in_the_root_is_not_imported(
+    tmp_path: Path, command: tuple[str, ...]
+) -> None:
+    # `-c` puts the run directory first on the import path, as `-m` does, and a `pytest.py` there
+    # would be what runs; the bootstrap drops it before pytest is imported, and appends it last
+    # for the module's shape, after the installed pytest. Mutation (declared): the bootstrap
+    # keeps the run directory first -> the planted module writes a green report, `proved`.
+    project = scratch_project(tmp_path / "p", failing=1, files={"pytest.py": _PLANTED})
+    got = real(project, *command)
+    assert (got.verdict, got.reason, got.counts) == (FAILED, FAILING, Counts(0, 1, 0))
+
+
+@needs_runner("pytest")
+def test_a_module_named_runpy_in_the_root_is_not_imported(tmp_path: Path) -> None:
+    # The bootstrap imports `runpy` only once the run directory is off the import path: where
+    # `runpy` is not frozen (`-X frozen_modules=off`, an interpreter before 3.11) a `runpy.py`
+    # there would otherwise be what runs. Mutation (declared): `runpy` imported first -> the
+    # planted one writes a green report, `proved`.
+    project = scratch_project(tmp_path / "p", failing=1, files={"runpy.py": _PLANTED})
+    got = real(project, "python", "-X", "frozen_modules=off", "-m", "pytest", "-q")
     assert (got.verdict, got.reason, got.counts) == (FAILED, FAILING, Counts(0, 1, 0))
 
 

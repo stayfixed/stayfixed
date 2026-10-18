@@ -19,8 +19,10 @@ to standard error, so that standard output holds the one object. The runner's st
 code under test, any file in the runner's load path and the environment the runner reads can shape
 its report.
 The first runner adapter is pytest's: `pytest`, `py.test` and `python -m pytest`, also behind
-`poetry run` or `uv run`, run as `<interpreter> -P -m pytest` with a JUnit report of `prove`'s own,
-the project's `PYTHON*` variables kept; it refuses `--junitxml`, `-p no:junitxml`, `-o junit_*`
+`poetry run` or `uv run`, run as `<interpreter> -c <bootstrap>`, which runs pytest as `-m pytest`
+would with the run directory never ahead of an installed module (last on the import path for
+`python -m pytest`, so a project's own packages still import, and off it for the console script),
+with a JUnit report of `prove`'s own, the project's `PYTHON*` variables kept, on any Python 3; it refuses `--junitxml`, `-p no:junitxml`, `-o junit_*`
 and `-o addopts`, `--setup-plan`, `--setup-only` and `--collect-only` and their undashed
 aliases, `--trace`, an `@file` word, the interpreter's `-O` (which compiles out the asserts
 pytest does not rewrite), and an assigned `PYTEST_ADDOPTS`, `PYTEST_PLUGINS` or `PYTHONOPTIMIZE`,
