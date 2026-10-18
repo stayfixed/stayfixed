@@ -1557,6 +1557,41 @@ text:
   of a child that had already ended, a `/etc` expectation macOS spells `/private/etc`, and a
   `-n auto` check the new `runners` job's line satisfied.
 
+### Wave I (controller, 2026-10-18)
+
+Four final seats (correctness, architecture, security, lifecycle) read the whole branch in
+parallel; one fresh agent took every Important finding and most Minors in one fix wave (about
+690k tokens), and one scoped re-review checked it. Changes against the text:
+
+- `python -O`, `-OO` and an assigned `PYTHONOPTIMIZE` strip `assert` from a helper module, so a
+  failing test passed; they are refused, and an inherited `PYTHONOPTIMIZE` is scrubbed. An `-O`
+  test leg cannot prove.
+- The `-P` the text gave the pytest plan broke `python -m pytest`'s import of the project and every
+  interpreter older than 3.11. The plan now starts pytest through a short `-c` bootstrap that drops
+  the run directory from the front of `sys.path` (and, for the `python -m pytest` shape, appends it
+  after site-packages), so a planted `pytest.py` or `runpy.py` is never imported and the project
+  still is. The owner may prefer `-P` back with a 3.11 floor.
+- vitest's subcommand, its first word, is read: `run` and `related` (given `--run`) run once;
+  `watch` and `dev` never end, and `bench`, `list`, `init` and `doctor` run no suite that reports,
+  so those are `not proven`. Any other first word is planned as `run` with that word a filter.
+- The receipt, the line and the record name every inherited variable a plan scrubbed, and
+  `node [node options] <jest or vitest entry>` is a recognised shape, so Node's own flags (jest's
+  ESM `--experimental-vm-modules`) have a way to prove. Node options in front of an entry are read
+  from a closed list measured on Node 26.12.0; an unknown one leaves the command not recognised,
+  `not proven`, never `proved`. Inline code the command spells (`-e`, `--eval`, `-p`, `--print`, a
+  `data:` preload, jest's inline JSON `--config`) is refused.
+- Every adapter keeps the `uv run` launcher in front of its runner, and `uv run --directory`,
+  `--project` and their variables are refused for all of them, since they run another tree than
+  the receipt describes; the way on is to run `prove` from that directory.
+- Which preload file the receipt names is a convenience no verdict reads. Three rounds of
+  automated security findings asked for refusals of unusual spellings; they were withdrawn on the
+  design rule, and the reader names a file only when its reading is unambiguous and otherwise names
+  nothing.
+- The uninstall skill names the evidence records.
+- The macOS leg ran 877 s against a 15-minute job. Tests that waited out a left-behind child now
+  see it die by its lock (4.7 s to 0.7 s each), and the real `go test` runs share one build cache
+  per worker (the suite went from 316 s to 262 s here); the `checks` job's bound is 20 minutes.
+
 ### Wave B and Task 4 — RC1
 
 **Wave B.** One implementer on Opus took Tasks 2 and 3: `test(ledger): hold new, check and renumber
