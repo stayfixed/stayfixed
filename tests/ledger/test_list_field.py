@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import replace
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -31,7 +32,9 @@ from stayfixed.ledger.register import BUG_SCHEMA, Section, bug_register
 from stayfixed.printed import quoted
 from tests.cli import cli
 from tests.gitfixture import needs_git
-from tests.ledger.test_literals import ledger_copy, literal
+from tests.ledger.kills import killed_at
+from tests.ledger.test_literals import ARGV, ledger_copy, literal
+from tests.snapshot import assert_snapshot_unchanged, snapshot
 
 REGISTER = bug_register(preset_defaults("widget"))
 PATH = Path("docs/bugs/BR-042.md")
@@ -339,6 +342,90 @@ def test_renumber_sweeps_a_regression_line_in_a_file_that_is_no_entry(
     assert (
         notes.read_text(encoding="utf-8") == '---\nregression: ["BR-009"]\n---\n\nAbout BR-009.\n'
     )
+
+
+VALID_ARGV = '["pytest", "-k", "BR-002 and not slow"]'
+
+
+@needs_git
+def test_new_beside_an_entry_with_a_regression_writes_what_it_writes_beside_none(
+    tmp_path: Path,
+) -> None:
+    # The entry, the output and the index `bugs new` writes are `test_literals.py`'s literals
+    # whether or not a sibling carries a `regression`: the index has no column for one. A run
+    # across midnight is run once more, as the literals' own runs are. Mutation (oracle): `mutations/`'s "the bug
+    # ledger declares no list" -> the sibling is refused and nothing is filed.
+    for attempt in ("first", "again"):
+        today = date.today().isoformat()
+        root = ledger_copy(tmp_path / attempt)
+        with_regression(root, "BR-001.md", VALID_ARGV)
+        printed = cli(root, tmp_path, *ARGV["new"])
+        if date.today().isoformat() == today:
+            break
+    assert printed == (0, literal("new.out", today), literal("new.err", today))
+    bugs = root / "docs" / "bugs"
+    assert (bugs / "BR-005.md").read_text(encoding="utf-8") == literal("new.entry.md", today)
+    index = (root / "docs" / "bug-reports.md").read_text(encoding="utf-8")
+    assert index == literal("index.md", today)
+
+
+@needs_git
+@pytest.mark.parametrize(
+    "argv",
+    [ARGV["new"], ["bugs", "index"], ["bugs", "index", "--check"]],
+    ids=["new", "index", "check"],
+)
+def test_a_malformed_regression_beside_it_refuses_new_and_index_writing_nothing(
+    tmp_path: Path, argv: list[str]
+) -> None:
+    # Every entry is read before anything is written, so a sibling's malformed list refuses the
+    # command in its own words with the tree as it was. Mutation (oracle): `mutations/`'s "the list
+    # reader takes a bare item" -> each command runs.
+    root = ledger_copy(tmp_path)
+    with_regression(root, "BR-001.md", "[pytest]")
+    before = snapshot(root)
+    shape = LIST_SHAPE.format(where="docs/bugs/BR-001.md", key="regression")
+    assert cli(root, tmp_path, *argv) == (1, "", f"stayfixed: failed: {shape}\n")
+    assert_snapshot_unchanged(root, before)
+
+
+@needs_git
+@pytest.mark.parametrize("kill", [3, 4], ids=["before-sibling-sweep", "before-index"])
+def test_a_renumber_killed_after_its_pointer_finishes_the_tree_with_its_argvs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, kill: int
+) -> None:
+    # BR-003 relates to BR-002 and both it and BR-004 carry an argv naming BR-002, so the move
+    # writes BR-009, the pointer at BR-002, BR-003's sweep and the index, in that order. Killed
+    # after the pointer and run again, it leaves the tree an uninterrupted run leaves, argvs as
+    # written. Mutation (oracle): `mutations/`'s "the sweep rewrites an argv inside a list value"
+    # -> neither tree keeps BR-002 in an argv, which `kept` asserts.
+    def prepared(where: Path) -> Path:
+        root = ledger_copy(where)
+        for name in ("BR-003.md", "BR-004.md"):
+            with_regression(root, name, VALID_ARGV)
+        return root
+
+    move = ("bugs", "renumber", "BR-002", "BR-009")
+    for attempt in ("first", "again"):
+        today = date.today().isoformat()
+        clean = prepared(tmp_path / attempt / "clean")
+        assert cli(clean, tmp_path, *move)[0] == 0
+        root = prepared(tmp_path / attempt / "killed")
+        # The command line reports any `BaseException` as an internal error, a kill included.
+        with killed_at(monkeypatch, kill) as writes:
+            code, _, err = cli(root, tmp_path, *move)
+        assert (code, err.startswith("stayfixed: internal error: Killed")) == (2, True)
+        assert len(writes) == kill - 1
+        assert cli(root, tmp_path, *move)[0] == 0
+        if date.today().isoformat() == today:
+            break
+    assert_snapshot_unchanged(root, snapshot(clean))
+    kept = [
+        name
+        for name in ("BR-003.md", "BR-004.md")
+        if VALID_ARGV in (root / "docs" / "bugs" / name).read_text(encoding="utf-8")
+    ]
+    assert kept == ["BR-003.md", "BR-004.md"]
 
 
 AS_SECTION = (

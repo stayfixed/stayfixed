@@ -3678,6 +3678,7 @@ after = '''        if raw[index : index + 1] != '"':
 reddens = [
   "tests/ledger/test_list_field.py::test_a_malformed_regression_is_refused_in_its_own_words[bare-item]",
   "tests/ledger/test_list_field.py::test_bugs_check_reports_a_malformed_regression_as_unreadable",
+  "tests/ledger/test_list_field.py::test_a_malformed_regression_beside_it_refuses_new_and_index_writing_nothing",
 ]
 
 [[mutation]]
@@ -3736,6 +3737,7 @@ reddens = [
   "tests/ledger/test_list_field.py::test_an_entry_with_a_regression_passes_bugs_check",
   "tests/ledger/test_list_field.py::test_renumber_carries_a_regression_byte_for_byte",
   "tests/ledger/test_entries.py::test_the_writers_and_the_reader_agree_on_the_key_set",
+  "tests/ledger/test_list_field.py::test_new_beside_an_entry_with_a_regression_writes_what_it_writes_beside_none",
 ]
 
 [[mutation]]
@@ -3746,6 +3748,7 @@ after = "            kept = []"
 reddens = [
   "tests/ledger/test_list_field.py::test_renumber_leaves_an_argv_naming_the_old_identifier",
   "tests/ledger/test_list_field.py::test_renumber_leaves_an_argv_naming_the_old_identifier_whatever_the_line_endings",
+  "tests/ledger/test_list_field.py::test_a_renumber_killed_after_its_pointer_finishes_the_tree_with_its_argvs",
 ]
 
 # One reader of where a frontmatter value sits, for the reader and the sweep alike: the fences and
