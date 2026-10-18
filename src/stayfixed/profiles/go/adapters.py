@@ -33,8 +33,9 @@ command; the anchor of each refusal is the command's own words.
   `testing` among them; and `GOOS` and `GOARCH`, under which a target the host cannot run has the
   go command run the test binary under the `go_$GOOS_$GOARCH_exec` it finds on `PATH` (measured:
   `GOOS=js GOARCH=wasm` and a `go_js_wasm_exec` that prints a pass exit 0, the failing test never
-  run). An inherited one of these four is scrubbed, so the `go` that runs finds its own root and
-  builds for the host.
+  run). An inherited one of these three (`GOROOT`, `GOOS`, `GOARCH`) is scrubbed, so the `go`
+  that runs finds its own root and builds for the host; the three `SET_ENV` sets are set over
+  whatever was inherited.
 - `CC`, `CXX`, the `CGO_*` variables, `-ldflags` and `-gcflags` (`-extld` among their values) and
   `-compiler` are free: they shape how the code under test is built, and a built test binary can
   already print test2json's framing, which is the bound's Go case below.

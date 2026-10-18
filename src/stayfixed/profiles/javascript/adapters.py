@@ -73,9 +73,11 @@ A watch mode -- jest's `--watch` and `--watchAll`, vitest's `-w`/`--watch`, node
 after the run, so no report is ever finished. It is not refused, which is for a command that
 steers the report; it is `NEVER_ENDS` (`not proven`), naming the option, read as the closed lists
 are, and a refusal in the same command wins.
-  `-r`/`--require`, `--import` and `--loader` are free (TypeScript through `tsx`, Plug'n'Play's
-  `.pnp.cjs`); where one is given a path rather than a package's name, that file is named among the
-  receipt's configuration files by its realpath.
+
+`-r`/`--require`, `--import` and `--loader` are free (TypeScript through `tsx`, Plug'n'Play's
+`.pnp.cjs`) for a value in one of the three forms `preload_form` reads; where one is given a path
+or a `file:` URL rather than a package's name, that file is named among the receipt's
+configuration files by its realpath.
 
 Each reader follows the runner's own parser, measured on the pinned version: jest's yargs (a short
 option in a cluster takes the rest of the word as its value after a `=`, a character other than a

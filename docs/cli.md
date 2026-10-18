@@ -1085,7 +1085,7 @@ so a private module's proxy must come from the environment); and nothing is inst
 **Reads** the command's report and git's answers about the tree. **Writes** nothing in the
 project: the scratch directory is under the system's temporary directory, is readable by you
 alone, and is removed on every path; and one line to the run's evidence record,
-`~/.local/state/stayfixed/evidence/<key>.jsonl` (below). What the command itself writes, it
+`~/.local/state/stayfixed/evidence/<key>.jsonl` (above). What the command itself writes, it
 writes. **Runs** the
 command, as the [What stayfixed sends where](https://github.com/stayfixed/stayfixed/blob/main/README.md#what-stayfixed-sends-where)
 row says.
