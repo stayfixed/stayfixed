@@ -28,6 +28,8 @@ PROFILE_CODE = (
 ADAPTER_CODE = (
     "stayfixed/profiles/javascript/__init__.py",
     "stayfixed/profiles/javascript/adapters.py",
+    "stayfixed/profiles/go/__init__.py",
+    "stayfixed/profiles/go/adapters.py",
 )
 
 
@@ -108,7 +110,8 @@ def test_a_wheel_without_a_stack_s_runner_adapters_is_named(tmp_path: Path, miss
     # `shipped_adapters` finds a stack's `adapters.py` through `importlib.resources`, profile or
     # none, so a build that dropped one would answer every command of that stack's runners with
     # `not proven`, silently. Oracle: `mutations/`'s "the wheel need not carry the JavaScript
-    # runner adapters" and "the wheel need not carry the JavaScript stack's package marker".
+    # runner adapters", "the wheel need not carry the Go runner adapter" and the two stacks'
+    # "package marker" entries.
     module = checker()
     findings = module.check_wheel(_wheel(tmp_path / "k.whl", without=missing))
     assert findings == [f"wheel: missing {missing}"]

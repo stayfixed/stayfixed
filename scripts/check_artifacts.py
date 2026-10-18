@@ -69,6 +69,9 @@ WHEEL_MUST = (
     # `stayfixed prove -- npx jest` with `not proven`. `__init__.py` with them, as above.
     "stayfixed/profiles/javascript/__init__.py",
     "stayfixed/profiles/javascript/adapters.py",
+    # The Go stack's runner adapter, `go test`'s, likewise with no profile.
+    "stayfixed/profiles/go/__init__.py",
+    "stayfixed/profiles/go/adapters.py",
 )
 # What a downstream packager needs to verify the sdist, plus the three files the harness runs
 # without an interpreter of ours and the record they are checked against.

@@ -853,6 +853,7 @@ def test_this_stayfixed_ships_the_stacks_adapters() -> None:
     # The stacks' own adapters are tested in their own files; this pins the default `source`, the
     # stacks in name order.
     assert [adapter.name for adapter in adapters.shipped_adapters()] == [
+        "go-test",
         "jest",
         "vitest",
         "node-test",

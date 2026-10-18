@@ -891,6 +891,22 @@ configuration files, by their realpath. Their forging set is `NODE_OPTIONS`, and
 also `NODE_TEST_CONTEXT`, an inherited one removed from the run's environment. Their configuration
 files are `package.json`, `.npmrc`, `jest.config.*`, `vitest.config.*` and `vite.config.*`.
 
+**The `go test` adapter** recognises `go test …` and runs the `go` on `PATH` as `go test -json …`,
+`-json` after a leading `-C dir` and a `-json` of the command's own kept once; the report is the
+run's standard output, copied to yours whole, and only its events are counted, so a line a test
+prints is an `output` event and never a result. Every run gets `GOENV=off`, `GOFLAGS=` and
+`GOTOOLCHAIN=local`, so your go env file, an inherited `GOFLAGS` and a `toolchain` line in `go.mod`
+or `go.work` cannot change what runs, and an inherited `GOROOT` is removed from the run's
+environment. It refuses (`refused-option`, naming the flag) `-exec`, `-toolexec`, `-overlay`, `-o`,
+`-c` unless it is `-c=false`, and a `-json=` of a false value, each read as the go command reads it:
+spaced or with `=`, with one dash or two, before the packages or after them, a word that is a flag's
+value never as a flag, and nothing past `-args`. Every other flag is free. Its forging set is
+`GOFLAGS`, `GOENV`, `GOTOOLCHAIN` and `GOROOT`, which names the standard library the run builds
+against. Its configuration files are `go.mod` and `go.work`, and the file `-modfile` names; its
+discovery set is `*_test.go`. The bound has a Go case of its own: a test, or a `TestMain`, that
+prints test2json's own framing (`\x16--- PASS: TestX`) gets a `pass` event for a test that never
+ran, and that is the code under test shaping its report.
+
 **`--junit PATH`** is for a runner no adapter knows: the command runs as typed (its assignments,
 `env` and `uv run …` read as above, the launcher's file options and variables refused as above), no
 adapter plans it, and its report is the JUnit file at `PATH`, read from the directory the command

@@ -2582,6 +2582,26 @@ reddens = [
 ]
 
 [[mutation]]
+name = "the wheel need not carry the Go runner adapter"
+file = "scripts/check_artifacts.py"
+before = """    "stayfixed/profiles/go/adapters.py",
+"""
+after = ""
+reddens = [
+  "tests/scripts/test_check_artifacts.py::test_a_wheel_without_a_stack_s_runner_adapters_is_named[stayfixed/profiles/go/adapters.py]",
+]
+
+[[mutation]]
+name = "the wheel need not carry the Go stack's package marker"
+file = "scripts/check_artifacts.py"
+before = """    "stayfixed/profiles/go/__init__.py",
+"""
+after = ""
+reddens = [
+  "tests/scripts/test_check_artifacts.py::test_a_wheel_without_a_stack_s_runner_adapters_is_named[stayfixed/profiles/go/__init__.py]",
+]
+
+[[mutation]]
 name = "the wheel need not carry the JavaScript stack's package marker"
 file = "scripts/check_artifacts.py"
 before = """    "stayfixed/profiles/javascript/__init__.py",

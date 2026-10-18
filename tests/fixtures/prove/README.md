@@ -62,3 +62,10 @@ How they were recorded:
 and `node-test/` hold the three-test case in each runner's own form. An `npm ci` of the two files,
 anywhere but in this checkout, installs the packages; `STAYFIXED_NODE_MODULES` names the
 `node_modules` it made (`tests/prove/real_runners.py`).
+
+`go/` is the module the `go test` adapter's real-runner tests copy and run: `three/` holds the
+three-test case, `passing/` one passing and one skipped test, `skipped/` two skipped ones,
+`testmain/` a `TestMain` that exits 0 before any test, `framing/` one that prints test2json's
+framing for a test that never ran, `printing/` a failing test that prints a whole `pass` event, and
+`broken/` a test file that does not compile. Its `go.mod` asks for Go 1.24, so the image's 1.24.7
+and the pinned 1.27.2 both run it.

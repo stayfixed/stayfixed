@@ -2908,3 +2908,137 @@ before = "    if url.scheme != _FILE_SCHEME or url.netloc not in _LOCAL_HOSTS or
 after = "    if not url.path:"
 reddens = ["tests/prove/test_javascript.py::test_a_preloaded_file_is_named_and_a_package_is_not"]
 
+
+# --- The go test adapter (`profiles/go/adapters.py`) ----------------------------------------------
+# Each reddens a test that runs no `go`: a plan, or a run through `prove` with a shell script
+# standing in for `go` that prints a recorded event stream.
+
+[[mutation]]
+name = "the go test adapter scrubs GOENV instead of setting it off"
+file = "src/stayfixed/profiles/go/adapters.py"
+before = 'SET_ENV: Mapping[str, str] = {"GOENV": "off", "GOFLAGS": "", "GOTOOLCHAIN": "local"}'
+after = 'SET_ENV: Mapping[str, str] = {"GOFLAGS": "", "GOTOOLCHAIN": "local"}'
+reddens = [
+  "tests/prove/test_go.py::test_the_plan_neutralises_the_go_environment",
+  "tests/prove/test_go.py::test_the_run_s_environment_is_pinned_whatever_it_inherits",
+]
+
+[[mutation]]
+name = "the go test adapter hands the run an inherited GOROOT"
+file = "src/stayfixed/profiles/go/adapters.py"
+before = 'SCRUB = frozenset({"GOROOT"})'
+after = "SCRUB: frozenset[str] = frozenset()"
+reddens = [
+  "tests/prove/test_go.py::test_the_plan_neutralises_the_go_environment",
+  "tests/prove/test_go.py::test_the_run_s_environment_is_pinned_whatever_it_inherits",
+]
+
+[[mutation]]
+name = "the go test adapter leaves GOROOT out of its forging set"
+file = "src/stayfixed/profiles/go/adapters.py"
+before = 'FORGING = frozenset({*SET_ENV, "GOROOT"})'
+after = "FORGING = frozenset(SET_ENV)"
+reddens = ["tests/prove/test_go.py::test_an_assigned_goflags_is_refused[GOROOT]"]
+
+[[mutation]]
+name = "the go test adapter allows -toolexec"
+file = "src/stayfixed/profiles/go/adapters.py"
+before = '_REFUSED = frozenset({"-exec", "-toolexec", "-overlay", "-o"})'
+after = '_REFUSED = frozenset({"-exec", "-overlay", "-o"})'
+reddens = [
+  "tests/prove/test_go.py::test_each_forging_flag_is_refused[-toolexec=x--toolexec]",
+  "tests/prove/test_go.py::test_each_forging_flag_is_refused[--toolexec_x--toolexec]",
+]
+
+[[mutation]]
+name = "a go flag given two dashes is read as no flag"
+file = "src/stayfixed/profiles/go/adapters.py"
+before = '    name, equals, value = word.lstrip("-").partition("=")'
+after = '    name, equals, value = word[1:].partition("=")'
+reddens = [
+  "tests/prove/test_go.py::test_each_forging_flag_is_refused[--exec=echo--exec]",
+  "tests/prove/test_go.py::test_each_forging_flag_is_refused[--c--c]",
+]
+
+[[mutation]]
+name = "a go build flag spelled with test. is read as that flag"
+file = "src/stayfixed/profiles/go/adapters.py"
+before = "    return name, value if equals else None"
+after = "    return name.removeprefix(_TEST_PREFIX), value if equals else None"
+reddens = [
+  "tests/prove/test_go.py::test_every_other_flag_is_free[-test.c]",
+  "tests/prove/test_go.py::test_every_other_flag_is_free[-test.exec=x]",
+]
+
+[[mutation]]
+name = "a go flag's value is read as a flag"
+file = "src/stayfixed/profiles/go/adapters.py"
+before = "            skip = True"
+after = "            skip = False"
+reddens = [
+  "tests/prove/test_go.py::test_every_other_flag_is_free[-run_-c]",
+  "tests/prove/test_go.py::test_every_other_flag_is_free[-test.run_-exec]",
+]
+
+[[mutation]]
+name = "the test binary's words past -args are read as go's"
+file = "src/stayfixed/profiles/go/adapters.py"
+before = """        if name == _ARGS:
+            break"""
+after = """        if name == _ARGS:
+            continue"""
+reddens = ["tests/prove/test_go.py::test_every_other_flag_is_free[-args_-c_-o_x_-exec=y]"]
+
+[[mutation]]
+name = "go's -c=false is refused as -c is"
+file = "src/stayfixed/profiles/go/adapters.py"
+before = "        if name == _BUILD_ONLY and value not in _FALSE:"
+after = "        if name == _BUILD_ONLY:"
+reddens = [
+  "tests/prove/test_go.py::test_every_other_flag_is_free[-c=false]",
+  "tests/prove/test_go.py::test_every_other_flag_is_free[-c=0]",
+]
+
+[[mutation]]
+name = "go's -json=false is read as -json"
+file = "src/stayfixed/profiles/go/adapters.py"
+before = "        if name == _JSON and value is not None and value not in _TRUE:"
+after = "        if False:"
+reddens = [
+  "tests/prove/test_go.py::test_each_forging_flag_is_refused[-json=false--json]",
+  "tests/prove/test_go.py::test_each_forging_flag_is_refused[--json=0--json]",
+]
+
+[[mutation]]
+name = "the command's own -json is kept beside the report's"
+file = "src/stayfixed/profiles/go/adapters.py"
+before = "    own = {index for index, name, value in flags if name == _JSON and value in (None, *_TRUE)}"
+after = "    own: set[int] = set()"
+reddens = [
+  "tests/prove/test_go.py::test_one_json_after_a_leading_C[kept-once]",
+  "tests/prove/test_go.py::test_one_json_after_a_leading_C[true]",
+]
+
+[[mutation]]
+name = "the report's -json is put before a leading -C"
+file = "src/stayfixed/profiles/go/adapters.py"
+before = '        lead = 1 if "=" in args[0] else 2'
+after = "        lead = 0"
+reddens = [
+  "tests/prove/test_go.py::test_one_json_after_a_leading_C[after-C]",
+  "tests/prove/test_go.py::test_one_json_after_a_leading_C[after-C-with-equals]",
+]
+
+[[mutation]]
+name = "the go test adapter leaves the file -modfile names out"
+file = "src/stayfixed/profiles/go/adapters.py"
+before = "            configs=(*CONFIGS, *_modfiles(args, cwd)),"
+after = "            configs=CONFIGS,"
+reddens = ["tests/prove/test_go.py::test_the_file_modfile_names_is_among_the_configs"]
+
+[[mutation]]
+name = "the go test adapter recognises every go command"
+file = "src/stayfixed/profiles/go/adapters.py"
+before = "        return list(command[:2]) == [_GO, _TEST]"
+after = "        return list(command[:1]) == [_GO]"
+reddens = ["tests/prove/test_go.py::test_go_test_is_recognised[command2-False]"]
