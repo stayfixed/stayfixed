@@ -68,11 +68,12 @@ class Plan:
     files that configure it, both matched from the right (`stayfixed.prove.tree`); an absolute
     entry of `configs` is no glob but names that one file, wherever it lies, one the command
     chose. `drop` is the JUnit reader's (`stayfixed.prove.junit.read_junit`), for a testcase a
-    runner writes that is no test. Whether a runner is verified is no plan's to say: the core
-    marks every `--junit` run's receipt, and only those, not verified. `entry` is the realpath of
-    the file the program runs as the runner, where the program is an interpreter running one
-    (`node` and a package's entry), for the receipt to name beside the program; `None` where the
-    program is the runner itself.
+    runner writes that is no test; a testcase holding a failure counts as failed whatever it
+    answers. Whether a runner is verified is no plan's to say: the core marks every `--junit`
+    run's receipt, and only those, not verified. `entry` is the realpath of the file that runs as
+    the runner where the program is not the runner itself, for the receipt to name beside the
+    program: the entry an interpreter runs (`node` and a package's entry), or the runner a
+    launcher such as `npx` finds and runs. `None` where the program is the runner itself.
     """
 
     argv: tuple[str, ...]

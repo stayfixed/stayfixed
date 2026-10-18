@@ -209,7 +209,9 @@ def test_read_report_hands_drop_to_the_junit_reader() -> None:
     def everything(_attributes: object) -> bool:
         return True
 
-    assert read_report(ReportKind.JUNIT, fixture("node-junit.xml"), drop=everything).total == 0
+    # Every testcase dropped but the failed one, which is never dropped.
+    got = read_report(ReportKind.JUNIT, fixture("node-junit.xml"), drop=everything)
+    assert got == Counts(0, 1, 0)
 
 
 def test_read_report_reads_no_kind_it_does_not_name() -> None:

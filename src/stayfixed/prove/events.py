@@ -28,9 +28,10 @@ count twice, which changes a count and never a verdict.
 A line that is not a JSON object, an event with no string `Action`, or a `Test`, `Package` or
 `ImportPath` of the wrong type is `REPORT_MALFORMED`: the stream is the runner's own, and a line in
 it the runner did not write as an event is not one to count around. Empty lines are skipped. A
-refusal names the line by its number and a key by its fixed name, and a value the stream holds in
-one case alone: a key an object holds twice, which `counts.strict_json` names through
-`printed.clipped`, escaped and bounded in length.
+refusal names the line by its number (a line that is no JSON at all as `line N:` and the parser's
+error's name) and a key by its fixed name, and a value the stream holds in one case alone: a key
+an object holds twice, which `counts.strict_json` names through `printed.clipped`, escaped and
+bounded in length.
 
 `read_line` says which lines of a stream this reader reads anything from: every one but an
 `output` event it would read whole, which counts nothing; an `output` line it cannot read whole is
@@ -73,8 +74,11 @@ def _optional_string(event: dict[str, object], key: str, line: int) -> str | Non
 
 def _event(line: str, number: int) -> tuple[str, str | None, str | None, str | None]:
     """The event `line`, line `number` of the stream, holds: its `Action`, `Test`, `Package` and
-    `ImportPath`; `ReportError` where it is no event."""
-    event = strict_json(line)
+    `ImportPath`; `ReportError` where it is no event, its detail led by the line's number."""
+    try:
+        event = strict_json(line)
+    except ReportError as exc:
+        raise ReportError(exc.reason, f"line {number}: {exc.detail}") from None
     if not isinstance(event, dict):
         raise ReportError(REPORT_MALFORMED, f"line {number} is not a JSON object")
     action = event.get("Action")

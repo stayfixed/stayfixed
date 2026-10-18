@@ -2466,6 +2466,31 @@ reddens = [
   "tests/prove/test_pytest.py::test_a_path_is_read_from_the_directory_the_command_is_typed_in",
 ]
 
+# The launcher's words stay in front of the command's, as typed.
+[[mutation]]
+name = "a launcher's words are dropped from the argv"
+file = "src/stayfixed/profiles/programs.py"
+before = "    words = (*launch, *argv)"
+after = "    words = tuple(argv)"
+reddens = ["tests/profiles/test_programs.py::test_the_launcher_is_kept_in_front_and_found"]
+
+# A run with no `PATH` searches the default one, as a shell does.
+[[mutation]]
+name = "a run with no PATH searches nothing"
+file = "src/stayfixed/profiles/programs.py"
+before = '        path = environ.get("PATH", os.defpath)'
+after = '        path = environ.get("PATH", "")'
+reddens = ["tests/profiles/test_programs.py::test_without_a_path_the_default_search_path_is_read"]
+
+# A `PATH` entry that cannot be asked about is passed over, as a shell passes it over, and never
+# ends the run's planning.
+[[mutation]]
+name = "a PATH entry that cannot be asked about raises"
+file = "src/stayfixed/profiles/programs.py"
+before = "    except (OSError, ValueError):\n        return False"
+after = "    except ValueError:\n        return False"
+reddens = ["tests/profiles/test_programs.py::test_a_path_entry_that_cannot_be_asked_about_is_passed_over"]
+
 [[mutation]]
 name = "a program is found on the last PATH entry that holds one"
 file = "src/stayfixed/profiles/programs.py"
@@ -3442,9 +3467,16 @@ reddens = ["tests/test_documents.py::test_every_reason_constant_is_documented"]
 [[mutation]]
 name = "the pytest adapter's unresolved entry names nothing"
 file = "src/stayfixed/profiles/python/adapters.py"
-before = "            return Unresolved(ENTRY_NOT_FOUND, _NOT_ON_PATH.format(program=first))"
+before = "            return Unresolved(ENTRY_NOT_FOUND, template.format(program=first))"
 after = "            return Unresolved(ENTRY_NOT_FOUND)"
-reddens = ["tests/prove/test_pytest.py::test_an_entry_point_not_on_path_does_not_resolve[command0-launch0-pytest]"]
+reddens = ["tests/prove/test_pytest.py::test_an_entry_point_not_on_path_does_not_resolve[command0-launch0-no pytest on PATH]"]
+
+[[mutation]]
+name = "the pytest adapter names a path that names nothing as looked up on PATH"
+file = "src/stayfixed/profiles/python/adapters.py"
+before = "            template = _NO_FILE if os.sep in first else _NOT_ON_PATH"
+after = "            template = _NOT_ON_PATH"
+reddens = ["tests/prove/test_pytest.py::test_an_entry_point_not_on_path_does_not_resolve[command4-launch4-no executable file at .venv/bin/pytest]"]
 
 [[mutation]]
 name = "the jest and vitest adapters' unresolved detail passes the line's clip"

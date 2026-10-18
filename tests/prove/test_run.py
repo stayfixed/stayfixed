@@ -143,7 +143,8 @@ def test_the_cascade(tmp_path: Path, report: str, code: int, verdict: Verdict, r
 
 
 def test_the_counts_and_the_report_s_digest_are_the_report_s(tmp_path: Path) -> None:
-    # Mutation (declared): the digest taken of nothing -> it differs.
+    # Mutations (declared): the digest taken of nothing -> it differs; the program named as
+    # planned -> the virtual environment's `python` link, not the interpreter it reaches.
     got = run(tmp_path, NAME, "--report", "fail", "--code", "1")
     assert got.counts == Counts(1, 1, 0)
     assert got.report_digest == hashlib.sha256(JUNIT["fail"]).hexdigest()

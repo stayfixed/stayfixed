@@ -76,8 +76,10 @@ CONFIGS = ("pytest.ini", "pyproject.toml", "setup.cfg", "tox.ini")
 REPORT_NAME = "junit.xml"
 
 _FAMILY = ("-o", "junit_family=xunit2")
-# What an unresolved plan's detail says was looked for.
+# What an unresolved plan's detail says was looked for: a bare name on `PATH`, and a word holding
+# a `/` at that path, which `programs.found` never searches `PATH` for.
 _NOT_ON_PATH = "no {program} on PATH"
+_NO_FILE = "no executable file at {program}"
 
 # The closed list of what is refused: the options that run no test and report the tests they set
 # up as passed.
@@ -206,7 +208,8 @@ class PytestAdapter:
         argv = launched(launch, (*typed, *before_separator(run.args, ours)), cwd, environ)
         if argv is None:
             first = (*launch, *command)[0]
-            return Unresolved(ENTRY_NOT_FOUND, _NOT_ON_PATH.format(program=first))
+            template = _NO_FILE if os.sep in first else _NOT_ON_PATH
+            return Unresolved(ENTRY_NOT_FOUND, template.format(program=first))
         return Plan(
             argv=argv,
             kind=ReportKind.JUNIT,

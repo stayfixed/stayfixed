@@ -162,10 +162,28 @@ def test_a_refusal_bounds_the_key_it_names() -> None:
     with pytest.raises(ReportError) as caught:
         read_events(line.encode())
     assert caught.value.reason == REPORT_MALFORMED
-    assert caught.value.detail.startswith("a key held twice: '\\x1b[2JKKK")
+    assert caught.value.detail.startswith("line 1: a key held twice: '\\x1b[2JKKK")
     assert "(1000004 chars)" in caught.value.detail
     assert len(caught.value.detail) < 200
     assert "\x1b" not in caught.value.detail
+
+
+@pytest.mark.parametrize(
+    ("line", "detail"),
+    [
+        (b"not json", "line 2: JSONDecodeError"),
+        (b'{"Action": "pass", "Action": "fail"}', "line 2: a key held twice: Action"),
+        (b"[]", "line 2 is not a JSON object"),
+    ],
+    ids=["no-json", "a-key-twice", "no-object"],
+)
+def test_a_refusal_names_the_line_it_stopped_at(line: bytes, detail: str) -> None:
+    # A line that does not parse is named by its number like any other refusal. Mutation
+    # (declared): the parser's refusal handed on as it is -> the detail names no line.
+    good = stream({"Action": "pass", "Package": "p", "Test": "TestA"})
+    with pytest.raises(ReportError) as caught:
+        read_events(good + line + b"\n")
+    assert (caught.value.reason, caught.value.detail) == (REPORT_MALFORMED, detail)
 
 
 def test_a_stream_without_a_final_newline_reads() -> None:

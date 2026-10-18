@@ -45,6 +45,7 @@ def test_a_word_holding_a_slash_is_read_from_the_directory_never_from_the_path(
 
 def test_without_a_path_the_default_search_path_is_read(tmp_path: Path) -> None:
     # As a shell with no `PATH`: `sh` is in `os.defpath` on every system this runs on.
+    # Mutation (declared): `mutations/`'s "a run with no PATH searches nothing".
     assert found("sh", tmp_path, {}) is not None
 
 
@@ -62,7 +63,8 @@ def test_a_file_that_cannot_be_executed_and_a_directory_are_passed_over(tmp_path
 def test_a_path_entry_that_cannot_be_asked_about_is_passed_over(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Root reads every directory, so the fault is stood in for.
+    # Root reads every directory, so the fault is stood in for. Mutation (declared):
+    # `mutations/`'s "a PATH entry that cannot be asked about raises".
     tool = program(tmp_path / "bin" / "tool")
     blind = tmp_path / "blind"
     asked = os.stat
@@ -78,7 +80,8 @@ def test_a_path_entry_that_cannot_be_asked_about_is_passed_over(
 
 
 def test_the_launcher_is_kept_in_front_and_found(tmp_path: Path) -> None:
-    # Mutation (declared): the launcher's words dropped -> the argv is the command's alone.
+    # Mutation (declared): `mutations/`'s "a launcher's words are dropped from the argv" -> the
+    # argv is the command's alone.
     uv = program(tmp_path / "bin" / "uv")
     environ = {"PATH": str(uv.parent)}
     assert launched(("uv", "run", "--locked"), ("pytest", "-q"), tmp_path, environ) == (

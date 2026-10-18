@@ -288,20 +288,23 @@ def test_a_launcher_is_kept_in_front_as_typed(
 
 
 @pytest.mark.parametrize(
-    ("command", "launch", "missing"),
+    ("command", "launch", "detail"),
     [
-        (["pytest"], (), "pytest"),
-        (["python", "-m", "pytest"], (), "python"),
-        (["poetry", "run", "pytest"], (), "poetry"),
-        (["pytest"], ("uv", "run"), "uv"),
+        (["pytest"], (), "no pytest on PATH"),
+        (["python", "-m", "pytest"], (), "no python on PATH"),
+        (["poetry", "run", "pytest"], (), "no poetry on PATH"),
+        (["pytest"], ("uv", "run"), "no uv on PATH"),
+        ([".venv/bin/pytest"], (), "no executable file at .venv/bin/pytest"),
     ],
 )
 def test_an_entry_point_not_on_path_does_not_resolve(
-    tmp_path: Path, command: list[str], launch: tuple[str, ...], missing: str
+    tmp_path: Path, command: list[str], launch: tuple[str, ...], detail: str
 ) -> None:
-    # The detail says what was looked for. Mutation (declared): the detail left off -> empty.
+    # The detail says what was looked for, and how: a word holding a `/` is never looked up on
+    # `PATH`. Mutations (declared): the detail left off -> empty; a path worded as looked up on
+    # `PATH` -> the last case reads "no .venv/bin/pytest on PATH".
     assert planned(command, tmp_path, path=str(tmp_path / "empty"), launch=launch) == Unresolved(
-        ENTRY_NOT_FOUND, f"no {missing} on PATH"
+        ENTRY_NOT_FOUND, detail
     )
 
 

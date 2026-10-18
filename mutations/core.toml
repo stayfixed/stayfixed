@@ -6677,6 +6677,44 @@ before = "        entry=str(plan.entry) if plan is not None and plan.entry is no
 after = "        entry=None,"
 reddens = ["tests/prove/test_javascript.py::test_an_npmrc_is_named_in_the_receipt"]
 
+# `uv run -m pytest` is read as the launcher `uv run -m` in front of `pytest`: read with modules
+# as no program, `-m` would be uv's last option and `pytest` its module, no program to recognise.
+[[mutation]]
+name = "prove reads a launcher's -m as naming no program"
+file = "src/stayfixed/prove/run.py"
+before = "    launch = read_launch(given, modules_as_programs=True)"
+after = "    launch = read_launch(given, modules_as_programs=False)"
+reddens = ["tests/prove/test_pytest.py::test_uv_run_m_pytest_runs_as_typed"]
+
+# The receipt names the realpath of what ran: a virtual environment's `python` is a link, and the
+# receipt names the file it reaches.
+[[mutation]]
+name = "the receipt names the program as planned, not its realpath"
+file = "src/stayfixed/prove/run.py"
+before = "    program = os.path.realpath(plan.argv[0])"
+after = "    program = plan.argv[0]"
+reddens = ["tests/prove/test_run.py::test_the_counts_and_the_report_s_digest_are_the_report_s"]
+
+# A refusal names the line of the event stream it stopped at, a line that does not parse too.
+[[mutation]]
+name = "an event line that does not parse is refused with no line number"
+file = "src/stayfixed/prove/events.py"
+before = """        raise ReportError(exc.reason, f"line {number}: {exc.detail}") from None"""
+after = """        raise"""
+reddens = ["tests/prove/test_events.py::test_a_refusal_names_the_line_it_stopped_at[no-json]"]
+
+# A failure is never dropped: a testcase an adapter's `drop` leaves out still counts as failed
+# when a `failure` or `error` stands inside it.
+[[mutation]]
+name = "a dropped testcase's failure counts nowhere"
+file = "src/stayfixed/prove/junit.py"
+before = "        elif not self._open:\n            return"
+after = "        elif not self._open or self._open[-1] == _DROPPED:\n            return"
+reddens = [
+  "tests/prove/test_junit.py::test_a_dropped_testcase_that_failed_counts_as_failed[failure]",
+  "tests/prove/test_junit.py::test_a_dropped_testcase_that_failed_counts_as_failed[error]",
+]
+
 # The bound has one source, which `docs/cli.md` quotes word for word.
 [[mutation]]
 name = "the bound's text drifts from the one docs/cli.md quotes"

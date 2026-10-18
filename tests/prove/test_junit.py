@@ -213,3 +213,15 @@ def test_a_hundred_thousand_cases_count_in_bounded_memory() -> None:
         tracemalloc.stop()
     assert counted == Counts(cases, 0, 0)
     assert peak < 8 * 1024 * 1024, f"peak {peak} bytes while reading {len(report)} bytes"
+
+
+@pytest.mark.parametrize("child", ["failure", "error"])
+def test_a_dropped_testcase_that_failed_counts_as_failed(child: str) -> None:
+    # `drop` leaves a testcase out by its attributes alone, and a failure inside it is never left
+    # out with it; a passed or skipped one is. Mutation (declared): a dropped testcase's children
+    # unread -> the failure counts nowhere.
+    report = (
+        f'<testsuite><testcase name="a"><{child}/></testcase>'
+        '<testcase name="b"/><testcase name="c"><skipped/></testcase></testsuite>'
+    ).encode()
+    assert read_junit(report, drop=lambda attributes: True) == Counts(0, 1, 0)
