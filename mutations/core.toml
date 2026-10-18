@@ -6724,3 +6724,11 @@ after = """                pass
         return _Ran(None, process.wait())
 """
 reddens = ["tests/prove/test_run.py::test_an_interrupt_anywhere_in_the_run_ends_it_not_proven[interrupt-reap]"]
+
+# Outside a repository the file a command chose by its path is still named: git is not asked.
+[[mutation]]
+name = "outside a repository the chosen configuration files are left to git"
+file = "src/stayfixed/prove/tree.py"
+before = "    elif chosen := _chosen(root, configs):"
+after = "    elif False:"
+reddens = ["tests/prove/test_run.py::test_outside_a_repository_a_file_the_command_chose_is_named_still"]

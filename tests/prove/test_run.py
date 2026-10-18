@@ -901,6 +901,18 @@ def test_a_configuration_file_named_by_its_path_is_named_wherever_it_lies(tmp_pa
     assert got.configs == ("stand-in.toml", "ignored/ci.toml", str(outside))
 
 
+def test_outside_a_repository_a_file_the_command_chose_is_named_still(tmp_path: Path) -> None:
+    # git answers nothing outside a repository, but the file a command chose by its path (`-c`,
+    # `-modfile`, `--config`) needs no git to be named. Mutation (declared): the chosen files left
+    # to git's answer -> none is named.
+    project = tmp_path / "project"
+    project.mkdir()
+    chosen = tmp_path / "ci.toml"
+    chosen.write_text("", encoding="utf-8")
+    got = run(project, NAME, adapter=StandIn(configs=("stand-in.toml", str(chosen))))
+    assert (got.commit, got.configs) == (None, (str(chosen),))
+
+
 def test_the_configuration_list_stops_at_its_cap_and_counts_the_rest(tmp_path: Path) -> None:
     # Mutation (declared): the configuration list uncapped -> every one named.
     root = repository(tmp_path / "repo")

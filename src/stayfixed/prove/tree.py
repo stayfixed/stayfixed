@@ -3,7 +3,8 @@
 Taken before the run and after it, through `gitenv.git_run`: the commit `HEAD` names, whether the
 work tree differs from it at all, the untracked and the ignored files in the runner's discovery
 set, and the files that configure the runner that exist. Each value is `None` where git cannot
-answer, outside a repository among them, and never a refusal. The untracked files that are not
+answer, outside a repository among them, and never a refusal; a file the command chose by its
+path (below) is named even there, since git is not asked about it. The untracked files that are not
 ignored are listed before the ignored ones, so a file a change added is never hidden behind a count
 of an ignored dependency tree's; a configuration file is one git tracks, or one it does not and
 does not ignore, since an ignored dependency tree holds configuration-named files by the dozen
@@ -114,6 +115,10 @@ def state(root: Path, discovery: Sequence[str], configs: Sequence[str]) -> TreeS
         present = [name for name in named if fsops.exists(root / name)]
         present += [name for name in _chosen(root, configs) if name not in present]
         configured, configs_more = _capped(present)
+    elif chosen := _chosen(root, configs):
+        # Outside a repository git lists nothing, but a file the command chose by its path is no
+        # glob for git to answer: it is named still.
+        configured, configs_more = _capped(chosen)
     return TreeState(
         commit=commit,
         dirty=dirty,

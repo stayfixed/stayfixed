@@ -1037,7 +1037,8 @@ variable, or one the adapter sets to its own value, as `go test`'s `GOFLAGS`), a
 can shape the report: the
 runner's configuration files that exist and that git tracks or does not ignore, with a count of the
 ignored ones (`and N ignored`), then any file the command itself named as its configuration, from
-the top-level where it lies there and whole where it does not, and the untracked files in its
+the top-level where it lies there and whole where it does not (outside a repository too, where git
+names nothing else), and the untracked files in its
 discovery set, those git does not ignore first and then the ignored ones; twenty of each and a count
 of the rest. The tree's state is taken before the run and after it, and is information for you,
 never an input to the verdict. `--json` carries `verdict`, `reason`, `detail` (the variable a
