@@ -6715,6 +6715,14 @@ reddens = [
   "tests/prove/test_junit.py::test_a_dropped_testcase_that_failed_counts_as_failed[error]",
 ]
 
+# The prove section's verdict table is `CASCADE`, row for row.
+[[mutation]]
+name = "the cascade's green-but-exited row is no longer the table's"
+file = "src/stayfixed/prove/run.py"
+before = "    (Verdict.NOT_PROVEN, GREEN_BUT_EXITED, lambda outcome: outcome.exit_code != 0),"
+after = "    (Verdict.FAILED, GREEN_BUT_EXITED, lambda outcome: outcome.exit_code != 0),"
+reddens = ["tests/test_documents.py::test_the_prove_verdict_table_is_the_cascade_row_for_row"]
+
 # The bound has one source, which `docs/cli.md` quotes word for word.
 [[mutation]]
 name = "the bound's text drifts from the one docs/cli.md quotes"

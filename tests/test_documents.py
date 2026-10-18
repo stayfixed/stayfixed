@@ -1137,6 +1137,28 @@ def test_the_json_keys_the_prove_section_lists_are_the_receipt_s_fields() -> Non
     assert listed == [field.name for field in dataclasses.fields(Receipt)]
 
 
+# `| what holds | `verdict` | exit | reason(s) |`: a row of the prove section's verdict table.
+_CASCADE_ROW = re.compile(r"^\| [^|]+ \| `([a-z ]+)` \| (\d) \|([^|]*)\|$", re.MULTILINE)
+
+
+def test_the_prove_verdict_table_is_the_cascade_row_for_row() -> None:
+    # The table says it is `CASCADE`, the first row that holds winning: each row its verdict, its
+    # exit code and, where the cascade names one, its reason; a row whose reason is the step's
+    # that stopped the run lists some. Mutation (declared): `mutations/`'s "the cascade's
+    # green-but-exited row is no longer the table's" -> that row's verdict differs.
+    from stayfixed.prove.run import CASCADE, EXIT
+
+    rows = _CASCADE_ROW.findall(_prove_section())
+    # The walk's floor, for the reason the Shared flags test gives.
+    assert len(rows) == len(CASCADE), rows
+    for (verdict, code, reasons), (expected, reason, _) in zip(rows, CASCADE, strict=True):
+        assert (verdict, int(code)) == (expected, EXIT[expected]), (verdict, code)
+        if reason is None:
+            assert reasons.strip(), verdict
+        else:
+            assert reasons.strip() == (f"`{reason}`" if reason else ""), (verdict, reasons)
+
+
 def test_every_reason_constant_is_documented() -> None:
     # Every reason a receipt can carry, the run's, the readers' and each shipped adapter's, is
     # named in the section as its code span, and so is the warning an unwritten record says.
@@ -1157,7 +1179,9 @@ def test_every_reason_constant_is_documented() -> None:
     assert core.isdisjoint(adapters), sorted(core & adapters)
     reasons = core | adapters
     section = _prove_section()
-    assert len(reasons) == 20, sorted(reasons)
+    # The walk's floor: the core's reasons alone, so a discovery that found no adapter cannot
+    # pass with nothing of theirs held.
+    assert adapters and len(reasons) > len(core), sorted(reasons)
     assert [reason for reason in sorted(reasons) if f"`{reason}`" not in section] == []
     warning = NOT_RECORDED.format(record="<record>", why="<why>")
     assert f"`{warning}`" in section, warning

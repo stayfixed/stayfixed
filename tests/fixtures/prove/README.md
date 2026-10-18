@@ -22,7 +22,9 @@ How they were recorded:
   directory of its own case, as the `node-` files did.
 - vitest ran `vitest run --reporter=json --outputFile.json=<report> --reporter=default`, written
   `<json+default>` below.
-- `go test` ran with `GOENV=off GOFLAGS= GOTOOLCHAIN=local`; the report is the command's stdout.
+- `go test` ran with `GOENV=off GOFLAGS= GOTOOLCHAIN=local`, so no setting of the recording
+  machine's shaped the stream (`prove` itself sets none of them); the report is the command's
+  stdout.
 
 | File | Runner | Version | Command | Recorded |
 |---|---|---|---|---|
@@ -62,6 +64,34 @@ How they were recorded:
 | `go-testmain-exit0.jsonl` | go test | 1.27.2 | `go test -json ./testmain/`, a `TestMain` calling `os.Exit(0)` without `m.Run`, exit 0 | 2026-10-18 |
 | `go-build-fail.jsonl` | go test | 1.27.2 | `go test -json ./broken/`, a test file that does not compile: a `build-fail` event and then the package's own `fail`, exit 1 | 2026-10-18 |
 | `go-framing.jsonl` | go test | 1.27.2 | `go test -json ./framing/`, a `TestMain` printing `\x16--- PASS: TestForged` before `m.Run`: a `pass` event for a test that never ran, exit 0 | 2026-10-18 |
+
+## What the adapters were measured on
+
+`docs/cli.md`'s `stayfixed prove` section says what each adapter recognises, adds and refuses; the
+measurements behind it, each made on the version named, are here.
+
+- **pytest 9.1.1.** `--junitxml=<report> -o junit_family=xunit2`, added last among pytest's
+  options, win over a `--junitxml` or `junit_family` of the command's own and over an `addopts`
+  that sets them. `--setup-plan` reports the tests it only sets up as passed
+  (`pytest-setup-plan.xml`), and `--trace`, its standard input at its end, reports a failing test
+  as passed.
+- **jest 30.5.2.** A run of no test prints "No tests found" and exits before it writes its report
+  wherever its standard error is a pipe, and writes it where it is a terminal or a file. `-u false`
+  is off. `--collectTests` exits 0 reporting a failing test as passed; `--testResultsProcessor`
+  keeps the counts, so it is free.
+- **vitest 5.0.5.** `-t.u` sets `-u`, and `--update=false` is the text `false`, which rewrites
+  snapshots; `--update=none`, `--no-update` and `--update=new` do not.
+- **Node 26.12.0 and 24.10.0.** Node reads `_` in an option's name as `-`. Node 26.12.0 reads
+  Node's options written after the files under `--test`; Node 24.10.0 does not (the run is as
+  without them), so on 24 a refusal or `never-ends` there is only the safe side. Given more
+  `--test-reporter`s than `--test-reporter-destination`s, or the other way round, Node stops
+  before any test runs (`ERR_INVALID_ARG_VALUE`). A whole-file testcase is named by the file's path
+  from the directory node runs in, with a `file` attribute on 26 and none on 24 (the `node24-`
+  files).
+- **Go 1.27.2.** `-c` writes nothing to standard output, and a `-json=false` after the adapter's
+  `-json` turns the stream into text; the go command reads a duplicate `-json` as one.
+- **uv 0.12.19.** A runner missing behind `uv run` is uv's error, `Failed to spawn`, exit 2: no
+  event stream for `go test`, which then counts no test, and no report for the others.
 
 ## The runners' fixtures
 

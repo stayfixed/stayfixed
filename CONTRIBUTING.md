@@ -25,8 +25,13 @@ three more steps you can reproduce only from a build (`uv build`, then
 without a global install of the harness CLI, the plugin-manifest validator, and one that installs
 the real test runners `stayfixed prove`'s adapters run and runs `-m runners` under
 `STAYFIXED_REQUIRE_RUNNERS=1` (Node, jest, vitest and Go at the versions `ci.yml` pins); a failure
-in the first two is ours to diagnose, not yours, and the third you can reproduce with those runners
-on your `PATH`.
+in the first two is ours to diagnose, not yours. The third you can reproduce with that Node and Go
+on your `PATH`: install jest and vitest with `npm ci --ignore-scripts` of
+`tests/fixtures/prove/node/package.json` and its lockfile in a directory outside the checkout, then
+run `STAYFIXED_RUNNERS_ON_PATH=1 STAYFIXED_NODE_MODULES=<that directory>/node_modules uv run pytest
+-n auto -m runners` (`tests/fixtures/prove/README.md` and `tests/prove/real_runners.py` say what
+each variable does). Without `STAYFIXED_RUNNERS_ON_PATH=1` the tests that need `node` or `go` skip,
+whatever is on your `PATH`.
 
 ## What this project is, and what that costs a change
 
