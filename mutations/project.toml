@@ -2960,8 +2960,17 @@ reddens = ["tests/prove/test_javascript.py::test_vitest_reads_its_configuration_
 [[mutation]]
 name = "a preloaded file URL keeps its escapes"
 file = "src/stayfixed/profiles/javascript/adapters.py"
-before = "    return os.path.realpath(unquote(url.path))"
-after = "    return os.path.realpath(url.path)"
+before = "    return os.path.realpath(_ROOT + unquote(url.path).lstrip(_ROOT))"
+after = "    return os.path.realpath(_ROOT + url.path.lstrip(_ROOT))"
+reddens = ["tests/prove/test_javascript.py::test_a_preloaded_file_is_named_and_a_package_is_not"]
+
+# node reads a `file:` URL as WHATWG does: `file:x.mjs` is `/x.mjs`, never a file of the run's
+# directory.
+[[mutation]]
+name = "a relative file URL preload is read from where prove runs"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = "    return os.path.realpath(_ROOT + unquote(url.path).lstrip(_ROOT))"
+after = "    return os.path.realpath(unquote(url.path))"
 reddens = ["tests/prove/test_javascript.py::test_a_preloaded_file_is_named_and_a_package_is_not"]
 
 [[mutation]]

@@ -756,20 +756,23 @@ _NODE_PRELOADS = frozenset({"--require", "--import", "--loader", "--experimental
 _NODE_PRELOAD_LETTER = "-r"
 _PATH_STARTS = ("/", "./", "../")
 _FILE_SCHEME = "file"
-# The hosts a `file:` URL may name and still name a file here.
+# The hosts a `file:` URL may name and still name a file here, and where its path starts.
 _LOCAL_HOSTS = frozenset({"", "localhost"})
+_ROOT = "/"
 
 
 def _preloaded_file(given: str, cwd: Path) -> str | None:
     """The realpath of the file a preload option's value names: a path (`/`, `./`, `../`) read
     from `cwd`, or a `file:` URL of this machine, percent-decoded, as `url2pathname` reads one on
-    POSIX; `None` for a package's name or any other specifier (`data:`, `node:`)."""
+    POSIX, its path read from the root as WHATWG reads it (measured on Node 26.12.0:
+    `--import=file:x.mjs` loads `/x.mjs`, never a file of the run's directory); `None` for a
+    package's name or any other specifier (`data:`, `node:`)."""
     if given.startswith(_PATH_STARTS):
         return os.path.realpath(cwd / given)
     url = urlsplit(given)
     if url.scheme != _FILE_SCHEME or url.netloc not in _LOCAL_HOSTS or not url.path:
         return None
-    return os.path.realpath(unquote(url.path))
+    return os.path.realpath(_ROOT + unquote(url.path).lstrip(_ROOT))
 
 
 def node_preloaded(words: Sequence[str], cwd: Path) -> tuple[str, ...]:

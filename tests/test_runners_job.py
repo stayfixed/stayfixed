@@ -18,6 +18,7 @@ from tests.workflow_yaml import Node, load
 
 ROOT = Path(__file__).resolve().parents[1]
 NODE_FIXTURE = ROOT / "tests" / "fixtures" / "prove" / "node"
+FIXTURES_README = ROOT / "tests" / "fixtures" / "prove" / "README.md"
 JOB = "runners"
 NODE_VERSION = "26.12.0"
 GO_VERSION = "1.27.2"
@@ -78,6 +79,11 @@ def test_the_job_installs_the_pinned_node_and_go() -> None:
     assert isinstance(env, dict), go
     assert env["GO_TOOLCHAIN"] == f"golang.org/toolchain@v0.0.1-go{GO_VERSION}.linux-amd64"
     assert re.fullmatch(r"[0-9a-f]{64}", str(env["GO_ZIP_SHA256"])), env
+    # The digest is the one the fixtures' README records beside the pins, with where it came
+    # from. Mutation (declared): `mutations/`'s "the runners job checks Go against a digest the
+    # README does not record".
+    recorded = re.findall(r"SHA-256 `([0-9a-f]{64})`", FIXTURES_README.read_text(encoding="utf-8"))
+    assert recorded == [env["GO_ZIP_SHA256"]], recorded
     script = str(go["run"])
     # The digest is checked before anything the download holds is unpacked or put on `PATH`.
     # Mutation (declared): `mutations/`'s "the runners job unpacks Go unchecked".

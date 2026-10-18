@@ -891,7 +891,8 @@ write in the tree; `--import` and `--require`; the files jest's `--setupFiles`, 
 `--projects` or `--rootDir` and vitest's `--root` or `--dir` name; and a reporter of jest's or
 vitest's own. The file `-c` or `--config` names (read from the directory the command runs in, and
 for vitest from its `--root` where the command gives one), and a file `-r`, `--require`, `--import`
-or `--loader` names by its path or a `file:` URL rather than a package's name, are among the
+or `--loader` names by its path or a `file:` URL (whose path node reads from the root:
+`file:x.mjs` is `/x.mjs`) rather than a package's name, are among the
 configuration files, by their realpath. Their forging set is `NODE_OPTIONS`, and for `node --test`
 also `NODE_TEST_CONTEXT`, an inherited one removed from the run's environment. Their configuration
 files are `package.json`, `.npmrc`, `jest.config.*`, `vitest.config.*` and `vite.config.*`.
@@ -913,7 +914,10 @@ free, `-ldflags`, `-gcflags` and `-compiler` among them, as are `CC`, `CXX` and 
 variables: they shape how the code under test is built, which the bound concedes. Its forging set is
 `GOFLAGS`, `GOENV`, `GOTOOLCHAIN`, `GOROOT`, which names the standard library the run builds
 against, and `GOOS` and `GOARCH`, under which a target this machine cannot run has the go command
-run the tests under the `go_$GOOS_$GOARCH_exec` it finds on `PATH`. Its configuration files are
+run the tests under the `go_$GOOS_$GOARCH_exec` it finds on `PATH`, `GOARCH=386` on an amd64
+machine among them. So a leg that tests another target is refused where the command assigns it and
+built for this machine where it is inherited: run it outside `prove`, or under `prove --junit`
+through a command no adapter recognises that writes a JUnit report. Its configuration files are
 `go.mod` and `go.work`, and the file `-modfile` names, read from the directory a leading `-C`
 names; its discovery set is `*_test.go`. The bound
 has a Go case of its own: a test, or a `TestMain`, that prints test2json's own framing (`\x16---

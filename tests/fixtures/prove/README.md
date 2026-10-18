@@ -69,3 +69,13 @@ three-test case, `passing/` one passing and one skipped test, `skipped/` two ski
 framing for a test that never ran, `printing/` a failing test that prints a whole `pass` event, and
 `broken/` a test file that does not compile. Its `go.mod` asks for Go 1.24, so the image's 1.24.7
 and the pinned 1.27.2 both run it.
+
+The `runners` CI job installs Go 1.27.2 as the toolchain module the `go` command itself switches
+to, `golang.org/toolchain@v0.0.1-go1.27.2.linux-amd64`, the zip
+`https://proxy.golang.org/golang.org/toolchain/@v/v0.0.1-go1.27.2.linux-amd64.zip`, and checks it
+against SHA-256 `3a467ed067f27cd55bf3a702f8e2bf12479f53c9d8ae0de548f48ebcb3c67796` before it
+unpacks it. The digest was recorded on 2026-10-18 from the zip the Go module proxy served when the
+version was pinned, the download `go` made into its module cache; the module hash `go` recorded
+beside it is `h1:N6Xv/1OLzI0jVVkUwkrxHRZc/GCTARUo6idcngKwlDE=`, which the Go checksum database's
+entry for that module and version can be checked against. `tests/test_runners_job.py` holds the
+job's digest equal to this one.

@@ -1104,10 +1104,15 @@ def test_a_test_files_stdout_is_never_counted(tmp_path: Path) -> None:
 
 @needs_runner("node")
 def test_a_project_with_no_packages_is_not_proven_and_installs_nothing(tmp_path: Path) -> None:
+    # `PATH` holds `node` alone, linked into a directory of its own: a vitest an `npm install -g`
+    # linked beside the machine's `node` would resolve, and this test would then prove nothing.
     project = tmp_path / "p"
     project.mkdir()
     (project / "package.json").write_text('{"name": "case"}', encoding="utf-8")
-    got = real(project, "npx", "vitest")
+    alone = tmp_path / "bin"
+    alone.mkdir()
+    (alone / "node").symlink_to(runner_directory("node") / "node")
+    got = through_prove(["npx", "vitest"], project, {**os.environ, "PATH": str(alone)})
     assert (got.verdict, got.reason) == (NOT_PROVEN, ENTRY_NOT_FOUND)
     assert sorted(path.name for path in project.iterdir()) == ["package.json"]
 
@@ -1273,8 +1278,10 @@ def test_a_preloaded_file_is_named_and_a_package_is_not(tmp_path: Path) -> None:
     # `-r`, `--require`, `--import` and `--loader` are free; the file a path or a `file:` URL of
     # this machine names is among the configuration files, percent-decoded; a package's name, a
     # `data:` or `node:` specifier and another host's URL are not; `-r=x` is a bad option to node,
-    # and a word after `--` is none of node's. Mutations (declared): the preloaded files left out;
-    # a `file:` URL's escapes kept; another host's URL named; a `data:` specifier named.
+    # and a word after `--` is none of node's. A `file:` URL's path is read as WHATWG reads it, from
+    # the root (measured on Node 26.12.0: `--import=file:x.mjs` loads `/x.mjs`). Mutations
+    # (declared): the preloaded files left out; a `file:` URL's escapes kept; another host's URL
+    # named; a `data:` specifier named; a relative `file:` URL read from the run's directory.
     node = node_on_path(tmp_path / "bin")
     got = plan_of(
         NODE_TEST,
@@ -1291,6 +1298,8 @@ def test_a_preloaded_file_is_named_and_a_package_is_not(tmp_path: Path) -> None:
             "--import=file:///abs/y.mjs",
             "--import=file://localhost/abs/z%20q.mjs",
             "--import=file://elsewhere/abs/no.mjs",
+            "--import=file:rel.mjs",
+            "--import=file:../up/u.mjs",
             "--import",
             "data:text/javascript,0",
             "--import=node:fs",
@@ -1313,6 +1322,8 @@ def test_a_preloaded_file_is_named_and_a_package_is_not(tmp_path: Path) -> None:
         "/abs/x.mjs",
         "/abs/y.mjs",
         "/abs/z q.mjs",
+        "/rel.mjs",
+        "/up/u.mjs",
         str(real / "after.cjs"),
     )
     last = plan_of(NODE_TEST, ["node", "--test", "-r"], tmp_path, path=str(node.parent))
