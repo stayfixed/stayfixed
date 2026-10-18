@@ -1509,3 +1509,29 @@ text:
   `PATH`, the installer's trampoline, else `python3` or `python` on `PATH`.
 - `Refused` carries a `detail` (the refused option); an absolute `Plan.configs` entry names one
   file.
+
+### Wave G (controller, 2026-10-18)
+
+Implementer about 660k tokens (four mid-wave rulings); the fix round went to a fresh agent (about
+330k). Each runner's options were swept once before its closed list was written (jest 30.5.2,
+vitest 5.0.5, `node --test` on Node 26.12.0, `go test` on Go 1.27.2); the tables are in the wave's
+record. Changes against the text:
+
+- No stand-in or package-name check (the owner's ruling). The entry is resolved as Node resolves
+  the package (`node_modules/<package>/package.json` `bin`, then `PATH`); pnpm's `.bin` shim is
+  never read.
+- jest's and vitest's `-c`/`--config` naming a file outside the root are not refused: the agent
+  can write the same configuration inside the tree, so the check stopped nobody and chased an open
+  set of path options. The file is named on the receipt; a jest `--config` given inline JSON text
+  is refused.
+- Measured routes joined the closed lists: jest `--collectTests`; vitest `--mergeReports`; node's
+  rerun state, snapshot update and `NODE_TEST_CONTEXT`; go's `GOROOT`, `GOOS` and `GOARCH` (go runs
+  the tests under `go_$GOOS_$GOARCH_exec` from `PATH` whenever the target is not the host, a 32-bit
+  leg included). jest's `--ci=false` and vitest's `--update=new` stay free: each is the runner's
+  default outside CI.
+- Watch modes are `not proven` (`never-ends`), not refused.
+- Go's flags: a build flag is read by its bare name only, a test-binary flag bare or `test.`-prefixed
+  (the review forged `proved` with `-test.p -exec=…`); a bare `--` ends go's flags.
+- Go in the `runners` job comes from the module proxy's toolchain zip checked against the SHA-256
+  recorded in `tests/fixtures/prove/README.md`, since no pinned `actions/setup-go` sha is in the
+  tree.
