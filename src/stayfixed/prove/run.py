@@ -300,8 +300,9 @@ def _signals_end_the_run() -> Iterator[None]:
 
 
 class _Tee:
-    """The runner's standard output, copied as it arrives to the caller's stream and, up to one
-    byte past `MAX_REPORT_BYTES`, to the report, by a thread of its own that owns both descriptors.
+    """The runner's standard output, copied as it arrives to the caller's stream and, where it is
+    the report, up to one byte past `MAX_REPORT_BYTES` to the report too, by a thread of its own
+    that owns both descriptors.
 
     The thread reads until the pipe ends; once `finish` is asked, it stops at the first moment the
     pipe holds nothing, or once it has copied `MAX_REPORT_BYTES` more, so a descendant that left the
@@ -310,10 +311,10 @@ class _Tee:
     written nothing more, and the report goes on filling.
     """
 
-    def __init__(self, source: IO[bytes], report: int, caller: TextIO) -> None:
+    def __init__(self, source: IO[bytes], report: int | None, caller: TextIO) -> None:
         self._source = source
         self._report = report
-        self._room = MAX_REPORT_BYTES + 1
+        self._room = MAX_REPORT_BYTES + 1 if report is not None else 0
         self._stop = threading.Event()
         self._out: BinaryIO | None = getattr(caller, "buffer", None)
         self._text = caller
@@ -340,7 +341,7 @@ class _Tee:
         self._echo(chunk)
         share = chunk[: self._room]
         self._room -= len(share)
-        while share:
+        while share and self._report is not None:
             share = share[os.write(self._report, share) :]
 
     def _pump(self) -> None:
@@ -366,7 +367,8 @@ class _Tee:
             if self._out is None:
                 self._echo(b"", final=True)
             self._source.close()
-            os.close(self._report)
+            if self._report is not None:
+                os.close(self._report)
 
     def finish(self) -> None:
         """Stop once the pipe is drained, and wait for the thread to end."""
@@ -380,16 +382,17 @@ def _open_report(path: Path) -> int:
     return os.open(path, flags, 0o600)
 
 
-def _launch(plan: Plan, cwd: Path, env: Mapping[str, str], teed: bool) -> subprocess.Popen[bytes]:
+def _launch(plan: Plan, cwd: Path, env: Mapping[str, str], piped: bool) -> subprocess.Popen[bytes]:
     # S603: the adapter's plan of the command the caller typed, list form, never a shell. A
     # session of its own puts what it starts in one process group, which is ended however it
     # finishes. Standard input and standard error are the caller's; standard output is too, or
-    # a pipe the tee copies to the caller's whole when it is the report.
+    # a pipe the tee copies whole to the caller's stream, when it is the report or the caller
+    # named a stream of its own.
     return subprocess.Popen(  # noqa: S603
         list(plan.argv),
         cwd=cwd,
         env=dict(env),
-        stdout=subprocess.PIPE if teed else None,
+        stdout=subprocess.PIPE if piped else None,
         start_new_session=True,
     )
 
@@ -400,21 +403,26 @@ class _Ran:
     exit_code: int | None
 
 
-def _run(plan: Plan, cwd: Path, env: Mapping[str, str], timeout: float, echo: TextIO) -> _Ran:
-    """Run `plan` in `cwd` under `env`, its process group ended however it finishes, a report on
-    standard output teed to `echo`."""
+def _run(
+    plan: Plan, cwd: Path, env: Mapping[str, str], timeout: float, echo: TextIO | None
+) -> _Ran:
+    """Run `plan` in `cwd` under `env`, its process group ended however it finishes. The runner's
+    standard output is the caller's, and a pipe teed to it when it is the report; given `echo`, it
+    is always a pipe, teed to `echo`, whatever the report's source."""
     teed = plan.source is ReportSource.STDOUT
+    piped = teed or echo is not None
+    caller = echo if echo is not None else sys.stdout
     report = _open_report(plan.report) if teed else None
     sys.stdout.flush()
     with contextlib.suppress(OSError, ValueError):
-        echo.flush()
+        caller.flush()
     try:
-        process = _launch(plan, cwd, env, teed)
+        process = _launch(plan, cwd, env, piped)
     except OSError:
         if report is not None:
             os.close(report)
         return _Ran(NOT_STARTED, None)
-    tee = None if report is None or process.stdout is None else _Tee(process.stdout, report, echo)
+    tee = None if process.stdout is None else _Tee(process.stdout, report, caller)
     try:
         try:
             with _signals_end_the_run():
@@ -461,8 +469,10 @@ def prove(
     echo: TextIO | None = None,
 ) -> Receipt:
     """Run `argv` in `cwd` and say what its runner's report proves. `adapters` defaults to every
-    adapter this stayfixed ships (`shipped_adapters`); `echo`, where a report on the runner's
-    standard output is teed, to the caller's standard output.
+    adapter this stayfixed ships (`shipped_adapters`). Given `echo`, the runner's standard output,
+    every byte, goes there whatever the report's source (`--json` hands standard error, so that
+    standard output holds the one object); without it, the runner's standard output is the
+    caller's.
 
     An adapter whose plan's program is not an absolute path is a defect in stayfixed, as a module
     that does not import is, and raises `ValueError`: a bare name would be found from stayfixed's
@@ -501,8 +511,7 @@ def prove(
             return _receipt(_Outcome(unproven=planned.reason), shown, adapter.name)
         # An inherited one goes from the run's environment as the plan's own scrub would go.
         kept = {name: value for name, value in environ.items() if name not in loaders}
-        caller = echo if echo is not None else sys.stdout
-        return _proved(adapter.name, planned, assigned, shown, cwd, root, kept, timeout, caller)
+        return _proved(adapter.name, planned, assigned, shown, cwd, root, kept, timeout, echo)
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 
@@ -516,7 +525,7 @@ def _proved(
     root: Path,
     environ: Mapping[str, str],
     timeout: float,
-    echo: TextIO,
+    echo: TextIO | None,
 ) -> Receipt:
     if not os.path.isabs(plan.argv[0]):
         raise ValueError(f"the {runner} adapter planned a program that is not absolute")

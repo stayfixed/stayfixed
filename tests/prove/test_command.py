@@ -174,3 +174,16 @@ def test_with_json_a_report_on_standard_output_is_teed_to_standard_error(
     assert json.loads(out)["verdict"] == "proved"
     event = json.dumps({"Action": "pass", "Package": "p", "Test": "TestA"})
     assert err == f"{event}\n"
+
+
+def test_with_json_a_runner_that_writes_its_report_to_a_file_prints_to_standard_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Whatever the report source, `--json` keeps standard output to the one object: what the
+    # runner prints goes, every byte, to standard error; without `--json` it is the caller's
+    # standard output, as ever. Mutation (declared): the runner's standard output piped only when
+    # it is the report -> the printed line never reaches standard error.
+    code, out, err = prove_cli(tmp_path, monkeypatch, "--json", "--", NAME, "--print", "hello")
+    assert code == 0
+    assert json.loads(out)["verdict"] == "proved"
+    assert err == "hello\n"

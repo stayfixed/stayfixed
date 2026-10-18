@@ -832,8 +832,9 @@ its environment, in order, the last of two for one name winning, and never in it
 adapter is handed the launcher's own words (`uv run` and its options) and never an assignment or
 an `env`. A report the runner writes to a file is read from a scratch directory outside the
 project; a report that is the runner's own standard output (a test event stream) is copied to
-yours as it arrives, every byte, and only the format's own events are counted; under `--json` it
-is copied to standard error instead, so that standard output holds the one JSON object. Text a
+yours as it arrives, every byte, and only the format's own events are counted. Under `--json`
+the runner's standard output, whatever the report's source, goes to standard error instead, every
+byte, so that standard output holds the one JSON object; without `--json` it is yours. Text a
 command prints is never counted.
 
 **What `proved` means.** The code under test, any file in the runner's load path, tracked or not, and the environment the runner reads can shape its report, so `proved` means the runner reported green on this tree, for the tests this command selected.

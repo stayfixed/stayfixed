@@ -5939,9 +5939,9 @@ reddens = ["tests/prove/test_run.py::test_the_counts_and_the_report_s_digest_are
 [[mutation]]
 name = "prove lets a launch that could not start escape"
 file = "src/stayfixed/prove/run.py"
-before = """        process = _launch(plan, cwd, env, teed)
+before = """        process = _launch(plan, cwd, env, piped)
     except OSError:"""
-after = """        process = _launch(plan, cwd, env, teed)
+after = """        process = _launch(plan, cwd, env, piped)
     except ValueError:"""
 reddens = [
   "tests/prove/test_run.py::test_a_command_that_cannot_start_is_not_proven[file]",
@@ -6203,6 +6203,15 @@ before = '    echo = sys.stderr if getattr(args, "as_json", False) else None'
 after = "    echo = None"
 reddens = [
   "tests/prove/test_command.py::test_with_json_a_report_on_standard_output_is_teed_to_standard_error",
+]
+
+[[mutation]]
+name = "prove leaves a file report's runner printing to standard output under --json"
+file = "src/stayfixed/prove/run.py"
+before = "    piped = teed or echo is not None"
+after = "    piped = teed"
+reddens = [
+  "tests/prove/test_command.py::test_with_json_a_runner_that_writes_its_report_to_a_file_prints_to_standard_error",
 ]
 
 [[mutation]]
