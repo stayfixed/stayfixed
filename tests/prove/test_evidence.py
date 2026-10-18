@@ -409,7 +409,10 @@ def test_a_run_interrupted_before_its_command_starts_is_recorded_not_proven(
     monkeypatch.setattr(tree, "state", interrupted)
     project = tmp_path / "project"
     project.mkdir()
-    code, _, _ = prove_cli(project, monkeypatch, "--", NAME)
+    try:
+        code, _, _ = prove_cli(project, monkeypatch, "--", NAME)
+    except KeyboardInterrupt:  # would stop the whole session rather than fail this case
+        pytest.fail("the interrupt escaped prove")
     assert code == 1
     (kept,) = records()
     assert (kept["verdict"], kept["reason"]) == (Verdict.NOT_PROVEN, INTERRUPTED)

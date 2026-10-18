@@ -609,7 +609,10 @@ def test_an_interrupt_anywhere_in_the_run_ends_it_not_proven(
     before = signal.getsignal(signal.SIGTERM)
     # The runner leaves a child in its group and exits: the reap is what ends that child.
     started, late = tmp_path / "started", tmp_path / "late"
-    got = run(tmp_path, NAME, "--leave", str(started), str(late), adapter=adapter)
+    try:
+        got = run(tmp_path, NAME, "--leave", str(started), str(late), adapter=adapter)
+    except KeyboardInterrupt:  # would stop the whole session rather than fail this case
+        pytest.fail("the interrupt escaped prove")
     assert (got.verdict, got.reason) == (NOT_PROVEN, INTERRUPTED)
     assert signal.getsignal(signal.SIGTERM) is before
     [(_, scratch)] = adapter.seen
