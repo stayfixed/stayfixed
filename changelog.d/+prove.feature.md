@@ -9,7 +9,9 @@ report, wherever it spells the assignment, before `uv run` or after it, one that
 option that loads an environment or configuration file (`--env-file`, `--config-file`) or assigns
 `UV_ENV_FILE` or `UV_CONFIG_FILE`, and a program that changed between the plan and the launch
 (`resolved-elsewhere`). It needs no `stayfixed.toml` and takes neither `--root` nor `--machine`.
-Its line names the counts, the runner and the realpath of what ran, and the configuration and
+Its line names the counts, the runner and the realpath of what ran, each inherited variable the
+run did not get as it was (`removed from the run's environment: NODE_OPTIONS`), and the
+configuration and
 untracked files that can shape the report, twenty of each and a count of the rest, with a count of
 the configuration files git ignores; `--json` carries the whole receipt, with every `NAME=value`
 and `--option=value` value in the command replaced by `…`, and sends the runner's standard output
@@ -30,7 +32,9 @@ and
 names the configuration file `-c` names, wherever it lies, among the files that can shape the
 report; `--pdb` is free, its debugger quitting at the end of standard input with the failure kept.
 The jest, vitest and `node --test` adapters recognise `jest` and `vitest`, bare or after `npx`
-(which is never run), and `node --test`; each runs the `node` on `PATH` with the entry point the
+(which is never run) or as `node [Node's flags] node_modules/jest/bin/jest.js` (the way to give
+Node a flag, `--experimental-vm-modules` for jest's ES modules, since an inherited `NODE_OPTIONS`
+is removed), and `node --test`; each runs the `node` on `PATH` with the entry point the
 runner's own package names, found under `node_modules` from where the command runs up to the
 project's top-level, and with a report of `prove`'s own (`entry-not-found` where there is none,
 which names `prove --junit`; `npm test`, `yarn` and `pnpm` are recognised by none). They refuse the

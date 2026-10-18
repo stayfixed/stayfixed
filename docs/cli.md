@@ -870,7 +870,9 @@ the file `-c` or `--config-file` names, by its realpath, wherever it lies; its d
 where it would be found is `entry-not-found` (`not proven`).
 
 **The jest, vitest and `node --test` adapters** recognise `jest` and `vitest`, bare or after `npx`,
-`npx --no-install` or `npx --no`, and `node` with `--test` among its options; `npm test`, `npm run`,
+`npx --no-install` or `npx --no`, or as `node [Node's options] <entry>`, the entry a path into
+`node_modules/jest` (or `jest-cli`) or `node_modules/vitest`, or `node_modules/.bin/jest` or
+`.bin/vitest`; and `node` with `--test` among its options; `npm test`, `npm run`,
 `yarn` and `pnpm` are recognised by none, and `prove --junit` counts what they run. No `npx` and no
 package manager's shim is run: the entry point is the file the `bin` of `node_modules/jest` (or
 `jest-cli`) or `node_modules/vitest` names, looked for in the directory the command runs in and each
@@ -919,7 +921,16 @@ for vitest from its `--root` where the command gives one), and a file `-r`, `--r
 or `--loader` names by its path or a `file:` URL (whose path node reads from the root:
 `file:x.mjs` is `/x.mjs`) rather than a package's name, are among the
 configuration files, by their realpath. Their forging set is `NODE_OPTIONS`, and for `node --test`
-also `NODE_TEST_CONTEXT`, an inherited one removed from the run's environment. Their configuration
+also `NODE_TEST_CONTEXT`, an inherited one removed from the run's environment (the line and the
+receipt say so). To give Node a flag, put it in front of the runner's entry instead:
+`stayfixed prove -- node --experimental-vm-modules node_modules/jest/bin/jest.js`, jest's
+recipe for ES modules. That entry must be the file its package's `bin` names (by its realpath, so a
+`.bin` link npm made is read through and pnpm's `.bin` shim is not: `entry-not-found`), the
+`node` is the one the command names, and Node's options there are free but those that load a file
+(`--env-file`, `--env-file-if-exists`, its configuration file options) and its test runner's (any
+`--test…`), refused (`refused-option`), and `--watch` and `--watch-path`, which never end; a node
+given `-e`, `-p`, `--check`, `--run` or another option under which it runs no script is recognised
+by none. A file `-r`, `--require` or `--import` names there is among the configuration files. Their configuration
 files are `package.json`, `.npmrc`, `jest.config.*`, `vitest.config.*` and `vite.config.*`.
 
 **The `go test` adapter** recognises `go test …` and runs the `go` on `PATH` as `go test -json …`,
@@ -993,7 +1004,10 @@ process group is ended with it.
 
 **The line** says the verdict and its reason in words, the counts (passed, failed, skipped), the
 runner and the realpath of the program that ran (and of the entry it runs, where it is `node`
-running jest's or vitest's), and the files that can shape the report: the
+running jest's or vitest's), each variable of your environment the run did not get as it was
+(`removed from the run's environment: NODE_OPTIONS`: an adapter's scrubbed variable, a `uv` file
+variable, or one the adapter sets to its own value, as `go test`'s `GOFLAGS`), and the files that
+can shape the report: the
 runner's configuration files that exist and that git tracks or does not ignore, with a count of the
 ignored ones (`and N ignored`), then any file the command itself named as its configuration, from
 the top-level where it lies there and whole where it does not, and the untracked files in its
@@ -1003,7 +1017,8 @@ never an input to the verdict. `--json` carries `verdict`, `reason`, `detail` (t
 refused assignment named, the launcher option refused, the option or word the runner's adapter
 refused, the `--junit` path on `junit-unchanged`, or where a report stopped reading), `argv` (the
 command, every `NAME=value` and `--option=value` value replaced by `…`; a value passed as the word
-after its option is kept), `runner`, `program`, `entry`, `verified`, `counts`, `exit_code`, `report_digest`
+after its option is kept), `runner`, `program`, `entry`, `verified`, `scrubbed` (those variables'
+names, sorted), `counts`, `exit_code`, `report_digest`
 (the SHA-256 of the report counted), `commit`, `dirty_before`, `dirty_after`, `untracked`,
 `untracked_more`, `configs`, `configs_more` and `ignored_configs`.
 

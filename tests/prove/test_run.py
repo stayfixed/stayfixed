@@ -247,6 +247,18 @@ def test_an_inherited_scrubbed_variable_is_removed_and_counted(tmp_path: Path) -
     )
     assert (got.verdict, got.reason) == (PROVED, "")
     assert got.counts == Counts(2, 0, 0)
+    # The removal is said: it can turn a legitimate run red, and nothing else tells the reader
+    # why. Mutation (declared): the removed variables left off the receipt -> `scrubbed` is empty.
+    assert got.scrubbed == ("SCRUBBED",)
+    assert "; removed from the run's environment: SCRUBBED" in line(got)
+
+
+def test_a_scrubbed_variable_the_run_did_not_inherit_is_not_named(tmp_path: Path) -> None:
+    adapter = StandIn(scrub=frozenset({"SCRUBBED"}), set_env={"SET": "by-adapter"})
+    environ = {name: value for name, value in os.environ.items() if name not in ("SCRUBBED", "SET")}
+    got = run(tmp_path, NAME, adapter=adapter, environ={**environ, "SET": "by-adapter"})
+    assert (got.verdict, got.scrubbed) == (PROVED, ())
+    assert "removed from the run's environment" not in line(got)
 
 
 def test_set_env_reaches_the_runner(tmp_path: Path) -> None:
@@ -263,6 +275,8 @@ def test_set_env_reaches_the_runner(tmp_path: Path) -> None:
         environ=environ,
     )
     assert got.verdict == PROVED
+    # The inherited value did not reach the run, and the receipt says so.
+    assert got.scrubbed == ("SET",)
 
 
 def test_a_program_resolved_elsewhere_is_refused(tmp_path: Path) -> None:
@@ -406,7 +420,7 @@ def test_the_launcher_s_file_variables_are_forging_and_scrubbed_where_it_runs(
         assert (got.verdict, got.reason, got.detail) == (REFUSED, ASSIGNED_FORGING, variable)
     environ = {**os.environ, variable: "inherited"}
     got = run(tmp_path, "uv", "run", NAME, "--expect-unset", variable, environ=environ)
-    assert got.verdict == PROVED
+    assert (got.verdict, got.scrubbed) == (PROVED, (variable,))
     got = run(tmp_path, NAME, "--expect-env", f"{variable}=inherited", environ=environ)
     assert got.verdict == PROVED
     got = run(tmp_path, f"{variable}=x", NAME, "--expect-env", f"{variable}=x")

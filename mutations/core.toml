@@ -6601,3 +6601,35 @@ file = "src/stayfixed/prove/evidence.py"
 before = 'NOT_RECORDED = "stayfixed: the evidence record {record} was not written: {why}"'
 after = 'NOT_RECORDED = "stayfixed: the evidence record {record} could not be written: {why}"'
 reddens = ["tests/test_documents.py::test_every_reason_constant_is_documented"]
+
+# A scrub can turn a legitimate run red (jest's ES modules recipe sets `NODE_OPTIONS`): the receipt,
+# the line and the record name each inherited variable the run did not get as it was.
+[[mutation]]
+name = "the receipt names no variable the run's environment lost"
+file = "src/stayfixed/prove/run.py"
+before = "    scrubbed = tuple(sorted(removed | (frozenset(environ) & plan.scrub) | overridden))"
+after = "    scrubbed: tuple[str, ...] = ()"
+reddens = ["tests/prove/test_run.py::test_an_inherited_scrubbed_variable_is_removed_and_counted"]
+
+[[mutation]]
+name = "the receipt names no inherited variable an adapter set to its own value"
+file = "src/stayfixed/prove/run.py"
+before = "    overridden = {name for name, value in plan.set_env.items() if environ.get(name, value) != value}"
+after = "    overridden: set[str] = set()"
+reddens = ["tests/prove/test_run.py::test_set_env_reaches_the_runner"]
+
+[[mutation]]
+name = "the receipt names no launcher file variable it removed"
+file = "src/stayfixed/prove/run.py"
+before = "    removed = frozenset(environ) & loaders"
+after = "    removed: frozenset[str] = frozenset()"
+reddens = [
+  "tests/prove/test_run.py::test_the_launcher_s_file_variables_are_forging_and_scrubbed_where_it_runs[UV_ENV_FILE]",
+]
+
+[[mutation]]
+name = "the line leaves out the variables the run's environment lost"
+file = "src/stayfixed/prove/run.py"
+before = "    if receipt.scrubbed:"
+after = "    if False:"
+reddens = ["tests/prove/test_run.py::test_an_inherited_scrubbed_variable_is_removed_and_counted"]

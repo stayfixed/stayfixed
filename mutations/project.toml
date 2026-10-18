@@ -2284,6 +2284,52 @@ reddens = [
   "tests/prove/test_javascript.py::test_vitest_s_subcommands_that_run_no_test_are_not_proven[list]",
 ]
 
+# Node's flags go in front of the runner's entry, since an inherited `NODE_OPTIONS` is scrubbed:
+# `node --experimental-vm-modules node_modules/jest/bin/jest.js` is jest's ES modules recipe.
+[[mutation]]
+name = "the jest and vitest adapters read no node in front of their entry"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = "            or node_entry(command, runner.name, runner.packages) is not None"
+after = "            or False"
+reddens = [
+  "tests/prove/test_javascript.py::test_each_runner_s_commands_are_recognised[command9-adapter9]",
+  "tests/prove/test_javascript.py::test_jest_s_esm_recipe_is_proved_with_node_s_flag_in_front",
+]
+
+[[mutation]]
+name = "node's options in front of a runner's entry are not read for a refusal"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = "            if refused_by_node is not None:"
+after = "            if False:"
+reddens = [
+  "tests/prove/test_javascript.py::test_node_s_options_that_load_a_file_or_run_its_test_runner_are_refused[node_options0---env-file]",
+]
+
+[[mutation]]
+name = "node's watch mode in front of a runner's entry is not read"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = "        never = node_never_ends(node_words) or runner.never_ends(args)"
+after = "        never = runner.never_ends(args)"
+reddens = ["tests/prove/test_javascript.py::test_node_s_watch_mode_in_front_of_the_entry_never_ends"]
+
+# `node -e <code> node_modules/jest/bin/jest.js` runs the code, never jest.
+[[mutation]]
+name = "a node that runs no script it is handed is read as running the runner's entry"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = "    if any(_node_name(word) in _NODE_RUNS_NO_SCRIPT for word in options if word.startswith(\"-\")):"
+after = "    if False:"
+reddens = ["tests/prove/test_javascript.py::test_npm_test_is_not_recognised[command12]"]
+
+# The file node is handed must be the entry its package's `bin` names.
+[[mutation]]
+name = "an entry is not checked against its package's bin"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = "    if package is None or _manifest_bin(package, name) != target:\n        return None\n    return target"
+after = "    if package is None:\n        return None\n    return target"
+reddens = [
+  "tests/prove/test_javascript.py::test_a_file_that_is_not_the_package_s_bin_does_not_resolve[node_modules/jest/other.js]",
+]
+
 # `--setup-plan` exits 0 and reports a failing test as passed: the refusal is load-bearing.
 [[mutation]]
 name = "the pytest adapter leaves --setup-plan off its refusals"
@@ -2546,7 +2592,7 @@ reddens = ["tests/prove/test_javascript.py::test_npm_test_is_not_recognised[comm
 [[mutation]]
 name = "the jest and vitest adapters run npx"
 file = "src/stayfixed/profiles/javascript/adapters.py"
-before = "            argv=(str(node), str(entry), *_with(words, runner.ours(words, report))),"
+before = "            argv=(str(node), *node_words, str(entry), *_with(words, runner.ours(words, report))),"
 after = "            argv=(str(node.parent / _NPX), runner.name, *_with(words, runner.ours(words, report))),"
 reddens = ["tests/prove/test_javascript.py::test_npx_is_never_executed"]
 
@@ -2615,8 +2661,9 @@ reddens = ["tests/prove/test_javascript.py::test_the_nearest_package_wins_and_je
 [[mutation]]
 name = "an unresolved entry point names no way on"
 file = "src/stayfixed/profiles/javascript/adapters.py"
-before = "            return Unresolved(ENTRY_NOT_FOUND, detail)"
-after = "            return Unresolved(ENTRY_NOT_FOUND)"
+before = """                detail = _UNRESOLVED.format(package=runner.packages[0], bin=runner.name)
+                return Unresolved(ENTRY_NOT_FOUND, detail)"""
+after = """                return Unresolved(ENTRY_NOT_FOUND)"""
 reddens = ["tests/prove/test_javascript.py::test_an_unresolvable_entry_installs_nothing"]
 
 [[mutation]]
@@ -2723,10 +2770,10 @@ reddens = [
 [[mutation]]
 name = "jest's and vitest's watch modes are refused"
 file = "src/stayfixed/profiles/javascript/adapters.py"
-before = """        never = runner.never_ends(args)
+before = """        never = node_never_ends(node_words) or runner.never_ends(args)
         if never is not None:
             return Unresolved(NEVER_ENDS, NEVER_ENDS_DETAIL.format(option=never))"""
-after = """        never = runner.never_ends(args)
+after = """        never = node_never_ends(node_words) or runner.never_ends(args)
         if never is not None:
             return Refused(REFUSED_OPTION, never)"""
 reddens = [
@@ -2754,10 +2801,10 @@ file = "src/stayfixed/profiles/javascript/adapters.py"
 before = """        refused = runner.refused(args, cwd, root)
         if refused is not None:
             return Refused(REFUSED_OPTION, refused)
-        never = runner.never_ends(args)
+        never = node_never_ends(node_words) or runner.never_ends(args)
         if never is not None:
             return Unresolved(NEVER_ENDS, NEVER_ENDS_DETAIL.format(option=never))"""
-after = """        never = runner.never_ends(args)
+after = """        never = node_never_ends(node_words) or runner.never_ends(args)
         if never is not None:
             return Unresolved(NEVER_ENDS, NEVER_ENDS_DETAIL.format(option=never))
         refused = runner.refused(args, cwd, root)
@@ -2771,8 +2818,8 @@ reddens = [
 [[mutation]]
 name = "the jest and vitest adapters leave the configuration file the command names out"
 file = "src/stayfixed/profiles/javascript/adapters.py"
-before = "            configs=(*CONFIGS, *runner.configs(args, cwd)),"
-after = "            configs=CONFIGS,"
+before = "            configs=(*CONFIGS, *runner.configs(args, cwd), *node_preloaded(node_words, cwd)),"
+after = "            configs=(*CONFIGS, *node_preloaded(node_words, cwd)),"
 reddens = ["tests/prove/test_javascript.py::test_the_configuration_file_the_command_names_is_among_the_configs"]
 
 [[mutation]]

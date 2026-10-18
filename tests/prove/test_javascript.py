@@ -34,6 +34,7 @@ from stayfixed.profiles.javascript.adapters import (
     NODE_DISCOVERY,
     NODE_REPORT,
     NODE_TEST_FORGING,
+    NOT_THE_ENTRY,
     REFUSED_OPTION,
     VITEST_DISCOVERY,
     VITEST_REPORT,
@@ -163,6 +164,12 @@ def installed(project: Path) -> tuple[Path, Path, Path]:
         (["node", "--test"], NODE_TEST),
         (["node", "--import", "tsx", "--test", "src/"], NODE_TEST),
         (["/usr/local/bin/node", "--test-only", "--test"], NODE_TEST),
+        # Node's own flags go to `node` in front of the runner's entry.
+        (["node", "--experimental-vm-modules", "node_modules/jest/bin/jest.js"], JEST),
+        (["node", "./node_modules/.bin/jest", "-i"], JEST),
+        (["/usr/bin/node", "--import", "tsx", "../node_modules/jest-cli/bin/jest.js"], JEST),
+        (["node", "--max-old-space-size=4096", "node_modules/vitest/vitest.mjs", "run"], VITEST),
+        (["node", "node_modules/.bin/vitest"], VITEST),
     ],
 )
 def test_each_runner_s_commands_are_recognised(command: list[str], adapter: Adapter) -> None:
@@ -183,6 +190,15 @@ def test_each_runner_s_commands_are_recognised(command: list[str], adapter: Adap
         ["node_modules/.bin/jest"],
         ["node", "script.js", "--test"],
         ["node", "--import", "tsx", "app.js"],
+        # A script of the project's own, which may run anything, and a node that runs no script.
+        ["node", "scripts/jest.js"],
+        ["node", "-e", "x", "node_modules/jest/bin/jest.js"],
+        ["node", "--eval=x", "node_modules/jest/bin/jest.js"],
+        ["node", "-p", "1", "node_modules/vitest/vitest.mjs"],
+        ["node", "--run=test", "node_modules/jest/bin/jest.js"],
+        ["node", "--check", "node_modules/jest/bin/jest.js"],
+        ["node", "-", "node_modules/jest/bin/jest.js"],
+        ["node", "node_modules/jest"],
         ["node"],
         ["npx"],
         [],
@@ -250,6 +266,118 @@ def test_vitest_without_run_runs_once(tmp_path: Path) -> None:
     assert again.argv == (str(node), str(entry), "run", "a", *ours, "--reporter=default")
     named = plan_of(VITEST, ["vitest", "run", "--reporter", "dot"], project, path=path)
     assert named.argv == (str(node), str(entry), "run", "--reporter", "dot", *ours)
+
+
+def test_node_s_own_flags_go_in_front_of_the_runner_s_entry(tmp_path: Path) -> None:
+    # jest's documented ESM recipe passes `--experimental-vm-modules` to node; an inherited
+    # `NODE_OPTIONS` is scrubbed, so this is the way to give Node a flag. The entry named must be
+    # the one its package's `bin` names, which the run runs by its realpath; node's preload of a
+    # file is named among the configuration files. Mutation (declared): the node shape not read
+    # -> no plan.
+    project = tmp_path / "project"
+    jest_entry, vitest_entry, node = installed(project)
+    path = str(node.parent)
+    report = project / "scratch" / JEST_REPORT
+    got = plan_of(
+        JEST,
+        [
+            "node",
+            "--experimental-vm-modules",
+            "-r",
+            "./setup.cjs",
+            "node_modules/jest/bin/jest.js",
+            "-i",
+        ],
+        project,
+        path=path,
+    )
+    assert got.argv == (
+        str(node),
+        "--experimental-vm-modules",
+        "-r",
+        "./setup.cjs",
+        str(jest_entry),
+        "-i",
+        "--json",
+        f"--outputFile={report}",
+    )
+    assert (got.program, got.entry) == (Path(os.path.realpath(node)), jest_entry)
+    assert got.configs == (*CONFIGS, os.path.realpath(project / "setup.cjs"))
+    linked = project / "node_modules" / ".bin"
+    linked.mkdir()
+    (linked / "vitest").symlink_to("../vitest/vitest.mjs")
+    again = plan_of(VITEST, ["node", "node_modules/.bin/vitest"], project, path=path)
+    assert again.argv[:3] == (str(node), str(vitest_entry), "run")
+
+
+def test_a_node_named_by_its_path_runs_the_runner_s_entry(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    entry, _, _ = installed(project)
+    node = executable(tmp_path / "opt" / "node")
+    got = plan_of(JEST, [str(node), "node_modules/jest/bin/jest.js"], project)
+    assert got.argv[:2] == (str(node), str(entry))
+
+
+@pytest.mark.parametrize(
+    ("node_options", "named"),
+    [
+        (("--env-file=.env",), "--env-file"),
+        (("--env-file-if-exists", ".env"), "--env-file-if-exists"),
+        (("--config-file=node.config.json",), "--config-file"),
+        (("--experimental-default-config-file",), "--experimental-default-config-file"),
+        (("--test",), "--test"),
+        (("--test-reporter=dot",), "--test-reporter"),
+        (("--test_update_snapshots",), "--test-update-snapshots"),
+    ],
+)
+def test_node_s_options_that_load_a_file_or_run_its_test_runner_are_refused(
+    tmp_path: Path, node_options: tuple[str, ...], named: str
+) -> None:
+    # Before anything resolves. Mutation (declared): node's options not read -> each is planned.
+    command = ["node", *node_options, "node_modules/jest/bin/jest.js"]
+    assert planned(JEST, command, tmp_path) == Refused(REFUSED_OPTION, named)
+
+
+def test_node_s_test_runner_in_front_of_jest_s_entry_is_jest_s_to_refuse(tmp_path: Path) -> None:
+    # `node --test` recognises it too; the first adapter that recognises a command plans it.
+    got = prove(
+        ["node", "--test", "node_modules/jest/bin/jest.js"],
+        cwd=tmp_path,
+        environ={"PATH": ""},
+        timeout=60,
+    )
+    assert (got.verdict, got.reason, got.detail, got.runner) == (
+        REFUSED,
+        REFUSED_OPTION,
+        "--test",
+        "jest",
+    )
+
+
+def test_node_s_watch_mode_in_front_of_the_entry_never_ends(tmp_path: Path) -> None:
+    got = planned(VITEST, ["node", "--watch", "node_modules/vitest/vitest.mjs"], tmp_path)
+    assert got == Unresolved(NEVER_ENDS, NEVER_ENDS_DETAIL.format(option="--watch"))
+
+
+def test_the_runner_s_own_refusals_hold_behind_node(tmp_path: Path) -> None:
+    got = planned(JEST, ["node", "node_modules/jest/bin/jest.js", "--json"], tmp_path)
+    assert got == Refused(REFUSED_OPTION, "--json")
+
+
+@pytest.mark.parametrize(
+    "script",
+    ["node_modules/jest/other.js", "node_modules/jest/bin/missing.js", "node_modules/.bin/jest"],
+)
+def test_a_file_that_is_not_the_package_s_bin_does_not_resolve(tmp_path: Path, script: str) -> None:
+    # The file node is handed must be the entry its package's `bin` names, as the search's own
+    # check reads it: `.bin/jest` here is pnpm's shim, no link, and is never read.
+    project = tmp_path / "project"
+    _, _, node = installed(project)
+    executable(project / "node_modules" / "jest" / "other.js", "#!/usr/bin/env node\n")
+    executable(project / "node_modules" / ".bin" / "jest", "#!/bin/sh\nexec node x\n")
+    got = planned(JEST, ["node", script], project, path=str(node.parent))
+    assert got == Unresolved(ENTRY_NOT_FOUND, NOT_THE_ENTRY.format(package="jest"))
+    assert len(NOT_THE_ENTRY.format(package="jest-cli")) <= CLIPPED_CHARS
 
 
 def test_vitest_related_keeps_its_subcommand_and_runs_once(tmp_path: Path) -> None:
@@ -1116,6 +1244,25 @@ def test_a_genuine_passing_run_is_proved(tmp_path: Path, runner: str) -> None:
     assert (got.verdict, got.reason, got.counts, got.exit_code) == (PROVED, "", Counts(1, 0, 1), 0)
     assert got.runner == runner
     assert got.program == os.path.realpath(runner_directory("node") / "node")
+
+
+_ESM = (
+    'import { strict as assert } from "node:assert";\ntest("ok", () => { assert.equal(1, 1); });\n'
+)
+
+
+@needs_packages
+def test_jest_s_esm_recipe_is_proved_with_node_s_flag_in_front(tmp_path: Path) -> None:
+    # jest's documented recipe for ES modules is `NODE_OPTIONS=--experimental-vm-modules`: the
+    # assignment is refused and an inherited one removed, which fails the run, and the line says
+    # so; Node's flag in front of jest's entry proves it.
+    project = js_project(tmp_path / "p", "vitest", _ESM)
+    inherited = real(project, "npx", "jest", NODE_OPTIONS="--experimental-vm-modules")
+    assert (inherited.verdict, inherited.scrubbed) == (FAILED, ("NODE_OPTIONS",))
+    assert "removed from the run's environment: NODE_OPTIONS" in line(inherited)
+    got = real(project, "node", "--experimental-vm-modules", "node_modules/jest/bin/jest.js")
+    assert (got.verdict, got.reason, got.counts, got.exit_code) == (PROVED, "", Counts(1, 0, 0), 0)
+    assert got.entry == os.path.realpath(project / "node_modules" / "jest" / "bin" / "jest.js")
 
 
 @needs_packages

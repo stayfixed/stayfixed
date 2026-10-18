@@ -1,10 +1,13 @@
 """JavaScript's runner adapters: a jest, vitest or `node --test` run, proved from the report the
 runner writes to a file `prove` hands it.
 
-**What is recognised.** `jest` and `vitest`, bare or after `npx`, `npx --no-install` or `npx --no`;
-and `node` (or a path to one) with `--test` among its options. `npm test`, `npm run`, `yarn`, `pnpm`
-and every other package manager's script runner are recognised by none of them: what a script runs
-is the script's, never read here, and `prove --junit` counts its report.
+**What is recognised.** `jest` and `vitest`, bare or after `npx`, `npx --no-install` or `npx --no`,
+or as `node [node's options] <entry> …`, the entry a path into `node_modules/<package>` or
+`node_modules/.bin/<runner>` (`node_entry`), which must be, by its realpath, the file its
+package's `bin` names; and `node` (or a path to one) with `--test` among its options. `npm test`,
+`npm run`, `yarn`, `pnpm` and every other package manager's script runner are recognised by none
+of them: what a script runs is the script's, never read here, and `prove --junit` counts its
+report.
 
 **No `npx` is executed, and no package manager's shim is.** The entry point is found the way Node
 finds a package: `node_modules/<package>/package.json` in the directory the command runs in, then
@@ -87,7 +90,15 @@ and the lists stay closed.
 
 `FORGING`, assigned in the command (refused) or inherited (scrubbed): `NODE_OPTIONS`, which Node
 reads as options of every run, `--require` and the reporters among them; for `node --test` also
-`NODE_TEST_CONTEXT`, under which it runs no file and exits 0 (measured on 26.12.0, any value).
+`NODE_TEST_CONTEXT`, under which it runs no file and exits 0 (measured on 26.12.0, any value). The
+scrub can turn a legitimate run red (jest's ES modules recipe sets `NODE_OPTIONS`), so the receipt
+names it, and node's flags are given in front of the entry instead (`node --experimental-vm-modules
+node_modules/jest/bin/jest.js`). There they are free, but for the same closed list `node --test`
+refuses that loads a file the command names (`--env-file`, `--env-file-if-exists`, the
+configuration file options) and node's test runner's own (any `--test…`), `REFUSED_OPTION`; its
+watch modes, `NEVER_ENDS`; and a node that runs no script it is handed (`-e`, `-p`, `--check`,
+`--run`), which is recognised by none. The adversary is the agent typing the command, the anchor
+its words, as for every list here.
 
 What a file in the tree can do -- a configuration's reporters, `testResultsProcessor` or setup
 files, a test that writes the report, a `package.json` that points `bin` elsewhere -- is the
@@ -166,6 +177,11 @@ _UNRESOLVED = (
     "linked into one; `prove --junit` counts a report you name"
 )
 _NO_NODE = "no node on PATH"
+# Where `node` is handed a file that is not the entry its package's `bin` names.
+NOT_THE_ENTRY = (
+    "the file node is given is not the entry a {package} package's bin names; "
+    "`prove --junit` counts a report you name"
+)
 
 
 def _executable(path: Path) -> bool:
@@ -179,6 +195,13 @@ def _on_path(name: str, cwd: Path, path: str) -> Path | None:
     """The first `name` on `path` that can be executed, a relative entry read from `cwd`."""
     candidates = [cwd / directory / name for directory in path.split(os.pathsep)]
     return next((candidate for candidate in candidates if _executable(candidate)), None)
+
+
+def _node(word: str, cwd: Path, path: str) -> Path | None:
+    """The `node` the command names: a path, read from `cwd`, or the first on `path`."""
+    if os.sep in word:
+        return cwd / word if _executable(cwd / word) else None
+    return _on_path(word, cwd, path)
 
 
 def _manifest_bin(package: Path, name: str) -> Path | None:
@@ -219,7 +242,12 @@ def _linked(name: str, cwd: Path, path: str) -> Path | None:
     found = _on_path(name, cwd, path)
     if found is None or not fsops.is_symlink(found):
         return None
-    target = Path(os.path.realpath(found))
+    return package_entry(Path(os.path.realpath(found)), name)
+
+
+def package_entry(target: Path, name: str) -> Path | None:
+    """`target`, a realpath, where it is the entry its package's `bin` names for `name`, the
+    package being the nearest directory above it that holds a `package.json`; else `None`."""
     package = next((p for p in target.parents if fsops.is_file(p / _MANIFEST)), None)
     if package is None or _manifest_bin(package, name) != target:
         return None
@@ -665,8 +693,88 @@ def entry_point(
     return _linked(name, cwd, path)
 
 
+# node's options under which it runs no script it is given: code of the command's own (`-e`,
+# `-p`), a check of the script's syntax, a prompt, a `package.json` script (`--run`), or help.
+_NODE_RUNS_NO_SCRIPT = frozenset(
+    {
+        "-e",
+        "--eval",
+        "-p",
+        "-pe",
+        "--print",
+        "-c",
+        "--check",
+        "-i",
+        "--interactive",
+        "--run",
+        "-h",
+        "--help",
+        "-v",
+        "--version",
+        "--v8-options",
+        "--completion-bash",
+    }
+)
+_BIN_LINKS = ".bin"
+# node's options refused in front of a runner's entry: those that load a file the command names
+# (`_NODE_REFUSED`, a configuration file among them) and its test runner's, any `--test…`.
+_NODE_TEST_RUNNER = "--test"
+
+
+def node_entry(
+    command: Sequence[str], name: str, packages: Sequence[str]
+) -> tuple[tuple[str, ...], str, tuple[str, ...]] | None:
+    """`command` read as `node [node's options] <entry> [the runner's arguments]`, where the entry
+    is a path into `node_modules/<package>` (a package of `packages`) or `node_modules/.bin/<name>`:
+    node's options, the entry as given, and the runner's arguments; `None` for any other command,
+    and for a node that runs no script it is given (`-e`, `--run`, `--check`, …). Whether the path
+    is the entry the package's `bin` names is the plan's to check, from where the command runs."""
+    if not command or Path(command[0]).name != _NODE:
+        return None
+    words = tuple(command[1:])
+    index, valued = 0, False
+    while index < len(words):
+        word = words[index]
+        if valued:
+            valued = False
+        elif word == _SEPARATOR or word == "-" or not word.startswith("-"):
+            break
+        else:
+            valued = "=" not in word and _node_name(word) in _NODE_VALUED
+        index += 1
+    options = words[:index]
+    if index >= len(words) or words[index] in (_SEPARATOR, "-"):
+        return None
+    if any(_node_name(word) in _NODE_RUNS_NO_SCRIPT for word in options if word.startswith("-")):
+        return None
+    script = words[index]
+    parts = Path(script).parts
+    for at, part in enumerate(parts[:-1]):
+        if part != _MODULES:
+            continue
+        after = parts[at + 1 :]
+        if after[0] in packages and len(after) > 1:
+            return options, script, words[index + 1 :]
+        if after == (_BIN_LINKS, name):
+            return options, script, words[index + 1 :]
+    return None
+
+
+def _node_entry_refused(options: Sequence[str]) -> str | None:
+    """The first of node's options in front of a runner's entry that loads a file the command
+    names or runs node's test runner, by its name; `None` where none does."""
+    for word in options:
+        if not word.startswith("-"):
+            continue
+        name = _node_name(word)
+        if name.startswith(_NODE_TEST_RUNNER) or name in _NODE_REFUSED:
+            return name
+    return None
+
+
 class _PackageRunner:
-    """`RunnerAdapter` for a runner a package ships, run by `node` from its entry point."""
+    """`RunnerAdapter` for a runner a package ships, run by `node` from its entry point: found by
+    the search `entry_point` makes, or named after `node` and node's own options."""
 
     def __init__(self, runner: _Runner) -> None:
         self._runner = runner
@@ -680,7 +788,11 @@ class _PackageRunner:
         return FORGING
 
     def recognises(self, command: Sequence[str]) -> bool:
-        return runner_args(command, self._runner.name) is not None
+        runner = self._runner
+        return (
+            runner_args(command, runner.name) is not None
+            or node_entry(command, runner.name, runner.packages) is not None
+        )
 
     def plan(
         self,
@@ -694,29 +806,43 @@ class _PackageRunner:
     ) -> Plan | Refused | Unresolved:
         runner = self._runner
         args = runner_args(command, runner.name)
+        node_words: tuple[str, ...] = ()
+        script: str | None = None
         if args is None:
-            return Unresolved(ENTRY_NOT_FOUND)
+            named = node_entry(command, runner.name, runner.packages)
+            if named is None:
+                return Unresolved(ENTRY_NOT_FOUND)
+            node_words, script, args = named
+            refused_by_node = _node_entry_refused(node_words)
+            if refused_by_node is not None:
+                return Refused(REFUSED_OPTION, refused_by_node)
         refused = runner.refused(args, cwd, root)
         if refused is not None:
             return Refused(REFUSED_OPTION, refused)
-        never = runner.never_ends(args)
+        never = node_never_ends(node_words) or runner.never_ends(args)
         if never is not None:
             return Unresolved(NEVER_ENDS, NEVER_ENDS_DETAIL.format(option=never))
         unplanned = runner.unplanned(args)
         if unplanned is not None:
             return unplanned
         path = environ.get("PATH", os.defpath)
-        entry = entry_point(runner.name, runner.packages, cwd, root, path)
-        if entry is None:
-            detail = _UNRESOLVED.format(package=runner.packages[0], bin=runner.name)
-            return Unresolved(ENTRY_NOT_FOUND, detail)
-        node = _on_path(_NODE, cwd, path)
+        if script is None:
+            entry = entry_point(runner.name, runner.packages, cwd, root, path)
+            if entry is None:
+                detail = _UNRESOLVED.format(package=runner.packages[0], bin=runner.name)
+                return Unresolved(ENTRY_NOT_FOUND, detail)
+        else:
+            entry = package_entry(Path(os.path.realpath(cwd / script)), runner.name)
+            if entry is None:
+                detail = NOT_THE_ENTRY.format(package=runner.packages[0])
+                return Unresolved(ENTRY_NOT_FOUND, detail)
+        node = _node(command[0] if script is not None else _NODE, cwd, path)
         if node is None:
             return Unresolved(ENTRY_NOT_FOUND, _NO_NODE)
         report = scratch / runner.report_name
         words = runner.words(args)
         return Plan(
-            argv=(str(node), str(entry), *_with(words, runner.ours(words, report))),
+            argv=(str(node), *node_words, str(entry), *_with(words, runner.ours(words, report))),
             program=Path(os.path.realpath(node)),
             kind=ReportKind.RESULTS_JSON,
             source=ReportSource.FILE,
@@ -724,7 +850,7 @@ class _PackageRunner:
             set_env={},
             scrub=FORGING,
             discovery=runner.discovery,
-            configs=(*CONFIGS, *runner.configs(args, cwd)),
+            configs=(*CONFIGS, *runner.configs(args, cwd), *node_preloaded(node_words, cwd)),
             entry=entry,
         )
 
@@ -939,12 +1065,7 @@ class NodeTestAdapter:
         never = node_never_ends(command[1:])
         if never is not None:
             return Unresolved(NEVER_ENDS, NEVER_ENDS_DETAIL.format(option=never))
-        path = environ.get("PATH", os.defpath)
-        word = command[0]
-        if os.sep in word:
-            node: Path | None = cwd / word if _executable(cwd / word) else None
-        else:
-            node = _on_path(word, cwd, path)
+        node = _node(command[0], cwd, environ.get("PATH", os.defpath))
         if node is None:
             return Unresolved(ENTRY_NOT_FOUND, _NO_NODE)
         report = scratch / NODE_REPORT
