@@ -1125,21 +1125,22 @@ def test_every_reason_constant_is_documented() -> None:
     # named in the section as its code span, and so is the warning an unwritten record says.
     # Mutations (declared): a reason's text renamed -> the section no longer names it; the
     # warning's words changed -> the section quotes another.
-    from stayfixed.profiles.go import adapters as go
-    from stayfixed.profiles.javascript import adapters as javascript
-    from stayfixed.profiles.python import adapters as python
+    import sys
+
+    from stayfixed.prove.api import shipped_adapters
     from stayfixed.prove.evidence import NOT_RECORDED
     from stayfixed.prove.run import WORDS
 
-    reasons = {reason for reason in WORDS if reason}
-    for module in (python, javascript, go):
-        reasons |= {
-            getattr(module, name)
-            for name in ("REFUSED_OPTION", "ENTRY_NOT_FOUND", "NEVER_ENDS")
-            if hasattr(module, name)
-        }
+    core = {reason for reason in WORDS if reason}
+    adapters: set[str] = set()
+    for adapter in shipped_adapters():
+        adapters |= set(sys.modules[type(adapter).__module__].REASONS)
+    # The receipt's line words an adapter's reason by the verdict it stopped the run with, and the
+    # core's by `WORDS`: a reason of both would be worded as the core's.
+    assert core.isdisjoint(adapters), sorted(core & adapters)
+    reasons = core | adapters
     section = _prove_section()
-    assert len(reasons) == 22, sorted(reasons)
+    assert len(reasons) == 23, sorted(reasons)
     assert [reason for reason in sorted(reasons) if f"`{reason}`" not in section] == []
     warning = NOT_RECORDED.format(record="<record>", why="<why>")
     assert f"`{warning}`" in section, warning

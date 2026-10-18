@@ -24,6 +24,15 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Protocol
 
+# The reasons every adapter may name, published once here so that two adapters never spell one
+# differently: an option of its closed list that the command spells (`Refused`), and a runner's
+# entry point that does not resolve, or a run that never ends (`Unresolved`). An adapter's own
+# further reasons are its module's; each module lists every reason it names as `REASONS`, which
+# the documents hold apart from the core's.
+REFUSED_OPTION = "refused-option"
+ENTRY_NOT_FOUND = "entry-not-found"
+NEVER_ENDS = "never-ends"
+
 
 class ReportKind(StrEnum):
     """The report formats `prove` counts, each by the format's own name and never a runner's."""

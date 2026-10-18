@@ -23,11 +23,9 @@ from stayfixed.printed import CLIPPED_CHARS, clipped
 from stayfixed.profiles.javascript.adapters import (
     ADAPTERS,
     CONFIGS,
-    ENTRY_NOT_FOUND,
     FORGING,
     JEST_DISCOVERY,
     JEST_REPORT,
-    NEVER_ENDS,
     NEVER_ENDS_DETAIL,
     NO_TEST_RUN,
     NO_TEST_RUN_DETAIL,
@@ -38,7 +36,6 @@ from stayfixed.profiles.javascript.adapters import (
     PRELOAD_FILE_URL,
     PRELOAD_PACKAGE,
     PRELOAD_PATH,
-    REFUSED_OPTION,
     VITEST_DISCOVERY,
     VITEST_REPORT,
     JestAdapter,
@@ -47,7 +44,16 @@ from stayfixed.profiles.javascript.adapters import (
     preload_form,
     whole_file,
 )
-from stayfixed.profiles.runners import Plan, Refused, ReportKind, ReportSource, Unresolved
+from stayfixed.profiles.runners import (
+    ENTRY_NOT_FOUND,
+    NEVER_ENDS,
+    REFUSED_OPTION,
+    Plan,
+    Refused,
+    ReportKind,
+    ReportSource,
+    Unresolved,
+)
 from stayfixed.prove.counts import Counts
 from stayfixed.prove.junit import read_junit
 from stayfixed.prove.run import (

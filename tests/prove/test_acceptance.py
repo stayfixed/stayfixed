@@ -30,9 +30,7 @@ from pathlib import Path
 
 import pytest
 
-from stayfixed.profiles.go.adapters import REFUSED_OPTION as GO_REFUSED
-from stayfixed.profiles.javascript.adapters import REFUSED_OPTION as JS_REFUSED
-from stayfixed.profiles.python.adapters import REFUSED_OPTION as PYTEST_REFUSED
+from stayfixed.profiles.runners import REFUSED_OPTION
 from stayfixed.prove.counts import Counts
 from stayfixed.prove.run import (
     ALL_SKIPPED,
@@ -219,12 +217,12 @@ def test_an_empty_jest_run_whose_standard_error_is_a_pipe_is_not_proven(
 
 ROUTES = {
     # each adapter's closed list
-    "pytest --junitxml": (("pytest", "--junitxml=elsewhere.xml"), PYTEST_REFUSED, "--junitxml"),
-    "pytest -p no:junitxml": (("pytest", "-p", "no:junitxml"), PYTEST_REFUSED, "-p no:junitxml"),
-    "jest --json": (("npx", "jest", "--json"), JS_REFUSED, "--json"),
-    "vitest --outputFile": (("npx", "vitest", "run", "--outputFile=x.json"), JS_REFUSED, None),
-    "node --test-reporter": (("node", "--test", "--test-reporter=dot"), JS_REFUSED, None),
-    "go -exec": (("go", "test", "-exec=/bin/true", "./..."), GO_REFUSED, "-exec"),
+    "pytest --junitxml": (("pytest", "--junitxml=elsewhere.xml"), REFUSED_OPTION, "--junitxml"),
+    "pytest -p no:junitxml": (("pytest", "-p", "no:junitxml"), REFUSED_OPTION, "-p no:junitxml"),
+    "jest --json": (("npx", "jest", "--json"), REFUSED_OPTION, "--json"),
+    "vitest --outputFile": (("npx", "vitest", "run", "--outputFile=x.json"), REFUSED_OPTION, None),
+    "node --test-reporter": (("node", "--test", "--test-reporter=dot"), REFUSED_OPTION, None),
+    "go -exec": (("go", "test", "-exec=/bin/true", "./..."), REFUSED_OPTION, "-exec"),
     # an assigned variable in each adapter's forging set
     "PYTEST_ADDOPTS=": (("PYTEST_ADDOPTS=--co", "pytest"), ASSIGNED_FORGING, "PYTEST_ADDOPTS"),
     "NODE_OPTIONS= jest": (("NODE_OPTIONS=-r x", "npx", "jest"), ASSIGNED_FORGING, "NODE_OPTIONS"),

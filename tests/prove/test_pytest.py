@@ -23,16 +23,22 @@ from stayfixed.profiles.python.adapters import (
     ADAPTERS,
     CONFIGS,
     DISCOVERY,
-    ENTRY_NOT_FOUND,
     FORGING,
     MODULE_BOOTSTRAP,
     NAME,
-    REFUSED_OPTION,
     REPORT_NAME,
     SCRIPT_BOOTSTRAP,
     PytestAdapter,
 )
-from stayfixed.profiles.runners import Plan, Refused, ReportKind, ReportSource, Unresolved
+from stayfixed.profiles.runners import (
+    ENTRY_NOT_FOUND,
+    REFUSED_OPTION,
+    Plan,
+    Refused,
+    ReportKind,
+    ReportSource,
+    Unresolved,
+)
 from stayfixed.prove.counts import Counts
 from stayfixed.prove.run import (
     ALL_SKIPPED,

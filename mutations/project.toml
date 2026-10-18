@@ -3415,9 +3415,18 @@ reddens = ["tests/prove/test_javascript.py::test_an_npmrc_is_named_in_the_receip
 # Every reason a receipt can carry is named in docs/cli.md's prove section.
 [[mutation]]
 name = "a watch mode's reason is one the prove section does not name"
-file = "src/stayfixed/profiles/javascript/adapters.py"
+file = "src/stayfixed/profiles/runners.py"
 before = 'NEVER_ENDS = "never-ends"'
 after = 'NEVER_ENDS = "never-finishes"'
+reddens = ["tests/test_documents.py::test_every_reason_constant_is_documented"]
+
+# An adapter's reason is worded by the verdict it stopped the run with, the core's by `WORDS`: one
+# spelled as the core's would be worded as the core's.
+[[mutation]]
+name = "an adapter's reason spells one of the core's"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = 'NO_TEST_RUN = "no-test-run"'
+after = 'NO_TEST_RUN = "no-report"'
 reddens = ["tests/test_documents.py::test_every_reason_constant_is_documented"]
 
 # A preload's value is read in exactly three forms (`preload_form`), and anything else is refused:

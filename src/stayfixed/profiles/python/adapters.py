@@ -69,13 +69,20 @@ from pathlib import Path
 
 from stayfixed import fsops
 from stayfixed.profiles.python.hygiene import PytestCommand, pytest_command
-from stayfixed.profiles.runners import Plan, Refused, ReportKind, ReportSource, Unresolved
+from stayfixed.profiles.runners import (
+    ENTRY_NOT_FOUND,
+    REFUSED_OPTION,
+    Plan,
+    Refused,
+    ReportKind,
+    ReportSource,
+    Unresolved,
+)
 
 NAME = "pytest"
-# The reasons this adapter names: an option the closed list refuses, and a program that is not
-# where the command would find it.
-REFUSED_OPTION = "refused-option"
-ENTRY_NOT_FOUND = "entry-not-found"
+# The reasons this adapter names, both `stayfixed.profiles.runners`': an option the closed list
+# refuses, and a program that is not where the command would find it.
+REASONS = (REFUSED_OPTION, ENTRY_NOT_FOUND)
 FORGING = frozenset({"PYTEST_ADDOPTS", "PYTEST_PLUGINS", "PYTHONOPTIMIZE"})
 DISCOVERY = (
     "conftest.py",

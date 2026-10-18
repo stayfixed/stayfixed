@@ -56,12 +56,20 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from stayfixed import fsops
-from stayfixed.profiles.runners import Plan, Refused, ReportKind, ReportSource, Unresolved
+from stayfixed.profiles.runners import (
+    ENTRY_NOT_FOUND,
+    REFUSED_OPTION,
+    Plan,
+    Refused,
+    ReportKind,
+    ReportSource,
+    Unresolved,
+)
 
 NAME = "go-test"
-# The reasons this adapter names: a flag the closed list refuses, and no `go` to run.
-REFUSED_OPTION = "refused-option"
-ENTRY_NOT_FOUND = "entry-not-found"
+# The reasons this adapter names, both `stayfixed.profiles.runners`': a flag the closed list
+# refuses, and no `go` to run.
+REASONS = (REFUSED_OPTION, ENTRY_NOT_FOUND)
 SET_ENV: Mapping[str, str] = {"GOENV": "off", "GOFLAGS": "", "GOTOOLCHAIN": "local"}
 SCRUB = frozenset({"GOROOT", "GOOS", "GOARCH"})
 FORGING = frozenset({*SET_ENV, *SCRUB})

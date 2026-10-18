@@ -125,17 +125,21 @@ from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
 from stayfixed import fsops
-from stayfixed.profiles.runners import Plan, Refused, ReportKind, ReportSource, Unresolved
+from stayfixed.profiles.runners import (
+    ENTRY_NOT_FOUND,
+    NEVER_ENDS,
+    REFUSED_OPTION,
+    Plan,
+    Refused,
+    ReportKind,
+    ReportSource,
+    Unresolved,
+)
 
 JEST = "jest"
 VITEST = "vitest"
 NODE_TEST = "node-test"
-# The reasons these adapters name: an option a closed list refuses, and an entry point that does
-# not resolve from where the command runs.
-REFUSED_OPTION = "refused-option"
-ENTRY_NOT_FOUND = "entry-not-found"
-# The reason a watch mode is not proven, and its detail, which names the option.
-NEVER_ENDS = "never-ends"
+# The detail of a watch mode's reason, `NEVER_ENDS`, which names the option.
 # Short enough for the receipt's line to carry whole beside the longest option it names
 # (`printed.CLIPPED_CHARS`).
 NEVER_ENDS_DETAIL = (
@@ -144,6 +148,10 @@ NEVER_ENDS_DETAIL = (
 )
 # The reason a vitest subcommand that runs no test suite is not proven, and its detail.
 NO_TEST_RUN = "no-test-run"
+# The reasons these adapters name: `stayfixed.profiles.runners`' three (an option a closed list
+# refuses, an entry point that does not resolve from where the command runs, a watch mode), and
+# their own, a vitest subcommand that runs no test suite.
+REASONS = (REFUSED_OPTION, ENTRY_NOT_FOUND, NEVER_ENDS, NO_TEST_RUN)
 NO_TEST_RUN_DETAIL = (
     "vitest {subcommand} runs no test suite that reports; prove `vitest run` instead"
 )
