@@ -45,13 +45,12 @@ from stayfixed.prove.run import (
     NONE_RAN,
     NOT_RECOGNISED,
     NOT_STARTED,
-    REFUSED_LAUNCHER_OPTION,
-    RESOLVED_ELSEWHERE,
     TIMED_OUT,
     WORDS,
     Receipt,
     Verdict,
     assignments,
+    environment,
     line,
     prove,
 )
@@ -234,8 +233,8 @@ def test_an_assigned_variable_outside_the_forging_set_reaches_the_runner(
     assert got.verdict == PROVED
 
 
-def test_an_inherited_scrubbed_variable_is_removed_and_counted(tmp_path: Path) -> None:
-    adapter = StandIn(scrub=frozenset({"SCRUBBED"}))
+def test_an_inherited_forging_variable_is_removed_and_counted(tmp_path: Path) -> None:
+    adapter = StandIn(forging=frozenset({"SCRUBBED"}))
     environ = {**os.environ, "SCRUBBED": "1", "KEPT": "1"}
     got = run(
         tmp_path,
@@ -255,38 +254,51 @@ def test_an_inherited_scrubbed_variable_is_removed_and_counted(tmp_path: Path) -
     assert "; removed from the run's environment: SCRUBBED" in line(got)
 
 
-def test_a_scrubbed_variable_the_run_did_not_inherit_is_not_named(tmp_path: Path) -> None:
-    adapter = StandIn(scrub=frozenset({"SCRUBBED"}), set_env={"SET": "by-adapter"})
-    environ = {name: value for name, value in os.environ.items() if name not in ("SCRUBBED", "SET")}
-    got = run(tmp_path, NAME, adapter=adapter, environ={**environ, "SET": "by-adapter"})
+def test_a_forging_variable_the_run_did_not_inherit_is_not_named(tmp_path: Path) -> None:
+    adapter = StandIn(forging=frozenset({"SCRUBBED"}))
+    environ = {name: value for name, value in os.environ.items() if name != "SCRUBBED"}
+    got = run(tmp_path, NAME, adapter=adapter, environ=environ)
     assert (got.verdict, got.scrubbed) == (PROVED, ())
     assert "removed from the run's environment" not in line(got)
 
 
-def test_set_env_reaches_the_runner(tmp_path: Path) -> None:
-    # The adapter's own values are set last, over what the environment and the command hold.
-    adapter = StandIn(set_env={"SET": "by-adapter"})
-    environ = {**os.environ, "SET": "inherited"}
+def test_the_run_s_environment_is_the_caller_s_less_forging_then_the_assignments() -> None:
+    # As a shell builds it: an assignment wins over the inherited value, and the names lost are
+    # the inherited ones alone. Mutation (declared): the assignments put under the inherited
+    # values -> `KEPT` is `1`.
+    env, scrubbed = environment(
+        {"KEPT": "1", "FORGE": "x", "OTHER": "o"}, frozenset({"FORGE", "ABSENT"}), {"KEPT": "2"}
+    )
+    assert env == {"KEPT": "2", "OTHER": "o"}
+    assert scrubbed == ("FORGE",)
+
+
+def test_the_plan_is_made_in_the_run_s_own_environment(tmp_path: Path) -> None:
+    # An adapter finds its program on the `PATH` the command runs under, the command's own
+    # assignment of `PATH` included, as a shell would, and never sees a variable the run does not
+    # get. Mutations (declared): the plan handed stayfixed's own environment -> it sees another
+    # `PATH`; the forging set kept in it -> it sees `SCRUBBED`.
+    adapter = StandIn(forging=frozenset({"SCRUBBED"}))
+    environ = {**os.environ, "PATH": "/inherited", "SCRUBBED": "1"}
     got = run(
         tmp_path,
-        "SET=typed",
+        "PATH=/typed",
         NAME,
         "--expect-env",
-        "SET=by-adapter",
+        "PATH=/typed",
         adapter=adapter,
         environ=environ,
     )
     assert got.verdict == PROVED
-    # The inherited value did not reach the run, and the receipt says so.
-    assert got.scrubbed == ("SET",)
+    [seen] = adapter.environs
+    assert seen["PATH"] == "/typed"
+    assert "SCRUBBED" not in seen
 
 
-def test_a_program_resolved_elsewhere_is_refused(tmp_path: Path) -> None:
-    # Mutation (declared): the check before the launch dropped -> the swapped program runs, writes
-    # no report, and the run is `not proven` for that instead.
-    got = run(tmp_path, NAME, adapter=StandIn(swap=True))
-    assert (got.verdict, got.reason) == (REFUSED, RESOLVED_ELSEWHERE)
-    assert got.exit_code is None
+def test_an_assignment_wins_over_the_inherited_value(tmp_path: Path) -> None:
+    environ = {**os.environ, "TYPED": "inherited"}
+    got = run(tmp_path, "TYPED=typed", NAME, "--expect-env", "TYPED=typed", environ=environ)
+    assert got.verdict == PROVED
 
 
 def test_stdout_is_teed_and_only_the_events_count(
@@ -373,96 +385,34 @@ def test_the_adapter_is_handed_the_launcher_s_words_alone(
 
 
 @pytest.mark.parametrize(
-    ("argv", "option"),
+    "words",
     [
-        (["uv", "run", "--env-file", ".env", NAME], "--env-file"),
-        (["uv", "run", "--env-file=.env", NAME], "--env-file"),
-        (["uv", "--config-file", "c.toml", "run", NAME], "--config-file"),
-        (["uv", "--config-file=c.toml", "run", NAME], "--config-file"),
-        (["uv", "run", "--locked", "--config-file", "c.toml", NAME], "--config-file"),
-        (["A=1", "env", "uv", "run", "--env-file", ".env", NAME], "--env-file"),
-        # Read where the tables would read it as another option's value: uv itself reads no
-        # option's value that starts with `-` (measured: it exits 2), so the spelling alone is
-        # refused, and a table that has fallen behind uv cannot hide it.
-        (["uv", "run", "--with", "--env-file", NAME], "--env-file"),
-        # The options with which uv runs the command in another tree, or discovers another
-        # project, than the one `prove` takes the state of (measured on uv 0.11.32: `uv run
-        # --directory <d> pwd` prints `<d>`).
-        (["uv", "run", "--directory", "../other", NAME], "--directory"),
-        (["uv", "--directory=../other", "run", NAME], "--directory"),
-        (["uv", "run", "--project", "../other", NAME], "--project"),
-        (["uv", "--project=/elsewhere", "run", "--locked", NAME], "--project"),
+        ["--with", "x"],
+        ["--python", "3.13"],
+        ["--isolated"],
+        ["--no-project"],
+        ["--env-file", ".env"],
+        ["--no-env-file", "--locked"],
+        ["--project", "../other"],
     ],
+    ids=lambda words: "_".join(words),
 )
-def test_a_launcher_option_that_loads_a_file_is_refused(
-    tmp_path: Path, argv: list[str], option: str
-) -> None:
-    # The launcher would load an environment or a configuration the command names, past every
-    # channel stayfixed controls. Mutation (declared): the launcher's options never read -> the
-    # run goes ahead and is `proved`.
+def test_a_launcher_s_options_are_kept_as_typed(tmp_path: Path, words: list[str]) -> None:
+    # The launcher runs the command as it was typed, whatever its options load or where they
+    # point: what the command selects is what runs, and the receipt names the directory it was
+    # typed in.
     adapter = StandIn()
-    got = run(tmp_path, *argv, adapter=adapter)
-    assert got.verdict == REFUSED
-    assert got.reason == REFUSED_LAUNCHER_OPTION
-    assert got.detail == option
-    assert EXIT[got.verdict] == 2
-    assert adapter.seen == []
-    assert WORDS[REFUSED_LAUNCHER_OPTION] in line(got)
+    assert run(tmp_path, "uv", "run", *words, NAME, adapter=adapter).verdict == PROVED
+    assert adapter.launches == [("uv", "run", *words)]
 
 
-def test_a_launcher_option_that_loads_no_file_is_free(tmp_path: Path) -> None:
-    # `--no-env-file` turns the loading off.
-    assert run(tmp_path, "uv", "run", "--no-env-file", "--locked", NAME).verdict == PROVED
-
-
-@pytest.mark.parametrize(
-    ("command", "option"),
-    [
-        (["uv", "run", "--directory", "../other", "pytest", "-q"], "--directory"),
-        (["uv", "run", "--project=../other", "npx", "jest"], "--project"),
-        (["uv", "run", "--directory", "/elsewhere", "go", "test", "./..."], "--directory"),
-    ],
-    ids=["pytest", "jest", "go"],
-)
-def test_a_launcher_that_runs_elsewhere_is_refused_for_every_adapter(
-    tmp_path: Path, command: list[str], option: str
-) -> None:
-    # Through the adapters this stayfixed ships: the receipt's tree state, configuration files and
-    # record describe the directory `prove` was typed in, and the run would be another tree's.
-    # Mutation (declared): the launcher's directory options left free -> each is planned.
-    got = prove(command, cwd=tmp_path, environ={"PATH": ""}, timeout=60)
-    assert got.verdict == REFUSED
-    assert (got.reason, got.detail) == (REFUSED_LAUNCHER_OPTION, option)
-    assert got.runner is not None
-
-
-def test_a_launcher_s_other_options_stay_free(tmp_path: Path) -> None:
-    # They shape the environment the runner reads, which the bound concedes.
-    for words in (["--with", "x"], ["--python", "3.13"], ["--isolated"], ["--no-project"]):
-        assert run(tmp_path, "uv", "run", *words, NAME).verdict == PROVED
-
-
-@pytest.mark.parametrize(
-    "variable", ["UV_ENV_FILE", "UV_CONFIG_FILE", "UV_WORKING_DIR", "UV_PROJECT"]
-)
-def test_the_launcher_s_file_variables_are_forging_and_scrubbed_where_it_runs(
-    tmp_path: Path, variable: str
-) -> None:
-    # The variable spelling of each of the two options: assigned in a launch that runs the
-    # launcher, it is refused; inherited, it is removed. Where nothing launches, it is any
-    # variable.
-    # Mutations (declared): the launcher's variables left out of the forging set, and an
-    # inherited one kept -> each run is `proved` with the variable in place.
-    for argv in ([f"{variable}=x", "uv", "run", NAME], ["uv", "run", "env", f"{variable}=x", NAME]):
-        got = run(tmp_path, *argv)
-        assert (got.verdict, got.reason, got.detail) == (REFUSED, ASSIGNED_FORGING, variable)
-    environ = {**os.environ, variable: "inherited"}
-    got = run(tmp_path, "uv", "run", NAME, "--expect-unset", variable, environ=environ)
-    assert (got.verdict, got.scrubbed) == (PROVED, (variable,))
-    got = run(tmp_path, NAME, "--expect-env", f"{variable}=inherited", environ=environ)
-    assert got.verdict == PROVED
-    got = run(tmp_path, f"{variable}=x", NAME, "--expect-env", f"{variable}=x")
-    assert got.verdict == PROVED
+def test_a_launcher_s_variable_is_any_variable(tmp_path: Path) -> None:
+    # Assigned or inherited, `UV_ENV_FILE` reaches the run as any variable does.
+    got = run(tmp_path, "UV_ENV_FILE=x", "uv", "run", NAME, "--expect-env", "UV_ENV_FILE=x")
+    assert (got.verdict, got.scrubbed) == (PROVED, ())
+    environ = {**os.environ, "UV_ENV_FILE": "inherited"}
+    got = run(tmp_path, "uv", "run", NAME, "--expect-env", "UV_ENV_FILE=inherited", environ=environ)
+    assert (got.verdict, got.scrubbed) == (PROVED, ())
 
 
 def test_a_value_never_reaches_the_receipt(tmp_path: Path) -> None:

@@ -35,7 +35,6 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import subprocess
 import sys
 import time
@@ -69,21 +68,16 @@ _EVENTS = {
 @dataclass(frozen=True)
 class StandIn:
     """`RunnerAdapter` for the word `stand-in`. `seen` collects each `plan` call's `root` and
-    `scratch`, so a test can ask what the run handed it and whether the scratch is gone, and
-    `launches` each call's `launch`."""
+    `scratch`, so a test can ask what the run handed it and whether the scratch is gone,
+    `launches` each call's `launch`, and `environs` each call's `environ`."""
 
     name: str = NAME
     forging: frozenset[str] = frozenset({"FORGE"})
     source: ReportSource = ReportSource.FILE
-    set_env: Mapping[str, str] = field(default_factory=dict)
-    scrub: frozenset[str] = frozenset()
     discovery: tuple[str, ...] = ("test_*.py",)
     configs: tuple[str, ...] = ("stand-in.toml",)
     refuse: str | None = None
     unresolved: str | None = None
-    # Plans a link to the interpreter and repoints it before the plan is returned: a program
-    # swapped between the plan and the launch.
-    swap: bool = False
     # Plans a program that is a file and cannot be executed.
     unlaunchable: bool = False
     # Plans its program by a bare name, as no adapter may.
@@ -92,6 +86,7 @@ class StandIn:
     elsewhere: Path | None = None
     seen: list[tuple[Path, Path]] = field(default_factory=list)
     launches: list[tuple[str, ...]] = field(default_factory=list)
+    environs: list[dict[str, str]] = field(default_factory=list)
 
     def recognises(self, command: Sequence[str]) -> bool:
         return bool(command) and Path(command[0]).name == NAME
@@ -108,35 +103,25 @@ class StandIn:
     ) -> Plan | Refused | Unresolved:
         self.seen.append((root, scratch))
         self.launches.append(tuple(launch))
+        self.environs.append(dict(environ))
         if self.refuse is not None:
             return Refused(self.refuse)
         if self.unresolved is not None:
             return Unresolved(self.unresolved)
-        program = Path(os.path.realpath(sys.executable))
         first = sys.executable
         if self.unlaunchable:
             first = str(scratch / "runner")
             Path(first).write_text("not a program\n", encoding="utf-8")
-            program = Path(os.path.realpath(first))
         if self.relative:
             first = Path(sys.executable).name
-        if self.swap:
-            link = scratch / "runner"
-            link.symlink_to(sys.executable)
-            first = str(link)
-            link.unlink()
-            link.symlink_to(shutil.which("true") or "/bin/true")
         report = self.elsewhere / "report" if self.elsewhere is not None else scratch / "report"
         kind = ReportKind.EVENTS if self.source is ReportSource.STDOUT else ReportKind.JUNIT
         argv = (first, str(PROGRAM), "--report-path", str(report), "--source", self.source)
         return Plan(
             argv=(*argv, *command[1:]),
-            program=program,
             kind=kind,
             source=self.source,
             report=report,
-            set_env=self.set_env,
-            scrub=self.scrub,
             discovery=self.discovery,
             configs=self.configs,
         )

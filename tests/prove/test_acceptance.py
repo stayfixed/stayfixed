@@ -35,10 +35,8 @@ from stayfixed.prove.counts import Counts
 from stayfixed.prove.run import (
     ALL_SKIPPED,
     ASSIGNED_FORGING,
-    JUNIT_BESIDE_ADAPTER,
     NONE_RAN,
     NOT_RECOGNISED,
-    REFUSED_LAUNCHER_OPTION,
 )
 from tests.ownerhome import stayfixed_argv
 from tests.prove.real_runners import installed_packages, node_modules, required, where
@@ -217,14 +215,14 @@ def test_an_empty_jest_run_whose_standard_error_is_a_pipe_is_not_proven(
 
 ROUTES = {
     # each adapter's closed list
-    "pytest --junitxml": (("pytest", "--junitxml=elsewhere.xml"), REFUSED_OPTION, "--junitxml"),
-    "pytest -p no:junitxml": (("pytest", "-p", "no:junitxml"), REFUSED_OPTION, "-p no:junitxml"),
+    "pytest --setup-plan": (("pytest", "--setup-plan"), REFUSED_OPTION, "--setup-plan"),
+    "python -O": (("python", "-O", "-m", "pytest"), REFUSED_OPTION, "-O"),
     "jest --json": (("npx", "jest", "--json"), REFUSED_OPTION, "--json"),
     "vitest --outputFile": (("npx", "vitest", "run", "--outputFile=x.json"), REFUSED_OPTION, None),
     "node --test-reporter": (("node", "--test", "--test-reporter=dot"), REFUSED_OPTION, None),
     "go -exec": (("go", "test", "-exec=/bin/true", "./..."), REFUSED_OPTION, "-exec"),
     # an assigned variable in each adapter's forging set
-    "PYTEST_ADDOPTS=": (("PYTEST_ADDOPTS=--co", "pytest"), ASSIGNED_FORGING, "PYTEST_ADDOPTS"),
+    "PYTHONOPTIMIZE=": (("PYTHONOPTIMIZE=1", "pytest"), ASSIGNED_FORGING, "PYTHONOPTIMIZE"),
     "NODE_OPTIONS= jest": (("NODE_OPTIONS=-r x", "npx", "jest"), ASSIGNED_FORGING, "NODE_OPTIONS"),
     "NODE_OPTIONS= vitest": (
         ("env", "NODE_OPTIONS=-r x", "npx", "vitest", "run"),
@@ -237,18 +235,6 @@ ROUTES = {
         "NODE_TEST_CONTEXT",
     ),
     "GOFLAGS=": (("GOFLAGS=-toolexec=x", "go", "test", "./..."), ASSIGNED_FORGING, "GOFLAGS"),
-    # uv's options and variables that load a file, after the launcher or before it
-    "uv run --env-file": (
-        ("uv", "run", "--env-file", ".env", "pytest"),
-        REFUSED_LAUNCHER_OPTION,
-        "--env-file",
-    ),
-    "uv run --config-file=": (
-        ("uv", "run", "--config-file=uv.toml", "pytest"),
-        REFUSED_LAUNCHER_OPTION,
-        "--config-file",
-    ),
-    "UV_ENV_FILE=": (("UV_ENV_FILE=.env", "uv", "run", "pytest"), ASSIGNED_FORGING, "UV_ENV_FILE"),
 }
 
 
@@ -262,21 +248,9 @@ def test_each_refused_route_exits_2(tmp_path: Path, route: str) -> None:
         assert receipt["detail"] == detail, receipt
 
 
-def test_a_known_runner_under_junit_exits_2(tmp_path: Path) -> None:
-    # The same table's last route: `--junit` beside a runner an adapter knows, which would skip
-    # that adapter's refusals and forging set.
-    verdict, code, receipt = run_prove(tmp_path, tmp_path, "pytest", flags=("--junit", "r.xml"))
-    assert (verdict, code, receipt["reason"], receipt["verified"]) == (
-        "refused",
-        2,
-        JUNIT_BESIDE_ADAPTER,
-        False,
-    )
-
-
 INHERITED = {
     # Each would change what runs or where its report goes, had it reached the runner.
-    "pytest": ("PYTEST_ADDOPTS", "--collect-only"),
+    "pytest": ("PYTHONOPTIMIZE", "1"),
     "jest": ("NODE_OPTIONS", "--require /no/such/preload.js"),
     "vitest": ("NODE_OPTIONS", "--require /no/such/preload.js"),
     "node-test": ("NODE_TEST_CONTEXT", "child-v8"),
@@ -297,3 +271,5 @@ def test_each_inherited_variable_is_scrubbed_and_counted(tmp_path: Path, runner:
         argv, counts = tuple(COMMANDS[runner]), Counts(1, 0, 1)
     verdict, code, receipt = run_prove(tmp_path, cwd, *argv, variables={name: value})
     assert (verdict, code, counted(receipt)) == ("proved", 0, counts), receipt
+    scrubbed = receipt["scrubbed"]
+    assert isinstance(scrubbed, list) and name in scrubbed, receipt

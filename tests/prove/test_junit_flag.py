@@ -21,15 +21,12 @@ from stayfixed.printed import clipped
 from stayfixed.profiles.runners import RunnerAdapter
 from stayfixed.prove.counts import Counts
 from stayfixed.prove.run import (
-    ASSIGNED_FORGING,
     GREEN_BUT_EXITED,
     INTERRUPTED,
-    JUNIT_BESIDE_ADAPTER,
     JUNIT_UNCHANGED,
     NONE_RAN,
     NOT_RECOGNISED,
     NOT_STARTED,
-    REFUSED_LAUNCHER_OPTION,
     WORDS,
     Receipt,
     Verdict,
@@ -63,6 +60,16 @@ def writer(shape: str = "pass", *more: str, at: str = REPORT) -> list[str]:
         shape,
         *more,
     ]
+
+
+def program(path: Path, *before: str) -> Path:
+    """An executable at `path` that runs `before`, then the stand-in writing the JUnit report
+    `REPORT` it is told to."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lines = [*before, f'exec "{sys.executable}" "{PROGRAM}" --report-path {REPORT} --source file']
+    path.write_text("#!/bin/sh\n" + "\n".join(lines) + "\n", encoding="utf-8")
+    path.chmod(0o755)
+    return path
 
 
 def run(
@@ -126,28 +133,37 @@ def test_a_symlinked_report_is_not_proven(tmp_path: Path, made_by: str) -> None:
     assert (got.verdict, got.reason) == (NOT_PROVEN, JUNIT_UNCHANGED)
 
 
-def test_a_known_runner_beside_junit_is_refused(tmp_path: Path) -> None:
-    # A runner an adapter recognises always gets its adapter's checks. Mutation (declared): the
-    # refusal dropped -> the stand-in runs and its green report is `proved`.
+def test_with_junit_no_adapter_is_consulted(tmp_path: Path) -> None:
+    # A command an adapter recognises runs as typed and its `--junit` report is counted, its
+    # runner not verified. Mutation (declared): the adapters asked under `--junit` -> the
+    # stand-in's adapter plans the run.
     adapter = StandIn()
-    got = run(tmp_path, [NAME, "--report-path", REPORT, "--source", "file"], adapters=[adapter])
-    assert (got.verdict, got.reason, got.runner, got.verified) == (
-        REFUSED,
-        JUNIT_BESIDE_ADAPTER,
-        NAME,
+    stand_in = program(tmp_path / "bin" / NAME)
+    got = run(tmp_path, [f"PATH={stand_in.parent}", NAME], adapters=[adapter])
+    assert (got.verdict, got.counts, got.runner, got.verified) == (
+        PROVED,
+        Counts(2, 0, 0),
+        None,
         False,
     )
-    assert adapter.seen == []  # nothing was planned or run
-    assert not (tmp_path / REPORT).exists()
-    # And through the adapters this stayfixed ships.
-    shipped = prove(
-        ["pytest", "-q"], cwd=tmp_path, environ={"PATH": ""}, timeout=600, junit=Path(REPORT)
+    assert adapter.seen == []
+    assert got.program == os.path.realpath(stand_in)
+
+
+def test_the_program_is_found_on_the_path_the_command_assigns(tmp_path: Path) -> None:
+    # As a shell finds it: the command's own `PATH`, never the caller's alone, through the
+    # adapters this stayfixed ships, one of which recognises `pytest`. Mutations (declared): the
+    # command's assignments left out of the run's environment, or the program looked up in
+    # stayfixed's own -> it is not the `pytest` the command's `PATH` names.
+    pytest_ = program(tmp_path / "tools" / "pytest")
+    got = prove(
+        [f"PATH={pytest_.parent}", "pytest", "-q"],
+        cwd=tmp_path,
+        environ={"PATH": str(tmp_path / "empty")},
+        timeout=600,
+        junit=Path(REPORT),
     )
-    assert (shipped.verdict, shipped.reason, shipped.runner) == (
-        REFUSED,
-        JUNIT_BESIDE_ADAPTER,
-        "pytest",
-    )
+    assert (got.verdict, got.runner, got.program) == (PROVED, None, os.path.realpath(pytest_))
 
 
 def test_an_empty_junit_report_fails(tmp_path: Path) -> None:
@@ -219,20 +235,14 @@ def test_a_command_of_assignments_alone_is_not_recognised(tmp_path: Path) -> Non
     assert (got.verdict, got.reason, got.verified) == (NOT_PROVEN, NOT_RECOGNISED, False)
 
 
-@pytest.mark.parametrize(
-    ("argv", "reason"),
-    [
-        (["UV_ENV_FILE=e.env", "uv", "run", "mvn", "test"], ASSIGNED_FORGING),
-        (["uv", "run", "--env-file", "e.env", "mvn", "test"], REFUSED_LAUNCHER_OPTION),
-    ],
-)
-def test_the_launcher_s_file_options_are_refused_under_junit_too(
-    tmp_path: Path, argv: list[str], reason: str
-) -> None:
+def test_a_launcher_runs_as_typed_under_junit(tmp_path: Path) -> None:
+    # Its options and its variables are the command's: nothing of them is refused or removed.
+    uv = program(tmp_path / "tools" / "uv", 'printf "%s\\n" "$UV_ENV_FILE" "$@" > argv.txt')
+    argv = [f"PATH={uv.parent}", "UV_ENV_FILE=e.env", "uv", "run", "--env-file", "e.env", "mvn"]
     got = run(tmp_path, argv)
-    assert got.verdict == REFUSED
-    assert got.reason == reason
-    assert got.verified is False
+    assert (got.verdict, got.verified, got.scrubbed) == (PROVED, False, ())
+    written = (tmp_path / "argv.txt").read_text(encoding="utf-8")
+    assert written == "e.env\nrun\n--env-file\ne.env\nmvn\n"
 
 
 def test_the_command_takes_junit_and_says_the_runner_is_not_verified(

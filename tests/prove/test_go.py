@@ -16,7 +16,6 @@ from pathlib import Path
 
 import pytest
 
-from stayfixed import fsops
 from stayfixed.profiles.go.adapters import (
     ADAPTERS,
     CONFIGS,
@@ -24,8 +23,6 @@ from stayfixed.profiles.go.adapters import (
     FORGING,
     NAME,
     REPORT_NAME,
-    SCRUB,
-    SET_ENV,
     GoTestAdapter,
 )
 from stayfixed.profiles.runners import (
@@ -108,30 +105,18 @@ def test_the_adapters_this_stack_ships() -> None:
 # --- How a run is planned -------------------------------------------------------------------
 
 
-def test_the_plan_neutralises_the_go_environment(tmp_path: Path) -> None:
-    # The user's go env file, an inherited `GOFLAGS` and a `toolchain` line cannot change what
-    # runs; an inherited `GOROOT` goes, and the `go` that runs finds its own. Mutations
-    # (declared): `GOENV` scrubbed instead of set; `GOROOT` handed to the run -> this plan
-    # differs.
+def test_the_plan_runs_go_test_with_json(tmp_path: Path) -> None:
     go = executable(tmp_path / "bin" / "go")
     got = planned(["go", "test", "./..."], tmp_path, path=str(go.parent))
     assert got == Plan(
         argv=(str(go), "test", "-json", "./..."),
-        program=Path(os.path.realpath(go)),
         kind=ReportKind.EVENTS,
         source=ReportSource.STDOUT,
         report=tmp_path / "scratch" / "events.jsonl",
-        set_env={"GOENV": "off", "GOFLAGS": "", "GOTOOLCHAIN": "local"},
-        scrub=frozenset({"GOROOT", "GOOS", "GOARCH"}),
         discovery=("*_test.go",),
         configs=("go.mod", "go.work"),
     )
-    assert (got.set_env, got.scrub, got.discovery, got.configs) == (
-        SET_ENV,
-        SCRUB,
-        DISCOVERY,
-        CONFIGS,
-    )
+    assert (got.discovery, got.configs) == (DISCOVERY, CONFIGS)
     assert got.report.name == REPORT_NAME
 
 
@@ -170,23 +155,6 @@ def test_one_json_after_a_leading_C(
     assert argv_of(command, tmp_path) == args
 
 
-def test_a_path_entry_that_cannot_be_asked_about_is_passed_over(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    go = executable(tmp_path / "bin" / "go")
-    blind = tmp_path / "blind"
-    asked = fsops.is_file
-
-    def is_file(path: Path) -> bool:
-        if path.parent == blind:
-            raise PermissionError(13, "denied", str(path))
-        return asked(path)
-
-    monkeypatch.setattr(fsops, "is_file", is_file)
-    got = planned(["go", "test"], tmp_path, path=os.pathsep.join([str(blind), str(go.parent)]))
-    assert isinstance(got, Plan) and got.argv[0] == str(go)
-
-
 def test_no_go_on_path_does_not_resolve(tmp_path: Path) -> None:
     assert planned(["go", "test"], tmp_path) == Unresolved(ENTRY_NOT_FOUND, "no go on PATH")
 
@@ -208,14 +176,13 @@ def test_the_go_on_path_runs_wherever_it_lies(tmp_path: Path, where: str) -> Non
         environ={"PATH": str(directory)},
     )
     assert isinstance(got, Plan), got
-    assert (got.argv[0], got.program) == (str(go), Path(os.path.realpath(go)))
+    assert got.argv[0] == str(go)
 
 
 def test_a_launcher_is_kept_in_front_of_the_go_on_path(tmp_path: Path) -> None:
     # `uv run go test ./...`: the launcher runs, its words kept in front, as every adapter keeps
-    # them, so the core's refusal of its file options guards the run that happens. The program is
-    # the launcher's realpath; the `go` it is handed is the caller's `PATH`'s, by its path.
-    # Mutation (declared): the launcher dropped -> the plan runs `go` alone.
+    # them; the `go` it is handed is the run's `PATH`'s, by its path. Mutation (declared): the
+    # launcher dropped -> the plan runs `go` alone.
     tools = tmp_path / "tools"
     launcher = executable(tools / "uv")
     go = executable(tmp_path / "bin" / "go")
@@ -229,7 +196,6 @@ def test_a_launcher_is_kept_in_front_of_the_go_on_path(tmp_path: Path) -> None:
     )
     assert isinstance(got, Plan), got
     assert got.argv == (str(launcher), "run", "--locked", str(go), "test", "-json", "./...")
-    assert got.program == Path(os.path.realpath(launcher))
 
 
 def test_a_launcher_not_on_path_does_not_resolve(tmp_path: Path) -> None:
@@ -475,7 +441,7 @@ def test_a_recorded_stream_is_judged_through_prove(
     assert (got.verdict, got.reason, got.counts, got.runner) == (verdict, reason, counts, NAME)
 
 
-def test_the_run_s_environment_is_pinned_whatever_it_inherits(tmp_path: Path) -> None:
+def test_the_forging_variables_it_inherits_are_removed_from_the_run(tmp_path: Path) -> None:
     got = through_fake(
         tmp_path,
         "go-framing.jsonl",
@@ -493,8 +459,8 @@ def test_the_run_s_environment_is_pinned_whatever_it_inherits(tmp_path: Path) ->
         for line in (tmp_path / "seen" / "env").read_text(encoding="utf-8").splitlines()
         if "=" in line
     )
-    assert (env["GOENV"], env["GOFLAGS"], env["GOTOOLCHAIN"]) == ("off", "", "local")
-    assert not {"GOROOT", "GOOS", "GOARCH"} & set(env)
+    assert not FORGING & set(env)
+    assert got.scrubbed == tuple(sorted(FORGING))
     argv = (tmp_path / "seen" / "argv").read_text(encoding="utf-8").splitlines()
     assert argv == ["test", "-json", "./..."]
 

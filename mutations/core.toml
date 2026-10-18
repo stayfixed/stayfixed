@@ -5676,10 +5676,10 @@ reddens = [
 name = "prove reads an adapter's refusal as an entry point that did not resolve"
 file = "src/stayfixed/prove/run.py"
 before = """            return _receipt(
-                _Outcome(refused=planned.reason), shown, adapter.name, detail=planned.detail
+                _Outcome(refused=planned.reason), run.shown, adapter.name, detail=planned.detail
             )"""
 after = """            return _receipt(
-                _Outcome(unproven=planned.reason), shown, adapter.name, detail=planned.detail
+                _Outcome(unproven=planned.reason), run.shown, adapter.name, detail=planned.detail
             )"""
 reddens = [
   "tests/prove/test_run.py::test_an_adapter_s_own_answer_is_the_verdict[adapter0-refused-stand-in-moves-the-report]",
@@ -5689,10 +5689,10 @@ reddens = [
 name = "prove refuses an entry point that did not resolve"
 file = "src/stayfixed/prove/run.py"
 before = """            return _receipt(
-                _Outcome(unproven=planned.reason), shown, adapter.name, detail=planned.detail
+                _Outcome(unproven=planned.reason), run.shown, adapter.name, detail=planned.detail
             )"""
 after = """            return _receipt(
-                _Outcome(refused=planned.reason), shown, adapter.name, detail=planned.detail
+                _Outcome(refused=planned.reason), run.shown, adapter.name, detail=planned.detail
             )"""
 reddens = [
   "tests/prove/test_run.py::test_an_adapter_s_own_answer_is_the_verdict[adapter1-not proven-stand-in-not-found]",
@@ -5704,9 +5704,9 @@ reddens = [
 name = "prove leaves an unresolved entry point's detail off the receipt"
 file = "src/stayfixed/prove/run.py"
 before = """            return _receipt(
-                _Outcome(unproven=planned.reason), shown, adapter.name, detail=planned.detail
+                _Outcome(unproven=planned.reason), run.shown, adapter.name, detail=planned.detail
             )"""
-after = """            return _receipt(_Outcome(unproven=planned.reason), shown, adapter.name)"""
+after = "            return _receipt(_Outcome(unproven=planned.reason), run.shown, adapter.name)"
 reddens = [
   "tests/prove/test_javascript.py::test_an_unresolved_entry_s_detail_is_on_the_receipt",
 ]
@@ -5735,61 +5735,13 @@ reddens = [
 [[mutation]]
 name = "prove hands the adapter the launch whole"
 file = "src/stayfixed/prove/run.py"
-before = "            launch.launcher, command, cwd=cwd, root=root, scratch=scratch, environ=environ"
-after = "            given[: len(given) - len(command)], command, cwd=cwd, root=root, scratch=scratch, environ=environ"
+before = """            run.launch.launcher,
+            run.launch.command,"""
+after = """            (*run.launch.assignments, *run.launch.launcher),
+            run.launch.command,"""
 reddens = [
   "tests/prove/test_run.py::test_the_adapter_is_handed_the_launcher_s_words_alone[argv0-launch0]",
   "tests/prove/test_run.py::test_the_adapter_is_handed_the_launcher_s_words_alone[argv1-launch1]",
-]
-
-# A launcher option that loads an environment or configuration file is refused, and the
-# launcher's variables that do the same are forging where the launch runs it, and scrubbed.
-[[mutation]]
-name = "prove never reads the launcher's options"
-file = "src/stayfixed/prove/run.py"
-before = "    loading = file_option(launch.launcher)"
-after = "    loading = None"
-reddens = [
-  "tests/prove/test_run.py::test_a_launcher_option_that_loads_a_file_is_refused[argv0---env-file]",
-  "tests/prove/test_run.py::test_a_launcher_option_that_loads_a_file_is_refused[argv2---config-file]",
-]
-
-[[mutation]]
-name = "prove reads a launcher option given its value with `=` as another"
-file = "src/stayfixed/prove/run.py"
-before = """        (name for word in launcher if (name := word.partition("=")[0]) in _LAUNCHER_REFUSED),"""
-after = """        (name for word in launcher if (name := word) in _LAUNCHER_REFUSED),"""
-reddens = [
-  "tests/prove/test_run.py::test_a_launcher_option_that_loads_a_file_is_refused[argv1---env-file]",
-  "tests/prove/test_run.py::test_a_launcher_option_that_loads_a_file_is_refused[argv3---config-file]",
-]
-
-[[mutation]]
-name = "prove leaves the launcher's file variables out of the forging set"
-file = "src/stayfixed/prove/run.py"
-before = "    forged = sorted(name for name in assigned if name in forging | loaders)"
-after = "    forged = sorted(name for name in assigned if name in forging)"
-reddens = [
-  "tests/prove/test_run.py::test_the_launcher_s_file_variables_are_forging_and_scrubbed_where_it_runs[UV_ENV_FILE]",
-  "tests/prove/test_run.py::test_the_launcher_s_file_variables_are_forging_and_scrubbed_where_it_runs[UV_CONFIG_FILE]",
-]
-
-[[mutation]]
-name = "prove hands the runner an inherited launcher file variable"
-file = "src/stayfixed/prove/run.py"
-before = "    kept = {name: value for name, value in environ.items() if name not in loaders}"
-after = "    kept = dict(environ)"
-reddens = [
-  "tests/prove/test_run.py::test_the_launcher_s_file_variables_are_forging_and_scrubbed_where_it_runs[UV_ENV_FILE]",
-]
-
-[[mutation]]
-name = "prove treats the launcher's file variables as forging where nothing launches"
-file = "src/stayfixed/prove/run.py"
-before = "    loaders = _LAUNCHER_VARIABLES if launch.launcher else frozenset()"
-after = "    loaders = _LAUNCHER_VARIABLES"
-reddens = [
-  "tests/prove/test_run.py::test_the_launcher_s_file_variables_are_forging_and_scrubbed_where_it_runs[UV_ENV_FILE]",
 ]
 
 # An adapter that plans a program by a bare name is a defect in stayfixed, never a verdict.
@@ -5800,40 +5752,65 @@ before = "    if not os.path.isabs(plan.argv[0]):"
 after = "    if False:"
 reddens = ["tests/prove/test_run.py::test_a_plan_whose_program_is_not_absolute_is_a_defect_and_raises"]
 
-# The run's environment: the caller's less the adapter's scrub, plus the command's assignments,
-# plus the adapter's own settings, the last winning.
+# The run's environment: the caller's less the adapter's forging set, then the command's
+# assignments, the last of two for one name winning, as a shell builds it.
 [[mutation]]
-name = "prove hands the runner an inherited variable its adapter scrubs"
+name = "prove hands the runner an inherited variable of its adapter's forging set"
 file = "src/stayfixed/prove/run.py"
-before = "    env = {name: value for name, value in environ.items() if name not in plan.scrub}"
+before = "    env = {name: value for name, value in environ.items() if name not in forging}"
 after = "    env = dict(environ)"
-reddens = ["tests/prove/test_run.py::test_an_inherited_scrubbed_variable_is_removed_and_counted"]
+reddens = [
+  "tests/prove/test_run.py::test_an_inherited_forging_variable_is_removed_and_counted",
+  "tests/prove/test_run.py::test_the_run_s_environment_is_the_caller_s_less_forging_then_the_assignments",
+  "tests/prove/test_run.py::test_the_plan_is_made_in_the_run_s_own_environment",
+]
 
 [[mutation]]
 name = "prove leaves the command's assignments out of the run's environment"
 file = "src/stayfixed/prove/run.py"
 before = """    env |= assigned
-    env |= plan.set_env"""
-after = """    env |= plan.set_env"""
+    return env,"""
+after = "    return env,"
 reddens = [
   "tests/prove/test_run.py::test_an_assigned_variable_outside_the_forging_set_reaches_the_runner",
+  "tests/prove/test_run.py::test_the_plan_is_made_in_the_run_s_own_environment",
+  "tests/prove/test_junit_flag.py::test_the_program_is_found_on_the_path_the_command_assigns",
+  "tests/prove/test_pytest.py::test_the_pytest_on_the_path_the_command_assigns_is_the_one_that_runs[bare]",
+]
+
+# The adapter plans in the run's own environment, where it finds its program as a shell
+# would: never stayfixed's own.
+[[mutation]]
+name = "prove plans in stayfixed's own environment"
+file = "src/stayfixed/prove/run.py"
+before = "            environ=run.env,"
+after = "            environ=os.environ,"
+reddens = [
+  "tests/prove/test_run.py::test_the_plan_is_made_in_the_run_s_own_environment",
+  "tests/prove/test_pytest.py::test_the_pytest_on_the_path_the_command_assigns_is_the_one_that_runs[bare]",
 ]
 
 [[mutation]]
-name = "prove lets the command's assignment win over the adapter's setting"
+name = "prove --junit finds its program in stayfixed's own environment"
 file = "src/stayfixed/prove/run.py"
-before = """    env |= assigned
-    env |= plan.set_env"""
-after = """    env |= plan.set_env
-    env |= assigned"""
-reddens = ["tests/prove/test_run.py::test_set_env_reaches_the_runner"]
+before = "    argv = launched(launch.launcher, launch.command, cwd, environ)"
+after = "    argv = launched(launch.launcher, launch.command, cwd, os.environ)"
+reddens = [
+  "tests/prove/test_junit_flag.py::test_the_program_is_found_on_the_path_the_command_assigns",
+]
 
+# A shell puts the command's own assignments over what it inherits.
 [[mutation]]
-name = "prove launches a program swapped since the plan"
+name = "prove lets the inherited value win over the command's assignment"
 file = "src/stayfixed/prove/run.py"
-before = "    if Path(os.path.realpath(plan.argv[0])) != plan.program:"
-after = "    if False:"
-reddens = ["tests/prove/test_run.py::test_a_program_resolved_elsewhere_is_refused"]
+before = """    env = {name: value for name, value in environ.items() if name not in forging}
+    env |= assigned"""
+after = """    env = dict(assigned)
+    env |= {name: value for name, value in environ.items() if name not in forging}"""
+reddens = [
+  "tests/prove/test_run.py::test_the_run_s_environment_is_the_caller_s_less_forging_then_the_assignments",
+  "tests/prove/test_run.py::test_an_assignment_wins_over_the_inherited_value",
+]
 
 # The runner's standard input is `/dev/null`: what feeds `prove`'s, an agent or a pipe upstream,
 # never reaches the run, so it cannot drive the runner (pytest's `--pdb` takes debugger commands
@@ -5849,8 +5826,8 @@ reddens = ["tests/prove/test_run.py::test_the_runner_reads_nothing_piped_into_pr
 [[mutation]]
 name = "prove launches the command in the project's top-level"
 file = "src/stayfixed/prove/run.py"
-before = "    ran = _run(plan, cwd, env, timeout, echo)"
-after = "    ran = _run(plan, root, env, timeout, echo)"
+before = "    ran = _run(plan, run.cwd, run.env, run.timeout, run.echo)"
+after = "    ran = _run(plan, run.root, run.env, run.timeout, run.echo)"
 reddens = ["tests/prove/test_run.py::test_the_run_is_in_cwd_and_the_project_is_its_toplevel"]
 
 [[mutation]]
@@ -6293,9 +6270,9 @@ reddens = ["tests/prove/test_junit.py::test_a_refusal_quotes_nothing_the_documen
 name = "prove drops the adapter's refusal detail"
 file = "src/stayfixed/prove/run.py"
 before = """            return _receipt(
-                _Outcome(refused=planned.reason), shown, adapter.name, detail=planned.detail
+                _Outcome(refused=planned.reason), run.shown, adapter.name, detail=planned.detail
             )"""
-after = """            return _receipt(_Outcome(refused=planned.reason), shown, adapter.name)"""
+after = "            return _receipt(_Outcome(refused=planned.reason), run.shown, adapter.name)"
 reddens = ["tests/prove/test_pytest.py::test_a_refused_option_is_named_on_the_receipt"]
 
 # An absolute configuration entry names the one file a command chose, wherever it lies: read as a
@@ -6331,7 +6308,7 @@ reddens = ["tests/prove/test_run.py::test_a_configuration_file_named_by_its_path
 [[mutation]]
 name = "prove --junit counts a report the run never wrote"
 file = "src/stayfixed/prove/run.py"
-before = "    elif junit is not None and not _rewritten(found, plan.report):"
+before = "    elif run.junit is not None and not _rewritten(found, plan.report):"
 after = "    elif False:"
 reddens = [
   "tests/prove/test_junit_flag.py::test_a_report_older_than_the_run_is_not_proven",
@@ -6356,12 +6333,24 @@ reddens = ["tests/prove/test_junit_flag.py::test_a_report_rewritten_in_place_is_
 [[mutation]]
 name = "prove --junit marks its runner verified"
 file = "src/stayfixed/prove/run.py"
-before = "            removed=removed,\n            verified=verified,"
-after = "            removed=removed,\n            verified=True,"
+before = """        scrubbed=run.scrubbed,
+        verified=run.verified,"""
+after = """        scrubbed=run.scrubbed,
+        verified=True,"""
 reddens = [
   "tests/prove/test_junit_flag.py::test_a_report_the_run_wrote_is_counted_and_marked_unverified",
   "tests/prove/test_junit_flag.py::test_the_line_says_the_runner_is_not_verified",
   "tests/prove/test_evidence.py::test_a_junit_record_marks_its_runner_not_verified",
+]
+
+[[mutation]]
+name = "prove marks a run no adapter planned verified"
+file = "src/stayfixed/prove/run.py"
+before = "        return self.junit is None"
+after = "        return True"
+reddens = [
+  "tests/prove/test_junit_flag.py::test_a_program_that_is_not_there_is_not_started",
+  "tests/prove/test_junit_flag.py::test_a_report_the_run_wrote_is_counted_and_marked_unverified",
 ]
 
 # Every `--junit` receipt says so, a run that never started or was refused before a plan as well.
@@ -6370,13 +6359,7 @@ name = "prove --junit marks the runner of a receipt with no plan verified"
 file = "src/stayfixed/prove/run.py"
 before = "    verified = junit is None"
 after = "    verified = True"
-reddens = [
-  "tests/prove/test_junit_flag.py::test_a_program_that_is_not_there_is_not_started",
-  "tests/prove/test_junit_flag.py::test_a_known_runner_beside_junit_is_refused",
-  "tests/prove/test_junit_flag.py::test_a_command_of_assignments_alone_is_not_recognised",
-  "tests/prove/test_junit_flag.py::test_the_launcher_s_file_options_are_refused_under_junit_too[argv0-assigned-forging]",
-  "tests/prove/test_junit_flag.py::test_the_launcher_s_file_options_are_refused_under_junit_too[argv1-launcher-option]",
-]
+reddens = ["tests/prove/test_junit_flag.py::test_a_command_of_assignments_alone_is_not_recognised"]
 
 [[mutation]]
 name = "prove's line says nothing of a runner no adapter resolved"
@@ -6385,19 +6368,21 @@ before = '        parts.append(f"runner not verified{ran}")'
 after = "        pass"
 reddens = ["tests/prove/test_junit_flag.py::test_the_line_says_the_runner_is_not_verified"]
 
-# A runner an adapter knows always gets its adapter's refusals and forging set.
+# Under `--junit` no adapter is consulted: the command runs as typed.
 [[mutation]]
-name = "prove --junit counts a command an adapter recognises"
+name = "prove --junit asks the adapters about the command"
 file = "src/stayfixed/prove/run.py"
-before = "    if junit is not None and adapter is not None:"
-after = "    if False:"
-reddens = ["tests/prove/test_junit_flag.py::test_a_known_runner_beside_junit_is_refused"]
+before = """        if junit is None
+        else None"""
+after = """        if True
+        else None"""
+reddens = ["tests/prove/test_junit_flag.py::test_with_junit_no_adapter_is_consulted"]
 
 [[mutation]]
 name = "prove --junit reads its path from the project's top-level"
 file = "src/stayfixed/prove/run.py"
-before = "        unverified = _unverified(launch, cwd / junit, cwd, environ) if junit is not None else None"
-after = "        unverified = _unverified(launch, root / junit, cwd, environ) if junit is not None else None"
+before = "            _unverified(run.launch, run.cwd / junit, run.cwd, run.env)"
+after = "            _unverified(run.launch, run.root / junit, run.cwd, run.env)"
 reddens = ["tests/prove/test_junit_flag.py::test_the_path_is_read_from_the_directory_the_command_is_typed_in"]
 
 [[mutation]]
@@ -6596,24 +6581,11 @@ reddens = ["tests/test_documents.py::test_every_reason_constant_is_documented"]
 [[mutation]]
 name = "the receipt names no variable the run's environment lost"
 file = "src/stayfixed/prove/run.py"
-before = "    scrubbed = tuple(sorted(removed | (frozenset(environ) & plan.scrub) | overridden))"
-after = "    scrubbed: tuple[str, ...] = ()"
-reddens = ["tests/prove/test_run.py::test_an_inherited_scrubbed_variable_is_removed_and_counted"]
-
-[[mutation]]
-name = "the receipt names no inherited variable an adapter set to its own value"
-file = "src/stayfixed/prove/run.py"
-before = "    overridden = {name for name, value in plan.set_env.items() if environ.get(name, value) != value}"
-after = "    overridden: set[str] = set()"
-reddens = ["tests/prove/test_run.py::test_set_env_reaches_the_runner"]
-
-[[mutation]]
-name = "the receipt names no launcher file variable it removed"
-file = "src/stayfixed/prove/run.py"
-before = "    removed = frozenset(environ) & loaders"
-after = "    removed: frozenset[str] = frozenset()"
+before = "    return env, tuple(sorted(frozenset(environ) & forging))"
+after = "    return env, ()"
 reddens = [
-  "tests/prove/test_run.py::test_the_launcher_s_file_variables_are_forging_and_scrubbed_where_it_runs[UV_ENV_FILE]",
+  "tests/prove/test_run.py::test_an_inherited_forging_variable_is_removed_and_counted",
+  "tests/prove/test_run.py::test_the_run_s_environment_is_the_caller_s_less_forging_then_the_assignments",
 ]
 
 [[mutation]]
@@ -6621,28 +6593,7 @@ name = "the line leaves out the variables the run's environment lost"
 file = "src/stayfixed/prove/run.py"
 before = "    if receipt.scrubbed:"
 after = "    if False:"
-reddens = ["tests/prove/test_run.py::test_an_inherited_scrubbed_variable_is_removed_and_counted"]
-
-# `uv run --directory <d>` (or `--project`) runs the tests in another tree while the receipt's tree
-# state, configuration files and record describe the directory `prove` was typed in.
-[[mutation]]
-name = "the launcher's directory options are free"
-file = "src/stayfixed/prove/run.py"
-before = "_LAUNCHER_REFUSED = LAUNCHER_FILE_OPTIONS | LAUNCHER_DIRECTORY_OPTIONS"
-after = "_LAUNCHER_REFUSED = LAUNCHER_FILE_OPTIONS"
-reddens = [
-  "tests/prove/test_run.py::test_a_launcher_that_runs_elsewhere_is_refused_for_every_adapter[pytest]",
-  "tests/prove/test_run.py::test_a_launcher_that_runs_elsewhere_is_refused_for_every_adapter[go]",
-]
-
-[[mutation]]
-name = "the launcher's directory variables are free"
-file = "src/stayfixed/prove/run.py"
-before = "_LAUNCHER_VARIABLES = LAUNCHER_FILE_VARIABLES | LAUNCHER_DIRECTORY_VARIABLES"
-after = "_LAUNCHER_VARIABLES = LAUNCHER_FILE_VARIABLES"
-reddens = [
-  "tests/prove/test_run.py::test_the_launcher_s_file_variables_are_forging_and_scrubbed_where_it_runs[UV_WORKING_DIR]",
-]
+reddens = ["tests/prove/test_run.py::test_an_inherited_forging_variable_is_removed_and_counted"]
 
 # A report a file plan puts anywhere but its scratch directory could be one the repository
 # committed: a defect in the adapter, and `prove` raises.

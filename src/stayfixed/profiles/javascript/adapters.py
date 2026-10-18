@@ -17,11 +17,10 @@ package. Then the runner's name on `PATH`, where the first one found is a symbol
 package's `bin` names, as npm links a global install. A `.bin` file or a `PATH` entry that is not a
 link (pnpm's `sh` shim, Yarn Plug'n'Play's) is never read or run, and nothing is installed: no entry
 found is `ENTRY_NOT_FOUND`, whose detail names `prove --junit` as the way on. The run is `[<node>,
-<entry's realpath>, …]`, `<node>` the first `node` on `PATH`; `--test` runs that `node` too, or the
-one the command names by its path. Behind a launcher the core read past (`uv run …`), its words are
-kept in front, the program is the launcher's realpath, and the `node` it is handed is still the
-one found on the caller's `PATH`, by that path: the launcher's file options the core refuses then
-guard the run that happens.
+<entry's realpath>, …]`, `<node>` the first `node` on the run's `PATH`; `--test` runs that `node`
+too, or the one the command names by its path (`stayfixed.profiles.programs.found`). Behind a
+launcher the core read past (`uv run …`), its words are kept in front, the program is the
+launcher's realpath, and the `node` it is handed is the one found, by that path.
 
 **The report.** jest: `--json --outputFile=<report>`. vitest: `run` first where the command's
 first word is none of vitest's subcommands, so it runs once; `related` kept, with `--run` where the
@@ -127,6 +126,7 @@ from pathlib import Path
 from urllib.parse import SplitResult, unquote, urlsplit
 
 from stayfixed import fsops
+from stayfixed.profiles.programs import before_separator, found, launched
 from stayfixed.profiles.runners import (
     ENTRY_NOT_FOUND,
     NEVER_ENDS,
@@ -204,38 +204,15 @@ NOT_THE_ENTRY = (
 )
 
 
-def _executable(path: Path) -> bool:
-    try:
-        return fsops.is_file(path) and os.access(path, os.X_OK)
-    except OSError:
-        return False
-
-
-def _on_path(name: str, cwd: Path, path: str) -> Path | None:
-    """The first `name` on `path` that can be executed, a relative entry read from `cwd`."""
-    candidates = [cwd / directory / name for directory in path.split(os.pathsep)]
-    return next((candidate for candidate in candidates if _executable(candidate)), None)
-
-
 def _launched(
-    launch: Sequence[str], argv: tuple[str, ...], cwd: Path, path: str
-) -> tuple[Path, tuple[str, ...]] | Unresolved:
-    """The program and the argv that run `argv` behind `launch`, the launcher's words, kept in
-    front (as `uv run` and its options were typed), the program the launcher found as the run
-    would find it; `argv` itself where there is no launcher, its program its first word."""
-    if not launch:
-        return Path(argv[0]), argv
-    launcher = _node(launch[0], cwd, path)
-    if launcher is None:
+    launch: Sequence[str], argv: tuple[str, ...], cwd: Path, environ: Mapping[str, str]
+) -> tuple[str, ...] | Unresolved:
+    """The argv that runs `argv`, its program a `node` already found, behind `launch`, the
+    launcher's words kept in front (`stayfixed.profiles.programs.launched`)."""
+    planned = launched(launch, argv, cwd, environ)
+    if planned is None:
         return Unresolved(ENTRY_NOT_FOUND, _NO_LAUNCHER.format(launcher=Path(launch[0]).name))
-    return launcher, (str(launcher), *launch[1:], *argv)
-
-
-def _node(word: str, cwd: Path, path: str) -> Path | None:
-    """The `node` the command names: a path, read from `cwd`, or the first on `path`."""
-    if os.sep in word:
-        return cwd / word if _executable(cwd / word) else None
-    return _on_path(word, cwd, path)
+    return planned
 
 
 def _manifest_bin(package: Path, name: str) -> Path | None:
@@ -271,13 +248,13 @@ def _upward(cwd: Path, root: Path) -> list[Path]:
     return [here, *above] if top == here or top in here.parents else [here]
 
 
-def _linked(name: str, cwd: Path, path: str) -> Path | None:
-    """The entry the first `name` on `path` links to, where it is a link to a file a package's
-    `bin` names for `name`; a file that is not a link is never read."""
-    found = _on_path(name, cwd, path)
-    if found is None or not fsops.is_symlink(found):
+def _linked(name: str, cwd: Path, environ: Mapping[str, str]) -> Path | None:
+    """The entry the first `name` on `environ`'s `PATH` links to, where it is a link to a file a
+    package's `bin` names for `name`; a file that is not a link is never read."""
+    on_path = found(name, cwd, environ)
+    if on_path is None or not fsops.is_symlink(on_path):
         return None
-    return package_entry(Path(os.path.realpath(found)), name)
+    return package_entry(Path(os.path.realpath(on_path)), name)
 
 
 def package_entry(target: Path, name: str) -> Path | None:
@@ -317,12 +294,6 @@ def runner_args(command: Sequence[str], name: str) -> tuple[str, ...] | None:
     if words[:1] != [name]:
         return None
     return tuple(words[1:])
-
-
-def _with(args: Sequence[str], ours: Sequence[str]) -> tuple[str, ...]:
-    """`args` with `ours` added last, before a `--` where there is one."""
-    cut = list(args).index(_SEPARATOR) if _SEPARATOR in args else len(args)
-    return (*args[:cut], *ours, *args[cut:])
 
 
 def _options(args: Sequence[str]) -> list[str]:
@@ -716,17 +687,17 @@ _VITEST = _Runner(
 
 
 def entry_point(
-    name: str, packages: Sequence[str], cwd: Path, root: Path, path: str
+    name: str, packages: Sequence[str], cwd: Path, root: Path, environ: Mapping[str, str]
 ) -> Path | None:
     """The realpath of the runner `name`'s entry: a package of `packages` under `node_modules` from
     `cwd` up to `root`, nearest first and each directory's packages in order; else the first `name`
-    on `path`, where it links to a file a package's `bin` names."""
+    on `environ`'s `PATH`, where it links to a file a package's `bin` names."""
     for directory in _upward(cwd, root):
         for package in packages:
             entry = _manifest_bin(directory / _MODULES / package, name)
             if entry is not None:
                 return entry
-    return _linked(name, cwd, path)
+    return _linked(name, cwd, environ)
 
 
 _BIN_LINKS = ".bin"
@@ -936,9 +907,8 @@ class _PackageRunner:
         unplanned = runner.unplanned(args)
         if unplanned is not None:
             return unplanned
-        path = environ.get("PATH", os.defpath)
         if script is None:
-            entry = entry_point(runner.name, runner.packages, cwd, root, path)
+            entry = entry_point(runner.name, runner.packages, cwd, root, environ)
             if entry is None:
                 detail = UNRESOLVED.format(package=runner.packages[0], bin=runner.name)
                 return Unresolved(ENTRY_NOT_FOUND, detail)
@@ -947,28 +917,20 @@ class _PackageRunner:
             if entry is None:
                 detail = NOT_THE_ENTRY.format(package=runner.packages[0])
                 return Unresolved(ENTRY_NOT_FOUND, detail)
-        node = _node(command[0] if script is not None else _NODE, cwd, path)
+        node = found(command[0] if script is not None else _NODE, cwd, environ)
         if node is None:
             return Unresolved(ENTRY_NOT_FOUND, _NO_NODE)
         report = scratch / runner.report_name
         words = runner.words(args)
-        launched = _launched(
-            launch,
-            (str(node), *node_words, str(entry), *_with(words, runner.ours(words, report))),
-            cwd,
-            path,
-        )
-        if isinstance(launched, Unresolved):
-            return launched
-        program, argv = launched
+        planned = before_separator(words, runner.ours(words, report))
+        argv = _launched(launch, (str(node), *node_words, str(entry), *planned), cwd, environ)
+        if isinstance(argv, Unresolved):
+            return argv
         return Plan(
             argv=argv,
-            program=Path(os.path.realpath(program)),
             kind=ReportKind.RESULTS_JSON,
             source=ReportSource.FILE,
             report=report,
-            set_env={},
-            scrub=FORGING,
             discovery=runner.discovery,
             configs=(*CONFIGS, *runner.configs(args, cwd), *node_preloaded(node_words, cwd)),
             entry=entry,
@@ -1225,8 +1187,7 @@ class NodeTestAdapter:
         never = node_never_ends(command[1:])
         if never is not None:
             return Unresolved(NEVER_ENDS, NEVER_ENDS_DETAIL.format(option=never))
-        path = environ.get("PATH", os.defpath)
-        node = _node(command[0], cwd, path)
+        node = found(command[0], cwd, environ)
         if node is None:
             return Unresolved(ENTRY_NOT_FOUND, _NO_NODE)
         report = scratch / NODE_REPORT
@@ -1236,18 +1197,14 @@ class NodeTestAdapter:
             "--test-reporter=spec",
             "--test-reporter-destination=stdout",
         )
-        launched = _launched(launch, (str(node), *ours, *command[1:]), cwd, path)
-        if isinstance(launched, Unresolved):
-            return launched
-        program, argv = launched
+        argv = _launched(launch, (str(node), *ours, *command[1:]), cwd, environ)
+        if isinstance(argv, Unresolved):
+            return argv
         return Plan(
             argv=argv,
-            program=Path(os.path.realpath(program)),
             kind=ReportKind.JUNIT,
             source=ReportSource.FILE,
             report=report,
-            set_env={},
-            scrub=NODE_TEST_FORGING,
             discovery=NODE_DISCOVERY,
             configs=(*CONFIGS, *node_preloaded(command[1:], cwd)),
             drop=whole_file,

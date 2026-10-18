@@ -18,7 +18,6 @@ from pathlib import Path
 
 import pytest
 
-from stayfixed import fsops
 from stayfixed.printed import CLIPPED_CHARS, clipped
 from stayfixed.profiles.javascript.adapters import (
     ADAPTERS,
@@ -245,12 +244,9 @@ def test_npx_is_never_executed(tmp_path: Path) -> None:
     report = project / "scratch" / JEST_REPORT
     assert got == Plan(
         argv=(str(node), str(entry), "-i", "--json", f"--outputFile={report}"),
-        program=Path(os.path.realpath(node)),
         kind=ReportKind.RESULTS_JSON,
         source=ReportSource.FILE,
         report=report,
-        set_env={},
-        scrub=frozenset({"NODE_OPTIONS"}),
         discovery=("*.test.*", "*.spec.*", "__tests__/*"),
         configs=("package.json", ".npmrc", "jest.config.*", "vitest.config.*", "vite.config.*"),
         entry=entry,
@@ -315,7 +311,7 @@ def test_node_s_own_flags_go_in_front_of_the_runner_s_entry(tmp_path: Path) -> N
         "--json",
         f"--outputFile={report}",
     )
-    assert (got.program, got.entry) == (Path(os.path.realpath(node)), jest_entry)
+    assert (got.argv[0], got.entry) == (str(node), jest_entry)
     assert got.configs == (*CONFIGS, os.path.realpath(project / "setup.cjs"))
     linked = project / "node_modules" / ".bin"
     linked.mkdir()
@@ -521,9 +517,8 @@ def test_a_file_that_is_not_the_package_s_bin_does_not_resolve(tmp_path: Path, s
 
 
 def test_a_launcher_is_kept_in_front_of_the_node_on_path(tmp_path: Path) -> None:
-    # `uv run npx jest`: the launcher runs, its words kept in front, as every adapter keeps them,
-    # so the core's refusal of its file options guards the run that happens; `node` is the
-    # caller's `PATH`'s, by its path, and the program the launcher's realpath. Mutation
+    # `uv run npx jest`: the launcher runs, its words kept in front, as every adapter keeps them;
+    # `node` is the run's `PATH`'s, by its path, and the program the launcher. Mutation
     # (declared): the launcher dropped -> the plan runs `node` alone.
     project = tmp_path / "project"
     entry, _, node = installed(project)
@@ -540,11 +535,10 @@ def test_a_launcher_is_kept_in_front_of_the_node_on_path(tmp_path: Path) -> None
         "--json",
         f"--outputFile={report}",
     )
-    assert (got.program, got.entry) == (Path(os.path.realpath(launcher)), entry)
+    assert got.entry == entry
     tested = planned(NODE_TEST, ["node", "--test"], project, path=path, launch=("uv", "run"))
     assert isinstance(tested, Plan), tested
     assert tested.argv[:3] == (str(launcher), "run", str(node))
-    assert tested.program == Path(os.path.realpath(launcher))
     missing = planned(JEST, ["npx", "jest"], project, path=str(node.parent), launch=("uv", "run"))
     assert missing == Unresolved(ENTRY_NOT_FOUND, "no uv on PATH")
 
@@ -766,24 +760,6 @@ def test_an_unresolvable_entry_installs_nothing(tmp_path: Path) -> None:
     assert sorted(path.name for path in project.iterdir()) == [".pnp.cjs"]
 
 
-def test_a_path_entry_that_cannot_be_asked_about_is_passed_over(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    project = tmp_path / "project"
-    entry, _, node = installed(project)
-    blind = tmp_path / "blind"
-    asked = fsops.is_file
-
-    def is_file(path: Path) -> bool:
-        if path.parent == blind:
-            raise PermissionError(13, "denied", str(path))
-        return asked(path)
-
-    monkeypatch.setattr(fsops, "is_file", is_file)
-    path = os.pathsep.join([str(blind), str(node.parent)])
-    assert plan_of(JEST, ["jest"], project, path=path).argv[:2] == (str(node), str(entry))
-
-
 def test_a_command_the_adapter_does_not_recognise_has_no_plan(tmp_path: Path) -> None:
     for adapter in (JEST, VITEST):
         assert planned(adapter, ["npm", "test"], tmp_path) == Unresolved(ENTRY_NOT_FOUND)
@@ -855,12 +831,9 @@ def test_node_s_plan_puts_its_reporters_first(tmp_path: Path) -> None:
             "--test",
             "src/",
         ),
-        program=Path(os.path.realpath(node)),
         kind=ReportKind.JUNIT,
         source=ReportSource.FILE,
         report=report,
-        set_env={},
-        scrub=frozenset({"NODE_OPTIONS", "NODE_TEST_CONTEXT"}),
         discovery=("*.test.*", "*-test.*", "*_test.*", "test-*.*", "test.*", "test/*"),
         configs=CONFIGS,
         drop=whole_file,
@@ -871,10 +844,8 @@ def test_node_s_plan_puts_its_reporters_first(tmp_path: Path) -> None:
 def test_a_node_named_by_its_path_is_the_one_that_runs(tmp_path: Path) -> None:
     node = executable(tmp_path / "tools" / "node")
     got = plan_of(NODE_TEST, ["tools/node", "--test"], tmp_path, path="")
-    assert (got.argv[0], got.program) == (
-        str(tmp_path / "tools/node"),
-        Path(os.path.realpath(node)),
-    )
+    assert got.argv[0] == str(tmp_path / "tools/node")
+    assert os.path.realpath(got.argv[0]) == os.path.realpath(node)
     assert planned(NODE_TEST, ["tools/missing/node", "--test"], tmp_path) == Unresolved(
         ENTRY_NOT_FOUND, "no node on PATH"
     )

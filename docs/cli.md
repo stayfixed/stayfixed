@@ -816,29 +816,23 @@ outside a repository; a command typed in `packages/web` runs in `packages/web`. 
 configuration, needs no `stayfixed.toml`, and takes neither `--root` nor `--machine`. A line with
 no `--`, or nothing after it, is a usage error (2).
 
-The command is read past its `NAME=value` assignments, `env` and `uv run …`, as the session guard
-reads a command, and the first runner adapter that recognises what is left plans the run: the argv
-to execute, the realpath of its program, where the runner's report arrives and in which format, and
-which files in the tree can shape it. A command no adapter recognises, an `env` given an option
-among them, is `not proven`. Every `NAME=value` the command spells before what runs is one of its
-assignments, wherever it stands: before `uv run` or after it, bare or after `env`. An assignment of
-a variable in the adapter's forging set is refused, and so is an assignment of `UV_ENV_FILE` or
-`UV_CONFIG_FILE`, or of `UV_WORKING_DIR` or `UV_PROJECT` (the variable spellings of `--directory`
-and `--project`), where the command runs `uv` (`assigned-forging`, naming the variable); an
-inherited one of the four is removed from the run's environment where the command runs `uv`.
-An option with which `uv` loads a file the command names, `--env-file` or `--config-file`, or runs
-the command in another directory or project than the one `prove` takes the state of, `--directory`
-or `--project`, as `--name value` or `--name=value` and wherever it stands among `uv`'s words, is
-refused (`launcher-option`, naming the option): to prove another directory's tests, run `prove`
-from that directory. `--with`, `--python`, `--isolated` and `uv`'s other options are free. Every other assignment reaches the runner in its
-environment, in order, the last of two for one name winning, and never in its argv; the adapter is
-handed the launcher's own words (`uv run` and its options) and never an assignment or an `env`.
-Every adapter keeps those words in front of the run it plans, so the launcher runs, its file
-options refused as above, and the receipt's program is the launcher's realpath; a `node` or `go`
-the adapter finds itself is the one on your `PATH`, handed to the launcher by its path.
-The environment is the whole launched process's, the launcher's included: `uv run TYPED=yes
-pytest`, which `uv` itself would not run, runs with `TYPED` set, and an assigned `UV_*` variable
-other than the two above reaches `uv`. A
+The command is read past its `NAME=value` assignments, `env` and `uv run …` (`uv run -m` too), as
+the session guard reads a command, and the first runner adapter that recognises what is left plans
+the run: the argv to execute, where the runner's report arrives and in which format, and which
+files in the tree can shape it. A command no adapter recognises, an `env` given an option among
+them, is `not proven`. The run is the command as typed, the launcher's words (`uv run` and its
+options, whatever they are) kept in front, with only the adapter's report options added; the
+receipt names the realpath of the program that ran. Every `NAME=value` the command spells before
+what runs is one of its assignments, wherever it stands: before `uv run` or after it, bare or
+after `env`. An assignment of a variable in the adapter's forging set is refused
+(`assigned-forging`, naming the variable). The run's environment is built once, as a shell builds
+it: yours, less every inherited variable of the adapter's forging set, then the command's own
+assignments, in order, the last of two for one name winning, and never in its argv. The adapter
+finds its program in that environment: a word holding a `/` from the directory the command runs
+in, a bare name on its `PATH`, so `PATH=.venv/bin:$PATH pytest` runs the `pytest` it names. The
+environment is the whole launched process's, the launcher's included: `uv run TYPED=yes pytest`,
+which `uv` itself would not run, runs with `TYPED` set. A
+report the runner writes to a file is read from a scratch directory outside the project;A
 report the runner writes to a file is read from a scratch directory outside the project; a report
 that is the runner's own standard output (a test event stream) is copied to yours as it arrives,
 every byte, and only the format's own events are counted. Under `--json` the runner's standard
@@ -848,32 +842,25 @@ output holds the one JSON object; without `--json` it is yours. The runner's sta
 sees its end; its standard error is yours. Text a command prints is never counted.
 
 **The pytest adapter** recognises `pytest`, `py.test` and `python… -m pytest` (the interpreter's own
-options alone before `-m`), each also behind `poetry run` or `uv run`. It runs
-`<interpreter> [its options] -c <bootstrap> … --junitxml=<report> -o junit_family=xunit2`, never the
-console script: the interpreter is the one the script's first line names (or, under the
-installer's `#!/bin/sh` trampoline, its second line), else `python3`, else `python`, on `PATH`, by
-the path named; behind `uv run` or `poetry run` the launcher runs, kept in front, and chooses it.
-The run directory never shadows an installed module: the bootstrap takes the directory the command
-runs in off the front of the import path before anything is imported from it, so a `pytest.py` (or
-`runpy.py`) there is never what runs, and runs pytest as `-m pytest` would; for `python -m pytest`,
-which puts that directory first, it puts it back last, after the installed packages, so your
-tests still import your own packages from it. Every `PYTHON*` variable stays yours, and any Python
-3 runs it (`-P` would not: Python 3.10 and older do not know it). It refuses
-`--junitxml` and `--junit-xml`, `-p no:junitxml`, `-o` or `--override-ini` setting a `junit_*` key
-or `addopts`, `--setup-plan`, `--setup-only`, `--collect-only` and `--co`, pytest's aliases
-`--setupplan`, `--setuponly` and `--collectonly`, `--trace` (which, its standard input at its end as
-every run's is, reports a failing test as passed), and a word before `--` that starts with `@`,
-whose options pytest reads from the file it names (`refused-option`, naming the option or the word);
-every other option is free, `--pdb` among them, whose debugger reads the end of its standard input
+options alone before `-m`), each also behind `poetry run`, `uv run` or `uv run -m`. It runs the
+command as typed, `--junitxml=<report> -o junit_family=xunit2` added last among pytest's options,
+before a `--` where there is one: the console script, the interpreter the command names, or the
+launcher in front, each found as your shell would find it. Coming last, the two options win over
+the command's own `--junitxml` or `junit_family` and over an `addopts` that sets them (measured on
+pytest 9.1.1). It refuses `--setup-plan` and `--setup-only`, pytest's aliases `--setupplan` and
+`--setuponly`, and `--trace` (which, its standard input at its end as every run's is, reports a
+failing test as passed) (`refused-option`, naming the option); every other option is free. One
+that writes no report, `-p no:junitxml`, is `not proven`, and one that runs no test,
+`--collect-only`, is `failed`, by themselves; `--pdb`'s debugger reads the end of its standard input
 and quits, the failure kept in the report. It refuses the interpreter's own `-O` too, in any word
 of its flags before `-m pytest` (`-OO`, `-bO`; a `-W` or `-X` value is no flag), since it compiles
 out every `assert` pytest does not rewrite and a failing test then reports passed. Its forging set
-is `PYTEST_ADDOPTS`, `PYTEST_PLUGINS` and `PYTHONOPTIMIZE`, an inherited one removed from the run's
-environment; `PYTHONPATH` and every other variable are
-yours. Its configuration files are `pytest.ini`, `pyproject.toml`, `setup.cfg` and `tox.ini`, and
-the file `-c` or `--config-file` names, by its realpath, wherever it lies; its discovery set is
-`conftest.py`, `test_*.py` and `*_test.py` at any depth. A program the command names that is not
-where it would be found is `entry-not-found` (`not proven`).
+is `PYTHONOPTIMIZE`, the same switch, an inherited one removed from the run's environment;
+`PYTEST_ADDOPTS`, `PYTHONPATH` and every other variable are yours. Its configuration files are
+`pytest.ini`, `pyproject.toml`, `setup.cfg` and `tox.ini`, and the file `-c` or `--config-file`
+names, by its realpath, wherever it lies; its discovery set is `conftest.py`, `test_*.py` and
+`*_test.py` at any depth. A program the command names that is not where it would be found is
+`entry-not-found` (`not proven`).
 
 **The jest, vitest and `node --test` adapters** recognise `jest` and `vitest`, bare or after `npx`,
 `npx --no-install` or `npx --no`, or as `node [Node's options] <entry>`, the entry a path into
@@ -960,10 +947,8 @@ files are `package.json`, `.npmrc`, `jest.config.*`, `vitest.config.*` and `vite
 **The `go test` adapter** recognises `go test …` and runs the `go` on `PATH` as `go test -json …`,
 `-json` after a leading `-C dir` and a `-json` of the command's own kept once; the report is the
 run's standard output, copied to yours whole, and only its events are counted, so a line a test
-prints is an `output` event and never a result. Every run gets `GOENV=off`, `GOFLAGS=` and
-`GOTOOLCHAIN=local`, so your go env file, an inherited `GOFLAGS` and a `toolchain` line in `go.mod`
-or `go.work` cannot change what runs, and an inherited `GOROOT`, `GOOS` or `GOARCH` is removed from
-the run's environment, so the `go` that runs finds its own root and builds for this machine. It
+prints is an `output` event and never a result. An inherited variable of its forging set, below,
+is removed from the run's environment, and the `go` that runs reads its own default for it. It
 refuses (`refused-option`, naming the flag) `-exec`, `-toolexec`, `-overlay`, `-o`, `-c` unless it
 is `-c=false`, and a `-json=` of a false value, each read as the go command reads it: spaced or with
 `=`, with one dash or two, before the packages or after them, a word that is a flag's value never as
@@ -986,22 +971,19 @@ has a Go case of its own: a test, or a `TestMain`, that prints test2json's own f
 PASS: TestX`) gets a `pass` event for a test that never ran, and that is the code under test shaping
 its report.
 
-**`--junit PATH`** is for a runner no adapter knows: the command runs as typed (its assignments,
-`env` and `uv run …` read as above, the launcher's file options and variables refused as above), no
-adapter plans it, and its report is the JUnit file at `PATH`, read from the directory the command
-runs in and allowed anywhere, inside the project too. A command an adapter recognises is refused
-(`junit-beside-adapter`, naming the runner), so a known runner always gets its adapter's checks.
-Before the run `prove` notes what is at `PATH` (nothing, or its inode, size and modification time);
-after it, the file is counted only when it is a regular file, not a link, that the run created or
-rewrote, and otherwise the run is `not proven` (`junit-unchanged`, naming the path), so a stale or
-committed report counts nothing. A program the command names that is not there is `not-started`. The
-verdict is the cascade's. `verified` says only whether the run was a `--junit` one: every
-`--junit` receipt carries `verified: false`, one refused or not started too, and every other
-`verified: true`, a command no adapter recognises or one refused among them; the receipt of a
-command no adapter recognises carries `runner: null`. The line of a
-command no adapter recognises says `runner not verified, ran <program>`; that of a command an adapter
-recognises, refused beside `--junit`, names the runner it is and says `runner <name>, not
-verified`.
+**`--junit PATH`** is for a runner no adapter knows: no adapter is consulted, and the command runs
+as typed (its assignments, `env` and `uv run …` read as above, its program found as above, nothing
+refused or removed), and its report is the JUnit file at `PATH`, read from the directory the command
+runs in and allowed anywhere, inside the project too. Before the run `prove` notes what is at
+`PATH` (nothing, or its inode, size and modification time); after it, the file is counted only
+when it is a regular file, not a link, that the run created or rewrote, and otherwise the run is
+`not proven` (`junit-unchanged`, naming the path), so a stale or committed report counts nothing.
+A program the command names that is not there is `not-started`. The verdict is the cascade's.
+`verified` says only whether the run was a `--junit` one: every `--junit` receipt carries
+`verified: false`, one not started too, and every other `verified: true`, a command no adapter
+recognises or one refused among them; the receipt of a `--junit` run, and of a command no adapter
+recognises, carries `runner: null`. The line of a `--junit` run says `runner not verified, ran
+<program>`.
 
 **What `proved` means.** The code under test, any file in the runner's load path, tracked or not, and the environment the runner reads can shape its report, so `proved` means the runner reported green on this tree, for the tests this command selected.
 
@@ -1009,7 +991,7 @@ verified`.
 
 | Row | Verdict | Exit | Reason |
 |---|---|---|---|
-| the runner's adapter refuses the command, the command assigns a variable in the adapter's forging set or one `uv` loads a file or runs elsewhere from, it gives `uv` an option that loads a file or runs the command in another directory or project, the program changed between the plan and the launch, or `--junit` names the report of a command an adapter recognises | `refused` | 2 | the adapter's own (`refused-option`), `assigned-forging`, `launcher-option`, `resolved-elsewhere`, `junit-beside-adapter` |
+| the runner's adapter refuses the command, or the command assigns a variable in the adapter's forging set | `refused` | 2 | the adapter's own (`refused-option`), `assigned-forging` |
 | no adapter recognises the command, its entry point does not resolve, it asks for a run that never ends or one that runs no test suite, it could not start, it was interrupted or passed its time limit, it wrote no report, the run did not write the `--junit` report, or the report does not read | `not proven` | 1 | `not-recognised`, the adapter's own (`entry-not-found`, `never-ends`, `no-test-run`), `not-started`, `interrupted`, `timed-out`, `no-report`, `junit-unchanged`, a report's own |
 | the report holds a failed test | `failed` | 1 | `failing` |
 | the report holds no test | `failed` | 1 | `none-ran` |
@@ -1032,10 +1014,9 @@ directory is removed, and the run's evidence record is still written.
 
 **The line** says the verdict and its reason in words, the counts (passed, failed, skipped), the
 runner and the realpath of the program that ran (and of the entry it runs, where it is `node`
-running jest's or vitest's), each variable of your environment the run did not get as it was
-(`removed from the run's environment: NODE_OPTIONS`: an adapter's scrubbed variable, a `uv` file
-variable, or one the adapter sets to its own value, as `go test`'s `GOFLAGS`), and the files that
-can shape the report: the
+running jest's or vitest's), each variable of your environment the run did not get
+(`removed from the run's environment: NODE_OPTIONS`: one of the adapter's forging set), and the
+files that can shape the report: the
 runner's configuration files that exist and that git tracks or does not ignore, with a count of the
 ignored ones (`and N ignored`), then any file the command itself named as its configuration, from
 the top-level where it lies there and whole where it does not (outside a repository too, where git
@@ -1043,8 +1024,7 @@ names nothing else), and the untracked files in its
 discovery set, those git does not ignore first and then the ignored ones; twenty of each and a count
 of the rest. The tree's state is taken before the run and after it, and is information for you,
 never an input to the verdict. `--json` carries `verdict`, `reason`, `detail` (the variable a
-refused assignment named, the launcher option refused, the option or word the runner's adapter
-refused, the `--junit` path on `junit-unchanged`, or where a report stopped reading), `argv` (the
+refused assignment named, the option or word the runner's adapter refused, the `--junit` path on `junit-unchanged`, or where a report stopped reading), `argv` (the
 command, every `NAME=value` and `--option=value` value replaced by `…`; a value passed as the word
 after its option is kept), `runner`, `program`, `entry`, `verified` (false on a `--junit` run, and
 only there), `scrubbed` (those variables'

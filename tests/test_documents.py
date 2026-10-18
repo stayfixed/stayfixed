@@ -1157,7 +1157,7 @@ def test_every_reason_constant_is_documented() -> None:
     assert core.isdisjoint(adapters), sorted(core & adapters)
     reasons = core | adapters
     section = _prove_section()
-    assert len(reasons) == 23, sorted(reasons)
+    assert len(reasons) == 20, sorted(reasons)
     assert [reason for reason in sorted(reasons) if f"`{reason}`" not in section] == []
     warning = NOT_RECORDED.format(record="<record>", why="<why>")
     assert f"`{warning}`" in section, warning

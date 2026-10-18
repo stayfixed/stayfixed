@@ -5,11 +5,12 @@ nothing from either, so neither reaches the other through it and no package cycl
 also the public contract an adapter stayfixed does not ship implements: `RunnerAdapter`, and the
 three answers its `plan` gives.
 
-An adapter refuses only what the command itself spells to move, replace or suppress the report,
-from a short closed list of its own; it neutralises the channels stayfixed controls (the
-environment it hands the runner, the entry point it runs) rather than removing them; and it names
-every file in the tree that can shape the report, for the receipt to name. Everything else a file
-in the tree can do is the bound's, which `docs/cli.md` states.
+An adapter plans the command as it was typed: the launcher's words kept in front, the runner's
+own words as they are, and only its report options added, so that what runs is what the command
+selects. It refuses only what a person or an agent could type by mistake and get a green report
+for tests that never ran or never checked anything, from a short closed list of its own; and it
+names every file in the tree that can shape the report, for the receipt to name. Everything else
+a file in the tree, or the environment, can do is the bound's, which `docs/cli.md` states.
 
 No entry in `mutations/` covers this module: it declares names and records and decides nothing.
 Which reader a kind is read with is `stayfixed.prove.reports.read_report`'s, and what the core
@@ -57,32 +58,27 @@ class ReportSource(StrEnum):
 class Plan:
     """How to run a recognised command so that its report can be counted.
 
-    `argv` is what is executed, its first item absolute, and `program` the realpath the adapter
-    resolved for it, which the core checks again just before the launch. `kind`, `source` and
-    `report` say what the report is and where it arrives; `report` lies in the scratch directory
-    the core handed the plan. `argv` holds no assignment and no `env`: the core takes every
-    `NAME=value` the command spells, before its launcher or after it, out of the launch it hands
-    `plan`, and the run's environment is the caller's less every inherited variable in `scrub`,
-    plus those assignments in order, plus `set_env`, the last winning. `argv[0]` not absolute is a
-    defect in the adapter, and the core raises. `discovery`
-    is the globs of the files the runner collects tests from, and `configs` of the files that
-    configure it, both matched from the right (`stayfixed.prove.tree`); an absolute entry of
-    `configs` is no glob but names that one file, wherever it lies, one the command chose. `drop`
-    is the JUnit reader's (`stayfixed.prove.junit.read_junit`), for a testcase a runner writes
-    that is no test. Whether a runner is verified is no plan's to say: the core marks every
-    `--junit` run's receipt, and only those, not verified. `entry` is the realpath of the file the
-    program runs as the runner, where the program is an interpreter running one (`node` and a
-    package's entry), for the receipt to name beside the program; `None` where the program is the
-    runner itself.
+    `argv` is what is executed, its first item absolute: the program, which the receipt names by
+    its realpath. `kind`, `source` and `report` say what the report is and where it arrives;
+    `report` lies in the scratch directory the core handed the plan. `argv` holds no assignment
+    and no `env`: the core takes every `NAME=value` the command spells, before its launcher or
+    after it, out of the launch it hands `plan`, and puts it in the run's environment, the one
+    `plan` is handed too. `argv[0]` not absolute is a defect in the adapter, and the core raises.
+    `discovery` is the globs of the files the runner collects tests from, and `configs` of the
+    files that configure it, both matched from the right (`stayfixed.prove.tree`); an absolute
+    entry of `configs` is no glob but names that one file, wherever it lies, one the command
+    chose. `drop` is the JUnit reader's (`stayfixed.prove.junit.read_junit`), for a testcase a
+    runner writes that is no test. Whether a runner is verified is no plan's to say: the core
+    marks every `--junit` run's receipt, and only those, not verified. `entry` is the realpath of
+    the file the program runs as the runner, where the program is an interpreter running one
+    (`node` and a package's entry), for the receipt to name beside the program; `None` where the
+    program is the runner itself.
     """
 
     argv: tuple[str, ...]
-    program: Path
     kind: ReportKind
     source: ReportSource
     report: Path
-    set_env: Mapping[str, str]
-    scrub: frozenset[str]
     discovery: tuple[str, ...]
     configs: tuple[str, ...]
     drop: Callable[[Mapping[str, str]], bool] | None = None
@@ -91,9 +87,10 @@ class Plan:
 
 @dataclass(frozen=True)
 class Refused:
-    """The command spells something that moves, replaces or suppresses the report. `reason` is a
-    constant of the adapter's module, and `detail` names what the command spelled, the option,
-    for the receipt."""
+    """The command spells something on the adapter's closed list: an option under which the
+    runner reports tests that never ran, or checked nothing, as passed. `reason` is a constant of
+    the adapter's module, and `detail` names what the command spelled, the option, for the
+    receipt."""
 
     reason: str
     detail: str = ""
@@ -122,9 +119,9 @@ class RunnerAdapter(Protocol):
 
     @property
     def forging(self) -> frozenset[str]:
-        """The variables whose assignment in the command itself is refused: each one the runner
-        reads to move, replace or suppress its report, or to run the tests under another
-        program."""
+        """The variables under which the runner reports tests that checked nothing as passed:
+        assigned in the command itself, the command is refused; inherited, each is removed from
+        the run's environment, and the receipt names it."""
         ...
 
     def recognises(self, command: Sequence[str]) -> bool:
@@ -147,11 +144,10 @@ class RunnerAdapter(Protocol):
         reads: it runs nothing.
 
         `launch` is the launcher's words alone (`uv run` and its options, and whatever launcher
-        the core reads through): the core has taken every assignment and every `env` out of it,
-        and they reach the run in its environment. A launcher option that loads a file, and an
-        assignment of a variable in `forging` or of a launcher's own file variable, were refused
-        before `plan` is asked. Every adapter keeps the launcher's words in front of its plan,
-        the program then the launcher's realpath, so those refusals guard the run that happens;
-        a program the adapter finds itself (`node`, `go`) is found on the caller's `PATH` and
-        handed to the launcher by its path."""
+        the core reads through): the core has taken every assignment and every `env` out of it.
+        Every adapter keeps the launcher's words in front of its plan, as they were typed, so the
+        program is then the launcher. `environ` is the run's own environment, the one the command
+        runs under: the caller's less the inherited variables of `forging`, then the command's
+        own assignments, the last of two for one name winning; a program is found on its `PATH`
+        (`stayfixed.profiles.programs.found`), as the shell running the command would find it."""
         ...

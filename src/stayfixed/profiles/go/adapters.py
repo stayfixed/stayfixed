@@ -1,5 +1,4 @@
-"""Go's runner adapter: a `go test` run, proved from the test event stream `go test -json` prints,
-with the Go environment pinned.
+"""Go's runner adapter: a `go test` run, proved from the test event stream `go test -json` prints.
 
 **What is recognised.** `go test …`, the `go` the command names found on `PATH`. The run is
 `<go> test -json <args>`: `-json` after a leading `-C dir`, which the `go` command reads only
@@ -7,12 +6,8 @@ first, and a `-json` of the command's own kept once. The report is the run's sta
 which `prove` copies to the caller whole and counts only the events of: a line a test prints is
 an `output` event, never a result.
 
-**The environment.** `GOENV=off`, `GOFLAGS=` and `GOTOOLCHAIN=local` are set on every run, so the
-user's go env file (`go env -w`), an inherited `GOFLAGS` and a `toolchain` line in `go.mod` or
-`go.work` cannot change what runs: measured on Go 1.27.2, a `GOFLAGS=-toolexec=<script>` in the
-file `GOENV` names runs the script, and under `GOENV=off` it does not; a `go.mod` asking a newer
-`go` under `GOTOOLCHAIN=local` stops before any event, which is `failed` or `not proven`, never
-`proved`.
+**The environment.** Every variable of `FORGING` the run inherits is removed from its
+environment, and the receipt names it; the go command then reads its own defaults for them.
 
 **Every control here, with its adversary and its anchor.** The adversary is the agent typing the
 command; the anchor of each refusal is the command's own words.
@@ -28,21 +23,21 @@ command; the anchor of each refusal is the command's own words.
   know, taking none), and nothing past a bare `-args`, `--args` or `--`, which is the test
   binary's. The list is closed, drawn by running every flag `go test` and `go build` register over
   a failing test with `-json` added, and every other flag is free.
-- `FORGING`, assigned in the command (refused): `GOFLAGS`, `GOENV` and `GOTOOLCHAIN`, the three
-  `SET_ENV` sets; `GOROOT`, which names the standard library and the tools the run builds with,
+- `FORGING`, assigned in the command (refused) or inherited (removed): `GOFLAGS`, `GOENV` and
+  `GOTOOLCHAIN`, through which the user's go env file (`go env -w`) and an inherited `GOFLAGS`
+  reach the run (measured on Go 1.27.2, a `GOFLAGS=-toolexec=<script>` in the file `GOENV` names
+  runs the script); `GOROOT`, which names the standard library and the tools the run builds with,
   `testing` among them; and `GOOS` and `GOARCH`, under which a target the host cannot run has the
   go command run the test binary under the `go_$GOOS_$GOARCH_exec` it finds on `PATH` (measured:
   `GOOS=js GOARCH=wasm` and a `go_js_wasm_exec` that prints a pass exit 0, the failing test never
-  run). An inherited one of these three (`GOROOT`, `GOOS`, `GOARCH`) is scrubbed, so the `go`
-  that runs finds its own root and builds for the host; the three `SET_ENV` sets are set over
-  whatever was inherited.
+  run).
 - `CC`, `CXX`, the `CGO_*` variables, `-ldflags` and `-gcflags` (`-extld` among their values) and
   `-compiler` are free: they shape how the code under test is built, and a built test binary can
   already print test2json's framing, which is the bound's Go case below.
-- The `go` is the one on `PATH`, and the receipt carries its realpath. Behind a launcher the core
-  read past (`uv run …`), its words are kept in front and the program is the launcher's realpath;
-  the `go` it is handed is still the caller's `PATH`'s, by its path, so the launcher's file
-  options the core refuses guard the run that happens.
+- The `go` is the one on the run's `PATH` (`stayfixed.profiles.programs.found`), and the receipt
+  carries its realpath. Behind a launcher the core read past (`uv run …`), its words are kept in
+  front and the program is the launcher's realpath; the `go` it is handed is the one found, by
+  its path.
 
 What a file in the tree can do -- a test that prints test2json's own framing (`\\x16--- PASS:`),
 which test2json reads as a result, a `TestMain` that exits 0 before any test, a `go.mod` that
@@ -56,7 +51,7 @@ import os
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
-from stayfixed import fsops
+from stayfixed.profiles.programs import found, launched
 from stayfixed.profiles.runners import (
     ENTRY_NOT_FOUND,
     REFUSED_OPTION,
@@ -71,9 +66,7 @@ NAME = "go-test"
 # The reasons this adapter names, both `stayfixed.profiles.runners`': a flag the closed list
 # refuses, and no `go` to run.
 REASONS = (REFUSED_OPTION, ENTRY_NOT_FOUND)
-SET_ENV: Mapping[str, str] = {"GOENV": "off", "GOFLAGS": "", "GOTOOLCHAIN": "local"}
-SCRUB = frozenset({"GOROOT", "GOOS", "GOARCH"})
-FORGING = frozenset({*SET_ENV, *SCRUB})
+FORGING = frozenset({"GOENV", "GOFLAGS", "GOTOOLCHAIN", "GOROOT", "GOOS", "GOARCH"})
 DISCOVERY = ("*_test.go",)
 CONFIGS = ("go.mod", "go.work")
 REPORT_NAME = "events.jsonl"
@@ -243,19 +236,6 @@ def _modfiles(args: Sequence[str], cwd: Path) -> tuple[str, ...]:
     )
 
 
-def _executable(path: Path) -> bool:
-    try:
-        return fsops.is_file(path) and os.access(path, os.X_OK)
-    except OSError:
-        return False
-
-
-def _on_path(name: str, cwd: Path, path: str) -> Path | None:
-    """The first `name` on `path` that can be executed, a relative entry read from `cwd`."""
-    candidates = [cwd / directory / name for directory in path.split(os.pathsep)]
-    return next((candidate for candidate in candidates if _executable(candidate)), None)
-
-
 class GoTestAdapter:
     """`RunnerAdapter` for `go test`."""
 
@@ -284,26 +264,18 @@ class GoTestAdapter:
         refused = refused_option(args)
         if refused is not None:
             return Refused(REFUSED_OPTION, refused)
-        path = environ.get("PATH", os.defpath)
-        go = _on_path(_GO, cwd, path)
+        go = found(_GO, cwd, environ)
         if go is None:
             return Unresolved(ENTRY_NOT_FOUND, _NO_GO)
-        argv: tuple[str, ...] = (str(go), _TEST, *_planned_args(args))
-        program = go
-        if launch:
-            launcher = cwd / launch[0] if os.sep in launch[0] else _on_path(launch[0], cwd, path)
-            if launcher is None or not _executable(launcher):
-                named = Path(launch[0]).name
-                return Unresolved(ENTRY_NOT_FOUND, _NO_LAUNCHER.format(launcher=named))
-            program, argv = launcher, (str(launcher), *launch[1:], *argv)
+        argv = launched(launch, (str(go), _TEST, *_planned_args(args)), cwd, environ)
+        if argv is None:
+            named = Path(launch[0]).name
+            return Unresolved(ENTRY_NOT_FOUND, _NO_LAUNCHER.format(launcher=named))
         return Plan(
             argv=argv,
-            program=Path(os.path.realpath(program)),
             kind=ReportKind.EVENTS,
             source=ReportSource.STDOUT,
             report=scratch / REPORT_NAME,
-            set_env=SET_ENV,
-            scrub=SCRUB,
             discovery=DISCOVERY,
             configs=(*CONFIGS, *_modfiles(args, cwd)),
         )

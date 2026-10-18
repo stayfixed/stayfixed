@@ -6,44 +6,31 @@ command is typed in, or that directory itself outside a repository; the command 
 directory, never in the top-level. `guards.api.read_launch` reads the command past its
 assignments, `env` and `uv run …` (the launch), and the first runner adapter that recognises what
 is left plans the run. Every `NAME=value` the launch holds, wherever it stands, is an assignment
-of the command: one of a variable in the adapter's `forging` set, or in the launcher's own
-file-loading set where the launch runs a launcher, is `refused`, and so is a launcher option that
-loads a file, both before anything is planned; every other assignment goes into the run's
-environment. The adapter is handed the launcher's words alone, never an assignment or an `env`.
-The plan names the argv to execute, the realpath of its
-program, where the report arrives and in which format, what the run's environment gains and loses,
-and the globs of the files that shape the report. The tree's state is taken, the program is checked
-to be the file the adapter resolved, and the command runs in a session of its own; then the report
-is counted, the tree's state is taken again, and `CASCADE` says what the run proved. The plan's
-scratch directory, made outside the project and readable by its owner alone, is removed on every
-path.
+of the command: one of a variable in the adapter's `forging` set is `refused` before anything is
+planned. The run's environment is built once: the caller's, less every inherited variable of the
+adapter's `forging` set, then the command's own assignments in order, the last of two for one name
+winning, as a shell builds it. The adapter plans in that environment, finding its program on its
+`PATH` (`stayfixed.profiles.programs`), and the command runs in it. The adapter is handed the
+launcher's words alone, never an assignment or an `env`, and keeps them in front of the command as
+typed. The plan names the argv to execute, where the report arrives and in which format, and the
+globs of the files that shape the report. The tree's state is taken and the command runs in a
+session of its own; then the report is counted, the tree's state is taken again, and `CASCADE`
+says what the run proved. The plan's scratch directory, made outside the project and readable by
+its owner alone, is removed on every path.
 
 The bound, `BOUND`, which `docs/cli.md` states word for word: what a file in the tree, and the
 environment, can do to the report is conceded, never checked. So the tree's state is information
 for a reader of the receipt and never an input to the verdict: everything it reads, the agent that
 typed the command can write.
 
-**Every control here, with its adversary and its anchor.**
+**Every control here, with what it catches and its anchor.** Each guards against a mistake that
+reads as a green run, never against an agent forging the report, which the bound concedes.
 
-- `ASSIGNED_FORGING`: an agent steering the report with a variable it assigns in the command
-  itself, before a launcher or after it, bare or after `env`. The anchor is the command's own
-  words, which stayfixed reads before anything runs; the control is a closed list the adapter
-  names, and the launcher's variables that load a file (`guards.api.LAUNCHER_FILE_VARIABLES`)
-  where the launch runs a launcher, and refuses nothing outside them. A variable the run inherits
-  is the adapter's to scrub or set, and an inherited launcher variable that loads a file is
-  scrubbed, which changes the run and refuses nothing.
-- `REFUSED_LAUNCHER_OPTION`: the same agent having the launcher load an environment or a
-  configuration file it names (`guards.api.LAUNCHER_FILE_OPTIONS`), past every channel stayfixed
-  controls, or run the command in another directory or project
-  (`guards.api.LAUNCHER_DIRECTORY_OPTIONS`), so that the tree whose state the receipt and the
-  record carry is not the tree that ran: the way on is to run `prove` from that directory. The
-  anchor is again the command's own words; the option's spelling is refused wherever it stands
-  among the launcher's words, which the launcher itself never reads as a value, so it refuses no
-  command the launcher would run. `--with`, `--python` and `--isolated` stay free: they shape the
-  environment the runner reads, which the bound concedes.
-- `RESOLVED_ELSEWHERE`: a program swapped between the plan and the launch, the anchor being the
-  filesystem, which the agent can write. A run whose program did not move passes, so it refuses no
-  legitimate user; it is a convenience that names the swap, not a guarantee against one.
+- `ASSIGNED_FORGING`: a variable under which the runner reports tests that checked nothing as
+  passed, assigned in the command itself, before a launcher or after it, bare or after `env`. The
+  anchor is the command's own words, which stayfixed reads before anything runs; the control is a
+  closed list the adapter names (`forging`), and refuses nothing outside it. The same variable
+  inherited is removed from the run's environment, which the receipt names (`scrubbed`).
 - The report is read where the adapter put it, in the scratch directory, and where it is the
   runner's standard output, off the pipe: a file the repository committed, or text a test printed
   outside the format's own framing, is never counted. The anchor, the scratch directory and the
@@ -57,15 +44,13 @@ typed the command can write.
   which no one else writes: the run's standard input is `/dev/null`. It refuses no one; a test that
   reads standard input sees its end.
 - `PROVE_TIMEOUT_SECONDS`: a suite that hangs. A named cap with its flag, `not proven` past it.
-- `--junit PATH` (`prove(junit=…)`), for a runner no adapter knows: the command runs as typed, no
-  adapter is asked to plan it, and the report is the file at `PATH`, read from the directory the
-  command runs in. `JUNIT_BESIDE_ADAPTER`: an agent routing a runner an adapter knows around that
-  adapter's refusals and forging set; the anchor is the command's own words, and the refusal costs
-  that runner nothing, since `prove` without `--junit` counts it. `JUNIT_UNCHANGED`: a stale or
-  committed report the run never wrote, or a link to one; the anchor is the file's state as the
-  run found it before it started (absent, or its inode, size and modification time), which the
-  agent can write too, so it is a convenience and never a guarantee. The receipt marks the runner
-  not verified, and the verdict is the cascade's as for any other run.
+- `--junit PATH` (`prove(junit=…)`), for a runner no adapter knows: no adapter is consulted, the
+  command runs as typed, and the report is the file at `PATH`, read from the directory the command
+  runs in. `JUNIT_UNCHANGED`: a stale or committed report the run never wrote, or a link to one;
+  the anchor is the file's state as the run found it before it started (absent, or its inode, size
+  and modification time), which the agent can write too, so it is a convenience and never a
+  guarantee. The receipt marks the runner not verified, and the verdict is the cascade's as for
+  any other run.
 """
 
 from __future__ import annotations
@@ -91,16 +76,10 @@ from typing import IO, BinaryIO, TextIO
 
 from stayfixed import fsops, processes
 from stayfixed.gitenv import checkout_root
-from stayfixed.guards.api import (
-    LAUNCHER_DIRECTORY_OPTIONS,
-    LAUNCHER_DIRECTORY_VARIABLES,
-    LAUNCHER_FILE_OPTIONS,
-    LAUNCHER_FILE_VARIABLES,
-    Launch,
-    read_launch,
-)
+from stayfixed.guards.api import Launch, read_launch
 from stayfixed.printed import clipped, printable
 from stayfixed.profiles.adapters import shipped_adapters
+from stayfixed.profiles.programs import launched
 from stayfixed.profiles.runners import (
     Plan,
     Refused,
@@ -158,8 +137,6 @@ PROVE_TIMEOUT_SECONDS = 3600
 # `stayfixed.prove.counts`'.
 NOT_RECOGNISED = "not-recognised"
 ASSIGNED_FORGING = "assigned-forging"
-REFUSED_LAUNCHER_OPTION = "launcher-option"
-RESOLVED_ELSEWHERE = "resolved-elsewhere"
 NOT_STARTED = "not-started"
 TIMED_OUT = "timed-out"
 INTERRUPTED = "interrupted"
@@ -168,7 +145,6 @@ FAILING = "failing"
 NONE_RAN = "none-ran"
 ALL_SKIPPED = "all-skipped"
 GREEN_BUT_EXITED = "green-but-exited"
-JUNIT_BESIDE_ADAPTER = "junit-beside-adapter"
 JUNIT_UNCHANGED = "junit-unchanged"
 
 # What the receipt's line says for each reason, every arm in words of its own.
@@ -176,10 +152,6 @@ WORDS: Mapping[str, str] = {
     "": "the runner reported every test it ran as passed",
     NOT_RECOGNISED: "no runner adapter recognises this command, so nothing can count its report",
     ASSIGNED_FORGING: "the command assigns a variable its runner reads to shape the report",
-    REFUSED_LAUNCHER_OPTION: (
-        "the command's launcher loads an environment or configuration file, or runs elsewhere"
-    ),
-    RESOLVED_ELSEWHERE: "the program changed between the plan and the launch",
     NOT_STARTED: "the command could not be started",
     TIMED_OUT: "the run passed its time limit and was ended",
     INTERRUPTED: "the run was interrupted and ended",
@@ -188,7 +160,6 @@ WORDS: Mapping[str, str] = {
     NONE_RAN: "the runner reported no test run",
     ALL_SKIPPED: "the runner reported every test skipped",
     GREEN_BUT_EXITED: "the runner reported green and the command exited non-zero",
-    JUNIT_BESIDE_ADAPTER: "a runner adapter knows this command, so `--junit` does not count it",
     JUNIT_UNCHANGED: "the run did not write the `--junit` report as a file of its own",
     REPORT_TOO_LARGE: "the report is past the size `prove` reads",
     REPORT_NOT_UTF8: "the report is not UTF-8",
@@ -216,16 +187,15 @@ class Receipt:
     `argv` is the command as given with every `NAME=value` and `--option=value` value replaced by
     `REDACTED`; a value passed as the word after its option is kept, since nothing tells it from an
     operand. `detail` is where the step that stopped the run stopped: the variable assigned, the
-    launcher option refused, the option or word the runner's adapter refused, what the adapter
-    looked for or was asked for where it could not plan the run, the `--junit` path the run did not
-    write (`JUNIT_UNCHANGED`), or where a report stopped reading. `program` is the realpath of what
-    ran, and `entry` the realpath of the file it ran as the runner where the program is an
-    interpreter running one (`node` and jest's or vitest's entry); `verified` is false on every
-    `--junit` receipt, a plan made or not, and true on every other. `scrubbed` names, sorted, each
-    variable the caller's environment held that the run did not get as it was: removed (the
-    adapter's `scrub`, a launcher's file variable) or given the adapter's own value (`set_env`),
-    since such a removal can turn a legitimate run red. `commit` and `dirty_before` are
-    the tree's state before the run, `dirty_after` after it, and `untracked` (at most
+    option or word the runner's adapter refused, what the adapter looked for or was asked for
+    where it could not plan the run, the `--junit` path the run did not write (`JUNIT_UNCHANGED`),
+    or where a report stopped reading. `program` is the realpath of what ran, and `entry` the
+    realpath of the file it ran as the runner where the program is an interpreter running one
+    (`node` and jest's or vitest's entry); `verified` is false on every `--junit` receipt, a plan
+    made or not, and true on every other. `scrubbed` names, sorted, each
+    variable the caller's environment held that the run did not get, one of the adapter's
+    `forging` set, since such a removal can turn a legitimate run red. `commit` and `dirty_before`
+    are the tree's state before the run, `dirty_after` after it, and `untracked` (at most
     `tree.UNTRACKED_LISTED`, `untracked_more` past it) and `configs` (at most as many,
     `configs_more` past it, and `ignored_configs` the count of those git ignores) after it, or
     before it where git could not answer after: none of them is an input to the verdict.
@@ -317,23 +287,6 @@ def assignments(words: Sequence[str]) -> dict[str, str]:
         name, _, value = word.partition("=")
         assigned[name] = value
     return assigned
-
-
-# The launcher's options refused for every adapter: those that load a file of the command's
-# choosing, and those that run it in another directory or project than the one `prove` judges;
-# and their variables, refused assigned and removed inherited.
-_LAUNCHER_REFUSED = LAUNCHER_FILE_OPTIONS | LAUNCHER_DIRECTORY_OPTIONS
-_LAUNCHER_VARIABLES = LAUNCHER_FILE_VARIABLES | LAUNCHER_DIRECTORY_VARIABLES
-
-
-def file_option(launcher: Sequence[str]) -> str | None:
-    """The first of the launcher's options that loads a file, or runs the command elsewhere,
-    which `launcher`'s words spell, as `--name value` or `--name=value`, by its name; `None` where
-    none does."""
-    return next(
-        (name for word in launcher if (name := word.partition("=")[0]) in _LAUNCHER_REFUSED),
-        None,
-    )
 
 
 class _Signalled(Exception):
@@ -531,25 +484,18 @@ def _rewritten(before: tuple[int, int, int, int] | None, path: Path) -> bool:
 
 
 def _unverified(launch: Launch, report: Path, cwd: Path, environ: Mapping[str, str]) -> Plan | None:
-    """The plan of a command no adapter knows: its launcher's words and its command, run as typed,
-    the program found from `cwd` as the run would find it, and the report the file at `report`;
-    `None` where the program is not there."""
-    words = (*launch.launcher, *launch.command)
-    if os.sep in words[0]:
-        found = shutil.which(str(cwd / words[0]))
-    else:
-        path = environ.get("PATH", os.defpath).split(os.pathsep)
-        found = shutil.which(words[0], path=os.pathsep.join(str(cwd / entry) for entry in path))
-    if found is None:
+    """The plan of a command no adapter is asked about: its launcher's words and its command, run
+    as typed, the program found from `cwd` on `environ`'s `PATH` as the run finds it
+    (`stayfixed.profiles.programs.launched`), and the report the file at `report`; `None` where
+    the program is not there."""
+    argv = launched(launch.launcher, launch.command, cwd, environ)
+    if argv is None:
         return None
     return Plan(
-        argv=(found, *words[1:]),
-        program=Path(os.path.realpath(found)),
+        argv=argv,
         kind=ReportKind.JUNIT,
         source=ReportSource.FILE,
         report=report,
-        set_env={},
-        scrub=frozenset(),
         discovery=(),
         configs=(),
     )
@@ -568,6 +514,40 @@ def _counted(plan: Plan) -> tuple[Counts | None, str | None, str, str | None]:
         return None, exc.reason, exc.detail, digest
 
 
+@dataclass(frozen=True)
+class _Run:
+    """One run of `prove` once its command is read and its environment built: the launch, the
+    command as the receipt shows it, where it runs and for which project, the run's environment
+    and the inherited variables it lost, and how it is run and counted."""
+
+    launch: Launch
+    shown: tuple[str, ...]
+    cwd: Path
+    root: Path
+    env: Mapping[str, str]
+    scrubbed: tuple[str, ...]
+    timeout: float
+    echo: TextIO | None
+    junit: Path | None
+
+    @property
+    def verified(self) -> bool:
+        """Whether the receipt calls its runner verified: false for a `--junit` run, and only
+        for one."""
+        return self.junit is None
+
+
+def environment(
+    environ: Mapping[str, str], forging: frozenset[str], assigned: Mapping[str, str]
+) -> tuple[dict[str, str], tuple[str, ...]]:
+    """The run's environment, as a shell builds it for the command: `environ`, the caller's, less
+    every variable of `forging`, then `assigned`, the command's own assignments, the last of two
+    for one name winning; and the names, sorted, of the inherited variables it lost."""
+    env = {name: value for name, value in environ.items() if name not in forging}
+    env |= assigned
+    return env, tuple(sorted(frozenset(environ) & forging))
+
+
 def prove(
     argv: Sequence[str],
     *,
@@ -584,10 +564,9 @@ def prove(
     standard output holds the one object); without it, the runner's standard output is the
     caller's.
 
-    Given `junit`, a path read from `cwd`, the command is one no adapter knows: one an adapter
-    recognises is refused (`JUNIT_BESIDE_ADAPTER`), and otherwise it runs as typed and its report is
-    the JUnit file at that path, counted only where the run created or rewrote it as a regular file
-    (`JUNIT_UNCHANGED`), its runner marked not verified.
+    Given `junit`, a path read from `cwd`, no adapter is consulted: the command runs as typed and
+    its report is the JUnit file at that path, counted only where the run created or rewrote it
+    as a regular file (`JUNIT_UNCHANGED`), its runner marked not verified.
 
     An adapter whose plan's program is not an absolute path is a defect in stayfixed, as a module
     that does not import is, and raises `ValueError`: a bare name would be found from stayfixed's
@@ -598,24 +577,22 @@ def prove(
     given = tuple(argv)
     shown = redacted(given)
     root = checkout_root(cwd) or cwd
-    launch = read_launch(given)
+    # `uv run -m pytest` reads as the launcher `uv run -m` and the command `pytest`.
+    launch = read_launch(given, modules_as_programs=True)
     command = launch.command
     known = shipped_adapters() if adapters is None else adapters
-    adapter = next((each for each in known if command and each.recognises(command)), None)
-    # A `--junit` receipt says its runner is not verified on every path, a plan made or not.
+    adapter = (
+        next((each for each in known if command and each.recognises(command)), None)
+        if junit is None
+        else None
+    )
     verified = junit is None
-    if junit is not None and adapter is not None:
-        return _receipt(
-            _Outcome(refused=JUNIT_BESIDE_ADAPTER), shown, adapter.name, verified=verified
-        )
     if adapter is None and (junit is None or not command):
         return _receipt(_Outcome(unproven=NOT_RECOGNISED), shown, verified=verified)
     runner = adapter.name if adapter is not None else None
     assigned = assignments(launch.assignments)
-    # The launcher's own variables that load a file, where the launch runs one.
-    loaders = _LAUNCHER_VARIABLES if launch.launcher else frozenset()
     forging = adapter.forging if adapter is not None else frozenset()
-    forged = sorted(name for name in assigned if name in forging | loaders)
+    forged = sorted(name for name in assigned if name in forging)
     if forged:
         return _receipt(
             _Outcome(refused=ASSIGNED_FORGING),
@@ -624,165 +601,84 @@ def prove(
             detail=", ".join(forged),
             verified=verified,
         )
-    loading = file_option(launch.launcher)
-    if loading is not None:
-        return _receipt(
-            _Outcome(refused=REFUSED_LAUNCHER_OPTION),
-            shown,
-            runner,
-            detail=loading,
-            verified=verified,
-        )
-    # An inherited one goes from the run's environment as the plan's own scrub would go.
-    kept = {name: value for name, value in environ.items() if name not in loaders}
-    removed = frozenset(environ) & loaders
+    env, scrubbed = environment(environ, forging, assigned)
+    run = _Run(launch, shown, cwd, root, env, scrubbed, timeout, echo, junit)
     # A Ctrl-C or a terminating signal anywhere from here on, the tree's state, the plan or the
     # reap as much as the wait, ends the run `not proven`, its scratch directory removed, and the
     # caller still records it: never an internal error.
     try:
         with _signals_end_the_run():
-            return _planned_and_proved(
-                adapter,
-                launch,
-                command,
-                assigned,
-                shown,
-                cwd,
-                root,
-                environ,
-                kept,
-                removed,
-                timeout,
-                echo,
-                junit=junit,
-                verified=verified,
-            )
+            return _planned_and_proved(adapter, run)
     except (KeyboardInterrupt, _Signalled):
         return _receipt(_Outcome(unproven=INTERRUPTED), shown, runner, verified=verified)
 
 
-def _planned_and_proved(
-    adapter: RunnerAdapter | None,
-    launch: Launch,
-    command: Sequence[str],
-    assigned: Mapping[str, str],
-    shown: tuple[str, ...],
-    cwd: Path,
-    root: Path,
-    environ: Mapping[str, str],
-    kept: Mapping[str, str],
-    removed: frozenset[str],
-    timeout: float,
-    echo: TextIO | None,
-    *,
-    junit: Path | None,
-    verified: bool,
-) -> Receipt:
+def _planned_and_proved(adapter: RunnerAdapter | None, run: _Run) -> Receipt:
     if adapter is None:
-        unverified = _unverified(launch, cwd / junit, cwd, environ) if junit is not None else None
-        if unverified is None:
-            return _receipt(_Outcome(unproven=NOT_STARTED), shown, verified=verified)
-        return _proved(
-            None,
-            unverified,
-            assigned,
-            shown,
-            cwd,
-            root,
-            kept,
-            timeout,
-            echo,
-            junit=junit,
-            removed=removed,
-            verified=verified,
+        junit = run.junit
+        unverified = (
+            _unverified(run.launch, run.cwd / junit, run.cwd, run.env)
+            if junit is not None
+            else None
         )
+        if unverified is None:
+            return _receipt(_Outcome(unproven=NOT_STARTED), run.shown, verified=run.verified)
+        return _proved(None, unverified, run)
     scratch = Path(tempfile.mkdtemp(prefix="stayfixed-prove-"))
     try:
         planned = adapter.plan(
-            launch.launcher, command, cwd=cwd, root=root, scratch=scratch, environ=environ
+            run.launch.launcher,
+            run.launch.command,
+            cwd=run.cwd,
+            root=run.root,
+            scratch=scratch,
+            environ=run.env,
         )
         if isinstance(planned, Refused):
             return _receipt(
-                _Outcome(refused=planned.reason), shown, adapter.name, detail=planned.detail
+                _Outcome(refused=planned.reason), run.shown, adapter.name, detail=planned.detail
             )
         if isinstance(planned, Unresolved):
             return _receipt(
-                _Outcome(unproven=planned.reason), shown, adapter.name, detail=planned.detail
+                _Outcome(unproven=planned.reason), run.shown, adapter.name, detail=planned.detail
             )
         if planned.source is ReportSource.FILE and scratch not in planned.report.parents:
             raise ValueError(
                 f"the {adapter.name} adapter planned a report outside its scratch directory"
             )
-        return _proved(
-            adapter.name,
-            planned,
-            assigned,
-            shown,
-            cwd,
-            root,
-            kept,
-            timeout,
-            echo,
-            removed=removed,
-        )
+        return _proved(adapter.name, planned, run)
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 
 
-def _proved(
-    runner: str | None,
-    plan: Plan,
-    assigned: Mapping[str, str],
-    shown: tuple[str, ...],
-    cwd: Path,
-    root: Path,
-    environ: Mapping[str, str],
-    timeout: float,
-    echo: TextIO | None,
-    *,
-    junit: Path | None = None,
-    removed: frozenset[str] = frozenset(),
-    verified: bool = True,
-) -> Receipt:
+def _proved(runner: str | None, plan: Plan, run: _Run) -> Receipt:
     if not os.path.isabs(plan.argv[0]):
         raise ValueError(f"the {runner} adapter planned a program that is not absolute")
-    before = tree.state(root, plan.discovery, plan.configs)
-    if Path(os.path.realpath(plan.argv[0])) != plan.program:
-        return _receipt(
-            _Outcome(refused=RESOLVED_ELSEWHERE),
-            shown,
-            runner,
-            plan,
-            before=before,
-            verified=verified,
-        )
-    env = {name: value for name, value in environ.items() if name not in plan.scrub}
-    env |= assigned
-    env |= plan.set_env
-    overridden = {name for name, value in plan.set_env.items() if environ.get(name, value) != value}
-    scrubbed = tuple(sorted(removed | (frozenset(environ) & plan.scrub) | overridden))
+    program = os.path.realpath(plan.argv[0])
+    before = tree.state(run.root, plan.discovery, plan.configs)
     found = _state(plan.report)
-    ran = _run(plan, cwd, env, timeout, echo)
-    after = tree.state(root, plan.discovery, plan.configs)
+    ran = _run(plan, run.cwd, run.env, run.timeout, run.echo)
+    after = tree.state(run.root, plan.discovery, plan.configs)
     if ran.stopped is not None:
         outcome, detail, digest = _Outcome(unproven=ran.stopped), "", None
-    elif junit is not None and not _rewritten(found, plan.report):
+    elif run.junit is not None and not _rewritten(found, plan.report):
         outcome = _Outcome(unproven=JUNIT_UNCHANGED, exit_code=ran.exit_code)
-        detail, digest = str(junit), None
+        detail, digest = str(run.junit), None
     else:
         counts, unread, detail, digest = _counted(plan)
         outcome = _Outcome(unproven=unread, counts=counts, exit_code=ran.exit_code)
     return _receipt(
         outcome,
-        shown,
+        run.shown,
         runner,
         plan,
+        program=program,
         detail=detail,
         before=before,
         after=after,
         digest=digest,
-        scrubbed=scrubbed,
-        verified=verified,
+        scrubbed=run.scrubbed,
+        verified=run.verified,
     )
 
 
@@ -792,6 +688,7 @@ def _receipt(
     runner: str | None = None,
     plan: Plan | None = None,
     *,
+    program: str | None = None,
     detail: str = "",
     before: tree.TreeState | None = None,
     after: tree.TreeState | None = None,
@@ -809,7 +706,7 @@ def _receipt(
         detail=detail,
         argv=shown,
         runner=runner,
-        program=str(plan.program) if plan is not None else None,
+        program=program,
         entry=str(plan.entry) if plan is not None and plan.entry is not None else None,
         verified=verified,
         scrubbed=scrubbed,
@@ -830,8 +727,8 @@ def _receipt(
 def line(receipt: Receipt) -> str:
     """The receipt in one line: the verdict and its reason in words, the counts, the runner (the
     program, and the entry it runs where it is an interpreter), the inherited variables the run
-    did not get as they were, and the files that can shape the report. A variable's name is one of
-    an adapter's or a launcher's own sets, never one the environment chose. A name the tree chose
+    did not get, and the files that can shape the report. A variable's name is one of an
+    adapter's forging set, never one the environment chose. A name the tree chose
     prints only inside the path grammar (`printed.printable`); `--json` carries every one."""
     words = WORDS.get(receipt.reason) or _ADAPTER_WORDS.get(receipt.verdict, receipt.reason)
     head = f"{receipt.verdict}: {words}"
