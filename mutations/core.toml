@@ -6367,8 +6367,8 @@ reddens = ["tests/prove/test_junit_flag.py::test_a_report_rewritten_in_place_is_
 [[mutation]]
 name = "prove --junit marks its runner verified"
 file = "src/stayfixed/prove/run.py"
-before = "        verified=False,"
-after = "        verified=True,"
+before = "            removed=removed,\n            verified=verified,"
+after = "            removed=removed,\n            verified=True,"
 reddens = [
   "tests/prove/test_junit_flag.py::test_a_report_the_run_wrote_is_counted_and_marked_unverified",
   "tests/prove/test_junit_flag.py::test_the_line_says_the_runner_is_not_verified",

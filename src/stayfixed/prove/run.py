@@ -548,7 +548,6 @@ def _unverified(launch: Launch, report: Path, cwd: Path, environ: Mapping[str, s
         scrub=frozenset(),
         discovery=(),
         configs=(),
-        verified=False,
     )
 
 
@@ -647,6 +646,7 @@ def prove(
             echo,
             junit=junit,
             removed=removed,
+            verified=verified,
         )
     scratch = Path(tempfile.mkdtemp(prefix="stayfixed-prove-"))
     try:
@@ -690,12 +690,20 @@ def _proved(
     *,
     junit: Path | None = None,
     removed: frozenset[str] = frozenset(),
+    verified: bool = True,
 ) -> Receipt:
     if not os.path.isabs(plan.argv[0]):
         raise ValueError(f"the {runner} adapter planned a program that is not absolute")
     before = tree.state(root, plan.discovery, plan.configs)
     if Path(os.path.realpath(plan.argv[0])) != plan.program:
-        return _receipt(_Outcome(refused=RESOLVED_ELSEWHERE), shown, runner, plan, before=before)
+        return _receipt(
+            _Outcome(refused=RESOLVED_ELSEWHERE),
+            shown,
+            runner,
+            plan,
+            before=before,
+            verified=verified,
+        )
     env = {name: value for name, value in environ.items() if name not in plan.scrub}
     env |= assigned
     env |= plan.set_env
@@ -722,6 +730,7 @@ def _proved(
         after=after,
         digest=digest,
         scrubbed=scrubbed,
+        verified=verified,
     )
 
 
@@ -738,7 +747,7 @@ def _receipt(
     verified: bool = True,
     scrubbed: tuple[str, ...] = (),
 ) -> Receipt:
-    """The receipt of `outcome`; `verified` is the plan's where there is one, else the one given."""
+    """The receipt of `outcome`; `verified` is false for a `--junit` run, and only for one."""
     verdict, reason = judged(outcome)
     files = after if after is not None and after.untracked is not None else before
     configs = after if after is not None and after.configs is not None else before
@@ -750,7 +759,7 @@ def _receipt(
         runner=runner,
         program=str(plan.program) if plan is not None else None,
         entry=str(plan.entry) if plan is not None and plan.entry is not None else None,
-        verified=plan.verified if plan is not None else verified,
+        verified=verified,
         scrubbed=scrubbed,
         counts=outcome.counts,
         exit_code=outcome.exit_code,

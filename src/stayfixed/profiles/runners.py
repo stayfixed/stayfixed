@@ -60,8 +60,8 @@ class Plan:
     configure it, both matched from the right (`stayfixed.prove.tree`); an absolute entry of
     `configs` is no glob but names that one file, wherever it lies, one the command chose. `drop`
     is the JUnit reader's (`stayfixed.prove.junit.read_junit`), for a testcase a runner writes
-    that is no test.
-    `verified` is false for a runner no adapter resolved. `entry` is the realpath of the file the
+    that is no test. Whether a runner is verified is no plan's to say: the core marks every
+    `--junit` run's receipt, and only those, not verified. `entry` is the realpath of the file the
     program runs as the runner, where the program is an interpreter running one (`node` and a
     package's entry), for the receipt to name beside the program; `None` where the program is the
     runner itself.
@@ -77,7 +77,6 @@ class Plan:
     discovery: tuple[str, ...]
     configs: tuple[str, ...]
     drop: Callable[[Mapping[str, str]], bool] | None = None
-    verified: bool = True
     entry: Path | None = None
 
 

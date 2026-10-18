@@ -997,8 +997,10 @@ Before the run `prove` notes what is at `PATH` (nothing, or its inode, size and 
 after it, the file is counted only when it is a regular file, not a link, that the run created or
 rewrote, and otherwise the run is `not proven` (`junit-unchanged`, naming the path), so a stale or
 committed report counts nothing. A program the command names that is not there is `not-started`. The
-verdict is the cascade's. Every `--junit` receipt carries `verified: false`, one refused or not
-started too, and the receipt of a command no adapter recognises `runner: null`. The line of a
+verdict is the cascade's. `verified` says only whether the run was a `--junit` one: every
+`--junit` receipt carries `verified: false`, one refused or not started too, and every other
+`verified: true`, a command no adapter recognises or one refused among them; the receipt of a
+command no adapter recognises carries `runner: null`. The line of a
 command no adapter recognises says `runner not verified, ran <program>`; that of a command an adapter
 recognises, refused beside `--junit`, names the runner it is and says `runner <name>, not
 verified`.
@@ -1043,7 +1045,8 @@ never an input to the verdict. `--json` carries `verdict`, `reason`, `detail` (t
 refused assignment named, the launcher option refused, the option or word the runner's adapter
 refused, the `--junit` path on `junit-unchanged`, or where a report stopped reading), `argv` (the
 command, every `NAME=value` and `--option=value` value replaced by `…`; a value passed as the word
-after its option is kept), `runner`, `program`, `entry`, `verified`, `scrubbed` (those variables'
+after its option is kept), `runner`, `program`, `entry`, `verified` (false on a `--junit` run, and
+only there), `scrubbed` (those variables'
 names, sorted), `counts`, `exit_code`, `report_digest`
 (the SHA-256 of the report counted), `commit`, `dirty_before`, `dirty_after`, `untracked`,
 `untracked_more`, `configs`, `configs_more` and `ignored_configs`.
