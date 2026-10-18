@@ -55,7 +55,6 @@ from stayfixed.profiles.runners import (
 from stayfixed.prove.counts import Counts
 from stayfixed.prove.junit import read_junit
 from stayfixed.prove.run import (
-    ALL_SKIPPED,
     FAILING,
     NONE_RAN,
     NOT_RECOGNISED,
@@ -65,6 +64,14 @@ from stayfixed.prove.run import (
     prove,
 )
 from tests.gitfixture import git
+from tests.prove.projects import (
+    COMMANDS,
+    JEST_PASSING,
+    NODE_HEAD,
+    NODE_PASSING,
+    VITEST_HEAD,
+    js_project,
+)
 from tests.prove.real_runners import (
     installed_packages,
     needs_packages,
@@ -1586,56 +1593,12 @@ def test_npm_test_is_not_proven(tmp_path: Path) -> None:
 
 # --- Real runs ------------------------------------------------------------------------------
 
-JEST_PASSING = 'test("passes", () => { expect(1).toBe(1); });\ntest.skip("skipped", () => {});\n'
-JEST_SKIPPED = 'test.skip("one", () => {});\ntest.skip("two", () => {});\n'
-VITEST_HEAD = 'import { test, expect } from "vitest";\n'
-NODE_HEAD = 'import { test } from "node:test";\nimport assert from "node:assert/strict";\n'
-NODE_PASSING = (
-    NODE_HEAD + 'test("passes", () => { assert.ok(true); });\n'
-    'test("skipped", { skip: true }, () => {});\n'
-)
-NODE_SKIPPED = (
-    NODE_HEAD + 'test("one", { skip: true }, () => {});\ntest("two", { skip: true }, () => {});\n'
-)
-# Each runner's test file, and its `package.json`.
-FILES = {
-    "jest": ("three.test.js", JEST_PASSING, JEST_SKIPPED, '{"name": "case", "private": true}'),
-    "vitest": (
-        "three.test.js",
-        VITEST_HEAD + JEST_PASSING,
-        VITEST_HEAD + JEST_SKIPPED,
-        '{"name": "case", "private": true, "type": "module"}',
-    ),
-    "node-test": (
-        "three.test.mjs",
-        NODE_PASSING,
-        NODE_SKIPPED,
-        '{"name": "case", "private": true}',
-    ),
-}
 FIXTURE_TESTS = {
     "jest": FIXTURE / "jest" / "three.test.js",
     "vitest": FIXTURE / "vitest" / "three.test.js",
     "node-test": FIXTURE / "node-test" / "three.test.mjs",
 }
-COMMANDS = {
-    "jest": ["npx", "jest"],
-    "vitest": ["npx", "vitest", "run"],
-    "node-test": ["node", "--test"],
-}
 RUNNERS = list(COMMANDS)
-
-
-def js_project(root: Path, runner: str, text: str | None = None) -> Path:
-    """A project `runner` collects in `root`: its `package.json`, `node_modules` linked to the
-    installed packages, and its test file holding `text` (none where `text` is empty)."""
-    name, _, _, manifest = FILES[runner]
-    root.mkdir(parents=True, exist_ok=True)
-    (root / "package.json").write_text(manifest, encoding="utf-8")
-    (root / "node_modules").symlink_to(installed_packages())
-    if text:
-        (root / name).write_text(text, encoding="utf-8")
-    return root
 
 
 def real(cwd: Path, *argv: str, **variables: str) -> Receipt:
@@ -1644,18 +1607,6 @@ def real(cwd: Path, *argv: str, **variables: str) -> Receipt:
     environ = {**os.environ, "PATH": os.pathsep.join([str(node), os.environ.get("PATH", "")])}
     environ.pop("NODE_OPTIONS", None)
     return through_prove(argv, cwd, {**environ, **variables})
-
-
-@needs_packages
-@pytest.mark.parametrize("runner", RUNNERS)
-def test_a_genuine_passing_run_is_proved(tmp_path: Path, runner: str) -> None:
-    project = js_project(tmp_path / "p", runner, FILES[runner][1])
-    got = real(project, *COMMANDS[runner])
-    assert (got.verdict, got.reason, got.counts, got.exit_code) == (PROVED, "", Counts(1, 0, 1), 0)
-    assert got.runner == runner
-    # The command as typed: `npx` (which ships beside `node`) or `node`.
-    program = COMMANDS[runner][0]
-    assert got.program == os.path.realpath(runner_directory("node") / program)
 
 
 NPX_PATH_TEST = (
@@ -1767,25 +1718,6 @@ def test_a_snapshot_the_run_writes_is_the_bound_s(
     got = real(project, *argv, CI="true")
     assert (got.verdict, got.counts) == (verdict, counts)
     assert (project / "__snapshots__").is_dir() is (verdict == PROVED)
-
-
-@needs_packages
-@pytest.mark.parametrize(("runner", "code"), [("jest", 1), ("vitest", 1), ("node-test", 0)])
-def test_an_empty_run_fails(tmp_path: Path, runner: str, code: int) -> None:
-    got = real(js_project(tmp_path / "p", runner), *COMMANDS[runner])
-    assert (got.verdict, got.reason, got.counts, got.exit_code) == (
-        FAILED,
-        NONE_RAN,
-        Counts(0, 0, 0),
-        code,
-    )
-
-
-@needs_packages
-@pytest.mark.parametrize("runner", RUNNERS)
-def test_an_all_skipped_run_fails(tmp_path: Path, runner: str) -> None:
-    got = real(js_project(tmp_path / "p", runner, FILES[runner][2]), *COMMANDS[runner])
-    assert (got.verdict, got.reason, got.counts) == (FAILED, ALL_SKIPPED, Counts(0, 0, 2))
 
 
 @needs_packages

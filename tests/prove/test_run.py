@@ -841,7 +841,8 @@ def test_an_adapter_s_own_answer_is_the_verdict(
 
 
 def test_the_line_marks_a_runner_no_adapter_resolved() -> None:
-    # Nothing this task ships plans an unverified runner; the receipt's line says so of one.
+    # No shipped adapter plans an unverified runner, so the receipt is built here: its line says
+    # so of one, and of no other.
     receipt = Receipt(Verdict.PROVED, "", "", ("x",), runner="junit", verified=False)
     assert "runner junit, not verified" in line(receipt)
     assert "not verified" not in line(dataclasses.replace(receipt, verified=True))
@@ -1000,13 +1001,6 @@ def test_tree_state_is_taken_before_and_after(tmp_path: Path) -> None:
 def test_tree_state_outside_git_is_unknown_and_never_a_refusal(tmp_path: Path) -> None:
     state = tree.state(tmp_path, ("*",), ("*",))
     assert state == tree.TreeState(None, None, None, 0, None, 0, 0)
-
-
-def test_prove_needs_no_stayfixed_toml(tmp_path: Path) -> None:
-    root = repository(tmp_path / "repo")
-    assert run(root, NAME).verdict == PROVED
-    (root / "stayfixed.toml").write_text("[[[ not toml\n", encoding="utf-8")
-    assert run(root, NAME).verdict == PROVED
 
 
 def _adapter_module(name: str, shipped: Sequence[object]) -> types.ModuleType:

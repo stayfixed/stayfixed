@@ -41,7 +41,6 @@ from stayfixed.profiles.runners import (
 )
 from stayfixed.prove.counts import Counts
 from stayfixed.prove.run import (
-    ALL_SKIPPED,
     ASSIGNED_FORGING,
     FAILING,
     NO_REPORT,
@@ -52,6 +51,7 @@ from stayfixed.prove.run import (
     prove,
 )
 from tests.gitfixture import git
+from tests.prove.projects import pytest_project
 from tests.prove.real_runners import needs_runner, runner_directory
 from tests.prove.test_run import standard_input
 
@@ -514,32 +514,6 @@ def test_uv_run_m_pytest_runs_as_typed(tmp_path: Path) -> None:
 # --- Real pytest runs -----------------------------------------------------------------------
 
 
-def scratch_project(
-    root: Path,
-    *,
-    passing: int = 0,
-    failing: int = 0,
-    skipped: int = 0,
-    files: Mapping[str, str] | None = None,
-) -> Path:
-    """A project pytest collects in `root`: a `pytest.ini`, so no configuration above it is read,
-    and `test_scratch.py` with that many passing, failing and skipped tests."""
-    root.mkdir(parents=True, exist_ok=True)
-    (root / "pytest.ini").write_text("[pytest]\n", encoding="utf-8")
-    tests = ["import pytest", ""]
-    tests += [f"def test_pass_{index}():\n    pass\n" for index in range(passing)]
-    tests += [f"def test_fail_{index}():\n    assert False\n" for index in range(failing)]
-    tests += [
-        f"@pytest.mark.skip(reason='scratch')\ndef test_skip_{index}():\n    pass\n"
-        for index in range(skipped)
-    ]
-    (root / "test_scratch.py").write_text("\n".join(tests), encoding="utf-8")
-    for name, text in (files or {}).items():
-        (root / name).parent.mkdir(parents=True, exist_ok=True)
-        (root / name).write_text(text, encoding="utf-8")
-    return root
-
-
 def real(cwd: Path, *argv: str, **variables: str) -> Receipt:
     """`argv` proved in `cwd` with the project's own pytest first on `PATH`. Its entry-point
     plugins are not loaded, so the suite's own (coverage, workers) never join the run."""
@@ -553,22 +527,14 @@ def real(cwd: Path, *argv: str, **variables: str) -> Receipt:
 
 
 @needs_runner("pytest")
-def test_a_genuine_passing_run_is_proved(tmp_path: Path) -> None:
-    got = real(scratch_project(tmp_path / "p", passing=2, skipped=1), "pytest", "-q")
-    assert (got.verdict, got.reason, got.counts, got.exit_code) == (PROVED, "", Counts(2, 0, 1), 0)
-    script = os.path.realpath(runner_directory("pytest") / "pytest")
-    assert (got.runner, got.program, got.verified) == (NAME, script, True)
-
-
-@needs_runner("pytest")
 def test_python_m_pytest_is_proved(tmp_path: Path) -> None:
-    got = real(scratch_project(tmp_path / "p", passing=2), "python", "-m", "pytest", "-q")
+    got = real(pytest_project(tmp_path / "p", passing=2), "python", "-m", "pytest", "-q")
     assert (got.verdict, got.reason, got.counts, got.exit_code) == (PROVED, "", Counts(2, 0, 0), 0)
 
 
 @needs_runner("pytest")
 def test_python_m_pytest_counts_a_failing_test(tmp_path: Path) -> None:
-    got = real(scratch_project(tmp_path / "p", passing=1, failing=1), "python", "-m", "pytest")
+    got = real(pytest_project(tmp_path / "p", passing=1, failing=1), "python", "-m", "pytest")
     assert (got.verdict, got.reason, got.counts) == (FAILED, FAILING, Counts(1, 1, 0))
 
 
@@ -641,7 +607,7 @@ def test_a_failing_assert_is_not_turned_off(tmp_path: Path) -> None:
     # 0. The option and the assignment are refused; an inherited `PYTHONOPTIMIZE` is removed from
     # the run's environment. Mutation (declared): `PYTHONOPTIMIZE` left out of the forging set ->
     # the inherited one turns the assert off, `proved`.
-    project = scratch_project(
+    project = pytest_project(
         tmp_path / "p",
         files={
             "checks.py": "def check(a, b):\n    assert a == b\n",
@@ -657,26 +623,9 @@ def test_a_failing_assert_is_not_turned_off(tmp_path: Path) -> None:
 
 
 @needs_runner("pytest")
-def test_an_empty_run_fails(tmp_path: Path) -> None:
-    got = real(scratch_project(tmp_path / "p", passing=2), "pytest", "-q", "-k", "no_such_test")
-    assert (got.verdict, got.reason, got.counts, got.exit_code) == (
-        FAILED,
-        NONE_RAN,
-        Counts(0, 0, 0),
-        5,
-    )
-
-
-@needs_runner("pytest")
-def test_an_all_skipped_run_fails(tmp_path: Path) -> None:
-    got = real(scratch_project(tmp_path / "p", skipped=2), "pytest", "-q")
-    assert (got.verdict, got.reason, got.counts) == (FAILED, ALL_SKIPPED, Counts(0, 0, 2))
-
-
-@needs_runner("pytest")
 def test_an_inherited_pytest_addopts_is_the_project_s(tmp_path: Path) -> None:
     # It reaches the run, as it reaches the command: here it selects no test, so the run fails.
-    project = scratch_project(tmp_path / "p", passing=2)
+    project = pytest_project(tmp_path / "p", passing=2)
     got = real(project, "pytest", "-q", PYTEST_ADDOPTS="-k nothing")
     assert (got.verdict, got.reason, got.counts) == (FAILED, NONE_RAN, Counts(0, 0, 0))
 
@@ -695,7 +644,7 @@ def test_the_adapter_s_report_options_win_over_the_command_s(
     tmp_path: Path, words: tuple[str, ...], variables: dict[str, str]
 ) -> None:
     # Measured on pytest 9.1.1: the options pytest reads last win, and the adapter's come last.
-    project = scratch_project(tmp_path / "p", passing=1, failing=1)
+    project = pytest_project(tmp_path / "p", passing=1, failing=1)
     got = real(project, "pytest", "-q", *words, **variables)
     assert (got.verdict, got.reason, got.counts) == (FAILED, FAILING, Counts(1, 1, 0))
     assert not (project / "elsewhere.xml").exists()
@@ -717,7 +666,7 @@ def test_a_run_that_writes_no_report_or_runs_no_test_is_never_proved(
 ) -> None:
     # Free, and needing no refusal: the cascade reads no report as `not proven` and a report of no
     # test as `failed`.
-    project = scratch_project(tmp_path / "p", passing=1, failing=1)
+    project = pytest_project(tmp_path / "p", passing=1, failing=1)
     got = real(project, "pytest", "-q", *words)
     assert (got.verdict, got.reason) == (verdict, reason)
 
@@ -725,7 +674,7 @@ def test_a_run_that_writes_no_report_or_runs_no_test_is_never_proved(
 @needs_runner("pytest")
 def test_an_argument_file_is_read_as_typed(tmp_path: Path) -> None:
     # pytest reads the words of `@args.txt` as its own: here a selection of one test.
-    project = scratch_project(
+    project = pytest_project(
         tmp_path / "p", passing=1, failing=1, files={"args.txt": "-k\ntest_pass_0\n"}
     )
     got = real(project, "pytest", "-q", "@args.txt")
@@ -734,7 +683,7 @@ def test_an_argument_file_is_read_as_typed(tmp_path: Path) -> None:
 
 @needs_runner("pytest")
 def test_pythonpath_src_is_the_projects(tmp_path: Path) -> None:
-    project = scratch_project(
+    project = pytest_project(
         tmp_path / "p",
         files={
             "src/under_test/__init__.py": "VALUE = 1\n",
@@ -748,7 +697,7 @@ def test_pythonpath_src_is_the_projects(tmp_path: Path) -> None:
 @needs_runner("pytest")
 def test_pythonwarnings_error_keeps_its_meaning(tmp_path: Path) -> None:
     # Every `PYTHON*` variable but `PYTHONOPTIMIZE` is the project's, as the command's.
-    project = scratch_project(
+    project = pytest_project(
         tmp_path / "p",
         files={"test_warns.py": "import warnings\n\ndef test_w():\n    warnings.warn('w')\n"},
     )
@@ -774,7 +723,7 @@ def test_an_atexit_rewrite_is_what_the_bound_concedes(tmp_path: Path) -> None:
         "        os._exit(0)\n"
         "    atexit.register(forged)\n"
     )
-    project = scratch_project(tmp_path / "p", failing=1, files={"conftest.py": conftest})
+    project = pytest_project(tmp_path / "p", failing=1, files={"conftest.py": conftest})
     got = real(project, "pytest", "-q")
     assert (got.verdict, got.counts, got.exit_code) == (PROVED, Counts(1, 0, 0), 0)
 
@@ -793,7 +742,7 @@ def test_a_debugger_driven_through_prove_s_standard_input_forges_nothing(tmp_pat
     # `--pdb` is free: the runner's standard input is `/dev/null`, so the debugger reads its end,
     # quits, and pytest exits 2 with the failure in its report. Had it the caller's, the command
     # piped in would write a green report and exit 0: `proved`.
-    project = scratch_project(tmp_path / "p", failing=1)
+    project = pytest_project(tmp_path / "p", failing=1)
     with standard_input(_DEBUGGER_FORGE.encode()):
         got = real(project, "pytest", "-q", "-p", "no:cacheprovider", "--pdb")
     assert (got.verdict, got.reason, got.counts, got.exit_code) == (
@@ -806,7 +755,7 @@ def test_a_debugger_driven_through_prove_s_standard_input_forges_nothing(tmp_pat
 
 @needs_runner("pytest")
 def test_a_configuration_file_the_command_names_is_named_on_the_receipt(tmp_path: Path) -> None:
-    project = scratch_project(tmp_path / "p", passing=1, files={"ci/ci.ini": "[pytest]\n"})
+    project = pytest_project(tmp_path / "p", passing=1, files={"ci/ci.ini": "[pytest]\n"})
     git(project, "init", "-q")
     git(project, "add", ".")
     git(project, "commit", "-q", "-m", "first")
@@ -817,7 +766,7 @@ def test_a_configuration_file_the_command_names_is_named_on_the_receipt(tmp_path
 
 @needs_runner("pytest")
 def test_an_untracked_conftest_is_counted_and_named(tmp_path: Path) -> None:
-    project = scratch_project(tmp_path / "p", passing=1)
+    project = pytest_project(tmp_path / "p", passing=1)
     git(project, "init", "-q")
     git(project, "add", "pytest.ini", "test_scratch.py")
     git(project, "commit", "-q", "-m", "first")

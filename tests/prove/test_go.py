@@ -11,7 +11,6 @@ over the module `tests/fixtures/prove/go/`, copied into a scratch directory.
 from __future__ import annotations
 
 import os
-import shutil
 from pathlib import Path
 
 import pytest
@@ -34,18 +33,17 @@ from stayfixed.profiles.runners import (
 )
 from stayfixed.prove.counts import REPORT_MALFORMED, Counts
 from stayfixed.prove.run import (
-    ALL_SKIPPED,
     FAILING,
     NONE_RAN,
     Receipt,
     Verdict,
     prove,
 )
+from tests.prove.projects import go_module
 from tests.prove.real_runners import needs_runner, runner_directory
 
 PROVED, FAILED, NOT_PROVEN = Verdict.PROVED, Verdict.FAILED, Verdict.NOT_PROVEN
 ROOT = Path(__file__).resolve().parents[2]
-MODULE = ROOT / "tests" / "fixtures" / "prove" / "go"
 REPORTS = ROOT / "tests" / "fixtures" / "prove" / "reports"
 GO = GoTestAdapter()
 
@@ -451,11 +449,6 @@ def test_an_assigned_go_variable_is_planned(tmp_path: Path, name: str, spelling:
 # --- Real go test runs ----------------------------------------------------------------------
 
 
-def module(tmp_path: Path) -> Path:
-    """The fixture module, copied where the run may build it."""
-    return Path(shutil.copytree(MODULE, tmp_path / "module"))
-
-
 def real(cwd: Path, *argv: str, **variables: str) -> Receipt:
     """`argv` proved in `cwd` with the `go` on `PATH` first."""
     go = runner_directory("go")
@@ -464,15 +457,8 @@ def real(cwd: Path, *argv: str, **variables: str) -> Receipt:
 
 
 @needs_runner("go")
-def test_a_genuine_passing_run_is_proved(tmp_path: Path) -> None:
-    got = real(module(tmp_path), "go", "test", "./passing/")
-    assert (got.verdict, got.reason, got.counts, got.exit_code) == (PROVED, "", Counts(1, 0, 1), 0)
-    assert got.program == os.path.realpath(runner_directory("go") / "go")
-
-
-@needs_runner("go")
 def test_the_three_tests_fail(tmp_path: Path) -> None:
-    got = real(module(tmp_path), "go", "test", "./three/")
+    got = real(go_module(tmp_path), "go", "test", "./three/")
     assert (got.verdict, got.reason, got.counts, got.exit_code) == (
         FAILED,
         FAILING,
@@ -482,25 +468,8 @@ def test_the_three_tests_fail(tmp_path: Path) -> None:
 
 
 @needs_runner("go")
-def test_run_no_such_test_fails(tmp_path: Path) -> None:
-    got = real(module(tmp_path), "go", "test", "-run", "NoSuchTest", "./three/")
-    assert (got.verdict, got.reason, got.counts, got.exit_code) == (
-        FAILED,
-        NONE_RAN,
-        Counts(0, 0, 0),
-        0,
-    )
-
-
-@needs_runner("go")
-def test_an_all_skipped_run_fails(tmp_path: Path) -> None:
-    got = real(module(tmp_path), "go", "test", "./skipped/")
-    assert (got.verdict, got.reason, got.counts) == (FAILED, ALL_SKIPPED, Counts(0, 0, 2))
-
-
-@needs_runner("go")
 def test_testmain_exiting_zero_fails(tmp_path: Path) -> None:
-    got = real(module(tmp_path), "go", "test", "./testmain/")
+    got = real(go_module(tmp_path), "go", "test", "./testmain/")
     assert (got.verdict, got.reason, got.counts, got.exit_code) == (
         FAILED,
         NONE_RAN,
@@ -511,7 +480,7 @@ def test_testmain_exiting_zero_fails(tmp_path: Path) -> None:
 
 @needs_runner("go")
 def test_a_build_failure_fails(tmp_path: Path) -> None:
-    got = real(module(tmp_path), "go", "test", "./broken/")
+    got = real(go_module(tmp_path), "go", "test", "./broken/")
     assert (got.verdict, got.reason, got.counts) == (FAILED, FAILING, Counts(0, 1, 0))
 
 
@@ -519,7 +488,7 @@ def test_a_build_failure_fails(tmp_path: Path) -> None:
 def test_framing_printed_by_a_test_is_what_the_bound_concedes(tmp_path: Path) -> None:
     # A `TestMain` printing `\x16--- PASS: TestForged` gets a `pass` event for a test that never
     # ran: the code under test can shape the report.
-    got = real(module(tmp_path), "go", "test", "./framing/")
+    got = real(go_module(tmp_path), "go", "test", "./framing/")
     assert (got.verdict, got.counts) == (PROVED, Counts(2, 0, 0))
 
 
@@ -527,7 +496,7 @@ def test_framing_printed_by_a_test_is_what_the_bound_concedes(tmp_path: Path) ->
 def test_an_event_a_test_prints_is_output(tmp_path: Path) -> None:
     # A test printing a whole `pass` event, without test2json's framing byte, is a line of
     # output, and its own failure is counted.
-    got = real(module(tmp_path), "go", "test", "./printing/")
+    got = real(go_module(tmp_path), "go", "test", "./printing/")
     assert (got.verdict, got.reason, got.counts) == (FAILED, FAILING, Counts(0, 1, 0))
 
 
@@ -535,7 +504,7 @@ def test_an_event_a_test_prints_is_output(tmp_path: Path) -> None:
 def test_the_user_s_go_env_file_shapes_the_run(tmp_path: Path) -> None:
     # The file `GOENV` names holds `GOFLAGS=-tags=integration`, which the go command reads as it
     # does outside `prove`: the failing test behind the tag runs.
-    project = module(tmp_path)
+    project = go_module(tmp_path)
     (project / "passing" / "integration_test.go").write_text(
         '//go:build integration\n\npackage passing\n\nimport "testing"\n\n'
         'func TestIntegration(t *testing.T) { t.Fatal("tagged") }\n',
@@ -555,5 +524,5 @@ def test_the_user_s_go_env_file_shapes_the_run(tmp_path: Path) -> None:
 def test_a_flag_that_ends_the_stream_is_never_proved(
     tmp_path: Path, flag: str, verdict: Verdict, reason: str
 ) -> None:
-    got = real(module(tmp_path), "go", "test", flag, "./passing/")
+    got = real(go_module(tmp_path), "go", "test", flag, "./passing/")
     assert (got.verdict, got.reason) == (verdict, reason)

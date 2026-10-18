@@ -1,11 +1,11 @@
 """`stayfixed prove`'s acceptance: one test per clause, each through the command line in a process
 of its own, asserting the verdict word `--json` prints and the exit code together.
 
-- each reader's genuine passing run is `proved`, exit 0, its counts a literal:
-  `test_each_genuine_passing_run_is_proved_with_exit_0`;
+- each reader's genuine passing run is `proved`, exit 0, its counts a literal, the program that
+  ran and the runner's own exit code named: `test_each_genuine_passing_run_is_proved_with_exit_0`;
 - a stdout-forged run is `not proven`: `test_a_stdout_forged_run_is_not_proven_with_exit_1`;
-- an empty and an all-skipped run are `failed`, `go test -run NoSuchTest` included:
-  `test_each_empty_and_all_skipped_run_fails_with_exit_1`;
+- an empty and an all-skipped run are `failed`, `go test -run NoSuchTest` included, each with
+  the runner's own exit code: `test_each_empty_and_all_skipped_run_fails_with_exit_1`;
 - each refused forging route is `refused`, exit 2: `test_each_refused_route_exits_2`;
 - the same variable merely inherited is scrubbed and the run still counted:
   `test_each_inherited_variable_is_scrubbed_and_counted`.
@@ -16,7 +16,9 @@ and the receipt names the realpath of what ran instead.
 The process runs the stayfixed the interpreter running the suite has installed, never this
 checkout's `src` put first (`stayfixed_argv(..., installed=True)`), behind the owner-home seam, so
 the same file run against an installed release tests that release. The cases that run a real
-runner are `runners`-marked and skip where it is not installed.
+runner are `runners`-marked and skip where it is not installed. They are the one real launch of
+each case: the per-stack tests (`test_pytest.py`, `test_go.py`, `test_javascript.py`) hold what
+these do not.
 """
 
 from __future__ import annotations
@@ -39,9 +41,16 @@ from stayfixed.prove.run import (
     NOT_RECOGNISED,
 )
 from tests.ownerhome import stayfixed_argv
-from tests.prove.real_runners import installed_packages, node_modules, required, where
-from tests.prove.test_go import module
-from tests.prove.test_javascript import COMMANDS, FILES
+from tests.prove.projects import (
+    COMMANDS,
+    FILES,
+    each_runner,
+    go_module,
+    js_project,
+    needs,
+    pytest_project,
+)
+from tests.prove.real_runners import where
 
 TIMEOUT_SECONDS = 600
 
@@ -87,53 +96,25 @@ def counted(receipt: dict[str, object]) -> Counts | None:
     return Counts(**counts) if isinstance(counts, dict) else None
 
 
-def pytest_project(root: Path, *, passing: int = 0, skipped: int = 0) -> Path:
-    """A project pytest collects in `root`, with no configuration above it read."""
-    root.mkdir(parents=True, exist_ok=True)
-    (root / "pytest.ini").write_text("[pytest]\n", encoding="utf-8")
-    tests = ["import pytest", ""]
-    tests += [f"def test_pass_{index}():\n    pass\n" for index in range(passing)]
-    tests += [
-        f"@pytest.mark.skip(reason='scratch')\ndef test_skip_{index}():\n    pass\n"
-        for index in range(skipped)
-    ]
-    (root / "test_scratch.py").write_text("\n".join(tests), encoding="utf-8")
-    return root
-
-
-def js_project(root: Path, runner: str, text: str | None) -> Path:
-    """A project `runner` collects in `root`, its `node_modules` linked to the installed ones."""
-    name, _, _, manifest = FILES[runner]
-    root.mkdir(parents=True, exist_ok=True)
-    (root / "package.json").write_text(manifest, encoding="utf-8")
-    (root / "node_modules").symlink_to(installed_packages())
-    if text:
-        (root / name).write_text(text, encoding="utf-8")
-    return root
-
-
 PYTEST = ("pytest", "-q", "-p", "no:cacheprovider")
-JS_RUNNERS = ("jest", "vitest", "node-test")
-
-
-def _needs(runner: str) -> list[pytest.MarkDecorator]:
-    """The marks a case of `runner` carries: `runners`, and a skip where it is not installed and
-    `STAYFIXED_REQUIRE_RUNNERS` does not require it, as `needs_runner` and `needs_packages` do."""
-    if runner in JS_RUNNERS:
-        missing = where("node") is None or node_modules() is None
-    else:
-        missing = where({"pytest": "pytest", "go-test": "go"}[runner]) is None
-    marks = [pytest.mark.runners]
-    if missing and not required():
-        marks.append(pytest.mark.skip(reason=f"{runner} is not installed here"))
-    return marks
-
-
-def each_runner(*cases: str) -> list[object]:
-    return [pytest.param(case, marks=_needs(case)) for case in cases]
-
-
 RUNNERS = ("pytest", "jest", "vitest", "node-test", "go-test")
+# The directory `where` names for each runner, and the program run from it: the command's first
+# word, which the receipt names by its realpath.
+PROGRAMS = {
+    "pytest": ("pytest", "pytest"),
+    "jest": ("node", "npx"),
+    "vitest": ("node", "npx"),
+    "node-test": ("node", "node"),
+    "go-test": ("go", "go"),
+}
+
+
+def program(runner: str) -> str:
+    """The realpath of the program a case of `runner` runs."""
+    directory, name = PROGRAMS[runner]
+    found = where(directory)
+    assert found is not None, runner
+    return os.path.realpath(found / name)
 
 
 @pytest.mark.parametrize("runner", each_runner(*RUNNERS))
@@ -142,12 +123,23 @@ def test_each_genuine_passing_run_is_proved_with_exit_0(tmp_path: Path, runner: 
     if runner == "pytest":
         cwd, argv, counts = pytest_project(tmp_path / "p", passing=2), PYTEST, Counts(2, 0, 0)
     elif runner == "go-test":
-        cwd, argv, counts = module(tmp_path), ("go", "test", "./passing/"), Counts(1, 0, 1)
+        cwd, argv, counts = go_module(tmp_path), ("go", "test", "./passing/"), Counts(1, 0, 1)
     else:
         cwd = js_project(tmp_path / "p", runner, FILES[runner][1])
         argv, counts = tuple(COMMANDS[runner]), Counts(1, 0, 1)
     verdict, code, receipt = run_prove(tmp_path, cwd, *argv)
-    assert (verdict, code, counted(receipt), receipt["runner"]) == ("proved", 0, counts, runner)
+    assert (verdict, code, receipt["reason"], counted(receipt), receipt["runner"]) == (
+        "proved",
+        0,
+        "",
+        counts,
+        runner,
+    )
+    assert (receipt["program"], receipt["exit_code"], receipt["verified"]) == (
+        program(runner),
+        0,
+        True,
+    )
 
 
 @pytest.mark.parametrize(
@@ -173,11 +165,15 @@ def test_a_stdout_forged_run_is_not_proven_with_exit_1(tmp_path: Path, printed: 
 
 
 EMPTY_AND_SKIPPED = [(runner, case) for runner in RUNNERS for case in ("empty", "all-skipped")]
+# What each runner exits with over no test: pytest's "no tests collected" 5, jest's and vitest's
+# 1, and 0 for `node --test` and `go test -run NoSuchTest`. Every runner exits 0 when it skipped
+# every test it ran.
+EMPTY_EXIT = {"pytest": 5, "jest": 1, "vitest": 1, "node-test": 0, "go-test": 0}
 
 
 @pytest.mark.parametrize(
     ("runner", "case"),
-    [pytest.param(runner, case, marks=_needs(runner)) for runner, case in EMPTY_AND_SKIPPED],
+    [pytest.param(runner, case, marks=needs(runner)) for runner, case in EMPTY_AND_SKIPPED],
 )
 def test_each_empty_and_all_skipped_run_fails_with_exit_1(
     tmp_path: Path, runner: str, case: str
@@ -187,7 +183,7 @@ def test_each_empty_and_all_skipped_run_fails_with_exit_1(
         cwd = pytest_project(tmp_path / "p", skipped=0 if empty else 2)
         argv: tuple[str, ...] = (*PYTEST, "-k", "no_such_test") if empty else PYTEST
     elif runner == "go-test":
-        cwd = module(tmp_path)
+        cwd = go_module(tmp_path)
         argv = (
             ("go", "test", "-run", "NoSuchTest", "./three/")
             if empty
@@ -199,6 +195,8 @@ def test_each_empty_and_all_skipped_run_fails_with_exit_1(
     verdict, code, receipt = run_prove(tmp_path, cwd, *argv)
     reason, counts = (NONE_RAN, Counts(0, 0, 0)) if empty else (ALL_SKIPPED, Counts(0, 0, 2))
     assert (verdict, code, receipt["reason"], counted(receipt)) == ("failed", 1, reason, counts)
+    exit_code = EMPTY_EXIT[runner] if empty else 0
+    assert (receipt["program"], receipt["exit_code"]) == (program(runner), exit_code)
 
 
 @pytest.mark.parametrize("runner", each_runner("jest"))
