@@ -582,6 +582,11 @@ REFUSALS: list[tuple[Adapter, tuple[str, ...], str]] = [
     (JEST, ("jest", "--collectTests"), "--collectTests"),
     (JEST, ("jest", "--watch"), "--watch"),
     (JEST, ("jest", "--watchAll"), "--watchAll"),
+    # A configuration's own text, as jest's `isJSONString` reads one: `{` first and `}` last.
+    (JEST, ("jest", "--config", '{"testResultsProcessor": "./p.js"}'), "--config"),
+    (JEST, ("jest", "--config={}"), "--config"),
+    (JEST, ("jest", "-c{}"), "--config"),
+    (JEST, ("jest", "-ic", '{"reporters": []}'), "--config"),
     # vitest 5.0.5
     (VITEST, ("npx", "vitest", "run", "--outputFile.json=x"), "--outputFile"),
     (VITEST, ("vitest", "run", "--outputFile=x"), "--outputFile"),
@@ -652,6 +657,9 @@ FREE: list[tuple[Adapter, tuple[str, ...]]] = [
     (JEST, ("jest", "-t", "passes")),
     (JEST, ("jest", "--testFailureExitCode=0")),
     (JEST, ("jest", "-c", "ci/jest.config.js")),
+    # Not JSON to jest, whose rule strips nothing: a file's name, which jest then refuses to read.
+    (JEST, ("jest", "--config", ' {"a": 1}')),
+    (JEST, ("jest", "--config", '{"a": 1} ')),
     (JEST, ("jest", "--", "--json")),
     (VITEST, ("vitest", "run", "--reporter=verbose")),
     (VITEST, ("vitest", "--update=none")),
@@ -695,9 +703,8 @@ def test_node_import_is_free(tmp_path: Path) -> None:
 def test_the_configuration_file_the_command_names_is_among_the_configs(tmp_path: Path) -> None:
     # A configuration file the command names is the bound's, as `jest.config.js` is, inside the
     # project or outside it, since the same agent could write either: never refused, named by its
-    # realpath, read from the directory the command runs in. A JSON object jest is given is no
-    # file. Mutations (declared): the named files left out -> the adapter's own globs alone; the
-    # JSON text named as a file -> it is among them.
+    # realpath, read from the directory the command runs in. Mutation (declared): the named files
+    # left out -> the adapter's own globs alone.
     root = tmp_path / "project"
     web = root / "web"
     web.mkdir(parents=True)
@@ -709,8 +716,6 @@ def test_the_configuration_file_the_command_names_is_among_the_configs(tmp_path:
             "-c",
             "ci/jest.config.js",
             "--config=../shared.config.js",
-            "--config",
-            '{"testResultsProcessor": "./p.js"}',
             "--rootDir",
             "elsewhere",
             "--",
@@ -743,15 +748,30 @@ def test_the_configuration_file_the_command_names_is_among_the_configs(tmp_path:
         (("-r", "sub", "-c", "c.js"), "sub/c.js"),
         (("--config", "./c.js", "--root=sub"), "sub/c.js"),
         (("--root", "a", "--root", "sub", "-c", "c.js"), "sub/c.js"),
+        # Measured: vitest reads these as the directory `false`, an error, and the directory
+        # `true`; none names a root here.
+        (("--no-root", "sub", "-c", "c.js"), "c.js"),
+        (("--root.x", "a", "-c", "c.js"), "c.js"),
+        (("--root=", "-c", "c.js"), "c.js"),
     ],
-    ids=["no-root", "root-first", "short", "config-first", "the-last-root"],
+    ids=[
+        "no-root",
+        "root-first",
+        "short",
+        "config-first",
+        "the-last-root",
+        "negated",
+        "dotted",
+        "empty",
+    ],
 )
 def test_vitest_reads_its_configuration_from_its_root(
     tmp_path: Path, args: tuple[str, ...], named: str
 ) -> None:
-    # Measured on vitest 5.0.5: a relative `--config` is read from `--root`, in either order.
-    # Mutation (declared): the configuration read from the run's directory whatever `--root` says
-    # -> the cases with a root name `c.js`.
+    # Measured on vitest 5.0.5: a relative `--config` is read from `--root`, in either order; two
+    # roots stop vitest before any run, and the last is taken. Mutations (declared): the
+    # configuration read from the run's directory whatever `--root` says -> the cases with a root
+    # name `c.js`; a negated, dotted or empty `--root` read as one -> its case names another.
     assert outcome(VITEST, ("run", *args), tmp_path) == f"named {named}"
 
 

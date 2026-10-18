@@ -2834,16 +2834,53 @@ reddens = ["tests/prove/test_javascript.py::test_a_preloaded_file_is_named_and_a
 
 # `-c`/`--config` is free: the file it names is named, read as the runner reads it.
 [[mutation]]
-name = "jest's JSON configuration text is named as a file"
+name = "jest's --config given a configuration's own text is free"
 file = "src/stayfixed/profiles/javascript/adapters.py"
-before = "        if not value.lstrip().startswith(_CONFIG_TEXT)"
-after = "        if value"
-reddens = ["tests/prove/test_javascript.py::test_the_configuration_file_the_command_names_is_among_the_configs"]
+before = """    if any(jest_config_text(value) for value in _config_values(settings)):
+        return "--config"
+"""
+after = ""
+reddens = [
+  'tests/prove/test_javascript.py::test_each_report_steering_option_is_refused[jest:--config_{"testResultsProcessor": "./p.js"}]',
+  "tests/prove/test_javascript.py::test_each_report_steering_option_is_refused[jest:-c{}]",
+]
+
+[[mutation]]
+name = "jest's JSON rule strips the value first"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = "    return value.startswith(_CONFIG_TEXT[0]) and value.endswith(_CONFIG_TEXT[1])"
+after = "    return value.strip().startswith(_CONFIG_TEXT[0]) and value.strip().endswith(_CONFIG_TEXT[1])"
+reddens = [
+  'tests/prove/test_javascript.py::test_every_other_option_is_free[jest:--config_ {"a": 1}]',
+  'tests/prove/test_javascript.py::test_every_other_option_is_free[jest:--config_{"a": 1} ]',
+]
+
+[[mutation]]
+name = "a negated --root is read as vitest's root"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = """        and not setting.negated
+        and not setting.dotted
+        and setting.value
+    ]"""
+after = """        and not setting.dotted
+        and setting.value
+    ]"""
+reddens = ["tests/prove/test_javascript.py::test_vitest_reads_its_configuration_from_its_root[negated]"]
+
+[[mutation]]
+name = "a dotted --root is read as vitest's root"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = """        and not setting.dotted
+        and setting.value
+    ]"""
+after = """        and setting.value
+    ]"""
+reddens = ["tests/prove/test_javascript.py::test_vitest_reads_its_configuration_from_its_root[dotted]"]
 
 [[mutation]]
 name = "vitest's configuration is read from the run's directory whatever --root says"
 file = "src/stayfixed/profiles/javascript/adapters.py"
-before = "    base = cwd / roots[-1] if roots and roots[-1] else cwd"
+before = "    base = cwd / roots[-1] if roots else cwd"
 after = "    base = cwd"
 reddens = [
   "tests/prove/test_javascript.py::test_vitest_reads_its_configuration_from_its_root[root-first]",
@@ -2853,8 +2890,8 @@ reddens = [
 [[mutation]]
 name = "vitest's configuration is read from its first --root"
 file = "src/stayfixed/profiles/javascript/adapters.py"
-before = "    base = cwd / roots[-1] if roots and roots[-1] else cwd"
-after = "    base = cwd / roots[0] if roots and roots[0] else cwd"
+before = "    base = cwd / roots[-1] if roots else cwd"
+after = "    base = cwd / roots[0] if roots else cwd"
 reddens = ["tests/prove/test_javascript.py::test_vitest_reads_its_configuration_from_its_root[the-last-root]"]
 
 [[mutation]]

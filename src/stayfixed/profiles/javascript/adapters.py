@@ -35,10 +35,12 @@ running every option the pinned runner registers over a failing test with the re
 appended, and every other option is free. `REFUSED_OPTION`, naming the option:
 
 - jest 30.5.2: `--json` and `--outputFile` (the report's own), `--testResultsProcessor` (which
-  rewrites the results before they are written), `-u`/`--updateSnapshot` (which rewrites a failing
-  snapshot so that it passes), `--ci=false`/`--no-ci` (which writes a missing snapshot rather than
-  failing it), `--collectTests` (which exits 0 reporting a failing test as passed), `--watch` and
-  `--watchAll` (which never end).
+  rewrites the results before they are written), `-c`/`--config` given a configuration's own text (a
+  value jest's `isJSONString` reads as JSON, which can set `testResultsProcessor` in the command
+  itself and names no file the receipt could name), `-u`/`--updateSnapshot` (which rewrites a
+  failing snapshot so that it passes), `--ci=false`/`--no-ci` (which writes a missing snapshot
+  rather than failing it), `--collectTests` (which exits 0 reporting a failing test as passed),
+  `--watch` and `--watchAll` (which never end).
 - vitest 5.0.5: `--outputFile` in any form, `-u`/`--update` but `--update=none` and
   `--no-update` (each other rewrites a failing or missing snapshot so that it passes),
   `--mergeReports` (which runs nothing and reports the blob files it reads as results),
@@ -63,15 +65,15 @@ vitest's cac (every character of a short cluster up to a `=` is an option of its
 `-u`; a boolean is off only by `--no-` or `false`, and `--update=false` is the text `false`, which
 rewrites snapshots as `--update` does).
 
-`-c`/`--config` is free for both: a configuration the command names outside the project is one
-the same agent could write inside it, which is the bound's, so a refusal of it would stop nobody.
-The file it names is named among the receipt's configuration files by its realpath
+`-c`/`--config` naming a file is free for both: a configuration the command names outside the
+project is one the same agent could write inside it, which is the bound's, so a refusal of it would
+stop nobody. The file it names is named among the receipt's configuration files by its realpath
 (`Plan.configs`), read from the directory the command runs in for jest, and from vitest's `--root`
-where the command gives one; a JSON object jest is given there is no file. Every other option that
-names code to load or where to look -- jest's `--setupFiles`, `--globalSetup`, `--testRunner`,
-`--testEnvironment`, `--projects`, `--rootDir`, `--roots` and `--reporters`, vitest's `--root`,
-`--dir` and `--setupFiles` -- is free too, since the code it loads is the bound's and the lists
-stay closed.
+where the command gives one; a configuration's own text jest is given there is refused, above. Every
+other option that names code to load or where to look -- jest's `--setupFiles`, `--globalSetup`,
+`--testRunner`, `--testEnvironment`, `--projects`, `--rootDir`, `--roots` and `--reporters`,
+vitest's `--root`, `--dir` and `--setupFiles` -- is free too, since the code it loads is the bound's
+and the lists stay closed.
 
 `FORGING`, assigned in the command (refused) or inherited (scrubbed): `NODE_OPTIONS`, which Node
 reads as options of every run, `--require` and the reporters among them; for `node --test` also
@@ -404,21 +406,23 @@ def _config_values(settings: Sequence[tuple[str, Setting]]) -> list[str]:
     ]
 
 
-# What jest reads as a configuration's own text rather than a file's name (a JSON object): no
-# file, and so none to name.
-_CONFIG_TEXT = "{"
+# What jest reads as a configuration's own text rather than a file's name: jest-config 30.5.2's
+# `isJSONString`, a value that starts with `{` and ends with `}`, nothing stripped.
+_CONFIG_TEXT = ("{", "}")
+
+
+def jest_config_text(value: str) -> bool:
+    """Whether jest reads a `--config` value as a configuration's own text, as its
+    `isJSONString` does."""
+    return value.startswith(_CONFIG_TEXT[0]) and value.endswith(_CONFIG_TEXT[1])
 
 
 def _jest_configs(args: Sequence[str], cwd: Path) -> tuple[str, ...]:
     """The realpath of each configuration file jest's `-c` or `--config` names, read from `cwd`
     (measured on 30.5.2: whatever `--rootDir` says): an absolute entry of `Plan.configs`, which
-    names that one file. A JSON object given there is no file."""
+    names that one file. A configuration's own text there was refused before the plan."""
     values = _config_values(_settings(jest_settings, args))
-    return tuple(
-        os.path.realpath(cwd / value)
-        for value in values
-        if not value.lstrip().startswith(_CONFIG_TEXT)
-    )
+    return tuple(os.path.realpath(cwd / value) for value in values)
 
 
 # vitest's options that name the directory its configuration file is read from.
@@ -427,11 +431,21 @@ _VITEST_ROOT = frozenset({"root", "r"})
 
 def _vitest_configs(args: Sequence[str], cwd: Path) -> tuple[str, ...]:
     """The realpath of each configuration file vitest's `-c` or `--config` names, read from the
-    directory the last `-r` or `--root` names where the command gives one, itself read from
-    `cwd` (measured on 5.0.5, in either order), else from `cwd`."""
+    directory `-r` or `--root` names where the command gives one, itself read from `cwd`
+    (measured on 5.0.5, in either order), else from `cwd`. A `--no-root`, a `--root.x` or an empty
+    `--root=` names no directory here (vitest reads the first two as the directory `false` or
+    stops, and the last as the directory `true`), and of two the last is taken (vitest stops at
+    two, "Expected a single value", before any run)."""
     settings = _settings(vitest_settings, args)
-    roots = [setting.value for _, setting in settings if setting.name in _VITEST_ROOT]
-    base = cwd / roots[-1] if roots and roots[-1] else cwd
+    roots = [
+        setting.value
+        for _, setting in settings
+        if setting.name in _VITEST_ROOT
+        and not setting.negated
+        and not setting.dotted
+        and setting.value
+    ]
+    base = cwd / roots[-1] if roots else cwd
     return tuple(os.path.realpath(base / value) for value in _config_values(settings))
 
 
@@ -459,6 +473,8 @@ def jest_refused(args: Sequence[str], cwd: Path, root: Path) -> str | None:
             return word if len(name) == 1 else f"--{name}"
         if name == _JEST_CI and not _yargs_on(setting):
             return word
+    if any(jest_config_text(value) for value in _config_values(settings)):
+        return "--config"
     return None
 
 

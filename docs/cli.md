@@ -872,24 +872,24 @@ command names no reporter; `node --test` with a junit reporter to `<report>` and
 to standard output, and a testcase node writes for a whole file that ran no test is not counted
 unless it failed. Each refuses (`refused-option`, naming the option) a closed list drawn by running
 every option the pinned runner registers over a failing test: jest's `--json`, `--outputFile`,
-`--testResultsProcessor`, `-u`/`--updateSnapshot`, `--no-ci`, `--collectTests`, `--watch` and
-`--watchAll`; vitest's `--outputFile` in any form, `-u`/`--update` but `--update=none` and
-`--no-update` (`--update=false` is the text `false`, which rewrites snapshots), `--mergeReports`,
-`--dangerouslyIgnoreUnhandledErrors` and `-w`/`--watch`; and node's own `--test-reporter…`,
-`--env-file`, `--env-file-if-exists`, its configuration file options, `--test-update-snapshots`,
-`--test-rerun-failures`, `--watch` and `--watch-path`, spelled with `_` or after the files too. Each
-option is read as the runner's own parser reads it on the pinned version: jest's `--ci false` is
-`--no-ci`, vitest's `-t.u` sets `-u`. Every other option is free: `-c`/`--config`, whose file,
-inside the project or outside it, is one the same agent could write in the tree; `--import` and
-`--require`; the files jest's `--setupFiles`, `--testRunner`, `--projects` or `--rootDir` and
-vitest's `--root` or `--dir` name; and a reporter of jest's or vitest's own. The file `-c` or
-`--config` names (read from the directory the command runs in, and for vitest from its `--root`
-where the command gives one; a JSON object jest is given there is no file), and a file `-r`,
-`--require`, `--import` or `--loader` names by its path or a `file:` URL rather than a package's
-name, are among the configuration files, by their realpath. Their forging set is `NODE_OPTIONS`, and
-for `node --test` also `NODE_TEST_CONTEXT`, an inherited one removed from the run's environment.
-Their configuration files are `package.json`, `.npmrc`, `jest.config.*`, `vitest.config.*` and
-`vite.config.*`.
+`--testResultsProcessor`, a `-c`/`--config` given a configuration's own text (a value that starts
+with `{` and ends with `}`, which jest reads as JSON), `-u`/`--updateSnapshot`, `--no-ci`,
+`--collectTests`, `--watch` and `--watchAll`; vitest's `--outputFile` in any form, `-u`/`--update`
+but `--update=none` and `--no-update` (`--update=false` is the text `false`, which rewrites
+snapshots), `--mergeReports`, `--dangerouslyIgnoreUnhandledErrors` and `-w`/`--watch`; and node's
+own `--test-reporter…`, `--env-file`, `--env-file-if-exists`, its configuration file options,
+`--test-update-snapshots`, `--test-rerun-failures`, `--watch` and `--watch-path`, spelled with `_`
+or after the files too. Each option is read as the runner's own parser reads it on the pinned
+version: jest's `--ci false` is `--no-ci`, vitest's `-t.u` sets `-u`. Every other option is free:
+`-c`/`--config` naming a file, which, inside the project or outside it, is one the same agent could
+write in the tree; `--import` and `--require`; the files jest's `--setupFiles`, `--testRunner`,
+`--projects` or `--rootDir` and vitest's `--root` or `--dir` name; and a reporter of jest's or
+vitest's own. The file `-c` or `--config` names (read from the directory the command runs in, and
+for vitest from its `--root` where the command gives one), and a file `-r`, `--require`, `--import`
+or `--loader` names by its path or a `file:` URL rather than a package's name, are among the
+configuration files, by their realpath. Their forging set is `NODE_OPTIONS`, and for `node --test`
+also `NODE_TEST_CONTEXT`, an inherited one removed from the run's environment. Their configuration
+files are `package.json`, `.npmrc`, `jest.config.*`, `vitest.config.*` and `vite.config.*`.
 
 **`--junit PATH`** is for a runner no adapter knows: the command runs as typed (its assignments,
 `env` and `uv run …` read as above, the launcher's file options and variables refused as above), no

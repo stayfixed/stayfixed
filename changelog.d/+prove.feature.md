@@ -29,16 +29,16 @@ The jest, vitest and `node --test` adapters recognise `jest` and `vitest`, bare 
 (which is never run), and `node --test`; each runs the `node` on `PATH` with the entry point the
 runner's own package names, found under `node_modules` from where the command runs up to the
 project's top-level, and with a report of `prove`'s own (`entry-not-found` where there is none,
-which names `prove --junit`; `npm test`, `yarn` and `pnpm` are recognised by none). They refuse
-the options that move, replace or suppress the report, or that report a test passed that failed or
-never ran: jest's `--json`, `--outputFile`, `--testResultsProcessor`, `-u`, `--no-ci`,
-`--collectTests` and watch modes; vitest's `--outputFile`, `-u` (`--update=false` among them),
-`--mergeReports`, `--dangerouslyIgnoreUnhandledErrors` and `--watch`; node's own reporters, `--env-file`, its
-configuration file, `--test-update-snapshots`, `--test-rerun-failures` and `--watch`; and an
-assigned `NODE_OPTIONS` (or, for `node --test`, `NODE_TEST_CONTEXT`). Each option is read as the
-runner's own parser reads it; every other option is free, `-c`/`--config` among them, and the file
-it names, like a file node's `--require` or `--import` names by its path, is named among the files
-that can shape the report.
+which names `prove --junit`; `npm test`, `yarn` and `pnpm` are recognised by none). They refuse the
+options that move, replace or suppress the report, or that report a test passed that failed or never
+ran: jest's `--json`, `--outputFile`, `--testResultsProcessor`, a `--config` given JSON text, `-u`,
+`--no-ci`, `--collectTests` and watch modes; vitest's `--outputFile`, `-u` (`--update=false` among
+them), `--mergeReports`, `--dangerouslyIgnoreUnhandledErrors` and `--watch`; node's own reporters,
+`--env-file`, its configuration file, `--test-update-snapshots`, `--test-rerun-failures` and
+`--watch`; and an assigned `NODE_OPTIONS` (or, for `node --test`, `NODE_TEST_CONTEXT`). Each option
+is read as the runner's own parser reads it; every other option is free, `-c`/`--config` naming a
+file among them, and the file it names, like a file node's `--require` or `--import` names by its
+path, is named among the files that can shape the report.
 `stayfixed prove --junit PATH -- COMMAND` counts the JUnit report of a runner no adapter knows,
 read from the directory the command runs in, only where the run created or rewrote it as a regular
 file (`junit-unchanged` otherwise); a command an adapter recognises is refused
