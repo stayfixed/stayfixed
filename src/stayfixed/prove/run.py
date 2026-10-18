@@ -516,11 +516,11 @@ def _counted(plan: Plan) -> tuple[Counts | None, str | None, str, str | None]:
 
 @dataclass(frozen=True)
 class _Run:
-    """One run of `prove` once its command is read and its environment built: the launch, the
-    command as the receipt shows it, where it runs and for which project, the run's environment
-    and the inherited variables it lost, and how it is run and counted."""
+    """One run of `prove` once its command is read and its environment built: the command as typed,
+    read into its parts and as the receipt shows it, where it runs and for which project, the run's
+    environment and the inherited variables it lost, and how it is run and counted."""
 
-    launch: Launch
+    typed: Launch
     shown: tuple[str, ...]
     cwd: Path
     root: Path
@@ -617,9 +617,7 @@ def _planned_and_proved(adapter: RunnerAdapter | None, run: _Run) -> Receipt:
     if adapter is None:
         junit = run.junit
         unverified = (
-            _unverified(run.launch, run.cwd / junit, run.cwd, run.env)
-            if junit is not None
-            else None
+            _unverified(run.typed, run.cwd / junit, run.cwd, run.env) if junit is not None else None
         )
         if unverified is None:
             return _receipt(_Outcome(unproven=NOT_STARTED), run.shown, verified=run.verified)
@@ -627,8 +625,8 @@ def _planned_and_proved(adapter: RunnerAdapter | None, run: _Run) -> Receipt:
     scratch = Path(tempfile.mkdtemp(prefix="stayfixed-prove-"))
     try:
         planned = adapter.plan(
-            run.launch.launcher,
-            run.launch.command,
+            run.typed.launcher,
+            run.typed.command,
             cwd=run.cwd,
             root=run.root,
             scratch=scratch,

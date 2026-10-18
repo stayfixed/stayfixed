@@ -5735,10 +5735,10 @@ reddens = [
 [[mutation]]
 name = "prove hands the adapter the launch whole"
 file = "src/stayfixed/prove/run.py"
-before = """            run.launch.launcher,
-            run.launch.command,"""
-after = """            (*run.launch.assignments, *run.launch.launcher),
-            run.launch.command,"""
+before = """            run.typed.launcher,
+            run.typed.command,"""
+after = """            (*run.typed.assignments, *run.typed.launcher),
+            run.typed.command,"""
 reddens = [
   "tests/prove/test_run.py::test_the_adapter_is_handed_the_launcher_s_words_alone[argv0-launch0]",
   "tests/prove/test_run.py::test_the_adapter_is_handed_the_launcher_s_words_alone[argv1-launch1]",
@@ -6381,8 +6381,8 @@ reddens = ["tests/prove/test_junit_flag.py::test_with_junit_no_adapter_is_consul
 [[mutation]]
 name = "prove --junit reads its path from the project's top-level"
 file = "src/stayfixed/prove/run.py"
-before = "            _unverified(run.launch, run.cwd / junit, run.cwd, run.env)"
-after = "            _unverified(run.launch, run.root / junit, run.cwd, run.env)"
+before = "            _unverified(run.typed, run.cwd / junit, run.cwd, run.env)"
+after = "            _unverified(run.typed, run.root / junit, run.cwd, run.env)"
 reddens = ["tests/prove/test_junit_flag.py::test_the_path_is_read_from_the_directory_the_command_is_typed_in"]
 
 [[mutation]]
