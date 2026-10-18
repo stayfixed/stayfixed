@@ -874,13 +874,18 @@ that ran no test is not counted unless it failed. Each refuses (`refused-option`
 option) a closed list drawn by running every option the pinned runner registers over a failing
 test: jest's `--json`, `--outputFile`, `--testResultsProcessor`, `-u`/`--updateSnapshot`,
 `--no-ci`, `--collectTests`, `--watch`, `--watchAll`, and a `-c`/`--config` given a JSON text or a
-file outside the project; vitest's `--outputFile` in any form, `-u`/`--update` but `--update=none`,
+file outside the project; vitest's `--outputFile` in any form, `-u`/`--update` but `--update=none`
+and `--no-update` (`--update=false` is the text `false`, which rewrites snapshots),
 `--mergeReports`, `--dangerouslyIgnoreUnhandledErrors`, `-w`/`--watch`, and a `-c`/`--config`
 outside the project; and node's own `--test-reporter…`, `--env-file`, `--env-file-if-exists`, its
 configuration file options, `--test-update-snapshots`, `--test-rerun-failures`, `--watch` and
-`--watch-path`, spelled with `_` or after the files too. Every other option is free, `--import`,
-`--require` and a reporter of jest's or vitest's own among them. A configuration file the command
-names inside the project is among the configuration files, by its realpath. Their forging set is
+`--watch-path`, spelled with `_` or after the files too. Each option is read as the runner's own
+parser reads it on the pinned version: jest's `-c/etc/x.js` names `/etc/x.js`, `--ci false` is
+`--no-ci`, vitest's `-t.u` sets `-u`. Every other option is free, `--import`, `--require`, the files
+jest's `--setupFiles`, `--testRunner`, `--projects` or `--rootDir` and vitest's `--root` or `--dir`
+name, and a reporter of jest's or vitest's own among them. A configuration file the command names
+inside the project, and a file `-r`, `--require`, `--import` or `--loader` names by its path
+rather than a package's name, are among the configuration files, by their realpath. Their forging set is
 `NODE_OPTIONS`, and for `node --test` also `NODE_TEST_CONTEXT`, an inherited one removed from the
 run's environment. Their configuration files are `package.json`, `.npmrc`, `jest.config.*`,
 `vitest.config.*` and `vite.config.*`.

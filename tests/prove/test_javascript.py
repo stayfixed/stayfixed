@@ -962,3 +962,192 @@ def test_a_project_with_no_packages_is_not_proven_and_installs_nothing(tmp_path:
     got = real(project, "npx", "vitest")
     assert (got.verdict, got.reason) == (NOT_PROVEN, ENTRY_NOT_FOUND)
     assert sorted(path.name for path in project.iterdir()) == ["package.json"]
+
+
+# --- Each option read as the runner's own parser reads it -----------------------------------
+#
+# Every case is a form measured on the pinned version with the runner's own parser (jest's yargs
+# and option table, vitest's `parseCLI`), and the answer is what that reading makes of it: a
+# refusal naming the word or option, the configuration files named, or free.
+
+
+def outcome(adapter: Adapter, args: Sequence[str], root: Path) -> str:
+    _, _, node = installed(root)
+    got = planned(adapter, [adapter.name, *args], root, path=str(node.parent))
+    if isinstance(got, Refused):
+        return f"refused {got.detail}"
+    assert isinstance(got, Plan), got
+    real = Path(os.path.realpath(root))
+    named = [os.path.relpath(entry, real) for entry in got.configs if os.path.isabs(entry)]
+    return f"named {' '.join(named)}" if named else "free"
+
+
+JEST_FORMS = [
+    # A short option in a cluster takes the rest of the word after a `=`, a character that is not
+    # a letter, digit or `_`, or a number; only the last letter takes the next word.
+    (("-c", "a.js"), "named a.js"),
+    (("-c=a.js",), "named a.js"),
+    (("-ic", "a.js"), "named a.js"),
+    (("-ic=a.js",), "named a.js"),
+    (("-c/etc/jest.config.js",), "refused --config"),
+    (("-ic/etc/jest.config.js",), "refused --config"),
+    (("-ic.a.js",), "named .a.js"),
+    # `-c` given the empty text, or an object, names no file.
+    (("-ca.js",), "free"),
+    (("-ci",), "free"),
+    (("-ci", "a.js"), "free"),
+    (("-c.a.js",), "free"),
+    (("-c../out.js",), "free"),
+    (("-u",), "refused -u"),
+    (("-iu",), "refused -iu"),
+    (("-ui",), "refused -ui"),
+    (("-tu",), "refused -tu"),
+    (("-uc", "a.js"), "refused -uc"),
+    (("-cu", "a.js"), "refused -cu"),
+    (("-u.x",), "refused -u.x"),
+    (("-u=true",), "refused -u=true"),
+    (("-u", "1"), "refused -u"),
+    # Turned off: `false` as the next word, or any value `=` gives but `true`, or a number.
+    (("-u=false",), "free"),
+    (("-u", "false"), "free"),
+    (("-u=yes",), "free"),
+    (("-u1",), "free"),
+    (("-t/u",), "free"),
+    (("-t=u",), "free"),
+    (("-t.u",), "free"),
+    # A boolean takes `true` or `false` as its next word, and nothing else.
+    (("--ci", "false"), "refused --ci"),
+    (("--ci=1",), "refused --ci=1"),
+    (("--ci=yes",), "refused --ci=yes"),
+    (("--ci", "0"), "free"),
+    (("--ci", "true"), "free"),
+    (("--ci", "False"), "free"),
+    (("--ci.x",), "free"),
+    (("--watch", "false"), "free"),
+    (("--watch=0",), "free"),
+    (("--watch", "0"), "refused --watch"),
+    (("--no-watch", "true"), "free"),
+    (("--watchAll", "false"), "free"),
+    (("--updateSnapshot", "false"), "free"),
+    (("--updateSnapshot", "true"), "refused --updateSnapshot"),
+    (("--collectTests", "false"), "free"),
+    (("--collectTests=true",), "refused --collectTests"),
+    (("--config", "a.js"), "named a.js"),
+    # A `-` after the letter is its value; a negative number is no option.
+    (("-c-",), "named -"),
+    (("-1",), "free"),
+    (("-u", "-1"), "refused -u"),
+]
+
+
+@pytest.mark.parametrize(
+    ("args", "expected"), JEST_FORMS, ids=["_".join(args) for args, _ in JEST_FORMS]
+)
+def test_jest_reads_each_form_as_yargs_does(
+    tmp_path: Path, args: tuple[str, ...], expected: str
+) -> None:
+    # Mutations (declared): a short option's value after a character that is no letter read as
+    # none -> `-c/etc/jest.config.js` is free; a boolean's next word never read -> `--ci false`
+    # is free; any `=` value read as on -> `-u=false` is refused.
+    assert outcome(JEST, args, tmp_path) == expected
+
+
+VITEST_FORMS = [
+    (("-c", "a.js"), "named a.js"),
+    (("-c=a.js",), "named a.js"),
+    (("-c", "../outside.js"), "refused --config"),
+    # Every character of a cluster is an option of its own, the last taking the value.
+    (("-ca.js",), "free"),
+    (("-c/abs/a.js",), "free"),
+    (("-c", "-t"), "free"),
+    (("-c../out.js",), "refused -c../out.js"),
+    (("-t.u",), "refused -t.u"),
+    (("-tu",), "refused -tu"),
+    (("-tfoo",), "free"),
+    (("-wc", "a.js"), "refused -wc"),
+    (("-cw", "a.js"), "refused -cw"),
+    (("-uc", "a.js"), "refused -uc"),
+    (("-cu", "a.js"), "refused -cu"),
+    (("-uw", "false"), "refused -uw"),
+    (("-u",), "refused -u"),
+    (("-u", "none"), "free"),
+    (("-u=none",), "free"),
+    (("--update", "none"), "free"),
+    (("--no-update",), "free"),
+    # `false` given to `--update` is the text `false`, which rewrites snapshots.
+    (("-u", "false"), "refused -u"),
+    (("--update=false",), "refused --update"),
+    (("--update", "false"), "refused --update"),
+    (("--update", "true"), "refused --update"),
+    (("--update.x",), "refused --update"),
+    # A boolean is off by `--no-` or `false` alone.
+    (("-w",), "refused -w"),
+    (("-w", "x"), "refused -w"),
+    (("-w=false",), "free"),
+    (("-w", "false"), "free"),
+    (("--watch", "false"), "free"),
+    (("--no-watch",), "free"),
+    (("--watch=0",), "refused --watch"),
+    (("--watch=no",), "refused --watch"),
+    (("--dangerouslyIgnoreUnhandledErrors", "false"), "free"),
+    (("--dangerouslyIgnoreUnhandledErrors=0",), "refused --dangerouslyIgnoreUnhandledErrors"),
+    (("--mergeReports=false",), "refused --mergeReports"),
+    (("--config", "a.js"), "named a.js"),
+    (("-=x",), "free"),
+    (("-u", "-1"), "refused -u"),
+]
+
+
+@pytest.mark.parametrize(
+    ("args", "expected"), VITEST_FORMS, ids=["_".join(args) for args, _ in VITEST_FORMS]
+)
+def test_vitest_reads_each_form_as_its_parser_does(
+    tmp_path: Path, args: tuple[str, ...], expected: str
+) -> None:
+    # Mutations (declared): `--update=false` read as no update -> its case is free; a cluster
+    # read only at its first letter -> `-t.u` is free; a boolean turned off by any `=` value ->
+    # `--watch=0` is free.
+    assert outcome(VITEST, ("run", *args), tmp_path) == expected
+
+
+def test_a_preloaded_file_is_named_and_a_package_is_not(tmp_path: Path) -> None:
+    # `-r`, `--require`, `--import` and `--loader` are free; the file a path names is among the
+    # configuration files, a package's name is not, `-r=x` is a bad option to node, and a word
+    # after `--` is none of node's. Mutation (declared): the preloaded files left out -> the
+    # adapter's own globs alone.
+    node = node_on_path(tmp_path / "bin")
+    got = plan_of(
+        NODE_TEST,
+        [
+            "node",
+            "-r",
+            "./.pnp.cjs",
+            "--import",
+            "tsx",
+            "--require=ts-node/register",
+            "--loader=../l.mjs",
+            "--experimental_loader",
+            "/abs/x.mjs",
+            "--import=file:///abs/y.mjs",
+            "-r=./bad.cjs",
+            "--test",
+            "a.test.mjs",
+            "--require",
+            "./after.cjs",
+            "--",
+            "--import=./not.mjs",
+        ],
+        tmp_path,
+        path=str(node.parent),
+    )
+    real = Path(os.path.realpath(tmp_path))
+    assert got.configs == (
+        *CONFIGS,
+        str(real / ".pnp.cjs"),
+        str(real.parent / "l.mjs"),
+        "/abs/x.mjs",
+        "/abs/y.mjs",
+        str(real / "after.cjs"),
+    )
+    last = plan_of(NODE_TEST, ["node", "--test", "-r"], tmp_path, path=str(node.parent))
+    assert last.configs == CONFIGS

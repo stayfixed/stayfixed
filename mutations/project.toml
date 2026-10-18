@@ -2554,17 +2554,20 @@ after = "_JEST_RUNS_NO_TEST: frozenset[str] = frozenset()"
 reddens = ["tests/prove/test_javascript.py::test_each_report_steering_option_is_refused[jest:--collectTests]"]
 
 [[mutation]]
-name = "jest's -u in a cluster is read as no snapshot update"
+name = "jest's cluster of short options is read at its first letter alone"
 file = "src/stayfixed/profiles/javascript/adapters.py"
-before = "            if _JEST_SNAPSHOT_LETTER in _short_letters(word):"
-after = '            if word == "-" + _JEST_SNAPSHOT_LETTER:'
-reddens = ["tests/prove/test_javascript.py::test_each_report_steering_option_is_refused[jest:-iu]"]
+before = '''        found.append(Setting(letter, "" if letter in _JEST_VALUED_LETTERS else None))'''
+after = "        return found"
+reddens = [
+  "tests/prove/test_javascript.py::test_each_report_steering_option_is_refused[jest:-iu]",
+  "tests/prove/test_javascript.py::test_jest_reads_each_form_as_yargs_does[-iu]",
+]
 
 [[mutation]]
 name = "jest's --updateSnapshot is left off its refusals"
 file = "src/stayfixed/profiles/javascript/adapters.py"
-before = """        if long.name == _JEST_SNAPSHOTS and not _off(long):
-            return f"--{long.name}"
+before = """        if name in _JEST_SNAPSHOTS and _yargs_on(setting):
+            return word if len(name) == 1 else f"--{name}"
 """
 after = ""
 reddens = [
@@ -2575,7 +2578,7 @@ reddens = [
 [[mutation]]
 name = "jest's --no-ci is left off its refusals"
 file = "src/stayfixed/profiles/javascript/adapters.py"
-before = """        if long.name == _JEST_CI and _off(long):
+before = """        if name == _JEST_CI and not _yargs_on(setting):
             return word
 """
 after = ""
@@ -2587,8 +2590,8 @@ reddens = [
 [[mutation]]
 name = "jest's --ci is refused as --no-ci is"
 file = "src/stayfixed/profiles/javascript/adapters.py"
-before = "        if long.name == _JEST_CI and _off(long):"
-after = "        if long.name == _JEST_CI:"
+before = "        if name == _JEST_CI and not _yargs_on(setting):"
+after = "        if name == _JEST_CI:"
 reddens = ["tests/prove/test_javascript.py::test_every_other_option_is_free[jest:--ci]"]
 
 [[mutation]]
@@ -2641,8 +2644,8 @@ reddens = [
 [[mutation]]
 name = "vitest's nested --outputFile.json is read as another option"
 file = "src/stayfixed/profiles/javascript/adapters.py"
-before = '    name = _camel(name.removeprefix("no-")).partition(".")[0]'
-after = '    name = _camel(name.removeprefix("no-"))'
+before = '''    head, dot, _ = camel.partition(".")'''
+after = '''    head, dot = camel, ""'''
 reddens = [
   "tests/prove/test_javascript.py::test_each_report_steering_option_is_refused[vitest:vitest_run_--outputFile.json=x]",
 ]
@@ -2657,8 +2660,8 @@ reddens = ["tests/prove/test_javascript.py::test_each_report_steering_option_is_
 [[mutation]]
 name = "vitest's --dangerouslyIgnoreUnhandledErrors is left off its refusals"
 file = "src/stayfixed/profiles/javascript/adapters.py"
-before = "        if long.name in (_VITEST_EXIT_PAST_ERRORS, _VITEST_NEVER_ENDS) and not _off(long):"
-after = "        if long.name == _VITEST_NEVER_ENDS and not _off(long):"
+before = '''_VITEST_EXIT_PAST_ERRORS = frozenset({"dangerouslyIgnoreUnhandledErrors"})'''
+after = "_VITEST_EXIT_PAST_ERRORS: frozenset[str] = frozenset()"
 reddens = [
   "tests/prove/test_javascript.py::test_each_report_steering_option_is_refused[vitest:--dangerouslyIgnoreUnhandledErrors]",
 ]
@@ -2666,9 +2669,12 @@ reddens = [
 [[mutation]]
 name = "vitest's --update=none is read as an update"
 file = "src/stayfixed/profiles/javascript/adapters.py"
-before = '_VITEST_NO_UPDATE = frozenset({"none", "false"})'
-after = "_VITEST_NO_UPDATE: frozenset[str] = frozenset()"
-reddens = ["tests/prove/test_javascript.py::test_every_other_option_is_free[vitest:--update=none]"]
+before = '''_VITEST_NO_UPDATE = "none"'''
+after = '''_VITEST_NO_UPDATE = "nothing"'''
+reddens = [
+  "tests/prove/test_javascript.py::test_every_other_option_is_free[vitest:--update=none]",
+  "tests/prove/test_javascript.py::test_vitest_reads_each_form_as_its_parser_does[-u_none]",
+]
 
 # node's closed list, drawn from the sweep of Node 26.12.0's options.
 [[mutation]]
@@ -2764,3 +2770,81 @@ before = """        and attributes.get("classname") == "test"
         and "failure" not in attributes"""
 after = """        and "failure" not in attributes"""
 reddens = ["tests/prove/test_javascript.py::test_whole_file_reads_the_attributes_alone[another-classname]"]
+
+# Each reader follows its runner's own parser, measured on the pinned version: jest's yargs,
+# vitest's cac.
+[[mutation]]
+name = "jest's short option takes no value after a character that is no letter"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = '''        if after is not None and not (after.isalnum() or after == "_"):'''
+after = "        if False:"
+reddens = [
+  "tests/prove/test_javascript.py::test_jest_reads_each_form_as_yargs_does[-c/etc/jest.config.js]",
+  "tests/prove/test_javascript.py::test_jest_reads_each_form_as_yargs_does[-ic/etc/jest.config.js]",
+]
+
+[[mutation]]
+name = "a long boolean never takes true or false as its next word"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = """        given = following if following in _BOOLEAN_WORDS else None
+    return Setting(head, given, negated=negated, dotted=bool(dot))"""
+after = """        given = None
+    return Setting(head, given, negated=negated, dotted=bool(dot))"""
+reddens = [
+  "tests/prove/test_javascript.py::test_jest_reads_each_form_as_yargs_does[--ci_false]",
+  "tests/prove/test_javascript.py::test_vitest_reads_each_form_as_its_parser_does[--watch_false]",
+]
+
+[[mutation]]
+name = "yargs reads a boolean given any value but false as on"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = '''    return not setting.negated and (setting.dotted or setting.value in (None, "true"))'''
+after = '''    return not setting.negated and setting.value != "false"'''
+reddens = [
+  "tests/prove/test_javascript.py::test_jest_reads_each_form_as_yargs_does[--ci=1]",
+  "tests/prove/test_javascript.py::test_jest_reads_each_form_as_yargs_does[-u=yes]",
+]
+
+[[mutation]]
+name = "vitest's --update=false is read as no update"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = "            setting.negated or (setting.value == _VITEST_NO_UPDATE and not setting.dotted)"
+after = '''            setting.negated or (setting.value in (_VITEST_NO_UPDATE, "false") and not setting.dotted)'''
+reddens = [
+  "tests/prove/test_javascript.py::test_vitest_reads_each_form_as_its_parser_does[--update=false]",
+  "tests/prove/test_javascript.py::test_vitest_reads_each_form_as_its_parser_does[-u_false]",
+]
+
+[[mutation]]
+name = "vitest's cluster of short options is read at its last letter alone"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = "    found = [Setting(letter) for letter in letters[:-1]]"
+after = "    found: list[Setting] = []"
+reddens = [
+  "tests/prove/test_javascript.py::test_vitest_reads_each_form_as_its_parser_does[-uc_a.js]",
+  "tests/prove/test_javascript.py::test_vitest_reads_each_form_as_its_parser_does[-wc_a.js]",
+]
+
+[[mutation]]
+name = "vitest reads a boolean given any value but true as off"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = '''    return not setting.negated and setting.value != "false"'''
+after = '''    return not setting.negated and setting.value in (None, "true")'''
+reddens = [
+  "tests/prove/test_javascript.py::test_vitest_reads_each_form_as_its_parser_does[--watch=0]",
+  "tests/prove/test_javascript.py::test_vitest_reads_each_form_as_its_parser_does[--dangerouslyIgnoreUnhandledErrors=0]",
+]
+
+[[mutation]]
+name = "the node --test adapter leaves the files it preloads out"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = "            configs=(*CONFIGS, *node_preloaded(command[1:], cwd)),"
+after = "            configs=CONFIGS,"
+reddens = ["tests/prove/test_javascript.py::test_a_preloaded_file_is_named_and_a_package_is_not"]
+
+[[mutation]]
+name = "a preloaded package's name is named as a file"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = "        if given is not None and given.startswith(_PATH_STARTS):"
+after = "        if given is not None:"
+reddens = ["tests/prove/test_javascript.py::test_a_preloaded_file_is_named_and_a_package_is_not"]

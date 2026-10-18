@@ -41,11 +41,12 @@ appended, and every other option is free. `REFUSED_OPTION`, naming the option:
   `--watchAll` (which never end), and `-c`/`--config` given a JSON text or naming a file outside the
   project. A configuration file inside the project is named among the receipt's configuration
   files by its realpath (`Plan.configs`).
-- vitest 5.0.5: `--outputFile` in any form, `-u`/`--update` but `--update=none` (each rewrites a
-  failing or missing snapshot so that it passes), `--mergeReports` (which runs nothing and reports
-  the blob files it reads as results), `--dangerouslyIgnoreUnhandledErrors` (which exits 0 past an
-  error no test reported), `-w`/`--watch` (which never ends), and `-c`/`--config` naming a file
-  outside the project, one inside it named as jest's is.
+- vitest 5.0.5: `--outputFile` in any form, `-u`/`--update` but `--update=none` and
+  `--no-update` (each other rewrites a failing or missing snapshot so that it passes),
+  `--mergeReports` (which runs nothing and reports the blob files it reads as results),
+  `--dangerouslyIgnoreUnhandledErrors` (which exits 0 past an error no test reported),
+  `-w`/`--watch` (which never ends), and `-c`/`--config` naming a file outside the project, one
+  inside it named as jest's is.
 - `node --test` on Node 26.12.0: any `--test-reporter…` of the command's own; `--env-file`,
   `--env-file-if-exists` and the configuration file options (`--config-file`,
   `--experimental-config-file`, `--experimental-default-config-file`), which load what the run
@@ -53,8 +54,20 @@ appended, and every other option is free. `REFUSED_OPTION`, naming the option:
   `--test-rerun-failures` (which reports as passed, unrun, every test the state file it names says
   passed before); and `--watch` and `--watch-path` (which never end). Node reads an option written
   with `_` as with `-`, and after the files under `--test` as before them, and so are these.
-  `--import`, `--require` and `--loader` are free (TypeScript through `tsx`, Plug'n'Play's
-  `.pnp.cjs`).
+  `-r`/`--require`, `--import` and `--loader` are free (TypeScript through `tsx`, Plug'n'Play's
+  `.pnp.cjs`); where one is given a path rather than a package's name, that file is named among the
+  receipt's configuration files by its realpath.
+
+Each reader follows the runner's own parser, measured on the pinned version: jest's yargs (a short
+option in a cluster takes the rest of the word as its value after a `=`, a character other than a
+letter, digit or `_`, or a number, so `-c/etc/x.js` names `/etc/x.js`; a boolean takes `true` or
+`false` as its next word, so `--ci false` is `--no-ci`, and any `=` value but `true` turns it off);
+vitest's cac (every character of a short cluster up to a `=` is an option of its own, so `-t.u` sets
+`-u`; a boolean is off only by `--no-` or `false`, and `--update=false` is the text `false`, which
+rewrites snapshots as `--update` does). Every other option that names code to load or where to look
+-- jest's `--setupFiles`, `--globalSetup`, `--testRunner`, `--testEnvironment`, `--projects`,
+`--rootDir`, `--roots` and `--reporters`, vitest's `--root`, `--dir` and `--setupFiles` -- is free,
+since the code it loads is the bound's and the lists stay closed.
 
 `FORGING`, assigned in the command (refused) or inherited (scrubbed): `NODE_OPTIONS`, which Node
 reads as options of every run, `--require` and the reporters among them; for `node --test` also
@@ -70,6 +83,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -221,60 +235,152 @@ def _camel(name: str) -> str:
 
 
 @dataclass(frozen=True)
-class _Long:
-    """A `--name[=value]` word as jest's and vitest's parsers read it: its name camel-cased and cut
-    at the first `.` (cac's nested options, `--outputFile.json`), whether `--no-` negated it, and
-    its value where the word holds one."""
+class Setting:
+    """One option a word of the command sets, as the runner's own parser reads it: its name (a
+    long option's, camel-cased and cut at its first `.`; a short option's letter), the value it is
+    given (`None` where it is given none, so that a boolean reads as on), whether `--no-` turned it
+    off, and whether a `.` made it an object (`--ci.x`, `-u.x`), which reads as on."""
 
     name: str
-    negated: bool
-    value: str | None
+    value: str | None = None
+    negated: bool = False
+    dotted: bool = False
 
 
-def _long(word: str) -> _Long | None:
-    if not word.startswith("--") or word == _SEPARATOR:
-        return None
+# The values a boolean is given as the next word, by both parsers: any other word is not its
+# value.
+_BOOLEAN_WORDS = frozenset({"true", "false"})
+# What yargs reads as a number: a short option followed by one takes it as its value.
+_YARGS_NUMBER = re.compile(r"-?\d+(\.\d*)?(e-?\d+)?")
+# A word yargs never takes as an option's value: an option of its own, not a negative number.
+_YARGS_OPTION = re.compile(r"-{1,2}[^-]")
+_YARGS_NEGATIVE = re.compile(r"-+(\d+|\d*\.\d+)")
+# jest 30.5.2's short options that take a value: `-c` (`--config`), `-w` (`--maxWorkers`) and
+# `-t` (`--testNamePattern`); every other letter is a boolean.
+_JEST_VALUED_LETTERS = frozenset("cwt")
+# jest's options this reader reads a value for: the configuration file, and the booleans on its
+# closed list, which take `true` or `false` as their next word.
+_JEST_VALUED = frozenset({"config"})
+
+
+def _yargs_takes(following: str | None) -> bool:
+    return following is not None and (
+        not _YARGS_OPTION.match(following) or bool(_YARGS_NEGATIVE.fullmatch(following))
+    )
+
+
+def _long_setting(word: str, following: str | None, *, valued: bool, takes: bool) -> Setting:
+    """A `--name[=value]` word as both parsers read it; `following` is its value where `=` gives
+    none and the option takes the next word (`takes`, for an option `valued`), or, for a
+    boolean, where the next word is `true` or `false`."""
     name, equals, value = word[2:].partition("=")
     negated = name.startswith("no-")
-    name = _camel(name.removeprefix("no-")).partition(".")[0]
-    return _Long(name, negated, value if equals else None)
-
-
-def _short_letters(word: str) -> str:
-    """The letters of a single-dash word (`-u`, `-iu`, `-c=x`), each a short option, as yargs and
-    cac read a cluster: up to an `=`."""
-    if not word.startswith("-") or word.startswith("--"):
-        return ""
-    return word[1:].partition("=")[0]
-
-
-def _short_value(words: Sequence[str], index: int, letter: str) -> str | None:
-    """The value a cluster at `index` gives its short option `letter`: what follows one `=`, or
-    the next word where `letter` closes the cluster; `None` where it gives none."""
-    word = words[index]
-    letters, equals, value = word[1:].partition("=")
-    if not letters.endswith(letter):
-        return None
+    camel = _camel(name.removeprefix("no-"))
+    head, dot, _ = camel.partition(".")
     if equals:
-        return value
-    return words[index + 1] if index + 1 < len(words) else None
+        given: str | None = value
+    elif valued:
+        given = following if takes else None
+    else:
+        given = following if following in _BOOLEAN_WORDS else None
+    return Setting(head, given, negated=negated, dotted=bool(dot))
 
 
-def _config_values(args: Sequence[str]) -> list[str]:
-    """Every value `-c` or `--config` is given in `args`, in either spelling."""
-    words = _options(args)
-    found: list[str] = []
-    for index, word in enumerate(words):
-        long = _long(word)
-        if long is not None and long.name == "config" and not long.negated:
-            given = long.value if long.value is not None else _next(words, index)
-        elif "c" in _short_letters(word):
-            given = _short_value(words, index, "c")
-        else:
+def jest_settings(word: str, following: str | None) -> list[Setting]:
+    """What jest's parser (yargs 17.7.3) reads `word` as setting, `following` the word after it;
+    `[]` for a word that is no option. Measured on jest 30.5.2: in a cluster of short options
+    (`-iu`), a letter takes the rest of the word as its value where a `=`, a character other than
+    a letter, digit or `_`, or a number follows it (`-c/etc/x.js` names `/etc/x.js`), and only the
+    last letter takes the next word; `-c.x` is an object."""
+    if word == _SEPARATOR or not word.startswith("-") or word == "-":
+        return []
+    if word.startswith("--"):
+        name = _camel(word[2:].partition("=")[0].removeprefix("no-")).partition(".")[0]
+        valued = name in _JEST_VALUED
+        return [_long_setting(word, following, valued=valued, takes=_yargs_takes(following))]
+    if _YARGS_NEGATIVE.fullmatch(word):
+        return []
+    body = word[1:]
+    if len(body) > 2 and body[1] == ".":
+        return [Setting(body[0], dotted=True)]
+    letters = body[:-1]
+    found: list[Setting] = []
+    for index, letter in enumerate(letters):
+        after = letters[index + 1] if index + 1 < len(letters) else None
+        rest = body[index + 1 :]
+        if after == "=":
+            return [*found, Setting(letter, body[index + 2 :])]
+        if rest == "-":
+            found.append(Setting(letter, rest))
             continue
-        if given is not None:
-            found.append(given)
-    return found
+        if letter.isalpha() and _YARGS_NUMBER.fullmatch(rest):
+            return [*found, Setting(letter, rest)]
+        if after is not None and not (after.isalnum() or after == "_"):
+            return [*found, Setting(letter, rest)]
+        found.append(Setting(letter, "" if letter in _JEST_VALUED_LETTERS else None))
+    last = body[-1]
+    if last == "-":
+        return found
+    if last in _JEST_VALUED_LETTERS and _yargs_takes(following):
+        return [*found, Setting(last, following)]
+    if following in _BOOLEAN_WORDS:
+        return [*found, Setting(last, following)]
+    return [*found, Setting(last, "" if last in _JEST_VALUED_LETTERS else None)]
+
+
+# vitest 5.0.5's short options that take a value (`-c`, `-t`, `-r`, `-p`, and `-u`, whose value
+# is optional); every other letter is a boolean.
+_VITEST_VALUED_LETTERS = frozenset("ctrpu")
+# vitest's options this reader reads a value for.
+_VITEST_VALUED = frozenset({"config", "update", "mergeReports", "outputFile"})
+
+
+def vitest_settings(word: str, following: str | None) -> list[Setting]:
+    """What vitest's parser (its own cac and mri) reads `word` as setting; `[]` for a word that is
+    no option. Measured on vitest 5.0.5: every character of a cluster of short options up to a
+    `=` is an option of its own (`-t.u` sets `-u`), and only the last takes the `=`'s value or
+    the next word, which an option that takes a value takes unless it starts with `-`, and a
+    boolean only where it is `true` or `false`."""
+    if word == _SEPARATOR or not word.startswith("-") or word == "-":
+        return []
+    takes = following is not None and not following.startswith("-")
+    if word.startswith("--"):
+        name = _camel(word[2:].partition("=")[0].removeprefix("no-")).partition(".")[0]
+        return [_long_setting(word, following, valued=name in _VITEST_VALUED, takes=takes)]
+    letters, _, value = word[1:].partition("=")
+    found = [Setting(letter) for letter in letters[:-1]]
+    last = letters[-1:]
+    if not last:
+        return found
+    if value:
+        given: str | None = value
+    elif last in _VITEST_VALUED_LETTERS:
+        given = following if takes else None
+    else:
+        given = following if following in _BOOLEAN_WORDS else None
+    return [*found, Setting(last, given)]
+
+
+def _settings(
+    reader: Callable[[str, str | None], list[Setting]], args: Sequence[str]
+) -> list[tuple[str, Setting]]:
+    """Every option the words of `args` before a `--` set, each with the word that set it."""
+    words = _options(args)
+    return [
+        (word, setting)
+        for index, word in enumerate(words)
+        for setting in reader(word, words[index + 1] if index + 1 < len(words) else None)
+    ]
+
+
+def _yargs_on(setting: Setting) -> bool:
+    """Whether yargs reads a boolean's setting as on: given no value, `true`, or an object."""
+    return not setting.negated and (setting.dotted or setting.value in (None, "true"))
+
+
+def _mri_on(setting: Setting) -> bool:
+    """Whether vitest's parser reads a boolean's setting as on: anything but `--no-` or `false`."""
+    return not setting.negated and setting.value != "false"
 
 
 def _next(words: Sequence[str], index: int) -> str | None:
@@ -288,83 +394,92 @@ def _outside(value: str, cwd: Path, root: Path) -> bool:
     return named != top and top not in named.parents
 
 
-def _chosen(args: Sequence[str], cwd: Path) -> tuple[str, ...]:
-    """The realpath of each configuration file `-c` or `--config` names: an absolute entry of
-    `Plan.configs`, which names that one file."""
-    return tuple(os.path.realpath(cwd / value) for value in _config_values(args))
+def _config_values(settings: Sequence[tuple[str, Setting]]) -> list[str]:
+    """Every configuration file `-c` or `--config` names among `settings`."""
+    return [
+        setting.value
+        for _, setting in settings
+        if setting.name in ("c", "config")
+        and setting.value
+        and not setting.negated
+        and not setting.dotted
+    ]
 
 
-def _config_refused(args: Sequence[str], cwd: Path, root: Path, *, text: bool) -> str | None:
+def _config_refused(values: Sequence[str], cwd: Path, root: Path, *, text: bool) -> str | None:
     """`--config` where its value is a configuration's own text (jest reads a JSON object given
     there) or names a file outside the project."""
-    for value in _config_values(args):
+    for value in values:
         if (text and value.lstrip().startswith("{")) or _outside(value, cwd, root):
             return "--config"
     return None
 
 
+def _jest_configs(args: Sequence[str], cwd: Path) -> tuple[str, ...]:
+    """The realpath of each configuration file jest's `-c` or `--config` names: an absolute
+    entry of `Plan.configs`, which names that one file."""
+    values = _config_values(_settings(jest_settings, args))
+    return tuple(os.path.realpath(cwd / value) for value in values)
+
+
+def _vitest_configs(args: Sequence[str], cwd: Path) -> tuple[str, ...]:
+    values = _config_values(_settings(vitest_settings, args))
+    return tuple(os.path.realpath(cwd / value) for value in values)
+
+
 # jest's closed list, each a name as yargs reads it, past `--no-` and camel-casing.
 _JEST_REPORT_OPTIONS = frozenset({"json", "outputFile", "testResultsProcessor"})
+# Booleans refused where they are on.
 _JEST_RUNS_NO_TEST = frozenset({"collectTests"})
 _JEST_NEVER_ENDS = frozenset({"watch", "watchAll"})
-_JEST_SNAPSHOTS = "updateSnapshot"
-_JEST_SNAPSHOT_LETTER = "u"
+_JEST_SNAPSHOTS = frozenset({"updateSnapshot", "u"})
+# A boolean refused where it is off.
 _JEST_CI = "ci"
-# The values yargs reads a boolean option as false by, where one is given.
-_FALSE = frozenset({"false", "0"})
-
-
-def _off(long: _Long) -> bool:
-    """Whether a boolean option's word turns it off: `--no-x` or `--x=false`."""
-    return long.negated or (long.value is not None and long.value in _FALSE)
 
 
 def jest_refused(args: Sequence[str], cwd: Path, root: Path) -> str | None:
-    """The first word of jest's `args` on its closed list, as the receipt names it; `None` where
-    none is."""
-    for word in _options(args):
-        long = _long(word)
-        if long is None:
-            if _JEST_SNAPSHOT_LETTER in _short_letters(word):
-                return word
-            continue
-        if long.name in _JEST_REPORT_OPTIONS or long.name in _JEST_RUNS_NO_TEST:
-            return f"--{long.name}"
-        if long.name in _JEST_NEVER_ENDS and not _off(long):
-            return f"--{long.name}"
-        if long.name == _JEST_SNAPSHOTS and not _off(long):
-            return f"--{long.name}"
-        if long.name == _JEST_CI and _off(long):
+    """The first word of jest's `args` that sets an option on its closed list, as the receipt
+    names it; `None` where none does."""
+    settings = _settings(jest_settings, args)
+    for word, setting in settings:
+        name = setting.name
+        if name in _JEST_REPORT_OPTIONS:
+            return f"--{name}"
+        if name in _JEST_RUNS_NO_TEST | _JEST_NEVER_ENDS and _yargs_on(setting):
+            return f"--{name}"
+        if name in _JEST_SNAPSHOTS and _yargs_on(setting):
+            return word if len(name) == 1 else f"--{name}"
+        if name == _JEST_CI and not _yargs_on(setting):
             return word
-    return _config_refused(args, cwd, root, text=True)
+    return _config_refused(_config_values(settings), cwd, root, text=True)
 
 
 # vitest's closed list.
 _VITEST_REPORT_OPTIONS = frozenset({"outputFile", "mergeReports"})
-_VITEST_EXIT_PAST_ERRORS = "dangerouslyIgnoreUnhandledErrors"
-_VITEST_SNAPSHOTS = "update"
-# The `--update` values that rewrite no snapshot.
-_VITEST_NO_UPDATE = frozenset({"none", "false"})
-_VITEST_NEVER_ENDS = "watch"
-_VITEST_LETTERS = frozenset("uw")
+# Booleans refused where they are on.
+_VITEST_EXIT_PAST_ERRORS = frozenset({"dangerouslyIgnoreUnhandledErrors"})
+_VITEST_NEVER_ENDS = frozenset({"watch", "w"})
+_VITEST_SNAPSHOTS = frozenset({"update", "u"})
+# The one `--update` value that rewrites no snapshot (measured: `--update=false` is the text
+# `false`, and rewrites them as `--update` does); `--no-update` is the other spelling.
+_VITEST_NO_UPDATE = "none"
 
 
 def vitest_refused(args: Sequence[str], cwd: Path, root: Path) -> str | None:
-    """The first word of vitest's `args` on its closed list, as the receipt names it; `None` where
-    none is."""
-    for word in _options(args):
-        long = _long(word)
-        if long is None:
-            if _VITEST_LETTERS & set(_short_letters(word)):
-                return word
-            continue
-        if long.name in _VITEST_REPORT_OPTIONS:
-            return f"--{long.name}"
-        if long.name == _VITEST_SNAPSHOTS and not (long.negated or long.value in _VITEST_NO_UPDATE):
-            return f"--{long.name}"
-        if long.name in (_VITEST_EXIT_PAST_ERRORS, _VITEST_NEVER_ENDS) and not _off(long):
-            return f"--{long.name}"
-    return _config_refused(args, cwd, root, text=False)
+    """The first word of vitest's `args` that sets an option on its closed list, as the receipt
+    names it; `None` where none does."""
+    settings = _settings(vitest_settings, args)
+    for word, setting in settings:
+        name = setting.name
+        if name in _VITEST_REPORT_OPTIONS:
+            return f"--{name}"
+        if name in _VITEST_SNAPSHOTS and not (
+            setting.negated or (setting.value == _VITEST_NO_UPDATE and not setting.dotted)
+        ):
+            return word if len(name) == 1 else f"--{name}"
+        if name in _VITEST_EXIT_PAST_ERRORS | _VITEST_NEVER_ENDS and _mri_on(setting):
+            return word if len(name) == 1 else f"--{name}"
+    return _config_refused(_config_values(settings), cwd, root, text=False)
 
 
 def _jest_ours(args: Sequence[str], report: Path) -> tuple[str, ...]:
@@ -373,7 +488,7 @@ def _jest_ours(args: Sequence[str], report: Path) -> tuple[str, ...]:
 
 def _vitest_ours(args: Sequence[str], report: Path) -> tuple[str, ...]:
     ours = ("--reporter=json", f"--outputFile={report}")
-    named = any((long := _long(word)) is not None and long.name == _REPORTER for word in args)
+    named = any(setting.name == _REPORTER for _, setting in _settings(vitest_settings, args))
     return ours if named else (*ours, "--reporter=default")
 
 
@@ -392,7 +507,7 @@ _JEST = _Runner(
     discovery=JEST_DISCOVERY,
     report_name=JEST_REPORT,
     refused=jest_refused,
-    configs=_chosen,
+    configs=_jest_configs,
     ours=_jest_ours,
     words=_jest_words,
 )
@@ -402,7 +517,7 @@ _VITEST = _Runner(
     discovery=VITEST_DISCOVERY,
     report_name=VITEST_REPORT,
     refused=vitest_refused,
-    configs=_chosen,
+    configs=_vitest_configs,
     ours=_vitest_ours,
     words=_vitest_words,
 )
@@ -571,6 +686,38 @@ def node_options(words: Sequence[str]) -> list[str]:
     return found
 
 
+# node's options that load a module before the tests run: free (TypeScript through `tsx`,
+# Plug'n'Play's `.pnp.cjs`), and where the value is a path rather than a package's name, the file
+# is named among the configuration files. Measured on 26.12.0: `-r` takes its value as the next
+# word only (`-r=x` is a bad option); the others take it either way; a `file:` URL is a path.
+_NODE_PRELOADS = frozenset({"--require", "--import", "--loader", "--experimental-loader"})
+_NODE_PRELOAD_LETTER = "-r"
+_PATH_STARTS = ("/", "./", "../")
+_FILE_URL = "file://"
+
+
+def node_preloaded(words: Sequence[str], cwd: Path) -> tuple[str, ...]:
+    """The realpath of each file node's `-r`, `--require`, `--import` or `--loader` names in
+    `words` (the words after `node`), read from `cwd`: an absolute entry of `Plan.configs`. A
+    package's name (`tsx`, `ts-node/register`) names no file of the project's and is left out."""
+    options = _options(words)
+    found: list[str] = []
+    for index, word in enumerate(options):
+        name, equals, value = word.partition("=")
+        name = name.replace("_", "-")
+        if name == _NODE_PRELOAD_LETTER and not equals:
+            given = _next(options, index)
+        elif name in _NODE_PRELOADS:
+            given = value if equals else _next(options, index)
+        else:
+            continue
+        if given is not None and given.startswith(_FILE_URL):
+            given = given.removeprefix(_FILE_URL)
+        if given is not None and given.startswith(_PATH_STARTS):
+            found.append(os.path.realpath(cwd / given))
+    return tuple(found)
+
+
 def node_refused(words: Sequence[str]) -> str | None:
     """The first word of `words` (the words after `node`) on node's closed list, by its name;
     `None` where none is. Every word before a `--` is read, a file's name among them: under
@@ -648,7 +795,7 @@ class NodeTestAdapter:
             set_env={},
             scrub=NODE_TEST_FORGING,
             discovery=NODE_DISCOVERY,
-            configs=CONFIGS,
+            configs=(*CONFIGS, *node_preloaded(command[1:], cwd)),
             drop=whole_file,
         )
 
