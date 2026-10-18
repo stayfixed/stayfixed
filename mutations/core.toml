@@ -5711,6 +5711,15 @@ reddens = [
   "tests/prove/test_javascript.py::test_an_unresolved_entry_s_detail_is_on_the_receipt",
 ]
 
+# An adapter's unresolved plan is a runner's entry point that did not resolve or a run that never
+# ends; the receipt's words fit both.
+[[mutation]]
+name = "prove's receipt calls every unresolved plan an entry point that did not resolve"
+file = "src/stayfixed/prove/run.py"
+before = """    Verdict.NOT_PROVEN: "the runner's adapter cannot plan this run","""
+after = """    Verdict.NOT_PROVEN: "the runner's entry point did not resolve","""
+reddens = ["tests/prove/test_javascript.py::test_a_watch_mode_s_receipt_says_it_never_ends"]
+
 # Every assignment the launch holds is the command's, the last of two winning; the adapter is
 # handed the launcher's own words and never an assignment or an `env`.
 [[mutation]]

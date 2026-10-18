@@ -38,21 +38,28 @@ appended, and every other option is free. `REFUSED_OPTION`, naming the option:
   rewrites the results before they are written), `-c`/`--config` given a configuration's own text (a
   value jest's `isJSONString` reads as JSON, which can set `testResultsProcessor` in the command
   itself and names no file the receipt could name), `-u`/`--updateSnapshot` (which rewrites a
-  failing snapshot so that it passes), `--ci=false`/`--no-ci` (which writes a missing snapshot
-  rather than failing it), `--collectTests` (which exits 0 reporting a failing test as passed),
-  `--watch` and `--watchAll` (which never end).
-- vitest 5.0.5: `--outputFile` in any form, `-u`/`--update` but `--update=none` and
-  `--no-update` (each other rewrites a failing or missing snapshot so that it passes),
-  `--mergeReports` (which runs nothing and reports the blob files it reads as results),
-  `--dangerouslyIgnoreUnhandledErrors` (which exits 0 past an error no test reported),
-  and `-w`/`--watch` (which never ends).
+  failing snapshot so that it passes), and `--collectTests` (which exits 0 reporting a failing
+  test as passed). `--ci=false`/`--no-ci` is free: jest then writes a snapshot that is missing and
+  passes it, as it does by default wherever `CI` is unset or false, and a snapshot the run writes
+  is the bound's, as deleting the snapshot file is.
+- vitest 5.0.5: `--outputFile` in any form, `-u`/`--update` but `--update=none`, `--no-update`
+  and `--update=new` (each other rewrites a failing snapshot so that it passes; `new`, vitest's
+  own default where `CI` is unset, only writes a missing one), `--mergeReports` (which runs
+  nothing and reports the blob files it reads as results), and
+  `--dangerouslyIgnoreUnhandledErrors` (which exits 0 past an error no test reported).
 - `node --test` on Node 26.12.0: any `--test-reporter…` of the command's own; `--env-file`,
   `--env-file-if-exists` and the configuration file options (`--config-file`,
   `--experimental-config-file`, `--experimental-default-config-file`), which load what the run
-  reads; `--test-update-snapshots` (which rewrites a failing snapshot so that it passes);
+  reads; `--test-update-snapshots` (which rewrites a failing snapshot so that it passes); and
   `--test-rerun-failures` (which reports as passed, unrun, every test the state file it names says
-  passed before); and `--watch` and `--watch-path` (which never end). Node reads an option written
-  with `_` as with `-`, and after the files under `--test` as before them, and so are these.
+  passed before). Node reads an option written with `_` as with `-`, and after the files under
+  `--test` as before them, and so are these.
+
+A watch mode -- jest's `--watch` and `--watchAll`, vitest's `-w`/`--watch`, node's `--watch` and
+`--watch-path` -- moves no report and forges no pass, but it never ends: it waits for changes
+after the run, so no report is ever finished. It is not refused, which is for a command that
+steers the report; it is `NEVER_ENDS` (`not proven`), naming the option, read as the closed lists
+are, and a refusal in the same command wins.
   `-r`/`--require`, `--import` and `--loader` are free (TypeScript through `tsx`, Plug'n'Play's
   `.pnp.cjs`); where one is given a path rather than a package's name, that file is named among the
   receipt's configuration files by its realpath.
@@ -60,7 +67,7 @@ appended, and every other option is free. `REFUSED_OPTION`, naming the option:
 Each reader follows the runner's own parser, measured on the pinned version: jest's yargs (a short
 option in a cluster takes the rest of the word as its value after a `=`, a character other than a
 letter, digit or `_`, or a number, so `-c/etc/x.js` names `/etc/x.js`; a boolean takes `true` or
-`false` as its next word, so `--ci false` is `--no-ci`, and any `=` value but `true` turns it off);
+`false` as its next word, so `-u false` is off, and any `=` value but `true` turns it off);
 vitest's cac (every character of a short cluster up to a `=` is an option of its own, so `-t.u` sets
 `-u`; a boolean is off only by `--no-` or `false`, and `--update=false` is the text `false`, which
 rewrites snapshots as `--update` does).
@@ -105,6 +112,12 @@ NODE_TEST = "node-test"
 # not resolve from where the command runs.
 REFUSED_OPTION = "refused-option"
 ENTRY_NOT_FOUND = "entry-not-found"
+# The reason a watch mode is not proven, and its detail, which names the option.
+NEVER_ENDS = "never-ends"
+NEVER_ENDS_DETAIL = (
+    "{option} watches for changes and never ends under prove, so no report is ever finished; "
+    "prove a single run without it"
+)
 FORGING = frozenset({"NODE_OPTIONS"})
 NODE_TEST_FORGING = FORGING | {"NODE_TEST_CONTEXT"}
 CONFIGS = ("package.json", ".npmrc", "jest.config.*", "vitest.config.*", "vite.config.*")
@@ -205,6 +218,7 @@ class _Runner:
     discovery: tuple[str, ...]
     report_name: str
     refused: Callable[[Sequence[str], Path, Path], str | None]
+    never_ends: Callable[[Sequence[str]], str | None]
     configs: Callable[[Sequence[str], Path], tuple[str, ...]]
     ours: Callable[[Sequence[str], Path], tuple[str, ...]]
     words: Callable[[Sequence[str]], tuple[str, ...]]
@@ -453,10 +467,9 @@ def _vitest_configs(args: Sequence[str], cwd: Path) -> tuple[str, ...]:
 _JEST_REPORT_OPTIONS = frozenset({"json", "outputFile", "testResultsProcessor"})
 # Booleans refused where they are on.
 _JEST_RUNS_NO_TEST = frozenset({"collectTests"})
-_JEST_NEVER_ENDS = frozenset({"watch", "watchAll"})
 _JEST_SNAPSHOTS = frozenset({"updateSnapshot", "u"})
-# A boolean refused where it is off.
-_JEST_CI = "ci"
+# Its watch modes, not proven where they are on: they never end.
+_JEST_NEVER_ENDS = frozenset({"watch", "watchAll"})
 
 
 def jest_refused(args: Sequence[str], cwd: Path, root: Path) -> str | None:
@@ -467,26 +480,36 @@ def jest_refused(args: Sequence[str], cwd: Path, root: Path) -> str | None:
         name = setting.name
         if name in _JEST_REPORT_OPTIONS:
             return f"--{name}"
-        if name in _JEST_RUNS_NO_TEST | _JEST_NEVER_ENDS and _yargs_on(setting):
+        if name in _JEST_RUNS_NO_TEST and _yargs_on(setting):
             return f"--{name}"
         if name in _JEST_SNAPSHOTS and _yargs_on(setting):
             return word if len(name) == 1 else f"--{name}"
-        if name == _JEST_CI and not _yargs_on(setting):
-            return word
     if any(jest_config_text(value) for value in _config_values(settings)):
         return "--config"
     return None
 
 
+def jest_never_ends(args: Sequence[str]) -> str | None:
+    """The first of jest's watch modes `args` turns on, as the receipt names it; `None` where
+    none is."""
+    for _, setting in _settings(jest_settings, args):
+        if setting.name in _JEST_NEVER_ENDS and _yargs_on(setting):
+            return f"--{setting.name}"
+    return None
+
+
 # vitest's closed list.
 _VITEST_REPORT_OPTIONS = frozenset({"outputFile", "mergeReports"})
-# Booleans refused where they are on.
+# A boolean refused where it is on.
 _VITEST_EXIT_PAST_ERRORS = frozenset({"dangerouslyIgnoreUnhandledErrors"})
-_VITEST_NEVER_ENDS = frozenset({"watch", "w"})
 _VITEST_SNAPSHOTS = frozenset({"update", "u"})
-# The one `--update` value that rewrites no snapshot (measured: `--update=false` is the text
-# `false`, and rewrites them as `--update` does); `--no-update` is the other spelling.
+# The `--update` values that rewrite no failing snapshot: `none`, and `new`, vitest's own default
+# where `CI` is unset, which writes a missing one (measured: `--update=false` is the text `false`,
+# and rewrites them as `--update` does); `--no-update` is another spelling of `none`.
 _VITEST_NO_UPDATE = "none"
+_VITEST_NEW_ONLY = "new"
+# Its watch mode, not proven where it is on: it never ends.
+_VITEST_NEVER_ENDS = frozenset({"watch", "w"})
 
 
 def vitest_refused(args: Sequence[str], cwd: Path, root: Path) -> str | None:
@@ -498,11 +521,21 @@ def vitest_refused(args: Sequence[str], cwd: Path, root: Path) -> str | None:
         if name in _VITEST_REPORT_OPTIONS:
             return f"--{name}"
         if name in _VITEST_SNAPSHOTS and not (
-            setting.negated or (setting.value == _VITEST_NO_UPDATE and not setting.dotted)
+            setting.negated
+            or (setting.value in (_VITEST_NO_UPDATE, _VITEST_NEW_ONLY) and not setting.dotted)
         ):
             return word if len(name) == 1 else f"--{name}"
-        if name in _VITEST_EXIT_PAST_ERRORS | _VITEST_NEVER_ENDS and _mri_on(setting):
-            return word if len(name) == 1 else f"--{name}"
+        if name in _VITEST_EXIT_PAST_ERRORS and _mri_on(setting):
+            return f"--{name}"
+    return None
+
+
+def vitest_never_ends(args: Sequence[str]) -> str | None:
+    """The first word of vitest's `args` that turns its watch mode on, as the receipt names it;
+    `None` where none does."""
+    for word, setting in _settings(vitest_settings, args):
+        if setting.name in _VITEST_NEVER_ENDS and _mri_on(setting):
+            return word if len(setting.name) == 1 else f"--{setting.name}"
     return None
 
 
@@ -531,6 +564,7 @@ _JEST = _Runner(
     discovery=JEST_DISCOVERY,
     report_name=JEST_REPORT,
     refused=jest_refused,
+    never_ends=jest_never_ends,
     configs=_jest_configs,
     ours=_jest_ours,
     words=_jest_words,
@@ -541,6 +575,7 @@ _VITEST = _Runner(
     discovery=VITEST_DISCOVERY,
     report_name=VITEST_REPORT,
     refused=vitest_refused,
+    never_ends=vitest_never_ends,
     configs=_vitest_configs,
     ours=_vitest_ours,
     words=_vitest_words,
@@ -595,6 +630,9 @@ class _PackageRunner:
         refused = runner.refused(args, cwd, root)
         if refused is not None:
             return Refused(REFUSED_OPTION, refused)
+        never = runner.never_ends(args)
+        if never is not None:
+            return Unresolved(NEVER_ENDS, NEVER_ENDS_DETAIL.format(option=never))
         path = environ.get("PATH", os.defpath)
         entry = entry_point(runner.name, runner.packages, cwd, root, path)
         if entry is None:
@@ -683,10 +721,10 @@ _NODE_REFUSED = frozenset(
         "--experimental-default-config-file",
         "--test-update-snapshots",
         "--test-rerun-failures",
-        "--watch",
-        "--watch-path",
     }
 )
+# node's watch modes, not proven: they never end.
+_NODE_NEVER_ENDS = frozenset({"--watch", "--watch-path"})
 
 
 def _node_name(word: str) -> str:
@@ -766,6 +804,15 @@ def node_refused(words: Sequence[str]) -> str | None:
     return None
 
 
+def node_never_ends(words: Sequence[str]) -> str | None:
+    """The first of node's watch modes among `words` (the words after `node`), by its name, read
+    as `node_refused` reads; `None` where none is."""
+    return next(
+        (_node_name(word) for word in _options(words) if _node_name(word) in _NODE_NEVER_ENDS),
+        None,
+    )
+
+
 def whole_file(attributes: Mapping[str, str]) -> bool:
     """Whether a testcase is the one node writes for a whole file that ran no test: named after
     its file, `classname` `test`, and carrying no failure. A whole-file testcase with a failure is
@@ -808,6 +855,9 @@ class NodeTestAdapter:
         refused = node_refused(command[1:])
         if refused is not None:
             return Refused(REFUSED_OPTION, refused)
+        never = node_never_ends(command[1:])
+        if never is not None:
+            return Unresolved(NEVER_ENDS, NEVER_ENDS_DETAIL.format(option=never))
         path = environ.get("PATH", os.defpath)
         word = command[0]
         if os.sep in word:

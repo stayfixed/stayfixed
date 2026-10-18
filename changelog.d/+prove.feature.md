@@ -31,14 +31,15 @@ runner's own package names, found under `node_modules` from where the command ru
 project's top-level, and with a report of `prove`'s own (`entry-not-found` where there is none,
 which names `prove --junit`; `npm test`, `yarn` and `pnpm` are recognised by none). They refuse the
 options that move, replace or suppress the report, or that report a test passed that failed or never
-ran: jest's `--json`, `--outputFile`, `--testResultsProcessor`, a `--config` given JSON text, `-u`,
-`--no-ci`, `--collectTests` and watch modes; vitest's `--outputFile`, `-u` (`--update=false` among
-them), `--mergeReports`, `--dangerouslyIgnoreUnhandledErrors` and `--watch`; node's own reporters,
-`--env-file`, its configuration file, `--test-update-snapshots`, `--test-rerun-failures` and
-`--watch`; and an assigned `NODE_OPTIONS` (or, for `node --test`, `NODE_TEST_CONTEXT`). Each option
+ran: jest's `--json`, `--outputFile`, `--testResultsProcessor`, a `--config` given JSON text, `-u`
+and `--collectTests`; vitest's `--outputFile`, `-u` (`--update=false` among them, `--update=new`
+not), `--mergeReports` and `--dangerouslyIgnoreUnhandledErrors`; node's own reporters,
+`--env-file`, its configuration file, `--test-update-snapshots` and `--test-rerun-failures`; and an
+assigned `NODE_OPTIONS` (or, for `node --test`, `NODE_TEST_CONTEXT`). Each option
 is read as the runner's own parser reads it; every other option is free, `-c`/`--config` naming a
 file among them, and the file it names, like a file node's `--require` or `--import` names by its
-path, is named among the files that can shape the report.
+path, is named among the files that can shape the report. A watch mode of any of the three never
+ends, and is `not proven` (`never-ends`).
 The `go test` adapter runs the `go` on `PATH` as `go test -json`, counting only the events of its
 standard output, with `GOENV=off`, `GOFLAGS=` and `GOTOOLCHAIN=local` set and an inherited `GOROOT`,
 `GOOS` or `GOARCH` removed; it refuses `-exec`, `-toolexec`, `-overlay`, `-o`, `-c` and a false

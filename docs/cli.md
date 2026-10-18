@@ -873,14 +873,19 @@ to standard output, and a testcase node writes for a whole file that ran no test
 unless it failed. Each refuses (`refused-option`, naming the option) a closed list drawn by running
 every option the pinned runner registers over a failing test: jest's `--json`, `--outputFile`,
 `--testResultsProcessor`, a `-c`/`--config` given a configuration's own text (a value that starts
-with `{` and ends with `}`, which jest reads as JSON), `-u`/`--updateSnapshot`, `--no-ci`,
-`--collectTests`, `--watch` and `--watchAll`; vitest's `--outputFile` in any form, `-u`/`--update`
-but `--update=none` and `--no-update` (`--update=false` is the text `false`, which rewrites
-snapshots), `--mergeReports`, `--dangerouslyIgnoreUnhandledErrors` and `-w`/`--watch`; and node's
-own `--test-reporter…`, `--env-file`, `--env-file-if-exists`, its configuration file options,
-`--test-update-snapshots`, `--test-rerun-failures`, `--watch` and `--watch-path`, spelled with `_`
-or after the files too. Each option is read as the runner's own parser reads it on the pinned
-version: jest's `--ci false` is `--no-ci`, vitest's `-t.u` sets `-u`. Every other option is free:
+with `{` and ends with `}`, which jest reads as JSON), `-u`/`--updateSnapshot` and
+`--collectTests`; vitest's `--outputFile` in any form, `-u`/`--update` but `--update=none`,
+`--no-update` and `--update=new` (`--update=false` is the text `false`, which rewrites
+snapshots), `--mergeReports` and `--dangerouslyIgnoreUnhandledErrors`; and node's own
+`--test-reporter…`, `--env-file`, `--env-file-if-exists`, its configuration file options,
+`--test-update-snapshots` and `--test-rerun-failures`, spelled with `_` or after the files too. A
+watch mode (jest's `--watch` and `--watchAll`, vitest's `-w`/`--watch`, node's `--watch` and
+`--watch-path`) never ends, so no report is ever finished: it is `not proven` (`never-ends`,
+naming the option), and a refusal in the same command wins. Each option is read as the runner's
+own parser reads it on the pinned version: jest's `-u false` is off, vitest's `-t.u` sets `-u`.
+jest's `--ci=false` and `--no-ci` and vitest's `--update=new` are free: each writes a snapshot that
+is missing and passes it, as each runner does by default where `CI` is unset, and a snapshot the
+run writes is the code under test's, which the bound concedes. Every other option is free:
 `-c`/`--config` naming a file, which, inside the project or outside it, is one the same agent could
 write in the tree; `--import` and `--require`; the files jest's `--setupFiles`, `--testRunner`,
 `--projects` or `--rootDir` and vitest's `--root` or `--dir` name; and a reporter of jest's or
@@ -935,7 +940,7 @@ started too, and the receipt of a command no adapter recognises `runner: null`; 
 | Row | Verdict | Exit | Reason |
 |---|---|---|---|
 | the runner's adapter refuses the command, the command assigns a variable in the adapter's forging set or one `uv` loads a file from, it gives `uv` an option that loads a file, the program changed between the plan and the launch, or `--junit` names the report of a command an adapter recognises | `refused` | 2 | the adapter's own, `assigned-forging`, `launcher-option`, `resolved-elsewhere`, `junit-beside-adapter` |
-| no adapter recognises the command, its entry point does not resolve, it could not start, it was interrupted or passed its time limit, it wrote no report, the run did not write the `--junit` report, or the report does not read | `not proven` | 1 | `not-recognised`, the adapter's own, `not-started`, `interrupted`, `timed-out`, `no-report`, `junit-unchanged`, a report's own |
+| no adapter recognises the command, its entry point does not resolve, it asks for a run that never ends, it could not start, it was interrupted or passed its time limit, it wrote no report, the run did not write the `--junit` report, or the report does not read | `not proven` | 1 | `not-recognised`, the adapter's own, `not-started`, `interrupted`, `timed-out`, `no-report`, `junit-unchanged`, a report's own |
 | the report holds a failed test | `failed` | 1 | `failing` |
 | the report holds no test | `failed` | 1 | `none-ran` |
 | every test the report holds was skipped | `failed` | 1 | `all-skipped` |

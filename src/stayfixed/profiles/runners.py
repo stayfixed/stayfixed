@@ -89,8 +89,9 @@ class Refused:
 
 @dataclass(frozen=True)
 class Unresolved:
-    """The runner's entry point does not resolve from where the command runs. `reason` is a
-    constant of the adapter's module, and `detail` says what was looked for, and what to do
+    """The adapter cannot plan a run it can prove: the runner's entry point does not resolve from
+    where the command runs, or the command asks for a run that never ends. `reason` is a constant
+    of the adapter's module, and `detail` says what was looked for or asked for, and what to do
     instead, for the receipt."""
 
     reason: str

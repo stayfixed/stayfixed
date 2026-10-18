@@ -142,7 +142,7 @@ EXIT: Mapping[Verdict, int] = {
 PROVE_TIMEOUT_SECONDS = 3600
 
 # The reasons, each one arm of `CASCADE` or the step that stopped the run before it. An adapter's
-# own refusals and unresolved entry points are its module's constants, and the reports' are
+# own refusals and unresolved plans are its module's constants, and the reports' are
 # `stayfixed.prove.counts`'.
 NOT_RECOGNISED = "not-recognised"
 ASSIGNED_FORGING = "assigned-forging"
@@ -185,7 +185,7 @@ WORDS: Mapping[str, str] = {
 # The words for a reason an adapter names, by the verdict it stopped the run with.
 _ADAPTER_WORDS: Mapping[Verdict, str] = {
     Verdict.REFUSED: "the runner's adapter refuses this command",
-    Verdict.NOT_PROVEN: "the runner's entry point did not resolve",
+    Verdict.NOT_PROVEN: "the runner's adapter cannot plan this run",
 }
 
 # A shell assignment, `NAME=value`, as the shell reads one before a command and `env` after it.
@@ -203,7 +203,7 @@ class Receipt:
     `REDACTED`; a value passed as the word after its option is kept, since nothing tells it from an
     operand. `detail` is where the step that stopped the run stopped: the variable assigned, the
     launcher option refused, the option or word the runner's adapter refused, what the adapter
-    looked for where the runner's entry point did not resolve, the `--junit` path the run did not
+    looked for or was asked for where it could not plan the run, the `--junit` path the run did not
     write (`JUNIT_UNCHANGED`), or where a report stopped reading. `program` is the
     realpath of what ran; `verified` is false on every `--junit` receipt, a plan made or not, and
     true on every other. `commit` and `dirty_before` are the tree's state before the run,

@@ -26,6 +26,8 @@ from stayfixed.profiles.javascript.adapters import (
     FORGING,
     JEST_DISCOVERY,
     JEST_REPORT,
+    NEVER_ENDS,
+    NEVER_ENDS_DETAIL,
     NODE_DISCOVERY,
     NODE_REPORT,
     NODE_TEST_FORGING,
@@ -577,11 +579,7 @@ REFUSALS: list[tuple[Adapter, tuple[str, ...], str]] = [
     (JEST, ("jest", "-iu"), "-iu"),
     (JEST, ("jest", "--updateSnapshot"), "--updateSnapshot"),
     (JEST, ("jest", "--update-snapshot"), "--updateSnapshot"),
-    (JEST, ("jest", "--no-ci"), "--no-ci"),
-    (JEST, ("jest", "--ci=false"), "--ci=false"),
     (JEST, ("jest", "--collectTests"), "--collectTests"),
-    (JEST, ("jest", "--watch"), "--watch"),
-    (JEST, ("jest", "--watchAll"), "--watchAll"),
     # A configuration's own text, as jest's `isJSONString` reads one: `{` first and `}` last.
     (JEST, ("jest", "--config", '{"testResultsProcessor": "./p.js"}'), "--config"),
     (JEST, ("jest", "--config={}"), "--config"),
@@ -593,11 +591,8 @@ REFUSALS: list[tuple[Adapter, tuple[str, ...], str]] = [
     (VITEST, ("vitest", "--output-file.junit", "x"), "--outputFile"),
     (VITEST, ("npx", "vitest", "run", "--update"), "--update"),
     (VITEST, ("vitest", "-u"), "-u"),
-    (VITEST, ("vitest", "--update=new"), "--update"),
     (VITEST, ("vitest", "--update=all"), "--update"),
-    (VITEST, ("vitest", "--watch"), "--watch"),
-    (VITEST, ("vitest", "-w"), "-w"),
-    (VITEST, ("vitest", "-tw", "x"), "-tw"),
+    (VITEST, ("vitest", "--update=false"), "--update"),
     (VITEST, ("vitest", "--mergeReports"), "--mergeReports"),
     (VITEST, ("vitest", "--merge-reports=.vitest-reports"), "--mergeReports"),
     (
@@ -627,8 +622,6 @@ REFUSALS: list[tuple[Adapter, tuple[str, ...], str]] = [
     ),
     (NODE_TEST, ("node", "--test", "--test-update-snapshots"), "--test-update-snapshots"),
     (NODE_TEST, ("node", "--test", "--test-rerun-failures=state.json"), "--test-rerun-failures"),
-    (NODE_TEST, ("node", "--watch", "--test"), "--watch"),
-    (NODE_TEST, ("node", "--test", "--watch-path=src"), "--watch-path"),
 ]
 
 
@@ -651,6 +644,11 @@ FREE: list[tuple[Adapter, tuple[str, ...]]] = [
     (JEST, ("jest", "--reporters=default")),
     (JEST, ("jest", "--passWithNoTests")),
     (JEST, ("jest", "--ci")),
+    # Off, jest writes a snapshot that is missing and passes it, as it does by default wherever
+    # `CI` is unset or false: a snapshot the run writes is the bound's.
+    (JEST, ("jest", "--no-ci")),
+    (JEST, ("jest", "--ci=false")),
+    (JEST, ("jest", "--ci", "false")),
     (JEST, ("jest", "--no-watch")),
     (JEST, ("jest", "--watchAll=false")),
     (JEST, ("jest", "--updateSnapshot=false")),
@@ -664,6 +662,11 @@ FREE: list[tuple[Adapter, tuple[str, ...]]] = [
     (VITEST, ("vitest", "run", "--reporter=verbose")),
     (VITEST, ("vitest", "--update=none")),
     (VITEST, ("vitest", "--no-update")),
+    # vitest's own default where `CI` is unset: a missing snapshot is written, a failing one
+    # fails.
+    (VITEST, ("vitest", "--update=new")),
+    (VITEST, ("vitest", "--update", "new")),
+    (VITEST, ("vitest", "-u", "new")),
     (VITEST, ("vitest", "--no-watch")),
     (VITEST, ("vitest", "--retry=2")),
     (VITEST, ("vitest", "-t", "passes")),
@@ -687,11 +690,73 @@ FREE: list[tuple[Adapter, tuple[str, ...]]] = [
 def test_every_other_option_is_free(
     tmp_path: Path, adapter: Adapter, argv: tuple[str, ...]
 ) -> None:
-    # Mutations (declared): `--update=none` read as an update; `--ci` refused as `--no-ci` is;
-    # node's `--import` refused -> each one's case is refused.
+    # Mutations (declared): `--update=none` and `--update=new` read as an update; node's
+    # `--import` refused -> each one's case is refused.
     _, _, node = installed(tmp_path)
     (tmp_path / "ci").mkdir()
     assert isinstance(planned(adapter, argv, tmp_path, path=str(node.parent)), Plan)
+
+
+NEVER_ENDING: list[tuple[Adapter, tuple[str, ...], str]] = [
+    (JEST, ("jest", "--watch"), "--watch"),
+    (JEST, ("npx", "jest", "--watchAll"), "--watchAll"),
+    (JEST, ("jest", "--watch", "0"), "--watch"),
+    (VITEST, ("vitest", "--watch"), "--watch"),
+    (VITEST, ("vitest", "run", "-w"), "-w"),
+    (VITEST, ("vitest", "-tw", "x"), "-tw"),
+    (NODE_TEST, ("node", "--watch", "--test"), "--watch"),
+    (NODE_TEST, ("node", "--test", "--watch-path=src"), "--watch-path"),
+    (NODE_TEST, ("node", "--test", "a.test.mjs", "--watch"), "--watch"),
+]
+
+
+@pytest.mark.parametrize(
+    ("adapter", "argv", "named"),
+    NEVER_ENDING,
+    ids=[f"{adapter.name}:{'_'.join(argv[1:])}" for adapter, argv, _ in NEVER_ENDING],
+)
+def test_a_watch_mode_is_not_proven_for_it_never_ends(
+    tmp_path: Path, adapter: Adapter, argv: tuple[str, ...], named: str
+) -> None:
+    # A watch mode moves no report and forges no pass: it waits for changes after the run, which
+    # under `prove` (standard input `/dev/null`) is past any time limit, so nothing could count a
+    # report. Not proven before anything is resolved: no `PATH` holds a runner here. Mutations
+    # (declared): each runner's watch modes planned; a watch mode refused -> each case differs.
+    assert planned(adapter, argv, tmp_path) == Unresolved(
+        NEVER_ENDS, NEVER_ENDS_DETAIL.format(option=named)
+    )
+
+
+@pytest.mark.parametrize(
+    ("adapter", "argv", "named"),
+    [
+        (JEST, ("jest", "--watch", "-u"), "-u"),
+        (VITEST, ("vitest", "-w", "--outputFile=x"), "--outputFile"),
+        (NODE_TEST, ("node", "--watch", "--test", "--env-file=.env"), "--env-file"),
+    ],
+    ids=[JEST.name, VITEST.name, NODE_TEST.name],
+)
+def test_a_refusal_wins_over_a_watch_mode(
+    tmp_path: Path, adapter: Adapter, argv: tuple[str, ...], named: str
+) -> None:
+    assert planned(adapter, argv, tmp_path) == Refused(REFUSED_OPTION, named)
+
+
+def test_a_watch_mode_s_receipt_says_it_never_ends(tmp_path: Path) -> None:
+    # The receipt's words fit every arm an adapter's unresolved plan stands for: not only an entry
+    # point that did not resolve. Mutation (declared, core): the words say the entry point did
+    # not resolve -> this line says so of a watch mode.
+    got = prove(["npx", "jest", "--watch"], cwd=tmp_path, environ={"PATH": ""}, timeout=60)
+    detail = NEVER_ENDS_DETAIL.format(option="--watch")
+    assert (got.verdict, got.reason, got.detail, got.exit_code) == (
+        NOT_PROVEN,
+        NEVER_ENDS,
+        detail,
+        None,
+    )
+    shown = line(got)
+    assert shown.startswith(f"not proven: the runner's adapter cannot plan this run ({NEVER_ENDS})")
+    assert detail in shown
 
 
 def test_node_import_is_free(tmp_path: Path) -> None:
@@ -921,6 +986,35 @@ def test_the_fixture_s_three_tests_fail(tmp_path: Path, runner: str) -> None:
     assert (got.verdict, got.reason, got.counts) == (FAILED, FAILING, Counts(1, 1, 1))
 
 
+SNAPSHOT_TEST = 'test("s", () => { expect({ a: 1 }).toMatchSnapshot(); });\n'
+
+
+@needs_packages
+@pytest.mark.parametrize(
+    ("runner", "argv", "verdict", "counts"),
+    [
+        ("jest", ("npx", "jest"), FAILED, Counts(0, 1, 0)),
+        ("jest", ("npx", "jest", "--no-ci"), PROVED, Counts(1, 0, 0)),
+        ("jest", ("npx", "jest", "--ci=false"), PROVED, Counts(1, 0, 0)),
+        ("jest", ("CI=false", "npx", "jest"), PROVED, Counts(1, 0, 0)),
+        ("vitest", ("npx", "vitest", "run"), FAILED, Counts(0, 1, 0)),
+        ("vitest", ("npx", "vitest", "run", "--update=new"), PROVED, Counts(1, 0, 0)),
+    ],
+    ids=["jest", "jest-no-ci", "jest-ci-false", "jest-CI-false", "vitest", "vitest-update-new"],
+)
+def test_a_snapshot_the_run_writes_is_the_bound_s(
+    tmp_path: Path, runner: str, argv: tuple[str, ...], verdict: Verdict, counts: Counts
+) -> None:
+    # The snapshot is missing and `CI=true` is inherited: jest off CI and vitest's `--update=new`
+    # write it and pass, as each does by default where `CI` is unset or false, so a refusal of
+    # either would stop nobody; what the run writes is the bound's.
+    head = VITEST_HEAD if runner == "vitest" else ""
+    project = js_project(tmp_path / "p", runner, head + SNAPSHOT_TEST)
+    got = real(project, *argv, CI="true")
+    assert (got.verdict, got.counts) == (verdict, counts)
+    assert (project / "__snapshots__").is_dir() is (verdict == PROVED)
+
+
 @needs_packages
 @pytest.mark.parametrize(("runner", "code"), [("jest", 1), ("vitest", 1), ("node-test", 0)])
 def test_an_empty_run_fails(tmp_path: Path, runner: str, code: int) -> None:
@@ -1030,6 +1124,9 @@ def outcome(adapter: Adapter, args: Sequence[str], root: Path) -> str:
     got = planned(adapter, [adapter.name, *args], root, path=str(node.parent))
     if isinstance(got, Refused):
         return f"refused {got.detail}"
+    if isinstance(got, Unresolved):
+        assert got.reason == NEVER_ENDS, got
+        return f"never ends {got.detail}"
     assert isinstance(got, Plan), got
     real = Path(os.path.realpath(root))
     named = [
@@ -1038,6 +1135,11 @@ def outcome(adapter: Adapter, args: Sequence[str], root: Path) -> str:
         if os.path.isabs(entry)
     ]
     return f"named {' '.join(named)}" if named else "free"
+
+
+def ends(option: str) -> str:
+    """What `outcome` says of a watch mode `option` turns on."""
+    return f"never ends {NEVER_ENDS_DETAIL.format(option=option)}"
 
 
 JEST_FORMS = [
@@ -1073,21 +1175,18 @@ JEST_FORMS = [
     (("-t/u",), "free"),
     (("-t=u",), "free"),
     (("-t.u",), "free"),
-    # A boolean takes `true` or `false` as its next word, and nothing else.
-    (("--ci", "false"), "refused --ci"),
-    (("--ci=1",), "refused --ci=1"),
-    (("--ci=yes",), "refused --ci=yes"),
-    (("--ci", "0"), "free"),
-    (("--ci", "true"), "free"),
-    (("--ci", "False"), "free"),
-    (("--ci.x",), "free"),
+    # A boolean takes `true` or `false` as its next word, and nothing else; any value `=` gives
+    # it but `true` turns it off.
     (("--watch", "false"), "free"),
     (("--watch=0",), "free"),
-    (("--watch", "0"), "refused --watch"),
+    (("--watch=1",), "free"),
+    (("--watch", "0"), ends("--watch")),
     (("--no-watch", "true"), "free"),
     (("--watchAll", "false"), "free"),
     (("--updateSnapshot", "false"), "free"),
     (("--updateSnapshot", "true"), "refused --updateSnapshot"),
+    (("--updateSnapshot=1",), "free"),
+    (("--updateSnapshot=yes",), "free"),
     (("--collectTests", "false"), "free"),
     (("--collectTests=true",), "refused --collectTests"),
     (("--config", "a.js"), "named a.js"),
@@ -1105,8 +1204,8 @@ def test_jest_reads_each_form_as_yargs_does(
     tmp_path: Path, args: tuple[str, ...], expected: str
 ) -> None:
     # Mutations (declared): a short option's value after a character that is no letter read as
-    # none -> `-c/etc/jest.config.js` is free; a boolean's next word never read -> `--ci false`
-    # is free; any `=` value read as on -> `-u=false` is refused.
+    # none -> `-c/etc/jest.config.js` is free; a boolean's next word never read ->
+    # `--updateSnapshot false` is refused; any `=` value read as on -> `-u=yes` is refused.
     assert outcome(JEST, args, tmp_path) == expected
 
 
@@ -1122,8 +1221,8 @@ VITEST_FORMS = [
     (("-t.u",), "refused -t.u"),
     (("-tu",), "refused -tu"),
     (("-tfoo",), "free"),
-    (("-wc", "a.js"), "refused -wc"),
-    (("-cw", "a.js"), "refused -cw"),
+    (("-wc", "a.js"), ends("-wc")),
+    (("-cw", "a.js"), ends("-cw")),
     (("-uc", "a.js"), "refused -uc"),
     (("-cu", "a.js"), "refused -cu"),
     (("-uw", "false"), "refused -uw"),
@@ -1132,6 +1231,8 @@ VITEST_FORMS = [
     (("-u=none",), "free"),
     (("--update", "none"), "free"),
     (("--no-update",), "free"),
+    (("--update=new",), "free"),
+    (("-u", "new"), "free"),
     # `false` given to `--update` is the text `false`, which rewrites snapshots.
     (("-u", "false"), "refused -u"),
     (("--update=false",), "refused --update"),
@@ -1139,14 +1240,14 @@ VITEST_FORMS = [
     (("--update", "true"), "refused --update"),
     (("--update.x",), "refused --update"),
     # A boolean is off by `--no-` or `false` alone.
-    (("-w",), "refused -w"),
-    (("-w", "x"), "refused -w"),
+    (("-w",), ends("-w")),
+    (("-w", "x"), ends("-w")),
     (("-w=false",), "free"),
     (("-w", "false"), "free"),
     (("--watch", "false"), "free"),
     (("--no-watch",), "free"),
-    (("--watch=0",), "refused --watch"),
-    (("--watch=no",), "refused --watch"),
+    (("--watch=0",), ends("--watch")),
+    (("--watch=no",), ends("--watch")),
     (("--dangerouslyIgnoreUnhandledErrors", "false"), "free"),
     (("--dangerouslyIgnoreUnhandledErrors=0",), "refused --dangerouslyIgnoreUnhandledErrors"),
     (("--mergeReports=false",), "refused --mergeReports"),

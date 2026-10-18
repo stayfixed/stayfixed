@@ -2575,33 +2575,83 @@ reddens = [
   "tests/prove/test_javascript.py::test_each_report_steering_option_is_refused[jest:--update-snapshot]",
 ]
 
+# A watch mode never ends under `prove`: not proven, naming the option, and never refused.
 [[mutation]]
-name = "jest's --no-ci is left off its refusals"
-file = "src/stayfixed/profiles/javascript/adapters.py"
-before = """        if name == _JEST_CI and not _yargs_on(setting):
-            return word
-"""
-after = ""
-reddens = [
-  "tests/prove/test_javascript.py::test_each_report_steering_option_is_refused[jest:--no-ci]",
-  "tests/prove/test_javascript.py::test_each_report_steering_option_is_refused[jest:--ci=false]",
-]
-
-[[mutation]]
-name = "jest's --ci is refused as --no-ci is"
-file = "src/stayfixed/profiles/javascript/adapters.py"
-before = "        if name == _JEST_CI and not _yargs_on(setting):"
-after = "        if name == _JEST_CI:"
-reddens = ["tests/prove/test_javascript.py::test_every_other_option_is_free[jest:--ci]"]
-
-[[mutation]]
-name = "jest's watch modes are left off its refusals"
+name = "jest's watch modes are planned"
 file = "src/stayfixed/profiles/javascript/adapters.py"
 before = '_JEST_NEVER_ENDS = frozenset({"watch", "watchAll"})'
 after = "_JEST_NEVER_ENDS: frozenset[str] = frozenset()"
 reddens = [
-  "tests/prove/test_javascript.py::test_each_report_steering_option_is_refused[jest:--watch]",
-  "tests/prove/test_javascript.py::test_each_report_steering_option_is_refused[jest:--watchAll]",
+  "tests/prove/test_javascript.py::test_a_watch_mode_is_not_proven_for_it_never_ends[jest:--watch]",
+  "tests/prove/test_javascript.py::test_a_watch_mode_is_not_proven_for_it_never_ends[jest:jest_--watchAll]",
+]
+
+[[mutation]]
+name = "vitest's watch mode is planned"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = '_VITEST_NEVER_ENDS = frozenset({"watch", "w"})'
+after = "_VITEST_NEVER_ENDS: frozenset[str] = frozenset()"
+reddens = [
+  "tests/prove/test_javascript.py::test_a_watch_mode_is_not_proven_for_it_never_ends[vitest:--watch]",
+  "tests/prove/test_javascript.py::test_a_watch_mode_is_not_proven_for_it_never_ends[vitest:run_-w]",
+]
+
+[[mutation]]
+name = "node's watch modes are planned"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = '_NODE_NEVER_ENDS = frozenset({"--watch", "--watch-path"})'
+after = "_NODE_NEVER_ENDS: frozenset[str] = frozenset()"
+reddens = [
+  "tests/prove/test_javascript.py::test_a_watch_mode_is_not_proven_for_it_never_ends[node-test:--watch_--test]",
+  "tests/prove/test_javascript.py::test_a_watch_mode_is_not_proven_for_it_never_ends[node-test:--test_--watch-path=src]",
+]
+
+[[mutation]]
+name = "jest's and vitest's watch modes are refused"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = """        never = runner.never_ends(args)
+        if never is not None:
+            return Unresolved(NEVER_ENDS, NEVER_ENDS_DETAIL.format(option=never))"""
+after = """        never = runner.never_ends(args)
+        if never is not None:
+            return Refused(REFUSED_OPTION, never)"""
+reddens = [
+  "tests/prove/test_javascript.py::test_a_watch_mode_is_not_proven_for_it_never_ends[jest:--watch]",
+  "tests/prove/test_javascript.py::test_a_watch_mode_is_not_proven_for_it_never_ends[vitest:--watch]",
+  "tests/prove/test_javascript.py::test_a_watch_mode_s_receipt_says_it_never_ends",
+]
+
+[[mutation]]
+name = "node's watch modes are refused"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = """        never = node_never_ends(command[1:])
+        if never is not None:
+            return Unresolved(NEVER_ENDS, NEVER_ENDS_DETAIL.format(option=never))"""
+after = """        never = node_never_ends(command[1:])
+        if never is not None:
+            return Refused(REFUSED_OPTION, never)"""
+reddens = [
+  "tests/prove/test_javascript.py::test_a_watch_mode_is_not_proven_for_it_never_ends[node-test:--watch_--test]",
+]
+
+[[mutation]]
+name = "a watch mode wins over a refusal in the same command"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = """        refused = runner.refused(args, cwd, root)
+        if refused is not None:
+            return Refused(REFUSED_OPTION, refused)
+        never = runner.never_ends(args)
+        if never is not None:
+            return Unresolved(NEVER_ENDS, NEVER_ENDS_DETAIL.format(option=never))"""
+after = """        never = runner.never_ends(args)
+        if never is not None:
+            return Unresolved(NEVER_ENDS, NEVER_ENDS_DETAIL.format(option=never))
+        refused = runner.refused(args, cwd, root)
+        if refused is not None:
+            return Refused(REFUSED_OPTION, refused)"""
+reddens = [
+  "tests/prove/test_javascript.py::test_a_refusal_wins_over_a_watch_mode[jest]",
+  "tests/prove/test_javascript.py::test_a_refusal_wins_over_a_watch_mode[vitest]",
 ]
 
 [[mutation]]
@@ -2647,6 +2697,17 @@ reddens = [
   "tests/prove/test_javascript.py::test_each_report_steering_option_is_refused[vitest:--dangerouslyIgnoreUnhandledErrors]",
 ]
 
+# vitest's own default where `CI` is unset writes a missing snapshot and fails a failing one.
+[[mutation]]
+name = "vitest's --update=new is read as an update"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = "            or (setting.value in (_VITEST_NO_UPDATE, _VITEST_NEW_ONLY) and not setting.dotted)"
+after = "            or (setting.value in (_VITEST_NO_UPDATE,) and not setting.dotted)"
+reddens = [
+  "tests/prove/test_javascript.py::test_every_other_option_is_free[vitest:--update=new]",
+  "tests/prove/test_javascript.py::test_vitest_reads_each_form_as_its_parser_does[-u_new]",
+]
+
 [[mutation]]
 name = "vitest's --update=none is read as an update"
 file = "src/stayfixed/profiles/javascript/adapters.py"
@@ -2687,10 +2748,12 @@ reddens = [
 name = "node --test's --test-rerun-failures is left off its refusals"
 file = "src/stayfixed/profiles/javascript/adapters.py"
 before = """        "--test-rerun-failures",
-        "--watch",
-"""
-after = """        "--watch",
-"""
+    }
+)
+# node's watch modes"""
+after = """    }
+)
+# node's watch modes"""
 reddens = [
   "tests/prove/test_javascript.py::test_each_report_steering_option_is_refused[node-test:--test_--test-rerun-failures=state.json]",
 ]
@@ -2772,7 +2835,7 @@ before = """        given = following if following in _BOOLEAN_WORDS else None
 after = """        given = None
     return Setting(head, given, negated=negated, dotted=bool(dot))"""
 reddens = [
-  "tests/prove/test_javascript.py::test_jest_reads_each_form_as_yargs_does[--ci_false]",
+  "tests/prove/test_javascript.py::test_jest_reads_each_form_as_yargs_does[--updateSnapshot_false]",
   "tests/prove/test_javascript.py::test_vitest_reads_each_form_as_its_parser_does[--watch_false]",
 ]
 
@@ -2782,15 +2845,15 @@ file = "src/stayfixed/profiles/javascript/adapters.py"
 before = '''    return not setting.negated and (setting.dotted or setting.value in (None, "true"))'''
 after = '''    return not setting.negated and setting.value != "false"'''
 reddens = [
-  "tests/prove/test_javascript.py::test_jest_reads_each_form_as_yargs_does[--ci=1]",
+  "tests/prove/test_javascript.py::test_jest_reads_each_form_as_yargs_does[--updateSnapshot=1]",
   "tests/prove/test_javascript.py::test_jest_reads_each_form_as_yargs_does[-u=yes]",
 ]
 
 [[mutation]]
 name = "vitest's --update=false is read as no update"
 file = "src/stayfixed/profiles/javascript/adapters.py"
-before = "            setting.negated or (setting.value == _VITEST_NO_UPDATE and not setting.dotted)"
-after = '''            setting.negated or (setting.value in (_VITEST_NO_UPDATE, "false") and not setting.dotted)'''
+before = "            or (setting.value in (_VITEST_NO_UPDATE, _VITEST_NEW_ONLY) and not setting.dotted)"
+after = '''            or (setting.value in (_VITEST_NO_UPDATE, _VITEST_NEW_ONLY, "false") and not setting.dotted)'''
 reddens = [
   "tests/prove/test_javascript.py::test_vitest_reads_each_form_as_its_parser_does[--update=false]",
   "tests/prove/test_javascript.py::test_vitest_reads_each_form_as_its_parser_does[-u_false]",
