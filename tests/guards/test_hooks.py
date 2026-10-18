@@ -325,6 +325,23 @@ def test_a_link_to_an_env_file_is_judged_by_what_it_names(tmp_path: Path) -> Non
     assert guard.run(file_event(tmp_path, "Read", "keys.txt"), NO_CONFIG).decision is None
 
 
+def test_a_link_under_the_home_is_resolved_as_the_tool_expands_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `~/notes.txt` resolved under the working directory names nothing, so the link it is would
+    # be judged by its own name. Mutation: `mutations/`'s "the env guard resolves a home path
+    # under the working directory" -> the read passes.
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / ".env.local").write_text("KEY=secret\n", encoding="utf-8")
+    (home / "notes.txt").symlink_to(".env.local")
+    monkeypatch.setenv("HOME", str(home))
+    work = tmp_path / "work"
+    work.mkdir()
+    event = file_event(work, "Read", "~/notes.txt")
+    assert env_guard().run(event, NO_CONFIG).decision is Decision.DENY
+
+
 def test_a_path_that_cannot_be_resolved_is_judged_by_its_own_name(tmp_path: Path) -> None:
     # A loop and a NUL both raise from the resolution; neither may end the call in a deny of a
     # file that is not an env file, nor let one through.
