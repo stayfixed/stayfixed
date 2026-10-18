@@ -5,9 +5,10 @@ are the truth, the index carries nothing of its own, so a conflict in it is alwa
 regenerating rather than by merging text.
 
 Frontmatter is a deliberately flat subset of YAML — `key: value` lines, an inline `[a, b]`
-list, no nesting — so this module reads it with the standard library alone. Anything outside
-the subset raises `LedgerError` rather than parsing to a default: a bug report that silently
-loses its status is worse than one that fails the guard.
+list of identifiers for `related`, an inline `["a", "b"]` list of double-quoted items for each
+of the register's lists, no nesting — so this module reads it with the standard library alone.
+Anything outside the subset raises `LedgerError` rather than parsing to a default: a bug report
+that silently loses its status is worse than one that fails the guard.
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
+from typing import NamedTuple
 
 from stayfixed.config.paths import contained
 from stayfixed.errors import Failure
@@ -25,7 +27,12 @@ from stayfixed.identifiers import Identifiers
 from stayfixed.ledger.register import ENGINE_KEYS, Register
 from stayfixed.printed import quoted
 
-_FRONTMATTER = re.compile(r"\A---\n(.*?)\n---\n\n?(.*)\Z", re.DOTALL)
+# A line break on the file's own endings: LF, CRLF or a lone CR, the three `read_ledger_text`
+# translates to LF. A CR is a break of its own only where no LF follows, so a CRLF is never read as
+# two: read as `\r` and then `\n`, `---` CRLF `---` CRLF would close a block it never opened.
+_BREAK = r"(?:\r\n|\r(?!\n)|\n)"
+# The frontmatter block between its two `---` fences, then the body after one optional blank line.
+_FRONTMATTER = re.compile(rf"\A---{_BREAK}(.*?){_BREAK}---{_BREAK}{_BREAK}?(.*)\Z", re.DOTALL)
 _KEY_VALUE = re.compile(r"\A([a-z_]+):[ \t]*(.*)\Z")
 _ISO_DATE = re.compile(r"\A\d{4}-\d{2}-\d{2}\Z")
 # A value that would parse as something other than a plain string in real YAML. The subset
@@ -37,6 +44,20 @@ _ISO_DATE = re.compile(r"\A\d{4}-\d{2}-\d{2}\Z")
 # A value that *ends* in a colon is the same promise broken at the other end — `source: a:` is
 # a nested mapping to a real YAML reader — so it is quoted too.
 _NEEDS_QUOTING = re.compile(r"\A[-?:,\[\]{}#&*!|>'\"%@`]|: | #|:\Z")
+# A C0 control character or DEL: an item a list key holds is an argv word, which a later command
+# hands to a process, so neither may reach one.
+_CONTROL_CHARACTER = re.compile(r"[\x00-\x1f\x7f]")
+# A double-quoted run, a backslash taking the next character along, and a list key's whole value:
+# `[`, such runs separated by a comma, spaces around any of it, `]`. Matched, never split on `,`:
+# an item is an argv word, and a comma or a bracket inside its quotes is part of it.
+_QUOTED = r'"(?:[^"\\]|\\.)*"'
+_QUOTED_LIST = re.compile(rf"\[ *(?:{_QUOTED}(?: *, *{_QUOTED})* *)?\]", re.DOTALL)
+
+# The refusals of a list key's value. They report validity, an argv a later runner can execute as
+# written, and are no trust boundary: whoever writes the entry already writes the whole argv.
+LIST_SHAPE = '{where}: `{key}` must be an inline list of double-quoted items, like `["a", "b"]`'
+EMPTY_ITEM = "{where}: `{key}` holds an empty item"
+CONTROL_IN_ITEM = "{where}: `{key}` holds an item with a control character"
 
 
 # An entry's `id:` line, whatever its spacing or quoting: what `renumber` rewrites to move an entry,
@@ -61,8 +82,11 @@ def _where(path: Path) -> str:
 
 @dataclass(frozen=True)
 class Entry:
-    """One parsed entry file. `fields` holds the register's keys outside `ENGINE_KEYS`, each one
-    the register declares, with `""` for a key the file leaves empty or out."""
+    """One parsed entry file. `fields` holds the register's keys outside `ENGINE_KEYS` and its
+    lists, each one the register declares, with `""` for a key the file leaves empty or out;
+    `lists` holds each of its lists, with `()` for one the file leaves empty or out. That every
+    list key is present is `parse_entry`'s guarantee, not this class's: an `Entry` built directly
+    holds the lists it is given, none by default."""
 
     id: str
     title: str
@@ -73,9 +97,11 @@ class Entry:
     # Compared, not hashed: a dict has no hash, and the fields above already tell two entries
     # apart, so equal entries still hash equal.
     fields: Mapping[str, str] = field(hash=False)
+    lists: Mapping[str, tuple[str, ...]] = field(default_factory=dict, hash=False)
 
     def value(self, key: str) -> str:
-        """The entry's value for one of its register's keys other than `related`."""
+        """The entry's value for one of its register's keys other than `related` and its lists;
+        a `KeyError` for a list, which has no one value."""
         if key in ENGINE_KEYS and key != "related":
             return str(getattr(self, key))
         return self.fields[key]
@@ -113,9 +139,10 @@ def _unquote(raw: str, *, key: str, where: Path) -> str:
             continue
         following = body[index + 1 : index + 2]
         if following not in ('"', "\\"):
-            raise LedgerError(
-                f"{_where(where)}: `{key}` uses an unsupported escape `\\{following}`"
-            )
+            # The repository's character: one that prints prints as itself, and any other, an ESC
+            # or a line break, through `quoted`, never as a sequence on the operator's terminal.
+            shown = following if following.isprintable() else quoted(following)
+            raise LedgerError(f"{_where(where)}: `{key}` uses an unsupported escape `\\{shown}`")
         out.append(following)
         index += 2
     return "".join(out)
@@ -144,6 +171,24 @@ def _require_iso_date(value: str, *, key: str, where: Path) -> str:
     return value
 
 
+def _parse_quoted_list(raw: str, *, key: str, where: Path) -> tuple[str, ...]:
+    """The items of a list key's value, or raise: an empty value is the empty list, and each
+    quoted run goes to `_unquote`, so an item's escapes are a title's."""
+    if not raw:
+        return ()
+    if not _QUOTED_LIST.fullmatch(raw):
+        raise LedgerError(LIST_SHAPE.format(where=_where(where), key=key))
+    items = tuple(
+        _unquote(run, key=key, where=where) for run in re.findall(_QUOTED, raw, re.DOTALL)
+    )
+    for item in items:
+        if not item:
+            raise LedgerError(EMPTY_ITEM.format(where=_where(where), key=key))
+        if _CONTROL_CHARACTER.search(item):
+            raise LedgerError(CONTROL_IN_ITEM.format(where=_where(where), key=key))
+    return items
+
+
 def _parse_related(raw: str, *, where: Path, ids: Identifiers) -> tuple[str, ...]:
     if not raw:
         return ()
@@ -160,6 +205,34 @@ def _parse_related(raw: str, *, where: Path, ids: Identifiers) -> tuple[str, ...
     return tuple(items)
 
 
+class _Line(NamedTuple):
+    """One frontmatter line: its number in the file, the offset in the text it starts at, and the
+    line without its line break."""
+
+    number: int
+    offset: int
+    text: str
+
+
+def _frontmatter(text: str) -> tuple[list[_Line], str] | None:
+    """The frontmatter lines of an entry's `text` and the body after them, or `None` for a file
+    with no frontmatter block at its top.
+
+    The one reader of where a value sits, for the text `read_ledger_text` translated to LF and for
+    the text on disk alike: the fences are found on the file's own endings (`_BREAK`), and the
+    lines are split wherever `str.splitlines` splits them.
+    """
+    match = _FRONTMATTER.match(text)
+    if match is None:
+        return None
+    lines: list[_Line] = []
+    offset = match.start(1)
+    for number, piece in enumerate(match.group(1).splitlines(keepends=True), start=2):
+        lines.append(_Line(number, offset, piece.splitlines()[0]))
+        offset += len(piece)
+    return lines, match.group(2)
+
+
 def parse_entry(text: str, *, path: Path, register: Register) -> Entry:
     """Parse one entry file's text, raising `LedgerError` on anything ambiguous.
 
@@ -169,11 +242,12 @@ def parse_entry(text: str, *, path: Path, register: Register) -> Entry:
     path is a runner's scratch directory nobody can act on.
     """
     ids, schema = register.ids, register.schema
-    match = _FRONTMATTER.match(text)
-    if match is None:
+    frontmatter = _frontmatter(text)
+    if frontmatter is None:
         raise LedgerError(f"{_where(path)}: no `---` frontmatter block at the top of the file")
+    lines, body = frontmatter
     fields: dict[str, str] = {}
-    for number, line in enumerate(match.group(1).splitlines(), start=2):
+    for number, _, line in lines:
         if not line.strip():
             continue
         if line[:1] in (" ", "\t"):
@@ -181,7 +255,11 @@ def parse_entry(text: str, *, path: Path, register: Register) -> Entry:
         key_value = _KEY_VALUE.match(line)
         if key_value is None:
             raise LedgerError(f"{_where(path)}:{number}: expected `key: value`, got {line!r}")
-        key, raw = key_value.group(1), key_value.group(2).strip()
+        key, raw = key_value.group(1), key_value.group(2)
+        # A list is padded only by the spaces and tabs YAML separates with: any other whitespace
+        # `str.strip` takes, a no-break space or U+001F, is text outside the brackets, which the
+        # list reader refuses. A scalar keeps the stripping it has always had.
+        raw = raw.strip(" \t") if key in schema.lists else raw.strip()
         if key not in schema.keys:
             raise LedgerError(f"{_where(path)}:{number}: unknown frontmatter key `{key}`")
         if key in fields:
@@ -220,19 +298,41 @@ def parse_entry(text: str, *, path: Path, register: Register) -> Entry:
         if values[key] or key in schema.required:
             _require_iso_date(values[key], key=key, where=path)
     title = _unquote(fields["title"], key="title", where=path)
-    for key in schema.keys:
+    for key in schema.scalar_keys:
         if key not in ENGINE_KEYS and key not in values:
             values[key] = _unquote(fields.get(key, ""), key=key, where=path)
+    lists = {
+        key: _parse_quoted_list(fields.get(key, ""), key=key, where=path) for key in schema.lists
+    }
 
     return Entry(
         id=identifier,
         title=title,
         status=status,
         related=_parse_related(fields.get("related", ""), where=path, ids=ids),
-        body=match.group(2),
+        body=body,
         path=path,
         fields=values,
+        lists=lists,
     )
+
+
+def list_value_spans(text: str, lists: tuple[str, ...]) -> list[tuple[int, int]]:
+    """Where the value of each of `lists` lies in an entry's frontmatter, as `(start, end)`
+    offsets into `text`, in order: what `renumber`'s sweep leaves as it is.
+
+    The lines are `parse_entry`'s own (`_frontmatter`), on the file's own line endings, so a span
+    is the value that reader reads, and a file with no frontmatter block has none.
+    """
+    frontmatter = _frontmatter(text)
+    if frontmatter is None:
+        return []
+    spans: list[tuple[int, int]] = []
+    for line in frontmatter[0]:
+        key_value = _KEY_VALUE.match(line.text)
+        if key_value is not None and key_value.group(1) in lists:
+            spans.append((line.offset + key_value.start(2), line.offset + len(line.text)))
+    return spans
 
 
 def read_ledger_text(path: Path, *, where: Path) -> str:
@@ -261,6 +361,16 @@ def entry_dir(root: Path, register: Register) -> Path:
     return contained(root, register.directory)
 
 
+def entry_paths(root: Path, register: Register) -> list[Path]:
+    """The register's entry files, sorted: every `<prefix>-*.md` in its directory.
+
+    The one statement of which files are entries. `load_entries` parses these, and `renumber`'s
+    sweep keeps the list values of these and of no other file, so a file the register does not
+    read — a note beside the ledger, a `.txt` named like an entry — is swept like any text.
+    """
+    return sorted(entry_dir(root, register).glob(f"{register.ids.prefix}-*.md"))
+
+
 def load_entries(root: Path, register: Register) -> list[Entry]:
     """Every entry under the register's directory, ordered by identifier number.
 
@@ -269,14 +379,13 @@ def load_entries(root: Path, register: Register) -> list[Entry]:
     path under a temporary directory while `check` described the same file repo-relatively —
     and on CI the absolute form names a runner's scratch directory nobody can act on.
     """
-    directory = entry_dir(root, register)
     entries = [
         parse_entry(
             read_ledger_text(path, where=path.relative_to(root)),
             path=path.relative_to(root),
             register=register,
         )
-        for path in sorted(directory.glob(f"{register.ids.prefix}-*.md"))
+        for path in entry_paths(root, register)
     ]
     return sorted(entries, key=lambda entry: entry.number)
 

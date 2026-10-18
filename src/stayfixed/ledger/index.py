@@ -12,7 +12,7 @@ from stayfixed import fsops
 from stayfixed.config.paths import contained
 from stayfixed.errors import Refusal
 from stayfixed.identifiers import Identifiers
-from stayfixed.ledger.entries import Entry, entry_dir, read_ledger_text
+from stayfixed.ledger.entries import Entry, entry_dir, entry_paths, read_ledger_text
 from stayfixed.ledger.register import Register, Section, ledger_path
 
 # Structural recognition: the first paragraph opens with the marker's fixed prefix and names
@@ -199,11 +199,7 @@ def _entry_identifiers(root: Path, register: Register) -> set[str]:
     and is the fail-closed answer.
     """
     ids = register.ids
-    return {
-        path.stem
-        for path in entry_dir(root, register).glob(f"{ids.prefix}-*.md")
-        if ids.is_identifier(path.stem)
-    }
+    return {path.stem for path in entry_paths(root, register) if ids.is_identifier(path.stem)}
 
 
 def _row_identifier(line: str, ids: Identifiers) -> str:
