@@ -1288,3 +1288,47 @@ finding changed the plan as below; a finding not named was fixed in the task it 
 
 Written by Tasks 1, 4, 14 and 15, and by the controller when a wave's implementer reports (its token
 total, its fix rounds) and when the owner answers an open question.
+
+### Task 15 — the matcher spike
+
+Measured on 2026-10-18 with Claude Code 2.1.301 on `claude-haiku-5-5` and the Codex CLI
+0.163.0-alpha.10.2 (the one bundled with the ChatGPT desktop app) on `gpt-5.6-luna` at effort
+`low`, macOS. Every run had `HOME`, `CLAUDE_CONFIG_DIR` and `CODEX_HOME` under `<scratchpad>/j1/`
+and ran in a scratch git repository holding one skill, `canary`, as
+`.claude/skills/canary/SKILL.md` and `.agents/skills/canary/SKILL.md`, whose body says to reply
+`CANARY-7731`. Each hook appended its stdin to a file and exited 0: on Claude Code `PreToolUse`
+with matcher `Skill`, `PreToolUse` with an empty matcher, `UserPromptExpansion` with an empty
+matcher and `UserPromptSubmit`; on Codex `UserPromptSubmit` and `PreToolUse` with no matcher, in
+`$CODEX_HOME/hooks.json`, trusted by the owner through `/hooks` (no run used
+`--dangerously-bypass-hook-trust`). Each harness ran twice interactively, the owner typing
+`What is the canary word?` (the implicit load) and then the invocation (`/canary`, `$canary`), and
+twice headless, `claude -p` and `codex exec`, once with each prompt. Every run answered
+`CANARY-7731`. The cells come from the payload files and the sessions' transcripts.
+
+| Harness, version | Path | How invoked | Fires | Payload names the skill in | In `-p` / `exec` |
+|---|---|---|---|---|---|
+| Claude Code 2.1.301 | `PreToolUse`, matcher `Skill` | the model loads the skill on its own | yes: the model calls the `Skill` tool | `tool_input.skill`: `{"skill": "canary"}` with `tool_name: "Skill"` | yes, the same payload |
+| Claude Code 2.1.301 | `PreToolUse`, matcher `Skill` | the person types `/canary` | no: the harness puts the skill's body in a user message, and no tool is called | none, nothing fires | no, the same |
+| Claude Code 2.1.301 | `UserPromptExpansion` | the person types `/canary` | yes | `command_name: "canary"`, beside `prompt: "/canary"`, `command_args: ""`, `expansion_type: "slash_command"` and `command_source: "projectSettings"` | yes, the same payload |
+| Codex 0.163.0-alpha.10.2 | the definition of a skill invocation | its documentation at the version run | explicit: the person mentions `$name` in the prompt or picks the skill from `/skills`; implicit: Codex picks a skill whose `description` matches the task and reads its `SKILL.md`. Skills are found under `.agents/skills` from the working directory up to the repository root, `$HOME/.agents/skills`, `/etc/codex/skills` and the bundled set; `allow_implicit_invocation = false` turns off the implicit kind only. Source: "Build skills", `https://learn.chatgpt.com/docs/build-skills` (where `developers.openai.com/codex/skills` redirects), read 2026-10-18; the page names no version or date | — | — |
+| Codex 0.163.0-alpha.10.2 | `PreToolUse`, no matcher | the model loads the skill on its own | yes: the model reads the file with a shell command | `tool_input.command`, as the file's path only: `tool_name: "Bash"`, `cat <scratchpad>/j1/proj/.agents/skills/canary/SKILL.md` (interactive), `sed -n '1,200p' <same path>` (`exec`) | yes, with the command the model chose |
+| Codex 0.163.0-alpha.10.2 | `PreToolUse`, no matcher | the person types `$canary` | no: the harness adds the body as a `<skill><name>canary</name><path>…</path>` user message, and no tool is called | none, nothing fires | no, the same |
+| Codex 0.163.0-alpha.10.2 | `UserPromptSubmit` (it takes no matcher) | the person types `$canary` | yes | `prompt: "$canary"`, the typed text; no field names the skill, and the payload does not show the `<skill>` message | yes, the same payload |
+
+What wave 10 inherits. On Claude Code neither path sees every invocation, and the two together
+see both kinds: `PreToolUse` with matcher `Skill` sees only the model's own loads and
+`UserPromptExpansion` only the person's `/name`, each naming the skill in its own field
+(`tool_input.skill`, `command_name`), the same interactively and under `-p`. On Codex no event sees
+an invocation as such. An explicit `$name` reaches a hook only as text in `UserPromptSubmit`'s
+`prompt`, which the hook must parse for mentions itself; an implicit load reaches it only as a `Bash` command in `PreToolUse`
+whose text contains a `SKILL.md` path, in whatever form the model writes the command (`cat` in one
+run, `sed` in the other), so a matcher on a skill's name is a guess about the model's shell. Every
+signal observed is the load itself, so a skill the model follows from its context without loading it
+again reaches no hook on either harness, and no payload carries the body that was loaded.
+
+Run notes. The first interactive Claude Code session recorded no payload, because the payload
+directory did not exist yet; it answered its first prompt `Credit balance is too low` before the
+owner ran `/login`, so a credential reached the isolated configuration from outside it, as the review
+warned. It was repeated in a fresh session after `/login`. `codex exec` reported 2,603 tokens for the
+implicit prompt and 6,933 for `$canary`. No reserve run was needed: six runs in all, besides the
+first, discarded session.
