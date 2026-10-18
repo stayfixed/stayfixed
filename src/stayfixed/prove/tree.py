@@ -15,11 +15,15 @@ command can write, and a file in the runner's load path, tracked or not, is what
 So the receipt names what could have shaped the report, and the reader weighs it.
 
 A glob is matched the way `PurePosixPath.match` matches one, from the right: `test_*.py` names a
-file of that name at any depth, and `tests/*.py` one directly under any `tests` directory.
+file of that name at any depth, and `tests/*.py` one directly under any `tests` directory. An
+absolute configuration entry is no glob: it names the one file a command chose (`pytest -c
+ci.ini`), listed after the matched ones where it exists, by its path from the top-level where it
+lies there, ignored or not, and whole where it lies outside.
 """
 
 from __future__ import annotations
 
+import os
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
@@ -68,6 +72,21 @@ def _matching(names: Sequence[str], globs: Sequence[str]) -> list[str]:
     return sorted({name for name in names if any(PurePosixPath(name).match(g) for g in globs)})
 
 
+def _chosen(root: Path, configs: Sequence[str]) -> list[str]:
+    """The files the absolute entries of `configs` name that exist, each by its path from `root`
+    where it lies there and whole where it does not."""
+    project = Path(os.path.realpath(root))
+    chosen: list[str] = []
+    for entry in configs:
+        path = Path(entry)
+        if not path.is_absolute() or not fsops.exists(path):
+            continue
+        chosen.append(
+            path.relative_to(project).as_posix() if path.is_relative_to(project) else entry
+        )
+    return chosen
+
+
 def state(root: Path, discovery: Sequence[str], configs: Sequence[str]) -> TreeState:
     """The tree under `root` as git answers for it now."""
     code, out = git_run(root, "rev-parse", "--verify", "--quiet", "HEAD")
@@ -85,7 +104,9 @@ def state(root: Path, discovery: Sequence[str], configs: Sequence[str]) -> TreeS
     ignored_configs = len(_matching(ignored, configs)) if ignored is not None else 0
     if others is not None and tracked is not None:
         named = _matching([*tracked, *others], configs)
-        configured, configs_more = _capped([name for name in named if fsops.exists(root / name)])
+        present = [name for name in named if fsops.exists(root / name)]
+        present += [name for name in _chosen(root, configs) if name not in present]
+        configured, configs_more = _capped(present)
     return TreeState(
         commit=commit,
         dirty=bool(status) if status is not None else None,

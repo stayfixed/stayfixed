@@ -710,6 +710,23 @@ def test_the_ignored_configuration_files_are_counted_and_never_named(tmp_path: P
     assert "; configuration: 3 ignored" in line(run(root, NAME))
 
 
+def test_a_configuration_file_named_by_its_path_is_named_wherever_it_lies(tmp_path: Path) -> None:
+    # An adapter names a file the command chose by its absolute path: named from the project
+    # where it lies there, whatever git says of it, and whole where it lies outside. Mutation
+    # (declared): an absolute entry read as a glob alone -> neither is named.
+    root = repository(tmp_path / "repo")
+    (root / ".gitignore").write_text("ignored/\n", encoding="utf-8")
+    (root / "ignored").mkdir()
+    inside = root / "ignored" / "ci.toml"
+    outside = tmp_path / "outside.toml"
+    for path in (inside, outside):
+        path.write_text("", encoding="utf-8")
+    (root / "stand-in.toml").write_text("", encoding="utf-8")
+    named = (str(inside), str(outside), str(tmp_path / "absent.toml"), str(root / "stand-in.toml"))
+    got = run(root, NAME, adapter=StandIn(configs=("stand-in.toml", *named)))
+    assert got.configs == ("stand-in.toml", "ignored/ci.toml", str(outside))
+
+
 def test_the_configuration_list_stops_at_its_cap_and_counts_the_rest(tmp_path: Path) -> None:
     # Mutation (declared): the configuration list uncapped -> every one named.
     root = repository(tmp_path / "repo")

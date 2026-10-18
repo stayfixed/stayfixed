@@ -2381,7 +2381,7 @@ reddens = [
 [[mutation]]
 name = "the pytest adapter names no configuration file the command names"
 file = "src/stayfixed/profiles/python/adapters.py"
-before = "            configs=(*CONFIGS, *_configuration_files(run.args, cwd, root)),"
+before = "            configs=(*CONFIGS, *_configuration_files(run.args, cwd)),"
 after = "            configs=CONFIGS,"
 reddens = ["tests/prove/test_pytest.py::test_the_configuration_file_the_command_names_is_among_the_configs"]
 
@@ -2396,9 +2396,30 @@ after = """        if False:
         following"""
 reddens = ["tests/prove/test_pytest.py::test_the_configuration_file_the_command_names_is_among_the_configs"]
 
+# `--trace` under a standard input that ends reports a failing test as passed and exits 0; an
+# `@file` word has pytest read options from a file, a refused one among them.
 [[mutation]]
-name = "the pytest adapter names a configuration file's glob characters unescaped"
+name = "the pytest adapter lets --trace and an @file word through"
 file = "src/stayfixed/profiles/python/adapters.py"
-before = '            found.append(_GLOB_SPECIAL.sub(r"[\1]", where.relative_to(project).as_posix()))'
-after = "            found.append(where.relative_to(project).as_posix())"
+before = "        if word == _DEBUGS_EACH_TEST or word.startswith(_FROM_FILE):"
+after = "        if False:"
+reddens = [
+  "tests/prove/test_pytest.py::test_each_report_steering_option_is_refused[--trace]",
+  "tests/prove/test_pytest.py::test_each_report_steering_option_is_refused[@args.txt]",
+  "tests/prove/test_pytest.py::test_each_report_steering_option_is_refused[-k_@ci/selection]",
+]
+
+[[mutation]]
+name = "the pytest adapter refuses an @file word after --"
+file = "src/stayfixed/profiles/python/adapters.py"
+before = "        if word == _DEBUGS_EACH_TEST or word.startswith(_FROM_FILE):"
+after = """        if word == _DEBUGS_EACH_TEST or _FROM_FILE in "".join(args):"""
+reddens = ["tests/prove/test_pytest.py::test_every_other_option_is_free[--_@args.txt]"]
+
+# A configuration file the command names is named wherever it lies, outside the project too.
+[[mutation]]
+name = "the pytest adapter names a configuration file by the path typed"
+file = "src/stayfixed/profiles/python/adapters.py"
+before = "            found.append(os.path.realpath(cwd / named))"
+after = "            found.append(named)"
 reddens = ["tests/prove/test_pytest.py::test_the_configuration_file_the_command_names_is_among_the_configs"]

@@ -845,12 +845,14 @@ script: the interpreter is the one the script's first line names (or, under the 
 named; behind `uv run` or `poetry run` the launcher runs, kept in front, and chooses it. `-P` keeps
 the directory the command runs in off the import path and leaves every `PYTHON*` variable yours. It
 refuses `--junitxml` and `--junit-xml`, `-p no:junitxml`, `-o` or `--override-ini` setting a
-`junit_*` key or `addopts`, `--setup-plan`, `--setup-only`, `--collect-only` and `--co`, and
-pytest's aliases `--setupplan`, `--setuponly` and `--collectonly` (`refused-option`, naming the
-option); every other option is free. Its forging set is `PYTEST_ADDOPTS` and `PYTEST_PLUGINS`, an
+`junit_*` key or `addopts`, `--setup-plan`, `--setup-only`, `--collect-only` and `--co`,
+pytest's aliases `--setupplan`, `--setuponly` and `--collectonly`, `--trace` (which, its standard
+input ended, reports a failing test as passed), and a word before `--` that starts with `@`, whose
+options pytest reads from the file it names (`refused-option`, naming the option or the word);
+every other option is free. Its forging set is `PYTEST_ADDOPTS` and `PYTEST_PLUGINS`, an
 inherited one removed from the run's environment; `PYTHONPATH` and every other variable are yours.
 Its configuration files are `pytest.ini`, `pyproject.toml`, `setup.cfg` and `tox.ini`, and the
-file `-c` or `--config-file` names where it lies in the project; its discovery set is
+file `-c` or `--config-file` names, by its realpath, wherever it lies; its discovery set is
 `conftest.py`, `test_*.py` and `*_test.py` at any depth. A
 program the command names that is not where it would be found is `entry-not-found` (`not proven`).
 
@@ -882,7 +884,8 @@ process group is ended with it.
 **The line** says the verdict and its reason in words, the counts (passed, failed, skipped), the
 runner and the realpath of the program that ran, and the files that can shape the report: the
 runner's configuration files that exist and that git tracks or does not ignore, with a count of
-the ignored ones (`and N ignored`), and the untracked files in its discovery set, those git does
+the ignored ones (`and N ignored`), then any file the command itself named as its configuration,
+from the top-level where it lies there and whole where it does not, and the untracked files in its discovery set, those git does
 not ignore first and then the ignored ones; twenty of each and a count of the rest. The tree's state is taken before the run and after it, and is
 information for you, never an input to the verdict. `--json` carries `verdict`, `reason`,
 `detail` (the variable a refused assignment named, the launcher option refused, or where a report

@@ -25,8 +25,10 @@ choice. The receipt carries the realpath of what ran.
   `--override-ini` setting a `junit_*` key or `addopts` (whose options pytest reads as typed),
   `--setup-plan` (which reports a failing test as passed), `--setup-only`, `--collect-only`,
   `--co`, and the undashed aliases pytest registers, `--setupplan`, `--setuponly` and
-  `--collectonly`. The anchor is the command's own words; the list is closed and every other
-  option is free.
+  `--collectonly`; `--trace`, which over a standard input that ends reports a failing test as
+  passed; and an `@file` word, whose options pytest reads from that file, never read here. The
+  anchor is the command's own words; the list is closed, every option pytest 9.1.1 registers was
+  run over a failing test to draw it, and every other option is free.
 - `FORGING`, assigned in the command (refused) or inherited (scrubbed): the same agent steering
   the report through the two variables pytest reads its options and plugins from. `PYTHONPATH`
   and every other variable are the project's.
@@ -34,9 +36,9 @@ choice. The receipt carries the realpath of what ran.
   The anchor is the argv stayfixed runs. A `pytest.py` the project's own `PYTHONPATH` reaches is
   the bound's, since `PYTHONPATH` is the project's.
 - The file `-c`/`--config-file` (or the older `--inifile`) names: the same agent pointing pytest
-  at a configuration of its choosing. Not refused, since a configuration file in the tree is the
-  bound's as `pytest.ini` is, but named among the receipt's configuration files (`Plan.configs`)
-  where it lies in the project; the anchor is the command's own words.
+  at a configuration of its choosing. Not refused, since a configuration file is the bound's as
+  `pytest.ini` is, but named among the receipt's configuration files by its realpath
+  (`Plan.configs`), wherever it lies; the anchor is the command's own words.
 
 What a file in the tree can do -- a `conftest.py` that moves the report or rewrites it on the way
 out, a configuration file's `addopts`, a shim on `PATH`, the interpreter a script's first line
@@ -87,6 +89,11 @@ _REPORT_OPTIONS = frozenset({"--junitxml", "--junit-xml"})
 _RUNS_NO_TEST = frozenset({"--setup-plan", "--setup-only", "--collect-only", "--co"})
 # The aliases pytest registers beside them, which run as they do.
 _RUNS_NO_TEST_ALIASES = frozenset({"--setupplan", "--setuponly", "--collectonly"})
+# Runs each test under the debugger, which, its standard input ended, lets a failing test report
+# as passed and the run exit 0.
+_DEBUGS_EACH_TEST = "--trace"
+# A word pytest's parser reads more words from, the file it names (`@args.txt`).
+_FROM_FILE = "@"
 _OVERRIDE_INI = "--override-ini"
 _JUNIT_KEY = "junit_"
 _ADDOPTS = "addopts"
@@ -100,8 +107,6 @@ _NO_REPORT = "no:junitxml"
 # letter outside them, which takes the rest of the word, or the next word, as its value.
 _PYTEST_FLAGS = frozenset("hlqsvVx")
 _INI_LETTER = "o"
-# What a configuration glob escapes in a file name, so the name matches itself alone.
-_GLOB_SPECIAL = re.compile(r"([*?[])")
 
 # How much of a console script is read for the interpreter its first two lines name.
 _SCRIPT_HEAD_BYTES = 4096
@@ -156,6 +161,8 @@ def refused_option(args: Sequence[str]) -> str | None:
         name, equals, value = word.partition("=")
         if name in _REPORT_OPTIONS or name in _RUNS_NO_TEST or name in _RUNS_NO_TEST_ALIASES:
             return name
+        if word == _DEBUGS_EACH_TEST or word.startswith(_FROM_FILE):
+            return word
         named = None
         if name == _OVERRIDE_INI:
             named = _ini(name, value if equals else following)
@@ -167,10 +174,9 @@ def refused_option(args: Sequence[str]) -> str | None:
     return None
 
 
-def _configuration_files(args: Sequence[str], cwd: Path, root: Path) -> tuple[str, ...]:
-    """A configuration glob for each file `-c`, `--config-file` or `--inifile` names in `args`,
-    read from `cwd`, that lies in `root`, its name matching itself alone; one outside the project
-    is no file the tree's state lists, and is not named."""
+def _configuration_files(args: Sequence[str], cwd: Path) -> tuple[str, ...]:
+    """The realpath of each file `-c`, `--config-file` or `--inifile` names in `args`, read from
+    `cwd`: an absolute entry of `Plan.configs`, which names that file wherever it lies."""
     found: list[str] = []
     for index, word in enumerate(args):
         if word == _SEPARATOR:
@@ -183,12 +189,8 @@ def _configuration_files(args: Sequence[str], cwd: Path, root: Path) -> tuple[st
         elif _single_dash(word) and (short := _short(word, following)) is not None:
             letter, setting = short
             named = setting if letter == _CONFIG_LETTER else None
-        if not named:
-            continue
-        where = Path(os.path.realpath(cwd / named))
-        project = Path(os.path.realpath(root))
-        if where.is_relative_to(project):
-            found.append(_GLOB_SPECIAL.sub(r"[\1]", where.relative_to(project).as_posix()))
+        if named:
+            found.append(os.path.realpath(cwd / named))
     return tuple(found)
 
 
@@ -317,7 +319,7 @@ class PytestAdapter:
             set_env={},
             scrub=FORGING,
             discovery=DISCOVERY,
-            configs=(*CONFIGS, *_configuration_files(run.args, cwd, root)),
+            configs=(*CONFIGS, *_configuration_files(run.args, cwd)),
         )
 
 

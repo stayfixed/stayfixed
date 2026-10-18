@@ -57,8 +57,10 @@ class Plan:
     plus those assignments in order, plus `set_env`, the last winning. `argv[0]` not absolute is a
     defect in the adapter, and the core raises. `discovery`
     is the globs of the files the runner collects tests from, and `configs` of the files that
-    configure it, both matched from the right (`stayfixed.prove.tree`). `drop` is the JUnit
-    reader's (`stayfixed.prove.junit.read_junit`), for a testcase a runner writes that is no test.
+    configure it, both matched from the right (`stayfixed.prove.tree`); an absolute entry of
+    `configs` is no glob but names that one file, wherever it lies, one the command chose. `drop`
+    is the JUnit reader's (`stayfixed.prove.junit.read_junit`), for a testcase a runner writes
+    that is no test.
     `verified` is false for a runner no adapter resolved.
     """
 

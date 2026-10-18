@@ -428,6 +428,11 @@ REFUSALS = [
     (("-qo", "addopts=--co"), "-o addopts"),
     (("--override-ini=addopts=--setup-plan",), "--override-ini addopts"),
     (("--override-ini", "addopts=--co"), "--override-ini addopts"),
+    # `--trace` under a standard input that ends reports a failing test as passed, exit 0.
+    (("--trace",), "--trace"),
+    # pytest reads the options of an `@file` word from that file, a refused one among them.
+    (("@args.txt",), "@args.txt"),
+    (("-k", "@ci/selection"), "@ci/selection"),
 ]
 
 
@@ -456,7 +461,9 @@ FREE = [
     ("-k", "junit_x"),
     # A cluster `-p` stands in is not one pytest reads before its parse, and so blocks nothing.
     ("-qpno:junitxml",),
-    # After `--` a word is a path to collect.
+    # After `--` a word is a path to collect, and an `@file` there is none pytest reads options
+    # from.
+    ("--", "@args.txt"),
     ("--", "--junitxml=x"),
     ("--", "--setup-plan"),
     # `-k` takes a value, so the `o` in its cluster is no `-o`.
@@ -471,10 +478,10 @@ def test_every_other_option_is_free(tmp_path: Path, argv: tuple[str, ...]) -> No
 
 
 def test_the_configuration_file_the_command_names_is_among_the_configs(tmp_path: Path) -> None:
-    # Not refused: a configuration file in the tree is the bound's, as `pytest.ini` is. Named,
-    # read from the directory the command runs in, where it lies in the project, its name escaped
-    # so that it matches itself alone. Mutation (declared): the named files left out -> the
-    # adapter's own globs alone.
+    # Not refused: a configuration file in the tree is the bound's, as `pytest.ini` is. Named by
+    # its realpath, read from the directory the command runs in, wherever it lies, the project or
+    # outside it; the tree's state names it from the project where it lies there. Mutation
+    # (declared): the named files left out -> the adapter's own globs alone.
     root = tmp_path / "project"
     bin_ = environment(tmp_path / "venv")
     (root / "sub").mkdir(parents=True)
@@ -500,12 +507,14 @@ def test_the_configuration_file_the_command_names_is_among_the_configs(tmp_path:
         environ={"PATH": str(bin_)},
     )
     assert isinstance(got, Plan)
+    real = Path(os.path.realpath(tmp_path))
     assert got.configs == (
         *CONFIGS,
-        "sub/ci/pytest-ci.ini",
-        "other.toml",
-        "sub/x[[]1].ini",
-        "sub/old.ini",
+        str(real / "project" / "sub" / "ci" / "pytest-ci.ini"),
+        str(real / "project" / "other.toml"),
+        str(real / "project" / "sub" / "x[1].ini"),
+        str(real / "project" / "sub" / "old.ini"),
+        str(real / "outside.ini"),
     )
 
 
@@ -702,7 +711,7 @@ def test_a_configuration_file_the_command_names_is_named_on_the_receipt(tmp_path
     git(project, "commit", "-q", "-m", "first")
     got = real(project, "pytest", "-q", "-c", "ci/ci.ini", "--rootdir", ".")
     assert (got.verdict, got.counts) == (PROVED, Counts(1, 0, 0))
-    assert got.configs == ("ci/ci.ini", "pytest.ini")
+    assert got.configs == ("pytest.ini", "ci/ci.ini")
 
 
 @needs_runner("pytest")

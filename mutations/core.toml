@@ -6105,8 +6105,8 @@ reddens = ["tests/prove/test_run.py::test_a_configuration_file_git_ignores_is_ne
 [[mutation]]
 name = "prove's tree state names a configuration file the tree deleted"
 file = "src/stayfixed/prove/tree.py"
-before = "        configured, configs_more = _capped([name for name in named if fsops.exists(root / name)])"
-after = "        configured, configs_more = _capped(named)"
+before = "        present = [name for name in named if fsops.exists(root / name)]"
+after = "        present = list(named)"
 reddens = ["tests/prove/test_run.py::test_a_configuration_file_is_named_only_where_it_exists"]
 
 [[mutation]]
@@ -6256,3 +6256,31 @@ before = """            return _receipt(
             )"""
 after = """            return _receipt(_Outcome(refused=planned.reason), shown, adapter.name)"""
 reddens = ["tests/prove/test_pytest.py::test_a_refused_option_is_named_on_the_receipt"]
+
+# An absolute configuration entry names the one file a command chose, wherever it lies: read as a
+# glob, it names nothing the tree's listing holds.
+[[mutation]]
+name = "prove's tree state reads an absolute configuration entry as a glob alone"
+file = "src/stayfixed/prove/tree.py"
+before = "        present += [name for name in _chosen(root, configs) if name not in present]"
+after = "        present += []"
+reddens = [
+  "tests/prove/test_run.py::test_a_configuration_file_named_by_its_path_is_named_wherever_it_lies",
+  "tests/prove/test_pytest.py::test_a_configuration_file_the_command_names_is_named_on_the_receipt",
+]
+
+[[mutation]]
+name = "prove's tree state names a chosen configuration file in the project by its whole path"
+file = "src/stayfixed/prove/tree.py"
+before = """        chosen.append(
+            path.relative_to(project).as_posix() if path.is_relative_to(project) else entry
+        )"""
+after = "        chosen.append(entry)"
+reddens = ["tests/prove/test_run.py::test_a_configuration_file_named_by_its_path_is_named_wherever_it_lies"]
+
+[[mutation]]
+name = "prove's tree state names a chosen configuration file that is not there"
+file = "src/stayfixed/prove/tree.py"
+before = "        if not path.is_absolute() or not fsops.exists(path):"
+after = "        if not path.is_absolute():"
+reddens = ["tests/prove/test_run.py::test_a_configuration_file_named_by_its_path_is_named_wherever_it_lies"]
