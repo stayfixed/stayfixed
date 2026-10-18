@@ -1406,3 +1406,42 @@ Also deferred:
 - `ledger_copy`'s variant overlay lives inside `project/`;
 - `check.py`, `index.py` and `next_identifier` spell the entry glob themselves;
 - a moved CRLF entry is written with LF endings, which is older than this branch.
+
+**Task 4, a second final review.** Three lenses on `090a33a`: correctness and security,
+code quality and architecture, and the controller's own read of the diff. Nothing Critical. Four
+Important findings, each reproduced before it was acted on, and all fixed in `cbee36b`:
+
+- The list reader was a hand-written scanner. It is now two patterns, a quoted run and the whole
+  list, with each run still read by `_unquote`. Over every string of up to six characters from
+  `[ ] " \ , space a tab q`, 597,870 inputs, the two readers accept the same strings and read the
+  same items. The messages differ for 1,444 of them, each a list malformed in its shape: the
+  pattern names the shape, where the scanner could name an empty item, a control character or an
+  escape inside it. The review's reason, that the escape rule lived in two places, does not
+  survive: the pattern's `\\.` states it too. The reason that stands is size, about 57 lines down
+  to 15.
+- `entry_paths` claimed to be the one statement of which files are entries while `check`, the
+  index's guard and `next_identifier` globbed for themselves. All three now call it.
+- The unsupported-escape refusal printed every character through `quoted`, so `\.` in a title
+  printed as `\'.'`, and the changelog said no such byte had moved. A character that prints now
+  prints as it did; only one that does not goes through `quoted`. The changelog says so.
+- The padding test accepted `()` for `["a"] `, so a reader emptying every padded list passed the
+  ledger suite. Each case now pins its items, and that mutant is an entry.
+
+Of the Minor findings, these were taken: the fixture's helpers moved to `tests/ledger/fixture.py`;
+the broken variant sits beside the project, not inside it; exit codes and the empty stderr are
+asserted inline, which retired 20 one-byte or empty literal files; the golden test is named for
+what it holds and says how to re-capture; the LF and CRLF renumber tests, and the padding cases
+and the malformed table, are each one parametrized test; `_frontmatter`'s lines are a
+`NamedTuple`; the sweep substitutes over the whole text with a callback; the list-is-the-level rule
+is gone, since the level must be required and a list may not be; a list key listed twice is
+refused; `docs/cli.md` gives the whole grammar; and the comments that "nothing writes one yet"
+were dropped from code.
+
+Two were declined. The identical `new.out` and `new-bare.out` stay two files, because they are
+two cases' literals and only happen to agree. The broken variant stays as whole files, not a
+`str.replace` overlay, because the files show what the check reads.
+
+Still open: whether `renumber` should flag an argv naming the moved identifier, which is a
+question for the owner; and, older than this branch, `renumber` deciding membership by path
+spelling rather than file identity, which corrupts a void pointer on a case-insensitive
+filesystem whose configured directory differs in case from the committed one.
