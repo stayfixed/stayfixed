@@ -35,12 +35,16 @@ from stayfixed.profiles.javascript.adapters import (
     NODE_REPORT,
     NODE_TEST_FORGING,
     NOT_THE_ENTRY,
+    PRELOAD_FILE_URL,
+    PRELOAD_PACKAGE,
+    PRELOAD_PATH,
     REFUSED_OPTION,
     VITEST_DISCOVERY,
     VITEST_REPORT,
     JestAdapter,
     NodeTestAdapter,
     VitestAdapter,
+    preload_form,
     whole_file,
 )
 from stayfixed.profiles.runners import Plan, Refused, ReportKind, ReportSource, Unresolved
@@ -392,32 +396,51 @@ def test_a_preload_of_a_file_or_a_package_is_free_in_front_of_the_entry(
     assert isinstance(planned(JEST, command, project, path=str(node.parent)), Plan)
 
 
-@pytest.mark.parametrize("value", ["pkg/../../evil.mjs", "@s/p/./x.cjs", "a/.."])
-def test_a_preload_with_a_dot_segment_is_a_path_named_on_the_receipt(
-    tmp_path: Path, value: str
-) -> None:
-    # No package's name holds a `.` or `..` segment: the value is a path, read from the run's
-    # directory, and named among the configuration files, in front of an entry and under
-    # `--test` alike. Mutation (declared): such a value read as a package -> it is named nowhere.
-    project = tmp_path / "project"
-    _, _, node = installed(project)
-    named = os.path.realpath(project / value)
-    got = plan_of(
-        JEST,
-        ["node", "--import", value, "node_modules/jest/bin/jest.js"],
-        project,
-        path=str(node.parent),
-    )
-    assert got.configs[-1] == named
-    tested = plan_of(
-        NODE_TEST, ["node", f"--import={value}", "--test"], project, path=str(node.parent)
-    )
-    assert tested.configs[-1] == named
+# The values a preload is refused for: in none of the three forms `preload_form` reads.
+PRELOADS_REFUSED = [
+    "pkg/../../evil.mjs",
+    "@s/p/./x.cjs",
+    "a/..",
+    ".pnp.cjs",
+    "file:rel.mjs",
+    "file:../up/u.mjs",
+    "file://elsewhere/abs/no.mjs",
+    "data:text/javascript,x/../y",
+    "data:text/javascript,process.exit(0)",
+    "node:fs",
+    "https://example.com/l.mjs",
+    "",
+]
 
 
-def test_a_data_url_with_a_dot_segment_is_still_refused(tmp_path: Path) -> None:
-    got = planned(NODE_TEST, ["node", "--import=data:text/javascript,x/../y", "--test"], tmp_path)
-    assert got == Refused(REFUSED_OPTION, "--import")
+@pytest.mark.parametrize("value", PRELOADS_REFUSED, ids=[v or "empty" for v in PRELOADS_REFUSED])
+def test_a_preload_in_none_of_the_three_forms_is_refused(tmp_path: Path, value: str) -> None:
+    # Code of the command's own, or a file read in a way the reader does not follow: refused, the
+    # option named and never its value, in front of an entry and under `node --test` alike.
+    # Mutations (declared): one per arm of `preload_form`.
+    assert preload_form(value) is None
+    entry = planned(JEST, ["node", f"--import={value}", "node_modules/jest/bin/jest.js"], tmp_path)
+    assert entry == Refused(REFUSED_OPTION, "--import")
+    tested = planned(NODE_TEST, ["node", "--test", "-r", value], tmp_path)
+    assert tested == Refused(REFUSED_OPTION, "-r")
+
+
+@pytest.mark.parametrize(
+    ("value", "form"),
+    [
+        ("/abs/x.mjs", PRELOAD_PATH),
+        ("./setup.cjs", PRELOAD_PATH),
+        ("../shared/s.cjs", PRELOAD_PATH),
+        ("file:///abs/y.mjs", PRELOAD_FILE_URL),
+        ("file://localhost/abs/z%20q.mjs", PRELOAD_FILE_URL),
+        ("tsx", PRELOAD_PACKAGE),
+        ("ts-node/register", PRELOAD_PACKAGE),
+        ("@swc-node/register/esm", PRELOAD_PACKAGE),
+        ("pkg.js/sub.path", PRELOAD_PACKAGE),
+    ],
+)
+def test_each_of_the_three_preload_forms_is_read(value: str, form: str) -> None:
+    assert preload_form(value) == form
 
 
 @pytest.mark.parametrize(
@@ -1694,14 +1717,11 @@ def test_vitest_reads_each_form_as_its_parser_does(
 
 
 def test_a_preloaded_file_is_named_and_a_package_is_not(tmp_path: Path) -> None:
-    # `-r`, `--require`, `--import` and `--loader` are free, but for code of the command's own
-    # (`test_node_test_refuses_code_the_command_spells`); the file a path or a `file:` URL of
-    # this machine names is among the configuration files, percent-decoded; a package's name and
-    # another host's URL are not; `-r=x` is a bad option to node,
-    # and a word after `--` is none of node's. A `file:` URL's path is read as WHATWG reads it, from
-    # the root (measured on Node 26.12.0: `--import=file:x.mjs` loads `/x.mjs`). Mutations
-    # (declared): the preloaded files left out; a `file:` URL's escapes kept; another host's URL
-    # named; a relative `file:` URL read from the run's directory.
+    # A preload's value is read in one of three forms (`preload_form`): a path starting `/`, `./`
+    # or `../`, named by its realpath from the run's directory; a `file:` URL of this machine with
+    # an absolute path, named by its path, percent-decoded; a package's bare name, not named.
+    # `-r=x` is a bad option to node, and a word after `--` is none of node's. Mutations
+    # (declared): the preloaded files left out; a `file:` URL's escapes kept.
     node = node_on_path(tmp_path / "bin")
     got = plan_of(
         NODE_TEST,
@@ -1717,9 +1737,8 @@ def test_a_preloaded_file_is_named_and_a_package_is_not(tmp_path: Path) -> None:
             "/abs/x.mjs",
             "--import=file:///abs/y.mjs",
             "--import=file://localhost/abs/z%20q.mjs",
-            "--import=file://elsewhere/abs/no.mjs",
-            "--import=file:rel.mjs",
-            "--import=file:../up/u.mjs",
+            "--import=file:/abs/w.mjs",
+            "--import=@scope/pkg/esm",
             "-r=./bad.cjs",
             "--test",
             "a.test.mjs",
@@ -1739,8 +1758,7 @@ def test_a_preloaded_file_is_named_and_a_package_is_not(tmp_path: Path) -> None:
         "/abs/x.mjs",
         "/abs/y.mjs",
         "/abs/z q.mjs",
-        "/rel.mjs",
-        "/up/u.mjs",
+        "/abs/w.mjs",
         str(real / "after.cjs"),
     )
     last = plan_of(NODE_TEST, ["node", "--test", "-r"], tmp_path, path=str(node.parent))
