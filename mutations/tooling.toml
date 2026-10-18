@@ -3717,6 +3717,32 @@ after = "        if: inputs.evidence"
 reddens = ["tests/test_check_workflow.py::test_the_upload_is_last_and_the_only_step_with_an_if"]
 
 [[mutation]]
+name = "a failed evidence upload fails the job"
+file = ".github/workflows/check.yml"
+before = """        if: always() && inputs.evidence
+        continue-on-error: true"""
+after = "        if: always() && inputs.evidence"
+reddens = ["tests/test_check_workflow.py::test_the_upload_is_last_and_the_only_step_with_an_if"]
+
+[[mutation]]
+name = "the evidence upload runs a command"
+file = ".github/workflows/check.yml"
+before = """        continue-on-error: true
+        uses: actions/upload-artifact"""
+after = """        continue-on-error: true
+        run: ls ~/.local/state/stayfixed/evidence/
+        uses: actions/upload-artifact"""
+reddens = ["tests/test_check_workflow.py::test_the_upload_runs_no_command_and_reads_no_secret"]
+
+[[mutation]]
+name = "the evidence upload reads a secret"
+file = ".github/workflows/check.yml"
+before = "          if-no-files-found: ignore"
+after = """          if-no-files-found: ignore
+          github-token: ${{ secrets.GITHUB_TOKEN }}"""
+reddens = ["tests/test_check_workflow.py::test_the_upload_runs_no_command_and_reads_no_secret"]
+
+[[mutation]]
 name = "the evidence artifact's name is the same for every leg"
 file = ".github/workflows/check.yml"
 before = "          name: stayfixed-evidence-${{ github.job }}-${{ inputs.only }}-${{ github.run_attempt }}"

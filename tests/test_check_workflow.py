@@ -486,7 +486,8 @@ def test_the_upload_is_last_and_the_only_step_with_an_if() -> None:
     # The evidence records the gate steps appended are uploaded after both, whatever they came
     # to, and a failed upload (a name a caller's matrix repeats, an outage) fails nothing.
     # Mutations (declared): the upload's `if: always()` dropped -> a failed run uploads no record;
-    # a judging step given an `if:` -> it is no longer the only one.
+    # its `continue-on-error` dropped -> a failed upload fails the job; a judging step given an
+    # `if:` -> it is no longer the only one.
     steps = _steps()
     assert _name(steps[-1]) == UPLOAD
     upload = steps[-1]
@@ -501,7 +502,9 @@ def test_the_upload_is_last_and_the_only_step_with_an_if() -> None:
 def test_the_upload_runs_no_command_and_reads_no_secret() -> None:
     # The step runs no command, reads no secret, and uploads bytes the pull request's own code
     # can write (a custom gate runs in the job and can append to the record), which is why a
-    # record is a log that no gate, verdict or trust decision reads.
+    # record is a log that no gate, verdict or trust decision reads. Mutations (declared): the
+    # upload gains a `run:` -> its keys differ; its `with:` reads a secret -> the expression is
+    # in it.
     upload = _step(UPLOAD)
     assert set(upload) == {"name", "if", "continue-on-error", "uses", "with"}, upload
     assert "secrets." not in json.dumps(upload)

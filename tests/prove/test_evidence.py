@@ -20,6 +20,7 @@ import pytest
 
 import stayfixed
 from stayfixed import gitenv, processes
+from stayfixed.assess.commands import NO_TREE_CONFIG, ONLY_UNKNOWN
 from stayfixed.gitenv import GitUnavailable
 from stayfixed.prove import evidence
 from stayfixed.prove.evidence import (
@@ -104,6 +105,7 @@ def test_one_repository_one_origin(url: str, expected: str) -> None:
 
 @needs_git
 def test_a_checkout_with_an_origin_keys_by_it_wherever_it_lies(tmp_path: Path) -> None:
+    # Mutation (declared): the origin keyed as spelled, not normalised -> the two clones key apart.
     one, two = tmp_path / "one", tmp_path / "two"
     for checkout, url in ((one, "git@github.com:o/r.git"), (two, "https://github.com/o/r")):
         checkout.mkdir()
@@ -115,6 +117,9 @@ def test_a_checkout_with_an_origin_keys_by_it_wherever_it_lies(tmp_path: Path) -
 
 @needs_git
 def test_no_origin_keys_by_the_real_path(tmp_path: Path) -> None:
+    # Mutation (declared): the path key is the directory typed in -> `sub` keys apart. The link
+    # half has no mutation of its own: `gitenv.checkout_root`'s walk resolves the top-level and
+    # the key takes its `realpath` too, so dropping either alone leaves the key as it was.
     real = tmp_path / "real"
     real.mkdir()
     git(real, "init", "-q")
@@ -221,11 +226,69 @@ def test_no_record_under_the_repository(
     assert not evidence_dir().exists()
 
 
+@needs_git
+def test_no_prove_record_inside_a_home_repository_a_nested_project_does_not_answer_for(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The run answers for its own repository, nested in a dotfiles repository at `~`: the record
+    # would be an untracked file of the dotfiles repository, so none is written there either.
+    # Mutation (declared): the evidence directory's own checkout not asked -> a line inside the
+    # dotfiles repository.
+    git(home(), "init", "-q")
+    project = home() / "code" / "proj"
+    project.mkdir(parents=True)
+    git(project, "init", "-q")
+    code, out, err = prove_cli(project, monkeypatch, "--", NAME)
+    assert code == 0
+    assert out.startswith("proved: ")
+    would = home() / STATE_DIR / EVIDENCE / f"{project_key(project)}.jsonl"
+    assert record_path(project, home=home()) is None
+    assert err == NOT_RECORDED.format(record=evidence.shown(would), why=INSIDE_REPOSITORY) + "\n"
+    assert not evidence_dir().exists()
+    status = git(home(), "status", "--porcelain", "--untracked-files=all")
+    assert ".local" not in status
+
+
+@needs_git
+def test_a_checkout_at_the_state_directory_is_asked_from_its_nearest_existing_part(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # No repository at the home, one at `~/.local/state`: the nearest part of the evidence
+    # directory that exists lies inside a checkout, so no record is written there.
+    # Mutation (declared): the checkout asked from the home alone -> a line inside it.
+    state = home() / ".local" / "state"
+    state.mkdir(parents=True)
+    git(state, "init", "-q")
+    project = tmp_path / "project"
+    project.mkdir()
+    code, _, err = prove_cli(project, monkeypatch, "--", NAME)
+    assert code == 0
+    would = home() / STATE_DIR / EVIDENCE / f"{project_key(project)}.jsonl"
+    assert err == NOT_RECORDED.format(record=evidence.shown(would), why=INSIDE_REPOSITORY) + "\n"
+    assert not (home() / STATE_DIR).exists()
+
+
+@needs_git
+def test_no_gate_record_inside_a_home_repository_a_nested_project_does_not_answer_for(
+    tmp_path: Path,
+) -> None:
+    # Mutation (declared): the evidence directory's own checkout not asked -> gate's line lands
+    # inside the dotfiles repository.
+    git(home(), "init", "-q")
+    project = clone(home() / "code", GATE_BASE + custom_gate("tests", "pass"))
+    code, _, err = cli(project, tmp_path, "gate", "--custom")
+    assert code == 0
+    would = home() / STATE_DIR / EVIDENCE / f"{project_key(project)}.jsonl"
+    assert err == NOT_RECORDED.format(record=evidence.shown(would), why=INSIDE_REPOSITORY) + "\n"
+    assert not evidence_dir().exists()
+
+
 def test_outside_a_repository_the_home_itself_records(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # A run typed in the home outside any repository answers for the home, which is no
-    # repository, so its record is written.
+    # repository, so its record is written. Mutation (declared): a record refused wherever the
+    # run's directory holds the home -> none is written.
     code, _, err = prove_cli(home(), monkeypatch, "--", NAME)
     assert (code, err) == (0, "")
     assert len(records()) == 1
@@ -260,6 +323,8 @@ def test_an_unwritable_state_directory_warns_and_keeps_the_verdict(
 def test_a_state_directory_that_is_a_symlink_is_refused_and_warns(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    # Mutation (declared): the record written by its path, not by the contained walk -> the line
+    # lands where the link leads, with no warning.
     elsewhere = tmp_path / "elsewhere"
     elsewhere.mkdir()
     (home() / ".local" / "state").mkdir(parents=True)
@@ -270,6 +335,29 @@ def test_a_state_directory_that_is_a_symlink_is_refused_and_warns(
     assert code == 0
     assert "was not written" in err
     assert list(elsewhere.iterdir()) == []
+
+
+def test_a_home_that_is_itself_a_link_records_where_it_leads(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The database's home is a link (a home moved to another disk and linked back): the link is
+    # the machine's, which no session writes, so the walk starts where it leads.
+    # Mutation (declared): the home walked as the database spells it -> "Not a directory".
+    real = tmp_path / "real-home"
+    real.mkdir()
+    linked = tmp_path / "linked-home"
+    linked.symlink_to(real, target_is_directory=True)
+    as_owner_home(monkeypatch, linked)
+    project = tmp_path / "project"
+    project.mkdir()
+    code, _, err = prove_cli(project, monkeypatch, "--", NAME)
+    assert (code, err) == (0, "")
+    assert len(records(real)) == 1
+
+
+def test_no_home_plans_no_record(tmp_path: Path) -> None:
+    # Mutation (declared): the no-home arm dropped from `record_path` -> it plans under no home.
+    assert record_path(tmp_path, home=None) is None
 
 
 @pytest.mark.parametrize("json_flag", [[], ["--json"]])
@@ -290,6 +378,8 @@ def test_no_home_warns_and_keeps_the_verdict(
 
 def test_no_value_reaches_the_record(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     # An assignment and an option given its value with `=`: the record carries their names.
+    # Mutations (declared): the receipt shows an assignment's value, or an option's -> the value
+    # is in the record.
     project = tmp_path / "project"
     project.mkdir()
     value = "s3cret-value-for-the-record"
@@ -306,6 +396,7 @@ def test_no_value_reaches_the_record(tmp_path: Path, monkeypatch: pytest.MonkeyP
 def test_a_timed_out_run_is_recorded_not_proven(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    # Mutation (declared): a run past its time limit said to be interrupted -> the reason differs.
     project = tmp_path / "project"
     project.mkdir()
     code, _, _ = prove_cli(project, monkeypatch, "--timeout", "0.5", "--", NAME, "--sleep", "30")
@@ -317,6 +408,7 @@ def test_a_timed_out_run_is_recorded_not_proven(
 def test_an_interrupted_run_is_recorded_not_proven(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    # Mutation (declared): an interrupted run said to have timed out -> the reason differs.
     def interrupted(process: object, seconds: float) -> None:
         raise KeyboardInterrupt
 
@@ -332,6 +424,7 @@ def test_an_interrupted_run_is_recorded_not_proven(
 def test_a_junit_record_marks_its_runner_not_verified(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    # Mutation (declared): a `--junit` receipt marks its runner verified -> so does the record.
     project = tmp_path / "project"
     project.mkdir()
     code, _, _ = prove_cli(project, monkeypatch, "--junit", REPORT, "--", *writer("pass"))
@@ -367,7 +460,8 @@ def test_a_junit_record_marks_its_runner_not_verified(
 def test_gate_appends_one_line_per_run(
     tmp_path: Path, flags: list[str], mode: str, gates: dict[str, str]
 ) -> None:
-    # Mutation (declared): `run_gate` keeps no record -> no line.
+    # Mutations (declared): `run_gate` keeps no record -> no line; the flags drop `--only`'s
+    # names -> the `only` case's argv differs.
     project = clone(tmp_path, GATE_BASE + custom_gate("tests", "pass"))
     code, _, err = cli(project, tmp_path, "gate", *flags)
     assert (code, err) == (0, "")
@@ -396,6 +490,7 @@ def test_gate_with_nothing_to_run_still_appends_its_line(tmp_path: Path) -> None
 
 @needs_git
 def test_a_failing_gate_run_records_each_gate_s_word(tmp_path: Path) -> None:
+    # Mutation (declared): an enforcing gate's findings called advisory -> `would fail`.
     failing = custom_gate("tests", "raise SystemExit(3)")
     project = clone(tmp_path, GATE_BASE + failing)
     (project / "stayfixed.toml").write_text(
@@ -414,21 +509,29 @@ def test_gate_appends_none_on_a_refusal_before_the_configuration_check(
     tmp_path: Path, refusal: str
 ) -> None:
     # Each refusal stops the run before the configuration check has an answer, so there is no
-    # run to record. Mutation (declared): `run_gate` keeping a record before its refusals -> the
-    # unknown `--only` name's run leaves a line.
+    # run to record; each says its own words and exits its own code. Mutations (declared):
+    # `run_gate` keeping a record before each refusal -> that refusal's run leaves a line.
     project = clone(tmp_path, GATE_BASE)
     argv = ["gate"]
     machine = None
     if refusal == "no-tree-config":
         git(project, "rm", "-q", "stayfixed.toml")
         commit(project, "chore: no configuration")
+        exit_code, said = 1, f"stayfixed: failed: {NO_TREE_CONFIG}\n"
     elif refusal == "machine-file":
         machine = tmp_path / "machine.toml"
         machine.write_text("[[[", encoding="utf-8")
+        # The machine file's refusal has no constant: `config.reading` builds it from the path
+        # and the parser's position.
+        exit_code, said = (
+            1,
+            f"stayfixed: failed: {machine} is not valid TOML (at line 1, column 3)\n",
+        )
     else:
         argv += ["--only", "no-such-gate"]
-    code, _, _ = cli(project, tmp_path, *argv, machine=machine)
-    assert code != 0
+        exit_code, said = 2, f"stayfixed: refused: {ONLY_UNKNOWN.format(count=1)}\n"
+    code, out, err = cli(project, tmp_path, *argv, machine=machine)
+    assert (code, out, err) == (exit_code, "", said)
     assert records() == []
 
 
@@ -440,6 +543,7 @@ def test_gate_appends_none_on_a_refusal_before_the_configuration_check(
 def test_gate_without_a_record_keeps_its_exit_and_warns_once(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fault: str, flags: list[str]
 ) -> None:
+    # Mutation (declared): a record that cannot be written turns gate's exit 1 -> every case.
     project = clone(tmp_path, GATE_BASE + custom_gate("tests", "pass"))
     if fault == "no-home":
         as_owner_home(monkeypatch, None)

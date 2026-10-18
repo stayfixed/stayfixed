@@ -1123,6 +1123,8 @@ def test_the_prove_section_states_the_bound_word_for_word() -> None:
 def test_every_reason_constant_is_documented() -> None:
     # Every reason a receipt can carry, the run's, the readers' and each shipped adapter's, is
     # named in the section as its code span, and so is the warning an unwritten record says.
+    # Mutations (declared): a reason's text renamed -> the section no longer names it; the
+    # warning's words changed -> the section quotes another.
     from stayfixed.profiles.go import adapters as go
     from stayfixed.profiles.javascript import adapters as javascript
     from stayfixed.profiles.python import adapters as python

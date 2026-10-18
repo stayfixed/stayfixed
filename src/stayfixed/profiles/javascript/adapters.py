@@ -495,7 +495,9 @@ def jest_never_ends(args: Sequence[str]) -> str | None:
     """The watch mode of jest's whose last setting in `args` turns it on, the later of the two
     where both are, as the receipt names it; `None` where none is. yargs keeps the last setting
     of an option, and each of the two watch modes is an option of its own (measured on 30.5.2:
-    `--watch --no-watch` runs once, `--watchAll --watch=false` watches)."""
+    `--watch --no-watch` runs once, `--watchAll --watch=false` watches). One measured case it
+    reads otherwise: `--watch --watchAll=false` ends (exit 0), and is read as `--watch`; not
+    proven either way, so the cost is the receipt's word."""
     last: dict[str, tuple[int, Setting]] = {}
     for index, (_, setting) in enumerate(_settings(jest_settings, args)):
         if setting.name in _JEST_NEVER_ENDS:

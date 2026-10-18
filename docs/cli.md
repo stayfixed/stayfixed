@@ -888,7 +888,9 @@ watch mode (jest's `--watch` and `--watchAll`, vitest's `-w`/`--watch`, node's `
 `--watch-path`) never ends, so no report is ever finished: it is `not proven` (`never-ends`,
 naming the option), and a refusal in the same command wins. Where the command sets a watch mode
 more than once, it is read as the runner reads it: the last setting wins (`node --watch --no-watch
---test` and `jest --watch --no-watch` are planned), vitest's `--no-watch` replaces what came
+--test` and `jest --watch --no-watch` are planned), with one measured exception, jest's `--watch
+--watchAll=false`, which ends (exit 0, no test related to a change) where the reading says
+`never-ends`, and is not proven either way; vitest's `--no-watch` replaces what came
 before it and two settings of its watch mode are refused by vitest before any run, and node's
 `--watch-path` never runs under `--test`. Each option is read as the runner's
 own parser reads it on the pinned version: jest's `-u false` is off, vitest's `-t.u` sets `-u`.
@@ -1003,8 +1005,13 @@ the real path of the top-level, so a run typed in a subdirectory keys the reposi
 version that ran) and every key of the receipt `--json` prints, the argv as redacted there, so a
 value never reaches it. A `--junit` run's line carries `runner: null` and `verified: false`; an
 interrupted or timed-out run's says `not proven`. A record is a log: no gate, verdict or trust
-decision reads one. It is never written inside a repository (a dotfiles checkout at `~` gets none),
-nor through a link, and one that cannot be written, with no home, or a state directory that is not
+decision reads one. It is never written inside a git checkout, asked from the nearest part of
+`~/.local/state/stayfixed/evidence/` that exists: a dotfiles repository at `~` gets none, whether
+the run answers for it or for a project of its own nested in it. A bare-repository dotfiles home
+(`git --git-dir=~/.dotfiles --work-tree=~`, no `.git` in `~`) is out of its reach, since git names
+no checkout there unless told where its directory is, so the record is written there. Nor is it
+written through a link below `~` (a `~` that is itself a link is followed first, as the machine's
+own). One that cannot be written, with no home, or a state directory that is not
 a directory or is a link, is one warning on standard error that names it, the verdict and the exit
 code unchanged. There is no rotation yet: each run adds its line. The warning reads
 `stayfixed: the evidence record <record> was not written: <why>`, `<record>` its path or `of this

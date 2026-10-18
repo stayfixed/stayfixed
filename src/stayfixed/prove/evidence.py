@@ -10,7 +10,7 @@ top-level. No rotation and no cap yet: a CI job adds two gate lines and one per 
 machine's runs grow the file by a line each.
 
 **What it is not.** A log, and nothing more: no gate, verdict or trust decision reads one. It is
-never written under a repository, and a record that cannot be written (no home, a state directory
+never written inside a git checkout, and a record that cannot be written (no home, a state directory
 that is not a directory or is a link, a full disk) is one warning on standard error, which changes
 neither the verdict nor the exit code.
 
@@ -19,11 +19,16 @@ neither the verdict nor the exit code.
 - The home from the password database: a checkout that sets `HOME` or `XDG_STATE_HOME` (a direnv
   or devcontainer file) to put the record inside itself, where a later commit would carry it. The
   anchor is the database, which no variable moves.
-- No record inside the repository the run answers for: a dotfiles checkout at the home itself,
-  where the record would be a file of the repository. The anchor is git's answer for the top-level
-  and the database's home; the run is unchanged and a warning names the record not written.
+- No record inside a git checkout: a dotfiles checkout at the home itself, where the record would
+  be a file of that repository, whether the run answers for it or for a project nested in it, and
+  a checkout at the state directory. The anchor is git's answer, asked from the nearest part of
+  the evidence directory that exists, and the database's home; the run is unchanged and a warning
+  names the record not written. A bare-repository dotfiles home (`--git-dir=~/.dotfiles`, no
+  `.git` in the home) is past it: git names no checkout there unless told where its directory is.
 - The write walks from the home with `O_NOFOLLOW` (`fsops.open_within`, `fsops.append_at`): a link
-  planted at the state directory or the record redirects nothing, and is a warning instead.
+  planted at the state directory or the record redirects nothing, and is a warning instead. The
+  home itself is followed first, where it leads: the database names it, and no session writes
+  the database or a link at the home's own path.
 - Nothing here is an input to anything: whoever can write the record, the agent among them, writes
   only a log, which is why a failure to write one is a warning and never a refusal.
 """
@@ -62,9 +67,7 @@ NOT_RECORDED = "stayfixed: the evidence record {record} was not written: {why}"
 # What the warning calls a record it cannot name: there is no home to put it under.
 UNNAMED = "of this run"
 NO_HOME = "the password database lists no home directory for this user"
-INSIDE_REPOSITORY = (
-    "it would lie inside the repository this run answers for, and a record is never written there"
-)
+INSIDE_REPOSITORY = "it would lie inside a git checkout, and a record is never written inside one"
 
 # The scp-like form git reads as ssh: `[user@]host:path`, with no `/` before the `:`.
 _SCP = re.compile(r"(?:[^@/:]+@)?(?P<host>[^/:]+):(?P<path>.*)", re.DOTALL)
@@ -121,20 +124,21 @@ def _planned(root: Path, home: Path) -> Path:
     return home / STATE_DIR / EVIDENCE / f"{project_key(root)}{SUFFIX}"
 
 
-def _inside_repository(root: Path, home: Path) -> bool:
-    """Whether `home` lies inside the repository `root` is in; never outside one."""
-    top = gitenv.checkout_root(root)
-    if top is None:
-        return False
-    return Path(os.path.realpath(home)).is_relative_to(os.path.realpath(top))
+def _inside_a_checkout(record: Path) -> bool:
+    """Whether `record` would lie inside a git checkout: asked from the nearest part of its
+    directory that exists, the home itself while nothing below it does. That holds the
+    repository the run answers for, where it holds the home, and a dotfiles repository at the
+    home, whatever repository the run answers for, alike."""
+    return gitenv.checkout_root(fsops.creation_directory(record)) is not None
 
 
 def record_path(root: Path, *, home: Path | None) -> Path | None:
     """The record of the project at `root` under `home`; `None` where there is no home, or where
-    the record would lie inside the repository `root` is in."""
-    if home is None or _inside_repository(root, home):
+    the record would lie inside a git checkout, the one `root` is in or any other."""
+    if home is None:
         return None
-    return _planned(root, home)
+    planned = _planned(root, home)
+    return None if _inside_a_checkout(planned) else planned
 
 
 def shown(path: Path) -> str:
@@ -164,10 +168,15 @@ def append(path: Path, line: Mapping[str, object], *, home: Path) -> str | None:
 
 
 def keep(root: Path, line: Mapping[str, object], *, home: Path | None) -> str | None:
-    """Append `line` to the record of the project at `root` under `home`, or warn why not."""
-    path = record_path(root, home=home)
+    """Append `line` to the record of the project at `root` under `home`, or warn why not.
+
+    `home` is followed to where it leads first: a home that is itself a link is the machine's
+    (the password database names it, and no session writes either), and the contained walk
+    below refuses a link only past it."""
     if home is None:
         return _warned(UNNAMED, NO_HOME)
+    home = Path(os.path.realpath(home))
+    path = record_path(root, home=home)
     if path is None:
         return _warned(shown(_planned(root, home)), INSIDE_REPOSITORY)
     return append(path, line, home=home)

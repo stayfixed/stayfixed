@@ -1770,6 +1770,58 @@ after = """        evidence.record_gate(root, {}, mode="all", argv=[])
 reddens = ["tests/prove/test_evidence.py::test_gate_appends_none_on_a_refusal_before_the_configuration_check[only-unknown]"]
 
 [[mutation]]
+name = "gate keeps a record of a run with no configuration"
+file = "src/stayfixed/assess/commands.py"
+before = "        raise ConfigError(NO_TREE_CONFIG)"
+after = """        evidence.record_gate(root, {}, mode="all", argv=[])
+        raise ConfigError(NO_TREE_CONFIG)"""
+reddens = ["tests/prove/test_evidence.py::test_gate_appends_none_on_a_refusal_before_the_configuration_check[no-tree-config]"]
+
+[[mutation]]
+name = "gate keeps a record of a run its machine file refused"
+file = "src/stayfixed/assess/commands.py"
+before = """    owner = command_owner(machine)
+    tree = loads(tree_text, root, machine=machine, owner=owner)"""
+after = """    evidence.record_gate(root, {}, mode="all", argv=[])
+    owner = command_owner(machine)
+    tree = loads(tree_text, root, machine=machine, owner=owner)"""
+reddens = ["tests/prove/test_evidence.py::test_gate_appends_none_on_a_refusal_before_the_configuration_check[machine-file]"]
+
+# A record that cannot be written is a warning: gate's exit code is its verdict's.
+[[mutation]]
+name = "a record that cannot be written turns gate's exit 1"
+file = "src/stayfixed/assess/commands.py"
+before = """    evidence.record_gate(
+        root, _verdict_words(gate_run, waiting), mode=args.part or "all", argv=_gate_flags(args)
+    )"""
+after = """    if evidence.record_gate(
+        root, _verdict_words(gate_run, waiting), mode=args.part or "all", argv=_gate_flags(args)
+    ):
+        return Result("", data, exit_code=1)"""
+reddens = [
+  "tests/prove/test_evidence.py::test_gate_without_a_record_keeps_its_exit_and_warns_once[neither-no-home]",
+  "tests/prove/test_evidence.py::test_gate_without_a_record_keeps_its_exit_and_warns_once[neither-unwritable]",
+  "tests/prove/test_evidence.py::test_gate_without_a_record_keeps_its_exit_and_warns_once[builtin-no-home]",
+  "tests/prove/test_evidence.py::test_gate_without_a_record_keeps_its_exit_and_warns_once[builtin-unwritable]",
+  "tests/prove/test_evidence.py::test_gate_without_a_record_keeps_its_exit_and_warns_once[custom-no-home]",
+  "tests/prove/test_evidence.py::test_gate_without_a_record_keeps_its_exit_and_warns_once[custom-unwritable]",
+]
+
+[[mutation]]
+name = "a gate record drops the names --only gives"
+file = "src/stayfixed/assess/commands.py"
+before = '        flags += ["--only", name]'
+after = '        flags.append("--only")'
+reddens = ["tests/prove/test_evidence.py::test_gate_appends_one_line_per_run[only]"]
+
+[[mutation]]
+name = "a gate record calls an enforcing gate's findings advisory"
+file = "src/stayfixed/assess/commands.py"
+before = '            words[result.name] = "fails" if enforcing else "would fail"'
+after = '            words[result.name] = "would fail"'
+reddens = ["tests/prove/test_evidence.py::test_a_failing_gate_run_records_each_gate_s_word"]
+
+[[mutation]]
 name = "a gate record calls every run's mode all"
 file = "src/stayfixed/assess/commands.py"
 before = 'mode=args.part or "all"'

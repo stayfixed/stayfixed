@@ -3245,3 +3245,11 @@ file = "src/stayfixed/profiles/javascript/adapters.py"
 before = "            entry=entry,\n"
 after = ""
 reddens = ["tests/prove/test_javascript.py::test_an_npmrc_is_named_in_the_receipt"]
+
+# Every reason a receipt can carry is named in docs/cli.md's prove section.
+[[mutation]]
+name = "a watch mode's reason is one the prove section does not name"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = 'NEVER_ENDS = "never-ends"'
+after = 'NEVER_ENDS = "never-finishes"'
+reddens = ["tests/test_documents.py::test_every_reason_constant_is_documented"]
