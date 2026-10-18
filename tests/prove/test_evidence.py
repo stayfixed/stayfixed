@@ -554,3 +554,16 @@ def test_gate_without_a_record_keeps_its_exit_and_warns_once(
     assert err.count("\n") == 1
     assert "was not written" in err
     assert records() == []
+
+
+def test_each_line_holds_its_version_s_keys() -> None:
+    # A key added to the receipt reaches every record: the format is a new version then, and this
+    # frozen set moves with `VERSION`. Mutation (declared): a key dropped from the frozen set ->
+    # the record holds one it does not name.
+    receipt = Receipt(Verdict.PROVED, "", "", ("pytest",))
+    assert evidence.VERSION == 1
+    assert set(evidence.prove_line(receipt, at="t", version="v")) == evidence.PROVE_KEYS
+    gate = evidence.gate_line(
+        {}, mode="builtin", argv=[], commit=None, dirty=None, at="t", version="v"
+    )
+    assert set(gate) == evidence.GATE_KEYS

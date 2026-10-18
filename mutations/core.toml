@@ -6652,3 +6652,21 @@ file = "src/stayfixed/prove/run.py"
 before = "        if planned.source is ReportSource.FILE and scratch not in planned.report.parents:"
 after = "        if False:"
 reddens = ["tests/prove/test_run.py::test_a_plan_whose_report_lies_outside_its_scratch_is_a_defect_and_raises"]
+
+# The record's keys at version 1 are frozen beside `VERSION`: a key the record gains is a new
+# version.
+[[mutation]]
+name = "the record's version 1 keys drift from what a line holds"
+file = "src/stayfixed/prove/evidence.py"
+before = '''        "scrubbed",
+        "counts",'''
+after = '''        "counts",'''
+reddens = ["tests/prove/test_evidence.py::test_each_line_holds_its_version_s_keys"]
+
+# The prove section lists `--json`'s keys as the receipt's fields, in order.
+[[mutation]]
+name = "the receipt gains a field the prove section does not list"
+file = "src/stayfixed/prove/run.py"
+before = "    ignored_configs: int = 0\n"
+after = "    ignored_configs: int = 0\n    extra: int = 0\n"
+reddens = ["tests/test_documents.py::test_the_json_keys_the_prove_section_lists_are_the_receipt_s_fields"]

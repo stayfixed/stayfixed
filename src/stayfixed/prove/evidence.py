@@ -56,8 +56,41 @@ from stayfixed.prove.run import Receipt
 STATE_DIR = ".local/state/stayfixed"
 EVIDENCE = "evidence"
 SUFFIX = ".jsonl"
-# The record format's version, the first key of every line.
+# The record format's version, the first key of every line, and the keys each kind of line holds
+# at that version: a key added, renamed or removed is a new version, which a reader of the records
+# can tell apart (`tests/prove/test_evidence.py` holds the lines to these).
 VERSION = 1
+PROVE_KEYS = frozenset(
+    {
+        "version",
+        "kind",
+        "at",
+        "stayfixed",
+        "verdict",
+        "reason",
+        "detail",
+        "argv",
+        "runner",
+        "program",
+        "entry",
+        "verified",
+        "scrubbed",
+        "counts",
+        "exit_code",
+        "report_digest",
+        "commit",
+        "dirty_before",
+        "dirty_after",
+        "untracked",
+        "untracked_more",
+        "configs",
+        "configs_more",
+        "ignored_configs",
+    }
+)
+GATE_KEYS = frozenset(
+    {"version", "kind", "at", "stayfixed", "mode", "argv", "commit", "dirty", "gates"}
+)
 # How long a key's digest is, in hex characters: 128 bits, more than enough to tell projects apart
 # on one machine, short enough for a file name.
 KEY_HEX = 32

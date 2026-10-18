@@ -1120,6 +1120,20 @@ def test_the_prove_section_states_the_bound_word_for_word() -> None:
     assert f"**What `proved` means.** {BOUND}\n" in _prove_section()
 
 
+def test_the_json_keys_the_prove_section_lists_are_the_receipt_s_fields() -> None:
+    # The section lists `--json`'s keys in order, each with what it holds in parentheses.
+    # Mutation (declared): a field added to the receipt -> the section lists one key fewer.
+    import dataclasses
+
+    from stayfixed.prove.run import Receipt
+
+    section = _prove_section()
+    start = section.index("`--json` carries `verdict`") + len("`--json` carries ")
+    end = section.index("`ignored_configs`.", start) + len("`ignored_configs`")
+    listed = re.findall(r"`([a-z_]+)`", re.sub(r"\([^()]*\)", "", section[start:end]))
+    assert listed == [field.name for field in dataclasses.fields(Receipt)]
+
+
 def test_every_reason_constant_is_documented() -> None:
     # Every reason a receipt can carry, the run's, the readers' and each shipped adapter's, is
     # named in the section as its code span, and so is the warning an unwritten record says.
