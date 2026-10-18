@@ -159,6 +159,20 @@ def test_a_report_of_another_shape_is_malformed(document: bytes) -> None:
     assert refusal(document) == REPORT_MALFORMED
 
 
+def test_a_refusal_bounds_the_status_it_names() -> None:
+    # The status is the report's, as long as the report makes it: the detail clips it and escapes
+    # the line break that would start a line of its own on a CI runner.
+    status = "\n::error::forged" + "x" * 1_000_000
+    data = json.dumps({"testResults": [{"assertionResults": [{"status": status}]}]}).encode()
+    with pytest.raises(ReportError) as caught:
+        read_results(data)
+    assert caught.value.reason == REPORT_MALFORMED
+    assert len(caught.value.detail) < 200
+    assert "(1000016 chars)" in caught.value.detail
+    assert "\n" not in caught.value.detail
+    assert caught.value.detail.startswith("an assertion's status is '\\n::error::")
+
+
 def test_bytes_that_are_not_utf8_are_refused_as_such() -> None:
     assert refusal(b'{"testResults": [], "x": "\xff"}') == REPORT_NOT_UTF8
 
@@ -196,3 +210,9 @@ def test_read_report_hands_drop_to_the_junit_reader() -> None:
         return True
 
     assert read_report(ReportKind.JUNIT, fixture("node-junit.xml"), drop=everything).total == 0
+
+
+def test_read_report_reads_no_kind_it_does_not_name() -> None:
+    # Exhaustive by kind: a value that is no `ReportKind` member is never read as the last kind.
+    with pytest.raises(AssertionError):
+        read_report("events-v2", fixture("go.jsonl"))  # type: ignore[arg-type]

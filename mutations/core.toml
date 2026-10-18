@@ -5313,7 +5313,7 @@ reddens = [
 [[mutation]]
 name = "the results reader counts an unknown status as skipped"
 file = "src/stayfixed/prove/results.py"
-before = """                raise ReportError(REPORT_MALFORMED, f"an assertion's status is {status!r}")"""
+before = """                raise ReportError(REPORT_MALFORMED, f"an assertion's status is {clipped(status)}")"""
 after = """                skipped += 1"""
 reddens = [
   "tests/prove/test_results.py::test_an_unknown_status_is_malformed",
@@ -5424,4 +5424,136 @@ before = "        return read_junit(data, drop=drop)"
 after = "        return read_junit(data)"
 reddens = [
   "tests/prove/test_results.py::test_read_report_hands_drop_to_the_junit_reader",
+]
+
+# A value the report holds reaches a refusal's detail only clipped: a status or a key is bounded in
+# length by nothing but the report's size, and a receipt cannot clip it once it is embedded.
+[[mutation]]
+name = "the results reader names an unknown status unclipped"
+file = "src/stayfixed/prove/results.py"
+before = """f"an assertion's status is {clipped(status)}\""""
+after = """f"an assertion's status is {status!r}\""""
+reddens = [
+  "tests/prove/test_results.py::test_a_refusal_bounds_the_status_it_names",
+]
+
+[[mutation]]
+name = "the JSON readers name a duplicate key unclipped"
+file = "src/stayfixed/prove/counts.py"
+before = """f"a key held twice: {clipped(exc.args[0])}\""""
+after = """f"a key held twice: {exc.args[0]!r}\""""
+reddens = [
+  "tests/prove/test_events.py::test_a_refusal_bounds_the_key_it_names",
+]
+
+# Each shape check of the event-stream reader refuses the line; skipping it instead would count
+# around a line the runner did not write as an event. Each `after` skips rather than deletes, so
+# what reddens is the refusal the test asserts, not an exception a deleted check lets through.
+[[mutation]]
+name = "the event-stream reader skips a line that is not an object"
+file = "src/stayfixed/prove/events.py"
+before = """            raise ReportError(REPORT_MALFORMED, f"line {number} is not a JSON object")"""
+after = """            continue"""
+reddens = [
+  "tests/prove/test_events.py::test_a_line_that_is_not_an_event_is_malformed",
+]
+
+[[mutation]]
+name = "the event-stream reader skips an event with no string Action"
+file = "src/stayfixed/prove/events.py"
+before = """            raise ReportError(REPORT_MALFORMED, f"line {number} has no string Action")"""
+after = """            continue"""
+reddens = [
+  "tests/prove/test_events.py::test_a_line_that_is_not_an_event_is_malformed",
+]
+
+[[mutation]]
+name = "the event-stream reader reads a key of the wrong type as absent"
+file = "src/stayfixed/prove/events.py"
+before = """        raise ReportError(REPORT_MALFORMED, f"line {line}: {key} is not a string")"""
+after = """        return None"""
+reddens = [
+  "tests/prove/test_events.py::test_a_line_that_is_not_an_event_is_malformed",
+]
+
+[[mutation]]
+name = "the event-stream reader reads an empty Test as no test"
+file = "src/stayfixed/prove/events.py"
+before = """            raise ReportError(REPORT_MALFORMED, f"line {number} names an empty Test")"""
+after = """            test = None"""
+reddens = [
+  "tests/prove/test_events.py::test_a_line_that_is_not_an_event_is_malformed",
+]
+
+# A package-level `skip` (a package with no test files) is no test.
+[[mutation]]
+name = "the event-stream reader counts a package-level skip"
+file = "src/stayfixed/prove/events.py"
+before = """        elif action == _FAILED:
+            failed_whole.add(package)"""
+after = """        elif action == _SKIPPED:
+            skipped += 1
+        elif action == _FAILED:
+            failed_whole.add(package)"""
+reddens = [
+  "tests/prove/test_events.py::test_package_level_pass_and_skip_count_nothing",
+]
+
+# The last event need not end in a line break.
+[[mutation]]
+name = "the event-stream reader drops a last line with no line break"
+file = "src/stayfixed/prove/events.py"
+before = """utf8(data).split("\\n")"""
+after = """utf8(data).split("\\n")[:-1]"""
+reddens = [
+  "tests/prove/test_events.py::test_a_stream_without_a_final_newline_reads",
+]
+
+# A report that is valid JSON but not an object is refused, never read as an empty one.
+[[mutation]]
+name = "the results reader reads a report that is not an object as empty"
+file = "src/stayfixed/prove/results.py"
+before = """        raise ReportError(REPORT_MALFORMED, "the report is not a JSON object")"""
+after = """        document = {"testResults": []}"""
+reddens = [
+  "tests/prove/test_results.py::test_a_report_of_another_shape_is_malformed",
+]
+
+# A failed file that holds a failed assertion loaded: the file adds nothing beyond its assertions.
+[[mutation]]
+name = "the results reader adds a failed file to its failed assertions"
+file = "src/stayfixed/prove/results.py"
+before = """        if entry.get("status") == _FILE_FAILED and failed_here == 0:
+            failed_here = 1"""
+after = """        if entry.get("status") == _FILE_FAILED:
+            failed_here += 1"""
+reddens = [
+  "tests/prove/test_results.py::test_a_failed_file_with_a_failed_assertion_adds_nothing_more",
+  "tests/prove/test_results.py::test_results_count_assertions_by_status",
+]
+
+# A file entry's own status is read for the load-failure rule only; a status outside the
+# assertions' set, such as `focused`, is never refused.
+[[mutation]]
+name = "the results reader refuses a file status outside passed and failed"
+file = "src/stayfixed/prove/results.py"
+before = """        failed_here = 0
+"""
+after = """        failed_here = 0
+        if entry.get("status") not in ("passed", "failed"):
+            raise ReportError(REPORT_MALFORMED, "a file's status")
+"""
+reddens = [
+  "tests/prove/test_results.py::test_a_file_entry_s_own_status_is_never_refused",
+  "tests/prove/test_results.py::test_results_count_assertions_by_status",
+]
+
+# `read_report` names every kind it reads; anything else is no kind, never the last one's reader.
+[[mutation]]
+name = "read_report reads any other kind as the event stream"
+file = "src/stayfixed/prove/reports.py"
+before = "    if kind is ReportKind.EVENTS:"
+after = "    if True:"
+reddens = [
+  "tests/prove/test_results.py::test_read_report_reads_no_kind_it_does_not_name",
 ]

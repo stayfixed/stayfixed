@@ -154,6 +154,20 @@ def test_a_line_that_is_not_an_event_is_malformed(line: bytes) -> None:
     assert refusal(good + line + b"\n" + good) == REPORT_MALFORMED
 
 
+def test_a_refusal_bounds_the_key_it_names() -> None:
+    # A key held twice, a million characters and an escape sequence long: the detail names it
+    # clipped and escaped.
+    key = json.dumps("\x1b[2J" + "K" * 1_000_000)
+    line = f'{{"Action": "pass", {key}: 1, {key}: 2}}'
+    with pytest.raises(ReportError) as caught:
+        read_events(line.encode())
+    assert caught.value.reason == REPORT_MALFORMED
+    assert caught.value.detail.startswith("a key held twice: '\\x1b[2JKKK")
+    assert "(1000004 chars)" in caught.value.detail
+    assert len(caught.value.detail) < 200
+    assert "\x1b" not in caught.value.detail
+
+
 def test_a_stream_without_a_final_newline_reads() -> None:
     assert read_events(b'{"Action": "skip", "Package": "p", "Test": "TestA"}') == Counts(0, 0, 1)
 

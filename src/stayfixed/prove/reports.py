@@ -8,6 +8,7 @@ size check, so the one function that imports every reader cannot live there with
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from typing import assert_never
 
 from stayfixed.profiles.runners import ReportKind
 from stayfixed.prove.counts import Counts
@@ -28,4 +29,6 @@ def read_report(
         return read_junit(data, drop=drop)
     if kind is ReportKind.RESULTS_JSON:
         return read_results(data)
-    return read_events(data)
+    if kind is ReportKind.EVENTS:
+        return read_events(data)
+    assert_never(kind)

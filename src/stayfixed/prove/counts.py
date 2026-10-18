@@ -17,6 +17,8 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
+from stayfixed.printed import clipped
+
 # The report is larger than `MAX_REPORT_BYTES`.
 REPORT_TOO_LARGE = "report-too-large"
 # A format read as UTF-8 holds bytes that are not.
@@ -50,7 +52,11 @@ class Counts:
 
 class ReportError(Exception):
     """A report that cannot be counted: `reason` is one of this module's `REPORT_*` constants,
-    and `detail`, when there is one, is where the reader stopped, for a receipt to print."""
+    and `detail`, when there is one, is where the reader stopped, for a receipt to print.
+
+    A value the report holds enters `detail` only through `printed.clipped`, so the detail is
+    bounded in length and escaped however long or strange the value; nothing upstream bounds a
+    status or a key but the report's own size."""
 
     def __init__(self, reason: str, detail: str = "") -> None:
         super().__init__(reason if not detail else f"{reason}: {detail}")
@@ -92,7 +98,7 @@ def strict_json(text: str) -> Any:
     try:
         return json.loads(text, object_pairs_hook=_unique)
     except _Duplicate as exc:
-        raise ReportError(REPORT_MALFORMED, f"a key held twice: {exc.args[0]!r}") from None
+        raise ReportError(REPORT_MALFORMED, f"a key held twice: {clipped(exc.args[0])}") from None
     except RecursionError:
         raise ReportError(REPORT_MALFORMED, "nested deeper than this reader follows") from None
     except ValueError as exc:

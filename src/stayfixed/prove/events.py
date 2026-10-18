@@ -12,8 +12,9 @@ the runner reported green on this tree, for the tests this command selected."
 A package-level event (no `Test`) counts nothing either, with two exceptions, so that a package
 that failed with no failed test still fails the run:
 
-- a package-level `fail` adds one failed when no test in that `Package` failed: a `TestMain` that
-  exits non-zero, a panic before any test ran, a package that did not build;
+- a package-level `fail` adds one failed when no test in that `Package` failed: a test program
+  that exits non-zero before or after its tests, a panic before any test ran, a package that did
+  not build;
 - a `build-fail` event, which names an `ImportPath` (`p [p.test]`) and no `Package`, adds one
   failed when no package-level `fail` names the package its `ImportPath` starts with (the first
   space-separated word).
@@ -26,7 +27,8 @@ count twice, which changes a count and never a verdict.
 
 A line that is not a JSON object, an event with no string `Action`, or a `Test`, `Package` or
 `ImportPath` of the wrong type is `REPORT_MALFORMED`: the stream is the runner's own, and a line in
-it the runner did not write as an event is not one to count around. Empty lines are skipped.
+it the runner did not write as an event is not one to count around. Empty lines are skipped. A
+refusal names the line by its number and a key by its fixed name, never a value the stream holds.
 """
 
 from __future__ import annotations

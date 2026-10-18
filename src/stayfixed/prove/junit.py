@@ -18,7 +18,14 @@ characters they stand for, and any other name is `REPORT_ENTITY`.
 
 `drop`, when given, is asked each testcase's attributes as it opens; a true answer counts that
 testcase nowhere, whatever stands inside it. It is how an adapter leaves out a testcase that is not
-a test, such as the node test runner's whole-file testcase.
+a test, such as one a writer emits for a whole file rather than for a test in it. It is asked before
+anything inside the testcase is read, so it sees the attributes alone and decides alone: a dropped
+testcase that holds a `failure` is not counted as failed, and a predicate that must keep a failed
+testcase counted has to tell it from its attributes and answer false.
+
+No text the document holds reaches a refusal: `REPORT_ENTITY` and `REPORT_MALFORMED` carry the
+parser's own fixed message for the error and where it stopped, never the name or token it stopped
+at.
 """
 
 from __future__ import annotations

@@ -160,23 +160,35 @@ def test_at_the_cap_is_read() -> None:
 
 
 def test_drop_counts_a_testcase_nowhere() -> None:
+    # Two testcases that stand for a whole file, neither failing: whether a failed one is dropped
+    # is the predicate's to decide from the attributes, and this reader leaves that to it.
     report = (
-        b'<testsuite><testcase name="whole.mjs" classname="test"/>'
-        b'<testcase name="whole.mjs" classname="test"><failure/></testcase>'
-        b'<testcase name="kept"><skipped/></testcase></testsuite>'
+        b'<testsuite><testcase name="one.test" file="/w/one.test"/>'
+        b'<testcase name="two.test" file="/w/two.test"><system-out>x</system-out></testcase>'
+        b'<testcase name="kept" file="/w/one.test"><skipped/></testcase></testsuite>'
     )
     asked: list[dict[str, str]] = []
 
     def whole_file(attributes: Mapping[str, str]) -> bool:
         asked.append(dict(attributes))
-        return attributes.get("name") == "whole.mjs"
+        return attributes["file"].endswith("/" + attributes["name"])
 
     assert read_junit(report, drop=whole_file) == Counts(0, 0, 1)
     assert asked == [
-        {"name": "whole.mjs", "classname": "test"},
-        {"name": "whole.mjs", "classname": "test"},
-        {"name": "kept"},
+        {"name": "one.test", "file": "/w/one.test"},
+        {"name": "two.test", "file": "/w/two.test"},
+        {"name": "kept", "file": "/w/one.test"},
     ]
+
+
+def test_a_refusal_quotes_nothing_the_document_holds() -> None:
+    # A mismatched end tag a million characters long: the detail names the error and where.
+    name = b"t" * 1_000_000
+    with pytest.raises(ReportError) as caught:
+        read_junit(b"<testsuite><" + name + b"></x></testsuite>")
+    assert caught.value.reason == REPORT_MALFORMED
+    assert len(caught.value.detail) < 200
+    assert len(str(caught.value)) < 250
 
 
 def test_a_hundred_thousand_cases_count_in_bounded_memory() -> None:

@@ -4,7 +4,7 @@ A leaf: the adapters under `profiles/<stack>/` and the `prove` core both import 
 nothing from either, so neither reaches the other through it and no package cycle forms.
 
 No entry in `mutations/` covers this module: it declares names and decides nothing. Which reader a
-kind is read with is `stayfixed.prove.counts.read_report`'s, and its entries cover that.
+kind is read with is `stayfixed.prove.reports.read_report`'s, and its entries cover that.
 """
 
 from __future__ import annotations

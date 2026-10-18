@@ -25,6 +25,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from stayfixed.printed import clipped
 from stayfixed.prove.counts import (
     REPORT_MALFORMED,
     Counts,
@@ -68,7 +69,7 @@ def read_results(data: bytes) -> Counts:
             elif status in _SKIPPED:
                 skipped += 1
             else:
-                raise ReportError(REPORT_MALFORMED, f"an assertion's status is {status!r}")
+                raise ReportError(REPORT_MALFORMED, f"an assertion's status is {clipped(status)}")
         if entry.get("status") == _FILE_FAILED and failed_here == 0:
             failed_here = 1
         failed += failed_here
