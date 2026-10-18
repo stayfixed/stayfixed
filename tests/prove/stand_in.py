@@ -24,7 +24,8 @@ The program's options, all after the word `stand-in`:
   and never exit;
 - `--escape PIDFILE` and `--escape-quiet PIDFILE`: leave a child in a session of its own, out of
   the run's process group, that holds standard output open for as long as it lives and writes to
-  it without pause, or writes nothing, its pid in `PIDFILE`, and exit;
+  it without pause, or writes nothing, and exit once the child has written its pid in `PIDFILE`,
+  which a loud one does only after its first write;
 
 and any other option is ignored, as a runner ignores the options it does not take.
 """
@@ -178,11 +179,30 @@ def _hang(started: str, late: str) -> None:
 
 
 def _escape(pidfile: str, *, loud: bool) -> None:
-    writer = "import sys\nwhile True:\n    sys.stdout.write('x' * 4096)\n    sys.stdout.flush()\n"
-    quiet = "import time\ntime.sleep(600)\n"
-    code = writer if loud else quiet
+    # The child names itself in `pidfile`, whole, once a loud one has written its first chunk, and
+    # the runner exits only once it is there: the pipe is never found empty for want of a child
+    # that had not started yet, so what ends the tee is its bound, not a race with the child.
+    named = (
+        "import os, pathlib, sys, time\n"
+        "def named():\n"
+        f"    part = pathlib.Path({pidfile + '.part'!r})\n"
+        "    part.write_text(str(os.getpid()), encoding='utf-8')\n"
+        f"    os.replace(part, {pidfile!r})\n"
+    )
+    writer = (
+        "def write():\n"
+        "    sys.stdout.write('x' * 4096)\n"
+        "    sys.stdout.flush()\n"
+        "write()\n"
+        "named()\n"
+        "while True:\n"
+        "    write()\n"
+    )
+    quiet = "named()\ntime.sleep(600)\n"
+    code = named + (writer if loud else quiet)
     child = subprocess.Popen([sys.executable, "-c", code], start_new_session=True)
-    Path(pidfile).write_text(str(child.pid), encoding="utf-8")
+    while not Path(pidfile).exists() and child.poll() is None:
+        time.sleep(0.01)
 
 
 def main(argv: list[str]) -> int:

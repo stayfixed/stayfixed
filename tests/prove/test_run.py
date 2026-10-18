@@ -603,10 +603,11 @@ def test_a_descendant_that_leaves_the_group_cannot_keep_the_run_open(
 ) -> None:
     # A child in a session of its own is out of the group the run ends, and it holds open the pipe
     # the report arrives on, writing on or silent. Once the runner has exited, the tee copies what
-    # is there, at most a report's worth more, and lets go. Each copy is slowed here, so the loud
-    # child refills the pipe between two reads and the pipe is never found empty: then the copy's
-    # bound is the only thing that ends it. Mutations (declared): the tee waiting for the pipe to
-    # end, and copying past its bound -> the run returns only once this test ends the child.
+    # is there, at most a report's worth more, and lets go. The stand-in exits only once the loud
+    # child has written, and each copy is slowed here, so the loud child refills the pipe between
+    # two reads and the pipe is never found empty: then the copy's bound is the only thing that
+    # ends it. Mutations (declared): the tee waiting for the pipe to end, and copying past its
+    # bound -> the run returns only once this test ends the child.
     monkeypatch.setattr(run_module, "MAX_REPORT_BYTES", 64 * 1024)
     copy = run_module._Tee._copy
 
