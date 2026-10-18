@@ -136,11 +136,15 @@ def _env_reads(event: HookEvent, session: SessionConfig) -> HookResult:
     names = [path.replace("\\", "/").rstrip("/").rpartition("/")[2]]
     # And the name it resolves to: a clone can commit `notes.txt` as a link to `.env.local`, and
     # the tool reads the file the link names. A path that cannot be resolved -- a loop, a NUL --
-    # is judged by its own name alone, and the tool cannot read it either. A leading `~` is
-    # expanded first, as the tool expands it, or `~/notes.txt` would be resolved under the
-    # working directory, where nothing is, and the link it names would go unread.
-    with contextlib.suppress(OSError, ValueError):
-        names.append(fsops.resolved(event.cwd / os.path.expanduser(path)).name)
+    # is judged by its own name alone, and the tool cannot read it either.
+    #
+    # Every reading of the path the tool might take, not a guess at the one it does: as written,
+    # under the working directory, and with a leading `~` expanded. Matching one tool's expansion
+    # rule exactly (`~`, `~/`, `~user/`) is a model of someone else's behaviour, and each guess at
+    # it left the other reading unjudged; judging both refuses whichever one names an env file.
+    for reading in {path, os.path.expanduser(path)}:
+        with contextlib.suppress(OSError, ValueError):
+            names.append(fsops.resolved(event.cwd / reading).name)
     if any(is_env_file(name) for name in names):
         return HookResult(decision=Decision.DENY, reason=ENV_READ_REFUSED)
     return HookResult()

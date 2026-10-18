@@ -340,6 +340,14 @@ def test_a_link_under_the_home_is_resolved_as_the_tool_expands_it(
     work.mkdir()
     event = file_event(work, "Read", "~/notes.txt")
     assert env_guard().run(event, NO_CONFIG).decision is Decision.DENY
+    # And the other reading: a directory literally named `~root` in the working directory, which
+    # `expanduser` sends to root's home. Both readings are judged, so the link there is refused.
+    # Mutation: `mutations/`'s "the env guard judges only the expanded reading" -> the read passes.
+    (work / "~root").mkdir()
+    (work / "~root" / ".env.prod").write_text("KEY=secret\n", encoding="utf-8")
+    (work / "~root" / "notes.txt").symlink_to(".env.prod")
+    event = file_event(work, "Read", "~root/notes.txt")
+    assert env_guard().run(event, NO_CONFIG).decision is Decision.DENY
 
 
 def test_a_path_that_cannot_be_resolved_is_judged_by_its_own_name(tmp_path: Path) -> None:
