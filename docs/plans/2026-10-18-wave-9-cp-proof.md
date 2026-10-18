@@ -1,4 +1,4 @@
-# Wave 9, RC1 and CP1 — the register's list field, `prove`, evidence records: Implementation Plan
+# Wave 9, RC1, CP1 and SP — the register's list field, `prove`, evidence records, the matcher spike: Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development
 > (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use
@@ -9,25 +9,29 @@
 > **dispatched** wave; inside a wave every task keeps its own failing test, verification and
 > commit. Do not dispatch one subagent per task.
 >
-> **Waves A, C and H are not dispatched.** A measures the five runners; C and H run the final
-> review seats and open a pull request. The controller runs all three.
+> **Waves A, C, H and I are not dispatched.** A measures the five runners; C and H run the final
+> review seats and open a pull request; I is the matcher spike, run with the owner. The controller
+> runs all four.
 >
-> **Two pull requests, one plan.** RC1 is `wp/rc1-list-field` into `dev` (Waves B and C); CP1 is
-> `wp/cp1-prove` into `dev` (Waves A and D–H). Both merge in release window R1 of the umbrella plan
-> (`docs/plans/2026-10-15-wave-9-umbrella.md`); neither imports the other, so the two run in
-> parallel sessions, each in its own worktree cut from `dev`.
+> **Three pull requests, one plan.** RC1 is `wp/rc1-list-field` into `dev` (Waves B and C); CP1 is
+> `wp/cp1-prove` into `dev` (Waves A and D–H); SP is `wp/matcher-spike` into `dev` (Wave I), a
+> record in this plan's Findings and no code. Each merges into `dev` when its own checks are green
+> (umbrella plan, `docs/plans/2026-10-15-wave-9-umbrella.md`; the owner, 2026-10-18: there are no
+> users besides the owner, so no release window holds a merge). None imports another, so the three
+> run in parallel sessions, each in its own worktree cut from `dev`.
 >
-> **Tasks 4 and 13 change no code.** Their failing test is Step 1's run on the branch's head (any
-> red stops the task), their verification is the review seats and `gh run watch`, and their commit
-> is the Findings entry they write.
+> **Tasks 4, 13 and 14 change no code.** The failing check of Tasks 4 and 13 is Step 1's run on the
+> branch's head (any red stops the task), their verification is the review seats and
+> `gh run watch`, and their commit is the Findings entry they write; Task 14's is its own Step 1.
 >
 > **Open questions block their tasks, not the plan.** The section "Open questions for the owner"
 > names, per question, the task that waits for its answer and the default this plan is written on.
 
-**Goal:** a bug entry may carry a `regression` list that `0.4.0` reads and never writes, with the
-bug ledger byte-identical to `v0.3.0`'s; and `stayfixed prove -- <command>` runs a test command,
+**Goal:** a bug entry may carry a `regression` list that the engine reads and validates, with every
+other byte the bug ledger writes and prints unchanged; `stayfixed prove -- <command>` runs a test command,
 counts what the runner itself reported, answers `proved`, `failed`, `not proven` or `refused`, and
-leaves one evidence record per run on the machine, as `stayfixed gate` does per run.
+leaves one evidence record per run on the machine, as `stayfixed gate` does per run; and the
+record of how a hook can see a skill invocation on Claude Code and Codex, for wave 10.
 
 **Architecture:** RC1 teaches the register engine one more value shape: a `Schema` names its list
 keys, `parse_entry` reads each as an inline list of double-quoted items with the escapes titles
@@ -47,7 +51,7 @@ runner versions Task 1 records.
 
 **Spec:** the agent-harness extraction design, in a private repository this one cannot link to —
 §15.8 decisions 1 and 3 (scope and releases), 4 (the value floor: `prove` works with no
-`stayfixed.toml`), 34 (`prove`, its bound and its verdicts), 35 (evidence records), 36 (what
+`stayfixed.toml`), 34 (`prove`, its bound and its verdicts), 35 (evidence records), 41 (the matcher spike), 36 (what
 `regression` will hold, read from `0.4.0`), 39 (the engine's list field, read-only), 43 (the bug
 entry's `regression` field and `prove`'s exit 2 as licensed contract changes), 45 (jest's and
 vitest's flags measured first), and core-proof's acceptance after decision 37; §5.4 as amended on
@@ -56,12 +60,15 @@ items for RC1 and CP1 are cited by their ids. Every value a task needs from the 
 into the task.
 
 **Scope:** pull requests RC1 and CP1 of package core-proof, with the slice of project-record the
-`regression` field needs (umbrella plan, Lanes). They share this plan because the umbrella cut them
-together: both land in `0.4.0`, and CP2 consumes both. A change belongs here iff it (a) lets the
-register engine read a list of quoted items, keeps the bug ledger's bytes as `v0.3.0` wrote and
-printed them, or declares `regression` on the bug ledger; (b) reads a runner's report, recognises,
+`regression` field needs, and the matcher spike (SP) (umbrella plan, Lanes, as amended on
+2026-10-18). RC1 and CP1 share this plan because CP2 consumes both; SP joined it by the owner's
+ruling of 2026-10-18 to cut the wave's plan count, since it is a record with no code and depends on
+nothing. A change belongs here iff it (a) lets the register engine read a list of quoted items,
+keeps every other byte of the bug ledger as the tree writes and prints it before Task 3, or
+declares `regression` on the bug ledger; (b) reads a runner's report, recognises,
 plans, scrubs, checks or runs a test command for `prove`, or says its verdict; (c) writes, keys or
-uploads an evidence record; or (d) restates the documents those changes falsify. Out: writing
+uploads an evidence record; (d) records how a hook sees a skill invocation (SP, Findings only);
+or (e) restates the documents those changes falsify. Out: writing
 `regression` (`bugs new --regression`, `0.6.0`), running regressions and `[gates] regressions`
 (CP2), the binding id as the evidence key (HS2), profiles as a list and their context (PF1, PF2),
 the JavaScript and Go profiles' rules and `assess` checks (after launch, d1).
@@ -93,7 +100,6 @@ that finds one no longer holds stops and reports the mismatch.
   `vitest`, `npx`, `poetry`, `pytest` and `npm` are `STACK_WORDS` the core may not spell.
 - `.github/workflows/check.yml` is one job whose judging steps never use `if: always()`
   (`tests/test_check_workflow.py`); it uploads no artifact.
-- `git ls-remote --tags origin` lists `v0.3.0` at `85a1ac5`.
 
 ## Global Constraints
 
@@ -105,7 +111,7 @@ that finds one no longer holds stops and reports the mismatch.
   test event stream) and its keys (`numTotalTests`, `assertionResults`, `Action`), never by a
   runner's name [P-CP-9].
 - `prove` works with no `stayfixed.toml` and with one the loader refuses (the value floor): it
-  reads no configuration at all in `0.4.0`.
+  reads no configuration at all in this plan.
 - Verdicts and exits: `proved` 0; `failed` 1 (a failing test, no test run, every test skipped);
   `not proven` 1 (a command no adapter recognises, no report, an unreadable report, or a green
   report from a runner that exited non-zero); `refused` 2 (an argv shape, an environment variable
@@ -119,7 +125,9 @@ that finds one no longer holds stops and reports the mismatch.
 - An evidence record is never written under a repository; a failure to write one is a warning on
   stderr and never changes the verdict or the exit code.
 - The bug ledger's bytes do not move: `bugs new`'s entry and output, `bugs check`'s text and
-  `--json`, and `renumber`'s files and output equal `v0.3.0`'s literals [O-23].
+  `--json`, and `renumber`'s files and output equal the literals Task 2 captures from the tree before
+  the engine changes [O-23, captured from `dev` instead of the `v0.3.0` tag by the owner's ruling of
+  2026-10-18; the tree's ledger code is the tag's or later].
 - Every new assertion ships with the mutation that reddens it, in the group file
   `scripts/mutation_oracle.py` `GROUP_OF` routes its source to (`src/stayfixed/ledger/` →
   `records`; `src/stayfixed/profiles/` → `project`; `src/stayfixed/prove/` → `core`; `.github/` →
@@ -199,8 +207,7 @@ is written on the default named; an answer that differs changes only the task na
    the report counts as green until listed — no more than an untracked `conftest.py` already can.
 2. **Where the records live and how long (Task 11).** §5.4 says "the state directory" and names no
    path. **Default:** `<home>/.local/state/stayfixed/evidence/<key>.jsonl`, `<home>` the password
-   database's, no `XDG_STATE_HOME` read (the same rule as the machine file), no rotation in
-   `0.4.0`. The alternative honours `XDG_STATE_HOME` at a terminal only, as `STAYFIXED_CONFIG`
+   database's, no `XDG_STATE_HOME` read (the same rule as the machine file), no rotation yet. The alternative honours `XDG_STATE_HOME` at a terminal only, as `STAYFIXED_CONFIG`
    would; a team on a managed laptop may want it, and a hook may not.
 3. **Freedom for runners stayfixed does not know (no task in this plan).** d34 counts only runners
    with an adapter, so `cargo nextest`, Maven, PHPUnit and `dotnet test` are `not proven` however
@@ -219,7 +226,7 @@ is written on the default named; an answer that differs changes only the task na
    cannot hold the acceptance's "genuine run" clause.
 5. **The evidence upload's owner (Task 12).** The umbrella's file table gives `check.yml`'s
    evidence upload to CP1 and its CP2 items name the same step [P-CP-11]. **Default:** CP1 builds it,
-   since `gate` writes records from `0.4.0`; CP2 inherits it and adds only its own step.
+   since CP1's `gate` writes records; CP2 inherits it and adds only its own step.
 6. **Origin normalisation (Task 11).** HS2's binding id will key a confirmed checkout; until then
    the key is a digest of the normalised `origin`. **Default rule:** drop userinfo, a trailing `/`
    and a trailing `.git`; lower-case the scheme and host; read the scp form `user@host:path` as
@@ -261,6 +268,7 @@ Inputs no task would exercise unless told to; each line's test is in the task na
 | F | 8–10 | CP1 | yes | 165 |
 | G | 11–12 | CP1 | yes | 95 |
 | H | 13 | CP1 | no — controller | 25 |
+| I | 14 | SP | no — controller and owner | 45 |
 
 Every dispatched wave's brief also carries the header above (about 300 lines), so the largest, F,
 is under 500 plan lines in all.
@@ -277,8 +285,11 @@ graph LR
   E --> G
   F --> G
   G --> H
+  I
 ```
 
+- **I** has no edge: it reads only Claude Code and Codex, writes only Findings, and runs whenever
+  the owner is at the keyboard, beside any other wave.
 - **B → C.** C reviews B's two commits and opens RC1. B and C import nothing CP1 writes and CP1
   imports nothing of theirs, so the RC1 chain runs beside A and D–H in its own session.
 - **A → D, F.** Task 1's recorded reports are D's fixtures; its measured flags and versions are F's
@@ -344,12 +355,12 @@ module proxy are the only network reached, and only here and in the `runners` CI
 
 ### Wave B — Tasks 2–3 (dispatched; pull request RC1)
 
-#### Task 2: Hold the bug ledger to `v0.3.0`'s bytes before the engine moves
+#### Task 2: Hold the bug ledger to its bytes before the engine moves
 
 **Files:**
-- Create: `tests/fixtures/ledger-v030/` (create) — a project with a `stayfixed.toml` and a bug
+- Create: `tests/fixtures/ledger/` (create) — a project with a `stayfixed.toml` and a bug
   ledger of four entries, and `expected/` holding the literals Step 3 captures
-- Test: `tests/ledger/test_v030_literals.py` (create)
+- Test: `tests/ledger/test_literals.py` (create)
 - Modify: `mutations/records.toml`
 
 **Interfaces:**
@@ -375,30 +386,28 @@ CASES = [
 
 @pytest.mark.parametrize("case, argv", CASES)
 @pytest.mark.parametrize("json_output", [False, True])
-def test_the_ledger_prints_what_v0_3_0_printed(tmp_path, case, argv, json_output): ...
+def test_the_ledger_prints_what_it_printed_before_the_list_field(tmp_path, case, argv, json_output): ...
     # stdout, stderr and the exit code, each equal to expected/<case>[.json].{out,err,code}
 
-def test_new_writes_the_entry_v0_3_0_wrote(tmp_path): ...       # expected/new.entry.md
-def test_renumber_leaves_the_files_v0_3_0_left(tmp_path): ...   # expected/renumber.{moved,void}.md
-def test_the_index_is_the_one_v0_3_0_rendered(tmp_path): ...    # expected/index.md after `new`
+def test_new_writes_the_entry_it_wrote(tmp_path): ...       # expected/new.entry.md
+def test_renumber_leaves_the_files_it_left(tmp_path): ...   # expected/renumber.{moved,void}.md
+def test_the_index_is_the_one_it_rendered(tmp_path): ...    # expected/index.md after `new`
 ```
 
   A captured date is written `{today}` in `expected/` and formatted with `date.today()` read before
   and after the run; when the two differ the test runs the case once more.
 
-- [ ] **Step 2: Run** `uv run pytest tests/ledger/test_v030_literals.py -q`. Expected: every case
+- [ ] **Step 2: Run** `uv run pytest tests/ledger/test_literals.py -q`. Expected: every case
   fails with a missing `expected/` file.
-- [ ] **Step 3: Capture.** `git worktree add <scratchpad>/b-impl/v030 v0.3.0`, then for each case
-  run `uv run --project <scratchpad>/b-impl/v030 stayfixed <argv> --root <copy>` on a fresh
-  `ledger_copy`, and write stdout, stderr, the exit code and the files into `expected/` with the
-  capture day replaced by `{today}`. Paste each command and its exit code into the report; remove
-  the worktree with `git worktree remove`.
-- [ ] **Step 4: Run** the file again. Expected: PASS on `dev`. A case that differs is a change
-  `dev` already made to the ledger since `v0.3.0`: stop and report it, with the diff, before Task 3.
+- [ ] **Step 3: Capture.** On the commit this task starts from, for each case run
+  `uv run stayfixed <argv> --root <copy>` on a fresh `ledger_copy`, and write stdout, stderr, the
+  exit code and the files into `expected/` with the capture day replaced by `{today}`. Paste each
+  command and its exit code into the report.
+- [ ] **Step 4: Run** the file again. Expected: PASS.
 - [ ] **Step 5: Mutations** in `mutations/records.toml`: `field_line` writing `key: ` for an empty
   value; `scalar` quoting every value; the `stale-index` detail dropping its `run:` remedy.
   Expected: each reddens a case here.
-- [ ] **Step 6: Commit** — `test(ledger): hold new, check and renumber to the bytes v0.3.0 wrote`.
+- [ ] **Step 6: Commit** — `test(ledger): hold new, check and renumber to the bytes they write today`.
 
 #### Task 3: The engine's list field, and `regression` on the bug ledger, read-only
 
@@ -468,8 +477,8 @@ def test_a_list_key_may_not_be_a_column_required_or_related(): ...     # Schema(
 - [ ] **Step 5: Mutations:** the scanner splitting on every comma; an empty item accepted; a list key
   left in `fields`; `BUG_SCHEMA.lists` empty. Expected: each reddens its test.
 - [ ] **Step 6: Documents.** `docs/cli.md`, the `bugs new` section: an entry may carry
-  `regression`, an inline list of double-quoted argv items that this release reads and validates and
-  never writes. Fragment `changelog.d/+regression-readable.feature.md` (create).
+  `regression`, an inline list of double-quoted argv items that `bugs check` validates; `bugs new`
+  does not write one yet. Fragment `changelog.d/+regression-readable.feature.md` (create).
 - [ ] **Step 7: Commit** — `feat(ledger): read a list of quoted items, and let a bug entry carry a regression`.
 
 ---
@@ -486,8 +495,8 @@ def test_a_list_key_may_not_be_a_column_required_or_related(): ...     # Schema(
   `bugs new`, `bugs index`, `bugs check [--base]` and `bugs renumber` × an entry with no
   `regression`, an empty one, a valid one, a malformed one, and a base whose entry has one the tree
   lacks.
-- [ ] **Step 3:** open `wp/rc1-list-field` into `dev`; the body says what `0.4.0` reads, what it
-  never writes, and the grammar CP2 writes; wait as item 8 says.
+- [ ] **Step 3:** open `wp/rc1-list-field` into `dev`; the body says what the engine now reads,
+  that nothing writes it yet, and the grammar CP2 writes; wait as item 8 says.
 
 ---
 
@@ -902,7 +911,7 @@ def test_a_go_on_path_inside_the_root_is_refused(tmp_path): ... # STAND_IN
     `evidence.VERSION = 1` (question 2).
   - `evidence.normalised_origin(url: str) -> str` (question 6's rule).
   - `evidence.project_key(root: Path) -> str` — `"origin-" + sha256(normalised origin)[:32]`, else
-    `"path-" + sha256(realpath of root)[:32]`; HS2 prepends the binding id's form [the `0.4.0` key].
+    `"path-" + sha256(realpath of root)[:32]`; HS2 prepends the binding id's form [the evidence record's key before HS2].
   - `evidence.record_path(root: Path, *, home: Path | None) -> Path | None` —
     `<home>/STATE_DIR/EVIDENCE/<key>.jsonl`; `None` without a home.
   - `evidence.append(path: Path, line: Mapping[str, object]) -> str | None` — one `json.dumps` line,
@@ -1002,7 +1011,50 @@ def test_every_reason_constant_is_documented(): ...              # each Tasks 7�
 
 ---
 
+### Wave I — Task 14 (controller and owner, not dispatched; pull request SP)
+
+#### Task 14: How a hook sees a skill invocation, on Claude Code and on Codex
+
+The spike measures both paths by which a hook could see a skill invocation — `PreToolUse` with the
+matcher `Skill`, and `UserPromptExpansion` on a `/skill` prompt — on Claude Code and on Codex, after
+defining what a skill invocation is on Codex [P-CP-23]. It writes no code; wave 10 decides what the
+core does with it. Every probe runs with `CLAUDE_CONFIG_DIR` and `CODEX_HOME` under
+`<scratchpad>/i1/`, in a scratch git repository there holding one canary skill, never in a real
+project and never with the owner's own configuration. Each model run costs money, so the controller
+lists the runs first and the owner says yes before the first one; the cheapest model each harness
+offers is used.
+
+**Files:** none in the tree but this plan's Findings.
+
+- [ ] **Step 1: The record, every cell `unmeasured`.** Write the table below into Findings under
+  "Task 14" (the heading `### Task 14 — the matcher spike`, the last section of the file). Run
+  `awk '/^### Task 14 — the matcher spike/,0' docs/plans/2026-10-18-wave-9-cp-proof.md | grep -c unmeasured`.
+  Expected: a count above zero; the task is done when the same command prints 0.
+
+  | Harness, version | Path | How invoked | Fires | Payload names the skill in | In `-p` / `exec` |
+  |---|---|---|---|---|---|
+  | Claude Code | `PreToolUse`, matcher `Skill` | the model loads the skill on its own | unmeasured | unmeasured | unmeasured |
+  | Claude Code | `PreToolUse`, matcher `Skill` | the person types `/canary` | unmeasured | unmeasured | unmeasured |
+  | Claude Code | `UserPromptExpansion` | the person types `/canary` | unmeasured | unmeasured | unmeasured |
+  | Codex | the definition of a skill invocation | its documentation at the version run | unmeasured | — | — |
+  | Codex | the hook event nearest each path above | as the definition says | unmeasured | unmeasured | unmeasured |
+
+- [ ] **Step 2: Claude Code.** With `claude --version` recorded, register a hook for each path that
+  appends its stdin payload to `<scratchpad>/i1/payloads/<event>.jsonl` and exits 0; run each row
+  once interactively (the owner at the terminal) and once with `-p`; fill the cells from the
+  payload files, quoting the field that names the skill.
+- [ ] **Step 3: Codex.** Write the definition from the Codex documentation for the version run (its
+  page and date in the cell), then probe the nearest event the same way with `codex exec` and
+  interactively.
+- [ ] **Step 4: What wave 10 inherits.** Under the table, one paragraph: which path sees every
+  invocation on each harness, which sees only one kind, and what neither sees.
+- [ ] **Step 5:** remove `<scratchpad>/i1/` with the owner's yes; run Step 1's count (Expected: 0);
+  commit on `wp/matcher-spike` — `docs(plans): record how a hook sees a skill invocation`; open the
+  pull request into `dev`, its diff this plan's Findings alone.
+
+---
+
 ## Findings
 
-Written by Tasks 1, 4 and 13, and by the controller when a wave's implementer reports (its token
+Written by Tasks 1, 4, 13 and 14, and by the controller when a wave's implementer reports (its token
 total, its fix rounds) and when the owner answers an open question.

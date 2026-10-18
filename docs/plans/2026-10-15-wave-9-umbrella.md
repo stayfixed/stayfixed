@@ -59,21 +59,27 @@ that finds one no longer holds stops and reports the mismatch.
 | Lane | Pull request | Branch | Targets | Plan | Release |
 |---|---|---|---|---|---|
 | HS | HS1 — the value floor (d4, D-2), key classes and who sets them (d12), layered preferences (d13), the owner's guard switch (d5), budgets (d5, d12), the ratchet rows (d15), one trust record and `stayfixed trust` (d11) | `wp/hs1-floor-layers-trust` | `dev` | `docs/plans/2026-10-15-wave-9-hs1-floor-layers-trust.md` | `0.4.0` |
-| HS | HS2 — scopes (d7), binding and confirmation (d8), the allowlist record (d9), pins (d10), the rendered plugin (d17), pinned rules (d19), Codex and worktrees (d20), `doctor --footprint` (d21), `attach`/`detach` (d22), where a tightening applies (d16) | `wp/hs2-delivery` | `wp/delivery` | `docs/plans/<date>-wave-9-hs2-delivery.md` (create), written after its measurements (d18) | `0.5.0` |
-| HS | HS3 — `harness` by default (d14), the composed store (d23), in-repo notes (d24), `local-only` (d25), the reviewed record (d26), the index (d27), the durable-note guard (d28), the memory doctor (d29) | `wp/hs3-memory` | `wp/delivery` | `docs/plans/<date>-wave-9-hs3-memory.md` (create) | `0.5.0` |
-| HS | HS4 — scopes in the template (d7), `setup --overlay` (d30), the overlay's identity (d31), migration through `attach` (d32), the guided `init` (d33), the scaffold rename (d21) | `wp/hs4-onboarding` | `wp/delivery` | `docs/plans/<date>-wave-9-hs4-onboarding.md` (create) | `0.5.0` |
-| CP | RC1 — the list field with quoted items, read-only (d39) | `wp/rc1-list-field` | `dev` | `docs/plans/<date>-wave-9-cp-proof.md` (create), one plan for RC1 and CP1 | `0.4.0` |
+| HS | HS2 — scopes (d7), binding and confirmation (d8), the allowlist record (d9), pins (d10), the rendered plugin (d17), pinned rules (d19), Codex and worktrees (d20), `doctor --footprint` (d21), `attach`/`detach` (d22), where a tightening applies (d16) | `wp/hs2-delivery` | `wp/delivery` | `docs/plans/<date>-wave-9-delivery.md` (create), one plan for HS2, HS3 and HS4, written after HS2's measurements (d18) | `0.5.0` |
+| HS | HS3 — `harness` by default (d14), the composed store (d23), in-repo notes (d24), `local-only` (d25), the reviewed record (d26), the index (d27), the durable-note guard (d28), the memory doctor (d29) | `wp/hs3-memory` | `wp/delivery` | the same plan | `0.5.0` |
+| HS | HS4 — scopes in the template (d7), `setup --overlay` (d30), the overlay's identity (d31), migration through `attach` (d32), the guided `init` (d33), the scaffold rename (d21) | `wp/hs4-onboarding` | `wp/delivery` | the same plan | `0.5.0` |
+| CP | RC1 — the list field with quoted items, read-only (d39) | `wp/rc1-list-field` | `dev` | `docs/plans/2026-10-18-wave-9-cp-proof.md`, one plan for RC1, CP1 and SP | `0.4.0` |
 | CP | CP1 — the report readers, the five runner adapters, `prove`, evidence records (d34, d35) | `wp/cp1-prove` | `dev` | the same plan | `0.4.0` |
-| CP | CP2 — regressions (d36) | `wp/cp2-regressions` | `dev` | `docs/plans/<date>-wave-9-cp-regressions.md` (create), one plan for CP2 and CP3 | `0.6.0` |
+| CP | CP2 — regressions (d36) | `wp/cp2-regressions` | `dev` | `docs/plans/<date>-wave-9-release-0-6.md` (create), one plan for CP2, CP3, PF1 and PF2, written after `wp/delivery` has merged into `dev` | `0.6.0` |
 | CP | CP3 — the `adopt` skill and BR-010 (d37); the `0.6.0` alias removals | `wp/cp3-adopt` | `dev` | the same plan | `0.6.0` |
-| PF | PF1 — profiles as a layered list with detection (d38) | `wp/pf1-profiles` | `dev` | `docs/plans/<date>-wave-9-profiles.md` (create), one plan for PF1 and PF2 | `0.6.0` |
+| PF | PF1 — profiles as a layered list with detection (d38) | `wp/pf1-profiles` | `dev` | the same plan as CP2's | `0.6.0` |
 | PF | PF2 — profile context delivered (d38) | `wp/pf2-profile-context` | `dev` | the same plan | `0.6.0` |
 | BM | benchmark part 1, then the final run (d40) | `wp/bench` | `dev` | the wave-7 side-lanes plan's Lane 2, rewritten in place against the tree | any window |
-| SP | the matcher measurement (d41) | `wp/matcher-spike` | `dev` | `docs/plans/<date>-wave-9-matcher-spike.md` (create) | any window |
+| SP | the matcher measurement (d41) | `wp/matcher-spike` | `dev` | the RC1 and CP1 plan, Wave I | any window |
 
 A lane plan is written in its lane's session from §15.8, this plan and the section "Lane-plan
-items" below, and it cites the decisions by number. The HS2 plan is written only after its four
-measurements (d18) are recorded, because two of them choose a mechanism.
+items" below, and it cites the decisions by number. The delivery plan is written only after HS2's
+four measurements (d18) are recorded, because two of them choose a mechanism.
+
+**Amended 2026-10-18 by the owner:** the remaining lanes share three plans instead of six — RC1, CP1
+and SP in one; HS2, HS3 and HS4 in one, since they reach `dev` together through `wp/delivery`; CP2,
+CP3, PF1 and PF2 in one, since they merge in one window and share `src/stayfixed/config/`,
+`src/stayfixed/doctor/` and `src/stayfixed/assess/rule.py`. A plan still dispatches by waves and
+opens one pull request per row; the pull requests, branches, targets and windows are unchanged.
 
 ## Launch graph
 
@@ -146,6 +152,11 @@ cut ships. Each window opens when the previous release is published.
 | R3 | CP2, CP3, PF1, PF2 into `dev`, in the graph's order | — | Task 3 cuts `0.6.0`, then Tasks 4–5 |
 
 BM and SP merge in any window: neither touches a path `scripts/plugin_tree.py` puts in the plugin.
+
+**Amended 2026-10-18 by the owner:** there are no users besides the owner, so a window no longer
+holds a merge and the table's **Holds** column no longer applies: each pull request merges into its
+target when its checks are green and the launch graph allows. The three releases stay as the owner's
+checkpoints, each cut when its lanes are on `dev`.
 `wp/delivery` is cut from `dev` when R2 opens; it carries no branch protection of its own, so a pull
 request merges into it only when `gh pr checks` has read every job green, and `dev` comes into it by
 `git merge origin/dev`, never a rebase, so no reviewed head is rewritten.
