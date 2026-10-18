@@ -2287,6 +2287,7 @@ after = """        if False:
 reddens = [
   "tests/prove/test_pytest.py::test_every_other_option_is_free[--_--junitxml=x]",
   "tests/prove/test_pytest.py::test_every_other_option_is_free[--_--setup-plan]",
+  "tests/prove/test_pytest.py::test_every_other_option_is_free[--_@args.txt]",
 ]
 
 [[mutation]]
@@ -2408,13 +2409,6 @@ reddens = [
   "tests/prove/test_pytest.py::test_each_report_steering_option_is_refused[@args.txt]",
   "tests/prove/test_pytest.py::test_each_report_steering_option_is_refused[-k_@ci/selection]",
 ]
-
-[[mutation]]
-name = "the pytest adapter refuses an @file word after --"
-file = "src/stayfixed/profiles/python/adapters.py"
-before = "        if word == _DEBUGS_EACH_TEST or word.startswith(_FROM_FILE):"
-after = """        if word == _DEBUGS_EACH_TEST or _FROM_FILE in "".join(args):"""
-reddens = ["tests/prove/test_pytest.py::test_every_other_option_is_free[--_@args.txt]"]
 
 # A configuration file the command names is named wherever it lies, outside the project too.
 [[mutation]]
