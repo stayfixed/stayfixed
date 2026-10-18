@@ -16,13 +16,16 @@ import os
 import re
 import subprocess
 import sys
+import types
 from pathlib import Path
+from typing import cast
 
 import pytest
 
 import stayfixed
 from stayfixed import gitenv, processes
-from stayfixed.assess.commands import NO_TREE_CONFIG, ONLY_UNKNOWN
+from stayfixed.assess.commands import NO_TREE_CONFIG, ONLY_UNKNOWN, _verdict_words
+from stayfixed.assess.report import GateRun
 from stayfixed.gitenv import GitUnavailable
 from stayfixed.prove import evidence
 from stayfixed.prove.evidence import (
@@ -596,3 +599,44 @@ def test_a_fifo_at_the_record_is_a_warning_and_never_a_wait(tmp_path: Path) -> N
     )
     assert done.stdout.startswith("stayfixed: the evidence record "), (done.stdout, done.stderr)
     assert "was not written" in done.stdout
+
+
+def _gate_run(
+    *, judged: bool, refused: bool, results: list[tuple[str, bool, bool, int]], enforcing: set[str]
+) -> GateRun:
+    """A gate run as `_verdict_words` reads one: each result a name, whether it ran, whether it
+    answered, and how many findings it has."""
+    verdict = types.SimpleNamespace(refused=refused, enforcing=frozenset(enforcing))
+    ran = [
+        types.SimpleNamespace(name=name, ran=r, answered=a, findings=["x"] * n)
+        for name, r, a, n in results
+    ]
+    return cast("GateRun", types.SimpleNamespace(judged=judged, verdict=verdict, results=ran))
+
+
+def test_each_gate_word_the_record_can_carry() -> None:
+    # Every word of a gate record's `gates`, each from the state that says it. Mutations
+    # (declared): each word spelled otherwise -> its case differs.
+    run = _gate_run(
+        judged=True,
+        refused=True,
+        results=[
+            ("docs", True, True, 0),
+            ("bugs", True, True, 2),
+            ("trail", True, True, 1),
+            ("plan", True, False, 0),
+            ("commit", False, False, 0),
+        ],
+        enforcing={"bugs"},
+    )
+    assert _verdict_words(run, ["tests"]) == {
+        "config": "refused",
+        "docs": "passes",
+        "bugs": "fails",
+        "trail": "would fail",
+        "plan": "could not run",
+        "commit": "not run",
+        "tests": "waiting",
+    }
+    unjudged = _gate_run(judged=False, refused=False, results=[], enforcing=set())
+    assert _verdict_words(unjudged, []) == {}

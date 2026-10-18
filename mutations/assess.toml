@@ -1834,3 +1834,32 @@ file = "src/stayfixed/assess/commands.py"
 before = '            words[result.name] = "fails" if enforcing else "would fail"'
 after = '            words[result.name] = "fails"'
 reddens = ["tests/prove/test_evidence.py::test_gate_appends_one_line_per_run[neither]"]
+
+# Each word a gate record's `gates` can carry, from the state that says it.
+[[mutation]]
+name = "a gate record says a refused configuration passes"
+file = "src/stayfixed/assess/commands.py"
+before = '        words["config"] = "refused" if gate_run.verdict.refused else "passes"'
+after = '        words["config"] = "passes"'
+reddens = ["tests/prove/test_evidence.py::test_each_gate_word_the_record_can_carry"]
+
+[[mutation]]
+name = "a gate record words a gate not run as one that could not"
+file = "src/stayfixed/assess/commands.py"
+before = '            words[result.name] = "not run"'
+after = '            words[result.name] = "could not run"'
+reddens = ["tests/prove/test_evidence.py::test_each_gate_word_the_record_can_carry"]
+
+[[mutation]]
+name = "a gate record words a gate that could not run as one that passes"
+file = "src/stayfixed/assess/commands.py"
+before = '            words[result.name] = "could not run"'
+after = '            words[result.name] = "passes"'
+reddens = ["tests/prove/test_evidence.py::test_each_gate_word_the_record_can_carry"]
+
+[[mutation]]
+name = "a gate record leaves a waiting gate out"
+file = "src/stayfixed/assess/commands.py"
+before = '        words[name] = "waiting"'
+after = "        pass"
+reddens = ["tests/prove/test_evidence.py::test_each_gate_word_the_record_can_carry"]
