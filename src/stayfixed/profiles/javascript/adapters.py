@@ -188,9 +188,10 @@ _VITEST_WATCHING = frozenset({"watch", "dev"})
 _VITEST_NO_TEST_RUN = frozenset({"bench", "list", "init", "doctor"})
 _VITEST_SUBCOMMANDS = frozenset({_RUN, _VITEST_RELATED, *_VITEST_WATCHING, *_VITEST_NO_TEST_RUN})
 
-_UNRESOLVED = (
-    "no node_modules/{package} from here up to the project's top-level, and no {bin} on PATH "
-    "linked into one; `prove --junit` counts a report you name"
+# Short enough for the receipt's line to carry whole (`printed.CLIPPED_CHARS`).
+UNRESOLVED = (
+    "no node_modules/{package} up to the top-level, nor a {bin} on PATH linked into one; "
+    "`prove --junit` counts a report"
 )
 _NO_NODE = "no node on PATH"
 _NO_LAUNCHER = "no {launcher} on PATH"
@@ -935,7 +936,7 @@ class _PackageRunner:
         if script is None:
             entry = entry_point(runner.name, runner.packages, cwd, root, path)
             if entry is None:
-                detail = _UNRESOLVED.format(package=runner.packages[0], bin=runner.name)
+                detail = UNRESOLVED.format(package=runner.packages[0], bin=runner.name)
                 return Unresolved(ENTRY_NOT_FOUND, detail)
         else:
             entry = package_entry(Path(os.path.realpath(cwd / script)), runner.name)

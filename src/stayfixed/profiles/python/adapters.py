@@ -117,6 +117,8 @@ _RUN_TEXT = "-c"
 _FAMILY = ("-o", "junit_family=xunit2")
 _SEPARATOR = "--"
 _INTERPRETERS = ("python3", "python")
+# What an unresolved plan's detail says was looked for.
+_NOT_ON_PATH = "no {program} on PATH"
 # What the program a `#!` line names is called, where it is an interpreter.
 _INTERPRETER_PREFIX = "python"
 # Under a launcher, the interpreter it chooses.
@@ -314,23 +316,23 @@ def _with_report(args: Sequence[str], report: Path) -> tuple[str, ...]:
 
 def _argv(
     launch: Sequence[str], run: PytestCommand, cwd: Path, path: str, module: tuple[str, ...]
-) -> tuple[Path, tuple[str, ...]] | None:
-    """The program and the argv that run `module` (`… -c <bootstrap> …`), or `None` where the
-    program is not where the command would find it."""
+) -> tuple[Path, tuple[str, ...]] | str:
+    """The program and the argv that run `module` (`… -c <bootstrap> …`), or, where the program
+    is not where the command would find it, what was looked for, for the receipt."""
     front = tuple(launch) or run.launcher
     if front:
         launcher = _found(front[0], cwd, path)
         if launcher is None:
-            return None
+            return _NOT_ON_PATH.format(program=front[0])
         words = (*launch[1:], *run.launcher) if launch else run.launcher[1:]
         chosen = run.program if run.module else _LAUNCHED_INTERPRETER
         return launcher, (str(launcher), *words, chosen, *module)
     found = _found(run.program, cwd, path)
     if found is None:
-        return None
+        return _NOT_ON_PATH.format(program=run.program)
     python = found if run.module else _interpreter(found, cwd, path)
     if python is None:
-        return None
+        return _NOT_ON_PATH.format(program=" or ".join(_INTERPRETERS))
     return python, (str(python), *module)
 
 
@@ -368,8 +370,8 @@ class PytestAdapter:
         bootstrap = MODULE_BOOTSTRAP if run.module else SCRIPT_BOOTSTRAP
         module = (*run.options, _RUN_TEXT, bootstrap, *_with_report(run.args, report))
         resolved = _argv(launch, run, cwd, environ.get("PATH", os.defpath), module)
-        if resolved is None:
-            return Unresolved(ENTRY_NOT_FOUND)
+        if isinstance(resolved, str):
+            return Unresolved(ENTRY_NOT_FOUND, resolved)
         program, argv = resolved
         return Plan(
             argv=argv,

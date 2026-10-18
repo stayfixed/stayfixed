@@ -2700,7 +2700,7 @@ reddens = ["tests/prove/test_javascript.py::test_the_nearest_package_wins_and_je
 [[mutation]]
 name = "an unresolved entry point names no way on"
 file = "src/stayfixed/profiles/javascript/adapters.py"
-before = """                detail = _UNRESOLVED.format(package=runner.packages[0], bin=runner.name)
+before = """                detail = UNRESOLVED.format(package=runner.packages[0], bin=runner.name)
                 return Unresolved(ENTRY_NOT_FOUND, detail)"""
 after = """                return Unresolved(ENTRY_NOT_FOUND)"""
 reddens = ["tests/prove/test_javascript.py::test_an_unresolvable_entry_installs_nothing"]
@@ -3501,3 +3501,20 @@ reddens = [
   "tests/prove/test_javascript.py::test_an_esm_preload_s_path_holding_url_characters_is_refused['./x.mjs?v=1']",
   "tests/prove/test_javascript.py::test_an_esm_preload_s_path_holding_url_characters_is_refused['./space name.mjs']",
 ]
+
+# An unresolved pytest plan says what was looked for, and jest's or vitest's fits the line whole.
+[[mutation]]
+name = "the pytest adapter's unresolved entry names nothing"
+file = "src/stayfixed/profiles/python/adapters.py"
+before = "            return Unresolved(ENTRY_NOT_FOUND, resolved)"
+after = "            return Unresolved(ENTRY_NOT_FOUND)"
+reddens = ["tests/prove/test_pytest.py::test_an_entry_point_not_on_path_does_not_resolve[command0-launch0-pytest]"]
+
+[[mutation]]
+name = "the jest and vitest adapters' unresolved detail passes the line's clip"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = '''    "`prove --junit` counts a report"
+)'''
+after = '''    "`prove --junit` counts a report you name, from the directory the command runs in"
+)'''
+reddens = ["tests/prove/test_javascript.py::test_an_unresolved_entry_s_detail_is_on_the_receipt"]

@@ -36,6 +36,7 @@ from stayfixed.profiles.javascript.adapters import (
     PRELOAD_FILE_URL,
     PRELOAD_PACKAGE,
     PRELOAD_PATH,
+    UNRESOLVED,
     VITEST_DISCOVERY,
     VITEST_REPORT,
     JestAdapter,
@@ -845,9 +846,13 @@ def test_an_unresolved_entry_s_detail_is_on_the_receipt(tmp_path: Path) -> None:
     got = prove(["npx", "jest"], cwd=project, environ={"PATH": str(node.parent)}, timeout=60)
     assert (got.verdict, got.reason, got.runner) == (NOT_PROVEN, ENTRY_NOT_FOUND, "jest")
     assert got.detail == (
-        "no node_modules/jest from here up to the project's top-level, and no jest on PATH "
-        "linked into one; `prove --junit` counts a report you name"
+        "no node_modules/jest up to the top-level, nor a jest on PATH linked into one; "
+        "`prove --junit` counts a report"
     )
+    # The receipt's line carries it whole. Mutation (declared): the detail lengthened past the
+    # clip -> vitest's is cut.
+    for name in ("jest", "vitest"):
+        assert len(UNRESOLVED.format(package=name, bin=name)) <= CLIPPED_CHARS
     assert "`prove --junit`" in line(got)
 
 

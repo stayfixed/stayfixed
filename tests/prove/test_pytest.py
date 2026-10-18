@@ -319,7 +319,9 @@ def test_a_path_entry_that_cannot_be_asked_about_is_passed_over(
 def test_a_script_naming_no_interpreter_with_none_on_path_does_not_resolve(tmp_path: Path) -> None:
     shims = tmp_path / "shims"
     executable(shims / "pytest", "#!/bin/sh\nexec true\n")
-    assert planned(["pytest"], tmp_path, path=str(shims)) == Unresolved(ENTRY_NOT_FOUND)
+    assert planned(["pytest"], tmp_path, path=str(shims)) == Unresolved(
+        ENTRY_NOT_FOUND, "no python3 or python on PATH"
+    )
 
 
 def test_a_command_it_does_not_recognise_has_no_plan(tmp_path: Path) -> None:
@@ -404,19 +406,20 @@ def test_a_launcher_is_kept_in_front_and_chooses_the_interpreter(
 
 
 @pytest.mark.parametrize(
-    ("command", "launch"),
+    ("command", "launch", "missing"),
     [
-        (["pytest"], ()),
-        (["python", "-m", "pytest"], ()),
-        (["poetry", "run", "pytest"], ()),
-        (["pytest"], ("uv", "run")),
+        (["pytest"], (), "pytest"),
+        (["python", "-m", "pytest"], (), "python"),
+        (["poetry", "run", "pytest"], (), "poetry"),
+        (["pytest"], ("uv", "run"), "uv"),
     ],
 )
 def test_an_entry_point_not_on_path_does_not_resolve(
-    tmp_path: Path, command: list[str], launch: tuple[str, ...]
+    tmp_path: Path, command: list[str], launch: tuple[str, ...], missing: str
 ) -> None:
+    # The detail says what was looked for. Mutation (declared): the detail left off -> empty.
     assert planned(command, tmp_path, path=str(tmp_path / "empty"), launch=launch) == Unresolved(
-        ENTRY_NOT_FOUND
+        ENTRY_NOT_FOUND, f"no {missing} on PATH"
     )
 
 
