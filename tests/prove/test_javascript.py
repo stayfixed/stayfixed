@@ -1230,6 +1230,8 @@ def ends(option: str) -> str:
     return f"never ends {NEVER_ENDS_DETAIL.format(option=option)}"
 
 
+# A file outside the project is named by its real path, as the receipt names every file: on macOS
+# `/etc` is a link to `/private/etc`, so an expected `/etc/...` is read through it too.
 JEST_FORMS = [
     # A short option in a cluster takes the rest of the word after a `=`, a character that is not
     # a letter, digit or `_`, or a number; only the last letter takes the next word.
@@ -1237,8 +1239,8 @@ JEST_FORMS = [
     (("-c=a.js",), "named a.js"),
     (("-ic", "a.js"), "named a.js"),
     (("-ic=a.js",), "named a.js"),
-    (("-c/etc/jest.config.js",), "named /etc/jest.config.js"),
-    (("-ic/etc/jest.config.js",), "named /etc/jest.config.js"),
+    (("-c/etc/jest.config.js",), f"named {os.path.realpath('/etc/jest.config.js')}"),
+    (("-ic/etc/jest.config.js",), f"named {os.path.realpath('/etc/jest.config.js')}"),
     (("-ic.a.js",), "named .a.js"),
     # `-c` given the empty text, or an object, names no file.
     (("-ca.js",), "free"),
@@ -1300,7 +1302,7 @@ def test_jest_reads_each_form_as_yargs_does(
 VITEST_FORMS = [
     (("-c", "a.js"), "named a.js"),
     (("-c=a.js",), "named a.js"),
-    (("-c", "/etc/vitest.config.js"), "named /etc/vitest.config.js"),
+    (("-c", "/etc/vitest.config.js"), f"named {os.path.realpath('/etc/vitest.config.js')}"),
     # Every character of a cluster is an option of its own, the last taking the value.
     (("-ca.js",), "free"),
     (("-c/abs/a.js",), "free"),

@@ -277,6 +277,13 @@ def test_the_block_a_contributor_copies_is_the_one_ci_runs() -> None:
     ci = "\n".join(bodies)
     floor = _COVERAGE_FLOOR.search(ci)
     assert floor is not None, "ci.yml no longer runs pytest with a coverage floor"
+    # The suite across workers is held to the very line that carries the floor: another job's
+    # `pytest -n auto` (the runners' leg) would satisfy a search of every script at once.
+    # Mutation (declared): `mutations/`'s "CI runs the suite one test at a time again".
+    start = ci.rfind("\n", 0, floor.start()) + 1
+    end = ci.find("\n", floor.end())
+    floor_line = ci[start : end if end != -1 else len(ci)]
+    assert "pytest -n auto" in floor_line, floor_line
 
     blocks = {}
     match = _SHORT_VERSION.search(CONTRIBUTING.read_text(encoding="utf-8"))
@@ -293,8 +300,7 @@ def test_the_block_a_contributor_copies_is_the_one_ci_runs() -> None:
     blocks["RELEASING.md"] = match.group(1)
 
     # Every gate the contributor is asked to run locally, in the spelling CI runs it in.
-    # `pytest -n auto` among them, the suite across workers. Mutation: drop `-n auto` from
-    # `ci.yml`'s `pytest` line -> reddens naming it.
+    # `pytest -n auto` among them, the suite across workers, held to the floor's line above.
     required = (
         "pytest -n auto",
         f"--cov-fail-under={floor.group(1)}",
