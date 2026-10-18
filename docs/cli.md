@@ -913,10 +913,10 @@ is `-c=false`, and a `-json=` of a false value, each read as the go command read
 `=`, with one dash or two, before the packages or after them, a word that is a flag's value never as
 a flag, a build flag spelled `-test.` (`-test.p`, `-test.tags`), which the go command does not know
 and hands to the test binary, as taking no value, and nothing past a bare `-args`, `--args` or `--`
-(`-args=x` ends nothing), nor past a word that is no flag once the package list is behind it, unless
-the word before it is a flag the go command does not know given no value, whose value it then is
-(`./pkg -v foo -exec=x` hands `-exec=x` to the test binary; `./pkg -update foo -exec=x` does not).
-Every other flag is free, `-ldflags`, `-gcflags` and `-compiler` among them, as are `CC`, `CXX` and the `CGO_*`
+(`-args=x` ends nothing). A refused flag after a word past the package list is refused too, though
+the go command hands it to the test binary there (`./pkg -v foo -exec=x`): where it stops reading
+its own flags depends on which flags each Go version knows, so the reading stops only at `-args`,
+the way to hand the test binary a flag. Every other flag is free, `-ldflags`, `-gcflags` and `-compiler` among them, as are `CC`, `CXX` and the `CGO_*`
 variables: they shape how the code under test is built, which the bound concedes. Its forging set is
 `GOFLAGS`, `GOENV`, `GOTOOLCHAIN`, `GOROOT`, which names the standard library the run builds
 against, and `GOOS` and `GOARCH`, under which a target this machine cannot run has the go command

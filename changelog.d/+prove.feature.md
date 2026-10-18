@@ -44,8 +44,7 @@ The `go test` adapter runs the `go` on `PATH` as `go test -json`, counting only 
 standard output, with `GOENV=off`, `GOFLAGS=` and `GOTOOLCHAIN=local` set and an inherited `GOROOT`,
 `GOOS` or `GOARCH` removed; it refuses `-exec`, `-toolexec`, `-overlay`, `-o`, `-c` and a false
 `-json=`, read as the go command reads them (a build flag spelled `-test.` taking no value, and
-nothing past a bare `-args`, `--args` or `--`, nor past a word that is no flag once the package
-list is behind it), and an assigned `GOFLAGS`, `GOENV`, `GOTOOLCHAIN`,
+nothing past a bare `-args`, `--args` or `--`), and an assigned `GOFLAGS`, `GOENV`, `GOTOOLCHAIN`,
 `GOROOT`, `GOOS` or `GOARCH`.
 `stayfixed prove --junit PATH -- COMMAND` counts the JUnit report of a runner no adapter knows,
 read from the directory the command runs in, only where the run created or rewrote it as a regular

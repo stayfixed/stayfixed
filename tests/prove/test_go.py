@@ -282,6 +282,14 @@ def test_the_file_modfile_names_is_read_from_where_go_reads_it(
         # (measured on Go 1.27.2: `./pkg -test.p -exec=X` runs X).
         (("./...", "-test.p", "-exec=x"), "-exec"),
         (("-test.tags", "x", "-toolexec=y"), "-toolexec"),
+        # Past a word after the package list the go command reads no flag of its own (measured
+        # on Go 1.27.2: `./three/ -v foo -exec=X` runs no X), but where it stops depends on
+        # which flags each Go version knows (`-artifacts` is Go 1.27.2's and not Go 1.24.7's),
+        # and a reader that stopped there would let a version that reads on run the flag. So the
+        # reading fails closed: a contrived over-refusal, accepted over a version-dependent
+        # bypass; `-args` is the way to hand the test binary a flag.
+        (("./...", "-v", "foo", "-exec=x"), "-exec"),
+        (("./...", "-artifacts", "foo", "-exec=x"), "-exec"),
     ],
     ids=lambda value: "_".join(value) if isinstance(value, tuple) else value,
 )
@@ -329,58 +337,6 @@ def test_every_other_flag_is_free(tmp_path: Path, flags: tuple[str, ...]) -> Non
     # flag; `-args` read past; `-c=false` refused as `-c` is -> each one's case is refused.
     go = executable(tmp_path / "bin" / "go")
     assert isinstance(planned(["go", "test", *flags], tmp_path, path=str(go.parent)), Plan)
-
-
-# Where a word that is no flag follows the package list (after a flag of the go command's, or a
-# flag it does not know given its value with `=`), the go command reads no flag of its own from it
-# on: that word and every one after it are the test binary's (`testFlags`, measured on Go 1.27.2 and
-# 1.24.7: `./three/ -v foo -exec=X` runs no X). A flag it does not know given no value makes the
-# next word that value, and the scan goes on (`-update foo -exec=X` runs X); a word in the package
-# list is another package (`./a ./b -exec=X` runs X); and `-artifacts` is a flag Go 1.27.2 knows and
-# Go 1.24.7 does not, so it is read as one it does not know.
-PAST_THE_PACKAGES = [
-    ("./...", "-v", "foo", "-exec=x"),
-    ("./...", "-v=true", "foo", "-exec=x"),
-    ("./...", "-run", "X", "foo", "-exec=x"),
-    ("./...", "-run=X", "foo", "-toolexec=x"),
-    ("./...", "-short", "foo", "-c"),
-    ("./...", "-test.v", "foo", "-o", "x"),
-    ("./...", "-update=1", "foo", "-exec=x"),
-    ("./...", "-update", "foo", "bar", "-exec=x"),
-    ("./a", "-v", "./b", "-exec=x"),
-    ("./...", "-v", "-", "-exec=x"),
-    ("./...", "-cover", "foo", "-json=false"),
-]
-STILL_GO_S = [
-    (("./...", "-update", "foo", "-exec=x"), "-exec"),
-    (("./a", "./b", "-exec=x"), "-exec"),
-    (("./...", "-artifacts", "foo", "-exec=x"), "-exec"),
-    (("./...", "-", "-exec=x"), "-exec"),
-    (("-update", "./...", "-exec=x"), "-exec"),
-    (("foo", "-exec=x"), "-exec"),
-    (("./...", "-v", "-exec=x"), "-exec"),
-]
-
-
-@pytest.mark.parametrize("args", PAST_THE_PACKAGES, ids="_".join)
-def test_a_word_past_the_package_list_ends_go_s_flags(
-    tmp_path: Path, args: tuple[str, ...]
-) -> None:
-    # Mutation (declared): a word past the package list read as no end of go's flags -> each case
-    # is refused.
-    go = executable(tmp_path / "bin" / "go")
-    assert isinstance(planned(["go", "test", *args], tmp_path, path=str(go.parent)), Plan)
-
-
-@pytest.mark.parametrize(
-    ("args", "named"), STILL_GO_S, ids=lambda v: "_".join(v) if isinstance(v, tuple) else v
-)
-def test_a_word_go_reads_as_a_package_or_a_value_ends_nothing(
-    tmp_path: Path, args: tuple[str, ...], named: str
-) -> None:
-    # Mutations (declared): a word after a flag go does not know read as the end of its flags; a
-    # word in the package list read as one; a flag go 1.24.7 does not know read as one it does.
-    assert planned(["go", "test", *args], tmp_path) == Refused(REFUSED_OPTION, named)
 
 
 # The go command's own flags that take a value (Go 1.27.2, `go help build` and `go help testflag`
