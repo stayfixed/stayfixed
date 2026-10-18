@@ -353,8 +353,9 @@ def test_new_beside_an_entry_with_a_regression_writes_what_it_writes_beside_none
 ) -> None:
     # The entry, the output and the index `bugs new` writes are `test_literals.py`'s literals
     # whether or not a sibling carries a `regression`: the index has no column for one. A run
-    # across midnight is run once more, as the literals' own runs are. Mutation (oracle): `mutations/`'s "the bug
-    # ledger declares no list" -> the sibling is refused and nothing is filed.
+    # across midnight is run once more, as the literals' own runs are. Mutation (oracle):
+    # `mutations/`'s "the bug ledger declares no list" -> the sibling is refused and nothing is
+    # filed.
     for attempt in ("first", "again"):
         today = date.today().isoformat()
         root = ledger_copy(tmp_path / attempt)
