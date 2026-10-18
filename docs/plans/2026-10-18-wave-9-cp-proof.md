@@ -1345,7 +1345,7 @@ elsewhere, and a literal the task did not list, `renumber.swept.md`. Two fix rou
 paths, the adversary-and-anchor sentence beside the refusals, a narrowed PyYAML record. Round 2, a
 fresh agent, about 79k: the record states only the PyYAML readings measured.
 
-**Task 4, Step 1.** Run on `2d5b04dd`, as uid 0 in a cloud sandbox, Python 3.13.16, which is also
+**Task 4, Step 1.** Run on `2d5b04d`, as uid 0 in a cloud sandbox, Python 3.13.16, which is also
 CI's newest leg:
 
 - `uv run pytest -n auto --cov --cov-fail-under=92`: 9 failed, 6780 passed, 107 skipped; coverage 97.21%, over the
@@ -1356,7 +1356,7 @@ CI's newest leg:
 - `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy`, and
   `uv run python scripts/release.py check`: all clean ("All checks passed!", 417 files formatted, 416 source files
   with no issues, "one version everywhere: 0.3.1").
-- `uv run python scripts/mutation_oracle.py` on `198f84db`, the head before the final review:
+- `uv run python scripts/mutation_oracle.py` on `198f84d`, the head before the final review:
   2807 of 2880 caught. The 73 survivors are branches for a path that cannot be read or written,
   whose tests skip or fail under uid 0, plus one `tests/scripts/test_plugin_tree.py` entry this
   pull request does not touch. Every list, literal and entry mutation was caught. The final fix
@@ -1366,7 +1366,7 @@ CI's newest leg:
   `stayfixed.toml`: "OK: linted 1 plan(s)", this plan. A shallow clone answers `base-unresolvable` until
   `git fetch --depth=1000 origin dev`.
 
-**Task 4, Step 2.** Four read-only seats on `198f84db`, all on Opus: correctness, architecture,
+**Task 4, Step 2.** Four read-only seats on `198f84d`, all on Opus: correctness, architecture,
 security and lifecycle. None found anything Critical. Every seat answered "ready after fixes":
 
 - Correctness: a CRLF or lone-CR entry passed `bugs check` while `renumber` rewrote its
