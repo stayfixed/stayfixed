@@ -151,7 +151,11 @@ def test_a_command_that_runs_no_pytest_is_not_recognised(command: list[str]) -> 
 
 def test_the_adapters_this_stack_ships() -> None:
     assert [adapter.name for adapter in ADAPTERS] == [NAME] == ["pytest"]
-    assert PytestAdapter().forging == FORGING == frozenset({"PYTEST_ADDOPTS", "PYTEST_PLUGINS"})
+    assert (
+        PytestAdapter().forging
+        == FORGING
+        == frozenset({"PYTEST_ADDOPTS", "PYTEST_PLUGINS", "PYTHONOPTIMIZE"})
+    )
 
 
 # --- How a run is planned -------------------------------------------------------------------
@@ -186,7 +190,7 @@ def test_the_plan_runs_the_script_s_interpreter_safe_path_first_with_a_report_of
         source=ReportSource.FILE,
         report=report,
         set_env={},
-        scrub=frozenset({"PYTEST_ADDOPTS", "PYTEST_PLUGINS"}),
+        scrub=frozenset({"PYTEST_ADDOPTS", "PYTEST_PLUGINS", "PYTHONOPTIMIZE"}),
         discovery=(
             "conftest.py",
             "**/conftest.py",
@@ -449,6 +453,47 @@ def test_each_report_steering_option_is_refused(
     assert planned(["pytest", *argv], tmp_path) == Refused(REFUSED_OPTION, named)
 
 
+# The interpreter's own options that turn `assert` off: a failing test then passes, and the run
+# exits 0 with a green report.
+OPTIMIZING = [
+    (("python", "-O", "-m", "pytest"), "-O"),
+    (("python3", "-OO", "-m", "pytest", "-q"), "-OO"),
+    (("python", "-bO", "-mpytest"), "-bO"),
+    (("python", "-W", "error", "-BO", "-m", "pytest"), "-BO"),
+    (("poetry", "run", "python", "-O", "-m", "pytest"), "-O"),
+]
+
+
+@pytest.mark.parametrize(
+    ("command", "named"), OPTIMIZING, ids=["_".join(command) for command, _ in OPTIMIZING]
+)
+def test_an_interpreter_option_that_turns_asserts_off_is_refused(
+    tmp_path: Path, command: tuple[str, ...], named: str
+) -> None:
+    # Refused before anything is resolved. Mutation (declared): the interpreter's options not
+    # read -> each is planned, and `python -O -m pytest` reports a failing test as passed.
+    assert planned(command, tmp_path) == Refused(REFUSED_OPTION, named)
+
+
+@pytest.mark.parametrize(
+    "options",
+    [("-W", "-O"), ("-WO",), ("-X", "O"), ("-XO",), ("-B", "-W", "ignore")],
+    ids=["W_-O", "-WO", "X_O", "-XO", "B_W_ignore"],
+)
+def test_a_warning_filter_or_x_option_is_no_optimization(
+    tmp_path: Path, options: tuple[str, ...]
+) -> None:
+    # `-W` and `-X` take a value, fused or as the next word, and an `O` in it is no flag.
+    bin_ = environment(tmp_path / "venv")
+    got = planned(["python", *options, "-m", "pytest"], tmp_path, path=str(bin_))
+    assert isinstance(got, Plan)
+
+
+def test_launched_under_uv_an_optimizing_option_is_refused(tmp_path: Path) -> None:
+    got = planned(["python", "-O", "-m", "pytest"], tmp_path, launch=("uv", "run"))
+    assert got == Refused(REFUSED_OPTION, "-O")
+
+
 FREE = [
     ("-o", "cache_dir=x"),
     ("-o", "junitfamily=x"),
@@ -552,6 +597,8 @@ def test_uv_run_env_file_is_refused(tmp_path: Path) -> None:
     [
         (["PYTEST_ADDOPTS=--junitxml=x", "pytest"], "PYTEST_ADDOPTS"),
         (["env", "PYTEST_PLUGINS=forged", "python", "-m", "pytest"], "PYTEST_PLUGINS"),
+        (["PYTHONOPTIMIZE=1", "pytest"], "PYTHONOPTIMIZE"),
+        (["uv", "run", "PYTHONOPTIMIZE=2", "python", "-m", "pytest"], "PYTHONOPTIMIZE"),
         # The core's own, where the command runs `uv`.
         (["UV_ENV_FILE=e.env", "uv", "run", "pytest"], "UV_ENV_FILE"),
     ],
@@ -615,6 +662,28 @@ def test_a_genuine_passing_run_is_proved(tmp_path: Path) -> None:
 def test_python_m_pytest_is_proved(tmp_path: Path) -> None:
     got = real(scratch_project(tmp_path / "p", passing=1, failing=1), "python", "-m", "pytest")
     assert (got.verdict, got.reason, got.counts) == (FAILED, FAILING, Counts(1, 1, 0))
+
+
+@needs_runner("pytest")
+def test_a_failing_assert_is_not_turned_off(tmp_path: Path) -> None:
+    # Under `-O` or `PYTHONOPTIMIZE` the interpreter compiles out every `assert` pytest does not
+    # rewrite, a helper module's among them: the failing test is reported passed and the run exits
+    # 0. The option and the assignment are refused; an inherited `PYTHONOPTIMIZE` is removed from
+    # the run's environment. Mutation (declared): `PYTHONOPTIMIZE` left out of the forging set ->
+    # the inherited one turns the assert off, `proved`.
+    project = scratch_project(
+        tmp_path / "p",
+        files={
+            "checks.py": "def check(a, b):\n    assert a == b\n",
+            "test_checks.py": "from checks import check\n\ndef test_check():\n    check(1, 2)\n",
+        },
+    )
+    got = real(project, "python", "-O", "-m", "pytest", "-q")
+    assert (got.verdict, got.reason, got.detail) == (REFUSED, REFUSED_OPTION, "-O")
+    got = real(project, "PYTHONOPTIMIZE=1", "pytest", "-q")
+    assert (got.verdict, got.reason, got.detail) == (REFUSED, ASSIGNED_FORGING, "PYTHONOPTIMIZE")
+    got = real(project, "pytest", "-q", PYTHONOPTIMIZE="1")
+    assert (got.verdict, got.reason, got.counts) == (FAILED, FAILING, Counts(0, 1, 0))
 
 
 @needs_runner("pytest")

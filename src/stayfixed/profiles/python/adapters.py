@@ -31,9 +31,14 @@ choice. The receipt carries the realpath of what ran.
   run over a failing test to draw it, and every other option is free. `--pdb` is among them: the
   run's standard input is `/dev/null` (`stayfixed.prove.run`), so its debugger reads the end and
   quits, pytest exiting 2 with the failure in its report.
+- `REFUSED_OPTION` for the interpreter's own options too: an agent typing `-O` (`-OO`, or in a
+  cluster such as `-bO`) before `-m pytest`, which compiles out every `assert` pytest does not
+  rewrite (a helper module's, or every one under `--assert=plain`), so a failing test reports
+  passed and the run exits 0. The anchor is the command's own words; a `-W` or `-X` value is no
+  flag, and every other interpreter option is free.
 - `FORGING`, assigned in the command (refused) or inherited (scrubbed): the same agent steering
-  the report through the two variables pytest reads its options and plugins from. `PYTHONPATH`
-  and every other variable are the project's.
+  the report through the two variables pytest reads its options and plugins from, and through
+  `PYTHONOPTIMIZE`, which is `-O`. `PYTHONPATH` and every other variable are the project's.
 - `-P`: a module named `pytest` in the directory the command runs in, which the agent can write.
   The anchor is the argv stayfixed runs. A `pytest.py` the project's own `PYTHONPATH` reaches is
   the bound's, since `PYTHONPATH` is the project's.
@@ -64,7 +69,7 @@ NAME = "pytest"
 # where the command would find it.
 REFUSED_OPTION = "refused-option"
 ENTRY_NOT_FOUND = "entry-not-found"
-FORGING = frozenset({"PYTEST_ADDOPTS", "PYTEST_PLUGINS"})
+FORGING = frozenset({"PYTEST_ADDOPTS", "PYTEST_PLUGINS", "PYTHONOPTIMIZE"})
 DISCOVERY = (
     "conftest.py",
     "**/conftest.py",
@@ -109,6 +114,11 @@ _NO_REPORT = "no:junitxml"
 # letter outside them, which takes the rest of the word, or the next word, as its value.
 _PYTEST_FLAGS = frozenset("hlqsvVx")
 _INI_LETTER = "o"
+
+# The interpreter's flag that compiles out every `assert` (`-O`, twice `-OO`), and its two options
+# that take a value, fused (`-Wdefault`) or as the next word, an `O` in which is no flag.
+_OPTIMIZE = "O"
+_VALUED_INTERPRETER_OPTIONS = frozenset({"-W", "-X"})
 
 # How much of a console script is read for the interpreter its first two lines name.
 _SCRIPT_HEAD_BYTES = 4096
@@ -173,6 +183,23 @@ def refused_option(args: Sequence[str]) -> str | None:
             named = _ini(f"-{letter}", setting) if letter == _INI_LETTER else None
         if named is not None:
             return named
+    return None
+
+
+def optimizing_option(options: Sequence[str]) -> str | None:
+    """The first of the interpreter's own options (`options`, the words before `-m pytest`) that
+    turns `assert` off, a word of flags holding `O` (`-O`, `-OO`, `-bO`), as the receipt names it;
+    `None` where none does."""
+    value = False
+    for word in options:
+        if value:
+            value = False
+        elif word in _VALUED_INTERPRETER_OPTIONS:
+            value = True
+        elif word[:2] in _VALUED_INTERPRETER_OPTIONS:
+            continue
+        elif word.startswith("-") and _OPTIMIZE in word[1:]:
+            return word
     return None
 
 
@@ -303,7 +330,7 @@ class PytestAdapter:
         run = pytest_command(command)
         if run is None:
             return Unresolved(ENTRY_NOT_FOUND)
-        refused = refused_option(run.args)
+        refused = refused_option(run.args) or optimizing_option(run.options)
         if refused is not None:
             return Refused(REFUSED_OPTION, refused)
         report = scratch / REPORT_NAME

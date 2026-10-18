@@ -2172,6 +2172,37 @@ reddens = [
   "tests/prove/test_pytest.py::test_the_plan_runs_the_script_s_interpreter_safe_path_first_with_a_report_of_its_own",
 ]
 
+# `python -O -m pytest` compiles out every assert pytest does not rewrite: a failing helper's
+# check passes, and the run exits 0.
+[[mutation]]
+name = "the pytest adapter reads none of the interpreter's own options"
+file = "src/stayfixed/profiles/python/adapters.py"
+before = "        refused = refused_option(run.args) or optimizing_option(run.options)"
+after = "        refused = refused_option(run.args)"
+reddens = [
+  "tests/prove/test_pytest.py::test_an_interpreter_option_that_turns_asserts_off_is_refused[python_-O_-m_pytest]",
+  "tests/prove/test_pytest.py::test_a_failing_assert_is_not_turned_off",
+]
+
+# `PYTHONOPTIMIZE` is `-O`: assigned it is refused, inherited it is scrubbed.
+[[mutation]]
+name = "the pytest adapter leaves PYTHONOPTIMIZE off its forging set"
+file = "src/stayfixed/profiles/python/adapters.py"
+before = 'FORGING = frozenset({"PYTEST_ADDOPTS", "PYTEST_PLUGINS", "PYTHONOPTIMIZE"})'
+after = 'FORGING = frozenset({"PYTEST_ADDOPTS", "PYTEST_PLUGINS"})'
+reddens = [
+  "tests/prove/test_pytest.py::test_a_failing_assert_is_not_turned_off",
+  "tests/prove/test_pytest.py::test_the_adapters_this_stack_ships",
+]
+
+# `-W` and `-X` take a value, and an `O` in it is no flag: a warning filter refuses nobody.
+[[mutation]]
+name = "the pytest adapter reads a -W value as the interpreter's flags"
+file = "src/stayfixed/profiles/python/adapters.py"
+before = "        elif word in _VALUED_INTERPRETER_OPTIONS:\n            value = True\n"
+after = "        elif word in _VALUED_INTERPRETER_OPTIONS:\n            value = False\n"
+reddens = ["tests/prove/test_pytest.py::test_a_warning_filter_or_x_option_is_no_optimization[W_-O]"]
+
 # `--setup-plan` exits 0 and reports a failing test as passed: the refusal is load-bearing.
 [[mutation]]
 name = "the pytest adapter leaves --setup-plan off its refusals"

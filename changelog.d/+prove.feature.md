@@ -22,7 +22,9 @@ The first runner adapter is pytest's: `pytest`, `py.test` and `python -m pytest`
 `poetry run` or `uv run`, run as `<interpreter> -P -m pytest` with a JUnit report of `prove`'s own,
 the project's `PYTHON*` variables kept; it refuses `--junitxml`, `-p no:junitxml`, `-o junit_*`
 and `-o addopts`, `--setup-plan`, `--setup-only` and `--collect-only` and their undashed
-aliases, `--trace`, an `@file` word, and an assigned `PYTEST_ADDOPTS` or `PYTEST_PLUGINS`, and
+aliases, `--trace`, an `@file` word, the interpreter's `-O` (which compiles out the asserts
+pytest does not rewrite), and an assigned `PYTEST_ADDOPTS`, `PYTEST_PLUGINS` or `PYTHONOPTIMIZE`,
+and
 names the configuration file `-c` names, wherever it lies, among the files that can shape the
 report; `--pdb` is free, its debugger quitting at the end of standard input with the failure kept.
 The jest, vitest and `node --test` adapters recognise `jest` and `vitest`, bare or after `npx`

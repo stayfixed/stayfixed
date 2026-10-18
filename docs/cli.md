@@ -854,8 +854,11 @@ or `addopts`, `--setup-plan`, `--setup-only`, `--collect-only` and `--co`, pytes
 every run's is, reports a failing test as passed), and a word before `--` that starts with `@`,
 whose options pytest reads from the file it names (`refused-option`, naming the option or the word);
 every other option is free, `--pdb` among them, whose debugger reads the end of its standard input
-and quits, the failure kept in the report. Its forging set is `PYTEST_ADDOPTS` and `PYTEST_PLUGINS`,
-an inherited one removed from the run's environment; `PYTHONPATH` and every other variable are
+and quits, the failure kept in the report. It refuses the interpreter's own `-O` too, in any word
+of its flags before `-m pytest` (`-OO`, `-bO`; a `-W` or `-X` value is no flag), since it compiles
+out every `assert` pytest does not rewrite and a failing test then reports passed. Its forging set
+is `PYTEST_ADDOPTS`, `PYTEST_PLUGINS` and `PYTHONOPTIMIZE`, an inherited one removed from the run's
+environment; `PYTHONPATH` and every other variable are
 yours. Its configuration files are `pytest.ini`, `pyproject.toml`, `setup.cfg` and `tox.ini`, and
 the file `-c` or `--config-file` names, by its realpath, wherever it lies; its discovery set is
 `conftest.py`, `test_*.py` and `*_test.py` at any depth. A program the command names that is not
