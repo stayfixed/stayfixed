@@ -28,8 +28,10 @@ edited stays where it is and is listed.
    left in place.
 7. Tell the user what stays on the machine: the store's approval in the trust record, which
    `stayfixed trust revoke memory` withdraws (after the uninstall, with the `--subject` that
-   `stayfixed trust list --all --json` prints), and the deny rules `setup` merged into the user
-   settings file, which are the machine's and stay.
+   `stayfixed trust list --all --json` prints), the deny rules `setup` merged into the user
+   settings file, which are the machine's and stay, and the evidence records `stayfixed prove` and
+   `stayfixed gate` wrote under `~/.local/state/stayfixed/evidence/`, one file per project, which
+   are the user's to remove.
 
 ## Rules
 
