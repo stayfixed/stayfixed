@@ -1081,9 +1081,12 @@ PRELOAD_PATH = "path"
 PRELOAD_FILE_URL = "file-url"
 PRELOAD_PACKAGE = "package"
 # The preloads node reads as ES modules, whose path form it reads as a URL relative to the run's
-# directory, so that a `%` escape, a `?` or a `#` changes which file it names; and those three.
+# directory, so that a `%` escape, a `?`, a `#`, a `\\` or a control character changes which
+# file it names; and the only characters such a path is accepted with, a closed list.
 _ESM_PRELOADS = frozenset({"--import", "--loader", "--experimental-loader"})
-_URL_CHARACTERS = frozenset("%?#")
+_ESM_PATH_CHARACTERS = frozenset(
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-/@+~"
+)
 
 
 def preload_form(value: str, option: str) -> str | None:
@@ -1095,11 +1098,11 @@ def preload_form(value: str, option: str) -> str | None:
     bound's. `None` for any other value -- a schemeless one with a `.` or `..` segment, a
     relative `file:` URL or another host's, `data:` or any other scheme, an empty one -- which is
     refused: it is code of the command's own, or a file read in a way this reader does not
-    follow. So is a path form holding `%`, `?` or `#` given to `option`, an ES module preload
-    (`--import`, `--loader`, `--experimental-loader`), which node reads as a URL; `-r` and
-    `--require` read the path as it is spelled, and keep it."""
+    follow. So is a path form given to `option`, an ES module preload (`--import`, `--loader`,
+    `--experimental-loader`), which node reads as a URL, that holds a character outside
+    `A-Za-z0-9 . _ - / @ + ~`; `-r` and `--require` read the path as it is spelled, and keep it."""
     if value.startswith(_PATH_STARTS):
-        if option in _ESM_PRELOADS and _URL_CHARACTERS & set(value):
+        if option in _ESM_PRELOADS and not set(value) <= _ESM_PATH_CHARACTERS:
             return None
         return PRELOAD_PATH
     url = urlsplit(value)

@@ -3481,10 +3481,14 @@ before = "        if preload and value is not None and preload_form(value, name)
 after = "        if False:"
 reddens = ["tests/prove/test_javascript.py::test_a_preload_in_none_of_the_three_forms_is_refused[node:fs]"]
 
-# node reads an ES module preload's path as a URL: `%`, `?` and `#` change the file it names.
+# node reads an ES module preload's path as a URL: a character outside a closed list may change the
+# file it names (`%`, `?`, `#`, `\\`, a control character).
 [[mutation]]
-name = "an ES module preload's path is read whatever URL characters it holds"
+name = "an ES module preload's path is read whatever characters it holds"
 file = "src/stayfixed/profiles/javascript/adapters.py"
-before = "        if option in _ESM_PRELOADS and _URL_CHARACTERS & set(value):"
+before = "        if option in _ESM_PRELOADS and not set(value) <= _ESM_PATH_CHARACTERS:"
 after = "        if False:"
-reddens = ["tests/prove/test_javascript.py::test_an_esm_preload_s_path_holding_url_characters_is_refused[./x.mjs?v=1]"]
+reddens = [
+  "tests/prove/test_javascript.py::test_an_esm_preload_s_path_holding_url_characters_is_refused['./x.mjs?v=1']",
+  "tests/prove/test_javascript.py::test_an_esm_preload_s_path_holding_url_characters_is_refused['./space name.mjs']",
+]

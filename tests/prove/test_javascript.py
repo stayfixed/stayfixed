@@ -443,14 +443,33 @@ def test_each_of_the_three_preload_forms_is_read(value: str, form: str) -> None:
     assert preload_form(value, "--import") == form == preload_form(value, "-r")
 
 
-@pytest.mark.parametrize("value", ["./a%20b.mjs", "./x.mjs?v=1", "../y.mjs#h", "/z%2e.mjs"])
+# One value for each class of character outside the closed list an ES module preload's path is
+# accepted with: a URL's escape, query and fragment, a backslash, whitespace, a control
+# character, and any other punctuation or non-ASCII letter.
+ESM_PATHS_REFUSED = [
+    "./a%20b.mjs",
+    "./x.mjs?v=1",
+    "../y.mjs#h",
+    "./back\\slash.mjs",
+    "./tab\tname.mjs",
+    "./line\nbreak.mjs",
+    "./carriage\rreturn.mjs",
+    "./space name.mjs",
+    "./bell\x07.mjs",
+    "./semi;colon.mjs",
+    "./caf\u00e9.mjs",
+]
+
+
+@pytest.mark.parametrize("value", ESM_PATHS_REFUSED, ids=[repr(v) for v in ESM_PATHS_REFUSED])
 def test_an_esm_preload_s_path_holding_url_characters_is_refused(
     tmp_path: Path, value: str
 ) -> None:
     # node reads an ES module preload's path as a URL relative to the run's directory, so `%`,
-    # `?` and `#` change which file it names; the reader stays closed rather than resolve URLs.
-    # `-r` and `--require` read the path as spelled, and keep it. Mutation (declared): the three
-    # characters read as any others -> each is a path.
+    # `?`, `#`, `\\` and control characters change which file it names; the reader accepts such a
+    # path only from a closed list of characters rather than resolve URLs. `-r` and `--require`
+    # read the path as spelled, and keep it. Mutation (declared): the list not read -> each is a
+    # path.
     for option in ("--import", "--loader", "--experimental-loader"):
         assert preload_form(value, option) is None
     assert preload_form(value, "-r") == preload_form(value, "--require") == PRELOAD_PATH
@@ -458,6 +477,12 @@ def test_an_esm_preload_s_path_holding_url_characters_is_refused(
     assert entry == Refused(REFUSED_OPTION, "--loader")
     tested = planned(NODE_TEST, ["node", "--test", "--import", value], tmp_path)
     assert tested == Refused(REFUSED_OPTION, "--import")
+
+
+def test_an_esm_preload_s_path_of_the_listed_characters_is_kept(tmp_path: Path) -> None:
+    value = "./A-z_0.9/@scope+x~/setup.mjs"
+    for option in ("--import", "--loader", "--experimental-loader"):
+        assert preload_form(value, option) == PRELOAD_PATH
     node = node_on_path(tmp_path / "bin")
     kept = plan_of(NODE_TEST, ["node", "--test", "-r", value], tmp_path, path=str(node.parent))
     assert kept.configs[-1] == os.path.realpath(tmp_path / value)
