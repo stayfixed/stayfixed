@@ -418,7 +418,7 @@ def test_a_preload_in_none_of_the_three_forms_is_refused(tmp_path: Path, value: 
     # Code of the command's own, or a file read in a way the reader does not follow: refused, the
     # option named and never its value, in front of an entry and under `node --test` alike.
     # Mutations (declared): one per arm of `preload_form`.
-    assert preload_form(value) is None
+    assert preload_form(value, "--import") is None
     entry = planned(JEST, ["node", f"--import={value}", "node_modules/jest/bin/jest.js"], tmp_path)
     assert entry == Refused(REFUSED_OPTION, "--import")
     tested = planned(NODE_TEST, ["node", "--test", "-r", value], tmp_path)
@@ -440,7 +440,27 @@ def test_a_preload_in_none_of_the_three_forms_is_refused(tmp_path: Path, value: 
     ],
 )
 def test_each_of_the_three_preload_forms_is_read(value: str, form: str) -> None:
-    assert preload_form(value) == form
+    assert preload_form(value, "--import") == form == preload_form(value, "-r")
+
+
+@pytest.mark.parametrize("value", ["./a%20b.mjs", "./x.mjs?v=1", "../y.mjs#h", "/z%2e.mjs"])
+def test_an_esm_preload_s_path_holding_url_characters_is_refused(
+    tmp_path: Path, value: str
+) -> None:
+    # node reads an ES module preload's path as a URL relative to the run's directory, so `%`,
+    # `?` and `#` change which file it names; the reader stays closed rather than resolve URLs.
+    # `-r` and `--require` read the path as spelled, and keep it. Mutation (declared): the three
+    # characters read as any others -> each is a path.
+    for option in ("--import", "--loader", "--experimental-loader"):
+        assert preload_form(value, option) is None
+    assert preload_form(value, "-r") == preload_form(value, "--require") == PRELOAD_PATH
+    entry = planned(JEST, ["node", f"--loader={value}", "node_modules/jest/bin/jest.js"], tmp_path)
+    assert entry == Refused(REFUSED_OPTION, "--loader")
+    tested = planned(NODE_TEST, ["node", "--test", "--import", value], tmp_path)
+    assert tested == Refused(REFUSED_OPTION, "--import")
+    node = node_on_path(tmp_path / "bin")
+    kept = plan_of(NODE_TEST, ["node", "--test", "-r", value], tmp_path, path=str(node.parent))
+    assert kept.configs[-1] == os.path.realpath(tmp_path / value)
 
 
 @pytest.mark.parametrize(

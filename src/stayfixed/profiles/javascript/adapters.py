@@ -865,7 +865,7 @@ def _node_entry_refused(options: Sequence[str]) -> str | None:
         if name in _NODE_INLINE_CODE or name.startswith(_NODE_TEST_RUNNER) or name in _NODE_REFUSED:
             return name
         preload = name in _NODE_PRELOADS or name == _NODE_PRELOAD_LETTER
-        if preload and value is not None and preload_form(value) is None:
+        if preload and value is not None and preload_form(value, name) is None:
             return name
     return None
 
@@ -1080,9 +1080,13 @@ _DOT_SEGMENTS = frozenset({".", ".."})
 PRELOAD_PATH = "path"
 PRELOAD_FILE_URL = "file-url"
 PRELOAD_PACKAGE = "package"
+# The preloads node reads as ES modules, whose path form it reads as a URL relative to the run's
+# directory, so that a `%` escape, a `?` or a `#` changes which file it names; and those three.
+_ESM_PRELOADS = frozenset({"--import", "--loader", "--experimental-loader"})
+_URL_CHARACTERS = frozenset("%?#")
 
 
-def preload_form(value: str) -> str | None:
+def preload_form(value: str, option: str) -> str | None:
     """Which of the three forms a preload option's value (`-r`, `--require`, `--import`,
     `--loader`, `--experimental-loader`) is in, the one closed reader of it: a path node reads as a
     file, starting `/`, `./` or `../` (`PRELOAD_PATH`); a `file:` URL of this machine with an
@@ -1091,8 +1095,12 @@ def preload_form(value: str) -> str | None:
     bound's. `None` for any other value -- a schemeless one with a `.` or `..` segment, a
     relative `file:` URL or another host's, `data:` or any other scheme, an empty one -- which is
     refused: it is code of the command's own, or a file read in a way this reader does not
-    follow."""
+    follow. So is a path form holding `%`, `?` or `#` given to `option`, an ES module preload
+    (`--import`, `--loader`, `--experimental-loader`), which node reads as a URL; `-r` and
+    `--require` read the path as it is spelled, and keep it."""
     if value.startswith(_PATH_STARTS):
+        if option in _ESM_PRELOADS and _URL_CHARACTERS & set(value):
+            return None
         return PRELOAD_PATH
     url = urlsplit(value)
     if url.scheme == _FILE_SCHEME:
@@ -1103,11 +1111,11 @@ def preload_form(value: str) -> str | None:
     return None
 
 
-def _preloaded_file(given: str, cwd: Path) -> str | None:
+def _preloaded_file(given: str, option: str, cwd: Path) -> str | None:
     """The realpath of the file a preload option's value names: a path, read from `cwd`, or a
     `file:` URL's path, percent-decoded as `url2pathname` reads one on POSIX; `None` for a
     package's name, and for a value `preload_form` refuses."""
-    form = preload_form(given)
+    form = preload_form(given, option)
     if form == PRELOAD_PATH:
         return os.path.realpath(cwd / given)
     if form == PRELOAD_FILE_URL:
@@ -1130,7 +1138,7 @@ def node_preloaded(words: Sequence[str], cwd: Path) -> tuple[str, ...]:
             given = value if equals else _next(options, index)
         else:
             continue
-        named = _preloaded_file(given, cwd) if given is not None else None
+        named = _preloaded_file(given, name, cwd) if given is not None else None
         if named is not None:
             found.append(named)
     return tuple(found)
@@ -1151,7 +1159,7 @@ def node_refused(words: Sequence[str]) -> str | None:
         if name in _NODE_PRELOADS or name == _NODE_PRELOAD_LETTER:
             _, equals, value = word.partition("=")
             given = value if equals else _next(options, index)
-            if given is not None and preload_form(given) is None:
+            if given is not None and preload_form(given, name) is None:
                 return name
     return None
 

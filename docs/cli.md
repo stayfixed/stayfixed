@@ -928,7 +928,9 @@ vitest's own. The file `-c` or `--config` names (read from the directory the com
 for vitest from its `--root` where the command gives one) is among the configuration files, by its
 realpath. A preload's value (`-r`, `--require`, `--import`, `--loader`, `--experimental-loader`) is
 read in exactly three forms: a path starting `/`, `./` or `../`, named among the configuration
-files by its realpath from the directory the command runs in; a `file:` URL of this machine with an
+files by its realpath from the directory the command runs in (for `--import`, `--loader` and
+`--experimental-loader`, which node reads as a URL, a path holding `%`, `?` or `#` is refused:
+those change which file node names; `-r` and `--require` read it as spelled); a `file:` URL of this machine with an
 absolute path (`file:///x.mjs`, `file://localhost/x.mjs`), named by its percent-decoded path; and a
 package's bare name with an optional subpath (`tsx`, `@scope/name/esm`, `ts-node/register`), none
 of its segments `.` or `..`, which resolves through `node_modules` and is not named. Any other
