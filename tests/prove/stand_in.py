@@ -87,6 +87,8 @@ class StandIn:
     unlaunchable: bool = False
     # Plans its program by a bare name, as no adapter may.
     relative: bool = False
+    # Plans its report outside the scratch directory it was handed, as no adapter may.
+    elsewhere: Path | None = None
     seen: list[tuple[Path, Path]] = field(default_factory=list)
     launches: list[tuple[str, ...]] = field(default_factory=list)
 
@@ -123,7 +125,7 @@ class StandIn:
             first = str(link)
             link.unlink()
             link.symlink_to(shutil.which("true") or "/bin/true")
-        report = scratch / "report"
+        report = self.elsewhere / "report" if self.elsewhere is not None else scratch / "report"
         kind = ReportKind.EVENTS if self.source is ReportSource.STDOUT else ReportKind.JUNIT
         argv = (first, str(PROGRAM), "--report-path", str(report), "--source", self.source)
         return Plan(

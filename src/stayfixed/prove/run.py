@@ -587,7 +587,9 @@ def prove(
 
     An adapter whose plan's program is not an absolute path is a defect in stayfixed, as a module
     that does not import is, and raises `ValueError`: a bare name would be found from stayfixed's
-    own directory and `PATH`, never where the adapter looked.
+    own directory and `PATH`, never where the adapter looked. So is a plan whose report, a file the
+    runner writes, lies outside the scratch directory the core handed it: a report anywhere else
+    could be one the repository committed.
     """
     given = tuple(argv)
     shown = redacted(given)
@@ -660,6 +662,10 @@ def prove(
         if isinstance(planned, Unresolved):
             return _receipt(
                 _Outcome(unproven=planned.reason), shown, adapter.name, detail=planned.detail
+            )
+        if planned.source is ReportSource.FILE and scratch not in planned.report.parents:
+            raise ValueError(
+                f"the {adapter.name} adapter planned a report outside its scratch directory"
             )
         return _proved(
             adapter.name,

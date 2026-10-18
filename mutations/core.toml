@@ -6654,3 +6654,12 @@ after = "_LAUNCHER_VARIABLES = LAUNCHER_FILE_VARIABLES"
 reddens = [
   "tests/prove/test_run.py::test_the_launcher_s_file_variables_are_forging_and_scrubbed_where_it_runs[UV_WORKING_DIR]",
 ]
+
+# A report a file plan puts anywhere but its scratch directory could be one the repository
+# committed: a defect in the adapter, and `prove` raises.
+[[mutation]]
+name = "prove reads a file plan's report wherever the adapter put it"
+file = "src/stayfixed/prove/run.py"
+before = "        if planned.source is ReportSource.FILE and scratch not in planned.report.parents:"
+after = "        if False:"
+reddens = ["tests/prove/test_run.py::test_a_plan_whose_report_lies_outside_its_scratch_is_a_defect_and_raises"]

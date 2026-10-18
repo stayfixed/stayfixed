@@ -603,6 +603,22 @@ def test_a_plan_whose_program_is_not_absolute_is_a_defect_and_raises(tmp_path: P
     assert not scratch.exists()
 
 
+def test_a_plan_whose_report_lies_outside_its_scratch_is_a_defect_and_raises(
+    tmp_path: Path,
+) -> None:
+    # A report the adapter put anywhere but the scratch directory `prove` made could be one the
+    # repository committed, or read from a place another run writes: a defect in the adapter, as a
+    # program that is not absolute is. Mutation (declared): the check dropped -> the run goes ahead
+    # and its report is read from where the adapter put it.
+    adapter = StandIn(elsewhere=tmp_path / "elsewhere")
+    (tmp_path / "elsewhere").mkdir()
+    with pytest.raises(ValueError, match="outside its scratch directory"):
+        run(tmp_path, NAME, adapter=adapter)
+    [(_, scratch)] = adapter.seen
+    assert not scratch.exists()
+    assert not (tmp_path / "elsewhere" / "report").exists()
+
+
 def test_the_tee_decodes_a_character_cut_between_two_reads(tmp_path: Path) -> None:
     # A caller's stream that takes text alone is handed whole characters: one cut between two
     # reads off the pipe is held until its last byte arrives. Mutation (declared): each chunk
