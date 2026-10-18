@@ -20,10 +20,58 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # What a change reaches, read once for every job below. A pull request that changes nothing
+  # outside `docs/` runs the suite on one leg, `ubuntu-latest` with 3.13, and skips the rest: the
+  # documents ship in no artifact and no plugin tree (`scripts/plugin_tree.py`'s `PLUGIN_PATHS`),
+  # yet tests read them — `docs/cli.md` is held to the parser, and every tracked file to the
+  # neutrality and anchor guards — so one leg of the suite still runs, and the other legs, the
+  # oracle and the plugin validator have nothing of theirs to judge.
+  #
+  # Skipped by step and not by job wherever a check is a matrix leg: branch protection requires
+  # each leg by its full name, and every leg here still starts and reports under it. A job skipped
+  # by its `if:` reports success, so `oracle` and `plugin` skip whole. Every job that reads this
+  # one runs unless the run was cancelled and treats any answer but `false` as a change to code, so this
+  # job failing, or answering nothing, runs everything: it can only narrow a run when it says,
+  # in so many words, that nothing outside `docs/` changed.
+  #
+  # A push (to `main`) runs everything. A pull request's checkout is the merge commit the platform
+  # makes, so its first parent is the base the change is judged against, and `--no-renames` lists a
+  # file moved into `docs/` under the name it left as well as the one it took. A name git quotes
+  # does not begin `docs/` and counts as code. `smoke.yml` carries the same job, byte for byte.
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.scope.outputs.code }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Whether the change reaches outside docs
+        id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          code=true
+          if [ "$EVENT" = pull_request ]; then
+            changed="$(git diff --no-renames --name-only HEAD^1 HEAD)"
+            if [ -n "$changed" ] && ! printf '%s\n' "$changed" | grep -qv '^docs/'; then
+              code=false
+            fi
+          fi
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+
   checks:
+    needs: changes
+    if: ${{ !cancelled() }}
     runs-on: ${{ matrix.os }}
     # A public repository: anyone can open a pull request, so no job runs unbounded.
     timeout-minutes: 15
+    # Every step carries `if: env.FULL == 'true'`: on a change to docs alone one leg runs whole and
+    # the others start, skip every step and report (`changes` above says why).
+    env:
+      FULL: ${{ needs.changes.outputs.code != 'false' || matrix.os == 'ubuntu-latest' && matrix.python == '3.13' }}
     strategy:
       fail-fast: false
       matrix:
@@ -63,11 +111,14 @@ jobs:
             python: "3.13"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        if: env.FULL == 'true'
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        if: env.FULL == 'true'
         with:
           enable-cache: true
           python-version: ${{ matrix.python }}
       - name: An interpreter below the floor, for the launcher's version guard
+        if: env.FULL == 'true'
         # `scripts/stayfixed` is the only thing between a Python 3.9 user and a SyntaxError, and
         # `test_an_old_interpreter_is_refused_with_a_reason` skipped for want of one on every
         # machine that has ever run it — so the guard was asserted nowhere, ever. The test is
@@ -86,14 +137,18 @@ jobs:
           old="$(uv python find --no-project 3.10)"
           echo "python-path=$old" >> "$GITHUB_OUTPUT"
       - name: Install
+        if: env.FULL == 'true'
         run: uv sync --locked
       - name: Lint and format
+        if: env.FULL == 'true'
         run: |
           uv run ruff check .
           uv run ruff format --check .
       - name: Types
+        if: env.FULL == 'true'
         run: uv run mypy
       - name: Tests
+        if: env.FULL == 'true'
         # Coverage, because security-sensitive code with nobody able to say which containment
         # branches are exercised is how an untested `..` argument stayed invisible: the walk's
         # loop was covered, just never with an escaping path. No statement count is written here:
@@ -102,14 +157,18 @@ jobs:
           STAYFIXED_OLD_PYTHON: ${{ steps.old-python.outputs.python-path }}
         run: uv run pytest -n auto --cov --cov-report=term-missing --cov-fail-under=92
       - name: Version discipline
+        if: env.FULL == 'true'
         run: uv run python scripts/release.py check
       - name: Build
+        if: env.FULL == 'true'
         run: uv build
       - name: The artifacts carry what an installed stayfixed needs
+        if: env.FULL == 'true'
         # Every earlier test resolves the template tree to the checkout; only an artifact
         # can say whether the build backend shipped it.
         run: uv run python scripts/check_artifacts.py dist
       - name: An installed wheel renders the overlay template
+        if: env.FULL == 'true'
         # The wheel is installed into a scratch environment with no checkout in reach, and
         # `overlay create --local` — the one working source for a first overlay — has to find
         # its template tree inside the package.
@@ -164,6 +223,8 @@ jobs:
   # that does not run here is a finding on the clean run, before the mutation is applied. It is
   # never banked as a proof, which is the failure that would matter.
   oracle:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
     runs-on: ubuntu-latest
     # Derived, not rounded. The oracle proves entries in one scratch checkout per CPU the
     # runner gives it — four on `ubuntu-latest` — against a bytecode cache warmed once from HEAD.
@@ -210,6 +271,8 @@ jobs:
   # checkout, whose root also holds the tests, the plans and the tooling. So the two manifests are
   # validated where the render put them, as the plugin repository will hold them.
   plugin:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

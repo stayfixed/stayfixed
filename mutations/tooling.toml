@@ -270,10 +270,12 @@ reddens = [
 name = "the smoke's hook entries take the checkout as the installed tree"
 file = ".github/workflows/smoke.yml"
 before = '''      - name: Every hook entry, fed its sample event through the installed wrapper
+        if: env.FULL == 'true'
         env:
           INSTALLED: ${{ steps.install.outputs.root }}
 '''
 after = '''      - name: Every hook entry, fed its sample event through the installed wrapper
+        if: env.FULL == 'true'
         env:
           INSTALLED: ${{ github.workspace }}
 '''
@@ -285,10 +287,12 @@ reddens = [
 name = "the smoke's exfiltration scenario takes the checkout as the installed tree"
 file = ".github/workflows/smoke.yml"
 before = '''      - name: The clone-to-exfiltration scenario
+        if: env.FULL == 'true'
         env:
           INSTALLED: ${{ steps.install.outputs.root }}
 '''
 after = '''      - name: The clone-to-exfiltration scenario
+        if: env.FULL == 'true'
         env:
           INSTALLED: ${{ github.workspace }}
 '''
@@ -1104,8 +1108,8 @@ reddens = [
 [[mutation]]
 name = "the oracle's job becomes one a condition can skip"
 file = ".github/workflows/ci.yml"
-before = "  oracle:\n    runs-on: ubuntu-latest"
-after = "  oracle:\n    if: github.event_name == 'push'\n    runs-on: ubuntu-latest"
+before = "  oracle:\n    needs: changes\n    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}"
+after = "  oracle:\n    needs: changes\n    if: github.event_name == 'push'"
 reddens = [
   "tests/test_fixtures.py::test_the_mutation_oracle_has_a_job_of_its_own_with_a_budget_that_fits",
 ]
@@ -3548,3 +3552,55 @@ file = "scripts/ptyrun.py"
 before = "        code = child.wait(timeout=max(give_up - time.monotonic(), 0))"
 after = "        code = child.wait()"
 reddens = ["tests/scripts/test_ptyrun.py::test_a_command_that_closes_the_terminal_and_runs_on_is_killed_at_the_deadline"]
+
+# The `changes` job narrows a run only when it says, in so many words, that every path a pull
+# request changes is under `docs/`; every job that reads it runs whole on any other answer, or none.
+[[mutation]]
+name = "a rename into docs hides the file it moved"
+file = ".github/workflows/ci.yml"
+before = "git diff --no-renames --name-only HEAD^1 HEAD"
+after = "git diff --name-only HEAD^1 HEAD"
+reddens = [
+  "tests/test_ci_scope.py::test_the_scope_step_answers_false_only_when_every_path_is_a_document[code-moved-into-docs]",
+  "tests/test_ci_scope.py::test_both_workflows_run_one_scope_step",
+]
+
+[[mutation]]
+name = "the scope step asks whether any path is a document"
+file = ".github/workflows/ci.yml"
+before = '''! printf '%s\n' "$changed" | grep -qv '^docs/';'''
+after = '''printf '%s\n' "$changed" | grep -q '^docs/';'''
+reddens = [
+  "tests/test_ci_scope.py::test_the_scope_step_answers_false_only_when_every_path_is_a_document[a-document-and-code]",
+]
+
+[[mutation]]
+name = "every checks leg narrows on a change to docs"
+file = ".github/workflows/ci.yml"
+before = '''      FULL: ${{ needs.changes.outputs.code != 'false' || matrix.os == 'ubuntu-latest' && matrix.python == '3.13' }}'''
+after = '''      FULL: ${{ needs.changes.outputs.code != 'false' }}'''
+reddens = [
+  "tests/test_ci_scope.py::test_every_job_that_reads_the_scope_runs_whole_on_any_answer_but_false",
+]
+
+[[mutation]]
+name = "a failed scope job skips the oracle"
+file = ".github/workflows/ci.yml"
+before = '''  oracle:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}'''
+after = '''  oracle:
+    needs: changes
+    if: ${{ needs.changes.outputs.code == 'true' }}'''
+reddens = [
+  "tests/test_ci_scope.py::test_every_job_that_reads_the_scope_runs_whole_on_any_answer_but_false",
+]
+
+[[mutation]]
+name = "the install smoke narrows on an answer that is not false"
+file = ".github/workflows/smoke.yml"
+before = '''      FULL: ${{ needs.changes.outputs.code != 'false' }}'''
+after = '''      FULL: ${{ needs.changes.outputs.code == 'true' }}'''
+reddens = [
+  "tests/test_ci_scope.py::test_every_job_that_reads_the_scope_runs_whole_on_any_answer_but_false",
+]
