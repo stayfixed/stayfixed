@@ -1103,6 +1103,17 @@ result line, not hidden. An index that cannot be written once the entry is filed
 naming the filed entry, the reason and any skipped fetch, and saying to run `bugs index` once it
 can be written, not `bugs new` again, which would file it twice.
 
+The entry carries the keys `id`, `title`, `status`, `severity`, `area`, `found`, `source`,
+`fixed_in` and `related`. An entry may also carry `regression`, the argv that reproduces the bug:
+an inline list of double-quoted items, like `regression: ["pytest", "-k", "total and not slow"]`,
+each item read with the two escapes a quoted title takes (`\"` and `\\`), separated by a comma.
+Spaces may surround each item and each comma; a tab may not. `regression:`, `regression: []` and
+`regression: [ ]` are the empty list. `bugs check` reports any other shape as `unreadable-entry`,
+as it does an empty item and an item holding a control character below U+0020, or DEL.
+`bugs renumber` leaves a `regression` exactly as written, while its sweep renames a test whose name
+carries the old identifier in a scanned file, so it names each entry whose argv still names the old
+identifier as one that may need editing by hand. `bugs new` does not write one yet.
+
 **Writes** the entry file (creating `<paths.bugs>` for the first entry) and `<paths.bug_index>`;
 and, unless `--no-fetch`, whatever the `git fetch --quiet --no-recurse-submodules origin` it runs
 before allocating writes into the repository — the remote-tracking refs, `FETCH_HEAD` and the
@@ -1204,7 +1215,9 @@ naming either, still names the renumber.
 Move an entry to a free identifier: `NEW` gets the entry with its `id:` rewritten, `OLD` becomes
 a `void` pointer at the new number, every scanned file that mentions `OLD` is rewritten, and the
 index is regenerated. Both endpoints are written first, then the sweep, so an interruption leaves
-`OLD` resolving to the pointer rather than to nothing.
+`OLD` resolving to the pointer rather than to nothing. The sweep knows the endpoints, the index
+and the entries by the file, not by how its path is spelt, so a ledger directory committed in
+another case than it is configured in, on a filesystem that folds case, is still one directory.
 
 A run that was killed part-way is finished by running the same move again. The re-run recognises
 the move's own half-done state: `NEW` holding exactly `OLD`'s text with the `id:` line rewritten,
@@ -1224,9 +1237,15 @@ because once the pointer exists a stale mention in that file looks intentional t
 forever. The line counts them and names up to eight; `--json`'s `unswept` carries every one, each
 an object with `path` and `reason`. The path is relative to the root, and the reason is the error
 in words, naming no absolute path; a refusal of stayfixed's own may repeat the root-relative path.
-The moved entry's own body is the operator's to rewrite and is not swept. A write of the move's
-own that fails — `NEW`, the pointer at `OLD` or the index — exits `1` naming the file and the
-reason, and says that running the same move again once the file can be written finishes it.
+The moved entry's own body is the operator's to rewrite and is not swept, and neither is any
+entry's `regression`, which is left exactly as written. The same sweep renames a test whose name
+carries `OLD` in a scanned file, a test file under `[ledger] code_roots` included, but renames no
+file, so an argv naming `OLD` may then select nothing, or name a path that is still right. The
+line names each entry file whose `regression` still names `OLD`, the moved entry included, as one
+that may need editing by hand, up to eight; `--json`'s `lists_naming_old` carries every one,
+relative to the root and sorted. They do not change the exit code. A write of the
+move's own that fails — `NEW`, the pointer at `OLD` or the index — exits `1` naming the file and
+the reason, and says that running the same move again once the file can be written finishes it.
 
 **Writes** the two entry files, every rewritten file, and `<paths.bug_index>`.
 

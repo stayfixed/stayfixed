@@ -121,19 +121,27 @@ def run_bugs_renumber(args: argparse.Namespace) -> Result:
         "void": void,
         "unswept": [asdict(u) for u in result.unswept],
         "moved": result.moved,
+        "lists_naming_old": list(result.lists_naming_old),
     }
     if not result.moved:
         return Result(f"{args.old} was already moved to {args.new}; nothing to do", data)
+    naming = ""
+    if result.lists_naming_old:
+        naming = (
+            f"; {len(result.lists_naming_old)} entry file(s) still name {args.old} in a list left "
+            f"as written, which may need editing by hand "
+            f"({listed([printable(path) for path in result.lists_naming_old])})"
+        )
     if result.unswept:
         return Result(
             f"FAIL: {args.old} moved to {args.new}, but {len(result.unswept)} file(s) still "
             f"reference {args.old} and must be fixed by hand "
             f"({listed([printable(u.path) for u in result.unswept])}); "
-            f"a void pointer remains at {void}",
+            f"a void pointer remains at {void}{naming}",
             data,
             exit_code=1,
         )
-    return Result(f"{args.old} -> {args.new}; a void pointer remains at {void}", data)
+    return Result(f"{args.old} -> {args.new}; a void pointer remains at {void}{naming}", data)
 
 
 def register(groups: SubParsers) -> None:

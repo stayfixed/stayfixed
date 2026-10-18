@@ -1556,3 +1556,126 @@ text:
 - The first CI run of the pull request found three test defects, fixed in the tests: a cleanup kill
   of a child that had already ended, a `/etc` expectation macOS spells `/private/etc`, and a
   `-n auto` check the new `runners` job's line satisfied.
+
+### Wave B and Task 4 — RC1
+
+**Wave B.** One implementer on Opus took Tasks 2 and 3: `test(ledger): hold new, check and renumber
+to the bytes they write today` and `feat(ledger): read a list of quoted items, and let a bug entry
+carry a regression`, about 268k tokens in its first pass. The wave review found both tasks
+compliant and accepted two departures: the renumber-argv test holds BR-003 to a swept literal with
+its `regression` line unchanged and BR-004 byte-identical, since the fixture's BR-003 names BR-002
+elsewhere, and a literal the task did not list, `renumber.swept.md`. Two fix rounds followed. Round
+1, the same implementer, about 307k tokens in all: mutations for the reader's empty and escape
+paths, the adversary-and-anchor sentence beside the refusals, a narrowed PyYAML record. Round 2, a
+fresh agent, about 79k: the record states only the PyYAML readings measured.
+
+**Task 4, Step 1.** Run on `2d5b04d`, as uid 0 in a cloud sandbox, Python 3.13.16, which is also
+CI's newest leg:
+
+- `uv run pytest -n auto --cov --cov-fail-under=92`: 9 failed, 6780 passed, 107 skipped; coverage 97.21%, over the
+  92% floor. The nine failures are
+  permission tests in `tests/doctor`, `tests/memory`, `tests/hooks` and `tests/setup`. A mode-000
+  file stays readable to uid 0, so they fail here with no change under `src/`. CI runs them
+  unprivileged.
+- `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy`, and
+  `uv run python scripts/release.py check`: all clean ("All checks passed!", 417 files formatted, 416 source files
+  with no issues, "one version everywhere: 0.3.1").
+- `uv run python scripts/mutation_oracle.py` on `198f84d`, the head before the final review:
+  2807 of 2880 caught. The 73 survivors are branches for a path that cannot be read or written,
+  whose tests skip or fail under uid 0, plus one `tests/scripts/test_plugin_tree.py` entry this
+  pull request does not touch. Every list, literal and entry mutation was caught. The final fix
+  wave's seven new and three extended entries were each run singly against their named tests, by
+  the fixer and again by the re-review. CI's oracle job judges the final head.
+- `uv run stayfixed plan check`, in a scratch worktree holding a copy of the owner's
+  `stayfixed.toml`: "OK: linted 1 plan(s)", this plan. A shallow clone answers `base-unresolvable` until
+  `git fetch --depth=1000 origin dev`.
+
+**Task 4, Step 2.** Four read-only seats on `198f84d`, all on Opus: correctness, architecture,
+security and lifecycle. None found anything Critical. Every seat answered "ready after fixes":
+
+- Correctness: a CRLF or lone-CR entry passed `bugs check` while `renumber` rewrote its
+  `regression`. The sweep located frontmatter on the raw text, the entry reader on the normalised
+  text.
+- Architecture: the sweep re-implemented the reader's frontmatter split. With the CRLF finding,
+  that made two findings at one seam, so the seam was redesigned rather than patched: one
+  frontmatter-line reader, on the file's own line endings, now serves the entry reader and the
+  sweep.
+- Lifecycle: `renumber` renames a test whose name carries the old identifier, while the argv
+  that names it keeps the old one. The documents now say so. Running regressions is CP2's, and CP2
+  must expect such an argv to select nothing.
+- Security: the documents claimed every control character is refused, but characters from U+0080
+  to U+009F pass. The documents now say what the code refuses. Whether to refuse that range too is
+  open for the owner before CP2 executes an argv.
+
+The other findings were fixed in the same wave:
+
+- the entry predicate is one helper, with a test and a mutation;
+- an unsupported escape prints escaped;
+- a list key is padded with spaces and tabs only;
+- the upgrading fragment names every `bugs` command an older release refuses;
+- three lifecycle cells gained tests.
+
+One fixer did all of this in about 263k tokens. The one scoped re-review found every finding
+addressed and four new Minor findings, all deferred to a follow-up:
+
+- the `_frontmatter` docstring overstates when a line cut refuses;
+- the `scalar_keys` docstring calls `related` a single value;
+- the escape message prints punctuation as `\'.'`;
+- one accepted case is pinned with `in` rather than equality.
+
+Also deferred:
+
+- the `LIST_SHAPE` error is built eagerly;
+- a key listed twice in `lists` is not refused, which CP2's writer must add;
+- `ledger_copy`'s variant overlay lives inside `project/`;
+- `check.py`, `index.py` and `next_identifier` spell the entry glob themselves;
+- a moved CRLF entry is written with LF endings, which is older than this branch.
+
+**Task 4, a second final review.** Three lenses on `090a33a`: correctness and security,
+code quality and architecture, and the controller's own read of the diff. Nothing Critical. Four
+Important findings, each reproduced before it was acted on, and all fixed in `cbee36b`:
+
+- The list reader was a hand-written scanner. It is now two patterns, a quoted run and the whole
+  list, with each run still read by `_unquote`. Over every string of up to six characters from
+  `[ ] " \ , space a tab q`, 597,870 inputs, the two readers accept the same strings and read the
+  same items. The messages differ for 1,444 of them, each a list malformed in its shape: the
+  pattern names the shape, where the scanner could name an empty item, a control character or an
+  escape inside it. The review's reason, that the escape rule lived in two places, does not
+  survive: the pattern's `\\.` states it too. The reason that stands is size, about 57 lines down
+  to 15.
+- `entry_paths` claimed to be the one statement of which files are entries while `check`, the
+  index's guard and `next_identifier` globbed for themselves. All three now call it.
+- The unsupported-escape refusal printed every character through `quoted`, so `\.` in a title
+  printed as `\'.'`, and the changelog said no such byte had moved. A character that prints now
+  prints as it did; only one that does not goes through `quoted`. The changelog says so.
+- The padding test accepted `()` for `["a"] `, so a reader emptying every padded list passed the
+  ledger suite. Each case now pins its items, and that mutant is an entry.
+
+Of the Minor findings, these were taken: the fixture's helpers moved to `tests/ledger/fixture.py`;
+the broken variant sits beside the project, not inside it; exit codes and the empty stderr are
+asserted inline, which retired 20 one-byte or empty literal files; the golden test is named for
+what it holds and says how to re-capture; the LF and CRLF renumber tests, and the padding cases
+and the malformed table, are each one parametrized test; `_frontmatter`'s lines are a
+`NamedTuple`; the sweep substitutes over the whole text with a callback; the list-is-the-level rule
+is gone, since the level must be required and a list may not be; a list key listed twice is
+refused; `docs/cli.md` gives the whole grammar; and the comments that "nothing writes one yet"
+were dropped from code.
+
+Two were declined. The identical `new.out` and `new-bare.out` stay two files, because they are
+two cases' literals and only happen to agree. The broken variant stays as whole files, not a
+`str.replace` overlay, because the files show what the check reads.
+
+The owner ruled on the review's design question, whether `renumber` should touch an argv naming
+the moved identifier: it leaves the argv as written and names each entry whose list still names the
+old identifier, on its line and in `--json`'s `lists_naming_old`, the moved entry included. An argv
+naming a path is still right after the move, since the sweep renames no file, so neither rewriting
+the argv nor a `bugs check` finding against it could be right for both shapes; the reader of the
+argv decides.
+
+The owner then had the older defect the review found fixed here too: `renumber` told its own files
+from the rest by how a path was spelt, the scan's paths as git lists them and its own as
+configured, so on a filesystem that folds case, with the ledger committed as `docs/Bugs` and
+configured as `docs/bugs`, the sweep rewrote the void pointer's `id:`. It now compares
+`(st_dev, st_ino)`. The test reproducing it runs only where case folds, macOS's CI leg among
+them, and no mutation is declared for it, since the oracle runs on Linux; a spelling-based
+identity put in by hand reddens it.
