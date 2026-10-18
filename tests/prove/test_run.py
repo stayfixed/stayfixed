@@ -769,6 +769,9 @@ def test_a_descendant_that_leaves_the_group_cannot_keep_the_run_open(
     deadline = time.monotonic() + STARTED_WAIT_SECONDS
     while not pidfile.exists() and time.monotonic() < deadline:
         time.sleep(0.05)
+    assert pidfile.exists(), (
+        f"the escaped child never named itself in {pidfile} within {STARTED_WAIT_SECONDS} s"
+    )
     # The loud child may be gone already: once the tee lets go of the pipe, its next write fails
     # (a broken pipe) and it ends, and where an init reaps orphans at once, as a CI runner's does,
     # its pid names no process by the time this kill is sent.

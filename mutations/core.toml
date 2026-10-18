@@ -6490,7 +6490,7 @@ reddens = [
 name = "a record's checkout is asked from the home alone"
 file = "src/stayfixed/prove/evidence.py"
 before = "    return gitenv.checkout_root(fsops.creation_directory(record)) is not None"
-after = "    return gitenv.checkout_root(record.parents[3]) is not None"
+after = "    return gitenv.checkout_root(record.parents[4]) is not None"
 reddens = ["tests/prove/test_evidence.py::test_a_checkout_at_the_state_directory_is_asked_from_its_nearest_existing_part"]
 
 # A home the database names as a link is followed first: walked as spelled, `O_NOFOLLOW` refuses
