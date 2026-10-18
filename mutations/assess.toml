@@ -1846,14 +1846,14 @@ reddens = ["tests/prove/test_evidence.py::test_each_gate_word_the_record_can_car
 [[mutation]]
 name = "a gate record words a gate not run as one that could not"
 file = "src/stayfixed/assess/commands.py"
-before = '            words[result.name] = "not run"'
-after = '            words[result.name] = "could not run"'
+before = '            words[result.name] = NOT_RUN'
+after = '            words[result.name] = UNANSWERED'
 reddens = ["tests/prove/test_evidence.py::test_each_gate_word_the_record_can_carry"]
 
 [[mutation]]
 name = "a gate record words a gate that could not run as one that passes"
 file = "src/stayfixed/assess/commands.py"
-before = '            words[result.name] = "could not run"'
+before = '            words[result.name] = UNANSWERED'
 after = '            words[result.name] = "passes"'
 reddens = ["tests/prove/test_evidence.py::test_each_gate_word_the_record_can_carry"]
 

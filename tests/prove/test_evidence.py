@@ -1,10 +1,10 @@
 """Evidence records: one JSON line on the machine per `stayfixed prove` and `stayfixed gate` run,
-under the password database's home and never under a repository, and a warning in place of one
-that cannot be written, the verdict and the exit code unchanged.
+under the state home (`XDG_STATE_HOME`, else `HOME`'s `.local/state`) and never where a git
+checkout would carry it, and a warning in place of one that cannot be written, the verdict and the
+exit code unchanged.
 
-Every test has a `HOME` of its own, and the password database answers it (`tests/conftest.py`), so
-a record lands under the test's own directory; a test about the two disagreeing pins the
-database's answer with `as_owner_home`.
+Every test has a `HOME` of its own and no `XDG_STATE_HOME` (`tests/conftest.py`), so a record lands
+under the test's own directory unless the test sets one.
 """
 
 from __future__ import annotations
@@ -29,21 +29,21 @@ from stayfixed.assess.report import GateRun
 from stayfixed.gitenv import GitUnavailable
 from stayfixed.prove import evidence, tree
 from stayfixed.prove.evidence import (
-    EVIDENCE,
+    EVIDENCE_DIR,
+    HOME_STATE,
     INSIDE_REPOSITORY,
     NO_HOME,
     NOT_RECORDED,
-    STATE_DIR,
+    UNASKED,
     VERSION,
+    StateHome,
     normalised_origin,
     project_key,
-    record_path,
 )
 from stayfixed.prove.run import INTERRUPTED, TIMED_OUT, Receipt, Verdict
 from tests.assess.baserepo import clone, commit
 from tests.cli import cli, custom_gate
 from tests.gitfixture import git, needs_git
-from tests.ownerhome import as_owner_home
 from tests.prove.stand_in import NAME
 from tests.prove.test_command import prove_cli
 from tests.prove.test_junit_flag import REPORT, writer
@@ -64,14 +64,20 @@ def home() -> Path:
 
 
 def evidence_dir(under: Path | None = None) -> Path:
-    return (under or home()) / STATE_DIR / EVIDENCE
+    """The evidence directory under the home `under` (the test's by default)."""
+    return (under or home()) / HOME_STATE / EVIDENCE_DIR
 
 
-def records(under: Path | None = None) -> list[dict[str, object]]:
-    """Every record under `under`'s evidence directory (the test's home by default), file by
-    file in name order, line by line."""
+def at_home() -> StateHome:
+    """The state home the test's `HOME` gives."""
+    return StateHome(home(), f"{HOME_STATE}/{EVIDENCE_DIR}")
+
+
+def records(under: Path | None = None, *, directory: Path | None = None) -> list[dict[str, object]]:
+    """Every record in `directory`, else under `under`'s evidence directory (the test's home by
+    default), file by file in name order, line by line."""
     found: list[dict[str, object]] = []
-    directory = evidence_dir(under)
+    directory = directory or evidence_dir(under)
     if not directory.is_dir():
         return found
     for path in sorted(directory.iterdir()):
@@ -187,29 +193,40 @@ def test_a_run_from_a_subdirectory_keys_the_repository(
     assert len(records()) == 2
 
 
-def test_the_record_lives_under_the_database_home(
+def test_the_record_lives_under_xdg_state_home(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Neither `HOME` nor `XDG_STATE_HOME` moves the record: the password database's home does.
-    # Mutation (declared): the home read from `HOME` -> the record lands under the variable's.
-    database = tmp_path / "database-home"
-    database.mkdir()
-    variable = tmp_path / "variable-home"
-    variable.mkdir()
+    # An absolute `XDG_STATE_HOME` is the state home, and nothing lands under `HOME`'s.
+    # Mutation (declared): `XDG_STATE_HOME` not read -> the record lands under `HOME`.
     state = tmp_path / "xdg-state"
-    as_owner_home(monkeypatch, database)
-    monkeypatch.setenv("HOME", str(variable))
     monkeypatch.setenv("XDG_STATE_HOME", str(state))
     project = tmp_path / "project"
     project.mkdir()
     code, _, err = prove_cli(project, monkeypatch, "--", NAME)
     assert (code, err) == (0, "")
-    assert len(records(database)) == 1
-    assert records(variable) == []
-    assert not state.exists()
-    assert record_path(project, home=database) == (
-        database / STATE_DIR / EVIDENCE / f"{project_key(project)}.jsonl"
-    )
+    assert len(records(directory=state / EVIDENCE_DIR)) == 1
+    assert records() == []
+    assert evidence.state_home(os.environ) == StateHome(state, EVIDENCE_DIR)
+
+
+@pytest.mark.parametrize(
+    "variable", [None, "", "relative/state"], ids=["unset", "empty", "relative"]
+)
+def test_the_record_lives_under_home_where_xdg_state_home_is_not_absolute(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, variable: str | None
+) -> None:
+    # The specification's default, `HOME`'s `.local/state`, where `XDG_STATE_HOME` is unset, empty
+    # or relative. Mutation (declared): any `XDG_STATE_HOME` taken -> the relative case writes
+    # under the run's directory.
+    if variable is not None:
+        monkeypatch.setenv("XDG_STATE_HOME", variable)
+    project = tmp_path / "project"
+    project.mkdir()
+    code, _, err = prove_cli(project, monkeypatch, "--", NAME)
+    assert (code, err) == (0, "")
+    assert len(records()) == 1
+    assert not (project / "relative").exists()
+    assert evidence.planned(project, at_home()) == evidence_dir() / f"{project_key(project)}.jsonl"
 
 
 @needs_git
@@ -225,8 +242,8 @@ def test_no_record_under_the_repository(
     code, out, err = prove_cli(home() / typed_in, monkeypatch, "--", NAME)
     assert code == 0
     assert out.startswith("proved: ")
-    would = home() / STATE_DIR / EVIDENCE / f"{project_key(home())}.jsonl"
-    assert record_path(home(), home=home()) is None
+    would = evidence_dir() / f"{project_key(home())}.jsonl"
+    assert evidence.carried(would) == INSIDE_REPOSITORY
     assert err == NOT_RECORDED.format(record=evidence.shown(would), why=INSIDE_REPOSITORY) + "\n"
     assert not evidence_dir().exists()
 
@@ -246,8 +263,8 @@ def test_no_prove_record_inside_a_home_repository_a_nested_project_does_not_answ
     code, out, err = prove_cli(project, monkeypatch, "--", NAME)
     assert code == 0
     assert out.startswith("proved: ")
-    would = home() / STATE_DIR / EVIDENCE / f"{project_key(project)}.jsonl"
-    assert record_path(project, home=home()) is None
+    would = evidence_dir() / f"{project_key(project)}.jsonl"
+    assert evidence.carried(would) == INSIDE_REPOSITORY
     assert err == NOT_RECORDED.format(record=evidence.shown(would), why=INSIDE_REPOSITORY) + "\n"
     assert not evidence_dir().exists()
     status = git(home(), "status", "--porcelain", "--untracked-files=all")
@@ -268,9 +285,56 @@ def test_a_checkout_at_the_state_directory_is_asked_from_its_nearest_existing_pa
     project.mkdir()
     code, _, err = prove_cli(project, monkeypatch, "--", NAME)
     assert code == 0
-    would = home() / STATE_DIR / EVIDENCE / f"{project_key(project)}.jsonl"
+    would = evidence_dir() / f"{project_key(project)}.jsonl"
     assert err == NOT_RECORDED.format(record=evidence.shown(would), why=INSIDE_REPOSITORY) + "\n"
-    assert not (home() / STATE_DIR).exists()
+    assert not evidence_dir().parent.exists()
+
+
+@needs_git
+@pytest.mark.parametrize("ignored", [".local/state/", ".local/", "/*\n!.gitignore"])
+def test_a_home_repository_that_ignores_the_state_directory_gets_its_record(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, ignored: str
+) -> None:
+    # A dotfiles repository at `~` that ignores the record's directory would never carry it, so
+    # the record is written and no warning is said on every run. Mutation (declared): the
+    # checkout's `check-ignore` not asked -> no record and a warning.
+    git(home(), "init", "-q")
+    (home() / ".gitignore").write_text(ignored + "\n", encoding="utf-8")
+    project = tmp_path / "project"
+    project.mkdir()
+    code, _, err = prove_cli(project, monkeypatch, "--", NAME)
+    assert (code, err) == (0, "")
+    assert len(records()) == 1
+    assert evidence.carried(evidence.planned(project, at_home())) is None
+
+
+@needs_git
+@pytest.mark.parametrize("answer", [-1, 128], ids=["no-answer", "an-error"])
+def test_a_check_ignore_that_cannot_answer_writes_no_record(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, answer: int
+) -> None:
+    # Inside a checkout only git's "ignored" lets a record through: a `check-ignore` that cannot
+    # say is no record and one warning saying so. Mutations (declared): every answer but "not
+    # ignored" read as ignored -> a record; the warning for no answer worded as "not ignored" ->
+    # the warning differs.
+    git(home(), "init", "-q")
+    (home() / ".gitignore").write_text(".local/\n", encoding="utf-8")
+    asked = gitenv.git_run
+
+    def unanswered(root: Path, *args: str, **kwargs: object) -> tuple[int, str]:
+        if args[:1] == ("check-ignore",):
+            return answer, ""
+        return asked(root, *args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(gitenv, "git_run", unanswered)
+    project = tmp_path / "project"
+    project.mkdir()
+    code, out, err = prove_cli(project, monkeypatch, "--", NAME)
+    assert code == 0
+    assert out.startswith("proved: ")
+    would = evidence_dir() / f"{project_key(project)}.jsonl"
+    assert err == NOT_RECORDED.format(record=evidence.shown(would), why=UNASKED) + "\n"
+    assert not evidence_dir().exists()
 
 
 @needs_git
@@ -283,7 +347,7 @@ def test_no_gate_record_inside_a_home_repository_a_nested_project_does_not_answe
     project = clone(home() / "code", GATE_BASE + custom_gate("tests", "pass"))
     code, _, err = cli(project, tmp_path, "gate", "--custom")
     assert code == 0
-    would = home() / STATE_DIR / EVIDENCE / f"{project_key(project)}.jsonl"
+    would = evidence_dir() / f"{project_key(project)}.jsonl"
     assert err == NOT_RECORDED.format(record=evidence.shown(would), why=INSIDE_REPOSITORY) + "\n"
     assert not evidence_dir().exists()
 
@@ -319,8 +383,7 @@ def test_an_unwritable_state_directory_warns_and_keeps_the_verdict(
     got, out, err = prove_cli(project, monkeypatch, "--", *argv)
     assert got == code
     assert out.startswith(f"{verdict}: ")
-    would = record_path(project, home=home())
-    assert would is not None
+    would = evidence.planned(project, at_home())
     assert err.startswith(NOT_RECORDED.format(record=evidence.shown(would), why="")[:-1]), err
     assert err.count("\n") == 1
 
@@ -333,7 +396,7 @@ def test_a_state_directory_that_is_a_symlink_is_refused_and_warns(
     elsewhere = tmp_path / "elsewhere"
     elsewhere.mkdir()
     (home() / ".local" / "state").mkdir(parents=True)
-    (home() / STATE_DIR).symlink_to(elsewhere, target_is_directory=True)
+    evidence_dir().parent.symlink_to(elsewhere, target_is_directory=True)
     project = tmp_path / "project"
     project.mkdir()
     code, _, err = prove_cli(project, monkeypatch, "--", NAME)
@@ -345,14 +408,13 @@ def test_a_state_directory_that_is_a_symlink_is_refused_and_warns(
 def test_a_home_that_is_itself_a_link_records_where_it_leads(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # The database's home is a link (a home moved to another disk and linked back): the link is
-    # the machine's, which no session writes, so the walk starts where it leads.
-    # Mutation (declared): the home walked as the database spells it -> "Not a directory".
+    # The home is a link (a home moved to another disk and linked back): the walk starts where it
+    # leads. Mutation (declared): the base walked as `HOME` spells it -> "Not a directory".
     real = tmp_path / "real-home"
     real.mkdir()
     linked = tmp_path / "linked-home"
     linked.symlink_to(real, target_is_directory=True)
-    as_owner_home(monkeypatch, linked)
+    monkeypatch.setenv("HOME", str(linked))
     project = tmp_path / "project"
     project.mkdir()
     code, _, err = prove_cli(project, monkeypatch, "--", NAME)
@@ -360,16 +422,24 @@ def test_a_home_that_is_itself_a_link_records_where_it_leads(
     assert len(records(real)) == 1
 
 
-def test_no_home_plans_no_record(tmp_path: Path) -> None:
-    # Mutation (declared): the no-home arm dropped from `record_path` -> it plans under no home.
-    assert record_path(tmp_path, home=None) is None
+@pytest.mark.parametrize(
+    "environ",
+    [{}, {"HOME": ""}, {"HOME": "relative"}, {"HOME": "relative", "XDG_STATE_HOME": "relative"}],
+    ids=["neither", "empty-home", "relative-home", "both-relative"],
+)
+def test_no_absolute_variable_is_no_state_home(environ: dict[str, str]) -> None:
+    # Mutation (declared): any `HOME` taken -> a relative one is a state home under the run's
+    # directory.
+    assert evidence.state_home(environ) is None
 
 
 @pytest.mark.parametrize("json_flag", [[], ["--json"]])
 def test_no_home_warns_and_keeps_the_verdict(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, json_flag: list[str]
 ) -> None:
-    as_owner_home(monkeypatch, None)
+    # Neither variable names an absolute directory: no state home, one warning.
+    monkeypatch.delenv("HOME")
+    monkeypatch.setenv("XDG_STATE_HOME", "relative")
     project = tmp_path / "project"
     project.mkdir()
     code, out, err = prove_cli(project, monkeypatch, *json_flag, "--", NAME)
@@ -584,28 +654,63 @@ def test_gate_without_a_record_keeps_its_exit_and_warns_once(
 ) -> None:
     # Mutation (declared): a record that cannot be written turns gate's exit 1 -> every case.
     project = clone(tmp_path, GATE_BASE + custom_gate("tests", "pass"))
+    own = home()
     if fault == "no-home":
-        as_owner_home(monkeypatch, None)
+        monkeypatch.delenv("HOME")
     else:
-        (home() / ".local").write_text("", encoding="utf-8")
+        (own / ".local").write_text("", encoding="utf-8")
     code, out, err = cli(project, tmp_path, "gate", *flags)
     assert code == 0, out
     assert err.count("\n") == 1
     assert "was not written" in err
-    assert records() == []
+    assert records(own) == []
+
+
+# The keys each kind of line holds at version 1. A key added, renamed or removed is a new version:
+# `VERSION` moves, and these sets with it.
+PROVE_KEYS = frozenset(
+    {
+        "version",
+        "kind",
+        "at",
+        "stayfixed",
+        "verdict",
+        "reason",
+        "detail",
+        "argv",
+        "runner",
+        "program",
+        "entry",
+        "verified",
+        "scrubbed",
+        "counts",
+        "exit_code",
+        "report_digest",
+        "commit",
+        "dirty_before",
+        "dirty_after",
+        "untracked",
+        "untracked_more",
+        "configs",
+        "configs_more",
+        "ignored_configs",
+    }
+)
+GATE_KEYS = frozenset(
+    {"version", "kind", "at", "stayfixed", "mode", "argv", "commit", "dirty", "gates"}
+)
 
 
 def test_each_line_holds_its_version_s_keys() -> None:
-    # A key added to the receipt reaches every record: the format is a new version then, and this
-    # frozen set moves with `VERSION`. Mutation (declared): a key dropped from the frozen set ->
-    # the record holds one it does not name.
+    # A key added to the receipt reaches every record: the format is a new version then. Mutation
+    # (declared): a prove record's `kind` dropped -> the line holds one key fewer than version 1.
     receipt = Receipt(Verdict.PROVED, "", "", ("pytest",))
     assert evidence.VERSION == 1
-    assert set(evidence.prove_line(receipt, at="t", version="v")) == evidence.PROVE_KEYS
-    gate = evidence.gate_line(
+    assert set(evidence.prove_record(receipt, at="t", version="v")) == PROVE_KEYS
+    gate = evidence.gate_record(
         {}, mode="builtin", argv=[], commit=None, dirty=None, at="t", version="v"
     )
-    assert set(gate) == evidence.GATE_KEYS
+    assert set(gate) == GATE_KEYS
 
 
 def test_a_fifo_at_the_record_is_a_warning_and_never_a_wait(tmp_path: Path) -> None:
@@ -614,7 +719,7 @@ def test_a_fifo_at_the_record_is_a_warning_and_never_a_wait(tmp_path: Path) -> N
     # warning. Run in a child under a timeout, so a regression fails this case rather than hanging
     # the suite. Mutation (declared): `O_NONBLOCK` left off the append's flags -> the child waits.
     home = tmp_path / "home"
-    record = home / evidence.STATE_DIR / evidence.EVIDENCE / "k.jsonl"
+    record = evidence_dir(home) / "k.jsonl"
     record.parent.mkdir(parents=True)
     os.mkfifo(record)
     probe = (
@@ -622,7 +727,7 @@ def test_a_fifo_at_the_record_is_a_warning_and_never_a_wait(tmp_path: Path) -> N
         "from pathlib import Path\n"
         "from stayfixed.prove import evidence\n"
         "home = Path(sys.argv[2])\n"
-        "print(evidence.append(Path(sys.argv[1]), {'a': 1}, home=home))\n"
+        "print(evidence.append(Path(sys.argv[1]), {'a': 1}, base=home))\n"
     )
     done = subprocess.run(
         [sys.executable, "-c", probe, str(record), str(home)],

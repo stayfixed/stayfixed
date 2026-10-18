@@ -63,6 +63,9 @@ NOT_ON_BASE = "not run until the base has this command"
 # A gate that could not judge the tree, wherever its count would print: `answered` is false and
 # `reason` names the command that shows why.
 UNANSWERED = "could not run"
+# A custom gate the run did not start because it had already failed, in a table and in the
+# evidence record's words.
+NOT_RUN = "not run"
 
 
 def mode(enforcing: bool) -> str:
@@ -72,7 +75,7 @@ def mode(enforcing: bool) -> str:
 def count_cell(result: GateResult) -> int | str:
     """A table's findings cell: the count, `UNANSWERED`, or `not run` for a gate never started."""
     if not result.ran:
-        return "not run"
+        return NOT_RUN
     return len(result.findings) if result.answered else UNANSWERED
 
 

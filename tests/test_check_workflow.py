@@ -553,7 +553,7 @@ def test_the_uploaded_directory_is_the_one_evidence_writes() -> None:
     # The records are written under the password database's home, which is the runner's `~`.
     given = _step(UPLOAD)["with"]
     assert isinstance(given, dict), given
-    assert given["path"] == f"~/{evidence.STATE_DIR}/{evidence.EVIDENCE}/", given
+    assert given["path"] == f"~/{evidence.HOME_STATE}/{evidence.EVIDENCE_DIR}/", given
 
 
 # The job's bound as `check.yml` spells it: the caller's value when it is inside the bounds, and

@@ -13,7 +13,7 @@ tests failed by the dozen on one machine and passed on the next.
 Here, rather than in the product, because the product's behaviour for a real user is right; it
 is the suite that must not depend on whose machine it runs on. `HOME` points at a fresh
 directory for each test and `XDG_CONFIG_HOME`, which `git` reads before `HOME/.config`, is
-dropped. A test that needs a global configuration writes one into that directory. What `HOME`
+dropped, as is `XDG_STATE_HOME`, which the evidence records read before `HOME`. A test that needs a global configuration writes one into that directory. What `HOME`
 cannot seal is git's system configuration, which `scrubbed_env` gives no variable to redirect;
 no shipped system file carries an excludes rule.
 
@@ -59,6 +59,9 @@ def _a_home_of_its_own(
     (home / ".gitconfig").write_text(gitconfig(MAINTENANCE_OFF), encoding="utf-8")
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    # And `XDG_STATE_HOME`, which places the evidence records before `HOME` does: a developer's
+    # own would collect every record the suite's runs keep.
+    monkeypatch.delenv("XDG_STATE_HOME", raising=False)
     # The password database answers whatever `HOME` holds, which is where every command not run
     # from a terminal finds the machine owner's home (`tests/ownerhome.py`).
     follows_home(monkeypatch)

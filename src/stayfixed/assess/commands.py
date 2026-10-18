@@ -140,16 +140,20 @@ def _verdict_words(gate_run: GateRun, waiting: Sequence[str]) -> dict[str, str]:
     """Each gate's verdict word for the run's evidence record: `config` when the configuration
     check ran, `passes` or `refused`; each gate that ran, `passes`, `fails` (enforcing) or `would
     fail` (advisory), `could not run`, or `not run` once the run had already failed; and
-    `waiting` for a custom gate not run until the base has its command."""
+    `waiting` for a custom gate not run until the base has its command. The two words a gate that
+    did not judge the tree carries are `assess.report`'s, as every other report of it spells
+    them."""
+    from stayfixed.assess.report import NOT_RUN, UNANSWERED
+
     words: dict[str, str] = {}
     if gate_run.judged:
         words["config"] = "refused" if gate_run.verdict.refused else "passes"
     for result in gate_run.results:
         enforcing = result.name in gate_run.verdict.enforcing
         if not result.ran:
-            words[result.name] = "not run"
+            words[result.name] = NOT_RUN
         elif not result.answered:
-            words[result.name] = "could not run"
+            words[result.name] = UNANSWERED
         elif result.findings:
             words[result.name] = "fails" if enforcing else "would fail"
         else:

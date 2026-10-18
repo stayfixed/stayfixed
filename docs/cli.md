@@ -1573,8 +1573,8 @@ where findings are serialised.
 `--workflow-sha` matches a moved `[ci] ref` — the public repository's tags.
 
 **Writes** the file `--summary` names, and one line to the project's evidence record,
-`~/.local/state/stayfixed/evidence/<key>.jsonl`, as
-[`stayfixed prove`](#stayfixed-prove---timeout-seconds---junit-path----command-) does, for every run
+`$XDG_STATE_HOME/stayfixed/evidence/<key>.jsonl` or `~/.local/state/stayfixed/evidence/<key>.jsonl`,
+as [`stayfixed prove`](#stayfixed-prove---timeout-seconds---junit-path----command-) does, for every run
 that judged the configuration or ran a gate (`nothing to run` included, and no line for a refusal
 before either: no tree `stayfixed.toml`, one the loader refuses, a refused machine file, an
 unknown `--only`; nor for a run interrupted before it finished, which judged nothing whole): its `mode` (`builtin`, `custom` or `all`), its flags, the commit and whether the tree
@@ -2282,8 +2282,8 @@ other. Run it on a checkout you trust.
 **What stays on the machine.** `uninstall` takes back one repository's footprint, and what is the
 machine's stays: the deny rules `stayfixed setup` added to the user settings file, every
 approval in `~/.config/stayfixed/trust.json`, this repository's store among them, and the evidence
-records of its `prove` and `gate` runs in `~/.local/state/stayfixed/evidence/`, which are yours to
-remove. Run `stayfixed
+records of its `prove` and `gate` runs in `$XDG_STATE_HOME/stayfixed/evidence/` or
+`~/.local/state/stayfixed/evidence/`, which are yours to remove. Run `stayfixed
 trust revoke memory` before uninstalling to withdraw this repository's approval; afterwards, with no
 `stayfixed.toml` to describe the store, `trust revoke` says so and names `stayfixed trust revoke
 memory --subject KEY`, with a key `stayfixed trust list --all --json` prints.

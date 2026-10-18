@@ -6489,8 +6489,8 @@ before = "        junit=args.junit,"
 after = "        junit=None,"
 reddens = ["tests/prove/test_junit_flag.py::test_the_command_takes_junit_and_says_the_runner_is_not_verified"]
 
-# Evidence records: one line a `prove` and a `gate` run, under the password database's home and
-# never inside a repository, and a warning in place of one that cannot be written.
+# Evidence records: one line a `prove` and a `gate` run, under the state home and never where a
+# git checkout would carry it, and a warning in place of one that cannot be written.
 [[mutation]]
 name = "prove keeps no evidence record"
 file = "src/stayfixed/prove/commands.py"
@@ -6509,13 +6509,32 @@ after = """    warned = record_prove(cwd, receipt)
 reddens = ["tests/prove/test_evidence.py::test_an_unwritable_state_directory_warns_and_keeps_the_verdict[proved-argv0-0]"]
 
 [[mutation]]
-name = "a prove record's home is the one HOME names"
+name = "a record's state home leaves XDG_STATE_HOME unread"
 file = "src/stayfixed/prove/evidence.py"
-before = """    line = prove_line(receipt, at=stamp(), version=__version__)
-    return keep(root, line, home=passwd_home())"""
-after = """    line = prove_line(receipt, at=stamp(), version=__version__)
-    return keep(root, line, home=Path(os.environ["HOME"]))"""
-reddens = ["tests/prove/test_evidence.py::test_the_record_lives_under_the_database_home"]
+before = """    if os.path.isabs(state):
+        return StateHome(Path(state), EVIDENCE_DIR)"""
+after = """    if False:
+        return StateHome(Path(state), EVIDENCE_DIR)"""
+reddens = ["tests/prove/test_evidence.py::test_the_record_lives_under_xdg_state_home"]
+
+# A relative `XDG_STATE_HOME` or `HOME` names no directory the specification reads: taken, it
+# would put the record under whatever directory the run was typed in.
+[[mutation]]
+name = "a record's state home takes a relative XDG_STATE_HOME"
+file = "src/stayfixed/prove/evidence.py"
+before = "    if os.path.isabs(state):"
+after = "    if state:"
+reddens = ["tests/prove/test_evidence.py::test_the_record_lives_under_home_where_xdg_state_home_is_not_absolute[relative]"]
+
+[[mutation]]
+name = "a record's state home takes a relative HOME"
+file = "src/stayfixed/prove/evidence.py"
+before = "    if os.path.isabs(home):"
+after = "    if home:"
+reddens = [
+  "tests/prove/test_evidence.py::test_no_absolute_variable_is_no_state_home[relative-home]",
+  "tests/prove/test_evidence.py::test_no_absolute_variable_is_no_state_home[both-relative]",
+]
 
 [[mutation]]
 name = "the origin's userinfo is kept in the key"
@@ -6544,8 +6563,10 @@ reddens = [
 [[mutation]]
 name = "a record is written inside a git checkout"
 file = "src/stayfixed/prove/evidence.py"
-before = "    return None if _inside_a_checkout(planned) else planned"
-after = "    return planned"
+before = """    if gitenv.checkout_root(asked) is None:
+        return None"""
+after = """    if True:
+        return None"""
 reddens = [
   "tests/prove/test_evidence.py::test_no_record_under_the_repository[]",
   "tests/prove/test_evidence.py::test_no_record_under_the_repository[sub]",
@@ -6553,15 +6574,48 @@ reddens = [
   "tests/prove/test_evidence.py::test_no_gate_record_inside_a_home_repository_a_nested_project_does_not_answer_for",
 ]
 
+# A checkout that ignores the record would never carry it: a dotfiles repository at the home that
+# ignores `.local/state` gets its records, and no warning on every run.
+[[mutation]]
+name = "a record a checkout ignores is refused all the same"
+file = "src/stayfixed/prove/evidence.py"
+before = """    if code == 0:
+        return None"""
+after = """    if False:
+        return None"""
+reddens = [
+  "tests/prove/test_evidence.py::test_a_home_repository_that_ignores_the_state_directory_gets_its_record[.local/state/]",
+  "tests/prove/test_evidence.py::test_a_home_repository_that_ignores_the_state_directory_gets_its_record[.local/]",
+]
+
+# Fail closed: only `check-ignore`'s "ignored" lets a record into a checkout, and a `check-ignore`
+# that cannot say is said to be one.
+[[mutation]]
+name = "a check-ignore with no answer lets the record into the checkout"
+file = "src/stayfixed/prove/evidence.py"
+before = "    return INSIDE_REPOSITORY if code == 1 else UNASKED"
+after = "    return INSIDE_REPOSITORY if code == 1 else None"
+reddens = [
+  "tests/prove/test_evidence.py::test_a_check_ignore_that_cannot_answer_writes_no_record[no-answer]",
+  "tests/prove/test_evidence.py::test_a_check_ignore_that_cannot_answer_writes_no_record[an-error]",
+]
+
+[[mutation]]
+name = "a check-ignore with no answer is worded as one that answered"
+file = "src/stayfixed/prove/evidence.py"
+before = "    return INSIDE_REPOSITORY if code == 1 else UNASKED"
+after = "    return INSIDE_REPOSITORY"
+reddens = ["tests/prove/test_evidence.py::test_a_check_ignore_that_cannot_answer_writes_no_record[no-answer]"]
+
 # A dotfiles repository at the home holds the record whatever repository the run answers for:
 # asking only that one, as the record first did, writes a line into the dotfiles repository.
 [[mutation]]
 name = "a record asks only the repository the run answers for"
 file = "src/stayfixed/prove/evidence.py"
-before = "    return None if _inside_a_checkout(planned) else planned"
+before = "    why = carried(path)"
 after = """    top = gitenv.checkout_root(root)
-    inside = top is not None and Path(os.path.realpath(home)).is_relative_to(os.path.realpath(top))
-    return None if inside else planned"""
+    inside = top is not None and start.is_relative_to(os.path.realpath(top))
+    why = INSIDE_REPOSITORY if inside else None"""
 reddens = [
   "tests/prove/test_evidence.py::test_no_prove_record_inside_a_home_repository_a_nested_project_does_not_answer_for",
   "tests/prove/test_evidence.py::test_no_gate_record_inside_a_home_repository_a_nested_project_does_not_answer_for",
@@ -6571,18 +6625,27 @@ reddens = [
 [[mutation]]
 name = "a record's checkout is asked from the home alone"
 file = "src/stayfixed/prove/evidence.py"
-before = "    return gitenv.checkout_root(fsops.creation_directory(record)) is not None"
-after = "    return gitenv.checkout_root(record.parents[4]) is not None"
+before = "    asked = fsops.creation_directory(record)"
+after = "    asked = record.parents[4]"
 reddens = ["tests/prove/test_evidence.py::test_a_checkout_at_the_state_directory_is_asked_from_its_nearest_existing_part"]
 
-# A home the database names as a link is followed first: walked as spelled, `O_NOFOLLOW` refuses
-# the machine's own link and no record is ever written.
+# A home that is a link (moved to another disk and linked back) is followed first: walked as
+# spelled, `O_NOFOLLOW` refuses the machine's own link and no record is ever written.
 [[mutation]]
-name = "a record's home is walked as the database spells it"
+name = "a record's base is walked as HOME spells it"
 file = "src/stayfixed/prove/evidence.py"
-before = "    home = Path(os.path.realpath(home))\n"
-after = ""
+before = "    start = Path(os.path.realpath(there))"
+after = "    start = there"
 reddens = ["tests/prove/test_evidence.py::test_a_home_that_is_itself_a_link_records_where_it_leads"]
+
+# An `XDG_STATE_HOME` not made yet is made: the walk starts at the nearest directory above it that
+# is there.
+[[mutation]]
+name = "a record's walk starts at an XDG_STATE_HOME not made yet"
+file = "src/stayfixed/prove/evidence.py"
+before = "    while not fsops.exists(there) and there != there.parent:"
+after = "    while False:"
+reddens = ["tests/prove/test_evidence.py::test_the_record_lives_under_xdg_state_home"]
 
 [[mutation]]
 name = "a run with no home says nothing of the record it did not write"
@@ -6635,30 +6698,17 @@ reddens = ["tests/prove/test_evidence.py::test_a_checkout_with_an_origin_keys_by
 [[mutation]]
 name = "a record is refused wherever the run's directory holds the home"
 file = "src/stayfixed/prove/evidence.py"
-before = """    if home is None:
-        return None
-    planned"""
-after = """    if home is None or Path(os.path.realpath(home)).is_relative_to(os.path.realpath(root)):
-        return None
-    planned"""
+before = "    why = carried(path)"
+after = "    why = INSIDE_REPOSITORY if start.is_relative_to(os.path.realpath(root)) else carried(path)"
 reddens = ["tests/prove/test_evidence.py::test_outside_a_repository_the_home_itself_records"]
 
-[[mutation]]
-name = "record_path plans a record under no home"
-file = "src/stayfixed/prove/evidence.py"
-before = """    if home is None:
-        return None
-    planned"""
-after = "    planned"
-reddens = ["tests/prove/test_evidence.py::test_no_home_plans_no_record"]
-
-# The record is reached from the home by the contained walk, so a link planted at the state
+# The record is reached from its base by the contained walk, so a link planted at the state
 # directory redirects nothing.
 [[mutation]]
 name = "a record is written by its path, not by the contained walk"
 file = "src/stayfixed/prove/evidence.py"
-before = """        fsops.mkdirs_within(home, relative)
-        with fsops.open_within(home, relative) as (dir_fd, name):
+before = """        fsops.mkdirs_within(base, relative)
+        with fsops.open_within(base, relative) as (dir_fd, name):
             fsops.append_at(dir_fd, name, payload)"""
 after = """        path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("ab") as stream:
@@ -6701,14 +6751,14 @@ before = "        if planned.source is ReportSource.FILE and scratch not in plan
 after = "        if False:"
 reddens = ["tests/prove/test_run.py::test_a_plan_whose_report_lies_outside_its_scratch_is_a_defect_and_raises"]
 
-# The record's keys at version 1 are frozen beside `VERSION`: a key the record gains is a new
-# version.
+# A line holds version 1's keys, which the test that reads them holds beside `VERSION`: a key the
+# record gains or loses is a new version.
 [[mutation]]
 name = "the record's version 1 keys drift from what a line holds"
 file = "src/stayfixed/prove/evidence.py"
-before = '''        "scrubbed",
-        "counts",'''
-after = '''        "counts",'''
+before = """        "kind": "prove",
+"""
+after = ""
 reddens = ["tests/prove/test_evidence.py::test_each_line_holds_its_version_s_keys"]
 
 # The prove section lists `--json`'s keys as the receipt's fields, in order.
