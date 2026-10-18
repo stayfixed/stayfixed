@@ -1419,8 +1419,8 @@ for Task 8 and the package-name half of its ruling for Task 10.
 
 ### Wave D (controller, 2026-10-18)
 
-Implementer about 260k tokens over the first pass and one fix round; commits `1d54f00b`,
-`e7feaac9`, `dc3c2230`. `read_report` lives in `src/stayfixed/prove/reports.py`, not `counts.py`:
+Implementer about 260k tokens over the first pass and one fix round; commits `1d54f00`,
+`e7feaac`, `dc3c223`. `read_report` lives in `src/stayfixed/prove/reports.py`, not `counts.py`:
 the readers import `counts`, and the layering test refuses the cycle. Review: spec compliant; one
 Important finding (a reader's refusal carried report-written text unbounded), fixed with
 `printed.clipped`. CPython 3.11.17 runs `tests/prove` green.
