@@ -3401,18 +3401,18 @@ reddens = [
 
 # Every document that counts `doctor`'s rows is held to the report's count.
 [[mutation]]
-name = "the reference counts the doctor rows it had before preferences"
+name = "the reference counts the doctor rows it had before retired-deny"
 file = "docs/cli.md"
-before = "Eighteen checks over one installation."
-after = "Seventeen checks over one installation."
+before = "Nineteen checks over one installation."
+after = "Eighteen checks over one installation."
 reddens = ["tests/test_documents.py::test_every_document_counts_the_rows_the_report_has"]
 
 # And the reference's order sentence counts the core's rows and the private layer's apart.
 [[mutation]]
-name = "the reference counts thirteen of the installation's own doctor rows"
+name = "the reference miscounts the installation's own doctor rows"
 file = "docs/cli.md"
-before = "The rows come in a fixed order: the installation's own twelve first, then the six about the"
-after = "The rows come in a fixed order: the installation's own thirteen first, then the six about the"
+before = "The rows come in a fixed order: the installation's own thirteen first, then the six about the"
+after = "The rows come in a fixed order: the installation's own fourteen first, then the six about the"
 reddens = [
   "tests/test_documents.py::test_the_reference_counts_the_cores_rows_and_the_private_layers_apart",
 ]

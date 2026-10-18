@@ -5,7 +5,7 @@ description: Diagnose a stayfixed installation — hooks, memory store, budgets,
 
 # Diagnosing an installation
 
-1. Run `stayfixed doctor --json` and read the report: eighteen checks, each with a status, a
+1. Run `stayfixed doctor --json` and read the report: nineteen checks, each with a status, a
    detail and a remedy. Between them they answer whether the repository is initialised, whether
    the hook wrapper can reach stayfixed at all, whether this checkout is attached and what shape
    its memory path has, every hook entry with its provenance, each budget raised or lowered, the
