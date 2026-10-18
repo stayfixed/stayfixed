@@ -272,8 +272,10 @@ def test_renumber_carries_a_regression_byte_for_byte(tmp_path: Path) -> None:
 
 @needs_git
 def test_renumber_leaves_an_argv_naming_the_old_identifier(tmp_path: Path) -> None:
-    # An argv names the test it runs, and a test is not renamed when its bug is renumbered. BR-003
-    # names BR-002 in its title, its `related` list and its body too, all of which the sweep still
+    # Renumber leaves a `regression` exactly as written. A test whose name carries BR-002 in a
+    # scanned file is renamed by the same sweep, so an argv naming the old identifier may need
+    # editing by hand; this pins only that the argv is not the sweep's to rewrite. BR-003 names
+    # BR-002 in its title, its `related` list and its body too, all of which the sweep still
     # rewrites; BR-004 names it in its argv alone. Mutation (oracle): `mutations/`'s "the sweep
     # rewrites an argv inside a list value" -> both argvs name BR-009.
     root = ledger_copy(tmp_path)

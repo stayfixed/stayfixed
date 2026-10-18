@@ -814,8 +814,10 @@ The entry carries the keys `id`, `title`, `status`, `severity`, `area`, `found`,
 an inline list of double-quoted items, like `regression: ["pytest", "-k", "total and not slow"]`,
 each item read with the two escapes a quoted title takes (`\"` and `\\`), separated by a comma
 and spaces. `regression:` and `regression: []` are the empty list. `bugs check` reports any other
-shape as `unreadable-entry`, as it does an empty item and an item holding a control character, and
-`bugs renumber` never rewrites a `regression`. `bugs new` does not write one yet.
+shape as `unreadable-entry`, as it does an empty item and an item holding a control character
+below U+0020, or DEL. `bugs renumber` leaves a `regression` exactly as written, while its sweep
+renames a test whose name carries the old identifier in a scanned file, so an argv naming the old
+identifier may need editing by hand. `bugs new` does not write one yet.
 
 **Writes** the entry file (creating `<paths.bugs>` for the first entry) and `<paths.bug_index>`;
 and, unless `--no-fetch`, whatever the `git fetch --quiet --no-recurse-submodules origin` it runs
@@ -939,9 +941,11 @@ forever. The line counts them and names up to eight; `--json`'s `unswept` carrie
 an object with `path` and `reason`. The path is relative to the root, and the reason is the error
 in words, naming no absolute path; a refusal of stayfixed's own may repeat the root-relative path.
 The moved entry's own body is the operator's to rewrite and is not swept, and neither is any
-entry's `regression`: an argv names the test it runs, and the test keeps its name. A write of the move's
-own that fails — `NEW`, the pointer at `OLD` or the index — exits `1` naming the file and the
-reason, and says that running the same move again once the file can be written finishes it.
+entry's `regression`, which is left exactly as written. The same sweep renames a test whose name
+carries `OLD` in a scanned file, a test file under `[ledger] code_roots` included, so an argv
+naming `OLD` may then name a test that no longer exists and need editing by hand. A write of the
+move's own that fails — `NEW`, the pointer at `OLD` or the index — exits `1` naming the file and
+the reason, and says that running the same move again once the file can be written finishes it.
 
 **Writes** the two entry files, every rewritten file, and `<paths.bug_index>`.
 

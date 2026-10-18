@@ -55,9 +55,10 @@ class Schema:
 
     Built consistent or not at all: a key or a status that one part names and another lacks is
     refused here, where the register is written, rather than as a `KeyError` on the first entry
-    that reaches it. The template is not read here: the entry reader owns the grammar of what it
-    writes, and a test round-trips every shipped register's scaffold and void entry through that
-    reader (`tests/ledger/test_register.py`), so a template is held to the one grammar there is.
+    that reaches it. The template's placeholders are read here, so that no list is one; the
+    grammar of what the template writes is not checked here: the entry reader owns it, and a test
+    round-trips every shipped register's scaffold and void entry through that reader
+    (`tests/ledger/test_register.py`), so a template is held to the one grammar there is.
     """
 
     keys: tuple[str, ...]  # frontmatter keys, in the order an entry writes them
@@ -94,7 +95,8 @@ class Schema:
 
     @property
     def scalar_keys(self) -> tuple[str, ...]:
-        """`keys` without `lists`: the keys whose value `Entry.value` reads."""
+        """`keys` without `lists`: the keys holding one value each. `related` is among them and
+        is read through `Entry.related`; every other one through `Entry.value`."""
         return tuple(key for key in self.keys if key not in self.lists)
 
 

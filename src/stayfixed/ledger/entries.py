@@ -81,7 +81,9 @@ def _where(path: Path) -> str:
 class Entry:
     """One parsed entry file. `fields` holds the register's keys outside `ENGINE_KEYS` and its
     lists, each one the register declares, with `""` for a key the file leaves empty or out;
-    `lists` holds each of its lists, with `()` for one the file leaves empty or out."""
+    `lists` holds each of its lists, with `()` for one the file leaves empty or out. That every
+    list key is present is `parse_entry`'s guarantee, not this class's: an `Entry` built directly
+    holds the lists it is given, none by default."""
 
     id: str
     title: str
