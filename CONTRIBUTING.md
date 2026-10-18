@@ -464,6 +464,14 @@ that the set holds on Linux under 3.13. A mutation that holds there and not on m
 under another interpreter, would reach `main`, where before it would have been caught in the
 pull request.
 
+A pull request that changes nothing outside `docs/` narrows further: the suite runs on that one
+configuration alone, and the oracle, the plugin validator and the install smoke skip. The
+documents ship in no artifact and no plugin tree, but tests read them, so the suite still runs
+once. The `changes` job in `ci.yml` and `smoke.yml` decides it, and decides it closed: a renamed
+file counts under the name it left, a name git quotes counts as code, and any answer but an
+explicit "only `docs/`" runs everything (`tests/test_ci_scope.py`). Every other leg still starts
+and reports, because branch protection requires each by name.
+
 A possessive repeat (`*+`, `++`) of one character or class may stand in any pattern; of a group,
 only where every pass is single characters and anchors followed by repeats of one character that
 may match nothing, or one repeat of one character that needs at most one, alone
