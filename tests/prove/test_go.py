@@ -205,6 +205,40 @@ def test_the_go_on_path_runs_wherever_it_lies(tmp_path: Path, where: str) -> Non
     assert (got.argv[0], got.program) == (str(go), Path(os.path.realpath(go)))
 
 
+def test_a_launcher_is_kept_in_front_of_the_go_on_path(tmp_path: Path) -> None:
+    # `uv run go test ./...`: the launcher runs, its words kept in front, as every adapter keeps
+    # them, so the core's refusal of its file options guards the run that happens. The program is
+    # the launcher's realpath; the `go` it is handed is the caller's `PATH`'s, by its path.
+    # Mutation (declared): the launcher dropped -> the plan runs `go` alone.
+    tools = tmp_path / "tools"
+    launcher = executable(tools / "uv")
+    go = executable(tmp_path / "bin" / "go")
+    got = GO.plan(
+        ("uv", "run", "--locked"),
+        ["go", "test", "./..."],
+        cwd=tmp_path,
+        root=tmp_path,
+        scratch=tmp_path / "scratch",
+        environ={"PATH": os.pathsep.join([str(tools), str(go.parent)])},
+    )
+    assert isinstance(got, Plan), got
+    assert got.argv == (str(launcher), "run", "--locked", str(go), "test", "-json", "./...")
+    assert got.program == Path(os.path.realpath(launcher))
+
+
+def test_a_launcher_not_on_path_does_not_resolve(tmp_path: Path) -> None:
+    go = executable(tmp_path / "bin" / "go")
+    got = GO.plan(
+        ("uv", "run"),
+        ["go", "test"],
+        cwd=tmp_path,
+        root=tmp_path,
+        scratch=tmp_path / "scratch",
+        environ={"PATH": str(go.parent)},
+    )
+    assert got == Unresolved(ENTRY_NOT_FOUND, "no uv on PATH")
+
+
 def test_the_file_modfile_names_is_among_the_configs(tmp_path: Path) -> None:
     # Mutation (declared): the named file left out -> the adapter's own globs alone.
     go = executable(tmp_path / "bin" / "go")

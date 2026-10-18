@@ -830,6 +830,9 @@ An option with which `uv` loads a file the command names, `--env-file` or `--con
 (`launcher-option`, naming the option). Every other assignment reaches the runner in its
 environment, in order, the last of two for one name winning, and never in its argv; the adapter is
 handed the launcher's own words (`uv run` and its options) and never an assignment or an `env`.
+Every adapter keeps those words in front of the run it plans, so the launcher runs, its file
+options refused as above, and the receipt's program is the launcher's realpath; a `node` or `go`
+the adapter finds itself is the one on your `PATH`, handed to the launcher by its path.
 The environment is the whole launched process's, the launcher's included: `uv run TYPED=yes
 pytest`, which `uv` itself would not run, runs with `TYPED` set, and an assigned `UV_*` variable
 other than the two above reaches `uv`. A

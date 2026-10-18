@@ -2333,6 +2333,22 @@ reddens = [
   "tests/prove/test_javascript.py::test_a_file_that_is_not_the_package_s_bin_does_not_resolve[node_modules/jest/other.js]",
 ]
 
+# Every adapter keeps the launcher's words in front of its plan, so the core's refusal of the
+# launcher's file options guards the run that happens.
+[[mutation]]
+name = "the jest and vitest adapters drop the launcher"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = "    if not launch:\n        return Path(argv[0]), argv"
+after = "    if True:\n        return Path(argv[0]), argv"
+reddens = ["tests/prove/test_javascript.py::test_a_launcher_is_kept_in_front_of_the_node_on_path"]
+
+[[mutation]]
+name = "the go adapter drops the launcher"
+file = "src/stayfixed/profiles/go/adapters.py"
+before = "        if launch:\n            launcher ="
+after = "        if False:\n            launcher ="
+reddens = ["tests/prove/test_go.py::test_a_launcher_is_kept_in_front_of_the_go_on_path"]
+
 # `--setup-plan` exits 0 and reports a failing test as passed: the refusal is load-bearing.
 [[mutation]]
 name = "the pytest adapter leaves --setup-plan off its refusals"
@@ -2595,8 +2611,8 @@ reddens = ["tests/prove/test_javascript.py::test_npm_test_is_not_recognised[comm
 [[mutation]]
 name = "the jest and vitest adapters run npx"
 file = "src/stayfixed/profiles/javascript/adapters.py"
-before = "            argv=(str(node), *node_words, str(entry), *_with(words, runner.ours(words, report))),"
-after = "            argv=(str(node.parent / _NPX), runner.name, *_with(words, runner.ours(words, report))),"
+before = "            (str(node), *node_words, str(entry), *_with(words, runner.ours(words, report))),"
+after = "            (str(node.parent / _NPX), runner.name, *_with(words, runner.ours(words, report))),"
 reddens = ["tests/prove/test_javascript.py::test_npx_is_never_executed"]
 
 [[mutation]]

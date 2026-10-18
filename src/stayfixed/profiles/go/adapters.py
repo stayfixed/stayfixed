@@ -38,7 +38,10 @@ command; the anchor of each refusal is the command's own words.
 - `CC`, `CXX`, the `CGO_*` variables, `-ldflags` and `-gcflags` (`-extld` among their values) and
   `-compiler` are free: they shape how the code under test is built, and a built test binary can
   already print test2json's framing, which is the bound's Go case below.
-- The `go` is the one on `PATH`, and the receipt carries its realpath.
+- The `go` is the one on `PATH`, and the receipt carries its realpath. Behind a launcher the core
+  read past (`uv run …`), its words are kept in front and the program is the launcher's realpath;
+  the `go` it is handed is still the caller's `PATH`'s, by its path, so the launcher's file
+  options the core refuses guard the run that happens.
 
 What a file in the tree can do -- a test that prints test2json's own framing (`\\x16--- PASS:`),
 which test2json reads as a result, a `TestMain` that exits 0 before any test, a `go.mod` that
@@ -77,6 +80,7 @@ _ENDS = frozenset({"-args", "--args", "--"})
 _CHANGE_DIRECTORY = "C"
 _MODFILE = "modfile"
 _NO_GO = "no go on PATH"
+_NO_LAUNCHER = "no {launcher} on PATH"
 # The closed list, each a flag as the receipt names it: the four that take a value, refused
 # whatever it is, and `-c`, refused unless it is turned off.
 _REFUSED = frozenset({"-exec", "-toolexec", "-overlay", "-o"})
@@ -237,6 +241,12 @@ def _executable(path: Path) -> bool:
         return False
 
 
+def _on_path(name: str, cwd: Path, path: str) -> Path | None:
+    """The first `name` on `path` that can be executed, a relative entry read from `cwd`."""
+    candidates = [cwd / directory / name for directory in path.split(os.pathsep)]
+    return next((candidate for candidate in candidates if _executable(candidate)), None)
+
+
 class GoTestAdapter:
     """`RunnerAdapter` for `go test`."""
 
@@ -266,13 +276,20 @@ class GoTestAdapter:
         if refused is not None:
             return Refused(REFUSED_OPTION, refused)
         path = environ.get("PATH", os.defpath)
-        candidates = [cwd / directory / _GO for directory in path.split(os.pathsep)]
-        go = next((candidate for candidate in candidates if _executable(candidate)), None)
+        go = _on_path(_GO, cwd, path)
         if go is None:
             return Unresolved(ENTRY_NOT_FOUND, _NO_GO)
+        argv: tuple[str, ...] = (str(go), _TEST, *_planned_args(args))
+        program = go
+        if launch:
+            launcher = cwd / launch[0] if os.sep in launch[0] else _on_path(launch[0], cwd, path)
+            if launcher is None or not _executable(launcher):
+                named = Path(launch[0]).name
+                return Unresolved(ENTRY_NOT_FOUND, _NO_LAUNCHER.format(launcher=named))
+            program, argv = launcher, (str(launcher), *launch[1:], *argv)
         return Plan(
-            argv=(str(go), _TEST, *_planned_args(args)),
-            program=Path(os.path.realpath(go)),
+            argv=argv,
+            program=Path(os.path.realpath(program)),
             kind=ReportKind.EVENTS,
             source=ReportSource.STDOUT,
             report=scratch / REPORT_NAME,

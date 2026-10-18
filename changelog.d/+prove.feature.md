@@ -52,6 +52,9 @@ ends, and is `not proven` (`never-ends`), read from its last setting as the runn
 subcommand in the command's first word is its own: `related` gets `--run`, `watch` and `dev` never
 end, and `bench`, `list`, `init` and `doctor`, which run no test suite that reports, are
 `not proven` (`no-test-run`).
+Behind `uv run`, every adapter keeps the launcher's words in front of its run, the `node` or `go`
+it finds handed to it by its path, so the refusal of the launcher's file options guards the run
+that happens.
 The `go test` adapter runs the `go` on `PATH` as `go test -json`, counting only the events of its
 standard output, with `GOENV=off`, `GOFLAGS=` and `GOTOOLCHAIN=local` set and an inherited `GOROOT`,
 `GOOS` or `GOARCH` removed; it refuses `-exec`, `-toolexec`, `-overlay`, `-o`, `-c` and a false

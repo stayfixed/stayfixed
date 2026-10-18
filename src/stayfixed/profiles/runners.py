@@ -142,5 +142,8 @@ class RunnerAdapter(Protocol):
         the core reads through): the core has taken every assignment and every `env` out of it,
         and they reach the run in its environment. A launcher option that loads a file, and an
         assignment of a variable in `forging` or of a launcher's own file variable, were refused
-        before `plan` is asked."""
+        before `plan` is asked. Every adapter keeps the launcher's words in front of its plan,
+        the program then the launcher's realpath, so those refusals guard the run that happens;
+        a program the adapter finds itself (`node`, `go`) is found on the caller's `PATH` and
+        handed to the launcher by its path."""
         ...

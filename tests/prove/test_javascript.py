@@ -118,9 +118,10 @@ def planned(
     *,
     root: Path | None = None,
     path: str = "",
+    launch: Sequence[str] = (),
 ) -> Plan | Refused | Unresolved:
     return adapter.plan(
-        (),
+        launch,
         command,
         cwd=cwd,
         root=root if root is not None else cwd,
@@ -378,6 +379,35 @@ def test_a_file_that_is_not_the_package_s_bin_does_not_resolve(tmp_path: Path, s
     got = planned(JEST, ["node", script], project, path=str(node.parent))
     assert got == Unresolved(ENTRY_NOT_FOUND, NOT_THE_ENTRY.format(package="jest"))
     assert len(NOT_THE_ENTRY.format(package="jest-cli")) <= CLIPPED_CHARS
+
+
+def test_a_launcher_is_kept_in_front_of_the_node_on_path(tmp_path: Path) -> None:
+    # `uv run npx jest`: the launcher runs, its words kept in front, as every adapter keeps them,
+    # so the core's refusal of its file options guards the run that happens; `node` is the
+    # caller's `PATH`'s, by its path, and the program the launcher's realpath. Mutation
+    # (declared): the launcher dropped -> the plan runs `node` alone.
+    project = tmp_path / "project"
+    entry, _, node = installed(project)
+    launcher = executable(tmp_path / "tools" / "uv")
+    path = os.pathsep.join([str(launcher.parent), str(node.parent)])
+    report = project / "scratch" / JEST_REPORT
+    got = planned(JEST, ["npx", "jest"], project, path=path, launch=("uv", "run"))
+    assert isinstance(got, Plan), got
+    assert got.argv == (
+        str(launcher),
+        "run",
+        str(node),
+        str(entry),
+        "--json",
+        f"--outputFile={report}",
+    )
+    assert (got.program, got.entry) == (Path(os.path.realpath(launcher)), entry)
+    tested = planned(NODE_TEST, ["node", "--test"], project, path=path, launch=("uv", "run"))
+    assert isinstance(tested, Plan), tested
+    assert tested.argv[:3] == (str(launcher), "run", str(node))
+    assert tested.program == Path(os.path.realpath(launcher))
+    missing = planned(JEST, ["npx", "jest"], project, path=str(node.parent), launch=("uv", "run"))
+    assert missing == Unresolved(ENTRY_NOT_FOUND, "no uv on PATH")
 
 
 def test_vitest_related_keeps_its_subcommand_and_runs_once(tmp_path: Path) -> None:

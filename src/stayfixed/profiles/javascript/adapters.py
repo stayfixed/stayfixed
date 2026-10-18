@@ -18,7 +18,10 @@ package's `bin` names, as npm links a global install. A `.bin` file or a `PATH` 
 link (pnpm's `sh` shim, Yarn Plug'n'Play's) is never read or run, and nothing is installed: no entry
 found is `ENTRY_NOT_FOUND`, whose detail names `prove --junit` as the way on. The run is `[<node>,
 <entry's realpath>, …]`, `<node>` the first `node` on `PATH`; `--test` runs that `node` too, or the
-one the command names by its path.
+one the command names by its path. Behind a launcher the core read past (`uv run …`), its words are
+kept in front, the program is the launcher's realpath, and the `node` it is handed is still the
+one found on the caller's `PATH`, by that path: the launcher's file options the core refuses then
+guard the run that happens.
 
 **The report.** jest: `--json --outputFile=<report>`. vitest: `run` first where the command's
 first word is none of vitest's subcommands, so it runs once; `related` kept, with `--run` where the
@@ -177,6 +180,7 @@ _UNRESOLVED = (
     "linked into one; `prove --junit` counts a report you name"
 )
 _NO_NODE = "no node on PATH"
+_NO_LAUNCHER = "no {launcher} on PATH"
 # Where `node` is handed a file that is not the entry its package's `bin` names.
 NOT_THE_ENTRY = (
     "the file node is given is not the entry a {package} package's bin names; "
@@ -195,6 +199,20 @@ def _on_path(name: str, cwd: Path, path: str) -> Path | None:
     """The first `name` on `path` that can be executed, a relative entry read from `cwd`."""
     candidates = [cwd / directory / name for directory in path.split(os.pathsep)]
     return next((candidate for candidate in candidates if _executable(candidate)), None)
+
+
+def _launched(
+    launch: Sequence[str], argv: tuple[str, ...], cwd: Path, path: str
+) -> tuple[Path, tuple[str, ...]] | Unresolved:
+    """The program and the argv that run `argv` behind `launch`, the launcher's words, kept in
+    front (as `uv run` and its options were typed), the program the launcher found as the run
+    would find it; `argv` itself where there is no launcher, its program its first word."""
+    if not launch:
+        return Path(argv[0]), argv
+    launcher = _node(launch[0], cwd, path)
+    if launcher is None:
+        return Unresolved(ENTRY_NOT_FOUND, _NO_LAUNCHER.format(launcher=Path(launch[0]).name))
+    return launcher, (str(launcher), *launch[1:], *argv)
 
 
 def _node(word: str, cwd: Path, path: str) -> Path | None:
@@ -841,9 +859,18 @@ class _PackageRunner:
             return Unresolved(ENTRY_NOT_FOUND, _NO_NODE)
         report = scratch / runner.report_name
         words = runner.words(args)
+        launched = _launched(
+            launch,
+            (str(node), *node_words, str(entry), *_with(words, runner.ours(words, report))),
+            cwd,
+            path,
+        )
+        if isinstance(launched, Unresolved):
+            return launched
+        program, argv = launched
         return Plan(
-            argv=(str(node), *node_words, str(entry), *_with(words, runner.ours(words, report))),
-            program=Path(os.path.realpath(node)),
+            argv=argv,
+            program=Path(os.path.realpath(program)),
             kind=ReportKind.RESULTS_JSON,
             source=ReportSource.FILE,
             report=report,
@@ -1065,7 +1092,8 @@ class NodeTestAdapter:
         never = node_never_ends(command[1:])
         if never is not None:
             return Unresolved(NEVER_ENDS, NEVER_ENDS_DETAIL.format(option=never))
-        node = _node(command[0], cwd, environ.get("PATH", os.defpath))
+        path = environ.get("PATH", os.defpath)
+        node = _node(command[0], cwd, path)
         if node is None:
             return Unresolved(ENTRY_NOT_FOUND, _NO_NODE)
         report = scratch / NODE_REPORT
@@ -1075,9 +1103,13 @@ class NodeTestAdapter:
             "--test-reporter=spec",
             "--test-reporter-destination=stdout",
         )
+        launched = _launched(launch, (str(node), *ours, *command[1:]), cwd, path)
+        if isinstance(launched, Unresolved):
+            return launched
+        program, argv = launched
         return Plan(
-            argv=(str(node), *ours, *command[1:]),
-            program=Path(os.path.realpath(node)),
+            argv=argv,
+            program=Path(os.path.realpath(program)),
             kind=ReportKind.JUNIT,
             source=ReportSource.FILE,
             report=report,
