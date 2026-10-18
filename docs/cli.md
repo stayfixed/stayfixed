@@ -822,8 +822,9 @@ format, and which files in the tree can shape it. A command no adapter recognise
 an option among them, is `not proven`. Every `NAME=value` the command spells before what runs is
 one of its assignments, wherever it stands: before `uv run` or after it, bare or after `env`. An
 assignment of a variable in the adapter's forging set is refused, and so is an assignment of
-`UV_ENV_FILE` where the command runs `uv` (`assigned-forging`, naming the variable); an inherited
-`UV_ENV_FILE` is removed from the run's environment where the command runs `uv`. An option with
+`UV_ENV_FILE` or `UV_CONFIG_FILE` where the command runs `uv` (`assigned-forging`, naming the
+variable); an inherited `UV_ENV_FILE` or `UV_CONFIG_FILE` is removed from the run's environment
+where the command runs `uv`. An option with
 which `uv` loads a file the command names, `--env-file` or `--config-file`, as `--name value` or
 `--name=value` and wherever it stands among `uv`'s words, is refused (`launcher-option`, naming
 the option). Every other assignment reaches the runner in

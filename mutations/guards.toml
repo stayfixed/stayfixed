@@ -259,6 +259,15 @@ reddens = [
   "tests/prove/test_run.py::test_a_launcher_option_that_loads_a_file_is_refused[argv2---config-file]",
 ]
 
+[[mutation]]
+name = "uv's configuration file variable is no longer one it loads"
+file = "src/stayfixed/guards/uvrun.py"
+before = 'FILE_VARIABLES = frozenset({"UV_ENV_FILE", "UV_CONFIG_FILE"})'
+after = 'FILE_VARIABLES = frozenset({"UV_ENV_FILE"})'
+reddens = [
+  "tests/prove/test_run.py::test_the_launcher_s_file_variables_are_forging_and_scrubbed_where_it_runs[UV_CONFIG_FILE]",
+]
+
 # `|&`, `;&` and `;;&` decompose to single characters by design, and each `&` there belongs to
 # a pipe or a case fall-through, never to the async operator.
 [[mutation]]

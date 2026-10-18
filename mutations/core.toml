@@ -5741,6 +5741,7 @@ before = "    forged = sorted(name for name in assigned if name in adapter.forgi
 after = "    forged = sorted(name for name in assigned if name in adapter.forging)"
 reddens = [
   "tests/prove/test_run.py::test_the_launcher_s_file_variables_are_forging_and_scrubbed_where_it_runs[UV_ENV_FILE]",
+  "tests/prove/test_run.py::test_the_launcher_s_file_variables_are_forging_and_scrubbed_where_it_runs[UV_CONFIG_FILE]",
 ]
 
 [[mutation]]

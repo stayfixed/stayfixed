@@ -364,11 +364,11 @@ def test_a_launcher_option_that_loads_no_file_is_free(tmp_path: Path) -> None:
     assert run(tmp_path, "uv", "run", "--no-env-file", "--locked", NAME).verdict == PROVED
 
 
-@pytest.mark.parametrize("variable", ["UV_ENV_FILE"])
+@pytest.mark.parametrize("variable", ["UV_ENV_FILE", "UV_CONFIG_FILE"])
 def test_the_launcher_s_file_variables_are_forging_and_scrubbed_where_it_runs(
     tmp_path: Path, variable: str
 ) -> None:
-    # The variable spelling of the environment-file option: assigned in a launch that runs the
+    # The variable spelling of each of the two options: assigned in a launch that runs the
     # launcher, it is refused; inherited, it is removed. Where nothing launches, it is any
     # variable.
     # Mutations (declared): the launcher's variables left out of the forging set, and an
