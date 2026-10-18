@@ -3505,6 +3505,22 @@ reddens = ["tests/prove/test_javascript.py::test_a_preload_whose_file_is_in_doub
 [[mutation]]
 name = "a preloaded file URL keeps its escapes"
 file = "src/stayfixed/profiles/javascript/adapters.py"
-before = "    return os.path.realpath(unquote(url.path))"
-after = "    return os.path.realpath(url.path)"
+before = "    decoded = unquote(url.path)"
+after = "    decoded = url.path"
 reddens = ["tests/prove/test_javascript.py::test_a_preloaded_file_is_named_and_a_package_is_not"]
+
+# A NUL names no file, and the path calls refuse one with `ValueError`: a preload's `%00` and a
+# manifest's `bin` that holds one name nothing rather than crash the plan.
+[[mutation]]
+name = "a file URL preload's NUL reaches realpath"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = '    return None if "\0" in decoded else os.path.realpath(decoded)'
+after = "    return os.path.realpath(decoded)"
+reddens = ["tests/prove/test_javascript.py::test_a_nul_in_a_file_url_preload_names_no_file"]
+
+[[mutation]]
+name = "a bin holding a NUL reaches realpath"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = '    if not isinstance(declared, str) or not declared or "\0" in declared:'
+after = "    if not isinstance(declared, str) or not declared:"
+reddens = ["tests/prove/test_javascript.py::test_a_bin_holding_a_nul_does_not_resolve"]

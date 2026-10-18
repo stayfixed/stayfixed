@@ -254,7 +254,8 @@ def _manifest_bin(package: Path, name: str) -> Path | None:
     declared = manifest.get("bin") if isinstance(manifest, dict) else None
     if isinstance(declared, dict):
         declared = declared.get(name)
-    if not isinstance(declared, str) or not declared:
+    # A NUL names no file: the path calls refuse it (`ValueError`), and a manifest may hold one.
+    if not isinstance(declared, str) or not declared or "\0" in declared:
         return None
     entry = Path(os.path.realpath(package / declared))
     home = Path(os.path.realpath(package))
@@ -1113,7 +1114,9 @@ def _preloaded_file(given: str, cwd: Path) -> str | None:
         return None
     if not url.path.startswith(_ROOT):
         return None
-    return os.path.realpath(unquote(url.path))
+    decoded = unquote(url.path)
+    # `%00` decodes to a NUL, which names no file and which the path calls refuse.
+    return None if "\0" in decoded else os.path.realpath(decoded)
 
 
 def node_preloaded(words: Sequence[str], cwd: Path) -> tuple[str, ...]:

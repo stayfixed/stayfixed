@@ -1802,3 +1802,27 @@ def test_a_preloaded_file_is_named_and_a_package_is_not(tmp_path: Path) -> None:
     )
     last = plan_of(NODE_TEST, ["node", "--test", "-r"], tmp_path, path=str(node.parent))
     assert last.configs == CONFIGS
+
+
+def test_a_nul_in_a_file_url_preload_names_no_file(tmp_path: Path) -> None:
+    # `%00` decodes to a NUL, which `os.path.realpath` refuses with `ValueError`: the value runs
+    # unnamed instead of crashing the plan. Mutation (declared): the NUL not looked for -> raises.
+    node = node_on_path(tmp_path / "bin")
+    got = plan_of(
+        NODE_TEST,
+        ["node", "--test", "--import=file:///abs/a%00b.mjs"],
+        tmp_path,
+        path=str(node.parent),
+    )
+    assert got.configs == CONFIGS
+
+
+def test_a_bin_holding_a_nul_does_not_resolve(tmp_path: Path) -> None:
+    # A manifest is the tree's to write, and a `bin` holding a NUL names no file. Mutation
+    # (declared): the NUL not looked for -> `ValueError` out of the plan.
+    project = tmp_path / "project"
+    package(project / "node_modules" / "jest", "jest", "./bin/je\u0000st.js", "bin/jest.js")
+    node = node_on_path(project / ".tools")
+    got = planned(JEST, ["npx", "jest"], project, path=str(node.parent))
+    assert isinstance(got, Unresolved)
+    assert got.reason == ENTRY_NOT_FOUND
