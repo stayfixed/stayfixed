@@ -3461,7 +3461,7 @@ reddens = ["tests/prove/test_run.py::test_an_adapter_module_that_does_not_import
 [[mutation]]
 name = "a preload of another scheme runs"
 file = "src/stayfixed/profiles/javascript/adapters.py"
-before = "    return bool(scheme) and scheme != _FILE_SCHEME"
+before = "    return url is not None and bool(url.scheme) and url.scheme != _FILE_SCHEME"
 after = "    return False"
 reddens = ["tests/prove/test_javascript.py::test_a_preload_of_code_the_command_spells_is_refused[node:fs]"]
 
@@ -3498,8 +3498,8 @@ reddens = ["tests/prove/test_javascript.py::test_a_preload_whose_file_is_in_doub
 [[mutation]]
 name = "a file URL of another host is named as a preload"
 file = "src/stayfixed/profiles/javascript/adapters.py"
-before = "    if url.scheme != _FILE_SCHEME or url.netloc not in _LOCAL_HOSTS:"
-after = "    if url.scheme != _FILE_SCHEME:"
+before = "    if url is None or url.scheme != _FILE_SCHEME or url.netloc not in _LOCAL_HOSTS:"
+after = "    if url is None or url.scheme != _FILE_SCHEME:"
 reddens = ["tests/prove/test_javascript.py::test_a_preload_whose_file_is_in_doubt_runs_unnamed['file://elsewhere/abs/no.mjs']"]
 
 [[mutation]]
