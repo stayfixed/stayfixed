@@ -19,7 +19,7 @@ from pathlib import Path
 import pytest
 
 from stayfixed import fsops
-from stayfixed.printed import CLIPPED_CHARS
+from stayfixed.printed import CLIPPED_CHARS, clipped
 from stayfixed.profiles.javascript.adapters import (
     ADAPTERS,
     CONFIGS,
@@ -221,6 +221,7 @@ def test_npx_is_never_executed(tmp_path: Path) -> None:
         scrub=frozenset({"NODE_OPTIONS"}),
         discovery=("*.test.*", "*.spec.*", "__tests__/*"),
         configs=("package.json", ".npmrc", "jest.config.*", "vitest.config.*", "vite.config.*"),
+        entry=entry,
     )
     assert (got.discovery, got.configs) == (JEST_DISCOVERY, CONFIGS)
 
@@ -948,7 +949,7 @@ def through_prove(argv: Sequence[str], cwd: Path, environ: Mapping[str, str]) ->
 
 def test_an_npmrc_is_named_in_the_receipt(tmp_path: Path) -> None:
     project = tmp_path / "project"
-    jest_package(project / "node_modules")
+    entry = jest_package(project / "node_modules")
     node = fake_node(tmp_path / "bin")
     for name in ("package.json", ".npmrc", "jest.config.js", "three.test.js"):
         (project / name).write_text("{}\n", encoding="utf-8")
@@ -959,6 +960,10 @@ def test_an_npmrc_is_named_in_the_receipt(tmp_path: Path) -> None:
     got = through_prove(["npx", "jest"], project, {"PATH": str(node.parent)})
     assert (got.verdict, got.counts, got.runner) == (PROVED, Counts(1, 0, 0), "jest")
     assert got.program == os.path.realpath(node)
+    # The program is node; the receipt names the runner's own entry beside it. Mutation
+    # (declared): the plan leaves its entry unnamed -> the receipt carries none.
+    assert got.entry == os.path.realpath(entry)
+    assert f"runner jest at {clipped(got.program)} running {clipped(got.entry)}" in line(got)
     assert got.configs == (".npmrc", "jest.config.js", "package.json")
     assert got.untracked == ("three.test.js",)
 

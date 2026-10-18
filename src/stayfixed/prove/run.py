@@ -204,13 +204,14 @@ class Receipt:
     operand. `detail` is where the step that stopped the run stopped: the variable assigned, the
     launcher option refused, the option or word the runner's adapter refused, what the adapter
     looked for or was asked for where it could not plan the run, the `--junit` path the run did not
-    write (`JUNIT_UNCHANGED`), or where a report stopped reading. `program` is the
-    realpath of what ran; `verified` is false on every `--junit` receipt, a plan made or not, and
-    true on every other. `commit` and `dirty_before` are the tree's state before the run,
-    `dirty_after` after it, and `untracked` (at most `tree.UNTRACKED_LISTED`, `untracked_more` past
-    it) and `configs` (at most as many, `configs_more` past it, and `ignored_configs` the count of
-    those git ignores) after it, or before it where git could not answer after: none of them is an
-    input to the verdict.
+    write (`JUNIT_UNCHANGED`), or where a report stopped reading. `program` is the realpath of what
+    ran, and `entry` the realpath of the file it ran as the runner where the program is an
+    interpreter running one (`node` and jest's or vitest's entry); `verified` is false on every
+    `--junit` receipt, a plan made or not, and true on every other. `commit` and `dirty_before` are
+    the tree's state before the run, `dirty_after` after it, and `untracked` (at most
+    `tree.UNTRACKED_LISTED`, `untracked_more` past it) and `configs` (at most as many,
+    `configs_more` past it, and `ignored_configs` the count of those git ignores) after it, or
+    before it where git could not answer after: none of them is an input to the verdict.
     """
 
     verdict: Verdict
@@ -219,6 +220,7 @@ class Receipt:
     argv: tuple[str, ...]
     runner: str | None = None
     program: str | None = None
+    entry: str | None = None
     verified: bool = True
     counts: Counts | None = None
     exit_code: int | None = None
@@ -687,6 +689,7 @@ def _receipt(
         argv=shown,
         runner=runner,
         program=str(plan.program) if plan is not None else None,
+        entry=str(plan.entry) if plan is not None and plan.entry is not None else None,
         verified=plan.verified if plan is not None else verified,
         counts=outcome.counts,
         exit_code=outcome.exit_code,
@@ -703,8 +706,9 @@ def _receipt(
 
 
 def line(receipt: Receipt) -> str:
-    """The receipt in one line: the verdict and its reason in words, the counts, the runner, and
-    the files that can shape the report. A name the tree chose prints only inside the path
+    """The receipt in one line: the verdict and its reason in words, the counts, the runner (the
+    program, and the entry it runs where it is an interpreter), and the files that can shape the
+    report. A name the tree chose prints only inside the path
     grammar (`printed.printable`); `--json` carries every one."""
     words = WORDS.get(receipt.reason) or _ADAPTER_WORDS.get(receipt.verdict, receipt.reason)
     head = f"{receipt.verdict}: {words}"
@@ -722,6 +726,8 @@ def line(receipt: Receipt) -> str:
         runner = f"runner {receipt.runner}"
         if receipt.program is not None:
             runner += f" at {clipped(receipt.program)}"
+        if receipt.entry is not None:
+            runner += f" running {clipped(receipt.entry)}"
         if not receipt.verified:
             runner += ", not verified"
         parts.append(runner)

@@ -675,6 +675,7 @@ class _PackageRunner:
             scrub=FORGING,
             discovery=runner.discovery,
             configs=(*CONFIGS, *runner.configs(args, cwd)),
+            entry=entry,
         )
 
 

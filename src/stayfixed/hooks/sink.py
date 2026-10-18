@@ -25,6 +25,7 @@ from pathlib import Path
 from stayfixed import fsops
 from stayfixed.fsops import (
     UnsafePath,
+    append_at,
     open_within,
     remove_within,
     rmdir_within,
@@ -152,16 +153,7 @@ class DataSink:
         try:
             with open_within(self.root, DIAGNOSTICS) as (dir_fd, name):
                 self._rotate(dir_fd, name, len(payload))
-                handle = os.open(
-                    name,
-                    os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_NOFOLLOW,
-                    0o600,
-                    dir_fd=dir_fd,
-                )
-                try:
-                    os.write(handle, payload)
-                finally:
-                    os.close(handle)
+                append_at(dir_fd, name, payload)
         except (OSError, UnsafePath):
             return None
 

@@ -1049,3 +1049,29 @@ def test_a_directory_that_can_be_written_but_not_searched_cannot_take_a_new_file
         assert not fsops.creatable(directory / "file")
     finally:
         directory.chmod(0o700)
+
+
+def test_an_append_adds_to_the_file_s_end_and_creates_it_for_its_owner_alone(
+    tmp_path: Path,
+) -> None:
+    # The one appending write, the hook sink's and the evidence records'. Mutation (declared):
+    # the write opened without `O_APPEND` -> the second line overwrites the first.
+    with fsops.open_within(tmp_path, "log.jsonl") as (dir_fd, name):
+        fsops.append_at(dir_fd, name, b"one\n")
+        fsops.append_at(dir_fd, name, b"two\n")
+    assert (tmp_path / "log.jsonl").read_bytes() == b"one\ntwo\n"
+    assert stat.S_IMODE((tmp_path / "log.jsonl").stat().st_mode) == fsops.APPENDED_FILE_MODE
+
+
+def test_an_append_never_writes_through_a_link(tmp_path: Path) -> None:
+    # Mutation (declared): the append opened without `O_NOFOLLOW` -> the target gains a line.
+    target = tmp_path / "target"
+    target.write_bytes(b"")
+    (tmp_path / "log.jsonl").symlink_to(target)
+    with (
+        pytest.raises(OSError) as raised,
+        fsops.open_within(tmp_path, "log.jsonl") as (dir_fd, name),
+    ):
+        fsops.append_at(dir_fd, name, b"line\n")
+    assert raised.value.errno == errno.ELOOP
+    assert target.read_bytes() == b""

@@ -969,7 +969,8 @@ a suite that hangs and is no suite's budget). So does an interrupt (Ctrl-C) or a
 process group is ended with it.
 
 **The line** says the verdict and its reason in words, the counts (passed, failed, skipped), the
-runner and the realpath of the program that ran, and the files that can shape the report: the
+runner and the realpath of the program that ran (and of the entry it runs, where it is `node`
+running jest's or vitest's), and the files that can shape the report: the
 runner's configuration files that exist and that git tracks or does not ignore, with a count of the
 ignored ones (`and N ignored`), then any file the command itself named as its configuration, from
 the top-level where it lies there and whole where it does not, and the untracked files in its
@@ -979,13 +980,32 @@ never an input to the verdict. `--json` carries `verdict`, `reason`, `detail` (t
 refused assignment named, the launcher option refused, the option or word the runner's adapter
 refused, the `--junit` path on `junit-unchanged`, or where a report stopped reading), `argv` (the
 command, every `NAME=value` and `--option=value` value replaced by `…`; a value passed as the word
-after its option is kept), `runner`, `program`, `verified`, `counts`, `exit_code`, `report_digest`
+after its option is kept), `runner`, `program`, `entry`, `verified`, `counts`, `exit_code`, `report_digest`
 (the SHA-256 of the report counted), `commit`, `dirty_before`, `dirty_after`, `untracked`,
 `untracked_more`, `configs`, `configs_more` and `ignored_configs`.
 
+**The evidence record.** Every run appends one JSON line to
+`~/.local/state/stayfixed/evidence/<key>.jsonl`, `~` being your entry in the password database:
+neither `HOME` nor `XDG_STATE_HOME` moves it, since a checkout can set either. `<key>` is `origin-`
+and a digest of the repository's `origin` URL, read one way for every spelling of it (userinfo,
+port, a trailing `/` and `.git` dropped, the scheme and host lower-cased, `user@host:path` and the
+`ssh`, `https`, `http` and `git` URLs of one host and path read as one), so every clone of one
+repository shares a file; without an `origin`, or where git cannot be asked, `path-` and a digest of
+the real path of the top-level, so a run typed in a subdirectory keys the repository. The line holds
+`version` (the record's format, 1), `kind` (`prove`), `at` (UTC, to the second), `stayfixed` (the
+version that ran) and every key of the receipt `--json` prints, the argv as redacted there, so a
+value never reaches it. A `--junit` run's line carries `runner: null` and `verified: false`; an
+interrupted or timed-out run's says `not proven`. A record is a log: no gate, verdict or trust
+decision reads one. It is never written inside a repository (a dotfiles checkout at `~` gets none),
+nor through a link, and one that cannot be written, with no home, or a state directory that is not
+a directory or is a link, is one warning on standard error that names it, the verdict and the exit
+code unchanged. There is no rotation yet: each run adds its line.
+
 **Reads** the command's report and git's answers about the tree. **Writes** nothing in the
 project: the scratch directory is under the system's temporary directory, is readable by you
-alone, and is removed on every path. What the command itself writes, it writes. **Runs** the
+alone, and is removed on every path; and one line to the run's evidence record,
+`~/.local/state/stayfixed/evidence/<key>.jsonl` (below). What the command itself writes, it
+writes. **Runs** the
 command, as the [What stayfixed sends where](https://github.com/stayfixed/stayfixed/blob/main/README.md#what-stayfixed-sends-where)
 row says.
 
@@ -1501,7 +1521,15 @@ where findings are serialised.
 **Reads** `stayfixed.toml`, the base's copy through git, every file a gate reads, and — only when
 `--workflow-sha` matches a moved `[ci] ref` — the public repository's tags.
 
-**Writes** nothing but the file `--summary` names; a custom gate writes whatever its command writes.
+**Writes** the file `--summary` names, and one line to the project's evidence record,
+`~/.local/state/stayfixed/evidence/<key>.jsonl`, as
+[`stayfixed prove`](#stayfixed-prove---timeout-seconds---junit-path----command-) does, for every run
+that judged the configuration or ran a gate (`nothing to run` included, and no line for a refusal
+before either): its `mode` (`builtin`, `custom` or `all`), its flags, the commit and whether the tree
+differed from it, and each gate's verdict word (`passes`, `fails`, `would fail`, `could not run`,
+`not run`, `waiting`, and `refused` for the configuration check). A record that cannot be written
+is a warning on standard error and changes no exit code. A custom gate writes whatever its command
+writes.
 
 A pull request that removes `stayfixed.toml` — `stayfixed uninstall` among them — fails the run:
 nothing says which gates run, and a run that cannot judge a change does not pass it. Such a

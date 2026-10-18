@@ -692,6 +692,28 @@ def write_atomically(
         os.close(dir_fd)
 
 
+# The flags of the one appending write: a regular file created 0600 where none is, written at its
+# end, and never through a link at its last component.
+_APPEND_FLAGS = os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0) | os.O_CLOEXEC
+APPENDED_FILE_MODE = 0o600
+
+
+def append_at(dir_fd: int, name: str, payload: bytes) -> None:
+    """Append `payload` to the file `name` in the directory `dir_fd` (one `open_within` yielded),
+    in one `O_APPEND` write, creating it `APPENDED_FILE_MODE` where it is not there.
+
+    The one appending write: the hook sink's diagnostics and the evidence records both reach it.
+    One `write` of the whole line, so two processes appending at once never interleave inside a
+    line on a local filesystem, and `O_NOFOLLOW`, so a link put where the file goes refuses the
+    open rather than redirecting the write. Raises `OSError` as the open or the write does.
+    """
+    handle = os.open(name, _APPEND_FLAGS, APPENDED_FILE_MODE, dir_fd=dir_fd)
+    try:
+        os.write(handle, payload)
+    finally:
+        os.close(handle)
+
+
 def mkdirs_within(root: Path, target: str) -> None:
     """Create `target`'s parent directories without ever leaving the root.
 

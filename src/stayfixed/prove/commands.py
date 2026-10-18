@@ -6,6 +6,7 @@ directory it is typed in, and the project it answers for is that directory's git
 directory itself outside a repository. The command is everything after `--`, so no word of it is
 read as an option of `prove`'s; a line with no `--`, or nothing after it, is a usage error.
 `--junit PATH`, read from that directory, names the JUnit report of a runner no adapter knows.
+Every run leaves one evidence record on the machine (`stayfixed.prove.evidence`).
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from stayfixed.areas import SubParsers
+from stayfixed.prove.evidence import record_prove
 from stayfixed.prove.run import EXIT, PROVE_TIMEOUT_SECONDS, line, prove
 from stayfixed.result import Result
 
@@ -62,14 +64,18 @@ def run_prove(args: argparse.Namespace) -> Result:
     # Under `--json` standard output is the one object the frame prints, so a report on the
     # runner's standard output is teed, every byte of it, to standard error instead.
     echo = sys.stderr if getattr(args, "as_json", False) else None
+    cwd = Path.cwd()
     receipt = prove(
         args.command,
-        cwd=Path.cwd(),
+        cwd=cwd,
         environ=os.environ,
         timeout=args.timeout,
         echo=echo,
         junit=args.junit,
     )
+    # One record a run, on the machine and never in the project; a record that cannot be written
+    # is a warning on standard error, and the verdict and the exit code stand.
+    record_prove(cwd, receipt)
     return Result(line(receipt), dataclasses.asdict(receipt), exit_code=EXIT[receipt.verdict])
 
 

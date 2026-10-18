@@ -8,6 +8,8 @@ discovery imports a package before the submodule it wants, and the package stays
   carries.
 - `shipped_adapters`: a reader of which runners this stayfixed can count, through the same
   discovery `prove` uses.
+- `record_gate`: `stayfixed gate`, which keeps one evidence record a run beside `prove`'s, in the
+  same directory under the same key.
 
 The protocol an adapter implements is not here: it is `stayfixed.profiles.runners`, the leaf both
 the adapters and this area import.
@@ -15,6 +17,7 @@ the adapters and this area import.
 
 from stayfixed.prove.adapters import shipped_adapters
 from stayfixed.prove.counts import Counts
+from stayfixed.prove.evidence import record_gate
 from stayfixed.prove.run import Receipt, Verdict, prove
 
 __all__ = [
@@ -22,5 +25,6 @@ __all__ = [
     "Receipt",
     "Verdict",
     "prove",
+    "record_gate",
     "shipped_adapters",
 ]

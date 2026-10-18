@@ -6169,8 +6169,8 @@ reddens = ["tests/prove/test_run.py::test_the_configuration_list_stops_at_its_ca
 [[mutation]]
 name = "prove's tree state reads no answer as a clean tree"
 file = "src/stayfixed/prove/tree.py"
-before = "        dirty=bool(status) if status is not None else None,"
-after = "        dirty=bool(status),"
+before = "    return commit, bool(status) if status is not None else None"
+after = "    return commit, bool(status)"
 reddens = [
   "tests/prove/test_run.py::test_tree_state_outside_git_is_unknown_and_never_a_refusal",
   "tests/prove/test_run.py::test_outside_a_repository_the_project_is_the_directory_itself",
@@ -6400,3 +6400,89 @@ file = "src/stayfixed/prove/commands.py"
 before = "        junit=args.junit,"
 after = "        junit=None,"
 reddens = ["tests/prove/test_junit_flag.py::test_the_command_takes_junit_and_says_the_runner_is_not_verified"]
+
+# Evidence records: one line a `prove` and a `gate` run, under the password database's home and
+# never inside a repository, and a warning in place of one that cannot be written.
+[[mutation]]
+name = "prove keeps no evidence record"
+file = "src/stayfixed/prove/commands.py"
+before = "    record_prove(cwd, receipt)\n"
+after = ""
+reddens = ["tests/prove/test_evidence.py::test_prove_appends_one_line_per_run"]
+
+[[mutation]]
+name = "a record that cannot be written turns prove's exit 1"
+file = "src/stayfixed/prove/commands.py"
+before = """    record_prove(cwd, receipt)
+    return Result(line(receipt), dataclasses.asdict(receipt), exit_code=EXIT[receipt.verdict])"""
+after = """    warned = record_prove(cwd, receipt)
+    code = 1 if warned else EXIT[receipt.verdict]
+    return Result(line(receipt), dataclasses.asdict(receipt), exit_code=code)"""
+reddens = ["tests/prove/test_evidence.py::test_an_unwritable_state_directory_warns_and_keeps_the_verdict[proved-argv0-0]"]
+
+[[mutation]]
+name = "a prove record's home is the one HOME names"
+file = "src/stayfixed/prove/evidence.py"
+before = """    line = prove_line(receipt, at=stamp(), version=__version__)
+    return keep(root, line, home=passwd_home())"""
+after = """    line = prove_line(receipt, at=stamp(), version=__version__)
+    return keep(root, line, home=Path(os.environ["HOME"]))"""
+reddens = ["tests/prove/test_evidence.py::test_the_record_lives_under_the_database_home"]
+
+[[mutation]]
+name = "the origin's userinfo is kept in the key"
+file = "src/stayfixed/prove/evidence.py"
+before = "        return f\"ssh://{split.hostname.lower()}/{_bare(split.path).lstrip('/')}\""
+after = "        return f\"ssh://{split.netloc.lower()}/{_bare(split.path).lstrip('/')}\""
+reddens = ["tests/prove/test_evidence.py::test_one_repository_one_origin[https://u:t@GitHub.com/o/r/-ssh://github.com/o/r]"]
+
+[[mutation]]
+name = "a git that cannot be asked stops the record's key"
+file = "src/stayfixed/prove/evidence.py"
+before = "    except gitenv.GitUnavailable:"
+after = "    except ValueError:"
+reddens = ["tests/prove/test_evidence.py::test_a_git_that_cannot_be_asked_keys_by_the_path"]
+
+[[mutation]]
+name = "the path key is the directory the run was typed in"
+file = "src/stayfixed/prove/evidence.py"
+before = "    return f\"path-{_digest(os.fsencode(os.path.realpath(_top(root))))}\""
+after = "    return f\"path-{_digest(os.fsencode(os.path.realpath(root)))}\""
+reddens = ["tests/prove/test_evidence.py::test_a_run_from_a_subdirectory_keys_the_repository"]
+
+[[mutation]]
+name = "a record is written inside the repository the run answers for"
+file = "src/stayfixed/prove/evidence.py"
+before = "    if home is None or _inside_repository(root, home):"
+after = "    if home is None:"
+reddens = ["tests/prove/test_evidence.py::test_no_record_under_the_repository[]", "tests/prove/test_evidence.py::test_no_record_under_the_repository[sub]"]
+
+[[mutation]]
+name = "a run with no home says nothing of the record it did not write"
+file = "src/stayfixed/prove/evidence.py"
+before = """    if home is None:
+        return _warned(UNNAMED, NO_HOME)"""
+after = """    if home is None:
+        return None"""
+reddens = ["tests/prove/test_evidence.py::test_no_home_warns_and_keeps_the_verdict[json_flag0]"]
+
+[[mutation]]
+name = "the one appending write opens without O_APPEND"
+file = "src/stayfixed/fsops.py"
+before = "_APPEND_FLAGS = os.O_WRONLY | os.O_APPEND | os.O_CREAT"
+after = "_APPEND_FLAGS = os.O_WRONLY | os.O_CREAT"
+reddens = ["tests/test_fsops.py::test_an_append_adds_to_the_file_s_end_and_creates_it_for_its_owner_alone"]
+
+[[mutation]]
+name = "the one appending write follows a link"
+file = "src/stayfixed/fsops.py"
+before = '| getattr(os, "O_NOFOLLOW", 0) | os.O_CLOEXEC'
+after = "| os.O_CLOEXEC"
+reddens = ["tests/test_fsops.py::test_an_append_never_writes_through_a_link"]
+
+[[mutation]]
+name = "prove's receipt names no entry beside its program"
+file = "src/stayfixed/prove/run.py"
+before = "        entry=str(plan.entry) if plan is not None and plan.entry is not None else None,"
+after = "        entry=None,"
+reddens = ["tests/prove/test_javascript.py::test_an_npmrc_is_named_in_the_receipt"]

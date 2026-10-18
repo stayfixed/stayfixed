@@ -1749,3 +1749,36 @@ reddens = [
   "tests/assess/test_rule_classes.py::test_adding_a_code_root_tightens_and_removing_one_is_refused_while_enforcing[root-swapped]",
   "tests/assess/test_rule_classes.py::test_adding_a_code_root_tightens_and_removing_one_is_refused_while_enforcing[severity-removed]",
 ]
+
+# `stayfixed gate` keeps one evidence record a run that judged or ran anything, and none for a
+# refusal before either.
+[[mutation]]
+name = "gate keeps no evidence record"
+file = "src/stayfixed/assess/commands.py"
+before = """    evidence.record_gate(
+        root, _verdict_words(gate_run, waiting), mode=args.part or "all", argv=_gate_flags(args)
+    )"""
+after = ""
+reddens = ["tests/prove/test_evidence.py::test_gate_appends_one_line_per_run[neither]", "tests/prove/test_evidence.py::test_gate_with_nothing_to_run_still_appends_its_line"]
+
+[[mutation]]
+name = "gate keeps a record of a run its --only refused"
+file = "src/stayfixed/assess/commands.py"
+before = "        raise Refusal(ONLY_UNKNOWN.format(count=len(stray)))"
+after = """        evidence.record_gate(root, {}, mode="all", argv=[])
+        raise Refusal(ONLY_UNKNOWN.format(count=len(stray)))"""
+reddens = ["tests/prove/test_evidence.py::test_gate_appends_none_on_a_refusal_before_the_configuration_check[only-unknown]"]
+
+[[mutation]]
+name = "a gate record calls every run's mode all"
+file = "src/stayfixed/assess/commands.py"
+before = 'mode=args.part or "all"'
+after = 'mode="all"'
+reddens = ["tests/prove/test_evidence.py::test_gate_appends_one_line_per_run[builtin]", "tests/prove/test_evidence.py::test_gate_appends_one_line_per_run[custom]"]
+
+[[mutation]]
+name = "a gate record calls an advisory gate's findings a failure"
+file = "src/stayfixed/assess/commands.py"
+before = '            words[result.name] = "fails" if enforcing else "would fail"'
+after = '            words[result.name] = "fails"'
+reddens = ["tests/prove/test_evidence.py::test_gate_appends_one_line_per_run[neither]"]

@@ -87,11 +87,18 @@ def _chosen(root: Path, configs: Sequence[str]) -> list[str]:
     return chosen
 
 
-def state(root: Path, discovery: Sequence[str], configs: Sequence[str]) -> TreeState:
-    """The tree under `root` as git answers for it now."""
+def head(root: Path) -> tuple[str | None, bool | None]:
+    """`HEAD`'s sha, and whether `git status` lists anything, untracked files included; each
+    `None` where git gives no answer."""
     code, out = git_run(root, "rev-parse", "--verify", "--quiet", "HEAD")
     commit = out.strip() or None if code == 0 else None
     status = _listed(root, "status", "--porcelain=v1", "-z", "--untracked-files=all")
+    return commit, bool(status) if status is not None else None
+
+
+def state(root: Path, discovery: Sequence[str], configs: Sequence[str]) -> TreeState:
+    """The tree under `root` as git answers for it now."""
+    commit, dirty = head(root)
     others = _listed(root, "ls-files", "-z", "--others", "--exclude-standard")
     ignored = _listed(root, "ls-files", "-z", "--others", "--ignored", "--exclude-standard")
     tracked = _listed(root, "ls-files", "-z", "--cached")
@@ -109,7 +116,7 @@ def state(root: Path, discovery: Sequence[str], configs: Sequence[str]) -> TreeS
         configured, configs_more = _capped(present)
     return TreeState(
         commit=commit,
-        dirty=bool(status) if status is not None else None,
+        dirty=dirty,
         untracked=untracked,
         more=more,
         configs=configured,
