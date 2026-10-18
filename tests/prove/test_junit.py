@@ -182,12 +182,16 @@ def test_drop_counts_a_testcase_nowhere() -> None:
 
 
 def test_a_refusal_quotes_nothing_the_document_holds() -> None:
-    # A mismatched end tag a million characters long: the detail names the error and where.
+    # A mismatched end tag a million characters long: the detail names the error from expat's
+    # fixed table and where, and nothing else. Expat's own message quotes no document text either,
+    # so length cannot tell the two apart; the exact detail does, since the exception's own text
+    # is `mismatched tag: line 1, …`. Mutation (declared): the detail built from `str(exc)` ->
+    # the detail differs.
     name = b"t" * 1_000_000
     with pytest.raises(ReportError) as caught:
         read_junit(b"<testsuite><" + name + b"></x></testsuite>")
     assert caught.value.reason == REPORT_MALFORMED
-    assert len(caught.value.detail) < 200
+    assert caught.value.detail == "mismatched tag, line 1, column 1000015"
     assert len(str(caught.value)) < 250
 
 

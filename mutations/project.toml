@@ -1855,23 +1855,23 @@ reddens = ["tests/profiles/test_hints.py::test_a_note_is_handed_counts_and_nothi
 name = "a hint module is imported outside its guard"
 file = "src/stayfixed/profiles/hints.py"
 before = """    try:
-        hint: RedRunHint = importlib.import_module(f"{__package__}.{name}.hygiene").HINT
+        hint: RedRunHint = stack_module(name, HINT_FILE.removesuffix(".py")).HINT
     except Exception:
         return None"""
-after = '    hint: RedRunHint = importlib.import_module(f"{__package__}.{name}.hygiene").HINT'
+after = '    hint: RedRunHint = stack_module(name, HINT_FILE.removesuffix(".py")).HINT'
 reddens = [
   "tests/profiles/test_hints.py::test_a_hint_that_cannot_load_or_gives_no_text_costs_only_its_own_line",
 ]
 
-# A pinned importer is pinned to what it reaches: profile discovery's `import importlib` gives
+# A pinned importer is pinned to what it reaches: stack discovery's `import importlib` gives
 # `importlib.util.find_spec` as well, and a loader's `exec_module` after it, with no new import
 # statement for the rule to see.
 [[mutation]]
 name = "profile discovery reaches importlib.util as well"
-file = "src/stayfixed/profiles/hints.py"
-before = '        hint: RedRunHint = importlib.import_module(f"{__package__}.{name}.hygiene").HINT'
-after = '''        importlib.util.find_spec("stayfixed.memory.store")
-        hint: RedRunHint = importlib.import_module(f"{__package__}.{name}.hygiene").HINT'''
+file = "src/stayfixed/profiles/__init__.py"
+before = '    return importlib.import_module(f"{__package__}.{name}.{module}")'
+after = '''    importlib.util.find_spec("stayfixed.memory.store")
+    return importlib.import_module(f"{__package__}.{name}.{module}")'''
 reddens = ["tests/boundaries/test_delivery.py::test_no_core_module_reaches_the_import_machinery_but_where_pinned"]
 
 # A profile reads configuration files a repository commits, each to `_TEXT_CAP`: one at the cap is
@@ -2151,3 +2151,12 @@ file = "src/stayfixed/presets/__init__.py"
 before = "    return copy.deepcopy(_parsed(name))"
 after = "    return _parsed(name)"
 reddens = ["tests/config/test_schema.py::test_a_loaded_preset_is_the_callers_own_copy"]
+
+# One walk finds a stack's files whether or not the directory holds a profile: a stack may ship
+# its runner's adapters and no `profile.toml`.
+[[mutation]]
+name = "stack discovery reads only a directory that holds a profile"
+file = "src/stayfixed/profiles/__init__.py"
+before = "            if entry.is_dir() and PROJECT_NAME.match(entry.name) and entry.joinpath(file).is_file()"
+after = "            if entry.is_dir() and PROJECT_NAME.match(entry.name) and entry.joinpath(file).is_file() and entry.joinpath(PROFILE_FILE).is_file()"
+reddens = ["tests/prove/test_run.py::test_shipped_adapters_reads_a_directory_without_a_profile"]

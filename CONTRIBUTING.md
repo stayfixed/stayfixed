@@ -150,7 +150,7 @@ report discover by name — there is no shared registry to edit. One table does 
 its entries go in the group its path falls into.
 
 Today the discovered ones are `assess`, `attach`, `docs`, `doctor`, `guards`, `hooks`, `ledger`,
-`memory`, `overlay`, `project`, `setup` and `trust`, and they fall on two sides of one line. Three of them
+`memory`, `overlay`, `project`, `prove`, `setup` and `trust`, and they fall on two sides of one line. Three of them
 are **delivery**: `overlay`, `attach` and `memory`, the private layer's code — the overlay, binding
 a repository to it, and the note store — named in `DELIVERY_AREAS` in `src/stayfixed/areas.py`.
 `overlay` renders and upgrades the private overlay; `attach` binds a repository to one, and its
@@ -159,7 +159,8 @@ a repository to it, and the note store — named in `DELIVERY_AREAS` in `src/sta
 and the subpackages that are not areas included, is the **core**: what stayfixed does without its
 private layer — the gates, the records they check and a machine's setup. `ledger` keeps the bug
 ledger, `docs` the documentation and plan lints, `guards` the session guard, the commit-message
-rules and the test-run checks, `hooks` the dispatcher every hook event goes through, and `setup` a
+rules and the test-run checks, `hooks` the dispatcher every hook event goes through, `prove` the
+run of a test command and the verdict its runner's own report supports, and `setup` a
 machine's configuration, and `trust` every approval a person gave on the machine, in one record,
 with the `stayfixed trust` commands over it. `project` holds the shipped project templates and `init`, the command that
 writes a repository's footprint from them; `assess` runs the gates and the inventory over a
@@ -315,16 +316,20 @@ too, since Python runs each package's `__init__.py` first.
 The core is language-neutral. A profile under `src/stayfixed/profiles/<name>/` is a directory of
 data — `profile.toml` and `rules.md` — and, optionally, a `hygiene.py` whose `HINT` is that
 stack's advice after its test runner failed (`stayfixed.profiles.hints` says what a hint
-answers, and the command that failed decides which hints speak). That is where one stack's
+answers, and the command that failed decides which hints speak), and an `adapters.py` whose
+`ADAPTERS` are its test runners' adapters for `stayfixed prove` (`stayfixed.profiles.runners`
+says what an adapter answers). A stack's directory may hold code and no profile: a stack whose
+runner `prove` counts and for which stayfixed ships no rules yet. That is where one stack's
 runner, build artifacts and package manager belong: no module outside a profile's own directory
 names a stack — the machinery directly under `profiles/` included — except the pardons
 `tests/test_language_neutral.py` lists, each with its reason, and a new mention either moves into
 its profile or joins that list with one. None imports a profile's code either: the core finds a
-hint by discovery, and that test refuses an import of it without pardon. That discovery is the
-`profiles` package's own convention, in the style of an area's:
-`stayfixed.profiles.hints.hint_modules` lists each profile directory that ships a `hygiene.py`,
-so adding a stack's advice is adding its profile's file, and no core module learns the stack's
-name.
+hint or an adapter by discovery, and that test refuses an import of it without pardon. That
+discovery is the `profiles` package's own convention, in the style of an area's:
+`stayfixed.profiles.stack_directories` lists each stack directory that ships a given file, a
+`profile.toml`, a `hygiene.py` or an `adapters.py`, and `stack_module` imports one, so adding a
+stack's advice or its runner is adding its directory's file, and no core module learns the
+stack's name.
 
 The agents are core knowledge too, held in one place. A harness — Claude Code, Codex — is a value in
 `harnesses.HARNESSES`, and the `hooks` area answers through it: `stayfixed hook` asks

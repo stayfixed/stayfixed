@@ -687,10 +687,12 @@ OTHER_PREDICATES: dict[tuple[str, str, str], tuple[int, str]] = {
     ("areas.py", "_has_submodule", "is_file"): (2, "the package's own directory"),
     ("overlay/template.py", "templates", "is_dir"): (1, "the wheel's own template tree"),
     ("project/templates.py", "read", "is_dir"): (1, "the wheel's own template tree"),
-    ("profiles/__init__.py", "shipped", "is_dir"): (1, "a resource of the package's own"),
-    ("profiles/__init__.py", "shipped", "is_file"): (1, "a resource of the package's own"),
+    ("profiles/__init__.py", "stack_directories", "is_dir"): (1, "a resource of the package's own"),
+    ("profiles/__init__.py", "stack_directories", "is_file"): (
+        1,
+        "a resource of the package's own",
+    ),
     ("profiles/__init__.py", "load_profile", "is_file"): (1, "a resource of the package's own"),
-    ("profiles/hints.py", "hint_modules", "is_file"): (1, "a resource of the package's own"),
     # `os.DirEntry`'s, which answers alike on every interpreter.
     ("doctor/hooked.py", "_nested", "is_dir"): (1, "an os.DirEntry"),
     ("doctor/hooked.py", "_nested", "is_symlink"): (1, "an os.DirEntry"),

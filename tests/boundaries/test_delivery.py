@@ -264,12 +264,14 @@ DISCOVERY_READS = (("area_modules", "import_module"), ("area_imports", "import_m
 # `src/stayfixed/`, the innermost function, and the name it reaches. Held as a multiset and by
 # equality in both directions, as `CORE_TO_DELIVERY` is.
 #
-# One row, meant to stay. `profiles/hints.py`'s `_hint` imports `stayfixed.profiles.<name>.hygiene`
-# for a `name` that `hint_modules` listed from this package's own shipped profiles through
-# `importlib.resources` — profile discovery, which CONTRIBUTING's "Areas" describes beside area
-# discovery. It names no area and no repository path, so it is pinned here rather than moved into
-# `areas.py`, which knows nothing of profiles.
-DYNAMIC_IMPORTERS = (("profiles/hints.py", "_hint", "import_module"),)
+# One row, meant to stay. `profiles/__init__.py`'s `stack_module` imports
+# `stayfixed.profiles.<name>.<module>` for a `name` that `stack_directories` listed from this
+# package's own directories through `importlib.resources` — stack discovery, which CONTRIBUTING's
+# "Areas" describes beside area discovery, and the one import both a red-run hint
+# (`profiles/hints.py`) and a runner adapter (`prove/adapters.py`) are loaded through. It names no
+# area and no repository path, so it is pinned here rather than moved into `areas.py`, which knows
+# nothing of profiles.
+DYNAMIC_IMPORTERS = (("profiles/__init__.py", "stack_module", "import_module"),)
 
 
 def _dynamic_imports(tree: ast.Module) -> list[tuple[str, str]]:
@@ -533,6 +535,10 @@ STANDARD_IMPORTS = frozenset(
         "posixpath",
         "pwd",
         "re",
+        # `prove` waits for its command's report on standard output without blocking forever
+        # (`selectors`) and copies it in a thread of its own while the command runs
+        # (`threading`); neither imports a module by a name.
+        "selectors",
         "shlex",
         "shutil",
         "signal",
@@ -542,6 +548,7 @@ STANDARD_IMPORTS = frozenset(
         "subprocess",
         "sys",
         "tempfile",
+        "threading",
         "time",
         "tomllib",
         "types",
@@ -569,8 +576,8 @@ MACHINERY_IMPORTERS = (
     # Discovery: imports `stayfixed.<area>.<submodule>` by name, and lists the areas.
     ("areas.py", "importlib", frozenset({"import_module"})),
     ("areas.py", "pkgutil", frozenset({"iter_modules"})),
-    # Profile discovery: imports `stayfixed.profiles.<name>.hygiene`, pinned in `DYNAMIC_IMPORTERS`.
-    ("profiles/hints.py", "importlib", frozenset({"import_module"})),
+    # Stack discovery: imports `stayfixed.profiles.<name>.<module>`, pinned in `DYNAMIC_IMPORTERS`.
+    ("profiles/__init__.py", "importlib", frozenset({"import_module"})),
     # Reads the running interpreter's bytecode magic, the first four bytes of every `.pyc` it would
     # open; it imports nothing.
     ("profiles/python/hygiene.py", "importlib.util", frozenset({"util.MAGIC_NUMBER"})),

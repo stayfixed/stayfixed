@@ -101,8 +101,8 @@ def test_no_module_reaches_into_another_packages_private_module() -> None:
     # one further package with an `api.py`, 5 scripts and 242 crossings, with a walk narrowed to
     # `commands.py` alone counting 9 under `src/` and 24 with the scripts — which is what the
     # crossings floor of 60 has to be below. `trust` became the twelfth area since, with its
-    # `commands.py`.
-    assert len(areas) == 12, areas
+    # `commands.py`, and `prove` the thirteenth.
+    assert len(areas) == 13, areas
     # The packages held to a surface without being discovered, pinned by name for the reason
     # `tests/test_surfaces.py` pins its list: gaining or losing one is a decision.
     assert sorted(set(ruled) - set(areas)) == ["release"], ruled

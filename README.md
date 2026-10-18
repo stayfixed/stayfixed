@@ -273,6 +273,7 @@ The **Run by**, **Talks to** and **When** columns are kept by hand. The hook wra
 | `pre-commit install` | `stayfixed overlay init`, `stayfixed setup --overlay create:<owner>/<name> --yes`, `stayfixed attach` | nothing as it installs; GitHub and Go's servers on the first commit after it (note 5) | `attach` only when the overlay carries a `.pre-commit-config.yaml` and no `pre-commit` hook yet |
 | `sh -c` | `stayfixed test attribute --command CMD` | wherever `CMD` reaches; stayfixed does not choose | every run: `CMD` in the working tree, then in extracts of `HEAD` and of the merge base |
 | the commands `[gates.custom]` names | `stayfixed assess`, `stayfixed gate`, `stayfixed adopt promote` | wherever those commands reach; stayfixed does not choose | when `[gates.custom]` names one, unless `--builtin` is passed |
+| the test command after `stayfixed prove --` | `stayfixed prove -- COMMAND` | wherever `COMMAND` reaches; stayfixed does not choose | every run, in the directory `prove` is typed in, once a runner adapter recognises `COMMAND` |
 | `.github/workflows/stayfixed.yml` | your CI, from the workflow `stayfixed init` writes in `reusable` mode | GitHub, through stayfixed's reusable workflow (note 6) | on the events the workflow names |
 | `.github/workflows/scan.yml` | the overlay's CI on GitHub (note 7) | GitHub, through `gitleaks/gitleaks-action` (note 7) | on every push, pull request and manual run, unless the repository is marked a template |
 | `.github/dependabot.yml` | GitHub's Dependabot, from the file the same commands write into the overlay | GitHub: it looks up new releases of the scan workflow's two pinned actions and opens one grouped pull request in the overlay to move them | monthly, once the file is on GitHub |
@@ -444,6 +445,9 @@ stayfixed gate --only docs --only config               # a few of them; config i
 stayfixed adopt promote docs                           # enforce one gate, if it passes now
 stayfixed adopt promote                                # enforce every gate that passes now; name the rest
 stayfixed adopt promote --builtin                      # the same, running none of the repository's own gate commands
+
+# Proving a fix
+stayfixed prove -- uv run --locked pytest tests/test_x.py   # run it here; proved, failed, not proven or refused, from the runner's own report
 
 # Diagnosing an installation
 stayfixed doctor                                       # eighteen checks over this installation, one line

@@ -5595,3 +5595,473 @@ after = '''    if False:
 reddens = [
   "tests/assess/test_gates.py::test_without_waitid_a_custom_gate_still_answers_and_ends_its_group",
 ]
+
+# --- `stayfixed prove`: the run, its verdict cascade, the receipt and the tree's state ---
+
+# A run that ran no test proved nothing whatever it exited with: the zero-tests row stands before
+# the exit code's, so a runner's own "no tests" exit (5, 1) is `failed`, never `not proven`.
+[[mutation]]
+name = "prove orders the non-zero exit before the zero-tests row"
+file = "src/stayfixed/prove/run.py"
+before = """    (Verdict.FAILED, NONE_RAN, lambda outcome: outcome.counted.total == 0),
+    (Verdict.FAILED, ALL_SKIPPED, lambda outcome: outcome.counted.skipped == outcome.counted.total),
+    (Verdict.NOT_PROVEN, GREEN_BUT_EXITED, lambda outcome: outcome.exit_code != 0),
+"""
+after = """    (Verdict.NOT_PROVEN, GREEN_BUT_EXITED, lambda outcome: outcome.exit_code != 0),
+    (Verdict.FAILED, NONE_RAN, lambda outcome: outcome.counted.total == 0),
+    (Verdict.FAILED, ALL_SKIPPED, lambda outcome: outcome.counted.skipped == outcome.counted.total),
+"""
+reddens = [
+  "tests/prove/test_run.py::test_the_cascade[empty-5-failed-none-ran]",
+  "tests/prove/test_run.py::test_the_cascade[empty-1-failed-none-ran]",
+  "tests/prove/test_run.py::test_the_cascade[all-skipped-5-failed-all-skipped]",
+]
+
+[[mutation]]
+name = "prove reads a run that skipped every test as green"
+file = "src/stayfixed/prove/run.py"
+before = "    (Verdict.FAILED, ALL_SKIPPED, lambda outcome: outcome.counted.skipped == outcome.counted.total),"
+after = "    (Verdict.FAILED, ALL_SKIPPED, lambda outcome: False),"
+reddens = [
+  "tests/prove/test_run.py::test_the_cascade[all-skipped-0-failed-all-skipped]",
+]
+
+[[mutation]]
+name = "prove reads a green report from a command that exited non-zero as proved"
+file = "src/stayfixed/prove/run.py"
+before = "    (Verdict.NOT_PROVEN, GREEN_BUT_EXITED, lambda outcome: outcome.exit_code != 0),"
+after = "    (Verdict.NOT_PROVEN, GREEN_BUT_EXITED, lambda outcome: False),"
+reddens = [
+  "tests/prove/test_run.py::test_the_cascade[pass-1-not proven-green-but-exited]",
+]
+
+[[mutation]]
+name = "prove counts past a failed test"
+file = "src/stayfixed/prove/run.py"
+before = "    (Verdict.FAILED, FAILING, lambda outcome: outcome.counted.failed > 0),"
+after = "    (Verdict.FAILED, FAILING, lambda outcome: outcome.counted.failed > 1),"
+reddens = [
+  "tests/prove/test_run.py::test_the_cascade[fail-1-failed-failing]",
+  "tests/prove/test_run.py::test_printed_text_is_never_counted",
+]
+
+# A variable the command itself assigns that the runner reads to steer its report is refused,
+# never quietly dropped from the run's environment: the refusal is what says the command was
+# shaped to forge.
+[[mutation]]
+name = "prove scrubs an assigned forging variable instead of refusing it"
+file = "src/stayfixed/prove/run.py"
+before = """    if forged:
+        return _receipt("""
+after = """    assigned = {name: value for name, value in assigned.items() if name not in forged}
+    if False:
+        return _receipt("""
+reddens = [
+  "tests/prove/test_run.py::test_an_assigned_forging_variable_is_refused[argv0]",
+  "tests/prove/test_run.py::test_an_assigned_forging_variable_is_refused[argv1]",
+  "tests/prove/test_command.py::test_the_command_exits_by_verdict_and_words_each_apart[refused-2]",
+]
+
+[[mutation]]
+name = "prove calls a command nothing can count refused"
+file = "src/stayfixed/prove/run.py"
+before = "        return _receipt(_Outcome(unproven=NOT_RECOGNISED), shown)"
+after = "        return _receipt(_Outcome(refused=NOT_RECOGNISED), shown)"
+reddens = [
+  "tests/prove/test_run.py::test_an_unrecognised_command_is_not_proven[argv0]",
+  "tests/prove/test_run.py::test_an_unrecognised_command_is_not_proven[argv1]",
+]
+
+[[mutation]]
+name = "prove reads an adapter's refusal as an entry point that did not resolve"
+file = "src/stayfixed/prove/run.py"
+before = "            return _receipt(_Outcome(refused=planned.reason), shown, adapter.name)"
+after = "            return _receipt(_Outcome(unproven=planned.reason), shown, adapter.name)"
+reddens = [
+  "tests/prove/test_run.py::test_an_adapter_s_own_answer_is_the_verdict[adapter0-refused-stand-in-moves-the-report]",
+]
+
+[[mutation]]
+name = "prove refuses an entry point that did not resolve"
+file = "src/stayfixed/prove/run.py"
+before = "            return _receipt(_Outcome(unproven=planned.reason), shown, adapter.name)"
+after = "            return _receipt(_Outcome(refused=planned.reason), shown, adapter.name)"
+reddens = [
+  "tests/prove/test_run.py::test_an_adapter_s_own_answer_is_the_verdict[adapter1-not proven-stand-in-not-found]",
+]
+
+# The shell and `env` assign; the words after a launcher are the launcher's to read.
+[[mutation]]
+name = "prove reads an assignment past the launcher"
+file = "src/stayfixed/prove/run.py"
+before = """        elif Path(word).name != _ENV:
+            break"""
+after = """        elif Path(word).name != _ENV:
+            continue"""
+reddens = [
+  "tests/prove/test_run.py::test_the_assignments_are_the_shell_s_and_env_s_and_stop_at_the_launcher",
+]
+
+# The run's environment: the caller's less the adapter's scrub, plus the command's assignments,
+# plus the adapter's own settings, the last winning.
+[[mutation]]
+name = "prove hands the runner an inherited variable its adapter scrubs"
+file = "src/stayfixed/prove/run.py"
+before = "    env = {name: value for name, value in environ.items() if name not in plan.scrub}"
+after = "    env = dict(environ)"
+reddens = ["tests/prove/test_run.py::test_an_inherited_scrubbed_variable_is_removed_and_counted"]
+
+[[mutation]]
+name = "prove leaves the command's assignments out of the run's environment"
+file = "src/stayfixed/prove/run.py"
+before = """    env |= assigned
+    env |= plan.set_env"""
+after = """    env |= plan.set_env"""
+reddens = [
+  "tests/prove/test_run.py::test_an_assigned_variable_outside_the_forging_set_reaches_the_runner",
+]
+
+[[mutation]]
+name = "prove lets the command's assignment win over the adapter's setting"
+file = "src/stayfixed/prove/run.py"
+before = """    env |= assigned
+    env |= plan.set_env"""
+after = """    env |= plan.set_env
+    env |= assigned"""
+reddens = ["tests/prove/test_run.py::test_set_env_reaches_the_runner"]
+
+[[mutation]]
+name = "prove launches a program swapped since the plan"
+file = "src/stayfixed/prove/run.py"
+before = "    if Path(os.path.realpath(plan.argv[0])) != plan.program:"
+after = "    if False:"
+reddens = ["tests/prove/test_run.py::test_a_program_resolved_elsewhere_is_refused"]
+
+# The command runs where it is typed; the project it answers for is that directory's top-level.
+[[mutation]]
+name = "prove launches the command in the project's top-level"
+file = "src/stayfixed/prove/run.py"
+before = "    ran = _run(plan, cwd, env, timeout)"
+after = "    ran = _run(plan, root, env, timeout)"
+reddens = ["tests/prove/test_run.py::test_the_run_is_in_cwd_and_the_project_is_its_toplevel"]
+
+[[mutation]]
+name = "prove answers for the directory typed in rather than its repository"
+file = "src/stayfixed/prove/run.py"
+before = "    root = checkout_root(cwd) or cwd"
+after = "    root = cwd"
+reddens = ["tests/prove/test_run.py::test_the_run_is_in_cwd_and_the_project_is_its_toplevel"]
+
+# A value in the command is a secret as often as not: the receipt names it and never shows it.
+[[mutation]]
+name = "prove's receipt shows an assignment's value"
+file = "src/stayfixed/prove/run.py"
+before = '            shown.append(f"{assignment.group(1)}={REDACTED}")'
+after = "            shown.append(word)"
+reddens = ["tests/prove/test_run.py::test_a_value_never_reaches_the_receipt"]
+
+[[mutation]]
+name = "prove's receipt shows an option's value"
+file = "src/stayfixed/prove/run.py"
+before = '            shown.append(f"{option.group(1)}{REDACTED}")'
+after = "            shown.append(word)"
+reddens = ["tests/prove/test_run.py::test_a_value_never_reaches_the_receipt"]
+
+# The report on standard output reaches the caller whole, to a binary stream or a text one.
+[[mutation]]
+name = "prove's tee writes to the report alone"
+file = "src/stayfixed/prove/run.py"
+before = """            self._out.write(chunk)
+            self._out.flush()"""
+after = """            pass"""
+reddens = ["tests/prove/test_run.py::test_stdout_is_teed_and_only_the_events_count"]
+
+[[mutation]]
+name = "prove's tee writes nothing to a text-only stream"
+file = "src/stayfixed/prove/run.py"
+before = '            self._text.write(chunk.decode("utf-8", "replace"))'
+after = "            pass"
+reddens = [
+  "tests/prove/test_command.py::test_a_report_on_standard_output_reaches_a_text_only_stream_before_the_line",
+]
+
+# A report is read, or copied, to one byte past the cap, so the reader's own size check refuses
+# it rather than counting a report cut short.
+[[mutation]]
+name = "prove's tee cuts the report at the cap"
+file = "src/stayfixed/prove/run.py"
+before = "        self._room = MAX_REPORT_BYTES + 1"
+after = "        self._room = MAX_REPORT_BYTES"
+reddens = ["tests/prove/test_run.py::test_a_report_past_the_cap_is_refused_and_not_cut_to_fit"]
+
+[[mutation]]
+name = "prove reads a report file to the cap alone"
+file = "src/stayfixed/prove/run.py"
+before = "        data, _ = fsops.read_bounded(plan.report, MAX_REPORT_BYTES + 1)"
+after = "        data, _ = fsops.read_bounded(plan.report, MAX_REPORT_BYTES)"
+reddens = ["tests/prove/test_run.py::test_a_report_past_the_cap_is_refused_and_not_cut_to_fit"]
+
+# A descendant that left the process group holds the pipe open; the tee lets go once the runner
+# has exited and what is there is copied.
+[[mutation]]
+name = "prove's tee waits for the pipe to end"
+file = "src/stayfixed/prove/run.py"
+before = """                    if not selector.select(timeout=0 if stopping else 0.1):
+                        if stopping:
+                            return
+                        continue"""
+after = """                    if not selector.select(timeout=0 if stopping else 0.1):
+                        continue"""
+reddens = [
+  "tests/prove/test_run.py::test_a_descendant_that_leaves_the_group_cannot_keep_the_run_open[--escape-quiet]",
+]
+
+[[mutation]]
+name = "prove's tee lets go at the first silence"
+file = "src/stayfixed/prove/run.py"
+before = """                        if stopping:
+                            return
+                        continue"""
+after = """                        return"""
+reddens = ["tests/prove/test_run.py::test_a_runner_silent_for_a_while_is_still_teed_whole"]
+
+[[mutation]]
+name = "prove's tee copies a writer that left the group without end"
+file = "src/stayfixed/prove/run.py"
+before = "                        if after_stop > MAX_REPORT_BYTES:"
+after = "                        if False:"
+reddens = [
+  "tests/prove/test_run.py::test_a_descendant_that_leaves_the_group_cannot_keep_the_run_open[--escape]",
+]
+
+[[mutation]]
+name = "prove's digest is of nothing"
+file = "src/stayfixed/prove/run.py"
+before = "    digest = hashlib.sha256(data).hexdigest()"
+after = '    digest = hashlib.sha256(b"").hexdigest()'
+reddens = ["tests/prove/test_run.py::test_the_counts_and_the_report_s_digest_are_the_report_s"]
+
+[[mutation]]
+name = "prove lets a launch that could not start escape"
+file = "src/stayfixed/prove/run.py"
+before = """        process = _launch(plan, cwd, env, teed)
+    except OSError:"""
+after = """        process = _launch(plan, cwd, env, teed)
+    except ValueError:"""
+reddens = [
+  "tests/prove/test_run.py::test_a_command_that_cannot_start_is_not_proven[file]",
+  "tests/prove/test_run.py::test_a_command_that_cannot_start_is_not_proven[stdout]",
+]
+
+# However the run ends, its process group goes with it and the scratch directory is removed.
+[[mutation]]
+name = "prove keeps its scratch directory"
+file = "src/stayfixed/prove/run.py"
+before = "        shutil.rmtree(scratch, ignore_errors=True)"
+after = "        pass"
+reddens = [
+  "tests/prove/test_run.py::test_an_ended_run_is_not_proven_and_leaves_no_scratch[interrupt]",
+  "tests/prove/test_run.py::test_the_scratch_directory_is_removed_on_every_path[pass]",
+  "tests/prove/test_run.py::test_a_fault_in_the_wait_still_ends_the_group_and_reaches_the_caller",
+]
+
+[[mutation]]
+name = "an interrupted prove leaves its command's group running"
+file = "src/stayfixed/prove/run.py"
+before = """            processes.end(process)
+            return _Ran(INTERRUPTED, None)"""
+after = """            process.kill()
+            process.wait()
+            return _Ran(INTERRUPTED, None)"""
+reddens = [
+  "tests/prove/test_run.py::test_an_ended_run_is_not_proven_and_leaves_no_scratch[interrupt]",
+  "tests/prove/test_run.py::test_an_ended_run_is_not_proven_and_leaves_no_scratch[terminate]",
+]
+
+[[mutation]]
+name = "a prove past its time limit leaves its command's group running"
+file = "src/stayfixed/prove/run.py"
+before = """            processes.end(process)
+            return _Ran(TIMED_OUT, None)"""
+after = """            process.kill()
+            process.wait()
+            return _Ran(TIMED_OUT, None)"""
+reddens = ["tests/prove/test_run.py::test_an_ended_run_is_not_proven_and_leaves_no_scratch[timeout]"]
+
+[[mutation]]
+name = "a prove past its time limit says it was interrupted"
+file = "src/stayfixed/prove/run.py"
+before = "            return _Ran(TIMED_OUT, None)"
+after = "            return _Ran(INTERRUPTED, None)"
+reddens = ["tests/prove/test_run.py::test_an_ended_run_is_not_proven_and_leaves_no_scratch[timeout]"]
+
+[[mutation]]
+name = "a fault in prove's wait leaves its command's group running"
+file = "src/stayfixed/prove/run.py"
+before = """            processes.end(process)
+            raise"""
+after = """            process.kill()
+            process.wait()
+            raise"""
+reddens = [
+  "tests/prove/test_run.py::test_a_fault_in_the_wait_still_ends_the_group_and_reaches_the_caller",
+]
+
+[[mutation]]
+name = "prove waits under the default bound and not the run's own"
+file = "src/stayfixed/prove/run.py"
+before = "                processes.exited(process, timeout)"
+after = "                processes.exited(process, PROVE_TIMEOUT_SECONDS)"
+reddens = ["tests/prove/test_run.py::test_an_ended_run_is_not_proven_and_leaves_no_scratch[interrupt]"]
+
+# A signal from outside ends the run as an interrupt does, and only while it runs.
+[[mutation]]
+name = "prove sets no handler for a terminating signal"
+file = "src/stayfixed/prove/run.py"
+before = "    kept = {number: signal.signal(number, raised) for number in (signal.SIGTERM, signal.SIGHUP)}"
+after = "    kept: dict[int, object] = {}"
+reddens = ["tests/prove/test_run.py::test_an_ended_run_is_not_proven_and_leaves_no_scratch[terminate]"]
+
+[[mutation]]
+name = "prove leaves its signal handlers in place after the run"
+file = "src/stayfixed/prove/run.py"
+before = "            signal.signal(number, handler)"
+after = "            pass"
+reddens = ["tests/prove/test_run.py::test_an_ended_run_is_not_proven_and_leaves_no_scratch[interrupt]"]
+
+[[mutation]]
+name = "prove sets a signal handler outside the main thread"
+file = "src/stayfixed/prove/run.py"
+before = "    if threading.current_thread() is not threading.main_thread():"
+after = "    if False:"
+reddens = ["tests/prove/test_run.py::test_a_run_outside_the_main_thread_sets_no_signal_handler"]
+
+[[mutation]]
+name = "prove's receipt takes the tree's state after the run for before it"
+file = "src/stayfixed/prove/run.py"
+before = "        dirty_after=after.dirty if after is not None else None,"
+after = "        dirty_after=before.dirty if before is not None else None,"
+reddens = ["tests/prove/test_run.py::test_tree_state_is_taken_before_and_after"]
+
+[[mutation]]
+name = "prove's line leaves out the configuration files"
+file = "src/stayfixed/prove/run.py"
+before = '        parts.append("configuration: " + ", ".join(printable(name) for name in receipt.configs))'
+after = "        pass"
+reddens = [
+  "tests/prove/test_command.py::test_the_line_names_the_counts_the_runner_and_the_files_that_shape_the_report",
+]
+
+[[mutation]]
+name = "prove words two arms alike"
+file = "src/stayfixed/prove/run.py"
+before = '    NONE_RAN: "the runner reported no test run",'
+after = '    NONE_RAN: "the runner reported a failed test",'
+reddens = ["tests/prove/test_command.py::test_every_arm_is_worded_apart"]
+
+[[mutation]]
+name = "prove's line hides that its runner was not verified"
+file = "src/stayfixed/prove/run.py"
+before = '            runner += ", not verified"'
+after = "            pass"
+reddens = ["tests/prove/test_run.py::test_the_line_marks_a_runner_no_adapter_resolved"]
+
+# The tree's state: untracked and ignored files in the discovery set, the configuration files that
+# exist, a capped list, and no answer outside git.
+[[mutation]]
+name = "prove's tree state leaves the ignored files out"
+file = "src/stayfixed/prove/tree.py"
+before = "        found = _matching([*others, *ignored], discovery)"
+after = "        found = _matching(others, discovery)"
+reddens = ["tests/prove/test_run.py::test_the_receipt_names_untracked_ignored_and_config_files"]
+
+[[mutation]]
+name = "prove's tree state lists past its cap"
+file = "src/stayfixed/prove/tree.py"
+before = "        untracked, more = tuple(found[:UNTRACKED_LISTED]), max(len(found) - UNTRACKED_LISTED, 0)"
+after = "        untracked, more = tuple(found), 0"
+reddens = ["tests/prove/test_run.py::test_the_untracked_list_stops_at_its_cap_and_counts_the_rest"]
+
+[[mutation]]
+name = "prove's tree state names a configuration file the tree deleted"
+file = "src/stayfixed/prove/tree.py"
+before = "        present = [name for name in [*tracked, *others, *ignored] if fsops.exists(root / name)]"
+after = "        present = [*tracked, *others, *ignored]"
+reddens = ["tests/prove/test_run.py::test_a_configuration_file_is_named_only_where_it_exists"]
+
+[[mutation]]
+name = "prove's tree state reads no answer as a clean tree"
+file = "src/stayfixed/prove/tree.py"
+before = "        dirty=bool(status) if status is not None else None,"
+after = "        dirty=bool(status),"
+reddens = [
+  "tests/prove/test_run.py::test_tree_state_outside_git_is_unknown_and_never_a_refusal",
+  "tests/prove/test_run.py::test_outside_a_repository_the_project_is_the_directory_itself",
+]
+
+# An adapter module that does not import is a defect in stayfixed, never a runner to skip.
+[[mutation]]
+name = "shipped_adapters skips a module that does not import"
+file = "src/stayfixed/prove/adapters.py"
+before = """        found.extend(stack_module(name, ADAPTER_FILE.removesuffix(".py")).ADAPTERS)"""
+after = """        try:
+            found.extend(stack_module(name, ADAPTER_FILE.removesuffix(".py")).ADAPTERS)
+        except Exception:
+            continue"""
+reddens = ["tests/prove/test_run.py::test_an_adapter_module_that_does_not_import_raises"]
+
+# The command: an exit code per verdict, the command after `--` and nowhere else, and the bound.
+[[mutation]]
+name = "prove's command exits 0 whatever the verdict"
+file = "src/stayfixed/prove/commands.py"
+before = "    return Result(line(receipt), dataclasses.asdict(receipt), exit_code=EXIT[receipt.verdict])"
+after = "    return Result(line(receipt), dataclasses.asdict(receipt), exit_code=0)"
+reddens = [
+  "tests/prove/test_command.py::test_the_command_exits_by_verdict_and_words_each_apart[failed-1]",
+  "tests/prove/test_command.py::test_the_command_exits_by_verdict_and_words_each_apart[refused-2]",
+]
+
+[[mutation]]
+name = "prove's refusal exits as a failure"
+file = "src/stayfixed/prove/run.py"
+before = "    Verdict.REFUSED: 2,"
+after = "    Verdict.REFUSED: 1,"
+reddens = [
+  "tests/prove/test_command.py::test_the_command_exits_by_verdict_and_words_each_apart[refused-2]",
+  "tests/prove/test_run.py::test_an_assigned_forging_variable_is_refused[argv0]",
+]
+
+[[mutation]]
+name = "prove runs a command typed without its separator"
+file = "src/stayfixed/prove/commands.py"
+before = "        if words[:1] != [_SEPARATOR] or len(words) < 2:"
+after = "        if not words:"
+reddens = [
+  "tests/prove/test_command.py::test_a_missing_separator_or_command_is_a_usage_error[argv1]",
+  "tests/prove/test_command.py::test_a_missing_separator_or_command_is_a_usage_error[argv2]",
+]
+
+[[mutation]]
+name = "prove takes a timeout of no seconds"
+file = "src/stayfixed/prove/commands.py"
+before = "    if not seconds > 0:  # false for NaN too"
+after = "    if seconds < 0:"
+reddens = [
+  "tests/prove/test_command.py::test_a_missing_separator_or_command_is_a_usage_error[argv5]",
+  "tests/prove/test_command.py::test_a_missing_separator_or_command_is_a_usage_error[argv6]",
+]
+
+[[mutation]]
+name = "prove's command ignores --timeout"
+file = "src/stayfixed/prove/commands.py"
+before = "    receipt = prove(args.command, cwd=Path.cwd(), environ=os.environ, timeout=args.timeout)"
+after = "    receipt = prove(args.command, cwd=Path.cwd(), environ=os.environ, timeout=PROVE_TIMEOUT_SECONDS)"
+reddens = ["tests/prove/test_command.py::test_the_timeout_reaches_the_run"]
+
+# The JUnit reader's refusal names expat's fixed-table message, never the exception's own text.
+[[mutation]]
+name = "the JUnit reader's refusal carries the parser's own text"
+file = "src/stayfixed/prove/junit.py"
+before = '        raise ReportError(REPORT_MALFORMED, f"{expat.errors.messages[exc.code]}, {where}") from None'
+after = "        raise ReportError(REPORT_MALFORMED, str(exc)) from None"
+reddens = ["tests/prove/test_junit.py::test_a_refusal_quotes_nothing_the_document_holds"]

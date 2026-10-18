@@ -47,6 +47,7 @@ Three things hold everywhere:
 - [`stayfixed commit strip FILE`](#stayfixed-commit-strip-file)
 - [`stayfixed test hygiene`](#stayfixed-test-hygiene)
 - [`stayfixed test attribute --command CMD [--base REF]`](#stayfixed-test-attribute---command-cmd---base-ref)
+- [`stayfixed prove [--timeout SECONDS] -- COMMAND …`](#stayfixed-prove---timeout-seconds----command-)
 - [`stayfixed bugs new TITLE --severity S --area A [--source S] [--related ID …] [--no-fetch]`](#stayfixed-bugs-new-title---severity-s---area-a---source-s---related-id----no-fetch)
 - [`stayfixed bugs index [--check]`](#stayfixed-bugs-index---check)
 - [`stayfixed bugs check [--base REF]`](#stayfixed-bugs-check---base-ref)
@@ -795,6 +796,74 @@ a shallow clone), when `git archive` fails, or when an archive is missing tracke
 files because the archived tree's own `.gitattributes` excluded them, and `2` when `--base` is
 shaped like an option, which is refused above the first subprocess rather than handed to `git` as
 one.
+
+## `stayfixed prove [--timeout SECONDS] -- COMMAND …`
+
+Run a test command where it is typed, count only what its runner reported, and say what that
+proves: `proved`, `failed`, `not proven` or `refused`.
+
+```bash
+stayfixed prove -- uv run --locked pytest tests/test_x.py
+stayfixed prove --timeout 600 -- uv run --locked pytest
+```
+
+The command is everything after `--`, run as typed in the current directory, never through a
+shell. The project it answers for is that directory's git top-level, or the directory itself
+outside a repository; a command typed in `packages/web` runs in `packages/web`. `prove` reads no
+configuration, needs no `stayfixed.toml`, and takes neither `--root` nor `--machine`. A line with
+no `--`, or nothing after it, is a usage error (2).
+
+The command is read past its leading `NAME=value` assignments, `env` and `uv run …`, as the
+session guard reads a command, and the first runner adapter that recognises what is left plans
+the run: the argv to execute, the realpath of its program, where the runner's report arrives and
+in which format, and which files in the tree can shape it. A command no adapter recognises, an
+`env` given an option among them, is `not proven`. The assignments reach the runner in its
+environment, not its argv. A report the runner writes to a file is read from a scratch directory
+outside the project; a report that is the runner's own standard output (a test event stream) is
+copied to yours as it arrives, every byte, and only the format's own events are counted. Text a
+command prints is never counted.
+
+**What `proved` means.** The code under test, any file in the runner's load path, tracked or not, and the environment the runner reads can shape its report, so `proved` means the runner reported green on this tree, for the tests this command selected.
+
+**The verdict**, the first row that holds winning:
+
+| Row | Verdict | Exit | Reason |
+|---|---|---|---|
+| the runner's adapter refuses the command, the command assigns a variable in the adapter's forging set, or the program changed between the plan and the launch | `refused` | 2 | the adapter's own, `assigned-forging`, `resolved-elsewhere` |
+| no adapter recognises the command, its entry point does not resolve, it could not start, it was interrupted or passed its time limit, it wrote no report, or the report does not read | `not proven` | 1 | `not-recognised`, the adapter's own, `not-started`, `interrupted`, `timed-out`, `no-report`, a report's own |
+| the report holds a failed test | `failed` | 1 | `failing` |
+| the report holds no test | `failed` | 1 | `none-ran` |
+| every test the report holds was skipped | `failed` | 1 | `all-skipped` |
+| the report is green and the command exited non-zero | `not proven` | 1 | `green-but-exited` |
+| otherwise | `proved` | 0 | |
+
+A report does not read when it is past 64 MiB (`report-too-large`), a JSON report is not UTF-8
+(`report-not-utf8`), it does not parse as its format or holds a key twice (`report-malformed`), an
+XML report declares a doctype (`report-doctype`), or it names an entity it never declared
+(`report-entity`). Where the refusal names something the report holds, an unknown test status or a
+key held twice, it is escaped and, past 120 characters, cut to its start and its length.
+
+`--timeout` ends the run's whole process group past that many seconds (default: 3600, which bounds
+a suite that hangs and is no suite's budget). So does an interrupt (Ctrl-C) or a `SIGTERM` or
+`SIGHUP` to `prove`: either way the run is `not proven`, and what the command left running in its
+process group is ended with it.
+
+**The line** says the verdict and its reason in words, the counts (passed, failed, skipped), the
+runner and the realpath of the program that ran, and the files that can shape the report: the
+runner's configuration files that exist, and the untracked and ignored files in its discovery set,
+twenty of them and a count of the rest. The tree's state is taken before the run and after it, and
+is information for you, never an input to the verdict. `--json` carries `verdict`, `reason`,
+`detail` (the variable a refused assignment named, or where a report stopped reading), `argv` (the
+command, every `NAME=value` and `--option=value` value replaced by `…`; a value passed as the word
+after its option is kept), `runner`, `program`, `verified`, `counts`, `exit_code`, `report_digest`
+(the SHA-256 of the report counted), `commit`, `dirty_before`, `dirty_after`, `untracked`,
+`untracked_more` and `configs`.
+
+**Reads** the command's report and git's answers about the tree. **Writes** nothing in the
+project: the scratch directory is under the system's temporary directory, is readable by you
+alone, and is removed on every path. What the command itself writes, it writes. **Runs** the
+command, as the [What stayfixed sends where](https://github.com/stayfixed/stayfixed/blob/main/README.md#what-stayfixed-sends-where)
+row says.
 
 ## `stayfixed bugs new TITLE --severity S --area A [--source S] [--related ID …] [--no-fetch]`
 
@@ -3628,14 +3697,16 @@ rules is the ordinary state of a first attach and is exactly what the `--yes` ga
 refusal `attach` raises names this flag as the way to read that diff first. A `--check` that failed
 whenever the run would widen would make the documented remedy itself a failure.
 
-Every command that reads a project takes `--root` and `--machine`, with the meanings in the first
-table, whether or not its heading spells them. Neither flag is taken by `stayfixed guard
-bg-cleanup`, `stayfixed commit strip`, `stayfixed hook` and `stayfixed overlay publish-template`,
-because none of them reads a project: the first two read only what they are handed, `hook` finds
-the project from the harness's own event, and `publish-template` renders the shipped overlay
-template. The other `overlay` commands take `--root` alone, in the sense the second table gives
-it, and read no `stayfixed.toml`; `setup` takes both, in its own senses. `tests/test_documents.py`
-holds both lists to the real parser.
+Every command that reads a project's configuration takes `--root` and `--machine`, with the
+meanings in the first table, whether or not its heading spells them.
+Neither flag is taken by `stayfixed guard bg-cleanup`, `stayfixed commit strip`, `stayfixed hook`,
+`stayfixed overlay publish-template` and `stayfixed prove`, because none of them reads a project's
+configuration: the first two read only what they are handed, `hook` finds the project from the
+harness's own event, `publish-template` renders the shipped overlay template, and `prove` runs its
+command where it is typed and answers for that directory's repository. The other `overlay`
+commands take `--root` alone, in the sense the second table gives it, and read no
+`stayfixed.toml`; `setup` takes both, in its own senses. `tests/test_documents.py` holds both
+lists to the real parser.
 
 ---
 

@@ -28,7 +28,9 @@ count twice, which changes a count and never a verdict.
 A line that is not a JSON object, an event with no string `Action`, or a `Test`, `Package` or
 `ImportPath` of the wrong type is `REPORT_MALFORMED`: the stream is the runner's own, and a line in
 it the runner did not write as an event is not one to count around. Empty lines are skipped. A
-refusal names the line by its number and a key by its fixed name, never a value the stream holds.
+refusal names the line by its number and a key by its fixed name, and a value the stream holds in
+one case alone: a key an object holds twice, which `counts.strict_json` names through
+`printed.clipped`, escaped and bounded in length.
 """
 
 from __future__ import annotations

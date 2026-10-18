@@ -15,7 +15,8 @@ mention is gone, so the list never outlives what it excuses.
 
 The words catch a stack named in the core; they do not catch the core importing a stack's own
 code, because `stayfixed.profiles.python.hygiene` holds no listed word. So the same walk also reads
-every import, and a core module that imports from a shipped profile's directory fails on its own.
+every import, and a core module that imports from a stack's directory, a profile's or one holding
+code alone, fails on its own.
 """
 
 from __future__ import annotations
@@ -224,8 +225,19 @@ def imported(path: Path, tree: ast.AST) -> Iterator[str]:
             yield from (f"{module}.{alias.name}" for alias in node.names)
 
 
+def stack_packages(profiles: Path) -> tuple[str, ...]:
+    """Every stack's directory under `profiles`, a profile or not: a stack may ship a runner's
+    adapters and no profile, and its code is a stack's all the same. `__pycache__` and any other
+    name no stack could have are left out."""
+    return tuple(
+        sorted(
+            p.name for p in profiles.iterdir() if p.is_dir() and not p.name.startswith(("_", "."))
+        )
+    )
+
+
 def stack_imports(modules: list[Path]) -> set[tuple[str, str]]:
-    stacks = tuple(f"stayfixed.profiles.{name}" for name in shipped())
+    stacks = tuple(f"stayfixed.profiles.{name}" for name in stack_packages(PROFILES))
     found: set[tuple[str, str]] = set()
     for path in modules:
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
@@ -251,6 +263,17 @@ def test_the_import_reader_resolves_every_spelling_of_a_stack_import(
     # `ImportFrom` (the second and third cases), and by dropping the relative resolution (the
     # third); both measured.
     assert module in set(imported(PROFILES / "hints.py", ast.parse(source)))
+
+
+def test_every_stack_directory_is_read_whether_or_not_it_holds_a_profile(tmp_path: Path) -> None:
+    # A stack may ship its runner's adapters with no `profile.toml` beside them, and a core import
+    # of that code is a stack import all the same; reading `shipped()` alone left it unseen.
+    # Measured by hand: `stack_packages` returning `shipped()` drops `go` here.
+    for name, file in (("python", "profile.toml"), ("go", "adapters.py"), ("__pycache__", "x.pyc")):
+        (tmp_path / name).mkdir()
+        (tmp_path / name / file).write_text("", encoding="utf-8")
+    assert stack_packages(tmp_path) == ("go", "python")
+    assert set(shipped()) <= set(stack_packages(PROFILES))
 
 
 def test_no_core_module_imports_a_stack_profiles_code() -> None:

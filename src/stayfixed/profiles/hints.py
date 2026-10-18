@@ -19,20 +19,18 @@ command text a repository authored can pass as a count's name. So the trust rule
 argument alone, which is the contract below; a hint that kept a string from `report` on itself
 for `note` to print would break the contract, and nothing but review catches that.
 
-The listing goes through `importlib.resources` over this package, never over a repository path,
-so only a hint stayfixed itself ships is ever imported.
+The listing is `stayfixed.profiles.stack_directories`, through `importlib.resources` over this
+package and never over a repository path, so only a hint stayfixed itself ships is ever imported.
 """
 
 from __future__ import annotations
 
-import importlib
 import re
 from collections.abc import Mapping, Sequence
-from importlib import resources
 from pathlib import Path
 from typing import Protocol
 
-from stayfixed.profiles import shipped
+from stayfixed.profiles import stack_directories, stack_module
 
 HINT_FILE = "hygiene.py"
 # What a count may be called: a lower-case word of letters, digits and underscores, which is a
@@ -84,9 +82,8 @@ class RedRunHint(Protocol):
 
 
 def hint_modules() -> tuple[str, ...]:
-    """The shipped profiles that carry a `hygiene.py`, by name."""
-    package = resources.files(__package__)
-    return tuple(name for name in shipped() if package.joinpath(name).joinpath(HINT_FILE).is_file())
+    """The stacks that carry a `hygiene.py`, by name."""
+    return stack_directories(HINT_FILE)
 
 
 class NotText(TypeError):
@@ -105,7 +102,7 @@ def shipped_hints() -> tuple[tuple[str, RedRunHint | None], ...]:
 
 def _hint(name: str) -> RedRunHint | None:
     try:
-        hint: RedRunHint = importlib.import_module(f"{__package__}.{name}.hygiene").HINT
+        hint: RedRunHint = stack_module(name, HINT_FILE.removesuffix(".py")).HINT
     except Exception:
         return None
     return hint

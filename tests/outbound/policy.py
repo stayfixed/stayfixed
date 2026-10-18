@@ -178,6 +178,9 @@ NO_ROWS: frozenset[str] = frozenset()
 PASS_THROUGH: dict[tuple[str, str, str], frozenset[str]] = {
     # A project's own `[gates.custom.<name>] run`, launched as configured.
     ("src/stayfixed/assess/gates.py", "_custom.run", "list(argv)"): frozenset({"[gates.custom]"}),
+    # The test command typed after `stayfixed prove --`, as the runner adapter that recognised it
+    # planned it: the command's own words, with the runner's report put where `prove` reads it.
+    ("src/stayfixed/prove/run.py", "_launch", "list(plan.argv)"): frozenset({"stayfixed prove --"}),
     # `claude plugin marketplace add` and `codex plugin marketplace add`, then `claude plugin
     # install` and `codex plugin add`, each built by a lambda in `_MARKETPLACE_ADD` or
     # `_PLUGIN_INSTALL`, which `test_the_plugin_installs_reach_the_rows_their_entries_name` calls.
@@ -253,5 +256,10 @@ OVERRIDES: dict[tuple[str, str, str], str] = {
     ("src/stayfixed/doctor/checks.py", "_wrapper", "env=env"): (
         "the environment doctor was handed, less every `CLAUDE_`, `PLUGIN_` and `STAYFIXED_` "
         "variable, plus the plugin root and project directory the wrapper needs"
+    ),
+    ("src/stayfixed/prove/run.py", "_launch", "env=dict(env)"): (
+        "the caller's own environment, less what the runner adapter scrubs, plus the "
+        "assignments the command itself typed and the adapter's own settings for its report: "
+        "the test command is the caller's, and reaches what it reaches"
     ),
 }

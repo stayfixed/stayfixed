@@ -6,8 +6,8 @@ first, so a re-export list in `__init__.py` would pull this whole area into ever
 call and reddens `tests/boundaries/test_discovery.py`. Keeping the surface one level down costs a
 consumer six characters and keeps discovery cheap.
 
-The list is what consumers outside this area actually reach for: the git hook, one shared rule
-and one gate:
+The list is what consumers outside this area actually reach for: the git hook, one shared rule,
+one gate and the command reader:
 
 - `setup` offers and undoes the git hook (`install`, `uninstall`, `HOOK_NAME`), and `Installed`
   and `Removed` come with the two verbs, because a return type absent from this list is a value
@@ -25,18 +25,22 @@ and one gate:
   red-run hint walks the same roots, handed to it by this area's guard rather than imported.
 - `assess` runs the `commit` gate (`commit_gate`), `(root, config, base) -> list[Finding]`;
   `commit check` reads the same range through the same `check_range`.
+- `prove` reads a test command past its leading assignments, `env` and `uv run …` the way the
+  session guard and every red-run hint do (`command_words`), so the runner it asks an adapter
+  about is the one they would name; a second reading of that launch would be a second answer.
 
 An area that needs something absent from this list grows it deliberately, in a commit that says
 which area and why.
 
 **What is not here.** The commit rules (`offending_lines`, `check_range`, `strip_message` and
-their records), the hygiene surface, the scanner a guard is built on, the failure
+their records), the hygiene surface, the rest of the scanner a guard is built on, the failure
 attribution and the background-cleanup judge stay in the modules that define them, each
 reachable there: no other area imports them, and a name published for a consumer that does not
 exist is a claim nothing checks. `assess` needs one name from this area, `commit_gate`, and it is
 above.
 """
 
+from stayfixed.guards.bashscan import command_words
 from stayfixed.guards.commit import commit_gate
 from stayfixed.guards.githooks import (
     HOOK_MARKER,
@@ -57,6 +61,7 @@ __all__ = [
     "Found",
     "Installed",
     "Removed",
+    "command_words",
     "commit_gate",
     "contained_roots",
     "git_path",
