@@ -20,6 +20,9 @@ The program's options, all after the word `stand-in`:
 - `--report-from-stdin`: the report's shape is the first line standard input holds, where it holds
   one, as a runner a debugger drives takes its commands there;
 - `--pad N`: `N` bytes of whitespace after the report's last element, or after its last event;
+- `--print-lines N`: on standard output, `N` `output` events before the report's own, each a line
+  a passing test printed, written compact as test2json writes them;
+- `--passes N`: on standard output, `N` passing tests' events in place of the report's own;
 - `--hang STARTED LATE`: leave a child that holds a lock on `held(LATE)` for as long as it lives,
   writes `STARTED` once it holds it, and writes `LATE` a few seconds later; and never exit;
 - `--leave STARTED LATE`: leave the same child, and exit once it has written `STARTED`;
@@ -133,6 +136,7 @@ def _options(argv: list[str]) -> dict[str, list[str]]:
     takes = {"--report-path": 1, "--source": 1, "--report": 1, "--code": 1, "--print": 1}
     takes |= {"--expect-env": 1, "--expect-unset": 1, "--expect-cwd": 1, "--touch": 1}
     takes |= {"--pad": 1, "--escape": 1, "--escape-quiet": 1, "--sleep": 1}
+    takes |= {"--print-lines": 1, "--passes": 1}
     takes |= {"--hang": 2, "--leave": 2}
     index = 0
     while index < len(argv):
@@ -232,9 +236,16 @@ def main(argv: list[str]) -> int:
             out.write(text.encode() + b"\n")
     pad = b" " * int((options.get("--pad") or ["0"])[0])
     if source == ReportSource.STDOUT:
+        for number in range(int((options.get("--print-lines") or ["0"])[0])):
+            line = {"Action": "output", "Package": "p", "Test": "TestA", "Output": f"{number}\n"}
+            out.write(json.dumps(line, separators=(",", ":")).encode() + b"\n")
         if shape == "doctype":
             out.write(b"not an event\n")
-        for event in _EVENTS.get(shape, []):
+        events = _EVENTS.get(shape, [])
+        if "--passes" in options:
+            count = int(options["--passes"][0])
+            events = [{"Action": "pass", "Package": "p", "Test": f"T{n}"} for n in range(count)]
+        for event in events:
             out.write(json.dumps(event).encode() + b"\n")
         out.write(pad)
     elif shape != "none":

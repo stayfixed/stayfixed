@@ -24,7 +24,7 @@ from stayfixed.prove.counts import (
     Counts,
     ReportError,
 )
-from stayfixed.prove.events import read_events
+from stayfixed.prove.events import read_events, read_line
 from tests.prove.test_fixtures import REPORTS
 
 
@@ -182,3 +182,61 @@ def test_bytes_that_are_not_utf8_are_refused_as_such() -> None:
 
 def test_past_the_cap_is_refused_before_decoding() -> None:
     assert refusal(b"\xff" * (MAX_REPORT_BYTES + 1)) == REPORT_TOO_LARGE
+
+
+# --- Which lines the reader reads anything from ----------------------------------------------
+
+_OUTPUT_EVENT = {"Action": "output", "Package": "p", "Test": "TestA", "Output": "printed\n"}
+
+
+@pytest.mark.parametrize("separators", [(",", ":"), (", ", ": ")], ids=["compact", "spaced"])
+def test_an_output_event_is_the_one_line_left_unread(separators: tuple[str, str]) -> None:
+    # test2json writes its events compact; the reader reads them however they are spaced.
+    # Mutations (declared): every output event read -> the first assertion fails; no event read
+    # -> the loop's.
+    assert read_line(json.dumps(_OUTPUT_EVENT, separators=separators).encode() + b"\n") is False
+    for event in (
+        {"Action": "pass", "Package": "p", "Test": "TestA", "Output": "output"},
+        {"Action": "run", "Package": "p", "Test": "output"},
+        {"ImportPath": "p [p.test]", "Action": "build-output", "Output": "# p\n"},
+    ):
+        assert read_line(json.dumps(event, separators=separators).encode() + b"\n") is True
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        b'{"Action":"output","Test":""}',
+        b'{"Action":"output","Test":1}',
+        b'{"Action":"output","Output":"\xff"}',
+        b'{"Action":"output","Action":"output"}',
+        b'[{"Action":"output"}]',
+        b'"output"',
+        b'{"Action":"output"',
+    ],
+    ids=[
+        "empty-test",
+        "test-not-a-string",
+        "not-utf8",
+        "key-twice",
+        "not-an-object",
+        "a-string",
+        "cut",
+    ],
+)
+def test_a_line_the_reader_refuses_is_read_so_the_refusal_stands(line: bytes) -> None:
+    # Mutation (declared): a refused line left unread -> each case reads as an output event's.
+    assert read_line(line) is True
+    with pytest.raises(ReportError):
+        read_events(line)
+
+
+@pytest.mark.parametrize(
+    "name", ["go.jsonl", "go-subtest.jsonl", "go-build-fail.jsonl", "go-framing.jsonl"]
+)
+def test_the_lines_left_unread_change_no_count(name: str) -> None:
+    whole = fixture(name)
+    lines = whole.splitlines(keepends=True)
+    kept = [line for line in lines if read_line(line)]
+    assert len(kept) < len(lines)
+    assert read_events(b"".join(kept)) == read_events(whole)

@@ -942,32 +942,20 @@ URL of any scheme but `file:`); `--watch` and `--watch-path` never end. A file a
 names there is among the configuration files. Their configuration
 files are `package.json`, `.npmrc`, `jest.config.*`, `vitest.config.*` and `vite.config.*`.
 
-**The `go test` adapter** recognises `go test …` and runs the `go` on `PATH` as `go test -json …`,
-`-json` after a leading `-C dir` and a `-json` of the command's own kept once; the report is the
-run's standard output, copied to yours whole, and only its events are counted, so a line a test
-prints is an `output` event and never a result. An inherited variable of its forging set, below,
-is removed from the run's environment, and the `go` that runs reads its own default for it. It
-refuses (`refused-option`, naming the flag) `-exec`, `-toolexec`, `-overlay`, `-o`, `-c` unless it
-is `-c=false`, and a `-json=` of a false value, each read as the go command reads it: spaced or with
-`=`, with one dash or two, before the packages or after them, a word that is a flag's value never as
-a flag, a build flag spelled `-test.` (`-test.p`, `-test.tags`), which the go command does not know
-and hands to the test binary, as taking no value, and nothing past a bare `-args`, `--args` or `--`
-(`-args=x` ends nothing). A refused flag after a word past the package list is refused too, though
-the go command hands it to the test binary there (`./pkg -v foo -exec=x`): where it stops reading
-its own flags depends on which flags each Go version knows, so the reading stops only at `-args`,
-the way to hand the test binary a flag. Every other flag is free, `-ldflags`, `-gcflags` and `-compiler` among them, as are `CC`, `CXX` and the `CGO_*`
-variables: they shape how the code under test is built, which the bound concedes. Its forging set is
-`GOFLAGS`, `GOENV`, `GOTOOLCHAIN`, `GOROOT`, which names the standard library the run builds
-against, and `GOOS` and `GOARCH`, under which a target this machine cannot run has the go command
-run the tests under the `go_$GOOS_$GOARCH_exec` it finds on `PATH`, `GOARCH=386` on an amd64
-machine among them. So a leg that tests another target is refused where the command assigns it and
-built for this machine where it is inherited: run it outside `prove`, or under `prove --junit`
-through a command no adapter recognises that writes a JUnit report. Its configuration files are
+**The `go test` adapter** recognises `go test …`, the `go` a bare name found on `PATH` or a path to
+one (`/usr/local/go/bin/go test ./...`), and runs the command as typed with `-json` added: after a
+leading `-C dir`, which the go command reads only first, and otherwise first. The report is the
+run's standard output, copied to yours whole; only its events are counted, so a line a test prints
+is an `output` event and never a result, and the 64 MiB cap counts the events alone, every `output`
+event left out of the report. Nothing is refused and nothing removed: `GOFLAGS`, `GOENV` (and the
+`go env -w` settings its file holds), `GOTOOLCHAIN`, `GOROOT`, `GOOS`, `GOARCH` and every flag are
+yours, read by the go command as outside `prove`. A flag that ends the run with no event stream is
+never `proved`: `-c` builds the test binary and runs nothing (`none-ran`), and a `-json=false` of
+the command's own turns the stream into text (`report-malformed`). Its configuration files are
 `go.mod` and `go.work`, and the file `-modfile` names, read from the directory a leading `-C`
-names; its discovery set is `*_test.go`. The bound
-has a Go case of its own: a test, or a `TestMain`, that prints test2json's own framing (`\x16---
-PASS: TestX`) gets a `pass` event for a test that never ran, and that is the code under test shaping
-its report.
+names; its discovery set is `*_test.go`. The bound has a Go case of its own: a test, or a
+`TestMain`, that prints test2json's own framing (`\x16--- PASS: TestX`) gets a `pass` event for a
+test that never ran, and that is the code under test shaping its report.
 
 **`--junit PATH`** is for a runner no adapter knows: no adapter is consulted, the command runs
 as typed (its assignments, `env` and `uv run …` read as above, its program found as above, nothing
@@ -1056,9 +1044,9 @@ the project's, and `~/.local/state/stayfixed/evidence/` is yours to remove.
 
 **The network.** `prove` itself reaches none; what runs may. `uv run` may sync the project's
 environment from its index first, as it does outside `prove`; `go test` may download the modules
-`go.mod` names, from the proxy your go environment names (`GOENV=off` drops a `go env -w` setting,
-so a private module's proxy must come from the environment); and nothing is installed through
-`npx`, which never runs: a runner that is not in `node_modules` is `entry-not-found`.
+`go.mod` names, from the proxy your go environment names, a `go env -w` setting included; and
+nothing is installed through `npx`, which never runs: a runner that is not in `node_modules` is
+`entry-not-found`.
 
 **Reads** the command's report and git's answers about the tree. **Writes** nothing in the
 project: the scratch directory is under the system's temporary directory, is readable by you

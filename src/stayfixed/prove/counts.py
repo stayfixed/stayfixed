@@ -33,7 +33,9 @@ REPORT_ENTITY = "report-entity"
 # A named cap: the longest report any reader here reads. A report is read whole into memory before
 # it is counted, so this bounds what one run can make `prove` hold. 64 MiB is room for a suite of a
 # few hundred thousand cases (a JUnit testcase with a long name and a short failure message is
-# under 200 bytes) and far short of a CI runner's memory. No shipped file states it.
+# under 200 bytes) and far short of a CI runner's memory. An event stream's report holds only the
+# lines its reader reads anything from (`stayfixed.prove.events.read_line`), so what a test prints
+# never counts against it. No shipped file states it.
 MAX_REPORT_BYTES = 64 * 1024 * 1024
 
 

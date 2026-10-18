@@ -31,6 +31,11 @@ it the runner did not write as an event is not one to count around. Empty lines 
 refusal names the line by its number and a key by its fixed name, and a value the stream holds in
 one case alone: a key an object holds twice, which `counts.strict_json` names through
 `printed.clipped`, escaped and bounded in length.
+
+`read_line` says which lines of a stream this reader reads anything from: every one but an
+`output` event it would read whole, which counts nothing. `prove`'s tee keeps only those in the
+report, so the size cap counts the events and never the text a test printed; every byte still
+reaches the caller.
 """
 
 from __future__ import annotations
@@ -50,6 +55,10 @@ _PASSED = "pass"
 _FAILED = "fail"
 _SKIPPED = "skip"
 _BUILD_FAIL = "build-fail"
+_OUTPUT = "output"
+# The action of an `output` event as a JSON string, which every one holds however it is spaced: a
+# line without it is read, so the whole parse below is made only for a line that may be one.
+_OUTPUT_WORD = b'"output"'
 
 
 def _optional_string(event: dict[str, object], key: str, line: int) -> str | None:
@@ -57,6 +66,36 @@ def _optional_string(event: dict[str, object], key: str, line: int) -> str | Non
     if value is not None and not isinstance(value, str):
         raise ReportError(REPORT_MALFORMED, f"line {line}: {key} is not a string")
     return value
+
+
+def _event(line: str, number: int) -> tuple[str, str | None, str | None, str | None]:
+    """The event `line`, line `number` of the stream, holds: its `Action`, `Test`, `Package` and
+    `ImportPath`; `ReportError` where it is no event."""
+    event = strict_json(line)
+    if not isinstance(event, dict):
+        raise ReportError(REPORT_MALFORMED, f"line {number} is not a JSON object")
+    action = event.get("Action")
+    if not isinstance(action, str):
+        raise ReportError(REPORT_MALFORMED, f"line {number} has no string Action")
+    test = _optional_string(event, "Test", number)
+    package = _optional_string(event, "Package", number)
+    import_path = _optional_string(event, "ImportPath", number)
+    if test == "":
+        raise ReportError(REPORT_MALFORMED, f"line {number} names an empty Test")
+    return action, test, package, import_path
+
+
+def read_line(line: bytes) -> bool:
+    """Whether `read_events` reads anything from `line`, one line of a stream: false only for an
+    `output` event it reads whole, which counts nothing. A line it refuses is read, so the refusal
+    stands: one that is not UTF-8, not an event, or an event of the wrong shape."""
+    if _OUTPUT_WORD not in line:
+        return True
+    try:
+        action = _event(line.decode("utf-8"), 0)[0]
+    except (UnicodeDecodeError, ReportError):
+        return True
+    return action != _OUTPUT
 
 
 def read_events(data: bytes) -> Counts:
@@ -71,17 +110,7 @@ def read_events(data: bytes) -> Counts:
     for number, line in enumerate(utf8(data).split("\n"), start=1):
         if not line.strip():
             continue
-        event = strict_json(line)
-        if not isinstance(event, dict):
-            raise ReportError(REPORT_MALFORMED, f"line {number} is not a JSON object")
-        action = event.get("Action")
-        if not isinstance(action, str):
-            raise ReportError(REPORT_MALFORMED, f"line {number} has no string Action")
-        test = _optional_string(event, "Test", number)
-        package = _optional_string(event, "Package", number)
-        import_path = _optional_string(event, "ImportPath", number)
-        if test == "":
-            raise ReportError(REPORT_MALFORMED, f"line {number} names an empty Test")
+        action, test, package, import_path = _event(line, number)
         if test is not None:
             if action == _PASSED:
                 passed += 1

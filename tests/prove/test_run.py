@@ -34,6 +34,7 @@ from stayfixed.prove import counts as counts_module
 from stayfixed.prove import run as run_module
 from stayfixed.prove import tree
 from stayfixed.prove.counts import REPORT_DOCTYPE, REPORT_TOO_LARGE, Counts
+from stayfixed.prove.events import read_line
 from stayfixed.prove.run import (
     ALL_SKIPPED,
     ASSIGNED_FORGING,
@@ -680,6 +681,94 @@ def test_a_report_past_the_cap_is_refused_and_not_cut_to_fit(
     got = run(tmp_path, NAME, "--pad", str(cap), adapter=teed)
     assert (got.verdict, got.reason) == (NOT_PROVEN, REPORT_TOO_LARGE)
     assert len(capsysbinary.readouterr().out) > cap  # the caller still saw every byte
+
+
+def test_the_cap_counts_the_events_and_never_what_a_test_printed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsysbinary: pytest.CaptureFixture[bytes]
+) -> None:
+    # An event stream's `output` events are copied to the caller and left out of the report, so a
+    # passing suite that prints far past the cap is proved; its result events alone past the cap
+    # are still too large. Mutations (declared): the tee handed no line test, `read_lines` naming
+    # none for the event stream -> the first run is too large.
+    cap = 4096
+    monkeypatch.setattr(run_module, "MAX_REPORT_BYTES", cap)
+    monkeypatch.setattr(counts_module, "MAX_REPORT_BYTES", cap)
+    teed = StandIn(source=ReportSource.STDOUT)
+    got = run(tmp_path, NAME, "--print-lines", "1000", adapter=teed)
+    assert (got.verdict, got.reason, got.counts) == (PROVED, "", Counts(1, 0, 0))
+    assert len(capsysbinary.readouterr().out) > 10 * cap
+    got = run(tmp_path, NAME, "--passes", "1000", adapter=teed)
+    assert (got.verdict, got.reason) == (NOT_PROVEN, REPORT_TOO_LARGE)
+    capsysbinary.readouterr()
+
+
+def test_a_passing_suite_that_prints_past_the_cap_is_proved(tmp_path: Path) -> None:
+    # One passing test that prints 1.7 million short lines, past 64 MiB once each is framed as an
+    # `output` event: measured on Go 1.27.2, `go test` passes it.
+    with open(os.devnull, "w", encoding="utf-8") as sink:
+        got = run(
+            tmp_path,
+            NAME,
+            "--print-lines",
+            "1700000",
+            adapter=StandIn(source=ReportSource.STDOUT),
+            echo=sink,
+        )
+    assert (got.verdict, got.reason, got.counts) == (PROVED, "", Counts(1, 0, 0))
+
+
+def _tee(tmp_path: Path) -> tuple[run_module._Tee, int, Path]:
+    """A tee of an event stream on a pipe that stays empty, its chunks handed to `_copy` by the
+    test, its report at the returned path; the pipe's writer to close."""
+    source, writer = os.pipe()
+    path = tmp_path / "report"
+    report = os.open(path, os.O_WRONLY | os.O_CREAT, 0o600)
+    caller = io.StringIO()
+    tee = run_module._Tee(os.fdopen(source, "rb"), report, caller, read_line)
+    return tee, writer, path
+
+
+def test_the_tee_reads_a_line_cut_between_two_reads_whole(tmp_path: Path) -> None:
+    # Mutation (declared): a line's held start dropped -> the report holds the pass event's end
+    # alone.
+    tee, writer, path = _tee(tmp_path)
+    printed = b'{"Action":"output","Package":"p","Output":"x\\n"}\n'
+    passed = b'{"Action":"pass","Package":"p","Test":"TestA"}\n'
+    stream = printed + passed + printed
+    for cut in (30, 60, 90):
+        tee._copy(stream[cut - 30 : cut])
+    tee._copy(stream[90:])
+    os.close(writer)
+    tee.finish()
+    assert path.read_bytes() == passed
+
+
+def test_the_tee_keeps_a_last_line_with_no_line_break(tmp_path: Path) -> None:
+    # Mutation (declared): the last line, cut short, dropped -> the report is empty.
+    tee, writer, path = _tee(tmp_path)
+    passed = b'{"Action":"pass","Package":"p","Test":"TestA"}'
+    tee._copy(passed)
+    os.close(writer)
+    tee.finish()
+    assert path.read_bytes() == passed
+
+
+def test_the_tee_holds_no_line_past_the_cap(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A line longer than the cap is copied as it stands, so no report holding it fits and none is
+    # held whole in memory. Mutation (declared): the line held whatever its length -> nothing is
+    # written while it lasts.
+    cap = 1000
+    monkeypatch.setattr(run_module, "MAX_REPORT_BYTES", cap)
+    tee, writer, path = _tee(tmp_path)
+    for _ in range(5):
+        tee._copy(b"x" * 400)
+    assert path.stat().st_size == cap + 1
+    assert len(tee._line) == 0
+    os.close(writer)
+    tee.finish()
+    assert path.stat().st_size == cap + 1
 
 
 @pytest.mark.parametrize("option", ["--escape", "--escape-quiet"])

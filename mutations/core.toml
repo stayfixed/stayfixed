@@ -5426,6 +5426,86 @@ reddens = [
   "tests/prove/test_results.py::test_read_report_hands_drop_to_the_junit_reader",
 ]
 
+# The size cap counts what the event-stream reader reads, never the text a test printed: the tee
+# leaves `output` events out of the report, and nothing else.
+[[mutation]]
+name = "read_lines names no line test for the event stream"
+file = "src/stayfixed/prove/reports.py"
+before = "        return read_line"
+after = "        return None"
+reddens = [
+  "tests/prove/test_run.py::test_the_cap_counts_the_events_and_never_what_a_test_printed",
+]
+
+[[mutation]]
+name = "the event-stream reader's line test reads every output event"
+file = "src/stayfixed/prove/events.py"
+before = "    return action != _OUTPUT"
+after = "    return True"
+reddens = [
+  "tests/prove/test_events.py::test_an_output_event_is_the_one_line_left_unread[compact]",
+  "tests/prove/test_events.py::test_an_output_event_is_the_one_line_left_unread[spaced]",
+]
+
+[[mutation]]
+name = "the event-stream reader's line test leaves every event it parses unread"
+file = "src/stayfixed/prove/events.py"
+before = "    return action != _OUTPUT"
+after = "    return False"
+reddens = [
+  "tests/prove/test_events.py::test_an_output_event_is_the_one_line_left_unread[compact]",
+  "tests/prove/test_events.py::test_the_lines_left_unread_change_no_count[go.jsonl]",
+]
+
+[[mutation]]
+name = "the event-stream reader's line test leaves a line it refuses unread"
+file = "src/stayfixed/prove/events.py"
+before = """    except (UnicodeDecodeError, ReportError):
+        return True"""
+after = """    except (UnicodeDecodeError, ReportError):
+        return False"""
+reddens = [
+  "tests/prove/test_events.py::test_a_line_the_reader_refuses_is_read_so_the_refusal_stands[empty-test]",
+  "tests/prove/test_events.py::test_a_line_the_reader_refuses_is_read_so_the_refusal_stands[not-utf8]",
+]
+
+[[mutation]]
+name = "prove's tee hands the report every line of an event stream"
+file = "src/stayfixed/prove/run.py"
+before = "    read = read_lines(plan.kind) if teed else None"
+after = "    read = None"
+reddens = [
+  "tests/prove/test_run.py::test_the_cap_counts_the_events_and_never_what_a_test_printed",
+]
+
+[[mutation]]
+name = "prove's tee drops the start of a line cut between two reads"
+file = "src/stayfixed/prove/run.py"
+before = "                line = bytes(self._line) + line"
+after = "                pass"
+reddens = [
+  "tests/prove/test_run.py::test_the_tee_reads_a_line_cut_between_two_reads_whole",
+]
+
+[[mutation]]
+name = "prove's tee drops a last line with no line break"
+file = "src/stayfixed/prove/run.py"
+before = """                self._last()
+"""
+after = ""
+reddens = [
+  "tests/prove/test_run.py::test_the_tee_keeps_a_last_line_with_no_line_break",
+]
+
+[[mutation]]
+name = "prove's tee holds a line whatever its length"
+file = "src/stayfixed/prove/run.py"
+before = "        if len(self._line) > MAX_REPORT_BYTES:"
+after = "        if False:"
+reddens = [
+  "tests/prove/test_run.py::test_the_tee_holds_no_line_past_the_cap",
+]
+
 # A value the report holds reaches a refusal's detail only clipped: a status or a key is bounded in
 # length by nothing but the report's size, and a receipt cannot clip it once it is embedded.
 [[mutation]]
@@ -5447,13 +5527,14 @@ reddens = [
 ]
 
 # Each shape check of the event-stream reader refuses the line; skipping it instead would count
-# around a line the runner did not write as an event. Each `after` skips rather than deletes, so
-# what reddens is the refusal the test asserts, not an exception a deleted check lets through.
+# around a line the runner did not write as an event. Each `after` skips rather than deletes, an
+# event with no action counting nothing, so what reddens is the refusal the test asserts, not an
+# exception a deleted check lets through.
 [[mutation]]
 name = "the event-stream reader skips a line that is not an object"
 file = "src/stayfixed/prove/events.py"
-before = """            raise ReportError(REPORT_MALFORMED, f"line {number} is not a JSON object")"""
-after = """            continue"""
+before = """        raise ReportError(REPORT_MALFORMED, f"line {number} is not a JSON object")"""
+after = """        return "", None, None, None"""
 reddens = [
   "tests/prove/test_events.py::test_a_line_that_is_not_an_event_is_malformed",
 ]
@@ -5461,8 +5542,8 @@ reddens = [
 [[mutation]]
 name = "the event-stream reader skips an event with no string Action"
 file = "src/stayfixed/prove/events.py"
-before = """            raise ReportError(REPORT_MALFORMED, f"line {number} has no string Action")"""
-after = """            continue"""
+before = """        raise ReportError(REPORT_MALFORMED, f"line {number} has no string Action")"""
+after = """        return "", None, None, None"""
 reddens = [
   "tests/prove/test_events.py::test_a_line_that_is_not_an_event_is_malformed",
 ]
@@ -5479,8 +5560,8 @@ reddens = [
 [[mutation]]
 name = "the event-stream reader reads an empty Test as no test"
 file = "src/stayfixed/prove/events.py"
-before = """            raise ReportError(REPORT_MALFORMED, f"line {number} names an empty Test")"""
-after = """            test = None"""
+before = """        raise ReportError(REPORT_MALFORMED, f"line {number} names an empty Test")"""
+after = """        test = None"""
 reddens = [
   "tests/prove/test_events.py::test_a_line_that_is_not_an_event_is_malformed",
 ]
@@ -5552,8 +5633,10 @@ reddens = [
 [[mutation]]
 name = "read_report reads any other kind as the event stream"
 file = "src/stayfixed/prove/reports.py"
-before = "    if kind is ReportKind.EVENTS:"
-after = "    if True:"
+before = """    if kind is ReportKind.EVENTS:
+        return read_events(data)"""
+after = """    if True:
+        return read_events(data)"""
 reddens = [
   "tests/prove/test_results.py::test_read_report_reads_no_kind_it_does_not_name",
 ]

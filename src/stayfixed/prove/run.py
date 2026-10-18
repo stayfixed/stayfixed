@@ -99,7 +99,7 @@ from stayfixed.prove.counts import (
     Counts,
     ReportError,
 )
-from stayfixed.prove.reports import read_report
+from stayfixed.prove.reports import read_lines, read_report
 
 
 class Verdict(StrEnum):
@@ -318,6 +318,13 @@ class _Tee:
     the report, up to one byte past `MAX_REPORT_BYTES` to the report too, by a thread of its own
     that owns both descriptors.
 
+    Given `read`, the report's reader's test of a line (`reports.read_lines`), only the lines it
+    reads anything from are copied to the report, so the cap counts what the reader needs and never
+    the text a test printed; the caller still gets every byte. A line is held until its line break
+    arrives, and the last one, cut short, when the pipe ends; one longer than `MAX_REPORT_BYTES` is
+    copied as it stands, its rest and every byte after it with it, since no report holding it fits
+    under the cap.
+
     The thread reads until the pipe ends; once `finish` is asked, it stops at the first moment the
     pipe holds nothing, or once it has copied `MAX_REPORT_BYTES` more, so a descendant that left the
     process group and writes on cannot keep it. A caller's stream that takes text alone is handed
@@ -325,10 +332,18 @@ class _Tee:
     written nothing more, and the report goes on filling.
     """
 
-    def __init__(self, source: IO[bytes], report: int | None, caller: TextIO) -> None:
+    def __init__(
+        self,
+        source: IO[bytes],
+        report: int | None,
+        caller: TextIO,
+        read: Callable[[bytes], bool] | None = None,
+    ) -> None:
         self._source = source
         self._report = report
         self._room = MAX_REPORT_BYTES + 1 if report is not None else 0
+        self._read = read
+        self._line = bytearray()
         self._stop = threading.Event()
         self._out: BinaryIO | None = getattr(caller, "buffer", None)
         self._text = caller
@@ -351,12 +366,39 @@ class _Tee:
             # not the caller's to end, and its report is not cut short.
             self._gone = True
 
-    def _copy(self, chunk: bytes) -> None:
-        self._echo(chunk)
-        share = chunk[: self._room]
+    def _keep(self, data: bytes | bytearray) -> None:
+        share = data[: self._room]
         self._room -= len(share)
         while share and self._report is not None:
             share = share[os.write(self._report, share) :]
+
+    def _copy(self, chunk: bytes) -> None:
+        self._echo(chunk)
+        read = self._read
+        if read is None:
+            self._keep(chunk)
+            return
+        *ended, rest = chunk.split(b"\n")
+        kept: list[bytes] = []
+        for index, part in enumerate(ended):
+            line = part + b"\n"
+            if index == 0 and self._line:
+                line = bytes(self._line) + line
+                self._line.clear()
+            if read(line):
+                kept.append(line)
+        self._keep(b"".join(kept))
+        self._line += rest
+        if len(self._line) > MAX_REPORT_BYTES:
+            self._keep(self._line)
+            self._line.clear()
+            self._read = None
+
+    def _last(self) -> None:
+        """The last line, where the pipe ended inside one, copied as a whole one is."""
+        if self._line and self._read is not None and self._read(bytes(self._line)):
+            self._keep(self._line)
+        self._line.clear()
 
     def _pump(self) -> None:
         after_stop = 0
@@ -382,6 +424,7 @@ class _Tee:
                 self._echo(b"", final=True)
             self._source.close()
             if self._report is not None:
+                self._last()
                 os.close(self._report)
 
     def finish(self) -> None:
@@ -438,7 +481,8 @@ def _run(
         if report is not None:
             os.close(report)
         return _Ran(NOT_STARTED, None)
-    tee = None if process.stdout is None else _Tee(process.stdout, report, caller)
+    read = read_lines(plan.kind) if teed else None
+    tee = None if process.stdout is None else _Tee(process.stdout, report, caller, read)
     try:
         try:
             with _signals_end_the_run():
