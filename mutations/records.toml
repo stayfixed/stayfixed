@@ -1369,6 +1369,26 @@ reddens = [
   "tests/memory/test_worktree.py::test_a_home_or_claude_under_a_directory_nobody_may_read_gets_the_harness_link[claude]",
 ]
 
+# A note link that fails after the anchor refused still carries the refusal out of `link`, and
+# the hook still says it, beside the count of what was made.
+[[mutation]]
+name = "a half-built tree drops the harness refusal"
+file = "src/stayfixed/memory/worktree.py"
+before = "        raise PartialLink(created, exc, harness_refused=unreachable) from exc"
+after = "        raise PartialLink(created, exc) from exc"
+reddens = [
+  "tests/memory/test_worktree.py::test_a_half_built_tree_under_a_refused_home_still_carries_the_refusal",
+]
+
+[[mutation]]
+name = "the hook drops the harness refusal of a half-built tree"
+file = "src/stayfixed/memory/hooks.py"
+before = "            return _with_harness_line(lines, partial.harness_refused)"
+after = "            return _with_harness_line(lines, None)"
+reddens = [
+  "tests/memory/test_hooks.py::test_a_half_built_tree_under_a_refused_home_still_tells_the_person",
+]
+
 [[mutation]]
 name = "a withdrawal whose walk refuses a component fails the command"
 file = "src/stayfixed/memory/worktree.py"

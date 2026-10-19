@@ -200,6 +200,28 @@ def test_a_half_built_tree_still_reports_what_was_made(
         assert result.context == PARTIAL.format(count=2)
 
 
+def _partial_under_a_refused_home(*_args: object, **_kwargs: object) -> list[Path]:
+    raise PartialLink(
+        [Path("one")], OSError("read-only file system"), harness_refused="under a home"
+    )
+
+
+def test_a_half_built_tree_under_a_refused_home_still_tells_the_person(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The partial path returned its count alone, so a home the anchor refused went unsaid
+    # whenever a note link also failed; the refusal's own text never reaches either channel.
+    from stayfixed.memory.hooks import HARNESS_UNREACHABLE
+
+    monkeypatch.setattr(worktree_module, "link", _partial_under_a_refused_home)
+    root = a_project(tmp_path)
+    config = load(root, machine=tmp_path / "absent.toml")
+    for handler in register():
+        result = handler.run(an_event(root), session_of(config))
+        assert result.context == f"{PARTIAL.format(count=1)}\n{HARNESS_UNREACHABLE}"
+        assert result.notice == HARNESS_UNREACHABLE
+
+
 def _revoke(*_args: object, **_kwargs: object) -> Links:
     return Links(created=[], revoked=[Path("/home/.claude/projects/x/memory")])
 

@@ -1308,6 +1308,30 @@ def test_a_home_the_anchor_refuses_costs_the_worktree_its_harness_link_alone(
     assert list(elsewhere.iterdir()) == []
 
 
+def test_a_half_built_tree_under_a_refused_home_still_carries_the_refusal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A note link that failed after the anchor refused raised `PartialLink` with the links made
+    # and nothing else, so the hook said the tree was half built and the home went unsaid.
+    # Mutation (declared, `mutations/`'s "a half-built tree drops the harness refusal").
+    root, store, config = a_checkout(tmp_path)
+    tree = a_worktree(root, tmp_path / "wt")
+    record(store, config)
+    home, _ = _a_home_the_anchor_refuses(tmp_path, monkeypatch, "projects-linked")
+    made = worktree._link
+
+    def second_fails(where: Path, relative: str, source: Path) -> bool:
+        if relative.endswith(linked_names(config)[1]):
+            raise OSError(30, "read-only file system")
+        return made(where, relative, source)
+
+    monkeypatch.setattr(worktree, "_link", second_fails)
+    with pytest.raises(PartialLink) as partial:
+        link(tree, store, config, home=home)
+    assert len(partial.value.created) == 1
+    assert partial.value.harness_refused is not None
+
+
 def test_an_empty_home_is_a_refusal(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("HOME", "")
     with pytest.raises(Refusal, match="names no home directory"):

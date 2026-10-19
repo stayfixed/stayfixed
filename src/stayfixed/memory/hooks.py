@@ -96,7 +96,8 @@ def _link_worktree(event: HookEvent, session: SessionConfig) -> HookResult:
             # missing from the tree is missing from the floor the reference guard derives
             # from it, "invisible twice". Keep degrading open, and say how many were made
             # instead of letting the list die with the exception.
-            return HookResult(context=PARTIAL.format(count=len(partial.created)))
+            lines = [PARTIAL.format(count=len(partial.created))]
+            return _with_harness_line(lines, partial.harness_refused)
         except Failure:
             # `main_checkout` runs first inside `link`, so the same "could not ask `git`" event
             # can arrive here rather than from `resolve`. One fixed line for one event.
@@ -116,10 +117,7 @@ def _link_worktree(event: HookEvent, session: SessionConfig) -> HookResult:
             # gate decides both.
             return HookResult(context=REVOKED)
         lines = [LINKED.format(count=len(links.created))] if links.created else []
-        if links.harness_refused is not None:
-            lines.append(HARNESS_UNREACHABLE)
-            return HookResult(context="\n".join(lines), notice=HARNESS_UNREACHABLE)
-        return HookResult(context="\n".join(lines)) if lines else HookResult()
+        return _with_harness_line(lines, links.harness_refused)
     # The backstop stays broad on purpose: a memory handler never costs a session,
     # and `resolve` alone reaches `tomllib`, `subprocess` and the filesystem. Narrowing it to
     # `OSError` would let an unforeseen exception out of the handler. What the two
@@ -127,6 +125,15 @@ def _link_worktree(event: HookEvent, session: SessionConfig) -> HookResult:
     # neither silent nor the same event.
     except Exception:
         return HookResult()
+
+
+def _with_harness_line(lines: list[str], refused: str | None) -> HookResult:
+    """`lines` for the model, and `HARNESS_UNREACHABLE` for both channels where the anchor refused
+    the home, on the full and the half-built tree alike."""
+    if refused is not None:
+        context = "\n".join((*lines, HARNESS_UNREACHABLE))
+        return HookResult(context=context, notice=HARNESS_UNREACHABLE)
+    return HookResult(context="\n".join(lines)) if lines else HookResult()
 
 
 def register() -> list[Handler]:

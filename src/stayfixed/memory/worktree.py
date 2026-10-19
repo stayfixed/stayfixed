@@ -100,9 +100,13 @@ class PartialLink(OSError):
     separately what a containment refusal means — see `stayfixed.memory.hooks`.
     """
 
-    def __init__(self, created: Sequence[Path], cause: OSError) -> None:
+    def __init__(
+        self, created: Sequence[Path], cause: OSError, *, harness_refused: str | None = None
+    ) -> None:
         super().__init__(str(cause))
         self.created = list(created)
+        # `Links.harness_refused`, carried so a half-built tree does not lose it.
+        self.harness_refused = harness_refused
 
 
 def linked_names(config: Config) -> tuple[str, ...]:
@@ -496,7 +500,7 @@ def link(
             created += made
             revoked += withdrawn
     except OSError as exc:
-        raise PartialLink(created, exc) from exc
+        raise PartialLink(created, exc, harness_refused=unreachable) from exc
     return Links(created, revoked, harness_refused=unreachable)
 
 
