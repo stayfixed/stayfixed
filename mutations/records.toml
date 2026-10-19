@@ -1360,6 +1360,16 @@ reddens = [
 ]
 
 [[mutation]]
+name = "the harness anchor walks a linked ~/.claude without resolving it"
+file = "src/stayfixed/memory/worktree.py"
+before = "            root, relative = fsops.resolved(claude), below"
+after = "            root, relative = claude, below"
+reddens = [
+  "tests/memory/test_worktree.py::test_a_symlinked_claude_directory_is_followed_in_both_directions",
+  "tests/memory/test_worktree.py::test_a_home_or_claude_under_a_directory_nobody_may_read_gets_the_harness_link[claude]",
+]
+
+[[mutation]]
 name = "a withdrawal whose walk refuses a component fails the command"
 file = "src/stayfixed/memory/worktree.py"
 before = "        return False  # a component that became a symlink after `harness_anchor` walked it"
