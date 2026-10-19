@@ -165,7 +165,7 @@ class Harness:
     project_dir_env: str | None
     # How the hook's stdout is shaped: (event name, joined context, notice) -> stdout, where the
     # notice is what the person is shown and the context what the model reads. Never a decision:
-    # a deny travels on the exit code.
+    # no handler refuses a call.
     render: Callable[[str, str, str], str]
     # Every `Surface`, each with the tier it holds at under this harness. Compared, and left out
     # of the hash: a mapping has none, and the other fields already tell two harnesses apart.
@@ -413,8 +413,7 @@ def detect(env: Mapping[str, str], payload: Mapping[str, Any] | None) -> Harness
     `hooks.dispatch.read_event`, into an event that does not say which value was detected; the
     project root, which decides which configuration loads, is the first variable set among every
     registered value's, `CANONICAL`'s first, whichever value was detected
-    (`project_root_variables`); and a deny is exit 2 with its reason on stderr under every
-    harness, and never reaches a `render`.
+    (`project_root_variables`); and no handler refuses a call under any harness.
 
     **A harness gets a `render` of its own only together with a detection signal a repository
     cannot steer.** While every value renders through `CANONICAL.render`, what this answers

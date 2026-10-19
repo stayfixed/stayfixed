@@ -147,18 +147,45 @@ def test_a_launcher_that_cannot_be_read_degrades_open(tmp_path: Path) -> None:
     assert "no readable launcher" in result.stderr
 
 
-@pytest.mark.parametrize("rc", [1, 3, 126, 127])
-def test_any_other_exit_code_degrades_open_and_says_so(tmp_path: Path, rc: int) -> None:
+@pytest.mark.parametrize("rc", [1, 2, 3, 126, 127])
+def test_any_non_zero_exit_degrades_open_and_says_so(tmp_path: Path, rc: int) -> None:
+    # No handler refuses a call, so a non-zero exit is always a fault, and a 2 passed through
+    # would block every Bash call on one.
     result = _run("hook", "PreToolUse", plugin_root=_plugin_root(tmp_path, rc))
     assert result.returncode == 0
     assert f"stayfixed exited {rc}" in result.stderr
 
 
-@pytest.mark.parametrize("rc", [0, 2])
-def test_the_two_platform_codes_pass_through_untouched(tmp_path: Path, rc: int) -> None:
-    result = _run("hook", "PreToolUse", plugin_root=_plugin_root(tmp_path, rc))
-    assert result.returncode == rc
-    assert "stayfixed:" not in result.stderr
+def test_a_zero_exit_passes_through_untouched(tmp_path: Path) -> None:
+    result = _run("hook", "PreToolUse", plugin_root=_plugin_root(tmp_path, 0))
+    assert (result.returncode, result.stderr) == (0, "")
+
+
+def test_the_interpreter_is_the_one_the_project_root_chooses(tmp_path: Path) -> None:
+    # A pyenv, asdf or mise shim answers for the directory it runs in. Probed outside the project
+    # and launched inside it, a shim passed the probe and then ran a sub-floor interpreter. No
+    # mutation entry: the defect is the order of two lines, not one line; measured by hand by
+    # moving the `cd` below the probe, after which the launch exits 2 and this reddens.
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / ".python-version").write_text("3.9\n", encoding="utf-8")
+    shims = tmp_path / "shims"
+    shims.mkdir()
+    shim = shims / "python3"
+    shim.write_text(
+        f'#!/bin/sh\ntest -e .python-version && exit 2\nexec "{sys.executable}" "$@"\n',
+        encoding="utf-8",
+    )
+    shim.chmod(0o755)
+    result = _run(
+        "hook",
+        "PreToolUse",
+        plugin_root=_plugin_root(tmp_path, 0),
+        project=project,
+        path=f"{shims}{os.pathsep}{os.environ.get('PATH', '')}",
+    )
+    assert result.returncode == 0
+    assert "is not python 3.11 or newer" in result.stderr
 
 
 def test_stayfixed_runs_from_the_project_root(tmp_path: Path) -> None:

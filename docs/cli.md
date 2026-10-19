@@ -433,17 +433,19 @@ Codex CLI 0.162.0-alpha.17.2). `stayfixed hook` dispatches six events, those fou
 The wrapper exists because a Python process cannot speak for its own absence: a missing script
 exits `2` by CPython accident, and so does a launcher run under an interpreter below stayfixed's
 floor, and on `PreToolUse` Claude Code reads a `2` as a refusal of the call. So the wrapper does
-three things before stayfixed runs: it takes the `python3` on `PATH` and asks it, by running code,
-to be 3.11 or newer; it unsets an inherited `GIT_DIR` and `GIT_WORK_TREE`, which would make every
-`git` answer about another repository, and changes into the project root (`CLAUDE_PROJECT_DIR`,
-else `git`'s toplevel) so every command's `--root` default is correct; and it maps exit codes.
+three things before stayfixed runs: it unsets an inherited `GIT_DIR` and `GIT_WORK_TREE`, which
+would make every `git` answer about another repository, and changes into the project root
+(`CLAUDE_PROJECT_DIR`, else `git`'s toplevel) so every command's `--root` default is correct; it
+then takes the `python3` on `PATH` there, where a pyenv, asdf or mise shim chooses by the project's
+own pin, and asks it, by running code, to be 3.11 or newer; and it maps exit codes.
 
-`0` and `2` are stayfixed's own and pass through untouched. Every other exit code, and every fault
-the wrapper finds before `stayfixed` runs — no `python3` of 3.11 or newer on `PATH`, no readable
-`scripts/stayfixed` beside the wrapper, a project root it cannot enter — ends in exit `0` with one
-line on stderr that names the fault and ends `continuing open`: **a session never dies of
-stayfixed's own fault.** `stayfixed hook` exits `0` on an internal error of its own for the same
-reason, and no handler refuses a call, so no shipped entry ever blocks one. Claude Code discards
+No handler refuses a call, so stayfixed's non-zero exit is always a fault. `0` passes through
+untouched. Every non-zero exit, and every fault the wrapper finds before `stayfixed` runs — no
+`python3` of 3.11 or newer on `PATH`, no readable `scripts/stayfixed` beside the wrapper, a project
+root it cannot enter — ends in exit `0` with one line on stderr that names the fault and ends
+`continuing open`: **a session never dies of stayfixed's own fault.** `stayfixed hook` exits `0` on
+an internal error of its own for the same reason, so a shipped entry blocks a call only when the
+harness itself does, as below. Claude Code discards
 stderr on a `0`, so `stayfixed doctor`'s `wrapper` row runs the wrapper and goes red on such a line.
 A hook that runs past its ten-second `timeout`, or that cannot start at all — the wrapper missing or
 not executable — never reaches the mapping, and Claude Code then carries the tool call out.

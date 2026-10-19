@@ -721,11 +721,7 @@ reddens = [
   "tests/doctor/test_floor_report.py::test_rows_that_need_no_configuration_run_without_one[preferences]",
 ]
 
-# Defence in depth, and the only guard in its commit with no entry in `mutations/` -- which is how
-# it stayed a claim rather than a fact. The `STAYFIXED_*` strip two lines above is what closes the
-# seam; this flag is the second, independent guard, so that a later edit narrowing the strip, or a
-# second variable gated on a terminal the way the wrapper gates `STAYFIXED_PYTHON_CANDIDATES`, still
-# meets a closed stdin. It also stops a wrapper that reads stdin holding the report open.
+# A closed stdin stops a wrapper that reads it holding the report open.
 [[mutation]]
 name = "doctor's wrapper probe inherits this process's stdin"
 file = "src/stayfixed/doctor/checks.py"

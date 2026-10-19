@@ -504,6 +504,17 @@ reddens = [
   "tests/hooks/test_wrapper.py::test_a_project_root_whose_name_begins_with_a_dash_is_a_destination_and_not_an_option",
 ]
 
+# No handler refuses a call, so the launcher's non-zero exit is a fault: passed through, a 2 blocks
+# every Bash call on stayfixed's own fault.
+[[mutation]]
+name = "the wrapper passes the launcher's non-zero exit through again"
+file = "hooks/run-hook.sh"
+before = ' || skip "stayfixed exited $?"'
+after = ''
+reddens = [
+  "tests/hooks/test_wrapper.py::test_any_non_zero_exit_degrades_open_and_says_so[2]",
+]
+
 # `-I` on each execution of the interpreter: either one dropped runs a module a `PYTHONPATH` or a
 # user site planted (`docs/cli.md`, "The interpreter starts isolated").
 [[mutation]]

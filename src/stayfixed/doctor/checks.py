@@ -1001,8 +1001,8 @@ def _diagnostics(context: Context) -> Row:
 
     **Nothing in this file is quoted, because nothing here can establish who wrote it.** The log
     is `${CLAUDE_PLUGIN_DATA}/stayfixed/diagnostics.jsonl`, and that variable is the same class
-    `plugin_root`'s docstring and `hooks/run-hook.sh` both name: a committed
-    `.claude/settings.json` `env` block reaches this process without a trust prompt. `event`,
+    `plugin_root`'s docstring names: a committed `.claude/settings.json` `env` block reaches this
+    process without a trust prompt. `event`,
     `handler` and `error` are stayfixed's own vocabulary *for a log stayfixed wrote*; for a log a
     repository committed they are three free-text fields, and `skills/doctor/SKILL.md` tells the
     model to relay this detail verbatim: quoted, a committed log whose `handler` is an

@@ -401,7 +401,7 @@ def test_a_backgrounded_command_that_only_mentions_sleep_later_is_allowed() -> N
 
 def test_a_command_past_the_size_cap_is_allowed_unread() -> None:
     # A named cap, not a config key. Tokenizing is quadratic in token length and every Bash
-    # call pays it; a hook past its timeout blocks the call (`onFailure`).
+    # call pays it; a hook past its timeout lets the call through unjudged.
     # The fixture leads with `echo`, not `sleep`: the `sleep` rule is judged before the `&`
     # scan, so a leading `sleep` would pin SLEEP_HINT and say nothing about the `&` rule.
     #
@@ -467,7 +467,7 @@ def test_the_shell_c_flag_matches_exactly_what_the_backtracking_pattern_did() ->
 
 def test_a_long_option_cluster_does_not_hang_the_hook() -> None:
     """`judge` runs on every `PreToolUse` Bash call, so the time it takes is part of its
-    contract: a hook past its timeout blocks the call (`onFailure`). The old
+    contract: a hook past its timeout lets the call through unjudged. The old
     `-[A-Za-z]*c[A-Za-z]*` backtracked quadratically on a cluster of `c`s ending in a
     non-letter -- measured through `judge`, INSIDE `MAX_COMMAND_CHARS`, at 1.09 s / 4.44 s /
     10.14 s for 20k / 40k / 60k characters, which is the 4x-per-doubling signature. The same

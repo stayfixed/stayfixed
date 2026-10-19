@@ -151,16 +151,15 @@ def test_a_red_run_entry_that_says_nothing_is_reported(
 def test_a_wrapper_that_answers_wrongly_is_reported(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # The script's own oracle: a plugin root whose launcher exits 2 on `PreToolUse` must make
-    # that row fail. Mutation (declared): drop the `expected != done.returncode`
+    # The script's own oracle: an installed wrapper that exits 2, which blocks a `PreToolUse`
+    # call, must make that row fail. Mutation (declared): drop the `expected != done.returncode`
     # comparison in `smoke_hooks.check_entry` -> the row's reason goes and this reddens.
     smoke = _load("smoke_hooks")
     planted = tmp_path / "plugin"
     _copy_hooks(ROOT / "hooks", planted)
+    (planted / "hooks" / "run-hook.sh").write_text("#!/bin/sh\nexit 2\n", encoding="utf-8")
     (planted / "scripts").mkdir()
-    (planted / "scripts" / "stayfixed").write_text(
-        'import sys\nraise SystemExit(2 if "PreToolUse" in sys.argv else 0)\n', encoding="utf-8"
-    )
+    (planted / "scripts" / "stayfixed").write_text("raise SystemExit(0)\n", encoding="utf-8")
     code = smoke.main(
         [
             "--plugin-root",

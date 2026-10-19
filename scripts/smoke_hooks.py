@@ -307,7 +307,7 @@ def check_entry(
         )
     for phrase in sample.stderr_never:
         if phrase in done.stderr:
-            return f"stderr carries the launcher token {phrase!r}: {done.stderr.strip()[:200]}"
+            return f"stderr reports a fault ({phrase!r}): {done.stderr.strip()[:200]}"
     wanted = INJECTED.get(tail_of(command))
     if wanted is not None:
         for phrase in wanted:
