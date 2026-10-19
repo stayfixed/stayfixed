@@ -270,7 +270,11 @@ def _write(machine: Path | None, approvals: dict[tuple[str, str], Approval]) -> 
         "approvals": [asdict(approvals[key]) for key in sorted(approvals)],
     }
     try:
-        fsops.write_atomically(path, json.dumps(document, indent=2, sort_keys=True) + "\n")
+        # Through a link at `path` (a dotfiles manager's), as `recorded` reads it, so the link
+        # stays; a loop there is the `OSError` answered below.
+        fsops.write_atomically(
+            fsops.resolved(path), json.dumps(document, indent=2, sort_keys=True) + "\n"
+        )
     except OSError as exc:
         if sandbox_refused(exc):
             raise SandboxedWrite(SANDBOXED) from None

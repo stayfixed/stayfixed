@@ -2951,6 +2951,33 @@ def test_a_symlinked_settings_file_or_claude_directory_is_written_through(
     assert (home / (USER_SETTINGS if per_file else ".claude")).is_symlink()
 
 
+def test_a_symlinked_machine_file_is_written_through_and_stays_a_link(tmp_path: Path) -> None:
+    # The machine file is the owner's as the settings file is: a dotfiles link at it gains the
+    # tables `setup` writes and stays a link. Mutation (`mutations/`'s "setup writes the machine
+    # file without resolving it"): the link becomes a regular file and the copy goes stale.
+    leads_to = tmp_path / "dotfiles" / "config.toml"
+    leads_to.parent.mkdir()
+    leads_to.write_text('[personal]\nscale = "x"\n', encoding="utf-8")
+    machine = tmp_path / "stayfixed" / "config.toml"
+    machine.parent.mkdir()
+    machine.symlink_to(leads_to)
+    home = tmp_path / "home"
+    home.mkdir()
+    setup(
+        "recommended",
+        home=home,
+        machine=machine,
+        runner=Recorder(),
+        yes=True,
+        overlay=None,
+        project_root=tmp_path / "project",
+    )
+    assert machine.is_symlink()
+    written = read_machine(leads_to)
+    assert written["personal"]["scale"] == "x"
+    assert "machine" in written
+
+
 def test_a_user_settings_file_the_encoder_cannot_write_back_is_a_failure_naming_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

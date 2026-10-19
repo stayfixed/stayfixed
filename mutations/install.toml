@@ -1895,6 +1895,17 @@ reddens = [
   "tests/setup/test_setup.py::test_a_symlinked_settings_file_or_claude_directory_is_written_through[True]",
 ]
 
+# The machine file is written through a link at it the same way, so a dotfiles copy keeps what
+# `setup` records there.
+[[mutation]]
+name = "setup writes the machine file without resolving it"
+file = "src/stayfixed/setup/machine.py"
+before = "        fsops.write_atomically(fsops.resolved(path), text)"
+after = "        fsops.write_atomically(path, text)"
+reddens = [
+  "tests/setup/test_setup.py::test_a_symlinked_machine_file_is_written_through_and_stays_a_link",
+]
+
 # A link at a `create:` destination whose target is not there passed the phase, and
 # `gh repo create` made a repository on the owner's account before the clone failed on the link.
 [[mutation]]

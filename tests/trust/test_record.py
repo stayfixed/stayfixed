@@ -393,6 +393,22 @@ def test_approving_no_subject_writes_nothing(tmp_path: Path) -> None:
     assert not (tmp_path / RECORD).exists()
 
 
+def test_a_symlinked_record_is_written_through_and_stays_a_link(tmp_path: Path) -> None:
+    # A dotfiles manager (stow, chezmoi) links `trust.json` to its own copy: an approval lands in
+    # that copy and the link stays. Mutation (`mutations/`'s "the trust record is written without
+    # resolving it"): the link becomes a regular file and the copy keeps the old approvals.
+    leads_to = tmp_path / "dotfiles" / RECORD
+    leads_to.parent.mkdir()
+    leads_to.write_text(json.dumps({"version": VERSION, "approvals": []}), encoding="utf-8")
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / RECORD).symlink_to(leads_to)
+    approve_all(home / "config.toml", "memory", {"/s": "d"}, now=T0)
+    assert (home / RECORD).is_symlink()
+    written = json.loads(leads_to.read_text(encoding="utf-8"))
+    assert [(a["subject"], a["digest"]) for a in written["approvals"]] == [("/s", "d")]
+
+
 def test_a_later_records_refusal_sends_its_reader_to_a_later_stayfixed() -> None:
     # A record a later stayfixed wrote is met after a downgrade, where deleting it would destroy
     # that release's approvals: the remedy is updating stayfixed, never deleting the file. No

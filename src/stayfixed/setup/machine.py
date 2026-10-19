@@ -184,7 +184,9 @@ def write_machine(
             f"command again"
         ) from exc
     try:
-        fsops.write_atomically(path, text)
+        # Through a link at `path` (a dotfiles manager's), as the user settings file is written,
+        # so the link stays; a loop there is the `OSError` answered below.
+        fsops.write_atomically(fsops.resolved(path), text)
     except OSError as exc:
         if sandbox_refused(exc):
             raise Refusal(SETUP_SANDBOXED) from None

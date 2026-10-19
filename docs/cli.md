@@ -93,8 +93,8 @@ stayfixed memory index --check    # report drift, write nothing
 
 **Writes** each note whose `index:` line it filled in, and `MEMORY.md` — in overlay mode, the file
 the symlink points at, not the link — and, when the store was trusted before the run,
-`~/.config/stayfixed/trust.json` (or the file beside `--machine`), re-recorded over the files it
-wrote (see below). Under `--check`, nothing.
+`~/.config/stayfixed/trust.json` (or the file beside `--machine`, through a link there, which
+stays), re-recorded over the files it wrote (see below). Under `--check`, nothing.
 
 What it does, in order:
 
@@ -231,7 +231,8 @@ measured). [SECURITY.md](../SECURITY.md) lists an agent with an unsandboxed shel
 
 **Reads** every file the kind hashes — for `memory`, every file the store yields.
 
-**Writes** `~/.config/stayfixed/trust.json` (or the file beside `--machine`).
+**Writes** `~/.config/stayfixed/trust.json` (or the file beside `--machine`), through a link a
+dotfiles manager put there: the file the link leads to gets the record, and the link stays.
 
 `--json` keys: `kind`, and `approved`, one object per subject recorded, with its `subject`, its
 `label`, its `digest` and `was`, its state before the run (`approved`, `lapsed` or `missing`).
@@ -299,8 +300,8 @@ uninstall` — which says why and names `stayfixed trust revoke KIND --subject K
 
 **Reads** the machine's trust record, and, with no `--subject`, every file the kind hashes.
 
-**Writes** `~/.config/stayfixed/trust.json` (or the file beside `--machine`), only when an
-approval was withdrawn. Run from an agent's sandboxed shell, that write is refused: the command
+**Writes** `~/.config/stayfixed/trust.json` (or the file beside `--machine`, through a link there,
+which stays), only when an approval was withdrawn. Run from an agent's sandboxed shell, that write is refused: the command
 exits `2`, withdraws nothing, and says a person must run it in their own terminal, outside the
 agent's sandbox.
 
@@ -2879,7 +2880,8 @@ scratch destination instead of your real one, the same way every other command h
 these two flags name, and nothing is suppressed. They apply to `--preset` alone — `--git-hooks`
 writes inside a repository and ignores both. The settings file is written through the home's own
 symlinks, so a `~/.claude` or a `~/.claude/settings.json` that a dotfiles manager links into
-another tree gets the file the link leads to, and the link stays.
+another tree gets the file the link leads to, and the link stays. The machine configuration file
+is written through a link at it the same way.
 
 `setup` is not the only command that writes outside a repository, and two others say so in their
 own sections: `stayfixed trust approve` records approval in `~/.config/stayfixed/trust.json`, and

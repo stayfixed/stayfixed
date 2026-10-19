@@ -4166,6 +4166,15 @@ reddens = [
   "tests/memory/test_commands.py::test_trust_where_the_home_cannot_be_written_fails_naming_the_directory",
 ]
 
+# A record a dotfiles manager links elsewhere is written where the link leads, and the link stays:
+# `os.replace` on the link's own name would put a regular file in its place.
+[[mutation]]
+name = "the trust record is written without resolving it"
+file = "src/stayfixed/trust/record.py"
+before = "            fsops.resolved(path), json.dumps(document, indent=2, sort_keys=True) + \"\\n\""
+after = "            path, json.dumps(document, indent=2, sort_keys=True) + \"\\n\""
+reddens = ["tests/trust/test_record.py::test_a_symlinked_record_is_written_through_and_stays_a_link"]
+
 # The machine's trust record that cannot be read is named once with the reason in words: the
 # error's own text named the same absolute path a second time.
 [[mutation]]
