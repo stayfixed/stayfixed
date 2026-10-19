@@ -13,7 +13,7 @@ import json
 import re
 from pathlib import Path
 
-from tests.test_fixtures import CI_WORKFLOW, needs_ci_workflow
+from tests.test_fixtures import CI_WORKFLOW, WORKFLOWS, needs_ci_workflow
 from tests.workflow_yaml import Node, load
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -95,3 +95,39 @@ def test_jest_and_vitest_come_from_the_fixture_s_lockfile_with_no_install_script
     for name, version in PINS.items():
         assert lock["packages"][f"node_modules/{name}"]["version"] == version
     assert lock["packages"][""]["dependencies"] == PINS
+
+
+@needs_ci_workflow
+def test_only_the_runners_job_opts_the_tests_into_the_runners_on_path() -> None:
+    # Every other job leaves `node` and `go` on `PATH` unused, the hosted image's own among them,
+    # so the tests that need one skip there. Mutation (declared): `mutations/`'s "the checks job
+    # opts the tests into the runners on PATH" -> `checks` is found too.
+    opted: list[tuple[str, str]] = []
+    for workflow in sorted(WORKFLOWS.glob("*.y*ml")):
+        document = load(workflow.read_text(encoding="utf-8"))
+        assert isinstance(document, dict), workflow.name
+        jobs = document.get("jobs")
+        assert isinstance(jobs, dict), workflow.name
+        outside = {key: value for key, value in document.items() if key != "jobs"}
+        assert "STAYFIXED_RUNNERS_ON_PATH" not in str(outside), workflow.name
+        opted += [
+            (workflow.name, name)
+            for name, job in jobs.items()
+            if "STAYFIXED_RUNNERS_ON_PATH" in str(job)
+        ]
+    assert opted == [(CI_WORKFLOW.name, JOB)]
+
+
+@needs_ci_workflow
+def test_the_runners_job_puts_the_pinned_go_first_on_path() -> None:
+    # The step that unpacks Go 1.27.2 adds its `bin` to `GITHUB_PATH`, which puts it before the
+    # image's own `go` for every later step, and no later step adds a directory of its own there.
+    # Mutation (declared): `mutations/`'s "the runners job leaves the pinned Go off PATH" -> the
+    # line is gone.
+    steps = _steps()
+    [go] = [step for step in steps if "proxy.golang.org" in str(step.get("run", ""))]
+    lines = str(go["run"]).splitlines()
+    assert lines[-1] == 'echo "$RUNNER_TEMP/go/$GO_TOOLCHAIN/bin" >> "$GITHUB_PATH"', lines
+    later = steps[steps.index(go) + 1 :]
+    assert not any("GITHUB_PATH" in str(step.get("run", "")) for step in later)
+    assert "go version" in str(steps[-1]["run"]).splitlines()

@@ -18,6 +18,7 @@ import os
 import signal
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import types
@@ -671,6 +672,19 @@ class _Ending:
         raise KeyboardInterrupt
 
 
+@pytest.fixture
+def private_tempdir(
+    tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+) -> Path:
+    """`tempfile`'s directory for this test alone, beside its `tmp_path` and never inside it: a
+    scratch directory a run leaves there, as under the mutation of its removal the oracle applies,
+    goes with pytest's own temporary directories and never into the developer's `TMPDIR`."""
+    where = tmp_path_factory.mktemp("tempdir")
+    monkeypatch.setattr(tempfile, "tempdir", str(where))
+    return where
+
+
+@pytest.mark.usefixtures("private_tempdir")
 @pytest.mark.parametrize("ending", ["interrupt", "timeout", "terminate", "interrupt-teed"])
 def test_an_ended_run_is_not_proven_and_leaves_no_scratch(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, ending: str
@@ -698,6 +712,7 @@ def test_an_ended_run_is_not_proven_and_leaves_no_scratch(
     assert ended_before_late(late)
 
 
+@pytest.mark.usefixtures("private_tempdir")
 def test_a_fault_in_the_wait_still_ends_the_group_and_reaches_the_caller(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1046,6 +1061,7 @@ def test_the_line_marks_a_runner_no_adapter_resolved() -> None:
     assert "not verified" not in line(dataclasses.replace(receipt, verified=True))
 
 
+@pytest.mark.usefixtures("private_tempdir")
 @pytest.mark.parametrize("verdict_report", ["pass", "none", "fail"])
 def test_the_scratch_directory_is_removed_on_every_path(
     tmp_path: Path, verdict_report: str
