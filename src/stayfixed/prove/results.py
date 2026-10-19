@@ -16,9 +16,7 @@ The `num*` totals beside the list are never read: for a file that did not load, 
 write this report count it nowhere in them, so a run with a broken test file reads one passed and
 none failed.
 
-The bytes are decoded as UTF-8 and parsed with every object's keys held unique, by `counts.utf8`
-and `counts.strict_json`: a plain parse keeps the last of two equal keys, so a second `status`
-could stand in for the first.
+The bytes are decoded as UTF-8 and parsed by `counts.utf8` and `counts.strict_json`.
 """
 
 from __future__ import annotations

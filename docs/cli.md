@@ -956,10 +956,10 @@ recognises, carries `runner: null`. The line of a `--junit` run says `runner not
 | otherwise | `proved` | 0 | |
 
 A report does not read when it is past 64 MiB (`report-too-large`), a JSON report is not UTF-8
-(`report-not-utf8`), it does not parse as its format or holds a key twice (`report-malformed`), an
+(`report-not-utf8`), it does not parse as its format (`report-malformed`), an
 XML report declares a doctype (`report-doctype`), or it names an entity it never declared
-(`report-entity`). Where the refusal names something the report holds, an unknown test status or a
-key held twice, it is escaped and, past 120 characters, cut to its start and its length.
+(`report-entity`). Where the refusal names something the report holds, an unknown test status, it is
+escaped and, past 120 characters, cut to its start and its length.
 
 `--timeout` ends the run's whole process group past that many seconds (default: 3600, which bounds
 a suite that hangs and is no suite's budget). So does an interrupt (Ctrl-C) or a `SIGTERM` or

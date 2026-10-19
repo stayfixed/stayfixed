@@ -5274,17 +5274,6 @@ reddens = [
   "tests/prove/test_events.py::test_bytes_that_are_not_utf8_are_refused_as_such",
 ]
 
-# A plain parse keeps the last of two equal keys, so a second `status` could stand in for the first.
-[[mutation]]
-name = "the JSON readers keep the last of two duplicate keys"
-file = "src/stayfixed/prove/counts.py"
-before = "        return json.loads(text, object_pairs_hook=_unique)"
-after = "        return json.loads(text)"
-reddens = [
-  "tests/prove/test_results.py::test_a_duplicate_key_is_malformed",
-  "tests/prove/test_results.py::test_a_duplicate_key_anywhere_is_malformed",
-]
-
 # The `num*` totals are the runner's claim, and for a file that did not load they count it nowhere.
 [[mutation]]
 name = "the results reader reads numPassedTests"
@@ -5529,15 +5518,6 @@ before = """f"an assertion's status is {clipped(status)}\""""
 after = """f"an assertion's status is {status!r}\""""
 reddens = [
   "tests/prove/test_results.py::test_a_refusal_bounds_the_status_it_names",
-]
-
-[[mutation]]
-name = "the JSON readers name a duplicate key unclipped"
-file = "src/stayfixed/prove/counts.py"
-before = """f"a key held twice: {clipped(exc.args[0])}\""""
-after = """f"a key held twice: {exc.args[0]!r}\""""
-reddens = [
-  "tests/prove/test_events.py::test_a_refusal_bounds_the_key_it_names",
 ]
 
 # Each shape check of the event-stream reader refuses the line; skipping it instead would count

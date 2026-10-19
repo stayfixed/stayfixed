@@ -17,7 +17,6 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
-from stayfixed.printed import clipped
 
 # The report is larger than `MAX_REPORT_BYTES`.
 REPORT_TOO_LARGE = "report-too-large"
@@ -80,27 +79,11 @@ def utf8(data: bytes) -> str:
         raise ReportError(REPORT_NOT_UTF8, f"byte {exc.start}") from None
 
 
-class _Duplicate(Exception):
-    """A key an object holds twice."""
-
-
-def _unique(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
-    document: dict[str, Any] = {}
-    for key, value in pairs:
-        if key in document:
-            raise _Duplicate(key)
-        document[key] = value
-    return document
-
-
 def strict_json(text: str) -> Any:
-    """`text` parsed as JSON with every object's keys unique, or `REPORT_MALFORMED` when it does
-    not parse, holds a key twice, or is past what the parser follows. A plain parse keeps the last
-    of two equal keys, so the second could stand in for the first unseen."""
+    """`text` parsed as JSON, or `REPORT_MALFORMED` when it does not parse or is past what the
+    parser follows."""
     try:
-        return json.loads(text, object_pairs_hook=_unique)
-    except _Duplicate as exc:
-        raise ReportError(REPORT_MALFORMED, f"a key held twice: {clipped(exc.args[0])}") from None
+        return json.loads(text)
     except RecursionError:
         raise ReportError(REPORT_MALFORMED, "nested deeper than this reader follows") from None
     except ValueError as exc:

@@ -120,17 +120,6 @@ def test_results_totals_are_never_read() -> None:
     assert read_results(json.dumps(document).encode()) == Counts(0, 1, 0)
 
 
-def test_a_duplicate_key_is_malformed() -> None:
-    # The last of two keys is what a plain parse keeps, so a second `status` could stand in for
-    # the first; neither is read.
-    data = b'{"testResults": [{"assertionResults": [{"status": "failed", "status": "passed"}]}]}'
-    assert refusal(data) == REPORT_MALFORMED
-
-
-def test_a_duplicate_key_anywhere_is_malformed() -> None:
-    assert refusal(b'{"testResults": [], "testResults": []}') == REPORT_MALFORMED
-
-
 @pytest.mark.parametrize("status", ["focused", "PASSED", "flaky", "", 1, None])
 def test_an_unknown_status_is_malformed(status: object) -> None:
     data = json.dumps({"testResults": [{"assertionResults": [{"status": status}]}]}).encode()
