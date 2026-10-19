@@ -444,9 +444,9 @@ untouched. Every non-zero exit, and every fault the wrapper finds before `stayfi
 `python3` of 3.11 or newer on `PATH`, no readable `scripts/stayfixed` beside the wrapper, a project
 root it cannot enter — ends in exit `0` with one line on stderr that names the fault and ends
 `continuing open`: **a session never dies of stayfixed's own fault.** `stayfixed hook` exits `0` on
-an internal error of its own for the same reason, so a shipped entry blocks a call only when the
-harness itself does, as below. Claude Code discards
-stderr on a `0`, so `stayfixed doctor`'s `wrapper` row runs the wrapper and goes red on such a line.
+an internal error of its own for the same reason, so no shipped entry ever blocks a call. Claude
+Code discards stderr on a `0`, so `stayfixed doctor`'s `wrapper` row runs the wrapper and goes red
+on such a line.
 A hook that runs past its ten-second `timeout`, or that cannot start at all — the wrapper missing or
 not executable — never reaches the mapping, and Claude Code then carries the tool call out.
 

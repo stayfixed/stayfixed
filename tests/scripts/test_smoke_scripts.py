@@ -172,7 +172,7 @@ def test_a_wrapper_that_answers_wrongly_is_reported(
     )
     assert code == 1
     out = capsys.readouterr().out
-    assert "exited 2, expected 0" in out  # the PreToolUse row, for its own reason
+    assert "exited 2, expected 0" in out
 
 
 @needs_git

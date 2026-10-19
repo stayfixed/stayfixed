@@ -393,8 +393,8 @@ reddens = [
   "tests/test_floor.py::test_a_stayfixed_the_suite_starts_runs_its_git_under_the_floor",
 ]
 
-# A launcher that is not there reaches Python as a missing script, which exits 2 by CPython
-# accident and blocks the call: a session dead of its configuration.
+# A launcher that is not there reaches Python as a missing script, and the session sees CPython's
+# "can't open file" in place of the line that names the fault.
 [[mutation]]
 name = "the wrapper stops noticing that its launcher is missing"
 file = "hooks/run-hook.sh"
@@ -418,7 +418,7 @@ reddens = [
 ]
 
 # `-f` tests existence, not readability. Measured with `chmod 000`: CPython printed its own
-# "Permission denied" and exited 2, passed through by `case $rc in 0 | 2)`, which blocks the call.
+# "Permission denied" in place of the line that names the fault.
 [[mutation]]
 name = "the wrapper stops noticing that its launcher cannot be read"
 file = "hooks/run-hook.sh"

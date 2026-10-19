@@ -104,7 +104,7 @@ def test_no_python3_on_path_degrades_open(tmp_path: Path) -> None:
 def test_an_interpreter_below_the_floor_degrades_open(tmp_path: Path) -> None:
     # A real sub-floor interpreter rather than a fake that exits non-zero for every argument,
     # which could not exercise `sys.version_info` at all. Without the probe the launcher's own
-    # floor check exits 2, which blocks every Bash call. `_old_python` is the tree's own seam,
+    # floor check answers in its own words. `_old_python` is the tree's own seam,
     # and CI pins it through STAYFIXED_OLD_PYTHON so this runs there rather than skipping.
     old = _old_python()
     if old is None:
@@ -126,8 +126,8 @@ def test_an_interpreter_at_the_floor_is_accepted(tmp_path: Path) -> None:
 
 
 def test_a_missing_launcher_degrades_open(tmp_path: Path) -> None:
-    # Without the check a missing launcher reaches Python as a missing script, which exits 2 by
-    # CPython accident and blocks the call.
+    # Without the check a missing launcher reaches Python as a missing script, and the line that
+    # names the fault is CPython's.
     result = _run("hook", "PreToolUse", plugin_root=_plugin_root(tmp_path, 0, with_launcher=False))
     assert result.returncode == 0
     assert "no readable launcher" in result.stderr
@@ -164,7 +164,7 @@ def test_a_zero_exit_passes_through_untouched(tmp_path: Path) -> None:
 def test_the_interpreter_is_the_one_the_project_root_chooses(tmp_path: Path) -> None:
     # A pyenv, asdf or mise shim answers for the directory it runs in. Probed outside the project
     # and launched inside it, a shim passed the probe and then ran a sub-floor interpreter. No
-    # mutation entry: the defect is the order of two lines, not one line; measured by hand by
+    # mutation entry, since the order now decides only whether the hook runs; measured by hand by
     # moving the `cd` below the probe, after which the launch exits 2 and this reddens.
     project = tmp_path / "project"
     project.mkdir()
