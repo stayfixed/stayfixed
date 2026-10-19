@@ -404,7 +404,8 @@ def test_node_s_own_options_go_in_front_of_the_runner_s_entry(tmp_path: Path) ->
     # `NODE_OPTIONS`. The entry named must be the one its package's `bin` names; the run is the
     # words as typed, and the receipt names the entry by its realpath; node's preload of a file is
     # named among the configuration files. Mutation: none here -- the node shape left unread is
-    # held at recognition, by "the jest and vitest adapters read no node in front of their entry".
+    # held at recognition, by `mutations/`'s "the jest and vitest adapters read no node in front
+    # of their entry".
     project = tmp_path / "project"
     jest_entry, _, node = installed(project)
     path = str(node.parent)
