@@ -29,7 +29,7 @@ one gate and the command reader:
   hint does (`read_launch`, the walk `command_words` returns the last part of, and `Launch`, what
   it returns), so the runner it asks an adapter about is the one they would name; a second
   reading of that launch would be a second answer. It runs the command, so it needs every part:
-  the assignments wherever they stand, for the run's environment and its forging check, and the
+  the assignments before the launcher, for the run's environment and its forging check, and the
   launcher's words apart from them, for the adapter. It judges the command in the directory the
   launcher runs it in (`run_directory`, `uv run --directory` and `UV_WORKING_DIR`), read from the
   launcher's words.

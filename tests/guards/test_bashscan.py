@@ -459,7 +459,7 @@ def test_read_launch_names_each_word_of_the_launch_by_its_part(
     command: str, assignments: list[str], launcher: list[str], program: list[str] | str
 ) -> None:
     """A caller that runs the command needs more than the program: every assignment the shell or
-    `env` would make, wherever it stands, and the launcher's own words apart from them.
+    `env` would make before the launcher, and the launcher's own words apart from them.
     `command_words` is the same walk's last part. Oracle: `mutations/`'s "the launch keeps no
     launcher's words"."""
     words = command.split()

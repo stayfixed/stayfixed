@@ -53,7 +53,7 @@ reddens = [
 ]
 
 # A `uv run` in which no adapter recognises a word is read whole: read as all launcher, it is a
-# launch of nothing, and `prove --junit` would refuse a command it runs as typed.
+# launch of nothing, and `prove --junit` would read `not proven` for a command it runs as typed.
 [[mutation]]
 name = "a `uv run` no adapter recognises is read as all launcher"
 file = "src/stayfixed/guards/bashscan.py"

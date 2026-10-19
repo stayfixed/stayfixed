@@ -708,9 +708,9 @@ def segments(tokens: list[str]) -> list[list[str]]:
 class Launch(NamedTuple):
     """A segment read the way `read_launch` reads it, every word in one part.
 
-    `assignments` is every `NAME=value` word the walk read as one, in order, wherever it stood:
-    before a launcher, bare or after `env`. `launcher` is the words of each launcher read
-    through, in order -- `uv`, every word up to the command it launches -- and never an `env`.
+    `assignments` is every `NAME=value` word the walk read as one, in order: before a launcher,
+    bare or after `env`. `launcher` is the words of each launcher read through, in order -- `uv`,
+    every word up to the command it launches, an `env` and its assignments among them.
     `command` is the rest, what `command_words` returns.
     """
 

@@ -725,26 +725,26 @@ in: each `uv` among the launcher's words moves to the directory its `--directory
 `--directory=DIR` names, else to `UV_WORKING_DIR`'s (`--project` moves nothing). Only the
 launcher's words are read, so neither moves a command read whole, a `--directory` after the first
 word an adapter recognises is not read, and a launched program's own `--directory` before it is
-read as uv's. That directory is the one judged: the plan is made there, and the project the receipt answers
-for, whose tree's state it names, is its git top-level, or the directory itself outside a
-repository. A command typed in `packages/web` runs in `packages/web`.
+read as uv's. That directory is the one judged: the plan is made there, and the project the
+receipt answers for, whose tree's state it names, is its git top-level, or the directory itself
+outside a repository. A command typed in `packages/web` runs in `packages/web`.
 
 **The environment** is built once, as a shell builds it: yours, then each `NAME=value` the command
-spells before what runs, in order, before the launcher or after an `env`, the last of two for one
-name winning; an assignment never reaches the argv. It is the whole launched process's, the
+spells before its launcher, bare or after an `env`, in order, the last of two for one name
+winning; such an assignment never reaches the argv. It is the whole launched process's, the
 launcher's included. An assignment after `uv run`, bare or after an `env`, is the launcher's word,
 handed to uv as typed: bare (`uv run TYPED=yes pytest`), uv runs it as its program and fails
 ("Failed to spawn", exit 2), so no test runs; after an `env`, it is set unchecked (the bound
-above). Two variables are set apart, each its
-adapter's forging set, and only for a value that turns tests off: `PYTHONOPTIMIZE` (pytest) set to
-anything but empty or `0`, and `UPDATE_SNAPSHOT`
+above). Two variables are set apart, each its adapter's forging set, and only for a value that
+turns tests off: `PYTHONOPTIMIZE` (pytest) set to anything but empty or `0`, and `UPDATE_SNAPSHOT`
 (vitest) set to anything but empty, `none` or `new`, which vitest reads as `--update`. Assigned by
-the command, such a value is `refused` (`assigned-forging`, naming the variable); inherited, the
-variable is removed from the run's environment, which the receipt names (`scrubbed`). Every other
-variable and value is yours, read by the runner as outside `prove`: `PYTEST_ADDOPTS`,
-`NODE_OPTIONS`, `GOFLAGS`, `GOENV` and the rest. A variable an env file sets past this reading (`uv
-run --env-file`, an inherited `UV_ENV_FILE`) is the bound's: it can set `PYTHONOPTIMIZE` or
-`UPDATE_SNAPSHOT`, or a nested launcher's directory, where `prove` does not look.
+the command before its launcher, such a value is `refused` (`assigned-forging`, naming the
+variable); inherited, the variable is removed from the run's environment, which the receipt names
+(`scrubbed`). Every other variable and value is yours, read by the runner as outside `prove`:
+`PYTEST_ADDOPTS`, `NODE_OPTIONS`, `GOFLAGS`, `GOENV` and the rest. A variable an env file sets past
+this reading (`uv run --env-file`, an inherited `UV_ENV_FILE`) is the bound's: it can set
+`PYTHONOPTIMIZE` or `UPDATE_SNAPSHOT`, or a nested launcher's directory, where `prove` does not
+look.
 
 **Input and output.** The runner's standard input is `/dev/null`, never yours, so nothing piped
 into `prove` reaches the run and a test that reads it sees its end. A report the runner writes to a

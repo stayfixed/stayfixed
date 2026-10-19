@@ -5612,7 +5612,7 @@ after = """    Verdict.NOT_PROVEN: "the runner's entry point did not resolve",""
 reddens = ["tests/prove/test_javascript.py::test_a_watch_mode_s_receipt_says_it_never_ends"]
 
 # Every assignment the launch holds is the command's, the last of two winning; the adapter is
-# handed the launcher's own words and never an assignment or an `env`.
+# handed the launcher's own words and never an assignment read before them.
 [[mutation]]
 name = "prove keeps the first of two assignments of one name"
 file = "src/stayfixed/prove/run.py"
