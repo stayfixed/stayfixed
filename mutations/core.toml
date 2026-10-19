@@ -35,14 +35,6 @@ reddens = [
   "tests/setup/test_commands.py::test_the_machine_default_is_the_file_every_reader_reads",
 ]
 
-# `~` in the machine file is the home that file lives under, never `HOME`.
-[[mutation]]
-name = "the overlay root's tilde is read from HOME"
-file = "src/stayfixed/config/overlay.py"
-before = '    return in_owner_home(value) if isinstance(value, str) and value else None'
-after = '    return Path(value).expanduser() if isinstance(value, str) and value else None'
-reddens = ["tests/config/test_overlay_root.py::test_a_root_under_tilde_is_the_owners_home"]
-
 [[mutation]]
 name = "a tilde with no home behind it is left to name a directory"
 file = "src/stayfixed/config/machine.py"

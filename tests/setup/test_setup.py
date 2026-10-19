@@ -2361,11 +2361,7 @@ def test_a_home_that_is_a_link_to_a_directory_is_followed_once_and_written_where
     tmp_path: Path,
 ) -> None:
     # `--home` is the machine owner's own directory, and one that is a link — a home on another
-    # volume — passed the questions before the first write, had the machine file written, and was
-    # then refused by the settings write, whose walk opens its root without following a link.
-    # It is resolved once, before anything else is asked, and every write under it lands where it
-    # leads; the walk below it still follows no link. Mutation (`mutations/`'s "setup asks about
-    # --home without resolving it first") -> refused after the machine file, and this reddens.
+    # volume — is that owner's layout: every write under it lands where it leads.
     real = tmp_path / "volume" / "me"
     real.mkdir(parents=True)
     home = tmp_path / "home"
@@ -2826,8 +2822,8 @@ def test_a_symlink_loop_at_any_path_setup_is_given_is_a_refusal_naming_it(
     assert code == 2, said
     assert said.startswith("stayfixed: refused: "), said
     # `--root` is resolved by the command before `setup` is called, and named as the flag.
-    # A loop at `~/.claude` is met resolving the settings file below it, which is named.
-    asked = home / USER_SETTINGS if place == "claude" else looped
+    # A loop at `~/.claude` or `--home` is met resolving the settings file below it, named.
+    asked = home / USER_SETTINGS if place in ("claude", "home") else looped
     named = f"--root {quoted(str(looped))}" if place == "root" else quoted(str(asked))
     assert f"{named} cannot be checked (" in said, said
     assert not machine.exists() and runner.calls == []

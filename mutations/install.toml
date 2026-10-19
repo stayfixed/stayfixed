@@ -1884,18 +1884,6 @@ reddens = [
   "tests/setup/test_setup.py::test_an_overlay_path_a_repository_spells_is_printed_quoted[the-summary]",
 ]
 
-# `--home` is the machine owner's own directory, and one that is a link to a directory passed every
-# question before the first write, had the machine file written, and was then refused by the
-# settings write, whose walk opens its root without following a link. It is resolved first.
-[[mutation]]
-name = "setup asks about --home without resolving it first"
-file = "src/stayfixed/setup/run.py"
-before = "        home = fsops.resolved(home)"
-after = "        pass"
-reddens = [
-  "tests/setup/test_setup.py::test_a_home_that_is_a_link_to_a_directory_is_followed_once_and_written_where_it_leads",
-]
-
 # A settings file a dotfiles manager links elsewhere is written where the link leads, and the link
 # stays: `os.replace` on the link's own name would put a regular file in its place.
 [[mutation]]

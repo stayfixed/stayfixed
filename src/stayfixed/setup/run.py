@@ -951,12 +951,8 @@ def _before_the_first_write(
     project_root: Path,
     overlay: str | None,
     yes: bool,
-) -> tuple[dict[str, Any], _Overlay | None, Path]:
-    """Every question `setup` asks before its first write, in one order, under one floor; and
-    `home` resolved, which every write under it uses.
-
-    **`--home` is resolved first.** It is the machine owner's own directory, and one that is a
-    link — a home kept on another volume — is that owner's layout.
+) -> tuple[dict[str, Any], _Overlay | None]:
+    """Every question `setup` asks before its first write, in one order, under one floor.
 
     Nothing is written, and no program is run, until every step has answered; each refuses with
     its own words, and the first refusal ends the run. The steps, in order:
@@ -984,7 +980,6 @@ def _before_the_first_write(
     `fsops.said`'s words. A step whose own words name the cause better keeps them.
     """
     try:
-        home = fsops.resolved(home)
         planned = _requested_overlay(overlay, home=home, yes=yes)
         # Where this run clones a `create:` overlay, or `None` when it creates none.
         created = planned.root if planned is not None and planned.create is not None else None
@@ -1002,7 +997,7 @@ def _before_the_first_write(
         raise Refusal(
             f"{asked} cannot be checked ({fsops.said(exc)}), so nothing was written"
         ) from exc
-    return data, planned, home
+    return data, planned
 
 
 def setup(
@@ -1029,7 +1024,7 @@ def setup(
     work, and the one refusal that follows a write is the post-condition on a tree this run
     created.
     """
-    data, planned_overlay, home = _before_the_first_write(
+    data, planned_overlay = _before_the_first_write(
         preset,
         home=home,
         machine=machine,
