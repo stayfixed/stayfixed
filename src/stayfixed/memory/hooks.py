@@ -61,9 +61,9 @@ REVOKED = (
 # answering `None` as for an unrecorded overlay. Saying `NO_STORE` for those would send the
 # user to `stayfixed attach` for a fault that is in their machine, not in their project.
 NOT_ASKABLE = "stayfixed: the memory store could not be located on this machine"
-# The home's fault and not the worktree's, so it costs the harness link alone (`worktree.link`),
-# and it is the person's to fix, so it reaches them too. Fixed, and true of every refusal: the
-# anchor's own refusal names a path derived from the project root, which a hook does not choose.
+# The home's fault and not the worktree's, so it costs the harness link alone (`worktree.link`).
+# Fixed, and true of every refusal: the anchor's own refusal names a path derived from the project
+# root, which a hook does not choose.
 HARNESS_UNREACHABLE = (
     "stayfixed: no harness memory link was made or withdrawn for this worktree, because ~/.claude, "
     "or a directory under it, could not be used; this worktree's own memory links do not depend "
@@ -128,11 +128,10 @@ def _link_worktree(event: HookEvent, session: SessionConfig) -> HookResult:
 
 
 def _with_harness_line(lines: list[str], refused: str | None) -> HookResult:
-    """`lines` for the model, and `HARNESS_UNREACHABLE` for both channels where the anchor refused
-    the home, on the full and the half-built tree alike."""
+    """`lines` for the model, with `HARNESS_UNREACHABLE` after them where the anchor refused the
+    home, on the full and the half-built tree alike."""
     if refused is not None:
-        context = "\n".join((*lines, HARNESS_UNREACHABLE))
-        return HookResult(context=context, notice=HARNESS_UNREACHABLE)
+        lines = [*lines, HARNESS_UNREACHABLE]
     return HookResult(context="\n".join(lines)) if lines else HookResult()
 
 

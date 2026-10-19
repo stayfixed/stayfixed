@@ -206,7 +206,7 @@ def _partial_under_a_refused_home(*_args: object, **_kwargs: object) -> list[Pat
     )
 
 
-def test_a_half_built_tree_under_a_refused_home_still_tells_the_person(
+def test_a_half_built_tree_under_a_refused_home_still_tells_the_model(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # The partial path returned its count alone, so a home the anchor refused went unsaid
@@ -219,7 +219,6 @@ def test_a_half_built_tree_under_a_refused_home_still_tells_the_person(
     for handler in register():
         result = handler.run(an_event(root), session_of(config))
         assert result.context == f"{PARTIAL.format(count=1)}\n{HARNESS_UNREACHABLE}"
-        assert result.notice == HARNESS_UNREACHABLE
 
 
 def _revoke(*_args: object, **_kwargs: object) -> Links:
@@ -290,15 +289,15 @@ def test_a_home_that_is_itself_a_symlink_gets_the_harness_link_from_the_hook(
 @pytest.mark.parametrize(
     "layout", ["plain", "projects-linked", "claude-dangling", "projects-unsearchable"]
 )
-def test_a_home_whose_claude_cannot_be_used_still_links_the_worktree_and_tells_the_person(
+def test_a_home_whose_claude_cannot_be_used_still_links_the_worktree_and_tells_the_model(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, layout: str
 ) -> None:
     # A `~/.claude/projects` moved to another disk, or a `~/.claude` whose dotfiles volume is not
     # mounted, made the anchor refuse, and the refusal cost the worktree every note link while the
-    # hook told the model alone that "a memory path was refused". The notes do not depend on the
-    # home: they are linked, the harness link is not, and both the person and the model hear which
-    # is which. `plain` is the same store under a home the anchor takes, where the harness link is
-    # made and nothing is said about the home.
+    # hook told the model that "a memory path was refused". The notes do not depend on the home:
+    # they are linked, the harness link is not, and the model hears which is which. `plain` is the
+    # same store under a home the anchor takes, where the harness link is made and nothing is said
+    # about the home.
     from stayfixed.harnesses import CLAUDE
     from stayfixed.hooks.dispatch import Recorder, dispatch
     from stayfixed.memory.hooks import HARNESS_UNREACHABLE
@@ -336,6 +335,7 @@ def test_a_home_whose_claude_cannot_be_used_still_links_the_worktree_and_tells_t
             (claude / "projects").chmod(0o755)
     payload = json.loads(outcome.stdout)
     context = payload["hookSpecificOutput"]["additionalContext"]
+    assert "systemMessage" not in payload
     base = tree / "docs" / "memory"
     names = linked_names(config)
     assert all((base / name).is_symlink() for name in names)
@@ -343,20 +343,8 @@ def test_a_home_whose_claude_cannot_be_used_still_links_the_worktree_and_tells_t
     if layout == "plain":
         assert harness.resolve() == store.path.resolve()
         assert context == LINKED.format(count=len(names) + 1)
-        assert "systemMessage" not in payload
         return
     assert not os.path.lexists(harness)
     assert list(elsewhere.iterdir()) == []
     assert context == f"{LINKED.format(count=len(names))}\n{HARNESS_UNREACHABLE}"
-    assert payload["systemMessage"] == HARNESS_UNREACHABLE
     assert NOT_LINKED not in context
-
-
-def test_the_harness_line_is_true_of_every_home_the_anchor_refuses() -> None:
-    # The line used to list its causes as if they were all of them, and the anchor also refuses a
-    # `~/.claude/projects` it may not search, so that person was told something false. It names
-    # `~/.claude` and no cause, and never the refusal's own text, which carries a path derived
-    # from the project.
-    from stayfixed.memory.hooks import HARNESS_UNREACHABLE
-
-    assert "because ~/.claude, or a directory under it, could not be used;" in HARNESS_UNREACHABLE

@@ -416,8 +416,7 @@ no longer covers the harness link, the handler withdraws it instead, and only wh
 this store. A home whose `~/.claude`, or a directory under it, cannot be used — for example
 `HOME` naming no directory, a `~/.claude` that is a dangling link, or a link below it or a
 directory stayfixed may not search — costs the harness link alone: the worktree's links are still
-made, no harness link is made or withdrawn, and the session says so to the person
-(`systemMessage`) as well as to the model.
+made, no harness link is made or withdrawn, and the model is told so in one fixed line.
 
 ## Hooks
 

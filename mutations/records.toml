@@ -1386,7 +1386,7 @@ file = "src/stayfixed/memory/hooks.py"
 before = "            return _with_harness_line(lines, partial.harness_refused)"
 after = "            return _with_harness_line(lines, None)"
 reddens = [
-  "tests/memory/test_hooks.py::test_a_half_built_tree_under_a_refused_home_still_tells_the_person",
+  "tests/memory/test_hooks.py::test_a_half_built_tree_under_a_refused_home_still_tells_the_model",
 ]
 
 [[mutation]]
@@ -1408,7 +1408,7 @@ after = "    except LookupError as refused:\n        unreachable = str(refused)"
 reddens = [
   "tests/memory/test_worktree.py::test_a_home_the_anchor_refuses_costs_the_worktree_its_harness_link_alone[claude-dangling]",
   "tests/memory/test_worktree.py::test_a_home_the_anchor_refuses_costs_the_worktree_its_harness_link_alone[projects-linked]",
-  "tests/memory/test_hooks.py::test_a_home_whose_claude_cannot_be_used_still_links_the_worktree_and_tells_the_person[claude-dangling]",
+  "tests/memory/test_hooks.py::test_a_home_whose_claude_cannot_be_used_still_links_the_worktree_and_tells_the_model[claude-dangling]",
 ]
 
 # The rows and floors that report on quantities they never looked at.

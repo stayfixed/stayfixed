@@ -184,27 +184,6 @@ def test_the_notice_counts_inside_the_cap_and_is_never_cut() -> None:
     assert context.startswith("a notice\n\nyyy") and context.endswith(TRUNCATION_MARK)
 
 
-@pytest.mark.parametrize("name", ["SessionStart", "PreToolUse"])
-def test_a_handlers_notice_reaches_the_person_after_the_sessions_on_session_start_alone(
-    name: str,
-) -> None:
-    # A handler's notice is for the person, so it rides `systemMessage` beside the session's own
-    # notices, and only where they ride it; the model hears the handler's context and nothing more.
-    said = HookResult(context="for the model", notice="for the person")
-    session = dataclasses.replace(NO_CONFIG, project_warnings=("a notice",))
-    outcome = dispatch(
-        event(name), [handler("a", said, event_name=name)], session, harness=CLAUDE, sink=Recorder()
-    )
-    payload = json.loads(outcome.stdout)
-    context = payload["hookSpecificOutput"]["additionalContext"]
-    if name == "SessionStart":
-        assert payload["systemMessage"] == "a notice\nfor the person"
-        assert context == "a notice\n\nfor the model"
-    else:
-        assert "systemMessage" not in payload
-        assert context == "for the model"
-
-
 def test_context_at_a_realistic_cap_keeps_its_leading_content_and_the_mark() -> None:
     handlers = [handler("a", HookResult(context="y" * 500))]
     outcome = dispatch(event(), handlers, NO_CONFIG, harness=CLAUDE, sink=Recorder(), cap=200)

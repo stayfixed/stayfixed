@@ -154,11 +154,9 @@ def dispatch(
     could not give it (`SessionConfig.warnings`), rendered on `NOTICE_EVENT` alone, through both
     of the harness's channels: the person's (`systemMessage`) and, ahead of every handler's
     context, the model's. It counts inside `cap` like the context. On every other event it is
-    ignored: a notice on each tool call would repeat itself. A handler's own `notice` joins it on
-    the person's channel, after it; the handler's `context` already carries the model's copy.
+    ignored: a notice on each tool call would repeat itself.
     """
     contexts: list[str] = []
-    notices: list[str] = []
     reasons: list[str] = []
     for handler in handlers:
         if handler.event != event.name:
@@ -190,8 +188,6 @@ def dispatch(
             # outside every per-handler `try`, and would take the whole dispatch down.
             if result.context is not None and not isinstance(result.context, str):
                 raise _UnrecognisedContext(result.context)
-            if result.notice is not None and not isinstance(result.notice, str):
-                raise _UnrecognisedContext(result.notice)
             # Banked past every check that can discard this result: marking above them spent a
             # once-per-context handler's single delivery on a result that then raised, and an
             # empty result has said nothing, so it spends none.
@@ -199,8 +195,6 @@ def dispatch(
                 sink.mark(handler.once_key)
             if result.context:
                 contexts.append(result.context)
-            if result.notice:
-                notices.append(result.notice)
         except BaseException as exc:  # costs this handler alone, never the call
             reason, record = _failure(exc)
             reasons.append(f"{handler.name}: {reason}")
@@ -209,7 +203,7 @@ def dispatch(
     stderr = ("stayfixed: " + "; ".join(reasons) + "\n") if reasons else ""
     shown = session.warnings if event.name == NOTICE_EVENT else ()
     context = "\n\n".join((*shown, *contexts))
-    message = "\n".join((*shown, *notices)) if event.name == NOTICE_EVENT else ""
+    message = "\n".join(shown)
     stdout = harness.render(event.name, context, message)
     if cap is not None and len(stdout) > cap:
         stdout = _clamp(harness.render, event.name, context, message, cap)
