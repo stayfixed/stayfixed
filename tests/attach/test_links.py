@@ -597,6 +597,37 @@ def test_a_worktree_git_reports_as_prunable_is_not_a_checkout_attach_or_detach_w
     assert all(path.name != "side" for path in _worktrees(root))
 
 
+def test_a_side_worktree_whose_slug_is_a_link_refuses_attach_and_detach_before_any_write(
+    tmp_path: Path,
+) -> None:
+    # The walk differs per checkout at `projects/<slug>`, so the anchor is asked for every
+    # checkout, above the first write. Mutations (oracle): `mutations/`'s "attach asks the harness
+    # anchor of --root alone" and "detach asks the harness anchor of --root alone".
+    from stayfixed.attach.write import detach
+
+    root, store, machine = _bound(tmp_path)
+    side = tmp_path / "side"
+    _git(root, "worktree", "add", "-q", str(side), "-b", "side")
+    home = tmp_path / "home"
+    slug = harness_memory_path(side, home).parent
+    slug.parent.mkdir(parents=True)
+    (tmp_path / "elsewhere").mkdir()
+    before = snapshot(root)
+    assert before
+    for attached in (False, True):
+        if attached:
+            _attach(root, store, machine, home)
+            before = snapshot(root)
+        slug.symlink_to(tmp_path / "elsewhere", target_is_directory=True)
+        with pytest.raises(Refusal, match="none below it"):
+            if attached:
+                detach(root, machine=machine, home=home)
+            else:
+                _attach(root, store, machine, home)
+        assert_snapshot_unchanged(root, before)
+        slug.unlink()
+
+
 def test_a_home_that_is_not_there_refuses_above_every_write(tmp_path: Path) -> None:
     # A mistyped `--home` used to be discovered from inside the link step, after the ignore
     # region, the Codex rule files, the settings merge, the ledger and the overlay's binding

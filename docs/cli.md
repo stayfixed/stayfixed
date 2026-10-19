@@ -2602,7 +2602,8 @@ withdrew any, its line says how many (`links_revoked` in `--json`).
 **The harness memory link goes under `HOME`**, and an empty one, which names no home, is refused
 (`2`). The home directory itself is found and never created — a missing one is a refusal, above
 `attach`'s first write, above `detach`'s first withdrawal and above the first note link a session
-makes in a worktree — and a `~/.claude` linked into a dotfiles tree is written through.
+makes in a worktree — and a `~/.claude` linked into a dotfiles tree is written through. A link
+below `~/.claude`, or a `~/.claude` the walk cannot reach, is refused above the first write.
 
 It also runs `pre-commit install` in the overlay when the overlay carries a pre-commit
 configuration and no hook is installed — the machine that cloned an overlay someone else created
@@ -3023,14 +3024,6 @@ was cloned to, because nothing else would. Everything else `create:` can be refu
 missing `--yes`, a malformed spec, a name that is not one path segment, a destination the project
 root could reach or a checkout of another repository holds, a `<home>` you cannot write into, or
 one the machine file could not record — still happens before `gh` is run at all.
-
-The symlink refusal names the link, where it leads, and a `stayfixed setup --home …` that writes
-the file the link leads to — and where no `--home` can express the layout, it says that instead
-of printing a command. `stow` folding a package to per-file links
-(`~/.claude/settings.json -> <dotfiles>/claude/settings.json`) is that case: `--home H` writes
-`H/.claude/settings.json` and nothing else, so no `H` names that target. Point the link at a
-path ending in `.claude/settings.json`, or let this command write a real file and have your
-dotfiles manager adopt it.
 
 A plugin that fails to install or a harness that is absent is a note in the report, not a
 nonzero exit. What the failing plugin command printed is quoted as `overlay create` quotes it

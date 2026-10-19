@@ -161,10 +161,11 @@ def harness_memory_path(worktree: Path, home: Path | None = None) -> Path:
 def harness_anchor(where: Path, home: Path | None) -> tuple[Path, str]:
     """`harness_link_parts` as the root the `O_NOFOLLOW` walk opens and the path below it.
 
-    `~/.claude` is resolved once, since a stow- or chezmoi-managed one is the owner's link, and the
-    walk opens the directory it lands in and follows no link from `.claude` down. The home is found
-    and never created: one that is not a directory is a mistyped `--home`. Both are refused here,
-    above every write, as is a `.claude` the walk cannot open.
+    `~/.claude` is resolved once and is the root, since a stow- or chezmoi-managed one is the
+    owner's link, and the walk follows no link below it; with no `.claude` yet the root is the
+    home, resolved. The home is found and never created: one that is not a directory is a
+    mistyped `--home`. Both are refused here, above every write, as is a root that is not a
+    directory and a path below it the walk cannot open.
     """
     root, relative = harness_link_parts(where, home)
     if not fsops.is_dir(root):
@@ -174,9 +175,14 @@ def harness_anchor(where: Path, home: Path | None) -> tuple[Path, str]:
             f"itself, so it has to exist already"
         )
     first, _, below = relative.partition("/")
+    claude = root / first
     try:
-        claude = fsops.resolved(root / first)
-        root, relative = claude.parent, f"{claude.name}/{below}"
+        if fsops.exists(claude) or fsops.is_symlink(claude):
+            root, relative = fsops.resolved(claude), below
+        else:
+            root = fsops.resolved(root)
+        if not fsops.is_dir(root):
+            raise NotADirectoryError(errno.ENOTDIR, "it is not a directory")
         fsops.check_within(root, relative)
     except OSError as exc:
         raise Refusal(
@@ -207,8 +213,8 @@ def _link(root: Path, relative: str, source: Path) -> bool:
 
     A `FileNotFoundError` from the read is "nothing is there": it means a directory above the
     target does not exist yet, which is the ordinary case on a first link — `symlink_within`
-    creates those parents through the same walk. A missing *root* is not created: see
-    `harness_anchor`.
+    creates those parents through the same walk. A root that is not there is refused before any
+    of this (`harness_anchor`).
     """
     try:
         current = fsops.readlink_within(root, relative)

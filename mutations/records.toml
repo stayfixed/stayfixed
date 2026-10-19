@@ -1299,8 +1299,8 @@ reddens = [
 [[mutation]]
 name = "a home that is not there stops being a refusal"
 file = "src/stayfixed/memory/worktree.py"
-before = "    if not fsops.is_dir(root):"
-after = "    if False:"
+before = "    if not fsops.is_dir(root):\n        raise Refusal("
+after = "    if False:\n        raise Refusal("
 reddens = [
   "tests/memory/test_worktree.py::test_a_home_that_is_not_there_is_a_refusal_naming_it_and_never_a_partial_link",
   "tests/memory/test_worktree.py::test_a_withdrawal_against_a_home_that_is_not_there_refuses_rather_than_reporting_nothing",
@@ -1348,6 +1348,15 @@ after = "        pass\n"
 reddens = [
   "tests/memory/test_worktree.py::test_a_claude_directory_the_walk_cannot_go_through_is_refused_at_the_anchor[claude-unsearchable]",
   "tests/memory/test_worktree.py::test_a_claude_directory_the_walk_cannot_go_through_is_refused_at_the_anchor[projects-linked]",
+]
+
+[[mutation]]
+name = "the harness anchor walks a root that is not there"
+file = "src/stayfixed/memory/worktree.py"
+before = "        if not fsops.is_dir(root):\n            raise NotADirectoryError"
+after = "        if False:\n            raise NotADirectoryError"
+reddens = [
+  "tests/memory/test_worktree.py::test_a_claude_directory_the_walk_cannot_go_through_is_refused_at_the_anchor[claude-dangling]",
 ]
 
 [[mutation]]

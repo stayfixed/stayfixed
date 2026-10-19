@@ -3152,7 +3152,7 @@ def test_a_machine_file_that_does_not_load_is_red_and_not_blamed_on_stayfixed_to
 def test_a_machine_file_that_does_not_load_is_named_as_the_file_that_was_read(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # The report reads the machine file no variable moves, which honours neither
+    # The report reads the machine file under `HOME`, which honours neither
     # `STAYFIXED_CONFIG` nor `XDG_CONFIG_HOME`, and a row once named the file through the terminal
     # check instead. So an owner at a terminal with `STAYFIXED_CONFIG` set, whose
     # `~/.config/stayfixed/config.toml` has a stray bracket in it, was told to fix the file the
@@ -3161,7 +3161,7 @@ def test_a_machine_file_that_does_not_load_is_named_as_the_file_that_was_read(
     # `run_checks` directly and not `_checks`, whose hermetic default names a file: the case is
     # the one where no `--machine` was given. `HOME` is this test's, so the file read is under it,
     # and the variable names a well-formed file beside it. No mutation: the file is resolved once,
-    # through the one path no variable moves, so no edit of `run_checks` makes the two differ.
+    # through the one path under `HOME`, so no edit of `run_checks` makes the two differ.
     root = _initialised(tmp_path)
     home = tmp_path / "owner-home"
     read = home / ".config" / "stayfixed" / "config.toml"

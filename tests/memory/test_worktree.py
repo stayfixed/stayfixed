@@ -1155,6 +1155,7 @@ _UNWALKABLE = {
     "projects-linked": "none below it",
     "claude-unsearchable": "Permission denied",
     "claude-loop": "cannot be reached",
+    "claude-dangling": "it is not a directory",
 }
 
 
@@ -1164,13 +1165,17 @@ def test_a_claude_directory_the_walk_cannot_go_through_is_refused_at_the_anchor(
     tmp_path: Path, layout: str
 ) -> None:
     # `.claude` is followed and nothing below it, and a `.claude` the walk cannot open is refused
-    # above every write rather than met by one. Mutation (oracle): `mutations/`'s "the harness
-    # anchor stops asking whether the walk can reach it" -> the first two raise nothing.
+    # above every write rather than met by one. Mutations (oracle): `mutations/`'s "the harness
+    # anchor stops asking whether the walk can reach it" -> `projects-linked` and
+    # `claude-unsearchable` raise nothing; "the harness anchor walks a root that is not there" ->
+    # `claude-dangling` does not.
     root, _store, _config = a_checkout(tmp_path)
     home = a_home(tmp_path)
     claude = home / ".claude"
     if layout == "claude-loop":
         claude.symlink_to(claude)
+    elif layout == "claude-dangling":
+        claude.symlink_to(tmp_path / "gone" / "claude", target_is_directory=True)
     else:
         claude.mkdir()
     if layout == "projects-linked":
@@ -1181,14 +1186,21 @@ def test_a_claude_directory_the_walk_cannot_go_through_is_refused_at_the_anchor(
         worktree.harness_anchor(root, home)
 
 
-def test_a_home_under_a_directory_nobody_may_read_gets_the_harness_link(tmp_path: Path) -> None:
-    # cPanel's `/home` is 0711: the walk opens the home and nothing above it.
+@pytest.mark.parametrize("linked", [False, True], ids=["home", "claude"])
+def test_a_home_or_claude_under_a_directory_nobody_may_read_gets_the_harness_link(
+    tmp_path: Path, linked: bool
+) -> None:
+    # cPanel's `/home` is 0711: the walk opens the home, or the `.claude` it links to, and
+    # nothing above it.
     root, store, config = a_checkout(tmp_path)
     tree = a_worktree(root, tmp_path / "wt")
     record(store, config)
-    home = tmp_path / "homes" / "me"
-    home.mkdir(parents=True)
-    with at_mode(home.parent, 0o311, after=0o755):
+    locked = tmp_path / "locked"
+    (locked / "me").mkdir(parents=True)
+    home = a_home(tmp_path) if linked else locked / "me"
+    if linked:
+        (home / ".claude").symlink_to(locked / "me", target_is_directory=True)
+    with at_mode(locked, 0o311, after=0o755):
         link(tree, store, config, home=home)
     assert harness_memory_path(tree, home).resolve() == store.path.resolve()
 

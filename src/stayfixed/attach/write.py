@@ -1433,8 +1433,6 @@ def plan_writes(
     these refusals with the run's code and line: each read here was once left out of the preview,
     and `--check` answered clean over a checkout the run then stopped on.
     """
-    # The eighth: the home the harness memory link goes under, which a mistyped `--home` misses.
-    harness_anchor(root, home)
     previous = existing_ledger(root)
     # Above every write, because the first of them creates `.stayfixed/local/` and the answer
     # would then be wrong by exactly the directory this run brought into existence.
@@ -1454,8 +1452,11 @@ def plan_writes(
     written = merged != document
     # The checkouts the link tree goes into, read here because the fallback below is asked of the
     # owning checkout's store, the first of them, as the write after the links asks it. Their
-    # refusal is a `git` that cannot list them, knowable before anything is written.
+    # refusal is a `git` that cannot list them, knowable before anything is written. The harness
+    # memory link's walk differs per checkout at `projects/<slug>`, so it is asked of each here.
     checkouts = tuple(_checkouts(root))
+    for tree in checkouts:
+        harness_anchor(tree, home)
     # The fallback's write is decided here too, for the same reason: it is the one write to the
     # settings file that happens after the links, and a refusal it earned there would come after
     # every write above it.
@@ -2006,7 +2007,8 @@ def detach(
     # `.codex/rules/` copies already removed and every link still in place. The home the harness
     # links are under is asked in the same breath: a mistyped `--home` withdrew nothing, exit 0.
     checkouts = _checkouts(root)
-    harness_anchor(root, home)
+    for tree in checkouts:
+        harness_anchor(tree, home)
     ignore_remainder = None if _footprint_owns_region(root) else _ignore_region_remainder(root)
     # The `info/exclude` block is found above the first withdrawal for the same reason: `git`
     # names the file and a region opened twice refuses, and both are knowable now. It is shared
