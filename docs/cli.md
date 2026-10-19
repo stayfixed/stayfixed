@@ -862,10 +862,11 @@ is yours, and its standard error is yours either way. Text a command prints is n
 **The runners.** Each refuses (`refused-option`, naming the option) only what you could type by
 mistake and get a green report for tests that never ran or checked nothing, and says `not proven`
 for a run that would never end (`never-ends`) or runs no test suite (`no-test-run`); every other
-option is free. An option is read in its documented spellings, alone or as `--option=value`
-(`--update=none` is free, `--update none` refused as `--update`), and for node with any `=value`,
-which Node reads as on; another spelling the runner also reads, a cluster of short options such as
-`-cu` among them, is the bound's.
+option is free. An option is read in its documented spellings, alone or as `--option=value`, where
+`=false` turns a jest or vitest boolean off (`--update=none` is free, `--update none` refused as
+`--update`); node's options and vitest's `--mergeReports` are read with any `=value`, which Node
+reads as on and vitest as a directory. Another spelling the runner also reads, a cluster of short
+options such as `-cu` among them, is the bound's.
 
 | Runner | Recognised | Added to the command | Refused, or `not proven` | The receipt names |
 |---|---|---|---|---|

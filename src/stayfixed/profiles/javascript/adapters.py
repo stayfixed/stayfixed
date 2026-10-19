@@ -34,8 +34,9 @@ the file's path from the directory node runs in, `classname` `test`, and passed:
 
 **What is refused** (`REFUSED_OPTION`, naming the option): only what a person or an agent could
 type by mistake and get a green report for tests that never ran or never checked anything. Each is
-read in its documented spellings alone, or as `--option=value` (`_spelled`); every other option
-is free.
+read in its documented spellings alone, or as `--option=value` (`_spelled`), where `=false` turns
+a jest or vitest boolean off; node's options and `--mergeReports` are read with any value. Every
+other option is free.
 
 - jest: `-u`/`--updateSnapshot` (rewrites a failing snapshot so that it passes) and
   `--collectTests` (exits 0 reporting a failing test as passed), each also dashed.
@@ -228,13 +229,13 @@ def jest_never_ends(args: Sequence[str]) -> str | None:
 
 
 # vitest's closed list: `--update` but for the values that rewrite no failing snapshot, `none`
-# and `new` (which writes a missing one); and two options refused in any spelling.
+# and `new` (which writes a missing one); and two options more.
 _VITEST_SNAPSHOTS = frozenset({"-u", "--update"})
 _VITEST_KEEPS_SNAPSHOTS = frozenset({"none", "new"})
-# vitest's guide spells `--merge-reports` where its reference spells `--mergeReports`.
-_VITEST_REFUSED = frozenset(
-    {"--mergeReports", "--merge-reports", "--dangerouslyIgnoreUnhandledErrors"}
-)
+# vitest's guide spells `--merge-reports` where its reference spells `--mergeReports`; its value
+# is a directory, so any value is refused.
+_VITEST_MERGES = frozenset({"--mergeReports", "--merge-reports"})
+_VITEST_EXITS_PAST_ERRORS = frozenset({"--dangerouslyIgnoreUnhandledErrors"})
 _VITEST_NEVER_ENDS = frozenset({"-w", "--watch"})
 # The variable vitest reads as `--update` where the command gives none; its empty value is unset.
 _VITEST_UPDATE_VARIABLE = "UPDATE_SNAPSHOT"
@@ -247,8 +248,10 @@ def snapshots_rewritten(value: str) -> bool:
 
 def vitest_refused(args: Sequence[str]) -> str | None:
     """The first option of vitest's `args` on its closed list; `None` where none is."""
-    return _spelled(args, _VITEST_REFUSED) or _spelled(
-        args, _VITEST_SNAPSHOTS, _VITEST_KEEPS_SNAPSHOTS
+    return (
+        _spelled(args, _VITEST_MERGES, frozenset())
+        or _spelled(args, _VITEST_EXITS_PAST_ERRORS)
+        or _spelled(args, _VITEST_SNAPSHOTS, _VITEST_KEEPS_SNAPSHOTS)
     )
 
 
@@ -407,11 +410,12 @@ def node_refused(words: Sequence[str], node_options: str = "") -> str | None:
 
 
 def node_never_ends(words: Sequence[str], node_options: str = "") -> str | None:
-    """node's option among `words` (the words after `node`) under which the run never ends: a watch
-    mode, or one that waits for a debugger there or among the words of `node_options` (the run's
-    `NODE_OPTIONS`, which reaches every node the run starts); `None` where none is."""
-    return _spelled(words, _NODE_WATCHES) or _spelled(
-        (*options(words), *node_options.split()), _NODE_INSPECT_WAITS
+    """node's option among `words` (the words after `node`) under which the run never ends, with
+    any `=value`: a watch mode, or one that waits for a debugger there or among the words of
+    `node_options` (the run's `NODE_OPTIONS`, which reaches every node the run starts); `None`
+    where none is."""
+    return _spelled(words, _NODE_WATCHES, frozenset()) or _spelled(
+        (*options(words), *node_options.split()), _NODE_INSPECT_WAITS, frozenset()
     )
 
 

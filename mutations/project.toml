@@ -2350,6 +2350,20 @@ reddens = [
   "tests/prove/test_go.py::test_a_launcher_is_handed_the_go_as_typed[./bin/go]",
 ]
 
+# node's options are read with no table of node's: the word after an option that gives itself no
+# value with `=` may be its value, so `--max-old-space-size 4096` is read past to the entry.
+[[mutation]]
+name = "node's word after an option is read as its script, never the option's value"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = """        if before is None or not _option(before) or "=" in before:
+            break"""
+after = """        if True:
+            break"""
+reddens = [
+  "tests/prove/test_javascript.py::test_each_runner_s_commands_are_recognised[command15-adapter15]",
+  "tests/prove/test_javascript.py::test_node_s_options_in_front_of_the_entry_run_as_typed[node_words0]",
+]
+
 # A word that can only be node's script ends the reading: `node x.js <entry>` runs `x.js`.
 [[mutation]]
 name = "node's script is read past to a later entry"
@@ -2751,18 +2765,19 @@ reddens = [
 [[mutation]]
 name = "vitest's --mergeReports is left off its refusals"
 file = "src/stayfixed/profiles/javascript/adapters.py"
-before = '"--mergeReports", "--merge-reports", '
-after = ""
+before = '_VITEST_MERGES = frozenset({"--mergeReports", "--merge-reports"})'
+after = "_VITEST_MERGES: frozenset[str] = frozenset()"
 reddens = [
   "tests/prove/test_javascript.py::test_each_report_steering_option_is_refused[vitest:--mergeReports]",
   "tests/prove/test_javascript.py::test_each_report_steering_option_is_refused[vitest:--merge-reports=.vitest-reports]",
+  "tests/prove/test_javascript.py::test_each_report_steering_option_is_refused[vitest:--mergeReports=false]",
 ]
 
 [[mutation]]
 name = "vitest's --dangerouslyIgnoreUnhandledErrors is left off its refusals"
 file = "src/stayfixed/profiles/javascript/adapters.py"
-before = ', "--dangerouslyIgnoreUnhandledErrors"}'
-after = "}"
+before = '_VITEST_EXITS_PAST_ERRORS = frozenset({"--dangerouslyIgnoreUnhandledErrors"})'
+after = "_VITEST_EXITS_PAST_ERRORS: frozenset[str] = frozenset()"
 reddens = ["tests/prove/test_javascript.py::test_each_report_steering_option_is_refused[vitest:--dangerouslyIgnoreUnhandledErrors]"]
 
 # vitest's own default where `CI` is unset writes a missing snapshot and fails a failing one.

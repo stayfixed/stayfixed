@@ -364,9 +364,8 @@ def test_npx_runs_as_typed(tmp_path: Path) -> None:
 
 def test_vitest_without_run_runs_once(tmp_path: Path) -> None:
     # `run` first, so it runs once and never watches; `--reporter=default` for the person where
-    # the command names no reporter of its own. Mutations (declared): `run` never added -> the
-    # first plan starts at `-t`; the default reporter added beside the command's own -> the third
-    # plan holds two.
+    # the command names no reporter of its own. Mutation (declared): `run` never added -> the
+    # first plan starts at `-t`.
     project = tmp_path / "project"
     _, _, node = installed(project)
     link_bins(project)
@@ -984,6 +983,7 @@ REFUSALS: list[tuple[Adapter, tuple[str, ...], str]] = [
     (VITEST, ("vitest", "--update=false"), "--update"),
     (VITEST, ("vitest", "--mergeReports"), "--mergeReports"),
     (VITEST, ("vitest", "--merge-reports=.vitest-reports"), "--merge-reports"),
+    (VITEST, ("vitest", "--mergeReports=false"), "--mergeReports"),
     (
         VITEST,
         ("vitest", "--dangerouslyIgnoreUnhandledErrors"),
@@ -1117,6 +1117,8 @@ NEVER_ENDING: list[tuple[Adapter, tuple[str, ...], str]] = [
     (NODE_TEST, ("node", "--watch", "--test"), "--watch"),
     (NODE_TEST, ("node", "--test", "--watch-path=src"), "--watch-path"),
     (NODE_TEST, ("node", "--test", "a.test.mjs", "--watch"), "--watch"),
+    # node watches under `--watch=false` too.
+    (NODE_TEST, ("node", "--test", "--watch=false"), "--watch"),
     # node holds the code until a debugger attaches (measured on Node 24.10.0, under `--test` too).
     (NODE_TEST, ("node", "--inspect-brk", "--test"), "--inspect-brk"),
     (NODE_TEST, ("node", "--inspect-wait=0", "--test"), "--inspect-wait"),

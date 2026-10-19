@@ -405,11 +405,13 @@ def test_the_run_is_in_cwd_and_the_project_is_its_toplevel(tmp_path: Path) -> No
     root = repository(tmp_path / "repo")
     package = root / "packages" / "web"
     package.mkdir(parents=True)
-    (root / "stand-in.toml").write_text("", encoding="utf-8")
+    (package / "test_new.py").write_text("", encoding="utf-8")
     adapter = StandIn()
     got = run(package, NAME, "--expect-cwd", str(package), adapter=adapter)
     assert got.verdict == PROVED
     assert got.commit == git(root, "rev-parse", "HEAD").strip()
+    # Named from the repository's top-level: the project is the repository, not the package.
+    assert got.untracked == ("packages/web/test_new.py",)
 
 
 def test_outside_a_repository_the_project_is_the_directory_itself(tmp_path: Path) -> None:
@@ -544,7 +546,7 @@ def test_the_command_is_judged_where_its_launcher_runs_it(
     # launcher handed as typed -> each case differs.
     typed = repository(tmp_path / "typed")
     other = repository(tmp_path / "other")
-    (other / "stand-in.toml").write_text("", encoding="utf-8")
+    (other / "test_there.py").write_text("", encoding="utf-8")
     uv = fake_uv(tmp_path / "bin")
     adapter = StandIn()
     environ = {**with_uv(uv), **inherited}
@@ -555,6 +557,7 @@ def test_the_command_is_judged_where_its_launcher_runs_it(
     assert adapter.cwds == [real]
     assert got.directory == str(real)
     assert got.commit == git(other, "rev-parse", "HEAD").strip()
+    assert got.untracked == ("test_there.py",)
     assert adapter.launches == [(str(uv), *words[1:])]
 
 
