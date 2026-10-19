@@ -697,8 +697,9 @@ def prove(
     handed, directory = moved(launch, cwd, env)
     root = checkout_root(directory) or directory
     run = _Run(handed, shown, cwd, directory, root, env, scrubbed, timeout, echo, junit)
-    if junit is None and launch.stranded:
-        # As typed, the launcher runs the assignment as its program, and no test runs.
+    if launch.stranded:
+        # As typed, the launcher runs the assignment as its program, and no test runs: with an
+        # adapter or under `--junit` alike.
         return _receipt(
             _Outcome(unproven=NOT_RECOGNISED),
             shown,

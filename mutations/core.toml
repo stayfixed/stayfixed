@@ -5190,7 +5190,7 @@ reddens = [
 [[mutation]]
 name = "the JUnit reader lets a skipped child hide a failure"
 file = "src/stayfixed/prove/junit.py"
-before = "        elif name == _SKIPPED_BY and self._open[-1] == _PASSED:"
+before = "        elif name == _SKIPPED_BY and (self._open[-1] & _OUTCOME) == _PASSED:"
 after = "        elif name == _SKIPPED_BY:"
 reddens = [
   "tests/prove/test_junit.py::test_a_failure_beside_a_skip_is_failed",
@@ -6777,17 +6777,21 @@ reddens = [
 [[mutation]]
 name = "a timed-out gate's group is sent SIGKILL alone"
 file = "src/stayfixed/processes.py"
-before = "    kill_group(process, signal.SIGTERM)"
-after = "    pass"
+before = "        kill_group(process, signal.SIGTERM)"
+after = "        pass"
 reddens = ["tests/assess/test_gates.py::test_a_gate_past_its_time_limit_lets_its_command_end_what_it_started"]
 
 [[mutation]]
 name = "a timed-out gate's group that ignores SIGTERM is never sent SIGKILL"
 file = "src/stayfixed/processes.py"
-before = """        _watched(process, TERM_WAIT_SECONDS if grace is None else grace)
-    kill_group(process)"""
-after = """        _watched(process, TERM_WAIT_SECONDS if grace is None else grace)"""
-reddens = ["tests/assess/test_gates.py::test_a_gate_past_its_time_limit_ends_a_command_that_ignores_sigterm"]
+before = """    finally:
+        kill_group(process)"""
+after = """    finally:
+        pass"""
+reddens = [
+  "tests/assess/test_gates.py::test_a_gate_past_its_time_limit_ends_a_command_that_ignores_sigterm",
+  "tests/assess/test_gates.py::test_an_interrupt_in_the_grace_still_ends_a_group_that_ignores_sigterm",
+]
 
 # A `--junit` path is followed to the file it reaches: a `latest.xml` link the run points at the
 # report it just wrote is that report, rewritten.
@@ -6811,13 +6815,16 @@ reddens = [
 ]
 
 # An assignment right after a launcher, with no `env` between, is the launcher's program as typed:
-# the command runs no test.
+# the command runs no test, with an adapter or under `--junit`.
 [[mutation]]
 name = "prove reads an assignment right after a launcher as the command's"
 file = "src/stayfixed/prove/run.py"
-before = "    if junit is None and launch.stranded:"
+before = "    if launch.stranded:"
 after = "    if False:"
-reddens = ["tests/prove/test_run.py::test_an_assignment_right_after_a_launcher_is_not_recognised[argv0]"]
+reddens = [
+  "tests/prove/test_run.py::test_an_assignment_right_after_a_launcher_is_not_recognised[argv0]",
+  "tests/prove/test_run.py::test_an_assignment_right_after_a_launcher_is_not_recognised[junit]",
+]
 
 # A todo test node does not count as failed, failing or not: `<skipped type="todo"/>` beside its
 # `<failure>`.

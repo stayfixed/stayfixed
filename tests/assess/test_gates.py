@@ -377,6 +377,32 @@ def test_a_gate_past_its_time_limit_ends_a_command_that_ignores_sigterm(
     assert not late.exists()
 
 
+def test_an_interrupt_in_the_grace_still_ends_a_group_that_ignores_sigterm(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A Ctrl-C ends the gate, and a second one lands in the grace `processes.end` gives the
+    # group after its SIGTERM: the group, which ignores SIGTERM, is still sent SIGKILL before the
+    # interrupt goes on up. Mutation (declared): no SIGKILL after the grace -> the child writes
+    # `late`.
+    command, started, late = delayed_writer(tmp_path)
+    command[2] = "import signal\nsignal.signal(signal.SIGTERM, signal.SIG_IGN)\n" + command[2]
+    config = with_custom(fixture_config(tmp_path), command, seconds=600)
+
+    def interrupted(process: subprocess.Popen[bytes], seconds: float) -> None:
+        deadline = time.monotonic() + STARTED_WAIT_SECONDS
+        while not started.exists() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(processes, "exited", interrupted)
+    monkeypatch.setattr(processes, "_watched", interrupted)
+    with pytest.raises(KeyboardInterrupt):
+        results(tmp_path, config)
+    assert started.exists()
+    time.sleep(LATE_WAIT_SECONDS)
+    assert not late.exists()
+
+
 def test_an_interrupted_custom_gate_leaves_nothing_running(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

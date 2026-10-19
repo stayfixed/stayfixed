@@ -52,12 +52,15 @@ _SKIPPED_BY = "skipped"
 # summary says `fail 0`, and it exits 0. So such a testcase is skipped, failure or none.
 TODO = "todo"
 
-# What one open testcase has met so far, one byte each on the stack of open testcases.
+# What one open testcase has met so far, one byte each on the stack of open testcases: its
+# outcome, and `_DROPPED` beside it where `drop` answered true, kept apart from the outcome so
+# that no order of its children loses either.
 _PASSED = 0
 _FAILED = 1
 _SKIPPED = 2
-_DROPPED = 3
-_TODO = 4
+_TODO = 3
+_OUTCOME = 3
+_DROPPED = 4
 
 # A named cap: how many bytes are handed to the parser at once, which bounds the copy expat keeps
 # of its input. Any size reads the same document the same way; 64 KiB keeps the copy far below the
@@ -84,24 +87,27 @@ class _Tally:
         elif not self._open:
             return
         elif name == _SKIPPED_BY and attributes.get("type") == TODO:
-            if self._open[-1] != _DROPPED:
-                self._open[-1] = _TODO
+            # Before its failure or after it, a todo wins.
+            self._open[-1] = (self._open[-1] & _DROPPED) | _TODO
         elif name in _FAILED_BY:
             # A dropped testcase too: a failure is never dropped. A todo's failure is no failure.
-            if self._open[-1] != _TODO:
-                self._open[-1] = _FAILED
-        elif name == _SKIPPED_BY and self._open[-1] == _PASSED:
-            self._open[-1] = _SKIPPED
+            if (self._open[-1] & _OUTCOME) != _TODO:
+                self._open[-1] = (self._open[-1] & _DROPPED) | _FAILED
+        elif name == _SKIPPED_BY and (self._open[-1] & _OUTCOME) == _PASSED:
+            self._open[-1] = (self._open[-1] & _DROPPED) | _SKIPPED
 
     def end(self, name: str) -> None:
         if name != _TESTCASE:
             return
-        outcome = self._open.pop()
+        held = self._open.pop()
+        outcome = held & _OUTCOME
         if outcome == _FAILED:
             self.failed += 1
+        elif held & _DROPPED:
+            return
         elif outcome in (_SKIPPED, _TODO):
             self.skipped += 1
-        elif outcome == _PASSED:
+        else:
             self.passed += 1
 
 

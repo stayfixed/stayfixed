@@ -82,9 +82,17 @@ def end(process: subprocess.Popen[bytes], grace: float | None = None) -> None:
     then, once the command has exited or `grace` seconds have passed (`TERM_WAIT_SECONDS` unless
     told otherwise), SIGKILL to the whole group, which a member that ignored SIGTERM cannot
     outlast; then the reap, within `KILL_WAIT_SECONDS`. The command is watched without being
-    reaped, as `exited` watches it, so the SIGKILL still reaches its group alone."""
-    kill_group(process, signal.SIGTERM)
-    with contextlib.suppress(subprocess.TimeoutExpired):
-        _watched(process, TERM_WAIT_SECONDS if grace is None else grace)
-    kill_group(process)
-    process.wait(timeout=KILL_WAIT_SECONDS)
+    reaped, as `exited` watches it, so the SIGKILL still reaches its group alone. An interrupt
+    in the grace (a second Ctrl-C) still sends the SIGKILL, and reaps, before it goes on up.
+
+    The grace watches the command alone, so behind a shell leader that dies on SIGTERM (`sh -c
+    "stayfixed prove -- …"`) it is the leader's: the SIGKILL follows at once and ends `prove`
+    inside its own grace, and a runner in a session of its own that ignores SIGTERM outlives
+    both, a limit of this bound rather than a case it ends."""
+    try:
+        kill_group(process, signal.SIGTERM)
+        with contextlib.suppress(subprocess.TimeoutExpired):
+            _watched(process, TERM_WAIT_SECONDS if grace is None else grace)
+    finally:
+        kill_group(process)
+        process.wait(timeout=KILL_WAIT_SECONDS)

@@ -227,20 +227,38 @@ def test_a_dropped_testcase_that_failed_counts_as_failed(child: str) -> None:
     assert read_junit(report, drop=lambda attributes: True) == Counts(0, 1, 0)
 
 
+TODO_FAILING = '<skipped type="todo" message="true"/><failure message="not yet"/>'
+TODO_FAILURE_FIRST = '<failure message="not yet"/><skipped type="todo"/>'
+
+
 @pytest.mark.parametrize(
-    ("inside", "counts"),
+    ("inside", "dropped", "counts"),
     [
-        ('<skipped type="todo" message="true"/><failure message="not yet"/>', Counts(1, 0, 1)),
-        ('<failure message="not yet"/><skipped type="todo"/>', Counts(1, 0, 1)),
-        ('<skipped type="todo" message="reason"/>', Counts(1, 0, 1)),
-        ('<skipped type="pytest.skip"/><failure/>', Counts(1, 1, 0)),
+        (TODO_FAILING, False, Counts(1, 0, 1)),
+        (TODO_FAILURE_FIRST, False, Counts(1, 0, 1)),
+        ('<skipped type="todo" message="reason"/>', False, Counts(1, 0, 1)),
+        ('<skipped type="pytest.skip"/><failure/>', False, Counts(1, 1, 0)),
+        (TODO_FAILING, True, Counts(1, 0, 0)),
+        (TODO_FAILURE_FIRST, True, Counts(1, 0, 0)),
     ],
-    ids=["failing", "failure-first", "passing", "another-skip"],
+    ids=[
+        "failing",
+        "failure-first",
+        "passing",
+        "another-skip",
+        "failing-dropped",
+        "failure-first-dropped",
+    ],
 )
-def test_a_todo_testcase_is_skipped_whatever_else_stands_in_it(inside: str, counts: Counts) -> None:
+def test_a_todo_testcase_is_skipped_whatever_else_stands_in_it(
+    inside: str, dropped: bool, counts: Counts
+) -> None:
     # Node 24.10.0's JUnit reporter writes a `todo` test that fails as `<skipped type="todo"/>`
     # beside its `<failure>`, and node itself counts it as neither (its summary says `fail 0`, and
     # it exits 0): it is skipped here too. A failure beside any other skip is still a failure.
-    # Mutation (declared): the todo skip not read -> the failing todo counts as failed.
+    # Whatever the order of the two, and dropped too: a dropped todo counts nowhere, as a dropped
+    # skip does, since its failure is no failure. Mutation (declared): the todo skip not read ->
+    # the failing todo counts as failed.
     report = f'<testsuites><testcase name="real"/><testcase name="later">{inside}</testcase>'
-    assert read_junit(f"{report}</testsuites>".encode()) == counts
+    drop = (lambda attributes: attributes.get("name") == "later") if dropped else None
+    assert read_junit(f"{report}</testsuites>".encode(), drop=drop) == counts

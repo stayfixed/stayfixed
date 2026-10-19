@@ -59,7 +59,15 @@ from stayfixed.prove.run import (
     prove,
 )
 from tests.gitfixture import git
-from tests.prove.stand_in import JUNIT, LATE_AFTER_SECONDS, NAME, StandIn, forges, held
+from tests.prove.stand_in import (
+    JUNIT,
+    LATE_AFTER_SECONDS,
+    NAME,
+    PROGRAM,
+    StandIn,
+    forges,
+    held,
+)
 
 PROVED, FAILED, NOT_PROVEN, REFUSED = (
     Verdict.PROVED,
@@ -82,6 +90,7 @@ def run(
     environ: dict[str, str] | None = None,
     timeout: float = 600,
     echo: TextIO | None = None,
+    junit: Path | None = None,
 ) -> Receipt:
     return prove(
         argv,
@@ -90,6 +99,7 @@ def run(
         timeout=timeout,
         adapters=[adapter or StandIn()],
         echo=echo,
+        junit=junit,
     )
 
 
@@ -226,25 +236,41 @@ def test_an_assigned_value_that_forges_nothing_reaches_the_runner(tmp_path: Path
     assert (got.verdict, got.reason) == (PROVED, "")
 
 
+# A command no adapter recognises that writes a green JUnit report at `out.xml`, for `--junit`.
+GREEN_JUNIT_WRITER = [
+    sys.executable,
+    str(PROGRAM),
+    "--report-path",
+    "out.xml",
+    "--source",
+    "file",
+    "--report",
+    "pass",
+]
+
+
 @pytest.mark.parametrize(
-    "argv",
+    ("argv", "junit"),
     [
-        ["uv", "run", "TYPED=yes", NAME],
-        ["uv", "run", "--", "TYPED=yes", NAME],
-        ["env", "A=1", "uv", "run", "TYPED=yes", "B=2", NAME],
-        ["uv", "run", "env", "A=1", "uv", "run", "TYPED=yes", NAME],
+        pytest.param(["uv", "run", "TYPED=yes", NAME], None, id="argv0"),
+        pytest.param(["uv", "run", "--", "TYPED=yes", NAME], None, id="argv1"),
+        pytest.param(["env", "A=1", "uv", "run", "TYPED=yes", "B=2", NAME], None, id="argv2"),
+        pytest.param(["uv", "run", "env", "A=1", "uv", "run", "TYPED=yes", NAME], None, id="argv3"),
+        pytest.param(["uv", "run", "TYPED=yes", *GREEN_JUNIT_WRITER], "out.xml", id="junit"),
     ],
 )
 def test_an_assignment_right_after_a_launcher_is_not_recognised(
-    tmp_path: Path, argv: list[str]
+    tmp_path: Path, argv: list[str], junit: str | None
 ) -> None:
     # Typed as it is, uv runs `TYPED=yes` as its program (uv 0.12.19: "Failed to spawn", exit 2),
     # and no test runs; read as an assignment, the run would be `proved` for a command that runs
-    # nothing. Mutation (declared): the stranded assignments left unread -> the stand-in runs
-    # and is `proved`.
+    # nothing, with an adapter or under `--junit`, whose writer would leave a green report.
+    # Mutation (declared): the stranded assignments left unread -> the stand-in runs and is
+    # `proved`.
     adapter = StandIn()
     environ = with_uv(fake_uv(tmp_path / "bin"))
-    got = run(tmp_path, *argv, adapter=adapter, environ=environ)
+    report = None if junit is None else Path(junit)
+    got = run(tmp_path, *argv, adapter=adapter, environ=environ, junit=report)
     assert (got.verdict, got.reason) == (NOT_PROVEN, NOT_RECOGNISED)
     # Mutation: none -- the detail is wording.
     assert got.detail == STRANDED.format(name="TYPED")

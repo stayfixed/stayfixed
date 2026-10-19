@@ -20,6 +20,10 @@ interrupt, in the order `stayfixed.processes` keeps — so nothing it left in th
 that group writes into the tree while a later gate runs or after the result is out. A
 descendant that leaves the command's process group (a new session, or a job-control shell's own
 group) is not reached, and nor is one stayfixed may not signal (a sudo or setuid descendant).
+On a timeout or an interrupt the group is sent SIGTERM, then SIGKILL once the command has exited
+or had its grace (`stayfixed.processes.end`); the grace watches the command alone, so behind a
+shell leader that dies on SIGTERM it is the leader's, and a runner `stayfixed prove` started that
+ignores SIGTERM outlives it, a limit of this bound.
 
 **Order.** The built-ins run first, in configured order: they execute nothing the repository
 wrote. Then the custom gates the caller names in `first`, then every other custom gate. A custom

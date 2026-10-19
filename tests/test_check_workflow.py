@@ -418,7 +418,8 @@ def _marker_gate(marker: Path) -> str:
 @needs_workflow
 def test_the_reusable_workflow_is_one_job() -> None:
     # Every case below is about `gates`, and a second job beside it would run with the caller's
-    # token and checkout under none of them. Mutation (declared): `check.yml` gains a job.
+    # token and checkout under none of them. Mutation: none -- the assertion is the whole list
+    # of jobs, held by equality, so there is no branch to mutate: any job added reddens it.
     jobs = _workflow()["jobs"]
     assert isinstance(jobs, dict) and list(jobs) == [GATES], jobs
 

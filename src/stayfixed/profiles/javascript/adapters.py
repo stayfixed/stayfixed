@@ -32,11 +32,12 @@ path to one, is the runner by its name, and runs whatever that file is.
 **The entry the receipt names** (`Plan.entry`), by its realpath, where it is not the program itself:
 the file `node` is handed; the file a path to the runner reaches, where that is the entry its
 package's `bin` names (npm's link; a shim is unnamed); and for `npx`, the
-`node_modules/.bin/<runner>` npx runs (`npx_bin`), the first there is in npm's local prefix and
-then in each directory above it, as npm walks: the directory the command runs in, or inside an npm
-workspace the workspace's root (`npm_prefix`). Where there is none, or the prefix cannot be told
-(a `workspaces` pattern this does not read), npx resolves the runner its own way, unnamed. Naming
-is the receipt's: no verdict reads it.
+`node_modules/.bin/<runner>` npx runs (`npx_bin`), the first there is in npm's local prefix (the
+nearest directory, from the one the command runs in upward, that holds a `package.json` or a
+`node_modules`: `npm_prefix`) and then in each directory above it, as npm walks. Inside an npm
+workspace, where a `package.json` above the prefix declares `workspaces`, nothing is named, since
+npm may run from the workspace's root instead; where there is no link, npx resolves the runner its
+own way, unnamed. Naming is the receipt's: no verdict reads it.
 
 **Node's options** are read with no table of node's (`_node_read`): a word starting with `-` is an
 option, and the word after one that gives itself no value with `=` may be that option's value. In
@@ -716,13 +717,6 @@ _VITEST = _Runner(
 _BIN_LINKS = ".bin"
 
 
-# What a workspace pattern of `package.json` may hold for `_covers` to read it: npm reads it as a
-# glob (`@npmcli/map-workspaces` 4.0.2, minimatch), and a negation, a brace, a class, an extended
-# glob (`+(…)`, `@(…)`) or an escape is read here as one that cannot be told.
-_UNREAD_GLOB = frozenset("!{}[]()\\")
-_ANY_DEPTH = "**"
-
-
 def _reaches(test: Callable[[Path], bool], path: Path) -> bool:
     """`test` (`fsops.is_file`, `fsops.is_dir`) of `path`, a path that cannot be asked about
     (`EACCES`) reaching nothing, as npm's own `stat` that fails reads it."""
@@ -732,73 +726,33 @@ def _reaches(test: Callable[[Path], bool], path: Path) -> bool:
         return False
 
 
-def _segment_matches(pattern: str, name: str) -> bool:
-    """Whether a pattern's segment, with `*` and `?` and nothing else special, matches `name` as
-    minimatch does by default: neither reaches past a `/`, and neither matches a leading `.`."""
-    if name.startswith(".") and not pattern.startswith("."):
+def _declares_workspaces(manifest: Path) -> bool:
+    """Whether the `package.json` at `manifest` declares `workspaces` truthy as JavaScript reads it
+    (anything but absent, `null`, `false`, `""` and `0`, an empty list among the truthy), or is
+    past `_MANIFEST_BYTES`, where that cannot be told; not where there is none or it does not read
+    as JSON, which npm skips too."""
+    if not _reaches(fsops.is_file, manifest):
         return False
-    return _wildcards_match(pattern, name)
-
-
-def _wildcards_match(pattern: str, name: str) -> bool:
-    """Whether `name` is `pattern`, each `*` in it any run of characters and each `?` one. Read
-    with two positions and no recursion: on a mismatch the reading goes back only to the last `*`,
-    which then takes one character more, so its time is bounded by the two lengths multiplied, at
-    worst. (`fnmatch` would do, but it brings in the import machinery a core module may not reach,
-    `tests/boundaries/test_delivery.py`.)"""
-    at = here = 0
-    star = taken = -1
-    while here < len(name):
-        if at < len(pattern) and pattern[at] in ("?", name[here]) and pattern[at] != "*":
-            at, here = at + 1, here + 1
-        elif at < len(pattern) and pattern[at] == "*":
-            star, taken, at = at, here, at + 1
-        elif star >= 0:
-            taken += 1
-            at, here = star + 1, taken
-        else:
-            return False
-    return all(rest == "*" for rest in pattern[at:])
-
-
-def _path_matches(pattern: Sequence[str], parts: Sequence[str]) -> bool:
-    """Whether the segments of a pattern match the segments of a path, `**` any number of them
-    that do not start with `.`."""
-    if not pattern:
-        return not parts
-    head, rest = pattern[0], pattern[1:]
-    if head == _ANY_DEPTH:
-        return _path_matches(rest, parts) or (
-            bool(parts) and not parts[0].startswith(".") and _path_matches(pattern, parts[1:])
-        )
-    return bool(parts) and _segment_matches(head, parts[0]) and _path_matches(rest, parts[1:])
-
-
-def _covers(declared: object, parts: tuple[str, ...]) -> bool | None:
-    """Whether the `workspaces` a `package.json` declares (a list of patterns, or a mapping whose
-    `packages` is one) lists the directory at `parts` below it, as npm maps them; `None` where
-    that cannot be told: a declaration npm itself refuses, a negated pattern, or a pattern past
-    the glob this reads (`_UNREAD_GLOB`). npm never lists a directory inside a `node_modules`."""
-    if isinstance(declared, dict) and isinstance(declared.get("packages"), list):
-        declared = declared["packages"]
-    if not isinstance(declared, list) or not all(isinstance(item, str) for item in declared):
-        return None
-    patterns = [
-        [part for part in re.sub(r"^\.?/+", "", pattern).split("/") if part] for pattern in declared
-    ]
-    if any(_UNREAD_GLOB & set(pattern) for pattern in declared) or any(
-        part in (".", "..") for segments in patterns for part in segments
-    ):
-        return None
-    return _MODULES not in parts and any(_path_matches(segments, parts) for segments in patterns)
+    try:
+        data, more = fsops.read_bounded(manifest, _MANIFEST_BYTES)
+    except OSError:
+        return False
+    if more:
+        return True
+    try:
+        parsed = json.loads(data)
+    except (ValueError, RecursionError):
+        return False
+    declared = parsed.get("workspaces") if isinstance(parsed, dict) else None
+    return declared not in (None, False, "", 0)
 
 
 def npm_prefix(cwd: Path) -> Path | None:
     """The directory npm (11.6.0) runs a command run in `cwd` from, its local prefix: the nearest
-    of `cwd` and the directories above it that holds a `package.json` or a `node_modules`, unless
-    a `package.json` above that one lists it among its `workspaces`, where it is the nearest such
-    workspace root (`@npmcli/config`'s `loadLocalPrefix`); `cwd` where none holds either. `None`
-    where that cannot be told (`_covers`), or a `package.json` above is past what this reads."""
+    of `cwd` and the directories above it that holds a `package.json` or a `node_modules`
+    (`@npmcli/config`'s `loadLocalPrefix`); `cwd` where none holds either. `None` inside an npm
+    workspace, where a `package.json` above the prefix declares `workspaces` (or is past what
+    this reads): npm may then run from that root, and which workspace it lists is not read."""
     here = Path(os.path.realpath(cwd))
     ancestors = (here, *here.parents)
     at = next(
@@ -812,40 +766,17 @@ def npm_prefix(cwd: Path) -> Path | None:
     )
     if at is None:
         return here
-    prefix = ancestors[at]
-    if not _reaches(fsops.is_file, prefix / _MANIFEST):
-        return prefix
-    for root in ancestors[at + 1 :]:
-        if not _reaches(fsops.is_file, root / _MANIFEST):
-            continue
-        try:
-            data, more = fsops.read_bounded(root / _MANIFEST, _MANIFEST_BYTES)
-        except OSError:
-            continue
-        if more:
-            return None
-        try:
-            manifest = json.loads(data)
-        except (ValueError, RecursionError):
-            continue
-        declared = manifest.get("workspaces") if isinstance(manifest, dict) else None
-        if declared is None or declared is False or declared in ("", 0):
-            continue
-        covered = _covers(declared, prefix.relative_to(root).parts)
-        if covered is None:
-            return None
-        if covered:
-            return root
-    return prefix
+    if any(_declares_workspaces(root / _MANIFEST) for root in ancestors[at + 1 :]):
+        return None
+    return ancestors[at]
 
 
 def npx_bin(name: str, cwd: Path) -> Path | None:
     """The realpath of the `node_modules/.bin/<name>` npx runs for a command run in `cwd`: the
     first that reaches a file, in npm's local prefix (`npm_prefix`) and then in each directory
     above it up to the file system's root (measured with npm 11.6.0: the nearest wins, the walk
-    goes on past a directory's own `package.json`, in a workspace it starts at the workspace's
-    root, and the file run is the link's target, or the file itself where it is no link); `None`
-    where there is none, or where the prefix cannot be told."""
+    goes on past a directory's own `package.json`, and the file run is the link's target, or the
+    file itself where it is no link); `None` where there is none, or inside a workspace."""
     prefix = npm_prefix(cwd)
     if prefix is None:
         return None

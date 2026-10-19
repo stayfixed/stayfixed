@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import json
 import os
-import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import replace
 from pathlib import Path
@@ -41,7 +40,6 @@ from stayfixed.profiles.javascript.adapters import (
     JestAdapter,
     NodeTestAdapter,
     VitestAdapter,
-    _segment_matches,
     node_options_words,
     npm_prefix,
     npx_bin,
@@ -405,8 +403,8 @@ def test_node_s_own_options_go_in_front_of_the_runner_s_entry(tmp_path: Path) ->
     # jest's documented ESM recipe passes `--experimental-vm-modules` to node, here or in
     # `NODE_OPTIONS`. The entry named must be the one its package's `bin` names; the run is the
     # words as typed, and the receipt names the entry by its realpath; node's preload of a file is
-    # named among the configuration files. Mutation (declared): the node shape not read -> no
-    # plan.
+    # named among the configuration files. Mutation: none here -- the node shape left unread is
+    # held at recognition, by "the jest and vitest adapters read no node in front of their entry".
     project = tmp_path / "project"
     jest_entry, _, node = installed(project)
     path = str(node.parent)
@@ -833,8 +831,7 @@ def test_npx_names_the_bin_link_it_runs_not_the_package_s_bin(tmp_path: Path) ->
 
 def test_npx_s_bin_is_found_from_where_the_command_runs_upward(tmp_path: Path) -> None:
     # A monorepo: the command runs in `packages/web`, and the runner is installed at the top-level.
-    # Mutation (declared): the search reads the directory the command runs in alone -> nothing is
-    # named.
+    # Mutation: none -- the entry is the receipt's naming, and no verdict reads it.
     root = tmp_path / "repo"
     web = root / "packages" / "web"
     web.mkdir(parents=True)
@@ -842,8 +839,7 @@ def test_npx_s_bin_is_found_from_where_the_command_runs_upward(tmp_path: Path) -
     entry, _, node = installed(root)
     link_bins(root)
     assert entry_of(["npx", "jest"], web, path=str(node.parent)) == entry
-    # The nearest wins. Mutation (declared): the directories searched from the root down -> the
-    # top-level's jest.
+    # The nearest wins.
     nearer = jest_package(web / "node_modules", "jest-cli")
     bin_link(web / "node_modules", "jest", "../jest-cli/bin/jest.js")
     assert entry_of(["npx", "jest"], web, path=str(node.parent)) == nearer
@@ -857,13 +853,12 @@ def test_npx_s_bin_is_found_from_where_the_command_runs_upward(tmp_path: Path) -
     assert entry_of(["npx", "jest"], inner, path=str(node.parent)) == above
 
 
-def workspace(root: Path, declared: object, package: str = "packages/a") -> Path:
-    """An npm workspace root at `root` declaring `declared` as its `workspaces`, with the package
-    at `package` below it, and a `node_modules/.bin/jest` in each: the package's directory."""
+def workspace(root: Path, manifest: str) -> Path:
+    """A directory at `root` whose `package.json` holds `manifest`, with a package at `packages/a`
+    below it, and a `node_modules/.bin/jest` in each: the package's directory."""
     root.mkdir(parents=True)
-    manifest = {"name": "root", "private": True, "workspaces": declared}
-    (root / "package.json").write_text(json.dumps(manifest), encoding="utf-8")
-    member = root / package
+    (root / "package.json").write_text(manifest, encoding="utf-8")
+    member = root / "packages" / "a"
     member.mkdir(parents=True)
     (member / "package.json").write_text('{"name": "a"}', encoding="utf-8")
     for where in (root, member):
@@ -872,98 +867,51 @@ def workspace(root: Path, declared: object, package: str = "packages/a") -> Path
 
 
 @pytest.mark.parametrize(
-    ("declared", "package"),
-    [
-        (["packages/*"], "packages/a"),
-        (["./packages/*/"], "packages/a"),
-        ({"packages": ["packages/*"]}, "packages/a"),
-        (["libs/**"], "libs/x/y"),
-        (["packages/a"], "packages/a"),
-    ],
-    ids=["glob", "dotted", "object-form", "any-depth", "literal"],
+    "declared",
+    [["packages/*"], {"packages": ["packages/*"]}, ["apps/*"], []],
+    ids=["listed", "object-form", "unlisted", "empty-list"],
 )
-def test_inside_a_workspace_npx_s_bin_is_found_from_the_workspace_root(
-    tmp_path: Path, declared: object, package: str
-) -> None:
-    # npm runs a command in a workspace from the workspace's root, its local prefix, so a jest
-    # the package holds of its own is not the one npx runs (measured with npm 11.6.0: `npx
-    # --no-install jest` in `packages/a` and in `packages/a/src` runs the root's). Mutation:
-    # none -- the entry is the receipt's naming, and no verdict reads it.
-    root = tmp_path / "ws"
-    member = workspace(root, declared, package)
+def test_inside_a_workspace_npx_names_nothing(tmp_path: Path, declared: object) -> None:
+    # npm runs a command in a workspace from the workspace's root where the root lists the
+    # package (measured with npm 11.6.0), and which packages it lists is not read here: below a
+    # `package.json` that declares `workspaces` truthy as JavaScript reads it, an empty list among
+    # them, nothing is named. Mutation: none -- the entry is the receipt's naming, and no verdict
+    # reads it.
+    manifest = json.dumps({"name": "root", "private": True, "workspaces": declared})
+    member = workspace(tmp_path / "ws", manifest)
     (member / "src").mkdir()
-    expected = Path(os.path.realpath(root / "node_modules" / ".bin" / "jest"))
-    assert npm_prefix(member) == Path(os.path.realpath(root))
-    assert npx_bin("jest", member) == npx_bin("jest", member / "src") == expected
+    assert npm_prefix(member) is None
+    assert npx_bin("jest", member) is None
+    assert npx_bin("jest", member / "src") is None
 
 
 @pytest.mark.parametrize(
-    ("pattern", "name", "matched"),
+    "manifest",
     [
-        ("*", "a", True),
-        ("a*", "a", True),
-        ("*b", "ab", True),
-        ("a?c", "abc", True),
-        ("a*b*c", "axxbyyc", True),
-        ("a*b*c", "axxbyy", False),
-        ("?", "", False),
-        ("", "", True),
-        ("*.test", "x.test.js", False),
-        ("*" * 40 + "b", "a" * 5000, False),
+        '{"name": "root"}',
+        '{"workspaces": null}',
+        '{"workspaces": false}',
+        '{"workspaces": ""}',
+        '{"workspaces": 0}',
+        "not json",
     ],
+    ids=["absent", "null", "false", "empty-string", "zero", "unreadable"],
 )
-def test_a_workspace_pattern_segment_is_read_with_star_and_question_mark(
-    pattern: str, name: str, matched: bool
-) -> None:
-    # The last case is many stars against a long name that does not match: read with two
-    # positions and no recursion, it answers at once, where a reading that tried every split
-    # would never end, and one that recursed per character would raise `RecursionError`.
-    # Mutation: none -- naming only, as above.
-    started = time.monotonic()
-    assert _segment_matches(pattern, name) is matched
-    assert time.monotonic() - started < 2
-
-
-@pytest.mark.parametrize(
-    ("declared", "named"),
-    [
-        (["apps/*"], "own"),
-        (["packages/.*"], "own"),
-        ([], "own"),
-        (["packages/*", "!packages/a"], None),
-        (["packages/{a,b}"], None),
-        (["packages/[ab]"], None),
-        (["../elsewhere/*"], None),
-        ("packages/*", None),
-        ([1], None),
-    ],
-    ids=[
-        "unlisted",
-        "dot-only",
-        "empty",
-        "negated",
-        "brace",
-        "class",
-        "parent",
-        "a-string",
-        "a-number",
-    ],
-)
-def test_a_workspace_root_that_does_not_list_the_package_or_cannot_be_read(
-    tmp_path: Path, declared: object, named: str | None
-) -> None:
-    # Unlisted, the package is its own prefix (measured: `apps/*` leaves npx running the
-    # package's jest); where the listing cannot be told here, nothing is named. Mutation: none --
-    # naming only.
-    member = workspace(tmp_path / "ws", declared)
+def test_outside_a_workspace_npx_s_bin_is_the_prefix_s_walk(tmp_path: Path, manifest: str) -> None:
+    # A `package.json` above that declares no `workspaces`, or none npm reads (a manifest that is
+    # no JSON is skipped, as npm skips it): the prefix is the package's own directory, and its
+    # `.bin/jest` is the one npx runs. Mutation: none -- naming only.
+    member = workspace(tmp_path / "ws", manifest)
+    (member / "src").mkdir()
     own = Path(os.path.realpath(member / "node_modules" / ".bin" / "jest"))
-    assert npx_bin("jest", member) == (own if named == "own" else None)
+    assert npm_prefix(member) == npm_prefix(member / "src") == Path(os.path.realpath(member))
+    assert npx_bin("jest", member) == npx_bin("jest", member / "src") == own
 
 
 def test_npx_names_nothing_where_no_bin_link_is(tmp_path: Path) -> None:
     # A package with no `.bin` link, or a runner on `PATH` alone (a global install, which npm finds
     # under its own prefix, never on `PATH`): npx resolves it its own way, and nothing is named.
-    # Mutation (declared): a `.bin` entry that reaches no file named -> a dangling link is.
+    # Mutation: none -- naming only.
     project = tmp_path / "project"
     entry = jest_package(project / "node_modules")
     bin_ = tmp_path / "global" / "bin"
@@ -989,8 +937,7 @@ def test_npx_s_bin_is_named_behind_a_launcher(tmp_path: Path) -> None:
 def test_a_runner_on_path_that_is_no_link_runs_unnamed(tmp_path: Path) -> None:
     # A `jest` on `PATH` that is a file of its own (pnpm's `sh` shim, or the package's own `bin`
     # directory put on `PATH`) is never read: typed bare, it runs as typed, as a shell runs it.
-    # Mutation (declared): a file that is not a link followed as one -> the package's own `bin`
-    # file is named.
+    # Mutation: none -- naming only.
     home = tmp_path / "global" / "lib" / "node_modules" / "jest"
     package(home, "jest", "./bin/jest", "bin/jest")
     executable(tmp_path / "shims" / "jest", "#!/bin/sh\nexec node /x\n")

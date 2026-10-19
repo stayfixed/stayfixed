@@ -258,8 +258,8 @@ OVERRIDES: dict[tuple[str, str, str], str] = {
         "variable, plus the plugin root and project directory the wrapper needs"
     ),
     ("src/stayfixed/prove/run.py", "_launch", "env=dict(env)"): (
-        "the caller's own environment, less what the runner adapter scrubs, plus the "
-        "assignments the command itself typed and the adapter's own settings for its report: "
-        "the test command is the caller's, and reaches what it reaches"
+        "the caller's own environment, less each variable whose value the runner adapter names "
+        "as forging, then the assignments the command itself typed: the test command is the "
+        "caller's, and reaches what it reaches"
     ),
 }

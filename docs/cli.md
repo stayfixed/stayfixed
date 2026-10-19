@@ -889,9 +889,10 @@ Notes by runner, each what the command does outside `prove` too:
   its standard input and quits, the failure kept in the report.
 - **jest, vitest.** `npx` reads `.npmrc` and puts every `node_modules/.bin` above npm's local
   prefix on `PATH`: the directory, or inside an npm workspace the workspace's root, whose jest
-  runs before a package's own. Given a runner no `node_modules` holds, it installs one **without
-  asking**: the run's standard input is `/dev/null`, and npm asks only at a terminal, and
-  otherwise warns and installs. Node's options before an entry are any (`node
+  runs before a package's own. Inside a workspace (a `package.json` above the package declares
+  `workspaces`) the receipt names no entry beside `npx`. Given a runner no `node_modules` holds,
+  it installs one **without asking**: the run's standard input is `/dev/null`, and npm asks only
+  at a terminal, and otherwise warns and installs. Node's options before an entry are any (`node
   --max-old-space-size=4096 node_modules/jest/bin/jest.js`), and
   `NODE_OPTIONS=--experimental-vm-modules npx jest`, jest's recipe for ES modules, runs as typed.
   A run of no test with jest's standard error a pipe, as in most CI jobs, writes no report, so it
@@ -978,16 +979,15 @@ not (outside a repository too, where git names nothing else), and the untracked 
 discovery set, those git does not ignore first and then the ignored ones; twenty of each and a
 count of the rest. The tree's state is taken before the run and after it, and is information for
 you, never an input to the verdict. `--json` carries `verdict`, `reason`, `detail` (the variable a
-refused assignment named, or one after a launcher with no `env`; the option or word the runner's
-adapter refused; what was looked for on `entry-not-found`; the option or subcommand on
-`never-ends` and `no-test-run`; the file on `junit-unchanged`; or where a report stopped
-reading), `argv` (the command, the value of every `NAME=value` and `--option=value` word
-replaced by `…`; a single-dash `-name=value`, Go's spelling, and a value passed as the word after
-its option are kept as typed), `directory` (where the command was judged), `runner`, `program`,
-`entry`, `verified` (false on a `--junit` run, and only there), `scrubbed` (those variables'
-names, sorted),
-`counts`, `exit_code`, `report_digest` (the SHA-256 of the report counted: of a test event stream,
-the lines kept, never the output printed), `commit`, `dirty_before`, `dirty_after`, `untracked`,
+refused assignment named, or a sentence naming the variable after a launcher; the option or word the
+runner's adapter refused; what was looked for on `entry-not-found`; the option or subcommand on
+`never-ends` and `no-test-run`; the file on `junit-unchanged`; or where a report stopped reading),
+`argv` (the command, the value of every `NAME=value` and `--option=value` word replaced by `…`; a
+single-dash `-name=value`, Go's spelling, and a value passed as the word after its option are kept
+as typed), `directory` (where the command was judged), `runner`, `program`, `entry`, `verified`
+(false on a `--junit` run, and only there), `scrubbed` (those variables' names, sorted), `counts`,
+`exit_code`, `report_digest` (the SHA-256 of the report counted: of a test event stream, the lines
+kept, never the output printed), `commit`, `dirty_before`, `dirty_after`, `untracked`,
 `untracked_more`, `configs`, `configs_more` and `ignored_configs`.
 
 **The network.** `prove` itself reaches none; what runs may. `uv run` may sync the project's
@@ -996,11 +996,10 @@ environment from its index first, as it does outside `prove`; `go test` may down
 `npx` installs a runner no `node_modules` holds, from the registry your `.npmrc` names, without
 asking, since its standard input is no terminal.
 
-**Reads** the command's report and git's answers about the tree. **Writes** nothing in the
-project: the scratch directory is under the system's temporary directory, is readable by you
-alone, and is removed on every path. What the command itself writes, it writes. **Runs** the command, as the
-[What stayfixed sends where](https://github.com/stayfixed/stayfixed/blob/main/README.md#what-stayfixed-sends-where)
-row says.
+**Reads** the command's report and git's answers about the tree. **Writes** nothing in the project:
+the scratch directory is under the system's temporary directory, is readable by you alone, and is
+removed on every path. What the command itself writes, it writes. **Runs** the command, as the
+README's [What stayfixed sends where](../README.md#what-stayfixed-sends-where) row says.
 
 ## `stayfixed bugs new TITLE --severity S --area A [--source S] [--related ID …] [--no-fetch]`
 

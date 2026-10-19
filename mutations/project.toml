@@ -2711,24 +2711,6 @@ reddens = [
 ]
 
 [[mutation]]
-name = "the entry-point search reads the directory the command runs in alone"
-file = "src/stayfixed/profiles/javascript/adapters.py"
-before = "    for directory in (prefix, *prefix.parents):"
-after = "    for directory in (prefix,):"
-reddens = [
-  "tests/prove/test_javascript.py::test_npx_s_bin_is_found_from_where_the_command_runs_upward",
-]
-
-[[mutation]]
-name = "the entry-point search reads from the top-level down"
-file = "src/stayfixed/profiles/javascript/adapters.py"
-before = "    for directory in (prefix, *prefix.parents):"
-after = "    for directory in (*reversed(prefix.parents), prefix):"
-reddens = [
-  "tests/prove/test_javascript.py::test_npx_s_bin_is_found_from_where_the_command_runs_upward",
-]
-
-[[mutation]]
 name = "a bare runner on no PATH entry names no way on"
 file = "src/stayfixed/profiles/javascript/adapters.py"
 before = "        missing = UNRESOLVED.format(bin=runner.name) if bare else None"
@@ -3562,13 +3544,6 @@ after = "            return package_entry(Path(os.path.realpath(candidate)), nam
 reddens = [
   "tests/prove/test_javascript.py::test_npx_names_the_bin_link_it_runs_not_the_package_s_bin",
 ]
-
-[[mutation]]
-name = "a `.bin` entry that reaches no file is named"
-file = "src/stayfixed/profiles/javascript/adapters.py"
-before = "        if _reaches(fsops.is_file, candidate):"
-after = "        if fsops.is_symlink(candidate) or _reaches(fsops.is_file, candidate):"
-reddens = ["tests/prove/test_javascript.py::test_npx_names_nothing_where_no_bin_link_is"]
 
 # Behind a launcher what is missing is the launcher: its name, never the bare runner's detail.
 [[mutation]]
