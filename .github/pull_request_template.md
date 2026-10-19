@@ -27,8 +27,8 @@ uv run python scripts/release.py check
 ## The mutation
 
 <!--
-Every new assertion ships with the mutation that reddens it, or a sentence saying why none
-exists. Say which line of source you broke and which test went red. See CONTRIBUTING.md.
+A branch that decides a verdict, a containment or a data-loss path ships with a declared
+mutation in `mutations/`; other assertions need none. See CONTRIBUTING.md.
 -->
 
 ## Checklist
