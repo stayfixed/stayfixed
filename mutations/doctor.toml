@@ -3012,3 +3012,24 @@ after = "    except OSError:"
 reddens = [
   "tests/doctor/test_checks.py::test_user_settings_that_do_not_parse_are_a_warning_and_not_a_crash",
 ]
+
+# home-manager exports `XDG_CONFIG_HOME=$HOME/.config`, the very directory the machine file is read
+# under: ignoring it loses nothing, and a warning about it could never be cleared.
+[[mutation]]
+name = "an XDG_CONFIG_HOME naming HOME's own .config is warned about as ignored"
+file = "src/stayfixed/doctor/checks.py"
+before = '        and not (name == "XDG_CONFIG_HOME" and _names_home_config(context.env[name], chosen))'
+after = '        and not (name == "XDG_CONFIG_HOME" and False)'
+reddens = [
+  "tests/doctor/test_checks.py::test_an_xdg_config_home_naming_homes_own_config_is_not_ignored[as-is]",
+]
+
+# Compared resolved, as the homes are, so a link to `$HOME/.config` names it too.
+[[mutation]]
+name = "an XDG_CONFIG_HOME is compared with HOME's .config unresolved"
+file = "src/stayfixed/doctor/checks.py"
+before = "        return fsops.resolved(Path(value)) == fsops.resolved(Path(home) / DEFAULT_CONFIG_DIR)"
+after = "        return Path(value) == Path(home) / DEFAULT_CONFIG_DIR"
+reddens = [
+  "tests/doctor/test_checks.py::test_an_xdg_config_home_naming_homes_own_config_is_not_ignored[through-a-link]",
+]
