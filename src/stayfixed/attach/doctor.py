@@ -410,10 +410,10 @@ def _settings_fallback(root: Path) -> _Fallback:
     effect over the shared one's, as the harness takes them.
 
     **A whitelist, and not a model of the harness's reader.** Every file the harness may read the
-    key from is answered as one of: no file, or a JSON object, read strictly, with no such key;
-    a key, of any value; or a file that cannot be read as settings — unreadable, not a regular
-    file, not UTF-8, a byte-order mark, a comment, a trailing comma, a constant JSON does not
-    have, a key given twice, or anything but one object. The verdict then admits one value, the
+    key from is answered as one of: no file, or a JSON object (`jsonobject.json_object`) with no
+    such key; a key, of any value; or a file that cannot be read as settings — unreadable, not a
+    regular file, not UTF-8, a byte-order mark, a comment, a trailing comma, or anything but one
+    object. The verdict then admits one value, the
     one `attach` writes (`_written_fallback`), and nothing else: a `~/…` value, a relative one,
     an empty one, another spelling of the store, a number. The harness reads more than strict
     JSON and expands more than absolute paths, so modelling it one spelling at a time read each
@@ -442,10 +442,9 @@ def _settings_fallback(root: Path) -> _Fallback:
 
 def _settings_key(path: Path) -> object:
     """`autoMemoryDirectory`'s value in one settings file, `_NO_KEY`, or `_CANNOT_TELL`."""
-    import json
-
     from stayfixed import fsops
     from stayfixed.attach.write import FALLBACK_KEY
+    from stayfixed.jsonobject import json_object
 
     try:
         text = fsops.read_regular_text(path, newline="")
@@ -456,26 +455,10 @@ def _settings_key(path: Path) -> object:
     if not text.strip():
         return _NO_KEY
     try:
-        document = json.loads(text, object_pairs_hook=_once_each, parse_constant=_no_constant)
-    except (ValueError, RecursionError):
-        return _CANNOT_TELL
-    if not isinstance(document, dict):
+        document = json_object(text, str(path), error=ValueError)
+    except ValueError:
         return _CANNOT_TELL
     return document.get(FALLBACK_KEY, _NO_KEY)
-
-
-def _once_each(pairs: list[tuple[str, object]]) -> dict[str, object]:
-    """A JSON object whose keys are each given once: one given twice is a file two readers can
-    take two ways."""
-    document = dict(pairs)
-    if len(document) != len(pairs):
-        raise ValueError("a key is given twice")
-    return document
-
-
-def _no_constant(name: str) -> object:
-    """`NaN` and `Infinity`, which Python's `json` reads and JSON does not have."""
-    raise ValueError(f"{name} is not JSON")
 
 
 def _owner(context: Context) -> Path:

@@ -8,14 +8,13 @@ the report states: a total is the runner's claim about its tests, and the tests 
 `within_cap` is the one size check. Each reader calls it before it reads a byte, so a report past
 `MAX_REPORT_BYTES` is refused the same way whichever reader is asked, and
 `stayfixed.prove.reports.read_report`, which picks the reader by the report's kind, checks nothing
-itself. `utf8` and `strict_json` are the two JSON readers' shared first steps.
+itself. `utf8` is the two JSON readers' shared first step, and `malformed` builds their refusal
+for `jsonobject.json_object`.
 """
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
-from typing import Any
 
 # The report is larger than `MAX_REPORT_BYTES`.
 REPORT_TOO_LARGE = "report-too-large"
@@ -78,14 +77,6 @@ def utf8(data: bytes) -> str:
         raise ReportError(REPORT_NOT_UTF8, f"byte {exc.start}") from None
 
 
-def strict_json(text: str) -> Any:
-    """`text` parsed as JSON, or `REPORT_MALFORMED` when it does not parse or is past what the
-    parser follows."""
-    try:
-        return json.loads(text)
-    except RecursionError:
-        raise ReportError(REPORT_MALFORMED, "nested deeper than this reader follows") from None
-    except ValueError as exc:
-        # `JSONDecodeError` is a `ValueError`, and so is an integer literal longer than the
-        # interpreter converts.
-        raise ReportError(REPORT_MALFORMED, type(exc).__name__) from None
+def malformed(reason: str) -> ReportError:
+    """`REPORT_MALFORMED` with `reason`, `jsonobject.json_object`'s sentence, as its detail."""
+    return ReportError(REPORT_MALFORMED, reason)
