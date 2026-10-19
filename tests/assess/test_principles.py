@@ -32,5 +32,4 @@ def test_each_probe_cites_the_principle_it_means() -> None:
         "memory-history": "A personal overlay is a versioned plugin, not a dotfiles sync",
         "foreign-hooks": "A repository is untrusted input",
         "codeowners": "Enforcement is earned, not declared",
-        "codeowners-scope": "Enforcement is earned, not declared",
     }

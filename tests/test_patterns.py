@@ -512,9 +512,8 @@ def test_no_pattern_repeats_a_group_in_a_shape_python_3_11_4_misreads() -> None:
     # Mutations (oracle):
     # `mutations/`'s "the path grammar repeats its segments possessively", "a symbol path's parts
     # are a possessive repeat", "a flow mapping's plain scalar is a possessive repeat", "a footer's
-    # words are a possessive repeat", "an owner's labels open on their possessive run", "a model's
-    # words open on their possessive run", "the blanks after a frontmatter property may fail" ->
-    # each reddens this.
+    # words are a possessive repeat", "a model's words open on their possessive run", "the blanks
+    # after a frontmatter property may fail" -> each reddens this.
     patterns = _held()
     assert len(patterns) > 50  # a walk-based assertion states its walk is non-empty
     spelled, unspelled = _built_by_package()
