@@ -33,8 +33,8 @@ skills in the format every harness reads [S4] [S14].
 
 ## 2. An assertion nobody has watched fail advertises coverage it may not have
 
-**Statement.** A new or preserved assertion ships with the mutation that reddens it, or with
-a sentence saying why no mutation exists. A test that cannot fail is not a test; a test that
+**Statement.** A branch that decides a verdict, a containment or a data-loss path ships with
+the mutation that reddens its test. A test that cannot fail is not a test; a test that
 fails for a reason other than the one it names proves nothing about that reason.
 
 **What stayfixed does.** `mutations/` declares, for each load-bearing guard, the one line

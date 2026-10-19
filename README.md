@@ -67,9 +67,9 @@ adds:
   this project keeps its notes in that overlay, a warning when it does not — and a session in a
   bound repository says so once at its start.
 
-Two more practices ride along and are named as such: every assertion ships with the
-mutation that reddens it, and working memory is a routing table of hand-written lines, not
-a summary. The principles behind all of it, with dated sources and an honest note where the
+Two more practices ride along and are named as such: every branch that decides a verdict, a
+containment or a data-loss path ships with the mutation that reddens its test, and working memory
+is a routing table of hand-written lines, not a summary. The principles behind all of it, with dated sources and an honest note where the
 backing is thin, are in [docs/methodology/README.md](https://github.com/stayfixed/stayfixed/blob/main/docs/methodology/README.md).
 
 **This is not a replacement for superpowers.** `stayfixed setup --preset recommended` installs
