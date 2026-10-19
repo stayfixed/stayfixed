@@ -1210,8 +1210,7 @@ on the installed release:
 | each reader's genuine passing run is `proved`, exit 0, counts equal a literal | `test_each_genuine_passing_run_is_proved_with_exit_0` |
 | a stdout-forged run is `not proven` | `test_a_stdout_forged_run_is_not_proven_with_exit_1` |
 | an empty and an all-skipped run are `failed` (`go test -run NoSuchTest` included) | `test_each_empty_and_all_skipped_run_fails_with_exit_1` |
-| a stand-in runner and each refused forging route are `refused`, exit 2 | `test_each_refused_route_exits_2` |
-| the same variable merely inherited is scrubbed and the run still counted | `test_each_inherited_variable_is_scrubbed_and_counted` |
+| each honest-mistake refusal (snapshot update or rerun of failures, `--setup-plan`/`--setup-only`, an optimised interpreter) is `refused`, exit 2 | `test_each_refused_route_exits_2` |
 
 ---
 
