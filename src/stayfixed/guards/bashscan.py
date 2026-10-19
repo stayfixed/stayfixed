@@ -195,10 +195,8 @@ _WORD_BOUNDARY = frozenset({";", "&", "|", "(", ")", "<", ">"})
 _ASSIGNMENT = re.compile(r"\A[A-Za-z_][A-Za-z0-9_]*=")
 # `env pytest`: a bare wrapper token, not the command. Deliberately not a general argv
 # resolver: `env` and `uv run` (`guards/uvrun.py`) are the only launchers read through, and
-# `poetry run`, `npx`, `sudo` and `time` are not. Under-reporting stays the safe direction for
-# the warn-only callers this exists for -- an unrecognised launcher just leaves a note
-# undelivered, never wrongly delivered -- so a launcher is added only when a real shape has been
-# reproduced, not speculatively.
+# `poetry run`, `npx`, `sudo` and `time` are not, unless they stand behind `uv run`, where every
+# word before the first a runner adapter recognises is the launcher's.
 _SINGLE_WRAPPERS = frozenset({"env"})
 
 
@@ -759,13 +757,12 @@ def _launched(
     segment: Sequence[str], index: int, recognises: Callable[[Sequence[str]], bool]
 ) -> int | None:
     """Where the command that the `uv` at `index` launches starts: the first word after `run`
-    that `recognises` reads a command from, or an `env`, whose assignments the walk reads on;
-    `None` where no `run` follows or no such word does."""
+    that `recognises` reads a command from; `None` where no `run` follows or no such word does."""
     start = uvrun.past_run(segment, index + 1)
     if start is None:
         return None
     for at in range(start, len(segment)):
-        if Path(segment[at]).name in _SINGLE_WRAPPERS or recognises(segment[at:]):
+        if recognises(segment[at:]):
             return at
     return None
 
@@ -783,11 +780,12 @@ def command_words(
     entirely, and neither is contrived: an assignment prefix is the ordinary way to run a
     suite against a checkout that has no venv of its own.
 
-    THE UNDER-REPORT IS DOCUMENTED, not accidental: a `uv` command in which `recognises` reads
-    no command, or one that is not `uv run`, is left whole and its program is `uv`, and no other
-    launcher is recognised at all. Under-reporting is the safe direction for the warn-only
-    callers this serves -- an unrecognised launcher leaves a note undelivered rather than
-    wrongly delivered -- so a launcher is added only when a real shape has been reproduced.
+    THE BOUND IS DOCUMENTED, not accidental: a `uv` command in which `recognises` reads no
+    command, or one with no `run`, is left whole and its program is `uv`, and no other launcher
+    is read through. Behind `uv run` every word before the first that `recognises` reads a
+    command from is the launcher's, so a runner named as a uv option's value or as another
+    program's argument (`uv run --with pytest echo`, `uv run grep -m pytest x`) is read as the
+    command, and a warn-only caller delivers its note to a run of no test.
     """
 
     return list(read_launch(segment, recognises).command)

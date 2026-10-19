@@ -5620,7 +5620,7 @@ before = "        assigned[name] = value"
 after = "        assigned.setdefault(name, value)"
 reddens = [
   "tests/prove/test_run.py::test_the_assignments_are_every_one_the_launch_makes_the_last_winning",
-  "tests/prove/test_run.py::test_an_assigned_variable_outside_the_forging_set_reaches_the_runner[argv3]",
+  "tests/prove/test_run.py::test_an_assigned_variable_outside_the_forging_set_reaches_the_runner[argv2]",
 ]
 
 [[mutation]]
@@ -6211,6 +6211,18 @@ file = "src/stayfixed/fsops.py"
 before = "    | getattr(os, \"O_NOFOLLOW\", 0)\n"
 after = ""
 reddens = ["tests/test_fsops.py::test_an_append_never_writes_through_a_link"]
+
+# `prove` reads `uv run` through with its adapters: read with none, `uv run -m pytest` is a
+# command no adapter recognises.
+[[mutation]]
+name = "prove reads no command past `uv run`"
+file = "src/stayfixed/prove/run.py"
+before = "    launch = read_launch(given, lambda words: any(each.recognises(words) for each in known))"
+after = "    launch = read_launch(given)"
+reddens = [
+  "tests/prove/test_pytest.py::test_uv_run_m_pytest_runs_as_typed",
+  "tests/prove/test_run.py::test_the_command_is_judged_where_its_launcher_runs_it[spaced]",
+]
 
 # The receipt names the realpath of what ran: a virtual environment's `python` is a link, and the
 # receipt names the file it reaches.

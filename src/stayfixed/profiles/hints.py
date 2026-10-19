@@ -57,10 +57,11 @@ class RedRunHint(Protocol):
         recurs: a shell assignment (`FOO=1`), `env`, and `uv … run` with every word up to the
         first a runner adapter recognises (`uv run --locked pytest` and `uv run -m pytest`
         arrive as `pytest`), the program named by its path or its bare name (`/usr/bin/env`
-        too). Everything else arrives as written: any other launcher (`poetry run`, `npx`,
-        `sudo`, `time`), a `uv` command in which no adapter recognises a word (it arrives whole,
-        as `uv …`), and the `(` that opens a subshell or the `{` that opens a group, which stays
-        the first word.
+        too); behind `uv run`, an `env`, another launcher or a uv option's value before that word
+        goes with it. Everything else arrives as written: any other launcher (`poetry run`,
+        `npx`, `sudo`, `time`), a `uv` command in which no adapter recognises a word (it arrives
+        whole, as `uv …`), and the `(` that opens a subshell or the `{` that opens a group, which
+        stays the first word.
         """
         ...
 

@@ -45,23 +45,38 @@ reddens = [
 [[mutation]]
 name = "the command `uv run` launches starts at its first word that is no option"
 file = "src/stayfixed/guards/bashscan.py"
-before = "        if Path(segment[at]).name in _SINGLE_WRAPPERS or recognises(segment[at:]):"
-after = '        if Path(segment[at]).name in _SINGLE_WRAPPERS or not segment[at].startswith("-"):'
+before = "        if recognises(segment[at:]):"
+after = '        if not segment[at].startswith("-"):'
 reddens = [
   "tests/guards/test_bashscan.py::test_the_command_uv_runs_starts_at_the_first_word_a_runner_adapter_recognises[with]",
   "tests/guards/test_bashscan.py::test_the_command_uv_runs_starts_at_the_first_word_a_runner_adapter_recognises[directory]",
 ]
 
-# `uv run env PYTHONOPTIMIZE=1 pytest`: read past the `env` as the launcher's words, the
-# assignment is never checked for forging.
+# A `uv run` in which no adapter recognises a word is read whole: read as all launcher, it is a
+# launch of nothing, and `prove --junit` would refuse a command it runs as typed.
 [[mutation]]
-name = "`uv run` reads no `env` after it"
+name = "a `uv run` no adapter recognises is read as all launcher"
 file = "src/stayfixed/guards/bashscan.py"
-before = "        if Path(segment[at]).name in _SINGLE_WRAPPERS or recognises(segment[at:]):"
-after = "        if recognises(segment[at:]):"
+before = """            return at
+    return None"""
+after = """            return at
+    return len(segment)"""
 reddens = [
-  "tests/guards/test_bashscan.py::test_read_launch_names_each_word_of_the_launch_by_its_part[uv-env-assignment]",
-  "tests/prove/test_run.py::test_an_assigned_forging_variable_is_refused[argv2]",
+  "tests/guards/test_bashscan.py::test_a_uv_command_in_which_no_runner_is_recognised_is_left_whole[no-runner]",
+  "tests/prove/test_junit_flag.py::test_a_launcher_runs_as_typed_under_junit",
+]
+
+# A uv command with no `run` launches nothing: read from its first word, `uv pip install
+# pytest` would be a pytest run.
+[[mutation]]
+name = "a uv command with no `run` is read as launching its words"
+file = "src/stayfixed/guards/uvrun.py"
+before = """    if _UV_RUN not in segment[index:]:
+        return None"""
+after = """    if _UV_RUN not in segment[index:]:
+        return index"""
+reddens = [
+  "tests/guards/test_bashscan.py::test_a_uv_command_in_which_no_runner_is_recognised_is_left_whole[no-run]",
 ]
 
 # The other two branches `command_words` implements, one entry each: a single mutation cannot pin
@@ -88,22 +103,8 @@ reddens = [
   "tests/guards/test_bashscan.py::test_command_words_strips_a_leading_assignment_and_wrapper",
 ]
 
-# `read_launch` names every part of the launch: the assignments wherever they stand, which a
-# caller that runs the command hands its environment and checks for forging, and the launcher's
-# words apart from them. Stopping the assignments at the launcher is what let `uv run env
-# FORGE=x` through `prove`.
-[[mutation]]
-name = "the launch keeps no assignment past the launcher"
-file = "src/stayfixed/guards/bashscan.py"
-before = "            assigned.append(token)"
-after = "            assigned.extend([] if launcher else [token])"
-reddens = [
-  "tests/guards/test_bashscan.py::test_read_launch_names_each_word_of_the_launch_by_its_part[uv-env-assignment]",
-  "tests/prove/test_run.py::test_an_assigned_forging_variable_is_refused[argv2]",
-  "tests/prove/test_run.py::test_an_assigned_forging_variable_is_refused[argv3]",
-  "tests/prove/test_run.py::test_an_assigned_variable_outside_the_forging_set_reaches_the_runner[argv2]",
-]
-
+# `read_launch` names the launcher's words apart from the assignments, which a caller that runs
+# the command hands its environment and checks for forging.
 [[mutation]]
 name = "the launch keeps no launcher's words"
 file = "src/stayfixed/guards/bashscan.py"

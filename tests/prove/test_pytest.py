@@ -456,7 +456,6 @@ def test_a_refused_option_is_named_on_the_receipt(tmp_path: Path) -> None:
     "argv",
     [
         ["PYTHONOPTIMIZE=1", "pytest"],
-        ["uv", "run", "env", "PYTHONOPTIMIZE=2", "python", "-m", "pytest"],
         ["env", "PYTHONOPTIMIZE=1", "uv", "run", "-m", "pytest"],
     ],
 )

@@ -429,11 +429,10 @@ def test_a_uv_command_in_which_no_runner_is_recognised_is_left_whole(
     ("command", "assignments", "launcher", "program"),
     [
         ("A=1 env B=2 pytest -q", ["A=1", "B=2"], [], ["pytest", "-q"]),
-        # An assignment after the launcher is the command's all the same, after `env`.
-        ("uv run env FORGE=x pytest", ["FORGE=x"], ["uv", "run"], ["pytest"]),
-        ("env A=1 uv run env B=2 pytest", ["A=1", "B=2"], ["uv", "run"], ["pytest"]),
-        # Every word before the command is the launcher's, an assignment-shaped one too, which
-        # a shell hands to uv as a word and uv runs as its program.
+        # Every word before the command is the launcher's, an `env` and its assignments or an
+        # assignment-shaped word too, which a shell hands to uv as a word.
+        ("uv run env FORGE=x pytest", [], ["uv", "run", "env", "FORGE=x"], ["pytest"]),
+        ("env A=1 uv run env B=2 pytest", ["A=1"], ["uv", "run", "env", "B=2"], ["pytest"]),
         (
             "uv --config-file c.toml run --env-file=.env --with x==1 pytest",
             [],
@@ -462,8 +461,7 @@ def test_read_launch_names_each_word_of_the_launch_by_its_part(
     """A caller that runs the command needs more than the program: every assignment the shell or
     `env` would make, wherever it stands, and the launcher's own words apart from them.
     `command_words` is the same walk's last part. Oracle: `mutations/`'s "the launch keeps no
-    assignment past the launcher", "the launch keeps no launcher's words", "`uv run` reads no
-    `env` after it"."""
+    launcher's words"."""
     words = command.split()
     expected = program.split() if isinstance(program, str) else program
     launch = bashscan.read_launch(words, a_runner)

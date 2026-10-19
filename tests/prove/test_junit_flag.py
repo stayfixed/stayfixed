@@ -37,7 +37,7 @@ from stayfixed.prove.run import (
 from tests.gitfixture import git
 from tests.prove.stand_in import JUNIT, NAME, PROGRAM, StandIn
 from tests.prove.test_command import prove_cli
-from tests.prove.test_run import fake_uv, with_uv
+from tests.prove.test_run import fake_uv
 
 PROVED, FAILED, NOT_PROVEN, REFUSED = (
     Verdict.PROVED,
@@ -234,20 +234,15 @@ def test_the_path_is_read_from_the_directory_the_command_is_typed_in(tmp_path: P
 def test_the_path_is_read_from_the_directory_the_launcher_runs_the_command_in(
     tmp_path: Path,
 ) -> None:
-    # `uv run --directory sub env`, a launcher read up to its `env`, since no adapter recognises
-    # the writer: the command writes its report in `sub`, as its own relative paths are read
-    # there, and the path is read from there too. Mutation (declared): the path read from the
-    # directory the command was typed in -> no report there, `junit-unchanged`.
+    # `uv run --directory sub`, read up to the word an adapter recognises: the command writes its
+    # report in `sub`, as its own relative paths are read there, and the path is read from there
+    # too. Mutation (declared): the path read from the directory the command was typed in -> no
+    # report there, `junit-unchanged`.
     sub = tmp_path / "sub"
     sub.mkdir()
     uv = fake_uv(tmp_path / "bin")
-    got = prove(
-        ["uv", "run", "--directory", "sub", "env", *writer("pass")],
-        cwd=tmp_path,
-        environ=with_uv(uv),
-        timeout=600,
-        junit=Path(REPORT),
-    )
+    program(uv.parent / NAME)
+    got = run(tmp_path, [f"PATH={uv.parent}", "uv", "run", "--directory", "sub", NAME])
     assert (sub / REPORT).exists()
     assert (got.verdict, got.counts, got.directory) == (
         PROVED,
