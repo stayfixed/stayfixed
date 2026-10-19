@@ -56,7 +56,7 @@ def executable(path: Path, text: str = "#!/bin/sh\nexit 0\n") -> Path:
 
 
 def planned(command: list[str], cwd: Path, *, path: str = "") -> Plan | Refused | Unresolved:
-    return GO.plan((), command, cwd=cwd, root=cwd, scratch=cwd / "scratch", environ={"PATH": path})
+    return GO.plan((), command, cwd=cwd, scratch=cwd / "scratch", environ={"PATH": path})
 
 
 def argv_of(command: list[str], cwd: Path) -> tuple[str, ...]:
@@ -94,7 +94,7 @@ def test_go_test_is_recognised(command: list[str], recognised: bool) -> None:
 
 def test_the_adapters_this_stack_ships() -> None:
     assert [adapter.name for adapter in ADAPTERS] == [NAME] == ["go-test"]
-    assert GO.forging == frozenset()
+    assert GO.forging == {}
 
 
 # --- How a run is planned -------------------------------------------------------------------
@@ -133,8 +133,7 @@ def test_a_path_to_no_go_does_not_resolve(tmp_path: Path) -> None:
     executable(tmp_path / "go")
     got = planned(["./bin/go", "test"], tmp_path, path=str(tmp_path))
     # A path is read from the directory the command runs in, never looked up on `PATH`, and the
-    # detail says so. Mutation (declared): every word named as looked up on `PATH` -> it names
-    # `PATH`.
+    # detail says so (`programs.not_found`). Mutation: none -- the detail is wording.
     assert got == Unresolved(ENTRY_NOT_FOUND, "no executable file at ./bin/go")
 
 
@@ -190,7 +189,6 @@ def test_the_go_on_path_runs_wherever_it_lies(tmp_path: Path, where: str) -> Non
         (),
         ["go", "test"],
         cwd=project,
-        root=project,
         scratch=tmp_path / "scratch",
         environ={"PATH": str(directory)},
     )
@@ -199,9 +197,7 @@ def test_the_go_on_path_runs_wherever_it_lies(tmp_path: Path, where: str) -> Non
 
 
 def launched_plan(launch: tuple[str, ...], command: list[str], cwd: Path, path: str) -> Plan:
-    got = GO.plan(
-        launch, command, cwd=cwd, root=cwd, scratch=cwd / "scratch", environ={"PATH": path}
-    )
+    got = GO.plan(launch, command, cwd=cwd, scratch=cwd / "scratch", environ={"PATH": path})
     assert isinstance(got, Plan), got
     return got
 
@@ -249,7 +245,6 @@ def test_a_launcher_that_names_nothing_does_not_resolve(
         (word, "run"),
         ["go", "test"],
         cwd=tmp_path,
-        root=tmp_path,
         scratch=tmp_path / "scratch",
         environ={"PATH": str(go.parent)},
     )

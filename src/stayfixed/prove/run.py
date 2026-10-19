@@ -7,11 +7,14 @@ the run. The command is launched in the directory it is typed in, never in the t
 judged in the directory it runs in (`moved`): the one its launcher moves it to (`uv run
 --directory`, `UV_WORKING_DIR`), else that same directory. The adapter plans from it, the project
 it answers for is its git top-level, or the directory itself outside a repository, and the
-receipt names it. Every `NAME=value` the launch holds, wherever it stands, is an assignment
-of the command: one of a variable in the adapter's `forging` set is `refused` before anything is
-planned. The run's environment is built once: the caller's, less every inherited variable of the
-adapter's `forging` set, then the command's own assignments in order, the last of two for one name
-winning, as a shell builds it. The adapter plans in that environment, finding its program on its
+receipt names it. Every `NAME=value` the launch holds, before its launcher or after an `env`, is
+an assignment of the command: one the adapter's `forging` set says forges (a variable it names,
+set to a value its test says shapes the report) is `refused` before anything is planned. One that
+stands right after a launcher, with no `env` between (`uv run FOO=1 pytest`), is the launcher's
+program as typed, which runs no test: the command is `not proven` (`not-recognised`). The run's
+environment is built once: the caller's, less every inherited variable the adapter's `forging` set
+says forges, then the command's own assignments in order, the last of two for one name winning,
+as a shell builds it. The adapter plans in that environment, finding its program on its
 `PATH` (`stayfixed.profiles.programs`), and the command runs in it. The adapter is handed the
 launcher's words alone, never an assignment or an `env`, and keeps them in front of the command as
 typed. The plan names the argv to execute, where the report arrives and in which format, and the
@@ -29,10 +32,13 @@ typed the command can write.
 reads as a green run, never against an agent forging the report, which the bound concedes.
 
 - `ASSIGNED_FORGING`: a variable under which the runner reports tests that checked nothing as
-  passed, assigned in the command itself, before a launcher or after it, bare or after `env`. The
-  anchor is the command's own words, which stayfixed reads before anything runs; the control is a
-  closed list the adapter names (`forging`), and refuses nothing outside it. The same variable
-  inherited is removed from the run's environment, which the receipt names (`scrubbed`).
+  passed, set to a value that does so (`PYTHONOPTIMIZE=1`, never `=0`), assigned in the command
+  itself, before a launcher or after it, after `env`. The anchor is the command's own words, which
+  stayfixed reads before anything runs; the control is a closed list the adapter names
+  (`forging`), and refuses nothing outside it. The same variable inherited with such a value is
+  removed from the run's environment, which the receipt names (`scrubbed`). A variable an env file
+  sets (`uv run --env-file`, an inherited `UV_ENV_FILE`) is past this reading: the file is the
+  agent's to write, so that is the bound's.
 - The report is read where the adapter put it, in the scratch directory, and where it is the
   runner's standard output, off the pipe: a file the repository committed, or text a test printed
   outside the format's own framing, is never counted. The anchor, the scratch directory and the
@@ -48,11 +54,13 @@ reads as a green run, never against an agent forging the report, which the bound
 - `PROVE_TIMEOUT_SECONDS`: a suite that hangs. A named cap with its flag, `not proven` past it.
 - `--junit PATH` (`prove(junit=…)`), for a runner no adapter knows: no adapter is consulted, the
   command runs as typed, and the report is the file at `PATH`, read from the directory the command
-  runs in. `JUNIT_UNCHANGED`: a stale or committed report the run never wrote, or a link to one;
-  the anchor is the file's state as the run found it before it started (absent, or its inode, size
-  and modification time), which the agent can write too, so it is a convenience and never a
-  guarantee. The receipt marks the runner not verified, and the verdict is the cascade's as for
-  any other run.
+  runs in. `JUNIT_UNCHANGED`: a stale or committed report the run never wrote; the anchor is the
+  state of the file the path reaches, followed through a link, as the run found it before it
+  started (absent, or its inode, size and modification time), so a `latest.xml` link the run
+  points at the report it just wrote is counted, and a link it newly makes to a stale file is
+  the bound's. The agent can write that file too, so it is a convenience and never a guarantee;
+  its detail names the file by its realpath. The receipt marks the runner not verified, and the
+  verdict is the cascade's as for any other run.
 """
 
 from __future__ import annotations
@@ -133,6 +141,11 @@ EXIT: Mapping[Verdict, int] = {
 # An hour bounds a suite that hangs and is no suite's budget; `--timeout` raises or lowers it. No
 # shipped file states it.
 PROVE_TIMEOUT_SECONDS = 3600
+# A named cap: how long the runner's group has to exit on SIGTERM before it is sent SIGKILL
+# (`processes.end`). Below `processes.TERM_WAIT_SECONDS`, so that a `prove` a gate ends that way
+# (a `[gates.custom]` gate past its time limit, or interrupted) has ended its runner, whose
+# session no signal to `prove`'s group reaches, before the gate's own SIGKILL ends `prove`.
+RUNNER_TERM_WAIT_SECONDS = 2
 
 # The reasons, each one arm of `CASCADE` or the step that stopped the run before it. An adapter's
 # own refusals and unresolved plans are its module's constants, and the reports' are
@@ -177,6 +190,9 @@ _ADAPTER_WORDS: Mapping[Verdict, str] = {
 
 # A shell assignment, `NAME=value`, as the shell reads one before a command and `env` after it.
 _ASSIGNMENT = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)=(.*)", re.DOTALL)
+# The detail of a command whose assignment stands right after its launcher (`uv run FOO=1
+# pytest`), which the launcher runs as its program.
+STRANDED = "{name}=… after the launcher is run as its program; `env {name}=…` assigns it"
 # An option given its value in the same word, `--name=value`.
 _OPTION_VALUE = re.compile(r"(--[^=]+=).*", re.DOTALL)
 REDACTED = "…"
@@ -272,7 +288,9 @@ def judged(outcome: _Outcome) -> tuple[Verdict, str]:
 
 
 def redacted(argv: Sequence[str]) -> tuple[str, ...]:
-    """`argv` with the value of every `NAME=value` and `--option=value` word replaced."""
+    """`argv` with the value of every `NAME=value` and `--option=value` word replaced. A
+    single-dash `-name=value` (Go's spelling) and a value given as the word after its option are
+    kept as they are: nothing tells either from an operand."""
     shown: list[str] = []
     for word in argv:
         if assignment := _ASSIGNMENT.fullmatch(word):
@@ -499,17 +517,17 @@ def _run(
                 processes.kill_group(process)
                 code = process.wait()
         except subprocess.TimeoutExpired:
-            processes.end(process)
+            processes.end(process, RUNNER_TERM_WAIT_SECONDS)
             return _Ran(TIMED_OUT, None)
         except (KeyboardInterrupt, _Signalled):
             # A terminal's Ctrl-C reaches stayfixed's process group and not the command's session,
             # so nothing but `prove` ends the command's group on the way out. One that landed after
             # the wait reaped the command leaves no group to end: its pid may be another's by now.
             if process.returncode is None:
-                processes.end(process)
+                processes.end(process, RUNNER_TERM_WAIT_SECONDS)
             return _Ran(INTERRUPTED, None)
         except BaseException:
-            processes.end(process)
+            processes.end(process, RUNNER_TERM_WAIT_SECONDS)
             raise
         return _Ran(None, code)
     finally:
@@ -518,18 +536,20 @@ def _run(
 
 
 def _state(path: Path) -> tuple[int, int, int, int] | None:
-    """What is at `path`, not followed through a link: its mode, inode, size and modification
-    time; `None` where nothing is."""
+    """What `path` reaches, followed through links: its mode, inode, size and modification time;
+    `None` where it reaches nothing."""
     try:
-        found = os.lstat(path)
+        found = os.stat(path)
     except OSError:
         return None
     return found.st_mode, found.st_ino, found.st_size, found.st_mtime_ns
 
 
 def _rewritten(before: tuple[int, int, int, int] | None, path: Path) -> bool:
-    """Whether `path` is now a regular file, not a link, that is not the one `before` found:
-    one the run created, or rewrote."""
+    """Whether `path` now reaches a regular file that is not the one `before` found: one the run
+    created or rewrote, or a link the run pointed at a file other than the one it reached. A
+    path that reaches no regular file reads no report either way, so that test names the reason
+    alone (Mutation: none -- the verdict is `not proven` with it or without it)."""
     after = _state(path)
     return after is not None and stat.S_ISREG(after[0]) and after != before
 
@@ -567,12 +587,14 @@ def _counted(plan: Plan) -> tuple[Counts | None, str | None, str, str | None]:
 
 @dataclass(frozen=True)
 class _Run:
-    """One run of `prove` once its command is read and its environment built: the command as typed,
-    read into its parts and as the receipt shows it, where it was typed (where the launch is made),
-    the directory it is judged in (`moved`) and for which project, the run's environment and the
-    inherited variables it lost, and how it is run and counted."""
+    """One run of `prove` once its command is read and its environment built: the command read
+    into its parts as the adapter is handed it (`moved`: the launcher's first word by the path it
+    was found at where the launcher moves the command, else as typed), the command as the receipt
+    shows it, where it was typed (where the launch is made), the directory it is judged in and
+    for which project, the run's environment and the inherited variables it lost, and how it is
+    run and counted."""
 
-    typed: Launch
+    handed: Launch
     shown: tuple[str, ...]
     cwd: Path
     directory: Path
@@ -590,15 +612,26 @@ class _Run:
         return self.junit is None
 
 
+def forges(forging: Mapping[str, Callable[[str], bool]], name: str, value: str) -> bool:
+    """Whether `name=value` is one of `forging`'s, an adapter's (`RunnerAdapter.forging`): a
+    variable it names, set to a value its test says shapes the report."""
+    test = forging.get(name)
+    return test is not None and test(value)
+
+
 def environment(
-    environ: Mapping[str, str], forging: frozenset[str], assigned: Mapping[str, str]
+    environ: Mapping[str, str],
+    forging: Mapping[str, Callable[[str], bool]],
+    assigned: Mapping[str, str],
 ) -> tuple[dict[str, str], tuple[str, ...]]:
     """The run's environment, as a shell builds it for the command: `environ`, the caller's, less
-    every variable of `forging`, then `assigned`, the command's own assignments, the last of two
-    for one name winning; and the names, sorted, of the inherited variables it lost."""
-    env = {name: value for name, value in environ.items() if name not in forging}
+    every variable `forging` says its value forges with (`forges`), then `assigned`, the command's
+    own assignments, the last of two for one name winning; and the names, sorted, of the
+    inherited variables it lost."""
+    lost = tuple(sorted(name for name, value in environ.items() if forges(forging, name, value)))
+    env = {name: value for name, value in environ.items() if name not in lost}
     env |= assigned
-    return env, tuple(sorted(frozenset(environ) & forging))
+    return env, lost
 
 
 def moved(launch: Launch, cwd: Path, environ: Mapping[str, str]) -> tuple[Launch, Path]:
@@ -657,18 +690,26 @@ def prove(
         if junit is None
         else None
     )
-    verified = junit is None
     runner = adapter.name if adapter is not None else None
     assigned = assignments(launch.assignments)
-    forging = adapter.forging if adapter is not None else frozenset()
+    forging = adapter.forging if adapter is not None else {}
     env, scrubbed = environment(environ, forging, assigned)
-    launch, directory = moved(launch, cwd, env)
+    handed, directory = moved(launch, cwd, env)
     root = checkout_root(directory) or directory
+    run = _Run(handed, shown, cwd, directory, root, env, scrubbed, timeout, echo, junit)
+    if junit is None and launch.stranded:
+        # As typed, the launcher runs the assignment as its program, and no test runs.
+        return _receipt(
+            _Outcome(unproven=NOT_RECOGNISED),
+            shown,
+            directory=directory,
+            detail=STRANDED.format(name=launch.stranded[0].partition("=")[0]),
+        )
     if adapter is None and (junit is None or not command):
         return _receipt(
-            _Outcome(unproven=NOT_RECOGNISED), shown, directory=directory, verified=verified
+            _Outcome(unproven=NOT_RECOGNISED), shown, directory=directory, verified=run.verified
         )
-    forged = sorted(name for name in assigned if name in forging)
+    forged = sorted(name for name, value in assigned.items() if forges(forging, name, value))
     if forged:
         return _receipt(
             _Outcome(refused=ASSIGNED_FORGING),
@@ -676,9 +717,8 @@ def prove(
             runner,
             directory=directory,
             detail=", ".join(forged),
-            verified=verified,
+            verified=run.verified,
         )
-    run = _Run(launch, shown, cwd, directory, root, env, scrubbed, timeout, echo, junit)
     # A Ctrl-C or a terminating signal anywhere from here on, the tree's state, the plan or the
     # reap as much as the wait, ends the run `not proven`, its scratch directory removed, and the
     # caller still records it: never an internal error.
@@ -687,7 +727,11 @@ def prove(
             return _planned_and_proved(adapter, run)
     except (KeyboardInterrupt, _Signalled):
         return _receipt(
-            _Outcome(unproven=INTERRUPTED), shown, runner, directory=directory, verified=verified
+            _Outcome(unproven=INTERRUPTED),
+            shown,
+            runner,
+            directory=directory,
+            verified=run.verified,
         )
 
 
@@ -695,7 +739,7 @@ def _planned_and_proved(adapter: RunnerAdapter | None, run: _Run) -> Receipt:
     if adapter is None:
         junit = run.junit
         unverified = (
-            _unverified(run.typed, run.directory / junit, run.directory, run.env)
+            _unverified(run.handed, run.directory / junit, run.directory, run.env)
             if junit is not None
             else None
         )
@@ -710,10 +754,9 @@ def _planned_and_proved(adapter: RunnerAdapter | None, run: _Run) -> Receipt:
     scratch = Path(tempfile.mkdtemp(prefix="stayfixed-prove-"))
     try:
         planned = adapter.plan(
-            run.typed.launcher,
-            run.typed.command,
+            run.handed.launcher,
+            run.handed.command,
             cwd=run.directory,
-            root=run.root,
             scratch=scratch,
             environ=run.env,
         )
@@ -754,7 +797,7 @@ def _proved(runner: str | None, plan: Plan, run: _Run) -> Receipt:
         outcome, detail, digest = _Outcome(unproven=ran.stopped), "", None
     elif run.junit is not None and not _rewritten(found, plan.report):
         outcome = _Outcome(unproven=JUNIT_UNCHANGED, exit_code=ran.exit_code)
-        detail, digest = str(run.junit), None
+        detail, digest = os.path.realpath(plan.report), None
     else:
         counts, unread, detail, digest = _counted(plan)
         outcome = _Outcome(unproven=unread, counts=counts, exit_code=ran.exit_code)

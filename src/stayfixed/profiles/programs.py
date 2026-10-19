@@ -41,6 +41,13 @@ def found(word: str, cwd: Path, environ: Mapping[str, str]) -> Path | None:
     return next((candidate for candidate in candidates if executable(candidate)), None)
 
 
+def not_found(word: str) -> str:
+    """What a receipt says was looked for where `word`, a command's first word, names nothing
+    (`found`): a word holding a `/` is a path, read where the command runs and never looked up
+    on `PATH`; a bare name is looked up on `PATH`."""
+    return f"no executable file at {word}" if os.sep in word else f"no {word} on PATH"
+
+
 def launched(
     launch: Sequence[str], argv: Sequence[str], cwd: Path, environ: Mapping[str, str]
 ) -> tuple[str, ...] | None:
@@ -53,8 +60,18 @@ def launched(
     return None if program is None else (str(program), *words[1:])
 
 
+def options(args: Sequence[str]) -> tuple[str, ...]:
+    """The words of `args` before a `--`, which ends a runner's options: every word after it is an
+    operand."""
+    return tuple(args[: _cut(args)])
+
+
 def before_separator(args: Sequence[str], ours: Sequence[str]) -> tuple[str, ...]:
-    """`args` with `ours` added last, before a `--` where there is one, since a runner reads every
-    word after it as an operand."""
-    cut = list(args).index(SEPARATOR) if SEPARATOR in args else len(args)
+    """`args` with `ours` added last among its options (`options`), before a `--` where there is
+    one."""
+    cut = _cut(args)
     return (*args[:cut], *ours, *args[cut:])
+
+
+def _cut(args: Sequence[str]) -> int:
+    return list(args).index(SEPARATOR) if SEPARATOR in args else len(args)

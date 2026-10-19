@@ -100,9 +100,10 @@ class Refused:
 @dataclass(frozen=True)
 class Unresolved:
     """The adapter cannot plan a run it can prove: the runner's entry point does not resolve from
-    where the command runs, or the command asks for a run that never ends. `reason` is a constant
-    of the adapter's module, and `detail` says what was looked for or asked for, and what to do
-    instead, for the receipt."""
+    where the command runs, the command asks for a run that never ends, or for one that runs no
+    test suite that reports (vitest's `no-test-run`). `reason` is a constant of the adapter's
+    module, and `detail` says what was looked for or asked for, and what to do instead, for the
+    receipt."""
 
     reason: str
     detail: str = ""
@@ -119,10 +120,11 @@ class RunnerAdapter(Protocol):
         ...
 
     @property
-    def forging(self) -> frozenset[str]:
-        """The variables under which the runner reports tests that checked nothing as passed:
-        assigned in the command itself, the command is refused; inherited, each is removed from
-        the run's environment, and the receipt names it."""
+    def forging(self) -> Mapping[str, Callable[[str], bool]]:
+        """The variables under which the runner reports tests that checked nothing as passed, each
+        with the test of a value that does (`PYTHONOPTIMIZE=0` optimises nothing): assigned such a
+        value in the command itself, the command is refused; inherited with one, the variable is
+        removed from the run's environment, and the receipt names it."""
         ...
 
     def recognises(self, command: Sequence[str]) -> bool:
@@ -136,21 +138,22 @@ class RunnerAdapter(Protocol):
         command: Sequence[str],
         *,
         cwd: Path,
-        root: Path,
         scratch: Path,
         environ: Mapping[str, str],
     ) -> Plan | Refused | Unresolved:
-        """How to run `command`, run in `cwd` after `launch`, in the project `root`, its report
-        put under `scratch`; or why not. A pure function of its arguments and of the filesystem it
-        reads: it runs nothing. `cwd` is the directory the command runs in: the one it was typed
-        in, or the one its launcher moves it to (`uv run --directory`), whose first word the core
-        then hands by the path it was found at from where the command was typed.
+        """How to run `command`, run in `cwd` after `launch`, its report put under `scratch`; or
+        why not. A pure function of its arguments and of the filesystem it reads: it runs
+        nothing. `cwd` is the directory the command runs in: the one it was typed in, or the one
+        its launcher moves it to (`uv run --directory`). Where the launcher moves it, the core
+        hands the launcher's first word by the path a shell finds it at from the directory the
+        command was typed in, so that the plan never looks for it from the one it moves to.
 
         `launch` is the launcher's words alone (`uv run` and its options, and whatever launcher
         the core reads through): the core has taken every assignment and every `env` out of it.
         Every adapter keeps the launcher's words in front of its plan, as they were typed, so the
         program is then the launcher. `environ` is the run's own environment, the one the command
-        runs under: the caller's less the inherited variables of `forging`, then the command's
-        own assignments, the last of two for one name winning; a program is found on its `PATH`
-        (`stayfixed.profiles.programs.found`), as the shell running the command would find it."""
+        runs under: the caller's less the inherited variables `forging` removes, then the
+        command's own assignments, the last of two for one name winning; a program is found on
+        its `PATH` (`stayfixed.profiles.programs.found`), as the shell running the command would
+        find it."""
         ...
