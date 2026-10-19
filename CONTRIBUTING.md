@@ -372,14 +372,11 @@ omission before a user does ([RELEASING.md](RELEASING.md), section 2, says where
 
 ## Tests
 
-**Every new assertion ships with the mutation that reddens it, or a sentence saying why none
-exists.** This is the project's strongest test convention and the easiest to satisfy vacuously:
-write the assertion, break the line of source it is about, watch it fail, put the source back.
-Say what you broke, in the test's own comment or in the commit message.
-
-For a guard that is genuinely load-bearing — a containment check, a trust gate, a refusal that
-something downstream reads as permission — add it to `mutations/` instead of only describing it,
-and the check becomes reproducible:
+**A branch that decides a verdict, a containment or a data-loss path ships with a declared
+mutation that reddens its test.** Write the assertion, break the line of source it is about, watch
+it fail, put the source back, and add that mutation to `mutations/`, so the check is reproducible.
+Other assertions need neither an entry nor a sentence saying why none exists, and deleting a
+control deletes its entries:
 
 ```bash
 uv run python scripts/mutation_oracle.py            # every declared mutation
