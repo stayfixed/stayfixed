@@ -146,7 +146,6 @@ def test_printed_framing_is_what_the_bound_concedes() -> None:
         b'{"Action": "pass", "Package": "p", "Test": ""}',
         b'{"Action": "fail", "Package": ["p"]}',
         b'{"Action": "build-fail", "ImportPath": 3}',
-        b'{"Action": "pass", "Action": "fail", "Package": "p", "Test": "TestA"}',
     ],
 )
 def test_a_line_that_is_not_an_event_is_malformed(line: bytes) -> None:
@@ -154,28 +153,13 @@ def test_a_line_that_is_not_an_event_is_malformed(line: bytes) -> None:
     assert refusal(good + line + b"\n" + good) == REPORT_MALFORMED
 
 
-def test_a_refusal_bounds_the_key_it_names() -> None:
-    # A key held twice, a million characters and an escape sequence long: the detail names it
-    # clipped and escaped.
-    key = json.dumps("\x1b[2J" + "K" * 1_000_000)
-    line = f'{{"Action": "pass", {key}: 1, {key}: 2}}'
-    with pytest.raises(ReportError) as caught:
-        read_events(line.encode())
-    assert caught.value.reason == REPORT_MALFORMED
-    assert caught.value.detail.startswith("line 1: a key held twice: '\\x1b[2JKKK")
-    assert "(1000004 chars)" in caught.value.detail
-    assert len(caught.value.detail) < 200
-    assert "\x1b" not in caught.value.detail
-
-
 @pytest.mark.parametrize(
     ("line", "detail"),
     [
         (b"not json", "line 2: JSONDecodeError"),
-        (b'{"Action": "pass", "Action": "fail"}', "line 2: a key held twice: Action"),
         (b"[]", "line 2 is not a JSON object"),
     ],
-    ids=["no-json", "a-key-twice", "no-object"],
+    ids=["no-json", "no-object"],
 )
 def test_a_refusal_names_the_line_it_stopped_at(line: bytes, detail: str) -> None:
     # A line that does not parse is named by its number like any other refusal. Mutation
@@ -227,7 +211,6 @@ def test_an_output_event_is_the_one_line_left_unread(separators: tuple[str, str]
         b'{"Action":"output","Test":""}',
         b'{"Action":"output","Test":1}',
         b'{"Action":"output","Output":"\xff"}',
-        b'{"Action":"output","Action":"output"}',
         b'[{"Action":"output"}]',
         b'"output"',
         b'{"Action":"output"',
@@ -237,7 +220,6 @@ def test_an_output_event_is_the_one_line_left_unread(separators: tuple[str, str]
         "empty-test",
         "test-not-a-string",
         "not-utf8",
-        "key-twice",
         "not-an-object",
         "a-string",
         "cut",

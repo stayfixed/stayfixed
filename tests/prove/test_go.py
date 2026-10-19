@@ -17,7 +17,6 @@ import pytest
 
 from stayfixed.profiles.go.adapters import (
     ADAPTERS,
-    CONFIGS,
     DISCOVERY,
     NAME,
     REPORT_NAME,
@@ -109,9 +108,8 @@ def test_the_plan_runs_go_test_with_json(tmp_path: Path) -> None:
         source=ReportSource.STDOUT,
         report=tmp_path / "scratch" / "events.jsonl",
         discovery=("*_test.go",),
-        configs=("go.mod", "go.work"),
     )
-    assert (got.discovery, got.configs) == (DISCOVERY, CONFIGS)
+    assert got.discovery == DISCOVERY
     assert got.report.name == REPORT_NAME
 
 
@@ -249,55 +247,6 @@ def test_a_launcher_that_names_nothing_does_not_resolve(
         environ={"PATH": str(go.parent)},
     )
     assert got == Unresolved(ENTRY_NOT_FOUND, detail)
-
-
-def test_the_file_modfile_names_is_among_the_configs(tmp_path: Path) -> None:
-    # Mutations (declared): the named file left out -> the adapter's own globs alone; a spaced
-    # value not read -> `ci/go.mod` missing; a word past `-args` read -> `x` named; `-args=x` read
-    # as `-args` -> `y.mod` missing.
-    go = executable(tmp_path / "bin" / "go")
-    got = planned(
-        [
-            *("go", "test", "-modfile", "ci/go.mod", "--modfile=../alt.mod"),
-            *("-test.tags", "-modfile=t.mod", "-args=x", "-modfile=y.mod", "-args", "-modfile=x"),
-        ],
-        tmp_path,
-        path=str(go.parent),
-    )
-    assert isinstance(got, Plan), got
-    real = Path(os.path.realpath(tmp_path))
-    assert got.configs == (
-        *CONFIGS,
-        str(real / "ci" / "go.mod"),
-        str(real.parent / "alt.mod"),
-        str(real / "t.mod"),
-        str(real / "y.mod"),
-    )
-
-
-@pytest.mark.parametrize(
-    ("command", "named"),
-    [
-        (["go", "test", "-C", "sub", "-modfile=alt.mod"], "sub/alt.mod"),
-        (["go", "test", "--C=sub", "-modfile", "alt.mod"], "sub/alt.mod"),
-        (["go", "test", "-modfile=alt.mod", "-C", "sub"], "alt.mod"),
-        (["go", "test", "./...", "--", "-modfile=x", "-modfile=alt.mod"], None),
-        (["go", "test", "-modfile"], None),
-    ],
-    ids=["C", "C-with-equals", "C-not-first", "terminator", "no-value"],
-)
-def test_the_file_modfile_names_is_read_from_where_go_reads_it(
-    tmp_path: Path, command: list[str], named: str | None
-) -> None:
-    # Measured on Go 1.27.2: under a leading `-C sub`, `-modfile=alt.mod` reads `sub/alt.mod`,
-    # and a word past `--` is the test binary's. Mutations (declared): `-modfile` read from the
-    # run's directory under a leading `-C` -> `C` names `alt.mod`; a bare `--` read as no end ->
-    # `terminator` names `alt.mod`.
-    go = executable(tmp_path / "bin" / "go")
-    got = planned(command, tmp_path, path=str(go.parent))
-    assert isinstance(got, Plan), got
-    real = Path(os.path.realpath(tmp_path))
-    assert got.configs == (*CONFIGS, *(() if named is None else (str(real / named),)))
 
 
 # --- Nothing is refused ---------------------------------------------------------------------

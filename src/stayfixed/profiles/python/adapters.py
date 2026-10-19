@@ -29,23 +29,18 @@ checked nothing; the anchor is the command's own words, and every other option i
   module's, or every one under `--assert=plain`), so a failing test reports passed and the run
   exits 0. A `-W` or `-X` value is no flag, and every other interpreter option is free.
 - `FORGING`: `PYTHONOPTIMIZE`, which is `-O` and which container images set, where its value
-  optimises as CPython reads it (`optimises`: any but the empty one and a zero, so
-  `PYTHONOPTIMIZE=0` runs every `assert`): assigned in the command, refused; inherited, removed
-  from the run's environment and named on the receipt. Every other variable is the project's.
-- The file `-c`/`--config-file` (or the older `--inifile`) names is not refused, since a
-  configuration file is the bound's as `pytest.ini` is, but named among the receipt's
-  configuration files by its realpath (`Plan.configs`), wherever it lies.
+  optimises (`optimises`: any but the empty one and `0`, so `PYTHONOPTIMIZE=0` runs every
+  `assert`): assigned in the command, refused; inherited, removed from the run's environment and
+  named on the receipt. Every other variable is the project's.
 
 What a file in the tree can do -- a `conftest.py` that moves the report or rewrites it on the way
 out, a configuration file's `addopts`, a module that shadows an installed one, a shim on `PATH` --
-is the bound's: the receipt names the configuration files (`CONFIGS`) and the untracked files
-pytest collects from (`DISCOVERY`), and the realpath of the program that ran.
+is the bound's: the receipt names the untracked files pytest collects from (`DISCOVERY`), and the
+realpath of the program that ran.
 """
 
 from __future__ import annotations
 
-import os
-import re
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 
@@ -65,16 +60,12 @@ NAME = "pytest"
 # The reasons this adapter names, both `stayfixed.profiles.runners`': an option the closed list
 # refuses, and a program that is not where the command would find it.
 REASONS = (REFUSED_OPTION, ENTRY_NOT_FOUND)
-# What CPython reads as no optimisation in `PYTHONOPTIMIZE`, past the empty value, which it reads
-# as unset: a value `strtol` reads whole as zero, after leading white space and a sign (measured on
-# 3.14.7: `0`, `00`, ` 0`, `+0`, `-0` are level 0; `0 `, `0_0`, `abc`, `-1` are level 1).
-_ZERO = re.compile(r"[ \t\n\v\f\r]*[+-]?0+")
 
 
 def optimises(value: str) -> bool:
-    """Whether `PYTHONOPTIMIZE=value` turns `assert` off, as CPython reads it: any value but the
-    empty one and one that reads as zero."""
-    return bool(value) and _ZERO.fullmatch(value) is None
+    """Whether `PYTHONOPTIMIZE=value` turns `assert` off: any value but the empty one and `0`.
+    Another spelling of zero (`00`, `+0`) reads as on, the safe side."""
+    return value not in ("", "0")
 
 
 FORGING: Mapping[str, Callable[[str], bool]] = {"PYTHONOPTIMIZE": optimises}
@@ -86,7 +77,6 @@ DISCOVERY = (
     "*_test.py",
     "**/*_test.py",
 )
-CONFIGS = ("pytest.ini", "pyproject.toml", "setup.cfg", "tox.ini")
 REPORT_NAME = "junit.xml"
 
 _FAMILY = ("-o", "junit_family=xunit2")
@@ -99,34 +89,10 @@ _RUNS_NO_TEST_ALIASES = frozenset({"--setupplan", "--setuponly"})
 # Runs each test under the debugger, which, its standard input ended, lets a failing test report
 # as passed and the run exit 0.
 _DEBUGS_EACH_TEST = "--trace"
-# The options that name the configuration file pytest reads, its short one `-c`.
-_CONFIG_OPTIONS = frozenset({"--config-file", "--inifile"})
-_CONFIG_LETTER = "c"
-# pytest's own short options that take no value, which its parser lets stand in one word before
-# one that takes a value (`-qc ci.ini`): a cluster is read up to the first letter outside them,
-# which takes the rest of the word, or the next word, as its value.
-_PYTEST_FLAGS = frozenset("hlqsvVx")
-
 # The interpreter's flag that compiles out every `assert` (`-O`, twice `-OO`), and its two options
 # that take a value, fused (`-Wdefault`) or as the next word, an `O` in which is no flag.
 _OPTIMIZE = "O"
 _VALUED_INTERPRETER_OPTIONS = frozenset({"-W", "-X"})
-
-
-def _short(word: str, following: str | None) -> tuple[str, str | None] | None:
-    """The short option a single-dash word (`-c`, `-cci.ini`, `-qc`, `-c=x`) ends in after
-    pytest's flags, and its value: the rest of the word past one `=`, or else the next word;
-    `None` where the word is flags alone."""
-    for index, letter in enumerate(word[1:], start=1):
-        if letter in _PYTEST_FLAGS:
-            continue
-        rest = word[index + 1 :]
-        return letter, rest.removeprefix("=") if rest else following
-    return None
-
-
-def _single_dash(word: str) -> bool:
-    return word.startswith("-") and not word.startswith(SEPARATOR)
 
 
 def refused_option(args: Sequence[str]) -> str | None:
@@ -158,26 +124,6 @@ def optimizing_option(options: Sequence[str]) -> str | None:
         elif word.startswith("-") and _OPTIMIZE in word[1:]:
             return word
     return None
-
-
-def _configuration_files(args: Sequence[str], cwd: Path) -> tuple[str, ...]:
-    """The realpath of each file `-c`, `--config-file` or `--inifile` names in `args`, read from
-    `cwd`: an absolute entry of `Plan.configs`, which names that file wherever it lies."""
-    found: list[str] = []
-    for index, word in enumerate(args):
-        if word == SEPARATOR:
-            break
-        following = args[index + 1] if index + 1 < len(args) else None
-        name, equals, value = word.partition("=")
-        named: str | None = None
-        if name in _CONFIG_OPTIONS:
-            named = value if equals else following
-        elif _single_dash(word) and (short := _short(word, following)) is not None:
-            letter, setting = short
-            named = setting if letter == _CONFIG_LETTER else None
-        if named:
-            found.append(os.path.realpath(cwd / named))
-    return tuple(found)
 
 
 class PytestAdapter:
@@ -223,7 +169,6 @@ class PytestAdapter:
             source=ReportSource.FILE,
             report=report,
             discovery=DISCOVERY,
-            configs=(*CONFIGS, *_configuration_files(run.args, cwd)),
         )
 
 

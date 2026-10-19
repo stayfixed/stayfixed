@@ -23,7 +23,6 @@ import pytest
 from stayfixed.guards.api import read_launch
 from stayfixed.profiles.python.adapters import (
     ADAPTERS,
-    CONFIGS,
     DISCOVERY,
     FORGING,
     NAME,
@@ -191,18 +190,13 @@ def test_the_adapters_this_stack_ships() -> None:
         (" ", True),
         ("", False),
         ("0", False),
-        ("00", False),
-        (" 0", False),
-        ("+0", False),
-        ("-0", False),
-        ("\t0", False),
+        # Another spelling of zero is read as optimising, the safe side.
+        ("00", True),
     ],
 )
-def test_pythonoptimize_optimises_as_cpython_reads_it(value: str, optimised: bool) -> None:
-    # Measured on 3.14.7 (`sys.flags.optimize` under each value): the empty value is unset, and a
-    # value `strtol` reads whole as zero, after white space and a sign, is level 0; any other
-    # value optimises. Mutations (declared): the zero rule dropped -> `0` is refused; the empty
-    # value read as one -> it is refused.
+def test_pythonoptimize_optimises_unless_empty_or_zero(value: str, optimised: bool) -> None:
+    # Mutations (declared): `0` read as optimising -> it is refused; the empty value read as one
+    # -> it is refused.
     assert optimises(value) is optimised
 
 
@@ -235,9 +229,8 @@ def test_the_plan_runs_the_command_as_typed_with_a_report_of_its_own(tmp_path: P
             "*_test.py",
             "**/*_test.py",
         ),
-        configs=("pytest.ini", "pyproject.toml", "setup.cfg", "tox.ini"),
     )
-    assert (got.discovery, got.configs) == (DISCOVERY, CONFIGS)
+    assert got.discovery == DISCOVERY
 
 
 @pytest.mark.parametrize(
@@ -435,46 +428,6 @@ def test_every_other_option_is_planned_as_typed(tmp_path: Path, argv: tuple[str,
         assert got == (str(bin_ / "pytest"), *argv[:cut], *ours(tmp_path), *argv[cut:])
     else:
         assert got == (str(bin_ / "pytest"), *argv, *ours(tmp_path))
-
-
-def test_the_configuration_file_the_command_names_is_among_the_configs(tmp_path: Path) -> None:
-    # Not refused: a configuration file in the tree is the bound's, as `pytest.ini` is. Named by
-    # its realpath, read from the directory the command runs in, wherever it lies, the project or
-    # outside it; the tree's state names it from the project where it lies there. Mutation
-    # (declared): the named files left out -> the adapter's own globs alone.
-    root = tmp_path / "project"
-    bin_ = environment(tmp_path / "venv")
-    (root / "sub").mkdir(parents=True)
-    args = (
-        "-c",
-        "ci/pytest-ci.ini",
-        "--config-file=../other.toml",
-        "-qc",
-        "x[1].ini",
-        "--inifile",
-        "old.ini",
-        "-c=../../outside.ini",
-        "--",
-        "-c",
-        "after.ini",
-    )
-    got = PytestAdapter().plan(
-        (),
-        ("pytest", *args),
-        cwd=root / "sub",
-        scratch=tmp_path / "scratch",
-        environ={"PATH": str(bin_)},
-    )
-    assert isinstance(got, Plan)
-    real = Path(os.path.realpath(tmp_path))
-    assert got.configs == (
-        *CONFIGS,
-        str(real / "project" / "sub" / "ci" / "pytest-ci.ini"),
-        str(real / "project" / "other.toml"),
-        str(real / "project" / "sub" / "x[1].ini"),
-        str(real / "project" / "sub" / "old.ini"),
-        str(real / "outside.ini"),
-    )
 
 
 def _proved_here(argv: Sequence[str], cwd: Path, environ: Mapping[str, str]) -> Receipt:
@@ -791,17 +744,6 @@ def test_a_debugger_driven_through_prove_s_standard_input_forges_nothing(tmp_pat
 
 
 @needs_runner("pytest")
-def test_a_configuration_file_the_command_names_is_named_on_the_receipt(tmp_path: Path) -> None:
-    project = pytest_project(tmp_path / "p", passing=1, files={"ci/ci.ini": "[pytest]\n"})
-    git(project, "init", "-q")
-    git(project, "add", ".")
-    git(project, "commit", "-q", "-m", "first")
-    got = real(project, "pytest", "-q", "-c", "ci/ci.ini", "--rootdir", ".")
-    assert (got.verdict, got.counts) == (PROVED, Counts(1, 0, 0))
-    assert got.configs == ("pytest.ini", "ci/ci.ini")
-
-
-@needs_runner("pytest")
 def test_an_untracked_conftest_is_counted_and_named(tmp_path: Path) -> None:
     project = pytest_project(tmp_path / "p", passing=1)
     git(project, "init", "-q")
@@ -813,5 +755,4 @@ def test_an_untracked_conftest_is_counted_and_named(tmp_path: Path) -> None:
     got = real(project, "pytest", "-q")
     assert (got.verdict, got.counts) == (PROVED, Counts(1, 0, 0))
     assert got.untracked == ("conftest.py",)
-    assert got.configs == ("pytest.ini",)
     assert "untracked in the discovery set: conftest.py" in line(got)

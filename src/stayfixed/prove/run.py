@@ -18,10 +18,10 @@ as a shell builds it. The adapter plans in that environment, finding its program
 `PATH` (`stayfixed.profiles.programs`), and the command runs in it. The adapter is handed the
 launcher's words alone, never an assignment or an `env`, and keeps them in front of the command as
 typed. The plan names the argv to execute, where the report arrives and in which format, and the
-globs of the files that shape the report. The tree's state is taken and the command runs in a
-session of its own; then the report is counted, the tree's state is taken again, and `CASCADE`
-says what the run proved. The plan's scratch directory, made outside the project and readable by
-its owner alone, is removed on every path.
+globs of the files the runner collects tests from. The tree's state is taken and the command runs
+in a session of its own; then the report is counted, the tree's state is taken again, and
+`CASCADE` says what the run proved. The plan's scratch directory, made outside the project and
+readable by its owner alone, is removed on every path.
 
 The bound, `BOUND`, which `docs/cli.md` states word for word: what a file in the tree, and the
 environment, can do to the report is conceded, never checked. So the tree's state is information
@@ -209,16 +209,14 @@ class Receipt:
     the step that stopped the run stopped: the variable assigned, the option or word the runner's
     adapter refused, what the adapter looked for or was asked for
     where it could not plan the run, the `--junit` path the run did not write (`JUNIT_UNCHANGED`),
-    or where a report stopped reading. `program` is the realpath of what ran, and `entry` the
-    realpath of the file it ran as the runner where the program is an interpreter running one
-    (`node` and jest's or vitest's entry); `verified` is false on every `--junit` receipt, a plan
-    made or not, and true on every other. `scrubbed` names, sorted, each
+    or where a report stopped reading. `program` is the realpath of what ran; `verified` is false
+    on every `--junit` receipt, a plan made or not, and true on every other. `scrubbed` names,
+    sorted, each
     variable the caller's environment held that the run did not get, one of the adapter's
     `forging` set, since such a removal can turn a legitimate run red. `commit` and `dirty_before`
     are the tree's state before the run, `dirty_after` after it, and `untracked` (at most
-    `tree.UNTRACKED_LISTED`, `untracked_more` past it) and `configs` (at most as many,
-    `configs_more` past it, and `ignored_configs` the count of those git ignores) after it, or
-    before it where git could not answer after: none of them is an input to the verdict.
+    `tree.UNTRACKED_LISTED`, `untracked_more` past it) after it, or before it where git could not
+    answer after: none of them is an input to the verdict.
     """
 
     verdict: Verdict
@@ -228,7 +226,6 @@ class Receipt:
     directory: str | None = None
     runner: str | None = None
     program: str | None = None
-    entry: str | None = None
     verified: bool = True
     scrubbed: tuple[str, ...] = ()
     counts: Counts | None = None
@@ -239,9 +236,6 @@ class Receipt:
     dirty_after: bool | None = None
     untracked: tuple[str, ...] = ()
     untracked_more: int = 0
-    configs: tuple[str, ...] = ()
-    configs_more: int = 0
-    ignored_configs: int = 0
 
 
 _NO_COUNTS = Counts(0, 0, 0)
@@ -568,7 +562,6 @@ def _unverified(launch: Launch, report: Path, cwd: Path, environ: Mapping[str, s
         source=ReportSource.FILE,
         report=report,
         discovery=(),
-        configs=(),
     )
 
 
@@ -790,10 +783,10 @@ def _proved(runner: str | None, plan: Plan, run: _Run) -> Receipt:
     if not os.path.isabs(plan.argv[0]):
         raise ValueError(f"the {runner} adapter planned a program that is not absolute")
     program = os.path.realpath(plan.argv[0])
-    before = tree.state(run.root, plan.discovery, plan.configs)
+    before = tree.state(run.root, plan.discovery)
     found = _state(plan.report)
     ran = _run(plan, run.cwd, run.env, run.timeout, run.echo)
-    after = tree.state(run.root, plan.discovery, plan.configs)
+    after = tree.state(run.root, plan.discovery)
     if ran.stopped is not None:
         outcome, detail, digest = _Outcome(unproven=ran.stopped), "", None
     elif run.junit is not None and not _rewritten(found, plan.report):
@@ -806,7 +799,6 @@ def _proved(runner: str | None, plan: Plan, run: _Run) -> Receipt:
         outcome,
         run.shown,
         runner,
-        plan,
         directory=run.directory,
         program=program,
         detail=detail,
@@ -822,7 +814,6 @@ def _receipt(
     outcome: _Outcome,
     shown: tuple[str, ...],
     runner: str | None = None,
-    plan: Plan | None = None,
     *,
     directory: Path | None = None,
     program: str | None = None,
@@ -836,7 +827,6 @@ def _receipt(
     """The receipt of `outcome`; `verified` is false for a `--junit` run, and only for one."""
     verdict, reason = judged(outcome)
     files = after if after is not None and after.untracked is not None else before
-    configs = after if after is not None and after.configs is not None else before
     return Receipt(
         verdict=verdict,
         reason=reason,
@@ -845,7 +835,6 @@ def _receipt(
         directory=str(directory) if directory is not None else None,
         runner=runner,
         program=program,
-        entry=str(plan.entry) if plan is not None and plan.entry is not None else None,
         verified=verified,
         scrubbed=scrubbed,
         counts=outcome.counts,
@@ -856,18 +845,15 @@ def _receipt(
         dirty_after=after.dirty if after is not None else None,
         untracked=(files.untracked or ()) if files is not None else (),
         untracked_more=files.more if files is not None else 0,
-        configs=(configs.configs or ()) if configs is not None else (),
-        configs_more=configs.configs_more if configs is not None else 0,
-        ignored_configs=configs.ignored_configs if configs is not None else 0,
     )
 
 
 def line(receipt: Receipt) -> str:
-    """The receipt in one line: the verdict and its reason in words, the counts, the runner (the
-    program, and the entry it runs where it is an interpreter), the inherited variables the run
-    did not get, and the files that can shape the report. A variable's name is one of an
-    adapter's forging set, never one the environment chose. A name the tree chose
-    prints only inside the path grammar (`printed.printable`); `--json` carries every one."""
+    """The receipt in one line: the verdict and its reason in words, the counts, the runner and
+    its program, the inherited variables the run did not get, and the untracked files in the
+    discovery set. A variable's name is one of an adapter's forging set, never one the environment
+    chose. A name the tree chose prints only inside the path grammar (`printed.printable`);
+    `--json` carries every one."""
     words = WORDS.get(receipt.reason) or _ADAPTER_WORDS.get(receipt.verdict, receipt.reason)
     head = f"{receipt.verdict}: {words}"
     if receipt.reason not in WORDS:
@@ -884,8 +870,6 @@ def line(receipt: Receipt) -> str:
         runner = f"runner {receipt.runner}"
         if receipt.program is not None:
             runner += f" at {clipped(receipt.program)}"
-        if receipt.entry is not None:
-            runner += f" running {clipped(receipt.entry)}"
         if not receipt.verified:
             runner += ", not verified"
         parts.append(runner)
@@ -894,14 +878,6 @@ def line(receipt: Receipt) -> str:
         parts.append(f"runner not verified{ran}")
     if receipt.scrubbed:
         parts.append(f"removed from the run's environment: {', '.join(receipt.scrubbed)}")
-    if receipt.configs or receipt.ignored_configs:
-        listed = ", ".join(printable(name) for name in receipt.configs)
-        more = f" and {receipt.configs_more} more" if receipt.configs_more else ""
-        named = f"{listed}{more}"
-        if receipt.ignored_configs:
-            ignored = f"{receipt.ignored_configs} ignored"
-            named = f"{named} and {ignored}" if named else ignored
-        parts.append(f"configuration: {named}")
     if receipt.untracked:
         listed = ", ".join(printable(name) for name in receipt.untracked)
         more = f" and {receipt.untracked_more} more" if receipt.untracked_more else ""

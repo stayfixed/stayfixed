@@ -1132,7 +1132,7 @@ def test_the_json_keys_the_prove_section_lists_are_the_receipt_s_fields() -> Non
 
     section = _prove_section()
     start = section.index("`--json` carries `verdict`") + len("`--json` carries ")
-    end = section.index("`ignored_configs`.", start) + len("`ignored_configs`")
+    end = section.index("`untracked_more`.", start) + len("`untracked_more`")
     listed = re.findall(r"`([a-z_]+)`", re.sub(r"\([^()]*\)", "", section[start:end]))
     assert listed == [field.name for field in dataclasses.fields(Receipt)]
 
