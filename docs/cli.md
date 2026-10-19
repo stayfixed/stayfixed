@@ -1298,8 +1298,7 @@ A row names no finding: `assess` lists them as items.
 | `memory-history` | the history of `[paths] memory` | warning | 8 | the store has history and `memory.mode` is not `in-repo` |
 | `foreign-hooks` | the committed hook settings of each harness `[stayfixed] agents` selects | advice | 5 | any hook entry, one claiming stayfixed's marker included: stayfixed writes none into a committed file, and the probe has no grant to vouch for one with |
 | `foreign-workflows` | `.github/workflows/*.yml` and `*.yaml` | advice | — | any workflow but stayfixed's own caller |
-| `codeowners` | the first of `.github/CODEOWNERS`, `CODEOWNERS` and `docs/CODEOWNERS` | warning | 7 | the line that governs stayfixed's caller workflow names no owner, or there is no file. Lines end at a line feed, and a carriage return just before one is dropped; words are separated by spaces and tabs, a `#` starts a comment at the line's start or after a blank, a line with an owner outside `@user`, `@org/team` and an email address decides nothing, and a line holding any other whitespace or control character, a carriage return anywhere else included, is read with no owner; not judged under `[ci] mode = "none"` |
-| `codeowners-scope` | the same file, and `.github/workflows/*.yml` and `*.yaml` | warning | 7 | the caller workflow is owned, but a workflow a pull request could add — asked at a name no project gives one, as `.yml` and as `.yaml`, so `stayfixed*` or `*.yml` alone does not own it — a workflow the repository already has, or the code-owners file itself is not; a `/.github/` rule in a file kept at `.github/CODEOWNERS` owns all three, until a later line with no owner takes a file back out of it. `where` names `.github/workflows/`, each unowned workflow whose path is inside the plain-path grammar (any other is counted under `.github/workflows/`), and the file. The repository's workflows are asked in turn under a budget of 30,000,000 matching steps, counted as they are taken; past it, the workflows not yet asked are `could-not-look`. Silent where `codeowners` reports; not judged under `[ci] mode = "none"` |
+| `codeowners` | the first of `.github/CODEOWNERS`, `CODEOWNERS` and `docs/CODEOWNERS` | advice | 7 | there is no file, or no line that does not start with `#` holds `.github`: a plain substring, not GitHub's pattern matching, so a line such as `* @owner` still reports; not judged under `[ci] mode = "none"` |
 | `commit-types` | the subjects of the last 100 commits, merges excluded | advice | — | a subject whose type is not in `[commit_messages] types`; `where` names commits |
 | `profile` | the configured profile's checks | the check's own | — | each failed check, counted once; a profile this stayfixed does not ship is one `profile-not-shipped` warning |
 
@@ -3711,8 +3710,7 @@ gates still run and still report but cannot stop a pull request that edits its o
 - **CODEOWNERS covering `/.github/`, with review from code owners required**, so a change to
   the caller needs someone other than its author. GitHub reads the rules from the base
   branch's copy; keep the file at `.github/CODEOWNERS`, where its own `/.github/` rule covers it
-  (`stayfixed assess` warns, `codeowners-scope`, when a line owns only the caller, or when a
-  later line with no owner takes a workflow back out of the `/.github/` rule);
+  (`stayfixed assess` advises, `codeowners`, when no line names `.github`);
 - **"Dismiss stale pull request approvals when new commits are pushed"**, or **"Require
   approval of the most recent reviewable push"**, so an approval of an innocuous `.github/` edit
   does not carry over to a later commit that repoints `uses:`;

@@ -25,7 +25,7 @@ Six names, each with the consumer that reaches for it:
   a project is adopted and its gates promoted. It is the one operation that rewrites a tool-owned
   key: a second copy in `adopt` would skip the `config` record's re-stamp, and `uninstall` would
   then keep every promoted project's `stayfixed.toml` as hand-edited.
-- `CI_WORKFLOW`, for `stayfixed assess`'s workflow and code-owners probes, which must name
+- `CI_WORKFLOW`, for `stayfixed assess`'s workflow probe, which must name
   stayfixed's own caller workflow and would otherwise spell it a third time beside `doctor`'s
   `WORKFLOW`.
 - `ASSESSMENT`, for `stayfixed assess`, which writes the inventory `uninstall` takes back: one
