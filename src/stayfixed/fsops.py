@@ -257,6 +257,16 @@ def is_symlink(path: Path) -> bool:
     return mode is not None and stat.S_ISLNK(mode)
 
 
+def linked_directory(path: Path) -> Path | None:
+    """The directory a symbolic link at `path` leads its file into, or `None` where `path` is not
+    one or that cannot be told: what a failed write through the link names, since the write went
+    there and not beside the link."""
+    try:
+        return resolved(path).parent if is_symlink(path) else None
+    except OSError:
+        return None
+
+
 def creation_directory(path: Path) -> Path:
     """The directory `path` would be made in: the one it lives in, or, while that is not there
     yet, the nearest one above it that is, where `mkdir(parents=True)` would start. What

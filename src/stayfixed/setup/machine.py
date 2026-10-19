@@ -190,6 +190,12 @@ def write_machine(
     except OSError as exc:
         if sandbox_refused(exc):
             raise Refusal(SETUP_SANDBOXED) from None
+        linked = fsops.linked_directory(path)
+        if linked is not None:
+            raise Failure(
+                f"{linked} cannot be written ({fsops.said(exc)}), so the machine configuration "
+                f"cannot be kept there, where the link at {path} leads"
+            ) from None
         where = (
             "; without --machine it is under HOME, which is the only place a hook reads it"
             if path == machine_config_path()

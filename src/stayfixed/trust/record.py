@@ -278,6 +278,12 @@ def _write(machine: Path | None, approvals: dict[tuple[str, str], Approval]) -> 
     except OSError as exc:
         if sandbox_refused(exc):
             raise SandboxedWrite(SANDBOXED) from None
+        linked = fsops.linked_directory(path)
+        if linked is not None:
+            raise Failure(
+                f"{linked} cannot be written ({fsops.said(exc)}), so the trust record cannot be "
+                f"kept there, where the link at {path} leads"
+            ) from None
         where = (
             "it is under HOME, which is the only place a hook reads a trust record"
             if machine is None
