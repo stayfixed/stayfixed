@@ -1111,8 +1111,8 @@ reddens = [
 [[mutation]]
 name = "the declined push stops naming the repository"
 file = "src/stayfixed/overlay/publish.py"
-before = '            raise Failure(f"`git push` to {slug} exited {pushed.code} ({_detail(pushed)})")'
-after = '            raise Failure(f"`git push` exited {pushed.code} ({_detail(pushed)})")'
+before = '            raise Failure(f"`git push` to {slug} exited {pushed.code} ({answered(pushed)})")'
+after = '            raise Failure(f"`git push` exited {pushed.code} ({answered(pushed)})")'
 reddens = [
   "tests/overlay/test_publish.py::test_a_push_that_is_declined_is_a_failure_naming_the_repository",
 ]
@@ -1176,7 +1176,7 @@ reddens = [
 [[mutation]]
 name = "any gh failure is read as a repository that is not there"
 file = "src/stayfixed/overlay/publish.py"
-before = "        if not _NOT_FOUND_REMOTELY.search(_detail(view)):"
+before = "        if not _NOT_FOUND_REMOTELY.search(answered(view)):"
 after = "        if False:"
 reddens = [
   "tests/overlay/test_publish.py::test_a_gh_that_cannot_answer_is_never_read_as_a_repository_that_is_absent",

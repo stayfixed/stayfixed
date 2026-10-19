@@ -465,7 +465,7 @@ def test_what_gh_and_git_print_cannot_drive_a_terminal(
     # The probe's answer was clipped and quoted, and every other subprocess answer this command
     # quotes, `gh repo create`'s, `gh repo view`'s and `git clone`'s, was printed raw: a line break
     # followed by `::error::` is a workflow command in a CI log, and an escape drives a terminal.
-    # They are all clipped in the one place that reads them, `_detail`.
+    # They are all clipped in the one place that reads them, `printed.answered`.
     #
     # Mutation: `mutations/`'s "a subprocess's answer is quoted raw".
     runner = Recorder(answers={**answers, "git clone": HOSTILE})
