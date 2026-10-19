@@ -11,9 +11,8 @@ description: Configure the machine for stayfixed — the preset, the personal pa
 2. For the commit-message hook, run `stayfixed setup --git-hooks` inside the repository and
    relay what it installed and what existing hook it kept and chained to;
    `stayfixed setup --git-hooks --uninstall` restores it.
-3. Personal parameters (reply language, artifact language) are the user's to set; do not
-   guess them. Nothing in this release reads either: a language preference the user wants
-   followed is a personal standing rule, a note with `metadata.startup` in the overlay.
+3. A language preference the user wants followed is a personal standing rule, a note with
+   `metadata.startup` in the overlay; do not guess it.
 4. Offer the private overlay — one repository holding the user's own standing rules,
    cross-project notes and per-project bindings. `setup` is what records it, through
    `--overlay`, and there are two ways in:

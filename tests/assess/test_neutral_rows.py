@@ -93,7 +93,7 @@ def test_the_neutral_keys_are_derived_whole() -> None:
         "memory.groups",
         "memory.index_extra",
         "native_caps.hook_output_chars",
-        "personal.reply_language",
+        "personal.preset",
         "stayfixed.preset",
         "project.name",
     } <= set(NEUTRAL)

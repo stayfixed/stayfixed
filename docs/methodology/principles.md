@@ -250,9 +250,7 @@ read by tools, by later contributors and by a possible public extraction.
 
 **What stayfixed does.** The freshness rule is the row grammar of [sources.md](sources.md)
 and a test over it. The language half is a person's own standing rule, a note with
-`metadata.startup`, and stayfixed enforces nothing about it: the machine configuration's
-`artifact_language` and `reply_language` are recorded by `stayfixed setup` and read by nothing
-in this release. The four "harness" sources in the [README](README.md) are the freshness rule's
+`metadata.startup`, and stayfixed enforces nothing about it. The four "harness" sources in the [README](README.md) are the freshness rule's
 own worked example: the term moved from a company blog [S27] to a discipline [S28] to an
 open-sourced platform [S30] and a research framing [S29] in nine months, with the pattern
 essay it all descends from [S31] published eleven months before the earliest of the four

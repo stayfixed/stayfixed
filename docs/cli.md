@@ -4037,8 +4037,6 @@ which no gate reads.
 
 ```toml
 [personal]
-reply_language = ""      # recorded; nothing in this release reads it
-artifact_language = "en" # recorded; nothing in this release reads it
 preset = "recommended"   # the preset `setup` applies
 
 [overlay]
@@ -4074,10 +4072,8 @@ this file when the session starts and `stayfixed doctor`'s `preferences` row red
 With no `stayfixed.toml` in the repository a session still reads this file: `bg_cleanup = false`
 turns the guard off there too.
 
-`reply_language` and `artifact_language` are kept for you and read by nothing in this release:
-they meant something only through the `recommended` preset's standing rule about which language
-each audience gets, which the preset no longer carries. To state a language preference, write a
-personal standing rule, a note with `metadata.startup` in your overlay's `common/memory/`.
+To state a language preference, write a personal standing rule, a note with `metadata.startup`
+in your overlay's `common/memory/`.
 
 `stayfixed setup` writes one more table, `[machine]`, into the same file — `version`, the
 stayfixed that ran, and `installed`, the date it ran. It is `setup`'s record of what it did, not

@@ -72,8 +72,6 @@ def exact_keys(table: Mapping[str, KeyClass]) -> set[str]:
 
 # One row per key the class table names; a wildcard row is asked through a key it covers.
 TABLE_ROWS = [
-    ("personal.reply_language", KeyClass.MACHINE_ONLY),
-    ("personal.artifact_language", KeyClass.MACHINE_ONLY),
     ("personal.preset", KeyClass.MACHINE_ONLY),
     ("guards.bg_cleanup", KeyClass.MACHINE_ONLY),
     ("memory.mode", KeyClass.PREFERENCE),

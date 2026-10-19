@@ -64,7 +64,7 @@ reddens = ["tests/overlay/test_create.py::test_the_cli_never_picks_the_github_so
 #
 # The same spread is what carries a recorded root through a run that was not given one, which is the
 # machine file's overlay anchor surviving a second `setup`: without it, a rewrite that only sets the
-# personal languages drops whatever `setup --overlay` recorded and every later `attach` reads "not
+# personal values drops whatever `setup --overlay` recorded and every later `attach` reads "not
 # recorded" about a machine that was already set up. That property had an entry of its own, on the
 # explicit read-back this module used to do beside the spread; it SURVIVED, because the spread
 # already held the property and the read-back was dead code shaped like a guard. The read-back is
@@ -103,9 +103,8 @@ before = 'created = create(owner, name, source="template", root=destination.pare
 after = 'created = create(owner, name, source="template", root=Path.cwd(), runner=runner)'
 reddens = ["tests/setup/test_setup.py::test_overlay_create_asks_github_and_records_the_new_root"]
 
-# The preset's own `reply_language = ""` default must never win over a value already recorded — by
-# an earlier `setup` run or by the owner's own hand — or a second `setup --preset recommended`
-# resets what "the user's to set" (skills/setup/SKILL.md) means.
+# A preset's own default must never win over a personal value already recorded — by an earlier
+# `setup` run or by the owner's own hand — or a second `setup --preset recommended` resets it.
 [[mutation]]
 name = "setup resets a personal value the owner already set"
 file = "src/stayfixed/setup/run.py"
@@ -875,7 +874,7 @@ reddens = [
 
 # `pluginConfigs` is where Claude Code reads this plugin's own options, and the mirror was
 # written from this run's *new* keys — empty on every run after the first. An owner who edited
-# `reply_language` in the machine file, the documented way, kept `""` there for ever.
+# a personal value in the machine file, the documented way, kept the preset's there for ever.
 [[mutation]]
 name = "setup mirrors only the values this run itself added"
 file = "src/stayfixed/setup/run.py"

@@ -185,10 +185,10 @@ def test_a_usable_machine_file_with_no_project_configuration_says_nothing(
     # The control for the case above: a machine file that loads whole is no warning. No mutation
     # of its own: the warning appearing here would be the case above's arm firing on every file.
     machine = tmp_path / "machine.toml"
-    machine.write_text('[personal]\nreply_language = "fr"\n', encoding="utf-8")
+    machine.write_text('[personal]\npreset = "fr"\n', encoding="utf-8")
     got = session_config(tmp_path if root == "no-file" else None, machine=machine)
     assert got.config is None and got.warnings == ()
-    assert got.owner.personal.reply_language == "fr"
+    assert got.owner.personal.preset == "fr"
 
 
 def test_both_broken(tmp_path: Path) -> None:

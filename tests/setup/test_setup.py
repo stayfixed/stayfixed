@@ -120,7 +120,7 @@ def test_setup_writes_the_machine_file_and_the_deny_rules(tmp_path: Path) -> Non
         project_root=tmp_path / "project",
     )
     written = read_machine(machine)
-    assert written["personal"]["artifact_language"] == "en"
+    assert written["personal"]["preset"] == "recommended"
     settings = json.loads((home / USER_SETTINGS).read_text(encoding="utf-8"))
     preset = load_preset("recommended")
     for rule in preset["deny"]["global"]:
@@ -837,7 +837,7 @@ def test_a_second_run_does_not_reset_a_personal_value_the_owner_set(tmp_path: Pa
         project_root=tmp_path / "project",
     )
     # The owner sets a personal value by hand between two runs.
-    write_machine(machine, personal={"reply_language": "ru"}, overlay_root=None, machine={})
+    write_machine(machine, personal={"preset": "mine"}, overlay_root=None, machine={})
     setup(
         "recommended",
         home=home,
@@ -847,7 +847,7 @@ def test_a_second_run_does_not_reset_a_personal_value_the_owner_set(tmp_path: Pa
         overlay=None,
         project_root=tmp_path / "project",
     )
-    assert read_machine(machine)["personal"]["reply_language"] == "ru"
+    assert read_machine(machine)["personal"]["preset"] == "mine"
 
 
 def test_a_malformed_overlay_spec_is_refused(tmp_path: Path) -> None:
@@ -3114,15 +3114,16 @@ def test_a_claude_directory_that_becomes_a_symlink_after_the_check_is_still_refu
 
 def test_the_plugin_config_mirror_follows_the_machine_file(tmp_path: Path) -> None:
     # The mirror was written from `_new_personal_values`, which is empty on every run after the
-    # first — so an owner who set `reply_language` in the machine file, the documented way
-    # (`README.md`: "Written by: you, or `stayfixed setup`"), kept `""` in `~/.claude/settings.json`
-    # for ever, and Claude Code read that. The mirror is a projection of the machine file and is
+    # first — so an owner who set `preset` in the machine file, the documented way (`README.md`:
+    # "Written by: you, or `stayfixed setup`"), kept the preset's in `~/.claude/settings.json` for
+    # ever, and Claude Code read that. The mirror is a projection of the machine file and is
     # recomputed from it on every run. The direction is a decision, recorded in `setup.run`: a value
     # set in Claude Code's own plugin-config UI loses to the machine file, because one file has to
     # win and that one is the file every reader reads.
     #
     # Mutation (`mutations/`'s "setup mirrors only the values this run itself added"): the argument
-    # goes back to `personal` → the second run leaves `""` in the settings file and this reddens.
+    # goes back to `personal` → the second run leaves the preset's in the settings file and this
+    # reddens.
     home = tmp_path / "home"
     machine = tmp_path / "config.toml"
     for _ in range(1):
@@ -3135,7 +3136,7 @@ def test_the_plugin_config_mirror_follows_the_machine_file(tmp_path: Path) -> No
             overlay=None,
             project_root=tmp_path / "project",
         )
-    write_machine(machine, personal={"reply_language": "ru"}, overlay_root=None, machine={})
+    write_machine(machine, personal={"preset": "mine"}, overlay_root=None, machine={})
     setup(
         "recommended",
         home=home,
@@ -3147,8 +3148,7 @@ def test_the_plugin_config_mirror_follows_the_machine_file(tmp_path: Path) -> No
     )
     settings = json.loads((home / USER_SETTINGS).read_text(encoding="utf-8"))
     options = settings["pluginConfigs"]["stayfixed@stayfixed-marketplace"]["options"]
-    assert options["reply_language"] == "ru"
-    assert options["artifact_language"] == "en", "a value nobody changed still round-trips"
+    assert options["preset"] == "mine"
 
 
 def test_a_created_tree_that_is_not_an_overlay_says_the_repository_now_exists(

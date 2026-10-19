@@ -247,15 +247,15 @@ def test_a_repository_guards_section_is_refused_by_resolve(tmp_path: Path) -> No
     # owner's values stand. Mutation (`mutations/`'s "the NOTE path removes a repository's
     # machine-only table without a note"): the two notes go missing.
     machine = tmp_path / "m.toml"
-    machine.write_text('[personal]\nreply_language = "ru"\n', encoding="utf-8")
+    machine.write_text('[personal]\npreset = "mine"\n', encoding="utf-8")
     owner = resolve_owner(machine)
-    text = MINIMAL + '[guards]\nbg_cleanup = false\n[personal]\nreply_language = "xx"\n'
+    text = MINIMAL + '[guards]\nbg_cleanup = false\n[personal]\npreset = "xx"\n'
     got = loads_noting(text, tmp_path, owner=owner)
     assert got.config.personal == owner.personal
-    assert got.config.personal.reply_language == "ru"
+    assert got.config.personal.preset == "mine"
     assert got.notes == (
         REFUSED_LAYER_NOTE.format(key="guards.bg_cleanup", layer="repository"),
-        REFUSED_LAYER_NOTE.format(key="personal.reply_language", layer="repository"),
+        REFUSED_LAYER_NOTE.format(key="personal.preset", layer="repository"),
     )
 
 

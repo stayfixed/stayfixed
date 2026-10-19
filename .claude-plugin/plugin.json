@@ -7,18 +7,6 @@
   "license": "MIT",
   "keywords": ["methodology", "bug-ledger", "memory", "hooks", "guards", "codex"],
   "userConfig": {
-    "reply_language": {
-      "type": "string",
-      "title": "Reply language",
-      "description": "Recorded for you; nothing in this release reads it. A personal standing-rule note states a language preference.",
-      "default": ""
-    },
-    "artifact_language": {
-      "type": "string",
-      "title": "Artifact language",
-      "description": "Recorded for you; nothing in this release reads it. A personal standing-rule note states a language preference.",
-      "default": "en"
-    },
     "preset": {
       "type": "string",
       "title": "Preset",

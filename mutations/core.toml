@@ -3938,7 +3938,7 @@ name = "an invalid value in the machine file costs every value read before it"
 file = "src/stayfixed/config/owner.py"
 before = "                    problem(str(exc), ignored=False)"
 after = "                    problem(str(exc), ignored=False)\n                    found.clear()"
-reddens = ["tests/config/test_owner.py::test_an_invalid_value_resets_only_its_key[personal]"]
+reddens = ["tests/config/test_owner.py::test_an_invalid_value_resets_only_its_key[guards]"]
 
 # A table that is not one is a note, never a session's owner layer failing.
 [[mutation]]

@@ -78,8 +78,6 @@ attribution_check = true
 types = ["feat", "fix", "docs", "test", "refactor", "style", "chore", "harden", "guard"]
 
 [defaults.personal]
-reply_language = ""
-artifact_language = "en"
 preset = "recommended"
 
 [plugins]

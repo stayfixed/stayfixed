@@ -45,7 +45,7 @@ def test_preset_defaults_fill_every_section(tmp_path: Path) -> None:
     assert config.budgets.effective("agents_md_lines") == 300
     assert config.native_caps.hook_output_chars == 10000
     assert config.commit_messages.types[-1] == "guard"
-    assert config.personal.artifact_language == "en"
+    assert config.personal.preset == "recommended"
 
 
 def test_file_values_override_preset_values(tmp_path: Path) -> None:
@@ -62,10 +62,9 @@ def test_file_values_override_preset_values(tmp_path: Path) -> None:
 def test_machine_config_sits_between_file_and_preset(tmp_path: Path) -> None:
     write(tmp_path, MINIMAL)
     machine = tmp_path / "machine.toml"
-    machine.write_text('[personal]\nreply_language = "ru"\n', encoding="utf-8")
+    machine.write_text('[personal]\npreset = "mine"\n', encoding="utf-8")
     config = load(tmp_path, machine=machine)
-    assert config.personal.reply_language == "ru"
-    assert config.personal.artifact_language == "en"
+    assert config.personal.preset == "mine"
 
 
 def test_unknown_top_level_section_is_rejected(tmp_path: Path) -> None:
@@ -181,13 +180,13 @@ def test_one_command_reads_one_machine_file(
     home = tmp_path / "home"
     (home / ".config" / "stayfixed").mkdir(parents=True)
     (home / ".config" / "stayfixed" / "config.toml").write_text(
-        '[personal]\nreply_language = "the-owners"\n\n[overlay]\nroot = "/tmp/recorded"\n',
+        '[personal]\npreset = "the-owners"\n\n[overlay]\nroot = "/tmp/recorded"\n',
         encoding="utf-8",
     )
     elsewhere = tmp_path / "elsewhere"
     (elsewhere / "stayfixed").mkdir(parents=True)
     (elsewhere / "stayfixed" / "config.toml").write_text(
-        '[personal]\nreply_language = "the-other-files"\n', encoding="utf-8"
+        '[personal]\npreset = "the-other-files"\n', encoding="utf-8"
     )
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
     as_owner_home(monkeypatch, home)
@@ -198,7 +197,7 @@ def test_one_command_reads_one_machine_file(
     (root / CONFIG_FILE).write_text(MINIMAL, encoding="utf-8")
     # All three readers, with no `--machine` threaded, now name the same file — and it is the
     # one the two security anchors were always going to read.
-    assert load(root).personal.reply_language == "the-owners"
+    assert load(root).personal.preset == "the-owners"
     assert overlay_root(None) == Path("/tmp/recorded")
     trust_file, machine = record_path(None), machine_config_path()
     assert trust_file is not None and machine is not None
@@ -218,7 +217,7 @@ def test_the_machine_file_a_person_names_is_honoured_by_every_reader(
     mine = tmp_path / "mine" / "config.toml"
     mine.parent.mkdir(parents=True)
     mine.write_text(
-        '[personal]\nreply_language = "mine"\n\n[overlay]\nroot = "/tmp/mine"\n',
+        '[personal]\npreset = "mine"\n\n[overlay]\nroot = "/tmp/mine"\n',
         encoding="utf-8",
     )
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path / "home"))
@@ -226,7 +225,7 @@ def test_the_machine_file_a_person_names_is_honoured_by_every_reader(
     root = tmp_path / "project"
     root.mkdir()
     (root / CONFIG_FILE).write_text(MINIMAL, encoding="utf-8")
-    assert load(root, machine=mine).personal.reply_language == "mine"
+    assert load(root, machine=mine).personal.preset == "mine"
     assert overlay_root(mine) == Path("/tmp/mine")
     assert record_path(mine) == mine.parent / "trust.json"
 

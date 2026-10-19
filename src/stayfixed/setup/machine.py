@@ -11,7 +11,7 @@ which belongs beside those readers, in `config`.
 
 **A rewrite merges, table by table, key by key — including the tables this writer knows
 nothing about.** `setup` runs again on a machine that already has a file, and the common case is
-"set the personal languages, leave the overlay alone" or the reverse — `overlay_root=None` means
+"set the personal values, leave the overlay alone" or the reverse — `overlay_root=None` means
 *this call does not know*, not *forget what was recorded*, so an unset value is simply not
 written over and survives in the table it was spread onto. The three tests this file exists to
 satisfy are the
@@ -44,7 +44,7 @@ trusted because it is built out of fixed strings this module and `config.machine
 a segment a repository chose, which is what `mkdirs_within`'s containment exists to stop.
 
 Every string that reaches `tomlout.dumps` is repository-*adjacent* rather than
-repository-authored — the overlay root and the personal languages are values the machine owner
+repository-authored — the overlay root and the personal values are values the machine owner
 typed — but it goes through the one serialiser anyway: `tomlout`'s own docstring says why a
 second writer, hand-rolled for "just this one path", is the mistake this module exists to not
 repeat.
