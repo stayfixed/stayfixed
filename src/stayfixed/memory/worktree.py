@@ -159,11 +159,12 @@ def harness_memory_path(worktree: Path, home: Path | None = None) -> Path:
 
 
 def harness_anchor(where: Path, home: Path | None) -> tuple[Path, str]:
-    """`harness_link_parts` as a root the `O_NOFOLLOW` walk opens and the path below it.
+    """`harness_link_parts` as the root the `O_NOFOLLOW` walk opens and the path below it.
 
-    The home's own symlinks are the owner's (a stow- or chezmoi-managed `~/.claude`), so the
-    link's directory is resolved and the walk starts at the filesystem root. The home is found and
-    never created: one that is not a directory is a mistyped `--home`, refused before any write.
+    `~/.claude` is resolved once, since a stow- or chezmoi-managed one is the owner's link, and the
+    walk opens the directory it lands in and follows no link from `.claude` down. The home is found
+    and never created: one that is not a directory is a mistyped `--home`. Both are refused here,
+    above every write, as is a `.claude` the walk cannot open.
     """
     root, relative = harness_link_parts(where, home)
     if not fsops.is_dir(root):
@@ -172,8 +173,17 @@ def harness_anchor(where: Path, home: Path | None) -> tuple[Path, str]:
             f"stayfixed writes inside the home directory and never creates the home directory "
             f"itself, so it has to exist already"
         )
-    link = fsops.resolved((root / relative).parent) / PurePosixPath(relative).name
-    return Path(link.anchor), str(link.relative_to(link.anchor))
+    first, _, below = relative.partition("/")
+    try:
+        claude = fsops.resolved(root / first)
+        root, relative = claude.parent, f"{claude.name}/{below}"
+        fsops.check_within(root, relative)
+    except OSError as exc:
+        raise Refusal(
+            f"the harness memory link cannot be reached under {root}: {fsops.said(exc)}; "
+            f"stayfixed follows the links up to `.claude` and none below it"
+        ) from exc
+    return root, relative
 
 
 def _link(root: Path, relative: str, source: Path) -> bool:
@@ -191,14 +201,14 @@ def _link(root: Path, relative: str, source: Path) -> bool:
     read, the removal and the creation each reach the entry through a descriptor the walk
     just opened, so there is no window between the check and the act. `root` is the
     containment anchor and never comes from the repository: it is the worktree `link` was
-    handed, the checkout `attach_main` was handed, or the machine owner's home directory
-    (`harness_link_parts`). `relative` is the half the repository can influence, and it is
-    walked one component at a time.
+    handed, the checkout `attach_main` was handed, or the directory `~/.claude` resolves into
+    (`harness_anchor`). `relative` is the half the repository can influence, and it is walked one
+    component at a time.
 
     A `FileNotFoundError` from the read is "nothing is there": it means a directory above the
     target does not exist yet, which is the ordinary case on a first link — `symlink_within`
     creates those parents through the same walk. A missing *root* is not created: see
-    `harness_link_parts`.
+    `harness_anchor`.
     """
     try:
         current = fsops.readlink_within(root, relative)
@@ -238,7 +248,7 @@ def _unlink(root: Path, relative: str, source: Path) -> bool:
     except FileNotFoundError:
         return False  # no directory above the name, so there is no link of ours there
     except fsops.UnsafePath:
-        return False  # a component that became a symlink after `harness_anchor` resolved it
+        return False  # a component that became a symlink after `harness_anchor` walked it
 
 
 @dataclass(frozen=True)

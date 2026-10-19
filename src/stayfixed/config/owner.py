@@ -3,7 +3,7 @@
 The preset's `[defaults.personal]`, `Guards()` and no session budget, overridden by the machine
 file's `[personal]`, `[guards]` and `[budgets]`, resolved through `classes.resolve` as the layers
 `PRESET` and `MACHINE_FILE`. The machine file is the owner's, never a repository's
-(`config.machine` says why no variable moves it), so it is the one place a guard may be switched
+(`config.machine` says where it is), so it is the one place a guard may be switched
 off; a repository's `[guards]` is a layer `classes.ALLOWED` does not admit.
 
 Two readers ask, and they differ only over a file that does not load. A command the owner runs

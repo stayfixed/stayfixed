@@ -3013,8 +3013,8 @@ be read or is not one JSON object the parser reaches ends the run `1`, naming it
 repaired the next run finishes what this one began.
 
 These questions are asked in one fixed order, and the first refusal ends the run: what `--overlay`
-names, and whether an existing path is an overlay; the preset; the settings file's place; where a
-write under `--home` lands; and last where the overlay lies, the one that runs `git`. Every one of
+names, and whether an existing path is an overlay; the preset; where a write under `--home`
+lands; and last where the overlay lies, the one that runs `git`. Every one of
 those refusals happens before the first write, **with one exception**: for
 `--overlay create:<owner>/<name>`, "not an overlay" is a check on the tree that arrived, so it runs
 after the repository has been created on GitHub and cloned — along with the machine file, the

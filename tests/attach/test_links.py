@@ -36,12 +36,9 @@ def _bound(tmp_path: Path) -> tuple[Path, Path, Path]:
     """A committed repository in overlay mode, and the overlay that already records it."""
     root = tmp_path / "project"
     root.mkdir(parents=True)
-    # A home directory that is already there. stayfixed finds the machine owner's home and
-    # never creates it — `worktree.harness_link_parts` makes it the containment anchor, and
-    # the `O_NOFOLLOW` walk vouches for every component below an anchor and never for the
-    # anchor itself — so a home that is not there is a refusal, which
-    # `tests/memory/test_worktree.py` asserts in both directions. Every test below spells its
-    # home as `tmp_path / "home"`; it is created here so none of them has to say so.
+    # A home directory that is already there: stayfixed never creates one, and a home that is not
+    # there is a refusal (`tests/memory/test_worktree.py`). Every test below spells its home as
+    # `tmp_path / "home"`; it is created here so none of them has to say so.
     (tmp_path / "home").mkdir(exist_ok=True)
     overlay = tmp_path / "overlay"
     (overlay / "common" / "memory").mkdir(parents=True)

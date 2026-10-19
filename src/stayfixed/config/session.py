@@ -140,8 +140,8 @@ def session_config(root: Path | None, *, machine: Path | None = None) -> Session
     """The configuration a session runs on in `root`, which never raises for anything the
     repository or the machine file holds.
 
-    `machine` is the machine file; `None` is the one `config.machine` names, which no variable
-    moves, as `loader.load` reads it. `root` is `None` for a hook with no project root, which has
+    `machine` is the machine file; `None` is the one `config.machine` names, as `loader.load`
+    reads it. `root` is `None` for a hook with no project root, which has
     no project configuration.
     """
     path = machine if machine is not None else machine_config_path()

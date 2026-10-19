@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import os
 import shutil
@@ -26,8 +27,11 @@ from stayfixed.presets import load_preset
 from tests.approved import record
 from tests.gitfixture import git
 from tests.pathfaults import (
+    ROOT_SEARCHES_EVERYTHING,
+    at_mode,
     resolving_raises,
     symlink_loop_at,
+    unsearchable,
 )
 from tests.snapshot import assert_snapshot_unchanged, snapshot
 
@@ -114,12 +118,9 @@ def a_checkout(
 def a_home(tmp_path: Path) -> Path:
     """A home directory that is already there, for the tests that expect the harness link.
 
-    stayfixed finds the machine owner's home and never creates it: `harness_link_parts` makes
-    it the containment anchor, and `open_within` applies `O_NOFOLLOW` to every component
-    *below* an anchor and never to the anchor itself — so an anchor stayfixed made up would be
-    one the walk cannot vouch for. Every component under it is still created by the walk,
-    which is what `test_the_harness_link_is_created_on_a_machine_with_no_projects_directory_yet`
-    asserts.
+    stayfixed finds the machine owner's home and never creates it (`harness_anchor`). Every
+    component under it is created by the walk, which is what
+    `test_the_harness_link_is_created_on_a_machine_with_no_projects_directory_yet` asserts.
     """
     home = tmp_path / "home"
     home.mkdir(exist_ok=True)
@@ -1149,6 +1150,49 @@ def _a_linked_claude(home: Path, tmp_path: Path) -> Path:
     return elsewhere
 
 
+# What stands in `~/.claude`'s way, and the words the refusal says it in.
+_UNWALKABLE = {
+    "projects-linked": "none below it",
+    "claude-unsearchable": "Permission denied",
+    "claude-loop": "cannot be reached",
+}
+
+
+@ROOT_SEARCHES_EVERYTHING
+@pytest.mark.parametrize("layout", sorted(_UNWALKABLE))
+def test_a_claude_directory_the_walk_cannot_go_through_is_refused_at_the_anchor(
+    tmp_path: Path, layout: str
+) -> None:
+    # `.claude` is followed and nothing below it, and a `.claude` the walk cannot open is refused
+    # above every write rather than met by one. Mutation (oracle): `mutations/`'s "the harness
+    # anchor stops asking whether the walk can reach it" -> the first two raise nothing.
+    root, _store, _config = a_checkout(tmp_path)
+    home = a_home(tmp_path)
+    claude = home / ".claude"
+    if layout == "claude-loop":
+        claude.symlink_to(claude)
+    else:
+        claude.mkdir()
+    if layout == "projects-linked":
+        (tmp_path / "elsewhere").mkdir()
+        (claude / "projects").symlink_to(tmp_path / "elsewhere", target_is_directory=True)
+    locked = unsearchable(claude) if layout == "claude-unsearchable" else contextlib.nullcontext()
+    with locked, pytest.raises(Refusal, match=_UNWALKABLE[layout]):
+        worktree.harness_anchor(root, home)
+
+
+def test_a_home_under_a_directory_nobody_may_read_gets_the_harness_link(tmp_path: Path) -> None:
+    # cPanel's `/home` is 0711: the walk opens the home and nothing above it.
+    root, store, config = a_checkout(tmp_path)
+    tree = a_worktree(root, tmp_path / "wt")
+    record(store, config)
+    home = tmp_path / "homes" / "me"
+    home.mkdir(parents=True)
+    with at_mode(home.parent, 0o311, after=0o755):
+        link(tree, store, config, home=home)
+    assert harness_memory_path(tree, home).resolve() == store.path.resolve()
+
+
 def test_a_symlinked_claude_directory_is_followed_in_both_directions(tmp_path: Path) -> None:
     # A stow- or chezmoi-managed `~/.claude` is the owner's layout, and nothing a repository
     # writes is on that path: the link is made behind it, and withdrawn from there.
@@ -1168,19 +1212,15 @@ def test_a_symlinked_claude_directory_is_followed_in_both_directions(tmp_path: P
 
 
 def test_a_withdrawal_whose_walk_refuses_a_component_leaves_it_standing(tmp_path: Path) -> None:
-    # The floor under the refusal above, and it is not the same rule: the anchor is checked
-    # once, above every write, and a component that becomes a symlink *after* that check is
-    # exactly the race the `O_NOFOLLOW` walk exists for. `_unlink` already answers `False` for
-    # the two things it declines to clobber — somebody else's file, somebody else's link — and
-    # a component the walk refuses is the third: there is no link of ours to withdraw behind
-    # it, and reporting that as a failure turns one worktree's odd home layout into a `detach`
-    # that cannot finish.
-    #
+    # The floor under the anchor's refusal: a component below `.claude` that becomes a symlink
+    # after the anchor walked it is the race the `O_NOFOLLOW` walk exists for, and there is no
+    # link of ours behind it to withdraw. `_unlink` is handed the root the anchor hands it.
     # Mutation (declared, `mutations/`'s "a withdrawal whose walk refuses a component fails the
     # command"): `return False` -> `raise` -> `UnsafePath` leaves `_unlink` and this case reddens.
     home = a_home(tmp_path)
-    elsewhere = _a_linked_claude(home, tmp_path)
-    (elsewhere / "projects").mkdir()
+    (home / ".claude").mkdir()
+    (tmp_path / "elsewhere").mkdir()
+    (home / ".claude" / "projects").symlink_to(tmp_path / "elsewhere", target_is_directory=True)
     assert worktree._unlink(home, ".claude/projects/x/memory", tmp_path / "store") is False
 
 

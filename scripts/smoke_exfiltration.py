@@ -42,7 +42,7 @@ DELIMITER = "<<<stayfixed:repository-data"
 # a checkout with none is a state of its own (`no-origin`), not the one this scenario is about.
 RECORDED_REMOTE = "git@example.com:the-owner/smoke.git"
 CLONES_REMOTE = "git@example.com:somebody-else/smoke.git"
-# How many rows this scenario declares. Asserted at the end, because six of the eight assert an
+# How many rows this scenario declares. Asserted at the end, because five of the seven assert an
 # ABSENCE and a run that executed one of them prints an identically green last line.
 EXPECTED_ROWS = 7
 

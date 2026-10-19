@@ -2,7 +2,7 @@
 
 **This module invents no schema.** `config.owner.resolve_owner` reads `[personal]`, `[guards]`
 and the session budgets of `[budgets]`, for every command's load and every session, and
-`config.overlay.overlay_root` reads `[overlay] root`, all from the file no variable moves, and
+`config.overlay.overlay_root` reads `[overlay] root`, all from the one file under `HOME`, and
 none of them changes here. This writer adds `[machine]` beside them — what `setup` installed, so
 `doctor` can check it later — and nothing else. `[guards]` and `[budgets]` are the owner's to write
 by hand, and a rewrite carries them through untouched, as it carries every table and key it does

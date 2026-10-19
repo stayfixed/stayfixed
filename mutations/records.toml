@@ -1338,10 +1338,22 @@ reddens = [
   "tests/memory/test_worktree.py::test_a_tree_with_nothing_to_link_leaves_no_base_directory_behind",
 ]
 
+# `~/.claude` is followed and nothing below it, and a `.claude` the walk cannot open is refused at
+# the anchor, above every write.
+[[mutation]]
+name = "the harness anchor stops asking whether the walk can reach it"
+file = "src/stayfixed/memory/worktree.py"
+before = "        fsops.check_within(root, relative)\n"
+after = "        pass\n"
+reddens = [
+  "tests/memory/test_worktree.py::test_a_claude_directory_the_walk_cannot_go_through_is_refused_at_the_anchor[claude-unsearchable]",
+  "tests/memory/test_worktree.py::test_a_claude_directory_the_walk_cannot_go_through_is_refused_at_the_anchor[projects-linked]",
+]
+
 [[mutation]]
 name = "a withdrawal whose walk refuses a component fails the command"
 file = "src/stayfixed/memory/worktree.py"
-before = "        return False  # a component that became a symlink after `harness_anchor` resolved it"
+before = "        return False  # a component that became a symlink after `harness_anchor` walked it"
 after = "        raise"
 reddens = [
   "tests/memory/test_worktree.py::test_a_withdrawal_whose_walk_refuses_a_component_leaves_it_standing",

@@ -53,9 +53,9 @@ def run_hook(args: argparse.Namespace) -> int:
         # Never raises for what the repository or the machine file holds (`config.session`): the
         # guards run on the preset and the owner's layer, and the session hears why once, on
         # `SessionStart`. The
-        # machine file is the one no variable moves (`config.machine`), so which overlay root and
-        # which `trust.json` this process reads rests on no property of how the harness happens
-        # to invoke us.
+        # machine file is the one under `HOME` (`config.machine`), so which overlay root and which
+        # `trust.json` this process reads rests on no property of how the harness happens to
+        # invoke us.
         session = session_config(event.project_root)
         # Keyed on the session the payload named, so `once_key` means "once per context"
         # rather than "every invocation", and a handler's failure reaches `doctor` instead of
