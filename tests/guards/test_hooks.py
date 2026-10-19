@@ -12,7 +12,7 @@ from stayfixed.config.loader import CONFIG_FILE, load
 from stayfixed.guards import bgcleanup
 from stayfixed.guards.hooks import register
 from stayfixed.harnesses import CLAUDE
-from stayfixed.hooks.api import EVENTS, Decision, Handler, HookEvent, Policy
+from stayfixed.hooks.api import EVENTS, Handler, HookEvent
 from stayfixed.hooks.dispatch import Recorder, dispatch
 from tests.floor import floor_env
 from tests.gitfixture import git
@@ -79,44 +79,31 @@ def test_every_handler_declares_a_known_event() -> None:
         assert handler.event in EVENTS
 
 
-def test_the_background_guard_is_the_closed_pre_tool_use_handler() -> None:
-    # A guard for an action with a high cost of error fails closed. This is the only
-    # CLOSED handler in the plugin, and the policy is the whole difference between "could not
-    # judge" and "permitted".
-    handler = guard()
-    assert handler.event == "PreToolUse"
-    assert handler.policy is Policy.CLOSED
-
-
 def test_no_config_silences_the_hygiene_note_and_never_the_guard(tmp_path: Path) -> None:
     # With no stayfixed.toml the guard was silent too, by design, so a repository that had not
     # run `stayfixed init` was not guarded. It judges with any configuration now, none included,
-    # and the hygiene note, which is about the project, stays silent. Mutations (`mutations/`'s
-    # "the background guard is silent without a project configuration" -> the deny goes; "the
-    # hygiene note judges with no project configuration" -> the note raises on `None`).
+    # and the hygiene note, which is about the project, stays silent. Mutation (`mutations/`'s
+    # "the hygiene note judges with no project configuration"): the note raises on `None`.
     verdicts = {
         handler.event: handler.run(bash_event(tmp_path, "sleep 300 &"), NO_CONFIG)
         for handler in register()
     }
-    assert verdicts["PreToolUse"].decision == Decision.DENY
-    assert verdicts["PreToolUse"].reason == bgcleanup.SLEEP_REASON
+    assert verdicts["PreToolUse"].context == bgcleanup.SLEEP_HINT
     for event in ("PostToolUse", "PostToolUseFailure"):
         assert verdicts[event].decision is None and verdicts[event].context is None
 
 
-def test_a_leaking_background_call_is_denied(tmp_path: Path) -> None:
+def test_a_leaking_background_call_is_hinted(tmp_path: Path) -> None:
     root = a_project(tmp_path)
     config = load(root, machine=tmp_path / "absent.toml")
     result = guard().run(bash_event(root, "python -m http.server 8000 &"), session_of(config))
-    assert result.decision is Decision.DENY
-    assert result.reason == bgcleanup.LEAK_REASON
+    assert (result.decision, result.context) == (None, bgcleanup.LEAK_HINT)
 
 
-def test_every_leaking_call_of_a_session_is_denied_not_only_the_first(tmp_path: Path) -> None:
-    # The guard carries no `once_key`: the dispatcher banks one after any delivery, a deny
-    # included, so with a key the second leaking call of a session would be let through. Two
-    # calls through the dispatcher and one recording sink, which is where that key is banked.
-    # Mutation: `mutations/`'s "the background guard refuses once a session".
+def test_every_leaking_call_of_a_session_is_hinted_not_only_the_first(tmp_path: Path) -> None:
+    # The guard carries no `once_key`: the dispatcher banks one after any delivery, so with a key
+    # the second leaking call of a session would go unnamed. Two calls through the dispatcher and
+    # one recording sink, which is where that key is banked.
     root = a_project(tmp_path)
     config = load(root, machine=tmp_path / "absent.toml")
     recorder = Recorder()
@@ -128,8 +115,8 @@ def test_every_leaking_call_of_a_session_is_denied_not_only_the_first(tmp_path: 
             harness=CLAUDE,
             sink=recorder,
         )
-        assert outcome.exit_code == 2
-        assert bgcleanup.LEAK_REASON in outcome.stderr
+        output = json.loads(outcome.stdout)["hookSpecificOutput"]
+        assert (outcome.exit_code, output["additionalContext"]) == (0, bgcleanup.LEAK_HINT)
 
 
 def test_a_non_bash_tool_is_ignored(tmp_path: Path) -> None:
@@ -138,7 +125,7 @@ def test_a_non_bash_tool_is_ignored(tmp_path: Path) -> None:
     root = a_project(tmp_path)
     config = load(root, machine=tmp_path / "absent.toml")
     result = guard().run(bash_event(root, "sleep 300 &", tool="Edit"), session_of(config))
-    assert result.decision is None
+    assert result.context is None
 
 
 def test_a_trailing_restore_arrives_as_context_not_a_decision(tmp_path: Path) -> None:
@@ -157,26 +144,6 @@ def test_a_masking_echo_arrives_as_context_not_a_decision(tmp_path: Path) -> Non
     result = guard().run(bash_event(root, command, background=True), session_of(config))
     assert result.decision is None
     assert result.context is not None and "notification" in result.context
-
-
-def test_a_guard_that_cannot_judge_refuses_rather_than_permits(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # The CLOSED policy, exercised through the real dispatcher: an exception inside the judge
-    # is exit 2 with a reason, not an allow. Under Policy.OPEN this same call exits 0.
-    def broken(command: str, *, background: bool) -> bgcleanup.Verdict:
-        raise RuntimeError("boom")
-
-    monkeypatch.setattr(bgcleanup, "judge", broken)
-    root = a_project(tmp_path)
-    config = load(root, machine=tmp_path / "absent.toml")
-    recorder = Recorder()
-    outcome = dispatch(
-        bash_event(root, "ls"), register(), session_of(config), harness=CLAUDE, sink=recorder
-    )
-    assert outcome.exit_code == 2
-    assert "bg-cleanup: RuntimeError: boom" in outcome.stderr
-    assert recorder.records[0]["handler"] == "bg-cleanup"
 
 
 def test_discovery_imports_no_guards_module_but_hooks(tmp_path: Path) -> None:
@@ -224,22 +191,23 @@ def hook(event: str, stdin: str, cwd: Path) -> subprocess.CompletedProcess[str]:
     )
 
 
-def test_a_leaking_background_call_is_denied_through_the_real_dispatcher(tmp_path: Path) -> None:
-    # The production path end to end: stdin in, exit code out. This is what the wrapper runs.
+def test_a_leaking_background_call_is_hinted_through_the_real_dispatcher(tmp_path: Path) -> None:
+    # The production path end to end: stdin in, the hint out. This is what the wrapper runs.
     root = a_project(tmp_path)
     payload = {
         "hook_event_name": "PreToolUse",
         "session_id": "s",
         "cwd": str(root),
         "tool_name": "Bash",
-        "tool_input": {"command": "sleep 300 & wait", "run_in_background": True},
+        "tool_input": {"command": "sleep 300 &", "run_in_background": True},
     }
     completed = hook("PreToolUse", json.dumps(payload), root)
-    assert completed.returncode == 2
-    assert "refused: bg-cleanup:" in completed.stderr
+    output = json.loads(completed.stdout)["hookSpecificOutput"]
+    assert (completed.returncode, output["additionalContext"]) == (0, bgcleanup.SLEEP_HINT)
     allowed = dict(payload, tool_input={"command": "make && make test", "run_in_background": True})
     completed = hook("PreToolUse", json.dumps(allowed), root)
     assert completed.returncode == 0, completed.stderr
+    assert "additionalContext" not in json.loads(completed.stdout)["hookSpecificOutput"]
 
 
 needs_git = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
@@ -286,16 +254,13 @@ RED_RUN_EVENTS = ("PostToolUse", "PostToolUseFailure")
 
 
 @pytest.mark.parametrize("event", RED_RUN_EVENTS)
-def test_the_hygiene_notice_is_an_open_handler_with_one_once_key_on_each_event(event: str) -> None:
-    # The policy is the whole of `test-hygiene`'s safety story: a notice that could refuse a
-    # tool call would be worse than no notice. Reddened by flipping `Policy.OPEN` to
-    # `Policy.CLOSED` in `register()`, on either registration; measured. `once_key` is asserted
-    # against the literal "test-hygiene" rather than against `ONCE_TEST_HYGIENE`, so the expected
-    # value is a fixed one and not one read from the subject; it is the same literal on both
-    # events because one key is what holds a context to one note, whichever event carries it.
+def test_the_hygiene_notice_has_one_once_key_on_each_event(event: str) -> None:
+    # `once_key` is asserted against the literal "test-hygiene" rather than against
+    # `ONCE_TEST_HYGIENE`, so the expected value is a fixed one and not one read from the subject;
+    # it is the same literal on both events because one key is what holds a context to one note,
+    # whichever event carries it.
     handler = hygiene(event)
     assert handler.event == event
-    assert handler.policy is Policy.OPEN
     assert handler.once_key == "test-hygiene"
 
 
@@ -351,12 +316,11 @@ RED_ON: dict[str, dict[str, object]] = {
 def test_a_hygiene_failure_is_recorded_and_never_costs_the_call(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, event: str
 ) -> None:
-    # OPEN: the dispatcher swallows and records. The handler does not need its own try/except,
-    # and must not have one — a silent swallow is how a broken notice goes unnoticed. The
-    # guards inside `context_for` are narrower: each costs one stack's line and nothing else,
-    # and `tests/profiles/test_hints.py` pins them. Reddened by flipping the handler's policy
-    # to `Policy.CLOSED` (exit 2, not 0) on the event's own registration; the stderr assertion
-    # is reddened by giving `_test_hygiene` its own try/except around `context_for`.
+    # The dispatcher swallows and records. The handler does not need its own try/except, and
+    # must not have one — a silent swallow is how a broken notice goes unnoticed. The guards
+    # inside `context_for` are narrower: each costs one stack's line and nothing else, and
+    # `tests/profiles/test_hints.py` pins them. The stderr assertion is reddened by giving
+    # `_test_hygiene` its own try/except around `context_for`.
     from stayfixed.guards import hygiene as module
 
     def broken(command: str, root: Path, config: object) -> str | None:

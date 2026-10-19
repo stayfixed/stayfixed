@@ -204,7 +204,7 @@ def _gate(store: Store, config: Config, trusted: bool) -> str | None:
 
     Deliberately not wired into `session-context`: that command's `Result.summary` *is* the
     text the `SessionStart` entry emits, so a diagnostic there would be injected into the model
-    rather than read by anyone. Nor into the handler, which stays `Policy.OPEN` and quiet. The
+    rather than read by anyone. Nor into the handler, which stays quiet. The
     commands a person runs by hand are where this belongs.
     """
     if trusted:

@@ -579,9 +579,6 @@ _REACH_SECTION = re.compile(
 )
 # A cell's words where no tier is claimed for a surface under an agent.
 NOT_REACHED = "not verified"
-# A measurement the section's prose cites, as "(<agent> <version>)", the version with a
-# pre-release suffix where the measured build carried one (`0.162.0-alpha.17.2`).
-_MEASURED_AT = re.compile(r"\(([A-Z][A-Za-z ]* \d+(?:\.\d+)+(?:-[0-9A-Za-z.]+)?)\)")
 
 
 def _reach_table() -> str:
@@ -608,44 +605,12 @@ def test_the_readme_states_each_agents_reach_as_the_registry_does() -> None:
     # README stays a plain file a reader can open and the claim it makes about each agent cannot
     # drift from the one `doctor` reports. An empty table equals nothing rendered, so a section
     # that lost its table reddens too. Mutation (declared, on `harnesses`): Codex's session
-    # guards stated as blocking -> this reddens.
-    from stayfixed.harnesses import HARNESSES, Surface
-
+    # notices stated as held in CI -> this reddens.
     match = _REACH_SECTION.search(README.read_text(encoding="utf-8"))
     assert match, "README.md has no ## What each agent enforces section"
     lines = match.group(1).splitlines(keepends=True)
     table = "".join(line for line in lines if line.startswith("|"))
     assert table == _reach_table(), table
-    # The prose under the table says what each agent's session guards did when they were
-    # measured, and at which version; the registry records the agent and version that surface was
-    # measured on, so a retaken measurement is one edit there and this reddens until the README
-    # follows it. Mutation (declared, on `harnesses`): Claude Code's guard measurement restated
-    # at another version -> this reddens.
-    measured = {harness.reach[Surface.GUARDS].measured_on for harness in HARNESSES}
-    assert set(_MEASURED_AT.findall(match.group(1))) == measured
-
-
-def test_the_readme_says_only_the_owner_switches_a_guard_off_and_how_to_pass_one() -> None:
-    # A blocked agent's first question is how to get past the block, and a user's is how to turn
-    # it off. The section answers both where the table says a guard blocks: the one blocking
-    # guard judges only backgrounded commands, so the same command run in the foreground passes;
-    # only the machine owner switches a guard off, in the machine file, a repository never can
-    # and no command-line flag does; and a false block is a defect to report. Each clause is one
-    # needle, read from the section alone, so a paragraph moved elsewhere in the README reddens
-    # too. Mutations (declared), one per needle: the foreground sentence deleted, the scope's
-    # "only" dropped, a repository given the switch, a flag offered, and the false block no
-    # longer called a defect -> each reddens this.
-    match = _REACH_SECTION.search(README.read_text(encoding="utf-8"))
-    assert match, "README.md has no ## What each agent enforces section"
-    section = " ".join(match.group(1).split())
-    assert "judges only a command the agent runs in the background" in section
-    assert "The same command run in the foreground passes." in section
-    assert (
-        "machine owner may switch a session guard off in the machine file; a repository never can"
-        in section
-    )
-    assert "no command-line flag does" in section
-    assert "a false block is a defect" in section
 
 
 # A fenced `toml` block, and inside one the `[stayfixed]` table's `version =` line: the table

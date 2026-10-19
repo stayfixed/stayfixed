@@ -13,9 +13,9 @@ from typing import cast
 import pytest
 
 from stayfixed.config.session import FALLBACK_WARNING, MACHINE_FILE_WARNING, NOTED_WARNING
-from stayfixed.guards.bgcleanup import SLEEP_REASON
+from stayfixed.guards.bgcleanup import SLEEP_HINT
 from stayfixed.guards.hygiene import LEAD
-from stayfixed.hooks.api import Decision, Handler, HookEvent, HookResult, Policy
+from stayfixed.hooks.api import Decision, Handler, HookEvent, HookResult
 from stayfixed.hooks.commands import _output_cap, run_hook
 from tests.floor import floor_env
 from tests.gitfixture import git
@@ -108,6 +108,12 @@ BACKGROUND_SLEEP = {
 }
 
 
+def hinted(completed: subprocess.CompletedProcess[str]) -> bool:
+    """Whether a `PreToolUse` answer let the call through with the backgrounded-sleep hint."""
+    output = json.loads(completed.stdout)["hookSpecificOutput"]
+    return completed.returncode == 0 and output.get("additionalContext") == SLEEP_HINT
+
+
 def test_no_handlers_means_a_clean_empty_outcome(tmp_path: Path) -> None:
     completed = hook("SessionStart", json.dumps({"hook_event_name": "SessionStart"}), tmp_path)
     assert completed.returncode == 0
@@ -129,7 +135,7 @@ def test_malformed_stdin_on_session_start_degrades_open(tmp_path: Path) -> None:
 def test_a_broken_repository_config_on_pre_tool_use_is_judged_not_refused(tmp_path: Path) -> None:
     # A `[ci]` that is not a table refused every tool call. It is one key the session puts back
     # to the preset's, and the guard judges the call as it would in any repository: `ls` goes
-    # through, a backgrounded `sleep` is refused for what it is. Mutation (`mutations/`'s
+    # through, a backgrounded `sleep` is hinted at for what it is. Mutation (`mutations/`'s
     # "session_config answers no configuration for a file that loads with notes" reddens the
     # session's own test; this one holds the hook's verdict on both sides).
     (tmp_path / "stayfixed.toml").write_text(
@@ -138,8 +144,7 @@ def test_a_broken_repository_config_on_pre_tool_use_is_judged_not_refused(tmp_pa
     )
     completed = hook("PreToolUse", json.dumps(TOOL_CALL), tmp_path)
     assert (completed.returncode, completed.stderr) == (0, "")
-    refused = hook("PreToolUse", json.dumps(BACKGROUND_SLEEP), tmp_path)
-    assert refused.returncode == 2 and SLEEP_REASON in refused.stderr
+    assert hinted(hook("PreToolUse", json.dumps(BACKGROUND_SLEEP), tmp_path))
 
 
 @pytest.mark.parametrize("target", ["regular-file", "/dev/zero"])
@@ -212,7 +217,7 @@ def test_a_base_exception_inside_the_wrapper_keeps_the_event_aware_verdict(
 def test_a_deny_with_a_malformed_context_still_refuses_through_the_wrapper(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], event: str
 ) -> None:
-    # The production path, not `dispatch` alone: an OPEN handler that denies while carrying a
+    # The production path, not `dispatch` alone: a handler that denies while carrying a
     # non-string context exited 0 and the tool call proceeded. PostToolUse is the discriminating
     # half — nothing there maps a stray internal error to 2, so only a genuinely recorded deny
     # can produce it.
@@ -223,7 +228,7 @@ def test_a_deny_with_a_malformed_context_still_refuses_through_the_wrapper(
             context=cast(str, {"n": 1}),
         )
 
-    probe = Handler(name="probe", event=event, policy=Policy.OPEN, run=deny)
+    probe = Handler(name="probe", event=event, run=deny)
     monkeypatch.setattr("stayfixed.hooks.commands.discover", lambda: [probe])
     monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps({"hook_event_name": event})))
     assert run_hook(argparse.Namespace(event=event)) == 2

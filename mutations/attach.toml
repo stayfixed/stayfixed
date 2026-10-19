@@ -858,8 +858,7 @@ reddens = [
 # blanket backstop is what makes that true of a failure no `except` here foresaw. Every other case
 # in this module reaches a path with an explicit `except` of its own, so the backstop survived
 # deletion green until the case beside this entry existed. It is also what keeps this module's
-# safety off `Policy.OPEN` being kept for it -- the two guards are independent, and `mutations/`'s
-# "the overlay-status handler refuses a session when it fails" is the other one.
+# safety off the dispatcher's own catch: the two guards are independent.
 [[mutation]]
 name = "an open session handler lets an unforeseen failure out"
 file = "src/stayfixed/attach/hooks.py"
@@ -869,20 +868,6 @@ after = """    except Exception:
         raise"""
 reddens = [
   "tests/attach/test_hooks.py::test_a_failure_with_no_except_of_its_own_is_silence_not_an_exception",
-]
-
-# The mirror of `mutations/`'s "the background guard fails open again", over the one handler that
-# must not fail closed. `Policy.CLOSED` turns a failed overlay lookup into a deny on the one channel
-# a refusal travels -- the state the closed policy reserves for a guard that could not judge -- out
-# of a handler that reads two git remotes and a manifest and protects nothing. Asserted through the
-# real dispatcher, not by reading the constant back off the handler it was passed to.
-[[mutation]]
-name = "the overlay-status handler refuses a session when it fails"
-file = "src/stayfixed/attach/hooks.py"
-before = "            policy=Policy.OPEN,"
-after = "            policy=Policy.CLOSED,"
-reddens = [
-  "tests/attach/test_hooks.py::test_the_registration_is_what_the_dispatcher_acts_on",
 ]
 
 # In the block led by `mutations/`'s "the TOML readers answer a document nested past the parser as

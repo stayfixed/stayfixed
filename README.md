@@ -85,38 +85,29 @@ later package.
 
 ## What each agent enforces
 
-stayfixed reaches an agent in four ways, and they do not hold alike on every agent. The
-**session guards** refuse a command before it runs (the `bg-cleanup` handler, which
-`stayfixed hook PreToolUse` runs on every shell call); the **session notices** add context and
-refuse nothing (the test-hygiene note, the standing rules, the volatile notes); the **repository
-gates** — the bug, documentation, plan, commit and trail checks — run in CI through the reusable
-workflow; and the **methodology** is the skills and the `AGENTS.md` region. Each column is an
-agent under the name `[stayfixed] agents` lists it by: `claude` is Claude Code and `codex` is
-Codex.
+stayfixed reaches an agent in three ways, and they do not hold alike on every agent. The
+**session notices** add context and refuse nothing (the background-cleanup hints, the test-hygiene
+note, the standing rules, the volatile notes); the **repository gates** — the bug, documentation,
+plan, commit and trail checks — run in CI through the reusable workflow; and the **methodology** is
+the skills and the `AGENTS.md` region. Each column is an agent under the name `[stayfixed] agents`
+lists it by: `claude` is Claude Code and `codex` is Codex.
 
 | Surface | `claude` | `codex` |
 |---|---|---|
-| session guards | blocks in the session | not verified |
 | session notices | context only | not verified |
 | repository gates | CI only | CI only |
 | methodology | instructions only | instructions only |
 
-One session guard blocks, `bg-cleanup`, and it judges only a command the agent runs in the
-background: one that leaves an `&` job behind with no `trap … EXIT` to stop it, or that begins with
-`sleep` (directly, or behind `env` or `uv run` and uv's options), is refused before it starts, and
-the refusal names the remedy. Other wrappers, such as `nohup`, `timeout` or `bash -c`, are not
-read through ([`docs/cli.md`](https://github.com/stayfixed/stayfixed/blob/main/docs/cli.md#stayfixed-guard-bg-cleanup) lists them). The same
-command run in the foreground passes. The guards run in every repository, on the preset and the
-machine owner's layer, whatever its `stayfixed.toml` holds, none at all included: a file that does
-not load never refuses a command, and the session hears once, when it starts, what it could not
-use. The machine owner may switch a session guard off in the
-machine file; a repository never can, and no command-line flag does
+The background-cleanup hints, from the `bg-cleanup` handler that `stayfixed hook PreToolUse` runs
+on every shell call, name a command the agent runs in the background that leaves an `&` job behind
+with no `trap … EXIT` or trailing `wait` to stop it, or that begins with `sleep`, and the remedy;
+they never refuse it. They run in every repository, on the preset and the machine owner's layer,
+whatever its `stayfixed.toml` holds, none at all included, and the session hears once, when it
+starts, what it could not use. The machine owner may switch them off in the machine file
 ([`docs/cli.md`](https://github.com/stayfixed/stayfixed/blob/main/docs/cli.md#configuration) names
-the machine file's key), so a false block is a defect: report it in
-[an issue](https://github.com/stayfixed/stayfixed/issues) with the command it refused.
+the key); a repository never can.
 
-On Claude Code a guard's refusal stopped the command before it ran when this was measured
-(Claude Code 2.1.261). Where a surface does not reach an agent in the session, the repository gates
+Where a surface does not reach an agent in the session, the repository gates
 still hold in CI, which every agent's changes pass through. What was measured of Codex
 (Codex CLI 0.162.0-alpha.17.2) is its side: it runs a plugin's hooks once they are trusted in
 `/hooks`, skips untrusted ones without a message and runs them anyway under
@@ -408,7 +399,6 @@ stayfixed plan check                                   # lint the plans a change
 stayfixed plan check --base origin/main docs/plans/example.md
 
 # Guards
-stayfixed guard bg-cleanup                             # judge one Bash call, read as JSON on stdin
 stayfixed commit check --range origin/main..HEAD       # attribution lines in commit messages
 stayfixed commit strip .git/COMMIT_EDITMSG             # take the attribution block out of a message file
 stayfixed test hygiene                                 # the faults that make a red run unattributable

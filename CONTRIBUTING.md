@@ -310,7 +310,7 @@ too, since Python runs each package's `__init__.py` first.
   rather than an area, and its one direct import of `hooks.policy` is named in that test rather than
   skipped silently.
 - **`stayfixed.hooks.api` is the one exception, and it is structural rather than drift.** That
-  module *defines* the vocabulary two areas share — `EVENTS`, `Policy`, `Decision`, `HookEvent`,
+  module *defines* the vocabulary two areas share — `EVENTS`, `Decision`, `HookEvent`,
   `HookResult`, `Handler`, `HandlerFn`, `Sink`, `NullSink` and the sink's on-disk layout —
   instead of re-exporting it, because `hooks.dispatch`, `hooks.sink`, `hooks.registry` and every
   area's `hooks.py` import *it*: a name defined in one of those modules and re-exported from

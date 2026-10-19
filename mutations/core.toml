@@ -1035,19 +1035,6 @@ reddens = [
   "tests/hooks/test_dispatch.py::test_a_deny_never_goes_through_render",
 ]
 
-# The README's prose cites the version each agent's session guards were measured at, and the
-# registry records it beside that surface's evidence; the README is held to it.
-[[mutation]]
-name = "Claude Code's guard measurement is restated at another version"
-file = "src/stayfixed/harnesses.py"
-before = """                f"({_P0_SPIKES}, the fail-closed matrix)",
-                measured_on="Claude Code 2.1.261","""
-after = """                f"({_P0_SPIKES}, the fail-closed matrix)",
-                measured_on="Claude Code 2.1.262","""
-reddens = [
-  "tests/test_documents.py::test_the_readme_states_each_agents_reach_as_the_registry_does",
-]
-
 # A harness's `render` shapes context and nothing else: a deny travels on the exit code alone, and an
 # allow spelled in the envelope would let a call through that no guard judged.
 [[mutation]]
@@ -1749,10 +1736,10 @@ reddens = [
 # A harness's reach is what the README's table of what each agent enforces says, so a tier the
 # registry moves without a measurement is a README that no longer matches it.
 [[mutation]]
-name = "Codex's session guards are stated as blocking"
+name = "Codex's session notices are stated as held in CI"
 file = "src/stayfixed/harnesses.py"
-before = "            Surface.GUARDS: _CODEX_HOOKS_UNVERIFIED,"
-after = "            Surface.GUARDS: Reach(Tier.BLOCKS, _CODEX_HOOKS_UNVERIFIED.evidence, _CODEX_HOOKS_UNVERIFIED.measured_on),"
+before = "            Surface.NOTICES: _CODEX_HOOKS_UNVERIFIED,"
+after = "            Surface.NOTICES: _IN_CI,"
 reddens = [
   "tests/test_documents.py::test_the_readme_states_each_agents_reach_as_the_registry_does",
 ]

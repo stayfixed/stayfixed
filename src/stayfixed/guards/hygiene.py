@@ -134,7 +134,7 @@ def notice(dirty: int | None, notes: Sequence[str]) -> str | None:
 
 # A hint that fails costs its own line and nothing else: one whose module did not load is `None`
 # and skipped, and the two guards below catch everything else, broad on purpose, because an
-# exception out of one stack's hint would reach the dispatcher, which under `Policy.OPEN` records
+# exception out of one stack's hint would reach the dispatcher, which records
 # it and drops the handler's whole context -- the dirty-tree line and every other stack's line
 # with it. They are also silent, and that is a cost rather than a design: a handler has no sink
 # to record into, and `stayfixed test hygiene`, which exposes the rest, never calls `recognises`,

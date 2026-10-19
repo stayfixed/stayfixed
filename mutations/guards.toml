@@ -49,7 +49,7 @@ before = '        width = _uv_option_width(word, flags, valued)'
 after = '        width = None'
 reddens = [
   "tests/profiles/python/test_hygiene.py::test_a_red_pytest_run_behind_uvs_options_gets_the_same_note",
-  "tests/guards/test_bgcleanup.py::test_a_backgrounded_sleep_uv_runs_past_its_options_is_refused",
+  "tests/guards/test_bgcleanup.py::test_a_backgrounded_sleep_uv_runs_past_its_options_is_flagged",
   "tests/guards/test_bgcleanup.py::test_the_exit_echo_hint_reads_both_commands_through_uvs_options",
 ]
 
@@ -166,7 +166,7 @@ reddens = [
 ]
 
 # `-m sleep` names a module and `--script sleep` a file: read as the program by default, a
-# backgrounded `uv run -m sleep 30` is refused as a `sleep` by the closed-policy guard.
+# backgrounded `uv run -m sleep 30` is flagged as a `sleep`.
 [[mutation]]
 name = "a module or script name reads as the program by default"
 file = "src/stayfixed/guards/uvrun.py"
@@ -249,91 +249,6 @@ reddens = [
   "tests/prove/test_run.py::test_the_adapter_is_handed_the_launcher_s_words_alone[argv0-launch0]",
 ]
 
-# `|&`, `;&` and `;;&` decompose to single characters by design, and each `&` there belongs to
-# a pipe or a case fall-through, never to the async operator.
-[[mutation]]
-name = "a pipe-both operator reads as backgrounding again"
-file = "src/stayfixed/guards/bgcleanup.py"
-before = '            if index and pieces[index - 1] in _COMMAND_ENDING_PIECES:'
-after = '            if False:'
-reddens = [
-  "tests/guards/test_bgcleanup.py::test_the_pipe_both_operator_is_not_backgrounding",
-  "tests/guards/test_bgcleanup.py::test_a_case_fallthrough_terminator_is_not_backgrounding",
-]
-
-# `(cmd &)` arrives as `['(', 'cmd', '&)']` — no bare `&` anywhere — and the deliberate-detach
-# idiom was allowed until the welded run was decomposed. The measured note on the tests named:
-# the idiom's own `(sleep 300 &)` can no longer prove this, because the ported `_begins_with_sleep`
-# skips a leading `(` and refuses that command on the `sleep` rule before the `&` scan runs. A
-# non-sleep weld is what reddens, so that is what is named here.
-[[mutation]]
-name = "a background welded to a closing paren is invisible again"
-file = "src/stayfixed/guards/bgcleanup.py"
-before = '        pieces = bashscan.operator_pieces(token)'
-after = '        pieces = [token]'
-reddens = [
-  "tests/guards/test_bgcleanup.py::test_a_non_sleep_background_welded_to_a_closing_paren_is_denied",
-  "tests/guards/test_bgcleanup.py::test_the_incident_command_denies_without_the_space_before_the_ampersand",
-]
-
-# The named size cap on the same judge. Above it the command is not read at all, because tokenizing
-# is quadratic in token length and every Bash call pays it; removing the cap makes the over-cap half
-# of the test judge a 64 KiB command and refuse it.
-[[mutation]]
-name = "the background judge reads a command past its size cap again"
-file = "src/stayfixed/guards/bgcleanup.py"
-before = '    if len(command) > MAX_COMMAND_CHARS:'
-after = '    if False:'
-reddens = [
-  "tests/guards/test_bgcleanup.py::test_a_command_past_the_size_cap_is_allowed_unread",
-]
-
-# The leading-`(` skip must drop a leading RUN, not every `(` in the segment: filtering the
-# whole segment pulls a `sleep` out of a command substitution and refuses `X=$(sleep 5) pytest`,
-# a false refusal of ordinary work from the one handler that fails closed.
-[[mutation]]
-name = "a sleep inside a command substitution reads as a leading sleep again"
-file = "src/stayfixed/guards/bgcleanup.py"
-before = '    segment = list(dropwhile(lambda t: t == "(", commands[0]))'
-after = '    segment = [t for t in commands[0] if t != "("]'
-reddens = [
-  "tests/guards/test_bgcleanup.py::test_a_sleep_inside_a_command_substitution_is_not_a_leading_sleep",
-]
-
-# The one CLOSED handler. Under OPEN an exception inside the judge is swallowed and the call
-# proceeds — "could not judge" read as "permitted", which is exactly what the fail-closed policy
-# forbids.
-[[mutation]]
-name = "the background guard fails open again"
-file = "src/stayfixed/guards/hooks.py"
-before = '        Handler(name="bg-cleanup", event="PreToolUse", policy=Policy.CLOSED, run=_bg_cleanup),'
-after = '        Handler(name="bg-cleanup", event="PreToolUse", policy=Policy.OPEN, run=_bg_cleanup),'
-reddens = [
-  "tests/guards/test_hooks.py::test_the_background_guard_is_the_closed_pre_tool_use_handler",
-  "tests/guards/test_hooks.py::test_a_guard_that_cannot_judge_refuses_rather_than_permits",
-]
-
-# The dispatcher banks a handler's `once_key` after any delivery, a deny included: with a key the
-# guard would refuse the first leaking call of a session and let every later one through.
-[[mutation]]
-name = "the background guard refuses once a session"
-file = "src/stayfixed/guards/hooks.py"
-before = '        Handler(name="bg-cleanup", event="PreToolUse", policy=Policy.CLOSED, run=_bg_cleanup),'
-after = '        Handler(name="bg-cleanup", event="PreToolUse", policy=Policy.CLOSED, run=_bg_cleanup, once_key="bg-cleanup"),'
-reddens = [
-  "tests/guards/test_hooks.py::test_every_leaking_call_of_a_session_is_denied_not_only_the_first",
-]
-
-[[mutation]]
-name = "a verdict's refusal never becomes a deny"
-file = "src/stayfixed/guards/hooks.py"
-before = '    if verdict.deny is not None:'
-after = '    if False:'
-reddens = [
-  "tests/guards/test_hooks.py::test_a_leaking_background_call_is_denied",
-  "tests/guards/test_hooks.py::test_a_leaking_background_call_is_denied_through_the_real_dispatcher",
-]
-
 # Claude Code delivers a Bash command that exited non-zero to `PostToolUseFailure` and never to
 # `PostToolUse`, so with the red-run hint registered on `PostToolUse` alone the note never reached
 # a red run there. Each case asks the real dispatcher, so what reddens is the note the harness reads.
@@ -343,7 +258,6 @@ file = "src/stayfixed/guards/hooks.py"
 before = """        Handler(
             name="test-hygiene",
             event="PostToolUseFailure",
-            policy=Policy.OPEN,
             run=_test_hygiene,
             once_key=ONCE_TEST_HYGIENE,
         ),
@@ -362,68 +276,34 @@ reddens = [
 name = "the red-run hint on a failure forgets that the note was delivered"
 file = "src/stayfixed/guards/hooks.py"
 before = """            event="PostToolUseFailure",
-            policy=Policy.OPEN,
             run=_test_hygiene,
             once_key=ONCE_TEST_HYGIENE,
 """
 after = """            event="PostToolUseFailure",
-            policy=Policy.OPEN,
             run=_test_hygiene,
             once_key=None,
 """
 reddens = [
   "tests/guards/test_hooks.py::test_the_red_run_note_is_delivered_once_per_context_whichever_event_carries_it[post-first]",
   "tests/guards/test_hooks.py::test_the_red_run_note_is_delivered_once_per_context_whichever_event_carries_it[failure-first]",
-  "tests/guards/test_hooks.py::test_the_hygiene_notice_is_an_open_handler_with_one_once_key_on_each_event[PostToolUseFailure]",
+  "tests/guards/test_hooks.py::test_the_hygiene_notice_has_one_once_key_on_each_event[PostToolUseFailure]",
 ]
 
 [[mutation]]
 name = "the red-run hint after a successful call forgets that the note was delivered"
 file = "src/stayfixed/guards/hooks.py"
 before = """            event="PostToolUse",
-            policy=Policy.OPEN,
             run=_test_hygiene,
             once_key=ONCE_TEST_HYGIENE,
 """
 after = """            event="PostToolUse",
-            policy=Policy.OPEN,
             run=_test_hygiene,
             once_key=None,
 """
 reddens = [
   "tests/guards/test_hooks.py::test_the_red_run_note_is_delivered_once_per_context_whichever_event_carries_it[post-first]",
   "tests/guards/test_hooks.py::test_the_red_run_note_is_delivered_once_per_context_whichever_event_carries_it[failure-first]",
-  "tests/guards/test_hooks.py::test_the_hygiene_notice_is_an_open_handler_with_one_once_key_on_each_event[PostToolUse]",
-]
-
-# A notice that could refuse a tool call would be worse than no notice: under `Policy.CLOSED` a
-# failure inside the hint is a deny, on either event it is registered on.
-[[mutation]]
-name = "the red-run hint on a failure fails closed"
-file = "src/stayfixed/guards/hooks.py"
-before = """            event="PostToolUseFailure",
-            policy=Policy.OPEN,
-"""
-after = """            event="PostToolUseFailure",
-            policy=Policy.CLOSED,
-"""
-reddens = [
-  "tests/guards/test_hooks.py::test_a_hygiene_failure_is_recorded_and_never_costs_the_call[PostToolUseFailure]",
-  "tests/guards/test_hooks.py::test_the_hygiene_notice_is_an_open_handler_with_one_once_key_on_each_event[PostToolUseFailure]",
-]
-
-[[mutation]]
-name = "the red-run hint after a successful call fails closed"
-file = "src/stayfixed/guards/hooks.py"
-before = """            event="PostToolUse",
-            policy=Policy.OPEN,
-"""
-after = """            event="PostToolUse",
-            policy=Policy.CLOSED,
-"""
-reddens = [
-  "tests/guards/test_hooks.py::test_a_hygiene_failure_is_recorded_and_never_costs_the_call[PostToolUse]",
-  "tests/guards/test_hooks.py::test_the_hygiene_notice_is_an_open_handler_with_one_once_key_on_each_event[PostToolUse]",
+  "tests/guards/test_hooks.py::test_the_hygiene_notice_has_one_once_key_on_each_event[PostToolUse]",
 ]
 
 # A value that reaches a subprocess is untrusted. Without the check a range shaped like an option is
@@ -695,23 +575,6 @@ reddens = [
   "tests/guards/test_commit.py::test_punctuation_after_the_address_does_not_disarm_the_trailer_rule",
 ]
 
-# The heredoc body read as GRAMMAR rather than as the data it is. `prepare` re-inserts an
-# unquoted body into the scanned text -- right for a caller matching paths, because the shell
-# expands such a body, and wrong for the one question this guard asks. Both directions were
-# measured through `judge(..., background=True)` before the flag was keyed off: a
-# `cat > README.md <<EOF` whose body carried `a=1&b=2` was DENIED by the plugin's only
-# `Policy.CLOSED` handler, and an apostrophe in a body ("don't") left `tokenize` returning
-# `None`, which degrades to ALLOW and let a real `sleep 5 &` after the heredoc through.
-[[mutation]]
-name = "a heredoc body is read as shell grammar again"
-file = "src/stayfixed/guards/bgcleanup.py"
-before = '    tokens = bashscan.tokenize(command, keep_unquoted_bodies=False)'
-after = '    tokens = bashscan.tokenize(command)'
-reddens = [
-  "tests/guards/test_bgcleanup.py::test_a_heredoc_written_to_a_file_is_data_not_a_program",
-  "tests/guards/test_bgcleanup.py::test_an_apostrophe_in_a_heredoc_body_does_not_hide_a_real_leak",
-]
-
 # `contained_roots` is what every consumer of `ledger.code_roots` walks, one `rglob` per entry
 # with the results added up, so a repeated or nested entry multiplies a count rather than
 # widening a scan. Measured with `code_roots = ["src", "src", "src/pkg"]` over two stale `.pyc`
@@ -858,30 +721,6 @@ reddens = [
   "tests/guards/test_commands.py::test_commit_strip_reports_a_message_file_that_is_not_utf_8_as_a_failure",
 ]
 
-# `guard bg-cleanup` is the CLI table's fail-closed row and `_tool_input` is where it closes.
-# Both of its refusals are replaced here with the answer a guard must never give for input it
-# could not read: `None`, which the command reports as "not a Bash call" and exit 0 — a refusal
-# that everything downstream reads as permission, which is the category CONTRIBUTING names.
-[[mutation]]
-name = "a payload that is not JSON is allowed instead of refused"
-file = "src/stayfixed/guards/commands.py"
-before = """
-    # Through `jsonobject`, the one reader of a JSON object, so stdin nested past the parser or
-"""
-after = """
-    if not (raw or "").lstrip().startswith(("{", "[")):
-        return None
-    # Through `jsonobject`, the one reader of a JSON object, so stdin nested past the parser or
-"""
-reddens = ["tests/guards/test_commands.py::test_guard_bg_cleanup_refuses_what_it_cannot_read[not json at all]"]
-
-[[mutation]]
-name = "a payload carrying no command string is allowed instead of refused"
-file = "src/stayfixed/guards/commands.py"
-before = '        raise Refusal(f"{_UNREADABLE}, and the object must carry a string `command`")'
-after = '        return None'
-reddens = ["tests/guards/test_commands.py::test_guard_bg_cleanup_refuses_what_it_cannot_read"]
-
 # "A tree git could not report on is not a clean tree." The whole value of `test hygiene` is that
 # it answers "can this red run be trusted", and "I do not know" reported as "yes" is the one
 # wrong answer. The replacement is the shape that makes it green and silent.
@@ -924,97 +763,6 @@ file = "src/stayfixed/guards/hygiene.py"
 before = '    code, out = git_run(root, "status", "--porcelain", "--", timeout=STATUS_TIMEOUT_SECONDS)'
 after = '    code, out = git_run(root, "status", "--porcelain", "--", timeout=0.001)'
 reddens = ["tests/test_git_run.py::test_every_bound_a_git_run_call_passes_is_one_the_table_pins"]
-
-# A trailing `; echo` hides the exit code the harness notification reports, but only after a
-# `;`: after `&&` a failing command skips the echo and the chain carries its code. Accepting
-# any chain operator turns every ordinary `cmd && echo done` into a false hint.
-[[mutation]]
-name = "the exit-code hint fires after && as well as after ;"
-file = "src/stayfixed/guards/bgcleanup.py"
-before = '    if not breaks or pieces[breaks[-1]] != ";":'
-after = '    if not breaks:'
-reddens = [
-  "tests/guards/test_bgcleanup.py::test_chains_whose_last_exit_code_is_the_real_one_are_not_warned_about",
-]
-
-# The hint is a fact about NOTIFICATIONS, which only a backgrounded call gets; unkeyed, it
-# fires on every foreground `cmd; echo done` a session types.
-[[mutation]]
-name = "the exit-code hint stops being keyed on the background flag"
-file = "src/stayfixed/guards/bgcleanup.py"
-before = '        for hint in (_restore_hint(command), _exit_echo_hint(command) if background else None)'
-after = '        for hint in (_restore_hint(command), _exit_echo_hint(command))'
-reddens = [
-  "tests/guards/test_bgcleanup.py::test_the_same_chain_in_the_foreground_is_silent",
-]
-
-# `command_words` is what lets `FOO=1 echo done` be read as an echo; `tail[0]` alone reads
-# the assignment and stays silent.
-[[mutation]]
-name = "the exit-code hint reads the echo's program from the raw first token"
-file = "src/stayfixed/guards/bgcleanup.py"
-before = '    words = bashscan.command_words(tail)'
-after = '    words = tail'
-reddens = [
-  "tests/guards/test_bgcleanup.py::test_an_env_prefixed_echo_is_still_an_echo",
-]
-
-# The last `;` of a compound statement falls after its terminator, so the masked segment is
-# `done` or `fi` alone and the hint advises making a keyword the last command of the chain.
-# A backgrounded loop ending in a progress echo is the traffic this rule sits in front of.
-[[mutation]]
-name = "the exit-code hint names a statement terminator as the masked command"
-file = "src/stayfixed/guards/bgcleanup.py"
-before = '    if program in _STATEMENT_KEYWORDS or program in _ECHO_COMMANDS:'
-after = '    if program in _ECHO_COMMANDS:'
-reddens = [
-  "tests/guards/test_bgcleanup.py::test_a_compound_statement_terminator_is_never_named_as_the_masked_command",
-]
-
-# `cmd > out.log; echo "----"; echo "EXIT=$?"` masks `cmd`, two breaks back. Naming the second
-# echo tells the reader to read the status of an `echo` from the output it wrote.
-[[mutation]]
-name = "the exit-code hint names a second echo as the masked command"
-file = "src/stayfixed/guards/bgcleanup.py"
-before = '    if program in _STATEMENT_KEYWORDS or program in _ECHO_COMMANDS:'
-after = '    if program in _STATEMENT_KEYWORDS:'
-reddens = [
-  "tests/guards/test_bgcleanup.py::test_a_second_echo_is_never_named_as_the_masked_command",
-]
-
-# A trailing `;` -- or the trailing newline every editor writes, which the tokenizer turns
-# into one -- leaves the last break with an empty tail, and the whole rule falls silent on the
-# commonest authoring of the shape it exists for.
-[[mutation]]
-name = "a trailing separator silences the exit-code hint again"
-file = "src/stayfixed/guards/bgcleanup.py"
-before = '    while pieces and pieces[-1] in _CHAIN_OPERATORS:'
-after = '    while False:'
-reddens = [
-  "tests/guards/test_bgcleanup.py::test_a_trailing_separator_does_not_silence_the_hint",
-]
-
-# Quoting every piece alike renders `>>` as a literal argument to `echo`, so the text offered
-# as "what you typed" is a different command -- in the shape this rule most often sees.
-[[mutation]]
-name = "the rendered tail quotes its redirect operators into arguments"
-file = "src/stayfixed/guards/bgcleanup.py"
-before = '        token if token in bashscan.REDIRECT_OPERATORS else shlex.quote(token)'
-after = '        shlex.quote(token)'
-reddens = [
-  "tests/guards/test_bgcleanup.py::test_the_rendered_tail_keeps_its_redirect_a_redirect",
-]
-
-# `&>` and `&>>` are redirects beginning with neither `>` nor `<`, so a first-character test
-# walks past them and renders the redirect as part of the masked command's own name.
-[[mutation]]
-name = "the command head stops on a redirect's first character instead of the table"
-file = "src/stayfixed/guards/bgcleanup.py"
-before = '        if piece in bashscan.REDIRECT_OPERATORS:'
-after = '        if piece[:1] in {">", "<"}:'
-reddens = [
-  "tests/guards/test_bgcleanup.py::test_an_ampersand_redirect_is_not_part_of_the_masked_command",
-]
 
 # `attribute`'s run 3. The merge-base and the base's tip are the same commit only until the base
 # advances; after that, archiving the tip puts commits that are not "before this change" into the
@@ -1300,7 +1048,7 @@ after = "    speaking = [hint for _, hint in hints if hint is not None and _reco
 reddens = ["tests/profiles/test_hints.py::test_two_recognising_hints_both_speak"]
 
 # A hint that raises costs its own line and nothing else. Unguarded, the exception reaches the
-# dispatcher, which under `Policy.OPEN` records it and drops the handler's whole context: the
+# dispatcher, which records it and drops the handler's whole context: the
 # dirty-tree line and every other stack's line go with the broken one.
 [[mutation]]
 name = "a hint's note is computed outside its guard"
@@ -1467,27 +1215,6 @@ reddens = [
 ]
 
 
-
-# `guard bg-cleanup` reads its stdin through the one JSON object reader, so stdin nested past
-# the parser or its depth bound, or holding an integer longer than the interpreter converts, is
-# refused in that reader's words; parsed with a bare `json.loads`, nesting raised `RecursionError`
-# past the guard's own arm, and a long integer was refused with the interpreter's advice.
-[[mutation]]
-name = "guard bg-cleanup parses stdin with a bare json.loads"
-file = "src/stayfixed/guards/commands.py"
-before = """
-    payload = json_object(
-        raw or "",
-"""
-after = """
-    payload = json.loads(raw or "") or json_object(
-        raw or "",
-"""
-reddens = [
-  "tests/guards/test_commands.py::test_guard_bg_cleanup_refuses_stdin_past_the_parser_in_its_own_words[nested]",
-  "tests/guards/test_commands.py::test_guard_bg_cleanup_refuses_stdin_past_the_parser_in_its_own_words[long]",
-  "tests/guards/test_commands.py::test_guard_bg_cleanup_refuses_stdin_past_the_depth_bound",
-]
 
 # The interpreter and the manifest of one stack are stack words like its runner: a core module that
 # names either is moved into that stack's profile or pardoned with its reason.
@@ -1742,26 +1469,6 @@ after = '_EXIT_CODE_ERROR = re.compile(r"\AExit code (\d+)")'
 reddens = [
   'tests/guards/test_hygiene.py::test_red_exit_reads_both_payload_shapes[raw8-None]',
 ]
-
-# The background guard judges with any project configuration and none, and only the machine
-# owner's `[guards] bg_cleanup = false` turns it off.
-[[mutation]]
-name = "the background guard is silent without a project configuration"
-file = "src/stayfixed/guards/hooks.py"
-before = "    if not session.owner.guards.bg_cleanup:\n        return HookResult()"
-after = "    if not session.owner.guards.bg_cleanup or session.config is None:\n        return HookResult()"
-reddens = [
-  "tests/hooks/test_floor.py::test_the_background_guard_judges_whatever_the_configuration[no_file]",
-  "tests/hooks/test_floor.py::test_the_background_guard_judges_whatever_the_configuration[unparseable]",
-  "tests/guards/test_hooks.py::test_no_config_silences_the_hygiene_note_and_never_the_guard",
-]
-
-[[mutation]]
-name = "the owner's switch never turns the background guard off"
-file = "src/stayfixed/guards/hooks.py"
-before = "    if not session.owner.guards.bg_cleanup:\n        return HookResult()"
-after = "    if False:\n        return HookResult()"
-reddens = ["tests/hooks/test_floor.py::test_the_owner_switches_the_guard_off_with_no_stayfixed_toml"]
 
 # The red-run note is about the project, and silent without its configuration.
 [[mutation]]

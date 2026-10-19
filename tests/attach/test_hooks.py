@@ -30,7 +30,7 @@ from stayfixed.attach.hooks import (
     register,
 )
 from stayfixed.config.loader import CONFIG_FILE, load
-from stayfixed.hooks.api import EVENTS, HookEvent, HookResult, Policy
+from stayfixed.hooks.api import EVENTS, HookEvent, HookResult
 from stayfixed.hooks.registry import discover
 from tests.boundaries.test_discovery import LIST_IMPORTS, ROOT
 from tests.gitfixture import git, needs_git
@@ -102,10 +102,10 @@ def _recorded(
     return _project(tmp_path), overlay, machine
 
 
-def test_the_handler_is_discovered_open_once_per_session_and_only_on_session_start() -> None:
+def test_the_handler_is_discovered_once_per_session_and_only_on_session_start() -> None:
     (handler,) = register()
     assert handler.event == "SessionStart" and handler.event in EVENTS
-    assert handler.policy is Policy.OPEN and handler.once_key == "overlay-status"
+    assert handler.once_key == "overlay-status"
     assert "overlay-status" in {h.name for h in discover()}
 
 
@@ -503,20 +503,16 @@ def test_a_failure_with_no_except_of_its_own_is_silence_not_an_exception(
 def test_the_registration_is_what_the_dispatcher_acts_on(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`policy` and `event` through the dispatcher, rather than read back off the same literals.
+    """`event` through the dispatcher, rather than read back off the same literal.
 
-    `test_the_handler_is_discovered_open_once_per_session_and_only_on_session_start` compares
-    `Handler.policy` and `Handler.event` with the constants `register()` passes, which holds
-    whatever those constants are — so what each one buys is asserted here instead, against the
-    real `dispatch`.
+    `test_the_handler_is_discovered_once_per_session_and_only_on_session_start` compares
+    `Handler.event` with the constant `register()` passes, which holds whatever that constant is —
+    so what it buys is asserted here instead, against the real `dispatch`.
 
-    **`Policy.OPEN`**: a failure of this handler is recorded and named on stderr and the run is not
-    a refusal. `Policy.CLOSED` would turn a failed overlay lookup into a deny on the one channel a
-    refusal travels — the state principle 6 reserves for a guard that could not decide — out of a
-    handler that reads two git remotes and a manifest and protects nothing. `_overlay_status` is
-    patched to raise, because with the module's own backstop in place the handler cannot fail from
-    inside; that backstop has its own case above, and this one is about what happens when something
-    gets past it.
+    A failure of this handler is recorded and named on stderr and the run is not a refusal.
+    `_overlay_status` is patched to raise, because with the module's own backstop in place the
+    handler cannot fail from inside; that backstop has its own case above, and this one is about
+    what happens when something gets past it.
 
     **`event`**: no other event in `EVENTS` reaches the handler at all. Asserted rather than given
     an oracle entry, because `event` is a name the dispatcher matches and not a guard —

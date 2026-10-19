@@ -1,6 +1,6 @@
 """Contract for the background-cleanup guard, driven through `judge`.
 
-The command this guard exists to refuse was measured on 2026-09-02: a session backgrounded
+The command this guard exists to name was measured on 2026-09-02: a session backgrounded
 fourteen busy-loop subshells with a bare ``&`` and expressed the cleanup as a LATER LINE of
 the same command. The harness reaped the parent shell before that line ran, the subshells
 re-parented to PID 1, and they burned 7.4 of 10 cores for 39 minutes with no writer left to
@@ -17,12 +17,11 @@ import pytest
 
 from stayfixed.guards import bgcleanup
 from stayfixed.guards.bgcleanup import (
-    ALLOW,
     EXIT_ECHO_HINT,
-    LEAK_REASON,
+    LEAK_HINT,
     MAX_COMMAND_CHARS,
     RESTORE_HINT,
-    SLEEP_REASON,
+    SLEEP_HINT,
     judge,
 )
 
@@ -34,122 +33,129 @@ PYTHONPATH=$PWD/src .venv/bin/python .../rate.py 15 2>&1 | grep -E '^idle|^under
 kill $LOADPIDS 2>/dev/null"""
 
 
-def denied(command: str, *, background: bool = True) -> bool:
-    return judge(command, background=background).deny is not None
+def flagged(command: str, *, background: bool = True) -> bool:
+    return judge(command, background=background) in (LEAK_HINT, SLEEP_HINT)
 
 
 def hint(command: str) -> str | None:
-    return judge(command, background=False).hint
+    return judge(command, background=False)
 
 
-def test_the_incident_command_is_denied() -> None:
-    assert denied(_INCIDENT)
+def test_the_incident_command_is_flagged() -> None:
+    assert flagged(_INCIDENT)
 
 
 def test_the_incident_command_with_a_trap_is_allowed() -> None:
-    """The same command, with the cleanup moved into a trap. This is the remedy the deny
-    names, so it has to actually be accepted -- a guard whose stated fix is also refused
+    """The same command, with the cleanup moved into a trap. This is the remedy the hint
+    names, so it has to actually be accepted -- a guard whose stated fix is also flagged
     teaches people to work around the guard rather than to fix the command."""
     remedied = _INCIDENT.replace(
         "LOADPIDS=$(jobs -p)",
         "LOADPIDS=$(jobs -p)\ntrap 'kill ${=LOADPIDS}' EXIT INT TERM",
     ).replace("\nkill $LOADPIDS 2>/dev/null", "")
 
-    assert judge(remedied, background=True) == ALLOW
+    assert judge(remedied, background=True) is None
 
 
 def test_the_incident_command_in_the_foreground_is_allowed() -> None:
     """The rule is keyed on `run_in_background`, and that is what holds false positives near
     zero. A foreground command's trailing `kill` line is reached because the tool is waiting
     on the very shell that runs it."""
-    assert judge(_INCIDENT, background=False) == ALLOW
+    assert judge(_INCIDENT, background=False) is None
 
 
 def test_a_command_with_no_ampersand_at_all_is_allowed() -> None:
-    assert judge("PYTHONPATH=src .venv/bin/python -m pytest -n 8", background=True) == ALLOW
+    assert judge("PYTHONPATH=src .venv/bin/python -m pytest -n 8", background=True) is None
 
 
 def test_a_chain_is_not_read_as_backgrounding() -> None:
     """`&&` is one compound token, not two `&`. A regex over raw text gets this wrong, which
     is why the check reads tokens."""
-    assert judge("make && make test", background=True) == ALLOW
+    assert judge("make && make test", background=True) is None
 
 
 def test_a_redirect_is_not_read_as_backgrounding() -> None:
     """`2>&1` tokenizes to `['cmd', '2', '>&', '1']` -- the `>&` is its own compound token and
     no bare `&` is produced."""
-    assert judge("pytest -q 2>&1 | tail -5", background=True) == ALLOW
+    assert judge("pytest -q 2>&1 | tail -5", background=True) is None
 
 
 def test_a_redirect_and_a_real_background_together_are_told_apart() -> None:
     """The discriminating case for the three shapes at once: this command contains `>`, `2>&1`
     AND a genuine backgrounding `&`. With a trap it is allowed; the test below removes only
-    the trap and the same command denies, so the deny is attributable to the missing cleanup
+    the trap and the same command is flagged, attributably to the missing cleanup
     and not to any of the redirects."""
     with_trap = "trap 'kill ${=PID}' EXIT INT TERM; server >file 2>&1 & PID=$!; sleep 1"
 
-    assert judge(with_trap, background=True) == ALLOW
+    assert judge(with_trap, background=True) is None
 
 
-def test_the_same_redirecting_command_without_its_trap_is_denied() -> None:
+def test_the_same_redirecting_command_without_its_trap_is_flagged() -> None:
     without_trap = "server >file 2>&1 & PID=$!; sleep 1; kill $PID"
 
-    assert denied(without_trap)
+    assert flagged(without_trap)
 
 
-def test_a_lone_backgrounded_server_is_denied_too() -> None:
+def test_a_lone_backgrounded_server_is_flagged_too() -> None:
     """The deliberate no-exemption decision, pinned so it is not silently rediscovered.
 
     A bare `&` on a command that is the only thing being run -- a server meant to outlive the
-    shell -- is still refused, because `run_in_background: true` already backgrounds the whole
+    shell -- is still flagged, because `run_in_background: true` already backgrounds the whole
     command. The inner `&` therefore only adds a child the harness cannot track and the reap
     cannot collect."""
-    assert denied("python -m http.server 8000 &")
+    assert flagged("python -m http.server 8000 &")
 
 
 def test_a_quoted_mention_of_a_trap_does_not_excuse_the_leak() -> None:
     """`echo 'trap ... EXIT'` tokenizes to `['echo', 'trap ... EXIT']` -- the quoted string is
     ONE token, so exact-token matching sees no trap. A substring test on raw command text
     would see one and allow a real leak."""
-    assert denied("echo 'trap it on EXIT'; sleep 300 & wait")
+    assert flagged("echo 'trap it on EXIT'; sleep 300 &")
 
 
 def test_a_trap_past_a_bare_double_dash_does_not_count() -> None:
     """`--` ends option parsing, so those words are operands to `printf`, not a trap."""
-    assert denied("sleep 300 & printf '%s\\n' -- trap EXIT")
+    assert flagged("sleep 300 & printf '%s\\n' -- trap EXIT")
 
 
 def test_a_trap_naming_only_int_and_term_does_not_count() -> None:
     """`INT`/`TERM` are accepted ALONGSIDE `EXIT`, never instead of it: a reap is neither
     signal, so a trap that does not name `EXIT` would not have run in the incident either."""
-    assert denied("trap 'kill ${=P}' INT TERM; sleep 300 & P=$!; wait")
+    assert flagged("trap 'kill ${=P}' INT TERM; sleep 300 & P=$!; kill $P")
 
 
 def test_a_trap_inside_a_compound_statement_counts() -> None:
     """`for ...; do trap ...; done` gives a segment whose first token is the keyword `do`, so
-    an argv0-keyed test would miss the trap and wrongly deny a command that cleans up."""
-    command = "for i in 1 2; do trap 'kill ${=P}' EXIT; sleep 9 & P=$!; done; wait"
+    an argv0-keyed test would miss the trap and wrongly flag a command that cleans up."""
+    command = "for i in 1 2; do trap 'kill ${=P}' EXIT; sleep 9 & P=$!; done; kill $P"
 
-    assert judge(command, background=True) == ALLOW
+    assert judge(command, background=True) is None
 
 
-def test_a_background_hidden_in_a_shell_c_string_is_denied() -> None:
+def test_a_trailing_wait_is_cleanup() -> None:
+    """A last `wait` reaps the jobs before the shell exits; one that is not last does not. No
+    mutation entry: a hint is neither a verdict nor a control."""
+    assert judge("pytest a & pytest b & wait", background=True) is None
+    assert flagged("pytest a & wait; echo done")
+
+
+def test_a_background_hidden_in_a_shell_c_string_is_flagged() -> None:
     """A `-c` string is ONE token however long the command inside it is, so without recursion
     this command's tokens say nothing but `bash`."""
-    assert denied("bash -c 'sleep 300 & wait'")
+    assert flagged("bash -c 'sleep 300 &'")
 
 
 @pytest.mark.parametrize("delimiter", ["'EOF'", "EOF"])
-def test_a_background_hidden_in_a_shell_fed_heredoc_is_denied(delimiter: str) -> None:
+def test_a_background_hidden_in_a_shell_fed_heredoc_is_flagged(delimiter: str) -> None:
     """A heredoc body fed to a SHELL is a program, and both delimiter spellings must be read
     as one. A body with a QUOTED delimiter is removed from the scanned text entirely, so it
     presents nothing but the word `bash` unless it is pulled back out of the heredoc list; an
     UNQUOTED one is now removed from that text too (see the module docstring's `&` rule), so
     it reaches this guard by the same route and by no other. The unquoted row is what proves
-    the fix for the false refusal below did not switch this path off with it."""
-    command = f"bash <<{delimiter}\nsleep 300 &\nwait\nEOF"
+    the fix for the false hint below did not switch this path off with it."""
+    command = f"bash <<{delimiter}\nsleep 300 &\nEOF"
 
-    assert denied(command)
+    assert flagged(command)
 
 
 @pytest.mark.parametrize(
@@ -157,38 +163,38 @@ def test_a_background_hidden_in_a_shell_fed_heredoc_is_denied(delimiter: str) ->
     [
         "cat > /tmp/x.sh <<'EOF'\nsleep 300 &\nEOF",
         # The same body with an UNQUOTED delimiter -- which is what a writer must use to get
-        # `$VAR` expanded. Measured DENIED before `_scan` stopped reading bodies as grammar:
+        # `$VAR` expanded. Measured flagged before `_scan` stopped reading bodies as grammar:
         # `prepare` re-inserts an unquoted body into the scanned text, so its `&` arrived as
-        # an async operator from the plugin's only `Policy.CLOSED` handler.
+        # an async operator.
         "cat > /tmp/x.sh <<EOF\nsleep 300 &\nEOF",
         # The cost in the shape a person actually hits: a README line carrying a URL's query
-        # separator, written with expansion wanted. Measured DENIED as well.
+        # separator, written with expansion wanted. Measured flagged as well.
         "cat > README.md <<EOF\nsee https://h/p?a=1&b=2 for $USER\nEOF",
     ],
 )
 def test_a_heredoc_written_to_a_file_is_data_not_a_program(command: str) -> None:
     """`cat > file <<EOF` writes its body; it does not run it. Reading it as a program would
     make this plugin's own fixture authoring -- including this test file -- undeniable, and
-    reading it as GRAMMAR refuses every file whose content happens to contain an `&`."""
-    assert judge(command, background=True) == ALLOW
+    reading it as GRAMMAR flags every file whose content happens to contain an `&`."""
+    assert judge(command, background=True) is None
 
 
 def test_an_apostrophe_in_a_heredoc_body_does_not_hide_a_real_leak() -> None:
     """The same root cause running the other way, and the direction that costs a leaked job
-    rather than a refusal. With the unquoted body in the scanned text, `don't` opened a quote
-    that never closed, `bashscan.tokenize` returned `None`, and `_scan` degraded to ALLOW --
+    rather than a false hint. With the unquoted body in the scanned text, `don't` opened a quote
+    that never closed, `bashscan.tokenize` returned `None`, and `_scan` said nothing --
     so the `sleep 5 &` AFTER the heredoc, a genuine unreaped job, walked through. A body is
     stdin to `cat`; the shell never parses an apostrophe in one."""
-    command = "cat > notes.md <<EOF\ndon't stop for $USER\nEOF\nsleep 5 &\nwait"
+    command = "cat > notes.md <<EOF\ndon't stop for $USER\nEOF\nsleep 5 &"
 
-    assert denied(command)
+    assert flagged(command)
 
 
-def test_a_malformed_command_is_allowed_rather_than_refused() -> None:
-    """An unbalanced quote is a command no shell would run. The judge allows it: the token
+def test_a_malformed_command_gets_no_hint() -> None:
+    """An unbalanced quote is a command no shell would run. The judge says nothing: the token
     it needs is `&`, the one thing a raw-text scan provably gets wrong, so there is no
-    fail-closed fallback that would not refuse ordinary quoted text."""
-    assert judge("sleep 300 & echo 'unbalanced", background=True) == ALLOW
+    fallback that would not flag ordinary quoted text."""
+    assert judge("sleep 300 & echo 'unbalanced", background=True) is None
 
 
 def test_an_ampersand_inside_a_quoted_argument_is_not_backgrounding() -> None:
@@ -196,73 +202,72 @@ def test_an_ampersand_inside_a_quoted_argument_is_not_backgrounding() -> None:
     a URL's query separators. `curl 'https://h/p?a=1&b=2'` contains two `&` characters and
     backgrounds nothing -- the tokenizer keeps the quoted argument as ONE token, so no bare
     `&` is produced."""
-    assert judge('curl -s "https://h/p?a=1&b=2&c=3" | jq .', background=True) == ALLOW
+    assert judge('curl -s "https://h/p?a=1&b=2&c=3" | jq .', background=True) is None
 
 
-def test_a_background_welded_to_a_closing_paren_is_denied() -> None:
+def test_a_background_welded_to_a_closing_paren_is_flagged() -> None:
     """`(sleep 300 &)` is THE deliberate-detach idiom, and it is exactly the leak this guard
-    exists to refuse. `shlex`'s `punctuation_chars` mode fuses adjacent punctuation into one
+    exists to name. `shlex`'s `punctuation_chars` mode fuses adjacent punctuation into one
     token, so the `&` arrives welded as `&)` and a membership test on the raw token list never
     sees it. `bashscan` already paid for this lesson once -- its header records
     "A SEPARATOR WELDED TO ITS NEIGHBOUR IS STILL A SEPARATOR".
 
     What this no longer measures, said here so the docstring is not read as a promise it does
     not keep: the ported `_begins_with_sleep` skips the leading `(`, so this command meets the
-    `sleep` rule before the `&` scan and would be refused even with the weld unread.
-    `test_a_non_sleep_background_welded_to_a_closing_paren_is_denied` below is the test that
+    `sleep` rule before the `&` scan and would be flagged even with the weld unread.
+    `test_a_non_sleep_background_welded_to_a_closing_paren_is_flagged` below is the test that
     still proves the weld is seen, and it is the one the mutation entry names."""
-    assert denied("(sleep 300 &)")
+    assert flagged("(sleep 300 &)")
 
 
-def test_a_non_sleep_background_welded_to_a_closing_paren_is_denied() -> None:
-    """The same weld with a program the `sleep` rule does not already refuse.
+def test_a_non_sleep_background_welded_to_a_closing_paren_is_flagged() -> None:
+    """The same weld with a program the `sleep` rule does not already flag.
 
     Not in the source, and needed only because of what changed in the port: the ported
     `_begins_with_sleep` skips a leading `(`, so `(sleep 300 &)` now meets the `sleep` rule
-    first and is denied whether or not the weld is read at all. It can no longer prove the
-    weld is seen; this can, because `LEAK_REASON` is reachable for this command only through
+    first and is flagged whether or not the weld is read at all. It can no longer prove the
+    weld is seen; this can, because `LEAK_HINT` is reachable for this command only through
     the decomposition of `&)` into two pieces."""
-    assert judge("(python -m http.server 8000 &)", background=True).deny == LEAK_REASON
+    assert judge("(python -m http.server 8000 &)", background=True) == LEAK_HINT
 
 
-def test_the_incident_command_denies_without_the_space_before_the_ampersand() -> None:
+def test_the_incident_command_is_flagged_without_the_space_before_the_ampersand() -> None:
     """The module docstring's own incident command with ONE space deleted. A guard that
     catches the incident only when its author happened to type a space is not catching the
     incident."""
     welded = _INCIDENT.replace("done) & done", "done)& done")
     assert welded != _INCIDENT, "the fixture no longer contains the shape under test"
 
-    assert denied(welded)
+    assert flagged(welded)
 
 
-def test_a_subshell_background_inside_another_subshell_is_denied() -> None:
+def test_a_subshell_background_inside_another_subshell_is_flagged() -> None:
     """`((cmd) & wait)` opens with the token `((` -- the same token arithmetic opens with.
     Pinned because the tempting fix for the arithmetic false positive (suppress `&` inside a
     `((` run) would silence this, which is a real leak and closer to the incident than
     arithmetic ever is."""
-    assert denied("((sleep 300; sleep 1) & wait)")
+    assert flagged("((sleep 300; sleep 1) & echo started)")
 
 
 @pytest.mark.parametrize(
     "command", ["echo $((3 & 1))", "echo $(( 3 & 1 ))", "x=$((5 & 3)); echo $x"]
 )
-def test_a_bitwise_and_in_an_arithmetic_expansion_is_the_documented_false_refusal(
+def test_a_bitwise_and_in_an_arithmetic_expansion_is_the_documented_false_hint(
     command: str,
 ) -> None:
-    """The module docstring's ONE admitted exception, and until now the only claim in it that
-    nothing executed. Measured here rather than restated: this is the plugin's only
-    `Policy.CLOSED` handler, so a documented false refusal that drifts either becomes a lie in
-    the docstring or a silent widening of what the guard denies, and neither shows up in a diff.
+    """The module docstring's known false hint, measured here rather than restated: a
+    documented false hint that drifts either becomes a lie in the docstring or a silent
+    widening of what the guard flags, and neither shows up in a diff.
 
     It has no mutation of its own, by construction: what reddens it is the fix the docstring
     rejects -- suppressing `&` inside a run opened by `((` -- and that same edit reddens
-    `test_a_subshell_background_inside_another_subshell_is_denied`, which is the leak the
+    `test_a_subshell_background_inside_another_subshell_is_flagged`, which is the leak the
     exception is paid for. The pair is the point; either alone can be made green by the wrong
     change. The `background=False` half is what keeps the cost as small as the docstring says:
     an arithmetic expression in an ordinary foreground call is not touched.
     """
-    assert denied(command)
-    assert judge(command, background=False) == ALLOW
+    assert flagged(command)
+    assert judge(command, background=False) is None
 
 
 def test_the_pipe_both_operator_is_not_backgrounding() -> None:
@@ -270,7 +275,7 @@ def test_the_pipe_both_operator_is_not_backgrounding() -> None:
     stderr"; `bashscan` deliberately leaves it out of its compound-operator table, so it
     decomposes to `['|', '&']` and a naive scan of the pieces would read it as backgrounding.
     Its `&` is part of a pipe operator, not the async operator."""
-    assert judge("make 2>/dev/null |& grep -i warning", background=True) == ALLOW
+    assert judge("make 2>/dev/null |& grep -i warning", background=True) is None
 
 
 def test_a_case_fallthrough_terminator_is_not_backgrounding() -> None:
@@ -279,7 +284,7 @@ def test_a_case_fallthrough_terminator_is_not_backgrounding() -> None:
     async operator."""
     command = "case $x in a) echo a ;& b) echo b ;; esac"
 
-    assert judge(command, background=True) == ALLOW
+    assert judge(command, background=True) is None
 
 
 def test_a_plain_argument_after_a_shell_c_cluster_is_not_a_program() -> None:
@@ -288,29 +293,29 @@ def test_a_plain_argument_after_a_shell_c_cluster_is_not_a_program() -> None:
     For any `-c` cluster other than the exact `-c`, every remaining token used to be scanned
     as a command in its own right -- and `tokenize("https://h/p?a=1&b=2")` yields
     `['https://h/p?a=1', '&', 'b=2']`, a bare `&`. So a URL passed as an ordinary argument
-    denied, contradicting `test_an_ampersand_inside_a_quoted_argument_is_not_backgrounding`
+    was flagged, contradicting `test_an_ampersand_inside_a_quoted_argument_is_not_backgrounding`
     which pins the identical shape at the top level."""
     command = "bash -lc 'echo hi' \"https://h/p?a=1&b=2\""
 
-    assert judge(command, background=True) == ALLOW
+    assert judge(command, background=True) is None
 
 
 def test_the_reasons_carry_the_neutral_remedy_and_no_repository_path() -> None:
-    """Every reason is shown to whoever just had a command refused, in a repository this
+    """Every hint is shown to whoever just ran a command, in a repository this
     plugin has never seen. The positive half is what the neutralisation actually changed --
     the path regex alone is green against the unported source, whose residue was a sentence
     about two named test suites, not a path."""
-    assert "parallelise the suite rather than wait on it" in LEAK_REASON
-    for text in (LEAK_REASON, SLEEP_REASON, RESTORE_HINT, EXIT_ECHO_HINT):
+    assert "parallelise the suite rather than wait on it" in LEAK_HINT
+    for text in (LEAK_HINT, SLEEP_HINT, RESTORE_HINT, EXIT_ECHO_HINT):
         assert re.findall(r"(?:docs|scripts|src|tests)/[\w./-]+", text) == [], text
         assert "suite" not in text.replace("parallelise the suite", "")
 
 
-def test_a_backgrounded_command_that_begins_with_sleep_is_refused() -> None:
+def test_a_backgrounded_command_that_begins_with_sleep_is_flagged() -> None:
     """`run_in_background: true` returns at once, whatever the command sleeps for. Measured: a
     session believed it had waited nine minutes across fifteen such calls while 39 s passed."""
 
-    reason = judge("sleep 300; gh pr checks 1", background=True).deny
+    reason = judge("sleep 300; gh pr checks 1", background=True)
     assert reason is not None
     assert "returns immediately" in reason and "Monitor" in reason
 
@@ -318,26 +323,26 @@ def test_a_backgrounded_command_that_begins_with_sleep_is_refused() -> None:
 @pytest.mark.parametrize(
     "command", ["/bin/sleep 30; gh pr checks 1", "FOO=1 sleep 30", "env sleep 30", "( sleep 30 )"]
 )
-def test_a_backgrounded_leading_sleep_is_refused_however_it_is_spelled(command: str) -> None:
+def test_a_backgrounded_leading_sleep_is_flagged_however_it_is_spelled(command: str) -> None:
     # None of these is adversarial; the source's exact `["sleep"]` comparison allowed all four.
-    assert judge(command, background=True).deny == SLEEP_REASON
+    assert judge(command, background=True) == SLEEP_HINT
 
 
-def test_a_backgrounded_sleep_uv_runs_past_its_options_is_refused() -> None:
+def test_a_backgrounded_sleep_uv_runs_past_its_options_is_flagged() -> None:
     """`uv run --no-project sleep 30` launches `sleep` as surely as `uv run sleep 30` does,
-    and was allowed while only the exact pair `uv run` was unwrapped. A refusal this guard did
-    not make before, and the right one: the call returns at once whatever it sleeps for.
+    and was missed while only the exact pair `uv run` was unwrapped. A hint this guard did
+    not give before, and the right one: the call returns at once whatever it sleeps for.
     Oracle: `mutations/`'s "uv's options stop being read past `run`"."""
-    assert judge("uv run --no-project sleep 30", background=True).deny == SLEEP_REASON
-    assert judge("uv --quiet run -- sleep 30", background=True).deny == SLEEP_REASON
+    assert judge("uv run --no-project sleep 30", background=True) == SLEEP_HINT
+    assert judge("uv --quiet run -- sleep 30", background=True) == SLEEP_HINT
 
 
 def test_a_backgrounded_test_run_through_uvs_options_is_not_a_sleep() -> None:
     """The legitimate call beside it: a suite started in the background through uv's options
-    is ordinary work, and neither the sleep rule nor a value uv takes may refuse it. Oracle:
+    is ordinary work, and neither the sleep rule nor a value uv takes may flag it. Oracle:
     `mutations/`'s "a value-taking uv option stops taking the next word"."""
-    assert judge("uv run --no-project pytest -q > out.log 2>&1", background=True) == ALLOW
-    assert judge("uv run --with sleep pytest -q > out.log 2>&1", background=True) == ALLOW
+    assert judge("uv run --no-project pytest -q > out.log 2>&1", background=True) is None
+    assert judge("uv run --with sleep pytest -q > out.log 2>&1", background=True) is None
 
 
 @pytest.mark.parametrize(
@@ -353,26 +358,26 @@ def test_a_backgrounded_test_run_through_uvs_options_is_not_a_sleep() -> None:
 )
 def test_a_module_or_script_named_sleep_is_not_a_backgrounded_sleep(command: str) -> None:
     """`uv run -m sleep 30` runs `python -m sleep`, and `--script sleep` a script file of that
-    name: neither is the `sleep` program, so a refusal here is a closed-policy deny on a command
+    name: neither is the `sleep` program, so a hint here is a false one on a command
     that does not sleep. Measured on uv: `No module named sleep`, exit 1. Oracle: `mutations/`'s
     "a module or script name reads as the program by default"."""
-    assert judge(command, background=True) == ALLOW
+    assert judge(command, background=True) is None
 
 
 def test_the_exit_echo_hint_reads_both_commands_through_uvs_options() -> None:
     """The hint asks the same question of the echo and of the command it masks. An echo uv
     launches past its options is an echo, and a command uv launches past them is not one.
     Oracle: `mutations/`'s "uv's options stop being read past `run`"."""
-    assert judge("pytest -q > out.log; uv run --no-project echo done", background=True).hint
-    assert judge("uv run --frozen echo hi; echo done", background=True).hint is None
+    assert judge("pytest -q > out.log; uv run --no-project echo done", background=True)
+    assert judge("uv run --frozen echo hi; echo done", background=True) is None
 
 
 def test_the_exit_echo_hint_never_reads_a_module_named_echo_as_an_echo() -> None:
     """`uv run -m echo` runs a module, whose exit code an echo after it hides and which hides
     nothing itself. Oracle: `mutations/`'s "a module or script name reads as the program by
     default"."""
-    assert judge("pytest -q > out.log; uv run -m echo done", background=True).hint is None
-    assert judge("uv run -m echo hi > out.log; echo done", background=True).hint is not None
+    assert judge("pytest -q > out.log; uv run -m echo done", background=True) is None
+    assert judge("uv run -m echo hi > out.log; echo done", background=True) is not None
 
 
 def test_a_sleep_inside_a_command_substitution_is_not_a_leading_sleep() -> None:
@@ -380,28 +385,25 @@ def test_a_sleep_inside_a_command_substitution_is_not_a_leading_sleep() -> None:
     value a substitution computes. It segments to
     `['X=$', '(', 'sleep', '5', ')', 'pytest', '-q']`, so filtering EVERY `(` out of the first
     segment -- rather than dropping the leading run of them -- put `sleep` at the front and
-    refused it. Measured on the shipped module before the fix: `SLEEP_REASON`. A false refusal
-    of ordinary work is the failure this guard's whole degrade-toward-silence rule exists to
-    avoid, and this is the one rule with no allow-side fallback behind it."""
-    assert judge("X=$(sleep 5) pytest -q", background=True) == ALLOW
+    flagged it. Measured on the shipped module before the fix: `SLEEP_HINT`."""
+    assert judge("X=$(sleep 5) pytest -q", background=True) is None
 
 
 def test_a_foreground_sleep_is_not_this_guard_s_business() -> None:
-    assert judge("sleep 5; ls", background=False) == ALLOW
+    assert judge("sleep 5; ls", background=False) is None
 
 
 def test_a_backgrounded_command_that_only_mentions_sleep_later_is_allowed() -> None:
     """Keyed on the FIRST simple command: `pytest … ; sleep 1` is not the misunderstanding."""
 
-    assert judge(".venv/bin/python -m pytest tests/x.py; sleep 1", background=True) == ALLOW
+    assert judge(".venv/bin/python -m pytest tests/x.py; sleep 1", background=True) is None
 
 
 def test_a_command_past_the_size_cap_is_allowed_unread() -> None:
     # A named cap, not a config key. Tokenizing is quadratic in token length and every Bash
-    # call pays it; a harness timeout on the one CLOSED handler would refuse a legitimate
-    # command.
+    # call pays it; a hook past its timeout blocks the call (`onFailure`).
     # The fixture leads with `echo`, not `sleep`: the `sleep` rule is judged before the `&`
-    # scan, so a leading `sleep` would pin SLEEP_REASON and say nothing about the `&` rule.
+    # scan, so a leading `sleep` would pin SLEEP_HINT and say nothing about the `&` rule.
     #
     # THE VALUE IS PINNED AGAINST THE LITERAL FIRST, and that line is not decoration. Every
     # assertion below derives its fixture from `MAX_COMMAND_CHARS`, so all of them survive any
@@ -413,8 +415,8 @@ def test_a_command_past_the_size_cap_is_allowed_unread() -> None:
     assert MAX_COMMAND_CHARS == 65_536
     at_the_cap = "echo " + "x" * (MAX_COMMAND_CHARS - len("echo  &")) + " &"
     assert len(at_the_cap) == MAX_COMMAND_CHARS
-    assert judge(at_the_cap + "x", background=True) == ALLOW
-    assert judge(at_the_cap, background=True).deny == LEAK_REASON
+    assert judge(at_the_cap + "x", background=True) is None
+    assert judge(at_the_cap, background=True) == LEAK_HINT
 
 
 def test_the_shell_c_flag_matches_exactly_what_the_backtracking_pattern_did() -> None:
@@ -463,9 +465,9 @@ def test_the_shell_c_flag_matches_exactly_what_the_backtracking_pattern_did() ->
     assert not any(bgcleanup._SHELL_C_FLAG.match(p) for p in ("--check", "--color", "-I{}", "-l"))
 
 
-def test_a_long_option_cluster_does_not_hang_the_closed_handler() -> None:
-    """`judge` runs in the plugin's only `Policy.CLOSED` `PreToolUse` handler, so the time it
-    takes is part of its contract: a handler that does not answer refuses the call. The old
+def test_a_long_option_cluster_does_not_hang_the_hook() -> None:
+    """`judge` runs on every `PreToolUse` Bash call, so the time it takes is part of its
+    contract: a hook past its timeout blocks the call (`onFailure`). The old
     `-[A-Za-z]*c[A-Za-z]*` backtracked quadratically on a cluster of `c`s ending in a
     non-letter -- measured through `judge`, INSIDE `MAX_COMMAND_CHARS`, at 1.09 s / 4.44 s /
     10.14 s for 20k / 40k / 60k characters, which is the 4x-per-doubling signature. The same
@@ -614,10 +616,9 @@ def test_restores_with_a_trap_or_with_nothing_to_restore_stay_silent(command: st
 
 
 def test_a_restore_command_with_no_operands_is_judged_rather_than_raised() -> None:
-    """`cp --` names nothing to move. In the source this was a crash into a fail-open handler;
-    here the handler is CLOSED, so an exception would refuse the call -- the opposite failure,
-    and the reason `judge` must return rather than raise on any string."""
-    assert judge("cp ci.yml ci.yml.bak; pytest; cp --", background=False) == ALLOW
+    """`cp --` names nothing to move. In the source this was a crash into the handler, which
+    costs every hint of the call; `judge` must return rather than raise on any string."""
+    assert judge("cp ci.yml ci.yml.bak; pytest; cp --", background=False) is None
 
 
 # A chain measured on 2026-09-16: argparse exited 2, the completion notification said 0.
@@ -627,14 +628,14 @@ _MASKING_CHAIN = 'python3 gate.py --run > out.log 2>&1; echo "EXIT=$?" >> out.lo
 def test_a_trailing_echo_after_a_semicolon_is_warned_about_in_the_background() -> None:
     """The harness reports the exit code of the chain's LAST command -- the echo's."""
 
-    context = judge(_MASKING_CHAIN, background=True).hint
+    context = judge(_MASKING_CHAIN, background=True)
 
     assert context is not None, "silence is the bug"
     assert "python3 gate.py --run" in context and "notification" in context
 
 
 def test_a_newline_before_the_echo_is_the_same_chain() -> None:
-    context = judge('pytest -q > out.log 2>&1\necho "EXIT=$?" >> out.log', background=True).hint
+    context = judge('pytest -q > out.log 2>&1\necho "EXIT=$?" >> out.log', background=True)
 
     assert context is not None and "pytest -q" in context
 
@@ -643,13 +644,13 @@ def test_an_env_prefixed_echo_is_still_an_echo() -> None:
     """`command_words` is what this scanner has that the repository the guards were extracted
     from lacks; pin that it is used."""
 
-    context = judge("pytest -q > out.log; FOO=1 echo done", background=True).hint
+    context = judge("pytest -q > out.log; FOO=1 echo done", background=True)
 
     assert context is not None and "notification" in context
 
 
 def test_the_same_chain_in_the_foreground_is_silent() -> None:
-    assert judge(_MASKING_CHAIN, background=False).hint is None
+    assert judge(_MASKING_CHAIN, background=False) is None
 
 
 @pytest.mark.parametrize(
@@ -662,7 +663,7 @@ def test_the_same_chain_in_the_foreground_is_silent() -> None:
     ],
 )
 def test_chains_whose_last_exit_code_is_the_real_one_are_not_warned_about(command: str) -> None:
-    assert judge(command, background=True).hint is None
+    assert judge(command, background=True) is None
 
 
 def test_a_numeric_final_argument_before_a_redirect_reads_as_a_file_descriptor() -> None:
@@ -685,10 +686,10 @@ def test_a_numeric_final_argument_before_a_redirect_reads_as_a_file_descriptor()
     change, and this docstring must not read as an argument against it.
 
     Prefixed with `true;` so the chain's FIRST command is not `sleep`: unprefixed, the
-    unrelated backgrounded-`sleep` rule denies the call outright before this hint is ever
+    unrelated backgrounded-`sleep` rule answers alone before this hint is ever
     computed, and the test would pin that rule instead of `_command_head`.
     """
-    context = judge("true; sleep 5 > out.log; echo done", background=True).hint
+    context = judge("true; sleep 5 > out.log; echo done", background=True)
 
     assert context is not None
     assert "`sleep`" in context and "sleep 5" not in context
@@ -713,7 +714,7 @@ def test_a_compound_statement_terminator_is_never_named_as_the_masked_command(
     so naming its terminator is the cry-wolf failure `_restores_at_the_end` records, reached
     by the very shape this module's header opens with.
     """
-    assert judge(command, background=True).hint is None
+    assert judge(command, background=True) is None
 
 
 def test_a_second_echo_is_never_named_as_the_masked_command() -> None:
@@ -723,7 +724,7 @@ def test_a_second_echo_is_never_named_as_the_masked_command() -> None:
     `echo` from its output teaches the reader to distrust the rule."""
     command = 'python -m pytest > out.log; echo "----"; echo "EXIT=$?"'
 
-    assert judge(command, background=True).hint is None
+    assert judge(command, background=True) is None
 
 
 @pytest.mark.parametrize(
@@ -741,7 +742,7 @@ def test_a_trailing_separator_does_not_silence_the_hint(command: str) -> None:
     last break has nothing after it. Dropping the empty tail is what keeps the commonest
     authoring of the flagship shape from passing unread.
     """
-    context = judge(command, background=True).hint
+    context = judge(command, background=True)
 
     assert context is not None, "silence is the bug"
     assert "pytest -q" in context
@@ -751,7 +752,7 @@ def test_the_rendered_tail_keeps_its_redirect_a_redirect() -> None:
     """`_as_shell_text` promises text a shell reads as this file read it, and the hint invites
     the reader to compare that text with what they typed. Quoting `>>` hands back a literal
     argument to `echo` instead of an append, in the shape this rule most often sees."""
-    context = judge(_MASKING_CHAIN, background=True).hint
+    context = judge(_MASKING_CHAIN, background=True)
 
     assert context is not None
     assert "echo 'EXIT=$?' >> out.log" in context
@@ -764,7 +765,7 @@ def test_an_ampersand_redirect_is_not_part_of_the_masked_command(operator: str) 
     first character alone walks past them and renders the redirect as part of the command's
     own name. Cosmetic -- `&>` is not a chain operator, so the right command is still found --
     but the name handed back is not one the reader typed."""
-    context = judge(f"pytest -q {operator} out.log; echo done", background=True).hint
+    context = judge(f"pytest -q {operator} out.log; echo done", background=True)
 
     assert context is not None
     assert "`pytest -q`" in context and operator not in context

@@ -32,7 +32,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, NamedTuple
 
-from stayfixed.hooks.api import Handler, HookEvent, HookResult, Policy
+from stayfixed.hooks.api import Handler, HookEvent, HookResult
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -187,7 +187,7 @@ def _link_worktree(event: HookEvent, session: SessionConfig) -> HookResult:
         return HookResult(context="\n".join(lines)) if lines else HookResult()
     # The backstop stays broad on purpose: a memory handler never costs a session,
     # and `resolve` alone reaches `tomllib`, `subprocess` and the filesystem. Narrowing it to
-    # `OSError` would let an unforeseen exception out of a `Policy.OPEN` handler. What the two
+    # `OSError` would let an unforeseen exception out of the handler. What the two
     # clauses above buy is that the two failures this function can actually produce are
     # neither silent nor the same event.
     except Exception:
@@ -235,7 +235,6 @@ def register() -> list[Handler]:
         Handler(
             name="worktree-link",
             event="SessionStart",
-            policy=Policy.OPEN,
             run=_link_worktree,
         )
     ]

@@ -92,17 +92,9 @@ def test_every_hook_entry_answers_its_sample_event_through_the_checkout(
 
 
 @needs_git
-def test_a_launcher_fault_is_not_mistaken_for_a_refusal(
+def test_a_launcher_fault_is_not_mistaken_for_an_injection(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # The row that proves the guard denies could not tell a genuine deny from any launcher
-    # fault at all: `hooks/run-hook.sh` maps a launcher `rc=1` under `closed` to exit 2 with a
-    # reason on stderr, which satisfied `expected_code=2` and `stderr_required=True` exactly.
-    # Measured against a `scripts/stayfixed` that writes to stderr and exits 1: thirteen of the
-    # fourteen rows green, including that one.
-    #
-    # Mutation (declared, `mutations/`'s "the hook smoke stops reading the refusal it was handed"):
-    # the `stderr_says` loop is emptied -> the first assertion below reddens.
     smoke = _load("smoke_hooks")
     code = smoke.main(
         [
@@ -116,12 +108,11 @@ def test_a_launcher_fault_is_not_mistaken_for_a_refusal(
     )
     out = capsys.readouterr().out
     assert code == 1, out
-    assert "stderr does not say 'refused: bg-cleanup'" in out, out
-    # And the entries that carry repository bytes: they emitted nothing, which is what every
-    # one of them did against the checkout before the fixture had a store at all.
+    # The entries that carry repository bytes emitted nothing, which is what every one of them
+    # did against the checkout before the fixture had a store at all.
     #
     # Mutation (declared, `mutations/`'s "the hook smoke stops reading what an injection entry
-    # injected"): the registry lookup answers `None` -> this reddens and the row above does not.
+    # injected"): the registry lookup answers `None` -> this reddens.
     assert "injected nothing carrying '<<<stayfixed:repository-data'" in out, out
 
 
@@ -168,14 +159,16 @@ def test_a_red_run_entry_that_says_nothing_is_reported(
 def test_a_wrapper_that_answers_wrongly_is_reported(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # The script's own oracle: a plugin root whose wrapper exits 0 on everything must make
+    # The script's own oracle: a plugin root whose launcher exits 2 on `PreToolUse` must make
     # the closed row fail. Mutation (declared): drop the `expected != done.returncode`
-    # comparison in `smoke_hooks.check_entry` -> this passes with code 0 and reddens.
+    # comparison in `smoke_hooks.check_entry` -> the row's reason goes and this reddens.
     smoke = _load("smoke_hooks")
     planted = tmp_path / "plugin"
     _copy_hooks(ROOT / "hooks", planted)
     (planted / "scripts").mkdir()
-    (planted / "scripts" / "stayfixed").write_text("raise SystemExit(0)\n", encoding="utf-8")
+    (planted / "scripts" / "stayfixed").write_text(
+        'import sys\nraise SystemExit(2 if "PreToolUse" in sys.argv else 0)\n', encoding="utf-8"
+    )
     code = smoke.main(
         [
             "--plugin-root",
@@ -188,7 +181,7 @@ def test_a_wrapper_that_answers_wrongly_is_reported(
     )
     assert code == 1
     out = capsys.readouterr().out
-    assert "exited 0, expected 2" in out  # the closed row, for its own reason
+    assert "exited 2, expected 0" in out  # the closed row, for its own reason
 
 
 @needs_git

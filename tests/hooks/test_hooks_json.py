@@ -26,8 +26,8 @@ def _entries() -> list[tuple[str, str, dict[str, Any]]]:
 
     The matcher used to be dropped here, and `type` was read by nothing at all. Both are the
     entry's own fields and both decide whether it ever runs: the reviewer changed `"matcher":
-    "Bash"` to `"bash"` -- which retires `bg-cleanup`, the plugin's only fail-closed guard --
-    and `"type": "command"` to `"commandd"`, and every one of the ten assertions below passed.
+    "Bash"` to `"bash"` -- which retires `bg-cleanup` -- and `"type": "command"` to
+    `"commandd"`, and every one of the ten assertions below passed.
     A walk that discards a field is a walk that cannot be asked about it.
     """
     return [
@@ -181,8 +181,7 @@ def test_every_tool_matched_entry_matches_the_name_both_handlers_filter_on() -> 
     # `guards.hooks.BASH` is the name `bash_command` compares `event.tool_name` against, so the
     # matcher in this file and that constant are two spellings of one thing. The matcher is a
     # case-sensitive regular expression: `"bash"` matches no tool Claude Code or Codex reports,
-    # which retires `bg-cleanup` -- the plugin's only `Policy.CLOSED` handler -- and the
-    # `test-hygiene` notice with it, permanently and silently.
+    # which retires `bg-cleanup` and the `test-hygiene` notice with it, permanently and silently.
     #
     # Asserted from the constant rather than spelled here, for the reason
     # `test_there_is_one_session_start_entry_per_declared_bundle_slot` gives about SLOTS.

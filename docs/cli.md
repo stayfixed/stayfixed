@@ -44,7 +44,6 @@ Three things hold everywhere:
 - [`stayfixed memory fit`](#stayfixed-memory-fit)
 - [`stayfixed hook <event>`](#stayfixed-hook-event)
 - [Hooks](#hooks)
-- [`stayfixed guard bg-cleanup`](#stayfixed-guard-bg-cleanup)
 - [`stayfixed commit check --range RANGE`](#stayfixed-commit-check---range-range)
 - [`stayfixed commit strip FILE`](#stayfixed-commit-strip-file)
 - [`stayfixed test hygiene`](#stayfixed-test-hygiene)
@@ -367,8 +366,8 @@ your prompt.
 
 **A session never dies of its configuration.** The guards run in every repository, on the preset
 and the machine owner's layer, whatever `stayfixed.toml` holds: none at all, one that does not
-load, and a broken machine file included. A configuration is never the reason a call is refused;
-only a guard refuses. The project's file is read the way [Configuration](#configuration) says a
+load, and a broken machine file included. A configuration is never the reason a call is refused.
+The project's file is read the way [Configuration](#configuration) says a
 session reads it: an unknown section or key is ignored and a value that cannot be used is put back
 to the preset's, so the rest of the file still applies. The handlers about the project — the
 worktree link, the overlay status, the red-run note — say nothing when there is no project
@@ -601,37 +600,6 @@ executes anything from — its
 `hooks/hooks.json` stays empty; hook entries the owner keeps in *common/claude/hooks.json* and
 `projects/<name>/claude/hooks.json` reach a session only through `attach`'s explicit, ledgered
 merge.
-
-## `stayfixed guard bg-cleanup`
-
-Judge one Bash call for a background leak. Reads one JSON object on stdin — a whole hook
-payload, or a bare `tool_input` with `command` and `run_in_background` — and answers `2` when
-the call would be refused (a `&`-backgrounded job with no `trap … EXIT`, or a backgrounded
-command that begins with `sleep`), `1` when it carries a trailing restore no trap protects or,
-for a backgrounded call, ends in a `; echo …` that hides the exit code the completion
-notification will report, and `0` otherwise. Both refusals need `run_in_background` to be
-`true` in the object you send —
-the leak and the `sleep` are only faults for a job the harness will not reap, so a CI smoke
-test written without that key measures `0` on a command that is refused in a session.
-Anything it cannot read is `2`: this is the fail-closed row of the CLI table, and a guard that
-guessed would be guessing. That is about the JSON, not about the command inside it: a command
-longer than the 64 KiB cap is not read either, and is allowed (`0`) rather than refused,
-because tokenizing an unbounded string in front of every Bash call is the larger fault.
-
-"Begins with `sleep`" is read off the first simple command's program, past a leading `(`,
-environment assignments (`FOO=1 sleep 30`), an absolute path (`/bin/sleep 30`), an `env` prefix
-(`env sleep 30`), and `uv run` with uv's own options before and after `run` (`uv run --no-project
-sleep 30`, `uv --quiet run --locked sleep 30`); `uv run -m sleep` and `uv run --script sleep`
-run a module or a file of that name and are not a `sleep`. The `; echo …` advice reads its
-`echo`, and the command before it, the same way. No other wrapper is read through: a
-backgrounded `nohup sleep 30`, `timeout 60 sleep 30`, `command sleep 30`, `time sleep 30`, `uvx
-sleep 30`, `uv tool run sleep 30` or `bash -c "sleep 30"` is not judged as a `sleep`, and answers
-`0`.
-
-This is the same judgement the `PreToolUse` `Bash` hook makes; the command exists so a CI
-smoke test and a person can ask it without a harness.
-
-**Writes** nothing.
 
 ## `stayfixed commit check --range RANGE`
 
@@ -3386,7 +3354,7 @@ never reaches the exit code, so read the detail — each one says which measurem
 
 The one no build can answer is `codex-hooks`: it needs the hash Codex keys hook trust on, which
 no spike measured. When `[stayfixed] agents` lists `codex`, its detail also says what stayfixed
-claims there: the session guards and session notices are not verified on Codex, and the
+claims there: the session notices are not verified on Codex, and the
 repository gates hold in CI.
 `init` writes `[ci] ref`, so what `ci-ref`'s skip reports is a state — this repository records
 none — and which state is the ordinary one moves with the release history rather than with any
@@ -3854,9 +3822,9 @@ whenever the run would widen would make the documented remedy itself a failure.
 
 Every command that reads a project's configuration takes `--root` and `--machine`, with the
 meanings in the first table, whether or not its heading spells them.
-Neither flag is taken by `stayfixed guard bg-cleanup`, `stayfixed commit strip`, `stayfixed hook`,
+Neither flag is taken by `stayfixed commit strip`, `stayfixed hook`,
 `stayfixed overlay publish-template` and `stayfixed prove`, because none of them reads a project's
-configuration: the first two read only what they are handed, `hook` finds the project from the
+configuration: the first reads only what it is handed, `hook` finds the project from the
 harness's own event, `publish-template` renders the shipped overlay template, and `prove` runs its
 command where it is typed and answers for that directory's repository. The other `overlay`
 commands take `--root` alone, in the sense the second table gives it, and read no
