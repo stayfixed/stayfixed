@@ -13,8 +13,8 @@ A stand-in runner is no refused route: guarding against a planted runner is not 
 and the receipt names the realpath of what ran instead.
 
 The process runs the stayfixed the interpreter running the suite has installed, never this
-checkout's `src` put first (`stayfixed_argv(..., installed=True)`), behind the owner-home seam, so
-the same file run against an installed release tests that release. The cases that run a real
+checkout's `src` put first (`-P`), so the same file run against an installed release tests that
+release. The cases that run a real
 runner are `runners`-marked and skip where it is not installed. They are the one real launch of
 each case: the per-stack tests (`test_pytest.py`, `test_go.py`, `test_javascript.py`) hold what
 these do not.
@@ -39,7 +39,6 @@ from stayfixed.prove.run import (
     NONE_RAN,
     NOT_RECOGNISED,
 )
-from tests.ownerhome import stayfixed_argv
 from tests.prove.projects import (
     COMMANDS,
     FILES,
@@ -71,9 +70,10 @@ def run_prove(
         **os.environ,
         "PATH": os.pathsep.join([*first, os.environ.get("PATH", "")]),
         "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
+        "HOME": str(tmp_path / "home"),
     }
     environ.pop("NODE_OPTIONS", None)
-    argv_ = [*stayfixed_argv(tmp_path / "home", installed=True), "prove", "--json", *flags]
+    argv_ = [sys.executable, "-P", "-m", "stayfixed", "prove", "--json", *flags]
     with (tmp_path / "stderr.txt").open("w", encoding="utf-8") as errors:
         done = subprocess.run(
             [*argv_, "--", *argv],

@@ -29,7 +29,7 @@ def overlay_root(machine: Path | None) -> Path | None:
 
     With no file named, the file is the one no variable can move (`machine_config_path`): the
     root anchors where the note store may resolve, and a committed `.claude/settings.json` can
-    set a variable in a session no person is watching. A machine with no home off a terminal
+    set a variable in a session no person is watching. A machine with no home
     (`config.machine.owner_home`) has no such file, and records no overlay.
     """
     path = machine_config_path() if machine is None else machine

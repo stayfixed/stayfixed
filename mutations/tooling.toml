@@ -217,8 +217,8 @@ reddens = [
 [[mutation]]
 name = "the smoke job demands an exfiltration summary the scenario no longer prints"
 file = ".github/workflows/smoke.yml"
-before = '          grep -qx "8 row(s), 0 failure(s)" "$RUNNER_TEMP/hostile.out"'
-after = '          grep -qx "7 row(s), 0 failure(s)" "$RUNNER_TEMP/hostile.out"'
+before = "          grep -qx \"7 row(s), 0 failure(s)\" \"$RUNNER_TEMP/hostile.out\""
+after = "          grep -qx \"6 row(s), 0 failure(s)\" \"$RUNNER_TEMP/hostile.out\""
 reddens = [
   "tests/test_check_workflow.py::test_the_smoke_job_demands_the_summary_the_exfiltration_scenario_prints_over_every_row",
 ]
@@ -3520,11 +3520,9 @@ reddens = [
 [[mutation]]
 name = "the exfiltration smoke stops importing the hooks smoke"
 file = "scripts/smoke_exfiltration.py"
-before = "from smoke_hooks import developer_free_env, fixture_repository, with_owner_home\n"
+before = "from smoke_hooks import developer_free_env, fixture_repository\n"
 after = ""
-reddens = [
-  "tests/scripts/test_script_imports.py::test_every_exemption_is_still_used",
-]
+reddens = ["tests/scripts/test_script_imports.py::test_every_exemption_is_still_used"]
 
 # The same offence spelled through the directory's name: a walk that read only the scripts' stems
 # saw `from scripts import plugin_tree` as an import of nothing it knew.

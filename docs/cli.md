@@ -70,9 +70,9 @@ Three things hold everywhere:
 - [`stayfixed overlay publish-template --owner OWNER [--name NAME] [--yes]`](#stayfixed-overlay-publish-template---owner-owner---name-name---yes)
 - [`stayfixed attach --store PATH [--check] [--yes] [--trust-remote] [--root PATH] [--machine PATH]`](#stayfixed-attach---store-path---check---yes---trust-remote---root-path---machine-path)
 - [`stayfixed detach [--root PATH] [--machine PATH]`](#stayfixed-detach---root-path---machine-path)
-- [`stayfixed setup [--preset NAME] [--yes] [--home PATH] [--settings PATH] [--machine PATH] [--overlay VALUE] [--root PATH]`](#stayfixed-setup---preset-name---yes---home-path---settings-path---machine-path---overlay-value---root-path)
+- [`stayfixed setup [--preset NAME] [--yes] [--home PATH] [--machine PATH] [--overlay VALUE] [--root PATH]`](#stayfixed-setup---preset-name---yes---home-path---machine-path---overlay-value---root-path)
 - [`stayfixed setup --git-hooks [--uninstall] [--root PATH]`](#stayfixed-setup---git-hooks---uninstall---root-path)
-- [`stayfixed setup --approval-boundary [--home PATH] [--settings PATH] [--machine PATH]`](#stayfixed-setup---approval-boundary---home-path---settings-path---machine-path)
+- [`stayfixed setup --approval-boundary [--home PATH] [--machine PATH]`](#stayfixed-setup---approval-boundary---home-path---machine-path)
 - [`stayfixed doctor [--json] [--root PATH] [--home PATH] [--machine PATH]`](#stayfixed-doctor---json---root-path---home-path---machine-path)
 - [The reusable workflow](#the-reusable-workflow)
 - [Shared flags](#shared-flags)
@@ -187,7 +187,7 @@ approved is what a session uses. A kind with nothing to describe here (no `stayf
 session can read, or no store) says so, and says why in the kind's own words. `--all` lists every approval recorded on the machine instead, whichever checkout
 it was given in, each with when it was approved. It names each subject — for `memory`, the store's
 absolute path — escaped where it leaves the path grammar and, past 120 characters, by its start
-and its length; a subject under the home the password database records is named from `~/`.
+and its length; a subject under `HOME` is named from `~/`.
 `--json` carries every subject whole.
 
 `--json` keys: `subjects`, one object per subject in this checkout with its `kind`, its `subject`
@@ -216,7 +216,7 @@ No flag skips the check, and nothing takes `--yes`.
 
 **What an approval holds against.** Repository bytes: stayfixed never writes `trust.json` from
 what a repository holds, and a clone, a pull or a pull request does not reach it, since it lies
-under the home the password database records and outside every repository; a change to anything
+under `HOME` and outside every repository; a change to anything
 the approval hashes lapses it. A repository whose hooks your harness runs — a committed
 `.claude/settings.json` hook in a folder you trusted — is code running as you, and can write any
 file you can, this one included. Not the session's own agent:
@@ -2599,18 +2599,10 @@ was recorded lapses it, and a pull that appends one line to one note is enough. 
 also withdraws the harness memory link from every checkout that held one, and whenever the run
 withdrew any, its line says how many (`links_revoked` in `--json`).
 
-**At a terminal the harness memory link goes under `HOME`**, and an empty one, which names no home,
-is refused (`2`). Elsewhere it goes under the home the password database records, and only while
-`HOME` is that home or unset; otherwise `attach` makes no harness link or fallback, does the rest
-and exits `0`, saying what makes the link, as `--check` does.
-
-**The harness memory link is written under a walk that follows no symlink.** The home
-directory itself is found and never created — a missing one is a refusal — and every component
-below it has to be a real directory: a `~/.claude` linked into a dotfiles tree is refused by
-name, above `attach`'s first write, above `detach`'s first withdrawal and above the first note
-link a session makes in a worktree, rather than written through. The refusal names the component
-and the way out, as `--settings` does for `setup`: make the directory real and have your dotfiles
-manager adopt the files inside it.
+**The harness memory link goes under `HOME`**, and an empty one, which names no home, is refused
+(`2`). The home directory itself is found and never created — a missing one is a refusal, above
+`attach`'s first write, above `detach`'s first withdrawal and above the first note link a session
+makes in a worktree — and a `~/.claude` linked into a dotfiles tree is written through.
 
 It also runs `pre-commit install` in the overlay when the overlay carries a pre-commit
 configuration and no hook is installed — the machine that cloned an overlay someone else created
@@ -2741,8 +2733,7 @@ or none.
 `.claude/settings.local.json`, drops the hook entries marked `# stayfixed:…` there (a group that
 mixes one of those with your own entry is split, never replaced), and leaves the file unwritten when
 none of those is in it, removes the `.codex/rules/` files it wrote, withdraws the link tree from
-this checkout and every worktree together with each one's harness memory link (under both homes
-where `HOME` is not the database's, only a link to this store) — while another checkout is
+this checkout and every worktree together with each one's harness memory link — while another checkout is
 attached, only this checkout's link, and its tree unless it is the main checkout, as above —
 removes the `stayfixed:ignore` region and the `stayfixed:attach` block in the repository's exclude
 file, and deletes the ledger, `.stayfixed/local/attach.json`. A file left holding nothing is
@@ -2865,7 +2856,7 @@ with part of the attach already undone:
 
 ---
 
-## `stayfixed setup [--preset NAME] [--yes] [--home PATH] [--settings PATH] [--machine PATH] [--overlay VALUE] [--root PATH]`
+## `stayfixed setup [--preset NAME] [--yes] [--home PATH] [--machine PATH] [--overlay VALUE] [--root PATH]`
 
 Configures this machine from a preset, `recommended` unless `--preset` names another: the
 machine configuration file's `[personal]` and `[machine]` tables, the deny rules and personal
@@ -2885,22 +2876,9 @@ cannot find is not a machine file. Both flags exist so this command can be point
 scratch destination instead of your real one, the same way every other command here takes
 `--root`. A scratch destination is **not a dry run**: the same files are written, at the paths
 these two flags name, and nothing is suppressed. They apply to `--preset` alone — `--git-hooks`
-writes inside a repository and ignores both, and `--settings` with them.
-
-`--settings PATH` writes the user-scope settings file at `PATH` instead of at
-`<home>/.claude/settings.json`, for a dotfiles layout that links that file into another tree.
-`stow` folds a package as far as it can, so with `~/.claude` already created by the harness it
-links the *file*: `~/.claude/settings.json -> <dotfiles>/claude/settings.json`. No `--home`
-value names that target — `--home <dotfiles>/claude` writes
-`<dotfiles>/claude/.claude/settings.json`, a file no reader reads — and the refusal that used
-to print an unusable remedy now names this flag. The write still never follows a symlink, and a
-link *at* the file itself is refused rather than written through — by a check above the first
-write, and not by the walk: the root is the directory `PATH` names and the walk is one component
-deep, so the walk never opens the final name and the rename underneath it would *replace* a link
-rather than refuse it. The refusal names the file the link leads to, which is the path to pass
-instead, and a directory at that path is refused in the same place. `--settings` changes nothing
-else: the machine configuration file is still `--machine`'s, and the harness memory link is still
-under `--home`.
+writes inside a repository and ignores both. The settings file is written through the home's own
+symlinks, so a `~/.claude` or a `~/.claude/settings.json` that a dotfiles manager links into
+another tree gets the file the link leads to, and the link stays.
 
 `setup` is not the only command that writes outside a repository, and two others say so in their
 own sections: `stayfixed trust approve` records approval in `~/.config/stayfixed/trust.json`, and
@@ -2988,7 +2966,7 @@ one whose `.git` it cannot read) or that cannot list its checkouts is a refusal.
 
 **Writes** `<home>` itself when it is not there yet; `--machine`'s file, with the directories above
 it, once for the preset and again for the overlay root `--overlay` records;
-`<home>/.claude/settings.json`, or the file `--settings` names in its place; and, through the plugin
+`<home>/.claude/settings.json`, where its links lead; and, through the plugin
 commands it runs for each harness with a declared marketplace (`claude plugin marketplace add` and
 `claude plugin install`, `codex plugin marketplace add` and `codex plugin add`), the marketplace
 registrations and installed plugins those commands write into each harness's own configuration.
@@ -3007,26 +2985,18 @@ hook).
 - a refused `--overlay`: missing, not an overlay, reachable from the project root, inside a
   checkout of another repository, where `git` gives no answer inside a checkout, at a path that is
   not UTF-8 text and so cannot be recorded in the machine file, or `create:` without `--yes`;
-- a symlink between `<home>` and the settings file, which is written through a walk that never
-  follows one (`<home>` itself may be a link to a directory: it is resolved once, before anything
-  else is asked, and every write under it lands where it leads);
-- something other than a directory at `<home>/.claude`, or a directory at
-  `<home>/.claude/settings.json`: the two shapes `--settings` refuses at its own directory and file;
-- a directory `--settings` names that cannot take the write: the new file is renamed into it;
 - a `--home` that cannot take what this run writes under it, naming the directory you cannot write
-  into, asked only where a write lands: the one the settings file is made in (`<home>/.claude` when
-  it is there, `<home>` when only that is, the nearest directory above it while neither is); with
-  `--settings`, which sends that file elsewhere, the one `<home>` is made in, and only while it is
-  not there yet; and for `create:`, the one the clone is made in while it is not there yet, or,
+  into, asked only where a write lands: the one the settings file is made in (its directory when
+  it is there, the nearest directory above it while it is not); and for `create:`, the one the
+  clone is made in while it is not there yet, or,
   while it is there, whether it can be searched, since `create:` looks inside it first. A `<home>`
   you cannot write into is not refused for that alone: with a writable `.claude` already in it, and
   no overlay to create, nothing this check asks about is made in it;
-- a directory the settings write opens on its way to the file that cannot be read: `<home>` and
-  `<home>/.claude`, or the `--settings` directory;
+- a settings file's directory that cannot be read, which the settings write opens;
 - a `<home>` that could not be created;
 - any other path this command cannot ask about before its first write, named with why: `<home>`,
-  an `--overlay`, a `--root` or a `--settings` directory below a directory nobody may search, and a
-  symbolic-link loop at `~/.claude`, `--home`, `--root`, `--settings` or `--overlay`, on every
+  an `--overlay` or a `--root` directory below a directory nobody may search, and a
+  symbolic-link loop at `~/.claude`, `--home`, `--root` or `--overlay`, on every
   Python;
 - a write refused as an agent's sandbox refuses one, met by the machine file or the user settings
   file (`EPERM` on macOS and `EROFS` on Linux and WSL2, as Claude Code's sandboxing reference gives
@@ -3102,8 +3072,8 @@ judged either: it is kept and chained, as below.
 
 **Refuses (`2`) together with `--preset`, `--overlay` or `--yes`.** Each asks machine setup to do
 something, which this form does not do, so it names `--git-hooks` and writes nothing, where
-`--overlay` and `--yes` used to be dropped and the hook installed. `--home`, `--settings` and
-`--machine` say only where machine setup would write, and are ignored.
+`--overlay` and `--yes` used to be dropped and the hook installed. `--home` and `--machine` say
+only where machine setup would write, and are ignored.
 
 **Refuses (`2`) `--uninstall` without `--git-hooks`.** It removes the hook this form installs and
 means nothing to machine setup, so `stayfixed setup --uninstall` names `--git-hooks` and writes
@@ -3125,7 +3095,7 @@ be read, or a hook names `prepare-commit-msg.local`.
 
 ---
 
-## `stayfixed setup --approval-boundary [--home PATH] [--settings PATH] [--machine PATH]`
+## `stayfixed setup --approval-boundary [--home PATH] [--machine PATH]`
 
 Prints what keeps an agent's shell out of the trust record's directory under Claude Code, for you
 to set, and sets none of it: an approval holds against an agent only while the harness's sandbox
@@ -3133,7 +3103,7 @@ holds ([`stayfixed trust approve`](#stayfixed-trust-approve-kind---store-path---
 stayfixed neither enforces nor checks that boundary. The line names:
 
 - the deny rule `Edit(//<the trust record's directory>/**)` for `permissions.deny` in
-  `<home>/.claude/settings.json`, or in the file `--settings` names. The directory is that of
+  `<home>/.claude/settings.json`. The directory is that of
   `~/.config/stayfixed/trust.json`, or of the file beside `--machine`, which is the machine
   configuration file's own, so the rule covers that file too; where a symbolic link makes the
   directory as named and the directory it leads to differ, a rule is named for each, since the
@@ -3150,7 +3120,7 @@ stayfixed neither enforces nor checks that boundary. The line names:
   `/Library/Application Support/ClaudeCode/managed-settings.json` on macOS and
   `/etc/claude-code/managed-settings.json` on Linux.
 
-`--home`, `--settings` and `--machine` name the two files as `setup` would write them, and each is
+`--home` and `--machine` name the two files as `setup` would write them, and each is
 printed absolute: a rule over a relative `--machine`'s directory would carry one leading slash and
 deny edits under the working directory of every project. `--json` keys: `deny_rules`, `settings`
 and `managed`.
@@ -3160,19 +3130,19 @@ and `managed`.
 **Writes** nothing.
 
 **Exits** `0`; `2` beside `--preset`, `--overlay`, `--yes`, `--git-hooks` or `--uninstall`, which
-name a write this run does not make; `1` for a `HOME` that is empty with no `--home`, and for a
-machine whose password database lists no home with no `--machine`.
+name a write this run does not make; `1` for a `HOME` that is empty with no `--home` or no
+`--machine`.
 
 ---
 
 ## `stayfixed doctor [--json] [--root PATH] [--home PATH] [--machine PATH]`
 
-Nineteen checks over one installation. It **reports and never repairs**: every finding
+Eighteen checks over one installation. It **reports and never repairs**: every finding
 carries the command that would fix it, and not one of them is run for you. Nothing is written.
 
-The rows come in a fixed order: the installation's own thirteen first, then the six about the
-private layer — the binding's (`attached`), the note store's (`bundles`, `store-debris`,
-`harness-link`) and the private overlay's (`pre-commit`, `overlay-requires`). Match a row by its `name`, never by its
+The rows come in a fixed order: the installation's own thirteen first, then the five about the
+private layer — the binding's (`attached`), the note store's (`bundles`, `store-debris`) and the
+private overlay's (`pre-commit`, `overlay-requires`). Match a row by its `name`, never by its
 position.
 
 **Several subprocesses are run and every one of them only asks.** stayfixed's own
@@ -3221,12 +3191,11 @@ check with `name`, `status`, `detail` and `remedy`, so every remedy is there.
 | `cli-path` | whether `stayfixed` resolves on `PATH` | `PATH` |
 | `ci-ref` | whether `[ci] ref` is the commit of a released stayfixed tag (or the `v1` alias: a warning, as mutable, once a `1.x` release creates it, and red until then), and whether the rendered workflow pins the same ref — under `[ci] mode = "reusable"`, a workflow that is not there at all is a warning and never a green row, and so are a path that is there and is not a regular file and a file past the 256 KiB bound on the read | `git ls-remote --exit-code` over the public repository's tags, bounded at 30 seconds; *.github/workflows/stayfixed.yml*, read as a regular file and to a bound |
 | `diagnostics` | how many reasons the hook sink recorded — a count, never a line of the file | `${CLAUDE_PLUGIN_DATA}/stayfixed/diagnostics.jsonl` |
-| `ignored-env` | `STAYFIXED_CONFIG` or `XDG_CONFIG_HOME` set and not honoured, and a `HOME` that is not the home the password database records for this user, with the directory stayfixed's machine files are under instead, or that it records none; from a terminal, the remedy says to move files of your own there first | the environment, the password database |
+| `ignored-env` | `STAYFIXED_CONFIG` or `XDG_CONFIG_HOME` set and not honoured; and, as information, a `HOME` that is not the home the password database records for this user, since stayfixed follows `HOME` | the environment, the password database |
 | `retired-deny` | whether `~/.claude/settings.json` still holds a deny rule an earlier `stayfixed setup` wrote and the machine's preset retired (its `[deny] retired`), such as `Read(.env*)`, which refuses `.env.example` too; matched by exact string, as `setup` removes them, and named in the preset's words | `~/.claude/settings.json`, the preset |
-| `attached` | the overlay binding, and the harness memory path's shape, judged off a terminal only where `HOME` is the database's home and read alike from every checkout (the states are below the table) | `.stayfixed/local/attach.json`, `~/.claude/projects/<slug>/memory`, `.claude/settings.local.json`, the link tree |
+| `attached` | the overlay binding, and the harness memory path's shape, read alike from every checkout (the states are below the table) | `.stayfixed/local/attach.json`, `~/.claude/projects/<slug>/memory`, `.claude/settings.local.json`, the link tree |
 | `bundles` | a bundle that does not fit its slots, and one whose part reaches the cap | the note store |
 | `store-debris` | files in the note store that are not notes (at most 500,000 entries) | the note store |
-| `harness-link` | whether a hook can make the harness memory link, which it cannot while `HOME` is not the database's home, said as the session is told it, with what makes the link instead | the environment, the password database |
 | `pre-commit` | whether the overlay's commit-time secret scan is installed on this machine | the overlay |
 | `overlay-requires` | whether the overlay this machine records requires a stayfixed the running one satisfies — red when this project keeps its notes in that overlay, a warning when it does not | the overlay's `.claude-plugin/plugin.json`, `stayfixed.toml` |
 
@@ -3304,18 +3273,17 @@ not resolve; `diagnostics`, when no harness data root is set in the environment,
 is recorded. `files` has a
 second state arm of its own — a plugin built before the release record existed carries none, and
 it says so rather than comparing anything.
-And six rows read the project configuration and skip, in one sentence, when there is none to
+And five rows read the project configuration and skip, in one sentence, when there is none to
 read — no `stayfixed.toml`, or one a session drops whole: `budgets`, `ci-ref`, `attached`,
-`bundles`, `store-debris`, and `harness-link` where `HOME` is not the database's home, since what
-makes the link then depends on the store's mode.
+`bundles` and `store-debris`.
 
-**A `skip` does not mean there is nothing to do.** Seven of the twenty-five arms carry a remedy:
+**A `skip` does not mean there is nothing to do.** Seven of the twenty-four arms carry a remedy:
 the two plugin-root skips, `wrapper`'s named-root skip, `attached`'s no-overlay and
 could-not-be-asked arms, and the moved-overlay arm of `pre-commit` and of `overlay-requires`. The dividing line is not "always"
 versus "on a state" — every other arm skips on a state and carries nothing: `bundles`,
 `store-debris`, `diagnostics` and `ci-ref`, the *no overlay recorded* arms of the two overlay
 rows, `overlay-requires`' no-requirement arm, `files` on a build with no release record, and the
-six with no project configuration, whose remedy is
+five with no project configuration, whose remedy is
 `not-initialised`'s, and the three on a machine file that does not load, whose remedy is
 `preferences`', red on the same file. Nor
 is it whether another row names a command that changes the state: `pre-commit`'s arm carries
@@ -4010,34 +3978,12 @@ it: a committed `.claude/settings.json` `env` block would otherwise choose your 
 and your trust record. Pass `--machine <path>` to read a different file — a path you typed
 rather than one an environment chose, and honoured by every reader of it.
 
-**`~` here is your home directory as the password database records it, not `HOME`.** A direnv,
-mise or devcontainer setup can set `HOME`, and a hook runs in the project, so `HOME=fakehome`
-would name a directory the clone ships, with a `trust.json` in it. Every command reads and writes
-this file and `trust.json` under the database's home, `setup` and `trust approve` included, so the
-file you write is the one a hook reads; a `~` in `[overlay] root` means that home too. `HOME`
-still decides `--home`'s default and where `attach` at a terminal puts the harness memory link;
-empty, it names none, so `setup`, `attach` and `detach` stop there and `doctor` says so.
-
-A container or home-manager setup whose `HOME` is not its database entry is not refused:
-
-- Its files live under the entry's home. `trust approve` and `setup` say which directory they
-  wrote under, and `doctor`'s `ignored-env` row names it.
-- A hook gives no sign that a file under `HOME` is no longer read: approved notes stop arriving
-  and `[personal]` falls back to the preset. If you kept a `config.toml` or `trust.json` of your
-  own under `HOME`'s `.config/stayfixed` before this release, check that they are yours and move
-  them to the entry's home **before** running `setup` or `trust approve`, which write there, or
-  merge them afterwards. Move only files you put there yourself: a clone's `.envrc` can point
-  `HOME` at a directory it ships.
-- A hook makes no harness memory link while the two homes differ, because the harness finds its
-  memory directory through `HOME`; the session and `doctor`'s `harness-link` row say so. For an
-  overlay store, `stayfixed attach` run from a terminal links every worktree under `HOME`. For any
-  other store nothing else makes the link, so start sessions with `HOME` set to the database's home.
-  A link an earlier release made under `HOME` is still withdrawn when the store's approval lapses.
-
-A user the database lists no home for has no such file off `--machine`: nothing is read,
-`trust approve` and `setup` fail and say so, and a hook makes no harness memory link. A home the
-database records that cannot be written fails the same two commands naming the directory; no
-other place is one a hook reads.
+**`~` here is `HOME`**, as the harness and every other program read it, so a devcontainer, a
+home-manager setup or a scratch `HOME` keeps stayfixed and the harness under one home; a `~` in
+`[overlay] root` means that home too. An environment that sets `HOME` already runs code as you.
+An empty `HOME` names no home, so `setup`, `attach` and `detach` stop there and `doctor` says so;
+`doctor`'s `ignored-env` row says, as information, when `HOME` is not the home the password
+database records.
 
 Only `[overlay]` and the trust record used to be held to that rule while `[personal]` followed
 the environment, so one command could read the two halves of this file from two different files.

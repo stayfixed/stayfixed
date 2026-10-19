@@ -14,7 +14,7 @@ from pathlib import Path
 
 from stayfixed.areas import SubParsers
 from stayfixed.command import common_flags
-from stayfixed.config.machine import passwd_home
+from stayfixed.config.machine import owner_home
 from stayfixed.errors import Failure, Refusal
 from stayfixed.printed import clipped, printable
 from stayfixed.result import Result
@@ -139,12 +139,12 @@ def _everything(machine: Path | None) -> Result:
 
 
 def _shown(subject: str) -> str:
-    """A recorded subject as a line prints it: under the home the password database records, as
+    """A recorded subject as a line prints it: under the owner's home, as
     `~/` and the rest; anywhere else, whole. Either way through `printed.clipped`, escaped and
     bounded: a subject is the absolute path of something in a checkout, chosen by whoever named
     its directories, and `printable` withheld every one of them, since the path grammar admits no
     leading `/`, so the listing a person reads to see what they approved named nothing."""
-    home = passwd_home()
+    home = owner_home()
     if home is not None:
         try:
             inside = Path(subject).relative_to(home.resolve())

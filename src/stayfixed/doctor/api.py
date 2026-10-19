@@ -32,9 +32,8 @@ one nobody can tell from a leftover:
   and told as that, `pre-commit`, `overlay-requires` and `attached` said a file nobody could read
   recorded nothing.
 - `NO_CONFIG_SKIP` is the skip of a row that reads the project configuration in a repository with
-  none: the areas' `attached`, `bundles`, `store-debris` and `harness-link` give it as the core's
-  rows do, so one sentence says one state. `configured` gives it for a row that reads nothing
-  before it reads the configuration, which is every one of them but `harness-link`.
+  none: the areas' `attached`, `bundles` and `store-debris` give it as the core's rows do, so one
+  sentence says one state, through `configured`.
 
 `plugin_root` is not here: nothing outside this area imports it, and the one test that reads it
 takes it from `stayfixed.doctor.checks`, its own area's module. Nor is `SETTINGS_FILES`, the

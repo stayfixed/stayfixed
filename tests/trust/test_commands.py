@@ -31,10 +31,11 @@ from tests.crafted import CRAFTED, assert_never_raw
 from tests.floor import developer_free_environ
 from tests.memory.test_commands import common, invoke
 from tests.memory.test_commands import project as project
-from tests.ownerhome import ROOT, as_owner_home, stayfixed_argv
 from tests.sandboxed import refuse_writes_under
 from tests.scriptload import SCRIPTS, load
 
+ROOT = Path(__file__).resolve().parents[2]
+LAUNCHER = [sys.executable, str(ROOT / "scripts" / "stayfixed")]
 T0 = datetime(2026, 10, 16, 9, 30, tzinfo=UTC)
 
 SPELLINGS = [["trust", "approve", "memory"], ["memory", "trust", "--in-repo-memory"]]
@@ -80,7 +81,7 @@ def test_no_terminal_no_approval(project: Path, tmp_path: Path, argv: list[str])
     # "the memory trust alias asks no terminal" -> the second does).
     before = _files(tmp_path)
     proc = subprocess.run(
-        [*stayfixed_argv(tmp_path / "owner"), *argv, *common(project)],
+        [*LAUNCHER, *argv, *common(project)],
         stdin=subprocess.DEVNULL,
         capture_output=True,
         text=True,
@@ -152,7 +153,7 @@ def test_a_terminal_approves(project: Path, tmp_path: Path, argv: list[str]) -> 
     # approve the store at its digest now. No mutation of its own: it is the positive control for
     # that case, without which a refusal for any reason would pass it.
     code, output = _ptyrun().run_in_pty(
-        [*stayfixed_argv(tmp_path / "owner"), *argv, *common(project)],
+        [*LAUNCHER, *argv, *common(project)],
         env=developer_free_environ(),
     )
     assert code == 0, output
@@ -203,7 +204,7 @@ def test_revoke_needs_no_terminal(project: Path, tmp_path: Path, at_a_terminal: 
     assert invoke(["trust", "approve", "memory", *common(project)]) == 0
     assert _approved(project)
     proc = subprocess.run(
-        [*stayfixed_argv(tmp_path / "owner"), "trust", "revoke", "memory", *common(project)],
+        [*LAUNCHER, "trust", "revoke", "memory", *common(project)],
         stdin=subprocess.DEVNULL,
         capture_output=True,
         text=True,
@@ -253,7 +254,7 @@ def test_revoke_of_nothing_lists_what_is_recorded(
     # subject, an absolute path, used to print withheld, which named nothing. Mutations
     # (`mutations/`'s "a revoke of nothing exits 0" -> exit 0; "a recorded subject under the home
     # prints whole" -> the line names the whole path).
-    as_owner_home(monkeypatch, tmp_path)
+    monkeypatch.setenv("HOME", str(tmp_path))
     assert invoke(["trust", "approve", "memory", *common(project)]) == 0
     capsys.readouterr()
     argv = ["trust", "revoke", "memory", "--subject", "/elsewhere", "--json", *common(project)]
@@ -269,11 +270,11 @@ def test_revoke_of_nothing_lists_what_is_recorded(
 def test_list_all_names_each_subject_from_the_home(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # A subject under the home the password database records prints from `~`, one anywhere else
+    # A subject under the home prints from `~`, one anywhere else
     # whole, both through `printed.clipped`. Mutation (`mutations/`'s "a recorded subject under the
     # home prints whole"): the first line names the whole path, quoted.
     home = tmp_path.resolve()
-    as_owner_home(monkeypatch, home)
+    monkeypatch.setenv("HOME", str(home))
     machine = tmp_path / "machine.toml"
     approve_all(machine, "memory", {str(home / "project" / ".stayfixed" / "memory"): "d"}, now=T0)
     approve_all(machine, "memory", {"/zz/elsewhere/memory": "e"}, now=T0)
@@ -293,7 +294,7 @@ def test_a_hostile_subject_prints_escaped_and_bounded(
     # Both listings print it escaped and clipped. Mutations (`mutations/`'s "a recorded subject
     # prints raw" -> both listings carry the escape; "revoke's recorded list prints a subject raw"
     # -> the revoke line does).
-    as_owner_home(monkeypatch, tmp_path / "owner")
+    monkeypatch.setenv("HOME", str(tmp_path / "owner"))
     machine = tmp_path / "machine.toml"
     hostile, long = f"/{CRAFTED}", "/" + "a" * 300
     approve_all(machine, "memory", {hostile: "d"}, now=T0)

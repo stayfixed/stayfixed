@@ -166,8 +166,7 @@ def run_detach(args: argparse.Namespace) -> Result:
         f"{len(removed.rules_removed)} Codex rule file(s), "
         f"{len(removed.links.revoked)} link(s), "
         f"{len(removed.directories_removed)} directory(ies); "
-        f"the binding record was left in place{kept}"
-        + "".join(f"; {note}" for note in removed.notes),
+        f"the binding record was left in place{kept}",
         data,
     )
 

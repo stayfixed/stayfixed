@@ -35,64 +35,13 @@ reddens = [
   "tests/setup/test_commands.py::test_the_machine_default_is_the_file_every_reader_reads",
 ]
 
-# Off a terminal and at one, the machine file is under the password database's home, never
-# `HOME`'s: every reader and writer asks for the file a hook reads, and the trust record a clone
-# ships under a `HOME` it chose is never read.
-[[mutation]]
-name = "the machine file follows HOME again"
-file = "src/stayfixed/config/machine.py"
-before = "    home = passwd_home()\n    if home is None:"
-after = "    home = Path.home()\n    if home is None:"
-reddens = [
-  "tests/config/test_machine.py::test_home_is_ignored_when_the_caller_is_not_interactive",
-  "tests/config/test_machine.py::test_home_is_honoured_from_an_interactive_shell",
-  "tests/memory/test_commands.py::test_an_owner_whose_home_differs_from_the_database_trusts_from_a_terminal_unrefused",
-  "tests/memory/test_commands.py::test_a_trust_record_under_a_home_the_environment_names_opens_nothing_off_a_terminal",
-  "tests/hooks/test_wrapper.py::test_a_trust_record_under_a_home_the_environment_names_is_never_read",
-  "tests/scripts/test_smoke_scripts.py::test_the_exfiltration_scenario_holds_against_the_checkout",
-]
-
-# Off a terminal the home directory is the password database's, never `HOME`: direnv, mise or a
-# devcontainer can set `HOME` from a file the clone commits, and relative, it names a directory
-# inside the clone a hook runs in, where a harness link would be made. The machine file and the
-# trust record beside it are held by `mutations/`'s "the machine file follows HOME again".
-[[mutation]]
-name = "the hook path takes the home directory from HOME again"
-file = "src/stayfixed/config/machine.py"
-before = '    return passwd_home()'
-after = '    return Path.home()'
-reddens = [
-  "tests/config/test_machine.py::test_home_is_ignored_when_the_caller_is_not_interactive",
-  "tests/memory/test_worktree.py::test_the_harness_link_is_anchored_on_home_only_from_a_terminal",
-]
-
-# A home the database records as no absolute path is no home: read as one, it is a directory
-# relative to wherever the process is, which on the hook path is the project.
-[[mutation]]
-name = "a home the password database records as a relative path is used"
-file = "src/stayfixed/config/machine.py"
-before = '    return Path(recorded) if os.path.isabs(recorded) else None'
-after = '    return Path(recorded)'
-reddens = ["tests/config/test_machine.py::test_a_home_the_database_records_as_no_absolute_path_is_no_home"]
-
-# A user the database does not list has no home off a terminal, and that is an answer, not an
-# exception that ends the command.
-[[mutation]]
-name = "a user the password database does not list ends the command"
-file = "src/stayfixed/config/machine.py"
-before = '    except KeyError:'
-after = '    except OSError:'
-reddens = [
-  "tests/config/test_machine.py::test_a_user_the_password_database_does_not_list_has_no_home_off_a_terminal",
-]
-
 # `~` in the machine file is the home that file lives under, never `HOME`.
 [[mutation]]
 name = "the overlay root's tilde is read from HOME"
 file = "src/stayfixed/config/overlay.py"
 before = '    return in_owner_home(value) if isinstance(value, str) and value else None'
 after = '    return Path(value).expanduser() if isinstance(value, str) and value else None'
-reddens = ["tests/config/test_overlay_root.py::test_a_root_under_tilde_is_the_owners_home_and_never_home"]
+reddens = ["tests/config/test_overlay_root.py::test_a_root_under_tilde_is_the_owners_home"]
 
 [[mutation]]
 name = "a tilde with no home behind it is left to name a directory"
@@ -100,24 +49,17 @@ file = "src/stayfixed/config/machine.py"
 before = '        return None if home is None else home / value[2:]'
 after = '        return Path(value) if home is None else home / value[2:]'
 reddens = [
-  "tests/config/test_overlay_root.py::test_a_root_under_tilde_is_not_recorded_where_the_database_lists_no_home",
+  "tests/config/test_overlay_root.py::test_a_root_under_tilde_is_not_recorded_where_there_is_no_home",
 ]
 
-# No home off a terminal is no machine file, for each of its readers, and never an error, which
+# No home is no machine file, for each of its readers, and never an error, which
 # every hook on such a machine would report.
 [[mutation]]
 name = "the configuration reads a machine file that has no home"
 file = "src/stayfixed/config/owner.py"
 before = '        raw = None if machine is None else read_machine_toml(machine)'
 after = '        raw = read_machine_toml(machine)'
-reddens = ["tests/hooks/test_dispatch.py::test_a_user_the_password_database_does_not_list_still_gets_an_answer"]
-
-[[mutation]]
-name = "the overlay root is read from a machine file that has no home"
-file = "src/stayfixed/config/overlay.py"
-before = '    raw = None if path is None else read_machine_toml(path)'
-after = '    raw = read_machine_toml(path)'
-reddens = ["tests/memory/test_hooks.py::test_no_harness_link_is_made_where_home_is_not_the_databases[no entry]"]
+reddens = ["tests/hooks/test_dispatch.py::test_a_session_with_no_home_still_gets_an_answer"]
 
 # Every `git` this project asks a question of now goes through `git_run`, the hook path's
 # toplevel and the memory store's resolver included, so one scrub is what keeps an inherited
@@ -3257,85 +3199,17 @@ reddens = [
   "tests/test_harnesses.py::test_claude_codes_memory_directory_is_keyed_by_the_projects_path",
 ]
 
-# `HOME` agrees with the database's home only when it resolves to it; read as agreeing anyway, a
-# hook makes the harness link where the harness does not look.
-[[mutation]]
-name = "any HOME agrees with the password database's home"
-file = "src/stayfixed/config/machine.py"
-before = '    return chosen != "" and Path(chosen).resolve() == recorded.resolve()'
-after = '    return True'
-reddens = [
-  "tests/memory/test_hooks.py::test_no_harness_link_is_made_where_home_is_not_the_databases",
-  "tests/config/test_machine.py::test_an_empty_home_is_a_value_that_names_no_home[another-False]",
-]
-
-# An empty `HOME` is a value that names no home, as every program measured reads it, and never an
-# unset one; read as unset, a hook links where the harness does not look and both rows read ok.
-[[mutation]]
-name = "an empty HOME agrees with the password database's home"
-file = "src/stayfixed/config/machine.py"
-before = "    if chosen is None:"
-after = "    if not chosen:"
-reddens = [
-  "tests/config/test_machine.py::test_an_empty_home_is_a_value_that_names_no_home[empty-False]",
-  "tests/memory/test_hooks.py::test_an_empty_home_gets_no_harness_link_even_in_the_databases_home",
-  "tests/memory/test_doctor.py::test_an_empty_home_is_told_the_hook_makes_no_link",
-  "tests/doctor/test_checks.py::test_an_empty_home_is_named_as_a_home_the_database_does_not_record",
-]
-
-[[mutation]]
-name = "an empty HOME is read as the directory a command runs in"
-file = "src/stayfixed/config/machine.py"
-before = '    return chosen != "" and Path(chosen).resolve() == recorded.resolve()'
-after = '    return Path(chosen).resolve() == recorded.resolve()'
-reddens = [
-  "tests/config/test_machine.py::test_an_empty_home_is_a_value_that_names_no_home[empty-False]",
-  "tests/memory/test_hooks.py::test_an_empty_home_gets_no_harness_link_even_in_the_databases_home",
-  "tests/memory/test_doctor.py::test_an_empty_home_is_told_the_hook_makes_no_link",
-  "tests/doctor/test_checks.py::test_an_empty_home_is_named_as_a_home_the_database_does_not_record",
-]
-
-# The database's home is resolved before it is a root, since the walk opens its root without
-# following a symlink and an entry naming one would otherwise get no harness link.
-[[mutation]]
-name = "a database home that is a symlink is used unresolved as a root"
-file = "src/stayfixed/config/machine.py"
-before = '    return home.resolve()'
-after = '    return home'
-reddens = [
-  "tests/config/test_machine.py::test_the_anchor_is_the_databases_home_resolved_and_home_as_typed_at_a_terminal",
-  "tests/memory/test_worktree.py::test_a_database_home_that_is_itself_a_symlink_still_gets_the_harness_link",
-]
-
-# At a terminal with `HOME` unset, for a user the database lists no home for, there is no home, and
-# `attach` says so rather than ending in `Path.home`'s error.
-[[mutation]]
-name = "a terminal with no home at all raises"
-file = "src/stayfixed/config/machine.py"
-before = """
-        try:
-            return Path.home()
-        except RuntimeError:
-            return None
-"""
-after = """
-        return Path.home()
-"""
-reddens = [
-  "tests/attach/test_commands.py::test_attach_at_a_terminal_with_no_home_at_all_refuses_in_words",
-]
-
 # At a terminal an empty `HOME` names no home, where `Path.home` answers `/`: `attach` there aimed the
 # harness memory link at `/.claude/...` and ended in an internal error on a read-only root.
 [[mutation]]
-name = "an empty HOME at a terminal is read as the root directory"
+name = "an empty HOME is read as the root directory"
 file = "src/stayfixed/config/machine.py"
-before = "        if home_is_empty():\n            return None"
-after = "        if False:\n            return None"
+before = "    if os.environ.get(\"HOME\") == \"\":\n        return None"
+after = "    if False:\n        return None"
 reddens = [
-  "tests/config/test_machine.py::test_an_empty_home_at_a_terminal_names_no_home",
-  "tests/attach/test_commands.py::test_attach_at_a_terminal_whose_home_is_empty_refuses_in_words",
-  "tests/attach/test_doctor.py::test_a_terminal_whose_home_is_empty_is_told_it_is_home_that_names_none",
+  "tests/config/test_machine.py::test_an_empty_home_names_no_home",
+  "tests/attach/test_commands.py::test_attach_whose_home_is_empty_refuses_in_words",
+  "tests/attach/test_doctor.py::test_an_empty_home_is_told_it_is_home_that_names_none",
 ]
 
 # Whether a version orders before its release by its suffix, read by PEP 440's grammar for one:
@@ -3497,7 +3371,6 @@ reddens = [
   "tests/setup/test_setup.py::test_a_symlink_loop_at_any_path_setup_is_given_is_a_refusal_naming_it[claude]",
   "tests/setup/test_setup.py::test_a_symlink_loop_at_any_path_setup_is_given_is_a_refusal_naming_it[home]",
   "tests/setup/test_setup.py::test_a_symlink_loop_at_any_path_setup_is_given_is_a_refusal_naming_it[root]",
-  "tests/setup/test_setup.py::test_a_symlink_loop_at_any_path_setup_is_given_is_a_refusal_naming_it[settings]",
   "tests/setup/test_setup.py::test_a_symlink_loop_at_any_path_setup_is_given_is_a_refusal_naming_it[overlay]",
   "tests/setup/test_setup.py::test_a_project_root_through_a_symlink_loop_handed_to_setup_is_refused",
 ]
@@ -4118,8 +3991,7 @@ reddens = [
   "tests/hooks/test_hook_command.py::test_a_machine_file_that_does_not_load_is_not_blamed_on_stayfixed_toml",
 ]
 
-# The machine file a session read is under the password database's home, so the warning names
-# that file and never a `~` that a differing `HOME` moves.
+# The warning names the machine file a session read, and never a `~` a reader resolves again.
 [[mutation]]
 name = "the machine-file warning names the file by a fixed path"
 file = "src/stayfixed/config/session.py"
@@ -4284,40 +4156,31 @@ reddens = [
   "tests/memory/test_commands.py::test_a_trust_record_past_the_parser_is_refused_and_never_overwritten[long-number]",
 ]
 
-# No home in the password database is no trust record: none is read, and none is written beside
+# No home is no trust record: none is read, and none is written beside
 # whatever directory the command happens to run in.
 [[mutation]]
 name = "a trust record with no home is written beside the working directory"
 file = "src/stayfixed/trust/record.py"
 before = '        raise Failure(NO_HOME)'
 after = '        path = Path(RECORD)'
-reddens = ["tests/memory/test_commands.py::test_trust_with_no_home_in_the_database_fails_and_writes_nothing"]
+reddens = ["tests/memory/test_commands.py::test_trust_with_no_home_fails_and_writes_nothing"]
 
 [[mutation]]
 name = "a trust record with no home is read as a path"
 file = "src/stayfixed/trust/record.py"
 before = '    if path is None or not fsops.is_file(path):'
 after = '    if not fsops.is_file(path):'
-reddens = ["tests/memory/test_commands.py::test_trust_with_no_home_in_the_database_fails_and_writes_nothing"]
+reddens = ["tests/memory/test_commands.py::test_trust_with_no_home_fails_and_writes_nothing"]
 
-# A trust record that cannot be written under the database's home is a failure naming the
-# directory, never an internal error; and where the homes differ the command says where it wrote.
+# A trust record that cannot be written under the home is a failure naming the directory, never an
+# internal error.
 [[mutation]]
 name = "an unwritable trust record directory ends as an internal error"
 file = "src/stayfixed/trust/record.py"
 before = "    except OSError as exc:\n        if sandbox_refused(exc):\n            raise SandboxedWrite(SANDBOXED) from None\n        where = ("
 after = "    except LookupError as exc:\n        if sandbox_refused(exc):\n            raise SandboxedWrite(SANDBOXED) from None\n        where = ("
 reddens = [
-  "tests/memory/test_commands.py::test_trust_where_the_database_home_cannot_be_written_fails_naming_the_directory",
-]
-
-[[mutation]]
-name = "memory trust keeps quiet about where it wrote while the homes differ"
-file = "src/stayfixed/trust/approving.py"
-before = "    if approved and context.machine is None and written is not None and not homes_agree():"
-after = "    if False:"
-reddens = [
-  "tests/memory/test_commands.py::test_an_owner_whose_home_differs_from_the_database_trusts_from_a_terminal_unrefused",
+  "tests/memory/test_commands.py::test_trust_where_the_home_cannot_be_written_fails_naming_the_directory",
 ]
 
 # The machine's trust record that cannot be read is named once with the reason in words: the
@@ -4512,13 +4375,13 @@ reddens = [
   "tests/memory/test_trust.py::test_a_refresh_keeps_when_the_person_approved",
 ]
 
-# The record is beside the machine file under the password database's home, never `HOME`'s.
+# The record is beside the machine file, and with no home there is none.
 [[mutation]]
-name = "the trust record follows HOME"
+name = "the trust record takes the root directory for an empty HOME"
 file = "src/stayfixed/trust/record.py"
 before = "    base = machine_config_path() if machine is None else machine"
-after = '    base = Path.home() / ".config" / "stayfixed" / "config.toml" if machine is None else machine'
-reddens = ["tests/trust/test_record.py::test_the_record_ignores_xdg_and_home"]
+after = "    base = Path.home() / \".config\" / \"stayfixed\" / \"config.toml\" if machine is None else machine"
+reddens = ["tests/trust/test_record.py::test_the_record_ignores_xdg"]
 
 # `stayfixed trust` (`src/stayfixed/trust/commands.py`). An approval is asked of a person: with no
 # terminal on standard input it refuses and writes nothing.
@@ -4577,7 +4440,7 @@ before = '            lines.append(f"{name}: nothing to approve in this checkout
 after = '            lines.append(f"{name}: nothing to approve in this checkout (`stayfixed trust approve {name}` says why)")'
 reddens = ["tests/trust/test_commands.py::test_list_says_why_a_kind_has_nothing_to_approve"]
 
-# A recorded subject prints on a line, from `~` under the password database's home, and always
+# A recorded subject prints on a line, from `~` under the home, and always
 # escaped and bounded, never withheld and never raw.
 [[mutation]]
 name = "a recorded subject under the home prints whole"
@@ -4657,7 +4520,7 @@ before = "SANDBOX_ERRNOS = frozenset({errno.EPERM, errno.EROFS})"
 after = "SANDBOX_ERRNOS = frozenset({errno.EPERM, errno.EROFS, errno.EACCES})"
 reddens = [
   "tests/trust/test_record.py::test_a_write_refused_as_a_sandbox_refuses_one_is_said_so[eacces]",
-  "tests/memory/test_commands.py::test_trust_where_the_database_home_cannot_be_written_fails_naming_the_directory",
+  "tests/memory/test_commands.py::test_trust_where_the_home_cannot_be_written_fails_naming_the_directory",
 ]
 
 [[mutation]]

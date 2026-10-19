@@ -31,6 +31,7 @@ import pty
 import re
 import shutil
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -45,7 +46,6 @@ from stayfixed.memory.api import DELIMITER, PROJECTS, harness_memory_path, marke
 from tests.floor import developer_free_environ
 from tests.gitfixture import git
 from tests.overlay.test_upgrade import SHIPPED_MEMORY_README
-from tests.ownerhome import plugin_root_with_owner_home, stayfixed_argv
 from tests.runners import Recorder
 from tests.snapshot import (
     assert_snapshot_changed,
@@ -189,9 +189,7 @@ def _cli(walk: Walkthrough, *argv: str, tty: bool = False) -> subprocess.Complet
     env["PATH"] = f"{walk.bin}{os.pathsep}{env.get('PATH', '')}"
     env["CLAUDE_PLUGIN_ROOT"] = str(ROOT)
     env["CLAUDE_PLUGIN_DATA"] = str(walk.data)
-    # The launcher's own lines, with the password database answering the scratch home as `HOME`
-    # does: off a terminal, that is where the machine owner's home is read (`tests/ownerhome.py`).
-    command = [*stayfixed_argv(walk.home), *argv]
+    command = [sys.executable, str(ROOT / "scripts" / "stayfixed"), *argv]
     if not tty:
         return subprocess.run(
             command,
@@ -219,7 +217,7 @@ def _cli(walk: Walkthrough, *argv: str, tty: bool = False) -> subprocess.Complet
 
 
 def _doctor(walk: Walkthrough, *, root: Path | None = None) -> list[dict[str, str]]:
-    """The nineteen rows, read back out of what `doctor --json` printed on the launcher's
+    """The eighteen rows, read back out of what `doctor --json` printed on the launcher's
     stdout."""
     done = _cli(
         walk,
@@ -234,7 +232,7 @@ def _doctor(walk: Walkthrough, *, root: Path | None = None) -> list[dict[str, st
     )
     assert done.stdout, done.stderr
     rows: list[dict[str, str]] = json.loads(done.stdout)["checks"]
-    assert len(rows) == 19, rows
+    assert len(rows) == 18, rows
     return rows
 
 
@@ -409,33 +407,24 @@ def _session(
     developer's own `~/.claude` or `~/.config/stayfixed`.
 
     `machine=False` for `stayfixed hook <event>`, which takes no such flag: the dispatcher hands
-    every handler `machine=None` on purpose, so a handler reads `.config/stayfixed/` under the
-    home the password database records, and nothing a session can name. The plugin root's
-    launcher pins that home to the scratch one `HOME` names (`_plugin_root`), and a caller that
-    wants the hook path to see a machine file puts one there.
+    every handler `machine=None` on purpose, so a handler reads `<HOME>/.config/stayfixed/` and
+    nothing a session can name. `HOME` above is what keeps that inside the scratch tree, and a
+    caller that wants the hook path to see a machine file puts one there.
     """
     env = developer_free_environ()
-    plugin = _plugin_root(walk)
-    env["CLAUDE_PLUGIN_ROOT"] = str(plugin)
+    env["CLAUDE_PLUGIN_ROOT"] = str(ROOT)
     env["CLAUDE_PROJECT_DIR"] = str(walk.root)
     env["CLAUDE_PLUGIN_DATA"] = str(walk.data)
     env["HOME"] = str(walk.home)
     flags = ["--machine", str(walk.machine)] if machine else []
     return subprocess.run(
-        [str(plugin / "hooks" / WRAPPER.name), *argv, *flags],
+        [str(WRAPPER), *argv, *flags],
         cwd=walk.root,
         capture_output=True,
         text=True,
         check=False,
         env=env,
     )
-
-
-def _plugin_root(walk: Walkthrough) -> Path:
-    """This checkout as the plugin root a session's wrapper runs from, with the password
-    database answering the scratch home: the hook path reads the machine owner's home from
-    there and not from `HOME` (`tests/ownerhome.py`)."""
-    return plugin_root_with_owner_home(walk.home.parent, walk.home)
 
 
 def _bundle(walk: Walkthrough, bundle: str, part: int = 1) -> subprocess.CompletedProcess[str]:
@@ -509,18 +498,11 @@ def test_the_machine_file_is_the_only_thing_that_says_where_the_overlay_is(
     walk = _install_path(tmp_path)
     assert str(walk.overlay) in walk.machine.read_text(encoding="utf-8")
     env = developer_free_environ()
-    plugin = _plugin_root(walk)
-    env["CLAUDE_PLUGIN_ROOT"] = str(plugin)
+    env["CLAUDE_PLUGIN_ROOT"] = str(ROOT)
     env["CLAUDE_PROJECT_DIR"] = str(walk.root)
     env["HOME"] = str(walk.home)
     without = subprocess.run(
-        [
-            str(plugin / "hooks" / WRAPPER.name),
-            "memory",
-            "session-context",
-            "--bundle",
-            "standing-rules",
-        ],
+        [str(WRAPPER), "memory", "session-context", "--bundle", "standing-rules"],
         cwd=walk.root,
         capture_output=True,
         text=True,

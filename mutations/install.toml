@@ -475,7 +475,7 @@ reddens = ["tests/setup/test_setup.py::test_a_created_overlay_is_refused_before_
 [[mutation]]
 name = "setup stops asking whether --home can be used before its first write"
 file = "src/stayfixed/setup/run.py"
-before = "        _check_home_usable(home, settings=settings, created=created)"
+before = "        _check_home_usable(home, created=created)"
 after = "        pass"
 reddens = [
   "tests/setup/test_setup.py::test_a_home_that_cannot_take_the_write_is_refused_before_any_write[above-home]",
@@ -488,29 +488,11 @@ reddens = [
 [[mutation]]
 name = "setup stops asking whether an existing .claude can be written"
 file = "src/stayfixed/setup/run.py"
-before = "        landing.append(home / USER_SETTINGS)"
-after = '        landing.append(home / "x")'
+before = "    landing = [fsops.resolved(home / USER_SETTINGS)]"
+after = "    landing = [home / \"x\"]"
 reddens = [
   "tests/setup/test_setup.py::test_a_home_that_cannot_take_the_write_is_refused_before_any_write[claude]",
   "tests/setup/test_setup.py::test_a_read_only_home_whose_claude_directory_is_writable_is_set_up",
-]
-
-[[mutation]]
-name = "setup asks whether a --home that is there can be written although --settings sends the write elsewhere"
-file = "src/stayfixed/setup/run.py"
-before = """    elif not fsops.exists(home):
-        landing.append(home)"""
-after = """    else:
-        landing.append(home / "x")"""
-reddens = ["tests/setup/test_setup.py::test_a_read_only_home_with_settings_named_elsewhere_is_set_up"]
-
-[[mutation]]
-name = "setup stops asking whether a missing --home can be created when --settings is given"
-file = "src/stayfixed/setup/run.py"
-before = "    elif not fsops.exists(home):"
-after = "    elif False:"
-reddens = [
-  "tests/setup/test_setup.py::test_a_home_under_a_read_only_parent_is_refused_with_settings_named_elsewhere",
 ]
 
 # `create:` clones into `<home>/<name>`; finding out from the clone is finding out after
@@ -555,8 +537,8 @@ reddens = ["tests/setup/test_setup.py::test_a_home_mkdir_that_fails_is_a_refusal
 
 # `setup`'s questions before its first write are one phase with one floor. `fsops`' predicates raise
 # when a path cannot be asked about, and the steps that do not word that themselves let it reach
-# the frame as `internal error`: an `--overlay`, a `--root` or a `--settings` directory below a
-# directory nobody may search, and the walk up from a `create:` destination under such a home.
+# the frame as `internal error`: an `--overlay` or a `--root` directory below a directory nobody
+# may search, and the walk up from a `create:` destination under such a home.
 [[mutation]]
 name = "setup lets a path it cannot ask about before its first write reach the frame"
 file = "src/stayfixed/setup/run.py"
@@ -569,8 +551,6 @@ after = """    except ValueError as exc:
 reddens = [
   "tests/setup/test_setup.py::test_a_path_setup_cannot_ask_about_before_its_first_write_is_a_refusal_naming_it[overlay]",
   "tests/setup/test_setup.py::test_a_path_setup_cannot_ask_about_before_its_first_write_is_a_refusal_naming_it[root]",
-  "tests/setup/test_setup.py::test_a_path_setup_cannot_ask_about_before_its_first_write_is_a_refusal_naming_it[settings]",
-  "tests/setup/test_setup.py::test_a_path_setup_cannot_ask_about_before_its_first_write_is_a_refusal_naming_it[home]",
 ]
 
 # The order is load-bearing where two steps can refuse one layout: a `create:` destination under a
@@ -579,53 +559,12 @@ reddens = [
 [[mutation]]
 name = "setup asks where the overlay lies before it asks about --home"
 file = "src/stayfixed/setup/run.py"
-before = """        if settings is None:
-            _check_settings_path(home)
-        else:
-            _check_settings_parent(settings)
-        _check_home_usable(home, settings=settings, created=created)
-        if planned is not None:
-            planned = replace(planned, exempt=_exemption(planned, machine=machine))
-            _outside_the_project(
-                planned.root, project_root=project_root, exempt=planned.exempt is not None
-            )"""
-after = """        if planned is not None:
-            planned = replace(planned, exempt=_exemption(planned, machine=machine))
-            _outside_the_project(
-                planned.root, project_root=project_root, exempt=planned.exempt is not None
-            )
-        if settings is None:
-            _check_settings_path(home)
-        else:
-            _check_settings_parent(settings)
-        _check_home_usable(home, settings=settings, created=created)"""
+before = "        _check_home_usable(home, created=created)\n        if planned is not None:\n            planned = replace(planned, exempt=_exemption(planned, machine=machine))\n            _outside_the_project(\n                planned.root, project_root=project_root, exempt=planned.exempt is not None\n            )"
+after = "        if planned is not None:\n            planned = replace(planned, exempt=_exemption(planned, machine=machine))\n            _outside_the_project(\n                planned.root, project_root=project_root, exempt=planned.exempt is not None\n            )\n        _check_home_usable(home, created=created)"
 reddens = [
   "tests/setup/test_setup.py::test_a_created_overlay_under_a_home_nobody_may_search_is_refused_before_anything[no-repository]",
   "tests/setup/test_setup.py::test_a_created_overlay_under_a_home_nobody_may_search_is_refused_before_anything[repository]",
   "tests/setup/test_setup.py::test_every_question_before_the_first_write_is_asked_in_the_documented_order",
-]
-
-# `contained` names the file it could not ask about relative to the root it was handed, and
-# `--home` is not in that sentence; `--settings` names its file whole, and so does this now.
-[[mutation]]
-name = "setup names a settings file it cannot ask about only relative to --home"
-file = "src/stayfixed/setup/run.py"
-before = "        if link is None and isinstance(exc, PathUnasked):"
-after = "        if False:"
-reddens = [
-  "tests/setup/test_setup.py::test_a_created_overlay_under_a_home_nobody_may_search_is_refused_before_anything[no-repository]",
-  "tests/setup/test_setup.py::test_a_created_overlay_under_a_home_nobody_may_search_is_refused_before_anything[repository]",
-]
-
-# `--settings` names the directory the write renames a new file into, and a 555 one took the
-# machine file before the write refused, in words about a symlink that was not there.
-[[mutation]]
-name = "setup --settings writes the machine file before asking whether its directory can be written"
-file = "src/stayfixed/setup/run.py"
-before = "    if not fsops.creatable(settings):"
-after = "    if False:"
-reddens = [
-  "tests/setup/test_setup.py::test_a_settings_directory_that_cannot_be_written_is_refused_before_the_machine_file",
 ]
 
 # Over a `<home>/<name>` that is there, `overlay.create` looks inside it before anything else, and a
@@ -701,38 +640,6 @@ after = "    outer = _candidate_repository(resolved_candidate)"
 reddens = [
   "tests/setup/test_setup.py::test_an_overlay_that_is_a_checkout_of_its_own_is_recorded",
   "tests/setup/test_setup.py::test_an_overlay_created_from_a_directory_in_no_repository_passes_containment",
-]
-
-# `CONTRIBUTING`'s containment rule has two stages, and `setup` had only the second: the
-# `O_NOFOLLOW` walk refused a symlinked `~/.claude` with `UnsafePath`, which `cli.run` renders as
-# `internal error`, after the machine file was already written. `config.paths.contained` is the
-# user-facing half. The mutation leaves the walk, so the run still refuses — with no link named,
-# no remedy, and the machine file on disk.
-[[mutation]]
-name = "setup meets a symlinked ~/.claude only at write time"
-file = "src/stayfixed/setup/run.py"
-before = """        if settings is None:
-            _check_settings_path(home)"""
-after = "        if False:\n            _check_settings_path(home)"
-reddens = [
-  "tests/setup/test_setup.py::test_a_symlinked_claude_directory_is_a_refusal_that_names_the_link",
-]
-
-# The floor under `mutations/`'s "setup meets a symlinked ~/.claude only at write time", and not
-# dead: a component that becomes a symlink between the check and the write can only be refused by
-# the walk, and that interval is what the walk is for. Swallowing it would report a settings file
-# this run never wrote.
-[[mutation]]
-name = "the write-time containment on the settings file is swallowed"
-file = "src/stayfixed/setup/run.py"
-before = """        fsops.write_within(root, relative, new_text)
-    except UnsafePath as exc:"""
-after = """        fsops.write_within(root, relative, new_text)
-    except UnsafePath:
-        return False
-    except UnsafePath as exc:"""
-reddens = [
-  "tests/setup/test_setup.py::test_a_claude_directory_that_becomes_a_symlink_after_the_check_is_still_refused",
 ]
 
 # `overlay upgrade --root` defaults to `.` and was checked nowhere: in a directory that was not an
@@ -878,28 +785,9 @@ reddens = [
 [[mutation]]
 name = "setup mirrors only the values this run itself added"
 file = "src/stayfixed/setup/run.py"
-before = "        home, deny_rules, read_personal(machine), settings=settings, retired=retired"
-after = "        home, deny_rules, personal, settings=settings, retired=retired"
+before = "    deny_written = _write_user_settings(home, deny_rules, read_personal(machine), retired=retired)"
+after = "    deny_written = _write_user_settings(home, deny_rules, personal, retired=retired)"
 reddens = ["tests/setup/test_setup.py::test_the_plugin_config_mirror_follows_the_machine_file"]
-
-# A remedy is held to the standard of the refusal that carries it. `stow` folds a package as far
-# as it can, so with `~/.claude` already created by Claude Code it links the *file*, and the first
-# draft's arm — comparing the link's basename to its target's, trivially true for a per-file link
-# — printed `--home <dotfiles>/claude`. Under that command `setup` writes
-# `<dotfiles>/claude/.claude/settings.json`, exits 0, and leaves the file the link leads to
-# untouched: the same "a file no reader reads" defect as the `--machine` default, arriving through
-# the advice instead. Without this check the guard prints a command for a layout no `--home` can
-# express.
-[[mutation]]
-name = "the symlink remedy prints a --home that writes somewhere else"
-file = "src/stayfixed/setup/run.py"
-before = """    if leads_to.parts[-len(wanted) :] != wanted:
-        return None"""
-after = """    if False:
-        return None"""
-reddens = [
-  "tests/setup/test_setup.py::test_a_home_layout_no_home_can_express_says_so_rather_than_printing_a_command",
-]
 
 # --- install path: the setup and overlay guards ------------------------------------------
 #
@@ -968,18 +856,6 @@ reddens = [
   "tests/overlay/test_template.py::test_the_capability_files_are_spelled_once_and_are_shipped_files",
 ]
 
-# `--settings` names the settings file itself, for the per-file stow layout no `--home` can express.
-# Ignoring it and writing under `home` is the defect the flag exists to remove, and it is a silent
-# one: the command exits 0 into a file no reader reads.
-[[mutation]]
-name = "setup ignores --settings and writes under home"
-file = "src/stayfixed/setup/run.py"
-before = "        (settings.parent, settings.name) if settings is not None else (home, USER_SETTINGS)"
-after = "        (home, USER_SETTINGS) if settings is not None else (home, USER_SETTINGS)"
-reddens = [
-  "tests/setup/test_setup.py::test_a_per_file_settings_link_is_written_through_settings_and_not_under_home",
-]
-
 # The walkthrough runs the launcher, so what it asserts about `pre-commit` is what a real `PATH`
 # lookup ran and not what a stub recorded. `overlay init` installs the overlay's commit-time secret
 # scan, and a verb that is not `install` installs nothing while every exit code stays 0 -- the quiet
@@ -992,36 +868,6 @@ before = '    done: Completed = runner.launch(["pre-commit", "install"], root)'
 after = '    done: Completed = runner.launch(["pre-commit", "--version"], root)'
 reddens = [
   "tests/test_install_path.py::test_setup_then_overlay_then_attach_then_a_session_sees_memory",
-]
-
-# `UnsafePath` is not the only `OSError` a settings write can raise, and the two that are not it
-# reached `cli.run`'s final handler as `internal error`. The mutation re-narrows the arm to the
-# class that was already caught, which is the defect exactly.
-[[mutation]]
-name = "a settings write's other OSErrors escape as an internal error again"
-file = "src/stayfixed/setup/run.py"
-before = """    except OSError as exc:
-        if sandbox_refused(exc):
-            raise Refusal(SETUP_SANDBOXED) from exc
-        # `UnsafePath` is not the only `OSError` reachable here"""
-after = """    except UnsafePath as exc:
-        if sandbox_refused(exc):
-            raise Refusal(SETUP_SANDBOXED) from exc
-        # `UnsafePath` is not the only `OSError` reachable here"""
-reddens = [
-  "tests/setup/test_setup.py::test_a_settings_path_whose_directory_is_not_there_is_a_refusal_and_not_an_internal_error",
-  "tests/setup/test_setup.py::test_a_settings_path_inside_a_symlinked_directory_is_a_refusal_and_not_an_internal_error",
-]
-
-# `--home` and `--machine` expand a leading `~` and `--settings` did not, while the README row this
-# flag ships advertises one. An agent harness passes argv as a list, so nothing else expands it.
-[[mutation]]
-name = "setup stops expanding a leading ~ in --settings"
-file = "src/stayfixed/setup/commands.py"
-before = "    return Path(args.settings).expanduser() if args.settings else None"
-after = "    return Path(args.settings) if args.settings else None"
-reddens = [
-  "tests/setup/test_commands.py::test_a_tilde_in_settings_is_expanded_the_way_home_and_machine_already_are",
 ]
 
 # The `--yes` gate, and the whole reason the command has one. Remove it and the documented dry run
@@ -1089,22 +935,6 @@ reddens = [
 # behaviour produces — never on a `NameError` from a deleted name or on a status a surviving arm
 # also produces.
 
-# `setup`'s docstring promises every structural question is asked "while nothing is on disk".
-# With `--settings` it was not: `_check_settings_path` ran only for the `None` case, so the
-# refusal came from `_write_user_settings` — after `home.mkdir(parents=True)` and after
-# `write_machine`. The mutation leaves the `Refusal` in place one frame later, which is why the
-# case asserts that nothing was written rather than that something was raised.
-[[mutation]]
-name = "setup asks about the --settings directory only at write time"
-file = "src/stayfixed/setup/run.py"
-before = """        else:
-            _check_settings_parent(settings)"""
-after = """        else:
-            pass"""
-reddens = [
-  "tests/setup/test_setup.py::test_a_settings_path_whose_directory_is_not_there_is_refused_before_anything_is_written",
-]
-
 # The case is named for the repository and matched on `refused by a ruleset`, which is the
 # STUB's own stderr — quoted back whatever this message says about where the push went. The
 # slug is the half only this line produces.
@@ -1115,30 +945,6 @@ before = '            raise Failure(f"`git push` to {slug} exited {pushed.code} 
 after = '            raise Failure(f"`git push` exited {pushed.code} ({answered(pushed)})")'
 reddens = [
   "tests/overlay/test_publish.py::test_a_push_that_is_declined_is_a_failure_naming_the_repository",
-]
-
-# `--settings` names the file, so `open_within` never opens the final component and
-# `write_atomically_at`'s `os.replace` replaces a symlink entry rather than refusing it. The
-# early check asked only about the directory, and three surfaces said the file was refused. One
-# entry per question the check now asks — the link, and the directory at the file's own name,
-# which failed from `_read_document` as a `Failure` after the home tree and the machine file had
-# been written.
-[[mutation]]
-name = "setup --settings asks about the directory and not the file"
-file = "src/stayfixed/setup/run.py"
-before = "        contained(parent, settings.name)"
-after = "        pass"
-reddens = [
-  "tests/setup/test_setup.py::test_a_settings_path_that_is_itself_a_symlink_is_refused_and_the_link_survives",
-]
-
-[[mutation]]
-name = "setup --settings accepts a directory where the file goes"
-file = "src/stayfixed/setup/run.py"
-before = "    if fsops.is_dir(settings):"
-after = "    if False:"
-reddens = [
-  "tests/setup/test_setup.py::test_a_settings_path_that_is_an_existing_directory_is_refused_before_anything_is_written",
 ]
 
 # `overlay publish-template --yes` returned "nothing to push", exit 0, whenever `git` was absent,
@@ -1748,35 +1554,21 @@ reddens = [
   "tests/overlay/test_upgrade.py::test_init_meets_a_manifest_the_encoder_cannot_write_back_as_one_it_cannot_read",
 ]
 
-# With no home in the password database there is no default machine file, and `setup` writes
-# none under `HOME`, which no hook would read.
+# With no home there is no default machine file, and `setup` writes none.
 [[mutation]]
 name = "setup runs with no machine file to write"
 file = "src/stayfixed/setup/commands.py"
-before = '    if machine is None:'
-after = '    if False:'
-reddens = [
-  "tests/setup/test_commands.py::test_setup_with_no_home_in_the_password_database_names_machine_and_writes_nothing",
-]
-
-# The machine file goes under the home the password database records unless `--machine` names
-# one. `setup` says so where `HOME` names another directory, and a directory there it cannot write
-# is a failure that names it and says no other place is one a hook reads, which it does not say of
-# a file `--machine` named.
-[[mutation]]
-name = "setup keeps quiet about which home it wrote under while the homes differ"
-file = "src/stayfixed/setup/commands.py"
-before = '        if args.machine is None and not homes_agree()'
-after = '        if False'
-reddens = ["tests/setup/test_commands.py::test_setup_where_the_homes_differ_says_which_home_it_wrote_under"]
+before = "    if home is None or machine is None:"
+after = "    if home is None:"
+reddens = ["tests/setup/test_commands.py::test_setup_with_no_home_names_machine_and_writes_nothing"]
 
 [[mutation]]
 name = "an unwritable machine file directory ends as an internal error"
 file = "src/stayfixed/setup/machine.py"
-before = "    except OSError as exc:\n        if sandbox_refused(exc):\n            raise Refusal(SETUP_SANDBOXED) from None\n        # With no `--machine`"
-after = "    except LookupError as exc:\n        if sandbox_refused(exc):\n            raise Refusal(SETUP_SANDBOXED) from None\n        # With no `--machine`"
+before = "    except OSError as exc:\n        if sandbox_refused(exc):\n            raise Refusal(SETUP_SANDBOXED) from None\n        where = ("
+after = "    except LookupError as exc:\n        if sandbox_refused(exc):\n            raise Refusal(SETUP_SANDBOXED) from None\n        where = ("
 reddens = [
-  "tests/setup/test_commands.py::test_setup_where_the_database_home_cannot_be_written_fails_naming_the_directory",
+  "tests/setup/test_commands.py::test_setup_where_the_home_cannot_be_written_fails_naming_the_directory",
 ]
 
 [[mutation]]
@@ -1789,39 +1581,12 @@ reddens = [
 ]
 
 [[mutation]]
-name = "setup's unwritable database home no longer says it is the only place a hook reads"
+name = "setup's unwritable home no longer says it is the only place a hook reads"
 file = "src/stayfixed/setup/machine.py"
 before = "            if path == machine_config_path()"
 after = "            if False"
 reddens = [
-  "tests/setup/test_commands.py::test_setup_where_the_database_home_cannot_be_written_fails_naming_the_directory",
-]
-
-# A settings file in a directory that cannot be searched is not a link, and the link refusal's
-# remedy would not help; and a link into such a directory is named, never an internal error.
-[[mutation]]
-name = "setup --settings words a file it cannot ask about as a link"
-file = "src/stayfixed/setup/run.py"
-before = "    except PathUnasked as exc:\n        raise Refusal(f\"{settings} cannot be checked"
-after = "    except OSError as exc:\n        raise Refusal(f\"{settings} cannot be checked"
-reddens = [
-  "tests/setup/test_setup.py::test_a_settings_file_in_a_directory_nobody_may_search_is_refused_for_that",
-]
-
-[[mutation]]
-name = "setup's search for the settings link stops at a path it cannot ask about"
-file = "src/stayfixed/setup/run.py"
-before = """
-        try:
-            if fsops.is_symlink(ancestor):
-                return ancestor
-        except OSError:
-            continue"""
-after = """
-        if fsops.is_symlink(ancestor):
-            return ancestor"""
-reddens = [
-  "tests/setup/test_setup.py::test_a_claude_directory_linked_into_a_directory_nobody_may_search_names_the_link",
+  "tests/setup/test_commands.py::test_setup_where_the_home_cannot_be_written_fails_naming_the_directory",
 ]
 
 # `--home` defaults to `HOME`, and an empty one names no home, where `Path.home` answers `/`: `setup`
@@ -1829,11 +1594,9 @@ reddens = [
 [[mutation]]
 name = "setup takes the root directory for an empty HOME"
 file = "src/stayfixed/setup/commands.py"
-before = "    if args.home is None and home_is_empty():"
-after = "    if False:"
-reddens = [
-  "tests/setup/test_commands.py::test_an_empty_home_is_no_default_for_home",
-]
+before = "    if home is None or machine is None:"
+after = "    if machine is None:"
+reddens = ["tests/setup/test_commands.py::test_an_empty_home_is_no_default_for_home"]
 
 # A git directory is git's answer, and a submodule's lies at `.git/modules/<name>`, the name the
 # repository's `.gitmodules` chose: printed raw, an escape sequence in it reached the terminal
@@ -1910,65 +1673,18 @@ reddens = [
   "tests/setup/test_setup.py::test_a_symlink_loop_at_any_path_setup_is_given_is_a_refusal_naming_it[overlay]",
 ]
 
-[[mutation]]
-name = "setup resolves a --settings link past fsops"
-file = "src/stayfixed/setup/run.py"
-before = "        real = fsops.resolved(settings)"
-after = "        real = settings.resolve()"
-reddens = [
-  "tests/setup/test_setup.py::test_a_symlink_loop_at_any_path_setup_is_given_is_a_refusal_naming_it[settings]",
-]
-
 # The settings write's walk opens the root and each directory on the way to the file `O_RDONLY`
 # (`fsops.open_within`), and a directory at mode 300 takes a new name and refuses that open: the
 # question whether a name can be made there passed it, the machine file was written, and the write
 # then refused in words about a symlink. Each directory the walk opens is asked whether it can be
 # read, above the first write.
 [[mutation]]
-name = "setup stops asking whether the settings walk can read --home's directories"
+name = "setup stops asking whether the settings write can read its directory"
 file = "src/stayfixed/setup/run.py"
-before = """    if settings is None:
-        unread = _unreadable_on_the_walk(home, USER_SETTINGS)"""
-after = """    if False:
-        unread = _unreadable_on_the_walk(home, USER_SETTINGS)"""
-reddens = [
-  "tests/setup/test_setup.py::test_a_directory_the_settings_write_opens_to_read_and_cannot_is_refused_before_any_write[home]",
-  "tests/setup/test_setup.py::test_a_directory_the_settings_write_opens_to_read_and_cannot_is_refused_before_any_write[claude]",
-]
-
-[[mutation]]
-name = "setup stops asking whether the settings walk can read the --settings directory"
-file = "src/stayfixed/setup/run.py"
-before = "    if _unreadable_on_the_walk(parent, settings.name) is not None:"
+before = "    if fsops.is_dir(directory) and not os.access(directory, os.R_OK):"
 after = "    if False:"
 reddens = [
-  "tests/setup/test_setup.py::test_a_directory_the_settings_write_opens_to_read_and_cannot_is_refused_before_any_write[settings]",
-]
-
-# A regular file at `<home>/.claude`, and a directory at `<home>/.claude/settings.json`, are the two
-# shapes `--settings` refuses at its own directory and its own file. Under `--home` neither was
-# asked before the first write: the machine file was written, and reading the settings file then
-# failed with exit 1.
-[[mutation]]
-name = "setup asks nothing of a .claude that is not a directory"
-file = "src/stayfixed/setup/run.py"
-before = "    if fsops.exists(path.parent) and not fsops.is_dir(path.parent):"
-after = "    if False:"
-reddens = [
-  "tests/setup/test_setup.py::test_a_settings_path_of_the_wrong_kind_under_home_is_refused_before_any_write[a-file-at-claude]",
-]
-
-[[mutation]]
-name = "setup asks nothing of a directory at the settings file"
-file = "src/stayfixed/setup/run.py"
-before = """    if fsops.is_dir(path):
-        raise Refusal(
-            f"{path} is a directory; setup writes"""
-after = """    if False:
-        raise Refusal(
-            f"{path} is a directory; setup writes"""
-reddens = [
-  "tests/setup/test_setup.py::test_a_settings_path_of_the_wrong_kind_under_home_is_refused_before_any_write[a-directory-at-settings]",
+  "tests/setup/test_setup.py::test_a_directory_the_settings_write_opens_to_read_and_cannot_is_refused_before_any_write",
 ]
 
 # A `create:` destination is exempt from the comparison with a `--root` in no repository only when
@@ -2108,15 +1824,6 @@ reddens = [
 ]
 
 [[mutation]]
-name = "setup resolves a symlinked ~/.claude past fsops"
-file = "src/stayfixed/setup/run.py"
-before = "        real = fsops.resolved(link)"
-after = "        real = link.resolve()"
-reddens = [
-  "tests/setup/test_setup.py::test_a_symlink_loop_at_any_path_setup_is_given_is_a_refusal_naming_it[claude]",
-]
-
-[[mutation]]
 name = "setup --git-hooks resolves --root past fsops"
 file = "src/stayfixed/setup/commands.py"
 before = "    root = _root(args.root)"
@@ -2187,6 +1894,17 @@ before = "        home = fsops.resolved(home)"
 after = "        pass"
 reddens = [
   "tests/setup/test_setup.py::test_a_home_that_is_a_link_to_a_directory_is_followed_once_and_written_where_it_leads",
+]
+
+# A settings file a dotfiles manager links elsewhere is written where the link leads, and the link
+# stays: `os.replace` on the link's own name would put a regular file in its place.
+[[mutation]]
+name = "setup writes the settings file without resolving it"
+file = "src/stayfixed/setup/run.py"
+before = "        fsops.write_atomically(fsops.resolved(path), new_text)"
+after = "        fsops.write_atomically(path, new_text)"
+reddens = [
+  "tests/setup/test_setup.py::test_a_symlinked_settings_file_or_claude_directory_is_written_through[True]",
 ]
 
 # A link at a `create:` destination whose target is not there passed the phase, and
@@ -2269,7 +1987,7 @@ file = "src/stayfixed/setup/run.py"
 before = "    return Refusal(SETUP_SANDBOXED if owned else said)"
 after = "    return Refusal(SETUP_SANDBOXED)"
 reddens = [
-  "tests/setup/test_setup.py::test_a_settings_directory_that_cannot_be_written_is_refused_before_the_machine_file",
+  "tests/setup/test_setup.py::test_a_home_that_cannot_take_the_write_is_refused_before_any_write[home]",
 ]
 
 # `setup`'s settings merge reads the owner's file past a leading byte-order mark, as Claude Code
@@ -2366,22 +2084,11 @@ before = "        if args.yes or args.preset is not None or args.overlay is not 
 after = "        if args.preset is not None or args.overlay is not None:"
 reddens = ["tests/setup/test_git_hooks.py::test_git_hooks_refuses_every_flag_that_asks_machine_setup_to_act[yes]"]
 
-# The advice names the user settings file `setup` would write: the one `--settings` names, else the
-# home's, and either absolute, so a relative `--home` or `--settings` names the file meant.
-[[mutation]]
-name = "setup --approval-boundary names the home's settings file beside --settings"
-file = "src/stayfixed/setup/commands.py"
-before = "    settings = (home / USER_SETTINGS if given is None else given).absolute()"
-after = "    settings = (home / USER_SETTINGS).absolute()"
-reddens = [
-  "tests/setup/test_approval_boundary.py::test_settings_names_the_file_the_advice_puts_the_rule_in",
-]
-
 [[mutation]]
 name = "setup --approval-boundary names a relative settings file as given"
 file = "src/stayfixed/setup/commands.py"
-before = "    settings = (home / USER_SETTINGS if given is None else given).absolute()"
-after = "    settings = home / USER_SETTINGS if given is None else given"
+before = "    settings = (home / USER_SETTINGS).absolute()"
+after = "    settings = home / USER_SETTINGS"
 reddens = [
   "tests/setup/test_approval_boundary.py::test_a_relative_machine_and_home_are_advised_as_absolute_paths[bare-name]",
   "tests/setup/test_approval_boundary.py::test_a_relative_machine_and_home_are_advised_as_absolute_paths[subdirectory]",

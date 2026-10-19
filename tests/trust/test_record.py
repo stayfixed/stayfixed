@@ -32,7 +32,6 @@ from stayfixed.trust.record import (
     revoke_all,
     state,
 )
-from tests.ownerhome import as_owner_home
 from tests.sandboxed import refuse_writes_under
 
 T0 = datetime(2026, 10, 16, 9, 30, tzinfo=UTC)
@@ -238,18 +237,15 @@ def test_no_record_at_all_holds_no_approval(tmp_path: Path) -> None:
     assert state(machine(tmp_path), "memory", "/s", "d") is State.MISSING
 
 
-def test_the_record_ignores_xdg_and_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    # The record beside the machine file is under the password database's home, whatever `HOME`
-    # and `XDG_CONFIG_HOME` say. Mutation (`mutations/`'s "the trust record follows HOME"): the
-    # record moves under the environment's home.
-    as_owner_home(monkeypatch, tmp_path / "owner")
-    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+def test_the_record_ignores_xdg(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # The record beside the machine file is under `HOME`, whatever `XDG_CONFIG_HOME` says.
+    monkeypatch.setenv("HOME", str(tmp_path / "owner"))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
     assert machine_config_path() == tmp_path / "owner" / ".config" / "stayfixed" / "config.toml"
     assert record_path(None) == tmp_path / "owner" / ".config" / "stayfixed" / RECORD
     assert record_path(machine(tmp_path)) == tmp_path / RECORD
-    # No home in the database: no record, and nothing to fall back on.
-    as_owner_home(monkeypatch, None)
+    # No home: no record, and nothing to fall back on.
+    monkeypatch.setenv("HOME", "")
     assert record_path(None) is None
 
 

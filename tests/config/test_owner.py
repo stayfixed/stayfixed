@@ -52,9 +52,9 @@ def test_no_machine_file_is_the_preset(tmp_path: Path) -> None:
 
 
 def test_a_machine_with_no_home_is_the_preset() -> None:
-    # `None` is what `machine_config_path` answers for a user the password database lists no
-    # home for: read as no file, as an absent file is. Mutation (`mutations/`'s "a
-    # machine with no home is read as a path"): `None` reaches the reader and the call fails.
+    # `None` is what `machine_config_path` answers where `HOME` names no home: read as no file, as
+    # an absent file is. Mutation (`mutations/`'s "a machine with no home is read as a path"):
+    # `None` reaches the reader and the call fails.
     got = resolve_owner(None)
     assert got.personal == preset_personal() and got.notes == ()
 

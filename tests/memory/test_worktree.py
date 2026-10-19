@@ -3,7 +3,6 @@ from __future__ import annotations
 import dataclasses
 import os
 import shutil
-import sys
 from pathlib import Path, PurePosixPath
 
 import pytest
@@ -16,9 +15,7 @@ from stayfixed.memory import worktree
 from stayfixed.memory.index import INDEX_NAME
 from stayfixed.memory.store import LOCAL_STORE, Store, resolve
 from stayfixed.memory.worktree import (
-    MakeUnder,
     PartialLink,
-    Withhold,
     attach_main,
     detach_main,
     harness_memory_path,
@@ -28,12 +25,9 @@ from stayfixed.memory.worktree import (
 from stayfixed.presets import load_preset
 from tests.approved import record
 from tests.gitfixture import git
-from tests.ownerhome import as_owner_home
 from tests.pathfaults import (
-    ROOT_SEARCHES_EVERYTHING,
     resolving_raises,
     symlink_loop_at,
-    unsearchable,
 )
 from tests.snapshot import assert_snapshot_unchanged, snapshot
 
@@ -139,15 +133,13 @@ def a_worktree(root: Path, where: Path) -> Path:
 
 def test_the_main_checkout_gets_no_links(tmp_path: Path) -> None:
     root, store, config = a_checkout(tmp_path)
-    assert link(root, store, config, harness=MakeUnder(a_home(tmp_path))).created == []
+    assert link(root, store, config, home=a_home(tmp_path)).created == []
 
 
 def test_a_worktree_gets_one_link_per_group_plus_the_index(tmp_path: Path) -> None:
     root, store, config = a_checkout(tmp_path)
     tree = a_worktree(root, tmp_path / "wt")
-    created = {
-        p.name for p in link(tree, store, config, harness=MakeUnder(a_home(tmp_path))).created
-    }
+    created = {p.name for p in link(tree, store, config, home=a_home(tmp_path)).created}
     assert {"MEMORY.md", "developer", "project-stable"} <= created
     assert (tree / "docs" / "memory" / "developer").is_symlink()
 
@@ -156,16 +148,14 @@ def test_the_group_list_comes_from_the_configuration(tmp_path: Path) -> None:
     root, store, config = a_checkout(tmp_path, groups=("developer", "specs"))
     assert "specs" in linked_names(config)
     tree = a_worktree(root, tmp_path / "wt")
-    created = {
-        p.name for p in link(tree, store, config, harness=MakeUnder(a_home(tmp_path))).created
-    }
+    created = {p.name for p in link(tree, store, config, home=a_home(tmp_path)).created}
     assert "specs" in created
 
 
 def test_the_links_resolve_to_the_real_store_not_to_another_symlink(tmp_path: Path) -> None:
     root, store, config = a_checkout(tmp_path)
     tree = a_worktree(root, tmp_path / "wt")
-    link(tree, store, config, harness=MakeUnder(a_home(tmp_path)))
+    link(tree, store, config, home=a_home(tmp_path))
     target = (tree / "docs" / "memory" / "developer").readlink()
     assert not target.is_symlink()
     assert target == (store.groups["developer"]).resolve()
@@ -174,8 +164,8 @@ def test_the_links_resolve_to_the_real_store_not_to_another_symlink(tmp_path: Pa
 def test_linking_twice_creates_nothing_the_second_time(tmp_path: Path) -> None:
     root, store, config = a_checkout(tmp_path)
     tree = a_worktree(root, tmp_path / "wt")
-    link(tree, store, config, harness=MakeUnder(a_home(tmp_path)))
-    assert link(tree, store, config, harness=MakeUnder(a_home(tmp_path))).created == []
+    link(tree, store, config, home=a_home(tmp_path))
+    assert link(tree, store, config, home=a_home(tmp_path)).created == []
 
 
 def test_a_real_directory_at_a_target_is_left_alone(tmp_path: Path) -> None:
@@ -184,7 +174,7 @@ def test_a_real_directory_at_a_target_is_left_alone(tmp_path: Path) -> None:
     mine = tree / "docs" / "memory" / "developer"
     mine.mkdir(parents=True)
     (mine / "mine.md").write_text("keep\n", encoding="utf-8")
-    link(tree, store, config, harness=MakeUnder(a_home(tmp_path)))
+    link(tree, store, config, home=a_home(tmp_path))
     assert (mine / "mine.md").read_text(encoding="utf-8") == "keep\n"
     assert not mine.is_symlink()
 
@@ -195,7 +185,7 @@ def test_a_dangling_symlink_is_replaced(tmp_path: Path) -> None:
     base = tree / "docs" / "memory"
     base.mkdir(parents=True, exist_ok=True)
     (base / "developer").symlink_to(tmp_path / "gone")
-    link(tree, store, config, harness=MakeUnder(a_home(tmp_path)))
+    link(tree, store, config, home=a_home(tmp_path))
     assert (base / "developer").resolve() == store.groups["developer"].resolve()
 
 
@@ -210,7 +200,7 @@ def test_a_symlink_to_the_wrong_target_is_replaced(tmp_path: Path) -> None:
     wrong = tmp_path / "wrong"
     wrong.mkdir()
     (base / "developer").symlink_to(wrong, target_is_directory=True)
-    link(tree, store, config, harness=MakeUnder(a_home(tmp_path)))
+    link(tree, store, config, home=a_home(tmp_path))
     assert (base / "developer").resolve() == store.groups["developer"].resolve()
 
 
@@ -221,7 +211,7 @@ def test_the_harness_memory_directory_is_keyed_by_the_worktree_path(tmp_path: Pa
     # `a_checkout` is `in-repo`, so the notes are repository data and the harness link is
     # gated on the trust record below (see the section at the end of this file).
     record(store, config)
-    link(tree, store, config, harness=MakeUnder(home))
+    link(tree, store, config, home=home)
     assert harness_memory_path(tree, home).is_symlink()
     slug = str(tree.resolve()).replace("/", "-").replace(".", "-")
     assert (home / ".claude" / "projects" / slug / "memory").is_symlink()
@@ -232,7 +222,7 @@ def test_nothing_outside_the_worktree_and_the_home_directory_is_touched(tmp_path
     elsewhere = tmp_path / "elsewhere"
     elsewhere.mkdir()
     tree = a_worktree(root, tmp_path / "wt")
-    link(tree, store, config, harness=MakeUnder(a_home(tmp_path)))
+    link(tree, store, config, home=a_home(tmp_path))
     assert list(elsewhere.iterdir()) == []
 
 
@@ -250,7 +240,7 @@ def test_no_new_top_level_entry_appears_anywhere_but_the_home_directory(tmp_path
     tree = a_worktree(root, tmp_path / "wt")
     home = a_home(tmp_path)
     before = set(tmp_path.iterdir())
-    link(tree, store, config, harness=MakeUnder(home))
+    link(tree, store, config, home=home)
     after = set(tmp_path.iterdir())
     assert after == before
 
@@ -306,7 +296,7 @@ def test_a_group_the_overlay_boundary_refused_is_never_linked_into_a_worktree(
     # below is only meaningful because `link()` receives a `store` that already excludes it.
     assert "project-stable" not in store.groups
     tree = a_worktree(root, tmp_path / "wt")
-    created = link(tree, store, config, harness=MakeUnder(a_home(tmp_path))).created
+    created = link(tree, store, config, home=a_home(tmp_path)).created
     assert "project-stable" not in {p.name for p in created}
     assert not (tree / "docs" / "memory" / "project-stable").exists()
     assert (tree / "docs" / "memory" / "developer").is_symlink()
@@ -324,7 +314,7 @@ def test_an_overlay_groups_worktree_link_skips_the_main_checkouts_own_hop(
     # checkout's link rather than at the store, and break the moment `detach` removes it.
     root, store, config = an_overlay_checkout(tmp_path)
     tree = a_worktree(root, tmp_path / "wt")
-    link(tree, store, config, harness=MakeUnder(a_home(tmp_path)))
+    link(tree, store, config, home=a_home(tmp_path))
     target = (tree / "docs" / "memory" / "developer").readlink()
     assert store.groups["developer"].is_symlink()  # the hop this link must skip
     assert target != store.groups["developer"]
@@ -377,7 +367,7 @@ def test_an_index_the_overlay_boundary_refuses_is_never_linked_into_a_worktree(
 ) -> None:
     root, store, config, _machine = an_overlay_checkout_with_a_leaked_index(tmp_path)
     tree = a_worktree(root, tmp_path / "wt")
-    created = link(tree, store, config, harness=MakeUnder(a_home(tmp_path))).created
+    created = link(tree, store, config, home=a_home(tmp_path)).created
     assert "MEMORY.md" not in {p.name for p in created}
     assert not (tree / "docs" / "memory" / "MEMORY.md").exists()
 
@@ -452,7 +442,7 @@ def test_an_index_inside_the_overlay_boundary_is_still_linked(tmp_path: Path) ->
     # share".
     root, store, config, _machine = an_overlay_checkout_with_a_linked_index(tmp_path)
     tree = a_worktree(root, tmp_path / "wt")
-    created = link(tree, store, config, harness=MakeUnder(a_home(tmp_path))).created
+    created = link(tree, store, config, home=a_home(tmp_path)).created
     assert "MEMORY.md" in {p.name for p in created}
     linked = (tree / "docs" / "memory" / "MEMORY.md").resolve()
     expected = tmp_path / "overlay" / "projects" / "widget" / "memory" / "MEMORY.md"
@@ -485,7 +475,7 @@ def test_a_symlinked_index_is_refused_outside_overlay_mode_even_with_an_overlay_
     assert store is not None
     _commit_checkout(root)
     tree = a_worktree(root, tmp_path / "wt")
-    created = link(tree, store, config, harness=MakeUnder(a_home(tmp_path))).created
+    created = link(tree, store, config, home=a_home(tmp_path)).created
     assert "MEMORY.md" not in {p.name for p in created}
     assert not (tree / "docs" / "memory" / "MEMORY.md").exists()
 
@@ -566,7 +556,7 @@ def test_a_local_only_worktree_is_linked_where_local_only_keeps_the_store(
     # `.gitignore` entry covers `.stayfixed/local/` and not `docs/`, left the worktree dirty.
     root, store, config = a_local_only_checkout(tmp_path)
     tree = a_worktree(root, tmp_path / "wt")
-    created = link(tree, store, config, harness=MakeUnder(a_home(tmp_path))).created
+    created = link(tree, store, config, home=a_home(tmp_path)).created
     linked = tree / LOCAL_STORE / "developer"
     assert linked in created
     assert linked.resolve() == store.groups["developer"].resolve()
@@ -590,7 +580,7 @@ def test_a_symlinked_paths_memory_is_never_where_the_worktree_tree_is_built(
     assert (tree / "mem").resolve() == victim.resolve()
     home = a_home(tmp_path)
     before = set(tmp_path.iterdir())
-    link(tree, store, config, harness=MakeUnder(home))
+    link(tree, store, config, home=home)
     assert list(victim.iterdir()) == []
     # Nothing new at the top level either, and no `{home}` allowance: `a_home` created it
     # before the snapshot, for the reason the isolation test above gives.
@@ -627,7 +617,7 @@ def test_a_group_target_that_escapes_the_worktree_tree_is_refused_rather_than_sk
     base.mkdir(parents=True, exist_ok=True)
     (base / "sub").symlink_to(outside, target_is_directory=True)
     with pytest.raises(PathEscape):
-        link(tree, store, config, harness=MakeUnder(a_home(tmp_path)))
+        link(tree, store, config, home=a_home(tmp_path))
     assert list(outside.iterdir()) == []
 
 
@@ -644,7 +634,7 @@ def test_a_repository_data_store_gets_no_harness_link_before_trust(tmp_path: Pat
     root, store, config = a_checkout(tmp_path)
     tree = a_worktree(root, tmp_path / "wt")
     home = a_home(tmp_path)
-    created = link(tree, store, config, harness=MakeUnder(home)).created
+    created = link(tree, store, config, home=home).created
     assert harness_memory_path(tree, home) not in created
     assert not harness_memory_path(tree, home).exists()
     # Everything inside the worktree is still linked: the gate is on the hop that hands
@@ -659,7 +649,7 @@ def test_the_harness_link_appears_once_the_owner_has_trusted_the_store(tmp_path:
     home = a_home(tmp_path)
     assert not harness_memory_path(tree, home).exists()
     record(store, config)
-    created = link(tree, store, config, harness=MakeUnder(home)).created
+    created = link(tree, store, config, home=home).created
     assert harness_memory_path(tree, home) in created
     assert harness_memory_path(tree, home).resolve() == store.path.resolve()
 
@@ -675,14 +665,14 @@ def test_an_overlay_store_gates_the_harness_link_on_the_directory_it_exposes(
     root, store, config, _machine = an_overlay_checkout_with_a_linked_index(tmp_path)
     tree = a_worktree(root, tmp_path / "wt")
     home = a_home(tmp_path)
-    created = link(tree, store, config, harness=MakeUnder(home)).created
+    created = link(tree, store, config, home=home).created
     assert harness_memory_path(tree, home) not in created
     assert not harness_memory_path(tree, home).exists()
     # Everything inside the worktree is still linked; only the hop outside `memory`'s gate
     # waits for the record.
     assert (tree / "docs" / "memory" / "developer").is_symlink()
     record(store, config)
-    created = link(tree, store, config, harness=MakeUnder(home)).created
+    created = link(tree, store, config, home=home).created
     assert harness_memory_path(tree, home) in created
 
 
@@ -695,7 +685,7 @@ def test_a_committed_index_reaches_no_harness_link_before_trust(tmp_path: Path) 
     root, store, config, _machine = an_overlay_checkout_with_a_committed_index(tmp_path)
     tree = a_worktree(root, tmp_path / "wt")
     home = a_home(tmp_path)
-    created = link(tree, store, config, harness=MakeUnder(home)).created
+    created = link(tree, store, config, home=home).created
     assert harness_memory_path(tree, home) not in created
     assert not harness_memory_path(tree, home).exists()
 
@@ -744,10 +734,7 @@ def test_the_harness_link_is_withdrawn_once_the_trust_record_lapses(tmp_path: Pa
     tree = a_worktree(root, tmp_path / "wt")
     home = a_home(tmp_path)
     record(store, config)
-    assert (
-        harness_memory_path(tree, home)
-        in link(tree, store, config, harness=MakeUnder(home)).created
-    )
+    assert harness_memory_path(tree, home) in link(tree, store, config, home=home).created
 
     planted = store.groups["developer"] / "planted.md"
     planted.write_text(
@@ -758,7 +745,7 @@ def test_the_harness_link_is_withdrawn_once_the_trust_record_lapses(tmp_path: Pa
     assert not state(store, config).trusted
     assert blocks(Bundle.STANDING_RULES, store, config) == []
 
-    links = link(tree, store, config, harness=MakeUnder(home))
+    links = link(tree, store, config, home=home)
     assert links.created == []
     assert links.revoked == [harness_memory_path(tree, home)]
     assert not harness_memory_path(tree, home).is_symlink()
@@ -779,14 +766,14 @@ def test_a_withdrawal_never_touches_a_real_directory_or_somebody_elses_link(
     harness.parent.mkdir(parents=True)
     harness.mkdir()
     (harness / "theirs.md").write_text("keep\n", encoding="utf-8")
-    assert link(tree, store, config, harness=MakeUnder(home)).revoked == []
+    assert link(tree, store, config, home=home).revoked == []
     assert (harness / "theirs.md").read_text(encoding="utf-8") == "keep\n"
 
     elsewhere = tmp_path / "elsewhere"
     elsewhere.mkdir()
     shutil.rmtree(harness)
     harness.symlink_to(elsewhere, target_is_directory=True)
-    assert link(tree, store, config, harness=MakeUnder(home)).revoked == []
+    assert link(tree, store, config, home=home).revoked == []
     assert harness.is_symlink() and harness.resolve() == elsewhere.resolve()
 
 
@@ -803,7 +790,7 @@ def test_a_dangling_harness_link_of_ours_is_still_withdrawn(tmp_path: Path) -> N
     harness.symlink_to(store.path.resolve(), target_is_directory=True)
     shutil.rmtree(store.path)
     assert not harness.exists() and harness.is_symlink()
-    assert link(tree, store, config, harness=MakeUnder(home)).revoked == [harness]
+    assert link(tree, store, config, home=home).revoked == [harness]
     assert not harness.is_symlink()
 
 
@@ -824,7 +811,7 @@ def test_an_os_error_part_way_through_carries_out_the_links_it_did_make(tmp_path
     # still only after the two names before it are linked.
     (base / "sub").write_text("not a directory\n", encoding="utf-8")
     with pytest.raises(PartialLink) as excinfo:
-        link(tree, store, config, harness=MakeUnder(a_home(tmp_path)))
+        link(tree, store, config, home=a_home(tmp_path))
     assert [p.name for p in excinfo.value.created] == ["MEMORY.md", "developer"]
     assert (base / "developer").is_symlink()
     assert not (base / "sub" / "nested").exists()
@@ -1073,7 +1060,7 @@ def test_a_group_directory_that_is_a_symlink_in_the_worktree_is_refused_and_noth
     (tree / "docs").mkdir(parents=True, exist_ok=True)
     (tree / "docs" / "memory").symlink_to(elsewhere, target_is_directory=True)
     with pytest.raises(PathEscape):
-        link(tree, store, config, harness=MakeUnder(a_home(tmp_path)))
+        link(tree, store, config, home=a_home(tmp_path))
     assert list(elsewhere.iterdir()) == []
 
 
@@ -1089,7 +1076,7 @@ def test_the_harness_link_is_created_on_a_machine_with_no_projects_directory_yet
     home = a_home(tmp_path)
     record(store, config)
     assert not (home / ".claude").exists()
-    link(tree, store, config, harness=MakeUnder(home))
+    link(tree, store, config, home=home)
     harness = harness_memory_path(tree, home)
     assert harness.is_symlink()
     assert harness.readlink() == store.path.resolve()
@@ -1121,7 +1108,7 @@ def test_a_home_that_is_not_there_is_a_refusal_naming_it_and_never_a_partial_lin
     absent = tmp_path / "no-such-home"
     record(store, config)
     with pytest.raises(Refusal) as refused:
-        link(tree, store, config, harness=MakeUnder(absent))
+        link(tree, store, config, home=absent)
     assert str(absent) in str(refused.value)
     assert "never creates the home directory itself" in str(refused.value)
 
@@ -1162,57 +1149,22 @@ def _a_linked_claude(home: Path, tmp_path: Path) -> Path:
     return elsewhere
 
 
-@ROOT_SEARCHES_EVERYTHING
-def test_a_claude_directory_nobody_may_search_is_refused_for_that(tmp_path: Path) -> None:
-    # A real `.claude` nobody may search: no link is on the way, so the remedy the link refusal
-    # gives, making that component a real directory, is already true. The refusal names what
-    # stopped the question instead. Mutation (oracle): `mutations/`'s "the harness anchor words a
-    # place it cannot ask about as a link".
-    root, _store, _config = a_checkout(tmp_path)
-    home = a_home(tmp_path)
-    (home / ".claude").mkdir(exist_ok=True)
-    with unsearchable(home / ".claude"), pytest.raises(Refusal) as refused:
-        worktree.harness_anchor(root, home)
-    assert str(refused.value).startswith("the harness memory link cannot be reached: ")
-    assert "cannot be checked for a symlink" in str(refused.value)
-    assert "real directory" not in str(refused.value)
-
-
-def test_a_symlinked_claude_directory_is_a_refusal_in_both_directions(tmp_path: Path) -> None:
-    # The walk under the home directory applies `O_NOFOLLOW` to every component below it, so
-    # `.claude` being a link raises `UnsafePath` — and that refusal is intended
-    # (`harness_link_parts` says so and cites `setup --settings` as the precedent). What was
-    # not intended is its shape: `_link` and `_unlink` catch `NotASymlink` and
-    # `FileNotFoundError` and not `UnsafePath`, so creating wrapped it as a `PartialLink`
-    # *after* the worktree's own links were made, and withdrawing let it out raw —
-    # `stayfixed: internal error`, exit 2, and every later `detach` failing at the same line
-    # with the repository half-attached for good.
-    #
-    # The assertion is on the sentence rather than on the class, for the reason the home-that-
-    # is-not-there case above gives: `PathEscape` is a `Refusal` too. `PartialLink` is an
-    # `OSError` and `Refusal` is not, so `pytest.raises(Refusal)` is also what says the
-    # creating direction no longer half-builds the tree.
-    #
-    # Mutation (declared, `mutations/`'s "the harness anchor stops asking whether the walk can reach
-    # it"): the `contained` call goes -> `link` raises `PartialLink` again and the first
-    # `pytest.raises(Refusal)` reddens.
-    root, store, config = a_checkout(tmp_path)
-    tree = a_worktree(root, tmp_path / "wt")
+def test_a_symlinked_claude_directory_is_followed_in_both_directions(tmp_path: Path) -> None:
+    # A stow- or chezmoi-managed `~/.claude` is the owner's layout, and nothing a repository
+    # writes is on that path: the link is made behind it, and withdrawn from there.
+    root, overlay, machine, config = an_overlay_to_attach(tmp_path)
     home = a_home(tmp_path)
     elsewhere = _a_linked_claude(home, tmp_path)
+    own = overlay / "projects" / "widget" / "memory"
+    attach_main(root, own, config, machine=machine, home=home)
+    store = resolve(root, config, machine=machine)
+    assert store is not None
     record(store, config)
-    with pytest.raises(Refusal) as creating:
-        link(tree, store, config, harness=MakeUnder(home))
-    # The symlink is named by its place under the home directory, `contained`'s root.
-    assert "passes through a symlink at '.claude'" in str(creating.value)
-    # The way out is named, because a refusal a dotfiles user cannot act on is the shape
-    # `setup`'s own settings refusal was rewritten to stop being.
-    assert "real directory" in str(creating.value)
-    # Nothing was written through the link, and nothing was written in front of it either.
-    assert list(elsewhere.iterdir()) == []
-    with pytest.raises(Refusal) as withdrawing:
-        detach_main(root, config, machine=None, home=home, targets=_own(root, config))
-    assert "passes through a symlink" in str(withdrawing.value)
+    attach_main(root, own, config, machine=machine, home=home)
+    assert harness_memory_path(root, home).resolve() == store.path.resolve()
+    assert list((elsewhere / "projects").iterdir())
+    detach_main(root, config, machine=machine, home=home, targets=_own(root, config))
+    assert not os.path.lexists(harness_memory_path(root, home))
 
 
 def test_a_withdrawal_whose_walk_refuses_a_component_leaves_it_standing(tmp_path: Path) -> None:
@@ -1223,9 +1175,6 @@ def test_a_withdrawal_whose_walk_refuses_a_component_leaves_it_standing(tmp_path
     # a component the walk refuses is the third: there is no link of ours to withdraw behind
     # it, and reporting that as a failure turns one worktree's odd home layout into a `detach`
     # that cannot finish.
-    #
-    # `_unlink` is called directly, because reaching it through `detach_main` now means getting
-    # past the anchor check that is the point of the case above.
     #
     # Mutation (declared, `mutations/`'s "a withdrawal whose walk refuses a component fails the
     # command"): `return False` -> `raise` -> `UnsafePath` leaves `_unlink` and this case reddens.
@@ -1252,203 +1201,45 @@ def test_a_tree_with_nothing_to_link_leaves_no_base_directory_behind(tmp_path: P
     (store.path / INDEX_NAME).unlink()
     nothing = dataclasses.replace(config, memory=dataclasses.replace(config.memory, groups=()))
     assert linked_names(nothing) == (INDEX_NAME,)
-    assert link(tree, store, nothing, harness=MakeUnder(a_home(tmp_path))).created == []
+    assert link(tree, store, nothing, home=a_home(tmp_path)).created == []
     assert not (tree / "docs" / "memory").exists()
 
 
-def test_a_symlinked_claude_directory_leaves_a_worktree_with_no_links_at_all(
+def test_a_home_that_is_not_there_leaves_a_worktree_with_no_links_at_all(
     tmp_path: Path,
 ) -> None:
-    # The third caller of the same rule, and the one `attach` and `detach` do not cover. The
-    # case above asserts that `link` refuses; this one asserts *where*. `link` used to run its
-    # whole group loop and only then call `_apply_harness_link`, which is where the anchor is
-    # asked about — so on the ordinary stow / chezmoi / synced home the note links were made
-    # and the refusal arrived after them. Nothing removes them afterwards: `detach_main`
-    # refuses above every withdrawal, correctly by its own contract, so no shipped command
-    # will take them out. And the reachable caller is `SessionStart`, which catches the
-    # `Refusal` and reports `NOT_LINKED` — so the session told the model the notes were not
-    # linked while three links had just been made.
-    #
-    # Asserting only that a `Refusal` is raised is what the case above already does and is
-    # what the defective code already satisfied. The assertion that carries this one is that
-    # the worktree is byte-for-byte as it was.
-    #
-    # Mutation (declared, `mutations/`'s "the session link step discovers the harness anchor after
-    # it has written"): the hoisted call goes -> the refusal still arrives, from
-    # `_apply_harness_link`, and the base-directory assertion reddens with the group links and
-    # the index link already made.
+    # `link` asks about the home above its group loop: asked after it, the refusal arrived with
+    # the note links already made, and `SessionStart` told the model they were not. Mutation
+    # (declared, `mutations/`'s "the session link step discovers the harness anchor after it has
+    # written"): the hoisted call goes -> the worktree gains its links before the refusal.
     root, store, config = a_checkout(tmp_path)
     tree = a_worktree(root, tmp_path / "wt")
-    home = a_home(tmp_path)
-    elsewhere = _a_linked_claude(home, tmp_path)
     record(store, config)
     before = snapshot(tree)
     # `snapshot` is a walk, and an empty one satisfies the comparison below on its own.
     assert before
-    with pytest.raises(Refusal) as refused:
-        link(tree, store, config, harness=MakeUnder(home))
-    assert "passes through a symlink at '.claude'" in str(refused.value)
-    # `snapshot` reaches the index link, which resolves to a file; it does not descend a
-    # symlink to a directory, so the group links are asserted by the base directory the first
-    # of them would have created.
+    with pytest.raises(Refusal, match="never creates the home directory itself"):
+        link(tree, store, config, home=tmp_path / "no-such-home")
     assert_snapshot_unchanged(tree, before)
     assert not (tree / "docs" / "memory").exists()
-    # Nothing reached the dotfiles tree either: the refusal is in front of the link, not a
-    # write that followed it.
-    assert list(elsewhere.iterdir()) == []
 
 
-def test_the_harness_link_is_anchored_on_home_only_from_a_terminal(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # With no `--home`, a person at a terminal keeps the `HOME` they set, as a container or
-    # home-manager setup sets one that differs from the password database. Anything else — a hook,
-    # a command an agent runs — is anchored on the database's home, which no variable moves.
-    owner, chosen = tmp_path / "owner", tmp_path / "chosen"
-    as_owner_home(monkeypatch, owner)
-    monkeypatch.setenv("HOME", str(chosen))
-    tree = tmp_path / "tree"
-    monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
-    assert worktree.harness_link_parts(tree)[0] == owner
-    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
-    assert worktree.harness_link_parts(tree)[0] == chosen
-
-
-def test_no_home_in_the_database_is_a_refusal_off_a_terminal(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    as_owner_home(monkeypatch, None)
-    monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
-    with pytest.raises(Refusal, match="lists no home directory"):
+def test_an_empty_home_is_a_refusal(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("HOME", "")
+    with pytest.raises(Refusal, match="names no home directory"):
         worktree.harness_link_parts(tmp_path / "tree")
 
 
-def test_a_link_without_the_harness_half_makes_the_tree_and_says_what_it_withheld(
+def test_a_home_that_is_itself_a_symlink_still_gets_the_harness_link(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # For a hook whose only trusted home is not the one the harness reads: the tree's links are
-    # made, no harness link is made or withdrawn under any home, and `withheld` says whether the
-    # store was approved for one, which is what the hook tells the session.
-    owner = a_home(tmp_path)
-    as_owner_home(monkeypatch, owner)
-    monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
-    root, store, config = a_checkout(tmp_path)
-    tree = a_worktree(root, tmp_path / "wt")
-    untrusted = link(tree, store, config, harness=Withhold())
-    assert (tree / "docs" / "memory" / "developer").is_symlink()
-    assert untrusted.withheld is False
-    record(store, config)
-    trusted = link(tree, store, config, harness=Withhold())
-    assert trusted.withheld is True
-    assert not harness_memory_path(tree, owner).exists()
-    assert not (owner / ".claude").exists()
-
-
-def _a_harness_link(home: Path, tree: Path, target: Path) -> Path:
-    """A symlink at `tree`'s harness memory path under `home`, as an earlier release made it."""
-    path = harness_memory_path(tree, home)
-    path.parent.mkdir(parents=True)
-    path.symlink_to(target, target_is_directory=True)
-    return path
-
-
-def test_a_lapsed_link_under_home_is_withdrawn_even_with_the_harness_half_withheld(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # The upgrader whose `HOME` is not the database's: an earlier release made the link under
-    # `HOME`, the harness still reads it there, and the store's approval has now lapsed (never
-    # recorded here). The hook makes nothing under that `HOME`, and still takes this link back.
-    as_owner_home(monkeypatch, tmp_path / "owner")
-    monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
-    root, store, config = a_checkout(tmp_path)
-    tree = a_worktree(root, tmp_path / "wt")
-    home = tmp_path / "home-the-harness-reads"
-    lapsed = _a_harness_link(home, tree, store.path.resolve())
-    links = link(tree, store, config, harness=Withhold(home))
-    assert links.revoked == [lapsed]
-    assert not lapsed.is_symlink()
-
-
-def test_a_link_to_anything_else_under_a_chosen_home_is_left_standing(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # A clone can choose an absolute `HOME`; withdrawing there only ever removes a link to this
-    # very store, so a link to anything else is somebody else's and stays.
-    as_owner_home(monkeypatch, tmp_path / "owner")
-    monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
-    root, store, config = a_checkout(tmp_path)
-    tree = a_worktree(root, tmp_path / "wt")
-    other = tmp_path / "somebody-elses"
-    other.mkdir()
-    chosen = tmp_path / "clone-chosen-home"
-    kept = _a_harness_link(chosen, tree, other)
-    assert link(tree, store, config, harness=Withhold(chosen)).revoked == []
-    assert kept.is_symlink() and kept.resolve() == other.resolve()
-
-
-def test_a_relative_home_and_an_approved_store_are_not_withdrawn_under(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # A relative `HOME` names a directory relative to wherever the process is, which for a hook
-    # is the clone; and an approved store keeps its link, which only a lapse takes back.
-    as_owner_home(monkeypatch, tmp_path / "owner")
-    monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
-    root, store, config = a_checkout(tmp_path)
-    tree = a_worktree(root, tmp_path / "wt")
-    monkeypatch.chdir(tmp_path)
-    relative = _a_harness_link(tmp_path / "relhome", tree, store.path.resolve())
-    assert link(tree, store, config, harness=Withhold(Path("relhome"))).revoked == []
-    assert relative.is_symlink()
-    home = tmp_path / "home-the-harness-reads"
-    approved = _a_harness_link(home, tree, store.path.resolve())
-    record(store, config)
-    links = link(tree, store, config, harness=Withhold(home))
-    assert links.revoked == [] and links.withheld is True
-    assert approved.is_symlink()
-
-
-@pytest.mark.parametrize("shape", ["a symlink", "unsearchable"])
-def test_a_home_the_walk_cannot_open_is_passed_over_when_withdrawing(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, shape: str
-) -> None:
-    # `HOME` is not trusted, so the walk never follows it when it is itself a symlink, and a home
-    # it may not search is no more its business: either way nothing is withdrawn, and the hook is
-    # not handed a `PartialLink` it would report as links that could not be made. The exact link
-    # behind the symlink is left standing, since only the walk's own path is ever touched.
-    if shape == "unsearchable" and os.geteuid() == 0:
-        pytest.skip("root searches everything")
-    as_owner_home(monkeypatch, tmp_path / "owner")
-    monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
-    root, store, config = a_checkout(tmp_path)
-    tree = a_worktree(root, tmp_path / "wt")
-    real = tmp_path / "real-home"
-    behind = _a_harness_link(real, tree, store.path.resolve())
-    home = tmp_path / "home-the-hook-was-handed"
-    if shape == "a symlink":
-        home.symlink_to(real, target_is_directory=True)
-    else:
-        home = real
-        (real / ".claude").chmod(0o000)
-    try:
-        links = link(tree, store, config, harness=Withhold(home))
-    finally:
-        (real / ".claude").chmod(0o755)
-    assert links.revoked == []
-    assert behind.is_symlink()
-
-
-def test_a_database_home_that_is_itself_a_symlink_still_gets_the_harness_link(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # An entry naming a symlink (`/Users/me` linking to a volume) is the machine's own layout.
-    # The walk opens its root with `O_NOFOLLOW`, so the database's answer is resolved once before
-    # it is a root; the link is made under the real directory, which is where `HOME` finds it.
+    # A `HOME` naming a symlink (`/Users/me` linking to a volume) is the machine's own layout;
+    # the link is made under the real directory, which is where `HOME` finds it.
     real = tmp_path / "real-home"
     real.mkdir()
     linked = tmp_path / "linked-home"
     linked.symlink_to(real, target_is_directory=True)
-    as_owner_home(monkeypatch, linked)
-    monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
+    monkeypatch.setenv("HOME", str(linked))
     root, store, config = a_checkout(tmp_path)
     tree = a_worktree(root, tmp_path / "wt")
     record(store, config)
@@ -1524,26 +1315,24 @@ def test_a_paths_memory_that_is_a_symlink_loop_is_the_same_refusal(tmp_path: Pat
     assert str(refused.value).endswith(f"{DEFAULT_MEMORY!r} is a symlink loop")
 
 
-def test_a_link_under_a_second_home_to_either_target_is_withdrawn(tmp_path: Path) -> None:
-    # `detach_main` withdraws the link under a second home a harness may read, only where it points
-    # at a directory `harness_targets` names, and a worktree's names two: the main checkout's tree,
-    # where `attach` points it, and the worktree's own, where the `SessionStart` re-link points it.
-    # A link to the second under that home was the one case no test made. Mutation (oracle):
-    # `mutations/`'s "the withdrawal under a second home compares with the first target alone"
+def test_a_harness_link_to_either_target_is_withdrawn(tmp_path: Path) -> None:
+    # `detach_main` withdraws the harness link only where it points at a directory
+    # `harness_targets` names, and a worktree's names two: the main checkout's tree, where
+    # `attach` points it, and the worktree's own, where the `SessionStart` re-link points it.
+    # Mutation (oracle): `mutations/`'s "the withdrawal compares with the first target alone"
     # -> the link to the worktree's own tree stays.
     root, _store, config = a_checkout(tmp_path)
     side = a_worktree(root, tmp_path / "side")
-    home, other = a_home(tmp_path), tmp_path / "other"
-    other.mkdir()
+    home = a_home(tmp_path)
     targets = worktree.harness_targets(side, root, config)
     # Non-vacuous: two targets, and the link names the second.
     assert len(targets) == 2 and targets[1] == (side / DEFAULT_MEMORY).resolve()
-    under_other = harness_memory_path(side, other)
-    under_other.parent.mkdir(parents=True)
-    under_other.symlink_to(targets[1], target_is_directory=True)
-    links = detach_main(side, config, home=home, elsewhere=other, targets=targets, keep_tree=True)
-    assert not os.path.lexists(under_other)
-    assert links.revoked == [under_other]
+    harness = harness_memory_path(side, home)
+    harness.parent.mkdir(parents=True)
+    harness.symlink_to(targets[1], target_is_directory=True)
+    links = detach_main(side, config, home=home, targets=targets, keep_tree=True)
+    assert not os.path.lexists(harness)
+    assert links.revoked == [harness]
 
 
 def _a_config(tmp_path: Path) -> Config:

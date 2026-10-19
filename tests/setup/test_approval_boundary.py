@@ -144,30 +144,6 @@ def test_the_deny_rule_is_the_measured_spelling() -> None:
     assert deny_rule(Path("/Users/me/.config/stayfixed")) == "Edit(//Users/me/.config/stayfixed/**)"
 
 
-def test_settings_names_the_file_the_advice_puts_the_rule_in(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    # A person whose Claude Code reads a settings file elsewhere (a dotfiles tree `--settings`
-    # writes for `setup`) was refused, or would have been told `<home>/.claude/settings.json`:
-    # the advice names the file `--settings` names, as `setup` would write it, and still writes
-    # nothing there. Mutation (`mutations/`'s "setup --approval-boundary names the home's settings
-    # file beside --settings"): the home's file is named.
-    machine = tmp_path / "machine" / "config.toml"
-    given = tmp_path / "dotfiles" / "claude" / "settings.json"
-    assert invoke(_advice(tmp_path, machine, "--settings", str(given))) == 0
-    assert capsys.readouterr().out == (
-        BOUNDARY_ADVICE.format(
-            rules=deny_rule(machine.parent),
-            settings=given,
-            sandbox=SANDBOX_ON,
-            enforcing=ENFORCING_SETTINGS,
-            managed=managed_named(),
-        )
-        + "\n"
-    )
-    assert list(tmp_path.iterdir()) == []
-
-
 @pytest.mark.parametrize(
     ("machine", "directory"),
     [

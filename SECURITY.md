@@ -54,9 +54,7 @@ In scope, and treated as security rather than as an ordinary bug:
   repository-data region it is wrapped in.
 - **The machine anchors.** Any way a repository can choose which machine configuration file,
   overlay root or `trust.json` stayfixed reads — for example through an environment variable a
-  committed settings file can set, such as `STAYFIXED_CONFIG`, or through a `HOME` that direnv,
-  mise or a devcontainer applies from a file the repository commits. Claude Code's own `env`
-  block cannot set `HOME`.
+  committed settings file can set, such as `STAYFIXED_CONFIG`.
 - **Destruction.** Any way a repository, or an ordinary mistake, silently destroys the machine
   owner's own state: the trust record, a hand-edited file, or a hook configuration stayfixed did
   not write.
@@ -70,9 +68,10 @@ Out of scope:
   includes which `stayfixed` runs, and so which `git` it runs, which nothing inside stayfixed can
   decide. A `PATH` a trusted folder's `env` block sets is the harness's boundary, as the last item
   below says.
-- `HOME` choosing git's global configuration: `$HOME/.gitconfig` and `$HOME/.config/git/config`.
-  stayfixed hands its `git` the environment's `HOME`, as it runs the `git` on its `PATH`, so that
-  your `safe.directory` and excludes answer, and a direnv, mise or devcontainer environment that
+- `HOME` choosing git's global configuration (`$HOME/.gitconfig` and `$HOME/.config/git/config`)
+  and stayfixed's machine files under `$HOME/.config/stayfixed`. stayfixed follows `HOME`, and
+  hands its `git` the environment's `HOME`, as it runs the `git` on its `PATH`, so that your
+  `safe.directory` and excludes answer, and a direnv, mise or devcontainer environment that
   sets it is the person's own, the same class as `PATH`. Claude Code never applies `HOME`, or any
   `XDG_*` variable, from a project's or a local `env` block: its settings reference says so under
   "Variables Claude Code ignores in `env`", and Claude Code 2.1.293 was measured keeping the real

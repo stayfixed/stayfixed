@@ -51,7 +51,6 @@ from tests.doctor.test_checks import (
 )
 from tests.floor import is_developers
 from tests.gitfixture import git as _git
-from tests.ownerhome import as_owner_home
 from tests.parserlimits import LONG_NUMBER, NESTED
 from tests.pathfaults import resolving_raises
 from tests.runners import Recorder, git_that_cannot_run
@@ -125,76 +124,47 @@ def test_an_overlay_project_with_no_ledger_is_a_warning_naming_the_file(tmp_path
     assert "stayfixed attach" in check.remedy
 
 
-def test_a_terminal_whose_home_is_empty_is_told_it_is_home_that_names_none(
+def test_an_empty_home_is_told_it_is_home_that_names_none(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # At a terminal the harness memory path is under `HOME`, and an empty one names no home. The
-    # row checked `/.claude/projects/...` instead and sent the user to `attach`, which then failed
-    # there; it now says that `HOME` names none, and not that the database lists none, since it
-    # lists a home here. Asked of the row directly with no `--home`, which is how a person runs
-    # `doctor`. Mutation (oracle): `mutations/`'s "the attached row blames the password database
-    # for an empty HOME at a terminal".
+    # The harness memory path is under `HOME`, and an empty one names no home. The row checked
+    # `/.claude/projects/...` instead and sent the user to `attach`, which then failed there; it
+    # now says that `HOME` names none, as a warning and never "this check could not run". Asked of
+    # the row directly with no `--home`, which is how a person runs `doctor`. Mutation (oracle):
+    # `mutations/`'s "the attached row dies on a home it cannot name".
     from stayfixed.attach.doctor import _attached as attached_row
     from stayfixed.attach.doctor import _Ledger
     from stayfixed.memory.api import Answers
     from tests.doctor.test_checks import _context
 
     root = _attached(tmp_path)
-    as_owner_home(monkeypatch, tmp_path / "home")
     monkeypatch.setenv("HOME", "")
-    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
     config = load(root, machine=_machine(tmp_path))
     context = _context(root, config)
     row = attached_row(context, config, Answers(), _Ledger())
     assert (row.status, row.detail, row.remedy) == (
         WARN,
-        "HOME is empty, so it names no home directory and there is no harness memory path to check",
+        "HOME names no home directory, so there is no harness memory path to check",
         "set HOME to your home directory, or pass --home <path> to check the harness memory path "
         "under that directory",
     )
 
 
-# The `attached` row off a terminal where `HOME` is not the database's home: `attach`'s words, and
-# where `HOME` differs, the way to have the link under it checked. Written out, not imported.
-_UNREAD_ROWS = {
-    "elsewhere": (
-        "attached; attach run here makes no harness memory link, since off a terminal it goes only "
-        "under this user's home in the password database and a harness started with this HOME "
-        "looks under HOME; the binding is bound",
-        "run `stayfixed attach --store <overlay>/projects/<project>/memory` from a terminal, or in "
-        "a session started with HOME set to that home; `stayfixed doctor` run from a terminal "
-        "checks the link under HOME",
-    ),
-    "empty": (
-        "attached; attach run here makes no harness memory link, since off a terminal it goes only "
-        "under this user's home in the password database and a harness started with an empty HOME "
-        "does not look there; the binding is bound",
-        "run `stayfixed attach --store <overlay>/projects/<project>/memory` in a session started "
-        "with HOME set to that home",
-    ),
-}
-
-
-def _approved_with_a_link_under(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, under: str
-) -> tuple[Path, Path]:
-    """An attached checkout whose store is approved, the database's home pinned to `home/`, and
-    the harness memory link under `home/` (`database`) or under `elsewhere/` (`HOME`), where
-    `attach` from a terminal with that `HOME` puts it. Returns `(root, elsewhere)`."""
+def _approved_with_a_link_under(tmp_path: Path) -> Path:
+    """An attached checkout whose store is approved, with the harness memory link under `home/`,
+    where `attach` puts it. Returns the checkout."""
     root = _attached(tmp_path)
-    owner, elsewhere = tmp_path / "home", tmp_path / "elsewhere"
-    as_owner_home(monkeypatch, owner)
+    owner = tmp_path / "home"
     machine = _machine(tmp_path)
     config = load(root, machine=machine)
     store = resolve(root, config, machine=machine)
     assert store is not None
     record(store, config)
     slug = str(root.resolve()).replace("/", "-").replace(".", "-")
-    link = (owner if under == "database" else elsewhere) / ".claude" / "projects" / slug / "memory"
+    link = owner / ".claude" / "projects" / slug / "memory"
     link.parent.mkdir(parents=True)
     link.symlink_to(store.path.resolve())
-    elsewhere.mkdir(exist_ok=True)
-    return root, elsewhere
+    return root
 
 
 def _attached_row(tmp_path: Path, root: Path, *, home: Path | None) -> Check:
@@ -208,47 +178,15 @@ def _attached_row(tmp_path: Path, root: Path, *, home: Path | None) -> Check:
     return _by_name(rows, "attached")
 
 
-@pytest.mark.parametrize(
-    ("home", "under"), [("elsewhere", "database"), ("elsewhere", "HOME"), ("empty", "database")]
-)
-def test_off_a_terminal_the_attached_row_says_what_attach_says_where_home_is_not_where_it_goes(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, home: str, under: str
-) -> None:
-    # Off a terminal, with `HOME` not the database's home, the row judged the link under the
-    # database's home: `ok` for a link only there, which a harness started with this `HOME` does
-    # not read, and "the harness sees no memory here" for a link only under `HOME`, which it does,
-    # with a remedy `attach` then declined. It now judges neither, since a `HOME` the clone chose
-    # could hold a link that reads green, and says what `attach` says, with the way to have the
-    # link under `HOME` checked. Mutations (oracle): `mutations/`'s "the attached row judges the
-    # harness link off a terminal whatever HOME says" -> each case is judged instead; "the
-    # attached row names no way to check the link under a HOME that differs" -> the remedy ends
-    # early.
-    root, elsewhere = _approved_with_a_link_under(tmp_path, monkeypatch, under)
-    monkeypatch.setenv("HOME", "" if home == "empty" else str(elsewhere))
-    monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
-    row = _attached_row(tmp_path, root, home=None)
-    assert (row.status, row.detail, row.remedy) == (WARN, *_UNREAD_ROWS[home])
-
-
-@pytest.mark.parametrize("case", ["unset", "agrees", "terminal", "--home"])
-def test_the_attached_row_judges_the_link_where_home_is_the_one_it_goes_under(
+@pytest.mark.parametrize("case", ["HOME", "--home"])
+def test_the_attached_row_judges_the_link_under_the_home_it_goes_under(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, case: str
 ) -> None:
-    # The vacuity guard for the case above: an unset `HOME` and one that agrees take the database's
-    # home off a terminal, a terminal takes `HOME`, and `--home` is the home it names, so each
-    # judges the link where it stands and finds it. Mutations (oracle): `mutations/`'s "attach
-    # off a terminal withholds the harness link under a HOME that agrees" -> the first two warn;
-    # "attach at a terminal withholds the harness link under a HOME that differs" -> the third
-    # does; "the attached row asks where HOME points when --home names the home" -> the fourth.
-    under = "HOME" if case == "terminal" else "database"
-    root, elsewhere = _approved_with_a_link_under(tmp_path, monkeypatch, under)
-    monkeypatch.setattr(sys.stdin, "isatty", lambda: case == "terminal")
-    if case == "unset":
-        monkeypatch.delenv("HOME", raising=False)
-    elif case == "agrees":
-        monkeypatch.setenv("HOME", str(tmp_path / "home"))
-    else:
-        monkeypatch.setenv("HOME", str(elsewhere))
+    # `HOME`, and `--home` where it names the home, are where the row judges the link. Mutation
+    # (oracle): `mutations/`'s "the attached row asks where HOME points when --home names the
+    # home" -> the second warns.
+    root = _approved_with_a_link_under(tmp_path)
+    monkeypatch.setenv("HOME", str(tmp_path / ("home" if case == "HOME" else "elsewhere")))
     row = _attached_row(tmp_path, root, home=tmp_path / "home" if case == "--home" else None)
     assert (row.status, row.detail, row.remedy) == (
         OK,
@@ -3208,21 +3146,3 @@ def test_codexs_hook_file_is_read_as_strictly_as_before_since_nothing_measured_i
     check = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
     assert "could not be read as hook entries" in check.detail
     assert check.detail.endswith(": .codex/hooks.json")
-
-
-def test_no_home_in_the_password_database_is_a_warning_and_not_a_broken_check(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # Off a terminal the harness memory path is under the database's home, and a user it lists no
-    # home for has none: the machine's state, said as a warning, never "this check could not run",
-    # whose remedy is to report a defect.
-    root = _attached(tmp_path)
-    as_owner_home(monkeypatch, None)
-    monkeypatch.setattr("sys.stdin.isatty", lambda: False)
-    # No `--home`, so the row asks where the harness memory path is, as `doctor` itself does.
-    rows = doctor_checks.run_checks(
-        root, home=None, machine=_machine(tmp_path), runner=Recorder(), env=_env(tmp_path)
-    )
-    check = _by_name(rows, "attached")
-    assert check.status == "warn"
-    assert "lists no home directory" in check.detail

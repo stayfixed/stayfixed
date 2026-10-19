@@ -3,13 +3,15 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
 from stayfixed import gitenv
 from tests.floor import SUITE_GIT_FLOOR_SECONDS, developer_free_environ, is_developers
-from tests.ownerhome import stayfixed_argv
+
+LAUNCHER = Path(__file__).resolve().parents[1] / "scripts" / "stayfixed"
 
 
 def test_a_spawner_strips_the_developers_variables_and_keeps_the_floor(
@@ -56,9 +58,8 @@ def test_a_stayfixed_the_suite_starts_runs_its_git_under_the_floor(tmp_path: Pat
     stand_in.chmod(0o755)
     env = developer_free_environ()
     env["PATH"] = f"{bin_dir}{os.pathsep}{env.get('PATH', '')}"
-    # The home the password database answers is the test's own `HOME` (`tests/ownerhome.py`).
     done = subprocess.run(
-        [*stayfixed_argv(Path(env["HOME"])), "hook", "SessionStart"],
+        [sys.executable, str(LAUNCHER), "hook", "SessionStart"],
         input=json.dumps({"cwd": str(nowhere)}),
         capture_output=True,
         text=True,

@@ -600,36 +600,17 @@ def test_a_worktree_git_reports_as_prunable_is_not_a_checkout_attach_or_detach_w
     assert all(path.name != "side" for path in _worktrees(root))
 
 
-def test_a_home_whose_claude_is_a_symlink_refuses_above_every_write(tmp_path: Path) -> None:
-    # The layout is stow's, chezmoi's, or any synced home: `~/.claude` is a link into a
-    # dotfiles tree. The walk under the home directory refuses to follow it — deliberately,
-    # and `worktree.harness_link_parts` cites `setup --settings` as the precedent — but the
-    # refusal used to be discovered from inside the link step, which runs after the ignore
+def test_a_home_that_is_not_there_refuses_above_every_write(tmp_path: Path) -> None:
+    # A mistyped `--home` used to be discovered from inside the link step, after the ignore
     # region, the Codex rule files, the settings merge, the ledger and the overlay's binding
-    # record. Measured then: `PartialLink` with three links already made, `detach` afterwards
-    # raising a raw `UnsafePath` as `internal error`, and no shipped command able to put the
-    # repository back.
-    #
-    # `attach`'s own docstring is the standard this holds it to: "All six refusals are above
-    # every write… A refusal that leaves a repository looking attached is not a refusal."
-    #
-    # Mutation (declared, `mutations/`'s "attach discovers the harness anchor from inside the link
-    # step"): the hoisted call goes -> the refusal still arrives, from `_apply_harness_link`, and
-    # `assert_snapshot_unchanged` reddens with the ledger and the region already written.
+    # record. Mutation (declared, `mutations/`'s "attach discovers the harness anchor from inside
+    # the link step"): the hoisted call goes -> `assert_snapshot_unchanged` reddens with the
+    # ledger and the region already written.
     root, store, machine = _bound(tmp_path)
-    home = tmp_path / "home"
-    elsewhere = tmp_path / "dotfiles" / "claude"
-    elsewhere.mkdir(parents=True)
-    (home / ".claude").symlink_to(elsewhere, target_is_directory=True)
     before = snapshot(root)
     # `snapshot` is a walk, and an empty one satisfies the comparison below on its own.
     assert before
-    with pytest.raises(Refusal) as refused:
-        _attach(root, store, machine, home, confirmed=True)
-    # The symlink is named by its place under the home directory, `contained`'s root.
-    assert "passes through a symlink at '.claude'" in str(refused.value)
+    with pytest.raises(Refusal, match="never creates the home directory itself"):
+        _attach(root, store, machine, tmp_path / "no-such-home", confirmed=True)
     assert_snapshot_unchanged(root, before)
     assert not (root / LEDGER).exists()
-    # Nothing reached the dotfiles tree either: the refusal is in front of the link, not a
-    # write that followed it.
-    assert list(elsewhere.iterdir()) == []

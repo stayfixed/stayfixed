@@ -274,14 +274,14 @@ def _relinked_to_its_own_tree(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
     points the link at the worktree's own `paths.memory` rather than at the main checkout's. The
     gate that link asks is the worktree's own store's, so that store is approved first. Returns
     `(root, side, machine, home)`."""
-    from stayfixed.memory.api import MakeUnder, link
+    from stayfixed.memory.api import link
 
     root, side, _, machine, home = _both_attached(tmp_path)
     config = _config(side, machine)
     own = resolve(side, config, machine=machine)
     assert own is not None
     record(own, config)
-    link(side, own, config, harness=MakeUnder(home))
+    link(side, own, config, home=home)
     harness = harness_memory_path(side, home)
     # Non-vacuous: the link is the worktree's own tree now, the second directory a harness link
     # may point at and be stayfixed's.
@@ -801,49 +801,21 @@ def test_a_ledger_naming_a_directory_no_attach_creates_is_refused(tmp_path: Path
     assert_snapshot_unchanged(root, before)
 
 
-def test_a_home_whose_claude_became_a_symlink_refuses_above_every_withdrawal(
-    tmp_path: Path,
-) -> None:
-    # The mirror of the `attach` case, and the half that had no answer at all: the walk's
-    # `UnsafePath` left `detach` uncaught, `cli.run` rendered it as `internal error` and exit
-    # 2, and every later `detach` failed at the same line — with `.codex/rules/` already
-    # deleted and the ledger, the ignore region and every link still on disk. A repository no
-    # shipped command could return to its pre-attach state.
-    #
-    # The layout is reached the way a person reaches it: attach first, then let the dotfiles
-    # manager adopt `~/.claude`. That is also why this is `detach`'s case and not a repeat of
-    # `attach`'s — the home directory was fine when the repository was attached.
-    #
-    # Mutation (declared, `mutations/`'s "detach discovers the harness anchor from inside the
-    # withdrawal"): the hoisted loop goes -> the refusal still arrives, from `detach_main`, and
+def test_a_home_that_is_not_there_refuses_above_every_withdrawal(tmp_path: Path) -> None:
+    # A mistyped `--home` is asked about before the first withdrawal: asked from inside it, the
+    # refusal arrived with `.codex/rules/` already deleted. Mutation (declared, `mutations/`'s
+    # "detach discovers the harness anchor from inside the withdrawal"): the hoisted call goes ->
     # `assert_snapshot_unchanged` reddens with the rule files already removed.
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2], allow=(RULE,), hooks=True)
-    home = tmp_path / "home"
-    _attach(root, store, machine, home, confirmed=True)
-    resolved = resolve(root, _config(root, machine), machine=machine)
-    assert resolved is not None
-    record(resolved, _config(root, machine))
-    _attach(root, store, machine, home, confirmed=True)
-    harness = harness_memory_path(root, home)
-    assert harness.is_symlink(), "there is no harness link for this case to be about"
-    adopted = tmp_path / "dotfiles" / "claude"
-    adopted.parent.mkdir(parents=True)
-    shutil.move(str(home / ".claude"), str(adopted))
-    (home / ".claude").symlink_to(adopted, target_is_directory=True)
+    _attach(root, store, machine, tmp_path / "home", confirmed=True)
     before = snapshot(root)
     assert before
-    with pytest.raises(Refusal) as refused:
-        _detach(root, machine, home)
-    # The symlink is named by its place under the home directory, `contained`'s root.
-    assert "passes through a symlink at '.claude'" in str(refused.value)
-    # Nothing was withdrawn, so the repository is still the one the attach left and a second
-    # `detach` — against a home whose `.claude` is a real directory — still has everything to
-    # withdraw.
+    with pytest.raises(Refusal, match="never creates the home directory itself"):
+        _detach(root, machine, tmp_path / "no-such-home")
     assert_snapshot_unchanged(root, before)
     assert (root / LEDGER).is_file()
     assert (root / ".codex" / "rules").is_dir()
-    assert harness.is_symlink()
 
 
 def test_a_gitignore_region_that_cannot_be_withdrawn_is_answered_before_anything_is(

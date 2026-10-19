@@ -33,7 +33,6 @@ from stayfixed.printed import CLIPPED_CHARS, clipped
 from tests.crafted import assert_never_raw
 from tests.doctor.test_checks import LOCAL_ONLY, _attached, _initialised, _machine
 from tests.overlay.test_requires import overlay_with
-from tests.ownerhome import as_owner_home
 from tests.runners import Recorder
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
@@ -256,19 +255,6 @@ def test_a_machine_with_an_overlay_and_no_stayfixed_toml_is_red_about_nothing(
     assert row(report, "overlay-requires").status == WARN
     assert row(report, "hook-entries").status != RED, row(report, "hook-entries")
     assert not [check.name for check in report if check.status == RED]
-
-
-def test_harness_link_skips_without_a_configuration_when_the_homes_differ(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # What makes the harness link depends on the store's mode, which only the project's file
-    # says. Mutation (`mutations/`'s "the harness-link row reads a configuration that is not
-    # there"): the row reads as a check that could not run.
-    as_owner_home(monkeypatch, tmp_path / "elsewhere")
-    root = tmp_path / "project"
-    root.mkdir()
-    checked = row(run_checks_for(tmp_path, root, machine=none(tmp_path)), "harness-link")
-    assert (checked.status, checked.detail) == (SKIP, NO_CONFIG_SKIP)
 
 
 def test_an_attached_checkout_whose_stayfixed_toml_is_gone_still_has_its_claims_asked(

@@ -51,7 +51,7 @@ from stayfixed.runner import subprocess_runner
 # `--git-hooks` installs a hook into one repository and does nothing of machine setup's, so a flag
 # that asks machine setup to do something has no run to belong to beside it: `--preset` was
 # refused, and `--overlay` and `--yes` were dropped, exit 0, the hook installed, for a person who
-# asked for both. Refused alike. `--home`, `--settings` and `--machine` say only where machine setup
+# asked for both. Refused alike. `--home` and `--machine` say only where machine setup
 # would write, ask nothing done, and are ignored here, as `docs/cli.md` says.
 _HOOKS_ALONE = (
     "--git-hooks installs a hook into one repository and does nothing of machine setup's, so it "
@@ -122,21 +122,16 @@ def run_git_hooks(args: argparse.Namespace) -> Result:
     return Result(summary, install_data)
 
 
-NO_MACHINE_HOME = (
-    "the password database lists no home directory for this user, so there is no default "
-    "machine configuration file; pass --machine PATH to write one, which no hook reads"
-)
-# `--home`'s default is `HOME`, and an empty one names no home (`config.machine.homes_agree`), where
-# `Path.home` answers `/`: this command once ended in an internal error creating `/.config`, or,
-# given `--machine`, wrote that file and then refused to write `/.claude/settings.json`. Said
+# `--home`'s default is `HOME`, and an empty one names no home (`config.machine.owner_home`), where
+# `Path.home` answers `/`: this command once ended in an internal error creating `/.config`. Said
 # before anything is written.
 EMPTY_HOME = (
-    "HOME is empty, so it names no home directory and there is no default for --home; set HOME "
-    "to your home directory, or pass --home PATH"
+    "HOME names no home directory, so there is no default for --home or --machine; set HOME "
+    "to your home directory, or pass --home PATH and --machine PATH"
 )
 # `--approval-boundary` writes nothing, so a flag that names something to write has no run to
-# belong to: refused rather than dropped, since a person who typed it expects it done. `--home`,
-# `--settings` and `--machine` name files too, and are taken: the advice names the user settings
+# belong to: refused rather than dropped, since a person who typed it expects it done. `--home`
+# and `--machine` name files too, and are taken: the advice names the user settings
 # file and the trust record's directory as they would be written. `--uninstall` was taken and
 # dropped, exit 0, for a person who asked for a hook to be removed. `--root` is taken and unread:
 # it says only where `--git-hooks` and `--overlay` act, and both are refused here.
@@ -170,7 +165,6 @@ def run_setup(args: argparse.Namespace) -> Result:
     if args.uninstall:
         raise Refusal(_UNINSTALL_ALONE)
 
-    from stayfixed.config.machine import homes_agree
     from stayfixed.setup.run import setup
 
     # The file every *reader* of it reads (`config.loader.load`, `config.overlay.overlay_root`,
@@ -192,7 +186,6 @@ def run_setup(args: argparse.Namespace) -> Result:
         yes=args.yes,
         overlay=args.overlay,
         project_root=_root(args.root),
-        settings=_settings(args),
     )
     data = {
         "machine_written": report.machine_written,
@@ -202,17 +195,9 @@ def run_setup(args: argparse.Namespace) -> Result:
         "overlay": str(report.overlay) if report.overlay is not None else None,
         "notes": list(report.notes),
     }
-    # Where `HOME` is not the database's home, the file is not where the person may look for it,
-    # so the line says which home it went under (`config.machine`'s docstring says why).
-    under = (
-        ", under the home the password database records for this user rather than HOME, "
-        "because that is where a hook reads it"
-        if args.machine is None and not homes_agree()
-        else ""
-    )
     summary = "; ".join(
         (
-            f"machine configuration written to {machine}{under}",
+            f"machine configuration written to {machine}",
             f"{len(report.plugins_installed)} plugin(s) installed",
             "deny rules merged" if report.deny_written else "deny rules unchanged",
             "stayfixed is on PATH" if report.cli_on_path else "stayfixed is not on PATH",
@@ -228,29 +213,18 @@ def run_setup(args: argparse.Namespace) -> Result:
 def _home_and_machine(args: argparse.Namespace) -> tuple[Path, Path]:
     """The home the user settings file lies under and the machine file, as `--home` and
     `--machine` name them or by default, or the failure for a machine that names neither."""
-    from stayfixed.config.machine import home_is_empty, machine_config_path
+    from stayfixed.config.machine import machine_config_path, owner_home
 
-    if args.home is None and home_is_empty():
-        raise Failure(EMPTY_HOME)
-    home = Path.home() if args.home is None else Path(args.home).expanduser()
+    home = owner_home() if args.home is None else Path(args.home).expanduser()
     machine = machine_config_path() if args.machine is None else Path(args.machine).expanduser()
-    if machine is None:
-        # Off `--machine`, the file is under the home the password database records, and this
-        # user has none there; a file put under `HOME` instead would be one no hook reads.
-        raise Failure(NO_MACHINE_HOME)
+    if home is None or machine is None:
+        raise Failure(EMPTY_HOME)
     return home, machine
-
-
-def _settings(args: argparse.Namespace) -> Path | None:
-    """The user settings file `--settings` names, or `None` for the one under the home, which
-    `setup.run` writes in its place; one reading for the setup and the advice alike."""
-    return Path(args.settings).expanduser() if args.settings else None
 
 
 def run_boundary_advice(args: argparse.Namespace) -> Result:
     """`setup --approval-boundary`: `BOUNDARY_ADVICE` for the trust record beside the machine file
-    and the user settings file `--settings` names or the one under the home, both as `setup` would
-    write them; writes nothing.
+    and the user settings file under the home, both as `setup` would write them; writes nothing.
 
     Both are printed absolute: the rule for the reason `record_deny_rules` gives, and the file so
     that a person who opens it from another directory opens the one meant."""
@@ -275,8 +249,7 @@ def run_boundary_advice(args: argparse.Namespace) -> Result:
             f"{quoted(str(record.parent))} cannot be checked ({fsops.said(exc)}), so no rule "
             "for it can be advised"
         ) from exc
-    given = _settings(args)
-    settings = (home / USER_SETTINGS if given is None else given).absolute()
+    settings = (home / USER_SETTINGS).absolute()
     summary = BOUNDARY_ADVICE.format(
         rules=" and ".join(rules),
         settings=settings,
@@ -289,7 +262,6 @@ def run_boundary_advice(args: argparse.Namespace) -> Result:
 
 
 def register(groups: SubParsers) -> None:
-    from stayfixed.setup.machine import USER_SETTINGS
 
     setup = groups.add_parser("setup", help="configure this machine from a preset")
     setup.add_argument(
@@ -307,14 +279,6 @@ def register(groups: SubParsers) -> None:
     # when the parser is built, which is every run of every command — and printed by
     # `stayfixed setup --help`, where it was the developer's own home directory.
     setup.add_argument("--home", default=None, help=HOME_HELP)
-    setup.add_argument(
-        "--settings",
-        default=None,
-        help=(
-            f"write the user-scope settings file here instead of <home>/{USER_SETTINGS}, "
-            "for a dotfiles layout that links that file into another tree"
-        ),
-    )
     setup.add_argument("--machine", default=None, help=SETUP_MACHINE_HELP)
     setup.add_argument(
         "--overlay",

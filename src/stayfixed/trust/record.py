@@ -46,8 +46,8 @@ from stayfixed.trust.boundary import RUN_OUTSIDE, SANDBOX_REFUSED, sandbox_refus
 RECORD = "trust.json"
 VERSION = 1
 NO_HOME = (
-    "the password database lists no home directory for this user, so there is no trust record "
-    "to write; pass --machine PATH to keep one beside that file, which no hook reads"
+    "HOME names no home directory, so there is no trust record to write; pass --machine PATH to "
+    "keep one beside that file, which no hook reads"
 )
 # The close of every refusal of a record that is there and cannot be read.
 _HOLDS = "it holds every project's approval on this machine, so nothing here will overwrite it"
@@ -109,11 +109,10 @@ _FIELDS = frozenset(field.name for field in fields(Approval))
 def record_path(machine: Path | None) -> Path | None:
     """`trust.json` beside the machine file `machine`, or beside the one `config.machine` names.
 
-    That one is under the home the password database records, which no variable moves, never
-    `HOME` or `XDG_CONFIG_HOME`: a file the clone commits can set either for direnv, mise or a
-    devcontainer, and a record they chose would be one the repository wrote. `None` for a machine
-    with no such home: it holds no record, so nothing is approved, and a write refuses to invent
-    a place for one.
+    That one is under `HOME`, never `XDG_CONFIG_HOME`: a file the clone commits can set it for
+    direnv, mise or a devcontainer, and a record it chose would be one the repository wrote.
+    `None` for a machine with no home: it holds no record, so nothing is approved, and a write
+    refuses to invent a place for one.
     """
     base = machine_config_path() if machine is None else machine
     return None if base is None else base.parent / RECORD
@@ -260,10 +259,8 @@ def _write(machine: Path | None, approvals: dict[tuple[str, str], Approval]) -> 
     """Replace the record with `approvals` as version 1, and fail naming its directory when that
     cannot be written.
 
-    With no `--machine` the directory is under the home the password database records, which a
-    system user's entry often names as a directory that is not there or not theirs. There is no
-    second place to put it that a hook would read, so the failure says which directory it was
-    rather than ending as an internal error about a temporary file.
+    There is no second place to put it that a hook would read, so the failure says which
+    directory it was rather than ending as an internal error about a temporary file.
     """
     path = record_path(machine)
     if path is None:
@@ -278,8 +275,7 @@ def _write(machine: Path | None, approvals: dict[tuple[str, str], Approval]) -> 
         if sandbox_refused(exc):
             raise SandboxedWrite(SANDBOXED) from None
         where = (
-            "it is under the home the password database records for this user, which is the "
-            "only place a hook reads a trust record"
+            "it is under HOME, which is the only place a hook reads a trust record"
             if machine is None
             else "it is beside the machine configuration file --machine names"
         )

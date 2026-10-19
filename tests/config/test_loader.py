@@ -21,7 +21,6 @@ from stayfixed.config.schema import (
     CustomGate,
 )
 from stayfixed.findings import LISTED_LIMIT
-from tests.ownerhome import as_owner_home
 
 HEAD = '[stayfixed]\nversion = "0.1.0"\npreset = "recommended"\n'
 MINIMAL = HEAD + '\n[project]\nname = "sample"\n'
@@ -160,7 +159,7 @@ def test_one_command_reads_one_machine_file(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # `load` resolved the machine file with the `isatty` sniff while `overlay_root` and the trust
-    # record (`trust.record.record_path`) resolved it off a terminal always. On an interactive run
+    # record (`trust.record.record_path`) resolved it with none. On an interactive run
     # with `XDG_CONFIG_HOME` set the two disagreed, so an owner who wrote one file holding both
     # `[personal]` and `[overlay] root` got `[personal]` honoured and the overlay silently
     # unrecorded — `memory index` refusing with "no overlay root is recorded in the machine
@@ -189,7 +188,7 @@ def test_one_command_reads_one_machine_file(
         '[personal]\npreset = "the-other-files"\n', encoding="utf-8"
     )
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
-    as_owner_home(monkeypatch, home)
+    monkeypatch.setenv("HOME", str(home))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(elsewhere))
 
     root = tmp_path / "project"
@@ -221,7 +220,7 @@ def test_the_machine_file_a_person_names_is_honoured_by_every_reader(
         encoding="utf-8",
     )
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path / "home"))
-    as_owner_home(monkeypatch, tmp_path / "home")
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
     root = tmp_path / "project"
     root.mkdir()
     (root / CONFIG_FILE).write_text(MINIMAL, encoding="utf-8")
