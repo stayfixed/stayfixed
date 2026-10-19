@@ -41,7 +41,7 @@ import os
 import subprocess
 import sys
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -68,15 +68,20 @@ _EVENTS = {
 }
 
 
+def forges(value: str) -> bool:
+    """The stand-in's test of a value of its forging variables: every value forges but `keep`."""
+    return value != "keep"
+
+
 @dataclass(frozen=True)
 class StandIn:
-    """`RunnerAdapter` for the word `stand-in`. `seen` collects each `plan` call's `root` and
-    `scratch`, so a test can ask what the run handed it and whether the scratch is gone,
-    `launches` each call's `launch`, `environs` each call's `environ`, and `cwds` each call's
-    `cwd`."""
+    """`RunnerAdapter` for the word `stand-in`. `seen` collects each `plan` call's `scratch`, so a
+    test can ask whether the run planned and whether the scratch is gone, `launches` each call's
+    `launch`, `environs` each call's `environ`, and `cwds` each call's `cwd`. Its `forging` set is
+    `FORGE` with any value but `keep`."""
 
     name: str = NAME
-    forging: frozenset[str] = frozenset({"FORGE"})
+    forging: Mapping[str, Callable[[str], bool]] = field(default_factory=lambda: {"FORGE": forges})
     source: ReportSource = ReportSource.FILE
     discovery: tuple[str, ...] = ("test_*.py",)
     configs: tuple[str, ...] = ("stand-in.toml",)
@@ -88,7 +93,7 @@ class StandIn:
     relative: bool = False
     # Plans its report outside the scratch directory it was handed, as no adapter may.
     elsewhere: Path | None = None
-    seen: list[tuple[Path, Path]] = field(default_factory=list)
+    seen: list[Path] = field(default_factory=list)
     launches: list[tuple[str, ...]] = field(default_factory=list)
     environs: list[dict[str, str]] = field(default_factory=list)
     cwds: list[Path] = field(default_factory=list)
@@ -102,11 +107,10 @@ class StandIn:
         command: Sequence[str],
         *,
         cwd: Path,
-        root: Path,
         scratch: Path,
         environ: Mapping[str, str],
     ) -> Plan | Refused | Unresolved:
-        self.seen.append((root, scratch))
+        self.seen.append(scratch)
         self.launches.append(tuple(launch))
         self.environs.append(dict(environ))
         self.cwds.append(cwd)

@@ -1,7 +1,9 @@
 """Count a JUnit XML report's testcases, streamed, refusing a doctype.
 
 Every `testcase` element, at any depth, is one test: failed when a `failure` or `error` element
-stands inside it, skipped when a `skipped` element does and nothing failed, passed otherwise. A
+stands inside it, skipped when a `skipped` element does and nothing failed, passed otherwise; and
+skipped whatever else stands inside it where its `skipped` is `type="todo"`, a test its runner
+marks as not done yet and does not count as failed when it fails (`TODO`). A
 suite's `tests`, `failures`, `errors` and `skipped` attributes are never read: they are what the
 writer says about its testcases, and the testcases are what is counted. Each dialect the shipped
 runners write reads the same way, the nested `testsuites`/`testsuite` form and the flat one alike.
@@ -44,12 +46,18 @@ from stayfixed.prove.counts import (
 _TESTCASE = "testcase"
 _FAILED_BY = frozenset({"failure", "error"})
 _SKIPPED_BY = "skipped"
+# The `type` of a `skipped` element that marks a test as not done yet. Node's JUnit reporter
+# (measured on 24.10.0) writes `<skipped type="todo"/>` for a `todo` test, and beside it the
+# `<failure>` where the test fails, which node itself counts as neither passed nor failed: its own
+# summary says `fail 0`, and it exits 0. So such a testcase is skipped, failure or none.
+TODO = "todo"
 
 # What one open testcase has met so far, one byte each on the stack of open testcases.
 _PASSED = 0
 _FAILED = 1
 _SKIPPED = 2
 _DROPPED = 3
+_TODO = 4
 
 # A named cap: how many bytes are handed to the parser at once, which bounds the copy expat keeps
 # of its input. Any size reads the same document the same way; 64 KiB keeps the copy far below the
@@ -75,9 +83,13 @@ class _Tally:
             self._open.append(_DROPPED if dropped else _PASSED)
         elif not self._open:
             return
+        elif name == _SKIPPED_BY and attributes.get("type") == TODO:
+            if self._open[-1] != _DROPPED:
+                self._open[-1] = _TODO
         elif name in _FAILED_BY:
-            # A dropped testcase too: a failure is never dropped.
-            self._open[-1] = _FAILED
+            # A dropped testcase too: a failure is never dropped. A todo's failure is no failure.
+            if self._open[-1] != _TODO:
+                self._open[-1] = _FAILED
         elif name == _SKIPPED_BY and self._open[-1] == _PASSED:
             self._open[-1] = _SKIPPED
 
@@ -87,7 +99,7 @@ class _Tally:
         outcome = self._open.pop()
         if outcome == _FAILED:
             self.failed += 1
-        elif outcome == _SKIPPED:
+        elif outcome in (_SKIPPED, _TODO):
             self.skipped += 1
         elif outcome == _PASSED:
             self.passed += 1

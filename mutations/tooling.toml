@@ -3729,3 +3729,22 @@ reddens = [
   "tests/test_check_workflow.py::test_one_job_whose_judging_steps_may_not_fail_and_run_in_order",
   "tests/test_check_workflow.py::test_the_verdict_s_process_gets_only_the_environment_its_step_names",
 ]
+
+# Only the `runners` job takes `node` and `go` from `PATH` for the tests that run them; every other
+# job's tests skip there rather than run the hosted image's own.
+[[mutation]]
+name = "the checks job opts the tests into the runners on PATH"
+file = ".github/workflows/ci.yml"
+before = """        env:
+          STAYFIXED_OLD_PYTHON: ${{ steps.old-python.outputs.python-path }}"""
+after = """        env:
+          STAYFIXED_RUNNERS_ON_PATH: "1"
+          STAYFIXED_OLD_PYTHON: ${{ steps.old-python.outputs.python-path }}"""
+reddens = ["tests/test_runners_job.py::test_only_the_runners_job_opts_the_tests_into_the_runners_on_path"]
+
+[[mutation]]
+name = "the runners job leaves the pinned Go off PATH"
+file = ".github/workflows/ci.yml"
+before = """          echo "$RUNNER_TEMP/go/$GO_TOOLCHAIN/bin" >> "$GITHUB_PATH""""
+after = """          ls "$RUNNER_TEMP/go/$GO_TOOLCHAIN/bin""""
+reddens = ["tests/test_runners_job.py::test_the_runners_job_puts_the_pinned_go_first_on_path"]

@@ -315,6 +315,68 @@ def test_a_custom_gate_past_its_time_limit_leaves_nothing_running(
     assert not late.exists()
 
 
+# A command that, on SIGTERM, ends a child it started in a session of its own, which no signal to
+# the command's group reaches: `stayfixed prove` and its runner, in small.
+ENDS_ITS_SESSION = (
+    "import os, signal, subprocess, sys, time\n"
+    "child = subprocess.Popen([sys.executable, '-c', "
+    '\'import pathlib, sys, time; pathlib.Path(sys.argv[1]).write_text("x"); '
+    'time.sleep(2.5); pathlib.Path(sys.argv[2]).write_text("x")\', '
+    "sys.argv[1], sys.argv[2]], start_new_session=True)\n"
+    "def ended(signum, frame):\n"
+    "    os.killpg(child.pid, signal.SIGKILL)\n"
+    "    sys.exit(0)\n"
+    "signal.signal(signal.SIGTERM, ended)\n"
+    "time.sleep(30)\n"
+)
+
+
+def _expired_once_started(monkeypatch: pytest.MonkeyPatch, started: Path) -> None:
+    def expired(process: subprocess.Popen[bytes], seconds: int) -> None:
+        deadline = time.monotonic() + STARTED_WAIT_SECONDS
+        while not started.exists() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        raise subprocess.TimeoutExpired(process.args, seconds)
+
+    monkeypatch.setattr(processes, "exited", expired)
+
+
+def test_a_gate_past_its_time_limit_lets_its_command_end_what_it_started(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The group is sent SIGTERM before SIGKILL, so a command that ends on it what lives outside
+    # its group does: `stayfixed prove` as a custom gate ends its runner's session. Measured end
+    # to end before this ending: the runner of a `stayfixed prove -- pytest` gate past its time
+    # limit ran on for its whole 40 s. Mutation (declared): the SIGTERM left out -> the child in
+    # its own session writes `late`.
+    started, late = tmp_path / "started", tmp_path / "late"
+    command = [sys.executable, "-c", ENDS_ITS_SESSION, str(started), str(late)]
+    config = with_custom(fixture_config(tmp_path), command, seconds=600)
+    _expired_once_started(monkeypatch, started)
+    [probe] = results(tmp_path, config)
+    assert not probe.answered
+    assert started.exists()
+    time.sleep(LATE_WAIT_SECONDS)
+    assert not late.exists()
+
+
+def test_a_gate_past_its_time_limit_ends_a_command_that_ignores_sigterm(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # SIGTERM ignored, by the command and the child it left in its group, the group is sent
+    # SIGKILL once the command has had its grace. Mutation (declared): no SIGKILL after the grace
+    # -> the reap waits on a command that never ends, and the gate raises.
+    monkeypatch.setattr(processes, "TERM_WAIT_SECONDS", 0.5)
+    command, started, late = delayed_writer(tmp_path)
+    command[2] = "import signal\nsignal.signal(signal.SIGTERM, signal.SIG_IGN)\n" + command[2]
+    config = with_custom(fixture_config(tmp_path), command, seconds=600)
+    _expired_once_started(monkeypatch, started)
+    [probe] = results(tmp_path, config)
+    assert not probe.answered
+    time.sleep(LATE_WAIT_SECONDS)
+    assert not late.exists()
+
+
 def test_an_interrupted_custom_gate_leaves_nothing_running(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

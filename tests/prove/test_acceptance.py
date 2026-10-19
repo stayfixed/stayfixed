@@ -6,9 +6,8 @@ of its own, asserting the verdict word `--json` prints and the exit code togethe
 - a stdout-forged run is `not proven`: `test_a_stdout_forged_run_is_not_proven_with_exit_1`;
 - an empty and an all-skipped run are `failed`, `go test -run NoSuchTest` included, each with
   the runner's own exit code: `test_each_empty_and_all_skipped_run_fails_with_exit_1`;
-- each refused forging route is `refused`, exit 2: `test_each_refused_route_exits_2`;
-- the same variable merely inherited is scrubbed and the run still counted:
-  `test_each_inherited_variable_is_scrubbed_and_counted`.
+- each honest-mistake refusal (snapshot update or rerun of failures, `--setup-plan`/`--setup-only`,
+  an optimised interpreter) is `refused`, exit 2: `test_each_refused_route_exits_2`.
 
 A stand-in runner is no refused route: guarding against a planted runner is not `prove`'s to do,
 and the receipt names the realpath of what ran instead.
@@ -212,13 +211,25 @@ def test_an_empty_jest_run_whose_standard_error_is_a_pipe_is_not_proven(
 
 
 ROUTES = {
-    # each adapter's closed list
+    # a snapshot update, or a rerun of failures
+    "jest -u": (("npx", "jest", "-u"), REFUSED_OPTION, "-u"),
+    "vitest --update": (("npx", "vitest", "run", "--update"), REFUSED_OPTION, "--update"),
+    "UPDATE_SNAPSHOT=": (("UPDATE_SNAPSHOT=all", "npx", "vitest"), ASSIGNED_FORGING, None),
+    "node --test-update-snapshots": (
+        ("node", "--test", "--test-update-snapshots"),
+        REFUSED_OPTION,
+        "--test-update-snapshots",
+    ),
+    "node --test-rerun-failures": (
+        ("node", "--test", "--test-rerun-failures=s.json"),
+        REFUSED_OPTION,
+        "--test-rerun-failures",
+    ),
+    # a run that sets tests up and runs none
     "pytest --setup-plan": (("pytest", "--setup-plan"), REFUSED_OPTION, "--setup-plan"),
+    "pytest --setup-only": (("pytest", "--setup-only"), REFUSED_OPTION, "--setup-only"),
+    # an optimised interpreter
     "python -O": (("python", "-O", "-m", "pytest"), REFUSED_OPTION, "-O"),
-    "jest --json": (("npx", "jest", "--json"), REFUSED_OPTION, "--json"),
-    "vitest --outputFile": (("npx", "vitest", "run", "--outputFile=x.json"), REFUSED_OPTION, None),
-    "node --test-reporter": (("node", "--test", "--test-reporter=dot"), REFUSED_OPTION, None),
-    # an assigned variable in each adapter's forging set
     "PYTHONOPTIMIZE=": (("PYTHONOPTIMIZE=1", "pytest"), ASSIGNED_FORGING, "PYTHONOPTIMIZE"),
 }
 
@@ -231,20 +242,3 @@ def test_each_refused_route_exits_2(tmp_path: Path, route: str) -> None:
     assert (verdict, code, receipt["reason"]) == ("refused", 2, reason), receipt
     if detail is not None:
         assert receipt["detail"] == detail, receipt
-
-
-INHERITED = {
-    # Each would change what runs or where its report goes, had it reached the runner.
-    "pytest": ("PYTHONOPTIMIZE", "1"),
-}
-
-
-@pytest.mark.parametrize("runner", each_runner(*INHERITED))
-def test_each_inherited_variable_is_scrubbed_and_counted(tmp_path: Path, runner: str) -> None:
-    name, value = INHERITED[runner]
-    # Only the pytest adapter has a forging set; every other adapter's environment is the caller's.
-    cwd, argv, counts = pytest_project(tmp_path / "p", passing=2), PYTEST, Counts(2, 0, 0)
-    verdict, code, receipt = run_prove(tmp_path, cwd, *argv, variables={name: value})
-    assert (verdict, code, counted(receipt)) == ("proved", 0, counts), receipt
-    scrubbed = receipt["scrubbed"]
-    assert isinstance(scrubbed, list) and name in scrubbed, receipt

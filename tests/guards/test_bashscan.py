@@ -586,6 +586,32 @@ def test_read_launch_names_each_word_of_the_launch_by_its_part(
 
 
 @pytest.mark.parametrize(
+    ("command", "stranded"),
+    [
+        ("uv run FOO=1 pytest", ["FOO=1"]),
+        ("uv run -- FOO=1 BAR=2 pytest", ["FOO=1", "BAR=2"]),
+        ("uv run env FOO=1 pytest", []),
+        ("FOO=1 uv run pytest", []),
+        ("env FOO=1 uv run env BAR=2 uv run BAZ=3 pytest", ["BAZ=3"]),
+        ("FOO=1 pytest", []),
+    ],
+    ids=["bare", "after-separator", "after-env", "before", "nested", "no-launcher"],
+)
+def test_read_launch_names_an_assignment_right_after_a_launcher(
+    command: str, stranded: list[str]
+) -> None:
+    """An assignment right after a launcher's words, with no `env` between, is one a shell hands
+    the launcher as a word: uv 0.12.19 runs `FOO=1` as its program ("Failed to spawn", exit 2).
+    The walk reads it as an assignment all the same, and names it apart. Oracle: `mutations/`'s
+    "the launch names no assignment stranded after a launcher", "an assignment after `env` past a
+    launcher is named stranded"."""
+    words = command.split()
+    launch = bashscan.read_launch(words)
+    assert list(launch.stranded) == stranded
+    assert set(launch.stranded) <= set(launch.assignments)
+
+
+@pytest.mark.parametrize(
     ("command", "environ", "moved"),
     [
         ("pytest", {"UV_WORKING_DIR": "a"}, ""),

@@ -28,9 +28,10 @@ checked nothing; the anchor is the command's own words, and every other option i
   `-bO`) before `-m pytest`, which compiles out every `assert` pytest does not rewrite (a helper
   module's, or every one under `--assert=plain`), so a failing test reports passed and the run
   exits 0. A `-W` or `-X` value is no flag, and every other interpreter option is free.
-- `FORGING`: `PYTHONOPTIMIZE`, which is `-O` and which container images set: assigned in the
-  command, refused; inherited, removed from the run's environment and named on the receipt. Every
-  other variable is the project's.
+- `FORGING`: `PYTHONOPTIMIZE`, which is `-O` and which container images set, where its value
+  optimises as CPython reads it (`optimises`: any but the empty one and a zero, so
+  `PYTHONOPTIMIZE=0` runs every `assert`): assigned in the command, refused; inherited, removed
+  from the run's environment and named on the receipt. Every other variable is the project's.
 - The file `-c`/`--config-file` (or the older `--inifile`) names is not refused, since a
   configuration file is the bound's as `pytest.ini` is, but named among the receipt's
   configuration files by its realpath (`Plan.configs`), wherever it lies.
@@ -44,10 +45,11 @@ pytest collects from (`DISCOVERY`), and the realpath of the program that ran.
 from __future__ import annotations
 
 import os
-from collections.abc import Mapping, Sequence
+import re
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 
-from stayfixed.profiles.programs import SEPARATOR, before_separator, launched
+from stayfixed.profiles.programs import SEPARATOR, before_separator, launched, not_found
 from stayfixed.profiles.python.hygiene import pytest_command
 from stayfixed.profiles.runners import (
     ENTRY_NOT_FOUND,
@@ -63,7 +65,19 @@ NAME = "pytest"
 # The reasons this adapter names, both `stayfixed.profiles.runners`': an option the closed list
 # refuses, and a program that is not where the command would find it.
 REASONS = (REFUSED_OPTION, ENTRY_NOT_FOUND)
-FORGING = frozenset({"PYTHONOPTIMIZE"})
+# What CPython reads as no optimisation in `PYTHONOPTIMIZE`, past the empty value, which it reads
+# as unset: a value `strtol` reads whole as zero, after leading white space and a sign (measured on
+# 3.14.7: `0`, `00`, ` 0`, `+0`, `-0` are level 0; `0 `, `0_0`, `abc`, `-1` are level 1).
+_ZERO = re.compile(r"[ \t\n\v\f\r]*[+-]?0+")
+
+
+def optimises(value: str) -> bool:
+    """Whether `PYTHONOPTIMIZE=value` turns `assert` off, as CPython reads it: any value but the
+    empty one and one that reads as zero."""
+    return bool(value) and _ZERO.fullmatch(value) is None
+
+
+FORGING: Mapping[str, Callable[[str], bool]] = {"PYTHONOPTIMIZE": optimises}
 DISCOVERY = (
     "conftest.py",
     "**/conftest.py",
@@ -76,10 +90,6 @@ CONFIGS = ("pytest.ini", "pyproject.toml", "setup.cfg", "tox.ini")
 REPORT_NAME = "junit.xml"
 
 _FAMILY = ("-o", "junit_family=xunit2")
-# What an unresolved plan's detail says was looked for: a bare name on `PATH`, and a word holding
-# a `/` at that path, which `programs.found` never searches `PATH` for.
-_NOT_ON_PATH = "no {program} on PATH"
-_NO_FILE = "no executable file at {program}"
 
 # The closed list of what is refused: the options that run no test and report the tests they set
 # up as passed.
@@ -178,7 +188,7 @@ class PytestAdapter:
         return NAME
 
     @property
-    def forging(self) -> frozenset[str]:
+    def forging(self) -> Mapping[str, Callable[[str], bool]]:
         return FORGING
 
     def recognises(self, command: Sequence[str]) -> bool:
@@ -190,7 +200,6 @@ class PytestAdapter:
         command: Sequence[str],
         *,
         cwd: Path,
-        root: Path,
         scratch: Path,
         environ: Mapping[str, str],
     ) -> Plan | Refused | Unresolved:
@@ -207,9 +216,7 @@ class PytestAdapter:
         ours = (f"--junitxml={report}", *_FAMILY)
         argv = launched(launch, (*typed, *before_separator(run.args, ours)), cwd, environ)
         if argv is None:
-            first = (*launch, *command)[0]
-            template = _NO_FILE if os.sep in first else _NOT_ON_PATH
-            return Unresolved(ENTRY_NOT_FOUND, template.format(program=first))
+            return Unresolved(ENTRY_NOT_FOUND, not_found((*launch, *command)[0]))
         return Plan(
             argv=argv,
             kind=ReportKind.JUNIT,

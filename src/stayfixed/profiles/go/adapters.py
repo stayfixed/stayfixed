@@ -27,10 +27,10 @@ bound's, which the receipt's list of those files lets a reader weigh.
 from __future__ import annotations
 
 import os
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 
-from stayfixed.profiles.programs import launched
+from stayfixed.profiles.programs import launched, not_found
 from stayfixed.profiles.runners import (
     ENTRY_NOT_FOUND,
     Plan,
@@ -56,8 +56,6 @@ _JSON = "-json"
 _ENDS = frozenset({"-args", "--args", "--"})
 _CHANGE_DIRECTORY = "C"
 _MODFILE = "modfile"
-_NOT_ON_PATH = "no {program} on PATH"
-_NO_FILE = "no executable file at {program}"
 
 
 def _flag(word: str) -> tuple[str, str | None] | None:
@@ -110,13 +108,6 @@ def _modfiles(args: Sequence[str], cwd: Path) -> tuple[str, ...]:
     return tuple(named)
 
 
-def _not_found(word: str) -> str:
-    """What a run's first word that names nothing was looked up as: a word holding a `/` is read
-    as a path, never looked up on `PATH`."""
-    template = _NO_FILE if os.sep in word else _NOT_ON_PATH
-    return template.format(program=word)
-
-
 class GoTestAdapter:
     """`RunnerAdapter` for `go test`."""
 
@@ -125,8 +116,8 @@ class GoTestAdapter:
         return NAME
 
     @property
-    def forging(self) -> frozenset[str]:
-        return frozenset()
+    def forging(self) -> Mapping[str, Callable[[str], bool]]:
+        return {}
 
     def recognises(self, command: Sequence[str]) -> bool:
         return len(command) >= 2 and Path(command[0]).name == _GO and command[1] == _TEST
@@ -137,14 +128,13 @@ class GoTestAdapter:
         command: Sequence[str],
         *,
         cwd: Path,
-        root: Path,
         scratch: Path,
         environ: Mapping[str, str],
     ) -> Plan | Refused | Unresolved:
         args = command[2:]
         argv = launched(launch, (command[0], _TEST, *_planned_args(args)), cwd, environ)
         if argv is None:
-            return Unresolved(ENTRY_NOT_FOUND, _not_found((launch or command)[0]))
+            return Unresolved(ENTRY_NOT_FOUND, not_found((launch or command)[0]))
         return Plan(
             argv=argv,
             kind=ReportKind.EVENTS,

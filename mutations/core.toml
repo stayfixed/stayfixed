@@ -5661,7 +5661,7 @@ reddens = [
 [[mutation]]
 name = "a timed-out custom gate's children run on after it reported"
 file = "src/stayfixed/processes.py"
-before = "        os.killpg(process.pid, signal.SIGKILL)"
+before = "        os.killpg(process.pid, signum)"
 after = "        process.kill()"
 reddens = ["tests/assess/test_gates.py::test_a_custom_gate_past_its_time_limit_leaves_nothing_running"]
 
@@ -5762,8 +5762,8 @@ reddens = [
 [[mutation]]
 name = "prove calls a command nothing can count refused"
 file = "src/stayfixed/prove/run.py"
-before = "            _Outcome(unproven=NOT_RECOGNISED), shown, directory=directory, verified=verified"
-after = "            _Outcome(refused=NOT_RECOGNISED), shown, directory=directory, verified=verified"
+before = "            _Outcome(unproven=NOT_RECOGNISED), shown, directory=directory, verified=run.verified"
+after = "            _Outcome(refused=NOT_RECOGNISED), shown, directory=directory, verified=run.verified"
 reddens = [
   "tests/prove/test_run.py::test_an_unrecognised_command_is_not_proven[argv0]",
   "tests/prove/test_run.py::test_an_unrecognised_command_is_not_proven[argv1]",
@@ -5841,10 +5841,10 @@ reddens = [
 [[mutation]]
 name = "prove hands the adapter the launch whole"
 file = "src/stayfixed/prove/run.py"
-before = """            run.typed.launcher,
-            run.typed.command,"""
-after = """            (*run.typed.assignments, *run.typed.launcher),
-            run.typed.command,"""
+before = """            run.handed.launcher,
+            run.handed.command,"""
+after = """            (*run.handed.assignments, *run.handed.launcher),
+            run.handed.command,"""
 reddens = [
   "tests/prove/test_run.py::test_the_adapter_is_handed_the_launcher_s_words_alone[argv0-launch0]",
   "tests/prove/test_run.py::test_the_adapter_is_handed_the_launcher_s_words_alone[argv1-launch1]",
@@ -5863,7 +5863,7 @@ reddens = ["tests/prove/test_run.py::test_a_plan_whose_program_is_not_absolute_i
 [[mutation]]
 name = "prove hands the runner an inherited variable of its adapter's forging set"
 file = "src/stayfixed/prove/run.py"
-before = "    env = {name: value for name, value in environ.items() if name not in forging}"
+before = "    env = {name: value for name, value in environ.items() if name not in lost}"
 after = "    env = dict(environ)"
 reddens = [
   "tests/prove/test_run.py::test_an_inherited_forging_variable_is_removed_and_counted",
@@ -5909,10 +5909,10 @@ reddens = [
 [[mutation]]
 name = "prove lets the inherited value win over the command's assignment"
 file = "src/stayfixed/prove/run.py"
-before = """    env = {name: value for name, value in environ.items() if name not in forging}
+before = """    env = {name: value for name, value in environ.items() if name not in lost}
     env |= assigned"""
 after = """    env = dict(assigned)
-    env |= {name: value for name, value in environ.items() if name not in forging}"""
+    env |= {name: value for name, value in environ.items() if name not in lost}"""
 reddens = [
   "tests/prove/test_run.py::test_the_run_s_environment_is_the_caller_s_less_forging_then_the_assignments",
   "tests/prove/test_run.py::test_an_assignment_wins_over_the_inherited_value",
@@ -6090,7 +6090,7 @@ reddens = [
 [[mutation]]
 name = "an interrupted prove leaves its command's group running"
 file = "src/stayfixed/prove/run.py"
-before = """            processes.end(process)
+before = """            processes.end(process, RUNNER_TERM_WAIT_SECONDS)
             return _Ran(INTERRUPTED, None)"""
 after = """            process.kill()
             process.wait()
@@ -6103,7 +6103,7 @@ reddens = [
 [[mutation]]
 name = "a prove past its time limit leaves its command's group running"
 file = "src/stayfixed/prove/run.py"
-before = """            processes.end(process)
+before = """            processes.end(process, RUNNER_TERM_WAIT_SECONDS)
             return _Ran(TIMED_OUT, None)"""
 after = """            process.kill()
             process.wait()
@@ -6129,7 +6129,7 @@ reddens = ["tests/prove/test_run.py::test_an_ended_run_is_not_proven_and_leaves_
 [[mutation]]
 name = "a fault in prove's wait leaves its command's group running"
 file = "src/stayfixed/prove/run.py"
-before = """            processes.end(process)
+before = """            processes.end(process, RUNNER_TERM_WAIT_SECONDS)
             raise"""
 after = """            process.kill()
             process.wait()
@@ -6424,15 +6424,8 @@ before = "    elif run.junit is not None and not _rewritten(found, plan.report):
 after = "    elif False:"
 reddens = [
   "tests/prove/test_junit_flag.py::test_a_report_older_than_the_run_is_not_proven",
-  "tests/prove/test_junit_flag.py::test_a_symlinked_report_is_not_proven[before]",
+  "tests/prove/test_junit_flag.py::test_a_link_to_a_stale_report_the_run_never_touched_is_not_proven",
 ]
-
-[[mutation]]
-name = "prove --junit reads a link the run made as its report"
-file = "src/stayfixed/prove/run.py"
-before = "    return after is not None and stat.S_ISREG(after[0]) and after != before"
-after = "    return after is not None and after != before"
-reddens = ["tests/prove/test_junit_flag.py::test_a_symlinked_report_is_not_proven[the run]"]
 
 [[mutation]]
 name = "prove --junit reads a report rewritten in place as unchanged"
@@ -6462,15 +6455,8 @@ after = "        return True"
 reddens = [
   "tests/prove/test_junit_flag.py::test_a_program_that_is_not_there_is_not_started",
   "tests/prove/test_junit_flag.py::test_a_report_the_run_wrote_is_counted_and_marked_unverified",
+  "tests/prove/test_junit_flag.py::test_a_command_of_assignments_alone_is_not_recognised",
 ]
-
-# Every `--junit` receipt says so, a run that never started or was refused before a plan as well.
-[[mutation]]
-name = "prove --junit marks the runner of a receipt with no plan verified"
-file = "src/stayfixed/prove/run.py"
-before = "    verified = junit is None"
-after = "    verified = True"
-reddens = ["tests/prove/test_junit_flag.py::test_a_command_of_assignments_alone_is_not_recognised"]
 
 [[mutation]]
 name = "prove's line says nothing of a runner no adapter resolved"
@@ -6492,8 +6478,8 @@ reddens = ["tests/prove/test_junit_flag.py::test_with_junit_no_adapter_is_consul
 [[mutation]]
 name = "prove --junit reads its path from the project's top-level"
 file = "src/stayfixed/prove/run.py"
-before = "            _unverified(run.typed, run.directory / junit, run.directory, run.env)"
-after = "            _unverified(run.typed, run.root / junit, run.directory, run.env)"
+before = "            _unverified(run.handed, run.directory / junit, run.directory, run.env)"
+after = "            _unverified(run.handed, run.root / junit, run.directory, run.env)"
 reddens = ["tests/prove/test_junit_flag.py::test_the_path_is_read_from_the_directory_the_command_is_typed_in"]
 
 [[mutation]]
@@ -6560,6 +6546,7 @@ after = "        elif not self._open or self._open[-1] == _DROPPED:\n           
 reddens = [
   "tests/prove/test_junit.py::test_a_dropped_testcase_that_failed_counts_as_failed[failure]",
   "tests/prove/test_junit.py::test_a_dropped_testcase_that_failed_counts_as_failed[error]",
+  "tests/prove/test_javascript.py::test_the_whole_file_testcase_is_dropped_unless_it_failed[node24-load-failure.xml]",
 ]
 
 # The prove section's verdict table is `CASCADE`, row for row.
@@ -6583,7 +6570,7 @@ reddens = ["tests/test_documents.py::test_the_prove_section_states_the_bound_wor
 [[mutation]]
 name = "the receipt names no variable the run's environment lost"
 file = "src/stayfixed/prove/run.py"
-before = "    return env, tuple(sorted(frozenset(environ) & forging))"
+before = "    return env, lost"
 after = "    return env, ()"
 reddens = [
   "tests/prove/test_run.py::test_an_inherited_forging_variable_is_removed_and_counted",
@@ -6629,11 +6616,12 @@ file = "src/stayfixed/prove/run.py"
 before = '''
     except (KeyboardInterrupt, _Signalled):
         return _receipt(
-            _Outcome(unproven=INTERRUPTED), shown, runner, directory=directory, verified=verified
-        )'''
+            _Outcome(unproven=INTERRUPTED),'''
 after = '''
     except (KeyboardInterrupt, _Signalled):
-        raise'''
+        raise
+        return _receipt(
+            _Outcome(unproven=INTERRUPTED),'''
 reddens = [
   "tests/prove/test_run.py::test_an_interrupt_anywhere_in_the_run_ends_it_not_proven[interrupt-tree-state]",
 ]
@@ -6644,33 +6632,33 @@ file = "src/stayfixed/prove/run.py"
 before = """                processes.kill_group(process)
                 code = process.wait()
         except subprocess.TimeoutExpired:
-            processes.end(process)
+            processes.end(process, RUNNER_TERM_WAIT_SECONDS)
             return _Ran(TIMED_OUT, None)
         except (KeyboardInterrupt, _Signalled):
             # A terminal's Ctrl-C reaches stayfixed's process group and not the command's session,
             # so nothing but `prove` ends the command's group on the way out. One that landed after
             # the wait reaped the command leaves no group to end: its pid may be another's by now.
             if process.returncode is None:
-                processes.end(process)
+                processes.end(process, RUNNER_TERM_WAIT_SECONDS)
             return _Ran(INTERRUPTED, None)
         except BaseException:
-            processes.end(process)
+            processes.end(process, RUNNER_TERM_WAIT_SECONDS)
             raise
         return _Ran(None, code)
 """
 after = """                pass
         except subprocess.TimeoutExpired:
-            processes.end(process)
+            processes.end(process, RUNNER_TERM_WAIT_SECONDS)
             return _Ran(TIMED_OUT, None)
         except (KeyboardInterrupt, _Signalled):
             # A terminal's Ctrl-C reaches stayfixed's process group and not the command's session,
             # so nothing but `prove` ends the command's group on the way out. One that landed after
             # the wait reaped the command leaves no group to end: its pid may be another's by now.
             if process.returncode is None:
-                processes.end(process)
+                processes.end(process, RUNNER_TERM_WAIT_SECONDS)
             return _Ran(INTERRUPTED, None)
         except BaseException:
-            processes.end(process)
+            processes.end(process, RUNNER_TERM_WAIT_SECONDS)
             raise
         processes.kill_group(process)
         return _Ran(None, process.wait())
@@ -6777,8 +6765,65 @@ reddens = [
 [[mutation]]
 name = "prove --junit reads its path from the directory the command was typed in"
 file = "src/stayfixed/prove/run.py"
-before = "            _unverified(run.typed, run.directory / junit, run.directory, run.env)"
-after = "            _unverified(run.typed, run.cwd / junit, run.directory, run.env)"
+before = "            _unverified(run.handed, run.directory / junit, run.directory, run.env)"
+after = "            _unverified(run.handed, run.cwd / junit, run.directory, run.env)"
 reddens = [
   "tests/prove/test_junit_flag.py::test_the_path_is_read_from_the_directory_the_launcher_runs_the_command_in",
 ]
+
+# A timeout or an interrupt sends the group SIGTERM before SIGKILL, so a command that ends a
+# descendant outside its group on SIGTERM (`stayfixed prove`, whose runner is in a session of its
+# own) does; and a group that ignores SIGTERM is still ended.
+[[mutation]]
+name = "a timed-out gate's group is sent SIGKILL alone"
+file = "src/stayfixed/processes.py"
+before = "    kill_group(process, signal.SIGTERM)"
+after = "    pass"
+reddens = ["tests/assess/test_gates.py::test_a_gate_past_its_time_limit_lets_its_command_end_what_it_started"]
+
+[[mutation]]
+name = "a timed-out gate's group that ignores SIGTERM is never sent SIGKILL"
+file = "src/stayfixed/processes.py"
+before = """        _watched(process, TERM_WAIT_SECONDS if grace is None else grace)
+    kill_group(process)"""
+after = """        _watched(process, TERM_WAIT_SECONDS if grace is None else grace)"""
+reddens = ["tests/assess/test_gates.py::test_a_gate_past_its_time_limit_ends_a_command_that_ignores_sigterm"]
+
+# A `--junit` path is followed to the file it reaches: a `latest.xml` link the run points at the
+# report it just wrote is that report, rewritten.
+[[mutation]]
+name = "prove --junit reads its path's state without following a link"
+file = "src/stayfixed/prove/run.py"
+before = "        found = os.stat(path)"
+after = "        found = os.lstat(path)"
+reddens = ["tests/prove/test_junit_flag.py::test_a_link_the_run_points_at_a_fresh_report_is_counted"]
+
+# A forging variable is one the adapter names with a value its test says forges: `PYTHONOPTIMIZE=0`
+# optimises nothing, and an assignment or an inheritance of it is the run's.
+[[mutation]]
+name = "prove refuses a forging variable's every value"
+file = "src/stayfixed/prove/run.py"
+before = "    return test is not None and test(value)"
+after = "    return test is not None"
+reddens = [
+  "tests/prove/test_run.py::test_an_assigned_value_that_forges_nothing_reaches_the_runner",
+  "tests/prove/test_run.py::test_the_run_s_environment_is_the_caller_s_less_forging_then_the_assignments",
+]
+
+# An assignment right after a launcher, with no `env` between, is the launcher's program as typed:
+# the command runs no test.
+[[mutation]]
+name = "prove reads an assignment right after a launcher as the command's"
+file = "src/stayfixed/prove/run.py"
+before = "    if junit is None and launch.stranded:"
+after = "    if False:"
+reddens = ["tests/prove/test_run.py::test_an_assignment_right_after_a_launcher_is_not_recognised[argv0]"]
+
+# A todo test node does not count as failed, failing or not: `<skipped type="todo"/>` beside its
+# `<failure>`.
+[[mutation]]
+name = "a todo testcase's failure is counted as failed"
+file = "src/stayfixed/prove/junit.py"
+before = """        elif name == _SKIPPED_BY and attributes.get("type") == TODO:"""
+after = """        elif False:"""
+reddens = ["tests/prove/test_junit.py::test_a_todo_testcase_is_skipped_whatever_else_stands_in_it[failing]"]

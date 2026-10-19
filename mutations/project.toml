@@ -2195,12 +2195,33 @@ reddens = [
 [[mutation]]
 name = "the pytest adapter leaves PYTHONOPTIMIZE off its forging set"
 file = "src/stayfixed/profiles/python/adapters.py"
-before = 'FORGING = frozenset({"PYTHONOPTIMIZE"})'
-after = "FORGING: frozenset[str] = frozenset()"
+before = 'FORGING: Mapping[str, Callable[[str], bool]] = {"PYTHONOPTIMIZE": optimises}'
+after = "FORGING: Mapping[str, Callable[[str], bool]] = {}"
 reddens = [
   "tests/prove/test_pytest.py::test_a_failing_assert_is_not_turned_off",
   "tests/prove/test_pytest.py::test_the_adapters_this_stack_ships",
   "tests/prove/test_pytest.py::test_an_assigned_pythonoptimize_is_refused",
+]
+
+# CPython reads `PYTHONOPTIMIZE=0` and the empty value as no optimisation: both run every `assert`.
+[[mutation]]
+name = "the pytest adapter reads PYTHONOPTIMIZE=0 as optimising"
+file = "src/stayfixed/profiles/python/adapters.py"
+before = "    return bool(value) and _ZERO.fullmatch(value) is None"
+after = "    return bool(value)"
+reddens = [
+  "tests/prove/test_pytest.py::test_pythonoptimize_optimises_as_cpython_reads_it[0-False]",
+  "tests/prove/test_pytest.py::test_an_assigned_pythonoptimize_that_optimises_nothing_runs[0]",
+]
+
+[[mutation]]
+name = "the pytest adapter reads an empty PYTHONOPTIMIZE as optimising"
+file = "src/stayfixed/profiles/python/adapters.py"
+before = "    return bool(value) and _ZERO.fullmatch(value) is None"
+after = "    return _ZERO.fullmatch(value) is None"
+reddens = [
+  "tests/prove/test_pytest.py::test_pythonoptimize_optimises_as_cpython_reads_it[-False]",
+  "tests/prove/test_pytest.py::test_an_assigned_pythonoptimize_that_optimises_nothing_runs[]",
 ]
 
 # `-W` and `-X` take a value, and an `O` in it is no flag: a warning filter refuses nobody.
@@ -2273,8 +2294,8 @@ reddens = [
 [[mutation]]
 name = "node's watch mode in front of a runner's entry is not read"
 file = "src/stayfixed/profiles/javascript/adapters.py"
-before = "        never = node_never_ends(node_words) or runner.never_ends(args)"
-after = "        never = runner.never_ends(args)"
+before = "        waits = node_never_ends(node_words, environ.get(NODE_OPTIONS, \"\"))"
+after = "        waits = None"
 reddens = ["tests/prove/test_javascript.py::test_node_s_watch_mode_in_front_of_the_entry_never_ends[watch]"]
 
 # The file node is handed must be the entry its package's `bin` names.
@@ -2339,17 +2360,6 @@ reddens = [
   "tests/prove/test_go.py::test_a_path_to_go_is_the_program[absolute]",
   "tests/prove/test_go.py::test_a_path_to_go_is_the_program[relative]",
   "tests/prove/test_go.py::test_a_launcher_is_handed_the_go_as_typed[./bin/go]",
-]
-
-# A word holding a `/` is read as a path, never looked up on `PATH`, and the detail says so.
-[[mutation]]
-name = "the go adapter names a path that names nothing as looked up on PATH"
-file = "src/stayfixed/profiles/go/adapters.py"
-before = "    template = _NO_FILE if os.sep in word else _NOT_ON_PATH"
-after = "    template = _NOT_ON_PATH"
-reddens = [
-  "tests/prove/test_go.py::test_a_path_to_no_go_does_not_resolve",
-  "tests/prove/test_go.py::test_a_launcher_that_names_nothing_does_not_resolve[path]",
 ]
 
 # node's options are read with no table of node's: the word after an option that gives itself no
@@ -2535,8 +2545,8 @@ reddens = [
 [[mutation]]
 name = "a runner's report options go after --"
 file = "src/stayfixed/profiles/programs.py"
-before = "    cut = list(args).index(SEPARATOR) if SEPARATOR in args else len(args)"
-after = "    cut = len(args)"
+before = "    return list(args).index(SEPARATOR) if SEPARATOR in args else len(args)"
+after = "    return len(args)"
 reddens = [
   "tests/prove/test_pytest.py::test_the_report_options_go_before_a_separator",
   "tests/prove/test_javascript.py::test_the_report_options_go_before_a_separator",
@@ -2686,17 +2696,7 @@ file = "src/stayfixed/profiles/javascript/adapters.py"
 before = "    if package is None or _manifest_bin(package, name) != target:"
 after = "    if package is None:"
 reddens = [
-  "tests/prove/test_javascript.py::test_a_runner_named_by_a_path_that_is_no_link_is_never_run",
-]
-
-[[mutation]]
-name = "a runner on PATH that is no link is followed as one"
-file = "src/stayfixed/profiles/javascript/adapters.py"
-before = "    if on_path is None or not fsops.is_symlink(on_path):"
-after = "    if on_path is None:"
-reddens = [
-  "tests/prove/test_javascript.py::test_a_runner_on_path_that_is_no_link_runs_unnamed",
-  "tests/prove/test_javascript.py::test_a_runner_named_by_a_path_that_is_no_link_is_never_run",
+  "tests/prove/test_javascript.py::test_a_file_that_is_not_the_package_s_bin_does_not_resolve[node_modules/jest/other.js]",
 ]
 
 [[mutation]]
@@ -2713,8 +2713,8 @@ reddens = [
 [[mutation]]
 name = "the entry-point search reads the directory the command runs in alone"
 file = "src/stayfixed/profiles/javascript/adapters.py"
-before = "    for directory in (here, *here.parents):"
-after = "    for directory in (here,):"
+before = "    for directory in (prefix, *prefix.parents):"
+after = "    for directory in (prefix,):"
 reddens = [
   "tests/prove/test_javascript.py::test_npx_s_bin_is_found_from_where_the_command_runs_upward",
 ]
@@ -2722,8 +2722,8 @@ reddens = [
 [[mutation]]
 name = "the entry-point search reads from the top-level down"
 file = "src/stayfixed/profiles/javascript/adapters.py"
-before = "    for directory in (here, *here.parents):"
-after = "    for directory in (*reversed(here.parents), here):"
+before = "    for directory in (prefix, *prefix.parents):"
+after = "    for directory in (*reversed(prefix.parents), prefix):"
 reddens = [
   "tests/prove/test_javascript.py::test_npx_s_bin_is_found_from_where_the_command_runs_upward",
 ]
@@ -2754,11 +2754,11 @@ reddens = ["tests/prove/test_javascript.py::test_vitest_without_run_runs_once"]
 [[mutation]]
 name = "the jest and vitest adapters remove an inherited NODE_OPTIONS"
 file = "src/stayfixed/profiles/javascript/adapters.py"
-before = """        return frozenset()
+before = """        return self._runner.forging
 
     def recognises(self, command: Sequence[str]) -> bool:
         runner = self._runner"""
-after = """        return frozenset({"NODE_OPTIONS"})
+after = """        return {"NODE_OPTIONS": bool, **self._runner.forging}
 
     def recognises(self, command: Sequence[str]) -> bool:
         runner = self._runner"""
@@ -2771,11 +2771,11 @@ reddens = [
 [[mutation]]
 name = "the node --test adapter removes an inherited NODE_OPTIONS"
 file = "src/stayfixed/profiles/javascript/adapters.py"
-before = """        return frozenset()
+before = """        return {}
 
     def recognises(self, command: Sequence[str]) -> bool:
         return ("""
-after = """        return frozenset({"NODE_OPTIONS"})
+after = """        return {"NODE_OPTIONS": bool}
 
     def recognises(self, command: Sequence[str]) -> bool:
         return ("""
@@ -2851,11 +2851,11 @@ reddens = [
 name = "jest's and vitest's watch modes are refused"
 file = "src/stayfixed/profiles/javascript/adapters.py"
 before = '''
-        never = node_never_ends(node_words) or runner.never_ends(args)
+        never = waits or runner.never_ends(args)
         if never is not None:
             return never_ends(never)'''
 after = '''
-        never = node_never_ends(node_words) or runner.never_ends(args)
+        never = waits or runner.never_ends(args)
         if never is not None:
             return Refused(REFUSED_OPTION, never)'''
 reddens = [
@@ -2868,11 +2868,11 @@ reddens = [
 name = "node's watch modes are refused"
 file = "src/stayfixed/profiles/javascript/adapters.py"
 before = '''
-        never = node_never_ends(command[1:])
+        never = node_never_ends(command[1:], inherited)
         if never is not None:
             return never_ends(never)'''
 after = '''
-        never = node_never_ends(command[1:])
+        never = node_never_ends(command[1:], inherited)
         if never is not None:
             return Refused(REFUSED_OPTION, never)'''
 reddens = [
@@ -2886,11 +2886,13 @@ before = '''
         refused = runner.refused(args)
         if refused is not None:
             return Refused(REFUSED_OPTION, refused)
-        never = node_never_ends(node_words) or runner.never_ends(args)
+        waits = node_never_ends(node_words, environ.get(NODE_OPTIONS, ""))
+        never = waits or runner.never_ends(args)
         if never is not None:
             return never_ends(never)'''
 after = '''
-        never = node_never_ends(node_words) or runner.never_ends(args)
+        waits = node_never_ends(node_words, environ.get(NODE_OPTIONS, ""))
+        never = waits or runner.never_ends(args)
         if never is not None:
             return never_ends(never)
         refused = runner.refused(args)
@@ -2914,25 +2916,25 @@ file = "src/stayfixed/profiles/javascript/adapters.py"
 before = '    return head + "".join(part[:1].upper() + part[1:] for part in rest)'
 after = "    return name"
 reddens = [
-  "tests/prove/test_javascript.py::test_each_report_steering_option_is_refused[jest:--output-file_x]",
+  "tests/prove/test_javascript.py::test_each_report_steering_option_is_refused[jest:--update-snapshot]",
   "tests/prove/test_javascript.py::test_each_report_steering_option_is_refused[vitest:--merge-reports=.vitest-reports]",
 ]
 
 # vitest's closed list, drawn from the sweep of vitest 5.0.5's options.
 [[mutation]]
-name = "vitest's nested --outputFile.json is read as another option"
+name = "vitest's nested --update.x is read as another option"
 file = "src/stayfixed/profiles/javascript/adapters.py"
 before = '''    head, dot, _ = camel.partition(".")'''
 after = '''    head, dot = camel, ""'''
 reddens = [
-  "tests/prove/test_javascript.py::test_each_report_steering_option_is_refused[vitest:vitest_run_--outputFile.json=x]",
+  "tests/prove/test_javascript.py::test_each_report_steering_option_is_refused[vitest:--update.all]",
 ]
 
 [[mutation]]
 name = "vitest's --mergeReports is left off its refusals"
 file = "src/stayfixed/profiles/javascript/adapters.py"
-before = '_VITEST_REPORT_OPTIONS = frozenset({"outputFile", "mergeReports"})'
-after = '_VITEST_REPORT_OPTIONS = frozenset({"outputFile"})'
+before = '_VITEST_REPORT_OPTIONS = frozenset({"mergeReports"})'
+after = '_VITEST_REPORT_OPTIONS: frozenset[str] = frozenset()'
 reddens = ["tests/prove/test_javascript.py::test_each_report_steering_option_is_refused[vitest:--mergeReports]"]
 
 [[mutation]]
@@ -2965,27 +2967,6 @@ reddens = [
   "tests/prove/test_javascript.py::test_vitest_reads_each_form_as_its_parser_does[-u_none]",
 ]
 
-# node pairs reporters with destinations in order: one the command gives more of than of the
-# other stops node before any test runs, and the adapter's report is never written.
-[[mutation]]
-name = "node --test lets an unpaired reporter through"
-file = "src/stayfixed/profiles/javascript/adapters.py"
-before = "    if reporters != destinations:"
-after = "    if False:"
-reddens = [
-  "tests/prove/test_javascript.py::test_each_report_steering_option_is_refused[node-test:--test_--test-reporter=dot]",
-  "tests/prove/test_javascript.py::test_each_report_steering_option_is_refused[node-test:--test_--test-reporter-destination=x]",
-]
-
-[[mutation]]
-name = "node --test refuses a reporter given its own destination"
-file = "src/stayfixed/profiles/javascript/adapters.py"
-before = "    if reporters != destinations:"
-after = "    if reporters or destinations:"
-reddens = [
-  "tests/prove/test_javascript.py::test_every_other_option_is_free[node-test:--test_--test-reporter=spec_--test-reporter-destination=stdout]",
-]
-
 [[mutation]]
 name = "node --test's --test-update-snapshots is left off its refusals"
 file = "src/stayfixed/profiles/javascript/adapters.py"
@@ -3010,28 +2991,16 @@ file = "src/stayfixed/profiles/javascript/adapters.py"
 before = '    return word.partition("=")[0].replace("_", "-")'
 after = '    return word.partition("=")[0]'
 reddens = [
-  "tests/prove/test_javascript.py::test_each_report_steering_option_is_refused[node-test:--test_--test_reporter=dot]",
+  "tests/prove/test_javascript.py::test_each_report_steering_option_is_refused[node-test:--test_--test_update_snapshots]",
 ]
 
 [[mutation]]
 name = "node --test's refusals read only the options before its first file"
 file = "src/stayfixed/profiles/javascript/adapters.py"
-before = '        refused = node_refused(command[1:], environ.get(_NODE_OPTIONS, ""))'
-after = '        refused = node_refused(node_options(command[1:]), environ.get(_NODE_OPTIONS, ""))'
+before = "        refused = node_refused(command[1:], inherited)"
+after = "        refused = node_refused(node_options(command[1:]), inherited)"
 reddens = [
-  "tests/prove/test_javascript.py::test_each_report_steering_option_is_refused[node-test:--test_a.test.mjs_b.test.mjs_--test-reporter=dot]",
-]
-
-# node pairs `NODE_OPTIONS`' reporters with the command's: an unpaired one there stops it as one on
-# the command line does.
-[[mutation]]
-name = "node --test's reporter count leaves NODE_OPTIONS out"
-file = "src/stayfixed/profiles/javascript/adapters.py"
-before = "    names += [_node_name(word) for word in node_options.split()]"
-after = ""
-reddens = [
-  "tests/prove/test_javascript.py::test_an_unpaired_reporter_in_node_options_is_refused[--test-reporter=spec---test-reporter]",
-  "tests/prove/test_javascript.py::test_an_assigned_unpaired_reporter_in_node_options_is_refused",
+  "tests/prove/test_javascript.py::test_each_report_steering_option_is_refused[node-test:--test_a.test.mjs_b.test.mjs_--test-rerun-failures=s.json]",
 ]
 
 [[mutation]]
@@ -3056,22 +3025,76 @@ reddens = [
 ]
 
 [[mutation]]
-name = "node's whole-file testcase is dropped though it failed"
+name = "node --test's refusals leave NODE_OPTIONS out"
 file = "src/stayfixed/profiles/javascript/adapters.py"
-before = '        if not name or attributes.get("classname") != "test" or "failure" in attributes:'
-after = '        if not name or attributes.get("classname") != "test":'
+before = "    names = [_node_name(word) for word in (*options(words), *node_options_words(node_options))]"
+after = "    names = [_node_name(word) for word in options(words)]"
 reddens = [
-  "tests/prove/test_javascript.py::test_the_whole_file_testcase_is_dropped_unless_it_failed[node-load-failure.xml]",
-  "tests/prove/test_javascript.py::test_the_whole_file_testcase_is_dropped_unless_it_failed[node24-load-failure.xml]",
-  "tests/prove/test_javascript.py::test_whole_file_reads_the_attributes_and_the_run_s_directory[failed]",
-  "tests/prove/test_javascript.py::test_whole_file_reads_the_attributes_and_the_run_s_directory[no-file-attribute-failed]",
+  "tests/prove/test_javascript.py::test_a_rerun_of_failures_in_node_options_is_refused[plain]",
+  "tests/prove/test_javascript.py::test_an_assigned_rerun_of_failures_in_node_options_is_refused",
 ]
+
+# node splits `NODE_OPTIONS` at spaces outside double quotes, and drops the quotes.
+[[mutation]]
+name = "NODE_OPTIONS' quotes are kept in its words"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = """        elif character == '"':
+            quoted = not quoted
+            word = word if word is not None else []
+            continue"""
+after = """        elif character == '"':
+            quoted = not quoted"""
+reddens = ["tests/prove/test_javascript.py::test_a_rerun_of_failures_in_node_options_is_refused[quoted]"]
+
+# A path to no file `node --test`'s `drop` cannot ask about (`EACCES`) names no run's file: the
+# testcase is counted, never an internal error.
+[[mutation]]
+name = "node's whole-file testcase lets an unaskable path through"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = """        except OSError:
+            return False
+
+    return drop"""
+after = """        except ValueError:
+            return False
+
+    return drop"""
+reddens = ["tests/prove/test_javascript.py::test_a_whole_file_name_that_cannot_be_asked_about_is_counted"]
+
+# vitest reads `UPDATE_SNAPSHOT` as `--update`; a rewriting value is a forging one.
+[[mutation]]
+name = "vitest's UPDATE_SNAPSHOT is left off its forging set"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = "    forging={_VITEST_UPDATE_VARIABLE: snapshots_rewritten},"
+after = "    forging={},"
+reddens = [
+  "tests/prove/test_javascript.py::test_an_assigned_update_snapshot_is_refused[all]",
+  "tests/prove/test_javascript.py::test_the_adapters_this_stack_ships",
+]
+
+[[mutation]]
+name = "vitest's UPDATE_SNAPSHOT reads every value as rewriting"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = "    return value not in _VITEST_KEEPS_SNAPSHOTS"
+after = "    return True"
+reddens = [
+  "tests/prove/test_javascript.py::test_vitest_s_update_snapshot_variable_rewrites_unless_it_keeps_them[none-False]",
+  "tests/prove/test_javascript.py::test_an_assigned_update_snapshot_is_refused[all]",
+]
+
+# A path to the runner that reaches no package's entry (pnpm's `sh` shim) runs as typed.
+[[mutation]]
+name = "a path to the runner that is no link to its entry is not found"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = "        return _Typed((command[0],), (), args, _linked(command[0], runner.name, cwd, environ))"
+after = "        return Unresolved(ENTRY_NOT_FOUND)"
+reddens = ["tests/prove/test_javascript.py::test_a_runner_named_by_a_path_that_is_no_link_runs_as_typed"]
 
 [[mutation]]
 name = "node's whole-file testcase is any classname's"
 file = "src/stayfixed/profiles/javascript/adapters.py"
-before = '        if not name or attributes.get("classname") != "test" or "failure" in attributes:'
-after = '        if not name or "failure" in attributes:'
+before = '        if not name or attributes.get("classname") != "test":'
+after = '        if not name:'
 reddens = [
   "tests/prove/test_javascript.py::test_whole_file_reads_the_attributes_and_the_run_s_directory[another-classname]",
   "tests/prove/test_javascript.py::test_whole_file_reads_the_attributes_and_the_run_s_directory[no-file-attribute-another-classname]",
@@ -3263,7 +3286,6 @@ before = "    base = cwd / roots[-1] if roots else cwd"
 after = "    base = cwd / roots[0] if roots else cwd"
 reddens = ["tests/prove/test_javascript.py::test_vitest_reads_its_configuration_from_its_root[the-last-root]"]
 
-
 # --- The go test adapter (`profiles/go/adapters.py`) ----------------------------------------------
 # Each reddens a test that runs no `go`: a plan, or a run through `prove` with a shell script
 # standing in for `go` that prints a recorded event stream.
@@ -3445,21 +3467,6 @@ before = 'NO_TEST_RUN = "no-test-run"'
 after = 'NO_TEST_RUN = "no-report"'
 reddens = ["tests/test_documents.py::test_every_reason_constant_is_documented"]
 
-# An unresolved pytest plan says what was looked for, and jest's or vitest's fits the line whole.
-[[mutation]]
-name = "the pytest adapter's unresolved entry names nothing"
-file = "src/stayfixed/profiles/python/adapters.py"
-before = "            return Unresolved(ENTRY_NOT_FOUND, template.format(program=first))"
-after = "            return Unresolved(ENTRY_NOT_FOUND)"
-reddens = ["tests/prove/test_pytest.py::test_an_entry_point_not_on_path_does_not_resolve[command0-launch0-no pytest on PATH]"]
-
-[[mutation]]
-name = "the pytest adapter names a path that names nothing as looked up on PATH"
-file = "src/stayfixed/profiles/python/adapters.py"
-before = "            template = _NO_FILE if os.sep in first else _NOT_ON_PATH"
-after = "            template = _NOT_ON_PATH"
-reddens = ["tests/prove/test_pytest.py::test_an_entry_point_not_on_path_does_not_resolve[command4-launch4-no executable file at .venv/bin/pytest]"]
-
 [[mutation]]
 name = "the jest and vitest adapters' unresolved detail passes the line's clip"
 file = "src/stayfixed/profiles/javascript/adapters.py"
@@ -3559,8 +3566,8 @@ reddens = [
 [[mutation]]
 name = "a `.bin` entry that reaches no file is named"
 file = "src/stayfixed/profiles/javascript/adapters.py"
-before = "        if fsops.is_file(candidate):"
-after = "        if fsops.is_symlink(candidate) or fsops.is_file(candidate):"
+before = "        if _reaches(fsops.is_file, candidate):"
+after = "        if fsops.is_symlink(candidate) or _reaches(fsops.is_file, candidate):"
 reddens = ["tests/prove/test_javascript.py::test_npx_names_nothing_where_no_bin_link_is"]
 
 # Behind a launcher what is missing is the launcher: its name, never the bare runner's detail.

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import sys
 from collections.abc import Sequence
 from pathlib import Path
@@ -113,25 +114,57 @@ def test_a_report_older_than_the_run_is_not_proven(tmp_path: Path) -> None:
     # changed-file check dropped -> the stale green report is `proved`.
     (tmp_path / REPORT).write_bytes(JUNIT["pass"])
     got = run(tmp_path, writer("none"))
-    assert (got.verdict, got.reason, got.detail) == (NOT_PROVEN, JUNIT_UNCHANGED, REPORT)
+    # The detail names the file as the run read it, by its realpath. Mutation: none -- the detail
+    # is wording.
+    resolved = os.path.realpath(tmp_path / REPORT)
+    assert (got.verdict, got.reason, got.detail) == (NOT_PROVEN, JUNIT_UNCHANGED, resolved)
     assert got.counts is None
-    assert line(got).startswith(f"not proven: {WORDS[JUNIT_UNCHANGED]}: {clipped(REPORT)};")
+    assert line(got).startswith(f"not proven: {WORDS[JUNIT_UNCHANGED]}: {clipped(resolved)};")
 
 
-@pytest.mark.parametrize("made_by", ["before", "the run"])
-def test_a_symlinked_report_is_not_proven(tmp_path: Path, made_by: str) -> None:
-    # A link the run writes through, or one the run makes to a green report elsewhere. Mutation
-    # (declared): any file the run changed read -> the link the run made is `proved`.
-    green = tmp_path / "green.xml"
-    green.write_bytes(JUNIT["pass"])
-    if made_by == "before":
-        (tmp_path / REPORT).symlink_to(green)
-        command = writer("pass")
-    else:
-        command = ["sh", "-c", f"ln -s green.xml {REPORT}"]
+def test_a_link_the_run_points_at_a_fresh_report_is_counted(tmp_path: Path) -> None:
+    # A runner that writes `run-<stamp>.xml` and points `latest.xml` at it: the path is followed
+    # to the file it reaches, which the run wrote. Mutation (declared): the path's state taken
+    # without following the link -> the run's link is no regular file, `junit-unchanged`.
+    (tmp_path / "old.xml").write_bytes(JUNIT["fail"])
+    (tmp_path / REPORT).symlink_to("old.xml")
+    fresh = shlex.join(writer("pass", at="fresh.xml"))
+    command = ["sh", "-c", f"{fresh} && ln -sfn fresh.xml {REPORT}"]
     got = run(tmp_path, command)
     assert (tmp_path / REPORT).is_symlink()
-    assert (got.verdict, got.reason) == (NOT_PROVEN, JUNIT_UNCHANGED)
+    assert (got.verdict, got.counts) == (PROVED, Counts(2, 0, 0))
+
+
+def test_a_report_written_through_a_link_is_counted(tmp_path: Path) -> None:
+    # The run writes its report through a link that was there before it: the file the link
+    # reaches is the one it rewrote.
+    green = tmp_path / "green.xml"
+    green.write_bytes(JUNIT["fail"])
+    (tmp_path / REPORT).symlink_to(green)
+    got = run(tmp_path, writer("pass"))
+    assert (got.verdict, got.counts) == (PROVED, Counts(2, 0, 0))
+
+
+def test_a_link_to_a_stale_report_the_run_never_touched_is_not_proven(tmp_path: Path) -> None:
+    # Mutation (declared): the changed-file check dropped -> the stale green report is `proved`.
+    green = tmp_path / "green.xml"
+    green.write_bytes(JUNIT["pass"])
+    (tmp_path / REPORT).symlink_to(green)
+    got = run(tmp_path, writer("none"))
+    assert (got.verdict, got.reason, got.detail) == (
+        NOT_PROVEN,
+        JUNIT_UNCHANGED,
+        os.path.realpath(green),
+    )
+
+
+def test_a_link_the_run_newly_makes_to_a_stale_report_is_the_bound_s(tmp_path: Path) -> None:
+    # A link that was not there before, made to a file that was: nothing before the run tells
+    # it from a fresh report, so it is counted. What a file in the tree can do is the bound's.
+    green = tmp_path / "green.xml"
+    green.write_bytes(JUNIT["pass"])
+    got = run(tmp_path, ["sh", "-c", f"ln -s green.xml {REPORT}"])
+    assert (got.verdict, got.counts) == (PROVED, Counts(2, 0, 0))
 
 
 def test_with_junit_no_adapter_is_consulted(tmp_path: Path) -> None:
@@ -237,9 +270,9 @@ def test_an_interrupted_junit_run_is_not_proven(
     def interrupted(process: object, seconds: float) -> None:
         raise KeyboardInterrupt
 
-    def end(process: object) -> None:
+    def end(process: object, *grace: float) -> None:
         ended.append(1)
-        real_end(process)  # type: ignore[arg-type]
+        real_end(process, *grace)  # type: ignore[arg-type]
 
     real_end = processes.end
     monkeypatch.setattr(processes, "exited", interrupted)

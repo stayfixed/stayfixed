@@ -225,3 +225,22 @@ def test_a_dropped_testcase_that_failed_counts_as_failed(child: str) -> None:
         '<testcase name="b"/><testcase name="c"><skipped/></testcase></testsuite>'
     ).encode()
     assert read_junit(report, drop=lambda attributes: True) == Counts(0, 1, 0)
+
+
+@pytest.mark.parametrize(
+    ("inside", "counts"),
+    [
+        ('<skipped type="todo" message="true"/><failure message="not yet"/>', Counts(1, 0, 1)),
+        ('<failure message="not yet"/><skipped type="todo"/>', Counts(1, 0, 1)),
+        ('<skipped type="todo" message="reason"/>', Counts(1, 0, 1)),
+        ('<skipped type="pytest.skip"/><failure/>', Counts(1, 1, 0)),
+    ],
+    ids=["failing", "failure-first", "passing", "another-skip"],
+)
+def test_a_todo_testcase_is_skipped_whatever_else_stands_in_it(inside: str, counts: Counts) -> None:
+    # Node 24.10.0's JUnit reporter writes a `todo` test that fails as `<skipped type="todo"/>`
+    # beside its `<failure>`, and node itself counts it as neither (its summary says `fail 0`, and
+    # it exits 0): it is skipped here too. A failure beside any other skip is still a failure.
+    # Mutation (declared): the todo skip not read -> the failing todo counts as failed.
+    report = f'<testsuites><testcase name="real"/><testcase name="later">{inside}</testcase>'
+    assert read_junit(f"{report}</testsuites>".encode()) == counts

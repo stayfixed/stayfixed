@@ -29,6 +29,7 @@ from stayfixed.profiles.python.adapters import (
     NAME,
     REPORT_NAME,
     PytestAdapter,
+    optimises,
 )
 from stayfixed.profiles.runners import (
     ENTRY_NOT_FOUND,
@@ -110,7 +111,7 @@ def planned(
     launch: Sequence[str] = (),
 ) -> Plan | Refused | Unresolved:
     return PytestAdapter().plan(
-        launch, command, cwd=cwd, root=cwd, scratch=cwd / "scratch", environ={"PATH": path}
+        launch, command, cwd=cwd, scratch=cwd / "scratch", environ={"PATH": path}
     )
 
 
@@ -175,7 +176,34 @@ def test_a_command_that_runs_no_pytest_is_not_recognised(command: list[str]) -> 
 
 def test_the_adapters_this_stack_ships() -> None:
     assert [adapter.name for adapter in ADAPTERS] == [NAME] == ["pytest"]
-    assert PytestAdapter().forging == FORGING == frozenset({"PYTHONOPTIMIZE"})
+    assert PytestAdapter().forging == FORGING == {"PYTHONOPTIMIZE": optimises}
+
+
+@pytest.mark.parametrize(
+    ("value", "optimised"),
+    [
+        ("1", True),
+        ("2", True),
+        ("abc", True),
+        ("-1", True),
+        ("0 ", True),
+        ("0_0", True),
+        (" ", True),
+        ("", False),
+        ("0", False),
+        ("00", False),
+        (" 0", False),
+        ("+0", False),
+        ("-0", False),
+        ("\t0", False),
+    ],
+)
+def test_pythonoptimize_optimises_as_cpython_reads_it(value: str, optimised: bool) -> None:
+    # Measured on 3.14.7 (`sys.flags.optimize` under each value): the empty value is unset, and a
+    # value `strtol` reads whole as zero, after white space and a sign, is level 0; any other
+    # value optimises. Mutations (declared): the zero rule dropped -> `0` is refused; the empty
+    # value read as one -> it is refused.
+    assert optimises(value) is optimised
 
 
 # --- How a run is planned -------------------------------------------------------------------
@@ -301,8 +329,7 @@ def test_an_entry_point_not_on_path_does_not_resolve(
     tmp_path: Path, command: list[str], launch: tuple[str, ...], detail: str
 ) -> None:
     # The detail says what was looked for, and how: a word holding a `/` is never looked up on
-    # `PATH`. Mutations (declared): the detail left off -> empty; a path worded as looked up on
-    # `PATH` -> the last case reads "no .venv/bin/pytest on PATH".
+    # `PATH` (`programs.not_found`). Mutation: none -- the detail is wording.
     assert planned(command, tmp_path, path=str(tmp_path / "empty"), launch=launch) == Unresolved(
         ENTRY_NOT_FOUND, detail
     )
@@ -435,7 +462,6 @@ def test_the_configuration_file_the_command_names_is_among_the_configs(tmp_path:
         (),
         ("pytest", *args),
         cwd=root / "sub",
-        root=root,
         scratch=tmp_path / "scratch",
         environ={"PATH": str(bin_)},
     )
@@ -475,13 +501,20 @@ def test_a_refused_option_is_named_on_the_receipt(tmp_path: Path) -> None:
     "argv",
     [
         ["PYTHONOPTIMIZE=1", "pytest"],
-        ["uv", "run", "PYTHONOPTIMIZE=2", "python", "-m", "pytest"],
+        ["uv", "run", "env", "PYTHONOPTIMIZE=2", "python", "-m", "pytest"],
         ["env", "PYTHONOPTIMIZE=1", "uv", "run", "-m", "pytest"],
     ],
 )
 def test_an_assigned_pythonoptimize_is_refused(tmp_path: Path, argv: list[str]) -> None:
     got = _proved_here(argv, tmp_path, {"PATH": ""})
     assert (got.verdict, got.reason, got.detail) == (REFUSED, ASSIGNED_FORGING, "PYTHONOPTIMIZE")
+
+
+@pytest.mark.parametrize("value", ["0", ""])
+def test_an_assigned_pythonoptimize_that_optimises_nothing_runs(tmp_path: Path, value: str) -> None:
+    # Level 0 runs every `assert`: the run goes ahead, here to a `pytest` on no `PATH` entry.
+    got = _proved_here([f"PYTHONOPTIMIZE={value}", "pytest"], tmp_path, {"PATH": ""})
+    assert (got.verdict, got.reason) == (NOT_PROVEN, ENTRY_NOT_FOUND)
 
 
 @pytest.mark.parametrize(
@@ -620,6 +653,10 @@ def test_a_failing_assert_is_not_turned_off(tmp_path: Path) -> None:
     assert (got.verdict, got.reason, got.detail) == (REFUSED, ASSIGNED_FORGING, "PYTHONOPTIMIZE")
     got = real(project, "pytest", "-q", PYTHONOPTIMIZE="1")
     assert (got.verdict, got.reason, got.counts) == (FAILED, FAILING, Counts(0, 1, 0))
+    assert got.scrubbed == ("PYTHONOPTIMIZE",)
+    # Level 0 asserts as no optimisation does: kept, and the failing assert fails.
+    got = real(project, "pytest", "-q", PYTHONOPTIMIZE="0")
+    assert (got.verdict, got.reason, got.scrubbed) == (FAILED, FAILING, ())
 
 
 @needs_runner("pytest")

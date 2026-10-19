@@ -18,6 +18,7 @@ import os
 import signal
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import types
@@ -47,6 +48,7 @@ from stayfixed.prove.run import (
     NONE_RAN,
     NOT_RECOGNISED,
     NOT_STARTED,
+    STRANDED,
     TIMED_OUT,
     WORDS,
     Receipt,
@@ -57,7 +59,7 @@ from stayfixed.prove.run import (
     prove,
 )
 from tests.gitfixture import git
-from tests.prove.stand_in import JUNIT, LATE_AFTER_SECONDS, NAME, StandIn, held
+from tests.prove.stand_in import JUNIT, LATE_AFTER_SECONDS, NAME, StandIn, forges, held
 
 PROVED, FAILED, NOT_PROVEN, REFUSED = (
     Verdict.PROVED,
@@ -202,7 +204,6 @@ def test_an_unrecognised_command_is_not_proven(tmp_path: Path, argv: list[str]) 
         ["uv", "run", "env", "FORGE=x", NAME],
         ["env", "A=1", "uv", "run", "env", "FORGE=x", NAME],
         ["FORGE=x", "uv", "run", NAME],
-        ["uv", "run", "FORGE=x", NAME],
     ],
 )
 def test_an_assigned_forging_variable_is_refused(tmp_path: Path, argv: list[str]) -> None:
@@ -215,6 +216,40 @@ def test_an_assigned_forging_variable_is_refused(tmp_path: Path, argv: list[str]
     assert got.detail == "FORGE"
     assert EXIT[got.verdict] == 2
     assert adapter.seen == []  # refused before anything was planned or run
+
+
+def test_an_assigned_value_that_forges_nothing_reaches_the_runner(tmp_path: Path) -> None:
+    # The adapter's test of the value decides, not the name alone (`PYTHONOPTIMIZE=0` optimises
+    # nothing). Mutation (declared): the value's test left unasked -> the stand-in's `FORGE=keep`
+    # is refused.
+    got = run(tmp_path, "FORGE=keep", NAME, "--expect-env", "FORGE=keep")
+    assert (got.verdict, got.reason) == (PROVED, "")
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["uv", "run", "TYPED=yes", NAME],
+        ["uv", "run", "--", "TYPED=yes", NAME],
+        ["env", "A=1", "uv", "run", "TYPED=yes", "B=2", NAME],
+        ["uv", "run", "env", "A=1", "uv", "run", "TYPED=yes", NAME],
+    ],
+)
+def test_an_assignment_right_after_a_launcher_is_not_recognised(
+    tmp_path: Path, argv: list[str]
+) -> None:
+    # Typed as it is, uv runs `TYPED=yes` as its program (uv 0.12.19: "Failed to spawn", exit 2),
+    # and no test runs; read as an assignment, the run would be `proved` for a command that runs
+    # nothing. Mutation (declared): the stranded assignments left unread -> the stand-in runs
+    # and is `proved`.
+    adapter = StandIn()
+    environ = with_uv(fake_uv(tmp_path / "bin"))
+    got = run(tmp_path, *argv, adapter=adapter, environ=environ)
+    assert (got.verdict, got.reason) == (NOT_PROVEN, NOT_RECOGNISED)
+    # Mutation: none -- the detail is wording.
+    assert got.detail == STRANDED.format(name="TYPED")
+    assert "yes" not in line(got)
+    assert adapter.seen == []
 
 
 @pytest.mark.parametrize(
@@ -237,7 +272,7 @@ def test_an_assigned_variable_outside_the_forging_set_reaches_the_runner(
 
 
 def test_an_inherited_forging_variable_is_removed_and_counted(tmp_path: Path) -> None:
-    adapter = StandIn(forging=frozenset({"SCRUBBED"}))
+    adapter = StandIn(forging={"SCRUBBED": forges})
     environ = {**os.environ, "SCRUBBED": "1", "KEPT": "1"}
     got = run(
         tmp_path,
@@ -258,7 +293,7 @@ def test_an_inherited_forging_variable_is_removed_and_counted(tmp_path: Path) ->
 
 
 def test_a_forging_variable_the_run_did_not_inherit_is_not_named(tmp_path: Path) -> None:
-    adapter = StandIn(forging=frozenset({"SCRUBBED"}))
+    adapter = StandIn(forging={"SCRUBBED": forges})
     environ = {name: value for name, value in os.environ.items() if name != "SCRUBBED"}
     got = run(tmp_path, NAME, adapter=adapter, environ=environ)
     assert (got.verdict, got.scrubbed) == (PROVED, ())
@@ -269,10 +304,14 @@ def test_the_run_s_environment_is_the_caller_s_less_forging_then_the_assignments
     # As a shell builds it: an assignment wins over the inherited value, and the names lost are
     # the inherited ones alone. Mutation (declared): the assignments put under the inherited
     # values -> `KEPT` is `1`.
+    # An inherited value its test says forges nothing is kept. Mutation (declared): the value's
+    # test left unasked when scrubbing -> `SAFE=keep` is removed.
     env, scrubbed = environment(
-        {"KEPT": "1", "FORGE": "x", "OTHER": "o"}, frozenset({"FORGE", "ABSENT"}), {"KEPT": "2"}
+        {"KEPT": "1", "FORGE": "x", "OTHER": "o", "SAFE": "keep"},
+        {"FORGE": forges, "ABSENT": forges, "SAFE": forges},
+        {"KEPT": "2"},
     )
-    assert env == {"KEPT": "2", "OTHER": "o"}
+    assert env == {"KEPT": "2", "OTHER": "o", "SAFE": "keep"}
     assert scrubbed == ("FORGE",)
 
 
@@ -281,7 +320,7 @@ def test_the_plan_is_made_in_the_run_s_own_environment(tmp_path: Path) -> None:
     # assignment of `PATH` included, as a shell would, and never sees a variable the run does not
     # get. Mutations (declared): the plan handed stayfixed's own environment -> it sees another
     # `PATH`; the forging set kept in it -> it sees `SCRUBBED`.
-    adapter = StandIn(forging=frozenset({"SCRUBBED"}))
+    adapter = StandIn(forging={"SCRUBBED": forges})
     environ = {**os.environ, "PATH": "/inherited", "SCRUBBED": "1"}
     got = run(
         tmp_path,
@@ -344,7 +383,6 @@ def test_the_run_is_in_cwd_and_the_project_is_its_toplevel(tmp_path: Path) -> No
     adapter = StandIn()
     got = run(package, NAME, "--expect-cwd", str(package), adapter=adapter)
     assert got.verdict == PROVED
-    assert [seen_root for seen_root, _ in adapter.seen] == [root]
     assert got.commit == git(root, "rev-parse", "HEAD").strip()
     assert got.configs == ("stand-in.toml",)
 
@@ -355,7 +393,6 @@ def test_outside_a_repository_the_project_is_the_directory_itself(tmp_path: Path
     adapter = StandIn()
     got = run(plain, NAME, "--expect-cwd", str(plain), adapter=adapter)
     assert got.verdict == PROVED
-    assert [seen_root for seen_root, _ in adapter.seen] == [plain]
     assert (got.commit, got.dirty_before, got.dirty_after) == (None, None, None)
     assert (got.untracked, got.configs) == ((), ())
 
@@ -491,7 +528,6 @@ def test_the_command_is_judged_where_its_launcher_runs_it(
     real = Path(os.path.realpath(other))
     assert got.verdict == PROVED, got
     assert adapter.cwds == [real]
-    assert [seen_root for seen_root, _ in adapter.seen] == [real]
     assert got.directory == str(real)
     assert got.commit == git(other, "rev-parse", "HEAD").strip()
     assert got.configs == ("stand-in.toml",)
@@ -636,6 +672,19 @@ class _Ending:
         raise KeyboardInterrupt
 
 
+@pytest.fixture
+def private_tempdir(
+    tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+) -> Path:
+    """`tempfile`'s directory for this test alone, beside its `tmp_path` and never inside it: a
+    scratch directory a run leaves there, as under the mutation of its removal the oracle applies,
+    goes with pytest's own temporary directories and never into the developer's `TMPDIR`."""
+    where = tmp_path_factory.mktemp("tempdir")
+    monkeypatch.setattr(tempfile, "tempdir", str(where))
+    return where
+
+
+@pytest.mark.usefixtures("private_tempdir")
 @pytest.mark.parametrize("ending", ["interrupt", "timeout", "terminate", "interrupt-teed"])
 def test_an_ended_run_is_not_proven_and_leaves_no_scratch(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, ending: str
@@ -658,11 +707,12 @@ def test_an_ended_run_is_not_proven_and_leaves_no_scratch(
     assert (got.verdict, got.reason) == (NOT_PROVEN, expected)
     assert fake.asked == [600]  # the run's own bound is the one its wait was given
     assert started.exists()
-    [(_, scratch)] = adapter.seen
+    [scratch] = adapter.seen
     assert not scratch.exists()
     assert ended_before_late(late)
 
 
+@pytest.mark.usefixtures("private_tempdir")
 def test_a_fault_in_the_wait_still_ends_the_group_and_reaches_the_caller(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -673,7 +723,7 @@ def test_a_fault_in_the_wait_still_ends_the_group_and_reaches_the_caller(
     adapter = StandIn()
     with pytest.raises(RuntimeError):
         run(tmp_path, NAME, "--hang", str(started), str(late), adapter=adapter)
-    [(_, scratch)] = adapter.seen
+    [scratch] = adapter.seen
     assert not scratch.exists()
     assert ended_before_late(late)
 
@@ -711,11 +761,11 @@ def test_an_interrupt_anywhere_in_the_run_ends_it_not_proven(
         reap = processes.kill_group
         calls: list[object] = []
 
-        def kill_group(process: subprocess.Popen[bytes]) -> None:
+        def kill_group(process: subprocess.Popen[bytes], *signum: int) -> None:
             calls.append(process)
             if len(calls) == 1:
                 stop()
-            reap(process)
+            reap(process, *signum)
 
         monkeypatch.setattr(processes, "kill_group", kill_group)
     before = signal.getsignal(signal.SIGTERM)
@@ -727,7 +777,7 @@ def test_an_interrupt_anywhere_in_the_run_ends_it_not_proven(
         pytest.fail("the interrupt escaped prove")
     assert (got.verdict, got.reason) == (NOT_PROVEN, INTERRUPTED)
     assert signal.getsignal(signal.SIGTERM) is before
-    [(_, scratch)] = adapter.seen
+    [scratch] = adapter.seen
     assert not scratch.exists()
     if where == "reap":
         assert ended_before_late(late)
@@ -767,7 +817,7 @@ def test_a_plan_whose_program_is_not_absolute_is_a_defect_and_raises(tmp_path: P
     adapter = StandIn(relative=True)
     with pytest.raises(ValueError, match="not absolute"):
         run(tmp_path, NAME, adapter=adapter)
-    [(_, scratch)] = adapter.seen
+    [scratch] = adapter.seen
     assert not scratch.exists()
 
 
@@ -782,7 +832,7 @@ def test_a_plan_whose_report_lies_outside_its_scratch_is_a_defect_and_raises(
     (tmp_path / "elsewhere").mkdir()
     with pytest.raises(ValueError, match="outside its scratch directory"):
         run(tmp_path, NAME, adapter=adapter)
-    [(_, scratch)] = adapter.seen
+    [scratch] = adapter.seen
     assert not scratch.exists()
     assert not (tmp_path / "elsewhere" / "report").exists()
 
@@ -1011,13 +1061,14 @@ def test_the_line_marks_a_runner_no_adapter_resolved() -> None:
     assert "not verified" not in line(dataclasses.replace(receipt, verified=True))
 
 
+@pytest.mark.usefixtures("private_tempdir")
 @pytest.mark.parametrize("verdict_report", ["pass", "none", "fail"])
 def test_the_scratch_directory_is_removed_on_every_path(
     tmp_path: Path, verdict_report: str
 ) -> None:
     adapter = StandIn()
     run(tmp_path, NAME, "--report", verdict_report, adapter=adapter)
-    [(_, scratch)] = adapter.seen
+    [scratch] = adapter.seen
     assert not scratch.exists()
     assert not scratch.is_relative_to(tmp_path)
 
