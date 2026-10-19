@@ -23,7 +23,7 @@ import os
 import struct
 from collections.abc import Iterable, Mapping, Sequence
 from contextlib import ExitStack
-from itertools import pairwise
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -34,7 +34,19 @@ if TYPE_CHECKING:
     from stayfixed.profiles.hints import RedRunHint
 
 _PYTEST = "pytest"
+# The two names pytest's console script is installed under.
+_PYTEST_SCRIPTS = frozenset({_PYTEST, "py.test"})
 _PYTHON_ARGV0_PREFIX = "python"
+_MODULE = "-m"
+# `poetry run`, read through as a launcher: the words after it are the command it runs.
+_POETRY = ("poetry", "run")
+_SEPARATOR = "--"
+# The interpreter's own options that may stand before `-m pytest`: those that take no value, one
+# word or several fused (`-bB`), and the two that take one, fused (`-Wdefault`) or as the next
+# word. Any other word there -- a script, `-c`, `-`, an option this list does not hold -- means
+# the interpreter runs something else, which `pytest_command` never reads as a pytest run.
+_INTERPRETER_FLAGS = frozenset("bBdEIOPqsSuvR")
+_INTERPRETER_VALUED = frozenset({"-W", "-X"})
 # PEP 552: every .pyc opens with a 4-byte magic, then a 4-byte little-endian flags word, then
 # four more bytes whose MEANING is decided by bit 0 of those flags.
 #
@@ -221,28 +233,80 @@ def _stale_bytecode(roots: Iterable[Path]) -> int | None:
     return stale
 
 
+@dataclass(frozen=True)
+class PytestCommand:
+    """One simple command that runs pytest, read into its parts.
+
+    `launcher` is `poetry run` (with the `--` after it, where the command spells one) as typed,
+    or nothing; `program` is the word that names pytest's console script or, where `module`, the
+    interpreter that is handed `-m pytest`, as typed; `options` are that interpreter's own
+    options before `-m`; `args` are pytest's.
+    """
+
+    launcher: tuple[str, ...]
+    program: str
+    module: bool
+    options: tuple[str, ...]
+    args: tuple[str, ...]
+
+
+def _interpreter_option(words: Sequence[str], index: int) -> int:
+    """How many words the interpreter's option at `words[index]` takes, its value included; 0
+    where that word is no option `_INTERPRETER_FLAGS` or `_INTERPRETER_VALUED` holds."""
+    word = words[index]
+    if word in _INTERPRETER_VALUED:
+        return 2 if index + 1 < len(words) else 0
+    if word[:2] in _INTERPRETER_VALUED:
+        return 1
+    if len(word) > 1 and word[0] == "-" and all(flag in _INTERPRETER_FLAGS for flag in word[1:]):
+        return 1
+    return 0
+
+
+def pytest_command(argv: Sequence[str]) -> PytestCommand | None:
+    """`argv` read as a pytest run, or `None` where it runs no pytest: pytest's console script
+    (`pytest`, `py.test`), or an interpreter (`python`, `python3`, `python3.13`, ...) given
+    `-m pytest`, adjacent or fused as `-mpytest`, after its own options alone; either behind
+    `poetry run`. The program is anchored on the first word, never found by a substring test
+    against text that merely names it.
+
+    Requiring the `-m` shape's argv0 to itself look like a Python interpreter is cheap
+    insurance: "pytest" is a short enough word that an unrelated program taking it as some
+    other flag's value is not implausible. Under-reading is the safe direction for both callers,
+    the warn-only hint and `prove`, where a command nothing recognises is `not proven`.
+    """
+    words = tuple(argv)
+    launcher: tuple[str, ...] = ()
+    if len(words) > 1 and (Path(words[0]).name, words[1]) == _POETRY:
+        cut = 3 if words[2:3] == (_SEPARATOR,) else 2
+        launcher, words = words[:cut], words[cut:]
+    if not words:
+        return None
+    argv0 = Path(words[0]).name
+    if argv0 in _PYTEST_SCRIPTS:
+        return PytestCommand(launcher, words[0], False, (), words[1:])
+    if not argv0.startswith(_PYTHON_ARGV0_PREFIX):
+        return None
+    index = 1
+    while index < len(words):
+        if words[index] == f"{_MODULE}{_PYTEST}":
+            return PytestCommand(launcher, words[0], True, words[1:index], words[index + 1 :])
+        if words[index] == _MODULE:
+            if words[index + 1 : index + 2] != (_PYTEST,):
+                return None
+            return PytestCommand(launcher, words[0], True, words[1:index], words[index + 2 :])
+        taken = _interpreter_option(words, index)
+        if not taken:
+            return None
+        index += taken
+    return None
+
+
 class PythonHint:
     def recognises(self, argv: Sequence[str]) -> bool:
-        """True when this simple command actually invokes pytest -- as its own program, or as a
-        module the interpreter loads (`-m pytest`, adjacent or fused as `-mpytest`) -- never a
-        substring test against text that merely names it.
-
-        Requiring the `-m` shape's argv0 to itself look like a Python interpreter (`python`,
-        `python3`, `python3.13`, ...) is cheap insurance: "pytest" is a short enough word that an
-        unrelated program taking it as some other flag's value is not implausible.
-        """
-        if not argv:
-            return False
-        argv0 = Path(argv[0]).name
-        if argv0 == _PYTEST:
-            return True
-        if not argv0.startswith(_PYTHON_ARGV0_PREFIX):
-            return False
-        if f"-m{_PYTEST}" in argv:
-            return True
-        return any(
-            current == "-m" and following == _PYTEST for current, following in pairwise(argv)
-        )
+        """True when this simple command actually invokes pytest, as `pytest_command` reads one:
+        the one reading of a pytest run, which `prove`'s adapter (`adapters.py`) plans from."""
+        return pytest_command(argv) is not None
 
     def report(self, roots: Sequence[Path]) -> Mapping[str, int] | None:
         stale = _stale_bytecode(roots)

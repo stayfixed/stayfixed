@@ -1210,8 +1210,7 @@ on the installed release:
 | each reader's genuine passing run is `proved`, exit 0, counts equal a literal | `test_each_genuine_passing_run_is_proved_with_exit_0` |
 | a stdout-forged run is `not proven` | `test_a_stdout_forged_run_is_not_proven_with_exit_1` |
 | an empty and an all-skipped run are `failed` (`go test -run NoSuchTest` included) | `test_each_empty_and_all_skipped_run_fails_with_exit_1` |
-| a stand-in runner and each refused forging route are `refused`, exit 2 | `test_each_refused_route_exits_2` |
-| the same variable merely inherited is scrubbed and the run still counted | `test_each_inherited_variable_is_scrubbed_and_counted` |
+| each honest-mistake refusal (snapshot update or rerun of failures, `--setup-plan`/`--setup-only`, an optimised interpreter) is `refused`, exit 2 | `test_each_refused_route_exits_2` |
 
 ---
 
@@ -1289,6 +1288,142 @@ finding changed the plan as below; a finding not named was fixed in the task it 
 Written by Tasks 1, 4, 14 and 15, and by the controller when a wave's implementer reports (its token
 total, its fix rounds) and when the owner answers an open question.
 
+### Open questions, taken on their defaults (controller, 2026-10-18)
+
+The owner's brief for CP1: proceed on each open question's stated default and record it here.
+
+1. **How the real runners run in CI:** the default, a `runners` job in `ci.yml` (Task 10), at the
+   pins below.
+2. **Origin normalisation:** the default rule (Task 12).
+3. **`--junit` inside the repository:** the default; the file may lie anywhere and counts only when
+   the run created or rewrote it (Task 9).
+
+### Task 1 (controller, 2026-10-18)
+
+Every probe ran under the session scratchpad's `a1/`; the network reached was the npm registry
+(Node, jest, vitest, pnpm) and the Go module proxy (the Go toolchain). Reports are in
+`tests/fixtures/prove/reports/`, the scratch prefix rewritten to `/work`; the README names each
+one's command, version and exit code.
+
+**Pins** (the `runners` job installs these): Node `26.12.0` (npm's `latest`), Go `1.27.2` (the
+proxy's newest), jest `30.5.2`, vitest `5.0.5`; pytest `9.1.1` is the project's own lock. Locally
+also measured: Go `1.24.7` (the image's), same events.
+
+**pytest** (`9.1.1`, CPython 3.13.16, `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1`):
+- xunit1 and xunit2 both write one `testcase` per test; `record_xml_attribute` adds attributes to the
+  `testcase` (xunit1; an experimental-API warning), `record_property` a `properties` child. `&amp;`
+  in an id is written `&amp;amp;`; a non-ASCII id is escaped (`caf\xe9`) unless the project sets the
+  id-escaping ini option.
+- `-k no_such_test`: exit 5, a `testsuite` with `tests="0"` and no `testcase`.
+- `--setup-plan`: **exit 0, and the failing test is reported as passed** (no `failure` child), so the
+  refusal is load-bearing.
+- A `conftest.py` `pytest_configure` setting `config.option.xmlpath` moves the report: the handed
+  path receives nothing and `elsewhere.xml` appears (with and without `tryfirst`) → `NO_REPORT`.
+- **A console script's first line:** `#!<venv>/bin/python` while the interpreter path is short; for a
+  path over 127 bytes (measured: 184) the installer writes `#!/bin/sh` and, on line 2,
+  `'''exec' '<venv>/bin/python3' "$0" "$@"`. Ruling for Task 8 below.
+
+**node --test** (`26.12.0`): the junit reporter writes flat `testcase` elements, `classname="test"`,
+an absolute `file`, and comment totals. An empty directory exits 0 with no `testcase`. A
+non-matching `--test-name-pattern`, a file with no tests and a file calling `process.exit(0)` early
+each yield **one whole-file testcase**: `name` equal to the basename of its `file` attribute,
+`classname="test"`, no child, reported as a pass. A file that fails to load (a syntax error, a throw)
+yields the same whole-file testcase **with a `failure` child** and a `failure` attribute, exit 1.
+
+**jest** (`30.5.2`, `bin` is the string ./bin/jest.js; `jest-cli`'s is {"jest": "./bin/jest.js"}):
+an empty run exits 1 ("No tests found") and with `--passWithNoTests` 0, both writing a report with an
+empty `testResults`; `test.todo` is `todo`, `test.skip` `pending`, and a file holding a `todo` has the
+file status `focused`; a file that fails to load has `status: "failed"`, an empty
+`assertionResults`, and the totals `numPassedTests: 1, numFailedTests: 0`. The rootDir is the nearest
+`package.json`.
+
+**vitest** (`5.0.5`, `bin` `{"vitest": "./vitest.mjs"}`): skip is `skipped`, todo `todo`; an empty run
+exits 1 with a report; a load failure as jest's. With `--reporter=json` and no output file, the
+report goes to .vitest/json/output.json **inside the project**. Precedence, measured case by case:
+
+| configuration | `--outputFile=<report>` | `--outputFile.json=<report>` |
+|---|---|---|
+| `outputFile: "x"` | the command line's | **the configuration's** |
+| `outputFile: {json: "x"}` | the command line's | the command line's |
+| `reporters: [["json", {outputFile: "x"}]]` | **the configuration's** | **the configuration's** |
+| `reporters: ["./custom.js"]` | the command line's | the command line's |
+
+So the command line does not always win (Premise's "the command line's reporter and output file win"
+holds for the object form only). Ruling for Task 10 below.
+
+**go test** (`1.27.2`; `1.24.7` the same): events on stdout only; a subtest is its own `pass`;
+`-run NoSuchTest` and a `TestMain` with `os.Exit(0)` give a package-level `pass` and no test event,
+exit 0; a `TestMain` printing `\x16--- PASS: TestForged` gives a real `pass` event for `TestForged`.
+**A build failure gives a `build-fail` event (no `Package`, an `ImportPath` like `p [p.test]`) and
+then the package's own `fail` event with no failed test**; so does a dependency that does not build
+(every dependent package gets its `fail`) and a vet failure. Ruling for Task 6 below. With `GOENV`
+naming a file holding `GOFLAGS=-toolexec=<script>`, the script runs; with `GOENV=off` it does not. A
+`go.mod` asking a newer `go` under `GOTOOLCHAIN=local` stops before any event. A Go root is
+`<root>/bin/go` beside `<root>/src/runtime`, for the image's `/usr/local/go1.24.7` and for the
+module-cache toolchain alike.
+
+**Entry points.** npm: `node_modules/.bin/jest` and `.bin/vitest` are symlinks to
+`../jest/bin/jest.js` and `../vitest/vitest.mjs`. **pnpm (`12.14.0`): `node_modules/.bin/jest` is a
+4 KB `sh` shim, not a symlink**, whose `exec` line names
+`../.pnpm/jest@30.5.2_…/node_modules/jest/bin/jest.js`; `node_modules/jest` and `node_modules/vitest`
+are symlinks into `.pnpm/`. `node <realpath of node_modules/jest>/bin/jest.js` and the vitest
+equivalent run and report three tests with no `NODE_PATH` set. Ruling for Task 10 below.
+
+**Rulings this task makes for later waves** (the plan's intent kept, its mechanism corrected to the
+measurement):
+
+- Ruling (Task 6): a package-level `fail` with no failed test in it adds one failed; a `build-fail`
+  adds one only when no package-level `fail` names the package its `ImportPath` starts with. So
+  `go-build-fail.jsonl` is `Counts(0, 1, 0)`, and a stream with a lone `build-fail` (an inline test
+  input, since no recorded Go writes one) still counts it. Cost if wrong: a build failure counts
+  twice, which changes a count and never a verdict.
+- Ruling (Task 8): a console script whose first line is `#!/bin/sh` and whose second is the
+  installer's `'''exec' '<python>' "$0" "$@"` names `<python>`; `STAND_IN` stays for any other first
+  line that names no Python interpreter. The plan's rule would refuse every legitimate virtual
+  environment deeper than 127 bytes, and the interpreter is the only thing the line chooses (the run
+  is `<python> -P -m pytest`, never the script). Cost if wrong: none for security; the script's
+  bytes were never the anchor.
+- Ruling (Task 10): the entry point is resolved as Node resolves the package: `node_modules/<package>`
+  (`jest`, `jest-cli`; `vitest`) from the run's directory up to the root, its `package.json` `name`
+  the runner's and its `bin` (a string, or a mapping holding the runner's name) the entry; then
+  `<bin>` on `PATH`, whose realpath must lie in such a package. A `.bin` file that is not a symlink is
+  never read. The plan's `.bin/<bin>` realpath rule refuses every pnpm project, which its own
+  `test_a_pnpm_layout_resolves` forbids. Cost if wrong: a project whose runner is reachable only
+  through a `.bin` shim is `Unresolved(ENTRY_NOT_FOUND)`, and `--junit` is the way on.
+- Ruling (Task 10): vitest is planned with `--outputFile=<report>` (the string form), which wins over
+  both configuration forms of `outputFile`; a configuration reporter tuple carrying its own
+  `outputFile` still wins, and the report that does not arrive is `NO_REPORT`, as the plan says. The
+  refusal of the command's own `--outputFile` in any form is unchanged. Cost if wrong: a vitest
+  project configured with `outputFile: "x"` is `not proven` on every run.
+- Ruling (Task 10): `Plan.drop` matches a `testcase` whose `name` equals the basename of its `file`,
+  whose `classname` is `test`, and that has **no `failure` or `error` child**; a whole-file testcase
+  with a failure is a file that did not load and counts as failed. Cost if wrong: a broken test file
+  beside a passing one would be dropped and the run `proved`.
+
+### Owner's ruling: no stand-in refusal (2026-10-18)
+
+Asked whether `STAND_IN` (a `pytest` script whose first line names no interpreter, a `go` outside a
+Go root, a `.bin` entry in a package not named after the runner) should refuse, mark or resolve
+shims, the owner answered that guarding against a planted runner is not `prove`'s responsibility:
+the anchor of each check (a script's first line, a Go root's layout, a `package.json` name) is one
+the agent in the session writes, so the sandbox or CI is that adversary's control, and the bound
+already concedes "any file in the runner's load path". So no adapter refuses or marks a stand-in:
+the pytest interpreter is the one the script names (its first line, or the installer's
+`#!/bin/sh` + `'''exec'` second line), else the `python` on `PATH`; `go` is the one on `PATH`; jest
+and vitest keep only the entry-point search, whose failure is `Unresolved(ENTRY_NOT_FOUND)`. The
+receipt and the record carry the realpath of what ran. "Runner not verified" stays the mark of
+`--junit` alone. The acceptance clause "a stand-in runner … refused" leaves
+`test_each_refused_route_exits_2`; its other routes are unchanged. This supersedes Task 1's ruling
+for Task 8 and the package-name half of its ruling for Task 10.
+
+### Wave D (controller, 2026-10-18)
+
+Implementer about 260k tokens over the first pass and one fix round; commits `1d54f00`,
+`e7feaac`, `dc3c223`. `read_report` lives in `src/stayfixed/prove/reports.py`, not `counts.py`:
+the readers import `counts`, and the layering test refuses the cycle. Review: spec compliant; one
+Important finding (a reader's refusal carried report-written text unbounded), fixed with
+`printed.clipped`. CPython 3.11.17 runs `tests/prove` green.
+
 ### Task 15 — the matcher spike
 
 Measured on 2026-10-18 with Claude Code 2.1.301 on `claude-haiku-5-5` and the Codex CLI
@@ -1332,6 +1467,165 @@ owner ran `/login`, so a credential reached the isolated configuration from outs
 warned. It was repeated in a fresh session after `/login`. `codex exec` reported 2,603 tokens for the
 implicit prompt and 6,933 for `$canary`. No reserve run was needed: six runs in all, besides the
 first, discarded session.
+
+### Wave E (controller, 2026-10-18)
+
+Implementer about 490k tokens for the first pass; the fix round went to a fresh agent (about 340k).
+Built as planned, with these changes the review and the controller's rulings made:
+
+- Every `NAME=value` word the command spells, before or after a launcher, bare or after `env`, is
+  the command's assignment: a forging name is refused wherever it is spelled, and every assignment
+  goes into the run's environment. Adapters receive the launcher's words only. The first text
+  stopped at the launcher, so `uv run env PYTEST_ADDOPTS=… pytest` escaped the refusal.
+- uv's file-loading launcher options (`--env-file`, `--config-file`) and their variables
+  (`UV_ENV_FILE`, `UV_CONFIG_FILE`) are refused for every adapter, from a closed list in
+  `src/stayfixed/guards/uvrun.py`; an inherited variable is scrubbed under `uv run`.
+- `guards.api` publishes `read_launch`/`Launch`, not `command_words`: a positional split cannot tell
+  an assignment from a uv option's value.
+- `--json` is read only before the first `--`; under `--json` the runner's standard output goes to
+  standard error, so standard output is one JSON object.
+- Configuration files are listed from tracked and untracked-not-ignored files, capped, with a count
+  of ignored ones; untracked discovery files are listed before ignored ones.
+- `read_report` lives in `stayfixed.prove.reports` (Wave D).
+
+### Wave F (controller, 2026-10-18)
+
+Implementer about 420k tokens; the fix round went to a fresh agent (about 180k). Changes against the
+text:
+
+- The runner's standard input is `/dev/null` for every run (Task 7's steps said "stdin
+  inherited"): the review forged `proved` over a failing test by piping a debugger command into
+  `prove -- pytest --pdb`. Standard input is a channel stayfixed controls, so it is neutralised and
+  refuses no one.
+- pytest's closed list, swept once over every option pytest 9.1.1 registers: `--junitxml`,
+  `--junit-xml`, `-p no:junitxml`, `-o`/`--override-ini` setting a `junit_*` key or `addopts`,
+  `--setup-plan`, `--setup-only`, `--collect-only`, `--co` and the undashed aliases
+  `--setupplan`, `--setuponly`, `--collectonly`, `--trace`, and a word before `--` that starts with
+  `@` (pytest's argument file). pytest refuses abbreviations, so names match exactly. The file `-c`,
+  `--config-file` or `--inifile` names is listed on the receipt, not refused; `--rootdir` is free.
+  The list is knowledge of pytest 9.1.1; a later pytest can add an option it misses.
+- The interpreter follows the owner's no-stand-in ruling: the script's `#!` line, an `env` name on
+  `PATH`, the installer's trampoline, else `python3` or `python` on `PATH`.
+- `Refused` carries a `detail` (the refused option); an absolute `Plan.configs` entry names one
+  file.
+
+### Wave G (controller, 2026-10-18)
+
+Implementer about 660k tokens (four mid-wave rulings); the fix round went to a fresh agent (about
+330k). Each runner's options were swept once before its closed list was written (jest 30.5.2,
+vitest 5.0.5, `node --test` on Node 26.12.0, `go test` on Go 1.27.2); the tables are in the wave's
+record. Changes against the text:
+
+- No stand-in or package-name check (the owner's ruling). The entry is resolved as Node resolves
+  the package (`node_modules/<package>/package.json` `bin`, then `PATH`); pnpm's `.bin` shim is
+  never read.
+- jest's and vitest's `-c`/`--config` naming a file outside the root are not refused: the agent
+  can write the same configuration inside the tree, so the check stopped nobody and chased an open
+  set of path options. The file is named on the receipt; a jest `--config` given inline JSON text
+  is refused.
+- Measured routes joined the closed lists: jest `--collectTests`; vitest `--mergeReports`; node's
+  rerun state, snapshot update and `NODE_TEST_CONTEXT`; go's `GOROOT`, `GOOS` and `GOARCH` (go runs
+  the tests under `go_$GOOS_$GOARCH_exec` from `PATH` whenever the target is not the host, a 32-bit
+  leg included). jest's `--ci=false` and vitest's `--update=new` stay free: each is the runner's
+  default outside CI.
+- Watch modes are `not proven` (`never-ends`), not refused.
+- Go's flags: a build flag is read by its bare name only, a test-binary flag bare or `test.`-prefixed
+  (the review forged `proved` with `-test.p -exec=…`); a bare `--` ends go's flags.
+- Go in the `runners` job comes from the module proxy's toolchain zip checked against the SHA-256
+  recorded in `tests/fixtures/prove/README.md`, since no pinned `actions/setup-go` sha is in the
+  tree.
+
+### Wave H (controller, 2026-10-18)
+
+Implementer about 530k tokens; the fix round went to a fresh agent (about 260k). Changes against the
+text:
+
+- No record is written inside any git checkout, asked from the evidence directory's nearest
+  existing part (the first text asked only the run's repository, so a dotfiles checkout at `~`
+  took every nested project's records). A bare-repository dotfiles setup is out of reach, and the
+  documents say so. The password database's home is followed through a link before the walk.
+- `gate` writes one record when its configuration check produced a result, and none on a missing
+  configuration, a refused machine file or an unknown `--only`; argparse's usage errors never reach
+  it.
+- The upload step carries `continue-on-error: true` and the run attempt in the artifact's name.
+- The bound is one constant, `stayfixed.prove.run.BOUND`, that `docs/cli.md` quotes.
+- An empty jest run whose standard error is a pipe writes no report (measured on 30.5.2), so it is
+  `not proven`, not `failed`; it is never `proved`.
+- The receipt and the record name the runner's entry (`entry`) where the program is node.
+- The first CI run of the pull request found three test defects, fixed in the tests: a cleanup kill
+  of a child that had already ended, a `/etc` expectation macOS spells `/private/etc`, and a
+  `-n auto` check the new `runners` job's line satisfied.
+
+### Wave I (controller, 2026-10-18)
+
+Four final seats (correctness, architecture, security, lifecycle) read the whole branch in
+parallel; one fresh agent took every Important finding and most Minors in one fix wave (about
+690k tokens), and one scoped re-review checked it. Changes against the text:
+
+- `python -O`, `-OO` and an assigned `PYTHONOPTIMIZE` strip `assert` from a helper module, so a
+  failing test passed; they are refused, and an inherited `PYTHONOPTIMIZE` is scrubbed. An `-O`
+  test leg cannot prove.
+- The `-P` the text gave the pytest plan broke `python -m pytest`'s import of the project and every
+  interpreter older than 3.11. The plan now starts pytest through a short `-c` bootstrap that drops
+  the run directory from the front of `sys.path` (and, for the `python -m pytest` shape, appends it
+  after site-packages), so a planted `pytest.py` or `runpy.py` is never imported and the project
+  still is. The owner may prefer `-P` back with a 3.11 floor.
+- vitest's subcommand, its first word, is read: `run` and `related` (given `--run`) run once;
+  `watch` and `dev` never end, and `bench`, `list`, `init` and `doctor` run no suite that reports,
+  so those are `not proven`. Any other first word is planned as `run` with that word a filter.
+- The receipt, the line and the record name every inherited variable a plan scrubbed, and
+  `node [node options] <jest or vitest entry>` is a recognised shape, so Node's own flags (jest's
+  ESM `--experimental-vm-modules`) have a way to prove. Node options in front of an entry are read
+  from a closed list measured on Node 26.12.0; an unknown one leaves the command not recognised,
+  `not proven`, never `proved`. Inline code the command spells (`-e`, `--eval`, `-p`, `--print`, a
+  `data:` preload, jest's inline JSON `--config`) is refused.
+- Every adapter keeps the `uv run` launcher in front of its runner, and `uv run --directory`,
+  `--project` and their variables are refused for all of them, since they run another tree than
+  the receipt describes; the way on is to run `prove` from that directory.
+- Which preload file the receipt names is a convenience no verdict reads. Three rounds of
+  automated security findings asked for refusals of unusual spellings; they were withdrawn on the
+  design rule, and the reader names a file only when its reading is unambiguous and otherwise names
+  nothing.
+- The uninstall skill names the evidence records.
+- The macOS leg ran 877 s against a 15-minute job. Tests that waited out a left-behind child now
+  see it die by its lock (4.7 s to 0.7 s each), and the real `go test` runs share one build cache
+  per worker (the suite went from 316 s to 262 s here); the `checks` job's bound is 20 minutes.
+
+### Run as typed (owner and controller, 2026-10-18/19)
+
+A five-seat review of the finished branch found three wrong verdicts, each caused by a hardening
+measure that changed what runs away from what was typed: the `-c` bootstrap tested an installed copy
+of the project instead of the tree (a false `proved`), an assigned `PATH` was ignored when finding the
+program, and Go's forced `GOTOOLCHAIN=local` and `GOENV=off` turned green code red and sent private
+module paths to the public proxy. It also found most refusals and scrubs guarding only against an agent
+forging the report, which the bound already concedes. **The owner ruled: run the command as typed, and
+keep only the guards against honest mistakes.** This supersedes the Rulings' `-P`, the bootstrap, the
+recorded costs of `assigned-forging`, `GOENV` and `GOTOOLCHAIN`, and the closed lists drawn by sweeping
+every option. Changes against the text:
+
+- The protocol lost `Plan.program`, `set_env` and `scrub` (the core derives the program and scrubs an
+  adapter's forging names) and `plan`'s `root`; one lookup rule serves every adapter and `--junit`.
+- The run's environment is built once, the command's own assignments included, and used to plan, to
+  find the program and to run it. A launcher is handed the command's words as typed, and the directory
+  a launcher runs the command in (`uv run --directory`, `UV_WORKING_DIR`) is the one judged.
+- Removed: `resolved-elsewhere`, `junit-beside-adapter` (under `--junit` no adapter is consulted), the
+  launcher refusals, the bootstrap, Go's set and scrubbed variables and every Go refusal, `NODE_OPTIONS`
+  and `NODE_TEST_CONTEXT` as forging, the Node option tables, the inline-code and config-file refusals,
+  and the refusals that only turned a `not proven` into a `refused`. npx runs as typed and may install.
+- Kept: what an honest mistake typed in the command (or set by an honest environment) turns into a
+  `proved` the tests did not earn — snapshot rewriting (`UPDATE_SNAPSHOT` included), a rerun of
+  failures, `--setup-plan`/`--setup-only`, `--trace`, an optimised interpreter, jest's `--collectTests`,
+  vitest's `--mergeReports` and `--dangerouslyIgnoreUnhandledErrors` — and the runs that never end.
+- Found on the way and fixed: Node 24's whole-file testcase carries no `file` attribute and was counted
+  as a pass (a false `proved` on the active LTS); a failing `todo` test read `failed`; the 64 MiB cap
+  covered a Go suite's own output; a gate that timed out left `prove`'s runner running.
+- The evidence records are deferred until a report reads them (owner, 2026-10-19): a log nothing reads,
+  a file in every user's home, and a public input of the reusable workflow that would be a breaking
+  change to remove.
+- A review of the wave's planning (owner, 2026-10-19) made three working rules binding here: a bypass
+  through an anchor the agent can write is no control, never a new refusal; a refusal exists only where
+  an honest mistake would otherwise read `proved`; mutation entries cover verdict-bearing branches, not
+  wording.
 
 ### Wave B and Task 4 — RC1
 

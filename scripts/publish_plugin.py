@@ -55,8 +55,9 @@ re-run changes (`Rejected`), and `2` says fix something and run again, for anyth
 outcome is which is said once, to the owner who acts on it: `RELEASING.md`, section 2, step 7.
 
 The command goes through the CLI frame's `run`, as `scripts/release.py`'s do: `--json` anywhere on
-the line, and `Rejected` is the frame's `Failure`, exit `1`. Run without this repository's
-`stayfixed`, it refuses with exit `2` before the frame exists, since a traceback would exit `1`.
+the line before a bare `--`, and `Rejected` is the frame's `Failure`, exit `1`. Run without this
+repository's `stayfixed`, it refuses with exit `2` before the frame exists, since a traceback would
+exit `1`.
 """
 
 from __future__ import annotations

@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
-from stayfixed.guards import bashscan
+from stayfixed.guards import bashscan, uvrun
 
 
 def test_quoted_heredoc_bodies_are_stripped_but_the_command_remains() -> None:
@@ -535,3 +537,126 @@ def test_command_words_leaves_a_uv_command_it_cannot_read_whole(command: str) ->
     command other than `run` is unwrapped", "a uv command that never reaches `run` is
     unwrapped"."""
     assert bashscan.command_words(command.split()) == command.split()
+
+
+# --- `read_launch`: the same walk, every word of the launch named by its part ------------------
+
+
+@pytest.mark.parametrize(
+    ("command", "assignments", "launcher", "program"),
+    [
+        ("A=1 env B=2 pytest -q", ["A=1", "B=2"], [], ["pytest", "-q"]),
+        # An assignment after the launcher is the command's all the same, bare or after `env`.
+        ("uv run env FORGE=x pytest", ["FORGE=x"], ["uv", "run"], ["pytest"]),
+        ("env A=1 uv run env B=2 pytest", ["A=1", "B=2"], ["uv", "run"], ["pytest"]),
+        # An option's value is the launcher's, whatever it looks like, and never an assignment.
+        (
+            "uv --config-file c.toml run --env-file=.env --with x==1 pytest",
+            [],
+            ["uv", "--config-file", "c.toml", "run", "--env-file=.env", "--with", "x==1"],
+            ["pytest"],
+        ),
+        ("uv run -- pytest", [], ["uv", "run", "--"], ["pytest"]),
+        # A launcher the tables cannot read whole is left in the command.
+        ("uv run --locked --frobnicate pytest", [], [], "uv run --locked --frobnicate pytest"),
+        ("env -i A=1 pytest", [], [], ["-i", "A=1", "pytest"]),
+    ],
+    ids=[
+        "assignments-and-env",
+        "uv-env-assignment",
+        "assignments-on-both-sides",
+        "option-values",
+        "separator",
+        "unread-launcher",
+        "env-option",
+    ],
+)
+def test_read_launch_names_each_word_of_the_launch_by_its_part(
+    command: str, assignments: list[str], launcher: list[str], program: list[str] | str
+) -> None:
+    """A caller that runs the command needs more than the program: every assignment the shell or
+    `env` would make, wherever it stands, and the launcher's own words apart from them.
+    `command_words` is the same walk's last part. Oracle: `mutations/`'s "the launch keeps no
+    assignment past the launcher", "the launch keeps no launcher's words"."""
+    words = command.split()
+    expected = program.split() if isinstance(program, str) else program
+    launch = bashscan.read_launch(words)
+    assert launch == bashscan.Launch(tuple(assignments), tuple(launcher), tuple(expected))
+    assert bashscan.command_words(words) == expected
+
+
+@pytest.mark.parametrize(
+    ("command", "stranded"),
+    [
+        ("uv run FOO=1 pytest", ["FOO=1"]),
+        ("uv run -- FOO=1 BAR=2 pytest", ["FOO=1", "BAR=2"]),
+        ("uv run env FOO=1 pytest", []),
+        ("FOO=1 uv run pytest", []),
+        ("env FOO=1 uv run env BAR=2 uv run BAZ=3 pytest", ["BAZ=3"]),
+        ("FOO=1 pytest", []),
+    ],
+    ids=["bare", "after-separator", "after-env", "before", "nested", "no-launcher"],
+)
+def test_read_launch_names_an_assignment_right_after_a_launcher(
+    command: str, stranded: list[str]
+) -> None:
+    """An assignment right after a launcher's words, with no `env` between, is one a shell hands
+    the launcher as a word: uv 0.12.19 runs `FOO=1` as its program ("Failed to spawn", exit 2).
+    The walk reads it as an assignment all the same, and names it apart. Oracle: `mutations/`'s
+    "the launch names no assignment stranded after a launcher", "an assignment after `env` past a
+    launcher is named stranded"."""
+    words = command.split()
+    launch = bashscan.read_launch(words)
+    assert list(launch.stranded) == stranded
+    assert set(launch.stranded) <= set(launch.assignments)
+
+
+@pytest.mark.parametrize(
+    ("command", "environ", "moved"),
+    [
+        ("pytest", {"UV_WORKING_DIR": "a"}, ""),
+        ("uv run pytest", {}, ""),
+        ("uv run --directory a pytest", {}, "a"),
+        ("uv run --directory=a pytest", {}, "a"),
+        ("uv --directory a run --locked pytest", {}, "a"),
+        ("uv run pytest", {"UV_WORKING_DIR": "a"}, "a"),
+        ("uv run --directory a pytest", {"UV_WORKING_DIR": "b"}, "a"),
+        ("uv run --directory a uv run --directory b pytest", {}, "a/b"),
+        ("uv run --directory a uv run pytest", {"UV_WORKING_DIR": "b"}, "a/b"),
+        ("uv run --directory /abs pytest", {}, "/abs"),
+        ("uv run -m pytest", {"UV_WORKING_DIR": "a"}, "a"),
+        ("uv run --project a pytest", {"UV_PROJECT": "b"}, ""),
+        # A value that spells the option is the value of the option before it.
+        ("uv run --with --directory pytest", {}, ""),
+        ("uv run --directory", {}, ""),
+    ],
+    ids=[
+        "no-launcher",
+        "none",
+        "spaced",
+        "equals",
+        "global",
+        "variable",
+        "option-over-variable",
+        "nested",
+        "nested-variable",
+        "absolute",
+        "module",
+        "project",
+        "a-value",
+        "no-value",
+    ],
+)
+def test_run_directory_is_where_uv_runs_the_program(
+    command: str, environ: dict[str, str], moved: str
+) -> None:
+    """Measured on uv 0.12.19: `--directory`, before `run` or after it, spaced or with `=`, else
+    `UV_WORKING_DIR`, moves where the program runs, the option winning; a `uv run` that a
+    `uv run` launches reads its own from where the outer one moved to; `--project` and
+    `UV_PROJECT` move nothing. Oracle: `mutations/`'s "uv's `--directory` is not read", "uv's
+    spaced `--directory` value is not read", "`UV_WORKING_DIR` is not read", "uv's variable
+    wins over its `--directory`", "a nested `uv run` reads its directory from where the command
+    was typed"."""
+    launcher = bashscan.read_launch(command.split(), modules_as_programs=True).launcher
+    typed = Path("/typed")
+    assert uvrun.run_directory(launcher, typed, environ) == typed / moved

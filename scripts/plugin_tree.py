@@ -33,8 +33,8 @@ hold, and anyone holding the source commit and its first parent can compute that
 compare.
 
 The commands go through the CLI frame's `run`, as `scripts/release.py`'s do: `--json` anywhere on
-the line, exit `0`, `1` when `commit --require-pin` finds the source commit pinning another
-commit, and `2` for a refusal.
+the line before a bare `--`, exit `0`, `1` when `commit --require-pin` finds the source commit
+pinning another commit, and `2` for a refusal.
 """
 
 from __future__ import annotations

@@ -692,6 +692,38 @@ def write_atomically(
         os.close(dir_fd)
 
 
+# The flags of the one appending write: a regular file created 0600 where none is, written at its
+# end, and never through a link at its last component.
+# `O_NONBLOCK`, which changes nothing for a regular file: a FIFO left at the path with no reader
+# would make the open wait for one for ever, and without blocking it is `ENXIO` instead.
+_APPEND_FLAGS = (
+    os.O_WRONLY
+    | os.O_APPEND
+    | os.O_CREAT
+    | getattr(os, "O_NOFOLLOW", 0)
+    | os.O_CLOEXEC
+    | os.O_NONBLOCK
+)
+APPENDED_FILE_MODE = 0o600
+
+
+def append_at(dir_fd: int, name: str, payload: bytes) -> None:
+    """Append `payload` to the file `name` in the directory `dir_fd` (one `open_within` yielded),
+    in one `O_APPEND` write, creating it `APPENDED_FILE_MODE` where it is not there.
+
+    The one appending write, which the hook sink's diagnostics reach.
+    One `write` of the whole line, so two processes appending at once never interleave inside a
+    line on a local filesystem, `O_NOFOLLOW`, so a link put where the file goes refuses the open
+    rather than redirecting the write, and `O_NONBLOCK`, so a FIFO there with no reader refuses it
+    (`ENXIO`) rather than waiting for one. Raises `OSError` as the open or the write does.
+    """
+    handle = os.open(name, _APPEND_FLAGS, APPENDED_FILE_MODE, dir_fd=dir_fd)
+    try:
+        os.write(handle, payload)
+    finally:
+        os.close(handle)
+
+
 def mkdirs_within(root: Path, target: str) -> None:
     """Create `target`'s parent directories without ever leaving the root.
 

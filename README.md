@@ -273,6 +273,7 @@ The **Run by**, **Talks to** and **When** columns are kept by hand. The hook wra
 | `pre-commit install` | `stayfixed overlay init`, `stayfixed setup --overlay create:<owner>/<name> --yes`, `stayfixed attach` | nothing as it installs; GitHub and Go's servers on the first commit after it (note 5) | `attach` only when the overlay carries a `.pre-commit-config.yaml` and no `pre-commit` hook yet |
 | `sh -c` | `stayfixed test attribute --command CMD` | wherever `CMD` reaches; stayfixed does not choose | every run: `CMD` in the working tree, then in extracts of `HEAD` and of the merge base |
 | the commands `[gates.custom]` names | `stayfixed assess`, `stayfixed gate`, `stayfixed adopt promote` | wherever those commands reach; stayfixed does not choose | when `[gates.custom]` names one, unless `--builtin` is passed |
+| the test command after `stayfixed prove --` | `stayfixed prove -- COMMAND` | wherever `COMMAND` reaches; stayfixed does not choose: `uv run` may sync the project's environment from its index, `go test` may download the modules `go.mod` names, and `npx` installs a runner no `node_modules` holds, from the registry the project's `.npmrc` names, without asking, since under `prove` its standard input is no terminal; each as outside `prove` | every run, in the directory `prove` is typed in or the one its launcher is told to run `COMMAND` in, once a runner adapter recognises `COMMAND`, or with `--junit` |
 | `.github/workflows/stayfixed.yml` | your CI, from the workflow `stayfixed init` writes in `reusable` mode | GitHub, through stayfixed's reusable workflow (note 6) | on the events the workflow names |
 | `.github/workflows/scan.yml` | the overlay's CI on GitHub (note 7) | GitHub, through `gitleaks/gitleaks-action` (note 7) | on every push, pull request and manual run, unless the repository is marked a template |
 | `.github/dependabot.yml` | GitHub's Dependabot, from the file the same commands write into the overlay | GitHub: it looks up new releases of the scan workflow's two pinned actions and opens one grouped pull request in the overlay to move them | monthly, once the file is on GitHub |
@@ -445,6 +446,9 @@ stayfixed adopt promote docs                           # enforce one gate, if it
 stayfixed adopt promote                                # enforce every gate that passes now; name the rest
 stayfixed adopt promote --builtin                      # the same, running none of the repository's own gate commands
 
+# Proving a fix
+stayfixed prove -- uv run --locked pytest tests/test_x.py   # run it here; proved, failed, not proven or refused, from the runner's own report
+
 # Diagnosing an installation
 stayfixed doctor                                       # nineteen checks over this installation, one line
 stayfixed doctor --json                                # every check with its status, detail and remedy
@@ -456,8 +460,8 @@ stayfixed hook SessionStart                            # dispatch one harness ho
 Commands that read a project take `--root` (default: the current directory) and `--machine` (read
 a machine configuration file other than the default); `memory` commands and `attach` take
 `--store` as well. The commands that take neither, and the ones that mean something else by
-either, are listed in [Shared flags](https://github.com/stayfixed/stayfixed/blob/main/docs/cli.md#shared-flags). `--json` is accepted anywhere and
-prints one machine-readable object instead of one line. The commands that report a list of
+either, are listed in [Shared flags](https://github.com/stayfixed/stayfixed/blob/main/docs/cli.md#shared-flags). `--json` is accepted anywhere before `--` and
+prints one machine-readable object instead of one line; the words after `--` are the command's own. The commands that report a list of
 findings — `bugs check`, `docs check`, `memory refs`, `plan check` — all spell it `findings`,
 whatever their summary line calls them; every other command's keys are its own and are listed
 with it in [docs/cli.md](https://github.com/stayfixed/stayfixed/blob/main/docs/cli.md).

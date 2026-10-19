@@ -42,13 +42,6 @@ before = "        except subprocess.TimeoutExpired:"
 after = "        except ValueError:"
 reddens = ["tests/assess/test_gates.py::test_a_custom_gate_past_its_time_limit_did_not_answer"]
 
-[[mutation]]
-name = "a timed-out custom gate's children run on after it reported"
-file = "src/stayfixed/assess/gates.py"
-before = "        os.killpg(process.pid, signal.SIGKILL)"
-after = "        process.kill()"
-reddens = ["tests/assess/test_gates.py::test_a_custom_gate_past_its_time_limit_leaves_nothing_running"]
-
 # Without a session of its own no process group has the command's pid, so the kill ends nothing
 # and the bounded reap's own `TimeoutExpired` escapes after `KILL_WAIT_SECONDS`: that, not the
 # marker, is what reddens here, and the sleeping command is left to its own end.
@@ -62,7 +55,7 @@ reddens = ["tests/assess/test_gates.py::test_a_custom_gate_past_its_time_limit_l
 [[mutation]]
 name = "an interrupted custom gate's tree runs on after stayfixed exits"
 file = "src/stayfixed/assess/gates.py"
-before = "            _end(process)  # on an interrupt or any other exit, as subprocess.run's own kill did"
+before = "            processes.end(process)  # on an interrupt or any other exit, as subprocess.run did"
 after = "            pass"
 reddens = ["tests/assess/test_gates.py::test_an_interrupted_custom_gate_leaves_nothing_running"]
 
@@ -72,7 +65,7 @@ reddens = ["tests/assess/test_gates.py::test_an_interrupted_custom_gate_leaves_n
 [[mutation]]
 name = "a custom gate that exits leaves its background children running"
 file = "src/stayfixed/assess/gates.py"
-before = "        _kill_group(process)  # after an exit of its own too"
+before = "        processes.kill_group(process)  # after an exit of its own too"
 after = "        pass"
 reddens = ["tests/assess/test_gates.py::test_a_custom_gate_that_exits_leaves_nothing_running"]
 
@@ -82,7 +75,7 @@ reddens = ["tests/assess/test_gates.py::test_a_custom_gate_that_exits_leaves_not
 [[mutation]]
 name = "a custom gate's command is reaped before its group is ended"
 file = "src/stayfixed/assess/gates.py"
-before = "            _exited(process, seconds)"
+before = "            processes.exited(process, seconds)"
 after = "            process.wait(timeout=seconds)"
 reddens = [
   "tests/assess/test_gates.py::test_the_group_is_ended_while_the_command_s_pid_is_still_held[pass-found0]",
@@ -1187,34 +1180,6 @@ file = "src/stayfixed/assess/commands.py"
 before = "        \"gates\": [gate_row(r, enforcing=r.name in promoted) for r in transition.results],"
 after = "        \"gates\": [gate_row(r, enforcing=False) for r in transition.results],"
 reddens = ["tests/assess/test_state.py::test_every_command_that_runs_gates_gives_a_gate_the_same_json_row"]
-
-# A group the gate may not signal answers `PermissionError`: on macOS a group left with only the
-# exited, unreaped command, anywhere a sudo or setuid descendant. The command's exit still
-# answers for the gate; the error must not end the whole run.
-[[mutation]]
-name = "a group the gate may not signal ends the gate run"
-file = "src/stayfixed/assess/gates.py"
-before = "    with contextlib.suppress(ProcessLookupError, PermissionError):"
-after = "    with contextlib.suppress(ProcessLookupError):"
-reddens = [
-  "tests/assess/test_gates.py::test_a_group_the_gate_may_not_signal_still_leaves_the_exit_status[pass]",
-  "tests/assess/test_gates.py::test_a_group_the_gate_may_not_signal_still_leaves_the_exit_status[raise SystemExit(3)]",
-]
-
-# Where `os.waitid` is missing (macOS before Python 3.13), the exit is waited for with
-# `Popen.wait`; without the fallback the gate raises AttributeError out of the run.
-[[mutation]]
-name = "a custom gate asks for os.waitid where the platform has none"
-file = "src/stayfixed/assess/gates.py"
-before = '''    if not hasattr(os, "waitid"):
-        process.wait(timeout=seconds)
-        return'''
-after = '''    if False:
-        process.wait(timeout=seconds)
-        return'''
-reddens = [
-  "tests/assess/test_gates.py::test_without_waitid_a_custom_gate_still_answers_and_ends_its_group",
-]
 
 # In the block led by `mutations/`'s "printable passes a name outside the grammar through": a name
 # the repository chose is printed through `printed.printable` or `printed.quoted`.

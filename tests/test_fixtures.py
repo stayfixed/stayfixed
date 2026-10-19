@@ -277,6 +277,13 @@ def test_the_block_a_contributor_copies_is_the_one_ci_runs() -> None:
     ci = "\n".join(bodies)
     floor = _COVERAGE_FLOOR.search(ci)
     assert floor is not None, "ci.yml no longer runs pytest with a coverage floor"
+    # The suite across workers is held to the very line that carries the floor: another job's
+    # `pytest -n auto` (the runners' leg) would satisfy a search of every script at once.
+    # Mutation (declared): `mutations/`'s "CI runs the suite one test at a time again".
+    start = ci.rfind("\n", 0, floor.start()) + 1
+    end = ci.find("\n", floor.end())
+    floor_line = ci[start : end if end != -1 else len(ci)]
+    assert "pytest -n auto" in floor_line, floor_line
 
     blocks = {}
     match = _SHORT_VERSION.search(CONTRIBUTING.read_text(encoding="utf-8"))
@@ -293,8 +300,7 @@ def test_the_block_a_contributor_copies_is_the_one_ci_runs() -> None:
     blocks["RELEASING.md"] = match.group(1)
 
     # Every gate the contributor is asked to run locally, in the spelling CI runs it in.
-    # `pytest -n auto` among them, the suite across workers. Mutation: drop `-n auto` from
-    # `ci.yml`'s `pytest` line -> reddens naming it.
+    # `pytest -n auto` among them, the suite across workers, held to the floor's line above.
     required = (
         "pytest -n auto",
         f"--cov-fail-under={floor.group(1)}",
@@ -495,6 +501,41 @@ def test_no_workflow_splices_an_expression_into_a_shell() -> None:
         text = workflow.read_text(encoding="utf-8")
         assert scripts(text) or workflow.name not in SCRIPTED, workflow.name
         assert spliced(text) == [], (workflow.name, spliced(text))
+
+
+# An action a step uses, by a full commit sha: a tag or a branch can be moved to other code after
+# the pin was reviewed. A step's `./` action is this repository's own; a job's `uses:` is a call of
+# a reusable workflow, whose ref `smoke-release.yml` names on purpose (`@dev`, a release tag).
+_PINNED_ACTION = re.compile(r"[\w.-]+/[\w./-]+@[0-9a-f]{40}")
+
+
+@needs_workflows_dir
+def test_every_action_a_step_uses_is_pinned_by_a_commit_sha() -> None:
+    # Every workflow, every job, every step: one sweep, so a step added to any job is held.
+    # Mutation (declared): `mutations/`'s "the runners job takes an action by its tag" -> the
+    # step is found unpinned.
+    unpinned: list[tuple[str, str, object]] = []
+    seen = 0
+    for workflow in sorted(WORKFLOWS.glob("*.y*ml")):
+        document = load(workflow.read_text(encoding="utf-8"))
+        assert isinstance(document, dict), workflow.name
+        jobs = document.get("jobs")
+        assert isinstance(jobs, dict), workflow.name
+        for name, job in jobs.items():
+            assert isinstance(job, dict), (workflow.name, name)
+            steps = job.get("steps") or []
+            assert isinstance(steps, list), (workflow.name, name)
+            for step in steps:
+                uses = step.get("uses") if isinstance(step, dict) else None
+                if uses is None:
+                    continue
+                seen += 1
+                local = isinstance(uses, str) and uses.startswith("./")
+                if not local and not (isinstance(uses, str) and _PINNED_ACTION.fullmatch(uses)):
+                    unpinned.append((workflow.name, name, uses))
+    # The walk's floor: a reader that found no step would pass with nothing held.
+    assert seen >= 10, seen
+    assert unpinned == []
 
 
 def test_an_expression_is_found_in_every_spelling_of_a_script(tmp_path: Path) -> None:

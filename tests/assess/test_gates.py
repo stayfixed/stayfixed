@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from stayfixed.assess import gates
+from stayfixed import processes
 from stayfixed.assess.gates import (
     BASE,
     BUILTIN,
@@ -295,7 +295,7 @@ def test_a_custom_gate_past_its_time_limit_leaves_nothing_running(
     # start-ups and could give up before there was a descendant to end.
     command, started, late = delayed_writer(tmp_path)
     config = with_custom(fixture_config(tmp_path), command, seconds=600)
-    # The bound expires in the wait for the command's exit, `gates._exited`: patching
+    # The bound expires in the wait for the command's exit, `processes.exited`: patching
     # `Popen.wait` would instead fail the reap after the command's own exit, 30 s later.
     calls: list[int] = []
 
@@ -306,10 +306,98 @@ def test_a_custom_gate_past_its_time_limit_leaves_nothing_running(
             time.sleep(0.05)
         raise subprocess.TimeoutExpired(process.args, seconds)
 
-    monkeypatch.setattr(gates, "_exited", expired)
+    monkeypatch.setattr(processes, "exited", expired)
     [probe] = results(tmp_path, config)
     assert not probe.answered
     assert calls == [600]  # the configured bound is the one the gate waited under
+    assert started.exists()
+    time.sleep(LATE_WAIT_SECONDS)
+    assert not late.exists()
+
+
+# A command that, on SIGTERM, ends a child it started in a session of its own, which no signal to
+# the command's group reaches: `stayfixed prove` and its runner, in small.
+ENDS_ITS_SESSION = (
+    "import os, signal, subprocess, sys, time\n"
+    "child = subprocess.Popen([sys.executable, '-c', "
+    '\'import pathlib, sys, time; pathlib.Path(sys.argv[1]).write_text("x"); '
+    'time.sleep(2.5); pathlib.Path(sys.argv[2]).write_text("x")\', '
+    "sys.argv[1], sys.argv[2]], start_new_session=True)\n"
+    "def ended(signum, frame):\n"
+    "    os.killpg(child.pid, signal.SIGKILL)\n"
+    "    sys.exit(0)\n"
+    "signal.signal(signal.SIGTERM, ended)\n"
+    "time.sleep(30)\n"
+)
+
+
+def _expired_once_started(monkeypatch: pytest.MonkeyPatch, started: Path) -> None:
+    def expired(process: subprocess.Popen[bytes], seconds: int) -> None:
+        deadline = time.monotonic() + STARTED_WAIT_SECONDS
+        while not started.exists() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        raise subprocess.TimeoutExpired(process.args, seconds)
+
+    monkeypatch.setattr(processes, "exited", expired)
+
+
+def test_a_gate_past_its_time_limit_lets_its_command_end_what_it_started(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The group is sent SIGTERM before SIGKILL, so a command that ends on it what lives outside
+    # its group does: `stayfixed prove` as a custom gate ends its runner's session. Measured end
+    # to end before this ending: the runner of a `stayfixed prove -- pytest` gate past its time
+    # limit ran on for its whole 40 s. Mutation (declared): the SIGTERM left out -> the child in
+    # its own session writes `late`.
+    started, late = tmp_path / "started", tmp_path / "late"
+    command = [sys.executable, "-c", ENDS_ITS_SESSION, str(started), str(late)]
+    config = with_custom(fixture_config(tmp_path), command, seconds=600)
+    _expired_once_started(monkeypatch, started)
+    [probe] = results(tmp_path, config)
+    assert not probe.answered
+    assert started.exists()
+    time.sleep(LATE_WAIT_SECONDS)
+    assert not late.exists()
+
+
+def test_a_gate_past_its_time_limit_ends_a_command_that_ignores_sigterm(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # SIGTERM ignored, by the command and the child it left in its group, the group is sent
+    # SIGKILL once the command has had its grace. Mutation (declared): no SIGKILL after the grace
+    # -> the reap waits on a command that never ends, and the gate raises.
+    monkeypatch.setattr(processes, "TERM_WAIT_SECONDS", 0.5)
+    command, started, late = delayed_writer(tmp_path)
+    command[2] = "import signal\nsignal.signal(signal.SIGTERM, signal.SIG_IGN)\n" + command[2]
+    config = with_custom(fixture_config(tmp_path), command, seconds=600)
+    _expired_once_started(monkeypatch, started)
+    [probe] = results(tmp_path, config)
+    assert not probe.answered
+    time.sleep(LATE_WAIT_SECONDS)
+    assert not late.exists()
+
+
+def test_an_interrupt_in_the_grace_still_ends_a_group_that_ignores_sigterm(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A Ctrl-C ends the gate, and a second one lands in the grace `processes.end` gives the
+    # group after its SIGTERM: the group, which ignores SIGTERM, is still sent SIGKILL before the
+    # interrupt goes on up. Mutation (declared): no SIGKILL after the grace -> the child writes
+    # `late`.
+    command, started, late = delayed_writer(tmp_path)
+    command[2] = "import signal\nsignal.signal(signal.SIGTERM, signal.SIG_IGN)\n" + command[2]
+    config = with_custom(fixture_config(tmp_path), command, seconds=600)
+
+    def interrupted(process: subprocess.Popen[bytes], seconds: float) -> None:
+        deadline = time.monotonic() + STARTED_WAIT_SECONDS
+        while not started.exists() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(processes, "exited", interrupted)
+    monkeypatch.setattr(processes, "_watched", interrupted)
+    with pytest.raises(KeyboardInterrupt):
+        results(tmp_path, config)
     assert started.exists()
     time.sleep(LATE_WAIT_SECONDS)
     assert not late.exists()
@@ -324,7 +412,7 @@ def test_an_interrupted_custom_gate_leaves_nothing_running(
     # end; the wait for it is bounded, and a child that never starts fails the assertion below.
     command, started, late = delayed_writer(tmp_path)
     config = with_custom(fixture_config(tmp_path), command, seconds=600)
-    # The interrupt lands in the wait for the command's exit, which is `gates._exited` on every
+    # The interrupt lands in the wait for the command's exit, which is `processes.exited` on every
     # platform: `os.waitid` where there is one, `Popen.wait` where there is not.
 
     def interrupted(process: subprocess.Popen[bytes], seconds: int) -> None:
@@ -333,7 +421,7 @@ def test_an_interrupted_custom_gate_leaves_nothing_running(
             time.sleep(0.05)
         raise KeyboardInterrupt
 
-    monkeypatch.setattr(gates, "_exited", interrupted)
+    monkeypatch.setattr(processes, "exited", interrupted)
     with pytest.raises(KeyboardInterrupt):
         results(tmp_path, config)
     assert started.exists()
@@ -369,13 +457,13 @@ def test_the_group_is_ended_while_the_command_s_pid_is_still_held(
     # (declared): the exit waited for with `process.wait`, which reaps -> the command's
     # `returncode` is already set when the group is killed. The exit status still reads the same.
     killed_with: list[int | None] = []
-    kill = gates._kill_group
+    kill = processes.kill_group
 
     def spy(process: subprocess.Popen[bytes]) -> None:
         killed_with.append(process.returncode)
         kill(process)
 
-    monkeypatch.setattr(gates, "_kill_group", spy)
+    monkeypatch.setattr(processes, "kill_group", spy)
     [probe] = results(
         tmp_path, with_custom(fixture_config(tmp_path), [sys.executable, "-c", source])
     )

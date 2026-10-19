@@ -687,10 +687,12 @@ OTHER_PREDICATES: dict[tuple[str, str, str], tuple[int, str]] = {
     ("areas.py", "_has_submodule", "is_file"): (2, "the package's own directory"),
     ("overlay/template.py", "templates", "is_dir"): (1, "the wheel's own template tree"),
     ("project/templates.py", "read", "is_dir"): (1, "the wheel's own template tree"),
-    ("profiles/__init__.py", "shipped", "is_dir"): (1, "a resource of the package's own"),
-    ("profiles/__init__.py", "shipped", "is_file"): (1, "a resource of the package's own"),
+    ("profiles/__init__.py", "stack_directories", "is_dir"): (1, "a resource of the package's own"),
+    ("profiles/__init__.py", "stack_directories", "is_file"): (
+        1,
+        "a resource of the package's own",
+    ),
     ("profiles/__init__.py", "load_profile", "is_file"): (1, "a resource of the package's own"),
-    ("profiles/hints.py", "hint_modules", "is_file"): (1, "a resource of the package's own"),
     # `os.DirEntry`'s, which answers alike on every interpreter.
     ("doctor/hooked.py", "_nested", "is_dir"): (1, "an os.DirEntry"),
     ("doctor/hooked.py", "_nested", "is_symlink"): (1, "an os.DirEntry"),
@@ -1047,3 +1049,55 @@ def test_a_directory_that_can_be_written_but_not_searched_cannot_take_a_new_file
         assert not fsops.creatable(directory / "file")
     finally:
         directory.chmod(0o700)
+
+
+def test_an_append_adds_to_the_file_s_end_and_creates_it_for_its_owner_alone(
+    tmp_path: Path,
+) -> None:
+    # The one appending write, the hook sink's. Mutation (declared): the write opened without
+    # `O_APPEND` -> the second line overwrites the first.
+    with fsops.open_within(tmp_path, "log.jsonl") as (dir_fd, name):
+        fsops.append_at(dir_fd, name, b"one\n")
+        fsops.append_at(dir_fd, name, b"two\n")
+    assert (tmp_path / "log.jsonl").read_bytes() == b"one\ntwo\n"
+    assert stat.S_IMODE((tmp_path / "log.jsonl").stat().st_mode) == fsops.APPENDED_FILE_MODE
+
+
+def test_an_append_never_writes_through_a_link(tmp_path: Path) -> None:
+    # Mutation (declared): the append opened without `O_NOFOLLOW` -> the target gains a line.
+    target = tmp_path / "target"
+    target.write_bytes(b"")
+    (tmp_path / "log.jsonl").symlink_to(target)
+    with (
+        pytest.raises(OSError) as raised,
+        fsops.open_within(tmp_path, "log.jsonl") as (dir_fd, name),
+    ):
+        fsops.append_at(dir_fd, name, b"line\n")
+    assert raised.value.errno == errno.ELOOP
+    assert target.read_bytes() == b""
+
+
+def test_an_append_to_a_fifo_with_no_reader_is_refused_and_never_waits(tmp_path: Path) -> None:
+    # A FIFO with no reader where the file goes: an open for writing would wait for a reader that
+    # never comes, and the hook with it. Opened without blocking it is `ENXIO`. Run in a child
+    # under a timeout, so a regression fails this case rather than hanging the suite. Mutation
+    # (declared): `O_NONBLOCK` left off the append's flags -> the child waits.
+    os.mkfifo(tmp_path / "log.jsonl")
+    probe = (
+        "import errno, sys\n"
+        "from pathlib import Path\n"
+        "from stayfixed import fsops\n"
+        "try:\n"
+        "    with fsops.open_within(Path(sys.argv[1]), 'log.jsonl') as (dir_fd, name):\n"
+        "        fsops.append_at(dir_fd, name, b'line\\n')\n"
+        "except OSError as exc:\n"
+        "    print(errno.errorcode[exc.errno])\n"
+    )
+    done = subprocess.run(
+        [sys.executable, "-c", probe, str(tmp_path)],
+        capture_output=True,
+        text=True,
+        timeout=20,
+        check=False,
+    )
+    assert done.stdout == "ENXIO\n", (done.stdout, done.stderr)

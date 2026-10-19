@@ -22,6 +22,14 @@ WHEEL_LAST = f"stayfixed/templates/overlay/{OVERLAY_FILES[-1]}"
 PROFILE_CODE = (
     "stayfixed/profiles/python/__init__.py",
     "stayfixed/profiles/python/hygiene.py",
+    "stayfixed/profiles/python/adapters.py",
+)
+# The stacks that ship runner adapters and no profile, each its package marker and its adapters.
+ADAPTER_CODE = (
+    "stayfixed/profiles/javascript/__init__.py",
+    "stayfixed/profiles/javascript/adapters.py",
+    "stayfixed/profiles/go/__init__.py",
+    "stayfixed/profiles/go/adapters.py",
 )
 
 
@@ -38,6 +46,7 @@ def _wheel(path: Path, *, without: str | None = None) -> Path:
         "stayfixed/profiles/python/profile.toml",
         "stayfixed/profiles/python/rules.md",
         *PROFILE_CODE,
+        *ADAPTER_CODE,
     ]
     with zipfile.ZipFile(path, "w") as archive:
         for name in names:
@@ -86,9 +95,23 @@ def test_a_template_file_missing_from_the_wheel_is_named(tmp_path: Path) -> None
 def test_a_wheel_without_the_python_profiles_code_is_named(tmp_path: Path, missing: str) -> None:
     # `hint_modules` finds a profile's `hygiene.py` through `importlib.resources`, so a build that
     # dropped it would leave every installed stayfixed with no Python note after a failed pytest
-    # run, silently, while the checkout's own suite stayed green. Oracle: `mutations/`'s "the
-    # wheel need not carry the Python profile's hint" and "the wheel need not carry the Python
+    # run, silently, while the checkout's own suite stayed green; `shipped_adapters` finds its
+    # `adapters.py` the same way, and without it every `prove -- pytest` is `not proven`. Oracle:
+    # `mutations/`'s "the wheel need not carry the Python profile's hint", "the wheel need not
+    # carry the Python profile's runner adapter" and "the wheel need not carry the Python
     # profile's package marker".
+    module = checker()
+    findings = module.check_wheel(_wheel(tmp_path / "k.whl", without=missing))
+    assert findings == [f"wheel: missing {missing}"]
+
+
+@pytest.mark.parametrize("missing", ADAPTER_CODE)
+def test_a_wheel_without_a_stack_s_runner_adapters_is_named(tmp_path: Path, missing: str) -> None:
+    # `shipped_adapters` finds a stack's `adapters.py` through `importlib.resources`, profile or
+    # none, so a build that dropped one would answer every command of that stack's runners with
+    # `not proven`, silently. Oracle: `mutations/`'s "the wheel need not carry the JavaScript
+    # runner adapters", "the wheel need not carry the Go runner adapter" and the two stacks'
+    # "package marker" entries.
     module = checker()
     findings = module.check_wheel(_wheel(tmp_path / "k.whl", without=missing))
     assert findings == [f"wheel: missing {missing}"]

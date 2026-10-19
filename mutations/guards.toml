@@ -100,8 +100,8 @@ reddens = [
 [[mutation]]
 name = "a uv command other than `run` is unwrapped"
 file = "src/stayfixed/guards/uvrun.py"
-before = '            return index if running else None'
-after = '            return index'
+before = "            return (index, directory) if running else None"
+after = "            return (index, directory)"
 reddens = [
   "tests/guards/test_bashscan.py::test_command_words_leaves_a_uv_command_it_cannot_read_whole",
 ]
@@ -109,8 +109,8 @@ reddens = [
 [[mutation]]
 name = "a uv command that never reaches `run` is unwrapped"
 file = "src/stayfixed/guards/uvrun.py"
-before = '    return min(index, len(segment)) if running else None'
-after = '    return min(index, len(segment))'
+before = "    return (min(index, len(segment)), directory) if running else None"
+after = "    return (min(index, len(segment)), directory)"
 reddens = [
   "tests/guards/test_bashscan.py::test_command_words_leaves_a_uv_command_it_cannot_read_whole",
 ]
@@ -221,6 +221,32 @@ before = '        if name in _SINGLE_WRAPPERS:'
 after = '        if False:'
 reddens = [
   "tests/guards/test_bashscan.py::test_command_words_strips_a_leading_assignment_and_wrapper",
+]
+
+# `read_launch` names every part of the launch: the assignments wherever they stand, which a
+# caller that runs the command hands its environment and checks for forging, and the launcher's
+# words apart from them. Stopping the assignments at the launcher is what let `uv run env
+# FORGE=x` through `prove`.
+[[mutation]]
+name = "the launch keeps no assignment past the launcher"
+file = "src/stayfixed/guards/bashscan.py"
+before = "            assigned.append(token)"
+after = "            assigned.extend([] if launcher else [token])"
+reddens = [
+  "tests/guards/test_bashscan.py::test_read_launch_names_each_word_of_the_launch_by_its_part[uv-env-assignment]",
+  "tests/prove/test_run.py::test_an_assigned_forging_variable_is_refused[argv2]",
+  "tests/prove/test_run.py::test_an_assigned_forging_variable_is_refused[argv3]",
+  "tests/prove/test_run.py::test_an_assigned_variable_outside_the_forging_set_reaches_the_runner[argv2]",
+]
+
+[[mutation]]
+name = "the launch keeps no launcher's words"
+file = "src/stayfixed/guards/bashscan.py"
+before = "            launcher.extend(segment[index:launched])"
+after = "            pass"
+reddens = [
+  "tests/guards/test_bashscan.py::test_read_launch_names_each_word_of_the_launch_by_its_part[uv-env-assignment]",
+  "tests/prove/test_run.py::test_the_adapter_is_handed_the_launcher_s_words_alone[argv0-launch0]",
 ]
 
 # `|&`, `;&` and `;;&` decompose to single characters by design, and each `&` there belongs to
@@ -1746,4 +1772,85 @@ after = "    config = session.config\n    if event.project_root is None:"
 reddens = [
   "tests/hooks/test_floor.py::test_project_handlers_speak_on_a_file_and_stay_silent_without_one[test_hygiene]",
   "tests/guards/test_hooks.py::test_no_config_silences_the_hygiene_note_and_never_the_guard",
+]
+
+# `uvrun.run_directory`, measured on uv 0.12.19: `--directory`, else `UV_WORKING_DIR`, moves
+# where the program runs, and `prove` judges the command there.
+[[mutation]]
+name = "uv's `--directory` is not read"
+file = "src/stayfixed/guards/uvrun.py"
+before = "        if name == _DIRECTORY:"
+after = "        if False:"
+reddens = [
+  "tests/guards/test_bashscan.py::test_run_directory_is_where_uv_runs_the_program[spaced]",
+  "tests/guards/test_bashscan.py::test_run_directory_is_where_uv_runs_the_program[equals]",
+  "tests/guards/test_bashscan.py::test_run_directory_is_where_uv_runs_the_program[global]",
+  "tests/prove/test_run.py::test_the_command_is_judged_where_its_launcher_runs_it[spaced]",
+]
+
+[[mutation]]
+name = "uv's spaced `--directory` value is not read"
+file = "src/stayfixed/guards/uvrun.py"
+before = "            directory = value if equals else _value(segment, index)"
+after = "            directory = value"
+reddens = [
+  "tests/guards/test_bashscan.py::test_run_directory_is_where_uv_runs_the_program[spaced]",
+]
+
+[[mutation]]
+name = "`UV_WORKING_DIR` is not read"
+file = "src/stayfixed/guards/uvrun.py"
+before = "        moved = directory if directory is not None else environ.get(WORKING_DIR)"
+after = "        moved = directory"
+reddens = [
+  "tests/guards/test_bashscan.py::test_run_directory_is_where_uv_runs_the_program[variable]",
+  "tests/prove/test_run.py::test_the_command_is_judged_where_its_launcher_runs_it[assigned]",
+  "tests/prove/test_run.py::test_the_command_is_judged_where_its_launcher_runs_it[inherited]",
+]
+
+[[mutation]]
+name = "uv's variable wins over its `--directory`"
+file = "src/stayfixed/guards/uvrun.py"
+before = "        moved = directory if directory is not None else environ.get(WORKING_DIR)"
+after = "        moved = environ.get(WORKING_DIR) or directory"
+reddens = [
+  "tests/guards/test_bashscan.py::test_run_directory_is_where_uv_runs_the_program[option-over-variable]",
+  "tests/prove/test_run.py::test_the_command_is_judged_where_its_launcher_runs_it[over-the-variable]",
+]
+
+[[mutation]]
+name = "a nested `uv run` reads its directory from where the command was typed"
+file = "src/stayfixed/guards/uvrun.py"
+before = "            here = here / moved"
+after = "            here = cwd / moved"
+reddens = [
+  "tests/guards/test_bashscan.py::test_run_directory_is_where_uv_runs_the_program[nested]",
+  "tests/guards/test_bashscan.py::test_run_directory_is_where_uv_runs_the_program[nested-variable]",
+  "tests/prove/test_run.py::test_the_command_is_judged_where_its_launcher_runs_it[nested]",
+]
+
+# `read_launch` names each assignment that stands right after a launcher's words, with no `env`
+# between, which uv runs as its program (`prove` reads it as a command that runs no test).
+[[mutation]]
+name = "the launch names no assignment stranded after a launcher"
+file = "src/stayfixed/guards/bashscan.py"
+before = """            if after_launcher:
+                stranded.append(token)"""
+after = """            if False:
+                stranded.append(token)"""
+reddens = [
+  "tests/guards/test_bashscan.py::test_read_launch_names_an_assignment_right_after_a_launcher[bare]",
+  "tests/prove/test_run.py::test_an_assignment_right_after_a_launcher_is_not_recognised[argv0]",
+]
+
+[[mutation]]
+name = "an assignment after `env` past a launcher is named stranded"
+file = "src/stayfixed/guards/bashscan.py"
+before = """        if name in _SINGLE_WRAPPERS:
+            after_launcher = False"""
+after = """        if name in _SINGLE_WRAPPERS:
+            pass"""
+reddens = [
+  "tests/guards/test_bashscan.py::test_read_launch_names_an_assignment_right_after_a_launcher[after-env]",
+  "tests/prove/test_run.py::test_an_assigned_variable_outside_the_forging_set_reaches_the_runner[argv2]",
 ]

@@ -773,7 +773,7 @@ projects only.
 
 `scripts/release.py` is this repository's own tooling, not a command stayfixed ships: it only
 ever checked the stayfixed repository itself. It runs through the same frame as the CLI, so
-`--json` is accepted anywhere on the line and prints one object, and it exits `0` on success,
+`--json` is accepted anywhere on the line before a bare `--` and prints one object, and it exits `0` on success,
 `1` on findings and `2` on a refusal.
 
 ```bash

@@ -226,7 +226,7 @@ Applied on 2026-10-18 (the owner's review "locks and redundancy"), as lane-plan 
 | the overlay's node id re-checked whenever its `HEAD` moves | identity is the remote's, not `HEAD`'s, and agents commit to the overlay all the time, so the line would fire in nearly every session | re-checked, by a local comparison, when the overlay's remote URL changes, and at `setup` and `attach`; no `SessionStart` line | HS2 |
 | pins on whole skills | a skill's body, like an agent definition's prose, is an instruction of the same kind as the overlay's unpinned rules | pins only on what runs without the model's or the permission layer's judgement: hooks, MCP servers, settings keys that run a program or grant a capability (`env`, `statusLine`, `apiKeyHelper`), allow rules, a skill's frontmatter hooks and bundled executables, custom gates (d10 and d19 amended) | HS2 |
 | `attach` refusing a `settings.local.json` with allow rules it did not write | the merge goes by stayfixed's marker, so no foreign entry is at risk; Claude Code may write its own "don't ask again" answers there, which HS2 measures first | merged by marker; foreign entries are left alone and shown in `attach`'s one-screen diff; only a tracked `settings.local.json` is refused | HS2 |
-| `prove`'s per-adapter refusal lists and `-I` beside a `PYTHON*` scrub | measured: nine bypasses through every list, and refusals of TypeScript, Plug'n'Play and `PYTHONPATH=src` | a short closed list of what the command spells, the channels stayfixed controls neutralised, `-P` | CP1 (done) |
+| `prove`'s per-adapter refusal lists and `-I` beside a `PYTHON*` scrub | measured: nine bypasses through every list, and refusals of TypeScript, Plug'n'Play and `PYTHONPATH=src` | CP1: run as typed; only the honest-mistake guards remain (PR 106's final review) | CP1 (done) |
 | the evidence artifact uploaded in every caller's CI | its one consumer is stayfixed's own metrics | an input, off by default, turned on by stayfixed's own calls | CP1 |
 | the local suite on 3.11.4 before every push | CI runs it on every pull request | dropped from the execution contract; the local run before a push stays on 3.13 | all lanes |
 | the approvals' three bumps (the terminal check, the `ask` rules, the honest boundary) | the `ask` rules were cut in HS1 and the terminal check goes above, so the honest boundary and `--digest` remain | nothing to add | HS2 |
@@ -410,8 +410,7 @@ servers. Where the step needs only a `SessionStart`, it drives one with
   | each reader's genuine passing run is `proved`, exit 0, counts equal a literal | the CP plan's Task 14 table |
   | a stdout-forged run is `not proven` | the same |
   | an empty and an all-skipped run are `failed`, `go test -run NoSuchTest` included | the same |
-  | a stand-in runner and each refused forging route are `refused`, exit 2 | the same |
-  | the same variable merely inherited is scrubbed and the run still counted | the same |
+  | each honest-mistake refusal (snapshot update or rerun of failures, `--setup-plan`/`--setup-only`, an optimised interpreter) is `refused`, exit 2 | the same |
   | a closed entry whose countable regression passes keeps the gate green, and a passing sibling is not named; a failing regression fails the gate and names its entry | named in the CP2 plan |
   | a base whose regression argv names a countable failing test, edited by the pull request to a countable passing one, stays `failed`; the reverse edit stays green; the same edit committed to the base before the branch point flips the verdict | named in the CP2 plan |
 

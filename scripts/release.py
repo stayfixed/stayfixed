@@ -12,7 +12,7 @@ record's reader (`doctor files` compares an installed plugin against it) and the
 is released under (`init` pins it). `RELEASING.md` is the process these commands serve.
 
 The commands go through the CLI frame's `run`, so they keep its contract: `--json` anywhere on
-the line, exit `0`, `1` for findings and `2` for a refusal or an internal error.
+the line before a bare `--`, exit `0`, `1` for findings and `2` for a refusal or an internal error.
 
 **`check --tag` holds the release commit to what it releases:** the seven version sources and the
 tag agree, no fragment is left to assemble, the plugin tree holds no more files than the plugin

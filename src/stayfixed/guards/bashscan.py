@@ -130,6 +130,7 @@ from __future__ import annotations
 
 import re
 import shlex
+from collections.abc import Sequence
 from pathlib import Path
 from typing import NamedTuple
 
@@ -784,6 +785,68 @@ def segments(tokens: list[str]) -> list[list[str]]:
     return result
 
 
+class Launch(NamedTuple):
+    """A segment read the way `read_launch` reads it, every word in one part.
+
+    `assignments` is every `NAME=value` word the walk read as one, in order, wherever it stood:
+    before a launcher or after it, bare or after `env`. `launcher` is the words of each launcher
+    read through, in order -- `uv`, its options and their values, `run`, `run`'s options, and a
+    `--` that ends them -- and never an assignment or an `env`. `command` is the rest, what
+    `command_words` returns.
+
+    `stranded` is each of `assignments` that stands right after a launcher's words, with no `env`
+    between them (`uv run FOO=1 pytest`): a shell hands it to the launcher as a word, and uv runs
+    it as its program, so typed as it is the command runs no test. The walk reads it as an
+    assignment all the same, as every reader of `command_words` does; a caller that runs the
+    command, as `prove` does, can tell the command as typed apart by it.
+    """
+
+    assignments: tuple[str, ...]
+    launcher: tuple[str, ...]
+    command: tuple[str, ...]
+    stranded: tuple[str, ...] = ()
+
+
+def read_launch(segment: Sequence[str], *, modules_as_programs: bool = False) -> Launch:
+    """`segment` split into its assignments, its launcher's words and its command, by the one
+    walk `command_words` documents.
+
+    A caller that runs the command, and not only names its program, needs every part: the
+    assignments go into the environment of what it starts, since nothing but a shell reads them
+    from an argv, and the launcher's words are what it may keep in front of the program. A
+    launcher the tables cannot read whole is left in `command`, as `command_words` leaves it.
+    """
+    assigned: list[str] = []
+    launcher: list[str] = []
+    stranded: list[str] = []
+    # Whether the last thing read was a launcher's words, past any assignment after them.
+    after_launcher = False
+    index = 0
+    while index < len(segment):
+        token = segment[index]
+        if _ASSIGNMENT.match(token):
+            assigned.append(token)
+            if after_launcher:
+                stranded.append(token)
+            index += 1
+            continue
+        name = Path(token).name
+        if uvrun.is_launcher(name):
+            launched = uvrun.past_run(segment, index + 1, modules_as_programs=modules_as_programs)
+            if launched is None:
+                break
+            launcher.extend(segment[index:launched])
+            index = launched
+            after_launcher = True
+            continue
+        if name in _SINGLE_WRAPPERS:
+            after_launcher = False
+            index += 1
+            continue
+        break
+    return Launch(tuple(assigned), tuple(launcher), tuple(segment[index:]), tuple(stranded))
+
+
 def command_words(segment: list[str], *, modules_as_programs: bool = False) -> list[str]:
     """This segment's own command and arguments, with any leading environment-assignment
     tokens and the wrapper prefixes -- `_SINGLE_WRAPPERS`, and `uv run` with uv's options --
@@ -807,21 +870,4 @@ def command_words(segment: list[str], *, modules_as_programs: bool = False) -> l
     shape has been reproduced.
     """
 
-    index = 0
-    while index < len(segment):
-        token = segment[index]
-        if _ASSIGNMENT.match(token):
-            index += 1
-            continue
-        name = Path(token).name
-        if uvrun.is_launcher(name):
-            launched = uvrun.past_run(segment, index + 1, modules_as_programs=modules_as_programs)
-            if launched is None:
-                break
-            index = launched
-            continue
-        if name in _SINGLE_WRAPPERS:
-            index += 1
-            continue
-        break
-    return segment[index:]
+    return list(read_launch(segment, modules_as_programs=modules_as_programs).command)
