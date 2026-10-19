@@ -3995,7 +3995,8 @@ load, and the refusal names the key and never the value.
 stayfixed's own five the project runs, all of them by default, and each
 `[gates.custom.<name>]` names one of the project's own: `run` is an argv to run from the
 project root, never through a shell, given `custom_timeout_seconds` to finish, and a non-zero
-exit is its one finding. A custom gate's name is one lowercase path segment, neither a
+exit is its one finding. Past that limit its process group gets SIGTERM and, once the command
+has exited or 5 seconds have passed, SIGKILL, so what it started can end its own children. A custom gate's name is one lowercase path segment, neither a
 built-in gate's name nor `config`, which names the configuration check. `stayfixed assess`,
 `stayfixed gate` and [the reusable workflow](#the-reusable-workflow) run exactly the configured
 gates. A custom gate runs only from a command a person or a workflow runs on purpose, never
