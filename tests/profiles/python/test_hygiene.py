@@ -500,6 +500,7 @@ def test_only_contained_code_roots_are_scanned(tmp_path: Path) -> None:
         "uv run --locked pytest -q",
         "uv run --python 3.11 pytest",
         "uv --quiet run -m pytest",
+        "uv run --frobnicate pytest",
         "make lint && pytest",
         "py.test -q",
         "python -W error -m pytest",
@@ -520,8 +521,6 @@ def test_a_real_pytest_invocation_is_recognised(command: str) -> None:
         "ls -la",
         'echo "run pytest later" > n.md',
         "grep -m pytest notes.txt",
-        "uv run --with pytest echo done",
-        "uv run --frobnicate pytest",
         "cargo test",
         # The interpreter runs `script.py`, which is handed `-m pytest` as its own arguments.
         "python script.py -m pytest",
@@ -529,9 +528,7 @@ def test_a_real_pytest_invocation_is_recognised(command: str) -> None:
     ],
 )
 def test_a_mention_or_an_unrecognised_launcher_is_not_a_run(command: str) -> None:
-    # The fourth names pytest as a package uv installs, and `echo` is what runs. The fifth is
-    # the documented under-report: an option the scanner cannot classify leaves the note
-    # undelivered, never wrongly delivered. Reddened by mutating `recognises` to answer
+    # Reddened by mutating `recognises` to answer
     # `_PYTEST in " ".join(argv)`, the substring test it exists to replace; measured.
     assert not runs_pytest(command)
 
@@ -590,10 +587,11 @@ def test_a_red_pytest_run_gets_the_python_profiles_note(tmp_path: Path) -> None:
 @needs_git
 def test_a_red_pytest_run_behind_uvs_options_gets_the_same_note(tmp_path: Path) -> None:
     # The shape the README and the `attribute-failure` skill recommend, end to end through the
-    # handler: before uv's options were read it got no notice at all, not even the core's
-    # dirty-tree line, because `context_for` speaks only when a hint recognises the run. The
-    # other spellings of uv's options are the scanner's own matrix, in `test_bashscan.py`.
-    # Oracle: `mutations/`'s "uv's options stop being read past `run`".
+    # handler: unless `uv run` is read through to the word a runner adapter recognises, it gets
+    # no notice at all, not even the core's dirty-tree line, because `context_for` speaks only
+    # when a hint recognises the run. The other shapes are the scanner's own matrix, in
+    # `test_bashscan.py`.
+    # Oracle: `mutations/`'s "`uv run` stops being stripped off a segment".
     root = faulty_python_tree(tmp_path)
     command = "uv sync --locked && uv run --locked pytest tests/x.py::t"
     result = hygiene().run(red_event(root, command), session_of(config(root)))

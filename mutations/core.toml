@@ -5612,7 +5612,7 @@ after = """    Verdict.NOT_PROVEN: "the runner's entry point did not resolve",""
 reddens = ["tests/prove/test_javascript.py::test_a_watch_mode_s_receipt_says_it_never_ends"]
 
 # Every assignment the launch holds is the command's, the last of two winning; the adapter is
-# handed the launcher's own words and never an assignment or an `env`.
+# handed the launcher's own words and never an assignment read before them.
 [[mutation]]
 name = "prove keeps the first of two assignments of one name"
 file = "src/stayfixed/prove/run.py"
@@ -5620,7 +5620,7 @@ before = "        assigned[name] = value"
 after = "        assigned.setdefault(name, value)"
 reddens = [
   "tests/prove/test_run.py::test_the_assignments_are_every_one_the_launch_makes_the_last_winning",
-  "tests/prove/test_run.py::test_an_assigned_variable_outside_the_forging_set_reaches_the_runner[argv3]",
+  "tests/prove/test_run.py::test_an_assigned_variable_outside_the_forging_set_reaches_the_runner[argv2]",
 ]
 
 [[mutation]]
@@ -6212,14 +6212,17 @@ before = "    | getattr(os, \"O_NOFOLLOW\", 0)\n"
 after = ""
 reddens = ["tests/test_fsops.py::test_an_append_never_writes_through_a_link"]
 
-# `uv run -m pytest` is read as the launcher `uv run -m` in front of `pytest`: read with modules
-# as no program, `-m` would be uv's last option and `pytest` its module, no program to recognise.
+# `prove` reads `uv run` through with its adapters: read with none, `uv run -m pytest` is a
+# command no adapter recognises.
 [[mutation]]
-name = "prove reads a launcher's -m as naming no program"
+name = "prove reads no command past `uv run`"
 file = "src/stayfixed/prove/run.py"
-before = "    launch = read_launch(given, modules_as_programs=True)"
-after = "    launch = read_launch(given, modules_as_programs=False)"
-reddens = ["tests/prove/test_pytest.py::test_uv_run_m_pytest_runs_as_typed"]
+before = "    launch = read_launch(given, lambda words: any(each.recognises(words) for each in known))"
+after = "    launch = read_launch(given)"
+reddens = [
+  "tests/prove/test_pytest.py::test_uv_run_m_pytest_runs_as_typed",
+  "tests/prove/test_run.py::test_the_command_is_judged_where_its_launcher_runs_it[spaced]",
+]
 
 # The receipt names the realpath of what ran: a virtual environment's `python` is a link, and the
 # receipt names the file it reaches.
@@ -6501,18 +6504,6 @@ after = "    return test is not None"
 reddens = [
   "tests/prove/test_run.py::test_an_assigned_value_that_forges_nothing_reaches_the_runner",
   "tests/prove/test_run.py::test_the_run_s_environment_is_the_caller_s_less_forging_then_the_assignments",
-]
-
-# An assignment right after a launcher, with no `env` between, is the launcher's program as typed:
-# the command runs no test, with an adapter or under `--junit`.
-[[mutation]]
-name = "prove reads an assignment right after a launcher as the command's"
-file = "src/stayfixed/prove/run.py"
-before = "    if launch.stranded:"
-after = "    if False:"
-reddens = [
-  "tests/prove/test_run.py::test_an_assignment_right_after_a_launcher_is_not_recognised[argv0]",
-  "tests/prove/test_run.py::test_an_assignment_right_after_a_launcher_is_not_recognised[junit]",
 ]
 
 # A todo test node does not count as failed, failing or not: `<skipped type="todo"/>` beside its

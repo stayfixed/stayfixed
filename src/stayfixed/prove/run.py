@@ -2,26 +2,24 @@
 say what that proves.
 
 What `prove` does, in order. `guards.api.read_launch` reads the command past its assignments,
-`env` and `uv run …` (the launch), and the first runner adapter that recognises what is left plans
-the run. The command is launched in the directory it is typed in, never in the top-level, and is
-judged in the directory it runs in (`moved`): the one its launcher moves it to (`uv run
---directory`, `UV_WORKING_DIR`), else that same directory. The adapter plans from it, the project
-it answers for is its git top-level, or the directory itself outside a repository, and the
-receipt names it. Every `NAME=value` the launch holds, before its launcher or after an `env`, is
-an assignment of the command: one the adapter's `forging` set says forges (a variable it names,
-set to a value its test says shapes the report) is `refused` before anything is planned. One that
-stands right after a launcher, with no `env` between (`uv run FOO=1 pytest`), is the launcher's
-program as typed, which runs no test: the command is `not proven` (`not-recognised`). The run's
-environment is built once: the caller's, less every inherited variable the adapter's `forging` set
-says forges, then the command's own assignments in order, the last of two for one name winning,
-as a shell builds it. The adapter plans in that environment, finding its program on its
-`PATH` (`stayfixed.profiles.programs`), and the command runs in it. The adapter is handed the
-launcher's words alone, never an assignment or an `env`, and keeps them in front of the command as
-typed. The plan names the argv to execute, where the report arrives and in which format, and the
-globs of the files the runner collects tests from. The tree's state is taken and the command runs
-in a session of its own; then the report is counted, the tree's state is taken again, and
-`CASCADE` says what the run proved. The plan's scratch directory, made outside the project and
-readable by its owner alone, is removed on every path.
+`env` and `uv run …` up to the first word a runner adapter recognises (the launch), and the first
+adapter that recognises what is left plans the run. The command is launched in the directory it
+is typed in, never in the top-level, and is judged in the directory it runs in (`moved`): the one
+its launcher moves it to (`uv run --directory`, `UV_WORKING_DIR`), else that same directory. The
+adapter plans from it, the project it answers for is its git top-level, or the directory itself
+outside a repository, and the receipt names it. Every `NAME=value` the launch holds before its
+launcher, bare or after an `env`, is an assignment of the command: one the adapter's `forging` set
+says forges (a variable it names, set to a value its test says shapes the report) is `refused`
+before anything is planned. The run's environment is built once: the caller's, less every inherited
+variable the adapter's `forging` set says forges, then the command's own assignments in order, the
+last of two for one name winning, as a shell builds it. The adapter plans in that environment,
+finding its program on its `PATH` (`stayfixed.profiles.programs`), and the command runs in it. The
+adapter is handed the launcher's words alone, never an assignment read before them, and keeps them
+in front of the command as typed. The plan names the argv to execute, where the report arrives and
+in which format, and the globs of the files the runner collects tests from. The tree's state is
+taken and the command runs in a session of its own; then the report is counted, the tree's state
+is taken again, and `CASCADE` says what the run proved. The plan's scratch directory, made outside
+the project and readable by its owner alone, is removed on every path.
 
 The bound, `BOUND`, which `docs/cli.md` states word for word: what a file in the tree, and the
 environment, can do to the report is conceded, never checked. So the tree's state is information
@@ -33,7 +31,8 @@ reads as a green run, never against an agent forging the report, which the bound
 
 - `ASSIGNED_FORGING`: a variable under which the runner reports tests that checked nothing as
   passed, set to a value that does so (`PYTHONOPTIMIZE=1`, never `=0`), assigned in the command
-  itself, before a launcher or after it, after `env`. The anchor is the command's own words, which
+  itself before its launcher, bare or after `env`; one behind `uv run` is a launcher word, the
+  bound's. The anchor is the command's own words, which
   stayfixed reads before anything runs; the control is a closed list the adapter names
   (`forging`), and refuses nothing outside it. The same variable inherited with such a value is
   removed from the run's environment, which the receipt names (`scrubbed`). A variable an env file
@@ -190,9 +189,6 @@ _ADAPTER_WORDS: Mapping[Verdict, str] = {
 
 # A shell assignment, `NAME=value`, as the shell reads one before a command and `env` after it.
 _ASSIGNMENT = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)=(.*)", re.DOTALL)
-# The detail of a command whose assignment stands right after its launcher (`uv run FOO=1
-# pytest`), which the launcher runs as its program.
-STRANDED = "{name}=… after the launcher is run as its program; `env {name}=…` assigns it"
 # An option given its value in the same word, `--name=value`.
 _OPTION_VALUE = re.compile(r"(--[^=]+=).*", re.DOTALL)
 REDACTED = "…"
@@ -674,10 +670,9 @@ def prove(
     """
     given = tuple(argv)
     shown = redacted(given)
-    # `uv run -m pytest` reads as the launcher `uv run -m` and the command `pytest`.
-    launch = read_launch(given, modules_as_programs=True)
-    command = launch.command
     known = shipped_adapters() if adapters is None else adapters
+    launch = read_launch(given, lambda words: any(each.recognises(words) for each in known))
+    command = launch.command
     adapter = (
         next((each for each in known if command and each.recognises(command)), None)
         if junit is None
@@ -690,15 +685,6 @@ def prove(
     handed, directory = moved(launch, cwd, env)
     root = checkout_root(directory) or directory
     run = _Run(handed, shown, cwd, directory, root, env, scrubbed, timeout, echo, junit)
-    if launch.stranded:
-        # As typed, the launcher runs the assignment as its program, and no test runs: with an
-        # adapter or under `--junit` alike.
-        return _receipt(
-            _Outcome(unproven=NOT_RECOGNISED),
-            shown,
-            directory=directory,
-            detail=STRANDED.format(name=launch.stranded[0].partition("=")[0]),
-        )
     if adapter is None and (junit is None or not command):
         return _receipt(
             _Outcome(unproven=NOT_RECOGNISED), shown, directory=directory, verified=run.verified

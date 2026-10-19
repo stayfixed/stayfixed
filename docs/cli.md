@@ -598,10 +598,10 @@ so a context gets at most one note, whichever event carries it. The note is chos
 that failed rather than by configuration: each simple command of the red run is offered to every
 shipped profile's hint, and the dirty-tree line and the line of each profile whose runner it
 recognises (Python's: `pytest`, or `python -m pytest`) are delivered together. A runner is
-recognised behind environment assignments, an `env` prefix and `uv run` with uv's own options (`uv
-run --locked pytest`, `uv --quiet run pytest`, `uv run -- pytest`). A value-taking option takes its
-value, so `uv run --with pytest echo` runs `echo`; an option outside uv's own list (`uv run
---frobnicate pytest`) leaves the command whole, so no value is ever taken for the program. A red
+recognised behind environment assignments, an `env` prefix and `uv run`, read as `stayfixed prove`
+reads it, its bound included: the command starts at the first word a runner adapter recognises, so
+a runner named before the real command (`uv run --with pytest echo`, `uv run grep -m pytest x`)
+gets the note, and one named through an alias, or by a path no adapter recognises, does not. A red
 command no profile recognises gets no note. When Python's walk stopped at its bound, its line says
 the walk could not tell whether a stale build was imported, and names neither stale bytecode nor its
 absence.
@@ -693,10 +693,22 @@ stayfixed prove --junit target/surefire-reports/TEST-all.xml -- mvn -q test
 **What runs.** The command is everything after `--`, run as typed, never through a shell. `prove`
 reads no configuration, needs no `stayfixed.toml`, and takes neither `--root` nor `--machine`; a
 line with no `--`, or nothing after it, is a usage error (2). It reads the command past its
-`NAME=value` assignments, `env` and a launcher (`uv run …`, `uv run -m` too), as the session guard
-reads a command, and the first runner adapter that recognises what is left plans the run: the
-argv, and where the runner's report arrives and in which format. A command no adapter recognises, an `env` given an option among them, is `not proven`
-(`not-recognised`); `--junit` (below) counts the report of a runner no adapter knows.
+`NAME=value` assignments, `env` and `uv run`, as the red-run hint reads a command, and the first
+runner adapter that recognises what is left plans the run: the argv, and where the runner's report
+arrives and in which format. A command no adapter recognises, an `env` given an option among them,
+is `not proven` (`not-recognised`); `--junit` (below) counts the report of a runner no adapter
+knows.
+
+**The `uv run` bound.** Behind `uv` and the first later word `run` (so `uv tool run pytest` and `uv
+pip install run pytest` too), the command starts at the first word an adapter recognises, and every
+word before it goes to uv unchecked, whether a uv option's value, another program and its
+arguments, or an `env` and its assignments. So `uv run --with pytest python -O -m pytest`, `uv run
+python -O -m coverage run -m pytest`, `uv run python -O .venv/bin/pytest`, `uv run pypy3 -O -m
+pytest` and `uv run env PYTHONOPTIMIZE=1 pytest` run with `-O` or `PYTHONOPTIMIZE` unchecked and
+can read `proved`; `uv run grep -m pytest x` runs with the report options added and reads `not
+proven`; and `uv run --with pytest -- pytest -x` hands them to uv, which refuses them (`not
+proven`). A `uv run` in which no adapter recognises a word is read whole, as is a runner named
+through an alias or by a path no adapter recognises, which `--junit` counts.
 
 The run is the command's own words with only the adapter's report options added (the table
 below). Behind a launcher, the command's words are handed to it as typed and the launcher finds
@@ -709,27 +721,30 @@ name on its `PATH`, so `PATH=.venv/bin:$PATH pytest` runs the `pytest` it names.
 the realpath of the program that ran.
 
 The command runs in the directory `prove` is typed in, or in the one its launcher is told to run it
-in (`uv run --directory DIR`, or `UV_WORKING_DIR`, the option winning; `--project` moves nothing),
-and that directory is the one judged: the plan is made there, and the project the receipt answers
-for, whose tree's state it names, is its git top-level, or the directory itself outside a
-repository. A command typed in `packages/web` runs in `packages/web`.
+in: each `uv` among the launcher's words moves to the directory its `--directory DIR` or
+`--directory=DIR` names, else to `UV_WORKING_DIR`'s (`--project` moves nothing). Only the
+launcher's words are read, so neither moves a command read whole, a `--directory` after the first
+word an adapter recognises is not read, and a launched program's own `--directory` before it is
+read as uv's. That directory is the one judged: the plan is made there, and the project the
+receipt answers for, whose tree's state it names, is its git top-level, or the directory itself
+outside a repository. A command typed in `packages/web` runs in `packages/web`.
 
 **The environment** is built once, as a shell builds it: yours, then each `NAME=value` the command
-spells before what runs, in order, before the launcher or after an `env`, the last of two for one
-name winning; an assignment never reaches the argv. It is the whole launched process's, the
-launcher's included. An assignment right after a launcher, with no `env` between (`uv run TYPED=yes
-pytest`), is no assignment: a shell hands it to uv as a word, uv runs it as its program and fails
-("Failed to spawn", exit 2), so the command is `not proven` (`not-recognised`, its detail naming
-the variable); `uv run env TYPED=yes pytest` sets it. Two variables are set apart, each its
-adapter's forging set, and only for a value that turns tests off: `PYTHONOPTIMIZE` (pytest) set to
-anything but empty or `0`, and `UPDATE_SNAPSHOT`
+spells before its launcher, bare or after an `env`, in order, the last of two for one name
+winning; such an assignment never reaches the argv. It is the whole launched process's, the
+launcher's included. An assignment after `uv run`, bare or after an `env`, is the launcher's word,
+handed to uv as typed: bare (`uv run TYPED=yes pytest`), uv runs it as its program and fails
+("Failed to spawn", exit 2), so no test runs; after an `env`, it is set unchecked (the bound
+above). Two variables are set apart, each its adapter's forging set, and only for a value that
+turns tests off: `PYTHONOPTIMIZE` (pytest) set to anything but empty or `0`, and `UPDATE_SNAPSHOT`
 (vitest) set to anything but empty, `none` or `new`, which vitest reads as `--update`. Assigned by
-the command, such a value is `refused` (`assigned-forging`, naming the variable); inherited, the
-variable is removed from the run's environment, which the receipt names (`scrubbed`). Every other
-variable and value is yours, read by the runner as outside `prove`: `PYTEST_ADDOPTS`,
-`NODE_OPTIONS`, `GOFLAGS`, `GOENV` and the rest. A variable an env file sets past this reading (`uv
-run --env-file`, an inherited `UV_ENV_FILE`) is the bound's: it can set `PYTHONOPTIMIZE` or
-`UPDATE_SNAPSHOT`, or a nested launcher's directory, where `prove` does not look.
+the command before its launcher, such a value is `refused` (`assigned-forging`, naming the
+variable); inherited, the variable is removed from the run's environment, which the receipt names
+(`scrubbed`). Every other variable and value is yours, read by the runner as outside `prove`:
+`PYTEST_ADDOPTS`, `NODE_OPTIONS`, `GOFLAGS`, `GOENV` and the rest. A variable an env file sets past
+this reading (`uv run --env-file`, an inherited `UV_ENV_FILE`) is the bound's: it can set
+`PYTHONOPTIMIZE` or `UPDATE_SNAPSHOT`, or a nested launcher's directory, where `prove` does not
+look.
 
 **Input and output.** The runner's standard input is `/dev/null`, never yours, so nothing piped
 into `prove` reaches the run and a test that reads it sees its end. A report the runner writes to a
@@ -750,7 +765,7 @@ options such as `-cu` among them, is the bound's.
 
 | Runner | Recognised | Added to the command | Refused, or `not proven` | The receipt names |
 |---|---|---|---|---|
-| `pytest` | `pytest`, `py.test` and `python… -m pytest` (the interpreter's own options alone before `-m`), each also behind `poetry run`, `uv run` or `uv run -m` | `--junitxml=<report> -o junit_family=xunit2`, last among pytest's options and before a `--` where there is one, so they win over the command's own and an `addopts` | refused: `--setup-plan` and `--setup-only` (and `--setupplan`, `--setuponly`), which report the tests they only set up as passed; `--trace`, which reports a failing test as passed once its standard input ends; the interpreter's `-O` in any word of its flags before `-m pytest` (`-OO`, `-bO`), which compiles out every `assert` pytest does not rewrite | the console script, the interpreter or the launcher |
+| `pytest` | `pytest`, `py.test` and `python… -m pytest` (the interpreter's own options alone before `-m`), each also behind `poetry run`, `uv run` or `uv run -m` | `--junitxml=<report> -o junit_family=xunit2`, last among pytest's options and before a `--` where there is one, so they win over the command's own and an `addopts` | refused: `--setup-plan` and `--setup-only` (and `--setupplan`, `--setuponly`), which report the tests they only set up as passed; `--trace`, which reports a failing test as passed once its standard input ends; the interpreter's `-O` in any word of its flags before `-m pytest` (`-OO`, `-bO`), which compiles out every `assert` pytest does not rewrite, unless the `uv run` bound puts it among the launcher's words | the console script, the interpreter or the launcher |
 | `jest` | `jest`, bare, after `npx` or `npx --no-install`, or by a path to it (`./node_modules/.bin/jest`, npm's link or pnpm's shim); `node [Node's options] <entry>`, the entry a path into `node_modules/jest` or `jest-cli`, or `node_modules/.bin/jest` | `--json --outputFile=<report>`; the command's own `--json` runs as without it, and its own `--outputFile` leaves jest writing no report (`not proven`) | refused: `-u`/`--updateSnapshot`, and `--collectTests`, which exits 0 reporting a failing test as passed, each also dashed (`--update-snapshot`); `never-ends`: `--watch`, `--watchAll` (`--watch-all`), and Node's `--inspect-brk` and `--inspect-wait`, on the command line or in `NODE_OPTIONS` | the program (`npx`, `node`, or the file the path names) |
 | `vitest` | as `jest`, for `vitest` and `node_modules/vitest` | `run` first where the command's first word is none of vitest's subcommands; `--reporter=json --outputFile=<report>`, and `--reporter=default` where the command names no reporter | refused: `-u`/`--update` but `--update=none`, `--no-update` and `--update=new`; `--mergeReports` or `--merge-reports`, which runs nothing and reports an earlier run's blobs; `--dangerouslyIgnoreUnhandledErrors`, which exits 0 past an error vitest fails the run for; and a rewriting `UPDATE_SNAPSHOT` (above); `never-ends`: the `watch` and `dev` subcommands, `-w`/`--watch`, `--inspect-brk`, `--inspect-wait`; `no-test-run`: `bench`, `list`, `init` and `doctor`, whose detail names `vitest run` | as `jest` |
 | `node --test` | `node` with `--test` among its options | a junit reporter to `<report>` and the spec reporter to standard output, before the command's own options | refused: `--test-update-snapshots` and `--test-rerun-failures`, which reports the tests a state file says passed before as passed, unrun; on the command line or in `NODE_OPTIONS`, which Node reads it from too; `never-ends`: `--watch`, `--watch-path`, and `--inspect-brk` and `--inspect-wait` there or in `NODE_OPTIONS` | `node` |
@@ -805,7 +820,8 @@ The discovery set of each runner, whose untracked files the receipt names (below
 **`--junit PATH`** is for a runner no adapter knows: no adapter is consulted, the command runs
 as typed (its assignments, `env` and launcher read as above, its program found as above, nothing
 refused or removed), and its report is the JUnit file at `PATH`, read from the directory the command
-runs in and allowed anywhere, inside the project too. Before the run `prove` notes what is at
+runs in and allowed anywhere, inside the project too; a command read whole moves to no directory,
+so `PATH` is read where `prove` is typed whatever its `--directory` or `UV_WORKING_DIR`. Before the run `prove` notes what is at
 `PATH` reaches, followed through a link (nothing, or its inode, size and modification time);
 after it, the file is counted only when `PATH` reaches a regular file the run created or rewrote,
 or a link the run pointed at another file (`latest.xml` at the report it just wrote), and

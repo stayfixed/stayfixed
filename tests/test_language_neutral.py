@@ -78,17 +78,12 @@ STACK_NAMED = {
     ("src/stayfixed/ledger/scan.py", "venv"),
     ("src/stayfixed/ledger/scan.py", "pycache"),
     ("src/stayfixed/ledger/scan.py", "pyc"),
-    # The command scanner unwraps `uv run <cmd>` to `<cmd>`, as it unwraps `env <cmd>`, past
-    # uv's own options before and after `run`; this module is that unwrap and nothing else: uv's
-    # option tables and the reading of them, which `guards/bashscan.py` calls and so names no
+    # The command scanner unwraps `uv run <cmd>` to `<cmd>`, as it unwraps `env <cmd>`, up to
+    # the first word a runner adapter recognises; this module is that unwrap and the directory
+    # uv runs the command in, which `guards/bashscan.py` and `prove` call, so neither names a
     # stack itself. `uv run` is a Python launcher, and it stays beside the shared scanner rather
-    # than in the Python profile because more than the profiles read commands through that
-    # unwrapping: the background-cleanup guard (`guards/bgcleanup.py`) judges the command
-    # `uv run` launches, as every profile's `recognises` does. Its option tables name the
-    # interpreter uv picks (`--python`, `--managed-python`, `--python-platform` …) because they
-    # are uv's own options, which the unwrap has to know to step past.
+    # than in the Python profile because every stack's runner may stand behind it.
     ("src/stayfixed/guards/uvrun.py", "uv"),
-    ("src/stayfixed/guards/uvrun.py", "python"),
     # stayfixed's own installer, `uv tool install`, named in two of `doctor`'s remedies
     # (`cli-path` in the core's checks, `overlay-requires` in the overlay area's) and in `setup`'s
     # pinned install command: the tool stayfixed itself is installed with, not a stack a project

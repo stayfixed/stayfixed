@@ -126,11 +126,11 @@ def test_a_command_the_scanner_cannot_read_is_asked_of_no_hint() -> None:
 
 def test_each_simple_command_is_unwrapped_to_its_own_program() -> None:
     # What every hint is handed: one argv per simple command, past assignments and the
-    # scanner's wrappers, in the order the command line gives them. Reddened by mutating
-    # `simple_commands`'s `words = bashscan.command_words(segment)` to `words = segment`;
-    # measured.
-    assert simple_commands("FOO=1 uv run make lint && env cargo test -q") == [
-        ["make", "lint"],
+    # scanner's wrappers, in the order the command line gives them; `uv run` up to the first
+    # word a runner adapter recognises. Reddened by mutating `simple_commands`'s `words =
+    # bashscan.command_words(segment, …)` to `words = segment`; measured.
+    assert simple_commands("FOO=1 uv run --locked pytest -q && env cargo test -q") == [
+        ["pytest", "-q"],
         ["cargo", "test", "-q"],
     ]
 

@@ -130,7 +130,7 @@ from __future__ import annotations
 
 import re
 import shlex
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import NamedTuple
 
@@ -195,10 +195,8 @@ _WORD_BOUNDARY = frozenset({";", "&", "|", "(", ")", "<", ">"})
 _ASSIGNMENT = re.compile(r"\A[A-Za-z_][A-Za-z0-9_]*=")
 # `env pytest`: a bare wrapper token, not the command. Deliberately not a general argv
 # resolver: `env` and `uv run` (`guards/uvrun.py`) are the only launchers read through, and
-# `poetry run`, `npx`, `sudo` and `time` are not. Under-reporting stays the safe direction for
-# the warn-only callers this exists for -- an unrecognised launcher just leaves a note
-# undelivered, never wrongly delivered -- so a launcher is added only when a real shape has been
-# reproduced, not speculatively; once one is read at all, its tables are its whole option list.
+# `poetry run`, `npx`, `sudo` and `time` are not, unless they stand behind `uv run`, where every
+# word before the first a runner adapter recognises is the launcher's.
 _SINGLE_WRAPPERS = frozenset({"env"})
 
 
@@ -710,86 +708,84 @@ def segments(tokens: list[str]) -> list[list[str]]:
 class Launch(NamedTuple):
     """A segment read the way `read_launch` reads it, every word in one part.
 
-    `assignments` is every `NAME=value` word the walk read as one, in order, wherever it stood:
-    before a launcher or after it, bare or after `env`. `launcher` is the words of each launcher
-    read through, in order -- `uv`, its options and their values, `run`, `run`'s options, and a
-    `--` that ends them -- and never an assignment or an `env`. `command` is the rest, what
-    `command_words` returns.
-
-    `stranded` is each of `assignments` that stands right after a launcher's words, with no `env`
-    between them (`uv run FOO=1 pytest`): a shell hands it to the launcher as a word, and uv runs
-    it as its program, so typed as it is the command runs no test. The walk reads it as an
-    assignment all the same, as every reader of `command_words` does; a caller that runs the
-    command, as `prove` does, can tell the command as typed apart by it.
+    `assignments` is every `NAME=value` word the walk read as one, in order: before a launcher,
+    bare or after `env`. `launcher` is the words of each launcher read through, in order -- `uv`,
+    every word up to the command it launches, an `env` and its assignments among them.
+    `command` is the rest, what `command_words` returns.
     """
 
     assignments: tuple[str, ...]
     launcher: tuple[str, ...]
     command: tuple[str, ...]
-    stranded: tuple[str, ...] = ()
 
 
-def read_launch(segment: Sequence[str], *, modules_as_programs: bool = False) -> Launch:
+def read_launch(
+    segment: Sequence[str], recognises: Callable[[Sequence[str]], bool] | None = None
+) -> Launch:
     """`segment` split into its assignments, its launcher's words and its command, by the one
     walk `command_words` documents.
 
     A caller that runs the command, and not only names its program, needs every part: the
     assignments go into the environment of what it starts, since nothing but a shell reads them
-    from an argv, and the launcher's words are what it may keep in front of the program. A
-    launcher the tables cannot read whole is left in `command`, as `command_words` leaves it.
+    from an argv, and the launcher's words are what it may keep in front of the program.
     """
     assigned: list[str] = []
     launcher: list[str] = []
-    stranded: list[str] = []
-    # Whether the last thing read was a launcher's words, past any assignment after them.
-    after_launcher = False
     index = 0
     while index < len(segment):
         token = segment[index]
         if _ASSIGNMENT.match(token):
             assigned.append(token)
-            if after_launcher:
-                stranded.append(token)
             index += 1
             continue
         name = Path(token).name
-        if uvrun.is_launcher(name):
-            launched = uvrun.past_run(segment, index + 1, modules_as_programs=modules_as_programs)
+        if recognises is not None and uvrun.is_launcher(name):
+            launched = _launched(segment, index, recognises)
             if launched is None:
                 break
             launcher.extend(segment[index:launched])
             index = launched
-            after_launcher = True
             continue
         if name in _SINGLE_WRAPPERS:
-            after_launcher = False
             index += 1
             continue
         break
-    return Launch(tuple(assigned), tuple(launcher), tuple(segment[index:]), tuple(stranded))
+    return Launch(tuple(assigned), tuple(launcher), tuple(segment[index:]))
 
 
-def command_words(segment: list[str], *, modules_as_programs: bool = False) -> list[str]:
+def _launched(
+    segment: Sequence[str], index: int, recognises: Callable[[Sequence[str]], bool]
+) -> int | None:
+    """Where the command that the `uv` at `index` launches starts: the first word after `run`
+    that `recognises` reads a command from; `None` where no `run` follows or no such word does."""
+    start = uvrun.past_run(segment, index + 1)
+    if start is None:
+        return None
+    for at in range(start, len(segment)):
+        if recognises(segment[at:]):
+            return at
+    return None
+
+
+def command_words(
+    segment: list[str], recognises: Callable[[Sequence[str]], bool] | None = None
+) -> list[str]:
     """This segment's own command and arguments, with any leading environment-assignment
-    tokens and the wrapper prefixes -- `_SINGLE_WRAPPERS`, and `uv run` with uv's options --
-    stripped off the front, repeatedly, so `env FOO=1 pytest` and `FOO=1 uv run --locked
-    pytest` both resolve to `pytest` as the real command, not to the assignment or the
-    launcher.
+    tokens and the wrapper prefixes -- `_SINGLE_WRAPPERS`, and, given `recognises`, `uv run`
+    with every word up to the first that `recognises` reads a command from -- stripped off the
+    front, repeatedly, so `env FOO=1 pytest` and `FOO=1 uv run --locked pytest` both resolve to
+    `pytest` as the real command, not to the assignment or the launcher.
 
     `Path(segment[0]).name` alone missed `PYTHONPATH=src pytest` and `FOO=1 BAR=2 pytest`
     entirely, and neither is contrived: an assignment prefix is the ordinary way to run a
     suite against a checkout that has no venv of its own.
 
-    A `uv run` whose next word is a module or a script (`-m`, `--script`) is left whole,
-    since that word names no program, unless `modules_as_programs` asks for it: a caller
-    asking which runner ran, as the red-run hint does, reads `uv run -m pytest` as `pytest`.
-
-    THE UNDER-REPORT IS DOCUMENTED, not accidental: a `uv` command with an option outside
-    uv's tables (`uv run --frobnicate pytest`), or one that is not `uv run`, is left whole and
-    its program is `uv`, and no other launcher is recognised at all. Under-reporting is the
-    safe direction for the warn-only callers this serves -- an unrecognised launcher leaves a
-    note undelivered rather than wrongly delivered -- so a launcher is added only when a real
-    shape has been reproduced.
+    THE BOUND IS DOCUMENTED, not accidental: a `uv` command in which `recognises` reads no
+    command, or one with no `run`, is left whole and its program is `uv`, and no other launcher
+    is read through. Behind `uv run` every word before the first that `recognises` reads a
+    command from is the launcher's, so a runner named as a uv option's value or as another
+    program's argument (`uv run --with pytest echo`, `uv run grep -m pytest x`) is read as the
+    command, and a warn-only caller delivers its note to a run of no test.
     """
 
-    return list(read_launch(segment, modules_as_programs=modules_as_programs).command)
+    return list(read_launch(segment, recognises).command)

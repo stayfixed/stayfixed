@@ -48,7 +48,6 @@ from stayfixed.prove.run import (
     NONE_RAN,
     NOT_RECOGNISED,
     NOT_STARTED,
-    STRANDED,
     TIMED_OUT,
     WORDS,
     Receipt,
@@ -192,7 +191,6 @@ def test_the_runner_reads_nothing_piped_into_prove(tmp_path: Path) -> None:
         ["env", "-i", NAME],
         ["env", "-u", "HOME", NAME],
         ["env", "-S", f"FORGE=x {NAME}"],
-        ["uv", "run", "env", "-i", "FORGE=x", NAME],
         [],
     ],
 )
@@ -209,17 +207,12 @@ def test_an_unrecognised_command_is_not_proven(tmp_path: Path, argv: list[str]) 
     [
         ["env", "FORGE=x", NAME],
         ["FORGE=x", NAME],
-        # Wherever the command spells the assignment: before the launcher or after it, bare or
-        # after `env`.
-        ["uv", "run", "env", "FORGE=x", NAME],
-        ["env", "A=1", "uv", "run", "env", "FORGE=x", NAME],
         ["FORGE=x", "uv", "run", NAME],
     ],
 )
 def test_an_assigned_forging_variable_is_refused(tmp_path: Path, argv: list[str]) -> None:
-    # Mutations (declared): the assigned name scrubbed from the run's environment instead of
-    # refused -> the run goes ahead and the stand-in's green report is `proved`; the forging scan
-    # stopping at the launcher -> the shapes past `uv run` are `proved`.
+    # Mutation (declared): the assigned name scrubbed from the run's environment instead of
+    # refused -> the run goes ahead and the stand-in's green report is `proved`.
     adapter = StandIn()
     got = run(tmp_path, *argv, adapter=adapter)
     assert (got.verdict, got.reason) == (REFUSED, ASSIGNED_FORGING)
@@ -252,30 +245,26 @@ GREEN_JUNIT_WRITER = [
 @pytest.mark.parametrize(
     ("argv", "junit"),
     [
-        pytest.param(["uv", "run", "TYPED=yes", NAME], None, id="argv0"),
-        pytest.param(["uv", "run", "--", "TYPED=yes", NAME], None, id="argv1"),
-        pytest.param(["env", "A=1", "uv", "run", "TYPED=yes", "B=2", NAME], None, id="argv2"),
-        pytest.param(["uv", "run", "env", "A=1", "uv", "run", "TYPED=yes", NAME], None, id="argv3"),
+        pytest.param(["uv", "run", "TYPED=yes", "pytest"], None, id="argv0"),
+        pytest.param(["uv", "run", "--", "TYPED=yes", "pytest"], None, id="argv1"),
+        pytest.param(["env", "A=1", "uv", "run", "TYPED=yes", "B=2", "pytest"], None, id="argv2"),
+        pytest.param(
+            ["uv", "run", "env", "A=1", "uv", "run", "TYPED=yes", "pytest"], None, id="argv3"
+        ),
         pytest.param(["uv", "run", "TYPED=yes", *GREEN_JUNIT_WRITER], "out.xml", id="junit"),
     ],
 )
-def test_an_assignment_right_after_a_launcher_is_not_recognised(
+def test_an_assignment_right_after_a_launcher_is_handed_to_it_and_runs_no_test(
     tmp_path: Path, argv: list[str], junit: str | None
 ) -> None:
     # Typed as it is, uv runs `TYPED=yes` as its program (uv 0.12.19: "Failed to spawn", exit 2),
-    # and no test runs; read as an assignment, the run would be `proved` for a command that runs
-    # nothing, with an adapter or under `--junit`, whose writer would leave a green report.
-    # Mutation (declared): the stranded assignments left unread -> the stand-in runs and is
-    # `proved`.
-    adapter = StandIn()
+    # and no test runs, with an adapter or under `--junit`, whose writer would leave a green
+    # report: the word is handed to uv as typed.
     environ = with_uv(fake_uv(tmp_path / "bin"))
     report = None if junit is None else Path(junit)
-    got = run(tmp_path, *argv, adapter=adapter, environ=environ, junit=report)
-    assert (got.verdict, got.reason) == (NOT_PROVEN, NOT_RECOGNISED)
-    # Mutation: none -- the detail is wording.
-    assert got.detail == STRANDED.format(name="TYPED")
+    got = prove(argv, cwd=tmp_path, environ=environ, timeout=600, junit=report)
+    assert got.verdict == NOT_PROVEN
     assert "yes" not in line(got)
-    assert adapter.seen == []
 
 
 @pytest.mark.parametrize(
@@ -283,16 +272,14 @@ def test_an_assignment_right_after_a_launcher_is_not_recognised(
     [
         ["env", "TYPED=yes", NAME],
         ["TYPED=yes", NAME],
-        ["uv", "run", "env", "TYPED=yes", NAME],
-        ["TYPED=no", "uv", "run", "env", "TYPED=yes", NAME],
+        ["TYPED=no", "env", "TYPED=yes", NAME],
     ],
 )
 def test_an_assigned_variable_outside_the_forging_set_reaches_the_runner(
     tmp_path: Path, argv: list[str]
 ) -> None:
     # `Popen` reads no shell assignment: the run hands it in the environment, the last of two
-    # winning, and the word itself never reaches the argv. Mutation (declared): the assignments
-    # read only up to the launcher -> the one past `uv run` never reaches the runner.
+    # winning, and the word itself never reaches the argv.
     got = run(tmp_path, *argv, "--expect-env", "TYPED=yes")
     assert got.verdict == PROVED
 
@@ -433,7 +420,7 @@ def test_the_assignments_are_every_one_the_launch_makes_the_last_winning() -> No
     [
         (
             ["A=1", "env", "B=2", "uv", "run", "--locked", "env", "C=3", NAME],
-            ("uv", "run", "--locked"),
+            ("uv", "run", "--locked", "env", "C=3"),
         ),
         (["env", "A=1", NAME], ()),
         (["uv", "--quiet", "run", "--", NAME], ("uv", "--quiet", "run", "--")),
@@ -442,8 +429,9 @@ def test_the_assignments_are_every_one_the_launch_makes_the_last_winning() -> No
 def test_the_adapter_is_handed_the_launcher_s_words_alone(
     tmp_path: Path, argv: list[str], launch: tuple[str, ...]
 ) -> None:
-    # The core takes every assignment and every `env` out of the launch: they reach the run's
-    # environment, and an adapter that keeps the launch in its argv keeps only the launcher.
+    # The core takes every assignment and every `env` before the launcher out of the launch: they
+    # reach the run's environment, and an adapter that keeps the launch in its argv keeps only the
+    # launcher, which holds every word before the command, an `env` and its assignments too.
     # Mutation (declared): the launch handed whole -> the adapter sees the assignments too.
     adapter = StandIn()
     got = run(tmp_path, *argv, adapter=adapter)

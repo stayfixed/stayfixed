@@ -39,6 +39,7 @@ from typing import TYPE_CHECKING, Any
 from stayfixed.gitenv import answer_lines, git_run
 from stayfixed.guards import bashscan
 from stayfixed.guards.roots import contained_roots
+from stayfixed.profiles.adapters import shipped_adapters
 from stayfixed.profiles.hints import answer, shipped_hints
 
 if TYPE_CHECKING:
@@ -77,9 +78,10 @@ def simple_commands(command: str) -> list[list[str]]:
     tokens = bashscan.tokenize(command)
     if tokens is None:
         return []
+    adapters = shipped_adapters()
     found: list[list[str]] = []
     for segment in bashscan.segments(tokens):
-        words = bashscan.command_words(segment, modules_as_programs=True)
+        words = bashscan.command_words(segment, lambda w: any(a.recognises(w) for a in adapters))
         if words:
             found.append(words)
     return found
