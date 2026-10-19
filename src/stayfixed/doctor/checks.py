@@ -1079,26 +1079,31 @@ HOME_DIFFERS = (
 )
 
 
-def _names_home_config(value: str, home: str) -> bool:
-    """Whether `value`, an `XDG_CONFIG_HOME`, names `$HOME/.config`, the directory the machine file
-    is read under, so that ignoring it loses nothing; a value that does not resolve names none."""
-    if not (os.path.isabs(value) and os.path.isabs(home)):
+def _names_home_config(value: str, home: Path) -> bool:
+    """Whether `value`, an `XDG_CONFIG_HOME`, names `home`'s `.config`, the directory the machine
+    file is read under, so ignoring it loses nothing; a value that does not resolve names none."""
+    if not os.path.isabs(value):
         return False
     try:
-        return fsops.resolved(Path(value)) == fsops.resolved(Path(home) / DEFAULT_CONFIG_DIR)
+        return fsops.resolved(Path(value)) == fsops.resolved(home / DEFAULT_CONFIG_DIR)
     except OSError:
         return False
 
 
 def _ignored_env(context: Context) -> Row:
-    chosen, recorded = context.env.get("HOME") or "", passwd_home()
+    # The home every command reads under, and none for a `HOME` that names none (`owner_home`).
+    home, recorded = owner_home(), passwd_home()
     set_here = [
         name
         for name in IGNORED_ENV
         if context.env.get(name)
-        and not (name == "XDG_CONFIG_HOME" and _names_home_config(context.env[name], chosen))
+        and not (
+            name == "XDG_CONFIG_HOME"
+            and home is not None
+            and _names_home_config(context.env[name], home)
+        )
     ]
-    differs = bool(chosen) and recorded is not None and Path(chosen).resolve() != recorded.resolve()
+    differs = home is not None and recorded is not None and home.resolve() != recorded.resolve()
     if not set_here:
         return Row(OK, HOME_DIFFERS if differs else "no environment variable is being ignored")
     detail = (

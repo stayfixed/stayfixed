@@ -1104,6 +1104,38 @@ def test_a_home_the_password_database_does_not_record_is_information(
     assert "XDG_CONFIG_HOME" in check.detail and checks.HOME_DIFFERS in check.detail
 
 
+@pytest.mark.parametrize("value", ["", "h"], ids=["empty", "relative"])
+def test_a_home_that_names_no_home_is_not_called_a_home_stayfixed_follows(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, value: str
+) -> None:
+    # The row read `HOME` raw, so a relative one was resolved against the working directory and
+    # reported as a home stayfixed follows, while every command reads it as naming no home
+    # (`owner_home`). Mutation (oracle): `mutations/`'s "ignored-env reads HOME raw".
+    monkeypatch.setattr(checks, "passwd_home", lambda: tmp_path / "database")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("HOME", value)
+    env = _env(tmp_path, HOME=value)
+    check = _by_name(_checks(tmp_path, _initialised(tmp_path), env=env), "ignored-env")
+    assert (check.status, check.detail) == (OK, "no environment variable is being ignored")
+
+
+def test_an_xdg_config_home_naming_the_database_homes_config_is_not_ignored_with_home_unset(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # With `HOME` unset every command reads under the password database's home (`owner_home`),
+    # so an `XDG_CONFIG_HOME` naming that `.config` loses nothing; compared against an absent
+    # `HOME`, it was warned about. `owner_home` is stood in for, so no test reads the real home.
+    # Mutation (oracle): `mutations/`'s "ignored-env reads HOME raw".
+    database = tmp_path / "database"
+    (database / ".config").mkdir(parents=True)
+    monkeypatch.setattr(checks, "passwd_home", lambda: database)
+    monkeypatch.setattr(checks, "owner_home", lambda: database)
+    env = _env(tmp_path, XDG_CONFIG_HOME=str(database / ".config"))
+    env.pop("HOME", None)
+    check = _by_name(_checks(tmp_path, _initialised(tmp_path), env=env), "ignored-env")
+    assert (check.status, check.detail) == (OK, "no environment variable is being ignored")
+
+
 def test_a_budget_the_base_branch_raised_is_named_as_raised(tmp_path: Path) -> None:
     # The base branch may raise a budget above the preset, and the value set is the value in
     # force, so the row says which budgets are raised and names no clamp: no consumer applies one.
