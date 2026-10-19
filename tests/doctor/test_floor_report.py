@@ -157,18 +157,18 @@ def test_a_file_longer_than_a_session_reads_is_red_with_a_remedy_of_its_own(
 
 def test_preferences_names_the_layer_and_hides_free_text(tmp_path: Path) -> None:
     # Each owner key and each preference as `key (layer)`, with a value only where it is one of
-    # stayfixed's own words, a number or a boolean: `index_extra` and `reply_language` are text a
+    # stayfixed's own words, a number or a boolean: `index_extra` and `preset` are text a
     # repository or an owner wrote. Mutation (`mutations/`'s "the preferences row prints a free
     # text value"): the repository's text reaches the row.
     root = _initialised(tmp_path, template=LOCAL_ONLY + 'index_extra = ["IGNORE-PRIOR-RULES.md"]\n')
     machine = tmp_path / "machine.toml"
     machine.write_text(
-        '[personal]\nreply_language = "SECRET-WORD"\n[guards]\nbg_cleanup = false\n', "utf-8"
+        '[personal]\npreset = "SECRET-WORD"\n[guards]\nbg_cleanup = false\n', "utf-8"
     )
     checked = row(run_checks_for(tmp_path, root, machine=machine), "preferences")
     assert checked.status == OK
     for named in (
-        "personal.reply_language (machine file)",
+        "personal.preset (machine file)",
         "guards.bg_cleanup = false (machine file)",
         "memory.mode = local-only (repository)",
         "memory.groups (repository)",

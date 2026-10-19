@@ -9,7 +9,7 @@ import pytest
 
 from stayfixed.config.loader import CONFIG_FILE, load
 from stayfixed.config.paths import PathEscape
-from stayfixed.hooks.api import EVENTS, Decision, HookEvent, Policy
+from stayfixed.hooks.api import EVENTS, Decision, HookEvent
 from stayfixed.memory import hooks as memory_hooks
 from stayfixed.memory import worktree as worktree_module
 from stayfixed.memory.hooks import (
@@ -76,12 +76,11 @@ def a_project(tmp_path: Path) -> Path:
     return root
 
 
-def test_every_handler_declares_a_known_event_and_an_open_policy() -> None:
+def test_every_handler_declares_a_known_event() -> None:
     handlers = register()
     assert handlers != []
     for handler in handlers:
         assert handler.event in EVENTS
-        assert handler.policy is Policy.OPEN
 
 
 def test_no_session_start_context_handler_is_registered() -> None:

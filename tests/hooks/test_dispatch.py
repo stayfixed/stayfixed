@@ -17,7 +17,7 @@ import pytest
 from stayfixed.config.session import SessionConfig
 from stayfixed.gitenv import _git_toplevel
 from stayfixed.harnesses import CLAUDE, HARNESSES, Harness
-from stayfixed.hooks.api import Decision, Handler, HookEvent, HookResult, NullSink, Policy
+from stayfixed.hooks.api import Decision, Handler, HookEvent, HookResult, NullSink
 from stayfixed.hooks.commands import run_hook
 from stayfixed.hooks.dispatch import TRUNCATION_MARK, Recorder, dispatch, read_event
 from tests.gitfixture import git
@@ -40,7 +40,6 @@ def event(name: str = "PreToolUse", **raw: object) -> HookEvent:
 
 def handler(
     name: str,
-    policy: Policy,
     result: HookResult | BaseException,
     once_key: str | None = None,
     event_name: str = "PreToolUse",
@@ -50,13 +49,13 @@ def handler(
             raise result
         return result
 
-    return Handler(name=name, event=event_name, policy=policy, run=run, once_key=once_key)
+    return Handler(name=name, event=event_name, run=run, once_key=once_key)
 
 
 def test_contexts_are_joined_into_the_claude_shape() -> None:
     handlers = [
-        handler("a", Policy.OPEN, HookResult(context="A")),
-        handler("b", Policy.OPEN, HookResult(context="B")),
+        handler("a", HookResult(context="A")),
+        handler("b", HookResult(context="B")),
     ]
     outcome = dispatch(event(), handlers, NO_CONFIG, harness=CLAUDE, sink=Recorder())
     assert outcome.exit_code == 0
@@ -71,9 +70,7 @@ def test_contexts_are_joined_into_the_claude_shape() -> None:
 def test_a_handler_stays_silent_on_every_event_but_its_own(registered: str, other: str) -> None:
     # `discover()` hands the dispatcher every area's handlers at once, so the event filter is
     # the only thing keeping a PostToolUse guard from refusing a PreToolUse call.
-    guard = handler(
-        "g", Policy.CLOSED, HookResult(decision=Decision.DENY, reason="no"), event_name=registered
-    )
+    guard = handler("g", HookResult(decision=Decision.DENY, reason="no"), event_name=registered)
     assert (
         dispatch(event(registered), [guard], NO_CONFIG, harness=CLAUDE, sink=Recorder()).exit_code
         == 2
@@ -86,28 +83,26 @@ def test_a_handler_stays_silent_on_every_event_but_its_own(registered: str, othe
 def test_a_decision_that_arrived_as_a_plain_string_still_denies() -> None:
     # A handler building a HookResult dynamically hands us "deny", not Decision.DENY. `Decision` is
     # a StrEnum, so the comparison must be by value: under identity this deny would be an
-    # unrecognised verdict instead, which an OPEN handler's policy swallows.
+    # unrecognised verdict instead, which the dispatcher swallows.
     result = HookResult(decision=cast(Decision, "deny"))
-    outcome = dispatch(
-        event(), [handler("a", Policy.OPEN, result)], NO_CONFIG, harness=CLAUDE, sink=Recorder()
-    )
+    outcome = dispatch(event(), [handler("a", result)], NO_CONFIG, harness=CLAUDE, sink=Recorder())
     assert outcome.exit_code == 2
     assert outcome.decision == "deny"
 
 
 def test_a_deny_from_a_handler_exits_two_with_its_reason() -> None:
-    handlers = [handler("g", Policy.CLOSED, HookResult(decision=Decision.DENY, reason="no"))]
+    handlers = [handler("g", HookResult(decision=Decision.DENY, reason="no"))]
     outcome = dispatch(event(), handlers, NO_CONFIG, harness=CLAUDE, sink=Recorder())
     assert outcome.exit_code == 2
     assert outcome.decision == "deny"
     assert "no" in outcome.stderr
 
 
-def test_an_open_handler_that_raises_is_swallowed_and_recorded() -> None:
+def test_a_handler_that_raises_is_swallowed_and_recorded() -> None:
     recorder = Recorder()
     outcome = dispatch(
         event(),
-        [handler("a", Policy.OPEN, RuntimeError("boom"))],
+        [handler("a", RuntimeError("boom"))],
         NO_CONFIG,
         harness=CLAUDE,
         sink=recorder,
@@ -118,50 +113,10 @@ def test_an_open_handler_that_raises_is_swallowed_and_recorded() -> None:
     assert recorder.records[0]["error"] == "RuntimeError"
 
 
-def test_a_closed_handler_that_raises_refuses() -> None:
-    outcome = dispatch(
-        event(),
-        [handler("g", Policy.CLOSED, RuntimeError("boom"))],
-        NO_CONFIG,
-        harness=CLAUDE,
-        sink=Recorder(),
-    )
-    assert outcome.exit_code == 2
-    assert "boom" in outcome.stderr
-
-
-def test_a_policy_that_arrived_as_a_plain_string_still_closes() -> None:
-    # An area that builds a Handler dynamically hands us "closed", not Policy.CLOSED; mypy
-    # cannot see that, so the cast stands in for it.
-    closed = cast(Policy, "closed")
-    outcome = dispatch(
-        event(),
-        [handler("g", closed, RuntimeError("boom"))],
-        NO_CONFIG,
-        harness=CLAUDE,
-        sink=Recorder(),
-    )
-    assert outcome.exit_code == 2
-
-
-def test_a_closed_handler_that_calls_sys_exit_refuses() -> None:
-    outcome = dispatch(
-        event(),
-        [handler("g", Policy.CLOSED, SystemExit(0))],
-        NO_CONFIG,
-        harness=CLAUDE,
-        sink=Recorder(),
-    )
-    assert outcome.exit_code == 2
-    assert "SystemExit" in outcome.stderr
-
-
-def test_an_unrecognised_decision_under_an_open_policy_is_swallowed_with_a_reason() -> None:
+def test_an_unrecognised_decision_is_swallowed_with_a_reason() -> None:
     recorder = Recorder()
     result = HookResult(decision=cast(Decision, "block"))
-    outcome = dispatch(
-        event(), [handler("a", Policy.OPEN, result)], NO_CONFIG, harness=CLAUDE, sink=recorder
-    )
+    outcome = dispatch(event(), [handler("a", result)], NO_CONFIG, harness=CLAUDE, sink=recorder)
     assert outcome.exit_code == 0
     # Production reads stderr and never reads the sink, so the reason must be on both.
     assert "unrecognised decision 'block'" in outcome.stderr
@@ -169,27 +124,13 @@ def test_an_unrecognised_decision_under_an_open_policy_is_swallowed_with_a_reaso
     assert recorder.records[0]["decision"] == "block"
 
 
-@pytest.mark.parametrize("decision", ["DENY", "block", True, 7, None.__class__])
-def test_an_unrecognised_decision_under_a_closed_policy_refuses(decision: object) -> None:
-    # A guard that means to deny but misnames its verdict must not read as permission: the
-    # malformed verdict is that handler failing, and a CLOSED handler's failure refuses.
-    recorder = Recorder()
-    result = HookResult(decision=cast(Decision, decision))
-    outcome = dispatch(
-        event(), [handler("g", Policy.CLOSED, result)], NO_CONFIG, harness=CLAUDE, sink=recorder
-    )
-    assert outcome.exit_code == 2
-    assert "unrecognised decision" in outcome.stderr
-    assert recorder.records[0]["error"] == "unrecognised-decision"
-
-
-def test_an_open_handlers_non_string_context_is_swallowed_and_a_later_one_lands() -> None:
+def test_a_handlers_non_string_context_is_swallowed_and_a_later_one_lands() -> None:
     # `result.context` used to be joined into the payload outside every per-handler `try`, so
-    # one OPEN handler's malformed context took the whole dispatch down with a TypeError instead
-    # of being judged by that handler's own policy the way a malformed decision already is.
+    # one handler's malformed context took the whole dispatch down with a TypeError instead of
+    # failing that handler alone the way a malformed decision already does.
     recorder = Recorder()
-    broken = handler("a-broken", Policy.OPEN, HookResult(context=cast(str, 42)))
-    ok = handler("b-ok", Policy.OPEN, HookResult(context="B"))
+    broken = handler("a-broken", HookResult(context=cast(str, 42)))
+    ok = handler("b-ok", HookResult(context="B"))
     outcome = dispatch(event(), [broken, ok], NO_CONFIG, harness=CLAUDE, sink=recorder)
     assert outcome.exit_code == 0
     assert "unrecognised context" in outcome.stderr
@@ -198,26 +139,14 @@ def test_an_open_handlers_non_string_context_is_swallowed_and_a_later_one_lands(
     assert json.loads(outcome.stdout)["hookSpecificOutput"]["additionalContext"] == "B"
 
 
-def test_a_closed_handlers_non_string_context_refuses() -> None:
-    recorder = Recorder()
-    result = HookResult(context=cast(str, 42))
-    outcome = dispatch(
-        event(), [handler("g", Policy.CLOSED, result)], NO_CONFIG, harness=CLAUDE, sink=recorder
-    )
-    assert outcome.exit_code == 2
-    assert "unrecognised context" in outcome.stderr
-    assert recorder.records[0]["error"] == "unrecognised-context"
-
-
-@pytest.mark.parametrize("policy", [Policy.OPEN, Policy.CLOSED])
 @pytest.mark.parametrize("decision", [Decision.DENY, "deny"], ids=["enum", "string"])
 def test_a_deny_carrying_a_malformed_context_still_refuses_and_records_the_failure(
-    policy: Policy, decision: object
+    decision: object,
 ) -> None:
     # One result carries both the deny and the malformed context, so the order the two are read
     # in decides the exit code. Validating `context` above the decision branch failed the handler
-    # before its deny was ever recorded, and an OPEN handler's policy then swallowed the whole
-    # result — a live deny converted into an allow by an ordinary neighbouring bug. The decision
+    # before its deny was ever recorded, and the dispatcher then swallowed the whole result — a
+    # live deny converted into an allow by an ordinary neighbouring bug. The decision
     # is read first now, and the context failure is still judged, on top of the refusal.
     recorder = Recorder()
     result = HookResult(
@@ -225,9 +154,7 @@ def test_a_deny_carrying_a_malformed_context_still_refuses_and_records_the_failu
         reason="rm -rf / is refused",
         context=cast(str, {"n": 1}),
     )
-    outcome = dispatch(
-        event(), [handler("g", policy, result)], NO_CONFIG, harness=CLAUDE, sink=recorder
-    )
+    outcome = dispatch(event(), [handler("g", result)], NO_CONFIG, harness=CLAUDE, sink=recorder)
     assert outcome.exit_code == 2
     assert outcome.decision == "deny"
     assert "g: rm -rf / is refused" in outcome.stderr
@@ -243,13 +170,10 @@ def test_an_earlier_deny_survives_a_later_handlers_malformed_context() -> None:
     recorder = Recorder()
     deny = handler(
         "a-deny",
-        Policy.CLOSED,
         HookResult(decision=Decision.DENY, reason="no"),
         event_name="PostToolUse",
     )
-    broken = handler(
-        "b-broken", Policy.OPEN, HookResult(context=cast(str, 42)), event_name="PostToolUse"
-    )
+    broken = handler("b-broken", HookResult(context=cast(str, 42)), event_name="PostToolUse")
     outcome = dispatch(
         event("PostToolUse"), [deny, broken], NO_CONFIG, harness=CLAUDE, sink=recorder
     )
@@ -258,21 +182,15 @@ def test_an_earlier_deny_survives_a_later_handlers_malformed_context() -> None:
     assert "a-deny: no" in outcome.stderr
 
 
-@pytest.mark.parametrize("policy", [Policy.CLOSED, Policy.OPEN])
 @pytest.mark.parametrize("raised", [asyncio.CancelledError(), KeyboardInterrupt()], ids=type)
-def test_a_base_exception_from_a_handler_is_judged_by_that_handlers_policy(
-    policy: Policy, raised: BaseException
-) -> None:
+def test_a_base_exception_from_a_handler_costs_that_handler_alone(raised: BaseException) -> None:
     # A handler that awaits anything surfaces CancelledError and a Ctrl-C mid-hook surfaces
     # KeyboardInterrupt; neither inherits Exception, so both used to escape every guard and
-    # exit the process on something that is not 2 — a CLOSED guard reading as an allow.
-    # CancelledError leads: a regression on it fails one test, where KeyboardInterrupt aborts
-    # the whole session and would otherwise be the only signal.
+    # exit the process. CancelledError leads: a regression on it fails one test, where
+    # KeyboardInterrupt aborts the whole session and would otherwise be the only signal.
     recorder = Recorder()
-    outcome = dispatch(
-        event(), [handler("g", policy, raised)], NO_CONFIG, harness=CLAUDE, sink=recorder
-    )
-    assert outcome.exit_code == (2 if policy == Policy.CLOSED else 0)
+    outcome = dispatch(event(), [handler("g", raised)], NO_CONFIG, harness=CLAUDE, sink=recorder)
+    assert outcome.exit_code == 0
     assert type(raised).__name__ in outcome.stderr
     assert recorder.records[0]["error"] == type(raised).__name__
 
@@ -283,11 +201,10 @@ def test_an_earlier_deny_survives_a_later_handlers_malformed_return() -> None:
     recorder = Recorder()
     deny = handler(
         "a-deny",
-        Policy.CLOSED,
         HookResult(decision=Decision.DENY, reason="no"),
         event_name="PostToolUse",
     )
-    broken = handler("b-broken", Policy.OPEN, cast(HookResult, None), event_name="PostToolUse")
+    broken = handler("b-broken", cast(HookResult, None), event_name="PostToolUse")
     outcome = dispatch(
         event("PostToolUse"), [deny, broken], NO_CONFIG, harness=CLAUDE, sink=recorder
     )
@@ -315,27 +232,17 @@ def test_a_once_key_handler_runs_every_time_under_the_null_sink() -> None:
         runs.append(1)
         return HookResult(context="A")
 
-    once = Handler(
-        name="a", event="PreToolUse", policy=Policy.OPEN, run=count, once_key="ledger-notes"
-    )
+    once = Handler(name="a", event="PreToolUse", run=count, once_key="ledger-notes")
     for _ in range(2):
         dispatch(event(), [once], NO_CONFIG, harness=CLAUDE, sink=NullSink())
     assert runs == [1, 1]
-
-
-def test_policy_is_taken_from_handlers_that_failed_not_from_all_registered() -> None:
-    handlers = [
-        handler("g", Policy.CLOSED, HookResult()),
-        handler("a", Policy.OPEN, RuntimeError("boom")),
-    ]
-    assert dispatch(event(), handlers, NO_CONFIG, harness=CLAUDE, sink=Recorder()).exit_code == 0
 
 
 def test_a_cap_below_the_envelope_is_recorded_and_emits_nothing() -> None:
     # No JSON envelope fits in 20 characters, so the honest output is none at all: anything
     # longer than the cap is replaced by the platform with a preview and a file path.
     recorder = Recorder()
-    handlers = [handler("a", Policy.OPEN, HookResult(context="x" * 50))]
+    handlers = [handler("a", HookResult(context="x" * 50))]
     outcome = dispatch(event(), handlers, NO_CONFIG, harness=CLAUDE, sink=recorder, cap=20)
     assert outcome.stdout == ""
     assert recorder.records[0]["error"] == "context-truncated"
@@ -346,7 +253,7 @@ def test_the_notice_counts_inside_the_cap_and_is_never_cut() -> None:
     # the cap bounds the string that carries both: the context loses its tail, never the notice.
     # Mutation (`mutations/`'s "the clamp cuts the notice from its answer"): the clamped answer
     # carries no `systemMessage`.
-    handlers = [handler("a", Policy.OPEN, HookResult(context="y" * 500), event_name="SessionStart")]
+    handlers = [handler("a", HookResult(context="y" * 500), event_name="SessionStart")]
     session = dataclasses.replace(NO_CONFIG, project_warnings=("a notice",))
     outcome = dispatch(
         event("SessionStart"), handlers, session, harness=CLAUDE, sink=Recorder(), cap=300
@@ -359,7 +266,7 @@ def test_the_notice_counts_inside_the_cap_and_is_never_cut() -> None:
 
 
 def test_context_at_a_realistic_cap_keeps_its_leading_content_and_the_mark() -> None:
-    handlers = [handler("a", Policy.OPEN, HookResult(context="y" * 500))]
+    handlers = [handler("a", HookResult(context="y" * 500))]
     outcome = dispatch(event(), handlers, NO_CONFIG, harness=CLAUDE, sink=Recorder(), cap=200)
     context = json.loads(outcome.stdout)["hookSpecificOutput"]["additionalContext"]
     # Every kept character here is plain ASCII, so nothing widens under JSON escaping and the
@@ -370,7 +277,7 @@ def test_context_at_a_realistic_cap_keeps_its_leading_content_and_the_mark() -> 
 
 
 def test_the_cap_bounds_the_emitted_string_not_the_field_inside_it() -> None:
-    handlers = [handler("a", Policy.OPEN, HookResult(context="x" * 20000))]
+    handlers = [handler("a", HookResult(context="x" * 20000))]
     outcome = dispatch(event(), handlers, NO_CONFIG, harness=CLAUDE, sink=Recorder(), cap=10000)
     assert len(outcome.stdout) <= 10000
     context = json.loads(outcome.stdout)["hookSpecificOutput"]["additionalContext"]
@@ -383,7 +290,7 @@ def test_json_escaping_is_charged_to_the_same_budget() -> None:
     # cap and one short of the other. Asking both pins that without depending on which one is
     # odd, which the envelope's and the mark's widths decide and a rename moves. Mutations (by
     # hand): `_clamp`'s `<= cap` as `< cap` -> [1, 2]; as `<= cap + 1` -> [-1, 0]; each reddens.
-    handlers = [handler("a", Policy.OPEN, HookResult(context="\n" * 500))]
+    handlers = [handler("a", HookResult(context="\n" * 500))]
     shortfall = []
     for cap in (200, 201):
         stdout = dispatch(
@@ -398,7 +305,7 @@ def test_json_escaping_is_charged_to_the_same_budget() -> None:
 
 def test_a_once_per_context_handler_runs_once_and_is_skipped_afterwards() -> None:
     recorder = Recorder()
-    once = handler("a", Policy.OPEN, HookResult(context="A"), once_key="ledger-notes")
+    once = handler("a", HookResult(context="A"), once_key="ledger-notes")
     first = json.loads(dispatch(event(), [once], NO_CONFIG, harness=CLAUDE, sink=recorder).stdout)
     second = json.loads(dispatch(event(), [once], NO_CONFIG, harness=CLAUDE, sink=recorder).stdout)
     assert first["hookSpecificOutput"]["additionalContext"] == "A"
@@ -421,21 +328,21 @@ def test_a_once_per_context_handler_that_says_nothing_keeps_its_one_delivery() -
     Mutation: `mutations/`'s "a silent handler spends its one delivery".
     """
     recorder = Recorder()
-    silent = handler("a", Policy.OPEN, HookResult(), once_key="overlay-status")
+    silent = handler("a", HookResult(), once_key="overlay-status")
     for _ in range(3):
         outcome = dispatch(event(), [silent], NO_CONFIG, harness=CLAUDE, sink=recorder)
         assert "additionalContext" not in json.loads(outcome.stdout)["hookSpecificOutput"]
     assert recorder.marks == set()
     # Non-vacuous: the same handler with something to say does bank it, so this is about the
     # emptiness of the result and not about the key being ignored.
-    speaking = handler("a", Policy.OPEN, HookResult(context="A"), once_key="overlay-status")
+    speaking = handler("a", HookResult(context="A"), once_key="overlay-status")
     dispatch(event(), [speaking], NO_CONFIG, harness=CLAUDE, sink=recorder)
     assert recorder.marks == {"overlay-status"}
 
 
 def test_a_handler_without_a_once_key_runs_every_time() -> None:
     recorder = Recorder()
-    every = handler("a", Policy.OPEN, HookResult(context="A"))
+    every = handler("a", HookResult(context="A"))
     for _ in range(2):
         outcome = dispatch(event(), [every], NO_CONFIG, harness=CLAUDE, sink=recorder)
         assert json.loads(outcome.stdout)["hookSpecificOutput"]["additionalContext"] == "A"
@@ -444,7 +351,7 @@ def test_a_handler_without_a_once_key_runs_every_time() -> None:
 
 def test_a_once_per_context_handler_that_raises_is_not_marked() -> None:
     recorder = Recorder()
-    once = handler("a", Policy.OPEN, RuntimeError("boom"), once_key="ledger-notes")
+    once = handler("a", RuntimeError("boom"), once_key="ledger-notes")
     assert "boom" in dispatch(event(), [once], NO_CONFIG, harness=CLAUDE, sink=recorder).stderr
     assert recorder.marks == set()
     assert "boom" in dispatch(event(), [once], NO_CONFIG, harness=CLAUDE, sink=recorder).stderr
@@ -481,9 +388,7 @@ def test_a_once_per_context_handler_whose_result_is_rejected_keeps_its_one_deliv
     def run(ev: HookEvent, config: object) -> HookResult:
         return results.pop(0)
 
-    once = Handler(
-        name="a", event="PreToolUse", policy=Policy.OPEN, run=run, once_key="ledger-notes"
-    )
+    once = Handler(name="a", event="PreToolUse", run=run, once_key="ledger-notes")
     first = dispatch(event(), [once], NO_CONFIG, harness=CLAUDE, sink=recorder)
     assert "unrecognised" in first.stderr, first.stderr
     assert recorder.marks == set()
@@ -502,9 +407,7 @@ def test_a_deny_that_carries_no_context_is_still_a_delivery() -> None:
     # a change of indentation rather than a substituted line. Measured by hand instead — see
     # the fix report.
     recorder = Recorder()
-    once = handler(
-        "a", Policy.OPEN, HookResult(decision=Decision.DENY, reason="no"), once_key="ledger-notes"
-    )
+    once = handler("a", HookResult(decision=Decision.DENY, reason="no"), once_key="ledger-notes")
     outcome = dispatch(event(), [once], NO_CONFIG, harness=CLAUDE, sink=recorder)
     assert outcome.exit_code == 2
     assert recorder.marks == {"ledger-notes"}
@@ -524,8 +427,8 @@ def test_one_handler_cannot_blank_what_the_next_one_reads() -> None:
         return HookResult()
 
     handlers = [
-        Handler(name="a-blank", event="PreToolUse", policy=Policy.OPEN, run=blank),
-        Handler(name="b-read", event="PreToolUse", policy=Policy.OPEN, run=read),
+        Handler(name="a-blank", event="PreToolUse", run=blank),
+        Handler(name="b-read", event="PreToolUse", run=read),
     ]
     dispatch(
         event(tool_input={"command": "rm -rf /"}),
@@ -553,7 +456,6 @@ def test_a_handlers_view_keeps_tool_input_aliased_to_raw_like_read_event_does() 
         Handler(
             name="a",
             event="PreToolUse",
-            policy=Policy.OPEN,
             run=write_through_tool_input_read_through_raw,
         )
     ]
@@ -786,7 +688,7 @@ def test_a_detected_harness_renders_its_own_answer(
         seen.append(ev.project_root)
         return HookResult(context="a note")
 
-    probe = Handler(name="probe", event="SessionStart", policy=Policy.OPEN, run=note)
+    probe = Handler(name="probe", event="SessionStart", run=note)
     payload: dict[str, object] = {"fake_session": "x", "cwd": str(tmp_path)}
     assert _hook(monkeypatch, "SessionStart", payload, probe) == 0
     assert capsys.readouterr().out == "fake:SessionStart:a note"
@@ -828,7 +730,7 @@ def test_a_handler_sees_one_event_whichever_harness_is_detected(
         seen.append(ev)
         return HookResult()
 
-    probe = Handler(name="probe", event="PreToolUse", policy=Policy.OPEN, run=note)
+    probe = Handler(name="probe", event="PreToolUse", run=note)
     payload: dict[str, object] = {"cwd": str(other), "session_id": "s", "tool_name": "Bash"}
     for steer in ({}, {"PLUGIN_ROOT": "/r"}, {"FAKE_HARNESS": "1"}):
         monkeypatch.delenv("FAKE_HARNESS", raising=False)
@@ -850,7 +752,6 @@ def test_an_unknown_harness_renders_the_canonical_shape(
     probe = Handler(
         name="probe",
         event="PreToolUse",
-        policy=Policy.OPEN,
         run=lambda ev, config: HookResult(context="a note"),
     )
     payload: dict[str, object] = {"cwd": str(tmp_path), "tool_name": "Bash"}
@@ -870,8 +771,8 @@ def test_a_deny_never_goes_through_render() -> None:
         raise AssertionError("a deny reached render")
 
     handlers = [
-        handler("a-note", Policy.OPEN, HookResult(context="a note")),
-        handler("probe", Policy.OPEN, HookResult(decision=Decision.DENY, reason="rm is refused")),
+        handler("a-note", HookResult(context="a note")),
+        handler("probe", HookResult(decision=Decision.DENY, reason="rm is refused")),
     ]
     outcome = dispatch(
         event(), handlers, NO_CONFIG, harness=_harness(broken), sink=Recorder(), cap=10000
@@ -889,7 +790,7 @@ def test_a_clamped_answer_is_the_detected_harnesss_envelope() -> None:
     def wide(name: str, context: str, notice: str) -> str:
         return json.dumps({"an-envelope-of-another-width": {"event": name, "text": context}})
 
-    handlers = [handler("a", Policy.OPEN, HookResult(context="y" * 500))]
+    handlers = [handler("a", HookResult(context="y" * 500))]
     recorder = Recorder()
     outcome = dispatch(event(), handlers, NO_CONFIG, harness=_harness(wide), sink=recorder, cap=200)
     assert len(outcome.stdout) == 200
@@ -921,7 +822,7 @@ def test_a_user_the_password_database_does_not_list_still_gets_an_answer(
         seen.append(config)
         return HookResult()
 
-    probe = Handler(name="probe", event="PreToolUse", policy=Policy.CLOSED, run=note)
+    probe = Handler(name="probe", event="PreToolUse", run=note)
     payload: dict[str, object] = {"cwd": str(tmp_path), "tool_name": "Bash"}
     assert _hook(monkeypatch, "PreToolUse", payload, probe, env={"HOME": str(tmp_path)}) == 0
     # The session a handler is handed always exists; its project configuration is what loaded.

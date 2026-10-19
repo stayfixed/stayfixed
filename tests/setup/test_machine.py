@@ -44,10 +44,10 @@ def test_the_file_written_is_the_file_both_readers_already_read(tmp_path: Path) 
     # readers' side rather than the writer's: a schema this writer invented would round-trip through
     # its own reader and fail in a hook.
     path = tmp_path / "config.toml"
-    write_machine(path, personal={"reply_language": "ru"}, overlay_root=tmp_path / "ov", machine={})
+    write_machine(path, personal={"preset": "ru"}, overlay_root=tmp_path / "ov", machine={})
     assert overlay_root(path) == tmp_path / "ov"
     project = _initialised_project(tmp_path)
-    assert load(project, machine=path).personal.reply_language == "ru"
+    assert load(project, machine=path).personal.preset == "ru"
 
 
 def test_writing_without_an_overlay_leaves_no_overlay_table(tmp_path: Path) -> None:
@@ -62,12 +62,12 @@ def test_writing_without_an_overlay_leaves_no_overlay_table(tmp_path: Path) -> N
 
 def test_a_rewrite_preserves_a_value_this_run_did_not_set(tmp_path: Path) -> None:
     # A second `setup` on a machine that already has one is the common case. Losing the overlay
-    # root because this run only set languages is the shape this catches.
+    # root because this run only set a personal value is the shape this catches.
     path = tmp_path / "config.toml"
     write_machine(path, personal={}, overlay_root=tmp_path / "ov", machine={})
-    write_machine(path, personal={"reply_language": "ru"}, overlay_root=None, machine={})
+    write_machine(path, personal={"preset": "ru"}, overlay_root=None, machine={})
     assert overlay_root(path) == tmp_path / "ov"
-    assert read_machine(path)["personal"]["reply_language"] == "ru"
+    assert read_machine(path)["personal"]["preset"] == "ru"
 
 
 def test_a_hostile_value_cannot_write_a_second_key(tmp_path: Path) -> None:
@@ -76,22 +76,22 @@ def test_a_hostile_value_cannot_write_a_second_key(tmp_path: Path) -> None:
     # serialiser as `project.toml`'s remote URL, and one escaping rule for both is the reason
     # `tomlout` exists rather than two format strings.
     #
-    # Why `.get(...)` and not a bracket lookup: `["artifact_language"] != "zz"` raises `KeyError`
+    # Why `.get(...)` and not a bracket lookup: `["injected"] != "zz"` raises `KeyError`
     # once the value is escaped correctly — nothing here ever asked for a second key, so none is
     # present at all, and a bracket lookup cannot tell "escaped safely" from "never happened" apart
     # from "the naive concatenation this guards against". `.get(...)` reads the same intent — no
-    # working `artifact_language = "zz"` key exists — without failing on the safe outcome the
-    # escaping is supposed to produce. Mutation: format `reply_language` with an f-string instead of
+    # working `injected = "zz"` key exists — without failing on the safe outcome the
+    # escaping is supposed to produce. Mutation: format `preset` with an f-string instead of
     # `tomlout.dumps` → the naive concatenation closes the string early and this test reddens on
     # `== "zz"`.
     path = tmp_path / "config.toml"
     write_machine(
         path,
-        personal={"reply_language": 'ru"\nartifact_language = "zz'},
+        personal={"preset": 'ru"\ninjected = "zz'},
         overlay_root=None,
         machine={},
     )
-    assert read_machine(path)["personal"].get("artifact_language") != "zz"
+    assert read_machine(path)["personal"].get("injected") != "zz"
 
 
 def test_the_preset_names_the_plugins_and_the_deny_rules() -> None:
@@ -169,7 +169,7 @@ def test_a_table_this_writer_does_not_know_survives_a_rewrite(tmp_path: Path) ->
         'schema = "mine"\n'
         "\n"
         "[personal]\n"
-        'reply_language = "ru"\n'
+        'preset = "ru"\n'
         "\n"
         "[trust]\n"
         'mode = "strict"\n'
@@ -180,7 +180,7 @@ def test_a_table_this_writer_does_not_know_survives_a_rewrite(tmp_path: Path) ->
     written = read_machine(path)
     assert written["trust"] == {"mode": "strict", "hosts": ["example.com"]}
     assert written["schema"] == "mine"
-    assert written["personal"]["reply_language"] == "ru"
+    assert written["personal"]["preset"] == "ru"
     assert written["machine"]["version"] == "9.9.9"
 
 
@@ -260,5 +260,5 @@ def test_a_hand_written_hex_integer_of_any_length_survives_the_rewrite(tmp_path:
     path = tmp_path / "config.toml"
     large = LONG_HEX
     path.write_text(f"[notes]\nkept = {large}\n", encoding="utf-8")
-    write_machine(path, personal={"reply_language": "ru"}, overlay_root=None, machine={})
+    write_machine(path, personal={"preset": "ru"}, overlay_root=None, machine={})
     assert read_machine(path)["notes"]["kept"] == int(large, 16)

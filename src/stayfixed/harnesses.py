@@ -109,10 +109,8 @@ class Rendition:
 class Surface(StrEnum):
     """Where stayfixed enforces something, by how it reaches a session."""
 
-    # A hook that refuses a command before it runs: `bg-cleanup`.
-    GUARDS = "session guards"
-    # A hook that adds context and refuses nothing: the test-hygiene note, the standing rules,
-    # the volatile notes.
+    # A hook that adds context and refuses nothing: the background-cleanup hints, the
+    # test-hygiene note, the standing rules, the volatile notes.
     NOTICES = "session notices"
     # The bug, documentation, plan, commit and trail checks, run by the reusable workflow.
     GATES = "repository gates"
@@ -123,7 +121,6 @@ class Surface(StrEnum):
 class Tier(StrEnum):
     """How strongly a surface holds under a harness."""
 
-    BLOCKS = "blocks in the session"
     CONTEXT = "context only"
     CI = "CI only"
     INSTRUCTIONS = "instructions only"
@@ -294,12 +291,6 @@ CLAUDE = MemoryHarness(
     render=hook_specific_output,
     reach=MappingProxyType(
         {
-            Surface.GUARDS: Reach(
-                Tier.BLOCKS,
-                "a guard's exit 2 stopped the command unrun "
-                f"({_P0_SPIKES}, the fail-closed matrix)",
-                measured_on="Claude Code 2.1.261",
-            ),
             Surface.NOTICES: Reach(
                 Tier.CONTEXT,
                 "a SessionStart hook's output arrived as context "
@@ -347,7 +338,6 @@ CODEX = Harness(
     render=hook_specific_output,
     reach=MappingProxyType(
         {
-            Surface.GUARDS: _CODEX_HOOKS_UNVERIFIED,
             Surface.NOTICES: _CODEX_HOOKS_UNVERIFIED,
             Surface.GATES: _IN_CI,
             Surface.METHOD: Reach(

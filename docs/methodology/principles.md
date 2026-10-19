@@ -143,9 +143,9 @@ platform blocks on a non-zero exit — before a tool call — and never on sessi
 exit codes are ignored, or on prompt submission, where a blocking exit erases the prompt.
 A guard that cannot fail closed must say so rather than pretend.
 
-**What stayfixed does today.** Every handler declares its policy, `open` or `closed`, and one is
-closed: `bg-cleanup`, the guard over a backgrounded shell call, which runs before the tool call.
-The note after a failing test run and the session-start handlers are open, and the
+**What stayfixed does today.** No handler refuses on its own failure: `bg-cleanup`, the reading
+of a backgrounded shell call before it runs, only hints, because the agent it would stop writes
+the command it reads. A handler that fails costs its own context and never the call, and the
 commit-message hook git runs locally never fails a commit itself, though a hook it chains to can
 — its gate is `stayfixed commit check` in CI. The guarantee lives in a shell wrapper rather than
 in Python, because a Python process cannot fail closed about its own absence: every entry in
@@ -250,9 +250,7 @@ read by tools, by later contributors and by a possible public extraction.
 
 **What stayfixed does.** The freshness rule is the row grammar of [sources.md](sources.md)
 and a test over it. The language half is a person's own standing rule, a note with
-`metadata.startup`, and stayfixed enforces nothing about it: the machine configuration's
-`artifact_language` and `reply_language` are recorded by `stayfixed setup` and read by nothing
-in this release. The four "harness" sources in the [README](README.md) are the freshness rule's
+`metadata.startup`, and stayfixed enforces nothing about it. The four "harness" sources in the [README](README.md) are the freshness rule's
 own worked example: the term moved from a company blog [S27] to a discipline [S28] to an
 open-sourced platform [S30] and a research framing [S29] in nine months, with the pattern
 essay it all descends from [S31] published eleven months before the earliest of the four

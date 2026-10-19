@@ -1,17 +1,10 @@
-"""The `guard`, `commit` and `test` groups.
-
-`guard bg-cleanup` is the fail-closed row: it reads one JSON object on stdin — a whole hook
-payload, or a bare `tool_input` — and refuses anything it cannot read with exit 2, because a
-guard that guessed at plain text would be guessing. A deny is a `Refusal` (2); the restore
-advisory is a finding (1); a clean command is 0.
-"""
+"""The `commit` and `test` groups."""
 
 from __future__ import annotations
 
 import argparse
-import sys
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from stayfixed import fsops
 from stayfixed.areas import SubParsers
@@ -19,52 +12,10 @@ from stayfixed.command import command_owner, common_flags
 from stayfixed.config.loader import load
 from stayfixed.errors import Failure, Refusal
 from stayfixed.findings import listed
-from stayfixed.jsonobject import json_object
 from stayfixed.result import Result
 
 if TYPE_CHECKING:
     from stayfixed.config.schema import Config
-
-_UNREADABLE = "guard bg-cleanup reads one JSON object on stdin: a hook payload or a tool_input"
-_CLEAN = "no background leak and no trailing restore"
-
-
-_NOT_BASH = "not a Bash call; nothing to judge"
-
-
-def _tool_input(raw: str) -> dict[str, Any] | None:
-    """The Bash input to judge, or None for a whole payload naming another tool."""
-    # Through `jsonobject`, the one reader of a JSON object, so stdin nested past the parser or
-    # its depth bound, or holding an integer longer than the interpreter converts, is refused in
-    # the words every reader uses rather than ending the guard in an internal error.
-    payload = json_object(
-        raw or "",
-        "stdin",
-        error=lambda reason: Refusal(f"{_UNREADABLE}; {reason}"),
-        shape=lambda _: Refusal(_UNREADABLE),
-    )
-    if "tool_name" in payload and payload["tool_name"] != "Bash":
-        return None  # the handler is silent here too (`hooks.bash_command`)
-    tool_input = payload.get("tool_input", payload)
-    if not isinstance(tool_input, dict) or not isinstance(tool_input.get("command"), str):
-        raise Refusal(f"{_UNREADABLE}, and the object must carry a string `command`")
-    return tool_input
-
-
-def run_bg_cleanup(args: argparse.Namespace) -> Result:
-    from stayfixed.guards.bgcleanup import judge
-
-    tool_input = _tool_input(sys.stdin.read())
-    if tool_input is None:
-        return Result(_NOT_BASH, {"hint": None})
-    background = tool_input.get("run_in_background") is True
-    verdict = judge(str(tool_input["command"]), background=background)
-    if verdict.deny is not None:
-        raise Refusal(verdict.deny)
-    if verdict.hint is not None:
-        return Result(verdict.hint, {"hint": verdict.hint}, exit_code=1)
-    return Result(_CLEAN, {"hint": None})
-
 
 # Printed on every `commit check` failure, which is inside the CI gate's own output, so it may
 # only name commands that exist. The clause naming the installer was dropped while the hook
@@ -296,11 +247,6 @@ def run_test_attribute(args: argparse.Namespace) -> Result:
 
 
 def register(groups: SubParsers) -> None:
-    guard = groups.add_parser("guard", help="fail-closed guards over a tool call")
-    guard_sub = guard.add_subparsers(dest="command", metavar="<command>")
-    bg = guard_sub.add_parser("bg-cleanup", help="judge a Bash call for a background leak")
-    bg.set_defaults(func=run_bg_cleanup)
-
     commit = groups.add_parser("commit", help="commit-message rules")
     commit_sub = commit.add_subparsers(dest="command", metavar="<command>")
     check = common_flags(

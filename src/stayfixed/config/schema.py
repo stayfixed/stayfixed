@@ -219,8 +219,6 @@ class CommitMessages:
 class Personal:
     """Machine-level parameters; never read from a repository."""
 
-    reply_language: str
-    artifact_language: str
     preset: str
 
 

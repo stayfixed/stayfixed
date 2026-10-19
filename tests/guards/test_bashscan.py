@@ -13,29 +13,29 @@ def test_quoted_heredoc_bodies_are_stripped_but_the_command_remains() -> None:
     """A QUOTED delimiter's body is data the shell does not expand — this is the property
     that keeps this repository's own guard fixtures authorable."""
     cmd = "cat > tests/x.py <<'EOF'\nsecret .env mention\nEOF\necho done"
-    stripped = bashscan.strip_heredocs(cmd)
+    stripped = bashscan.prepare(cmd)[0]
     assert ".env" not in stripped
     assert "echo done" in stripped
 
 
 def test_unquoted_heredoc_bodies_stay_visible() -> None:
-    """The inversion of the old `strip_heredocs` contract. An UNQUOTED delimiter's body is
+    """The inversion of the old heredoc-stripping contract. An UNQUOTED delimiter's body is
     expanded by the shell, and — when the heredoc is a shell's stdin — executed. Deleting it
     before any check ran is what made `bash <<EOF` / `cat secrets/.env` / `EOF` allowed."""
     cmd = "bash <<EOF\ncat secrets/.env\nEOF\necho done"
-    stripped = bashscan.strip_heredocs(cmd)
+    stripped = bashscan.prepare(cmd)[0]
     assert ".env" in stripped
     assert "echo done" in stripped
 
 
 def test_unterminated_quoted_heredoc_strips_to_the_end() -> None:
     cmd = "cat <<'EOF'\nline .env"
-    assert ".env" not in bashscan.strip_heredocs(cmd)
+    assert ".env" not in bashscan.prepare(cmd)[0]
 
 
 def test_unterminated_unquoted_heredoc_keeps_its_body() -> None:
     cmd = "bash <<EOF\ncat secrets/.env"
-    assert ".env" in bashscan.strip_heredocs(cmd)
+    assert ".env" in bashscan.prepare(cmd)[0]
 
 
 def test_heredocs_are_reported_with_their_header_and_quoting() -> None:
@@ -85,19 +85,19 @@ def test_segments_split_on_every_separator() -> None:
 
 def test_arithmetic_shift_with_spaces_is_not_a_heredoc() -> None:
     cmd = "count=$((1 << 3))\nrm -rf .env\necho done"
-    stripped = bashscan.strip_heredocs(cmd)
+    stripped = bashscan.prepare(cmd)[0]
     assert ".env" in stripped
     assert "echo done" in stripped
 
 
 def test_arithmetic_shift_without_spaces_is_not_a_heredoc() -> None:
     cmd = "x=$(( 1<<3 ))\ncat secrets/.env"
-    assert ".env" in bashscan.strip_heredocs(cmd)
+    assert ".env" in bashscan.prepare(cmd)[0]
 
 
 def test_here_string_is_not_a_heredoc() -> None:
     cmd = "echo a <<< word\ncat secrets/.env"
-    assert ".env" in bashscan.strip_heredocs(cmd)
+    assert ".env" in bashscan.prepare(cmd)[0]
 
 
 def test_a_mid_word_hash_does_not_truncate_the_command() -> None:
@@ -318,86 +318,12 @@ def test_line_continuation_inside_a_quoted_heredoc_body_is_left_alone() -> None:
     assert [h.body for h in heredocs] == ["foo\\\nbar"]
 
 
-# --- `heredoc_body_end`, the offset scan a caller inside a `$(...)` needs ------------------
-
-
-def test_heredoc_body_end_steps_over_a_body_to_its_terminator() -> None:
-    """The offset handed back is just PAST the terminator line, so a caller resumes on the
-    next line rather than on the `EOF` it must not read as command text."""
-    text = "cat <<'EOF'\nbody\nEOF\n)"
-    end = bashscan.heredoc_body_end(text, text.index("<<"))
-    assert end is not None
-    assert text[end:] == ")"
-
-
-def test_heredoc_body_end_ignores_quotes_and_parens_in_the_body() -> None:
-    """The whole point: a body is DATA, so an apostrophe opens nothing and a paren nests
-    nothing. Both characters appear in the body below and neither moves the answer."""
-    text = "cat <<'EOF'\nfix(guard): the lexer's contract\nEOF\n)"
-    end = bashscan.heredoc_body_end(text, text.index("<<"))
-    assert end is not None
-    assert text[end:] == ")"
-
-
-def test_heredoc_body_end_accepts_every_delimiter_spelling() -> None:
-    """`<<'TAG'`, `<<"TAG"`, `<<\\TAG` and a bare `<<TAG` are all redirects; quoting decides
-    expansion, not whether a body is there to step over. `<<-` strips leading tabs from the
-    terminator line, which `.strip()` already tolerates."""
-    for header, terminator in (
-        ("<<'EOF'", "EOF"),
-        ('<<"EOF"', "EOF"),
-        ("<<\\EOF", "EOF"),
-        ("<<EOF", "EOF"),
-        ("<<-EOF", "\tEOF"),
-    ):
-        text = f"cat {header}\nbody\n{terminator}\n)"
-        end = bashscan.heredoc_body_end(text, text.index("<<"))
-        assert end is not None, header
-        assert text[end:] == ")", header
-
-
-def test_heredoc_body_end_answers_none_without_a_terminator_line() -> None:
-    """Deliberately NOT the "run to the end" answer `scan_heredocs` gives an unterminated
-    body. This function's caller scans text `prepare` has already stripped, so the common
-    way to reach a `<<TAG` with no terminator is a heredoc that was found and removed
-    normally, leaving its header behind — and consuming to the end there swallows whatever
-    delimiter the caller was counting. `None` means "nothing to step over"."""
-    assert bashscan.heredoc_body_end("cat <<'EOF'\n)", 4) is None
-    assert bashscan.heredoc_body_end("cat <<'EOF'", 4) is None
-
-
-def test_heredoc_body_end_answers_none_where_there_is_no_redirect() -> None:
-    """A herestring has no body, and neither of its later `<` characters may be mistaken for
-    the start of one; an ordinary comparison is not a redirect either."""
-    for text, index in (
-        ("cat <<<'word'", 4),
-        ("cat <<<'word'", 5),
-        ("cat <<<'word'", 6),
-        ("test 1 < 2", 7),
-        ("echo a", 0),
-    ):
-        assert bashscan.heredoc_body_end(text, index) is None, (text, index)
-
-
-def test_heredoc_body_end_accepts_a_redirect_glued_to_the_preceding_word() -> None:
-    """`cat<<'EOF'` and `2<<EOF` are both valid bash -- the first an ordinary no-space
-    spelling, the second a file descriptor -- and `_HEREDOC`'s lookbehind used to reject a
-    word character before `<<`, so the heredoc-offset fix reached only the spacing it happened
-    to be written with. The `<` half of that lookbehind is kept and pinned by
-    `test_heredoc_body_end_answers_none_where_there_is_no_redirect`."""
-    for header in ("cat<<'EOF'", "2<<EOF", "cat 2<<EOF"):
-        text = f"{header}\nbody\nEOF\n)"
-        end = bashscan.heredoc_body_end(text, text.index("<<"))
-        assert end is not None, header
-        assert text[end:] == ")", header
-
-
 def test_arithmetic_shift_is_not_taken_for_a_heredoc() -> None:
-    """The control for relaxing that lookbehind: `$((1<<2))` must stay unmatched. It is the
-    trailing `(?!\\S)` that rejects it -- `)` follows the tag -- not the lookbehind, which is
-    why relaxing the lookbehind does not reach it."""
-    for text in ("$((1<<2))", "echo $((n<<3))"):
-        assert bashscan.heredoc_body_end(text, text.index("<<")) is None, text
+    """`$((1<<2))` must stay unmatched: the trailing `(?!\\S)` after the tag rejects it, since `)`
+    follows, and a match would hide the rest of the command as a heredoc body."""
+    for text in ("echo $((1<<2))\ncat x", "echo $((n<<3))\ncat x"):
+        stripped, heredocs = bashscan.prepare(text, keep_unquoted_bodies=False)
+        assert (heredocs, "cat x" in stripped) == ([], True), text
 
 
 def test_scan_heredocs_finds_a_glued_redirect() -> None:
@@ -407,16 +333,6 @@ def test_scan_heredocs_finds_a_glued_redirect() -> None:
     stripped, heredocs = bashscan.prepare("bash<<'EOF'\ncat secrets/.env\nEOF")
     assert "secrets/.env" not in stripped
     assert [h.body for h in heredocs] == ["cat secrets/.env"]
-
-
-def test_heredoc_body_end_tolerates_an_indented_terminator_without_a_dash() -> None:
-    """`heredoc_body_end` compares `line.strip()` to the tag. The docstring justifies that
-    by `<<-`, which strips leading tabs -- but the leniency applies to every heredoc, so it
-    is pinned here for a plain `<<` too rather than left as an unasserted claim."""
-    text = "cat <<'EOF'\nbody\n   EOF\n)"
-    end = bashscan.heredoc_body_end(text, text.index("<<"))
-    assert end is not None
-    assert text[end:] == ")"
 
 
 # --- `command_words`, moved here because two guards need the same argv0 resolution ---------

@@ -61,7 +61,6 @@ __all__ = [
     "HookEvent",
     "HookResult",
     "NullSink",
-    "Policy",
     "Sink",
     "data_root",
     "first_set",
@@ -81,11 +80,6 @@ EVENTS = (
     "PostToolUse",
     "PostToolUseFailure",
 )
-
-
-class Policy(StrEnum):
-    OPEN = "open"
-    CLOSED = "closed"
 
 
 class Decision(StrEnum):
@@ -118,7 +112,6 @@ HandlerFn = Callable[[HookEvent, "SessionConfig"], HookResult]
 class Handler:
     name: str
     event: str
-    policy: Policy
     run: HandlerFn
     # Handlers stay pure `(event, session) -> result`, so a handler that must run once
     # per context declares the marker key and the dispatcher owns the bookkeeping. The session is

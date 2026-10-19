@@ -77,8 +77,8 @@ def test_a_hint_that_raises_costs_its_note_not_the_dispatch(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # One stack's broken hint must cost that stack's line and nothing else: not the other
-    # stacks' lines, and not the handler, whose failure under `Policy.OPEN` the dispatcher would
-    # record and swallow whole. Through the real dispatcher, so "nothing else" includes stderr.
+    # stacks' lines, and not the handler, whose failure the dispatcher would record and swallow
+    # whole. Through the real dispatcher, so "nothing else" includes stderr.
     # Oracle: `mutations/`'s "a hint's note is computed outside its guard" and "a hint's
     # recognition is asked outside its guard".
     ship(

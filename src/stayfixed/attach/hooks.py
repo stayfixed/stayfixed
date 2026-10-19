@@ -65,7 +65,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from stayfixed.attach import ATTACH_STORE
-from stayfixed.hooks.api import Handler, HookEvent, HookResult, Policy
+from stayfixed.hooks.api import Handler, HookEvent, HookResult
 
 if TYPE_CHECKING:
     from stayfixed.config.session import SessionConfig
@@ -235,7 +235,6 @@ def register() -> list[Handler]:
         Handler(
             name="overlay-status",
             event="SessionStart",
-            policy=Policy.OPEN,
             run=_overlay_status,
             once_key="overlay-status",
         )

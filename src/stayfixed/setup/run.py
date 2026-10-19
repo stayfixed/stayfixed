@@ -9,12 +9,11 @@ or record the private overlay.
 
 **A preset default never overwrites a value already recorded.** The first draft of this module
 rebuilt `[personal]` from the preset's own defaults on every run, which meant a second
-`setup --preset recommended` reset `reply_language` back to `""` even after the owner had set it by
-hand — exactly the value `skills/setup/SKILL.md` calls "the user's to set" and `setup.machine`'s own
-docstring promises survives a rewrite that "only set one of them". `_new_personal_values` computes
-only the keys the machine file does not already carry, and that is what both `write_machine` and the
-settings file's `pluginConfigs` receive — an empty dict on every run after the first, once every key
-has a recorded value.
+`setup --preset recommended` reset a personal value back to the preset's after the owner set it by
+hand — exactly the value `setup.machine`'s own docstring promises survives a rewrite that "only
+set one of them". `_new_personal_values` computes only the keys the machine file does not already
+carry, and that is what both `write_machine` and the settings file's `pluginConfigs` receive — an
+empty dict on every run after the first, once every key has a recorded value.
 
 **Marketplaces are registered before anything is installed from them, and per-plugin sources are
 never guessed.** The first draft attempted `claude plugin install superpowers@obra` on a fresh
@@ -1338,8 +1337,8 @@ def setup(
     retired = [r for r in data.get("deny", {}).get("retired", []) if isinstance(r, str)]
     # **The `pluginConfigs` mirror is recomputed from the machine file, not from this run's own
     # new keys.** `personal` above is empty on every run after the first, so the mirror was
-    # write-once: an owner who edited `reply_language` in the machine file — the documented way,
-    # `README.md`'s own "Written by: you, or `stayfixed setup`" — kept `""` in
+    # write-once: an owner who edited a personal value in the machine file — the documented way,
+    # `README.md`'s own "Written by: you, or `stayfixed setup`" — kept the preset's in
     # `~/.claude/settings.json` for ever. The other answer the review offered was to stop
     # writing the mirror at all; it is rejected because `pluginConfigs` is where Claude Code
     # itself reads a plugin's `userConfig` answers, and this plugin's own manifest declares

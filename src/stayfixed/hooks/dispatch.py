@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any
 
 from stayfixed.gitenv import checkout_root
 from stayfixed.harnesses import Harness, project_root_variables
-from stayfixed.hooks.api import Decision, Handler, HookEvent, HookResult, Policy, Sink, first_set
+from stayfixed.hooks.api import Decision, Handler, HookEvent, HookResult, Sink, first_set
 
 if TYPE_CHECKING:
     from stayfixed.config.session import SessionConfig
@@ -116,10 +116,9 @@ def _clamp(
 class _UnrecognisedDecision(Exception):
     """A verdict `dispatch` cannot read.
 
-    Raised rather than ignored so it travels the path a handler's exception already travels:
-    the handler's own policy judges it, a CLOSED guard that misnames its deny refuses instead
-    of permitting, and the reason reaches stderr — which production reads — and not only the
-    sink, which today forgets (see `NullSink`).
+    Raised rather than ignored so it travels the path a handler's exception already travels: the
+    reason reaches stderr — which production reads — and not only the sink, which today forgets
+    (see `NullSink`).
     """
 
     def __init__(self, decision: object) -> None:
@@ -134,10 +133,9 @@ class _UnrecognisedContext(Exception):
     from carrying something else, and the join that builds the payload happens once, after
     every handler has run — outside every per-handler `try`. Raised inside the per-handler
     `try` instead, so a malformed `context` is that handler failing rather than a `TypeError`
-    that takes down the whole dispatch: an OPEN handler's policy swallows it and a CLOSED
-    handler's policy refuses, exactly like a malformed decision. Raised *after* the decision
-    branch, never before it: a deny already read off the same result is banked first, so a
-    handler that denies and carries a malformed context keeps its refusal.
+    that takes down the whole dispatch, exactly like a malformed decision. Raised *after* the
+    decision branch, never before it: a deny already read off the same result is banked first,
+    so a handler that denies and carries a malformed context keeps its refusal.
     """
 
     def __init__(self, context: object) -> None:
@@ -230,8 +228,8 @@ def dispatch(
                 raise _UnrecognisedDecision(result.decision)
             # `context` is validated here too, and not only at the join below: the join runs
             # once after every handler, outside every per-handler `try`, so a non-string context
-            # caught there would take the whole dispatch down instead of being judged by this
-            # handler's own policy.
+            # caught there would take the whole dispatch down instead of failing this handler
+            # alone.
             if result.context is not None and not isinstance(result.context, str):
                 raise _UnrecognisedContext(result.context)
             # The delivery is banked here, past every check that can discard this result, and
@@ -250,11 +248,10 @@ def dispatch(
                 sink.mark(handler.once_key)
             if result.context:
                 contexts.append(result.context)
-        except BaseException as exc:  # judged by the handler's own policy
+        except BaseException as exc:  # costs this handler alone, never the call
             reason, record = _failure(exc)
             reasons.append(f"{handler.name}: {reason}")
             sink.diagnostic({"event": event.name, "handler": handler.name, **record})
-            refuse = refuse or handler.policy == Policy.CLOSED
             continue
     if refuse:
         return Outcome(2, "", "stayfixed: refused: " + "; ".join(reasons) + "\n", "deny")

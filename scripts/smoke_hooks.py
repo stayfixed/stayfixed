@@ -59,38 +59,30 @@ UNCOMMITTED = "uncommitted-by-the-smoke.txt"
 class Sample:
     payload: dict[str, object]
     expected_code: int
-    stderr_required: bool
     label: str
-    # What the stderr must and must not say, because the exit code cannot tell a genuine deny
-    # from a launcher fault. `hooks/run-hook.sh` maps a launcher `rc=1` under the `closed`
-    # policy to exit 2 with a `SF_` token on stderr, which satisfies `expected_code=2` and
-    # `stderr_required=True` byte for byte. Measured 2026-09-19: a three-line
-    # `scripts/stayfixed` that writes to stderr and raises `SystemExit(1)` left the row that
-    # proves the guard denies GREEN, along with twelve of the other thirteen.
-    stderr_says: tuple[str, ...] = ()
+    # What the stderr must never say: the wrapper's token for a launcher fault, which the
+    # `open` policy degrades to exit 0.
     stderr_never: tuple[str, ...] = ()
     # What the `additionalContext` a dispatched entry prints must say. Empty asks nothing of it.
     context_says: tuple[str, ...] = ()
 
 
 SAMPLES: dict[str, tuple[Sample, ...]] = {
-    "SessionStart": (Sample({"source": "startup"}, 0, False, "a session starts"),),
+    "SessionStart": (Sample({"source": "startup"}, 0, "a session starts"),),
     "PreToolUse": (
         Sample(
             {
                 "tool_name": "Bash",
-                "tool_input": {"command": "sleep 300 & wait", "run_in_background": True},
+                "tool_input": {"command": "sleep 300 &", "run_in_background": True},
             },
-            2,
-            True,
-            "a leaking background command is refused with a reason",
-            stderr_says=("refused: bg-cleanup", "backgrounded"),
+            0,
+            "a backgrounded sleep is hinted, never blocked",
             stderr_never=(FAULT,),
+            context_says=("backgrounded",),
         ),
         Sample(
             {"tool_name": "Bash", "tool_input": {"command": "ls"}},
             0,
-            False,
             "an ordinary command is allowed",
             stderr_never=(FAULT,),
         ),
@@ -103,7 +95,6 @@ SAMPLES: dict[str, tuple[Sample, ...]] = {
                 "tool_response": {"exit_code": 1},
             },
             0,
-            False,
             "a failed test run is annotated, never blocked",
             stderr_never=(FAULT,),
         ),
@@ -121,7 +112,6 @@ SAMPLES: dict[str, tuple[Sample, ...]] = {
                 "error": "Exit code 1",
             },
             0,
-            False,
             "a red run Claude Code reports as a failure is annotated, never blocked",
             stderr_never=(FAULT,),
             context_says=(RED_RUN_NOTE,),
@@ -317,15 +307,6 @@ def check_entry(
             f"exited {done.returncode}, expected {sample.expected_code}; "
             f"stderr: {done.stderr.strip()[:200]}"
         )
-    if sample.stderr_required and not done.stderr.strip():
-        return "refused with no reason on stderr"
-    # The reason itself, and not merely that there was one. Without these two clauses the
-    # security-bearing row cannot tell a deny the dispatcher made from any launcher fault at
-    # all — a missing interpreter, an import error, a syntax error in a handler — because the
-    # wrapper reports every one of them as exit 2 with something on stderr under `closed`.
-    for phrase in sample.stderr_says:
-        if phrase not in done.stderr:
-            return f"stderr does not say {phrase!r}: {done.stderr.strip()[:200]}"
     for phrase in sample.stderr_never:
         if phrase in done.stderr:
             return f"stderr carries the launcher token {phrase!r}: {done.stderr.strip()[:200]}"

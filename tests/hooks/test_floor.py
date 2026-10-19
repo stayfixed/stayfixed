@@ -24,7 +24,6 @@ from stayfixed.config.session import (
     SessionConfig,
     session_config,
 )
-from stayfixed.guards.bgcleanup import SLEEP_REASON
 from stayfixed.guards.hooks import register as guards_handlers
 from stayfixed.hooks.api import DIAGNOSTICS, DIRECTORY, Handler, HookEvent, HookResult
 from stayfixed.hooks.commands import CONFIG_FALLBACK
@@ -32,7 +31,14 @@ from stayfixed.memory.hooks import register as memory_handlers
 from stayfixed.trust import kinds
 from tests.config.test_session import densest_file, long_file_of_gates_that_run
 from tests.gitfixture import git
-from tests.hooks.test_hook_command import BACKGROUND_SLEEP, CONFIG, TOOL_CALL, hook, notice_texts
+from tests.hooks.test_hook_command import (
+    BACKGROUND_SLEEP,
+    CONFIG,
+    TOOL_CALL,
+    hinted,
+    hook,
+    notice_texts,
+)
 from tests.memory.test_commands import CONFIG as MEMORY_CONFIG
 from tests.memory.test_commands import NOTE, invoke
 from tests.sessions import NO_CONFIG
@@ -92,12 +98,10 @@ def test_the_background_guard_judges_whatever_the_configuration(
 ) -> None:
     # With no stayfixed.toml the guard said nothing; with one that did not load, or a broken
     # machine file, every tool call was refused. Now the guard judges in each, on the preset and
-    # the owner's layer. Mutations (`mutations/`'s "the background guard is silent without a
-    # project configuration" -> `no_file`, `unparseable` and `both_broken` let the sleep through;
-    # "a session lets a file that is not TOML raise" -> `unparseable` refuses `ls` too).
+    # the owner's layer. Mutation (`mutations/`'s "a session lets a file that is not TOML raise"):
+    # `unparseable` refuses `ls` too.
     root, home = _setup(tmp_path, project)
-    refused = hook("PreToolUse", json.dumps(BACKGROUND_SLEEP), root, home=home)
-    assert refused.returncode == 2 and SLEEP_REASON in refused.stderr
+    assert hinted(hook("PreToolUse", json.dumps(BACKGROUND_SLEEP), root, home=home))
     allowed = hook("PreToolUse", json.dumps(TOOL_CALL), root, home=home)
     # The control: never refused for its configuration.
     assert (allowed.returncode, allowed.stderr) == (0, "")
@@ -128,14 +132,14 @@ def test_a_file_of_thousands_of_unusable_keys_never_outlasts_the_hook(tmp_path: 
     root, home = _setup(tmp_path, no_file)
     (root / "stayfixed.toml").write_text(MANY_UNUSABLE_GATES, encoding="utf-8")
     started = time.monotonic()
-    refused = hook("PreToolUse", json.dumps(BACKGROUND_SLEEP), root, home=home)
+    answer = hook("PreToolUse", json.dumps(BACKGROUND_SLEEP), root, home=home)
     elapsed = time.monotonic() - started
-    assert refused.returncode == 2 and SLEEP_REASON in refused.stderr
+    assert hinted(answer)
     assert elapsed < HOOK_BOUND_SECONDS, elapsed
 
 
 def _hook_seconds(tmp_path: Path, document: str) -> float:
-    """The CPU time a `PreToolUse` hook spends refusing a background sleep beside `document`.
+    """The CPU time a `PreToolUse` hook spends hinting at a background sleep beside `document`.
 
     Counted in the hook's own process: timed inside the suite's process, a CI runner measured its
     coverage tracer and its scheduler, 6.6 s for a read that takes 0.4 s, and neither is what a
@@ -144,9 +148,9 @@ def _hook_seconds(tmp_path: Path, document: str) -> float:
     root, home = _setup(tmp_path, no_file)
     (root / "stayfixed.toml").write_text(document, encoding="utf-8")
     before = resource.getrusage(resource.RUSAGE_CHILDREN)
-    refused = hook("PreToolUse", json.dumps(BACKGROUND_SLEEP), root, home=home)
+    answer = hook("PreToolUse", json.dumps(BACKGROUND_SLEEP), root, home=home)
     after = resource.getrusage(resource.RUSAGE_CHILDREN)
-    assert refused.returncode == 2 and SLEEP_REASON in refused.stderr
+    assert hinted(answer)
     return (after.ru_utime + after.ru_stime) - (before.ru_utime + before.ru_stime)
 
 
@@ -195,13 +199,11 @@ def test_a_path_value_of_thousands_of_components_never_outlasts_the_hook(tmp_pat
 def test_the_owner_switches_the_guard_off_with_no_stayfixed_toml(tmp_path: Path) -> None:
     # No `stayfixed.toml`, and the machine file switches the background guard off: the machine
     # file is the one place a session guard is switched off.
-    # Mutation (`mutations/`'s "the owner's switch never turns the background guard off"): the
-    # sleep is refused with the switch off.
     root, home = _setup(tmp_path, no_file)
     machine_with(home, "[guards]\nbg_cleanup = false\n")
-    assert hook("PreToolUse", json.dumps(BACKGROUND_SLEEP), root, home=home).returncode == 0
+    assert not hinted(hook("PreToolUse", json.dumps(BACKGROUND_SLEEP), root, home=home))
     machine_with(home, "")  # the control
-    assert hook("PreToolUse", json.dumps(BACKGROUND_SLEEP), root, home=home).returncode == 2
+    assert hinted(hook("PreToolUse", json.dumps(BACKGROUND_SLEEP), root, home=home))
 
 
 def test_a_repository_never_switches_the_guard_off(tmp_path: Path) -> None:
@@ -210,7 +212,7 @@ def test_a_repository_never_switches_the_guard_off(tmp_path: Path) -> None:
     # `mutations/`'s "the NOTE path removes a repository's machine-only table without a note".
     root, home = _setup(tmp_path, no_file)
     (root / "stayfixed.toml").write_text(CONFIG + "\n[guards]\nbg_cleanup = false\n", "utf-8")
-    assert hook("PreToolUse", json.dumps(BACKGROUND_SLEEP), root, home=home).returncode == 2
+    assert hinted(hook("PreToolUse", json.dumps(BACKGROUND_SLEEP), root, home=home))
 
 
 @pytest.mark.parametrize(

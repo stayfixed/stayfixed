@@ -76,11 +76,10 @@ def test_the_machine_file_switches_the_background_guard_off(tmp_path: Path) -> N
 
 def test_the_machine_files_personal_values_win(tmp_path: Path) -> None:
     # Mutation (`mutations/`'s "the preset's personal values win over the machine file's"): the
-    # two layers trade names and the preset's `reply_language` comes back.
-    got = resolve_owner(machine_file(tmp_path, '[personal]\nreply_language = "ru"\n'))
-    assert got.personal.reply_language == "ru"
-    assert got.personal.artifact_language == preset_personal().artifact_language
-    assert got.provenance["personal.reply_language"] is LayerName.MACHINE_FILE
+    # two layers trade names and the preset's `preset` comes back.
+    got = resolve_owner(machine_file(tmp_path, '[personal]\npreset = "mine"\n'))
+    assert got.personal.preset == "mine"
+    assert got.provenance["personal.preset"] is LayerName.MACHINE_FILE
 
 
 def test_a_session_budget_is_the_owners(tmp_path: Path) -> None:
@@ -120,28 +119,27 @@ def test_an_unknown_key_is_a_note_and_never_printed_raw(tmp_path: Path) -> None:
     assert_never_raw(*got.notes)
 
 
-KEPT = '[personal]\nartifact_language = "de"\n'
+KEPT = '[personal]\npreset = "de"\n'
 
 
 @pytest.mark.parametrize(
     ("text", "key", "rule"),
     [
         (KEPT + "[guards]\nbg_cleanup = 0\n", "guards.bg_cleanup", "true or false"),
-        (KEPT + "reply_language = 1\n", "personal.reply_language", "a string"),
         (KEPT + "[budgets]\nvolatile_ttl_days = 0\n", "budgets.volatile_ttl_days", "a positive"),
     ],
-    ids=["guards", "personal", "budgets"],
+    ids=["guards", "budgets"],
 )
 def test_an_invalid_value_resets_only_its_key(
     tmp_path: Path, text: str, key: str, rule: str
 ) -> None:
-    # The rest of the file stands: `artifact_language` is still the owner's, and the one key
-    # that could not be used is the preset's again, with a note naming it and not its value.
-    # Mutation (`mutations/`'s "an invalid value in the machine file costs every value read
-    # before it"): `artifact_language` is lost with the bad key.
+    # The rest of the file stands: `preset` is still the owner's, and the one key that could
+    # not be used is the preset's again, with a note naming it and not its value. Mutation
+    # (`mutations/`'s "an invalid value in the machine file costs every value read before it"):
+    # `preset` is lost with the bad key.
     path = machine_file(tmp_path, text)
     got = resolve_owner(path)
-    assert got.personal.artifact_language == "de"
+    assert got.personal.preset == "de"
     assert key not in got.provenance or got.provenance[key] is LayerName.PRESET
     assert len(got.notes) == 1
     assert got.notes[0].startswith(f"{path}: {key} must be {rule}")
@@ -220,8 +218,8 @@ def test_strict_notes_what_a_session_notes_in_a_file_that_loads(tmp_path: Path, 
 
 
 def _second_preset(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Every preset name but `recommended` loads as `recommended` with another
-    `artifact_language`, in both readers of a preset a load asks: the project loader's and the
+    """Every preset name but `recommended` loads as `recommended` with another personal
+    `preset`, in both readers of a preset a load asks: the project loader's and the
     owner's layer's."""
     from stayfixed import presets
     from stayfixed.config import loader
@@ -231,7 +229,7 @@ def _second_preset(monkeypatch: pytest.MonkeyPatch) -> None:
     def load(name: str, *, key: str = "[stayfixed] preset") -> dict[str, Any]:
         preset = copy.deepcopy(real("recommended", key=key))
         if name != "recommended":
-            preset["defaults"]["personal"]["artifact_language"] = "de"
+            preset["defaults"]["personal"]["preset"] = "de"
         return preset
 
     monkeypatch.setattr(loader, "load_preset", load)
@@ -245,14 +243,14 @@ def test_the_owners_layer_stands_on_another_preset_without_reading_the_file_agai
     # another preset than the one it was resolved over: the machine file's values stand on that
     # preset's defaults, as a layer resolved over it would, and its notes are not said again.
     # Mutation (`mutations/`'s "a command's owner layer stays on the preset it was resolved
-    # over"): the other preset's `artifact_language` never arrives.
+    # over"): the other preset's personal `preset` never arrives.
     _second_preset(monkeypatch)
-    path = machine_file(tmp_path, '[personal]\nreply_language = "ru"\n[guards]\nfuture = 1\n')
+    path = machine_file(tmp_path, "[guards]\nbg_cleanup = false\nfuture = 1\n")
     got = resolve_owner(path)
     path.unlink()
     moved = rebased(got, "other")
-    assert (moved.preset, moved.personal.artifact_language) == ("other", "de")
-    assert moved.personal.reply_language == "ru" and moved.notes == got.notes
+    assert (moved.preset, moved.personal.preset) == ("other", "de")
+    assert moved.guards.bg_cleanup is False and moved.notes == got.notes
     assert rebased(got, "recommended") is got
 
 
@@ -265,10 +263,10 @@ def test_a_load_stands_the_layer_it_is_handed_on_the_documents_preset(
     from stayfixed.config.loader import loads
 
     _second_preset(monkeypatch)
-    path = machine_file(tmp_path, '[personal]\nreply_language = "ru"\n')
+    path = machine_file(tmp_path, "[guards]\nbg_cleanup = false\n")
     document = '[stayfixed]\nversion = "0.1.0"\npreset = "other"\n\n[project]\nname = "sample"\n'
     config = loads(document, tmp_path, owner=resolve_owner(path))
-    assert (config.personal.artifact_language, config.personal.reply_language) == ("de", "ru")
+    assert config.personal.preset == "de"
 
 
 def test_write_machine_keeps_the_owners_guards_and_budgets(tmp_path: Path) -> None:
@@ -279,7 +277,7 @@ def test_write_machine_keeps_the_owners_guards_and_budgets(tmp_path: Path) -> No
     path = machine_file(
         tmp_path, "[guards]\nbg_cleanup = false\n\n[budgets]\nstartup_rules_words = 9000\n"
     )
-    write_machine(path, personal={"reply_language": "ru"}, overlay_root=None, machine={})
+    write_machine(path, personal={"preset": "mine"}, overlay_root=None, machine={})
     written = read_machine(path)
     assert written["guards"] == {"bg_cleanup": False}
     assert written["budgets"] == {"startup_rules_words": 9000}

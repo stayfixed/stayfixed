@@ -1,4 +1,4 @@
-"""The background-cleanup judge: two refusals and one hint about a cleanup a reap can skip.
+"""The background-cleanup judge: hints about a cleanup a reap can skip, and never a refusal.
 
 MEASURED 2026-09-02. A session reproducing a timing flake under CPU contention ran this as
 ONE backgrounded command::
@@ -20,113 +20,75 @@ WHAT THIS FILE CANNOT FIX, stated so the boundary stays clear: the harness reaps
 shell without killing its process group. That is agent-harness behaviour, not repository
 behaviour, and nothing here works around it.
 
-WHAT IT CAN FIX is the command SHAPE, which is where the leak is actually authored. Cleanup
+WHAT IT CAN DO is name the command SHAPE, which is where the leak is actually authored. Cleanup
 expressed as a trailing line of the same command is not cleanup -- it runs only if the shell
 survives to reach it, which is exactly the assumption a reap breaks. `trap 'kill ...' EXIT INT
 TERM` runs where a trailing line does not, because the shell fires it on the way out however it
-leaves. So the rules below refuse that shape before it starts where refusing is right and
-advise where it is not, each naming the remedy rather than the rule alone.
+leaves. The agent in the session writes the command, so it can spell around any reading here:
+every reading is a hint naming the remedy, an honest mistake's convenience, never a refusal.
 
 WHAT THIS MODULE DOES, four readings of that one shape:
 
-1. It REFUSES a backgrounded command that leaks an `&` job with no trap (`LEAK_REASON`).
-2. It REFUSES a backgrounded command whose FIRST simple command is `sleep` (`SLEEP_REASON`).
-3. It ADVISES -- never refuses -- when a command's last line restores a backup outside a trap
-   (`RESTORE_HINT`).
-4. It ADVISES, for a backgrounded call only, when the chain ends in `; echo …`, because the
-   harness's completion notification reports that echo's exit code and not the code of the
-   command before it (`EXIT_ECHO_HINT`). It cannot fire together with 3: a restore is a last
-   command, and so is the echo.
+1. A backgrounded command that leaks an `&` job with no cleanup (`LEAK_HINT`).
+2. A backgrounded command whose FIRST simple command is `sleep` (`SLEEP_HINT`).
+3. A command whose last line restores a backup outside a trap (`RESTORE_HINT`).
+4. A backgrounded call whose chain ends in `; echo …`, because the harness's completion
+   notification reports that echo's exit code and not the code of the command before it
+   (`EXIT_ECHO_HINT`). It cannot fire together with 3: a restore is a last command, and so is
+   the echo.
 
-THE `&` RULE, all three conditions required:
+THE `&` READING, all three conditions required:
 
-1. The call carries `run_in_background: true`. Keying on the flag is what keeps false
-   positives near zero: a foreground command that leaks is a much rarer accident, because the
-   shell that would run the trailing line is the one the tool is waiting on.
+1. The call carries `run_in_background: true`. A foreground command that leaks is a much rarer
+   accident, because the shell that would run the trailing line is the one the tool is waiting
+   on.
 2. The command backgrounds a job with a bare `&`. Read as a TOKEN from `bashscan.tokenize`,
    never as a regex over raw text -- `&&` and `2>&1` are precisely what a text scan gets
-   wrong, and the tokenizer already resolves both (`a && b` -> `['a', '&&', 'b']`,
-   `cmd 2>&1` -> `['cmd', '2', '>&', '1']`, neither yielding a bare `&`). Read, too, from a
-   command whose heredoc BODIES are gone -- every one of them, quoted delimiter or not: a
-   body is standard input to the header's command, never an operator of the enclosing shell,
-   and reading one as grammar refused an ordinary `cat > README.md <<EOF` whose text carried
-   a `&`. `_scan` carries that measurement.
-3. No `trap` naming `EXIT` anywhere in the command.
+   wrong, and the tokenizer already resolves both. Read, too, from a command whose heredoc
+   BODIES are gone: a body is standard input to the header's command, never an operator of the
+   enclosing shell. `_scan` carries that measurement.
+3. No cleanup: no `trap` naming `EXIT` anywhere in the command, and no trailing `wait`, which
+   reaps the jobs before the shell exits.
 
-THE `sleep` RULE is one condition on top of the flag: the first simple command is `sleep`.
+THE `sleep` READING is one condition on top of the flag: the first simple command is `sleep`.
 A backgrounded call returns at once -- the harness does not wait for it -- so the sleep buys
 nothing and the check after it runs immediately, in the background, unread. Measured
-2026-09-05: fifteen such calls, nine 'minutes' of sleeping, 39 seconds of wall clock. It
-refuses rather than advises because there is no shape where a backgrounded leading `sleep`
-does what its author meant. Only the FIRST command counts: `pytest ...; sleep 1` is not the
-misunderstanding.
+2026-09-05: fifteen such calls, nine 'minutes' of sleeping, 39 seconds of wall clock. Only the
+FIRST command counts: `pytest ...; sleep 1` is not the misunderstanding.
 
-THE RESTORE HINT is the one behaviour NOT keyed on `run_in_background`, deliberately: the
-shape it names was measured 2026-09-05 on a FOREGROUND call, which outlived the 120 s timeout,
-was backgrounded by the harness and reaped before its restore line, leaving a workflow file
+THE RESTORE HINT is the one reading NOT keyed on `run_in_background`, deliberately: the shape
+it names was measured 2026-09-05 on a FOREGROUND call, which outlived the 120 s timeout, was
+backgrounded by the harness and reaped before its restore line, leaving a workflow file
 mutated. The flag cannot key it because at PreToolUse time the timeout has not happened. That
 is also why its matching is the narrowest thing in this file: it reads every Bash call, so it
 fires only on the ROUND TRIP -- an earlier `cp`/`mv` whose source and destination the last
 command swaps back -- and stays silent on an ordinary chained copy (`cp src/a build/a; make;
-cp build/a dist/a`), which shares the last command's shape and restores nothing. It is advice
-and never a refusal, so a miss costs nothing and a false fire is noise on every `cp` anyone
-writes.
+cp build/a dist/a`), which shares the last command's shape and restores nothing.
 
-NO EXEMPTION FOR A LONE `cmd &`, and this was the one judgement call the rule left open: should
-a bare `&` on a command that is itself the only thing being run -- a server the caller means to
-outlive the shell -- be allowed? It is not, because under `run_in_background: true` the harness
-ALREADY backgrounds the whole command. An inner `&` therefore adds nothing but a child the
-harness cannot track and the reap cannot collect: either it is redundant (drop it, and the tool
-still backgrounds the command) or it is the leak (a server nothing will reap is the same defect
-as fourteen busy-loops nothing will reap, differing only in how much CPU it burns). There is no
-shape where the inner `&` is both necessary and safe, so there is nothing to exempt.
-`test_a_lone_backgrounded_server_is_denied_too` pins the decision rather than leaving it to be
-rediscovered.
+A lone `cmd &` gets the leak hint too: under `run_in_background: true` the harness ALREADY
+backgrounds the whole command, so an inner `&` adds nothing but a child the harness cannot
+track and the reap cannot collect.
 
-DEGRADES TOWARD SILENCE at every seam where it can degrade at all, with ONE measured
-exception named below: an unparseable command is allowed, a trap this reads too generously is
-allowed, and a `&` nested past the recursion bound is allowed. That direction is deliberate.
-This guard exists to stop a shape people write BY ACCIDENT, not to hold a line against someone
-spelling around it -- and a guard that fires on ordinary work is one people learn to route
-around rather than obey.
-
-THE EXCEPTION, stated rather than left for someone to trip over: a BITWISE `&` inside an
-arithmetic expansion is refused. `echo $((3 & 1))` tokenizes to
-`['echo', '$', '((', '3', '&', '1', '))']`, and that `&` is bare. The obvious fix -- suppress
-`&` inside a run opened by `((` -- was measured and rejected, because `((` is not unambiguous:
-`((sleep 1; sleep 2) & wait)` opens with the same token, and suppressing there would silence a
-REAL leak that is far closer to the incident than any arithmetic is
-(`test_a_subshell_background_inside_another_subshell_is_denied` pins that shape). Refusing a
-rare bitwise expression is the cheaper error of the two, and backgrounding one is not a thing
-anyone does on purpose.
+DEGRADES TOWARD SILENCE at every seam: an unparseable command, a trap this reads too
+generously and a `&` nested past the recursion bound all get no hint. A false hint is the
+cheaper error and has a known shape: a BITWISE `&` inside an arithmetic expansion
+(`echo $((3 & 1))`) tokenizes to a bare `&`, and suppressing `&` inside a run opened by `((`
+would also silence `((sleep 1; sleep 2) & echo x)`, a real leak.
 
 WHAT IS NOT COVERED, recorded rather than implied:
 
-- BY EITHER REFUSAL, a command the harness moves to the background ITSELF, after the
-  foreground timeout, with no `run_in_background` in the payload. The flag is the only signal
-  available at PreToolUse time; the timeout has not happened yet and nothing in the input
-  predicts it. The restore hint is the one behaviour that does not need the flag, and it is
-  unkeyed for exactly this reason.
-- `trap - EXIT`, which REMOVES a trap rather than installing one, reads here as a trap and
-  allows. Distinguishing it is one condition, and it is deliberately not written: it buys
-  nothing against an accident, and every line spent narrowing the trap test is a line that can
-  produce a false refusal on a real trap spelled unusually.
+- By the `&` and `sleep` readings, a command the harness moves to the background ITSELF, after
+  the foreground timeout, with no `run_in_background` in the payload.
+- `trap - EXIT`, which REMOVES a trap rather than installing one, reads here as a trap.
 - A `&` inside a `$(...)` substitution, or in a body fed to a LANGUAGE interpreter rather than
-  a shell (`python3 - <<'PY'`). The first is exotic -- a substitution's output is captured, so
-  backgrounding inside one is not a shape that occurs by accident -- and the second is not
-  shell grammar, so re-reading it as shell would be judging the wrong language.
+  a shell (`python3 - <<'PY'`).
 - A shell `-c` command string that another option in the same cluster displaces, as in
-  `bash -cO extglob '<command>'`. `_nested_programs` takes the token after the cluster and
-  only that one; reading further was measured to REFUSE ordinary quoted arguments, which is
-  the wrong direction to be wrong in.
-- A backup copied INTO A DIRECTORY (`cp ci.yml bak/`, `cp -t bak ci.yml`, `cp a b bak`). The
-  backup then lives at `bak/ci.yml`, a path this reader would have to construct rather than
-  read, so no round trip can be recognised and the hint stays silent. Recorded rather than
-  built: guessing the joined path is the kind of reach that turns a hint into noise.
+  `bash -cO extglob '<command>'`: `_nested_programs` takes the token after the cluster and
+  only that one.
+- A backup copied INTO A DIRECTORY (`cp ci.yml bak/`, `cp -t bak ci.yml`, `cp a b bak`), whose
+  path this reader would have to construct rather than read.
 - A restore line carrying a redirect (`cp a.bak a 2>/dev/null`), on either side of the round
-  trip. `segments` keeps the redirect pieces in the segment and this reader counts them as
-  operands, so the command looks multi-operand and comes back silent -- verified both ways
-  rather than assumed.
+  trip: this reader counts the redirect pieces as operands.
 - A command longer than `MAX_COMMAND_CHARS`, which is not read at all. See that constant.
 """
 
@@ -139,16 +101,6 @@ from pathlib import Path
 from typing import NamedTuple
 
 from stayfixed.guards import bashscan
-
-
-class Verdict(NamedTuple):
-    """What the guard says about one Bash call: a refusal reason, an advisory, or neither."""
-
-    deny: str | None
-    hint: str | None
-
-
-ALLOW = Verdict(None, None)
 
 # A named cap (CONTRIBUTING.md#named-caps), and no shipped file changes with it. Above it the guard
 # does not read the command at all. 64 KiB is far past any command a person or a model types and far
@@ -165,7 +117,7 @@ _BACKGROUND_OPERATOR = "&"
 # are deliberately absent from `bashscan._COMPOUND_OPERATORS`: for SEGMENTATION every
 # piece of them ends a command, so letting them fall through to single characters yields the
 # right number of breaks with no extra table. That is correct there and wrong here, so this
-# file reads the pieces and then interprets them -- a naive scan for a `&` piece would refuse
+# file reads the pieces and then interprets them -- a naive scan for a `&` piece would flag
 # `cmd |& grep x`, which backgrounds nothing.
 _COMMAND_ENDING_PIECES = frozenset({"|", ";"})
 
@@ -198,8 +150,8 @@ _SHELL_INTERPRETERS = frozenset(
 # and quadratic. `-[A-Za-z]*c[A-Za-z]*\Z` lets the first run consume a `c` too, so on a token
 # that has a `c` and then a non-letter -- `-ccc...c0` -- every `c` is a place the engine can
 # re-enter the tail, and the tail is itself a linear scan to `\Z`. Measured through `judge`,
-# INSIDE the 65,536-char cap this file's own comment says prevents exactly this, on the one
-# `Policy.CLOSED` handler: 20,002-char token 1.09 s, 40,002 4.44 s, 60,002 10.14 s -- the
+# INSIDE the 65,536-char cap this file's own comment says prevents exactly this, on every
+# `PreToolUse` call: 20,002-char token 1.09 s, 40,002 4.44 s, 60,002 10.14 s -- the
 # 4x-per-doubling signature of O(n^2). With `c` out of the leading class there is exactly one
 # position at which the literal can match, so the tail runs at most once, and the same three
 # calls take 0.03 s, 0.06 s and 0.13 s -- linear, and the same cost as a token with no `c` in
@@ -211,12 +163,10 @@ _SHELL_C_FLAG = re.compile(r"\A-[A-Zabd-z]*c[A-Za-z]*\Z")
 
 # A named cap (CONTRIBUTING.md#named-caps) on descent into a command hidden inside a string, and no
 # shipped file changes with it. Real nesting rarely goes past one level. Exceeding it stops looking,
-# which ALLOWS, and that direction is deliberate: it risks a leak in a shape -- a shell inside a
-# shell inside a shell -- nobody reaches by accident, while denying on depth alone would refuse
-# legitimate deep nesting that carries no `&` this reader can see.
+# which says nothing: a shell inside a shell inside a shell is a shape nobody reaches by accident.
 _MAX_RECURSION_DEPTH = 3
 
-LEAK_REASON = (
+LEAK_HINT = (
     "This command backgrounds a job with `&` and expresses its cleanup as a later line of "
     "the same command. That is not cleanup: the harness can reap the parent shell before the "
     "line is reached, and an `&`-backgrounded child survives the reap, re-parents to PID 1, "
@@ -235,7 +185,7 @@ LEAK_REASON = (
     "rather than wait on it."
 )
 
-SLEEP_REASON = (
+SLEEP_HINT = (
     "This command is backgrounded (`run_in_background: true`) and begins with `sleep`. A "
     "backgrounded call returns immediately -- the harness does not wait for it -- so the sleep "
     "buys nothing and the check after it runs at once, in the background, unread. Measured "
@@ -292,28 +242,24 @@ _STATEMENT_KEYWORDS = frozenset({"done", "fi", "esac", "then", "else", "elif", "
 _CHAIN_OPERATORS = frozenset({";", "&&", "||", "|", "&"})
 
 
-def judge(command: str, *, background: bool) -> Verdict:
-    """The whole contract, as a pure function of the command text and the background flag.
-
-    It never raises on a string input. The handler that calls it is `Policy.CLOSED`, so an
-    exception here would refuse an ordinary call -- the opposite of the failure this guard
-    exists to prevent, and the reason every seam below degrades toward silence instead.
-    """
+def judge(command: str, *, background: bool) -> str | None:
+    """The whole contract, as a pure function of the command text and the background flag: the
+    hint for one Bash call, or `None`. It never raises on a string input."""
     if len(command) > MAX_COMMAND_CHARS:
-        return ALLOW
+        return None
     if background:
         tokens = bashscan.tokenize(command)
         if tokens is not None and _begins_with_sleep(tokens):
-            return Verdict(SLEEP_REASON, None)
-        backgrounds, traps = _scan(command, depth=0)
-        if backgrounds and not traps:
-            return Verdict(LEAK_REASON, None)
+            return SLEEP_HINT
+        backgrounds, cleaned = _scan(command, depth=0)
+        if backgrounds and not cleaned:
+            return LEAK_HINT
     hints = [
         hint
         for hint in (_restore_hint(command), _exit_echo_hint(command) if background else None)
         if hint
     ]
-    return Verdict(None, "\n\n".join(hints) or None)
+    return "\n\n".join(hints) or None
 
 
 def _begins_with_sleep(tokens: list[str]) -> bool:
@@ -325,13 +271,12 @@ def _begins_with_sleep(tokens: list[str]) -> bool:
     `Path(...).name` resolves the absolute path.
 
     `dropwhile`, NOT a filter over the whole segment, and the difference is a measured false
-    refusal rather than a nicety. A LEADING `(` is skipped because a subshell opens the same
+    hint rather than a nicety. A LEADING `(` is skipped because a subshell opens the same
     command, but `X=$(sleep 5) pytest -q` segments to
     `['X=$', '(', 'sleep', '5', ')', 'pytest', '-q']`, and dropping every `(` in it put
-    `sleep` at the front of a command that does not begin with `sleep` at all -- a refusal on
-    ordinary work, from a `Policy.CLOSED` handler, on the one rule that has no allow-side
-    fallback. A `sleep` inside a substitution is not a leading `sleep`; after the leading run
-    of `(` the first word decides, and here that word is the assignment's own token.
+    `sleep` at the front of a command that does not begin with `sleep` at all. A `sleep` inside
+    a substitution is not a leading `sleep`; after the leading run of `(` the first word decides,
+    and here that word is the assignment's own token.
 
     STILL MISSED, recorded rather than implied: `time sleep 30`, and any other prefix command
     `command_words` does not resolve -- it resolves `env` and `uv run` with uv's options, and
@@ -346,7 +291,7 @@ def _begins_with_sleep(tokens: list[str]) -> bool:
 
 
 def _restore_hint(command: str) -> str | None:
-    """Advice, never a refusal: a trailing restore with no trap, foreground or not."""
+    """A trailing restore with no trap, foreground or not."""
     tokens = bashscan.tokenize(command)
     if tokens is None or _installs_an_exit_trap(tokens):
         return None
@@ -462,7 +407,7 @@ def _backgrounds_a_job(tokens: list[str]) -> bool:
     rather than a stylistic simplification. `shlex`'s `punctuation_chars` mode fuses a run
     of adjacent punctuation into ONE token, so `(sleep 300 &)` arrives as
     `['(', 'sleep', '300', '&)']` -- no bare `&` anywhere -- and the deliberate-detach idiom,
-    the very thing this guard exists to refuse, was allowed. So was the module docstring's own
+    the very thing this guard exists to name, was missed. So was the module docstring's own
     incident command with a single space deleted (`done)& done`). `_installs_an_exit_trap`
     never had the problem because it goes through `bashscan.segments`, which decomposes such
     runs; this was the one place that skipped the decomposition. `bashscan`'s own header
@@ -492,12 +437,11 @@ def _installs_an_exit_trap(tokens: list[str]) -> bool:
     `echo trap && echo EXIT` is two commands and neither is a trap. Within a segment the
     scan is positional rather than argv0-keyed, because a trap is routinely written inside
     a compound statement -- `for i in 1 2; do trap 'x' EXIT; done` gives a segment whose
-    first token is the keyword `do`, and an argv0 test would miss it and wrongly deny.
+    first token is the keyword `do`, and an argv0 test would miss it and wrongly flag.
 
-    Reading a trap too generously ALLOWS, which is the safe direction here and the reason
-    the looser positional test is the right one: the cost of a false trap is a leak that
-    was already going to happen, while the cost of a missed trap is refusing a command
-    that did the correct thing.
+    Reading a trap too generously says nothing, which is the safe direction here and the reason
+    the looser positional test is the right one: the cost of a false trap is a missed hint,
+    while the cost of a missed trap is a hint on a command that did the correct thing.
     """
     for segment in bashscan.segments(tokens):
         seen_trap = False
@@ -660,17 +604,11 @@ def _nested_programs(tokens: list[str], heredocs: list[bashscan.Heredoc]) -> lis
                 shell = Path(token).name
             elif shell is not None and _SHELL_C_FLAG.match(token):
                 # The NEXT token, for every cluster spelling. Taking "every remaining token"
-                # for a non-exact cluster (`-lc`, `-ic`) was a measured WRONGFUL DENY, not the
-                # inert over-reading its comment claimed: a candidate is re-tokenized without
-                # its original quoting, and `tokenize("https://h/p?a=1&b=2")` yields a bare
-                # `&`, so `bash -lc 'echo hi' "<that url>"` refused an ordinary argument --
-                # contradicting the top-level shape pinned by
-                # `test_an_ampersand_inside_a_quoted_argument_is_not_backgrounding`.
-                # What this gives up is the shape where another option in the cluster consumes
-                # the slot (`bash -cO extglob '<command>'`, where the command string is two
-                # tokens away). That is a miss rather than a false refusal, which is the
-                # direction this file degrades in everywhere else, and it is recorded in the
-                # module docstring instead of being traded for a deny on ordinary work.
+                # for a non-exact cluster (`-lc`, `-ic`) was measured flagging an ordinary
+                # argument: a candidate is re-tokenized without its original quoting, and
+                # `tokenize("https://h/p?a=1&b=2")` yields a bare `&`. What this gives up is
+                # the shape where another option in the cluster consumes the slot
+                # (`bash -cO extglob '<command>'`), recorded in the module docstring.
                 programs.extend(segment[index + 1 : index + 2])
                 shell = None
     for heredoc in heredocs:
@@ -687,13 +625,13 @@ def _nested_programs(tokens: list[str], heredocs: list[bashscan.Heredoc]) -> lis
 
 
 def _scan(command: str, depth: int) -> tuple[bool, bool]:
-    """`(backgrounds a job, installs an EXIT trap)` for `command` and everything nested in it.
+    """`(backgrounds a job, cleans up)` for `command` and everything nested in it: cleaning up
+    is installing an EXIT trap or ending in `wait`.
 
     Both halves are collected over the WHOLE command tree rather than judged per simple
     command, because the question this guard asks is about the command as a whole: does it
-    leave a process nothing will reap? A trap installed anywhere excuses a `&` written
-    anywhere, which is both the shell's own reading -- an EXIT trap fires for the shell that
-    installed it, whichever line backgrounded the job -- and the permissive direction.
+    leave a process nothing will reap? A cleanup anywhere excuses a `&` written anywhere, which
+    is the permissive direction.
 
     HEREDOC BODIES ARE NOT GRAMMAR, which is why both reads below ask for tokens with every
     body removed rather than `bashscan`'s default text. `prepare` re-inserts an UNQUOTED body
@@ -702,10 +640,10 @@ def _scan(command: str, depth: int) -> tuple[bool, bool]:
     header's command and never an operator of the enclosing shell. Measured, both directions,
     before this was keyed off:
 
-    - `cat > README.md <<EOF` / `see https://h/p?a=1&b=2 for $USER` / `EOF` was DENIED. An
+    - `cat > README.md <<EOF` / `see https://h/p?a=1&b=2 for $USER` / `EOF` was flagged. An
       unquoted delimiter is what a writer must use to get `$VAR` expanded, so writing any file
-      whose content carries an `&` was refused outright by the one `Policy.CLOSED` handler.
-    - `cat > notes.md <<EOF` / `don't stop for $USER` / `EOF` / `sleep 5 &` was ALLOWED. The
+      whose content carries an `&` was flagged.
+    - `cat > notes.md <<EOF` / `don't stop for $USER` / `EOF` / `sleep 5 &` was missed. The
       apostrophe opened a quote that never closed, `tokenize` returned `None`, and a real
       unreaped job walked through the `None` path below.
 
@@ -713,10 +651,10 @@ def _scan(command: str, depth: int) -> tuple[bool, bool]:
     whatever the flag says about the text, and `_nested_programs` picks the shell-fed ones out
     of that list and recurses into them.
 
-    An unparseable command (unbalanced quotes) yields `(False, False)` and is therefore
-    allowed. There is no fail-closed fallback available: the token this reader needs is `&`,
-    the one thing a raw-text scan provably gets wrong, so a text-level fallback would refuse
-    ordinary quoted arguments. With the bodies gone, an unbalanced quote in what remains is
+    An unparseable command (unbalanced quotes) yields `(False, False)` and gets no hint: the
+    token this reader needs is `&`, the one thing a raw-text scan provably gets wrong, so a
+    text-level fallback would flag ordinary quoted arguments. With the bodies gone, an
+    unbalanced quote in what remains is
     a command no shell would run -- which is the claim this docstring used to make about the
     whole command text, and which the apostrophe measurement above showed to be false while
     a body was part of it.
@@ -732,10 +670,11 @@ def _scan(command: str, depth: int) -> tuple[bool, bool]:
     # drift into reading the command two different ways.
     _text, heredocs = bashscan.prepare(command, keep_unquoted_bodies=False)
     backgrounds = _backgrounds_a_job(tokens)
-    traps = _installs_an_exit_trap(tokens)
+    commands = bashscan.segments(tokens)
+    cleaned = _installs_an_exit_trap(tokens) or (bool(commands) and commands[-1][0] == "wait")
     if depth < _MAX_RECURSION_DEPTH:
         for program in _nested_programs(tokens, heredocs):
-            nested_backgrounds, nested_traps = _scan(program, depth + 1)
+            nested_backgrounds, nested_cleaned = _scan(program, depth + 1)
             backgrounds = backgrounds or nested_backgrounds
-            traps = traps or nested_traps
-    return backgrounds, traps
+            cleaned = cleaned or nested_cleaned
+    return backgrounds, cleaned
