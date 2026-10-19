@@ -17,7 +17,7 @@ import pytest
 from stayfixed.config.session import SessionConfig
 from stayfixed.gitenv import _git_toplevel
 from stayfixed.harnesses import CLAUDE, HARNESSES, Harness
-from stayfixed.hooks.api import Decision, Handler, HookEvent, HookResult, NullSink
+from stayfixed.hooks.api import Handler, HookEvent, HookResult, NullSink
 from stayfixed.hooks.commands import run_hook
 from stayfixed.hooks.dispatch import TRUNCATION_MARK, Recorder, dispatch, read_event
 from tests.gitfixture import git
@@ -69,33 +69,13 @@ def test_contexts_are_joined_into_the_claude_shape() -> None:
 )
 def test_a_handler_stays_silent_on_every_event_but_its_own(registered: str, other: str) -> None:
     # `discover()` hands the dispatcher every area's handlers at once, so the event filter is
-    # the only thing keeping a PostToolUse guard from refusing a PreToolUse call.
-    guard = handler("g", HookResult(decision=Decision.DENY, reason="no"), event_name=registered)
-    assert (
-        dispatch(event(registered), [guard], NO_CONFIG, harness=CLAUDE, sink=Recorder()).exit_code
-        == 2
-    )
+    # the only thing keeping a PostToolUse hint off a PreToolUse call.
+    guard = handler("g", HookResult(context="G"), event_name=registered)
+    heard = dispatch(event(registered), [guard], NO_CONFIG, harness=CLAUDE, sink=Recorder())
+    assert json.loads(heard.stdout)["hookSpecificOutput"]["additionalContext"] == "G"
     silent = dispatch(event(other), [guard], NO_CONFIG, harness=CLAUDE, sink=Recorder())
-    assert silent.exit_code == 0
+    assert "additionalContext" not in json.loads(silent.stdout)["hookSpecificOutput"]
     assert silent.stderr == ""
-
-
-def test_a_decision_that_arrived_as_a_plain_string_still_denies() -> None:
-    # A handler building a HookResult dynamically hands us "deny", not Decision.DENY. `Decision` is
-    # a StrEnum, so the comparison must be by value: under identity this deny would be an
-    # unrecognised verdict instead, which the dispatcher swallows.
-    result = HookResult(decision=cast(Decision, "deny"))
-    outcome = dispatch(event(), [handler("a", result)], NO_CONFIG, harness=CLAUDE, sink=Recorder())
-    assert outcome.exit_code == 2
-    assert outcome.decision == "deny"
-
-
-def test_a_deny_from_a_handler_exits_two_with_its_reason() -> None:
-    handlers = [handler("g", HookResult(decision=Decision.DENY, reason="no"))]
-    outcome = dispatch(event(), handlers, NO_CONFIG, harness=CLAUDE, sink=Recorder())
-    assert outcome.exit_code == 2
-    assert outcome.decision == "deny"
-    assert "no" in outcome.stderr
 
 
 def test_a_handler_that_raises_is_swallowed_and_recorded() -> None:
@@ -113,21 +93,10 @@ def test_a_handler_that_raises_is_swallowed_and_recorded() -> None:
     assert recorder.records[0]["error"] == "RuntimeError"
 
 
-def test_an_unrecognised_decision_is_swallowed_with_a_reason() -> None:
-    recorder = Recorder()
-    result = HookResult(decision=cast(Decision, "block"))
-    outcome = dispatch(event(), [handler("a", result)], NO_CONFIG, harness=CLAUDE, sink=recorder)
-    assert outcome.exit_code == 0
-    # Production reads stderr and never reads the sink, so the reason must be on both.
-    assert "unrecognised decision 'block'" in outcome.stderr
-    assert recorder.records[0]["error"] == "unrecognised-decision"
-    assert recorder.records[0]["decision"] == "block"
-
-
 def test_a_handlers_non_string_context_is_swallowed_and_a_later_one_lands() -> None:
     # `result.context` used to be joined into the payload outside every per-handler `try`, so
     # one handler's malformed context took the whole dispatch down with a TypeError instead of
-    # failing that handler alone the way a malformed decision already does.
+    # failing that handler alone.
     recorder = Recorder()
     broken = handler("a-broken", HookResult(context=cast(str, 42)))
     ok = handler("b-ok", HookResult(context="B"))
@@ -137,49 +106,6 @@ def test_a_handlers_non_string_context_is_swallowed_and_a_later_one_lands() -> N
     assert recorder.records[0]["error"] == "unrecognised-context"
     assert recorder.records[0]["context"] == "42"
     assert json.loads(outcome.stdout)["hookSpecificOutput"]["additionalContext"] == "B"
-
-
-@pytest.mark.parametrize("decision", [Decision.DENY, "deny"], ids=["enum", "string"])
-def test_a_deny_carrying_a_malformed_context_still_refuses_and_records_the_failure(
-    decision: object,
-) -> None:
-    # One result carries both the deny and the malformed context, so the order the two are read
-    # in decides the exit code. Validating `context` above the decision branch failed the handler
-    # before its deny was ever recorded, and the dispatcher then swallowed the whole result — a
-    # live deny converted into an allow by an ordinary neighbouring bug. The decision
-    # is read first now, and the context failure is still judged, on top of the refusal.
-    recorder = Recorder()
-    result = HookResult(
-        decision=cast(Decision, decision),
-        reason="rm -rf / is refused",
-        context=cast(str, {"n": 1}),
-    )
-    outcome = dispatch(event(), [handler("g", result)], NO_CONFIG, harness=CLAUDE, sink=recorder)
-    assert outcome.exit_code == 2
-    assert outcome.decision == "deny"
-    assert "g: rm -rf / is refused" in outcome.stderr
-    # Production reads stderr and never reads the sink, so the failure must reach both.
-    assert "unrecognised context {'n': 1}" in outcome.stderr
-    assert recorder.records[0]["error"] == "unrecognised-context"
-    assert recorder.records[0]["context"] == "{'n': 1}"
-
-
-def test_an_earlier_deny_survives_a_later_handlers_malformed_context() -> None:
-    # Not PreToolUse: there `run_hook`'s blanket catch maps any internal error to 2 anyway, so
-    # the lost deny is invisible. Everywhere else an escaped TypeError left the process at 0.
-    recorder = Recorder()
-    deny = handler(
-        "a-deny",
-        HookResult(decision=Decision.DENY, reason="no"),
-        event_name="PostToolUse",
-    )
-    broken = handler("b-broken", HookResult(context=cast(str, 42)), event_name="PostToolUse")
-    outcome = dispatch(
-        event("PostToolUse"), [deny, broken], NO_CONFIG, harness=CLAUDE, sink=recorder
-    )
-    assert outcome.exit_code == 2
-    assert outcome.decision == "deny"
-    assert "a-deny: no" in outcome.stderr
 
 
 @pytest.mark.parametrize("raised", [asyncio.CancelledError(), KeyboardInterrupt()], ids=type)
@@ -195,22 +121,17 @@ def test_a_base_exception_from_a_handler_costs_that_handler_alone(raised: BaseEx
     assert recorder.records[0]["error"] == type(raised).__name__
 
 
-def test_an_earlier_deny_survives_a_later_handlers_malformed_return() -> None:
-    # Not PreToolUse: there `run_hook`'s blanket catch maps any internal error to 2 anyway, so
-    # the lost deny is invisible. Everywhere else the AttributeError left the process at 0.
+def test_an_earlier_context_survives_a_later_handlers_malformed_return() -> None:
+    # Reading `.context` off a later handler's `None` raised an AttributeError out of `dispatch`
+    # and took the earlier handler's answer with it.
     recorder = Recorder()
-    deny = handler(
-        "a-deny",
-        HookResult(decision=Decision.DENY, reason="no"),
-        event_name="PostToolUse",
-    )
+    note = handler("a-note", HookResult(context="A"), event_name="PostToolUse")
     broken = handler("b-broken", cast(HookResult, None), event_name="PostToolUse")
     outcome = dispatch(
-        event("PostToolUse"), [deny, broken], NO_CONFIG, harness=CLAUDE, sink=recorder
+        event("PostToolUse"), [note, broken], NO_CONFIG, harness=CLAUDE, sink=recorder
     )
-    assert outcome.exit_code == 2
-    assert outcome.decision == "deny"
-    assert "a-deny: no" in outcome.stderr
+    assert outcome.exit_code == 0
+    assert json.loads(outcome.stdout)["hookSpecificOutput"]["additionalContext"] == "A"
     assert recorder.records[0] == {
         "event": "PostToolUse",
         "handler": "b-broken",
@@ -316,9 +237,8 @@ def test_a_once_per_context_handler_runs_once_and_is_skipped_afterwards() -> Non
 def test_a_once_per_context_handler_that_says_nothing_keeps_its_one_delivery() -> None:
     """An empty result is not a delivery, so the handler is asked again.
 
-    `dispatch` banks a `once_key` only `if handler.once_key is not None and delivered`, and
-    `delivered` is `bool(result.context) or result.decision == Decision.DENY` -- spending a
-    handler's single delivery on a result that said nothing would let the first unrelated Bash
+    `dispatch` banks a `once_key` only for a result with a context -- spending a handler's single
+    delivery on a result that said nothing would let the first unrelated Bash
     call of a session consume a notice meant for the first failing test run. That is the right
     rule and it has a consequence worth stating: a handler whose healthy answer is silence runs
     on every matching event, and pays whatever it pays to decide that, every time.
@@ -357,33 +277,19 @@ def test_a_once_per_context_handler_that_raises_is_not_marked() -> None:
     assert "boom" in dispatch(event(), [once], NO_CONFIG, harness=CLAUDE, sink=recorder).stderr
 
 
-@pytest.mark.parametrize(
-    "rejected",
-    [
-        HookResult(context=cast(str, 42)),
-        HookResult(context="A", decision=cast(Decision, "block")),
-    ],
-    ids=["non-string-context", "unrecognised-decision"],
-)
-def test_a_once_per_context_handler_whose_result_is_rejected_keeps_its_one_delivery(
-    rejected: HookResult,
-) -> None:
-    # The delivery used to be banked above the two validations that can discard the result. A
-    # truthy non-string `context`, or an unrecognised decision alongside a context, marked
-    # `once_key` and then raised into the per-handler `except`: the context never reached
-    # `contexts`, never reached stdout, and the handler was skipped for the rest of the
-    # session — its one notice spent on a result nobody received. Both arms are parametrised
-    # because the two validations are separate branches and a fix to one is not a fix to both.
+def test_a_once_per_context_handler_whose_result_is_rejected_keeps_its_one_delivery() -> None:
+    # The delivery used to be banked above the validation that can discard the result. A truthy
+    # non-string `context` marked `once_key` and then raised into the per-handler `except`: the
+    # context never reached stdout, and the handler was skipped for the rest of the session.
     #
     # Asserted from both sides, because "not marked" alone is satisfied by a handler that
     # never ran: the rejected dispatch records the failure and marks nothing, and the NEXT
     # dispatch still delivers, which is the property the mark exists to protect.
     #
-    # Mutation (declared): mark immediately after `delivered` is computed -> the first
-    # dispatch marks `ledger-notes`, the second is skipped, and the last two assertions
-    # redden on both arms.
+    # Mutation (declared): mark above the validation -> the first dispatch marks
+    # `ledger-notes`, the second is skipped, and the last two assertions redden.
     recorder = Recorder()
-    results = [rejected, HookResult(context="A")]
+    results = [HookResult(context=cast(str, 42)), HookResult(context="A")]
 
     def run(ev: HookEvent, config: object) -> HookResult:
         return results.pop(0)
@@ -394,22 +300,6 @@ def test_a_once_per_context_handler_whose_result_is_rejected_keeps_its_one_deliv
     assert recorder.marks == set()
     second = dispatch(event(), [once], NO_CONFIG, harness=CLAUDE, sink=recorder)
     assert json.loads(second.stdout)["hookSpecificOutput"]["additionalContext"] == "A"
-    assert recorder.marks == {"ledger-notes"}
-
-
-def test_a_deny_that_carries_no_context_is_still_a_delivery() -> None:
-    # The mark sits above `if result.context:`, not inside it, and this is the assertion that
-    # holds it there: a deny with no context appends nothing, so a mark written at the append
-    # would stop marking the one case the `or result.decision == Decision.DENY` half of
-    # `delivered` exists for. A deny reached the harness; it spent the delivery.
-    #
-    # No mutation entry of its own: moving the mark inside the `if` is the mutation, and it is
-    # a change of indentation rather than a substituted line. Measured by hand instead — see
-    # the fix report.
-    recorder = Recorder()
-    once = handler("a", HookResult(decision=Decision.DENY, reason="no"), once_key="ledger-notes")
-    outcome = dispatch(event(), [once], NO_CONFIG, harness=CLAUDE, sink=recorder)
-    assert outcome.exit_code == 2
     assert recorder.marks == {"ledger-notes"}
 
 
@@ -529,8 +419,8 @@ def test_the_walk_finds_the_root_above_a_directory_too_deep_to_name_its_dot_git(
 ) -> None:
     # Within a few characters of the longest path, `<cwd>/.git` is past it. `Path.exists()` raised
     # on that up to Python 3.13 and answered `False` from 3.14, so under Codex, where `cwd` is the
-    # payload's, every hook in such a directory was an internal error on one interpreter and
-    # `PreToolUse` refused every tool call. The walk reads it as no `.git` there on every
+    # payload's, every hook in such a directory was an internal error on one interpreter. The
+    # walk reads it as no `.git` there on every
     # interpreter and goes on to the parents. Mutations (oracle): `mutations/`'s "the path
     # predicates read a name longer than the system takes as a fault" -> this reddens on every
     # interpreter; "the hook's walk for .git asks pathlib what is there" -> it reddens up to 3.13.
@@ -614,8 +504,7 @@ def test_an_inherited_git_dir_never_reaches_the_hook_paths_git(
 # Every harness's payload is read by `read_event` the same way whichever value was detected, and
 # the detected value contributes the shape of its stdout to the answer and nothing to the event.
 # These tests hold both halves: a handler sees one event under every answer, the value detection
-# chose is the one that renders, a deny reaches no value at all, and the clamp measures the
-# envelope that is actually emitted.
+# chose is the one that renders, and the clamp measures the envelope that is actually emitted.
 
 # Every variable either harness sets, so a test of detection is not answered by the environment
 # the suite happens to run in.
@@ -761,27 +650,6 @@ def test_an_unknown_harness_renders_the_canonical_shape(
     )
 
 
-def test_a_deny_never_goes_through_render() -> None:
-    # A refusal is complete as exit 2 with its reason on stderr for every harness, and JSON is an
-    # enhancement of an answer that lets the call through. So no harness value is asked to shape
-    # a deny, and one whose rendering fails cannot cost the refusal or turn it into an internal
-    # error. Mutation (declared, on `hooks.dispatch`): the refusal's stdout rendered through
-    # `harness.render` -> the render raises out of `dispatch` and this reddens.
-    def broken(name: str, context: str, notice: str) -> str:
-        raise AssertionError("a deny reached render")
-
-    handlers = [
-        handler("a-note", HookResult(context="a note")),
-        handler("probe", HookResult(decision=Decision.DENY, reason="rm is refused")),
-    ]
-    outcome = dispatch(
-        event(), handlers, NO_CONFIG, harness=_harness(broken), sink=Recorder(), cap=10000
-    )
-    assert (outcome.exit_code, outcome.stdout) == (2, "")
-    assert outcome.stderr == "stayfixed: refused: probe: rm is refused\n"
-    assert "internal error" not in outcome.stderr
-
-
 def test_a_clamped_answer_is_the_detected_harnesss_envelope() -> None:
     # The cap bounds the string the harness reads, so the largest prefix that fits is searched
     # for in the detected harness's own envelope; one measured against Claude Code's would be the
@@ -805,10 +673,9 @@ def test_a_user_the_password_database_does_not_list_still_gets_an_answer(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # A container run under a uid with no entry has no home off a terminal, so no machine file:
-    # the configuration loads over the preset's owner values and the guards still answer. Read as
-    # an error instead, a `closed` entry would refuse every tool call on such a machine. Mutation
+    # the configuration loads over the preset's owner values and the guards still answer. Mutation
     # (`mutations/`'s "the configuration reads a machine file that has no home"): the owner's
-    # layer raises and the call is refused.
+    # layer raises and no handler runs.
     as_owner_home(monkeypatch, None)
     (tmp_path / ".git").mkdir()
     (tmp_path / "stayfixed.toml").write_text(

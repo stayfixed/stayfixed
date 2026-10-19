@@ -249,8 +249,8 @@ dynamic dispatch, aliasing, a value computed at run time, a connection the stand
 on the package's behalf — is beyond it; the docstring of
 [`tests/outbound/walk.py`](https://github.com/stayfixed/stayfixed/blob/main/tests/outbound/walk.py) says what it sees and names each such case.
 The **Run by**, **Talks to** and **When** columns are kept by hand. The hook wrapper,
-`hooks/run-hook.sh`, is not Python and is not walked: it starts `env`, `dirname`, `python3` and
-`git`, the last to find the project root and its worktrees, and reaches no network.
+`hooks/run-hook.sh`, is not Python and is not walked: it starts `python3` and `git`, the last
+to find the project root, and reaches no network.
 
 | Program | Run by | Talks to | When |
 |---|---|---|---|
@@ -458,11 +458,9 @@ with it in [docs/cli.md](https://github.com/stayfixed/stayfixed/blob/main/docs/c
 
 Exit codes are the same everywhere: **0** success, **1** findings, **2** a refusal or an
 internal error. A caller must never read 2 as permission. One command is deliberately
-outside that rule: `stayfixed hook` refuses with **2** on an internal
-error only for `PreToolUse`, the one event a harness blocks on; everywhere else it degrades
-open with **0**, because on `UserPromptSubmit` an exit 2 erases what you typed and a bug in
-stayfixed must not cost you that. A handler's own deny is a decision, not a breakage, and
-refuses on every event. [docs/cli.md](https://github.com/stayfixed/stayfixed/blob/main/docs/cli.md) states it per event.
+outside that rule: `stayfixed hook` degrades open with **0** on an internal error, on every event,
+because a bug in stayfixed must not cost you a tool call, and on `UserPromptSubmit` an exit 2 would
+erase what you typed. [docs/cli.md](https://github.com/stayfixed/stayfixed/blob/main/docs/cli.md) states it.
 
 ### `stayfixed trust approve memory`
 

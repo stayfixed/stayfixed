@@ -5,7 +5,7 @@
 
 `R` is a plugin root — the checkout, or the copy the harness installed. One row per
 entry and sample; exit 1 on any row whose exit code, stderr or stdout shape is not the one
-the policy and the dispatcher's contract require.
+the dispatcher's contract requires.
 """
 
 from __future__ import annotations
@@ -25,10 +25,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from ptyrun import run_in_pty
 
 PLACEHOLDER = "${CLAUDE_PLUGIN_ROOT}"
-# The wrapper's own fault tokens all begin with this, and every one of them is a report about
-# the launcher rather than an answer from the dispatcher. A refusal that carries one is not a
-# refusal the guard made.
-FAULT = "SF_"
+# What the wrapper and the dispatcher end a fault of their own with, and exit 0 after: a row that
+# carries it is stayfixed failing to answer, not answering.
+FAULT = "; continuing open"
 DELIMITER = "<<<stayfixed:repository-data"
 # What `tests/fixtures/smoke-project`'s own store puts in front of the model, one marker per
 # bundle that renders anything on it.
@@ -60,8 +59,7 @@ class Sample:
     payload: dict[str, object]
     expected_code: int
     label: str
-    # What the stderr must never say: the wrapper's token for a launcher fault, which the
-    # `open` policy degrades to exit 0.
+    # What the stderr must never say: a fault the wrapper or the dispatcher degraded to exit 0.
     stderr_never: tuple[str, ...] = ()
     # What the `additionalContext` a dispatched entry prints must say. Empty asks nothing of it.
     context_says: tuple[str, ...] = ()
@@ -124,8 +122,8 @@ SAMPLES: dict[str, tuple[Sample, ...]] = {
 # part renders nothing on this fixture, so anything at all in its stdout is a finding.
 #
 # **Why this registry exists.** Before it, every one of these rows ran against a project with no
-# memory store: `stayfixed` answered "no memory store", the wrapper degraded that to 0 under the
-# `open` policy, and each row asserted an exit code it would have had if `session-context` were
+# memory store: `stayfixed` answered "no memory store", the wrapper degraded that to 0, and each
+# row asserted an exit code it would have had if `session-context` were
 # `/bin/false`. Measured 2026-09-19 on the storeless fixture: ten rows, 0 bytes of stdout, all
 # green. These are the entries that carry repository bytes toward the model, which is the one
 # thing the smoke scenario exists to watch.
@@ -134,12 +132,12 @@ SAMPLES: dict[str, tuple[Sample, ...]] = {
 # volatile-notes part 1 993, every other part empty — so the second and third part of each
 # bundle assert that a store which fits one part says nothing in the slots after it.
 INJECTED: dict[str, tuple[str, ...]] = {
-    "open memory session-context --bundle standing-rules --part 1": (DELIMITER, STANDING_RULE),
-    "open memory session-context --bundle standing-rules --part 2": (),
-    "open memory session-context --bundle standing-rules --part 3": (),
-    "open memory session-context --bundle volatile-notes --part 1": (DELIMITER, VOLATILE_NOTE),
-    "open memory session-context --bundle volatile-notes --part 2": (),
-    "open memory session-context --bundle volatile-notes --part 3": (),
+    "memory session-context --bundle standing-rules --part 1": (DELIMITER, STANDING_RULE),
+    "memory session-context --bundle standing-rules --part 2": (),
+    "memory session-context --bundle standing-rules --part 3": (),
+    "memory session-context --bundle volatile-notes --part 1": (DELIMITER, VOLATILE_NOTE),
+    "memory session-context --bundle volatile-notes --part 2": (),
+    "memory session-context --bundle volatile-notes --part 3": (),
 }
 
 
@@ -309,7 +307,7 @@ def check_entry(
         )
     for phrase in sample.stderr_never:
         if phrase in done.stderr:
-            return f"stderr carries the launcher token {phrase!r}: {done.stderr.strip()[:200]}"
+            return f"stderr reports a fault ({phrase!r}): {done.stderr.strip()[:200]}"
     wanted = INJECTED.get(tail_of(command))
     if wanted is not None:
         for phrase in wanted:

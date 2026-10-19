@@ -193,7 +193,7 @@ PASS_THROUGH: dict[tuple[str, str, str], frozenset[str]] = {
     # `git [-c core.excludesFile=…] --git-dir=… --work-tree=<empty> check-ignore --no-index
     # --stdin -z`, assembled in `asked`: the owner's own exclude files, asked about.
     ("src/stayfixed/attach/exclude.py", "unhidden_by_owner", "*asked"): NO_ROWS,
-    # `hooks/run-hook.sh open --version` under the plugin root this process derived: stayfixed's
+    # `hooks/run-hook.sh --version` under the plugin root this process derived: stayfixed's
     # own hook wrapper, asked for its version.
     ("src/stayfixed/doctor/checks.py", "_wrapper", "str(root / WRAPPER)"): NO_ROWS,
 }

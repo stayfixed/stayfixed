@@ -360,9 +360,8 @@ Internal. Reads a hook payload on stdin, dispatches it to every handler register
 event, and writes the harness's expected output.
 
 Not something to run by hand. Its exit-code policy differs from every other command: an internal
-error refuses (`2`) only on `PreToolUse`, and degrades open (`0`) everywhere else — on
-`UserPromptSubmit` an exit `2` erases what you typed, so a bug in stayfixed must not cost you
-your prompt.
+error degrades open (`0`) on every event, with the error on stderr — a bug in stayfixed must not
+cost you a tool call, and on `UserPromptSubmit` an exit `2` would erase what you typed.
 
 **A session never dies of its configuration.** The guards run in every repository, on the preset
 and the machine owner's layer, whatever `stayfixed.toml` holds: none at all, one that does not
@@ -380,7 +379,7 @@ symlink. Nor is a file longer than 256 KiB read at all, nor one read key by key 
 it cannot use than its length allows — 64 for a file of up to 16 KiB, fewer for a longer one, 4 at
 256 KiB: each costs the session a whole rebuild of the configuration, which costs what the file is
 long, so a long file of unusable keys would keep a hook past its timeout, which lets the call
-through, or blocks it where the hook sets `onFailure` (below). Such a file is dropped whole, and the guards run on the
+through with its guards silent. Such a file is dropped whole, and the guards run on the
 preset and the owner's layer.
 
 What the session could not use is said once, on `SessionStart`, in one warning about each file, to
@@ -418,14 +417,11 @@ this store.
 ## Hooks
 
 The two harnesses do not run `stayfixed` directly. Every entry in `hooks/hooks.json` invokes
-`hooks/run-hook.sh`, and its argv is:
+`hooks/run-hook.sh`, which hands its argv to `stayfixed` untouched:
 
 ```
-run-hook.sh <policy> <stayfixed args…>
+run-hook.sh <stayfixed args…>
 ```
-
-`<policy>` is `open` or `closed`, and it is the only argument the wrapper itself reads; the rest
-is handed to `stayfixed` untouched.
 
 `hooks/hooks.json` files its entries under four events: `SessionStart`, `PreToolUse`,
 `PostToolUse` and `PostToolUseFailure`, each tool event matched on `Bash`. The last is where Claude
@@ -434,133 +430,49 @@ hygiene`](#stayfixed-test-hygiene)); Codex reads the same file and ignores that 
 Codex CLI 0.162.0-alpha.17.2). `stayfixed hook` dispatches six events, those four and
 `UserPromptSubmit` and `UserPromptExpansion`, which no shipped entry uses.
 
-The wrapper exists because a Python process cannot fail closed about its own absence: a missing
-script exits `2` by CPython accident, a missing interpreter `127`, an `ImportError` `1`, a lost
-executable bit `126` — and Claude Code reads every exit that is not `2` as a non-blocking error,
-which is permission. So the wrapper owns three things Python cannot: it probes for a `python3` of
-3.11 or newer by running code rather than by matching a path, it resolves the project root
-(`CLAUDE_PROJECT_DIR`, else `git`) and changes into it so every command's `--root` default is
-correct, and it maps exit codes.
+The wrapper exists because a Python process cannot speak for its own absence: a missing script
+exits `2` by CPython accident, and so does a launcher run under an interpreter below stayfixed's
+floor, and on `PreToolUse` Claude Code reads a `2` as a refusal of the call. So the wrapper does
+three things before stayfixed runs: it unsets an inherited `GIT_DIR` and `GIT_WORK_TREE`, which
+would make every `git` answer about another repository, and changes into the project root
+(`CLAUDE_PROJECT_DIR`, else `git`'s toplevel) so every command's `--root` default is correct; it
+then takes the `python3` on `PATH` there, where a pyenv, asdf or mise shim chooses by the project's
+own pin, and asks it, by running code, to be 3.11 or newer; and it maps exit codes.
 
-`0` and `2` are the dispatcher's own and pass through untouched — a `2` it produced is a
-handler's deny, not a wrapper failure. Every other exit code, and every fault the wrapper finds
-before `stayfixed` runs at all, is judged by `<policy>`: `closed` refuses with exit `2`, `open`
-continues with exit `0`. Either way the reason is written to stderr with a token, so the reason
-is part of the contract. That Codex downgrades an exit `2` with empty stderr to a plain failure
-is unmeasured: Codex CLI 0.162.0-alpha.17.2 ran the plugin's hooks once they were trusted in
-`/hooks`, and a blocking `PreToolUse` hook's reason reached the model, but an exit `2` with empty
-stderr has not been observed there, and the README's [What each agent
-enforces](../README.md#what-each-agent-enforces) says what stayfixed claims on Codex.
+No handler refuses a call, so stayfixed's non-zero exit is always a fault. `0` passes through
+untouched. Every non-zero exit, and every fault the wrapper finds before `stayfixed` runs — no
+`python3` of 3.11 or newer on `PATH`, no readable `scripts/stayfixed` beside the wrapper, a project
+root it cannot enter — ends in exit `0` with one line on stderr that names the fault and ends
+`continuing open`: **a session never dies of stayfixed's own fault.** `stayfixed hook` exits `0` on
+an internal error of its own for the same reason, so no shipped entry ever blocks a call. Claude
+Code discards stderr on a `0`, so `stayfixed doctor`'s `wrapper` row runs the wrapper and goes red
+on such a line.
+A hook that runs past its ten-second `timeout`, or that cannot start at all — the wrapper missing or
+not executable — never reaches the mapping, and Claude Code then carries the tool call out.
 
-**What never reaches the wrapper is Claude Code's to block.** A hook that runs past its ten-second
-`timeout`, or that cannot start at all — the wrapper missing or not executable — never gets to map
-an exit code, and by default Claude Code then carries the tool call out. So the `closed`
-`PreToolUse` entry sets `"onFailure": "block"`: from Claude Code 2.1.295, such a failure blocks the
-call as an exit `2` does, in Claude Code's words and with no stayfixed reason. The wrapper's own
-exits under `closed` are `0` and `2`, neither of which that setting reads as a failure, so it
-changes nothing a working hook decides; a session whose hook cannot start at all then runs no `Bash`
-call until the plugin is repaired. Such a session still edits files: the entry's matcher is `Bash`,
-so the Read, Edit and Write tools can repair what keeps the hook from answering. To run `Bash`
-meanwhile, turn the plugin off with `/plugin`, or start Claude Code with
-`claude --settings '{"disableAllHooks": true}'`, which turns off every hook for that session and
-every guard with them. Claude Code before 2.1.295 was not measured with the key: one that rejected
-it would lose the closed entry, and the `Bash` guards with it. `stayfixed doctor`'s `wrapper` row
-says so beside its `ok`, on every Claude Code, since nothing in the report asks which one runs.
-Codex's reader of `hooks.json` ignores a key it does not define on an entry (read in its source,
-`codex-rs/config/src/hook_config.rs`, on 2026-10-17, and not measured). The `open` entries leave it
-unset: a failure there is the session's to survive.
+**Which `python3` and which `git` run is `PATH`'s to choose**, in a hook as at a terminal: a nix,
+MacPorts or mise `git`, and a `python3` in a virtual environment, both answer. A trusted folder's
+committed `env` block can set `PATH`, and it runs code in your shells by design; that boundary is
+the harness's ([SECURITY.md](../SECURITY.md)).
 
-**Exit `2` is shared with the platform, and the wrapper does not pretend otherwise.** Because a
-`2` the dispatcher produced is a deny that must pass through, a `2` CPython produced underneath
-is indistinguishable from it and no token accompanies it. What the wrapper owns is the set of
-faults it can reach *first* — a lost policy argument, no interpreter, a launcher it cannot read,
-a project root it cannot enter — and each of those prints its token. So an exit `2` **carrying a
-token** is attributed; an exit `2` carrying none is a handler's deny or a fault beneath the
-wrapper, and `stayfixed doctor`'s `wrapper` row reports on the same basis.
-
-| Token | What it means |
-|---|---|
-| `SF_ARGV` | The entry lost its policy argument. Always a refusal, whatever the missing policy would have been: a `closed` guard that disarmed itself must say so. |
-| `SF_NO_PY` | No candidate interpreter is 3.11 or newer **and outside the project root**. The message distinguishes the two states, because their remedies differ: a candidate that was found inside the checkout and skipped says so and names the remedy, while "none among the candidates" means no interpreter answered at all. `STAYFIXED_PYTHON_CANDIDATES` replaces the built-in list, space-separated — and is honoured **only when the wrapper's stdin is a terminal**, because it names the program the wrapper executes. See below. |
-| `SF_NO_GIT` | There is no `git` at any of the wrapper's absolute candidate paths. `git`'s answer is one of the two anchors the interpreter containment is measured against, so a machine without one has no anchor this process can trust: it degrades under `open` and refuses under `closed`, rather than keeping the shape of the containment and none of its strength. `git` is **not** looked up on `PATH` here — see below. |
-| `SF_NO_LAUNCHER` | There is no readable `scripts/stayfixed` beside the wrapper. The launcher is derived from the wrapper's own path and never read out of the environment: the harness substitutes the plugin root into the *command string*, so the wrapper that runs is always the plugin's own, while a variable of that name reaching this process from anywhere else would choose the program Python is handed — before any stayfixed guard runs. Readability and not merely existence: a launcher at mode `000` otherwise reached CPython, which printed its own error and exited `2` with no token. |
-| `SF_NO_ROOT` | `CLAUDE_PROJECT_DIR`, or `git`, named a project root the wrapper could not enter. A root that cannot be *resolved* is correct: no project configuration is read, so the handlers about the project say nothing, and the session guards still judge on the preset and the machine owner's layer — but a root that was named and cannot be entered used to leave the process in the harness's working directory, where every `--root`-defaulting entry would read whatever project happened to be there. |
-| `SF_RC` | `stayfixed` exited with something other than `0` or `2`; the code is printed. |
-
-**Which values may choose what.** The wrapper asks one question of everything it reads: is this
-a *destination*, or does it choose a program, or the provenance of what runs? `CLAUDE_PROJECT_DIR`
-is a destination and is honoured, and a committed `env` block does not choose it: measured in Claude
-Code 2.1.288 on macOS (2026-10-05), a `.claude/settings.json` `env` block naming another
-`CLAUDE_PROJECT_DIR` reached neither a project hook nor a plugin hook on `UserPromptSubmit`, nor
-a project hook on `SessionStart` (a plugin hook on `SessionStart` was not measured) — Claude Code
-set the real project root over it, while the block's other keys were applied.
-`STAYFIXED_PYTHON_CANDIDATES` is not — the probe asks a candidate only to exit `0` for a trivial
-`-I -c`, so an unguarded list picks the interpreter that runs on every tool call — and it is
-therefore honoured from an interactive terminal, as `attach` honours `--machine`, and ignored
-everywhere else. A hook's stdin is the harness's JSON payload on a pipe and `stayfixed doctor`
-hands its own probe `/dev/null`, so a committed `.claude/settings.json` `env` block — which
-applies without a trust prompt in a non-interactive session — cannot reach it, while a machine
-owner debugging the probe by hand still can. The `git` that resolves the project root is asked
-with an allowlisted environment for the same reason: an inherited `GIT_DIR` or `GIT_WORK_TREE`
-otherwise made it answer for a different repository.
-
-**`git` is chosen by the wrapper, not by `PATH`.** It answers the question the containment below is
-measured against, and on the Codex path, where `CLAUDE_PROJECT_DIR` is unset, it is the only anchor,
-so a bare `git` would let a clone that ships one have that binary run on every hook, before any
-guard. The wrapper therefore tries a fixed list of absolute paths and takes the first that exists,
-asking the machine owner's own installs before `/usr/bin/git`; nothing under `$HOME` is on the list,
-because `HOME` is environment-chosen too. A machine with `git` at none of them gets `SF_NO_GIT`. A
-`stayfixed` this wrapper launched takes its own `git` from the same list, with a fixed `PATH` for
-the programs git runs by name; anywhere else it resolves `git` through `PATH`, so the machine
-owner's `git` answers. Both give a hook's `git` the password database's home as `HOME`.
-
-**`PATH` is contained rather than trusted or dropped.** The last built-in candidate is bare
-`python3`, resolved through `PATH`, and an `env` block can set `PATH` — so gating
-`STAYFIXED_PYTHON_CANDIDATES` alone would have moved the choice of program from one variable to
-another. The entry cannot simply go: it is the fall-through the built-in list exists for, and a
-machine whose Python lives under `pyenv`, `nix` or `asdf` has none at any of the four absolute
-paths. So the rule matches what a hostile clone can stage — **no candidate whose resolved path lies
-inside the project root is used**, whatever spelling reached it. Both sides are resolved before they
-are compared, so a relative entry, a `.` in `PATH`, a `..` spelling and a symlink on either side all
-answer alike. Where there is no project root to compare against, the candidate stands.
-
-**"The project root" here means either anchor.** `CLAUDE_PROJECT_DIR` and `git`'s answer are both
-taken, and a candidate inside *either* is refused. Measured against `CLAUDE_PROJECT_DIR` alone
-the rule was defeatable through the channel it exists to defeat: a clone that set `PATH` to its
-own tree **and** named a root outside that tree made its own `python3` "outside the project
-root". Against the pair, both anchors have to move at once, and one of them is now the answer of
-a binary the clone does not choose. It is a union and not a check that the two agree, because a
-disagreement rule has no answer where `git` returns nothing — every project that is not a git
-repository — and its only fallback there is to trust the remaining variable on its own, which is
-the same hole under a longer name.
-
-**The chosen interpreter starts isolated.** The environment reaches three things here: which
-program runs, what that program imports before stayfixed's first line, and what the dynamic loader
-injects into it. The candidate list and the containment above close the first. `-I` closes the
-second: the wrapper runs every candidate with it — the version probe as well as the launcher —
-so no `PYTHON*` variable is read (`PYTHONPATH`, `PYTHONHOME`, `PYTHONUSERBASE`), there is no
-user site, and neither the working directory nor the script's own directory is on `sys.path`.
-The launcher puts the plugin's own `src` there itself, and stayfixed still sees the whole
-environment: `-I` changes how the interpreter starts, not what `os.environ` holds. The third is
-out of any wrapper's reach — `LD_PRELOAD` on Linux acts on the wrapper's own shell before its first
-line — and [SECURITY.md](../SECURITY.md) says so. On macOS the wrapper's `/bin/sh` is
-SIP-protected and drops `DYLD_*` before anything below it starts, which is why its shebang must
-stay a protected shell.
-
-A machine whose interpreter really is inside the checkout — a vendored toolchain, or an in-tree
-virtual environment that is the only `python3` on `PATH` — gets `SF_NO_PY` rather than a silent
-run of the tree's own program: a refusal under `closed`, a degradation under `open`, and a red
-`wrapper` row in `stayfixed doctor` either way. That is the accepted cost of the rule, and it is
-reached only when none of the four absolute candidates answers first.
+**The interpreter starts isolated.** `-I` keeps what the interpreter imports before stayfixed's
+first line to the standard library: the wrapper runs both the version probe and the launcher with
+it, so no `PYTHON*` variable is read (`PYTHONPATH`, `PYTHONHOME`, `PYTHONUSERBASE`), there is no
+user site, and neither the working directory nor the script's own directory is on `sys.path`. The
+launcher puts the plugin's own `src` there itself, and stayfixed still sees the whole environment:
+`-I` changes how the interpreter starts, not what `os.environ` holds. What the dynamic loader
+injects is out of any wrapper's reach — `LD_PRELOAD` on Linux acts on the wrapper's own shell before
+its first line. On macOS the wrapper's `/bin/sh` is SIP-protected and drops `DYLD_*` before
+anything below it starts, which is why its shebang must stay a protected shell.
 
 **The one row this does not cover.** A `run-hook.sh` whose executable bit has been cleared is
-never executed by the harness at all, so no code of ours runs and no policy applies — the guard
-is silent rather than closed. The wrapper cannot defend its own mode, so `stayfixed doctor` is
-what catches it: the `files` row goes **red** on a cleared bit and hands you the `chmod +x`. Run
-it after anything that rewrites the plugin directory.
+never executed by the harness at all, so no code of ours runs and the hooks are silent. The
+wrapper cannot defend its own mode, so `stayfixed doctor` is what catches it: the `files` row goes
+**red** on a cleared bit and hands you the `chmod +x`. Run it after anything that rewrites the
+plugin directory.
 
 **What a session hears about the overlay it is bound to: `overlay-status`.** The `attach` area
-registers one `SessionStart` handler — `open`, with a `once_key`, so it speaks **at most** once
+registers one `SessionStart` handler, with a `once_key`, so it speaks **at most** once
 per session: the marker is banked only when the handler had something to say, so a session that
 hears a line hears it once, and a repository with nothing to report is asked again on every
 `startup`, `resume`, `clear`, `compact` and `fork` the matcher above covers — and it says
@@ -3285,7 +3197,7 @@ check with `name`, `status`, `detail` and `remedy`, so every remedy is there.
 | `not-initialised` | whether there is a `stayfixed.toml` here, and how much of it a session can use: with none, a warning that the session guards and `doctor` work without one and `stayfixed init` adds the rest; with one that loaded with settings ignored or put back to the preset's, a warning naming at most three of their keys and counting the rest, never their values; red only for one a session drops whole, in the words of the session's warning | `stayfixed.toml` |
 | `versions` | whether the project's `[stayfixed] version` is the stayfixed running; with no project configuration, which stayfixed runs | `stayfixed.toml`, the package |
 | `files` | the hook wrapper's executable bit, and the three shipped files against the hashes the release recorded beside them | `hooks/run-hook.sh`, `hooks/hooks.json`, `scripts/stayfixed`, `hooks/hashes.json` |
-| `wrapper` | whether the wrapper can actually reach stayfixed on this machine; beside an `ok`, that Claude Code before 2.1.295 was not measured with the closed entry's `onFailure: "block"` | one `run-hook.sh open --version`, and only under the plugin root this stayfixed is part of |
+| `wrapper` | whether the wrapper can actually reach stayfixed on this machine: red when it writes a fault to stderr | one `run-hook.sh --version`, and only under the plugin root this stayfixed is part of |
 | `hook-entries` | every hook entry, counted by provenance, with any that claims the stayfixed marker and is in no ledger named by position; and, as a warning, every skill, command or agent file whose frontmatter declares hooks, which it does not judge | `.claude/settings.json`, `.claude/settings.local.json`, `.codex/hooks.json`, and `~/.claude/settings.json`; every `SKILL.md` below a `.claude/skills` anywhere in the tree that git does not ignore, a checked-out submodule's committed files included, and every `*.md` below `.claude/commands` and `.claude/agents` |
 | `codex-hooks` | whether any stayfixed hook is untrusted on Codex, and, when `[stayfixed] agents` lists `codex`, which surfaces are not verified there and which hold in CI | `stayfixed.toml`, the harness registry |
 | `budgets` | every budget set above the preset, named raised, and every one set below it, named lowered | `stayfixed.toml`, the machine file, the preset |

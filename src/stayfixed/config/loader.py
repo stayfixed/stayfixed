@@ -114,8 +114,7 @@ RESET_NOTE = "{key} is left out ({reason}); the preset's value applies"
 # removal costs a whole build of the configuration, `validate_paths` included, so a document holding
 # thousands of keys nothing can use -- ten thousand custom gates with an empty `run`, a 200 KB
 # committed file -- cost a hook more than its ten-second timeout, which Claude Code answers by
-# letting the `PreToolUse` call through, the guard silent, or, where `hooks/hooks.json` sets
-# `onFailure: "block"`, by blocking every call, the session dead of its configuration. A release
+# letting the `PreToolUse` call through, the guard silent. A release
 # that leaves a handful of keys an older one cannot use is what the NOTE path reads key by key; 64
 # is far above that. It bounds how many builds there are and not what they cost: a build costs in
 # proportion to the document, which `NOTE_REBUILT_LIMIT` bounds them by. Past it the document is

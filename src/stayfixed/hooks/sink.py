@@ -185,8 +185,7 @@ def sink_for(session: str | None, env: Mapping[str, str]) -> Sink:
     if not data:
         return NullSink()
     base = Path(data)
-    # Absolute, or no sink. The variable reaches a hook through a committed `env` block -- the
-    # channel `hooks/run-hook.sh` spends forty lines containing for `CLAUDE_PROJECT_DIR` -- and a
+    # Absolute, or no sink. The variable reaches a hook through a committed `env` block, and a
     # relative value anchors `write_within`'s contained walk on the process cwd, which for a
     # hook is the checkout: `CLAUDE_PLUGIN_DATA=.` put `stayfixed/diagnostics.jsonl` inside the
     # repository. The walk still refused traversal and symlinks; where it was anchored was the

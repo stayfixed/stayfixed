@@ -10,46 +10,13 @@ different repository than the one the user is sitting in; the memory store's que
 whose notes a session reads, and the same variable would choose another project's.
 
 A leaf module: it imports `stayfixed.errors` and `stayfixed.fsops`, two leaves, and nothing else
-from `stayfixed` when it loads, so the hook path pays no area import to reach it, and no caller has
-to import another's area to share the constants. In a hook, `scrubbed_env` also asks
-`stayfixed.config.machine`, which imports the standard library alone, for the password database's
-home, inside `hook_home`.
+from `stayfixed`, so the hook path pays no area import to reach it, and no caller has to import
+another's area to share the constants.
 
-**In a stayfixed the hook wrapper launched, `git` is never found through `PATH`.** A committed
-`.claude/settings.json` `env` block can set `PATH` for every hook — Claude Code applies it, and
-resolves a relative entry against the project (measured on 2.1.293) — so a bare `git` there was
-whatever binary the clone ships. There `git_program` takes the first executable of
-`GIT_CANDIDATES`, the absolute paths `hooks/run-hook.sh` takes its own `git` from, in the same
-order, and hands it a `PATH` of those paths' directories and the system's (`trusted_path`) and
-never an inherited entry: git runs helpers by name — the program a `filter.<driver>.process`
-names, such as `git-lfs`, and a `core.fsmonitor` hook — and an inherited `PATH` would choose
-those for an absolute `git` just the same. No candidate is no answer, as a `git` that cannot be
-launched is, and never a lookup on `PATH`. The wrapper says it launched this process through
-`HOOK_WRAPPER_VARIABLE`, and nothing else is asked: not whether a terminal is attached, since a
-hook run by hand from one is still a hook. This rule covers the programs stayfixed runs; the
-wrapper keeps an exported function from standing in for its own builtins, and what the shell
-acts on before the wrapper's first line, `SHELLOPTS` with `PS4` or a loader variable, Claude Code
-passes on from a trusted folder by design (`SECURITY.md`).
-
-**Anywhere else, `git` and its `PATH` are the environment's**, as they always were. At a
-terminal that is the person's own shell, where a fixed list is what picks the Xcode shim at
-`/usr/bin/git` on macOS over the working `git` they installed. A `stayfixed gate` step
-in CI runs in the repository's own job, and in a command an agent runs through its shell tool
-`PATH` has already chosen the `stayfixed` binary itself, so a fixed list would buy nothing there
-and would cost a machine whose only `git` is under a Nix store or `/opt/local/bin` every answer.
-
-**`HOME` chooses git's global configuration**: `$HOME/.gitconfig` and
-`$HOME/.config/git/config`, whose `core.fsmonitor` names a program git runs on `status`,
-`ls-files` and `diff`. git is handed one so that the owner's `safe.directory` and excludes
-answer. In a stayfixed the hook wrapper launched it is the password database's home for this
-user (`config.machine.passwd_home`, the home the machine file is read under), and no `HOME` at
-all when the database lists none, never the inherited one: Claude Code does not apply `HOME` from
-a project's `env` block (`SECURITY.md`), but direnv, mise or a devcontainer can set it from a
-file a clone commits, and the wrapper enters the project before Python starts, so `HOME=fakehome`
-named a `.gitconfig` the clone ships, and git ran the program it named on the `status` a hook
-asks. Anywhere else `HOME` is the environment's, as `PATH` is. Every
-`GIT_CONFIG_*` variable and `XDG_CONFIG_HOME` are dropped, which closes git's other doors to that
-configuration.
+`git` is the one on `PATH`, handed the environment's `PATH` and `HOME`, so that the machine
+owner's `git`, `safe.directory` and excludes answer. Every other variable is dropped, every
+`GIT_CONFIG_*` and `XDG_CONFIG_HOME` among them, so no inherited variable names another
+repository or a configuration git would otherwise not read.
 
 `git_run` is the one runner for every question this project asks git about a repository it works on
 — the hook path's toplevel, the three-valued answer (`git_answer`) the memory store and
@@ -77,36 +44,8 @@ from pathlib import Path
 from stayfixed import fsops
 from stayfixed.errors import Failure
 
-# Everything else is dropped, `GIT_DIR` and `GIT_WORK_TREE` above all. In a stayfixed the hook
-# wrapper launched, `git_program` replaces `PATH` and `scrubbed_env` replaces `HOME` (the module
-# docstring).
+# Everything else is dropped, `GIT_DIR` and `GIT_WORK_TREE` above all.
 GIT_ENV_KEEP = ("PATH", "HOME", "LANG", "LC_ALL", "SYSTEMROOT")
-
-# The variable `hooks/run-hook.sh` exports, with this value, immediately before it runs the
-# launcher: "this process is one the hook wrapper launched", and the one thing `git_program` asks.
-# The wrapper overwrites whatever value it inherited, so on the hook path no `env` block or parent
-# can turn it off; set anywhere else, it can only make the `git` choice stricter, never looser.
-# Spelled twice, here and in the wrapper; `tests/hooks/test_wrapper.py` holds the two equal.
-HOOK_WRAPPER_VARIABLE = "STAYFIXED_HOOK_WRAPPER"
-HOOK_WRAPPER_LAUNCHED = "1"
-
-# Where `git` is taken from in a stayfixed the hook wrapper launched: the first of these that is
-# executable, as the wrapper's `test -x` asks. The list `hooks/run-hook.sh` takes its own `git`
-# from, in its order, and one list spelled twice, since a shell script cannot import it:
-# `tests/test_git_run.py` holds the two equal, and the `PATH` the wrapper hands its `git` equal to
-# `trusted_path()`. The machine owner's own installs come before
-# `/usr/bin/git`, for the reason a `PATH` lookup is kept everywhere else, and nothing under `HOME`
-# is on it, since `HOME` is the environment's too.
-GIT_CANDIDATES: tuple[str, ...] = (
-    "/opt/homebrew/bin/git",
-    "/usr/local/bin/git",
-    "/home/linuxbrew/.linuxbrew/bin/git",
-    "/run/current-system/sw/bin/git",
-    "/usr/bin/git",
-    "/bin/git",
-)
-# What follows the candidates' own directories in the `PATH` git is handed there.
-SYSTEM_PATH: tuple[str, ...] = ("/usr/bin", "/bin", "/usr/sbin", "/sbin")
 
 # Wall-clock bound on one `git` call: a named cap (CONTRIBUTING.md#named-caps), and no shipped file
 # changes with it. It is the bound for a local, argument-free, read-only query against the
@@ -137,10 +76,9 @@ QUERY_TIMEOUT_SECONDS = 30
 # caller's bound, so no value of it shortens any bound, and one that is not a positive number is
 # ignored. A repository reaches a process's environment only through something that applies a file
 # it commits — a harness's `.claude/settings.json` `env` block, which applies without a trust
-# prompt in a non-interactive session, or a `direnv`, `mise` or devcontainer environment. In a
-# stayfixed the hook wrapper launched none of those chooses the `git` a call runs or the `PATH` it
-# is handed (the module docstring), and anywhere else whatever sets this variable can set `PATH`
-# as readily, which chooses that `git` outright; so a repository that sets it gains a longer wait,
+# prompt in a non-interactive session, or a `direnv`, `mise` or devcontainer environment, and
+# whatever sets this variable can set `PATH` as readily, which chooses that `git` outright; so a
+# repository that sets it gains a longer wait,
 # and never an answer it could not have had without it. In a hook that wait can outlast the
 # harness's own timeout on the entry, which ends the hook unanswered where the bound would have
 # ended git with no answer, so the wait is capped, at `FLOOR_CEILING_SECONDS`.
@@ -189,73 +127,10 @@ def in_work_tree(root: Path) -> bool:
     return any(os.path.lexists(directory / ".git") for directory in (root, *root.parents))
 
 
-def scrubbed_env(path: str | None = None) -> dict[str, str]:
-    """The variables `GIT_ENV_KEEP` names, as this process has them, with `PATH` set to `path`
-    when one is given: what `git_run` hands git, and `test attribute` the `tar` it runs.
-
-    `HOME` but in a stayfixed the hook wrapper launched, where it is `hook_home`'s: no
-    environment chooses it there (the module docstring).
-    """
-    env = {key: os.environ[key] for key in GIT_ENV_KEEP if key in os.environ}
-    if launched_by_the_hook_wrapper():
-        env.pop("HOME", None)
-        home = hook_home()
-        if home is not None:
-            env["HOME"] = home
-    if path is not None:
-        env["PATH"] = path
-    return env
-
-
-def hook_home() -> str | None:
-    """`HOME` for a program a stayfixed the hook wrapper launched runs: the password database's
-    home for this user (`config.machine.passwd_home`, the home the machine file is read under), or
-    `None` when the database lists none, which hands the program no `HOME` at all."""
-    from stayfixed.config.machine import passwd_home
-
-    home = passwd_home()
-    return None if home is None else str(home)
-
-
-def launched_by_the_hook_wrapper() -> bool:
-    """Whether `hooks/run-hook.sh` launched this process: `HOOK_WRAPPER_VARIABLE` holds exactly
-    `HOOK_WRAPPER_LAUNCHED`. Read at every call, like the list below."""
-    return os.environ.get(HOOK_WRAPPER_VARIABLE) == HOOK_WRAPPER_LAUNCHED
-
-
-def trusted_path() -> str:
-    """The `PATH` git is handed in a stayfixed the hook wrapper launched: the directory of each of
-    `GIT_CANDIDATES`, once and in the list's order, then `SYSTEM_PATH`. Built from constants
-    alone, so no entry of it is inherited, and the helpers an installed `git` runs by name —
-    `git-lfs` beside a Homebrew `git`, `ssh` — are found where that `git` was."""
-    directories = [os.path.dirname(candidate) for candidate in GIT_CANDIDATES]
-    return os.pathsep.join(dict.fromkeys([*directories, *SYSTEM_PATH]))
-
-
-@dataclass(frozen=True)
-class GitProgram:
-    """The `git` a `git_run` call executes, and the `PATH` it is handed: `None` hands on this
-    process's own."""
-
-    executable: str
-    path: str | None
-
-
-def git_program() -> GitProgram | None:
-    """The `git` to run here, or `None` in a hook when no candidate is executable.
-
-    In a stayfixed the hook wrapper launched, the first of `GIT_CANDIDATES` that is executable,
-    with `trusted_path`; the first that exists is *the* `git`, as in `hooks/run-hook.sh`, and one
-    that then fails to answer is no answer rather than a reason to try the next. Anywhere else,
-    `git` through this process's `PATH`, which git is handed as it is. Read at every call, so a
-    test that changes the variable or the list is under its own choice from its next call.
-    """
-    if not launched_by_the_hook_wrapper():
-        return GitProgram("git", None)
-    for candidate in GIT_CANDIDATES:
-        if os.access(candidate, os.X_OK):
-            return GitProgram(candidate, trusted_path())
-    return None
+def scrubbed_env() -> dict[str, str]:
+    """The variables `GIT_ENV_KEEP` names, as this process has them: what `git_run` hands git, and
+    `test attribute` the `tar` it runs."""
+    return {key: os.environ[key] for key in GIT_ENV_KEEP if key in os.environ}
 
 
 def pipe_encoding() -> str:
@@ -307,11 +182,7 @@ def git_run(
     The one place this project runs `git` to ask it something: every argument list is built
     from constants by the caller, every pathspec follows `--` or `--end-of-options`, and no
     configuration value reaches this list without `contained()` having refused the `-`-shaped
-    ones. The `git` and the `PATH` it is handed are `git_program`'s, and its `HOME` is
-    `scrubbed_env`'s: in a stayfixed the hook wrapper launched, an absolute candidate, a `PATH` of
-    fixed directories and the password database's home, so neither a `PATH` nor a `HOME` an
-    environment sets for a checkout chooses git, a helper git runs by name or a program git's
-    global configuration names; anywhere else, the environment's own. A non-zero exit is
+    ones, and git is handed `scrubbed_env`. A non-zero exit is
     returned, not collapsed — `check-ignore` answers 1 for "nothing matched", and that is an
     answer.
 
@@ -336,8 +207,8 @@ def git_run(
     file or parsing it as UTF-8 text: a caller whose answer ends up in one checks it itself, as
     `assess.rule.read_base` does for the base's `stayfixed.toml`.
 
-    No answer is three things, and `NO_ANSWER` names all three: git could not be launched —
-    in a hook, no candidate is executable — it ran past `timeout`, or `stdin` held a
+    No answer is three things, and `NO_ANSWER` names all three: git could not be launched, it
+    ran past `timeout`, or `stdin` held a
     character the filesystem's codec has no bytes for: a name from a note or a file written in
     UTF-8, asked on Linux under a locale that is not. A name read off the disk never does,
     because it was decoded with that same codec.
@@ -365,19 +236,16 @@ def _ask(
     says of the call is true of this one. A `returncode` below zero is a `git` a signal ended,
     which `subprocess` reports as the signal's negative.
     """
-    program = git_program()
-    if program is None:
-        return _NoAnswer.UNLAUNCHABLE
     codec = pipe_encoding()
     try:
         given = None if stdin is None else stdin.encode(codec, "surrogateescape")
         completed = subprocess.run(  # noqa: S603 - see `git_run`'s docstring
-            [program.executable, "-C", str(root), *args],
+            ["git", "-C", str(root), *args],  # noqa: S607 - the `git` on PATH
             input=given,
             capture_output=True,
             check=False,
             timeout=max(timeout, bound_floor()),
-            env=scrubbed_env(program.path),
+            env=scrubbed_env(),
         )
     except subprocess.TimeoutExpired:
         return _NoAnswer.TIMED_OUT
@@ -397,9 +265,8 @@ def _git_toplevel(cwd: Path) -> Path | None:
     an inherited `GIT_DIR` or `GIT_WORK_TREE` would make every handler answer for a different
     repository than the session is in. It also decodes
     the answer losslessly, so on Linux a checkout under a directory named in latin-1 bytes is
-    that directory; decoded strictly, it would make every hook an internal error, which
-    PreToolUse turns into a refusal of every tool call. The line ending alone is taken off, so a
-    path that ends in a space is still that path.
+    that directory; decoded strictly, it would make every hook an internal error. The line ending
+    alone is taken off, so a path that ends in a space is still that path.
     """
     code, out = git_run(cwd, "rev-parse", "--show-toplevel")
     top = out.removesuffix("\n")
@@ -416,7 +283,7 @@ def _walk_to_git_root(cwd: Path) -> Path | None:
     Asked through `fsops.exists`, never `Path.exists()`: within a few characters of the longest
     path, `<cwd>/.git` is past it, which `Path.exists()` raised on up to Python 3.13 and answered
     `False` from 3.14. Under Codex, where `cwd` is the payload's, every hook in such a directory
-    was an internal error on one interpreter, and `PreToolUse` refused every tool call. `fsops`
+    was an internal error on one interpreter. `fsops`
     reads it as nothing there, as 3.14 did, so the walk goes on to the parents, as git itself,
     which cannot open the path either, would have to.
     """

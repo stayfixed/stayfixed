@@ -60,43 +60,24 @@ In scope, and treated as security rather than as an ordinary bug:
 - **Destruction.** Any way a repository, or an ordinary mistake, silently destroys the machine
   owner's own state: the trust record, a hand-edited file, or a hook configuration stayfixed did
   not write.
-- **A program a hook runs.** Claude Code applies a committed `env` block's `PATH` to hooks, and
-  resolves a relative entry against the project (measured on Claude Code 2.1.293). So the hook path
-  looks up no program through the inherited `PATH` but the wrapper's last-resort `python3`, which it
-  refuses inside the project or any checkout of it (`docs/cli.md`): in a process the hook wrapper
-  launched, stayfixed runs `git` from fixed absolute paths and hands it a fixed `PATH` for the
-  programs git runs by name, such as `git-lfs`, and the wrapper names every other program by
-  absolute path. Every `git` on the hook path, the wrapper's own included, is handed the password
-  database's home for this user as `HOME`, or no `HOME` where the database lists none, so a `HOME`
-  that direnv, mise or a devcontainer points into the clone chooses no global git configuration,
-  whose `core.fsmonitor` names a program git runs on `status`. The wrapper's own two `git` calls
-  also get no `HOME` where it finds `id` at none of its absolute paths, where the name `id` gives
-  is not a plain one (empty, led by `-`, digits alone, or holding anything but letters, digits,
-  `.`, `_` and `-`), and where the name is one the shell keeps read-only, such as `PPID` or `UID`
-  under bash, since the lookup first unsets the variable of that name. A variable in the hook's
-  environment named for the user chooses no home either, where `/bin/sh` is zsh. Where `/bin/sh`
-  is bash, which imports a function from any `BASH_FUNC_<name>%%` variable, the wrapper first
-  removes any function named for a command it runs, so none stands in for one of its builtins. A
-  committed `PATH`, an exported function or a `HOME` that makes the wrapper or stayfixed run a
-  program the repository chose is in scope. What the shell acts on before the wrapper's first line
-  is not; see below.
 
 Out of scope:
 
 - Anything that requires the attacker to already be able to write to the machine owner's home
-  directory or to a directory on their own `PATH`. Outside a hook, at a terminal and in a
-  `stayfixed gate` step in CI, stayfixed runs the `git` on your `PATH` by design. In the commands
-  an agent runs through its own shell tool, `PATH` is the harness's to choose, and that includes
-  which `stayfixed` runs, and so which `git` it runs, which nothing inside stayfixed can decide.
-- `HOME` choosing git's global configuration outside a hook: `$HOME/.gitconfig` and
-  `$HOME/.config/git/config`. At a terminal and in a `stayfixed gate` step in CI, stayfixed
-  hands its `git` the environment's `HOME`, as it runs the `git` on its `PATH`, so that your
-  `safe.directory` and excludes answer, and a direnv, mise or devcontainer environment that sets
-  it there is the person's own, the same class as `PATH` at a terminal. Claude Code never applies
-  `HOME`, or any `XDG_*` variable, from a project's or a local `env` block: its settings reference
-  says so under "Variables Claude Code ignores in `env`", and Claude Code 2.1.293 was measured
-  keeping the real `HOME` and an empty `XDG_CONFIG_HOME` in project and plugin hooks.
-  `XDG_CONFIG_HOME`, git's other door to that configuration, is dropped before any `git` runs.
+  directory or to a directory on their own `PATH`. stayfixed runs the `python3` and the `git` on
+  your `PATH` by design, in a hook as at a terminal and in a `stayfixed gate` step in CI. In the
+  commands an agent runs through its own shell tool, `PATH` is the harness's to choose, and that
+  includes which `stayfixed` runs, and so which `git` it runs, which nothing inside stayfixed can
+  decide. A `PATH` a trusted folder's `env` block sets is the harness's boundary, as the last item
+  below says.
+- `HOME` choosing git's global configuration: `$HOME/.gitconfig` and `$HOME/.config/git/config`.
+  stayfixed hands its `git` the environment's `HOME`, as it runs the `git` on its `PATH`, so that
+  your `safe.directory` and excludes answer, and a direnv, mise or devcontainer environment that
+  sets it is the person's own, the same class as `PATH`. Claude Code never applies `HOME`, or any
+  `XDG_*` variable, from a project's or a local `env` block: its settings reference says so under
+  "Variables Claude Code ignores in `env`", and Claude Code 2.1.293 was measured keeping the real
+  `HOME` and an empty `XDG_CONFIG_HOME` in project and plugin hooks. `XDG_CONFIG_HOME`, git's other door to that
+  configuration, is dropped before any `git` runs.
 - An agent with an unsandboxed shell writing an approval itself. An approval in `trust.json`
   holds against a repository's bytes: stayfixed never writes the record from them, a clone, a
   pull or a pull request does not reach it, and a changed note lapses it. A repository whose hooks
@@ -113,9 +94,8 @@ Out of scope:
   shell tool gave a command none, measured in a terminal session and on the desktop app's Code
   tab; no other harness, Codex among them, was measured. The check slows a bare call and
   guarantees nothing against an agent that can open a pseudo-terminal.
-- A repository being able to make stayfixed **refuse** — suppressing memory, failing a hook
-  closed. Undesirable, and an ordinary bug, but not a vulnerability: the whole design fails
-  closed on purpose.
+- A repository being able to make stayfixed **refuse** — suppressing memory. Undesirable, and an
+  ordinary bug, but not a vulnerability: the trust gate fails closed on purpose.
 - Findings in a dependency that stayfixed does not reach; it has no runtime dependencies.
 - A variable the dynamic loader reads (`LD_PRELOAD` and `LD_LIBRARY_PATH` on Linux,
   `DYLD_INSERT_LIBRARIES` and `DYLD_LIBRARY_PATH` on macOS) reaching a hook, from a committed `env`

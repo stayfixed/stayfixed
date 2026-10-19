@@ -301,11 +301,8 @@ LISTED = {
     ("src/stayfixed/hooks/api.py", "claude"): (1, "`hooks.api.DATA_ROOT_VARIABLES`"),
     ("src/stayfixed/hooks/api.py", "plugin_data"): (2, "`hooks.api.DATA_ROOT_VARIABLES`"),
     ("src/stayfixed/doctor/checks.py", "claude"): (
-        4,
-        (
-            "every variable under Claude Code's and Codex's",
-            "`doctor`'s `wrapper` row names the Claude Code release",
-        ),
+        3,
+        "every variable under Claude Code's and Codex's",
     ),
     ("src/stayfixed/doctor/checks.py", "codex"): (4, "reads `CODEX` by name in its"),
     ("src/stayfixed/doctor/checks.py", "plugin_root"): (

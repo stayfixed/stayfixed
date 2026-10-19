@@ -173,8 +173,8 @@ reddens = [
 ]
 
 # The hook smoke is the only thing that feeds the INSTALLED plugin a real event, and every one
-# of its rows is an exit-code comparison. Drop the comparison and the closed `PreToolUse` entry
-# reports no failure of its own while exiting 2 — a plugin that refuses every call.
+# of its rows is an exit-code comparison. Drop the comparison and a `PreToolUse` entry that exits 2
+# reports no failure of its own — a plugin that refuses every call.
 [[mutation]]
 name = "the hook smoke stops comparing exit codes"
 file = "scripts/smoke_hooks.py"
@@ -217,8 +217,8 @@ reddens = [
 [[mutation]]
 name = "the smoke job demands an exfiltration summary the scenario no longer prints"
 file = ".github/workflows/smoke.yml"
-before = '          grep -qx "9 row(s), 0 failure(s)" "$RUNNER_TEMP/hostile.out"'
-after = '          grep -qx "8 row(s), 0 failure(s)" "$RUNNER_TEMP/hostile.out"'
+before = '          grep -qx "8 row(s), 0 failure(s)" "$RUNNER_TEMP/hostile.out"'
+after = '          grep -qx "7 row(s), 0 failure(s)" "$RUNNER_TEMP/hostile.out"'
 reddens = [
   "tests/test_check_workflow.py::test_the_smoke_job_demands_the_summary_the_exfiltration_scenario_prints_over_every_row",
 ]

@@ -127,13 +127,6 @@ from stayfixed.semver import later
 # at the plugin root — `overlay/template.py` says why — so it is found by environment or by
 # checkout probe and never through `importlib.resources`.
 WRAPPER = "hooks/run-hook.sh"
-# A refusal token the wrapper prints: `SF_ARGV`, `SF_NO_GIT`, `SF_NO_PY`, `SF_NO_ROOT`,
-# `SF_NO_LAUNCHER`, `SF_RC` — the pattern matches the shape rather than the list, so a new one
-# is reported without an edit here, but the list is kept true because it is what a reader
-# checks against. The
-# wrapper's own vocabulary, which is the whole reason it prints one — an exit 2 is attributed
-# rather than inferred, and under `open` policy the exit code is 0 and the token is all there is.
-_TOKEN = re.compile(r"\bSF_[A-Z_]+\b")
 # Wall-clock bound on the one subprocess this *module* launches. A report launches more, inside the
 # areas whose rows it asks; `docs/cli.md` counts them, and `stayfixed.doctor` says which one leaves
 # the machine.
@@ -143,15 +136,6 @@ _TOKEN = re.compile(r"\bSF_[A-Z_]+\b")
 # Wide enough for a cold interpreter start on a loaded machine, narrow enough that a hung probe does
 # not hang `doctor`.
 WRAPPER_TIMEOUT_SECONDS = 30
-# What the `wrapper` row says beside its `ok`: the closed `PreToolUse` entry in `hooks/hooks.json`
-# sets `onFailure: "block"`, which decides what a wrapper that cannot start costs, and only Claude
-# Code 2.1.295 and later were measured with it (`docs/cli.md`, "What never reaches the wrapper").
-# Said on every green row, since nothing here asks which Claude Code runs.
-UNMEASURED_ON_FAILURE = (
-    "from Claude Code 2.1.295 a closed hook that cannot start blocks the Bash call; an earlier "
-    "Claude Code was not measured with that setting, and one that rejected it would lose the "
-    "closed entry, and the Bash guards with it"
-)
 # Wall-clock bound on the one call this area makes that leaves the machine: the `ci-ref` row's
 # `git ls-remote` over the public repository's tags, which `doctor/commands.py` builds the runner
 # with. `runner.NETWORK_TIMEOUT_SECONDS` is 300 and is right for what it was written for — `gh
@@ -488,12 +472,13 @@ def _files(context: Context) -> Row:
 
 
 def _wrapper(context: Context) -> Row:
-    """Execute the wrapper once, and report the token it printed.
+    """Execute the wrapper once, and report the fault it printed.
 
-    This check closes a blind spot that no row reading a file can see. Under `open`
-    policy a failed interpreter probe prints to stderr and exits **0**; the harness discards
+    This check closes a blind spot that no row reading a file can see. A fault the wrapper
+    meets, such as no `python3` of 3.11 or newer on `PATH`, prints to stderr and exits **0**;
+    the harness discards
     stderr on a 0; no Python ran, so nothing reached the sink; and `doctor` itself runs under
-    whatever interpreter the user invoked it with rather than under the wrapper's candidate list.
+    whatever interpreter the user invoked it with.
     On a machine where the probe fails, every bundle is silently absent and all three diagnostic
     surfaces are blind. One subprocess closes it.
 
@@ -540,25 +525,18 @@ def _wrapper(context: Context) -> Row:
             env[variable] = str(value)
     try:
         done = subprocess.run(  # noqa: S603 - list form, never a shell; stayfixed's own wrapper
-            [str(root / WRAPPER), "open", "--version"],
+            [str(root / WRAPPER), "--version"],
             cwd=context.root,
             capture_output=True,
             text=True,
-            # Read for an ASCII token and never quoted: the wrapper echoes what it was handed, a
-            # project directory in latin-1 bytes included, and strictly that raised and lost it.
+            # Never quoted: the wrapper echoes what it was handed, a project directory in latin-1
+            # bytes included, and strictly that raised and lost the row.
             errors="replace",
             check=False,
             timeout=WRAPPER_TIMEOUT_SECONDS,
             env=env,
-            # Closed, not inherited — and defence in depth rather than the half that carries
-            # the weight: the `env` dict above drops every `STAYFIXED_*` key, so
-            # `STAYFIXED_PYTHON_CANDIDATES` is not in the child's environment at all and a tty on
-            # its own has nothing left to reopen.
-            #
-            # What it does buy is that the two guards fail independently — a later edit that
-            # narrowed the strip, or a second variable gated on a terminal the same way, still
-            # meets a closed stdin — and that a child which decides to read stdin cannot hold
-            # the report open behind `WRAPPER_TIMEOUT_SECONDS`.
+            # Closed, not inherited, so a child that decides to read stdin cannot hold the report
+            # open behind `WRAPPER_TIMEOUT_SECONDS`.
             stdin=subprocess.DEVNULL,
         )
     except (OSError, subprocess.SubprocessError) as exc:
@@ -567,21 +545,14 @@ def _wrapper(context: Context) -> Row:
             f"{WRAPPER} could not be run ({type(exc).__name__}), so no hook entry can fire",
             f"check that {root / WRAPPER} exists and is executable",
         )
-    token = _TOKEN.search(done.stderr)
-    if token is not None:
+    if done.stderr or done.returncode != 0:
         return Row(
             RED,
-            f"{WRAPPER} refused with {token.group(0)} and exited {done.returncode}; under "
-            f"`open` policy that exit code is 0 and nothing else reports it",
-            "run `hooks/run-hook.sh open --version` and read its stderr",
+            f"{WRAPPER} exited {done.returncode} and wrote to stderr, so every hook entry "
+            "answers nothing on this machine and nothing else reports it",
+            "run `hooks/run-hook.sh --version` and read its stderr",
         )
-    if done.returncode != 0:
-        return Row(
-            RED,
-            f"{WRAPPER} exited {done.returncode} with no refusal token",
-            "run `hooks/run-hook.sh open --version` and read its stderr",
-        )
-    return Row(OK, f"{WRAPPER} reached stayfixed and exited 0; {UNMEASURED_ON_FAILURE}", "")
+    return Row(OK, f"{WRAPPER} reached stayfixed and exited 0", "")
 
 
 def _joined(words: Sequence[str]) -> str:
@@ -1030,8 +1001,8 @@ def _diagnostics(context: Context) -> Row:
 
     **Nothing in this file is quoted, because nothing here can establish who wrote it.** The log
     is `${CLAUDE_PLUGIN_DATA}/stayfixed/diagnostics.jsonl`, and that variable is the same class
-    `plugin_root`'s docstring and `hooks/run-hook.sh` both name: a committed
-    `.claude/settings.json` `env` block reaches this process without a trust prompt. `event`,
+    `plugin_root`'s docstring names: a committed `.claude/settings.json` `env` block reaches this
+    process without a trust prompt. `event`,
     `handler` and `error` are stayfixed's own vocabulary *for a log stayfixed wrote*; for a log a
     repository committed they are three free-text fields, and `skills/doctor/SKILL.md` tells the
     model to relay this detail verbatim: quoted, a committed log whose `handler` is an
@@ -1313,10 +1284,8 @@ def run_checks(
     """One row per check, the core's and every area's, whatever state the machine is in.
 
     Four keyword parameters, which is the published signature. None chooses the interpreter the
-    `wrapper` check's probe runs under: the wrapper honours `STAYFIXED_PYTHON_CANDIDATES` only
-    from an interactive terminal and this probe is handed `/dev/null`, so such a parameter could
-    only be a no-op here. A test fails the probe the way a machine does — with a plugin root
-    whose launcher is not there.
+    `wrapper` check's probe runs under: the wrapper takes the `python3` on `PATH`. A test fails
+    the probe the way a machine does — with a plugin root whose launcher is not there.
 
     `env` defaults to the process environment because two checks are *about* the environment —
     `ignored-env` reads it, and `diagnostics` finds the harness data root in it.

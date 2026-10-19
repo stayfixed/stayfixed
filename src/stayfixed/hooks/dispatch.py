@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any
 
 from stayfixed.gitenv import checkout_root
 from stayfixed.harnesses import Harness, project_root_variables
-from stayfixed.hooks.api import Decision, Handler, HookEvent, HookResult, Sink, first_set
+from stayfixed.hooks.api import Handler, HookEvent, HookResult, Sink, first_set
 
 if TYPE_CHECKING:
     from stayfixed.config.session import SessionConfig
@@ -28,7 +28,6 @@ class Outcome:
     exit_code: int
     stdout: str
     stderr: str
-    decision: str | None = None
 
 
 @dataclass
@@ -52,7 +51,7 @@ def read_event(payload: dict[str, Any], env: Mapping[str, str]) -> HookEvent:
     """The one reading of a hook's stdin, whichever harness sent it, and never told which
     (`harnesses.detect` says why).
 
-    The project root decides which configuration loads, and so whether a guard refuses: it is the
+    The project root decides which configuration loads, and so what a guard says: it is the
     first non-empty variable among every registered harness's, asked in
     `harnesses.project_root_variables`' order, and without one the checkout `cwd` sits in
     (`gitenv.checkout_root`). Codex names none (measured in the spike record,
@@ -113,19 +112,6 @@ def _clamp(
     return ""
 
 
-class _UnrecognisedDecision(Exception):
-    """A verdict `dispatch` cannot read.
-
-    Raised rather than ignored so it travels the path a handler's exception already travels: the
-    reason reaches stderr — which production reads — and not only the sink, which today forgets
-    (see `NullSink`).
-    """
-
-    def __init__(self, decision: object) -> None:
-        super().__init__(f"unrecognised decision {decision!r}")
-        self.decision = decision
-
-
 class _UnrecognisedContext(Exception):
     """A `context` `dispatch` cannot join into the emitted payload.
 
@@ -133,9 +119,7 @@ class _UnrecognisedContext(Exception):
     from carrying something else, and the join that builds the payload happens once, after
     every handler has run — outside every per-handler `try`. Raised inside the per-handler
     `try` instead, so a malformed `context` is that handler failing rather than a `TypeError`
-    that takes down the whole dispatch, exactly like a malformed decision. Raised *after* the
-    decision branch, never before it: a deny already read off the same result is banked first,
-    so a handler that denies and carries a malformed context keeps its refusal.
+    that takes down the whole dispatch.
     """
 
     def __init__(self, context: object) -> None:
@@ -145,8 +129,6 @@ class _UnrecognisedContext(Exception):
 
 def _failure(exc: BaseException) -> tuple[str, dict[str, object]]:
     """The stderr reason and the sink record one handler's failure earns."""
-    if isinstance(exc, _UnrecognisedDecision):
-        return str(exc), {"error": "unrecognised-decision", "decision": str(exc.decision)}
     if isinstance(exc, _UnrecognisedContext):
         return str(exc), {"error": "unrecognised-context", "context": str(exc.context)}
     return f"{type(exc).__name__}: {exc}", {"error": type(exc).__name__}
@@ -161,12 +143,10 @@ def dispatch(
     sink: Sink,
     cap: int | None = None,
 ) -> Outcome:
-    """One deny travels on one channel — the exit code — so every failure here is judged.
+    """Every handler's context, joined, and every handler's failure on stderr: exit 0 always.
 
-    `harness` is the value `harnesses.detect` answered, and it shapes an answer that lets the
-    call through and nothing else: a refusal is exit 2, empty stdout and the reasons on stderr
-    for every harness, and no value is asked about it, so a rendering that fails cannot cost a
-    deny. `sink` and `harness` carry no default on purpose: a caller that has no durable sink
+    `harness` is the value `harnesses.detect` answered, and it shapes the answer. `sink` and
+    `harness` carry no default on purpose: a caller that has no durable sink
     must say so with `NullSink()` and inherit its forgetfulness, and one that has not asked which
     harness it runs under must say which it means, rather than acquire either by omission.
 
@@ -174,12 +154,10 @@ def dispatch(
     could not give it (`SessionConfig.warnings`), rendered on `NOTICE_EVENT` alone, through both
     of the harness's channels: the person's (`systemMessage`) and, ahead of every handler's
     context, the model's. It counts inside `cap` like the context. On every other event it is
-    ignored: a notice on each tool call would repeat itself, and a refused call's stderr is the
-    model's alone.
+    ignored: a notice on each tool call would repeat itself.
     """
     contexts: list[str] = []
     reasons: list[str] = []
-    refuse = False
     for handler in handlers:
         if handler.event != event.name:
             continue
@@ -203,48 +181,17 @@ def dispatch(
             result = handler.run(view, session)
             # Consuming the result belongs inside this `try`: reading `.context` off whatever a
             # handler actually returned used to raise out of `dispatch` entirely, so one later
-            # handler's malformed return destroyed an earlier handler's deny.
+            # handler's malformed return destroyed every earlier handler's context.
             if not isinstance(result, HookResult):
                 raise TypeError(f"returned {type(result).__name__}, not HookResult")
-            # Delivery is DECIDED here and BANKED below. A handler that answered
-            # with an empty result has said nothing, and spending its one delivery on that
-            # would make the first unrelated Bash call of a session consume a notice meant for
-            # the first failing test run. A deny is a delivery too: it reached the harness.
-            # Computed here because it reads the result's fields, so it must follow the type
-            # check above; the `sink.mark` that acts on it is below both validations, because
-            # a result either of them rejects is a result nobody received.
-            delivered = bool(result.context) or result.decision == Decision.DENY
-            # The decision is read before anything else that can fail this handler. A deny is
-            # the one thing a neighbouring bug must never cost, and it travels on one channel;
-            # banking it here means a malformed `context` on the same result costs that handler
-            # its context and a recorded failure, not its refusal. Validating `context` above
-            # this branch turned a live deny into an allow, which is the very defect the
-            # per-handler judging exists to prevent. The asymmetry with a malformed *decision*
-            # is deliberate: there is no well-formed deny to lose there.
-            if result.decision == Decision.DENY:
-                reasons.append(f"{handler.name}: {result.reason or 'denied'}")
-                refuse = True
-            elif result.decision is not None:
-                raise _UnrecognisedDecision(result.decision)
-            # `context` is validated here too, and not only at the join below: the join runs
-            # once after every handler, outside every per-handler `try`, so a non-string context
-            # caught there would take the whole dispatch down instead of failing this handler
-            # alone.
+            # Validated here and not only at the join below, which runs once after every handler,
+            # outside every per-handler `try`, and would take the whole dispatch down.
             if result.context is not None and not isinstance(result.context, str):
                 raise _UnrecognisedContext(result.context)
-            # The delivery is banked here, past every check that can discard this result, and
-            # that placement is the whole point: marking above the two validations spent a
-            # once-per-context handler's single delivery on a result that then raised into the
-            # `except` below, so the context never reached `contexts`, never reached stdout,
-            # and the notice was gone for the session. Above the `if` below, not inside it: a
-            # deny with no context is a delivery that never appends anything, and marking at
-            # the append would stop marking it. One accepted loss remains, stated rather than
-            # hidden: when a NEIGHBOURING handler denies in the same dispatch, `contexts` is
-            # discarded with the refusal and this handler's context never reaches the harness
-            # although its delivery is spent. The alternative — marking after the join for the
-            # contexts that survived into stdout — is the foundation's redesign, not this
-            # line's.
-            if handler.once_key is not None and delivered:
+            # Banked past every check that can discard this result: marking above them spent a
+            # once-per-context handler's single delivery on a result that then raised, and an
+            # empty result has said nothing, so it spends none.
+            if handler.once_key is not None and result.context:
                 sink.mark(handler.once_key)
             if result.context:
                 contexts.append(result.context)
@@ -253,8 +200,6 @@ def dispatch(
             reasons.append(f"{handler.name}: {reason}")
             sink.diagnostic({"event": event.name, "handler": handler.name, **record})
             continue
-    if refuse:
-        return Outcome(2, "", "stayfixed: refused: " + "; ".join(reasons) + "\n", "deny")
     stderr = ("stayfixed: " + "; ".join(reasons) + "\n") if reasons else ""
     shown = session.warnings if event.name == NOTICE_EVENT else ()
     context = "\n\n".join((*shown, *contexts))
@@ -263,4 +208,4 @@ def dispatch(
     if cap is not None and len(stdout) > cap:
         stdout = _clamp(harness.render, event.name, context, message, cap)
         sink.diagnostic({"event": event.name, "handler": "*", "error": "context-truncated"})
-    return Outcome(0, stdout, stderr, None)
+    return Outcome(0, stdout, stderr)

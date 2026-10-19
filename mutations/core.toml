@@ -103,8 +103,8 @@ reddens = [
   "tests/config/test_overlay_root.py::test_a_root_under_tilde_is_not_recorded_where_the_database_lists_no_home",
 ]
 
-# No home off a terminal is no machine file, for each of its readers, and never an error: a
-# `closed` hook that raised would refuse every tool call on such a machine.
+# No home off a terminal is no machine file, for each of its readers, and never an error, which
+# every hook on such a machine would report.
 [[mutation]]
 name = "the configuration reads a machine file that has no home"
 file = "src/stayfixed/config/owner.py"
@@ -125,7 +125,7 @@ reddens = ["tests/memory/test_hooks.py::test_no_harness_link_is_made_where_home_
 [[mutation]]
 name = "the git runner, and with it the hook path and the store, inherits the session's GIT_DIR"
 file = "src/stayfixed/gitenv.py"
-before = '            env=scrubbed_env(program.path),'
+before = '            env=scrubbed_env(),'
 after = ''
 reddens = [
   "tests/hooks/test_dispatch.py::test_an_inherited_git_dir_never_reaches_the_hook_paths_git",
@@ -133,148 +133,6 @@ reddens = [
   "tests/test_git_run.py::test_the_environment_is_scrubbed",
   "tests/scripts/test_plugin_tree.py::test_the_plugin_commit_is_the_same_under_an_inherited_git_environment_and_configuration",
 ]
-
-# In a stayfixed the hook wrapper launched `git` is never found through `PATH`: Claude Code applies
-# a committed `env` block's `PATH` to every hook, so a bare `git` was the one the clone ships, run
-# by every hook that asked git anything. The choice as a whole is mutated, not `argv[0]` alone:
-# `subprocess` resolves a bare name through the `PATH` of the environment it is handed, which is
-# the fixed one, so a bare `git` there finds the same first candidate, and that mutant is
-# equivalent.
-[[mutation]]
-name = "the git runner takes git from PATH in a hook again"
-file = "src/stayfixed/gitenv.py"
-before = '    program = git_program()'
-after = '    program = GitProgram("git", None)'
-reddens = [
-  "tests/test_git_run.py::test_launched_by_the_hook_wrapper_the_first_existing_candidate_runs_never_the_git_on_path[off a terminal]",
-  "tests/hooks/test_wrapper.py::test_no_program_a_committed_path_plants_runs_on_a_hook_that_asks_git",
-]
-
-# An absolute `git` handed the inherited `PATH` still runs the helpers it names by name from it: a
-# `git-lfs` filter, a `core.fsmonitor` program.
-[[mutation]]
-name = "the git runner hands git the inherited PATH in a hook again"
-file = "src/stayfixed/gitenv.py"
-before = '            env=scrubbed_env(program.path),'
-after = '            env=scrubbed_env(),'
-reddens = [
-  "tests/test_git_run.py::test_launched_by_the_hook_wrapper_git_is_handed_a_path_with_no_inherited_entry",
-  "tests/hooks/test_wrapper.py::test_no_program_a_committed_path_plants_runs_on_a_hook_that_asks_git",
-]
-
-# `HOME` chooses git's global configuration, whose `core.fsmonitor` names a program git runs on
-# `status`, and direnv, mise or a devcontainer can point it into the clone: measured, a clone's
-# `fakehome/.gitconfig` ran the clone's own program on a hook's `git status`. So in a hook git is
-# handed the password database's home, or none, and outside one the environment's.
-[[mutation]]
-name = "the git runner hands git the inherited HOME in a hook again"
-file = "src/stayfixed/gitenv.py"
-before = """    if launched_by_the_hook_wrapper():
-        env.pop("HOME", None)"""
-after = """    if False:
-        env.pop("HOME", None)"""
-reddens = [
-  "tests/test_git_run.py::test_launched_by_the_hook_wrapper_git_is_handed_the_database_home_and_never_an_inherited_one[not listed]",
-  "tests/hooks/test_wrapper.py::test_a_home_inside_the_clone_names_no_program_a_hooks_git_runs[relative]",
-]
-
-[[mutation]]
-name = "a hook's git is handed no HOME where the password database lists one"
-file = "src/stayfixed/gitenv.py"
-before = """        if home is not None:
-            env["HOME"] = home"""
-after = """        if False:
-            env["HOME"] = home"""
-reddens = [
-  "tests/test_git_run.py::test_launched_by_the_hook_wrapper_git_is_handed_the_database_home_and_never_an_inherited_one[listed]",
-  "tests/hooks/test_wrapper.py::test_a_home_inside_the_clone_names_no_program_a_hooks_git_runs[absolute]",
-]
-
-[[mutation]]
-name = "git is handed the password database's home outside a hook too"
-file = "src/stayfixed/gitenv.py"
-before = """    if launched_by_the_hook_wrapper():
-        env.pop("HOME", None)"""
-after = """    if True:
-        env.pop("HOME", None)"""
-reddens = [
-  "tests/test_git_run.py::test_not_launched_by_the_hook_wrapper_git_is_handed_the_environment_s_home",
-]
-
-# The trusted `PATH` names each candidate's directory once.
-[[mutation]]
-name = "the trusted PATH repeats a directory"
-file = "src/stayfixed/gitenv.py"
-before = '    return os.pathsep.join(dict.fromkeys([*directories, *SYSTEM_PATH]))'
-after = '    return os.pathsep.join([*directories, *SYSTEM_PATH])'
-reddens = ["tests/test_git_run.py::test_launched_by_the_hook_wrapper_git_is_handed_a_path_with_no_inherited_entry"]
-
-# The first candidate that is executable is the `git`; one that is missing is passed over.
-[[mutation]]
-name = "the git runner takes the first candidate whether or not it exists"
-file = "src/stayfixed/gitenv.py"
-before = '        if os.access(candidate, os.X_OK):'
-after = '        if True:'
-reddens = [
-  "tests/test_git_run.py::test_launched_by_the_hook_wrapper_the_first_existing_candidate_runs_never_the_git_on_path[off a terminal]",
-]
-
-# No candidate is no answer, never a lookup on the `PATH` a repository can set.
-[[mutation]]
-name = "no git candidate falls back to the one on PATH"
-file = "src/stayfixed/gitenv.py"
-before = """            return GitProgram(candidate, trusted_path())
-    return None"""
-after = """            return GitProgram(candidate, trusted_path())
-    return GitProgram("git", None)"""
-reddens = [
-  "tests/test_git_run.py::test_launched_by_the_hook_wrapper_no_candidate_is_no_answer_and_never_a_lookup_on_path",
-]
-
-# Outside a hook — a person's terminal, a CI step, a command an agent runs — the environment's own
-# `PATH` chooses `git` and is handed to it: the rule above is for the hook wrapper's processes.
-[[mutation]]
-name = "the git runner stops asking whether the hook wrapper launched it"
-file = "src/stayfixed/gitenv.py"
-before = '    if not launched_by_the_hook_wrapper():'
-after = '    if False:'
-reddens = [
-  "tests/test_git_run.py::test_not_launched_by_the_hook_wrapper_git_and_its_path_are_the_environment_s_own[at a terminal]",
-  "tests/test_git_run.py::test_not_launched_by_the_hook_wrapper_git_and_its_path_are_the_environment_s_own[off a terminal]",
-  "tests/test_git_run.py::test_a_stayfixed_no_hook_wrapper_launched_runs_the_git_on_path_off_a_terminal",
-  "tests/test_git_run.py::test_a_git_that_cannot_run_is_minus_one",
-  "tests/guards/test_commit.py::test_the_log_is_bounded_scrubbed_and_terminated",
-]
-
-# Only the value the wrapper writes counts, which is what makes its overwriting an inherited one
-# the guard: any value counting would leave the wrapper's overwrite deciding nothing.
-[[mutation]]
-name = "any value of the hook wrapper's variable takes git from the fixed list"
-file = "src/stayfixed/gitenv.py"
-before = '    return os.environ.get(HOOK_WRAPPER_VARIABLE) == HOOK_WRAPPER_LAUNCHED'
-after = '    return HOOK_WRAPPER_VARIABLE in os.environ'
-reddens = ["tests/test_git_run.py::test_not_launched_by_the_hook_wrapper_git_and_its_path_are_the_environment_s_own[another value]"]
-
-# One variable spelled twice, in Python and in the hook wrapper, and held equal.
-[[mutation]]
-name = "the git runner's hook wrapper variable drifts from the one the wrapper sets"
-file = "src/stayfixed/gitenv.py"
-before = 'HOOK_WRAPPER_VARIABLE = "STAYFIXED_HOOK_WRAPPER"'
-after = 'HOOK_WRAPPER_VARIABLE = "STAYFIXED_HOOK"'
-reddens = [
-  "tests/hooks/test_wrapper.py::test_the_launcher_is_told_the_wrapper_launched_it_whatever_value_was_inherited[unset]",
-  "tests/hooks/test_wrapper.py::test_no_program_a_committed_path_plants_runs_on_a_hook_that_asks_git",
-]
-
-# One candidate list spelled twice, in Python and in the hook wrapper, and held equal in order.
-[[mutation]]
-name = "the git runner's candidates drift from the hook wrapper's"
-file = "src/stayfixed/gitenv.py"
-before = """    "/usr/bin/git",
-    "/bin/git","""
-after = """    "/bin/git",
-    "/usr/bin/git","""
-reddens = ["tests/test_git_run.py::test_the_hook_wrapper_and_git_run_take_git_from_one_list"]
 
 # The atomic write syncs the bytes to disk before it renames the file into place.
 [[mutation]]
@@ -410,7 +268,7 @@ reddens = [
 
 # A launched program's output is a message or a grammar's input, never a path, so a byte that
 # is not text reads as U+FFFD. Strict, one such byte in a test run's output ended `test
-# attribute` as an internal error, and in the wrapper's stderr it lost `doctor` the refusal token.
+# attribute` as an internal error.
 [[mutation]]
 name = "the runner decodes a launched program's output strictly again"
 file = "src/stayfixed/runner.py"
@@ -948,17 +806,6 @@ before = '    for name, table in sorted(tables.items(), key=lambda item: item[0]
 after = "    for name, table in tables.items():"
 reddens = ["tests/test_tomlout.py::test_the_root_table_is_hoisted_when_it_is_not_given_first"]
 
-# A once-per-context handler is marked on delivery, not on any run: an empty result used to spend
-# its one delivery.
-[[mutation]]
-name = "the dispatcher marks a once-per-context handler on any run again"
-file = "src/stayfixed/hooks/dispatch.py"
-before = "            delivered = bool(result.context) or result.decision == Decision.DENY"
-after = "            delivered = True"
-reddens = [
-  "tests/guards/test_hooks.py::test_an_unrelated_call_does_not_consume_the_one_delivery",
-]
-
 # The delivery is banked BELOW the two validations that can discard the result. Marking it above
 # them spent a once-per-context handler's single delivery on a result that then raised into the
 # per-handler `except`. The mutation re-adds the early mark rather than moving the late one, so one
@@ -966,10 +813,10 @@ reddens = [
 [[mutation]]
 name = "a once-per-context delivery is banked before the result is validated"
 file = "src/stayfixed/hooks/dispatch.py"
-before = "            delivered = bool(result.context) or result.decision == Decision.DENY"
-after = """            delivered = bool(result.context) or result.decision == Decision.DENY
-            if handler.once_key is not None and delivered:
-                sink.mark(handler.once_key)"""
+before = "            if result.context is not None and not isinstance(result.context, str):"
+after = """            if handler.once_key is not None and result.context:
+                sink.mark(handler.once_key)
+            if result.context is not None and not isinstance(result.context, str):"""
 reddens = [
   "tests/hooks/test_dispatch.py::test_a_once_per_context_handler_whose_result_is_rejected_keeps_its_one_delivery",
 ]
@@ -1024,19 +871,8 @@ reddens = [
   "tests/hooks/test_dispatch.py::test_a_clamped_answer_is_the_detected_harnesss_envelope",
 ]
 
-# A refusal is exit 2, an empty stdout and the reasons on stderr under every harness, and no
-# harness value is asked to shape one, so a rendering that fails cannot cost a deny.
-[[mutation]]
-name = "a deny is rendered through the detected harness"
-file = "src/stayfixed/hooks/dispatch.py"
-before = '        return Outcome(2, "", "stayfixed: refused: "'
-after = '        return Outcome(2, harness.render(event.name, ""), "stayfixed: refused: "'
-reddens = [
-  "tests/hooks/test_dispatch.py::test_a_deny_never_goes_through_render",
-]
-
-# A harness's `render` shapes context and nothing else: a deny travels on the exit code alone, and an
-# allow spelled in the envelope would let a call through that no guard judged.
+# A harness's `render` shapes context and nothing else: an allow spelled in the envelope would let a
+# call skip the harness's own permission prompt.
 [[mutation]]
 name = "the canonical render spells an allow beside the context"
 file = "src/stayfixed/harnesses.py"
@@ -1621,7 +1457,7 @@ reddens = [
 [[mutation]]
 name = "a silent handler spends its one delivery"
 file = "src/stayfixed/hooks/dispatch.py"
-before = "            if handler.once_key is not None and delivered:"
+before = "            if handler.once_key is not None and result.context:"
 after = "            if handler.once_key is not None:"
 reddens = [
   "tests/hooks/test_dispatch.py::test_a_once_per_context_handler_that_says_nothing_keeps_its_one_delivery",
@@ -2701,10 +2537,10 @@ reddens = [
 [[mutation]]
 name = "gitenv reads the profiles inside a function"
 file = "src/stayfixed/gitenv.py"
-before = "    env = {key: os.environ[key] for key in GIT_ENV_KEEP if key in os.environ}"
+before = "    return {key: os.environ[key] for key in GIT_ENV_KEEP if key in os.environ}"
 after = """    from stayfixed.profiles.model import Check  # noqa: F401
 
-    env = {key: os.environ[key] for key in GIT_ENV_KEEP if key in os.environ}"""
+    return {key: os.environ[key] for key in GIT_ENV_KEEP if key in os.environ}"""
 reddens = [
   "tests/boundaries/test_layering.py::test_the_modules_import_one_another_without_a_cycle_even_inside_functions",
 ]

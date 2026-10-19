@@ -12,7 +12,6 @@ from typing import Any
 import stayfixed
 from stayfixed.areas import Registrar, SubParsers, area_modules
 from stayfixed.errors import Failure, Refusal
-from stayfixed.hooks.policy import hook_event_name, refuses_on_internal_error
 from stayfixed.result import Result
 
 # The aliases live in the leaf module every area imports; they are re-exported here because
@@ -172,18 +171,14 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _discovery_failed(raw: list[str], exc: BaseException) -> int:
-    """Discovery and the parser build both abort before argparse, so `hook`'s own policy is
-    applied here (the exit-code policy `docs/cli.md#stayfixed-hook-event` documents).
-
-    Exit 2 on `UserPromptSubmit` erases what the user typed, so one later area's bug in its
-    `commands.py` — raised at import, or from the `register()` the parser build calls, or as
-    two areas claiming one group name — must not cost the user their prompt: on a hook
-    invocation the failure degrades open everywhere exit 2 does not block, and refuses only
-    where it does.
+    """Discovery and the parser build both abort before argparse, so `hook`'s own rule is applied
+    here (`docs/cli.md#stayfixed-hook-event`): one area's bug in its `commands.py` — raised at
+    import, or from the `register()` the parser build calls, or as two areas claiming one group
+    name — exits 0 on a hook, since a session never dies of stayfixed's own fault.
     """
     reason = f"stayfixed: internal error: {type(exc).__name__}: {exc}"
-    event = hook_event_name(raw)
-    if event is not None and not refuses_on_internal_error(event):
+    words = [arg for arg in raw if arg != "--json"]
+    if len(words) >= 2 and words[0] == "hook":
         print(f"{reason}; continuing open", file=sys.stderr)
         return 0
     print(reason, file=sys.stderr)

@@ -71,7 +71,7 @@ from stayfixed.release.api import HASHED_FILES
 from stayfixed.setup.api import USER_SETTINGS
 from tests.gitfixture import git as _git
 from tests.overlay.test_requires import overlay_with
-from tests.ownerhome import as_owner_home, pin_git_home
+from tests.ownerhome import as_owner_home
 from tests.parserlimits import LONG_NUMBER, NESTED
 from tests.release.test_hashes import recorded
 from tests.runners import LsRemote, Recorder
@@ -170,7 +170,7 @@ def _env(tmp_path: Path, **extra: str) -> dict[str, str]:
     Passing it explicitly is what makes the whole file hermetic, the same way
     `tests/test_install_path.py::_doctor_env` does for the walkthrough.
 
-    `PATH` is kept because the wrapper's interpreter probe is `command -v`, and a probe with no
+    `PATH` is kept because the wrapper finds its `python3` with `command -v`, and a probe with no
     `PATH` measures nothing. `HOME` is the test's own (`tests/conftest.py`), which is also what the
     password database answers in this process, so `ignored-env` finds the two homes one.
     """
@@ -536,15 +536,13 @@ def _shipped_wrapper_root(base: Path, *, with_launcher: bool) -> Path:
     """A plugin root carrying the **real** wrapper, and a launcher beside it or not.
 
     A copy and not the checkout, because the case below needs a root whose launcher is missing,
-    which is a thing one may not do to the checkout. The wrapper's own `git` reads this test's
-    `HOME`, and never the developer's configuration (`tests/ownerhome.py`, `pin_git_home`).
+    which is a thing one may not do to the checkout.
     """
     root = base / "plugin-root"
     (root / "hooks").mkdir(parents=True, exist_ok=True)
     shutil.copy(
         Path(stayfixed.__file__).resolve().parents[2] / "hooks" / "run-hook.sh", root / "hooks"
     )
-    pin_git_home(root / "hooks" / "run-hook.sh", Path(os.environ["HOME"]))
     (root / "hooks" / "run-hook.sh").chmod(0o755)
     if with_launcher:
         (root / "scripts").mkdir(parents=True, exist_ok=True)
@@ -557,37 +555,23 @@ def _shipped_wrapper_root(base: Path, *, with_launcher: bool) -> Path:
 def test_the_wrapper_is_executed_rather_than_only_read(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # The blind spot: under `open` policy a fault before the launcher exits 0, the harness
-    # discards stderr on a 0, no Python ran so the sink saw nothing, and doctor runs under the
-    # user's own interpreter rather than the wrapper's. One subprocess is the whole fix, and
-    # only the token on stderr distinguishes the two exit-0 states.
-    #
-    # The fault is a missing launcher rather than a failed interpreter probe, because
-    # `STAYFIXED_PYTHON_CANDIDATES` is now honoured only from an interactive terminal and this
-    # probe is handed `/dev/null` — which keeps a repository's `env` block from choosing the
-    # interpreter the wrapper runs, and is not a detail of this row.
+    # The blind spot: a fault before the launcher exits 0, the harness discards stderr on a 0,
+    # no Python ran so the sink saw nothing, and doctor runs under the user's own interpreter.
+    # One subprocess is the whole fix, and only the stderr distinguishes the two exit-0 states.
     monkeypatch.setattr(
         checks, "_own_root", lambda: _shipped_wrapper_root(tmp_path, with_launcher=False)
     )
     check = _by_name(_checks(tmp_path, _initialised(tmp_path)), "wrapper")
     assert check.status == "red"
-    assert "SF_NO_LAUNCHER" in check.detail
+    assert "wrote to stderr" in check.detail
 
 
 def test_a_wrapper_that_runs_is_reported_green(tmp_path: Path) -> None:
     # The vacuity guard for the test above: an implementation that reported `red` whatever the
     # wrapper printed would pass it. This is the shipped wrapper, executed for real, against
-    # this checkout's own launcher. Its detail says which Claude Code was measured with the closed
-    # entry's `onFailure: "block"`, since nothing in the report asks which one runs. Mutation
-    # (`mutations/`'s "the wrapper row leaves out which Claude Code was measured with onFailure"):
-    # the green row stops at the exit code.
-    check = _by_name(
-        _checks(tmp_path, _initialised(tmp_path)),
-        "wrapper",
-    )
-    assert check.status == "ok"
-    assert check.detail.endswith(checks.UNMEASURED_ON_FAILURE)
-    assert "2.1.295" in checks.UNMEASURED_ON_FAILURE
+    # this checkout's own launcher.
+    check = _by_name(_checks(tmp_path, _initialised(tmp_path)), "wrapper")
+    assert check.status == "ok", check
 
 
 def test_the_wrapper_runs_under_the_variables_the_harness_registry_names(
@@ -2935,16 +2919,15 @@ def test_an_id_the_overlay_grants_does_not_vouch_for_a_different_command(tmp_pat
 def test_a_wrapper_refusal_that_quotes_bytes_that_are_not_text_is_still_read(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # The row reads the wrapper's stderr for its refusal token, and the wrapper quotes what it
-    # was handed — a project directory in latin-1 bytes, on Linux. Decoded strictly, that stderr
-    # raised, and the row said only "this check could not run: UnicodeDecodeError" in place of
-    # the token that names the fault. A byte that is not text is U+FFFD; the token is ASCII.
-    # Mutation (declared): decode strictly again -> the token is lost and this reddens.
+    # The row reads the wrapper's stderr, and the wrapper quotes what it was handed — a project
+    # directory in latin-1 bytes, on Linux. Decoded strictly, that stderr raised, and the row said
+    # only "this check could not run: UnicodeDecodeError" in place of the fault. Mutation
+    # (declared): decode strictly again -> the row's own words are lost and this reddens.
     planted = tmp_path / "plugin-root"
     (planted / "hooks").mkdir(parents=True)
     wrapper = planted / "hooks" / "run-hook.sh"
     wrapper.write_text(
-        "#!/bin/sh\nprintf 'stayfixed: SF_NO_LAUNCHER in /caf\\351; continuing open\\n' >&2\n"
+        "#!/bin/sh\nprintf 'stayfixed: no readable launcher at /caf\\351; continuing open\\n' >&2\n"
         "exit 0\n",
         encoding="utf-8",
     )
@@ -2952,19 +2935,13 @@ def test_a_wrapper_refusal_that_quotes_bytes_that_are_not_text_is_still_read(
     monkeypatch.setattr(checks, "_own_root", lambda: planted)
     check = _by_name(_checks(tmp_path, _initialised(tmp_path)), "wrapper")
     assert check.status == "red"
-    assert "SF_NO_LAUNCHER" in check.detail
+    assert "wrote to stderr" in check.detail
 
 
 def test_the_wrapper_probe_never_inherits_this_process_stdin(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Defence in depth, asserted as such. The `STAYFIXED_*` strip in `_wrapper` is what closes
-    # the seam — with the variable gone from the child's environment, a terminal has nothing to
-    # reopen — so this flag's job is to be the *second*, independent guard: a later edit that
-    # narrows the strip, or a second variable gated on a terminal the way the wrapper gates
-    # `STAYFIXED_PYTHON_CANDIDATES`, still meets a closed stdin. It was the only guard in its
-    # commit with no entry in `mutations/`, which is how it stayed a claim rather than a
-    # fact. It also bounds the row: a wrapper that reads stdin cannot hold the report open.
+    # A wrapper that reads stdin cannot hold the report open.
     saw = tmp_path / "wrapper-saw-stdin"
     planted = tmp_path / "plugin-root"
     (planted / "hooks").mkdir(parents=True)

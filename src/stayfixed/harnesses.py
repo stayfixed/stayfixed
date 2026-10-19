@@ -34,8 +34,8 @@ package that names a harness is pardoned there, each pardon by one of these item
   does not set `CLAUDE_PLUGIN_ROOT`, is an edit there: without that variable each command
   expands to `/hooks/run-hook.sh` and exits 127, which Claude Code reads as a non-blocking
   error, so no guard runs and nothing says so.
-- `hooks/run-hook.sh` takes the directory it enters from `CLAUDE_PROJECT_DIR` alone, before any
-  Python runs, so another root variable is an edit to its `root=` line and to the digest
+- `hooks/run-hook.sh` takes the directory it enters from `CLAUDE_PROJECT_DIR`, else from `git`,
+  before any Python runs, so another root variable is an edit to its `root=` line and to the digest
   `hooks/hashes.json` records for it (`scripts/release.py hashes`).
 - `hooks.api.DATA_ROOT_VARIABLES` names the variables the sink and `doctor` find the harness's
   data root by.
@@ -64,12 +64,10 @@ package that names a harness is pardoned there, each pardon by one of these item
   its managed-settings paths, its sandbox settings and its deny-rule grammar, and names it in the
   one sentence every writer gives a write its sandbox refused. Another harness's sandbox is an
   edit there.
-- `doctor`'s `wrapper` row names the Claude Code release the closed `PreToolUse` entry's
-  `onFailure` was measured on, which is a fact of that harness alone.
 - The hook payload is read in Claude Code's schema, the canonical one (`CANONICAL`): its keys
   (`hook_event_name`, `tool_name`, `tool_input`, `session_id`, `run_in_background`), the tool
   name `Bash` and its event names are spelled across the `hooks` package (`hooks.dispatch`,
-  `hooks.api`, `hooks.policy`, `hooks.sink`), in `guards` and in the areas' hook handlers, so a
+  `hooks.api`, `hooks.sink`), in `guards` and in the areas' hook handlers, so a
   harness whose payload differs is an edit to each.
 
 Elsewhere, code that needs a harness fact asks this registry: `doctor` walks every value's
@@ -167,7 +165,7 @@ class Harness:
     project_dir_env: str | None
     # How the hook's stdout is shaped: (event name, joined context, notice) -> stdout, where the
     # notice is what the person is shown and the context what the model reads. Never a decision:
-    # a deny travels on the exit code.
+    # no handler refuses a call.
     render: Callable[[str, str, str], str]
     # Every `Surface`, each with the tier it holds at under this harness. Compared, and left out
     # of the hash: a mapping has none, and the other fields already tell two harnesses apart.
@@ -415,8 +413,7 @@ def detect(env: Mapping[str, str], payload: Mapping[str, Any] | None) -> Harness
     `hooks.dispatch.read_event`, into an event that does not say which value was detected; the
     project root, which decides which configuration loads, is the first variable set among every
     registered value's, `CANONICAL`'s first, whichever value was detected
-    (`project_root_variables`); and a deny is exit 2 with its reason on stderr under every
-    harness, and never reaches a `render`.
+    (`project_root_variables`); and no handler refuses a call under any harness.
 
     **A harness gets a `render` of its own only together with a detection signal a repository
     cannot steer.** While every value renders through `CANONICAL.render`, what this answers

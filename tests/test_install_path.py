@@ -422,7 +422,7 @@ def _session(
     env["HOME"] = str(walk.home)
     flags = ["--machine", str(walk.machine)] if machine else []
     return subprocess.run(
-        [str(plugin / "hooks" / WRAPPER.name), "open", *argv, *flags],
+        [str(plugin / "hooks" / WRAPPER.name), *argv, *flags],
         cwd=walk.root,
         capture_output=True,
         text=True,
@@ -516,7 +516,6 @@ def test_the_machine_file_is_the_only_thing_that_says_where_the_overlay_is(
     without = subprocess.run(
         [
             str(plugin / "hooks" / WRAPPER.name),
-            "open",
             "memory",
             "session-context",
             "--bundle",

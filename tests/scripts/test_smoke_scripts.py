@@ -7,7 +7,6 @@ mismatch is reported and a match is not — so a green CI row means the plugin, 
 from __future__ import annotations
 
 import json
-import os
 import shutil
 from pathlib import Path
 from types import ModuleType
@@ -17,7 +16,6 @@ import pytest
 from stayfixed import gitenv
 from tests.floor import SUITE_GIT_FLOOR_SECONDS
 from tests.gitfixture import needs_git
-from tests.ownerhome import pin_git_home
 from tests.scriptload import SCRIPTS, load
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -28,8 +26,7 @@ def _load(name: str) -> ModuleType:
 
 
 def _plugin(tmp_path: Path, *, launcher: str | None = None, hooks: Path | None = None) -> Path:
-    """A plugin root: the shipped `hooks/`, and either the real launcher or a planted one. The
-    wrapper's own `git` reads this test's `HOME` (`tests/ownerhome.py`, `pin_git_home`)."""
+    """A plugin root: the shipped `hooks/`, and either the real launcher or a planted one."""
     planted = tmp_path / "plugin"
     _copy_hooks(hooks or ROOT / "hooks", planted)
     if launcher is None:
@@ -42,14 +39,11 @@ def _plugin(tmp_path: Path, *, launcher: str | None = None, hooks: Path | None =
 
 def _copy_hooks(hooks: Path, planted: Path) -> None:
     shutil.copytree(hooks, planted / "hooks")
-    pin_git_home(planted / "hooks" / "run-hook.sh", Path(os.environ["HOME"]))
 
 
 # A launcher that performs the owner's trust act for real and answers everything else the way
-# a broken plugin does: something on stderr, exit 1. That is the shape the security seat ran —
-# a three-line `scripts/stayfixed` — and under it the wrapper's `closed` policy produces exit 2
-# with a `SF_` token on stderr, which is byte-for-byte what the security-bearing row used to
-# ask for. Trust is delegated so that the run reaches its rows at all.
+# a broken plugin does: something on stderr, exit 1, which the wrapper turns into exit 0 and a
+# line on stderr. Trust is delegated so that the run reaches its rows at all.
 FAULTY = f"""
 import runpy, sys
 
@@ -64,11 +58,9 @@ sys.exit(1)
 def test_every_hook_entry_answers_its_sample_event_through_the_checkout(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # The wrapper's fail-closed matrix lives in tests/hooks/test_wrapper.py; this is the
-    # positive row per entry:
-    # every `hooks.json` command, fed the event it is filed under, exits as the policy says.
-    # The closed `PreToolUse` entry is fed a leaking background command and must exit 2 with
-    # a reason; every open entry exits 0.
+    # The wrapper's own exit mapping lives in tests/hooks/test_wrapper.py; this is the positive
+    # row per entry: every `hooks.json` command, fed the event it is filed under, exits 0 with
+    # what its handler says.
     #
     # The summary line and not only the exit code: `main` returns 0 over a report with one row
     # exactly as it does over a report with fourteen, and the sibling files in this same tree
@@ -159,16 +151,15 @@ def test_a_red_run_entry_that_says_nothing_is_reported(
 def test_a_wrapper_that_answers_wrongly_is_reported(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # The script's own oracle: a plugin root whose launcher exits 2 on `PreToolUse` must make
-    # the closed row fail. Mutation (declared): drop the `expected != done.returncode`
+    # The script's own oracle: an installed wrapper that exits 2, which blocks a `PreToolUse`
+    # call, must make that row fail. Mutation (declared): drop the `expected != done.returncode`
     # comparison in `smoke_hooks.check_entry` -> the row's reason goes and this reddens.
     smoke = _load("smoke_hooks")
     planted = tmp_path / "plugin"
     _copy_hooks(ROOT / "hooks", planted)
+    (planted / "hooks" / "run-hook.sh").write_text("#!/bin/sh\nexit 2\n", encoding="utf-8")
     (planted / "scripts").mkdir()
-    (planted / "scripts" / "stayfixed").write_text(
-        'import sys\nraise SystemExit(2 if "PreToolUse" in sys.argv else 0)\n', encoding="utf-8"
-    )
+    (planted / "scripts" / "stayfixed").write_text("raise SystemExit(0)\n", encoding="utf-8")
     code = smoke.main(
         [
             "--plugin-root",
@@ -181,7 +172,7 @@ def test_a_wrapper_that_answers_wrongly_is_reported(
     )
     assert code == 1
     out = capsys.readouterr().out
-    assert "exited 2, expected 0" in out  # the closed row, for its own reason
+    assert "exited 2, expected 0" in out
 
 
 @needs_git
@@ -299,13 +290,13 @@ def test_the_exfiltration_scenario_holds_against_the_checkout(
 ) -> None:
     # The clone-to-exfiltration scenario: a hostile clone with in-repo memory at `startup: -1`,
     # a `project.name` naming another project, and a committed settings `env` block naming a
-    # machine configuration inside the clone and a PATH into the clone. Asserted separately:
-    # nothing untrusted reaches the session-start output, the hook ignored the clone's
-    # STAYFIXED_CONFIG, the planted interpreter never ran, and `attach` refuses. The MCP arm is
+    # machine configuration inside the clone. Asserted separately: nothing untrusted reaches the
+    # session-start output, the hook ignored the clone's STAYFIXED_CONFIG, and `attach` refuses.
+    # The MCP arm is
     # not run: stayfixed ships no MCP server yet (the README lists the memory MCP server under
     # "Not yet"), and the script says so in its own output.
     #
-    # The count as well as the exit code, because seven of the nine rows assert an ABSENCE and a
+    # The count as well as the exit code, because six of the eight rows assert an ABSENCE and a
     # report holding one row satisfies `failures == 0` identically. Measured: with
     # `report.rows = report.rows[:1]` before the summary, this file was still five green.
     # Mutation (declared, `mutations/`'s "the exfiltration scenario stops recording the rows that
@@ -324,7 +315,7 @@ def test_the_exfiltration_scenario_holds_against_the_checkout(
     )
     out = capsys.readouterr().out
     assert code == 0, out
-    assert "9 row(s), 0 failure(s)" in out, out
+    assert "8 row(s), 0 failure(s)" in out, out
 
 
 @needs_git

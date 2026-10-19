@@ -90,14 +90,14 @@ def test_no_config_silences_the_hygiene_note_and_never_the_guard(tmp_path: Path)
     }
     assert verdicts["PreToolUse"].context == bgcleanup.SLEEP_HINT
     for event in ("PostToolUse", "PostToolUseFailure"):
-        assert verdicts[event].decision is None and verdicts[event].context is None
+        assert verdicts[event].context is None
 
 
 def test_a_leaking_background_call_is_hinted(tmp_path: Path) -> None:
     root = a_project(tmp_path)
     config = load(root, machine=tmp_path / "absent.toml")
     result = guard().run(bash_event(root, "python -m http.server 8000 &"), session_of(config))
-    assert (result.decision, result.context) == (None, bgcleanup.LEAK_HINT)
+    assert result.context == bgcleanup.LEAK_HINT
 
 
 def test_every_leaking_call_of_a_session_is_hinted_not_only_the_first(tmp_path: Path) -> None:
@@ -133,7 +133,6 @@ def test_a_trailing_restore_arrives_as_context_not_a_decision(tmp_path: Path) ->
     config = load(root, machine=tmp_path / "absent.toml")
     command = "cp a a.bak; sed -i '' 's/x/y/' a; pytest; cp a.bak a"
     result = guard().run(bash_event(root, command, background=False), session_of(config))
-    assert result.decision is None
     assert result.context is not None and "trap" in result.context
 
 
@@ -142,7 +141,6 @@ def test_a_masking_echo_arrives_as_context_not_a_decision(tmp_path: Path) -> Non
     config = load(root, machine=tmp_path / "absent.toml")
     command = 'pytest -q > out.log 2>&1; echo "EXIT=$?" >> out.log'
     result = guard().run(bash_event(root, command, background=True), session_of(config))
-    assert result.decision is None
     assert result.context is not None and "notification" in result.context
 
 
@@ -278,7 +276,6 @@ def test_a_red_pytest_over_a_dirty_tree_is_noticed(
     root = dirty_project(tmp_path)
     config = load(root, machine=tmp_path / "absent.toml")
     result = hygiene().run(post_event(root, "pytest -q", extra), session_of(config))
-    assert result.decision is None
     assert result.context is not None and "uncommitted" in result.context
 
 

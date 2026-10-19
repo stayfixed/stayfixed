@@ -263,9 +263,7 @@ def sweep_stale_scratch(keep: Path | None = None, *, tempdir: Path | None = None
     run leaves the `mkdtemp` tree standing — so the registration survived every prune, the
     commit stayed pinned against `git gc`, and the tree stayed on disk. One was found in the
     development repository during review: 6.5 MB, and `git worktree prune --dry-run -v` printed
-    nothing about it. Because the leaked trees are checkouts of this repository they also join
-    `hooks/run-hook.sh`'s `list_checkouts` containment set, which is the part that is not
-    merely untidy.
+    nothing about it.
 
     The order matters: `worktree remove --force` first so git forgets the registration, then
     `rmtree` for anything `remove` declined, then `prune` to collect whatever is now missing a

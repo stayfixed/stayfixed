@@ -306,11 +306,9 @@ too, since Python runs each package's `__init__.py` first.
   `api.py`, an area or not (`release` is held to its surface like any area), and every area without
   one (`assess`), none of whose modules anything outside it may import. The list is what consumers
   actually reach for, not what the area finds tidy: a consumer that needs something absent from it
-  grows it deliberately, in a commit that says which consumer and why. `cli.py` is the CLI frame
-  rather than an area, and its one direct import of `hooks.policy` is named in that test rather than
-  skipped silently.
+  grows it deliberately, in a commit that says which consumer and why.
 - **`stayfixed.hooks.api` is the one exception, and it is structural rather than drift.** That
-  module *defines* the vocabulary two areas share — `EVENTS`, `Decision`, `HookEvent`,
+  module *defines* the vocabulary two areas share — `EVENTS`, `HookEvent`,
   `HookResult`, `Handler`, `HandlerFn`, `Sink`, `NullSink` and the sink's on-disk layout —
   instead of re-exporting it, because `hooks.dispatch`, `hooks.sink`, `hooks.registry` and every
   area's `hooks.py` import *it*: a name defined in one of those modules and re-exported from

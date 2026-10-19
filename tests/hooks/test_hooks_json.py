@@ -57,8 +57,7 @@ def test_every_command_parses_against_the_real_parser() -> None:
     for _, _matcher, entry in _entries():
         words = entry["command"].split()
         assert words[0] == WRAPPER
-        assert words[1] in {"open", "closed"}
-        parser.parse_args(words[2:])
+        parser.parse_args(words[1:])
 
 
 def test_no_entry_passes_json() -> None:
@@ -89,7 +88,7 @@ def test_there_is_one_session_start_entry_per_declared_bundle_slot() -> None:
     # all" -> the set reddens; "two session-start parts swap places in the hooks file" -> the set
     # holds and the order reddens.
     session_start = [
-        entry["command"].split()[2:]
+        entry["command"].split()[1:]
         for event, _matcher, entry in _entries()
         if event == "SessionStart"
     ]
@@ -111,8 +110,8 @@ def test_every_dispatched_event_has_at_least_one_handler() -> None:
     events = {handler.event for handler in discover()}
     for _, _matcher, entry in _entries():
         words = entry["command"].split()
-        if words[2] == "hook":
-            assert words[3] in events
+        if words[1] == "hook":
+            assert words[2] in events
 
 
 def test_every_registered_handler_has_an_entry() -> None:
@@ -120,33 +119,11 @@ def test_every_registered_handler_has_an_entry() -> None:
     # never runs. If `worktree-link` were the one left out, every bundle in every worktree
     # would be empty and `scripts/smoke_hooks.py` could not see it.
     dispatched = {
-        words[3]
+        words[2]
         for _, _matcher, entry in _entries()
-        if (words := entry["command"].split())[2] == "hook"
+        if (words := entry["command"].split())[1] == "hook"
     }
     assert {handler.event for handler in discover()} <= dispatched
-
-
-def test_only_pre_tool_use_entries_may_be_closed() -> None:
-    # Principle 6: fail-closed is expressible only where the platform blocks on exit 2. On
-    # SessionStart exit codes are ignored and on UserPromptSubmit exit 2 erases the prompt, so
-    # a `closed` entry there is a refusal that either does nothing or destroys the user's input.
-    for event, _matcher, entry in _entries():
-        if entry["command"].split()[1] == "closed":
-            assert event == "PreToolUse"
-
-
-def test_the_closed_entry_blocks_when_it_cannot_answer_and_no_open_one_does() -> None:
-    # A hook past its timeout, or one that cannot start, never reaches the wrapper's exit mapping,
-    # and Claude Code then lets the tool call through: the fail-open the closed guard exists to
-    # deny. `onFailure: "block"` (Claude Code 2.1.295) blocks it instead. An open entry blocking
-    # on its failure would refuse what its policy says to survive. Mutation (`mutations/`'s "the
-    # closed PreToolUse entry lets a hook that cannot answer through"): `"continue"` reddens.
-    closed = [entry for _, _, entry in _entries() if entry["command"].split()[1] == "closed"]
-    assert closed, "no closed entry, so the assertion below measures nothing"
-    assert {entry.get("onFailure") for entry in closed} == {"block"}
-    opened = [entry for _, _, entry in _entries() if entry["command"].split()[1] == "open"]
-    assert opened and all("onFailure" not in entry for entry in opened)
 
 
 def test_no_entry_is_async() -> None:
@@ -221,13 +198,13 @@ def test_every_entry_is_filed_under_the_event_its_command_dispatches() -> None:
         assert key in EVENTS, key
     for event, _matcher, entry in _entries():
         words = entry["command"].split()
-        if words[2] == "hook":
-            assert words[3] == event, entry["command"]
+        if words[1] == "hook":
+            assert words[2] == event, entry["command"]
 
 
 def test_the_shipped_hooks_register_post_tool_use_failure_for_bash() -> None:
     # Claude Code delivers a Bash command that exits non-zero to `PostToolUseFailure`, so the
-    # red-run hint has an entry there, matched on the shell tool, open, and dispatching that
+    # red-run hint has an entry there, matched on the shell tool, and dispatching that
     # event. Codex reads this file too and ignores the key (measured on Codex CLI
     # 0.162.0-alpha.17.2); it delivers a failed command on `PostToolUse`, whose entry stays.
     # Mutation: `mutations/`'s "the hooks file loses the entry for a failed command".
@@ -239,7 +216,7 @@ def test_the_shipped_hooks_register_post_tool_use_failure_for_bash() -> None:
                 {
                     "type": "command",
                     "timeout": 10,
-                    "command": f"{WRAPPER} open hook PostToolUseFailure",
+                    "command": f"{WRAPPER} hook PostToolUseFailure",
                 }
             ],
         }

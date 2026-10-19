@@ -330,7 +330,7 @@ def test_other_modes_no_config_and_a_broken_machine_file_are_silence_or_one_fixe
     )
     machine.write_text("[overlay\n", encoding="utf-8")
     result = handler.run(_event(root), session_of(load(root, machine=root / "absent.toml")))
-    assert result.decision is None and result.context == NOT_ASKABLE
+    assert result.context == NOT_ASKABLE
 
 
 @needs_git
@@ -497,7 +497,7 @@ def test_a_failure_with_no_except_of_its_own_is_silence_not_an_exception(
     monkeypatch.setattr(binding_module, "unlinked_groups", raising)
     (handler,) = register()
     result = handler.run(_event(root), session_of(load(root, machine=root / "absent.toml")))
-    assert result.context is None and result.decision is None
+    assert result.context is None
 
 
 def test_the_registration_is_what_the_dispatcher_acts_on(
@@ -534,7 +534,7 @@ def test_the_registration_is_what_the_dispatcher_acts_on(
     sink = Recorder()
     outcome = dispatch(_event(tmp_path), handlers, NO_CONFIG, harness=CLAUDE, sink=sink)
     assert seen == ["SessionStart"]
-    assert outcome.exit_code == 0 and outcome.decision is None
+    assert outcome.exit_code == 0
     assert "overlay-status: RuntimeError" in outcome.stderr
     assert sink.records == [
         {"event": "SessionStart", "handler": "overlay-status", "error": "RuntimeError"}
