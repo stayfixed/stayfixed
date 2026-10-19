@@ -1,11 +1,13 @@
 """The `prove` command: run a test command where it is typed and say what its runner's report
 proves.
 
-`prove` reads no configuration and takes neither `--root` nor `--machine`: the command runs in the
-directory it is typed in, and the project it answers for is that directory's git top-level, or the
-directory itself outside a repository. The command is everything after `--`, so no word of it is
-read as an option of `prove`'s; a line with no `--`, or nothing after it, is a usage error.
-`--junit PATH`, read from that directory, names the JUnit report of a runner no adapter knows.
+`prove` reads no configuration and takes neither `--root` nor `--machine`: the command is launched
+in the directory it is typed in and judged in the one it runs in, where its launcher moves it
+(`uv run --directory`) and else that same one; the project it answers for is the judged
+directory's git top-level, or the directory itself outside a repository. The command is
+everything after `--`, so no word of it is read as an option of `prove`'s; a line with no `--`, or
+nothing after it, is a usage error. `--junit PATH`, read from the judged directory, names the
+JUnit report of a runner no adapter knows.
 Every run leaves one evidence record on the machine (`stayfixed.prove.evidence`).
 """
 
