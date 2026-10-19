@@ -156,7 +156,7 @@ def test_a_line_that_is_not_an_event_is_malformed(line: bytes) -> None:
 @pytest.mark.parametrize(
     ("line", "detail"),
     [
-        (b"not json", "line 2: JSONDecodeError"),
+        (b"not json", "line 2 is not valid JSON: Expecting value: line 1 column 1 (char 0)"),
         (b"[]", "line 2 is not a JSON object"),
     ],
     ids=["no-json", "no-object"],

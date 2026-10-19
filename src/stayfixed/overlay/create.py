@@ -218,7 +218,7 @@ def _initialise_repository(
     if done.code != 0:
         return (
             rendered,
-            f"`{step}` {_ended(done)} ({_detail(done)}), so this is not a git repository on main "
+            f"`{step}` {_ended(done)} ({answered(done)}), so this is not a git repository on main "
             f"yet: run `git init` and `git symbolic-ref HEAD refs/heads/main` in it, then {remote}",
         )
     return (rendered, f"made it a git repository on main with no remote; give it one with {remote}")
@@ -235,23 +235,6 @@ def _ended(done: Completed) -> str:
     return f"exited {done.code}"
 
 
-def _detail(done: Completed) -> str:
-    """What a subprocess said about itself, in the order a reader wants it.
-
-    `Completed` has carried `code` and `stderr` since this seam was written and this module threw
-    both away: with `gh` absent from `PATH`, every call answered `Completed(127, "", "gh could
-    not be run: …")` and the failure below still said "GitHub did not confirm the repository
-    exists; check `gh auth status`" — a cause that was not the cause, about a binary that was
-    not there. The same idiom `setup.run` uses for its notes.
-
-    **Clipped, in `printed.answered`**, which every command quoting a subprocess goes through.
-    What `gh`, `git` and `pre-commit` print is not text this project wrote: a proxy or a wrapper
-    can put a line break and `::error::` in it, which a CI runner reads as a workflow command, or
-    an escape sequence, which drives a terminal.
-    """
-    return answered(done)
-
-
 def _template_for(owner: str, *, root: Path, runner: Runner) -> str:
     """The template repository to generate from: the owner's own when it is published, else the
     publisher's.
@@ -266,7 +249,7 @@ def _template_for(owner: str, *, root: Path, runner: Runner) -> str:
     failure and an answer that is not the JSON asked for are each a state in which this run does
     not know whether the owner has a template, and guessing "no" would silently generate the
     overlay of somebody who has one from somebody else's. What `gh` said is quoted through
-    `_detail`, which clips it.
+    `printed.answered`, which clips it.
     """
     mine = f"{owner}/{TEMPLATE_REPOSITORY}"
     theirs = PUBLISHED_TEMPLATE
@@ -287,7 +270,7 @@ def _template_for(owner: str, *, root: Path, runner: Runner) -> str:
     else:
         what = f"exited {probe.code}"
     raise Failure(
-        f"`gh repo view {mine} …` {what} ({_detail(probe)}), so it is not known whether "
+        f"`gh repo view {mine} …` {what} ({answered(probe)}), so it is not known whether "
         f"you have published a template, and nothing was created."
         + ("" if launched else " Install `gh` and authenticate it, or render the overlay locally.")
         + f" {TEMPLATE_PRECONDITION}"
@@ -340,7 +323,7 @@ def _from_template(
         # its absence is the machine owner's to fix: a reported finding that names it, never a
         # traceback.
         raise Failure(
-            f"`gh repo create {slug} …` could not be run ({_detail(created)}), so nothing was "
+            f"`gh repo create {slug} …` could not be run ({answered(created)}), so nothing was "
             f"created and nothing was cloned. Install `gh` and authenticate it, or render the "
             f"overlay locally: {TEMPLATE_PRECONDITION}"
         )
@@ -350,7 +333,7 @@ def _from_template(
         # guess. The clone is still retried below only when `gh` *succeeded* and nothing
         # arrived, which is the one shape the race can take.
         raise Failure(
-            f"`gh repo create {slug} …` exited {created.code} ({_detail(created)}), so no tree "
+            f"`gh repo create {slug} …` exited {created.code} ({answered(created)}), so no tree "
             f"arrived at {target}. {TEMPLATE_PRECONDITION}"
         )
 
@@ -376,12 +359,12 @@ def _from_template(
         f"{slug} produced no tree at {target}: `gh repo create --clone` reported success and "
         f"left nothing, and the "
         + ("retried" if raced else "one further")
-        + f" `git clone` exited {cloned.code} ({_detail(cloned)}). "
+        + f" `git clone` exited {cloned.code} ({answered(cloned)}). "
         + (
             "GitHub reports the repository exists, so generation may still be running — wait and "
             "clone it by hand"
             if raced
-            else f"`gh repo view` did not confirm the repository exists ({_detail(view)}); "
+            else f"`gh repo view` did not confirm the repository exists ({answered(view)}); "
             f"check `gh auth status`. {TEMPLATE_PRECONDITION}"
         )
     )
@@ -634,6 +617,6 @@ def _install_secret_scan(root: Path, runner: Runner) -> str:
     if done.code == 0:
         return "installed the commit-time secret scan with `pre-commit install`"
     return (
-        f"`pre-commit install` did not run ({_detail(done)}), so the commit-time secret scan "
+        f"`pre-commit install` did not run ({answered(done)}), so the commit-time secret scan "
         f"is not installed; install pre-commit and run it in {root}. The push-time scan still runs"
     )

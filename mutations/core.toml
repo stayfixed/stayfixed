@@ -5232,8 +5232,8 @@ reddens = [
 name = "the results reader decodes a report past the cap"
 file = "src/stayfixed/prove/results.py"
 before = """    within_cap(data)
-    document = strict_json(utf8(data))"""
-after = """    document = strict_json(utf8(data))"""
+    document = json_object(utf8(data), "the report", error=malformed)"""
+after = """    document = json_object(utf8(data), "the report", error=malformed)"""
 reddens = [
   "tests/prove/test_results.py::test_past_the_cap_is_refused_before_decoding",
   "tests/prove/test_results.py::test_read_report_caps_every_kind",
@@ -5511,14 +5511,6 @@ reddens = [
 # around a line the runner did not write as an event. Each `after` skips rather than deletes, an
 # event with no action counting nothing, so what reddens is the refusal the test asserts, not an
 # exception a deleted check lets through.
-[[mutation]]
-name = "the event-stream reader skips a line that is not an object"
-file = "src/stayfixed/prove/events.py"
-before = """        raise ReportError(REPORT_MALFORMED, f"line {number} is not a JSON object")"""
-after = """        return "", None, None, None"""
-reddens = [
-  "tests/prove/test_events.py::test_a_line_that_is_not_an_event_is_malformed",
-]
 
 [[mutation]]
 name = "the event-stream reader skips an event with no string Action"
@@ -5569,16 +5561,6 @@ before = """utf8(data).split("\\n")"""
 after = """utf8(data).split("\\n")[:-1]"""
 reddens = [
   "tests/prove/test_events.py::test_a_stream_without_a_final_newline_reads",
-]
-
-# A report that is valid JSON but not an object is refused, never read as an empty one.
-[[mutation]]
-name = "the results reader reads a report that is not an object as empty"
-file = "src/stayfixed/prove/results.py"
-before = """        raise ReportError(REPORT_MALFORMED, "the report is not a JSON object")"""
-after = """        document = {"testResults": []}"""
-reddens = [
-  "tests/prove/test_results.py::test_a_report_of_another_shape_is_malformed",
 ]
 
 # A failed file that holds a failed assertion loaded: the file adds nothing beyond its assertions.
@@ -6411,14 +6393,6 @@ file = "src/stayfixed/prove/run.py"
 before = "    program = os.path.realpath(plan.argv[0])"
 after = "    program = plan.argv[0]"
 reddens = ["tests/prove/test_run.py::test_the_counts_and_the_report_s_digest_are_the_report_s"]
-
-# A refusal names the line of the event stream it stopped at, a line that does not parse too.
-[[mutation]]
-name = "an event line that does not parse is refused with no line number"
-file = "src/stayfixed/prove/events.py"
-before = """        raise ReportError(exc.reason, f"line {number}: {exc.detail}") from None"""
-after = """        raise"""
-reddens = ["tests/prove/test_events.py::test_a_refusal_names_the_line_it_stopped_at[no-json]"]
 
 # A failure is never dropped: a testcase an adapter's `drop` leaves out still counts as failed
 # when a `failure` or `error` stands inside it.

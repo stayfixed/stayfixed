@@ -9,7 +9,7 @@ import pytest
 from stayfixed import __version__
 from stayfixed.config.loader import preset_defaults
 from stayfixed.hooks.api import EVENTS
-from stayfixed.overlay.layout import OVERLAY_FILES, PLACEHOLDER_NAMES
+from stayfixed.overlay.layout import OVERLAY_FILES
 from stayfixed.overlay.template import retired, template_root, templates
 from stayfixed.presets import load_preset
 from stayfixed.scaffold import MANIFEST_PATH
@@ -418,11 +418,11 @@ def _is_placeholder(relative: str) -> bool:
     `overlay create` drops a README into each directory the owner fills — `common/memory/`'s
     `_README.md` and `projects/`'s `README.md`. The template README describes those as
     *directories* on purpose, and naming the placeholders inside them would be noise. Derived
-    from the basename rather than listed, so a third such directory needs no edit here. The
-    convention is stated in `layout.py`, beside `PLACEHOLDER_NAMES`, which is also where the
-    sentence about the root `README.md` now lives; the `/` conjunct below is what excludes it.
+    from the basename rather than listed, so a third such directory needs no edit here. The root
+    `README.md` is no placeholder; the `/` conjunct below is what excludes it. `common/memory/`'s
+    is `_README.md` because the note reader skips a name that starts with `_`.
     """
-    return "/" in relative and relative.rsplit("/", 1)[1] in PLACEHOLDER_NAMES
+    return "/" in relative and relative.rsplit("/", 1)[1] in ("README.md", "_README.md")
 
 
 def test_the_overlay_readme_accounts_for_every_file_a_create_leaves() -> None:

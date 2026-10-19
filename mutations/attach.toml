@@ -3323,8 +3323,8 @@ reddens = [
 [[mutation]]
 name = "doctor reads a settings file it cannot parse as one with no fallback"
 file = "src/stayfixed/attach/doctor.py"
-before = "    except (ValueError, RecursionError):\n        return _CANNOT_TELL\n"
-after = "    except (ValueError, RecursionError):\n        return _NO_KEY\n"
+before = "    except ValueError:\n        return _CANNOT_TELL\n"
+after = "    except ValueError:\n        return _NO_KEY\n"
 reddens = [
   "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[settings-unparseable-beside-a-link]",
 ]

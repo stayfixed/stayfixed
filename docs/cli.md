@@ -3316,10 +3316,9 @@ below is shortened; the row spells the command in full.
 
 **The settings fallback is a whitelist, not a reading of the harness's settings.** The two files are
 `.claude/settings.local.json` and the shared `.claude/settings.json`, the local file's key in effect
-over the shared one's. Each is no file, or one JSON object, read strictly, with no
-`autoMemoryDirectory`; or it holds the key; or it cannot be read as settings: unreadable, not a
-regular file, not UTF-8, a byte-order mark, a comment, a trailing comma, `NaN`, a key given twice,
-or anything but one object. One value is admitted, the main checkout's store exactly as `attach`
+over the shared one's. Each is no file, or one JSON object with no `autoMemoryDirectory`; or it
+holds the key; or it cannot be read as settings: unreadable, not a regular file, not UTF-8, a
+byte-order mark, a comment, a trailing comma, or anything but one object. One value is admitted, the main checkout's store exactly as `attach`
 writes it; any other value in effect, of any type, `~/…`, relative, empty or another spelling of the
 store, is `fallback-elsewhere`. A file that cannot be read as settings is never read as having no
 key: beside it, every state that would read `ok` warns that what the harness makes of the file is

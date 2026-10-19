@@ -72,15 +72,11 @@ class Existing:
     default_branch: str
 
 
-def _detail(done: Completed) -> str:
-    return answered(done)
-
-
 def _gh(runner: Runner, argv: list[str], cwd: Path) -> Completed:
     done = runner.launch(["gh", *argv], cwd)
     if done.code in (NOT_FOUND, TIMED_OUT):
         raise Failure(
-            f"`gh {' '.join(argv[:2])} …` could not be run ({_detail(done)}); install and "
+            f"`gh {' '.join(argv[:2])} …` could not be run ({answered(done)}); install and "
             f"authenticate gh"
         )
     return done
@@ -103,7 +99,7 @@ def _git(runner: Runner, argv: list[str], cwd: Path) -> Completed:
     done = runner.launch(["git", *argv], cwd)
     if done.code in (NOT_FOUND, TIMED_OUT):
         raise Failure(
-            f"`git {' '.join(argv[2:4])} …` could not be run ({_detail(done)}); this command "
+            f"`git {' '.join(argv[2:4])} …` could not be run ({answered(done)}); this command "
             f"needs git on PATH to publish"
         )
     return done
@@ -143,9 +139,9 @@ def _inspect_repository(runner: Runner, slug: str, cwd: Path) -> Existing:
         # authenticated as somebody else does, and for them `--yes` still stops at
         # `gh repo create`. Distinguishing it would take a credential this command should not
         # want.
-        if not _NOT_FOUND_REMOTELY.search(_detail(view)):
+        if not _NOT_FOUND_REMOTELY.search(answered(view)):
             raise Failure(
-                f"`gh repo view {slug}` exited {view.code} ({_detail(view)}), so whether "
+                f"`gh repo view {slug}` exited {view.code} ({answered(view)}), so whether "
                 f"{slug} exists is not known; authenticate gh, or retry"
             )
         return Existing(False, False, "", DEFAULT_BRANCH)
@@ -204,7 +200,7 @@ def _ensure_repository(
             runner, ["repo", "create", slug, "--public", "--description", DESCRIPTION], cwd
         )
         if created.code != 0:
-            raise Failure(f"`gh repo create {slug}` exited {created.code} ({_detail(created)})")
+            raise Failure(f"`gh repo create {slug}` exited {created.code} ({answered(created)})")
         notes.append(f"created {slug}, public")
         is_template, default_branch = False, DEFAULT_BRANCH
     else:
@@ -215,7 +211,7 @@ def _ensure_repository(
         marked = _gh(runner, ["repo", "edit", slug, "--template"], cwd)
         if marked.code != 0:
             raise Failure(
-                f"`gh repo edit {slug} --template` exited {marked.code} ({_detail(marked)})"
+                f"`gh repo edit {slug} --template` exited {marked.code} ({answered(marked)})"
             )
         notes.append(f"marked {slug} as a template repository")
     return notes, default_branch
@@ -301,11 +297,11 @@ def publish_template(
         cloned = runner.launch(["gh", "repo", "clone", slug, "clone"], scratch)
         clone = scratch / "clone"
         if cloned.code != 0 or not fsops.is_dir(clone):
-            raise Failure(f"`gh repo clone {slug}` exited {cloned.code} ({_detail(cloned)})")
+            raise Failure(f"`gh repo clone {slug}` exited {cloned.code} ({answered(cloned)})")
         _replace_tree(clone, rendered, written)
         added = _git(runner, ["-C", str(clone), "add", "-A"], clone)
         if added.code != 0:
-            raise Failure(f"`git add -A` in the clone exited {added.code} ({_detail(added)})")
+            raise Failure(f"`git add -A` in the clone exited {added.code} ({answered(added)})")
         status = _git(runner, ["-C", str(clone), "status", "--porcelain"], clone)
         # Read before the emptiness of `stdout` is interpreted. An empty listing means "the
         # published tree is already this stayfixed's" only when the question was actually
@@ -313,7 +309,7 @@ def publish_template(
         # the kind.
         if status.code != 0:
             raise Failure(
-                f"`git status` in the clone exited {status.code} ({_detail(status)}), so "
+                f"`git status` in the clone exited {status.code} ({answered(status)}), so "
                 f"whether {slug} already carries this template is not known"
             )
         changed = tuple(line[3:] for line in status.stdout.splitlines() if line.strip())
@@ -323,13 +319,15 @@ def publish_template(
         message = f"stayfixed overlay template {stayfixed.__version__}"
         committed = _git(runner, ["-C", str(clone), "commit", "-q", "-m", message], clone)
         if committed.code != 0:
-            raise Failure(f"committing the template exited {committed.code} ({_detail(committed)})")
+            raise Failure(
+                f"committing the template exited {committed.code} ({answered(committed)})"
+            )
         # `HEAD:refs/heads/<default>`: a freshly created repository has no branch to clone,
         # so a bare `push origin HEAD` would push whatever `init.defaultBranch` says.
         pushed = _git(
             runner, ["-C", str(clone), "push", "origin", f"HEAD:refs/heads/{default_branch}"], clone
         )
         if pushed.code != 0:
-            raise Failure(f"`git push` to {slug} exited {pushed.code} ({_detail(pushed)})")
+            raise Failure(f"`git push` to {slug} exited {pushed.code} ({answered(pushed)})")
         notes.append(f"pushed {len(changed)} changed file(s) to {slug} as {message!r}")
     return Published(slug, changed, True, tuple(notes))

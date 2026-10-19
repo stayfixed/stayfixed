@@ -16,19 +16,20 @@ The `num*` totals beside the list are never read: for a file that did not load, 
 write this report count it nowhere in them, so a run with a broken test file reads one passed and
 none failed.
 
-The bytes are decoded as UTF-8 and parsed by `counts.utf8` and `counts.strict_json`.
+The bytes are decoded as UTF-8 by `counts.utf8` and parsed by `jsonobject.json_object`.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
+from stayfixed.jsonobject import json_object
 from stayfixed.printed import clipped
 from stayfixed.prove.counts import (
     REPORT_MALFORMED,
     Counts,
     ReportError,
-    strict_json,
+    malformed,
     utf8,
     within_cap,
 )
@@ -49,9 +50,7 @@ def _list_of_objects(value: object, where: str) -> list[dict[str, Any]]:
 def read_results(data: bytes) -> Counts:
     """The assertions `data` lists, counted; `ReportError` when it cannot be counted."""
     within_cap(data)
-    document = strict_json(utf8(data))
-    if not isinstance(document, dict):
-        raise ReportError(REPORT_MALFORMED, "the report is not a JSON object")
+    document = json_object(utf8(data), "the report", error=malformed)
     passed = failed = skipped = 0
     for entry in _list_of_objects(document.get("testResults"), "testResults"):
         assertions = _list_of_objects(entry.get("assertionResults"), "assertionResults")

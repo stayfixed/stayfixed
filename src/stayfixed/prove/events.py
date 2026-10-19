@@ -28,8 +28,9 @@ count twice, which changes a count and never a verdict.
 A line that is not a JSON object, an event with no string `Action`, or a `Test`, `Package` or
 `ImportPath` of the wrong type is `REPORT_MALFORMED`: the stream is the runner's own, and a line in
 it the runner did not write as an event is not one to count around. Empty lines are skipped. A
-refusal names the line by its number (a line that is no JSON at all as `line N:` and the parser's
-error's name) and a key by its fixed name, never by a value the stream holds.
+refusal names the line by its number (a line that is no JSON at all with the parser's own
+sentence, as `jsonobject.json_object` words it) and a key by its fixed name, never by a value the
+stream holds.
 
 `read_line` says which lines of a stream this reader reads anything from: every one but an
 `output` event it would read whole, which counts nothing; an `output` line it cannot read whole is
@@ -44,11 +45,12 @@ from __future__ import annotations
 
 from collections import Counter
 
+from stayfixed.jsonobject import json_object
 from stayfixed.prove.counts import (
     REPORT_MALFORMED,
     Counts,
     ReportError,
-    strict_json,
+    malformed,
     utf8,
     within_cap,
 )
@@ -73,12 +75,7 @@ def _optional_string(event: dict[str, object], key: str, line: int) -> str | Non
 def _event(line: str, number: int) -> tuple[str, str | None, str | None, str | None]:
     """The event `line`, line `number` of the stream, holds: its `Action`, `Test`, `Package` and
     `ImportPath`; `ReportError` where it is no event, its detail led by the line's number."""
-    try:
-        event = strict_json(line)
-    except ReportError as exc:
-        raise ReportError(exc.reason, f"line {number}: {exc.detail}") from None
-    if not isinstance(event, dict):
-        raise ReportError(REPORT_MALFORMED, f"line {number} is not a JSON object")
+    event = json_object(line, f"line {number}", error=malformed)
     action = event.get("Action")
     if not isinstance(action, str):
         raise ReportError(REPORT_MALFORMED, f"line {number} has no string Action")
