@@ -265,7 +265,9 @@ def test_a_home_that_is_itself_a_symlink_gets_the_harness_link_from_the_hook(
     assert contexts == [LINKED.format(count=4)]
 
 
-@pytest.mark.parametrize("layout", ["plain", "projects-linked", "claude-dangling"])
+@pytest.mark.parametrize(
+    "layout", ["plain", "projects-linked", "claude-dangling", "projects-unsearchable"]
+)
 def test_a_home_whose_claude_cannot_be_used_still_links_the_worktree_and_tells_the_person(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, layout: str
 ) -> None:
@@ -293,6 +295,9 @@ def test_a_home_whose_claude_cannot_be_used_still_links_the_worktree_and_tells_t
         (claude / "projects").symlink_to(elsewhere, target_is_directory=True)
     elif layout == "claude-dangling":
         claude.symlink_to(elsewhere / "unmounted", target_is_directory=True)
+    elif layout == "projects-unsearchable":
+        (claude / "projects").mkdir(parents=True)
+        (claude / "projects").chmod(0)
     monkeypatch.setenv("HOME", str(home))
     root, _, config = a_checkout(tmp_path)
     tree = a_worktree(root, tmp_path / "wt")
@@ -300,9 +305,13 @@ def test_a_home_whose_claude_cannot_be_used_still_links_the_worktree_and_tells_t
     store = resolve(tree, config)
     assert store is not None
     record(store, config)
-    outcome = dispatch(
-        an_event(tree), register(), session_of(config), harness=CLAUDE, sink=Recorder()
-    )
+    try:
+        outcome = dispatch(
+            an_event(tree), register(), session_of(config), harness=CLAUDE, sink=Recorder()
+        )
+    finally:
+        if layout == "projects-unsearchable":
+            (claude / "projects").chmod(0o755)
     payload = json.loads(outcome.stdout)
     context = payload["hookSpecificOutput"]["additionalContext"]
     base = tree / "docs" / "memory"
@@ -319,3 +328,13 @@ def test_a_home_whose_claude_cannot_be_used_still_links_the_worktree_and_tells_t
     assert context == f"{LINKED.format(count=len(names))}\n{HARNESS_UNREACHABLE}"
     assert payload["systemMessage"] == HARNESS_UNREACHABLE
     assert NOT_LINKED not in context
+
+
+def test_the_harness_line_is_true_of_every_home_the_anchor_refuses() -> None:
+    # The line used to list its causes as if they were all of them, and the anchor also refuses a
+    # `~/.claude/projects` it may not search, so that person was told something false. It names
+    # `~/.claude` and no cause, and never the refusal's own text, which carries a path derived
+    # from the project.
+    from stayfixed.memory.hooks import HARNESS_UNREACHABLE
+
+    assert "because ~/.claude, or a directory under it, could not be used;" in HARNESS_UNREACHABLE

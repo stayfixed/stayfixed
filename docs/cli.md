@@ -413,10 +413,11 @@ link, `~/.claude/projects/<slug>/memory`, with the directories above it inside t
 directory. Either kind of link replaces a symlink already at its name that points anywhere else,
 a dangling one included, and leaves a real file or directory there alone. When the store's trust
 no longer covers the harness link, the handler withdraws it instead, and only when it points at
-this store. A home whose `~/.claude` cannot be used — `HOME` naming no directory, a `~/.claude`
-that is a dangling link, a loop or not a directory, or a link below it — costs the harness link
-alone: the worktree's links are still made, no harness link is made or withdrawn, and the session
-says so to the person (`systemMessage`) as well as to the model.
+this store. A home whose `~/.claude`, or a directory under it, cannot be used — for example
+`HOME` naming no directory, a `~/.claude` that is a dangling link, or a link below it or a
+directory stayfixed may not search — costs the harness link alone: the worktree's links are still
+made, no harness link is made or withdrawn, and the session says so to the person
+(`systemMessage`) as well as to the model.
 
 ## Hooks
 

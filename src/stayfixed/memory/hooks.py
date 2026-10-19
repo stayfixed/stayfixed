@@ -62,13 +62,12 @@ REVOKED = (
 # user to `stayfixed attach` for a fault that is in their machine, not in their project.
 NOT_ASKABLE = "stayfixed: the memory store could not be located on this machine"
 # The home's fault and not the worktree's, so it costs the harness link alone (`worktree.link`),
-# and it is the person's to fix, so it reaches them too. Fixed: the anchor's own refusal names a
-# path derived from the project root, which a hook does not choose.
+# and it is the person's to fix, so it reaches them too. Fixed, and true of every refusal: the
+# anchor's own refusal names a path derived from the project root, which a hook does not choose.
 HARNESS_UNREACHABLE = (
-    "stayfixed: no harness memory link was made or withdrawn for this worktree, because ~/.claude "
-    "could not be used: HOME names no directory, ~/.claude is a dangling link, a loop or not a "
-    "directory, or a directory below it is a link, and stayfixed follows links up to ~/.claude and "
-    "none below it; this worktree's own memory links do not depend on it"
+    "stayfixed: no harness memory link was made or withdrawn for this worktree, because ~/.claude, "
+    "or a directory under it, could not be used; this worktree's own memory links do not depend "
+    "on it"
 )
 
 
