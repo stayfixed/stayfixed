@@ -139,6 +139,29 @@ def test_an_empty_home_is_no_default_for_home(
     assert not machine.exists()
 
 
+def test_a_relative_home_is_no_default_for_home_from_any_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Taken as typed, `HOME=h` gave every working directory a machine file and a user settings
+    # file of its own, under `<cwd>/h`. A relative `HOME` names no home, as an empty one does, so
+    # `setup` refuses from either directory before anything is written. Mutation (oracle):
+    # `mutations/`'s "a relative HOME is read against the working directory".
+    stub = Recorder()
+    monkeypatch.setattr("stayfixed.setup.commands.subprocess_runner", lambda: stub)
+    monkeypatch.setenv("HOME", "h")
+    for name in ("a", "b"):
+        (tmp_path / name).mkdir()
+        monkeypatch.chdir(tmp_path / name)
+        assert invoke(["setup", "--preset", "recommended", "--yes"]) == 1
+        assert capsys.readouterr().err == (
+            "stayfixed: failed: HOME names no home directory, so there is no default for --home "
+            "or --machine; set HOME to your home directory, or pass --home PATH and --machine "
+            "PATH\n"
+        )
+    assert [p.relative_to(tmp_path).as_posix() for p in sorted(tmp_path.rglob("*"))] == ["a", "b"]
+    assert not stub.calls
+
+
 def test_setup_help_names_no_path_from_the_machine_the_parser_was_built_on(
     capsys: pytest.CaptureFixture[str],
 ) -> None:

@@ -3187,12 +3187,24 @@ reddens = [
 [[mutation]]
 name = "an empty HOME is read as the root directory"
 file = "src/stayfixed/config/machine.py"
-before = "    if os.environ.get(\"HOME\") == \"\":\n        return None"
-after = "    if False:\n        return None"
+before = "    if value is not None and not os.path.isabs(value):"
+after = "    if value and not os.path.isabs(value):"
 reddens = [
   "tests/config/test_machine.py::test_an_empty_home_names_no_home",
   "tests/attach/test_commands.py::test_attach_whose_home_is_empty_refuses_in_words",
   "tests/attach/test_doctor.py::test_an_empty_home_is_told_it_is_home_that_names_none",
+]
+
+# Taken as typed, a relative `HOME` put the machine file, the trust record and `setup`'s writes
+# under whatever directory a command ran from, a clone's on the hook path.
+[[mutation]]
+name = "a relative HOME is read against the working directory"
+file = "src/stayfixed/config/machine.py"
+before = "    if value is not None and not os.path.isabs(value):"
+after = "    if value == \"\":"
+reddens = [
+  "tests/config/test_machine.py::test_a_relative_home_names_no_home",
+  "tests/setup/test_commands.py::test_a_relative_home_is_no_default_for_home_from_any_directory",
 ]
 
 # Whether a version orders before its release by its suffix, read by PEP 440's grammar for one:

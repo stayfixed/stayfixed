@@ -2600,11 +2600,11 @@ was recorded lapses it, and a pull that appends one line to one note is enough. 
 also withdraws the harness memory link from every checkout that held one, and whenever the run
 withdrew any, its line says how many (`links_revoked` in `--json`).
 
-**The harness memory link goes under `HOME`**, and an empty one, which names no home, is refused
-(`2`). The home directory itself is found and never created — a missing one is a refusal, above
-`attach`'s first write, above `detach`'s first withdrawal and above the first note link a session
-makes in a worktree — and a `~/.claude` linked into a dotfiles tree is written through. A link
-below `~/.claude`, or a `~/.claude` the walk cannot reach, is refused above the first write.
+**The harness memory link goes under `HOME`**, and an empty or relative one, which names no home, is
+refused (`2`). The home directory itself is found and never created — a missing one is a refusal,
+above `attach`'s first write, above `detach`'s first withdrawal and above the first note link a
+session makes in a worktree — and a `~/.claude` linked into a dotfiles tree is written through. A
+link below `~/.claude`, or a `~/.claude` the walk cannot reach, is refused above the first write.
 
 It also runs `pre-commit install` in the overlay when the overlay carries a pre-commit
 configuration and no hook is installed — the machine that cloned an overlay someone else created
@@ -3976,9 +3976,9 @@ rather than one an environment chose, and honoured by every reader of it.
 **`~` here is `HOME`**, as the harness and every other program read it, so a devcontainer, a
 home-manager setup or a scratch `HOME` keeps stayfixed and the harness under one home; a `~` in
 `[overlay] root` means that home too. An environment that sets `HOME` already runs code as you.
-An empty `HOME` names no home, so `setup`, `attach` and `detach` stop there and `doctor` says so;
-`doctor`'s `ignored-env` row says, as information, when `HOME` is not the home the password
-database records.
+An empty or relative `HOME` names no home, so `setup`, `attach` and `detach` stop there and
+`doctor` says so; `doctor`'s `ignored-env` row says, as information, when `HOME` is not the home
+the password database records.
 
 Only `[overlay]` and the trust record used to be held to that rule while `[personal]` followed
 the environment, so one command could read the two halves of this file from two different files.

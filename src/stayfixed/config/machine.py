@@ -57,8 +57,10 @@ def passwd_home() -> Path | None:
 def owner_home() -> Path | None:
     """The machine owner's home directory: `HOME`, or the password database's entry where `HOME`
     is unset (`Path.home`). `None` where `HOME` is empty, which names no home and which
-    `Path.home` reads as `/`, and where neither names one."""
-    if os.environ.get("HOME") == "":
+    `Path.home` reads as `/`; where it is relative, which would name a home under whatever
+    directory a command runs from, a clone's on the hook path; and where neither names one."""
+    value = os.environ.get("HOME")
+    if value is not None and not os.path.isabs(value):
         return None
     try:
         return Path.home()
