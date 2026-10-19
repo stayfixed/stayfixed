@@ -1302,7 +1302,7 @@ file = "src/stayfixed/memory/worktree.py"
 before = "    if not fsops.is_dir(root):\n        raise Refusal("
 after = "    if False:\n        raise Refusal("
 reddens = [
-  "tests/memory/test_worktree.py::test_a_home_that_is_not_there_is_a_refusal_naming_it_and_never_a_partial_link",
+  "tests/memory/test_worktree.py::test_a_home_that_is_not_there_is_reported_naming_it_and_never_a_partial_link",
   "tests/memory/test_worktree.py::test_a_withdrawal_against_a_home_that_is_not_there_refuses_rather_than_reporting_nothing",
 ]
 
@@ -1368,13 +1368,17 @@ reddens = [
   "tests/memory/test_worktree.py::test_a_withdrawal_whose_walk_refuses_a_component_leaves_it_standing",
 ]
 
+# The note links are inside the worktree, so a home the anchor refuses costs the harness link
+# alone; raised, the refusal ended the session's link step before its first note link.
 [[mutation]]
-name = "the session link step discovers the harness anchor after it has written"
+name = "a home-side refusal costs the worktree its note links again"
 file = "src/stayfixed/memory/worktree.py"
-before = "    harness_anchor(worktree, home)\n    created: list[Path] = []"
-after = "    created: list[Path] = []"
+before = "    except Refusal as refused:\n        unreachable = str(refused)"
+after = "    except LookupError as refused:\n        unreachable = str(refused)"
 reddens = [
-  "tests/memory/test_worktree.py::test_a_home_that_is_not_there_leaves_a_worktree_with_no_links_at_all",
+  "tests/memory/test_worktree.py::test_a_home_the_anchor_refuses_costs_the_worktree_its_harness_link_alone[claude-dangling]",
+  "tests/memory/test_worktree.py::test_a_home_the_anchor_refuses_costs_the_worktree_its_harness_link_alone[projects-linked]",
+  "tests/memory/test_hooks.py::test_a_home_whose_claude_cannot_be_used_still_links_the_worktree_and_tells_the_person[claude-dangling]",
 ]
 
 # The rows and floors that report on quantities they never looked at.

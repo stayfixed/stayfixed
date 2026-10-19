@@ -95,6 +95,9 @@ class HookEvent:
 @dataclass
 class HookResult:
     context: str | None = None
+    # A line for the person as well, shown as the session's notices are (`dispatch`), on
+    # `SessionStart` alone; the model's copy is the handler's to put into `context`.
+    notice: str | None = None
 
 
 HandlerFn = Callable[[HookEvent, "SessionConfig"], HookResult]

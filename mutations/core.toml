@@ -746,6 +746,17 @@ reddens = [
   "tests/hooks/test_dispatch.py::test_a_once_per_context_handler_whose_result_is_rejected_keeps_its_one_delivery",
 ]
 
+# A handler's notice is for the person, beside the session's own, on `SessionStart` alone.
+[[mutation]]
+name = "a handler's notice never reaches the person"
+file = "src/stayfixed/hooks/dispatch.py"
+before = '    message = "\n".join((*shown, *notices)) if event.name == NOTICE_EVENT else ""'
+after = '    message = "\n".join(shown)'
+reddens = [
+  "tests/hooks/test_dispatch.py::test_a_handlers_notice_reaches_the_person_after_the_sessions_on_session_start_alone[SessionStart]",
+  "tests/memory/test_hooks.py::test_a_home_whose_claude_cannot_be_used_still_links_the_worktree_and_tells_the_person[projects-linked]",
+]
+
 # The clamp keeps the largest prefix whose whole rendered string fits the cap. Either off-by-one
 # changes where the escaping case lands on one of its two caps, whichever of them is odd.
 [[mutation]]

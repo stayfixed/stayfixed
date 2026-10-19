@@ -61,6 +61,15 @@ REVOKED = (
 # answering `None` as for an unrecorded overlay. Saying `NO_STORE` for those would send the
 # user to `stayfixed attach` for a fault that is in their machine, not in their project.
 NOT_ASKABLE = "stayfixed: the memory store could not be located on this machine"
+# The home's fault and not the worktree's, so it costs the harness link alone (`worktree.link`),
+# and it is the person's to fix, so it reaches them too. Fixed: the anchor's own refusal names a
+# path derived from the project root, which a hook does not choose.
+HARNESS_UNREACHABLE = (
+    "stayfixed: no harness memory link was made or withdrawn for this worktree, because ~/.claude "
+    "could not be used: HOME names no directory, ~/.claude is a dangling link, a loop or not a "
+    "directory, or a directory below it is a link, and stayfixed follows links up to ~/.claude and "
+    "none below it; this worktree's own memory links do not depend on it"
+)
 
 
 def _link_worktree(event: HookEvent, session: SessionConfig) -> HookResult:
@@ -107,9 +116,11 @@ def _link_worktree(event: HookEvent, session: SessionConfig) -> HookResult:
             # lapsed is what the owner has to act on, and the two never co-occur — the same
             # gate decides both.
             return HookResult(context=REVOKED)
-        if links.created:
-            return HookResult(context=LINKED.format(count=len(links.created)))
-        return HookResult()
+        lines = [LINKED.format(count=len(links.created))] if links.created else []
+        if links.harness_refused is not None:
+            lines.append(HARNESS_UNREACHABLE)
+            return HookResult(context="\n".join(lines), notice=HARNESS_UNREACHABLE)
+        return HookResult(context="\n".join(lines)) if lines else HookResult()
     # The backstop stays broad on purpose: a memory handler never costs a session,
     # and `resolve` alone reaches `tomllib`, `subprocess` and the filesystem. Narrowing it to
     # `OSError` would let an unforeseen exception out of the handler. What the two

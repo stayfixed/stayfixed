@@ -413,7 +413,10 @@ link, `~/.claude/projects/<slug>/memory`, with the directories above it inside t
 directory. Either kind of link replaces a symlink already at its name that points anywhere else,
 a dangling one included, and leaves a real file or directory there alone. When the store's trust
 no longer covers the harness link, the handler withdraws it instead, and only when it points at
-this store.
+this store. A home whose `~/.claude` cannot be used — `HOME` naming no directory, a `~/.claude`
+that is a dangling link, a loop or not a directory, or a link below it — costs the harness link
+alone: the worktree's links are still made, no harness link is made or withdrawn, and the session
+says so to the person (`systemMessage`) as well as to the model.
 
 ## Hooks
 
@@ -2602,9 +2605,10 @@ withdrew any, its line says how many (`links_revoked` in `--json`).
 
 **The harness memory link goes under `HOME`**, and an empty or relative one, which names no home, is
 refused (`2`). The home directory itself is found and never created — a missing one is a refusal,
-above `attach`'s first write, above `detach`'s first withdrawal and above the first note link a
-session makes in a worktree — and a `~/.claude` linked into a dotfiles tree is written through. A
-link below `~/.claude`, or a `~/.claude` the walk cannot reach, is refused above the first write.
+above `attach`'s first write and above `detach`'s first withdrawal — and a `~/.claude` linked into a
+dotfiles tree is written through. A link below `~/.claude`, or a `~/.claude` the walk cannot reach,
+is refused above the first write. A session in a worktree makes that worktree's note links all the
+same, and only its harness memory link waits for the home.
 
 It also runs `pre-commit install` in the overlay when the overlay carries a pre-commit
 configuration and no hook is installed — the machine that cloned an overlay someone else created
