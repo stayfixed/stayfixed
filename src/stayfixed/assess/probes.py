@@ -306,7 +306,7 @@ PROBES: tuple[Probe, ...] = (
     Probe(
         "codeowners",
         7,
-        Severity.WARNING,
+        Severity.ADVICE,
         "add a CODEOWNERS line covering /.github/ and require code-owner review on the gate "
         "branch: a pull request can otherwise rewrite the workflow that judges it",
         _codeowners,

@@ -1298,7 +1298,7 @@ A row names no finding: `assess` lists them as items.
 | `memory-history` | the history of `[paths] memory` | warning | 8 | the store has history and `memory.mode` is not `in-repo` |
 | `foreign-hooks` | the committed hook settings of each harness `[stayfixed] agents` selects | advice | 5 | any hook entry, one claiming stayfixed's marker included: stayfixed writes none into a committed file, and the probe has no grant to vouch for one with |
 | `foreign-workflows` | `.github/workflows/*.yml` and `*.yaml` | advice | — | any workflow but stayfixed's own caller |
-| `codeowners` | the first of `.github/CODEOWNERS`, `CODEOWNERS` and `docs/CODEOWNERS` | warning | 7 | there is no file, or no line outside a comment holds `.github`: a plain substring, not GitHub's pattern matching, so a line such as `* @owner` still reports; not judged under `[ci] mode = "none"` |
+| `codeowners` | the first of `.github/CODEOWNERS`, `CODEOWNERS` and `docs/CODEOWNERS` | advice | 7 | there is no file, or no line outside a comment holds `.github`: a plain substring, not GitHub's pattern matching, so a line such as `* @owner` still reports; not judged under `[ci] mode = "none"` |
 | `commit-types` | the subjects of the last 100 commits, merges excluded | advice | — | a subject whose type is not in `[commit_messages] types`; `where` names commits |
 | `profile` | the configured profile's checks | the check's own | — | each failed check, counted once; a profile this stayfixed does not ship is one `profile-not-shipped` warning |
 
@@ -3710,7 +3710,7 @@ gates still run and still report but cannot stop a pull request that edits its o
 - **CODEOWNERS covering `/.github/`, with review from code owners required**, so a change to
   the caller needs someone other than its author. GitHub reads the rules from the base
   branch's copy; keep the file at `.github/CODEOWNERS`, where its own `/.github/` rule covers it
-  (`stayfixed assess` warns, `codeowners`, when no line names `.github`);
+  (`stayfixed assess` advises, `codeowners`, when no line names `.github`);
 - **"Dismiss stale pull request approvals when new commits are pushed"**, or **"Require
   approval of the most recent reviewable push"**, so an approval of an innocuous `.github/` edit
   does not carry over to a later commit that repoints `uses:`;

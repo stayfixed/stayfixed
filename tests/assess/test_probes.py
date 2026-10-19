@@ -426,7 +426,7 @@ def test_codeowners_is_reported_unless_a_line_names_github(
     if codeowners is not None:
         _write(root, ".github/CODEOWNERS", codeowners)
     items = _items(root, tmp_path, "codeowners")
-    expected = [("codeowners", Severity.WARNING, 7, (OWNED_WORKFLOWS,))] if reported else []
+    expected = [("codeowners", Severity.ADVICE, 7, (OWNED_WORKFLOWS,))] if reported else []
     assert [(i.rule, i.severity, i.principle, i.where) for i in items] == expected
 
 
@@ -555,14 +555,13 @@ def test_no_profile_configured_reports_no_profile_item(tmp_path: Path) -> None:
     assert _items(root, tmp_path, PROFILE) == []
 
 
-def test_the_smoke_copy_warns_only_that_nobody_owns_the_workflow(tmp_path: Path) -> None:
-    # The fixture every gate passes on has no CODEOWNERS file, and nothing else to warn about.
+def test_the_smoke_copy_warns_of_nothing(tmp_path: Path) -> None:
+    # The fixture every gate passes on has nothing to warn about; its missing CODEOWNERS file is
+    # advice.
     root = smoke_repo(tmp_path)
     config = load(root, machine=tmp_path / "m.toml")
     items = run_probes(ProbeContext(root, config, WINDOW))
-    assert [(i.probe, i.rule) for i in items if i.severity is Severity.WARNING] == [
-        ("codeowners", "codeowners")
-    ]
+    assert [(i.probe, i.rule) for i in items if i.severity is Severity.WARNING] == []
 
 
 def test_a_probe_s_attributes_are_the_item_s(tmp_path: Path) -> None:
