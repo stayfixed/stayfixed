@@ -318,6 +318,14 @@ def test_line_continuation_inside_a_quoted_heredoc_body_is_left_alone() -> None:
     assert [h.body for h in heredocs] == ["foo\\\nbar"]
 
 
+def test_arithmetic_shift_is_not_taken_for_a_heredoc() -> None:
+    """`$((1<<2))` must stay unmatched: the trailing `(?!\\S)` after the tag rejects it, since `)`
+    follows, and a match would hide the rest of the command as a heredoc body."""
+    for text in ("echo $((1<<2))\ncat x", "echo $((n<<3))\ncat x"):
+        stripped, heredocs = bashscan.prepare(text, keep_unquoted_bodies=False)
+        assert (heredocs, "cat x" in stripped) == ([], True), text
+
+
 def test_scan_heredocs_finds_a_glued_redirect() -> None:
     """The same relaxation seen through the caller that shares `_HEREDOC`: a quoted body
     leaves the general text and is still REPORTED, so `bgcleanup._nested_programs` can judge
