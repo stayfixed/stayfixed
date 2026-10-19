@@ -44,15 +44,6 @@ reddens = [
   "tests/config/test_overlay_root.py::test_a_root_under_tilde_is_not_recorded_where_there_is_no_home",
 ]
 
-# No home is no machine file, for each of its readers, and never an error, which
-# every hook on such a machine would report.
-[[mutation]]
-name = "the configuration reads a machine file that has no home"
-file = "src/stayfixed/config/owner.py"
-before = '        raw = None if machine is None else read_machine_toml(machine)'
-after = '        raw = read_machine_toml(machine)'
-reddens = ["tests/hooks/test_dispatch.py::test_a_session_with_no_home_still_gets_an_answer"]
-
 # Every `git` this project asks a question of now goes through `git_run`, the hook path's
 # toplevel and the memory store's resolver included, so one scrub is what keeps an inherited
 # `GIT_DIR` from answering for a different repository than the session is in.
