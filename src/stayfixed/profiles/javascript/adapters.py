@@ -70,8 +70,9 @@ option is free.
 - jest 30.5.2: `-u`/`--updateSnapshot` (which rewrites a failing snapshot so that it passes);
   and `--collectTests` (which exits 0 reporting a failing test as passed). `--ci=false`/`--no-ci`
   is free: jest then writes a snapshot that is missing and passes it, as it does by default
-  wherever `CI` is unset or false. The command's own `--json` and `--outputFile` are free: the
-  adapter's come last and win.
+  wherever `CI` is unset or false. The command's own `--json` and `--outputFile` are free: measured,
+  `--json` runs as without it, and an `--outputFile` beside the adapter's leaves jest writing no
+  report (`not proven`).
 - vitest 5.0.5: `-u`/`--update` but `--update=none`, `--no-update` and `--update=new` (each other
   rewrites a failing snapshot so that it passes; `new`, vitest's own default where `CI` is unset,
   only writes a missing one); the same values of `UPDATE_SNAPSHOT`, which vitest reads as
@@ -79,8 +80,8 @@ option is free.
   refused; inherited with one, the variable is removed from the run's environment and named on the
   receipt); `--mergeReports` (which runs nothing and reports the blob files it reads, written by an
   earlier run, as results); and `--dangerouslyIgnoreUnhandledErrors` (which exits 0 past an error
-  no test reported, a run vitest itself fails). The command's own `--outputFile` is free: the run
-  ends `not proven` or reads the adapter's report.
+  no test reported, a run vitest itself fails). The command's own `--outputFile` is free: beside
+  the adapter's, vitest writes no report (`not proven`, measured).
 - `node --test`: `--test-update-snapshots` (which rewrites a failing snapshot so that it passes);
   and `--test-rerun-failures` (which reports as passed, unrun, every test the state file it names
   says passed before), on the command line or in the run's `NODE_OPTIONS`, which Node 24.10.0
