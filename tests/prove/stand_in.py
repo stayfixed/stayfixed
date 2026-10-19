@@ -84,7 +84,6 @@ class StandIn:
     forging: Mapping[str, Callable[[str], bool]] = field(default_factory=lambda: {"FORGE": forges})
     source: ReportSource = ReportSource.FILE
     discovery: tuple[str, ...] = ("test_*.py",)
-    configs: tuple[str, ...] = ("stand-in.toml",)
     refuse: str | None = None
     unresolved: str | None = None
     # Plans a program that is a file and cannot be executed.
@@ -133,7 +132,6 @@ class StandIn:
             source=self.source,
             report=report,
             discovery=self.discovery,
-            configs=self.configs,
         )
 
 

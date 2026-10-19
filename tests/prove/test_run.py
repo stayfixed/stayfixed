@@ -410,7 +410,6 @@ def test_the_run_is_in_cwd_and_the_project_is_its_toplevel(tmp_path: Path) -> No
     got = run(package, NAME, "--expect-cwd", str(package), adapter=adapter)
     assert got.verdict == PROVED
     assert got.commit == git(root, "rev-parse", "HEAD").strip()
-    assert got.configs == ("stand-in.toml",)
 
 
 def test_outside_a_repository_the_project_is_the_directory_itself(tmp_path: Path) -> None:
@@ -420,7 +419,7 @@ def test_outside_a_repository_the_project_is_the_directory_itself(tmp_path: Path
     got = run(plain, NAME, "--expect-cwd", str(plain), adapter=adapter)
     assert got.verdict == PROVED
     assert (got.commit, got.dirty_before, got.dirty_after) == (None, None, None)
-    assert (got.untracked, got.configs) == ((), ())
+    assert got.untracked == ()
 
 
 def test_the_assignments_are_every_one_the_launch_makes_the_last_winning() -> None:
@@ -556,7 +555,6 @@ def test_the_command_is_judged_where_its_launcher_runs_it(
     assert adapter.cwds == [real]
     assert got.directory == str(real)
     assert got.commit == git(other, "rev-parse", "HEAD").strip()
-    assert got.configs == ("stand-in.toml",)
     assert adapter.launches == [(str(uv), *words[1:])]
 
 
@@ -639,7 +637,6 @@ def test_a_pytest_plan_behind_uv_s_directory_is_made_there(tmp_path: Path) -> No
     assert (got.verdict, got.counts) == (PROVED, Counts(1, 0, 0)), got
     assert adapter.cwds == [real]
     assert got.directory == str(real)
-    assert got.configs == ("sub/ci.ini",)
 
 
 def test_a_value_never_reaches_the_receipt(tmp_path: Path) -> None:
@@ -1099,7 +1096,7 @@ def test_the_scratch_directory_is_removed_on_every_path(
     assert not scratch.is_relative_to(tmp_path)
 
 
-def test_the_receipt_names_untracked_ignored_and_config_files(tmp_path: Path) -> None:
+def test_the_receipt_names_untracked_and_ignored_files(tmp_path: Path) -> None:
     root = repository(tmp_path / "repo")
     (root / ".gitignore").write_text("hidden/\n", encoding="utf-8")
     (root / "stand-in.toml").write_text("", encoding="utf-8")
@@ -1112,7 +1109,6 @@ def test_the_receipt_names_untracked_ignored_and_config_files(tmp_path: Path) ->
     got = run(root, NAME)
     assert got.untracked == ("test_untracked.py", "hidden/test_ignored.py")
     assert got.untracked_more == 0
-    assert got.configs == ("stand-in.toml",)
     assert got.verdict == PROVED  # information for the reader, never an input to the verdict
 
 
@@ -1126,105 +1122,18 @@ def test_an_untracked_file_is_listed_before_any_ignored_one(tmp_path: Path) -> N
     for index in range(tree.UNTRACKED_LISTED + 5):
         (root / "deps" / f"test_{index:02d}.py").write_text("", encoding="utf-8")
     (root / "test_real.py").write_text("", encoding="utf-8")
-    state = tree.state(root, ("test_*.py",), ())
+    state = tree.state(root, ("test_*.py",))
     assert state.untracked is not None
     assert state.untracked[0] == "test_real.py"
     assert state.untracked[1] == "deps/test_00.py"
     assert (len(state.untracked), state.more) == (tree.UNTRACKED_LISTED, 6)
 
 
-def test_a_configuration_file_git_ignores_is_never_named(tmp_path: Path) -> None:
-    # An ignored dependency tree holds configuration-named files of its own by the dozen, none of
-    # them the project's. Mutation (declared): the ignored files matched too -> every one named.
-    root = repository(tmp_path / "repo")
-    (root / ".gitignore").write_text("deps/\n", encoding="utf-8")
-    (root / "stand-in.toml").write_text("", encoding="utf-8")
-    for index in range(50):
-        (root / "deps" / f"p{index:02d}").mkdir(parents=True)
-        (root / "deps" / f"p{index:02d}" / "stand-in.toml").write_text("", encoding="utf-8")
-    (root / "sub").mkdir()
-    (root / "sub" / "stand-in.toml").write_text("", encoding="utf-8")
-    state = tree.state(root, (), ("stand-in.toml",))
-    assert (state.configs, state.configs_more) == (("stand-in.toml", "sub/stand-in.toml"), 0)
-
-
-def test_the_ignored_configuration_files_are_counted_and_never_named(tmp_path: Path) -> None:
-    # Left out of the list, they are still said to be there: an ignored file in the runner's load
-    # path can shape the report as well as any. Mutations (declared): the count dropped from the
-    # tree's state, and from the line -> neither says so.
-    root = repository(tmp_path / "repo")
-    (root / ".gitignore").write_text("deps/\n", encoding="utf-8")
-    (root / "stand-in.toml").write_text("", encoding="utf-8")
-    for index in range(3):
-        (root / "deps" / f"p{index}").mkdir(parents=True)
-        (root / "deps" / f"p{index}" / "stand-in.toml").write_text("", encoding="utf-8")
-    got = run(root, NAME)
-    assert (got.configs, got.configs_more, got.ignored_configs) == (("stand-in.toml",), 0, 3)
-    assert "; configuration: stand-in.toml and 3 ignored" in line(got)
-    (root / "stand-in.toml").unlink()
-    assert "; configuration: 3 ignored" in line(run(root, NAME))
-
-
-def test_a_configuration_file_named_by_its_path_is_named_wherever_it_lies(tmp_path: Path) -> None:
-    # An adapter names a file the command chose by its absolute path: named from the project
-    # where it lies there, whatever git says of it, and whole where it lies outside. Mutation
-    # (declared): an absolute entry read as a glob alone -> neither is named.
-    root = repository(tmp_path / "repo")
-    (root / ".gitignore").write_text("ignored/\n", encoding="utf-8")
-    (root / "ignored").mkdir()
-    inside = root / "ignored" / "ci.toml"
-    outside = tmp_path / "outside.toml"
-    for path in (inside, outside):
-        path.write_text("", encoding="utf-8")
-    (root / "stand-in.toml").write_text("", encoding="utf-8")
-    named = (str(inside), str(outside), str(tmp_path / "absent.toml"), str(root / "stand-in.toml"))
-    got = run(root, NAME, adapter=StandIn(configs=("stand-in.toml", *named)))
-    assert got.configs == ("stand-in.toml", "ignored/ci.toml", str(outside))
-
-
-def test_outside_a_repository_a_file_the_command_chose_is_named_still(tmp_path: Path) -> None:
-    # git answers nothing outside a repository, but the file a command chose by its path (`-c`,
-    # `-modfile`, `--config`) needs no git to be named. Mutation (declared): the chosen files left
-    # to git's answer -> none is named.
-    project = tmp_path / "project"
-    project.mkdir()
-    chosen = tmp_path / "ci.toml"
-    chosen.write_text("", encoding="utf-8")
-    got = run(project, NAME, adapter=StandIn(configs=("stand-in.toml", str(chosen))))
-    assert (got.commit, got.configs) == (None, (str(chosen),))
-
-
-def test_the_configuration_list_stops_at_its_cap_and_counts_the_rest(tmp_path: Path) -> None:
-    # Mutation (declared): the configuration list uncapped -> every one named.
-    root = repository(tmp_path / "repo")
-    for index in range(tree.UNTRACKED_LISTED + 3):
-        (root / f"c{index:02d}").mkdir()
-        (root / f"c{index:02d}" / "stand-in.toml").write_text("", encoding="utf-8")
-    got = run(root, NAME)
-    assert len(got.configs) == tree.UNTRACKED_LISTED
-    assert got.configs[0] == "c00/stand-in.toml"
-    assert got.configs_more == 3
-    assert "and 3 more" in line(got).split("; configuration: ")[1].split(";")[0]
-
-
-def test_a_configuration_file_is_named_only_where_it_exists(tmp_path: Path) -> None:
-    # git still lists a tracked file the work tree deleted. Mutation (declared): every listed
-    # name taken to exist -> the deleted one is named.
-    root = repository(tmp_path / "repo")
-    for name in ("stand-in.toml", "sub/stand-in.toml"):
-        (root / name).parent.mkdir(exist_ok=True)
-        (root / name).write_text("", encoding="utf-8")
-    git(root, "add", ".")
-    git(root, "commit", "-q", "-m", "configs")
-    (root / "sub" / "stand-in.toml").unlink()
-    assert tree.state(root, (), ("stand-in.toml",)).configs == ("stand-in.toml",)
-
-
 def test_the_untracked_list_stops_at_its_cap_and_counts_the_rest(tmp_path: Path) -> None:
     root = repository(tmp_path / "repo")
     for index in range(tree.UNTRACKED_LISTED + 5):
         (root / f"test_{index:02d}.py").write_text("", encoding="utf-8")
-    state = tree.state(root, ("test_*.py",), ())
+    state = tree.state(root, ("test_*.py",))
     assert state.untracked is not None
     assert len(state.untracked) == tree.UNTRACKED_LISTED
     assert state.untracked[0] == "test_00.py"
@@ -1239,8 +1148,8 @@ def test_tree_state_is_taken_before_and_after(tmp_path: Path) -> None:
 
 
 def test_tree_state_outside_git_is_unknown_and_never_a_refusal(tmp_path: Path) -> None:
-    state = tree.state(tmp_path, ("*",), ("*",))
-    assert state == tree.TreeState(None, None, None, 0, None, 0, 0)
+    state = tree.state(tmp_path, ("*",))
+    assert state == tree.TreeState(None, None, None, 0)
 
 
 def _adapter_module(name: str, shipped: Sequence[object]) -> types.ModuleType:

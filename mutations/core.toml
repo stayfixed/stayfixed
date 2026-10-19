@@ -6155,15 +6155,6 @@ after = "        dirty_after=before.dirty if before is not None else None,"
 reddens = ["tests/prove/test_run.py::test_tree_state_is_taken_before_and_after"]
 
 [[mutation]]
-name = "prove's line leaves out the configuration files"
-file = "src/stayfixed/prove/run.py"
-before = '        parts.append(f"configuration: {named}")'
-after = "        pass"
-reddens = [
-  "tests/prove/test_command.py::test_the_line_names_the_counts_the_runner_and_the_files_that_shape_the_report",
-]
-
-[[mutation]]
 name = "prove words two arms alike"
 file = "src/stayfixed/prove/run.py"
 before = '    NONE_RAN: "the runner reported no test run",'
@@ -6177,15 +6168,14 @@ before = '            runner += ", not verified"'
 after = "            pass"
 reddens = ["tests/prove/test_run.py::test_the_line_marks_a_runner_no_adapter_resolved"]
 
-# The tree's state: untracked files in the discovery set before the ignored ones, the
-# configuration files that exist and that git tracks or does not ignore, two capped lists, and no
-# answer outside git.
+# The tree's state: untracked files in the discovery set before the ignored ones, a capped list,
+# and no answer outside git.
 [[mutation]]
 name = "prove's tree state leaves the ignored files out"
 file = "src/stayfixed/prove/tree.py"
 before = "        untracked, more = _capped(_matching(others, discovery) + _matching(ignored, discovery))"
 after = "        untracked, more = _capped(_matching(others, discovery))"
-reddens = ["tests/prove/test_run.py::test_the_receipt_names_untracked_ignored_and_config_files"]
+reddens = ["tests/prove/test_run.py::test_the_receipt_names_untracked_and_ignored_files"]
 
 [[mutation]]
 name = "prove's tree state sorts the untracked and the ignored files as one"
@@ -6194,7 +6184,7 @@ before = "        untracked, more = _capped(_matching(others, discovery) + _matc
 after = "        untracked, more = _capped(_matching([*others, *ignored], discovery))"
 reddens = [
   "tests/prove/test_run.py::test_an_untracked_file_is_listed_before_any_ignored_one",
-  "tests/prove/test_run.py::test_the_receipt_names_untracked_ignored_and_config_files",
+  "tests/prove/test_run.py::test_the_receipt_names_untracked_and_ignored_files",
 ]
 
 [[mutation]]
@@ -6202,45 +6192,7 @@ name = "prove's tree state lists past its cap"
 file = "src/stayfixed/prove/tree.py"
 before = "    return tuple(found[:UNTRACKED_LISTED]), max(len(found) - UNTRACKED_LISTED, 0)"
 after = "    return tuple(found), 0"
-reddens = [
-  "tests/prove/test_run.py::test_the_untracked_list_stops_at_its_cap_and_counts_the_rest",
-  "tests/prove/test_run.py::test_the_configuration_list_stops_at_its_cap_and_counts_the_rest",
-]
-
-[[mutation]]
-name = "prove's tree state names a configuration file git ignores"
-file = "src/stayfixed/prove/tree.py"
-before = "        named = _matching([*tracked, *others], configs)"
-after = "        named = _matching([*tracked, *others, *(ignored or [])], configs)"
-reddens = ["tests/prove/test_run.py::test_a_configuration_file_git_ignores_is_never_named"]
-
-[[mutation]]
-name = "prove's tree state names a configuration file the tree deleted"
-file = "src/stayfixed/prove/tree.py"
-before = "        present = [name for name in named if fsops.exists(root / name)]"
-after = "        present = list(named)"
-reddens = ["tests/prove/test_run.py::test_a_configuration_file_is_named_only_where_it_exists"]
-
-[[mutation]]
-name = "prove's tree state counts no ignored configuration file"
-file = "src/stayfixed/prove/tree.py"
-before = "    ignored_configs = len(_matching(ignored, configs)) if ignored is not None else 0"
-after = "    ignored_configs = 0"
-reddens = ["tests/prove/test_run.py::test_the_ignored_configuration_files_are_counted_and_never_named"]
-
-[[mutation]]
-name = "prove's line keeps the ignored configuration files' count to itself"
-file = "src/stayfixed/prove/run.py"
-before = "        if receipt.ignored_configs:"
-after = "        if False:"
-reddens = ["tests/prove/test_run.py::test_the_ignored_configuration_files_are_counted_and_never_named"]
-
-[[mutation]]
-name = "prove's line names no configuration file past the cap"
-file = "src/stayfixed/prove/run.py"
-before = '        more = f" and {receipt.configs_more} more" if receipt.configs_more else ""'
-after = '        more = ""'
-reddens = ["tests/prove/test_run.py::test_the_configuration_list_stops_at_its_cap_and_counts_the_rest"]
+reddens = ["tests/prove/test_run.py::test_the_untracked_list_stops_at_its_cap_and_counts_the_rest"]
 
 [[mutation]]
 name = "prove's tree state reads no answer as a clean tree"
@@ -6367,34 +6319,6 @@ after = '''
 '''
 reddens = ["tests/prove/test_pytest.py::test_a_refused_option_is_named_on_the_receipt"]
 
-# An absolute configuration entry names the one file a command chose, wherever it lies: read as a
-# glob, it names nothing the tree's listing holds.
-[[mutation]]
-name = "prove's tree state reads an absolute configuration entry as a glob alone"
-file = "src/stayfixed/prove/tree.py"
-before = "        present += [name for name in _chosen(root, configs) if name not in present]"
-after = "        present += []"
-reddens = [
-  "tests/prove/test_run.py::test_a_configuration_file_named_by_its_path_is_named_wherever_it_lies",
-  "tests/prove/test_pytest.py::test_a_configuration_file_the_command_names_is_named_on_the_receipt",
-]
-
-[[mutation]]
-name = "prove's tree state names a chosen configuration file in the project by its whole path"
-file = "src/stayfixed/prove/tree.py"
-before = """        chosen.append(
-            path.relative_to(project).as_posix() if path.is_relative_to(project) else entry
-        )"""
-after = "        chosen.append(entry)"
-reddens = ["tests/prove/test_run.py::test_a_configuration_file_named_by_its_path_is_named_wherever_it_lies"]
-
-[[mutation]]
-name = "prove's tree state names a chosen configuration file that is not there"
-file = "src/stayfixed/prove/tree.py"
-before = "        if not path.is_absolute() or not fsops.exists(path):"
-after = "        if not path.is_absolute():"
-reddens = ["tests/prove/test_run.py::test_a_configuration_file_named_by_its_path_is_named_wherever_it_lies"]
-
 # `--junit PATH`: a report is counted only where the run created or rewrote it, so a stale or
 # committed one counts nothing.
 [[mutation]]
@@ -6483,13 +6407,6 @@ before = "    | getattr(os, \"O_NOFOLLOW\", 0)\n"
 after = ""
 reddens = ["tests/test_fsops.py::test_an_append_never_writes_through_a_link"]
 
-[[mutation]]
-name = "prove's receipt names no entry beside its program"
-file = "src/stayfixed/prove/run.py"
-before = "        entry=str(plan.entry) if plan is not None and plan.entry is not None else None,"
-after = "        entry=None,"
-reddens = ["tests/prove/test_javascript.py::test_an_npmrc_is_named_in_the_receipt"]
-
 # `uv run -m pytest` is read as the launcher `uv run -m` in front of `pytest`: read with modules
 # as no program, `-m` would be uv's last option and `pytest` its module, no program to recognise.
 [[mutation]]
@@ -6577,8 +6494,11 @@ reddens = ["tests/prove/test_run.py::test_a_plan_whose_report_lies_outside_its_s
 [[mutation]]
 name = "the receipt gains a field the prove section does not list"
 file = "src/stayfixed/prove/run.py"
-before = "    ignored_configs: int = 0\n"
-after = "    ignored_configs: int = 0\n    extra: int = 0\n"
+before = """    untracked_more: int = 0
+"""
+after = """    untracked_more: int = 0
+    extra: int = 0
+"""
 reddens = ["tests/test_documents.py::test_the_json_keys_the_prove_section_lists_are_the_receipt_s_fields"]
 
 # A FIFO left at an appended file's path with no reader would make the open wait for one for ever.
@@ -6644,14 +6564,6 @@ after = """                pass
         return _Ran(None, process.wait())
 """
 reddens = ["tests/prove/test_run.py::test_an_interrupt_anywhere_in_the_run_ends_it_not_proven[interrupt-reap]"]
-
-# Outside a repository the file a command chose by its path is still named: git is not asked.
-[[mutation]]
-name = "outside a repository the chosen configuration files are left to git"
-file = "src/stayfixed/prove/tree.py"
-before = "    elif chosen := _chosen(root, configs):"
-after = "    elif False:"
-reddens = ["tests/prove/test_run.py::test_outside_a_repository_a_file_the_command_chose_is_named_still"]
 
 # The command is judged in the directory its launcher runs it in (`uv run --directory`,
 # `UV_WORKING_DIR`): judged where it was typed, node's whole-file testcase is read from the
@@ -6814,3 +6726,4 @@ file = "src/stayfixed/prove/junit.py"
 before = """        elif name == _SKIPPED_BY and attributes.get("type") == TODO:"""
 after = """        elif False:"""
 reddens = ["tests/prove/test_junit.py::test_a_todo_testcase_is_skipped_whatever_else_stands_in_it[failing]"]
+

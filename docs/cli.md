@@ -815,8 +815,7 @@ reads no configuration, needs no `stayfixed.toml`, and takes neither `--root` no
 line with no `--`, or nothing after it, is a usage error (2). It reads the command past its
 `NAME=value` assignments, `env` and a launcher (`uv run …`, `uv run -m` too), as the session guard
 reads a command, and the first runner adapter that recognises what is left plans the run: the
-argv, where the runner's report arrives and in which format, and which files in the tree can shape
-it. A command no adapter recognises, an `env` given an option among them, is `not proven`
+argv, and where the runner's report arrives and in which format. A command no adapter recognises, an `env` given an option among them, is `not proven`
 (`not-recognised`); `--junit` (below) counts the report of a runner no adapter knows.
 
 The run is the command's own words with only the adapter's report options added (the table
@@ -843,7 +842,7 @@ pytest`), is no assignment: a shell hands it to uv as a word, uv runs it as its 
 ("Failed to spawn", exit 2), so the command is `not proven` (`not-recognised`, its detail naming
 the variable); `uv run env TYPED=yes pytest` sets it. Two variables are set apart, each its
 adapter's forging set, and only for a value that turns tests off: `PYTHONOPTIMIZE` (pytest) set to
-a value that optimises as CPython reads it, anything but empty or zero, and `UPDATE_SNAPSHOT`
+anything but empty or `0`, and `UPDATE_SNAPSHOT`
 (vitest) set to anything but empty, `none` or `new`, which vitest reads as `--update`. Assigned by
 the command, such a value is `refused` (`assigned-forging`, naming the variable); inherited, the
 variable is removed from the run's environment, which the receipt names (`scrubbed`). Every other
@@ -863,24 +862,24 @@ is yours, and its standard error is yours either way. Text a command prints is n
 **The runners.** Each refuses (`refused-option`, naming the option) only what you could type by
 mistake and get a green report for tests that never ran or checked nothing, and says `not proven`
 for a run that would never end (`never-ends`) or runs no test suite (`no-test-run`); every other
-option is free. An option is read as the runner's own parser reads it on the versions
-`tests/fixtures/prove/README.md` names.
+option is free. An option is read in its documented spelling alone or as `--option=value`
+(`--update=none` is free, `--update none` refused as `--update`); another spelling the runner also
+reads, a cluster of short options such as `-cu` or a kebab-case name, is the bound's.
 
 | Runner | Recognised | Added to the command | Refused, or `not proven` | The receipt names |
 |---|---|---|---|---|
 | `pytest` | `pytest`, `py.test` and `python… -m pytest` (the interpreter's own options alone before `-m`), each also behind `poetry run`, `uv run` or `uv run -m` | `--junitxml=<report> -o junit_family=xunit2`, last among pytest's options and before a `--` where there is one, so they win over the command's own and an `addopts` | refused: `--setup-plan` and `--setup-only` (and `--setupplan`, `--setuponly`), which report the tests they only set up as passed; `--trace`, which reports a failing test as passed once its standard input ends; the interpreter's `-O` in any word of its flags before `-m pytest` (`-OO`, `-bO`), which compiles out every `assert` pytest does not rewrite | the console script, the interpreter or the launcher |
-| `jest` | `jest`, bare, after `npx` or `npx --no-install`, or by a path to it (`./node_modules/.bin/jest`, npm's link or pnpm's shim); `node [Node's options] <entry>`, the entry jest's own `bin` file (in `node_modules/jest` or `jest-cli`, or the `.bin` link to it) | `--json --outputFile=<report>`; the command's own `--json` runs as without it, and its own `--outputFile` leaves jest writing no report (`not proven`) | refused: `-u`/`--updateSnapshot`, and `--collectTests`, which exits 0 reporting a failing test as passed; `never-ends`: `--watch`, `--watchAll`, and Node's `--inspect-brk` and `--inspect-wait`, on the command line or in `NODE_OPTIONS` | the program (`npx`, `node`, or the file the path names) and, beside it, jest's entry: the file `node` is given, the entry an npm `.bin` link reaches, or the `node_modules/.bin/jest` `npx` runs, by its realpath |
-| `vitest` | as `jest`, for `vitest` and its `bin` file in `node_modules/vitest` | `run` first where the command's first word is none of vitest's subcommands; `--reporter=json --outputFile=<report>`, and `--reporter=default` where the command names no reporter | refused: `-u`/`--update` but `--update=none`, `--no-update` and `--update=new`; `--mergeReports`, which runs nothing and reports an earlier run's blobs; `--dangerouslyIgnoreUnhandledErrors`, which exits 0 past an error vitest fails the run for; and a rewriting `UPDATE_SNAPSHOT` (above); `never-ends`: the `watch` and `dev` subcommands, `-w`/`--watch`, `--inspect-brk`, `--inspect-wait`; `no-test-run`: `bench`, `list`, `init` and `doctor`, whose detail names `vitest run` | as `jest` |
+| `jest` | `jest`, bare, after `npx` or `npx --no-install`, or by a path to it (`./node_modules/.bin/jest`, npm's link or pnpm's shim); `node [Node's options] <entry>`, the entry a path into `node_modules/jest` or `jest-cli`, or `node_modules/.bin/jest` | `--json --outputFile=<report>`; the command's own `--json` runs as without it, and its own `--outputFile` leaves jest writing no report (`not proven`) | refused: `-u`/`--updateSnapshot`, and `--collectTests`, which exits 0 reporting a failing test as passed; `never-ends`: `--watch`, `--watchAll`, and Node's `--inspect-brk` and `--inspect-wait`, on the command line or in `NODE_OPTIONS` | the program (`npx`, `node`, or the file the path names) |
+| `vitest` | as `jest`, for `vitest` and `node_modules/vitest` | `run` first where the command's first word is none of vitest's subcommands; `--reporter=json --outputFile=<report>`, and `--reporter=default` where the command names no reporter | refused: `-u`/`--update` but `--update=none`, `--no-update` and `--update=new`; `--mergeReports`, which runs nothing and reports an earlier run's blobs; `--dangerouslyIgnoreUnhandledErrors`, which exits 0 past an error vitest fails the run for; and a rewriting `UPDATE_SNAPSHOT` (above); `never-ends`: the `watch` and `dev` subcommands, `-w`/`--watch`, `--inspect-brk`, `--inspect-wait`; `no-test-run`: `bench`, `list`, `init` and `doctor`, whose detail names `vitest run` | as `jest` |
 | `node --test` | `node` with `--test` among its options | a junit reporter to `<report>` and the spec reporter to standard output, before the command's own options | refused: `--test-update-snapshots` and `--test-rerun-failures`, which reports the tests a state file says passed before as passed, unrun; on the command line or in `NODE_OPTIONS`, which Node reads it from too; `never-ends`: `--watch`, `--watch-path`, and `--inspect-brk` and `--inspect-wait` there or in `NODE_OPTIONS` | `node` |
 | `go test` | `go test …`, the `go` a bare name or a path to one | `-json`, after a leading `-C dir` (which the go command reads only first) and otherwise first | nothing is refused and nothing removed; `-c`, which builds the test binary and runs nothing, is `failed` (`none-ran`), and a `-json=false` of the command's own turns the stream into text (`report-malformed`) | the `go` or the launcher |
 
 A program the command names that is not where it would be found is `not proven`
 (`entry-not-found`), its detail saying what was looked for: a word holding a `/` at that path, a
 bare name on `PATH`; a bare `jest` or `vitest` on no `PATH` entry names `npx jest` and `prove
---junit`. So is a file `node` is given that is not the package's entry. `npm test`, `npm run`,
-`yarn` and `pnpm` are recognised by none; `prove --junit` counts what they run. A refusal and a
-`never-ends` in one command: the refusal wins, and of two watch settings the last, as the runner
-reads it.
+--junit`. A file `node` is given that is not the runner's entry writes no report (`not proven`).
+`npm test`, `npm run`, `yarn` and `pnpm` are recognised by none; `prove --junit` counts what they
+run. A refusal and a `never-ends` in one command: the refusal wins.
 
 Notes by runner, each what the command does outside `prove` too:
 
@@ -889,8 +888,7 @@ Notes by runner, each what the command does outside `prove` too:
   its standard input and quits, the failure kept in the report.
 - **jest, vitest.** `npx` reads `.npmrc` and puts every `node_modules/.bin` above npm's local
   prefix on `PATH`: the directory, or inside an npm workspace the workspace's root, whose jest
-  runs before a package's own. Inside a workspace (a `package.json` above the package declares
-  `workspaces`) the receipt names no entry beside `npx`. Given a runner no `node_modules` holds,
+  runs before a package's own. Given a runner no `node_modules` holds,
   it installs one **without asking**: the run's standard input is `/dev/null`, and npm asks only
   at a terminal, and otherwise warns and installs. Node's options before an entry are any (`node
   --max-old-space-size=4096 node_modules/jest/bin/jest.js`), and
@@ -914,16 +912,13 @@ Notes by runner, each what the command does outside `prove` too:
   file holds), `GOTOOLCHAIN`, `GOROOT`, `GOOS`, `GOARCH` and every flag are yours. A leading `-C
   dir` moves the go command and not the judgement: the receipt's `directory` is the one typed.
 
-The files that can shape a report, which the receipt names (below):
+The discovery set of each runner, whose untracked files the receipt names (below):
 
-| Runner | Configuration files | Discovery set |
-|---|---|---|
-| `pytest` | `pytest.ini`, `pyproject.toml`, `setup.cfg`, `tox.ini`, and the file `-c` or `--config-file` names | `conftest.py`, `test_*.py` and `*_test.py`, at any depth |
-| `jest`, `vitest`, `node --test` | `package.json`, `.npmrc`, `jest.config.*`, `vitest.config.*`, `vite.config.*`, the file `-c` or `--config` names (vitest's read from its `--root`), and a file a preload (`-r`, `--require`, `--import`, `--loader`) names by a plain path or an absolute `file:` URL | jest: `*.test.*`, `*.spec.*`, `__tests__/*`; vitest: `*.test.*`, `*.spec.*`; node: `*.test.*`, `*-test.*`, `*_test.*`, `test-*.*`, `test.*`, `test/*` |
-| `go test` | `go.mod`, `go.work`, and the file `-modfile` names, read from the directory a leading `-C` names | `*_test.go` |
-
-A file a command names is named by its realpath, wherever it lies; a package's name, code the
-command spells and a value whose file is in doubt run unnamed.
+| Runner | Discovery set |
+|---|---|
+| `pytest` | `conftest.py`, `test_*.py` and `*_test.py`, at any depth |
+| `jest`, `vitest`, `node --test` | jest: `*.test.*`, `*.spec.*`, `__tests__/*`; vitest: `*.test.*`, `*.spec.*`; node: `*.test.*`, `*-test.*`, `*_test.*`, `test-*.*`, `test.*`, `test/*` |
+| `go test` | `*_test.go` |
 
 **`--junit PATH`** is for a runner no adapter knows: no adapter is consulted, the command runs
 as typed (its assignments, `env` and launcher read as above, its program found as above, nothing
@@ -969,26 +964,21 @@ as much as while the command runs): either way the run is `not proven` (`interru
 scratch directory is removed.
 
 **The line** says the verdict and its reason in words, the counts (passed, failed, skipped), the
-runner and the realpath of the program that ran (and of the entry it runs, where it is `node` or
-`npx` running jest's or vitest's), each variable of your environment the run did not get
-(`removed from the run's environment: PYTHONOPTIMIZE`: one of the adapter's forging set), and the
-files that can shape the report: the runner's configuration files that exist and that git tracks
-or does not ignore, with a count of the ignored ones (`and N ignored`), then any file the command
-itself named as its configuration, from the top-level where it lies there and whole where it does
-not (outside a repository too, where git names nothing else), and the untracked files in its
-discovery set, those git does not ignore first and then the ignored ones; twenty of each and a
-count of the rest. The tree's state is taken before the run and after it, and is information for
+runner and the realpath of the program that ran, each variable of your environment the run did
+not get (`removed from the run's environment: PYTHONOPTIMIZE`: one of the adapter's forging set),
+and the untracked files in its discovery set, those git does not ignore first and then the ignored
+ones; twenty and a count of the rest. The tree's state is taken before the run and after it, and is information for
 you, never an input to the verdict. `--json` carries `verdict`, `reason`, `detail` (the variable a
 refused assignment named, or a sentence naming the variable after a launcher; the option or word the
 runner's adapter refused; what was looked for on `entry-not-found`; the option or subcommand on
 `never-ends` and `no-test-run`; the file on `junit-unchanged`; or where a report stopped reading),
 `argv` (the command, the value of every `NAME=value` and `--option=value` word replaced by `…`; a
 single-dash `-name=value`, Go's spelling, and a value passed as the word after its option are kept
-as typed), `directory` (where the command was judged), `runner`, `program`, `entry`, `verified`
+as typed), `directory` (where the command was judged), `runner`, `program`, `verified`
 (false on a `--junit` run, and only there), `scrubbed` (those variables' names, sorted), `counts`,
 `exit_code`, `report_digest` (the SHA-256 of the report counted: of a test event stream, the lines
-kept, never the output printed), `commit`, `dirty_before`, `dirty_after`, `untracked`,
-`untracked_more`, `configs`, `configs_more` and `ignored_configs`.
+kept, never the output printed), `commit`, `dirty_before`, `dirty_after`, `untracked` and
+`untracked_more`.
 
 **The network.** `prove` itself reaches none; what runs may. `uv run` may sync the project's
 environment from its index first, as it does outside `prove`; `go test` may download the modules

@@ -17,7 +17,6 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
-
 # The report is larger than `MAX_REPORT_BYTES`.
 REPORT_TOO_LARGE = "report-too-large"
 # A format read as UTF-8 holds bytes that are not.

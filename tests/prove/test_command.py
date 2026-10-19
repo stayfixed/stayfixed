@@ -70,17 +70,15 @@ def test_every_arm_is_worded_apart(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     assert len(set(words.values())) == len(words)
 
 
-def test_the_line_names_the_counts_the_runner_and_the_files_that_shape_the_report(
+def test_the_line_names_the_counts_the_runner_and_the_untracked_test_files(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     git(tmp_path, "init", "-q")
-    (tmp_path / "stand-in.toml").write_text("", encoding="utf-8")
     (tmp_path / "test_new.py").write_text("", encoding="utf-8")
     code, out, _ = prove_cli(tmp_path, monkeypatch, "--", NAME, "--report", "fail", "--code", "1")
     assert code == 1
     assert "1 passed, 1 failed, 0 skipped" in out
     assert f"runner {NAME}" in out
-    assert "stand-in.toml" in out
     assert "test_new.py" in out
 
 

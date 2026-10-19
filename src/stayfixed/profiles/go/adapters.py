@@ -17,16 +17,13 @@ no event stream is the cascade's, never `proved`: measured on Go 1.27.2, `-c` bu
 binary and prints nothing (`none-ran`), and a `-json=false` of the command's own, which comes after
 ours, turns the stream into text (`report-malformed`).
 
-**The configuration files** are `go.mod`, `go.work` and the file each `-modfile` names, read from
-the directory a leading `-C` names; the discovery set is `*_test.go`. What a file in the tree can do
--- a test that prints test2json's own framing (`\\x16--- PASS:`), which test2json reads as a
-result, a `TestMain` that exits 0 before any test, a `go.mod` that replaces a dependency -- is the
-bound's, which the receipt's list of those files lets a reader weigh.
+The discovery set is `*_test.go`. What a file in the tree can do -- a test that prints
+test2json's own framing (`\\x16--- PASS:`), which test2json reads as a result, a `TestMain` that
+exits 0 before any test, a `go.mod` that replaces a dependency -- is the bound's.
 """
 
 from __future__ import annotations
 
-import os
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 
@@ -44,18 +41,12 @@ NAME = "go-test"
 # The one reason this adapter names, `stayfixed.profiles.runners`': no `go` to run.
 REASONS = (ENTRY_NOT_FOUND,)
 DISCOVERY = ("*_test.go",)
-CONFIGS = ("go.mod", "go.work")
 REPORT_NAME = "events.jsonl"
 
 _GO = "go"
 _TEST = "test"
 _JSON = "-json"
-# The words that end the go command's own flags: `-args`, `--args` and the terminator `--`,
-# bare; every word after one is the test binary's (measured on Go 1.27.2: `-args=x` ends
-# nothing).
-_ENDS = frozenset({"-args", "--args", "--"})
 _CHANGE_DIRECTORY = "C"
-_MODFILE = "modfile"
 
 
 def _flag(word: str) -> tuple[str, str | None] | None:
@@ -85,27 +76,6 @@ def _planned_args(args: Sequence[str]) -> tuple[str, ...]:
     (measured on Go 1.27.2)."""
     lead, _ = _leading_directory(args)
     return (*args[:lead], _JSON, *args[lead:])
-
-
-def _modfiles(args: Sequence[str], cwd: Path) -> tuple[str, ...]:
-    """The realpath of the file each `-modfile` names (`-modfile=f`, or `-modfile f`), up to a
-    bare `-args`, `--args` or `--`, read from the directory a leading `-C` names, else from `cwd`
-    (measured on Go 1.27.2: `-C sub -modfile=alt.mod` reads `sub/alt.mod`): an absolute entry of
-    `Plan.configs`, which names that one file. A word read as `-modfile` that is another flag's
-    value names one file more on the receipt, which is information and never the verdict's."""
-    _, directory = _leading_directory(args)
-    base = cwd / (directory or "")
-    named: list[str] = []
-    for index, word in enumerate(args):
-        if word in _ENDS:
-            break
-        read = _flag(word)
-        if read is None or read[0] != _MODFILE:
-            continue
-        value = read[1] if read[1] is not None else (args[index + 1 : index + 2] or [""])[0]
-        if value:
-            named.append(os.path.realpath(base / value))
-    return tuple(named)
 
 
 class GoTestAdapter:
@@ -141,7 +111,6 @@ class GoTestAdapter:
             source=ReportSource.STDOUT,
             report=scratch / REPORT_NAME,
             discovery=DISCOVERY,
-            configs=(*CONFIGS, *_modfiles(args, cwd)),
         )
 
 

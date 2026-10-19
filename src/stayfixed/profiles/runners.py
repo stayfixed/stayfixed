@@ -8,9 +8,9 @@ three answers its `plan` gives.
 An adapter plans the command as it was typed: the launcher's words kept in front, the runner's
 own words as they are, and only its report options added, so that what runs is what the command
 selects. It refuses only what a person or an agent could type by mistake and get a green report
-for tests that never ran or never checked anything, from a short closed list of its own; and it
-names every file in the tree that can shape the report, for the receipt to name. Everything else
-a file in the tree, or the environment, can do is the bound's, which `docs/cli.md` states.
+for tests that never ran or never checked anything, from a short closed list of its own.
+Everything else a file in the tree, or the environment, can do is the bound's, which
+`docs/cli.md` states.
 
 No entry in `mutations/` covers this module: it declares names and records and decides nothing.
 Which reader a kind is read with is `stayfixed.prove.reports.read_report`'s, and what the core
@@ -64,16 +64,11 @@ class Plan:
     and no `env`: the core takes every `NAME=value` the command spells, before its launcher or
     after it, out of the launch it hands `plan`, and puts it in the run's environment, the one
     `plan` is handed too. `argv[0]` not absolute is a defect in the adapter, and the core raises.
-    `discovery` is the globs of the files the runner collects tests from, and `configs` of the
-    files that configure it, both matched from the right (`stayfixed.prove.tree`); an absolute
-    entry of `configs` is no glob but names that one file, wherever it lies, one the command
-    chose. `drop` is the JUnit reader's (`stayfixed.prove.junit.read_junit`), for a testcase a
-    runner writes that is no test; a testcase holding a failure counts as failed whatever it
-    answers. Whether a runner is verified is no plan's to say: the core marks every `--junit`
-    run's receipt, and only those, not verified. `entry` is the realpath of the file that runs as
-    the runner where the program is not the runner itself, for the receipt to name beside the
-    program: the entry an interpreter runs (`node` and a package's entry), or the runner a
-    launcher such as `npx` finds and runs. `None` where the program is the runner itself.
+    `discovery` is the globs of the files the runner collects tests from, matched from the right
+    (`stayfixed.prove.tree`). `drop` is the JUnit reader's (`stayfixed.prove.junit.read_junit`),
+    for a testcase a runner writes that is no test; a testcase holding a failure counts as failed
+    whatever it answers. Whether a runner is verified is no plan's to say: the core marks every
+    `--junit` run's receipt, and only those, not verified.
     """
 
     argv: tuple[str, ...]
@@ -81,9 +76,7 @@ class Plan:
     source: ReportSource
     report: Path
     discovery: tuple[str, ...]
-    configs: tuple[str, ...]
     drop: Callable[[Mapping[str, str]], bool] | None = None
-    entry: Path | None = None
 
 
 @dataclass(frozen=True)
