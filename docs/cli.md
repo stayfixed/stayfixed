@@ -1298,7 +1298,7 @@ A row names no finding: `assess` lists them as items.
 | `memory-history` | the history of `[paths] memory` | warning | 8 | the store has history and `memory.mode` is not `in-repo` |
 | `foreign-hooks` | the committed hook settings of each harness `[stayfixed] agents` selects | advice | 5 | any hook entry, one claiming stayfixed's marker included: stayfixed writes none into a committed file, and the probe has no grant to vouch for one with |
 | `foreign-workflows` | `.github/workflows/*.yml` and `*.yaml` | advice | — | any workflow but stayfixed's own caller |
-| `codeowners` | the first of `.github/CODEOWNERS`, `CODEOWNERS` and `docs/CODEOWNERS` | advice | 7 | there is no file, or no line outside a comment holds `.github`: a plain substring, not GitHub's pattern matching, so a line such as `* @owner` still reports; not judged under `[ci] mode = "none"` |
+| `codeowners` | the first of `.github/CODEOWNERS`, `CODEOWNERS` and `docs/CODEOWNERS` | advice | 7 | there is no file, or no line that does not start with `#` holds `.github`: a plain substring, not GitHub's pattern matching, so a line such as `* @owner` still reports; not judged under `[ci] mode = "none"` |
 | `commit-types` | the subjects of the last 100 commits, merges excluded | advice | — | a subject whose type is not in `[commit_messages] types`; `where` names commits |
 | `profile` | the configured profile's checks | the check's own | — | each failed check, counted once; a profile this stayfixed does not ship is one `profile-not-shipped` warning |
 

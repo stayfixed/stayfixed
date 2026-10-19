@@ -211,8 +211,7 @@ def _foreign_workflows(context: ProbeContext) -> Looked:
 
 
 # GitHub does not load a code-owners file of 3 MB or more. Decimal megabytes: of the two
-# readings it is the smaller bound, so a file between them is read as unowned, the side that
-# warns.
+# readings it is the smaller bound, so a file between them is read as naming no `.github`.
 CODEOWNERS_MAX_BYTES = 3_000_000
 
 
