@@ -33,7 +33,6 @@ from tests.pathfaults import (
     symlink_loop_at,
     unsearchable,
 )
-from tests.snapshot import assert_snapshot_unchanged, snapshot
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
@@ -1085,33 +1084,25 @@ def test_the_harness_link_is_created_on_a_machine_with_no_projects_directory_yet
         assert parent.is_dir() and not parent.is_symlink()
 
 
-def test_a_home_that_is_not_there_is_a_refusal_naming_it_and_never_a_partial_link(
+def test_a_home_that_is_not_there_is_reported_naming_it_and_never_a_partial_link(
     tmp_path: Path,
 ) -> None:
     # The anchor is found and never created, and this is the sentence that buys. Without it
     # the walk raised a bare `FileNotFoundError` from `os.open(root)`, `link` wrapped it as a
     # `PartialLink`, and `stayfixed.memory.hooks` rendered that as "0 links made" with the home
-    # path nowhere in the message — an error where a refusal belongs (exit 2, not 1).
+    # path nowhere in the message. `link` reports the anchor's refusal rather than raising it,
+    # since it costs the harness link alone; a `PartialLink` would fail this call outright.
     #
-    # The assertion is on the sentence and not on the exception class, because `PathEscape` is
-    # also a `Refusal` and `link` already raises one of those for an escaping name: a test
-    # that asked only for `Refusal` would pass on the wrong refusal. The other half of the
-    # name — "never a partial link" — is earned by `pytest.raises(Refusal)` itself: the two
-    # classes are disjoint (`PartialLink` is an `OSError`, `Refusal` is not), so a run that
-    # raised `PartialLink` fails here. An `assert not isinstance(..., PartialLink)` inside the
-    # block would say it a second time and could not fail, and an assertion that cannot fail
-    # proves nothing.
-    #
-    # Mutation (declared): `if not root.is_dir():` -> `if False:` -> `PartialLink` again, and
-    # `pytest.raises(Refusal)` reddens.
+    # Mutation (declared): `if not root.is_dir():` -> `if False:` -> the walk's own refusal
+    # stands in, without the sentence asserted here.
     root, store, config = a_checkout(tmp_path)
     tree = a_worktree(root, tmp_path / "wt")
     absent = tmp_path / "no-such-home"
     record(store, config)
-    with pytest.raises(Refusal) as refused:
-        link(tree, store, config, home=absent)
-    assert str(absent) in str(refused.value)
-    assert "never creates the home directory itself" in str(refused.value)
+    refused = link(tree, store, config, home=absent).harness_refused
+    assert refused is not None
+    assert str(absent) in refused
+    assert "never creates the home directory itself" in refused
 
 
 def test_a_withdrawal_against_a_home_that_is_not_there_refuses_rather_than_reporting_nothing(
@@ -1257,23 +1248,88 @@ def test_a_tree_with_nothing_to_link_leaves_no_base_directory_behind(tmp_path: P
     assert not (tree / "docs" / "memory").exists()
 
 
-def test_a_home_that_is_not_there_leaves_a_worktree_with_no_links_at_all(
-    tmp_path: Path,
+def _a_home_the_anchor_refuses(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fault: str
+) -> tuple[Path | None, Path]:
+    """A home `harness_anchor` refuses, as `fault` names it: the `home` to hand `link` (`None` for
+    `HOME` itself), and a directory where nothing may be written."""
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    if fault == "home-absent":
+        return tmp_path / "no-such-home", elsewhere
+    if fault == "home-empty":
+        monkeypatch.setenv("HOME", "")
+        return None, elsewhere
+    if fault == "home-a-file":
+        (tmp_path / "home-file").write_text("", encoding="utf-8")
+        return tmp_path / "home-file", elsewhere
+    home = a_home(tmp_path)
+    claude = home / ".claude"
+    if fault == "claude-dangling":
+        claude.symlink_to(elsewhere / "unmounted", target_is_directory=True)
+    elif fault == "claude-loop":
+        claude.symlink_to(claude)
+    else:
+        claude.mkdir()
+        (claude / "projects").symlink_to(elsewhere, target_is_directory=True)
+    return home, elsewhere
+
+
+_HOME_FAULTS = (
+    "home-absent",
+    "home-empty",
+    "home-a-file",
+    "claude-dangling",
+    "claude-loop",
+    "projects-linked",
+)
+
+
+@pytest.mark.parametrize("fault", _HOME_FAULTS)
+def test_a_home_the_anchor_refuses_costs_the_worktree_its_harness_link_alone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fault: str
 ) -> None:
-    # `link` asks about the home above its group loop: asked after it, the refusal arrived with
-    # the note links already made, and `SessionStart` told the model they were not. Mutation
-    # (declared, `mutations/`'s "the session link step discovers the harness anchor after it has
-    # written"): the hoisted call goes -> the worktree gains its links before the refusal.
+    # The note links are inside the worktree and do not depend on the home. A refusal at the
+    # anchor ended the whole call, so a dangling `~/.claude` or a `~/.claude/projects` moved to
+    # another disk cost every worktree session its notes. Mutation (declared, `mutations/`'s "a
+    # home-side refusal costs the worktree its note links again"): the refusal is raised again.
     root, store, config = a_checkout(tmp_path)
     tree = a_worktree(root, tmp_path / "wt")
     record(store, config)
-    before = snapshot(tree)
-    # `snapshot` is a walk, and an empty one satisfies the comparison below on its own.
-    assert before
-    with pytest.raises(Refusal, match="never creates the home directory itself"):
-        link(tree, store, config, home=tmp_path / "no-such-home")
-    assert_snapshot_unchanged(tree, before)
-    assert not (tree / "docs" / "memory").exists()
+    home, elsewhere = _a_home_the_anchor_refuses(tmp_path, monkeypatch, fault)
+    links = link(tree, store, config, home=home)
+    base = tree / "docs" / "memory"
+    assert sorted(links.created) == sorted(base / name for name in linked_names(config))
+    for name in linked_names(config):
+        assert (base / name).resolve() == (store.path / name).resolve()
+    assert links.harness_refused is not None
+    assert links.revoked == []
+    # Nothing is made behind a link below `~/.claude` or a dangling one.
+    assert list(elsewhere.iterdir()) == []
+
+
+def test_a_half_built_tree_under_a_refused_home_still_carries_the_refusal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A note link that failed after the anchor refused raised `PartialLink` with the links made
+    # and nothing else, so the hook said the tree was half built and the home went unsaid.
+    # Mutation (declared, `mutations/`'s "a half-built tree drops the harness refusal").
+    root, store, config = a_checkout(tmp_path)
+    tree = a_worktree(root, tmp_path / "wt")
+    record(store, config)
+    home, _ = _a_home_the_anchor_refuses(tmp_path, monkeypatch, "projects-linked")
+    made = worktree._link
+
+    def second_fails(where: Path, relative: str, source: Path) -> bool:
+        if relative.endswith(linked_names(config)[1]):
+            raise OSError(30, "read-only file system")
+        return made(where, relative, source)
+
+    monkeypatch.setattr(worktree, "_link", second_fails)
+    with pytest.raises(PartialLink) as partial:
+        link(tree, store, config, home=home)
+    assert len(partial.value.created) == 1
+    assert partial.value.harness_refused is not None
 
 
 def test_an_empty_home_is_a_refusal(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -70,7 +70,12 @@ import stayfixed
 from stayfixed import REPOSITORY_URL, fsops
 from stayfixed.config.classes import CLASSES, KeyClass, Layer, LayerName, resolve
 from stayfixed.config.loader import CONFIG_FILE
-from stayfixed.config.machine import machine_config_path, owner_home, passwd_home
+from stayfixed.config.machine import (
+    DEFAULT_CONFIG_DIR,
+    machine_config_path,
+    owner_home,
+    passwd_home,
+)
 from stayfixed.config.schema import MEMORY_MODES, Config
 from stayfixed.config.session import (
     SESSION_READ_LIMIT,
@@ -1074,15 +1079,36 @@ HOME_DIFFERS = (
 )
 
 
+def _names_home_config(value: str, home: Path) -> bool:
+    """Whether `value`, an `XDG_CONFIG_HOME`, names `home`'s `.config`, the directory the machine
+    file is read under, so ignoring it loses nothing; a value that does not resolve names none."""
+    if not os.path.isabs(value):
+        return False
+    try:
+        return fsops.resolved(Path(value)) == fsops.resolved(home / DEFAULT_CONFIG_DIR)
+    except OSError:
+        return False
+
+
 def _ignored_env(context: Context) -> Row:
-    set_here = [name for name in IGNORED_ENV if context.env.get(name)]
-    chosen, recorded = context.env.get("HOME") or "", passwd_home()
-    differs = bool(chosen) and recorded is not None and Path(chosen).resolve() != recorded.resolve()
+    # The home every command reads under, and none for a `HOME` that names none (`owner_home`).
+    home, recorded = owner_home(), passwd_home()
+    set_here = [
+        name
+        for name in IGNORED_ENV
+        if context.env.get(name)
+        and not (
+            name == "XDG_CONFIG_HOME"
+            and home is not None
+            and _names_home_config(context.env[name], home)
+        )
+    ]
+    differs = home is not None and recorded is not None and home.resolve() != recorded.resolve()
     if not set_here:
         return Row(OK, HOME_DIFFERS if differs else "no environment variable is being ignored")
     detail = (
-        f"{listed(set_here)} is set and is not honoured on the hook path: the machine "
-        f"configuration is ~/.config/stayfixed/config.toml and nothing else there"
+        f"{listed(set_here)} is set and is not honoured: every command reads the machine "
+        f"configuration at ~/.config/stayfixed/config.toml and nothing else"
     )
     if differs:
         detail = f"{detail}; {HOME_DIFFERS}"

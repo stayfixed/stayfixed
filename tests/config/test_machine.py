@@ -52,3 +52,24 @@ def test_an_empty_home_names_no_home(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("HOME", "")
     assert owner_home() is None
     assert machine_config_path() is None
+
+
+@pytest.mark.parametrize("value", ["h", "./h", "~", "h/../home"])
+def test_a_relative_home_names_no_home(monkeypatch: pytest.MonkeyPatch, value: str) -> None:
+    # Taken as typed, a relative `HOME` put the machine file and the trust record under whatever
+    # directory a command ran from, inside a clone on the hook path. Mutation (oracle):
+    # `mutations/`'s "a relative HOME is read against the working directory".
+    monkeypatch.setenv("HOME", value)
+    assert owner_home() is None
+    assert machine_config_path() is None
+
+
+def test_an_absolute_and_an_unset_home_still_name_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The vacuity guard for the case above: a check that refused every `HOME` would pass it.
+    monkeypatch.setenv("HOME", str(tmp_path))
+    assert owner_home() == tmp_path
+    monkeypatch.delenv("HOME")
+    unset = owner_home()
+    assert unset is not None and unset.is_absolute()

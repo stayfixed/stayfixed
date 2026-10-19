@@ -322,6 +322,8 @@ PROSE = {
     ("src/stayfixed/doctor/entries.py", "claude"): 2,
     # The refusal for a `.claude` the link walk cannot go through.
     ("src/stayfixed/memory/worktree.py", "claude"): 1,
+    # The session's line for the same `.claude`, when it costs a worktree its harness link.
+    ("src/stayfixed/memory/hooks.py", "claude"): 1,
     # The advice `setup --approval-boundary` prints, which names the harness whose settings it is.
     ("src/stayfixed/setup/commands.py", "claude"): 1,
     # The commit-trailer guard's names of tools that sign commits as authors: the agent as an

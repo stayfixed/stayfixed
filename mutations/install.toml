@@ -1565,8 +1565,8 @@ reddens = ["tests/setup/test_commands.py::test_setup_with_no_home_names_machine_
 [[mutation]]
 name = "an unwritable machine file directory ends as an internal error"
 file = "src/stayfixed/setup/machine.py"
-before = "    except OSError as exc:\n        if sandbox_refused(exc):\n            raise Refusal(SETUP_SANDBOXED) from None\n        where = ("
-after = "    except LookupError as exc:\n        if sandbox_refused(exc):\n            raise Refusal(SETUP_SANDBOXED) from None\n        where = ("
+before = "    except OSError as exc:\n        if sandbox_refused(exc):\n            raise Refusal(SETUP_SANDBOXED) from None\n        linked = fsops.linked_directory(path)"
+after = "    except LookupError as exc:\n        if sandbox_refused(exc):\n            raise Refusal(SETUP_SANDBOXED) from None\n        linked = fsops.linked_directory(path)"
 reddens = [
   "tests/setup/test_commands.py::test_setup_where_the_home_cannot_be_written_fails_naming_the_directory",
 ]
@@ -1893,6 +1893,28 @@ before = "        fsops.write_atomically(fsops.resolved(path), new_text)"
 after = "        fsops.write_atomically(path, new_text)"
 reddens = [
   "tests/setup/test_setup.py::test_a_symlinked_settings_file_or_claude_directory_is_written_through[True]",
+]
+
+# The machine file is written through a link at it the same way, so a dotfiles copy keeps what
+# `setup` records there.
+[[mutation]]
+name = "setup writes the machine file without resolving it"
+file = "src/stayfixed/setup/machine.py"
+before = "        fsops.write_atomically(fsops.resolved(path), text)"
+after = "        fsops.write_atomically(path, text)"
+reddens = [
+  "tests/setup/test_setup.py::test_a_symlinked_machine_file_is_written_through_and_stays_a_link",
+]
+
+# The machine file written through a link fails naming the directory the link leads to, where
+# the write went.
+[[mutation]]
+name = "setup's write-through failure names the link's directory"
+file = "src/stayfixed/setup/machine.py"
+before = "        if linked is not None:"
+after = "        if False:"
+reddens = [
+  "tests/setup/test_setup.py::test_a_machine_file_linked_into_a_directory_that_cannot_be_written_names_that_directory",
 ]
 
 # A link at a `create:` destination whose target is not there passed the phase, and

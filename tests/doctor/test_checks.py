@@ -983,8 +983,46 @@ def test_an_ignored_environment_variable_is_named(tmp_path: Path) -> None:
         "ignored-env",
     )
     assert check.status == "warn"
-    assert "XDG_CONFIG_HOME" in check.detail
-    assert "STAYFIXED_CONFIG" not in check.detail
+    assert check.detail == (
+        "XDG_CONFIG_HOME is set and is not honoured: every command reads the machine "
+        "configuration at ~/.config/stayfixed/config.toml and nothing else"
+    )
+
+
+@pytest.mark.parametrize("form", ["as-is", "trailing-slash", "through-a-link"])
+def test_an_xdg_config_home_naming_homes_own_config_is_not_ignored(
+    tmp_path: Path, form: str
+) -> None:
+    # home-manager exports `XDG_CONFIG_HOME=$HOME/.config`, which names the very directory
+    # stayfixed reads, so ignoring it loses nothing and a warning there could never be cleared.
+    # Compared resolved, as the homes are. Mutation (oracle): `mutations/`'s "an XDG_CONFIG_HOME
+    # naming HOME's own .config is warned about as ignored".
+    home = Path(os.environ["HOME"])
+    (home / ".config").mkdir(exist_ok=True)
+    (tmp_path / "link").symlink_to(home / ".config")
+    value = {
+        "as-is": str(home / ".config"),
+        "trailing-slash": f"{home / '.config'}/",
+        "through-a-link": str(tmp_path / "link"),
+    }[form]
+    env = _env(tmp_path, XDG_CONFIG_HOME=value)
+    check = _by_name(_checks(tmp_path, _initialised(tmp_path), env=env), "ignored-env")
+    assert (check.status, check.detail) == (OK, "no environment variable is being ignored")
+
+
+@pytest.mark.parametrize("value", ["{home}/.config/x", ".config", "{home}/loop"])
+def test_an_xdg_config_home_naming_anything_else_is_still_ignored(
+    tmp_path: Path, value: str
+) -> None:
+    # The vacuity guard for the case above: a directory below `$HOME/.config`, a relative value
+    # and one that does not resolve are each still a directory stayfixed does not read.
+    home = Path(os.environ["HOME"])
+    (home / "loop").symlink_to(home / "loop")
+    env = _env(tmp_path, XDG_CONFIG_HOME=value.format(home=home))
+    check = _by_name(_checks(tmp_path, _initialised(tmp_path), env=env), "ignored-env")
+    assert check.status == WARN
+    assert check.detail.startswith("XDG_CONFIG_HOME is set and is not honoured")
+    assert str(home) not in check.detail
 
 
 def _user_settings(home: Path, text: str) -> None:
@@ -1064,6 +1102,38 @@ def test_a_home_the_password_database_does_not_record_is_information(
     check = _by_name(_checks(tmp_path, _initialised(tmp_path), env=env), "ignored-env")
     assert check.status == WARN
     assert "XDG_CONFIG_HOME" in check.detail and checks.HOME_DIFFERS in check.detail
+
+
+@pytest.mark.parametrize("value", ["", "h"], ids=["empty", "relative"])
+def test_a_home_that_names_no_home_is_not_called_a_home_stayfixed_follows(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, value: str
+) -> None:
+    # The row read `HOME` raw, so a relative one was resolved against the working directory and
+    # reported as a home stayfixed follows, while every command reads it as naming no home
+    # (`owner_home`). Mutation (oracle): `mutations/`'s "ignored-env reads HOME raw".
+    monkeypatch.setattr(checks, "passwd_home", lambda: tmp_path / "database")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("HOME", value)
+    env = _env(tmp_path, HOME=value)
+    check = _by_name(_checks(tmp_path, _initialised(tmp_path), env=env), "ignored-env")
+    assert (check.status, check.detail) == (OK, "no environment variable is being ignored")
+
+
+def test_an_xdg_config_home_naming_the_database_homes_config_is_not_ignored_with_home_unset(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # With `HOME` unset every command reads under the password database's home (`owner_home`),
+    # so an `XDG_CONFIG_HOME` naming that `.config` loses nothing; compared against an absent
+    # `HOME`, it was warned about. `owner_home` is stood in for, so no test reads the real home.
+    # Mutation (oracle): `mutations/`'s "ignored-env reads HOME raw".
+    database = tmp_path / "database"
+    (database / ".config").mkdir(parents=True)
+    monkeypatch.setattr(checks, "passwd_home", lambda: database)
+    monkeypatch.setattr(checks, "owner_home", lambda: database)
+    env = _env(tmp_path, XDG_CONFIG_HOME=str(database / ".config"))
+    env.pop("HOME", None)
+    check = _by_name(_checks(tmp_path, _initialised(tmp_path), env=env), "ignored-env")
+    assert (check.status, check.detail) == (OK, "no environment variable is being ignored")
 
 
 def test_a_budget_the_base_branch_raised_is_named_as_raised(tmp_path: Path) -> None:

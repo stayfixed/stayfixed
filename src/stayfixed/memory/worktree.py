@@ -100,9 +100,13 @@ class PartialLink(OSError):
     separately what a containment refusal means — see `stayfixed.memory.hooks`.
     """
 
-    def __init__(self, created: Sequence[Path], cause: OSError) -> None:
+    def __init__(
+        self, created: Sequence[Path], cause: OSError, *, harness_refused: str | None = None
+    ) -> None:
         super().__init__(str(cause))
         self.created = list(created)
+        # `Links.harness_refused`, carried so a half-built tree does not lose it.
+        self.harness_refused = harness_refused
 
 
 def linked_names(config: Config) -> tuple[str, ...]:
@@ -273,6 +277,9 @@ class Links:
     # The approval this run could not carry across the index it wrote, because the trust record's
     # directory refused the write as an agent's sandbox refuses one (`_render_missing_index`).
     refresh_refused: bool = False
+    # Why `link` neither made nor withdrew the harness link: `harness_anchor`'s refusal, a fault
+    # of the home's and not the worktree's, so it costs the harness link alone.
+    harness_refused: str | None = None
 
 
 def _tree_base(worktree: Path, store: Store) -> str | None:
@@ -350,7 +357,7 @@ def harness_gate(store: Store, config: Config) -> str:
 
 
 def _apply_harness_link(
-    where: Path, store: Store, config: Config, home: Path | None
+    anchor: tuple[Path, str], store: Store, config: Config
 ) -> tuple[list[Path], list[Path]]:
     """Create or withdraw the harness memory link for one checkout; report which it did.
 
@@ -364,9 +371,9 @@ def _apply_harness_link(
     directory is not licence to delete one.
 
     Three rules written down once and then copied is exactly how a pair stops agreeing, which is
-    why they are not copied.
+    why they are not copied. `anchor` is `harness_anchor`'s answer, asked by the caller once.
     """
-    root, relative = harness_anchor(where, home)
+    root, relative = anchor
     harness = root / relative
     created: list[Path] = []
     revoked: list[Path] = []
@@ -456,11 +463,20 @@ def link(
     `SessionStart` touched. `symlink_within` creates a target's parents through the same
     `O_NOFOLLOW` walk that creates the link, so when `linked_names(config)` yields no source
     the base is not created at all.
+
+    **A home the anchor refuses costs the harness link alone.** The tree's links are inside the
+    worktree and do not depend on the home, so they are made whatever it says, and the anchor's
+    refusal is returned in `harness_refused` rather than raised: no harness link is made and
+    none is withdrawn under that home. Raised, it ended the call before the first note link.
     """
     if main_checkout(worktree).resolve() == worktree.resolve():
         return Links()
-    # Above the loop: the anchor can refuse, and refused after the note links it left them made.
-    harness_anchor(worktree, home)
+    anchor: tuple[Path, str] | None = None
+    unreachable: str | None = None
+    try:
+        anchor = harness_anchor(worktree, home)
+    except Refusal as refused:
+        unreachable = str(refused)
     created: list[Path] = []
     revoked: list[Path] = []
     try:
@@ -479,12 +495,13 @@ def link(
                 target = contained(worktree / base, name, allow_final_symlink=True)
                 if _link(worktree, f"{base}/{name}", source.resolve()):
                     created.append(target)
-        made, withdrawn = _apply_harness_link(worktree, store, config, home)
-        created += made
-        revoked += withdrawn
+        if anchor is not None:
+            made, withdrawn = _apply_harness_link(anchor, store, config)
+            created += made
+            revoked += withdrawn
     except OSError as exc:
-        raise PartialLink(created, exc) from exc
-    return Links(created, revoked)
+        raise PartialLink(created, exc, harness_refused=unreachable) from exc
+    return Links(created, revoked, harness_refused=unreachable)
 
 
 def attach_main(
@@ -564,7 +581,7 @@ def attach_main(
                 "`stayfixed memory index --check` reports why"
             )
         refused = _render_missing_index(store, config)
-        made, withdrawn = _apply_harness_link(root, store, config, home)
+        made, withdrawn = _apply_harness_link(harness_anchor(root, home), store, config)
         created += made
         revoked += withdrawn
     except OSError as exc:

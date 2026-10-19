@@ -61,6 +61,14 @@ REVOKED = (
 # answering `None` as for an unrecorded overlay. Saying `NO_STORE` for those would send the
 # user to `stayfixed attach` for a fault that is in their machine, not in their project.
 NOT_ASKABLE = "stayfixed: the memory store could not be located on this machine"
+# The home's fault and not the worktree's, so it costs the harness link alone (`worktree.link`).
+# Fixed, and true of every refusal: the anchor's own refusal names a path derived from the project
+# root, which a hook does not choose.
+HARNESS_UNREACHABLE = (
+    "stayfixed: no harness memory link was made or withdrawn for this worktree, because ~/.claude, "
+    "or a directory under it, could not be used; this worktree's own memory links do not depend "
+    "on it"
+)
 
 
 def _link_worktree(event: HookEvent, session: SessionConfig) -> HookResult:
@@ -88,7 +96,8 @@ def _link_worktree(event: HookEvent, session: SessionConfig) -> HookResult:
             # missing from the tree is missing from the floor the reference guard derives
             # from it, "invisible twice". Keep degrading open, and say how many were made
             # instead of letting the list die with the exception.
-            return HookResult(context=PARTIAL.format(count=len(partial.created)))
+            lines = [PARTIAL.format(count=len(partial.created))]
+            return _with_harness_line(lines, partial.harness_refused)
         except Failure:
             # `main_checkout` runs first inside `link`, so the same "could not ask `git`" event
             # can arrive here rather than from `resolve`. One fixed line for one event.
@@ -107,9 +116,8 @@ def _link_worktree(event: HookEvent, session: SessionConfig) -> HookResult:
             # lapsed is what the owner has to act on, and the two never co-occur — the same
             # gate decides both.
             return HookResult(context=REVOKED)
-        if links.created:
-            return HookResult(context=LINKED.format(count=len(links.created)))
-        return HookResult()
+        lines = [LINKED.format(count=len(links.created))] if links.created else []
+        return _with_harness_line(lines, links.harness_refused)
     # The backstop stays broad on purpose: a memory handler never costs a session,
     # and `resolve` alone reaches `tomllib`, `subprocess` and the filesystem. Narrowing it to
     # `OSError` would let an unforeseen exception out of the handler. What the two
@@ -117,6 +125,14 @@ def _link_worktree(event: HookEvent, session: SessionConfig) -> HookResult:
     # neither silent nor the same event.
     except Exception:
         return HookResult()
+
+
+def _with_harness_line(lines: list[str], refused: str | None) -> HookResult:
+    """`lines` for the model, with `HARNESS_UNREACHABLE` after them where the anchor refused the
+    home, on the full and the half-built tree alike."""
+    if refused is not None:
+        lines = [*lines, HARNESS_UNREACHABLE]
+    return HookResult(context="\n".join(lines)) if lines else HookResult()
 
 
 def register() -> list[Handler]:

@@ -93,8 +93,8 @@ stayfixed memory index --check    # report drift, write nothing
 
 **Writes** each note whose `index:` line it filled in, and `MEMORY.md` — in overlay mode, the file
 the symlink points at, not the link — and, when the store was trusted before the run,
-`~/.config/stayfixed/trust.json` (or the file beside `--machine`), re-recorded over the files it
-wrote (see below). Under `--check`, nothing.
+`~/.config/stayfixed/trust.json` (or the file beside `--machine`, through a link there, which
+stays), re-recorded over the files it wrote (see below). Under `--check`, nothing.
 
 What it does, in order:
 
@@ -231,7 +231,8 @@ measured). [SECURITY.md](../SECURITY.md) lists an agent with an unsandboxed shel
 
 **Reads** every file the kind hashes — for `memory`, every file the store yields.
 
-**Writes** `~/.config/stayfixed/trust.json` (or the file beside `--machine`).
+**Writes** `~/.config/stayfixed/trust.json` (or the file beside `--machine`), through a link a
+dotfiles manager put there: the file the link leads to gets the record, and the link stays.
 
 `--json` keys: `kind`, and `approved`, one object per subject recorded, with its `subject`, its
 `label`, its `digest` and `was`, its state before the run (`approved`, `lapsed` or `missing`).
@@ -299,8 +300,8 @@ uninstall` — which says why and names `stayfixed trust revoke KIND --subject K
 
 **Reads** the machine's trust record, and, with no `--subject`, every file the kind hashes.
 
-**Writes** `~/.config/stayfixed/trust.json` (or the file beside `--machine`), only when an
-approval was withdrawn. Run from an agent's sandboxed shell, that write is refused: the command
+**Writes** `~/.config/stayfixed/trust.json` (or the file beside `--machine`, through a link there,
+which stays), only when an approval was withdrawn. Run from an agent's sandboxed shell, that write is refused: the command
 exits `2`, withdraws nothing, and says a person must run it in their own terminal, outside the
 agent's sandbox.
 
@@ -412,7 +413,10 @@ link, `~/.claude/projects/<slug>/memory`, with the directories above it inside t
 directory. Either kind of link replaces a symlink already at its name that points anywhere else,
 a dangling one included, and leaves a real file or directory there alone. When the store's trust
 no longer covers the harness link, the handler withdraws it instead, and only when it points at
-this store.
+this store. A home whose `~/.claude`, or a directory under it, cannot be used — for example
+`HOME` naming no directory, a `~/.claude` that is a dangling link, or a link below it or a
+directory stayfixed may not search — costs the harness link alone: the worktree's links are still
+made, no harness link is made or withdrawn, and the model is told so in one fixed line.
 
 ## Hooks
 
@@ -2599,11 +2603,12 @@ was recorded lapses it, and a pull that appends one line to one note is enough. 
 also withdraws the harness memory link from every checkout that held one, and whenever the run
 withdrew any, its line says how many (`links_revoked` in `--json`).
 
-**The harness memory link goes under `HOME`**, and an empty one, which names no home, is refused
-(`2`). The home directory itself is found and never created — a missing one is a refusal, above
-`attach`'s first write, above `detach`'s first withdrawal and above the first note link a session
-makes in a worktree — and a `~/.claude` linked into a dotfiles tree is written through. A link
-below `~/.claude`, or a `~/.claude` the walk cannot reach, is refused above the first write.
+**The harness memory link goes under `HOME`**, and an empty or relative one, which names no home, is
+refused (`2`). The home directory itself is found and never created — a missing one is a refusal,
+above `attach`'s first write and above `detach`'s first withdrawal — and a `~/.claude` linked into a
+dotfiles tree is written through. A link below `~/.claude`, or a `~/.claude` the walk cannot reach,
+is refused above the first write. A session in a worktree makes that worktree's note links all the
+same, and only its harness memory link waits for the home.
 
 It also runs `pre-commit install` in the overlay when the overlay carries a pre-commit
 configuration and no hook is installed — the machine that cloned an overlay someone else created
@@ -2879,7 +2884,8 @@ scratch destination instead of your real one, the same way every other command h
 these two flags name, and nothing is suppressed. They apply to `--preset` alone — `--git-hooks`
 writes inside a repository and ignores both. The settings file is written through the home's own
 symlinks, so a `~/.claude` or a `~/.claude/settings.json` that a dotfiles manager links into
-another tree gets the file the link leads to, and the link stays.
+another tree gets the file the link leads to, and the link stays. The machine configuration file
+is written through a link at it the same way.
 
 `setup` is not the only command that writes outside a repository, and two others say so in their
 own sections: `stayfixed trust approve` records approval in `~/.config/stayfixed/trust.json`, and
@@ -3184,7 +3190,7 @@ check with `name`, `status`, `detail` and `remedy`, so every remedy is there.
 | `cli-path` | whether `stayfixed` resolves on `PATH` | `PATH` |
 | `ci-ref` | whether `[ci] ref` is the commit of a released stayfixed tag (or the `v1` alias: a warning, as mutable, once a `1.x` release creates it, and red until then), and whether the rendered workflow pins the same ref — under `[ci] mode = "reusable"`, a workflow that is not there at all is a warning and never a green row, and so are a path that is there and is not a regular file and a file past the 256 KiB bound on the read | `git ls-remote --exit-code` over the public repository's tags, bounded at 30 seconds; *.github/workflows/stayfixed.yml*, read as a regular file and to a bound |
 | `diagnostics` | how many reasons the hook sink recorded — a count, never a line of the file | `${CLAUDE_PLUGIN_DATA}/stayfixed/diagnostics.jsonl` |
-| `ignored-env` | `STAYFIXED_CONFIG` or `XDG_CONFIG_HOME` set and not honoured; and, as information, a `HOME` that is not the home the password database records for this user, since stayfixed follows `HOME` | the environment, the password database |
+| `ignored-env` | `STAYFIXED_CONFIG` set, or `XDG_CONFIG_HOME` set to anything but the `.config` of the home every command reads under (`HOME`, or the password database's where `HOME` is unset), and not honoured by any command; and, as information, a `HOME` that is not the home the password database records for this user, since stayfixed follows `HOME` | the environment, the password database |
 | `retired-deny` | whether `~/.claude/settings.json` still holds a deny rule an earlier `stayfixed setup` wrote and the machine's preset retired (its `[deny] retired`), such as `Read(.env*)`, which refuses `.env.example` too; matched by exact string, as `setup` removes them, and named in the preset's words | `~/.claude/settings.json`, the preset |
 | `attached` | the overlay binding, and the harness memory path's shape, read alike from every checkout (the states are below the table) | `.stayfixed/local/attach.json`, `~/.claude/projects/<slug>/memory`, `.claude/settings.local.json`, the link tree |
 | `bundles` | a bundle that does not fit its slots, and one whose part reaches the cap | the note store |
@@ -3974,9 +3980,9 @@ rather than one an environment chose, and honoured by every reader of it.
 **`~` here is `HOME`**, as the harness and every other program read it, so a devcontainer, a
 home-manager setup or a scratch `HOME` keeps stayfixed and the harness under one home; a `~` in
 `[overlay] root` means that home too. An environment that sets `HOME` already runs code as you.
-An empty `HOME` names no home, so `setup`, `attach` and `detach` stop there and `doctor` says so;
-`doctor`'s `ignored-env` row says, as information, when `HOME` is not the home the password
-database records.
+An empty or relative `HOME` names no home, so `setup`, `attach` and `detach` stop there and
+`doctor` says so; `doctor`'s `ignored-env` row says, as information, when `HOME` is not the home
+the password database records.
 
 Only `[overlay]` and the trust record used to be held to that rule while `[personal]` followed
 the environment, so one command could read the two halves of this file from two different files.

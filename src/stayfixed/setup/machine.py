@@ -184,10 +184,18 @@ def write_machine(
             f"command again"
         ) from exc
     try:
-        fsops.write_atomically(path, text)
+        # Through a link at `path` (a dotfiles manager's), as the user settings file is written,
+        # so the link stays; a loop there is the `OSError` answered below.
+        fsops.write_atomically(fsops.resolved(path), text)
     except OSError as exc:
         if sandbox_refused(exc):
             raise Refusal(SETUP_SANDBOXED) from None
+        linked = fsops.linked_directory(path)
+        if linked is not None:
+            raise Failure(
+                f"{linked} cannot be written ({fsops.said(exc)}), so the machine configuration "
+                f"cannot be kept there, where the link at {path} leads"
+            ) from None
         where = (
             "; without --machine it is under HOME, which is the only place a hook reads it"
             if path == machine_config_path()

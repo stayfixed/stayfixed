@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -198,6 +200,27 @@ def test_a_half_built_tree_still_reports_what_was_made(
         assert result.context == PARTIAL.format(count=2)
 
 
+def _partial_under_a_refused_home(*_args: object, **_kwargs: object) -> list[Path]:
+    raise PartialLink(
+        [Path("one")], OSError("read-only file system"), harness_refused="under a home"
+    )
+
+
+def test_a_half_built_tree_under_a_refused_home_still_tells_the_model(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The partial path returned its count alone, so a home the anchor refused went unsaid
+    # whenever a note link also failed; the refusal's own text never reaches either channel.
+    from stayfixed.memory.hooks import HARNESS_UNREACHABLE
+
+    monkeypatch.setattr(worktree_module, "link", _partial_under_a_refused_home)
+    root = a_project(tmp_path)
+    config = load(root, machine=tmp_path / "absent.toml")
+    for handler in register():
+        result = handler.run(an_event(root), session_of(config))
+        assert result.context == f"{PARTIAL.format(count=1)}\n{HARNESS_UNREACHABLE}"
+
+
 def _revoke(*_args: object, **_kwargs: object) -> Links:
     return Links(created=[], revoked=[Path("/home/.claude/projects/x/memory")])
 
@@ -261,3 +284,67 @@ def test_a_home_that_is_itself_a_symlink_gets_the_harness_link_from_the_hook(
     assert harness.is_symlink()
     assert harness.resolve() == store.path.resolve()
     assert contexts == [LINKED.format(count=4)]
+
+
+@pytest.mark.parametrize(
+    "layout", ["plain", "projects-linked", "claude-dangling", "projects-unsearchable"]
+)
+def test_a_home_whose_claude_cannot_be_used_still_links_the_worktree_and_tells_the_model(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, layout: str
+) -> None:
+    # A `~/.claude/projects` moved to another disk, or a `~/.claude` whose dotfiles volume is not
+    # mounted, made the anchor refuse, and the refusal cost the worktree every note link while the
+    # hook told the model that "a memory path was refused". The notes do not depend on the home:
+    # they are linked, the harness link is not, and the model hears which is which. `plain` is the
+    # same store under a home the anchor takes, where the harness link is made and nothing is said
+    # about the home.
+    from stayfixed.harnesses import CLAUDE
+    from stayfixed.hooks.dispatch import Recorder, dispatch
+    from stayfixed.memory.hooks import HARNESS_UNREACHABLE
+    from stayfixed.memory.store import resolve
+    from stayfixed.memory.worktree import harness_memory_path, linked_names
+    from tests.approved import record
+    from tests.memory.test_worktree import a_checkout, a_worktree
+
+    home = tmp_path / "home"
+    home.mkdir()
+    elsewhere = tmp_path / "disk"
+    elsewhere.mkdir()
+    claude = home / ".claude"
+    if layout == "projects-linked":
+        claude.mkdir()
+        (claude / "projects").symlink_to(elsewhere, target_is_directory=True)
+    elif layout == "claude-dangling":
+        claude.symlink_to(elsewhere / "unmounted", target_is_directory=True)
+    elif layout == "projects-unsearchable":
+        (claude / "projects").mkdir(parents=True)
+        (claude / "projects").chmod(0)
+    monkeypatch.setenv("HOME", str(home))
+    root, _, config = a_checkout(tmp_path)
+    tree = a_worktree(root, tmp_path / "wt")
+    # Approved, so the harness link is wanted wherever the home allows it.
+    store = resolve(tree, config)
+    assert store is not None
+    record(store, config)
+    try:
+        outcome = dispatch(
+            an_event(tree), register(), session_of(config), harness=CLAUDE, sink=Recorder()
+        )
+    finally:
+        if layout == "projects-unsearchable":
+            (claude / "projects").chmod(0o755)
+    payload = json.loads(outcome.stdout)
+    context = payload["hookSpecificOutput"]["additionalContext"]
+    assert "systemMessage" not in payload
+    base = tree / "docs" / "memory"
+    names = linked_names(config)
+    assert all((base / name).is_symlink() for name in names)
+    harness = harness_memory_path(tree, home)
+    if layout == "plain":
+        assert harness.resolve() == store.path.resolve()
+        assert context == LINKED.format(count=len(names) + 1)
+        return
+    assert not os.path.lexists(harness)
+    assert list(elsewhere.iterdir()) == []
+    assert context == f"{LINKED.format(count=len(names))}\n{HARNESS_UNREACHABLE}"
+    assert NOT_LINKED not in context

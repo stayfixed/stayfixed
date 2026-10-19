@@ -3187,12 +3187,24 @@ reddens = [
 [[mutation]]
 name = "an empty HOME is read as the root directory"
 file = "src/stayfixed/config/machine.py"
-before = "    if os.environ.get(\"HOME\") == \"\":\n        return None"
-after = "    if False:\n        return None"
+before = "    if value is not None and not os.path.isabs(value):"
+after = "    if value and not os.path.isabs(value):"
 reddens = [
   "tests/config/test_machine.py::test_an_empty_home_names_no_home",
   "tests/attach/test_commands.py::test_attach_whose_home_is_empty_refuses_in_words",
   "tests/attach/test_doctor.py::test_an_empty_home_is_told_it_is_home_that_names_none",
+]
+
+# Taken as typed, a relative `HOME` put the machine file, the trust record and `setup`'s writes
+# under whatever directory a command ran from, a clone's on the hook path.
+[[mutation]]
+name = "a relative HOME is read against the working directory"
+file = "src/stayfixed/config/machine.py"
+before = "    if value is not None and not os.path.isabs(value):"
+after = "    if value == \"\":"
+reddens = [
+  "tests/config/test_machine.py::test_a_relative_home_names_no_home",
+  "tests/setup/test_commands.py::test_a_relative_home_is_no_default_for_home_from_any_directory",
 ]
 
 # Whether a version orders before its release by its suffix, read by PEP 440's grammar for one:
@@ -4160,10 +4172,30 @@ reddens = ["tests/memory/test_commands.py::test_trust_with_no_home_fails_and_wri
 [[mutation]]
 name = "an unwritable trust record directory ends as an internal error"
 file = "src/stayfixed/trust/record.py"
-before = "    except OSError as exc:\n        if sandbox_refused(exc):\n            raise SandboxedWrite(SANDBOXED) from None\n        where = ("
-after = "    except LookupError as exc:\n        if sandbox_refused(exc):\n            raise SandboxedWrite(SANDBOXED) from None\n        where = ("
+before = "    except OSError as exc:\n        if sandbox_refused(exc):\n            raise SandboxedWrite(SANDBOXED) from None\n        linked = fsops.linked_directory(path)"
+after = "    except LookupError as exc:\n        if sandbox_refused(exc):\n            raise SandboxedWrite(SANDBOXED) from None\n        linked = fsops.linked_directory(path)"
 reddens = [
   "tests/memory/test_commands.py::test_trust_where_the_home_cannot_be_written_fails_naming_the_directory",
+]
+
+# A record a dotfiles manager links elsewhere is written where the link leads, and the link stays:
+# `os.replace` on the link's own name would put a regular file in its place.
+[[mutation]]
+name = "the trust record is written without resolving it"
+file = "src/stayfixed/trust/record.py"
+before = "            fsops.resolved(path), json.dumps(document, indent=2, sort_keys=True) + \"\\n\""
+after = "            path, json.dumps(document, indent=2, sort_keys=True) + \"\\n\""
+reddens = ["tests/trust/test_record.py::test_a_symlinked_record_is_written_through_and_stays_a_link"]
+
+# A record written through a link is written where the link leads, so a failure names that
+# directory: the link's own could be written, and naming it sent the person to the wrong one.
+[[mutation]]
+name = "a write-through failure names the link's directory"
+file = "src/stayfixed/trust/record.py"
+before = "        if linked is not None:"
+after = "        if False:"
+reddens = [
+  "tests/trust/test_record.py::test_a_record_linked_into_a_directory_that_cannot_be_written_names_that_directory",
 ]
 
 # The machine's trust record that cannot be read is named once with the reason in words: the
