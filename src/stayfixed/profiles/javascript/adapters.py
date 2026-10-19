@@ -34,14 +34,15 @@ the file's path from the directory node runs in, `classname` `test`, and passed:
 
 **What is refused** (`REFUSED_OPTION`, naming the option): only what a person or an agent could
 type by mistake and get a green report for tests that never ran or never checked anything. Each is
-read in its documented spelling alone, or as `--option=value` (`_spelled`); every other option is
-free.
+read in its documented spellings alone, or as `--option=value` (`_spelled`); every other option
+is free.
 
 - jest: `-u`/`--updateSnapshot` (rewrites a failing snapshot so that it passes) and
-  `--collectTests` (exits 0 reporting a failing test as passed).
+  `--collectTests` (exits 0 reporting a failing test as passed), each also dashed.
 - vitest: `-u`/`--update` but `--update=none` and `--update=new` (each other value rewrites a
   failing snapshot so that it passes; `new` only writes a missing one); the same values of
-  `UPDATE_SNAPSHOT`, which vitest reads as `--update` (`FORGING`); `--mergeReports` (runs nothing
+  `UPDATE_SNAPSHOT`, which vitest reads as `--update` (`FORGING`); `--mergeReports` or
+  `--merge-reports` (runs nothing
   and reports an earlier run's blob files as results); and `--dangerouslyIgnoreUnhandledErrors`
   (exits 0 past an error no test reported).
 - `node --test`: `--test-update-snapshots` and `--test-rerun-failures` (reports as passed, unrun,
@@ -208,9 +209,12 @@ def linked_args(command: Sequence[str], name: str) -> tuple[str, ...] | None:
     return tuple(command[1:])
 
 
-# jest's closed list, and its watch modes, which never end.
-_JEST_REFUSED = frozenset({"-u", "--updateSnapshot", "--collectTests"})
-_JEST_NEVER_ENDS = frozenset({"--watch", "--watchAll"})
+# jest's closed list, and its watch modes, which never end; jest documents the dashed spelling of
+# each long option beside its camel-case one.
+_JEST_REFUSED = frozenset(
+    {"-u", "--updateSnapshot", "--update-snapshot", "--collectTests", "--collect-tests"}
+)
+_JEST_NEVER_ENDS = frozenset({"--watch", "--watchAll", "--watch-all"})
 
 
 def jest_refused(args: Sequence[str]) -> str | None:
@@ -227,7 +231,10 @@ def jest_never_ends(args: Sequence[str]) -> str | None:
 # and `new` (which writes a missing one); and two options refused in any spelling.
 _VITEST_SNAPSHOTS = frozenset({"-u", "--update"})
 _VITEST_KEEPS_SNAPSHOTS = frozenset({"none", "new"})
-_VITEST_REFUSED = frozenset({"--mergeReports", "--dangerouslyIgnoreUnhandledErrors"})
+# vitest's guide spells `--merge-reports` where its reference spells `--mergeReports`.
+_VITEST_REFUSED = frozenset(
+    {"--mergeReports", "--merge-reports", "--dangerouslyIgnoreUnhandledErrors"}
+)
 _VITEST_NEVER_ENDS = frozenset({"-w", "--watch"})
 # The variable vitest reads as `--update` where the command gives none; its empty value is unset.
 _VITEST_UPDATE_VARIABLE = "UPDATE_SNAPSHOT"
@@ -394,9 +401,9 @@ _NODE_INSPECT_WAITS = frozenset({"--inspect-brk", "--inspect-wait"})
 
 def node_refused(words: Sequence[str], node_options: str = "") -> str | None:
     """The first of node's options on its closed list among `words` (the words after `node`) and
-    then the words of `node_options` (the run's `NODE_OPTIONS`, split at white space); `None` where
-    none is."""
-    return _spelled((*options(words), *node_options.split()), _NODE_REFUSED)
+    then the words of `node_options` (the run's `NODE_OPTIONS`, split at white space), with any
+    `=value`, since node reads `--test-update-snapshots=false` as on; `None` where none is."""
+    return _spelled((*options(words), *node_options.split()), _NODE_REFUSED, frozenset())
 
 
 def node_never_ends(words: Sequence[str], node_options: str = "") -> str | None:

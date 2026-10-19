@@ -2645,22 +2645,25 @@ reddens = [
 [[mutation]]
 name = "jest's --collectTests is left off its refusals"
 file = "src/stayfixed/profiles/javascript/adapters.py"
-before = '_JEST_REFUSED = frozenset({"-u", "--updateSnapshot", "--collectTests"})'
-after = '_JEST_REFUSED = frozenset({"-u", "--updateSnapshot"})'
+before = ', "--collectTests", "--collect-tests"}'
+after = "}"
 reddens = ["tests/prove/test_javascript.py::test_each_report_steering_option_is_refused[jest:--collectTests]"]
 
 [[mutation]]
 name = "jest's --updateSnapshot is left off its refusals"
 file = "src/stayfixed/profiles/javascript/adapters.py"
-before = '_JEST_REFUSED = frozenset({"-u", "--updateSnapshot", "--collectTests"})'
-after = '_JEST_REFUSED = frozenset({"-u", "--collectTests"})'
-reddens = ["tests/prove/test_javascript.py::test_each_report_steering_option_is_refused[jest:--updateSnapshot]"]
+before = '"--updateSnapshot", "--update-snapshot", '
+after = ""
+reddens = [
+  "tests/prove/test_javascript.py::test_each_report_steering_option_is_refused[jest:--updateSnapshot]",
+  "tests/prove/test_javascript.py::test_each_report_steering_option_is_refused[jest:--update-snapshot]",
+]
 
 # A watch mode never ends under `prove`: not proven, naming the option, and never refused.
 [[mutation]]
 name = "jest's watch modes are planned"
 file = "src/stayfixed/profiles/javascript/adapters.py"
-before = '_JEST_NEVER_ENDS = frozenset({"--watch", "--watchAll"})'
+before = '_JEST_NEVER_ENDS = frozenset({"--watch", "--watchAll", "--watch-all"})'
 after = "_JEST_NEVER_ENDS: frozenset[str] = frozenset()"
 reddens = [
   "tests/prove/test_javascript.py::test_a_watch_mode_is_not_proven_for_it_never_ends[jest:--watch]",
@@ -2748,15 +2751,18 @@ reddens = [
 [[mutation]]
 name = "vitest's --mergeReports is left off its refusals"
 file = "src/stayfixed/profiles/javascript/adapters.py"
-before = '_VITEST_REFUSED = frozenset({"--mergeReports", "--dangerouslyIgnoreUnhandledErrors"})'
-after = '_VITEST_REFUSED = frozenset({"--dangerouslyIgnoreUnhandledErrors"})'
-reddens = ["tests/prove/test_javascript.py::test_each_report_steering_option_is_refused[vitest:--mergeReports]"]
+before = '"--mergeReports", "--merge-reports", '
+after = ""
+reddens = [
+  "tests/prove/test_javascript.py::test_each_report_steering_option_is_refused[vitest:--mergeReports]",
+  "tests/prove/test_javascript.py::test_each_report_steering_option_is_refused[vitest:--merge-reports=.vitest-reports]",
+]
 
 [[mutation]]
 name = "vitest's --dangerouslyIgnoreUnhandledErrors is left off its refusals"
 file = "src/stayfixed/profiles/javascript/adapters.py"
-before = '_VITEST_REFUSED = frozenset({"--mergeReports", "--dangerouslyIgnoreUnhandledErrors"})'
-after = '_VITEST_REFUSED = frozenset({"--mergeReports"})'
+before = ', "--dangerouslyIgnoreUnhandledErrors"}'
+after = "}"
 reddens = ["tests/prove/test_javascript.py::test_each_report_steering_option_is_refused[vitest:--dangerouslyIgnoreUnhandledErrors]"]
 
 # vitest's own default where `CI` is unset writes a missing snapshot and fails a failing one.
@@ -2823,10 +2829,17 @@ reddens = [
 ]
 
 [[mutation]]
+name = "node's refused options read =false as off"
+file = "src/stayfixed/profiles/javascript/adapters.py"
+before = "_NODE_REFUSED, frozenset())"
+after = "_NODE_REFUSED)"
+reddens = ["tests/prove/test_javascript.py::test_each_report_steering_option_is_refused[node-test:--test_--test-update-snapshots=false]"]
+
+[[mutation]]
 name = "node --test's refusals leave NODE_OPTIONS out"
 file = "src/stayfixed/profiles/javascript/adapters.py"
-before = "    return _spelled((*options(words), *node_options.split()), _NODE_REFUSED)"
-after = "    return _spelled(options(words), _NODE_REFUSED)"
+before = "    return _spelled((*options(words), *node_options.split()), _NODE_REFUSED, frozenset())"
+after = "    return _spelled(options(words), _NODE_REFUSED, frozenset())"
 reddens = [
   "tests/prove/test_javascript.py::test_a_rerun_of_failures_in_node_options_is_refused[plain]",
   "tests/prove/test_javascript.py::test_an_assigned_rerun_of_failures_in_node_options_is_refused",

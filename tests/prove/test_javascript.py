@@ -975,6 +975,7 @@ REFUSALS: list[tuple[Adapter, tuple[str, ...], str]] = [
     # jest 30.5.2
     (JEST, ("npx", "jest", "-u"), "-u"),
     (JEST, ("jest", "--updateSnapshot"), "--updateSnapshot"),
+    (JEST, ("jest", "--update-snapshot"), "--update-snapshot"),
     (JEST, ("jest", "--collectTests"), "--collectTests"),
     # vitest 5.0.5
     (VITEST, ("npx", "vitest", "run", "--update"), "--update"),
@@ -982,6 +983,7 @@ REFUSALS: list[tuple[Adapter, tuple[str, ...], str]] = [
     (VITEST, ("vitest", "--update=all"), "--update"),
     (VITEST, ("vitest", "--update=false"), "--update"),
     (VITEST, ("vitest", "--mergeReports"), "--mergeReports"),
+    (VITEST, ("vitest", "--merge-reports=.vitest-reports"), "--merge-reports"),
     (
         VITEST,
         ("vitest", "--dangerouslyIgnoreUnhandledErrors"),
@@ -990,6 +992,8 @@ REFUSALS: list[tuple[Adapter, tuple[str, ...], str]] = [
     # node --test
     (NODE_TEST, ("node", "--test", "--test-update-snapshots"), "--test-update-snapshots"),
     (NODE_TEST, ("node", "--test", "--test-rerun-failures=state.json"), "--test-rerun-failures"),
+    # node reads `=false` as on, and rewrites the snapshot.
+    (NODE_TEST, ("node", "--test", "--test-update-snapshots=false"), "--test-update-snapshots"),
     # After the files: Node 26.12.0 reads an option there as before them; Node 24.10.0 reads none
     # there (measured: the run as without it), so there the refusal is only the safe side.
     (
@@ -1106,6 +1110,7 @@ def test_every_other_option_is_free(
 NEVER_ENDING: list[tuple[Adapter, tuple[str, ...], str]] = [
     (JEST, ("jest", "--watch"), "--watch"),
     (JEST, ("npx", "jest", "--watchAll"), "--watchAll"),
+    (JEST, ("jest", "--watch-all"), "--watch-all"),
     (JEST, ("jest", "--watch", "0"), "--watch"),
     (VITEST, ("vitest", "--watch"), "--watch"),
     (VITEST, ("vitest", "run", "-w"), "-w"),
