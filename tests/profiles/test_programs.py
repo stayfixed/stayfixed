@@ -69,14 +69,21 @@ def test_a_path_entry_that_cannot_be_asked_about_is_passed_over(
     blind = tmp_path / "blind"
     asked = os.stat
 
-    def stat(path: Path) -> os.stat_result:
+    def stat(path: Path, **options: bool) -> os.stat_result:
         if Path(path).parent == blind:
             raise PermissionError(13, "denied", str(path))
-        return asked(path)
+        return asked(path, **options)
 
-    monkeypatch.setattr(os, "stat", stat)
     path = os.pathsep.join([str(blind), str(tool.parent)])
-    assert found("tool", tmp_path, {"PATH": path}) == tool
+    # Undone before pytest reports, whose own cleanup asks `os.stat` (with `follow_symlinks`
+    # from 3.13's pathlib); a raise left in place broke the run rather than reddening it.
+    with monkeypatch.context() as patched:
+        patched.setattr(os, "stat", stat)
+        try:
+            result: Path | OSError | None = found("tool", tmp_path, {"PATH": path})
+        except OSError as raised:
+            result = raised
+    assert result == tool
 
 
 def test_the_launcher_is_kept_in_front_and_found(tmp_path: Path) -> None:
