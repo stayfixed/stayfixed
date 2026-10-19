@@ -106,8 +106,8 @@ anywhere but in this checkout, installs the packages; `STAYFIXED_NODE_MODULES` n
 three-test case, `passing/` one passing and one skipped test, `skipped/` two skipped ones,
 `testmain/` a `TestMain` that exits 0 before any test, `framing/` one that prints test2json's
 framing for a test that never ran, `printing/` a failing test that prints a whole `pass` event, and
-`broken/` a test file that does not compile. Its `go.mod` asks for Go 1.24, so the image's 1.24.7
-and the pinned 1.27.2 both run it.
+`broken/` a test file that does not compile. Its `go.mod` asks for Go 1.24, which the pinned
+1.27.2 the `runners` job puts first on `PATH` runs.
 
 The `runners` CI job installs Go 1.27.2 as the toolchain module the `go` command itself switches
 to, `golang.org/toolchain@v0.0.1-go1.27.2.linux-amd64`, the zip

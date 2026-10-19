@@ -3000,7 +3000,7 @@ file = "src/stayfixed/profiles/javascript/adapters.py"
 before = "        refused = node_refused(command[1:], inherited)"
 after = "        refused = node_refused(node_options(command[1:]), inherited)"
 reddens = [
-  "tests/prove/test_javascript.py::test_each_report_steering_option_is_refused[node-test:--test_a.test.mjs_--test-update-snapshots]",
+  "tests/prove/test_javascript.py::test_each_report_steering_option_is_refused[node-test:--test_a.test.mjs_b.test.mjs_--test-rerun-failures=s.json]",
 ]
 
 [[mutation]]

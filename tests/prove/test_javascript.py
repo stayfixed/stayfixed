@@ -1351,6 +1351,11 @@ REFUSALS: list[tuple[Adapter, tuple[str, ...], str]] = [
         ("node", "--test", "a.test.mjs", "--test-update-snapshots"),
         "--test-update-snapshots",
     ),
+    (
+        NODE_TEST,
+        ("node", "--test", "a.test.mjs", "b.test.mjs", "--test-rerun-failures=s.json"),
+        "--test-rerun-failures",
+    ),
 ]
 
 

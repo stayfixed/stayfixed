@@ -125,6 +125,7 @@ that points `bin` elsewhere -- is the bound's.
 
 from __future__ import annotations
 
+import fnmatch
 import json
 import os
 import re
@@ -736,10 +737,8 @@ def _segment_matches(pattern: str, name: str) -> bool:
     minimatch does by default: neither reaches past a `/`, and neither matches a leading `.`."""
     if name.startswith(".") and not pattern.startswith("."):
         return False
-    expression = "".join(
-        "[^/]*" if char == "*" else "[^/]" if char == "?" else re.escape(char) for char in pattern
-    )
-    return re.fullmatch(expression, name) is not None
+    # A segment holds no `/` and, past `_UNREAD_GLOB`, no class: `fnmatch` reads it as minimatch.
+    return fnmatch.fnmatchcase(name, pattern)
 
 
 def _path_matches(pattern: Sequence[str], parts: Sequence[str]) -> bool:
