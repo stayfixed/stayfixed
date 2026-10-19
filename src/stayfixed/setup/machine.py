@@ -2,7 +2,7 @@
 
 **This module invents no schema.** `config.owner.resolve_owner` reads `[personal]`, `[guards]`
 and the session budgets of `[budgets]`, for every command's load and every session, and
-`config.overlay.overlay_root` reads `[overlay] root`, all from the file no variable moves, and
+`config.overlay.overlay_root` reads `[overlay] root`, all from the one file under `HOME`, and
 none of them changes here. This writer adds `[machine]` beside them — what `setup` installed, so
 `doctor` can check it later — and nothing else. `[guards]` and `[budgets]` are the owner's to write
 by hand, and a rewrite carries them through untouched, as it carries every table and key it does
@@ -188,14 +188,8 @@ def write_machine(
     except OSError as exc:
         if sandbox_refused(exc):
             raise Refusal(SETUP_SANDBOXED) from None
-        # With no `--machine` the directory is under the home the password database records,
-        # which a system user's entry often names as a directory that is not there or not
-        # theirs; no other place is one a hook reads, so the failure names the directory. A file
-        # `--machine` named elsewhere is where the flag says, and that clause would not be true
-        # of it.
         where = (
-            "; without --machine it is under the home the password database records for this "
-            "user, which is the only place a hook reads it"
+            "; without --machine it is under HOME, which is the only place a hook reads it"
             if path == machine_config_path()
             else ""
         )

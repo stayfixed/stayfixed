@@ -51,7 +51,7 @@ from pathlib import Path
 from typing import Any
 
 from stayfixed import fsops, tomlout
-from stayfixed.attach import ATTACH_STORE, exclude
+from stayfixed.attach import exclude
 from stayfixed.attach.binding import (
     Binding,
     not_overlay,
@@ -78,13 +78,6 @@ from stayfixed.config.layout import (
     LOCAL_STATE_PATHS,
 )
 from stayfixed.config.loader import load
-from stayfixed.config.machine import (
-    anchor_home,
-    home_is_empty,
-    homes_agree,
-    override_is_honoured,
-    passwd_home,
-)
 from stayfixed.config.owner import Owner
 from stayfixed.config.paths import PathEscape, PathUnasked, contained
 from stayfixed.config.reading import UNPARSEABLE
@@ -106,10 +99,8 @@ from stayfixed.memory.api import (
     PROJECTS,
     STORE_DIR,
     Links,
-    MakeUnder,
     PartialLink,
     Store,
-    Withhold,
     approval_recorded,
     attach_main,
     detach_main,
@@ -950,7 +941,6 @@ def _link_everywhere(
     *,
     machine: Path | None,
     home: Path | None,
-    withhold: bool = False,
 ) -> Links:
     """The owning checkout first, then every other worktree.
 
@@ -979,10 +969,7 @@ def _link_everywhere(
     worktrees is knowable before anything is written.
     """
     owner = checkouts[0]
-    # `withhold` makes no harness link in any checkout, and still withdraws one under the home it
-    # goes under that points at a store whose approval lapsed (`plan_writes` asked its anchor).
-    withheld = Withhold(anchor_home()) if withhold else None
-    links = attach_main(owner, binding.store, config, machine=machine, home=home, withhold=withheld)
+    links = attach_main(owner, binding.store, config, machine=machine, home=home)
     created, revoked = list(links.created), list(links.revoked)
     # Resolved against the owner and not against `root`: in overlay mode `resolve` reads the
     # link tree, and the tree that exists at this point is the one `attach_main` just built.
@@ -994,9 +981,7 @@ def _link_everywhere(
         )
     for tree in checkouts[1:]:
         try:
-            more = link(
-                tree, store, config, harness=MakeUnder(home) if withheld is None else withheld
-            )
+            more = link(tree, store, config, home=home)
         except PartialLink as partial:
             raise PartialLink([*created, *partial.created], partial) from partial
         except GitUnavailable as unasked:
@@ -1008,7 +993,7 @@ def _link_everywhere(
             continue
         created += more.created
         revoked += more.revoked
-    return Links(created, revoked, withheld=links.withheld, refresh_refused=links.refresh_refused)
+    return Links(created, revoked, refresh_refused=links.refresh_refused)
 
 
 def _keys_in(document: str) -> tuple[str, ...]:
@@ -1186,9 +1171,6 @@ class AttachPlan:
     # Each `.codex/rules/` target and the text to copy there.
     rules: tuple[tuple[str, str], ...]
     checkouts: tuple[Path, ...]
-    # Why the harness memory link is not made, where `HOME` is not the home it goes under off a
-    # terminal (`unread_home`); `None` where it is made as the gate says.
-    unread: UnreadHome | None = None
 
 
 def attach(
@@ -1433,51 +1415,6 @@ def refuse_unless_share_holds(binding: Binding, config: Config) -> None:
     _check_groups(binding, config)
 
 
-# Off a terminal the harness memory link goes under the password database's home
-# (`config.machine.anchor_home`), and a harness finds its memory directory through `HOME`. Where
-# the two differ, a link made there is one the harness this `HOME` starts never reads, so `attach`
-# makes none and says so, and does everything else; it never makes the link under `HOME` instead,
-# which off a terminal may be a directory the clone chose. A hook withholds the link in the same
-# state (`memory.hooks`), and `doctor`'s `attached` row says the same words.
-@dataclass(frozen=True)
-class UnreadHome:
-    """Why, off a terminal, `attach` makes no harness memory link, and what makes one a harness
-    reads: one wording for the run's note, `--check`'s and `doctor`'s `attached` row."""
-
-    cause: str
-    remedy: str
-
-    @property
-    def note(self) -> str:
-        return f"{self.cause}; {self.remedy}"
-
-
-HOME_DIFFERS = UnreadHome(
-    "attach run here makes no harness memory link, since off a terminal it goes only under this "
-    "user's home in the password database and a harness started with this HOME looks under HOME",
-    f"run `{ATTACH_STORE}` from a terminal, or in a session started with HOME set to that home",
-)
-HOME_EMPTY = UnreadHome(
-    "attach run here makes no harness memory link, since off a terminal it goes only under this "
-    "user's home in the password database and a harness started with an empty HOME does not look "
-    "there",
-    f"run `{ATTACH_STORE}` in a session started with HOME set to that home",
-)
-
-
-def unread_home() -> UnreadHome | None:
-    """Why the harness memory link the real command would make is one no harness this `HOME`
-    starts reads, or `None` where it is the one it reads.
-
-    `None` at a terminal, where `HOME` is the home the link goes under (and an empty one is refused
-    by `harness_anchor`); where `HOME` agrees with the database, unset included; and for a user the
-    database lists no home for, whom `harness_anchor` refuses in words naming that cause.
-    """
-    if override_is_honoured() or homes_agree() or passwd_home() is None:
-        return None
-    return HOME_EMPTY if home_is_empty() else HOME_DIFFERS
-
-
 def plan_writes(
     root: Path,
     config: Config,
@@ -1496,23 +1433,6 @@ def plan_writes(
     these refusals with the run's code and line: each read here was once left out of the preview,
     and `--check` answered clean over a checkout the run then stopped on.
     """
-    # The eighth, and the one that is not about this repository at all: the anchor for the
-    # harness memory link. `_apply_harness_link` asks it per checkout, which is one frame
-    # below every write here — so a home directory that is not there, and the ordinary
-    # dotfiles layout that links `~/.claude` elsewhere, were discovered after the ignore
-    # region, the rule files, the settings merge, the ledger and the binding record. Measured:
-    # `PartialLink` with three links made, then a `detach` that could not undo it.
-    #
-    # Asked for `root` and not for every checkout, because `_checkouts` needs `git` and is
-    # read below: every checkout shares `.claude/projects` under one home, which is the
-    # component a dotfiles manager links, so the layout that reaches production is refused
-    # here for all of them. A `<slug>` component that is itself a symlink is left to the
-    # per-call floor in `harness_anchor`, which is a `Refusal` either way. Asked where the link is
-    # withheld too: a link there to a store whose approval lapsed is still withdrawn. The real
-    # command's home (`None`) is first asked whether it is the one a harness reads; where it is
-    # not, the run makes no harness link, and no fallback for it either, and says so.
-    unread = unread_home() if home is None else None
-    harness_anchor(root, home)
     previous = existing_ledger(root)
     # Above every write, because the first of them creates `.stayfixed/local/` and the answer
     # would then be wrong by exactly the directory this run brought into existence.
@@ -1532,14 +1452,15 @@ def plan_writes(
     written = merged != document
     # The checkouts the link tree goes into, read here because the fallback below is asked of the
     # owning checkout's store, the first of them, as the write after the links asks it. Their
-    # refusal is a `git` that cannot list them, knowable before anything is written.
+    # refusal is a `git` that cannot list them, knowable before anything is written. The harness
+    # memory link's walk differs per checkout at `projects/<slug>`, so it is asked of each here.
     checkouts = tuple(_checkouts(root))
+    for tree in checkouts:
+        harness_anchor(tree, home)
     # The fallback's write is decided here too, for the same reason: it is the one write to the
     # settings file that happens after the links, and a refusal it earned there would come after
     # every write above it.
-    possible = unread is None and _fallback_possible(
-        root, config, owner=checkouts[0], machine=machine, home=home
-    )
+    possible = _fallback_possible(root, config, owner=checkouts[0], machine=machine, home=home)
     # A `.claude` linked in from elsewhere takes the fallback off the table rather than refusing
     # the run: the link is a layout the owner chose, and the note below says what the harness
     # link is missing and how to get it.
@@ -1571,7 +1492,6 @@ def plan_writes(
         hidden=hidden,
         rules=rules,
         checkouts=checkouts,
-        unread=unread,
     )
 
 
@@ -1602,22 +1522,11 @@ def _carry_out(
     _write_ledger(root, planned, carried)
     recorded = _record_binding(binding)
     _prepare_store(binding, config)
-    links = _link_everywhere(
-        planned.checkouts,
-        binding,
-        config,
-        machine=machine,
-        home=home,
-        withhold=planned.unread is not None,
-    )
+    links = _link_everywhere(planned.checkouts, binding, config, machine=machine, home=home)
     notes = [] if (note := _secret_scan(binding, runner)) is None else [note]
     owner = planned.checkouts[0]
     unavailable = False
-    if links.withheld:
-        # The fallback stands in for a link this run would make, and it makes none: the key is left
-        # as it stands. A store not approved is not withheld, and its key is withdrawn below.
-        keys = carried
-    elif _settings_containable(root):
+    if _settings_containable(root):
         keys = _harness_fallback(root, config, owner=owner, machine=machine, home=home)
     else:
         keys = carried
@@ -1630,14 +1539,7 @@ def _carry_out(
         notes.append(HARNESS_WITHDREW.format(count=len(links.revoked)))
     if links.refresh_refused:
         notes.append(REFRESH_REFUSED)
-    if keys and links.withheld:
-        # Left as an earlier run recorded it, and said so: "was recorded" would read as this run's
-        # act, beside a note that this run makes no link at all.
-        notes.append(
-            f"{FALLBACK_KEY} stays in {LOCAL_SETTINGS}, where an earlier attach recorded it; "
-            "`stayfixed detach` removes it"
-        )
-    elif keys:
+    if keys:
         notes.append(
             f"the harness memory link could not be created, so {FALLBACK_KEY} was recorded in "
             f"{LOCAL_SETTINGS} instead; `stayfixed detach` removes it"
@@ -1648,8 +1550,6 @@ def _carry_out(
     # its notes, and a run that says something else above has no use for that.
     elif (waits := _harness_waits(owner, config, machine=machine)) is not None:
         notes.append(waits)
-    if planned.unread is not None:
-        notes.append(planned.unread.note)
     return Attached(written, rules, recorded, tuple(notes), links)
 
 
@@ -1668,8 +1568,6 @@ class Detached:
     # The block was left in place because another checkout of this repository still holds a
     # ledger: the exclude file is shared, and that checkout's files still need hiding.
     exclude_block_kept: bool = False
-    # Fixed sentences about what was left, for the command's line.
-    notes: tuple[str, ...] = ()
     # This checkout's link tree was left in place because it owns the store and another checkout
     # of this repository still holds a ledger: that checkout's harness memory link points at it.
     link_tree_kept: bool = False
@@ -2060,36 +1958,6 @@ def _reach(root: Path, checkouts: list[Path], *, kept: bool) -> tuple[list[Path]
     return [own], [] if own == checkouts[0] else [own]
 
 
-# Said where the other home's anchor refuses, so `detach` withdrew nothing under it.
-_LEFT_UNDER = (
-    "the harness memory link under {where} was not looked for, because a directory on the way to "
-    "it is missing, a symlink or unreadable"
-)
-
-
-def _other_harness_home() -> tuple[Path, str] | None:
-    """The home besides `anchor_home`'s that a harness may read this checkout's memory link under,
-    with how a note names it, or `None` where there is no other.
-
-    `attach` puts the link under `HOME` at a terminal and under the password database's home off
-    one, so where the two differ a link can stand under either, and a harness started with the
-    other `HOME` reads it there. At a terminal the other is the database's home. Off one it is
-    `HOME`, read as a hook reads it for a lapsed link (`memory.hooks._lapsed_link_home`): set,
-    not empty and absolute, since a relative one names a directory inside the clone. Under it
-    nothing is made or judged; only a link that points at this store is removed
-    (`worktree.detach_main`), which a `HOME` the clone chose gains nothing from.
-    """
-    if homes_agree():
-        return None
-    if override_is_honoured():
-        recorded = anchor_home(interactive=False)
-        return None if recorded is None else (recorded, "the home the password database records")
-    chosen = os.environ.get("HOME")
-    if not chosen or not os.path.isabs(chosen):
-        return None
-    return Path(chosen), "HOME"
-
-
 def detach(
     root: Path, *, machine: Path | None, home: Path | None, owner: Owner | None = None
 ) -> Detached:
@@ -2136,30 +2004,11 @@ def detach(
     # Asked before the first withdrawal, because it is the one thing here that needs `git` and a
     # `git` that cannot run is knowable at the start. Asked between the settings withdrawal and
     # the link trees, a machine whose `git` is gone would get exit 1 with the settings file and the
-    # `.codex/rules/` copies already removed and every link still in place.
-    #
-    # The anchor for each checkout's harness link is the same shape and is asked in the same
-    # breath, with this list as its argument: `detach_main` asks it per checkout from inside the
-    # withdrawal, so left to it, a home whose `.claude` became a symlink after the attach — a
-    # dotfiles manager adopting it is the ordinary way — would let a raw `UnsafePath` out of
-    # `detach` as `internal error`, with the rule files already deleted and every later run
-    # failing at the same line.
+    # `.codex/rules/` copies already removed and every link still in place. The home the harness
+    # links are under is asked in the same breath: a mistyped `--home` withdrew nothing, exit 0.
     checkouts = _checkouts(root)
     for tree in checkouts:
         harness_anchor(tree, home)
-    # The other home a harness may read a link under, asked here too, and best-effort: a home its
-    # anchor refuses is passed over with a note rather than refused, since `detach` is the one
-    # command that takes back what `attach` made under either.
-    other = _other_harness_home() if home is None else None
-    elsewhere: Path | None = None
-    notes: tuple[str, ...] = ()
-    if other is not None:
-        elsewhere, where = other
-        try:
-            for tree in checkouts:
-                harness_anchor(tree, elsewhere)
-        except Refusal:
-            elsewhere, notes = None, (_LEFT_UNDER.format(where=where),)
     ignore_remainder = None if _footprint_owns_region(root) else _ignore_region_remainder(root)
     # The `info/exclude` block is found above the first withdrawal for the same reason: `git`
     # names the file and a region opened twice refuses, and both are knowable now. It is shared
@@ -2199,7 +2048,6 @@ def detach(
             config,
             machine=machine,
             home=home,
-            elsewhere=elsewhere,
             targets=targets[tree],
             keep_tree=tree not in trees,
         ).revoked
@@ -2220,6 +2068,5 @@ def detach(
         directories + memory,
         hidden is not None,
         kept,
-        notes,
         root.resolve() not in trees,
     )

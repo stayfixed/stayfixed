@@ -291,8 +291,8 @@ reddens = [
 [[mutation]]
 name = "attach applies the owning-checkout entry point to --root"
 file = "src/stayfixed/attach/write.py"
-before = "    links = attach_main(owner, binding.store, config, machine=machine, home=home, withhold=withheld)"
-after = "    links = attach_main(root, binding.store, config, machine=machine, home=home, withhold=withheld)"
+before = "    links = attach_main(owner, binding.store, config, machine=machine, home=home)"
+after = "    links = attach_main(root, binding.store, config, machine=machine, home=home)"
 reddens = [
   "tests/attach/test_links.py::test_attaching_from_a_linked_worktree_links_the_main_checkout_too",
 ]
@@ -436,11 +436,8 @@ reddens = [
 [[mutation]]
 name = "detach asks git where the checkouts are after it has already withdrawn"
 file = "src/stayfixed/attach/write.py"
-# The block this moves runs from the anchor loop through the manifest's answer to the region read.
-# What it proves: `git` is asked before the first withdrawal, and a `git` that cannot run must not
-# strand a half-detached repository.
-before = "    checkouts = _checkouts(root)\n    for tree in checkouts:\n        harness_anchor(tree, home)\n    # The other home a harness may read a link under, asked here too, and best-effort: a home its\n    # anchor refuses is passed over with a note rather than refused, since `detach` is the one\n    # command that takes back what `attach` made under either.\n    other = _other_harness_home() if home is None else None\n    elsewhere: Path | None = None\n    notes: tuple[str, ...] = ()\n    if other is not None:\n        elsewhere, where = other\n        try:\n            for tree in checkouts:\n                harness_anchor(tree, elsewhere)\n        except Refusal:\n            elsewhere, notes = None, (_LEFT_UNDER.format(where=where),)\n    ignore_remainder = None if _footprint_owns_region(root) else _ignore_region_remainder(root)\n    # The `info/exclude` block is found above the first withdrawal for the same reason: `git`\n    # names the file and a region opened twice refuses, and both are knowable now. It is shared\n    # by every checkout while the ledger, the settings file and the `.codex/rules/` copies are\n    # each checkout's own, so it stays while another checkout still holds a ledger: taking it\n    # would show that checkout's settings file and rule copies in its `git status`.\n    kept = _another_attached(root, checkouts)\n    hidden = None if kept else exclude.withdrawn_block(root)\n    harnessed, trees = _reach(root, checkouts, kept=kept)\n    settings = _planned_settings(root, recorded)\n    # Where each checkout's harness link may point and be ours, asked here because it walks the\n    # owning checkout's `paths.memory` as well as the checkout's own, and while another ledger\n    # stands `_refuse_unwithdrawable` walks no tree but `--root`'s. Asked from inside the\n    # withdrawal, a main checkout whose `paths.memory` came to be reached through a symlink\n    # refused after the rule copies were gone. And asked before `_refuse_unwithdrawable`, which\n    # walks only checkouts asked here: it resolves each tree's `paths.memory` with no answer for\n    # a symlink loop, where `.resolve()` raises `RuntimeError` up to Python 3.12, and this\n    # question's one refusal names the loop.\n    targets = {tree: harness_targets(tree, checkouts[0], config) for tree in harnessed}\n    _refuse_unwithdrawable(root, recorded, trees, config, settings)\n    allow_removed = _withdraw_settings(root, settings)"
-after = "    ignore_remainder = None if _footprint_owns_region(root) else _ignore_region_remainder(root)\n    settings = _planned_settings(root, recorded)\n    allow_removed = _withdraw_settings(root, settings)\n    checkouts = _checkouts(root)\n    for tree in checkouts:\n        harness_anchor(tree, home)\n    # The other home a harness may read a link under, asked here too, and best-effort: a home its\n    # anchor refuses is passed over with a note rather than refused, since `detach` is the one\n    # command that takes back what `attach` made under either.\n    other = _other_harness_home() if home is None else None\n    elsewhere: Path | None = None\n    notes: tuple[str, ...] = ()\n    if other is not None:\n        elsewhere, where = other\n        try:\n            for tree in checkouts:\n                harness_anchor(tree, elsewhere)\n        except Refusal:\n            elsewhere, notes = None, (_LEFT_UNDER.format(where=where),)\n    kept = _another_attached(root, checkouts)\n    hidden = None if kept else exclude.withdrawn_block(root)\n    harnessed, trees = _reach(root, checkouts, kept=kept)\n    # Where each checkout's harness link may point and be ours, asked here because it walks the\n    # owning checkout's `paths.memory` as well as the checkout's own, and while another ledger\n    # stands `_refuse_unwithdrawable` walks no tree but `--root`'s. Asked from inside the\n    # withdrawal, a main checkout whose `paths.memory` came to be reached through a symlink\n    # refused after the rule copies were gone. And asked before `_refuse_unwithdrawable`, which\n    # walks only checkouts asked here: it resolves each tree's `paths.memory` with no answer for\n    # a symlink loop, where `.resolve()` raises `RuntimeError` up to Python 3.12, and this\n    # question's one refusal names the loop.\n    targets = {tree: harness_targets(tree, checkouts[0], config) for tree in harnessed}\n    _refuse_unwithdrawable(root, recorded, trees, config, settings)"
+before = "    checkouts = _checkouts(root)\n    for tree in checkouts:\n        harness_anchor(tree, home)\n    ignore_remainder = None if _footprint_owns_region(root) else _ignore_region_remainder(root)\n    # The `info/exclude` block is found above the first withdrawal for the same reason: `git`\n    # names the file and a region opened twice refuses, and both are knowable now. It is shared\n    # by every checkout while the ledger, the settings file and the `.codex/rules/` copies are\n    # each checkout's own, so it stays while another checkout still holds a ledger: taking it\n    # would show that checkout's settings file and rule copies in its `git status`.\n    kept = _another_attached(root, checkouts)\n    hidden = None if kept else exclude.withdrawn_block(root)\n    harnessed, trees = _reach(root, checkouts, kept=kept)\n    settings = _planned_settings(root, recorded)\n    # Where each checkout's harness link may point and be ours, asked here because it walks the\n    # owning checkout's `paths.memory` as well as the checkout's own, and while another ledger\n    # stands `_refuse_unwithdrawable` walks no tree but `--root`'s. Asked from inside the\n    # withdrawal, a main checkout whose `paths.memory` came to be reached through a symlink\n    # refused after the rule copies were gone. And asked before `_refuse_unwithdrawable`, which\n    # walks only checkouts asked here: it resolves each tree's `paths.memory` with no answer for\n    # a symlink loop, where `.resolve()` raises `RuntimeError` up to Python 3.12, and this\n    # question's one refusal names the loop.\n    targets = {tree: harness_targets(tree, checkouts[0], config) for tree in harnessed}\n    _refuse_unwithdrawable(root, recorded, trees, config, settings)\n    allow_removed = _withdraw_settings(root, settings)"
+after = "    ignore_remainder = None if _footprint_owns_region(root) else _ignore_region_remainder(root)\n    settings = _planned_settings(root, recorded)\n    allow_removed = _withdraw_settings(root, settings)\n    checkouts = _checkouts(root)\n    for tree in checkouts:\n        harness_anchor(tree, home)\n    kept = _another_attached(root, checkouts)\n    hidden = None if kept else exclude.withdrawn_block(root)\n    harnessed, trees = _reach(root, checkouts, kept=kept)\n    # Where each checkout's harness link may point and be ours, asked here because it walks the\n    # owning checkout's `paths.memory` as well as the checkout's own, and while another ledger\n    # stands `_refuse_unwithdrawable` walks no tree but `--root`'s. Asked from inside the\n    # withdrawal, a main checkout whose `paths.memory` came to be reached through a symlink\n    # refused after the rule copies were gone. And asked before `_refuse_unwithdrawable`, which\n    # walks only checkouts asked here: it resolves each tree's `paths.memory` with no answer for\n    # a symlink loop, where `.resolve()` raises `RuntimeError` up to Python 3.12, and this\n    # question's one refusal names the loop.\n    targets = {tree: harness_targets(tree, checkouts[0], config) for tree in harnessed}\n    _refuse_unwithdrawable(root, recorded, trees, config, settings)"
 reddens = [
   "tests/attach/test_detach.py::test_a_git_that_cannot_run_is_answered_before_anything_is_withdrawn",
 ]
@@ -585,24 +582,42 @@ reddens = [
   "tests/attach/test_binding.py::test_a_project_name_reaches_neither_refusal_of_this_module",
 ]
 
-# In the block led by `mutations/`'s "the harness anchor stops asking whether the walk can reach
-# it": the harness anchor is asked about before the first write, at each of its three hoists.
+# The home the harness memory link goes under is asked about before the first write, at each of
+# its three hoists.
 [[mutation]]
 name = "attach discovers the harness anchor from inside the link step"
 file = "src/stayfixed/attach/write.py"
-before = "    harness_anchor(root, home)\n    previous = existing_ledger(root)"
-after = "    previous = existing_ledger(root)"
-reddens = [
-  "tests/attach/test_links.py::test_a_home_whose_claude_is_a_symlink_refuses_above_every_write",
-]
+before = "    checkouts = tuple(_checkouts(root))\n    for tree in checkouts:\n        harness_anchor(tree, home)\n"
+after = "    checkouts = tuple(_checkouts(root))\n"
+reddens = ["tests/attach/test_links.py::test_a_home_that_is_not_there_refuses_above_every_write"]
 
 [[mutation]]
 name = "detach discovers the harness anchor from inside the withdrawal"
 file = "src/stayfixed/attach/write.py"
-before = "    for tree in checkouts:\n        harness_anchor(tree, home)\n"
-after = "    for tree in checkouts:\n        pass\n"
+before = "    checkouts = _checkouts(root)\n    for tree in checkouts:\n        harness_anchor(tree, home)\n"
+after = "    checkouts = _checkouts(root)\n"
 reddens = [
-  "tests/attach/test_detach.py::test_a_home_whose_claude_became_a_symlink_refuses_above_every_withdrawal",
+  "tests/attach/test_detach.py::test_a_home_that_is_not_there_refuses_above_every_withdrawal",
+]
+
+# The harness memory link's walk differs per checkout at `projects/<slug>`, so the anchor is asked
+# of every checkout the run touches, above the first write.
+[[mutation]]
+name = "attach asks the harness anchor of --root alone"
+file = "src/stayfixed/attach/write.py"
+before = "    checkouts = tuple(_checkouts(root))\n    for tree in checkouts:\n        harness_anchor(tree, home)\n"
+after = "    checkouts = tuple(_checkouts(root))\n    harness_anchor(root, home)\n"
+reddens = [
+  "tests/attach/test_links.py::test_a_side_worktree_whose_slug_is_a_link_refuses_attach_and_detach_before_any_write",
+]
+
+[[mutation]]
+name = "detach asks the harness anchor of --root alone"
+file = "src/stayfixed/attach/write.py"
+before = "    checkouts = _checkouts(root)\n    for tree in checkouts:\n        harness_anchor(tree, home)\n"
+after = "    checkouts = _checkouts(root)\n    harness_anchor(root, home)\n"
+reddens = [
+  "tests/attach/test_links.py::test_a_side_worktree_whose_slug_is_a_link_refuses_attach_and_detach_before_any_write",
 ]
 
 # `unlinked_groups` lists the `memory.groups` entries that are real directories under
@@ -953,7 +968,7 @@ reddens = [
 [[mutation]]
 name = "attach decides the settings fallback only once it has written"
 file = "src/stayfixed/attach/write.py"
-before = "    possible = unread is None and _fallback_possible(\n        root, config, owner=checkouts[0], machine=machine, home=home\n    )"
+before = "    possible = _fallback_possible(root, config, owner=checkouts[0], machine=machine, home=home)"
 after = "    possible = False"
 reddens = [
   "tests/attach/test_detach.py::test_a_symlinked_exclude_file_is_refused_first_when_only_the_fallback_needs_a_line",
@@ -1671,8 +1686,8 @@ reddens = [
 [[mutation]]
 name = "doctor reads the real directory at the harness memory path without the settings fallback"
 file = "src/stayfixed/attach/doctor.py"
-before = "        fallback = _settings_fallback(context.root)\n"
-after = "        fallback = _Fallback()\n"
+before = "    fallback = _settings_fallback(context.root)\n"
+after = "    fallback = _Fallback()\n"
 reddens = [
   "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[fallback-approved]",
 ]
@@ -2600,14 +2615,14 @@ reddens = [
   "tests/attach/test_binding.py::test_check_refuses_the_allow_list_shape_the_real_run_refuses",
 ]
 
-# A user the password database lists no home for has no harness memory path off a terminal, and
-# the `attached` row says so as a warning rather than dying as a broken check.
+# An empty `HOME` names no harness memory path, and the `attached` row says so as a warning
+# rather than dying as a broken check.
 [[mutation]]
-name = "the attached row dies on a home the password database does not list"
+name = "the attached row dies on a home it cannot name"
 file = "src/stayfixed/attach/doctor.py"
-before = "        except Refusal:\n            # Refused only for a home it cannot name"
-after = "        except LookupError:\n            # Refused only for a home it cannot name"
-reddens = ["tests/attach/test_doctor.py::test_no_home_in_the_password_database_is_a_warning_and_not_a_broken_check"]
+before = "    except Refusal:\n        # Refused only for a home it cannot name"
+after = "    except LookupError:\n        # Refused only for a home it cannot name"
+reddens = ["tests/attach/test_doctor.py::test_an_empty_home_is_told_it_is_home_that_names_none"]
 
 # A linked worktree's harness link points at the store the owning checkout holds, so the fallback
 # and the waiting note are asked of that store: asked of the worktree's own link tree, a run that
@@ -2674,8 +2689,8 @@ reddens = ["tests/attach/test_links.py::test_a_worktree_whose_claude_is_linked_i
 [[mutation]]
 name = "the settings fallback is planned by a worktree's own store"
 file = "src/stayfixed/attach/write.py"
-before = "    possible = unread is None and _fallback_possible(\n        root, config, owner=checkouts[0], machine=machine, home=home\n    )"
-after = "    possible = unread is None and _fallback_possible(\n        root, config, owner=root, machine=machine, home=home\n    )"
+before = "    possible = _fallback_possible(root, config, owner=checkouts[0], machine=machine, home=home)"
+after = "    possible = _fallback_possible(root, config, owner=root, machine=machine, home=home)"
 reddens = [
   "tests/attach/test_links.py::test_attaching_from_a_linked_worktree_hides_the_fallback_the_owners_approval_takes",
   "tests/attach/test_links.py::test_check_from_a_linked_worktree_refuses_where_only_the_owners_fallback_needs_a_line",
@@ -2720,13 +2735,12 @@ reddens = [
 [[mutation]]
 name = "check skips the reads the run makes before its first write"
 file = "src/stayfixed/attach/check.py"
-before = "        unread = plan_writes(root, config, binding, diff, machine=machine, home=home).unread\n"
+before = "        plan_writes(root, config, binding, diff, machine=machine, home=home)\n"
 after = "        pass\n"
 reddens = [
   "tests/attach/test_commands.py::test_check_ends_on_a_ledger_the_run_cannot_take_with_the_runs_code_and_words[not-json]",
   "tests/attach/test_commands.py::test_check_ends_on_a_ledger_the_run_cannot_take_with_the_runs_code_and_words[a-link]",
   "tests/attach/test_commands.py::test_check_ends_on_an_overlay_rule_that_is_not_utf8_with_the_runs_code_and_line",
-  "tests/attach/test_commands.py::test_check_ends_on_a_home_whose_claude_is_a_link_with_the_runs_code_and_line",
   "tests/attach/test_commands.py::test_check_ends_on_a_trust_record_that_does_not_parse_with_the_runs_code_and_line",
   "tests/attach/test_commands.py::test_check_ends_on_each_refusal_past_the_runs_gates_with_the_runs_code_and_line[gitignore-region-doubled]",
   "tests/attach/test_commands.py::test_check_ends_on_each_refusal_past_the_runs_gates_with_the_runs_code_and_line[gitignore-not-text]",
@@ -2882,238 +2896,13 @@ reddens = [
   "tests/attach/test_write.py::test_a_codex_directory_linked_where_nobody_may_search_is_refused_by_name_by_check_and_run",
 ]
 
-# The `attached` row at a terminal whose `HOME` is empty names `HOME`, not the database, which lists
-# a home there.
-[[mutation]]
-name = "the attached row blames the password database for an empty HOME at a terminal"
-file = "src/stayfixed/attach/doctor.py"
-before = "        if override_is_honoured() and home_is_empty():"
-after = "        if False:"
-reddens = [
-  "tests/attach/test_doctor.py::test_a_terminal_whose_home_is_empty_is_told_it_is_home_that_names_none",
-]
-
-# Off a terminal the harness memory link goes under the password database's home and a harness
-# looks under `HOME`: where they differ, an empty `HOME` included, `attach` made a link no harness
-# that `HOME` starts reads and said it had. It makes none in any checkout and does everything else,
-# takes no settings fallback for it, and says so, `--check` with it; at a terminal, where `HOME` is
-# the home the link goes under, and where the two agree, it makes the link, and a user the database
-# lists no home for is told that.
-[[mutation]]
-name = "attach off a terminal makes the harness link under a home the harness does not read"
-file = "src/stayfixed/attach/write.py"
-before = "    unread = unread_home() if home is None else None"
-after = "    unread = None"
-reddens = [
-  "tests/attach/test_commands.py::test_attach_off_a_terminal_withholds_only_the_harness_link_where_home_is_not_where_it_goes[elsewhere]",
-  "tests/attach/test_commands.py::test_attach_off_a_terminal_withholds_only_the_harness_link_where_home_is_not_where_it_goes[empty]",
-]
-
-[[mutation]]
-name = "attach tells an empty HOME off a terminal what a HOME that differs is told"
-file = "src/stayfixed/attach/write.py"
-before = "    return HOME_EMPTY if home_is_empty() else HOME_DIFFERS"
-after = "    return HOME_DIFFERS"
-reddens = [
-  "tests/attach/test_commands.py::test_attach_off_a_terminal_withholds_only_the_harness_link_where_home_is_not_where_it_goes[empty]",
-]
-
-[[mutation]]
-name = "attach says nothing of the harness link it withholds"
-file = "src/stayfixed/attach/write.py"
-before = "        notes.append(planned.unread.note)"
-after = "        pass"
-reddens = [
-  "tests/attach/test_commands.py::test_attach_off_a_terminal_withholds_only_the_harness_link_where_home_is_not_where_it_goes[elsewhere]",
-]
-
-# A fallback key a withheld run leaves is told as an earlier run's, not as this run's act.
-[[mutation]]
-name = "attach tells a fallback key it leaves as one it recorded"
-file = "src/stayfixed/attach/write.py"
-before = "    if keys and links.withheld:"
-after = "    if False:"
-reddens = [
-  "tests/attach/test_commands.py::test_attach_off_a_terminal_says_a_fallback_key_it_withholds_beside_is_an_earlier_runs",
-]
-
-[[mutation]]
-name = "attach --check says nothing of the harness link the run would withhold"
-file = "src/stayfixed/attach/check.py"
-before = '        summary += f"; {unread.note}"'
-after = "        pass"
-reddens = [
-  "tests/attach/test_commands.py::test_attach_off_a_terminal_withholds_only_the_harness_link_where_home_is_not_where_it_goes[elsewhere]",
-]
-
-[[mutation]]
-name = "attach makes the harness link in the owning checkout it withholds it from"
-file = "src/stayfixed/attach/write.py"
-before = "    withheld = Withhold(anchor_home()) if withhold else None"
-after = "    withheld = None"
-reddens = [
-  "tests/attach/test_commands.py::test_attach_off_a_terminal_withholds_only_the_harness_link_where_home_is_not_where_it_goes[elsewhere]",
-]
-
-[[mutation]]
-name = "attach makes the harness link in a worktree it withholds it from"
-file = "src/stayfixed/attach/write.py"
-before = "                tree, store, config, harness=MakeUnder(home) if withheld is None else withheld"
-after = "                tree, store, config, harness=MakeUnder(home)"
-reddens = [
-  "tests/attach/test_commands.py::test_attach_off_a_terminal_withholds_only_the_harness_link_where_home_is_not_where_it_goes[elsewhere]",
-]
-
-[[mutation]]
-name = "attach takes the settings fallback for a harness link it withholds"
-file = "src/stayfixed/attach/write.py"
-before = "    if links.withheld:"
-after = "    if False:"
-reddens = [
-  "tests/attach/test_commands.py::test_attach_off_a_terminal_takes_no_settings_fallback_for_a_harness_link_it_withholds",
-]
-
-[[mutation]]
-name = "attach plans the settings fallback for a harness link it withholds"
-file = "src/stayfixed/attach/write.py"
-before = "    possible = unread is None and _fallback_possible("
-after = "    possible = _fallback_possible("
-reddens = [
-  "tests/attach/test_commands.py::test_attach_off_a_terminal_takes_no_settings_fallback_for_a_harness_link_it_withholds",
-]
-
-[[mutation]]
-name = "attach off a terminal withholds the harness link under a HOME that agrees"
-file = "src/stayfixed/attach/write.py"
-before = "    if override_is_honoured() or homes_agree() or passwd_home() is None:"
-after = "    if override_is_honoured() or passwd_home() is None:"
-reddens = [
-  "tests/attach/test_commands.py::test_attach_links_where_the_harness_reads_its_home_and_names_a_home_the_database_lacks",
-  "tests/attach/test_doctor.py::test_the_attached_row_judges_the_link_where_home_is_the_one_it_goes_under[unset]",
-]
-
-[[mutation]]
-name = "attach at a terminal withholds the harness link under a HOME that differs"
-file = "src/stayfixed/attach/write.py"
-before = "    if override_is_honoured() or homes_agree() or passwd_home() is None:"
-after = "    if homes_agree() or passwd_home() is None:"
-reddens = [
-  "tests/attach/test_commands.py::test_attach_links_where_the_harness_reads_its_home_and_names_a_home_the_database_lacks",
-  "tests/attach/test_doctor.py::test_the_attached_row_judges_the_link_where_home_is_the_one_it_goes_under[terminal]",
-]
-
-[[mutation]]
-name = "attach off a terminal blames HOME for a user the database lists no home for"
-file = "src/stayfixed/attach/write.py"
-before = "    if override_is_honoured() or homes_agree() or passwd_home() is None:"
-after = "    if override_is_honoured() or homes_agree():"
-reddens = [
-  "tests/attach/test_commands.py::test_attach_links_where_the_harness_reads_its_home_and_names_a_home_the_database_lacks",
-  "tests/attach/test_doctor.py::test_no_home_in_the_password_database_is_a_warning_and_not_a_broken_check",
-]
-
-# A run that withholds the harness link still takes back what a store whose approval lapsed was
-# given by an earlier one: the settings fallback, and the link under the database's home.
-[[mutation]]
-name = "attach keeps a lapsed store's settings fallback on a run that withholds the harness link"
-file = "src/stayfixed/attach/write.py"
-before = "    if links.withheld:"
-after = "    if planned.unread is not None:"
-reddens = [
-  "tests/attach/test_commands.py::test_attach_off_a_terminal_withdraws_what_a_lapsed_store_was_given_though_it_makes_no_link[key]",
-]
-
-[[mutation]]
-name = "attach keeps a lapsed store's harness link under the database's home on a run that withholds it"
-file = "src/stayfixed/attach/write.py"
-before = "    withheld = Withhold(anchor_home()) if withhold else None"
-after = "    withheld = Withhold(None) if withhold else None"
-reddens = [
-  "tests/attach/test_commands.py::test_attach_off_a_terminal_withdraws_what_a_lapsed_store_was_given_though_it_makes_no_link[link]",
-]
-
-# Off a terminal, where `HOME` is not the database's home, the `attached` row judged the link under
-# the database's home, which a harness started with this `HOME` does not read, and was wrong both
-# ways. It judges neither home and says what `attach` says, with the way to have the link under
-# `HOME` checked; with `--home` it judges the link under the home that names.
-[[mutation]]
-name = "the attached row judges the harness link off a terminal whatever HOME says"
-file = "src/stayfixed/attach/doctor.py"
-before = "    unread = unread_home() if context.home is None else None"
-after = "    unread = None"
-reddens = [
-  "tests/attach/test_doctor.py::test_off_a_terminal_the_attached_row_says_what_attach_says_where_home_is_not_where_it_goes[elsewhere-database]",
-  "tests/attach/test_doctor.py::test_off_a_terminal_the_attached_row_says_what_attach_says_where_home_is_not_where_it_goes[elsewhere-HOME]",
-  "tests/attach/test_doctor.py::test_off_a_terminal_the_attached_row_says_what_attach_says_where_home_is_not_where_it_goes[empty-database]",
-]
-
-[[mutation]]
-name = "the attached row names no way to check the link under a HOME that differs"
-file = "src/stayfixed/attach/doctor.py"
-before = "        if harness == HOME_DIFFERS:"
-after = "        if False:"
-reddens = [
-  "tests/attach/test_doctor.py::test_off_a_terminal_the_attached_row_says_what_attach_says_where_home_is_not_where_it_goes[elsewhere-HOME]",
-]
-
 [[mutation]]
 name = "the attached row asks where HOME points when --home names the home"
 file = "src/stayfixed/attach/doctor.py"
-before = "    unread = unread_home() if context.home is None else None"
-after = "    unread = unread_home()"
+before = "        harness = harness_memory_path(context.root, context.home)"
+after = "        harness = harness_memory_path(context.root, None)"
 reddens = [
-  "tests/attach/test_doctor.py::test_the_attached_row_judges_the_link_where_home_is_the_one_it_goes_under[--home]",
-]
-
-# `attach` puts the harness memory link under `HOME` at a terminal and under the database's home
-# off one, so where they differ `detach` withdraws under both, the second best-effort: only a link
-# to this store goes there, a home whose walk refuses is passed over and named, and an unset, an
-# agreeing, an empty or a relative `HOME` names no second home.
-[[mutation]]
-name = "detach withdraws under one home where HOME is not the database's"
-file = "src/stayfixed/attach/write.py"
-before = "    other = _other_harness_home() if home is None else None"
-after = "    other = None"
-reddens = [
-  "tests/attach/test_commands.py::test_detach_withdraws_the_harness_link_under_both_homes_where_home_is_not_the_databases[off-a-terminal-under-home]",
-  "tests/attach/test_commands.py::test_detach_withdraws_the_harness_link_under_both_homes_where_home_is_not_the_databases[off-a-terminal-under-both]",
-  "tests/attach/test_commands.py::test_detach_withdraws_the_harness_link_under_both_homes_where_home_is_not_the_databases[at-a-terminal-under-both]",
-]
-
-[[mutation]]
-name = "detach looks under HOME for the other home at a terminal"
-file = "src/stayfixed/attach/write.py"
-before = '        return None if recorded is None else (recorded, "the home the password database records")'
-after = '        return None'
-reddens = [
-  "tests/attach/test_commands.py::test_detach_withdraws_the_harness_link_under_both_homes_where_home_is_not_the_databases[at-a-terminal-under-both]",
-]
-
-[[mutation]]
-name = "detach looks under a relative HOME"
-file = "src/stayfixed/attach/write.py"
-before = "    if not chosen or not os.path.isabs(chosen):\n        return None\n    return Path(chosen), \"HOME\""
-after = "    if not chosen:\n        return None\n    return Path(chosen), \"HOME\""
-reddens = [
-  "tests/attach/test_commands.py::test_detach_withdraws_under_the_one_home_where_there_is_no_other[relative]",
-]
-
-[[mutation]]
-name = "detach refuses where the other home cannot be walked"
-file = "src/stayfixed/attach/write.py"
-before = "        except Refusal:\n            elsewhere, notes = None, (_LEFT_UNDER.format(where=where),)"
-after = "        except LookupError:\n            elsewhere, notes = None, (_LEFT_UNDER.format(where=where),)"
-reddens = [
-  "tests/attach/test_commands.py::test_detach_leaves_under_the_other_home_what_is_not_its_own_and_says_where_it_could_not_look",
-]
-
-[[mutation]]
-name = "detach's line says nothing of a home it did not look under"
-file = "src/stayfixed/attach/commands.py"
-before = '        + "".join(f"; {note}" for note in removed.notes),'
-after = '        + "",'
-reddens = [
-  "tests/attach/test_commands.py::test_detach_leaves_under_the_other_home_what_is_not_its_own_and_says_where_it_could_not_look",
+  "tests/attach/test_doctor.py::test_the_attached_row_judges_the_link_under_the_home_it_goes_under[--home]",
 ]
 
 # A worktree `git worktree list` named and that was removed before `link` asked in it is no
@@ -3265,8 +3054,8 @@ reddens = [
 [[mutation]]
 name = "doctor reads the settings fallback beside a real directory alone"
 file = "src/stayfixed/attach/doctor.py"
-before = "        fallback = _settings_fallback(context.root)\n"
-after = "        fallback = _settings_fallback(context.root) if _shape_of(harness) == _REAL_DIRECTORY else _Fallback()\n"
+before = "    fallback = _settings_fallback(context.root)\n"
+after = "    fallback = _settings_fallback(context.root) if _shape_of(harness) == _REAL_DIRECTORY else _Fallback()\n"
 reddens = [
   "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[fallback-elsewhere-beside-a-link]",
   "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[fallback-elsewhere-beside-nothing]",
@@ -3431,8 +3220,8 @@ reddens = [
 [[mutation]]
 name = "attach drops the refresh the sandbox refused on its way out of the checkouts"
 file = "src/stayfixed/attach/write.py"
-before = "    return Links(created, revoked, withheld=links.withheld, refresh_refused=links.refresh_refused)"
-after = "    return Links(created, revoked, withheld=links.withheld, refresh_refused=False)"
+before = "    return Links(created, revoked, refresh_refused=links.refresh_refused)"
+after = "    return Links(created, revoked, refresh_refused=False)"
 reddens = [
   "tests/attach/test_write.py::test_an_approval_attach_could_not_carry_is_said_as_what_happened[sandboxed]",
 ]

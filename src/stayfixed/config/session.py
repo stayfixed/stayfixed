@@ -105,9 +105,7 @@ NEWER_RELEASE_WARNING = (
     "does not read were ignored or put back to the preset's; update the stayfixed plugin, and run "
     "`stayfixed doctor` for the list"
 )
-# `path` is the machine file that was read: under the password database's home, never `HOME`'s
-# (`config.machine`), so a `~` would point an owner whose `HOME` differs at the wrong file. The
-# owner's own path, never the repository's.
+# `path` is the machine file that was read, the owner's own path, never the repository's.
 MACHINE_FILE_WARNING = (
     "stayfixed: the machine file, {path}, could not be used whole, so the preset's personal values "
     "and guards stand in for what it could not give; run `stayfixed doctor` for the detail"
@@ -142,8 +140,8 @@ def session_config(root: Path | None, *, machine: Path | None = None) -> Session
     """The configuration a session runs on in `root`, which never raises for anything the
     repository or the machine file holds.
 
-    `machine` is the machine file; `None` is the one `config.machine` names, which no variable
-    moves, as `loader.load` reads it. `root` is `None` for a hook with no project root, which has
+    `machine` is the machine file; `None` is the one `config.machine` names, as `loader.load`
+    reads it. `root` is `None` for a hook with no project root, which has
     no project configuration.
     """
     path = machine if machine is not None else machine_config_path()

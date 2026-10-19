@@ -4,7 +4,7 @@ load whole is said once, at `SessionStart`, and never refuses a tool call
 
 Every hook here is a real `stayfixed hook` process (`tests/hooks/test_hook_command.py`'s `hook`),
 under a home of its own: the machine file a hook reads is `<home>/.config/stayfixed/config.toml`,
-which no variable moves, and none of these reads the developer's."""
+and none of these reads the developer's."""
 
 from __future__ import annotations
 

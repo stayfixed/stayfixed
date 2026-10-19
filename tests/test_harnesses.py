@@ -320,7 +320,7 @@ PROSE = {
     # The `hook-entries` remedies, which name the harness that runs a skill's hooks and the
     # directories to look through.
     ("src/stayfixed/doctor/entries.py", "claude"): 2,
-    # The refusal for a home directory whose `.claude` the link walk cannot follow.
+    # The refusal for a `.claude` the link walk cannot go through.
     ("src/stayfixed/memory/worktree.py", "claude"): 1,
     # The advice `setup --approval-boundary` prints, which names the harness whose settings it is.
     ("src/stayfixed/setup/commands.py", "claude"): 1,

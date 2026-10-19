@@ -6,6 +6,7 @@ import asyncio
 import io
 import json
 import subprocess
+import sys
 from collections.abc import Callable
 from pathlib import Path
 
@@ -17,7 +18,6 @@ from stayfixed.guards.hygiene import LEAD
 from stayfixed.hooks.commands import _output_cap, run_hook
 from tests.floor import floor_env
 from tests.gitfixture import git
-from tests.ownerhome import stayfixed_argv
 from tests.parserlimits import LONG_NUMBER
 from tests.pathfaults import ROOT_SEARCHES_EVERYTHING, unsearchable
 
@@ -72,13 +72,11 @@ def hook(
     }
     if data is not None:
         env["CLAUDE_PLUGIN_DATA"] = str(data)
-    # A hook reads the machine file under the home the password database records, and nowhere a
-    # repository can name, so every case gives the hook a home of its own there: one with no
-    # machine file unless the case is about that file. `HOME` says the same, as on most machines.
-    owner = home if home is not None else cwd / "no-home"
-    env["HOME"] = str(owner)
+    # A hook reads the machine file under `HOME` and nowhere a repository can name, so every case
+    # gives the hook a home of its own: one with no machine file unless the case is about that file.
+    env["HOME"] = str(home if home is not None else cwd / "no-home")
     return subprocess.run(
-        [*stayfixed_argv(owner), "hook", event, *args],
+        [sys.executable, "-m", "stayfixed", "hook", event, *args],
         input=stdin,
         capture_output=True,
         text=True,
@@ -398,6 +396,6 @@ def test_a_machine_file_that_does_not_load_is_not_blamed_on_stayfixed_toml(tmp_p
         "SessionStart", json.dumps({"hook_event_name": "SessionStart"}), project, home=home
     )
     person, _ = notice_texts(json.loads(started.stdout))
-    # The file the hook read, under the password database's home, which is the hook's pinned one.
+    # The file the hook read, under the hook's `HOME`.
     machine = home / ".config" / "stayfixed" / "config.toml"
     assert person == [MACHINE_FILE_WARNING.format(path=machine)]

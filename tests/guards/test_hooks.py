@@ -16,7 +16,6 @@ from stayfixed.hooks.api import EVENTS, Handler, HookEvent
 from stayfixed.hooks.dispatch import Recorder, dispatch
 from tests.floor import floor_env
 from tests.gitfixture import git
-from tests.ownerhome import stayfixed_argv
 from tests.sessions import NO_CONFIG, session_of
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -169,11 +168,10 @@ def test_discovery_imports_no_guards_module_but_hooks(tmp_path: Path) -> None:
 
 
 def hook(event: str, stdin: str, cwd: Path) -> subprocess.CompletedProcess[str]:
-    # A home of its own in the password database, which is where a hook reads the machine file
-    # (`tests/ownerhome.py`); one with no file, so nothing of the developer's is read.
+    # A home of its own with no machine file, so nothing of the developer's is read.
     home = cwd.parent / "no-home"
     return subprocess.run(
-        [*stayfixed_argv(home), "hook", event],
+        [sys.executable, "-m", "stayfixed", "hook", event],
         input=stdin,
         capture_output=True,
         text=True,

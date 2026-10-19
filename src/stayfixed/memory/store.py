@@ -28,15 +28,13 @@ nor an inherited `GIT_DIR` can point this module at another project's notes. Bot
 by tests, and both matter because a committed `.claude/settings.json` may carry an `env` block that
 applies with no trust prompt in a non-interactive session.
 
-**The machine file makes the same claim.** `machine_config_path` reads none of
-`STAYFIXED_CONFIG`, `XDG_CONFIG_HOME` and `HOME` (the home directory is the password database's),
-since gating one alone is worth nothing: each of them reaches the same file, and this area routes
-the store's overlay anchor (`overlay_root(None)`) and the trust record
-(`trust.record.record_path(None)`) through it. A committed
-`env` block setting `STAYFIXED_CONFIG`, or direnv, mise or a devcontainer setting
-`XDG_CONFIG_HOME` or `HOME` from a file the clone commits, would choose which overlay root
-`permitted_roots` is computed from, and which `trust.json` `may_inject` consults, wherever no
-`--machine` is threaded.
+**The machine file makes the same claim.** `machine_config_path` reads neither
+`STAYFIXED_CONFIG` nor `XDG_CONFIG_HOME`, since gating one alone is worth nothing: each of them
+reaches the same file, and this area routes the store's overlay anchor (`overlay_root(None)`) and
+the trust record (`trust.record.record_path(None)`) through it. A committed `env` block setting
+`STAYFIXED_CONFIG`, or direnv, mise or a devcontainer setting `XDG_CONFIG_HOME` from a file the
+clone commits, would choose which overlay root `permitted_roots` is computed from, and which
+`trust.json` `may_inject` consults, wherever no `--machine` is threaded.
 
 Stated exactly, because the exposure is not the same size as the invariant: pointing a variable
 somewhere of the author's choosing would **suppress** memory — no overlay root and no recorded
@@ -95,7 +93,7 @@ class Store:
     # The machine file this store was resolved against, carried rather than re-passed.
     #
     # Not an optional keyword on every function that reads the store: a `None` there is not
-    # inert — it re-reads the machine file under the password database's home rather than the
+    # inert — it re-reads the machine file under the owner's home rather than the
     # one `resolve` was given, silently changing `permitted_roots`, the index destination, and
     # which `trust.json` is consulted — so a caller that forgot one argument would get a different
     # overlay, a different write target and a different trust record, with nothing to say so.

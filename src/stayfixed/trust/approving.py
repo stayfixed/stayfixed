@@ -16,7 +16,6 @@ from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 
-from stayfixed.config.machine import homes_agree
 from stayfixed.errors import Refusal
 from stayfixed.printed import printable
 from stayfixed.result import Result
@@ -45,12 +44,6 @@ NOT_A_TERMINAL = (
 )
 # A kind no area contributes. The name typed is not repeated: it is whatever was typed.
 UNKNOWN_KIND = "there is no approval kind of that name; the kinds are: {known}"
-# Said after an approval where `HOME` is not the database's home, because a person who looks under
-# `HOME` for the record finds an older one or none (`config.machine`'s docstring says why).
-ELSEWHERE = (
-    "in {path}: under the home the password database records for this user, not under HOME, "
-    "because that is where a hook reads it"
-)
 
 
 def approve_kind(name: str, context: KindContext, given: Sequence[str]) -> Result:
@@ -85,10 +78,7 @@ def approve_kind(name: str, context: KindContext, given: Sequence[str]) -> Resul
         }
         for subject in subjects
     ]
-    written = record.record_path(context.machine)
     summary = "\n".join(lines) or f"{name} has nothing to approve in this checkout"
-    if approved and context.machine is None and written is not None and not homes_agree():
-        summary = f"{summary}\n{ELSEWHERE.format(path=written)}"
     return Result(summary, {"kind": name, "approved": approved})
 
 

@@ -2361,11 +2361,7 @@ def test_a_home_that_is_a_link_to_a_directory_is_followed_once_and_written_where
     tmp_path: Path,
 ) -> None:
     # `--home` is the machine owner's own directory, and one that is a link — a home on another
-    # volume — passed the questions before the first write, had the machine file written, and was
-    # then refused by the settings write, whose walk opens its root without following a link.
-    # It is resolved once, before anything else is asked, and every write under it lands where it
-    # leads; the walk below it still follows no link. Mutation (`mutations/`'s "setup asks about
-    # --home without resolving it first") -> refused after the machine file, and this reddens.
+    # volume — is that owner's layout: every write under it lands where it leads.
     real = tmp_path / "volume" / "me"
     real.mkdir(parents=True)
     home = tmp_path / "home"
@@ -2383,90 +2379,6 @@ def test_a_home_that_is_a_link_to_a_directory_is_followed_once_and_written_where
     assert machine.is_file()
     assert (real / USER_SETTINGS).is_file()
     assert home.is_symlink()
-
-
-def test_a_symlinked_claude_directory_is_a_refusal_that_names_the_link(tmp_path: Path) -> None:
-    # `fsops.write_within` walks `.claude` with `O_NOFOLLOW`, so a home managed by stow, chezmoi or
-    # a synced directory raised `UnsafePath` — which `cli.run`'s final handler renders as
-    # `stayfixed: internal error: UnsafePath: …`, exit 2, for the most common non-default home
-    # layout there is, and only *after* the machine file had been written. The containment rule
-    # has two stages and `setup` had only the second; `config.paths.contained` is the first,
-    # and it now runs above the first write and names the link and the way out.
-    #
-    # Mutation (`mutations/`'s "setup meets a symlinked ~/.claude only at write time"): the
-    # `_check_settings_path(home)` call is dropped → the write-time floor still refuses, so the
-    # refusal survives; this reddens on the machine file and on the remedy the message carries.
-    home = tmp_path / "home"
-    home.mkdir()
-    real = tmp_path / "dotfiles" / ".claude"
-    real.mkdir(parents=True)
-    (home / ".claude").symlink_to(real)
-    machine = tmp_path / "config.toml"
-    with pytest.raises(Refusal) as refused:
-        setup(
-            "recommended",
-            home=home,
-            machine=machine,
-            runner=Recorder(),
-            yes=True,
-            overlay=None,
-            project_root=tmp_path / "project",
-        )
-    message = str(refused.value)
-    assert str(home / ".claude") in message and str(real) in message
-    assert f"--home {real.parent}" in message, "the refusal has to carry a command that works"
-    assert not machine.is_file(), "the machine file was written before the refusal"
-
-
-@ROOT_SEARCHES_EVERYTHING
-def test_a_claude_directory_linked_into_a_directory_nobody_may_search_names_the_link(
-    tmp_path: Path,
-) -> None:
-    # Below the link nothing can be asked, and the walk that looks for the link to name asked the
-    # settings file first: `internal error: PermissionError`, with the absolute path, where the
-    # same link into a readable directory is a refusal naming it. Mutation (oracle):
-    # `mutations/`'s "setup's search for the settings link stops at a path it cannot ask about".
-    home = tmp_path / "home"
-    home.mkdir()
-    locked = tmp_path / "locked"
-    locked.mkdir()
-    (home / ".claude").symlink_to(locked / "x")
-    machine = tmp_path / "config.toml"
-    with unsearchable(locked), pytest.raises(Refusal) as refused:
-        setup(
-            "recommended",
-            home=home,
-            machine=machine,
-            runner=Recorder(),
-            yes=True,
-            overlay=None,
-            project_root=tmp_path / "project",
-        )
-    assert f"{home / '.claude'} is a symlink" in str(refused.value)
-    assert not machine.is_file()
-
-
-@ROOT_SEARCHES_EVERYTHING
-def test_a_settings_file_in_a_directory_nobody_may_search_is_refused_for_that(
-    tmp_path: Path,
-) -> None:
-    # A real directory, so no link is on the way: "is a symlink to ..." named a cause the file did
-    # not have. Mutation (oracle): `mutations/`'s "setup --settings words a file it cannot ask
-    # about as a link".
-    settings = tmp_path / "locked" / "settings.json"
-    settings.parent.mkdir()
-    with unsearchable(settings.parent), pytest.raises(Refusal) as refused:
-        setup(
-            "recommended",
-            home=tmp_path / "home",
-            machine=tmp_path / "machine.toml",
-            runner=Recorder(),
-            yes=False,
-            overlay=None,
-            project_root=tmp_path / "project",
-            settings=settings,
-        )
-    assert str(refused.value) == f"{settings} cannot be checked for a symlink (Permission denied)"
 
 
 # For a test that needs a directory its owner may not write into: root writes into every one,
@@ -2527,24 +2439,16 @@ def test_a_home_that_cannot_take_the_write_is_refused_before_any_write(
 
 
 @_ROOT_WRITES_EVERYWHERE
-@pytest.mark.parametrize("locked", ["home", "claude", "settings"])
 def test_a_directory_the_settings_write_opens_to_read_and_cannot_is_refused_before_any_write(
-    tmp_path: Path, locked: str
+    tmp_path: Path,
 ) -> None:
-    # The settings write walks to its file opening each directory `O_RDONLY`, and a directory at
-    # mode 300 takes a new name and refuses that open: the question whether a name can be made
-    # there passed it, the machine file was written, and the settings write then refused in words
-    # about a symlink. Each directory the walk opens is asked whether it can be read, too.
-    # Mutations (`mutations/`'s "setup stops asking whether the settings walk can read --home's
-    # directories" -> `home` and `claude`; "setup stops asking whether the settings walk can read
-    # the --settings directory" -> `settings`).
+    # The settings write opens its file's directory `O_RDONLY`, and a directory at mode 300 takes
+    # a new name and refuses that open: the question whether a name can be made there passed it,
+    # the machine file was written, and the settings write then refused. Mutation (`mutations/`'s
+    # "setup stops asking whether the settings write can read its directory").
     home, machine = tmp_path / "home", tmp_path / "config.toml"
-    (home / ".claude").mkdir(parents=True)
-    settings = tmp_path / "dotfiles" / "settings.json" if locked == "settings" else None
-    directory = {"home": home, "claude": home / ".claude", "settings": tmp_path / "dotfiles"}[
-        locked
-    ]
-    directory.mkdir(exist_ok=True)
+    directory = home / ".claude"
+    directory.mkdir(parents=True)
     runner = Recorder()
     with write_only(directory), pytest.raises(Refusal) as refused:
         setup(
@@ -2555,49 +2459,9 @@ def test_a_directory_the_settings_write_opens_to_read_and_cannot_is_refused_befo
             yes=False,
             overlay=None,
             project_root=tmp_path / "project",
-            settings=settings,
         )
     said = str(refused.value)
     assert f"{directory} is not readable, and the settings write opens it to read" in said, said
-    assert not machine.exists() and runner.calls == []
-
-
-@pytest.mark.parametrize("shape", ["a-file-at-claude", "a-directory-at-settings"])
-def test_a_settings_path_of_the_wrong_kind_under_home_is_refused_before_any_write(
-    tmp_path: Path, shape: str
-) -> None:
-    # A regular file at `<home>/.claude`, and a directory at `<home>/.claude/settings.json`, are
-    # the two shapes `--settings` refuses in its own directory and at its own file. Under `--home`
-    # neither was asked: the machine file was written, and reading the settings file failed with
-    # exit 1. Mutations (`mutations/`'s "setup asks nothing of a .claude that is not a directory"
-    # -> `a-file-at-claude`; "setup asks nothing of a directory at the settings file" ->
-    # `a-directory-at-settings`).
-    home, machine = tmp_path / "home", tmp_path / "config.toml"
-    home.mkdir()
-    if shape == "a-file-at-claude":
-        (home / ".claude").write_text("not a directory\n", encoding="utf-8")
-        said = (
-            f"{home / USER_SETTINGS} cannot be written: its directory has to be a real directory, "
-            f"and {home / '.claude'} is not one"
-        )
-    else:
-        (home / USER_SETTINGS).mkdir(parents=True)
-        said = (
-            f"{home / USER_SETTINGS} is a directory; setup writes the settings file at that path, "
-            f"so it has to be a file, or not be there yet"
-        )
-    runner = Recorder()
-    with pytest.raises(Refusal) as refused:
-        setup(
-            "recommended",
-            home=home,
-            machine=machine,
-            runner=runner,
-            yes=False,
-            overlay=None,
-            project_root=tmp_path / "project",
-        )
-    assert str(refused.value) == said
     assert not machine.exists() and runner.calls == []
 
 
@@ -2656,61 +2520,6 @@ def test_a_read_only_home_whose_claude_directory_is_writable_is_set_up(tmp_path:
         )
     assert machine.is_file()
     assert (home / USER_SETTINGS).is_file()
-
-
-@_ROOT_WRITES_EVERYWHERE
-def test_a_read_only_home_with_settings_named_elsewhere_is_set_up(tmp_path: Path) -> None:
-    # With `--settings` the settings file is not under `home` at all, and a home that is there
-    # takes no write. Mutation (`mutations/`'s "setup asks whether a --home that is there can be
-    # written although --settings sends the write elsewhere") -> refused, and this reddens.
-    home = tmp_path / "home"
-    home.mkdir()
-    settings = tmp_path / "dot" / "settings.json"
-    settings.parent.mkdir()
-    machine = tmp_path / "config.toml"
-    with read_only(home):
-        setup(
-            "recommended",
-            home=home,
-            machine=machine,
-            runner=Recorder(),
-            yes=False,
-            overlay=None,
-            project_root=tmp_path / "project",
-            settings=settings,
-        )
-    assert machine.is_file()
-    assert settings.is_file()
-
-
-@_ROOT_WRITES_EVERYWHERE
-def test_a_home_under_a_read_only_parent_is_refused_with_settings_named_elsewhere(
-    tmp_path: Path,
-) -> None:
-    # The one write `--settings` leaves under a home that is not there yet is the `mkdir`, and
-    # the directory it would be made in is what has to take it. Mutation (`mutations/`'s "setup
-    # stops asking whether a missing --home can be created when --settings is given"): the
-    # question dropped -> the `mkdir` floor refuses in words that name no directory to fix, and
-    # this reddens.
-    parent = tmp_path / "locked"
-    parent.mkdir()
-    home = parent / "home"
-    settings = tmp_path / "dot" / "settings.json"
-    settings.parent.mkdir()
-    machine = tmp_path / "config.toml"
-    with read_only(parent), pytest.raises(Refusal) as refused:
-        setup(
-            "recommended",
-            home=home,
-            machine=machine,
-            runner=Recorder(),
-            yes=False,
-            overlay=None,
-            project_root=tmp_path / "project",
-            settings=settings,
-        )
-    assert str(refused.value) == f"--home {home} cannot be used: {parent} is not writable"
-    assert not machine.exists()
 
 
 @_ROOT_WRITES_EVERYWHERE
@@ -2803,9 +2612,8 @@ def test_a_created_overlay_under_a_home_nobody_may_search_is_refused_before_anyt
     # destination (`_candidate_repository` -> `_nearest_directory`) asked `is_dir` of it first and
     # `PermissionError` reached the frame as `stayfixed: internal error`. The questions about
     # `--home` come before where the overlay lies, and they name the file they could not ask
-    # about. Mutations (`mutations/`'s "setup asks where the overlay lies before it asks about
-    # --home", and "setup names a settings file it cannot ask about only relative to --home"):
-    # either reddens this on the wording.
+    # about. Mutation (`mutations/`'s "setup asks where the overlay lies before it asks about
+    # --home") reddens this on the wording.
     locked = tmp_path / "locked"
     locked.mkdir()
     home = locked / "home"
@@ -2826,14 +2634,15 @@ def test_a_created_overlay_under_a_home_nobody_may_search_is_refused_before_anyt
             project_root=project,
         )
     assert str(refused.value) == (
-        f"{home / USER_SETTINGS} cannot be checked for a symlink (Permission denied)"
+        f"{quoted(str(home / 'stayfixed-private'))} cannot be checked (Permission denied), so "
+        "nothing was written"
     )
     assert runner.calls == []
     assert not machine.exists()
 
 
 def _below_a_locked_directory(tmp_path: Path, what: str) -> tuple[dict[str, Any], Path]:
-    """`setup`'s keyword arguments with `what` — `--overlay`, `--root`, `--settings` or `--home` —
+    """`setup`'s keyword arguments with `what` — `--overlay` or `--root` —
     below `tmp_path/locked`, and the path below it that cannot be asked about once it is locked."""
     locked = tmp_path / "locked"
     locked.mkdir()
@@ -2848,34 +2657,22 @@ def _below_a_locked_directory(tmp_path: Path, what: str) -> tuple[dict[str, Any]
         asked = locked / "overlay"
         _seed_overlay(asked)
         arguments["overlay"] = str(asked)
-    elif what == "root":
+    else:
         asked = locked / "project"
         asked.mkdir()
         arguments["project_root"] = asked
-    elif what == "home":
-        # With `--settings` elsewhere, the walk below `home` to the settings file is not asked,
-        # and the first question about `home` is whether it is there.
-        asked = locked / "home"
-        arguments["home"] = asked
-        (tmp_path / "dotfiles").mkdir()
-        arguments["settings"] = tmp_path / "dotfiles" / "settings.json"
-    else:
-        asked = locked / "dotfiles"
-        asked.mkdir()
-        arguments["settings"] = asked / "settings.json"
     return arguments, asked
 
 
 @ROOT_SEARCHES_EVERYTHING
-@pytest.mark.parametrize("what", ["overlay", "root", "settings", "home"])
+@pytest.mark.parametrize("what", ["overlay", "root"])
 def test_a_path_setup_cannot_ask_about_before_its_first_write_is_a_refusal_naming_it(
     tmp_path: Path, what: str
 ) -> None:
     # Each of these ended in `stayfixed: internal error: PermissionError`, with the path in a
     # traceback's words: `--overlay` from the overlay probe's `is_dir`, `--root` from the walk to
-    # the nearest directory git is asked from, `--settings` from the question whether its
-    # directory is a real one, and `--home`, with `--settings` elsewhere, from the question
-    # whether it is there yet. None of those steps words that fault itself, so the phase's floor
+    # the nearest directory git is asked from. Neither step words that fault itself, so the phase's
+    # floor
     # does, naming the path the predicate was handed. Mutation (`mutations/`'s "setup lets a path
     # it cannot ask about before its first write reach the frame"): the floor's `except` dropped
     # -> `PermissionError` leaves `setup`, and every case reddens.
@@ -2887,39 +2684,6 @@ def test_a_path_setup_cannot_ask_about_before_its_first_write_is_a_refusal_namin
     assert str(refused.value) == (
         f"{quoted(str(asked))} cannot be checked (Permission denied), so nothing was written"
     )
-    assert runner.calls == []
-    assert not machine.exists()
-
-
-@_ROOT_WRITES_EVERYWHERE
-def test_a_settings_directory_that_cannot_be_written_is_refused_before_the_machine_file(
-    tmp_path: Path,
-) -> None:
-    # `--settings` into a 555 directory wrote the machine file, and only the settings write
-    # refused — saying the directory "has to exist and be a real directory, because stayfixed
-    # writes .claude/settings.json through a walk that never follows a symlink", of a real
-    # directory with no link in sight. It is asked now whether it can take the write, as
-    # `--home`'s directories are. Mutation (`mutations/`'s "setup --settings writes the machine
-    # file before asking whether its directory can be written"): the question dropped -> the
-    # machine file is on disk and the refusal speaks of a symlink, and this reddens on both.
-    dotfiles = tmp_path / "dotfiles"
-    dotfiles.mkdir()
-    settings = dotfiles / "settings.json"
-    machine = tmp_path / "config.toml"
-    runner = Recorder()
-    with read_only(dotfiles), pytest.raises(Refusal) as refused:
-        setup(
-            "recommended",
-            home=tmp_path / "home",
-            machine=machine,
-            runner=runner,
-            yes=False,
-            overlay=None,
-            project_root=tmp_path / "project",
-            settings=settings,
-        )
-    assert str(refused.value) == f"{settings} cannot be written: {dotfiles} is not writable"
-    assert "symlink" not in str(refused.value)
     assert runner.calls == []
     assert not machine.exists()
 
@@ -2957,12 +2721,10 @@ def test_a_created_overlay_whose_destination_cannot_be_searched_is_refused_befor
     assert not machine.exists()
 
 
-# `_before_the_first_write`'s steps, in its documented order, for a `create:` run without
-# `--settings`.
+# `_before_the_first_write`'s steps, in its documented order, for a `create:` run.
 _THE_PHASE = (
     "_requested_overlay",
     "load_preset",
-    "_check_settings_path",
     "_check_home_usable",
     "_outside_the_project",
 )
@@ -3018,7 +2780,7 @@ def test_every_question_before_the_first_write_is_asked_in_the_documented_order(
     assert {"write_machine", "_write_user_settings", "run"} <= set(events[phase:]), events
 
 
-@pytest.mark.parametrize("place", ["claude", "home", "root", "settings", "overlay"])
+@pytest.mark.parametrize("place", ["claude", "home", "root", "overlay"])
 def test_a_symlink_loop_at_any_path_setup_is_given_is_a_refusal_naming_it(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -3027,15 +2789,13 @@ def test_a_symlink_loop_at_any_path_setup_is_given_is_a_refusal_naming_it(
 ) -> None:
     # Python 3.11 and 3.12 raise `RuntimeError` resolving a path through a symlink loop, which the
     # floor under `setup`'s questions before its first write, an `except OSError`, did not catch:
-    # a loop at `~/.claude`, `--home`, `--root`, `--settings` or `--overlay` was
+    # a loop at `~/.claude`, `--home`, `--root` or `--overlay` was
     # `stayfixed: internal error: RuntimeError` there, while 3.13 refused some in other words and
     # recorded the overlay past a looping `--root`. Every resolve in `setup` goes through
     # `fsops.resolved`, so each is the floor's refusal, naming the path, on every interpreter, with
     # nothing written and nothing run. Mutations (`mutations/`'s "setup's command resolves --root
-    # past fsops" -> `root`; "setup resolves --overlay past fsops" -> `overlay`; "setup resolves a
-    # --settings link past fsops" -> `settings`; "setup resolves a symlinked ~/.claude past
-    # fsops" -> `claude`; "contained resolves its root past fsops" and "fsops.resolved answers a
-    # loop with a path where the interpreter does" -> `home`).
+    # past fsops" -> `root`; "setup resolves --overlay past fsops" -> `overlay`; "fsops.resolved
+    # answers a loop with a path where the interpreter does" -> `home`).
     from stayfixed.cli import build_parser, discover_registrars, run
 
     home, machine = tmp_path / "home", tmp_path / "config.toml"
@@ -3047,7 +2807,6 @@ def test_a_symlink_loop_at_any_path_setup_is_given_is_a_refusal_naming_it(
         "claude": home / ".claude",
         "home": home,
         "root": root,
-        "settings": tmp_path / "dotfiles" / "settings.json",
         "overlay": overlay,
     }[place]
     if looped.is_dir():
@@ -3056,8 +2815,6 @@ def test_a_symlink_loop_at_any_path_setup_is_given_is_a_refusal_naming_it(
     looped.symlink_to(looped)
     argv = ["setup", "--preset", "recommended", "--yes", "--home", str(home)]
     argv += ["--machine", str(machine), "--root", str(root), "--overlay", str(overlay)]
-    if place == "settings":
-        argv += ["--settings", str(looped)]
     runner = Recorder()
     monkeypatch.setattr("stayfixed.setup.commands.subprocess_runner", lambda: runner)
     code = run(argv, parser=build_parser(discover_registrars()))
@@ -3065,7 +2822,9 @@ def test_a_symlink_loop_at_any_path_setup_is_given_is_a_refusal_naming_it(
     assert code == 2, said
     assert said.startswith("stayfixed: refused: "), said
     # `--root` is resolved by the command before `setup` is called, and named as the flag.
-    named = f"--root {quoted(str(looped))}" if place == "root" else quoted(str(looped))
+    # A loop at `~/.claude` or `--home` is met resolving the settings file below it, named.
+    asked = home / USER_SETTINGS if place in ("claude", "home") else looped
+    named = f"--root {quoted(str(looped))}" if place == "root" else quoted(str(asked))
     assert f"{named} cannot be checked (" in said, said
     assert not machine.exists() and runner.calls == []
 
@@ -3082,34 +2841,6 @@ def test_a_project_root_through_a_symlink_loop_handed_to_setup_is_refused(tmp_pa
     with pytest.raises(Refusal, match="cannot be checked"):
         _record(tmp_path, overlay, root)
     assert not (tmp_path / "config.toml").exists()
-
-
-def test_a_claude_directory_that_becomes_a_symlink_after_the_check_is_still_refused(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # The floor under the test above, and not dead: a component that becomes a symlink between
-    # the check and the write can only be refused by the `O_NOFOLLOW` walk, and that interval is
-    # the whole reason the walk exists. Patching the first stage out is how the interval is
-    # reached deterministically — the alternative is a race nothing can schedule.
-    #
-    # Mutation (`mutations/`'s "the write-time containment on the settings file is swallowed"): the
-    # `except UnsafePath` arm stops raising → `setup` reports a settings file it never wrote.
-    monkeypatch.setattr("stayfixed.setup.run._check_settings_path", lambda home: None)
-    home = tmp_path / "home"
-    home.mkdir()
-    real = tmp_path / "elsewhere" / ".claude"
-    real.mkdir(parents=True)
-    (home / ".claude").symlink_to(real)
-    with pytest.raises(Refusal, match="never follows a symlink"):
-        setup(
-            "recommended",
-            home=home,
-            machine=tmp_path / "config.toml",
-            runner=Recorder(),
-            yes=True,
-            overlay=None,
-            project_root=tmp_path / "project",
-        )
 
 
 def test_the_plugin_config_mirror_follows_the_machine_file(tmp_path: Path) -> None:
@@ -3190,22 +2921,13 @@ def test_a_created_tree_that_is_not_an_overlay_says_the_repository_now_exists(
 
 
 @pytest.mark.parametrize("per_file", [False, True])
-def test_the_home_a_symlinked_settings_file_suggests_is_one_that_works(
+def test_a_symlinked_settings_file_or_claude_directory_is_written_through(
     tmp_path: Path, per_file: bool
 ) -> None:
-    # The remedy is only worth printing if following it does what it says. `stow` folds a package as
-    # far as it can, so with `~/.claude` already created by Claude Code it links the *file* and not
-    # the directory — and the first draft's arm compared the link's basename to its target's, which
-    # is trivially true for a per-file link. It printed `--home <dotfiles>/claude`, under which this
-    # command writes `<dotfiles>/claude/.claude/settings.json`, exits 0, and leaves the file the
-    # link leads to untouched: the same shape as a `--machine` default that wrote a file no reader
-    # reads, arriving through the remedy. So the test follows the advice rather than matching a
-    # string, in both shapes of the accident.
-    #
-    # Mutation (`mutations/`'s "the symlink remedy prints a --home that writes somewhere
-    # else"): `_home_that_leads_there` stops checking that the link leads to a
-    # `.claude/settings.json` at all → the per-file case below gets a command, and the
-    # companion test's "no --home can name it" never fires.
+    # `stow` links the file where `~/.claude` is already there, and the directory where it is not:
+    # either is the owner's layout, so the file the link leads to gains the rules and the link
+    # stays. Mutation (`mutations/`'s "setup writes the settings file without resolving it") ->
+    # the link becomes a regular file.
     home = tmp_path / "home"
     home.mkdir()
     leads_to = tmp_path / "dotfiles" / ".claude" / "settings.json"
@@ -3216,284 +2938,17 @@ def test_the_home_a_symlinked_settings_file_suggests_is_one_that_works(
         (home / USER_SETTINGS).symlink_to(leads_to)
     else:
         (home / ".claude").symlink_to(leads_to.parent)
-    with pytest.raises(Refusal) as refused:
-        setup(
-            "recommended",
-            home=home,
-            machine=tmp_path / "config.toml",
-            runner=Recorder(),
-            yes=True,
-            overlay=None,
-            project_root=tmp_path / "project",
-        )
-    advised = str(refused.value).partition("--home ")[2].partition("`")[0]
-    assert advised, "the refusal printed no command at all"
     setup(
         "recommended",
-        home=Path(advised),
-        machine=tmp_path / "second.toml",
+        home=home,
+        machine=tmp_path / "config.toml",
         runner=Recorder(),
         yes=True,
         overlay=None,
         project_root=tmp_path / "project",
     )
-    # The advised run wrote the file the link leads to, and not a second one beside it.
     assert "permissions" in json.loads(leads_to.read_text(encoding="utf-8"))
-    assert not (Path(advised) / USER_SETTINGS).is_symlink()
-    assert (Path(advised) / USER_SETTINGS).resolve() == leads_to.resolve()
-
-
-def test_a_home_layout_no_home_can_express_says_so_rather_than_printing_a_command(
-    tmp_path: Path,
-) -> None:
-    # What `stow` actually produces for a package named `claude`:
-    # `~/.claude/settings.json -> <dotfiles>/claude/settings.json`. `--home H` writes
-    # `H/.claude/settings.json` and nothing else, so no value of `H` names that target — and an
-    # honest "this layout cannot be expressed, here are the two ways out" beats a command that
-    # silently writes somewhere no reader reads.
-    home = tmp_path / "home"
-    (home / ".claude").mkdir(parents=True)
-    leads_to = tmp_path / "dotfiles" / "claude" / "settings.json"
-    leads_to.parent.mkdir(parents=True)
-    leads_to.write_text("{}\n", encoding="utf-8")
-    (home / USER_SETTINGS).symlink_to(leads_to)
-    with pytest.raises(Refusal) as refused:
-        setup(
-            "recommended",
-            home=home,
-            machine=tmp_path / "config.toml",
-            runner=Recorder(),
-            yes=True,
-            overlay=None,
-            project_root=tmp_path / "project",
-        )
-    message = str(refused.value)
-    assert "no --home can name it" in message
-    assert "stayfixed setup --home" not in message, "a command that cannot work is worse than none"
-    assert "adopt it" in message, "the way out has to be named, not just the refusal"
-
-
-def test_a_per_file_settings_link_is_written_through_settings_and_not_under_home(
-    tmp_path: Path,
-) -> None:
-    # `stow` links `~/.claude/settings.json` itself into a dotfiles tree, and no `--home` value
-    # writes that file — `--home <dotfiles>/claude` writes `<dotfiles>/claude/.claude/
-    # settings.json`. `--settings PATH` names the file. The link under `home` is left exactly as it
-    # was; the dotfiles file gains the deny rules; nothing new appears under `home`.
-    #
-    # Mutation (declared): the `root, relative = …` line -> `(home, USER_SETTINGS)`
-    # unconditionally. What it actually does is recorded beside the assertion below.
-    home = tmp_path / "home"
-    dotfiles = tmp_path / "dotfiles" / "claude"
-    dotfiles.mkdir(parents=True)
-    real = dotfiles / "settings.json"
-    real.write_text("{}\n", encoding="utf-8")
-    (home / ".claude").mkdir(parents=True)
-    (home / ".claude" / "settings.json").symlink_to(real)
-    before = sorted(str(p.relative_to(home)) for p in home.rglob("*"))
-    setup(
-        "recommended",
-        home=home,
-        machine=tmp_path / "machine.toml",
-        runner=Recorder(),
-        yes=False,
-        overlay=None,
-        project_root=tmp_path / "project",
-        settings=real,
-    )
-    written = json.loads(real.read_text(encoding="utf-8"))
-    # Read defensively so the failure says which file was written rather than raising a
-    # `KeyError` on a document the deny rules never reached: under the declared mutation the
-    # write lands under `home` — replacing the link with a real file of the same name, so the
-    # inventory below is unchanged — and the dotfiles file is still the empty `{}` it started
-    # as. That silence is the whole defect, and this sentence is what names it.
-    deny = written.get("permissions", {}).get("deny", [])
-    assert "Read(**/.env)" in deny, f"the file --settings named was not written: {written}"
-    assert sorted(str(p.relative_to(home)) for p in home.rglob("*")) == before
-
-
-def test_a_settings_path_whose_directory_is_not_there_is_refused_before_anything_is_written(
-    tmp_path: Path,
-) -> None:
-    # The structural question `setup`'s own docstring promises is asked "while nothing is on
-    # disk", asked for the spelling that skipped it. `_check_settings_path(home)` ran only when
-    # `settings is None`, so with `--settings` the refusal came from `_write_user_settings` —
-    # after `home.mkdir(parents=True)` and after `write_machine`. A typo in the directory
-    # component therefore created the home tree, wrote the machine configuration, and exited 2,
-    # and the two cases below asserted the refusal and its sentence while never asking that.
-    #
-    # Mutation (declared, `mutations/`'s "setup asks about the --settings directory only at write
-    # time"): the `else:` arm becomes `pass`. The `Refusal` still comes — one frame later — so the
-    # two `exists()` assertions are what redden, and the `raises` is not the claim here.
-    home = tmp_path / "home"
-    machine = tmp_path / "machine.toml"
-    missing = tmp_path / "not-there" / "settings.json"
-    with pytest.raises(Refusal) as refused:
-        setup(
-            "recommended",
-            home=home,
-            machine=machine,
-            runner=Recorder(),
-            yes=False,
-            overlay=None,
-            project_root=tmp_path / "project",
-            settings=missing,
-        )
-    assert str(missing) in str(refused.value)
-    assert "has to exist and be a real directory" in str(refused.value)
-    assert not home.exists(), sorted(p.name for p in home.rglob("*"))
-    assert not machine.exists()
-
-
-def test_a_settings_path_whose_directory_is_not_there_is_a_refusal_and_not_an_internal_error(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # `_write_user_settings` caught only `UnsafePath`, and `write_within` opens the root itself
-    # before the loop that wraps `ELOOP`/`ENOTDIR` into one — so a root that is not there raises a
-    # bare `FileNotFoundError`, which left the library and reached `cli.run`'s final handler as
-    # `stayfixed: internal error`, exit 2, no remedy. A typo in `--settings`' directory component is
-    # the ordinary way to get there.
-    #
-    # This is now the FLOOR under the case above rather than the case itself:
-    # `_check_settings_parent` refuses the same two conditions one stage earlier, so the
-    # interval in which the directory goes away between the check and the write is what is
-    # left, and it is reached the way the `~/.claude` floor above reaches its own — by patching
-    # the first stage out. The alternative is a race nothing can schedule.
-    #
-    # Mutation (declared): the `except OSError` arm -> `except UnsafePath` (a second, dead
-    # copy) -> the `OSError` escapes again and this reddens on `Refusal` not being raised.
-    monkeypatch.setattr("stayfixed.setup.run._check_settings_parent", lambda settings: None)
-    home = tmp_path / "home"
-    missing = tmp_path / "not-there" / "settings.json"
-    with pytest.raises(Refusal) as refused:
-        setup(
-            "recommended",
-            home=home,
-            machine=tmp_path / "machine.toml",
-            runner=Recorder(),
-            yes=False,
-            overlay=None,
-            project_root=tmp_path / "project",
-            settings=missing,
-        )
-    message = str(refused.value)
-    assert str(missing) in message
-    assert "FileNotFoundError" in message
-    assert "has to exist and be a real directory" in message
-
-
-def test_a_settings_path_inside_a_symlinked_directory_is_a_refusal_and_not_an_internal_error(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # The other half of that defect, and the layout `--settings` is advertised for one door over:
-    # `--settings ~/.claude/settings.json` where `~/.claude` is itself the stow link. The walk
-    # carries `O_NOFOLLOW`, so the root open refuses the link — and refused it as a bare `OSError`
-    # rather than as `UnsafePath`, for the same reason as above. The first stage is patched out for
-    # the reason the case above gives: it now refuses a symlinked directory too, and this one is the
-    # floor beneath it.
-    monkeypatch.setattr("stayfixed.setup.run._check_settings_parent", lambda settings: None)
-    home = tmp_path / "home"
-    real = tmp_path / "dotfiles" / "claude"
-    real.mkdir(parents=True)
-    linked = tmp_path / "linked-claude"
-    linked.symlink_to(real, target_is_directory=True)
-    with pytest.raises(Refusal) as refused:
-        setup(
-            "recommended",
-            home=home,
-            machine=tmp_path / "machine.toml",
-            runner=Recorder(),
-            yes=False,
-            overlay=None,
-            project_root=tmp_path / "project",
-            settings=linked / "settings.json",
-        )
-    message = str(refused.value)
-    assert str(linked / "settings.json") in message
-    assert "has to exist and be a real directory" in message
-    # The file the link leads to is untouched: a refusal that had already written would be the
-    # defect this one replaces, one step later.
-    assert not (real / "settings.json").exists()
-
-
-def test_a_settings_path_that_is_itself_a_symlink_is_refused_and_the_link_survives(
-    tmp_path: Path,
-) -> None:
-    # The layout the flag is advertised for, with the path a person actually types: `stow`
-    # folds as far as it can, so with `~/.claude` already there it links the *file*, and
-    # `--settings ~/.claude/settings.json` names the link. `_check_settings_parent` asked only
-    # about the directory, and `fsops.write_within` reaches `os.replace`, which REPLACES a
-    # symlink entry rather than following or refusing it — so the link became a regular file,
-    # the dotfiles copy kept its old bytes, and the command exited 0. Three surfaces said it
-    # was refused: the comment beside the write, `docs/cli.md`, and the changelog.
-    #
-    # Measured before the fix: `is_symlink()` went `True -> False` and the dotfiles file was
-    # still `{"mine": true}`. Both assertions below are that measurement.
-    #
-    # Mutation (declared, `mutations/`'s "setup --settings asks about the directory and not the
-    # file"): the `contained` call goes -> the write lands, the link is replaced, and
-    # `pytest.raises` reddens with `DID NOT RAISE`.
-    home = tmp_path / "home"
-    (home / ".claude").mkdir(parents=True)
-    machine = tmp_path / "machine.toml"
-    real = tmp_path / "dotfiles" / "claude" / "settings.json"
-    real.parent.mkdir(parents=True)
-    real.write_text('{"mine": true}\n', encoding="utf-8")
-    link = home / USER_SETTINGS
-    link.symlink_to(real)
-    with pytest.raises(Refusal) as refused:
-        setup(
-            "recommended",
-            home=home,
-            machine=machine,
-            runner=Recorder(),
-            yes=False,
-            overlay=None,
-            project_root=tmp_path / "project",
-            settings=link,
-        )
-    message = str(refused.value)
-    assert str(link) in message
-    # The way out names the file to pass instead, the way `_check_settings_path`'s does.
-    assert str(real) in message
-    assert link.is_symlink(), "the link was replaced rather than refused"
-    assert json.loads(real.read_text(encoding="utf-8")) == {"mine": True}
-    assert not machine.exists()
-
-
-def test_a_settings_path_that_is_an_existing_directory_is_refused_before_anything_is_written(
-    tmp_path: Path,
-) -> None:
-    # The mirror of the case above, and the standing defect class in the function whose
-    # docstring says it has been eliminated: a directory at `--settings` passed the early check
-    # — `parent.is_dir() and not parent.is_symlink()` is true of it — and failed from inside
-    # `_write_user_settings`, after `home.mkdir(parents=True)` and after the machine
-    # configuration had been written. The `Refusal` is therefore NOT what this case is about:
-    # the `except OSError` arm produces one either way, and what reddens under the declared
-    # mutation is the two `exists()` assertions.
-    #
-    # Mutation (declared, `mutations/`'s "setup --settings accepts a directory where the file
-    # goes"): the `is_dir()` refusal goes -> the run writes the home tree and the machine file
-    # before `os.replace` reports `IsADirectoryError`, and both assertions below redden.
-    home = tmp_path / "home"
-    machine = tmp_path / "machine.toml"
-    directory = tmp_path / "claude" / "settings.json"
-    directory.mkdir(parents=True)
-    with pytest.raises(Refusal) as refused:
-        setup(
-            "recommended",
-            home=home,
-            machine=machine,
-            runner=Recorder(),
-            yes=False,
-            overlay=None,
-            project_root=tmp_path / "project",
-            settings=directory,
-        )
-    assert str(directory) in str(refused.value)
-    assert "is a directory" in str(refused.value)
-    assert not home.exists(), sorted(p.name for p in home.rglob("*"))
-    assert not machine.exists()
+    assert (home / (USER_SETTINGS if per_file else ".claude")).is_symlink()
 
 
 def test_a_user_settings_file_the_encoder_cannot_write_back_is_a_failure_naming_it(

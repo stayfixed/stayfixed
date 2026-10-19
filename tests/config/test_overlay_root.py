@@ -9,7 +9,6 @@ import pytest
 
 from stayfixed.config.overlay import overlay_root
 from stayfixed.config.reading import MachineConfigError
-from tests.ownerhome import as_owner_home
 
 
 def test_a_recorded_root_is_answered_and_an_empty_machine_file_records_none(
@@ -69,16 +68,12 @@ def test_a_machine_file_with_no_usable_overlay_root_records_none(tmp_path: Path,
     assert overlay_root(machine) is None
 
 
-def test_a_root_under_tilde_is_the_owners_home_and_never_home(
+def test_a_root_under_tilde_is_the_owners_home(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Every command reads this file under the password database's home, so a `~` in it is the
-    # home the file lives under: the database's. A direnv, mise or devcontainer setup can set
-    # `HOME` from a file the clone commits, and relative, it is a directory inside the clone a
-    # hook runs in.
+    # A `~` in this file is the home the file lives under.
     owner = tmp_path / "owner"
-    as_owner_home(monkeypatch, owner)
-    monkeypatch.setenv("HOME", "fakehome")
+    monkeypatch.setenv("HOME", str(owner))
     machine = tmp_path / "machine.toml"
     machine.write_text('[overlay]\nroot = "~/stayfixed-private"\n', encoding="utf-8")
     assert overlay_root(machine) == owner / "stayfixed-private"
@@ -86,12 +81,12 @@ def test_a_root_under_tilde_is_the_owners_home_and_never_home(
     assert overlay_root(machine) == owner
 
 
-def test_a_root_under_tilde_is_not_recorded_where_the_database_lists_no_home(
+def test_a_root_under_tilde_is_not_recorded_where_there_is_no_home(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # Never a `~` left in place, which every later path would read as a directory named `~`
     # inside the current one.
-    as_owner_home(monkeypatch, None)
+    monkeypatch.setenv("HOME", "")
     machine = tmp_path / "machine.toml"
     machine.write_text('[overlay]\nroot = "~/stayfixed-private"\n', encoding="utf-8")
     assert overlay_root(machine) is None

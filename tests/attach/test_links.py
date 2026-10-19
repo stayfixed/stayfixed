@@ -36,12 +36,9 @@ def _bound(tmp_path: Path) -> tuple[Path, Path, Path]:
     """A committed repository in overlay mode, and the overlay that already records it."""
     root = tmp_path / "project"
     root.mkdir(parents=True)
-    # A home directory that is already there. stayfixed finds the machine owner's home and
-    # never creates it — `worktree.harness_link_parts` makes it the containment anchor, and
-    # the `O_NOFOLLOW` walk vouches for every component below an anchor and never for the
-    # anchor itself — so a home that is not there is a refusal, which
-    # `tests/memory/test_worktree.py` asserts in both directions. Every test below spells its
-    # home as `tmp_path / "home"`; it is created here so none of them has to say so.
+    # A home directory that is already there: stayfixed never creates one, and a home that is not
+    # there is a refusal (`tests/memory/test_worktree.py`). Every test below spells its home as
+    # `tmp_path / "home"`; it is created here so none of them has to say so.
     (tmp_path / "home").mkdir(exist_ok=True)
     overlay = tmp_path / "overlay"
     (overlay / "common" / "memory").mkdir(parents=True)
@@ -600,36 +597,48 @@ def test_a_worktree_git_reports_as_prunable_is_not_a_checkout_attach_or_detach_w
     assert all(path.name != "side" for path in _worktrees(root))
 
 
-def test_a_home_whose_claude_is_a_symlink_refuses_above_every_write(tmp_path: Path) -> None:
-    # The layout is stow's, chezmoi's, or any synced home: `~/.claude` is a link into a
-    # dotfiles tree. The walk under the home directory refuses to follow it — deliberately,
-    # and `worktree.harness_link_parts` cites `setup --settings` as the precedent — but the
-    # refusal used to be discovered from inside the link step, which runs after the ignore
-    # region, the Codex rule files, the settings merge, the ledger and the overlay's binding
-    # record. Measured then: `PartialLink` with three links already made, `detach` afterwards
-    # raising a raw `UnsafePath` as `internal error`, and no shipped command able to put the
-    # repository back.
-    #
-    # `attach`'s own docstring is the standard this holds it to: "All six refusals are above
-    # every write… A refusal that leaves a repository looking attached is not a refusal."
-    #
-    # Mutation (declared, `mutations/`'s "attach discovers the harness anchor from inside the link
-    # step"): the hoisted call goes -> the refusal still arrives, from `_apply_harness_link`, and
-    # `assert_snapshot_unchanged` reddens with the ledger and the region already written.
+def test_a_side_worktree_whose_slug_is_a_link_refuses_attach_and_detach_before_any_write(
+    tmp_path: Path,
+) -> None:
+    # The walk differs per checkout at `projects/<slug>`, so the anchor is asked for every
+    # checkout, above the first write. Mutations (oracle): `mutations/`'s "attach asks the harness
+    # anchor of --root alone" and "detach asks the harness anchor of --root alone".
+    from stayfixed.attach.write import detach
+
     root, store, machine = _bound(tmp_path)
+    side = tmp_path / "side"
+    _git(root, "worktree", "add", "-q", str(side), "-b", "side")
     home = tmp_path / "home"
-    elsewhere = tmp_path / "dotfiles" / "claude"
-    elsewhere.mkdir(parents=True)
-    (home / ".claude").symlink_to(elsewhere, target_is_directory=True)
+    slug = harness_memory_path(side, home).parent
+    slug.parent.mkdir(parents=True)
+    (tmp_path / "elsewhere").mkdir()
+    before = snapshot(root)
+    assert before
+    for attached in (False, True):
+        if attached:
+            _attach(root, store, machine, home)
+            before = snapshot(root)
+        slug.symlink_to(tmp_path / "elsewhere", target_is_directory=True)
+        with pytest.raises(Refusal, match="none below it"):
+            if attached:
+                detach(root, machine=machine, home=home)
+            else:
+                _attach(root, store, machine, home)
+        assert_snapshot_unchanged(root, before)
+        slug.unlink()
+
+
+def test_a_home_that_is_not_there_refuses_above_every_write(tmp_path: Path) -> None:
+    # A mistyped `--home` used to be discovered from inside the link step, after the ignore
+    # region, the Codex rule files, the settings merge, the ledger and the overlay's binding
+    # record. Mutation (declared, `mutations/`'s "attach discovers the harness anchor from inside
+    # the link step"): the hoisted call goes -> `assert_snapshot_unchanged` reddens with the
+    # ledger and the region already written.
+    root, store, machine = _bound(tmp_path)
     before = snapshot(root)
     # `snapshot` is a walk, and an empty one satisfies the comparison below on its own.
     assert before
-    with pytest.raises(Refusal) as refused:
-        _attach(root, store, machine, home, confirmed=True)
-    # The symlink is named by its place under the home directory, `contained`'s root.
-    assert "passes through a symlink at '.claude'" in str(refused.value)
+    with pytest.raises(Refusal, match="never creates the home directory itself"):
+        _attach(root, store, machine, tmp_path / "no-such-home", confirmed=True)
     assert_snapshot_unchanged(root, before)
     assert not (root / LEDGER).exists()
-    # Nothing reached the dotfiles tree either: the refusal is in front of the link, not a
-    # write that followed it.
-    assert list(elsewhere.iterdir()) == []

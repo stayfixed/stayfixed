@@ -183,7 +183,7 @@ mkdir -p .stayfixed/local/memory/developer
 printf -- '---\nname: first-note\ndescription: "When to open this note"\n---\n\nThe note.\n' \
   > .stayfixed/local/memory/developer/first-note.md
 stayfixed memory index      # renders .stayfixed/local/memory/MEMORY.md from the notes
-stayfixed doctor            # nineteen checks over this installation, one line; --json has the remedies
+stayfixed doctor            # eighteen checks over this installation, one line; --json has the remedies
 ```
 
 `memory index` will tell you the notes reach no session until you run
@@ -217,7 +217,7 @@ stayfixed writes files. Being specific about which is the point of this section.
 | `.stayfixed/manifest.json` | The ledger of every scaffolded artifact | the scaffold engine |
 | `.stayfixed/local/artifacts/` | The artifacts `[artifacts] local` keeps out of git, at the path each would have in the repository — git-ignored, never recorded in the manifest | `stayfixed init` and `stayfixed upgrade`, when `[artifacts] local` lists them; `stayfixed uninstall` takes them back |
 | `.stayfixed/local/artifacts.json` | The record of the bytes stayfixed last wrote under `.stayfixed/local/artifacts/`, so an unedited copy is refreshed or retired and an edited one is left. Git-ignored and never committed. Deleted, later runs judge a copy at its artifact's own place by what they render, and no longer find a copy left at an earlier place at all | the scaffold engine; `stayfixed uninstall` removes it |
-| `~/.config/stayfixed/config.toml` | Machine-level settings: `[personal]`; `[guards]`, where `bg_cleanup = false` switches the background guard off on this machine; `[budgets]`, the four budgets that bound what a session loads; `[overlay]`; and `[machine]`. `~` is your home as the password database records it, never `HOME`, which direnv, mise or a devcontainer can set from a file the repository commits ([docs/cli.md](https://github.com/stayfixed/stayfixed/blob/main/docs/cli.md#configuration)) | you, or `stayfixed setup` |
+| `~/.config/stayfixed/config.toml` | Machine-level settings: `[personal]`; `[guards]`, where `bg_cleanup = false` switches the background guard off on this machine; `[budgets]`, the four budgets that bound what a session loads; `[overlay]`; and `[machine]`. `~` is `HOME`, as the harness reads it ([docs/cli.md](https://github.com/stayfixed/stayfixed/blob/main/docs/cli.md#configuration)) | you, or `stayfixed setup` |
 | `~/.config/stayfixed/trust.json` | Every approval you gave on this machine — today, which repositories' committed notes may reach the model — as a versioned record of kinds and subjects, under the same home | `stayfixed trust approve`, under either of its spellings, and `stayfixed trust revoke`; and `stayfixed memory index` and `stayfixed attach`, which carry an approval across a write of their own to the store and never give one |
 | `hooks/hooks.json` and `hooks/run-hook.sh` | The zero-config wiring both harnesses read, and the wrapper they execute. **Shipped in the plugin; never written into a project** | nothing — they are part of the plugin |
 | `${CLAUDE_PLUGIN_DATA}/stayfixed/` | Once-per-session markers and the hook diagnostics log. Deleted with the plugin | the hook dispatcher |
@@ -422,7 +422,6 @@ stayfixed detach                                       # remove what attach adde
 stayfixed setup --preset recommended                   # the machine configuration, deny rules and preset plugins
 stayfixed setup --preset recommended --overlay ../stayfixed-private   # record an existing overlay; no --yes needed
 stayfixed setup --preset recommended --overlay create:you/stayfixed-private --yes  # create one on GitHub; --yes is the consent
-stayfixed setup --preset recommended --settings ~/dotfiles/claude/settings.json    # a linked settings file, written where it really is
 stayfixed setup --git-hooks                            # install the commit-message hook into this repository
 stayfixed setup --git-hooks --uninstall                # remove it; restore the hook it chained to
 stayfixed setup --approval-boundary                    # print the deny rule and sandbox settings that keep an agent out of the trust record; writes nothing
@@ -440,7 +439,7 @@ stayfixed adopt promote --builtin                      # the same, running none 
 stayfixed prove -- uv run --locked pytest tests/test_x.py   # run it here; proved, failed, not proven or refused, from the runner's own report
 
 # Diagnosing an installation
-stayfixed doctor                                       # nineteen checks over this installation, one line
+stayfixed doctor                                       # eighteen checks over this installation, one line
 stayfixed doctor --json                                # every check with its status, detail and remedy
 
 # Internal

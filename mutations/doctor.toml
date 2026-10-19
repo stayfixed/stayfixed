@@ -2625,64 +2625,6 @@ reddens = [
   "tests/doctor/test_checks.py::test_a_settings_file_past_the_read_cap_is_one_the_walk_is_blind_to",
 ]
 
-# A `HOME` that is not the password database's home is named, with the directory stayfixed's
-# machine files are under, rather than ignored in silence; a user the database does not list is
-# told that no machine file is read. The row asks the predicate every hook asks, so it warns
-# exactly where a hook stops reading `HOME`, an unset one included.
-[[mutation]]
-name = "doctor says nothing of a HOME the password database does not record"
-file = "src/stayfixed/doctor/checks.py"
-before = "    if homes_agree(env):\n        return None"
-after = "    if True:\n        return None"
-reddens = [
-  "tests/doctor/test_checks.py::test_a_home_the_password_database_does_not_record_is_named_with_the_one_it_does",
-]
-
-[[mutation]]
-name = "doctor reads an unset HOME as the database's home"
-file = "src/stayfixed/doctor/checks.py"
-before = "    if homes_agree(env):"
-after = '    if not env.get("HOME") or homes_agree(env):'
-reddens = [
-  "tests/doctor/test_checks.py::test_no_home_in_the_environment_or_the_database_is_told_no_file_is_read",
-]
-
-[[mutation]]
-name = "doctor reads a home the password database does not list"
-file = "src/stayfixed/doctor/checks.py"
-before = "    recorded = passwd_home()\n    if recorded is None:"
-after = "    recorded = passwd_home()\n    if False:"
-reddens = ["tests/doctor/test_checks.py::test_a_user_the_password_database_does_not_list_is_told_no_file_is_read"]
-
-# Off a terminal `HOME` may be a directory a clone ships, so the upgrader's remedy to move the
-# files under it is given only to a person at a terminal.
-[[mutation]]
-name = "doctor advises moving files from HOME off a terminal"
-file = "src/stayfixed/doctor/checks.py"
-before = '        _MOVE_YOUR_FILES.format(owner=owner) if override_is_honoured() else _FROM_A_TERMINAL,'
-after = '        _MOVE_YOUR_FILES.format(owner=owner),'
-reddens = ["tests/doctor/test_checks.py::test_off_a_terminal_doctor_never_advises_moving_files_from_home"]
-
-[[mutation]]
-name = "ignored-env drops the HOME remedy when a variable is set too"
-file = "src/stayfixed/doctor/checks.py"
-before = '        detail, remedy = f"{detail}; {home[0]}", f"{remedy}; {home[1]}"'
-after = '        detail, remedy = f"{detail}; {home[0]}", remedy'
-reddens = [
-  "tests/doctor/test_checks.py::test_a_variable_and_a_home_that_both_go_unhonoured_get_both_remedies",
-]
-
-# The core's row names the directory the machine files are under and nothing an area withholds
-# meanwhile: the harness memory link is the `memory` area's `harness-link` row, in its own words.
-[[mutation]]
-name = "doctor's core row speaks for the memory area's harness link"
-file = "src/stayfixed/doctor/checks.py"
-before = '''        f"not honoured on the hook path: stayfixed's machine files are under {owner}",'''
-after = '''        f"not honoured on the hook path: stayfixed's machine files are under {owner}; a hook makes no harness memory link",'''
-reddens = [
-  "tests/doctor/test_checks.py::test_a_home_the_password_database_does_not_record_is_named_with_the_one_it_does",
-]
-
 # Each submodule discovery imports has one reader. A core module that asks for `commands` itself,
 # naming the submodule as a literal as every call must, can still pick one area's module out of the
 # answer by its name and call into the private layer.

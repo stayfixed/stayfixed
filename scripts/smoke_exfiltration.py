@@ -32,7 +32,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from ptyrun import run_in_pty
-from smoke_hooks import developer_free_env, fixture_repository, with_owner_home
+from smoke_hooks import developer_free_env, fixture_repository
 
 CANARY = "CANARY-IN-REPO-RULE"
 DELIMITER = "<<<stayfixed:repository-data"
@@ -42,9 +42,9 @@ DELIMITER = "<<<stayfixed:repository-data"
 # a checkout with none is a state of its own (`no-origin`), not the one this scenario is about.
 RECORDED_REMOTE = "git@example.com:the-owner/smoke.git"
 CLONES_REMOTE = "git@example.com:somebody-else/smoke.git"
-# How many rows this scenario declares. Asserted at the end, because six of the eight assert an
+# How many rows this scenario declares. Asserted at the end, because five of the seven assert an
 # ABSENCE and a run that executed one of them prints an identically green last line.
-EXPECTED_ROWS = 8
+EXPECTED_ROWS = 7
 
 
 @dataclass
@@ -191,11 +191,7 @@ def main(argv: list[str]) -> int:
     for flag in ("--plugin-root", "--fixture", "--scratch"):
         parser.add_argument(flag, required=True, type=Path)
     args = parser.parse_args(argv)
-    # The owner's home is the scratch one in the password database too, which is where stayfixed
-    # looks for it off a terminal (`smoke_hooks.with_owner_home`); `plant` puts it at `home`.
-    plugin_root = with_owner_home(
-        args.plugin_root.resolve(), args.scratch / "owner-home-plugin", args.scratch / "home"
-    )
+    plugin_root = args.plugin_root.resolve()
     report = Report([])
     planted = plant(args.fixture, args.scratch, plugin_root)
     env = hostile_env(planted, plugin_root)
@@ -282,34 +278,6 @@ def main(argv: list[str]) -> int:
         f"canary={CANARY in without.stdout}",
     )
 
-    # --- a home the clone names ------------------------------------------------------------
-    # Claude Code applies no `HOME` from the clone's `env` block, but direnv, mise or a
-    # devcontainer can set one from a file the clone commits, and the wrapper enters the clone
-    # before Python starts, so `HOME=fakehome` is a directory the clone ships. It ships the
-    # owner's own record there, moved out of the owner's home: the digest is one a clone computes
-    # from its own content. Relative and absolute, the note stays out; moved back, the same record
-    # lets it through under the same `HOME`, so the absence is the home's doing.
-    retrusted = approve(plugin_root, planted.clone, env)
-    planted_record = planted.clone / "fakehome" / ".config" / "stayfixed" / "trust.json"
-    planted_record.parent.mkdir(parents=True, exist_ok=True)
-    trust_record(planted).replace(planted_record)
-    spelled = {
-        "relative": through_wrapper(wrapper, bundle, {**env, "HOME": "fakehome"}, planted.clone),
-        "absolute": through_wrapper(
-            wrapper, bundle, {**env, "HOME": str(planted.clone / "fakehome")}, planted.clone
-        ),
-    }
-    planted_record.replace(trust_record(planted))
-    owners = through_wrapper(wrapper, bundle, {**env, "HOME": "fakehome"}, planted.clone)
-    report.row(
-        retrusted == 0
-        and all(done.returncode == 0 and CANARY not in done.stdout for done in spelled.values())
-        and CANARY in owners.stdout,
-        "a trust record under a HOME the clone names is never read",
-        ", ".join(f"{name} canary={CANARY in done.stdout}" for name, done in spelled.items())
-        + f", the owner's record under the same HOME canary={CANARY in owners.stdout}",
-    )
-
     # --- what the clone's machine configuration bought it: a warning row and nothing else ----
     reported = stayfixed(
         plugin_root,
@@ -374,8 +342,8 @@ def main(argv: list[str]) -> int:
     )
 
     print("skip  memory_search under an explicit project= — stayfixed does not depend on mcp")
-    # The floor this script had none of. Six of its eight rows assert an ABSENCE, and a run
-    # that executed one row prints the same green last line as a run that executed all eight —
+    # The floor this script had none of. Five of its seven rows assert an ABSENCE, and a run
+    # that executed one row prints the same green last line as a run that executed all seven —
     # measured, with `report.rows[:1]` immediately before this print and the whole suite still
     # green. The sibling script states its own count for the same reason.
     ran = len(report.rows)

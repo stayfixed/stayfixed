@@ -19,7 +19,6 @@ from stayfixed.overlay.api import MARKETPLACE_MANIFEST, PLUGIN_MANIFEST
 from stayfixed.printed import quoted
 from stayfixed.setup.api import SetupReport
 from stayfixed.setup.machine import SETUP_SANDBOXED
-from tests.ownerhome import as_owner_home
 from tests.parserlimits import LONG_NUMBER, NESTED
 from tests.runners import Recorder
 from tests.sandboxed import refuse_writes_under
@@ -102,7 +101,7 @@ def test_the_machine_default_is_the_file_every_reader_reads(
     monkeypatch.setenv("XDG_CONFIG_HOME", str(xdg))
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
-    as_owner_home(monkeypatch, home)
+    monkeypatch.setenv("HOME", str(home))
     # An interactive shell is what makes the sniff answer yes; the reader's answer must not
     # depend on it.
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
@@ -114,12 +113,8 @@ def test_the_machine_default_is_the_file_every_reader_reads(
     assert stub.calls, "the stubbed runner was never called; the patch may have stopped applying"
 
 
-@pytest.mark.parametrize("terminal", [False, True], ids=["off-a-terminal", "at-a-terminal"])
 def test_an_empty_home_is_no_default_for_home(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-    terminal: bool,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # `--home` defaults to `HOME` wherever this runs, and an empty `HOME` names no home, where
     # `Path.home` answers `/`: this command wrote the machine file and then refused to write
@@ -133,14 +128,12 @@ def test_an_empty_home_is_no_default_for_home(
         return SetupReport(False, (), False, False, None, ())
 
     monkeypatch.setattr("stayfixed.setup.run.setup", recorded)
-    monkeypatch.setattr("sys.stdin.isatty", lambda: terminal)
     monkeypatch.setenv("HOME", "")
-    as_owner_home(monkeypatch, tmp_path / "owner")
     machine = tmp_path / "config.toml"
     assert invoke(["setup", "--preset", "recommended", "--machine", str(machine)]) == 1
     assert capsys.readouterr().err == (
-        "stayfixed: failed: HOME is empty, so it names no home directory and there is no default "
-        "for --home; set HOME to your home directory, or pass --home PATH\n"
+        "stayfixed: failed: HOME names no home directory, so there is no default for --home or "
+        "--machine; set HOME to your home directory, or pass --home PATH and --machine PATH\n"
     )
     assert seen == []
     assert not machine.exists()
@@ -158,101 +151,6 @@ def test_setup_help_names_no_path_from_the_machine_the_parser_was_built_on(
     assert "--machine" in printed
     assert str(Path.home()) not in printed
     assert "~/.config/stayfixed/config.toml" in printed
-
-
-def test_settings_reaches_setup_as_a_path_and_not_as_the_string_argparse_read(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # The `--settings` flag, through argv rather than through the library seam: the parser accepts
-    # `--settings` beside the other four, and `run_setup` hands `setup()` a `Path` under the keyword
-    # `settings`. Asserted on the keyword's value and not merely on exit 0, because a `run_setup`
-    # that parsed the flag and dropped it would exit 0 too.
-    #
-    # Mutation: none of its own. `mutations/`'s "setup ignores --settings and writes under
-    # home" reddens the library-level test in `tests/setup/test_setup.py`; this test is about
-    # the wiring above it, and the wiring's own failure mode is a `TypeError` at the call.
-    seen: dict[str, object] = {}
-
-    def fake_setup(preset: str, **kwargs: object) -> SetupReport:
-        seen["preset"] = preset
-        seen.update(kwargs)
-        return SetupReport(
-            machine_written=True,
-            plugins_installed=(),
-            deny_written=True,
-            cli_on_path=True,
-            overlay=None,
-            notes=(),
-        )
-
-    monkeypatch.setattr("stayfixed.setup.run.setup", fake_setup)
-    settings = tmp_path / "dotfiles" / "claude" / "settings.json"
-    code = invoke(
-        [
-            "setup",
-            "--preset",
-            "recommended",
-            "--home",
-            str(tmp_path / "home"),
-            "--machine",
-            str(tmp_path / "config.toml"),
-            "--settings",
-            str(settings),
-            "--root",
-            str(tmp_path),
-        ]
-    )
-    assert code == 0
-    assert seen["settings"] == settings
-
-
-def test_a_tilde_in_settings_is_expanded_the_way_home_and_machine_already_are(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # `--home` and `--machine` are both `expanduser`'d in `run_setup` and `--settings` was not,
-    # while the README row this flag ships advertises `--settings ~/dotfiles/claude/settings.json`.
-    # From a shell that works because the shell expands it; from an agent harness passing argv as a
-    # list -- the harness this project is written for --
-    # `Path("~/dotfiles/claude/settings.json").parent` is the *relative* path `~/dotfiles/claude`,
-    # so the run either creates a literal `~` directory under the cwd or dies on the missing one.
-    #
-    # Mutation (declared): drop the `.expanduser()` -> the recorded keyword is the unexpanded
-    # `Path("~/...")` and this reddens naming both.
-    home = tmp_path / "home"
-    monkeypatch.setenv("HOME", str(home))
-    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
-    seen: dict[str, object] = {}
-
-    def fake_setup(preset: str, **kwargs: object) -> SetupReport:
-        seen.update(kwargs)
-        return SetupReport(
-            machine_written=True,
-            plugins_installed=(),
-            deny_written=True,
-            cli_on_path=True,
-            overlay=None,
-            notes=(),
-        )
-
-    monkeypatch.setattr("stayfixed.setup.run.setup", fake_setup)
-    code = invoke(
-        [
-            "setup",
-            "--preset",
-            "recommended",
-            "--home",
-            str(home),
-            "--machine",
-            str(tmp_path / "config.toml"),
-            "--settings",
-            "~/dotfiles/claude/settings.json",
-            "--root",
-            str(tmp_path),
-        ]
-    )
-    assert code == 0
-    assert seen["settings"] == home / "dotfiles" / "claude" / "settings.json"
-    assert "~" not in str(seen["settings"])
 
 
 # Two manifests that are valid JSON past this interpreter's parser: nested deeper than it follows,
@@ -303,13 +201,12 @@ def test_an_overlay_manifest_past_the_parser_is_refused_as_unreadable_through_th
     assert stub.calls == []
 
 
-def test_setup_with_no_home_in_the_password_database_names_machine_and_writes_nothing(
+def test_setup_with_no_home_names_machine_and_writes_nothing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # The default machine file is under the database's home, and a user it does not list has
-    # none. A file written under `HOME` instead is one no hook reads, so the command says to name
-    # one, and runs nothing.
-    as_owner_home(monkeypatch, None)
+    # The default machine file is under `HOME`, and an empty one names none, so the command says
+    # to name one, and runs nothing.
+    monkeypatch.setenv("HOME", "")
     stub = Recorder()
     monkeypatch.setattr("stayfixed.setup.commands.subprocess_runner", lambda: stub)
     home = tmp_path / "home"
@@ -320,21 +217,7 @@ def test_setup_with_no_home_in_the_password_database_names_machine_and_writes_no
     assert list(tmp_path.rglob("config.toml")) == []
 
 
-def test_setup_where_the_homes_differ_says_which_home_it_wrote_under(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    owner, chosen = tmp_path / "owner", tmp_path / "chosen"
-    chosen.mkdir()
-    as_owner_home(monkeypatch, owner)
-    monkeypatch.setenv("HOME", str(chosen))
-    monkeypatch.setattr("stayfixed.setup.commands.subprocess_runner", lambda: Recorder())
-    assert invoke(["setup", "--preset", "recommended", "--yes", "--home", str(chosen)]) == 0
-    said = capsys.readouterr().out
-    machine = owner / ".config" / "stayfixed" / "config.toml"
-    assert f"written to {machine}, under the home the password database records" in said
-
-
-def test_setup_where_the_database_home_cannot_be_written_fails_naming_the_directory(
+def test_setup_where_the_home_cannot_be_written_fails_naming_the_directory(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     locked, home = tmp_path / "locked-home", tmp_path / "home"
@@ -343,13 +226,13 @@ def test_setup_where_the_database_home_cannot_be_written_fails_naming_the_direct
     locked.chmod(0o555)
     monkeypatch.setattr("stayfixed.setup.commands.subprocess_runner", lambda: Recorder())
     try:
-        as_owner_home(monkeypatch, locked)
+        monkeypatch.setenv("HOME", str(locked))
         assert invoke(["setup", "--preset", "recommended", "--yes", "--home", str(home)]) == 1
     finally:
         locked.chmod(0o755)
     err = capsys.readouterr().err
     assert f"{locked / '.config' / 'stayfixed'} cannot be written" in err
-    assert "without --machine it is under the home the password database records" in err
+    assert "without --machine it is under HOME" in err
     assert "internal error" not in err
 
 

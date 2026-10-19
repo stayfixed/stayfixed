@@ -51,11 +51,10 @@ reddens = [
 [[mutation]]
 name = "the withdrawal stops checking what the link it removes points at"
 file = "src/stayfixed/memory/worktree.py"
-before = '        return fsops.unlink_within(root, relative, pointing_at=source)'
-after = '        return fsops.unlink_within(root, relative)'
+before = "        return fsops.unlink_within(root, relative, pointing_at=source)"
+after = "        return fsops.unlink_within(root, relative)"
 reddens = [
   "tests/memory/test_worktree.py::test_a_withdrawal_never_touches_a_real_directory_or_somebody_elses_link",
-  "tests/attach/test_commands.py::test_detach_leaves_under_the_other_home_what_is_not_its_own_and_says_where_it_could_not_look",
 ]
 
 # Two specified rules that no assertion discriminated: both mutations, `mutations/`'s
@@ -1300,8 +1299,8 @@ reddens = [
 [[mutation]]
 name = "a home that is not there stops being a refusal"
 file = "src/stayfixed/memory/worktree.py"
-before = "    if not fsops.is_dir(root):"
-after = "    if False:"
+before = "    if not fsops.is_dir(root):\n        raise Refusal("
+after = "    if False:\n        raise Refusal("
 reddens = [
   "tests/memory/test_worktree.py::test_a_home_that_is_not_there_is_a_refusal_naming_it_and_never_a_partial_link",
   "tests/memory/test_worktree.py::test_a_withdrawal_against_a_home_that_is_not_there_refuses_rather_than_reporting_nothing",
@@ -1339,29 +1338,31 @@ reddens = [
   "tests/memory/test_worktree.py::test_a_tree_with_nothing_to_link_leaves_no_base_directory_behind",
 ]
 
-# The anchor for the harness memory link, both halves of it. The walk under the home directory
-# refuses a symlinked component — intended, and `harness_link_parts` cites `setup --settings` as the
-# precedent — but `_link` and `_unlink` caught `NotASymlink` and `FileNotFoundError` and not
-# `UnsafePath`, so the ordinary stow / chezmoi layout half-attached a repository on the way in and
-# crashed `detach` on the way out. Five entries, because the guard is five decisions: the question
-# itself, the floor under it for the component that changes after it is asked, and the three hoists
-# that make the refusal precede the first write — `attach`'s, `detach`'s first withdrawal, and the
-# worktree link step every `SessionStart` runs. The first two hoists are `mutations/`'s "attach
-# discovers the harness anchor from inside the link step" and "detach discovers the harness anchor
-# from inside the withdrawal".
+# `~/.claude` is followed and nothing below it, and a `.claude` the walk cannot open is refused at
+# the anchor, above every write.
 [[mutation]]
 name = "the harness anchor stops asking whether the walk can reach it"
 file = "src/stayfixed/memory/worktree.py"
-before = "        contained(root, relative, allow_final_symlink=True)"
-after = "        pass"
+before = "        fsops.check_within(root, relative)\n"
+after = "        pass\n"
 reddens = [
-  "tests/memory/test_worktree.py::test_a_symlinked_claude_directory_is_a_refusal_in_both_directions",
+  "tests/memory/test_worktree.py::test_a_claude_directory_the_walk_cannot_go_through_is_refused_at_the_anchor[claude-unsearchable]",
+  "tests/memory/test_worktree.py::test_a_claude_directory_the_walk_cannot_go_through_is_refused_at_the_anchor[projects-linked]",
+]
+
+[[mutation]]
+name = "the harness anchor walks a root that is not there"
+file = "src/stayfixed/memory/worktree.py"
+before = "        if not fsops.is_dir(root):\n            raise NotADirectoryError"
+after = "        if False:\n            raise NotADirectoryError"
+reddens = [
+  "tests/memory/test_worktree.py::test_a_claude_directory_the_walk_cannot_go_through_is_refused_at_the_anchor[claude-dangling]",
 ]
 
 [[mutation]]
 name = "a withdrawal whose walk refuses a component fails the command"
 file = "src/stayfixed/memory/worktree.py"
-before = "        # one checkout's odd home from being a `detach` that cannot finish.\n        return False"
+before = "        return False  # a component that became a symlink after `harness_anchor` walked it"
 after = "        raise"
 reddens = [
   "tests/memory/test_worktree.py::test_a_withdrawal_whose_walk_refuses_a_component_leaves_it_standing",
@@ -1370,10 +1371,10 @@ reddens = [
 [[mutation]]
 name = "the session link step discovers the harness anchor after it has written"
 file = "src/stayfixed/memory/worktree.py"
-before = "        harness_anchor(worktree, harness.home)\n    created: list[Path] = []"
-after = "        pass\n    created: list[Path] = []"
+before = "    harness_anchor(worktree, home)\n    created: list[Path] = []"
+after = "    created: list[Path] = []"
 reddens = [
-  "tests/memory/test_worktree.py::test_a_symlinked_claude_directory_leaves_a_worktree_with_no_links_at_all",
+  "tests/memory/test_worktree.py::test_a_home_that_is_not_there_leaves_a_worktree_with_no_links_at_all",
 ]
 
 # The rows and floors that report on quantities they never looked at.
@@ -2871,207 +2872,12 @@ reddens = [
   "tests/boundaries/test_api_surface.py::test_no_module_reaches_into_another_packages_private_module",
 ]
 
-# With no `--home`, the harness link is anchored on `HOME` only from a terminal, and on the
-# password database's home everywhere else; a user the database lists no home for has no anchor.
 [[mutation]]
-name = "the harness link is anchored on HOME off a terminal"
+name = "the harness link has an anchor where HOME names no home"
 file = "src/stayfixed/memory/worktree.py"
-before = '    base = anchor_home() if home is None else home'
-after = '    base = Path.home() if home is None else home'
-reddens = ["tests/memory/test_worktree.py::test_the_harness_link_is_anchored_on_home_only_from_a_terminal"]
-
-[[mutation]]
-name = "the harness link has an anchor where the database lists no home"
-file = "src/stayfixed/memory/worktree.py"
-before = '    if base is None:'
-after = '    if False:'
-reddens = ["tests/memory/test_worktree.py::test_no_home_in_the_database_is_a_refusal_off_a_terminal"]
-
-# A hook trusts only the password database's home, and the harness finds its memory directory
-# through `HOME`: where the two differ the hook makes no harness link, and says so, rather than
-# making one the harness never reads.
-[[mutation]]
-name = "the worktree-link hook makes the harness link where HOME is not the database's home"
-file = "src/stayfixed/memory/hooks.py"
-before = '        home = anchor_home(interactive=False) if homes_agree() else None'
-after = '        home = anchor_home(interactive=False)'
-reddens = ["tests/memory/test_hooks.py::test_no_harness_link_is_made_where_home_is_not_the_databases"]
-
-# Off a terminal the hook anchors the harness link on the database's home resolved once: the walk
-# opens its root with `O_NOFOLLOW`, so an entry that is itself a symlink, handed over unresolved,
-# was refused there and the session told that the rest of the links could not be created.
-[[mutation]]
-name = "the worktree-link hook anchors the harness link on the database's home unresolved"
-file = "src/stayfixed/memory/hooks.py"
-before = "        from stayfixed.config.machine import anchor_home, homes_agree"
-after = "        from stayfixed.config.machine import homes_agree, owner_home as anchor_home"
-reddens = [
-  "tests/memory/test_hooks.py::test_a_database_home_that_is_itself_a_symlink_gets_the_harness_link_from_the_hook",
-]
-
-[[mutation]]
-name = "the worktree-link hook says nothing of the harness link it withheld"
-file = "src/stayfixed/memory/hooks.py"
-before = '        if links.withheld:'
-after = '        if False:'
-reddens = ["tests/memory/test_hooks.py::test_no_harness_link_is_made_where_home_is_not_the_databases"]
-
-[[mutation]]
-name = "a link without the harness half makes the harness link anyway"
-file = "src/stayfixed/memory/worktree.py"
-before = "    if isinstance(harness, Withhold):\n        approved = harness_link_needed(store, config)"
-after = "    if False:\n        approved = harness_link_needed(store, config)"
-reddens = [
-  "tests/memory/test_worktree.py::test_a_link_without_the_harness_half_makes_the_tree_and_says_what_it_withheld",
-]
-
-# The line for a withheld harness link names `attach` only where `attach` makes the link: an
-# overlay store. It refuses every other mode, and for those the hook is the only maker.
-[[mutation]]
-name = "the withheld link line names attach for every store"
-file = "src/stayfixed/memory/hooks.py"
-before = "    overlay = config.memory.mode == OVERLAY_MODE"
-after = "    overlay = True"
-reddens = [
-  "tests/memory/test_hooks.py::test_the_withheld_link_line_names_only_what_makes_the_link_for_the_store",
-  "tests/memory/test_doctor.py::test_a_home_the_database_does_not_record_is_told_what_it_costs_the_harness_link[local-only]",
-]
-
-[[mutation]]
-name = "the withheld link line points a user with no home at a home"
-file = "src/stayfixed/memory/hooks.py"
-before = "    if passwd_home() is None:"
+before = "    if base is None:"
 after = "    if False:"
-reddens = [
-  "tests/memory/test_hooks.py::test_no_harness_link_is_made_where_home_is_not_the_databases",
-  "tests/memory/test_doctor.py::test_a_user_the_database_lists_no_home_for_is_told_the_hook_makes_no_link",
-]
-
-# Where the database lists no home, `HOME` is not the cause for an overlay store either.
-[[mutation]]
-name = "the withheld link line asks the store's mode before the database"
-file = "src/stayfixed/memory/hooks.py"
-before = "        return NO_HARNESS_LINK_OVERLAY_NO_HOME if overlay else NO_HARNESS_LINK_NO_HOME"
-after = "        return NO_HARNESS_LINK_OVERLAY if overlay else NO_HARNESS_LINK_NO_HOME"
-reddens = [
-  "tests/memory/test_doctor.py::test_a_user_the_database_lists_no_home_for_is_told_the_hook_makes_no_link[overlay-set]",
-  "tests/memory/test_doctor.py::test_a_user_the_database_lists_no_home_for_is_told_the_hook_makes_no_link[overlay-unset]",
-  "tests/memory/test_hooks.py::test_the_withheld_link_line_names_only_what_makes_the_link_for_the_store[overlay-no entry]",
-]
-
-# An empty `HOME` in a session is told that it names no home, and is sent to no `attach`, which no
-# empty `HOME` lets make a link the harness reads through it.
-[[mutation]]
-name = "an empty HOME in a session is told what a HOME that differs is told"
-file = "src/stayfixed/memory/hooks.py"
-before = "    if home_is_empty(env):"
-after = "    if False:"
-reddens = [
-  "tests/memory/test_hooks.py::test_an_empty_home_gets_no_harness_link_even_in_the_databases_home",
-  "tests/memory/test_doctor.py::test_an_empty_home_is_told_the_hook_makes_no_link",
-]
-
-# `attach` at a terminal links under the `HOME` it reads there, which has to name a home.
-[[mutation]]
-name = "the withheld link line for a user with no home asks only that HOME be set"
-file = "src/stayfixed/memory/hooks.py"
-before = '    "set to a home directory, and start sessions with that HOME",'
-after = '    "set, and start sessions with that HOME",'
-reddens = [
-  "tests/memory/test_hooks.py::test_the_withheld_link_line_names_only_what_makes_the_link_for_the_store[overlay-no entry]",
-]
-
-# A session with no `HOME`, or an empty one, reads no link `attach` makes under a terminal's.
-[[mutation]]
-name = "the withheld link line for a user with no home leaves sessions on the HOME they had"
-file = "src/stayfixed/memory/hooks.py"
-before = '    "set to a home directory, and start sessions with that HOME",'
-after = '    "set to a home directory",'
-reddens = [
-  "tests/memory/test_hooks.py::test_the_withheld_link_line_names_only_what_makes_the_link_for_the_store[overlay-no entry]",
-]
-
-# The harness link's refusal at a terminal whose `HOME` is empty names `HOME`, not the database,
-# which lists a home there.
-[[mutation]]
-name = "attach blames the password database for an empty HOME at a terminal"
-file = "src/stayfixed/memory/worktree.py"
-before = "        if override_is_honoured() and home_is_empty():"
-after = "        if False:"
-reddens = [
-  "tests/attach/test_commands.py::test_attach_at_a_terminal_whose_home_is_empty_refuses_in_words",
-]
-
-# `doctor`'s `harness-link` row warns where a hook withholds the harness link, asked of the
-# report's environment through the predicate the hook asks of its own.
-[[mutation]]
-name = "the harness-link row reads HOME as the database's home whatever it names"
-file = "src/stayfixed/memory/doctor.py"
-before = "    if homes_agree(context.env):"
-after = "    if True:"
-reddens = [
-  "tests/memory/test_doctor.py::test_a_home_the_database_does_not_record_is_told_what_it_costs_the_harness_link",
-]
-
-[[mutation]]
-name = "the harness-link row asks this process's HOME rather than the report's"
-file = "src/stayfixed/memory/doctor.py"
-before = "    if homes_agree(context.env):"
-after = "    if homes_agree():"
-reddens = [
-  "tests/memory/test_doctor.py::test_a_home_the_database_records_leaves_the_harness_link_to_the_hook",
-]
-
-# An unset `HOME` agrees, and is no home: the `ok` row does not say it is the database's.
-[[mutation]]
-name = "the harness-link row says an unset HOME is the database's home"
-file = "src/stayfixed/memory/doctor.py"
-before = '        if "HOME" in context.env:'
-after = "        if True:"
-reddens = [
-  "tests/memory/test_doctor.py::test_a_home_the_database_records_leaves_the_harness_link_to_the_hook[unset]",
-]
-
-# A link an earlier release made under `HOME` is still the harness's, so its withdrawal on a lapse
-# survives the hook making nothing there; and only under an absolute `HOME`.
-[[mutation]]
-name = "a lapsed link under HOME stays once the harness half is withheld"
-file = "src/stayfixed/memory/worktree.py"
-before = '        if not approved and harness.under is not None:'
-after = '        if False:'
-reddens = [
-  "tests/memory/test_worktree.py::test_a_lapsed_link_under_home_is_withdrawn_even_with_the_harness_half_withheld",
-]
-
-[[mutation]]
-name = "a lapsed link is withdrawn under a relative home"
-file = "src/stayfixed/memory/worktree.py"
-before = "    if not home.is_absolute():\n        return []"
-after = "    if False:\n        return []"
-reddens = ["tests/memory/test_worktree.py::test_a_relative_home_and_an_approved_store_are_not_withdrawn_under"]
-
-[[mutation]]
-name = "the worktree-link hook hands on a relative HOME to withdraw under"
-file = "src/stayfixed/memory/hooks.py"
-before = '    if not chosen or not os.path.isabs(chosen):'
-after = '    if not chosen:'
-reddens = ["tests/memory/test_hooks.py::test_no_harness_link_is_made_where_home_is_not_the_databases"]
-
-[[mutation]]
-name = "the worktree-link hook withdraws nothing under HOME"
-file = "src/stayfixed/memory/hooks.py"
-before = '                harness=MakeUnder(home) if home is not None else Withhold(_lapsed_link_home()),'
-after = '                harness=MakeUnder(home) if home is not None else Withhold(),'
-reddens = ["tests/memory/test_hooks.py::test_a_lapsed_link_is_looked_for_under_an_absolute_home_that_differs"]
-
-# A home the withdrawal walk cannot open — itself a symlink, or not searchable — is passed over,
-# never reported to the session as links that could not be made.
-[[mutation]]
-name = "a home the withdrawal cannot open is reported as a failed link"
-file = "src/stayfixed/memory/worktree.py"
-before = '    except (Refusal, OSError):'
-after = '    except Refusal:'
-reddens = ["tests/memory/test_worktree.py::test_a_home_the_walk_cannot_open_is_passed_over_when_withdrawing"]
+reddens = ["tests/memory/test_worktree.py::test_an_empty_home_is_a_refusal"]
 
 # What an error says about a file is spelt once, `fsops.said`; a reader spelling it from the
 # error's own fields again is a private copy of it, and the four there were each said less.
@@ -3104,26 +2910,6 @@ before = '            "a directory on the way to paths.memory cannot be checked 
 after = '            "paths.memory does not stay inside the project",'
 reddens = [
   "tests/memory/test_store.py::test_a_paths_memory_that_cannot_be_asked_about_is_refused_for_that",
-]
-
-[[mutation]]
-name = "the harness anchor words a place it cannot ask about as a link"
-file = "src/stayfixed/memory/worktree.py"
-before = "    except PathUnasked as exc:\n        raise Refusal("
-after = "    except OSError as exc:\n        raise Refusal("
-reddens = [
-  "tests/memory/test_worktree.py::test_a_claude_directory_nobody_may_search_is_refused_for_that",
-]
-
-# `detach` withdraws the harness link under the other home a harness may read it under too, only
-# where it points at this store, and the `<slug>` directory it sat in with it.
-[[mutation]]
-name = "detach leaves the directory the other home's harness link sat in"
-file = "src/stayfixed/memory/worktree.py"
-before = "            with contextlib.suppress(OSError):\n                fsops.rmdir_within(elsewhere, str(PurePosixPath(harness_relative).parent))"
-after = "            pass"
-reddens = [
-  "tests/attach/test_commands.py::test_detach_withdraws_the_harness_link_under_both_homes_where_home_is_not_the_databases[off-a-terminal-under-home]",
 ]
 
 # `attach` asks which checkout owns each worktree, 65 of them in the repository that found this,
@@ -3295,13 +3081,11 @@ reddens = [
 # A worktree's harness link is stayfixed's when it points at the main checkout's tree or at the
 # worktree's own, under a second home a harness may read as under the first.
 [[mutation]]
-name = "the withdrawal under a second home compares with the first target alone"
+name = "the withdrawal compares with the first target alone"
 file = "src/stayfixed/memory/worktree.py"
-before = "        gone = [path for target in targets for path in _withdraw_lapsed(root, target, elsewhere)]\n"
-after = "        gone = [path for target in targets[:1] for path in _withdraw_lapsed(root, target, elsewhere)]\n"
-reddens = [
-  "tests/memory/test_worktree.py::test_a_link_under_a_second_home_to_either_target_is_withdrawn",
-]
+before = "    if any(_unlink(home_root, harness_relative, target) for target in targets):"
+after = "    if any(_unlink(home_root, harness_relative, target) for target in targets[:1]):"
+reddens = ["tests/memory/test_worktree.py::test_a_harness_link_to_either_target_is_withdrawn"]
 
 # The binding classifier holds the three transport spellings of one repository equal, and holds
 # nothing else equal: a record made over ssh binds a clone made over https, and a different owner,
@@ -3401,15 +3185,6 @@ before = "            (\"store-debris\", configured(lambda context, _: _store_de
 after = "            (\"store-debris\", lambda context: _store_debris(context, answers)),"
 reddens = [
   "tests/doctor/test_checks.py::test_a_repository_without_a_configuration_skips_only_the_rows_that_read_one",
-]
-
-[[mutation]]
-name = "the harness-link row reads a configuration that is not there"
-file = "src/stayfixed/memory/doctor.py"
-before = "    if context.config is None:\n        # What makes the link depends"
-after = "    if False:\n        # What makes the link depends"
-reddens = [
-  "tests/doctor/test_floor_report.py::test_harness_link_skips_without_a_configuration_when_the_homes_differ",
 ]
 
 # A store's approval is kept under the kind `0.3.0`'s flat record reads as, so every store it

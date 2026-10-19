@@ -22,10 +22,6 @@ off, with the two keys and for the reason `tests/gitfixture.py` gives the fixtur
 `scrubbed_env` drops the variables that carry them there, and `HOME` is how the same two reach
 the product's `git` — a ledger `fetch` starts maintenance like a `commit` does — and every
 `stayfixed` and `Runner` launch a test starts, which inherit this `HOME`.
-
-The password database answers whatever `HOME` holds for this user, in this process only: off a
-terminal, the product takes the machine owner's home from there and not from `HOME`
-(`tests/ownerhome.py` says how a test reaches a process it starts).
 """
 
 from __future__ import annotations
@@ -40,7 +36,6 @@ import pytest
 from stayfixed import gitenv
 from tests.floor import SUITE_GIT_FLOOR_SECONDS
 from tests.gitfixture import MAINTENANCE_OFF, gitconfig
-from tests.ownerhome import follows_home
 
 
 @pytest.fixture(autouse=True)
@@ -59,9 +54,8 @@ def _a_home_of_its_own(
     (home / ".gitconfig").write_text(gitconfig(MAINTENANCE_OFF), encoding="utf-8")
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
-    # The password database answers whatever `HOME` holds, which is where every command not run
-    # from a terminal finds the machine owner's home (`tests/ownerhome.py`).
-    follows_home(monkeypatch)
+    # The password database agrees with `HOME`, as on most machines (`doctor`'s `ignored-env`).
+    monkeypatch.setattr("stayfixed.doctor.checks.passwd_home", lambda: home)
     return home
 
 

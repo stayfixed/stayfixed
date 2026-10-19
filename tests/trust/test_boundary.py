@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+from pathlib import Path
 
 import pytest
 
@@ -11,7 +12,8 @@ from stayfixed.memory.commands import _NOT_REFRESHED
 from stayfixed.setup.machine import SETUP_SANDBOXED
 from stayfixed.trust.boundary import ONLY_OUTSIDE, RUN_OUTSIDE, SANDBOX_REFUSED
 from stayfixed.trust.record import SANDBOXED
-from tests.ownerhome import ROOT
+
+ROOT = Path(__file__).resolve().parents[2]
 
 # What `SANDBOX_REFUSED` says between its first two fields: the sandbox and what it refuses.
 _MIDDLE = SANDBOX_REFUSED.split("{directory}")[1].split("{remedy}")[0]

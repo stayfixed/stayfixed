@@ -386,8 +386,6 @@ def test_render_writes_bytes_and_the_executable_bit(tmp_path: Path, mask: int) -
     # Mutation (declared): written as `content.decode(errors="replace")` text -> `\xff` is
     # replaced. Mutation (declared): the `fchmod` dropped -> under 077 the umask decides.
     awkward = b"line\r\n\x00nul\xff\n"
-    # Not the hook wrapper's path: `tests/test_owner_home_seam.py` reads a list headed by it as a
-    # launch of stayfixed.
     entries = [
         Member("bin/run", "100755", b"#!/bin/sh\r\n" + awkward),
         Member("skills/data/blob", "100644", awkward),
