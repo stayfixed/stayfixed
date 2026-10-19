@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import replace
 from pathlib import Path
@@ -40,6 +41,7 @@ from stayfixed.profiles.javascript.adapters import (
     JestAdapter,
     NodeTestAdapter,
     VitestAdapter,
+    _segment_matches,
     node_options_words,
     npm_prefix,
     npx_bin,
@@ -893,6 +895,33 @@ def test_inside_a_workspace_npx_s_bin_is_found_from_the_workspace_root(
     expected = Path(os.path.realpath(root / "node_modules" / ".bin" / "jest"))
     assert npm_prefix(member) == Path(os.path.realpath(root))
     assert npx_bin("jest", member) == npx_bin("jest", member / "src") == expected
+
+
+@pytest.mark.parametrize(
+    ("pattern", "name", "matched"),
+    [
+        ("*", "a", True),
+        ("a*", "a", True),
+        ("*b", "ab", True),
+        ("a?c", "abc", True),
+        ("a*b*c", "axxbyyc", True),
+        ("a*b*c", "axxbyy", False),
+        ("?", "", False),
+        ("", "", True),
+        ("*.test", "x.test.js", False),
+        ("*" * 40 + "b", "a" * 5000, False),
+    ],
+)
+def test_a_workspace_pattern_segment_is_read_with_star_and_question_mark(
+    pattern: str, name: str, matched: bool
+) -> None:
+    # The last case is many stars against a long name that does not match: read with two
+    # positions and no recursion, it answers at once, where a reading that tried every split
+    # would never end, and one that recursed per character would raise `RecursionError`.
+    # Mutation: none -- naming only, as above.
+    started = time.monotonic()
+    assert _segment_matches(pattern, name) is matched
+    assert time.monotonic() - started < 2
 
 
 @pytest.mark.parametrize(

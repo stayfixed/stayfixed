@@ -741,13 +741,24 @@ def _segment_matches(pattern: str, name: str) -> bool:
 
 
 def _wildcards_match(pattern: str, name: str) -> bool:
-    """Whether `name` is `pattern`, each `*` in it any run of characters and each `?` one."""
-    if not pattern:
-        return not name
-    head, rest = pattern[0], pattern[1:]
-    if head == "*":
-        return any(_wildcards_match(rest, name[at:]) for at in range(len(name) + 1))
-    return bool(name) and head in ("?", name[0]) and _wildcards_match(rest, name[1:])
+    """Whether `name` is `pattern`, each `*` in it any run of characters and each `?` one. Read
+    with two positions and no recursion: on a mismatch the reading goes back only to the last `*`,
+    which then takes one character more, so its time is bounded by the two lengths multiplied, at
+    worst. (`fnmatch` would do, but it brings in the import machinery a core module may not reach,
+    `tests/boundaries/test_delivery.py`.)"""
+    at = here = 0
+    star = taken = -1
+    while here < len(name):
+        if at < len(pattern) and pattern[at] in ("?", name[here]) and pattern[at] != "*":
+            at, here = at + 1, here + 1
+        elif at < len(pattern) and pattern[at] == "*":
+            star, taken, at = at, here, at + 1
+        elif star >= 0:
+            taken += 1
+            at, here = star + 1, taken
+        else:
+            return False
+    return all(rest == "*" for rest in pattern[at:])
 
 
 def _path_matches(pattern: Sequence[str], parts: Sequence[str]) -> bool:
