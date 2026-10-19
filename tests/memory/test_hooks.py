@@ -9,7 +9,7 @@ import pytest
 
 from stayfixed.config.loader import CONFIG_FILE, load
 from stayfixed.config.paths import PathEscape
-from stayfixed.hooks.api import EVENTS, Decision, HookEvent
+from stayfixed.hooks.api import EVENTS, HookEvent
 from stayfixed.memory import hooks as memory_hooks
 from stayfixed.memory import worktree as worktree_module
 from stayfixed.memory.hooks import (
@@ -96,7 +96,6 @@ def test_no_config_is_silence_not_an_exception(tmp_path: Path) -> None:
     for handler in register():
         result = handler.run(an_event(tmp_path), NO_CONFIG)
         assert result.context is None
-        assert result.decision is None
 
 
 def test_a_broken_store_is_silence_not_an_exception(tmp_path: Path) -> None:
@@ -106,7 +105,7 @@ def test_a_broken_store_is_silence_not_an_exception(tmp_path: Path) -> None:
     )
     config = load(root, machine=tmp_path / "absent.toml")
     for handler in register():
-        assert handler.run(an_event(root), session_of(config)).decision is None
+        handler.run(an_event(root), session_of(config))
 
 
 def _raise(*_args: object, **_kwargs: object) -> list[Path]:
@@ -128,16 +127,7 @@ def test_a_link_failure_is_silence_not_an_exception(
     config = load(root, machine=tmp_path / "absent.toml")
     for handler in register():
         result = handler.run(an_event(root), session_of(config))
-        assert result.decision is None
         assert result.context is None
-
-
-def test_no_handler_in_this_area_ever_denies(tmp_path: Path) -> None:
-    root = a_project(tmp_path)
-    config = load(root, machine=tmp_path / "absent.toml")
-    for handler in register():
-        result = handler.run(an_event(root, handler.event), session_of(config))
-        assert result.decision is not Decision.DENY
 
 
 def test_discovery_does_not_import_the_configuration_layer() -> None:
@@ -219,7 +209,6 @@ def test_a_half_built_tree_still_reports_what_was_made(
     config = load(root, machine=tmp_path / "absent.toml")
     for handler in register():
         result = handler.run(an_event(root), session_of(config))
-        assert result.decision is None
         assert result.context == PARTIAL.format(count=2)
 
 
@@ -239,7 +228,6 @@ def test_a_withdrawn_harness_link_is_a_different_event_from_a_quiet_session(
     config = load(root, machine=tmp_path / "absent.toml")
     for handler in register():
         result = handler.run(an_event(root), session_of(config))
-        assert result.decision is None
         assert result.context == REVOKED
 
 
@@ -255,7 +243,6 @@ def test_a_containment_refusal_is_a_different_event_from_a_disk_error(
     config = load(root, machine=tmp_path / "absent.toml")
     for handler in register():
         result = handler.run(an_event(root), session_of(config))
-        assert result.decision is None
         assert result.context == NOT_LINKED
         for fragment in HOSTILE_GROUP.splitlines():
             if fragment.strip():

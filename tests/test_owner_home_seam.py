@@ -87,7 +87,6 @@ DERIVED: dict[tuple[str, str], str] = {
     "derives",
 }
 
-_FAKE = "the plugin root's launcher is `_plugin_root`'s fake, which runs no stayfixed"
 # `(file, function, argv as written)`: launches that reach stayfixed and read no home, with why.
 EXEMPT: dict[tuple[str, str, str], str] = {
     (
@@ -96,52 +95,6 @@ EXEMPT: dict[tuple[str, str, str], str] = {
         "[str(plugin_root / 'hooks' / WRAPPER.name), *argv]",
     ): "runs the wrapper of the plugin root its case passes: `_plugin_root`'s fake launcher, "
     "`plugin_root_with_owner_home`'s, or this checkout's for `--version`, which reads no home",
-    (
-        "tests/hooks/test_wrapper.py",
-        "_run_under_bash",
-        "['sh', str(plugin_root / 'hooks' / WRAPPER.name), 'closed', 'hook', 'PreToolUse']",
-    ): "runs the wrapper of the plugin root its case passes, held as `_run`'s are",
-    (
-        "tests/hooks/test_wrapper.py",
-        "test_a_variable_named_for_the_user_chooses_no_home_for_the_wrappers_git_under_zsh_as_sh",
-        "['sh', str(root / 'hooks' / WRAPPER.name), 'open', 'hook', 'PreToolUse']",
-    ): _FAKE,
-    (
-        "tests/hooks/test_wrapper.py",
-        "test_an_interpreter_the_environment_names_is_ignored_off_a_terminal",
-        "[str(root / 'hooks' / WRAPPER.name), 'closed', 'hook', 'PreToolUse']",
-    ): _FAKE,
-    (
-        "tests/hooks/test_wrapper.py",
-        "test_the_project_root_is_never_taken_from_an_inherited_git_environment",
-        "[str(root / 'hooks' / WRAPPER.name), 'open', 'hook', 'PreToolUse']",
-    ): _FAKE,
-    (
-        "tests/hooks/test_wrapper.py",
-        "test_the_wrapper_hands_its_git_the_database_home_and_never_an_inherited_one",
-        "[str(root / 'hooks' / WRAPPER.name), 'open', 'hook', 'PreToolUse']",
-    ): _FAKE,
-    (
-        "tests/hooks/test_wrapper.py",
-        "test_the_suites_copies_of_the_wrapper_hand_their_git_this_tests_home",
-        "[str(root / 'hooks' / WRAPPER.name), 'open', 'hook', 'PreToolUse']",
-    ): _FAKE,
-    (
-        "tests/hooks/test_wrapper.py",
-        "test_the_wrapper_takes_id_from_any_absolute_candidate_and_never_a_name_the_environment_holds",
-        "[str(root / 'hooks' / WRAPPER.name), 'open', 'hook', 'PreToolUse']",
-    ): _FAKE,
-    (
-        "tests/hooks/test_wrapper.py",
-        "test_a_project_root_that_cannot_be_entered_says_so",
-        "[str(root / 'hooks' / WRAPPER.name), policy, 'hook', 'PreToolUse']",
-    ): _FAKE,
-    (
-        "tests/hooks/test_wrapper.py",
-        "test_stayfixed_runs_from_the_project_root",
-        "[str(root / 'hooks' / WRAPPER.name), 'open', 'memory', 'session-context', '--bundle', "
-        "'standing-rules']",
-    ): "the plugin root's launcher is `_plugin_root`'s fake, which prints its directory",
     (
         "tests/test_cli.py",
         "test_module_entry_point_runs_without_the_console_script",
@@ -590,7 +543,7 @@ def _wrapper_runs(source: str | None = None) -> list[tuple[int, str, bool]]:
         only_version = (
             getattr(call.func, "id", None) == "_run"
             and all(isinstance(a, ast.Constant) for a in call.args)
-            and words - {"open", "closed"} == {"--version"}
+            and words == {"--version"}
         )
         safe = (
             bool(_called(root) & _FAKE_OR_SEAMED)
@@ -618,7 +571,7 @@ def test_every_wrapper_run_uses_a_root_that_reads_no_home() -> None:
     # checkout's with `--version` and nothing else. A new real launch through either is a finding,
     # not an excuse.
     runs = _wrapper_runs()
-    assert len(runs) > 20, runs
+    assert len(runs) > 10, runs
     assert [(line, root) for line, root, safe in runs if not safe] == []
 
 
@@ -633,8 +586,8 @@ def test_the_wrapper_run_walk_judges_every_runner_and_every_root_a_builder_gives
         "    root, log = _builder(tmp_path)\n"
         "    _run_under_bash(root, {}, tmp_path)\n"
         "    _run_under_bash(tmp_path, {}, tmp_path)\n"
-        "    _run('open', '--version', plugin_root=ROOT)\n"
-        "    _run('open', 'hook', plugin_root=ROOT)\n"
+        "    _run('--version', plugin_root=ROOT)\n"
+        "    _run('hook', plugin_root=ROOT)\n"
     )
     assert _wrapper_runs(source) == [
         (5, "root", True),

@@ -1,4 +1,4 @@
-"""`stayfixed hook <event>`: stdin in, JSON out, the exit code owned here and event-aware."""
+"""`stayfixed hook <event>`: stdin in, JSON out, and exit 0 whatever stayfixed itself does."""
 
 from __future__ import annotations
 
@@ -13,7 +13,6 @@ from stayfixed.config.session import session_config
 from stayfixed.harnesses import detect
 from stayfixed.hooks.api import Sink
 from stayfixed.hooks.dispatch import NOTICE_EVENT, dispatch, read_event
-from stayfixed.hooks.policy import refuses_on_internal_error
 from stayfixed.hooks.registry import discover
 from stayfixed.hooks.sink import sink_for
 from stayfixed.presets import DEFAULT_PRESET, load_preset
@@ -51,9 +50,9 @@ def run_hook(args: argparse.Namespace) -> int:
         payload["hook_event_name"] = event_name
         harness = detect(os.environ, payload)
         event = read_event(payload, os.environ)
-        # Never raises for what the repository or the machine file holds (`config.session`), so a
-        # configuration that does not load is never why a call is refused: the guards run on the
-        # preset and the owner's layer, and the session hears why once, on `SessionStart`. The
+        # Never raises for what the repository or the machine file holds (`config.session`): the
+        # guards run on the preset and the owner's layer, and the session hears why once, on
+        # `SessionStart`. The
         # machine file is the one no variable moves (`config.machine`), so which overlay root and
         # which `trust.json` this process reads rests on no property of how the harness happens
         # to invoke us.
@@ -74,12 +73,10 @@ def run_hook(args: argparse.Namespace) -> int:
             sink=sink,
             cap=_output_cap(session.config),
         )
-    except BaseException as exc:  # an internal error must never read as permission
-        reason = f"stayfixed: internal error: {type(exc).__name__}: {exc}"
-        if refuses_on_internal_error(event_name):
-            sys.stderr.write(f"{reason}; refused\n")
-            return 2
-        sys.stderr.write(f"{reason}; continuing open\n")
+    except BaseException as exc:  # a session never dies of stayfixed's own fault
+        sys.stderr.write(
+            f"stayfixed: internal error: {type(exc).__name__}: {exc}; continuing open\n"
+        )
         return 0
     if outcome.stdout:
         sys.stdout.write(outcome.stdout)

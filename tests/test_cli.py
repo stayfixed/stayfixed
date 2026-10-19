@@ -225,12 +225,12 @@ def test_a_broken_area_module_maps_to_exit_two(
     )
 
 
-@pytest.mark.parametrize("event", ["UserPromptSubmit", "SessionStart", "UserPromptExpansion"])
-def test_a_broken_area_never_erases_the_prompt_on_a_non_blocking_event(
+@pytest.mark.parametrize("event", ["UserPromptSubmit", "SessionStart", "PreToolUse"])
+def test_a_broken_area_never_costs_a_hook_event(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], event: str
 ) -> None:
     # One later area's import-time bug in its commands.py must not cost the user what they
-    # typed: exit 2 on UserPromptSubmit erases the prompt.
+    # typed (exit 2 on UserPromptSubmit erases the prompt) nor block a tool call.
     monkeypatch.setattr("stayfixed.cli.discover_registrars", _broken)
     assert main(["hook", event]) == 0
     err = capsys.readouterr().err
@@ -243,13 +243,6 @@ def test_the_json_flag_does_not_hide_the_hook_event_from_the_guard(
 ) -> None:
     monkeypatch.setattr("stayfixed.cli.discover_registrars", _broken)
     assert main(["--json", "hook", "UserPromptSubmit"]) == 0
-
-
-def test_a_broken_area_still_refuses_where_exit_two_blocks(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr("stayfixed.cli.discover_registrars", _broken)
-    assert main(["hook", "PreToolUse"]) == 2
 
 
 def test_a_broken_area_on_a_non_hook_command_still_exits_two(
@@ -266,7 +259,7 @@ def _broken_by_keyboard_interrupt() -> list[Registrar]:
 
 @pytest.mark.parametrize(
     ("argv", "code"),
-    [(["hook", "SessionStart"], 0), (["hook", "PreToolUse"], 2), (["doctor"], 2)],
+    [(["hook", "SessionStart"], 0), (["hook", "PreToolUse"], 0), (["doctor"], 2)],
 )
 def test_discovery_raising_a_base_exception_gets_the_same_verdicts_as_an_exception(
     monkeypatch: pytest.MonkeyPatch,
@@ -277,9 +270,8 @@ def test_discovery_raising_a_base_exception_gets_the_same_verdicts_as_an_excepti
     # `main`'s own guard around discovery and the parser build stayed `except Exception` after
     # `dispatch`, `run_hook` and `cli.run` were widened to `BaseException`, so an area importing
     # something that raises KeyboardInterrupt or asyncio.CancelledError at import time bypassed
-    # `_discovery_failed` (and its per-event judging) entirely instead of degrading open on
-    # SessionStart and refusing on PreToolUse and on a non-hook command, exactly like a
-    # RuntimeError already does.
+    # `_discovery_failed` entirely instead of degrading open on a hook and refusing on a
+    # non-hook command, exactly like a RuntimeError already does.
     monkeypatch.setattr("stayfixed.cli.discover_registrars", _broken_by_keyboard_interrupt)
     assert main(argv) == code
     err = capsys.readouterr().err
@@ -304,7 +296,7 @@ BROKEN_BUILDS: dict[str, list[Registrar]] = {
 @pytest.mark.parametrize("registrars", list(BROKEN_BUILDS.values()), ids=list(BROKEN_BUILDS))
 @pytest.mark.parametrize(
     ("argv", "code"),
-    [(["hook", "PreToolUse"], 2), (["hook", "UserPromptSubmit"], 0), (["doctor"], 2)],
+    [(["hook", "PreToolUse"], 0), (["hook", "UserPromptSubmit"], 0), (["doctor"], 2)],
 )
 def test_a_broken_parser_build_is_judged_like_a_broken_import(
     monkeypatch: pytest.MonkeyPatch,
@@ -314,8 +306,7 @@ def test_a_broken_parser_build_is_judged_like_a_broken_import(
     code: int,
 ) -> None:
     # An area's `register()` runs during the parser build, one line outside the try that judged its
-    # import. The bypass went both ways: PreToolUse returned 1 where a blocking event requires 2,
-    # and UserPromptSubmit returned 1 where it must degrade open. Two areas claiming one group name
+    # import, and returned 1 where a hook must degrade open. Two areas claiming one group name
     # is the same failure, and a plausible merge accident in an architecture that adds areas.
     monkeypatch.setattr("stayfixed.cli.discover_registrars", lambda: list(registrars))
     assert main(argv) == code

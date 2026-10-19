@@ -8,43 +8,43 @@
             "type": "command",
             "timeout": 10,
             "additionalContextLimit": 0,
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.sh\" open hook SessionStart"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.sh\" hook SessionStart"
           },
           {
             "type": "command",
             "timeout": 10,
             "additionalContextLimit": 0,
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.sh\" open memory session-context --bundle standing-rules --part 1"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.sh\" memory session-context --bundle standing-rules --part 1"
           },
           {
             "type": "command",
             "timeout": 10,
             "additionalContextLimit": 0,
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.sh\" open memory session-context --bundle standing-rules --part 2"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.sh\" memory session-context --bundle standing-rules --part 2"
           },
           {
             "type": "command",
             "timeout": 10,
             "additionalContextLimit": 0,
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.sh\" open memory session-context --bundle standing-rules --part 3"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.sh\" memory session-context --bundle standing-rules --part 3"
           },
           {
             "type": "command",
             "timeout": 10,
             "additionalContextLimit": 0,
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.sh\" open memory session-context --bundle volatile-notes --part 1"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.sh\" memory session-context --bundle volatile-notes --part 1"
           },
           {
             "type": "command",
             "timeout": 10,
             "additionalContextLimit": 0,
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.sh\" open memory session-context --bundle volatile-notes --part 2"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.sh\" memory session-context --bundle volatile-notes --part 2"
           },
           {
             "type": "command",
             "timeout": 10,
             "additionalContextLimit": 0,
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.sh\" open memory session-context --bundle volatile-notes --part 3"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.sh\" memory session-context --bundle volatile-notes --part 3"
           }
         ]
       }
@@ -56,8 +56,7 @@
           {
             "type": "command",
             "timeout": 10,
-            "onFailure": "block",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.sh\" closed hook PreToolUse"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.sh\" hook PreToolUse"
           }
         ]
       }
@@ -69,7 +68,7 @@
           {
             "type": "command",
             "timeout": 10,
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.sh\" open hook PostToolUse"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.sh\" hook PostToolUse"
           }
         ]
       }
@@ -81,7 +80,7 @@
           {
             "type": "command",
             "timeout": 10,
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.sh\" open hook PostToolUseFailure"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.sh\" hook PostToolUseFailure"
           }
         ]
       }

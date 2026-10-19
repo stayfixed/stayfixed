@@ -41,7 +41,6 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
-from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
@@ -55,7 +54,6 @@ __all__ = [
     "DIRECTORY",
     "EVENTS",
     "MARKERS",
-    "Decision",
     "Handler",
     "HandlerFn",
     "HookEvent",
@@ -82,10 +80,6 @@ EVENTS = (
 )
 
 
-class Decision(StrEnum):
-    DENY = "deny"
-
-
 @dataclass(frozen=True)
 class HookEvent:
     name: str
@@ -101,8 +95,6 @@ class HookEvent:
 @dataclass
 class HookResult:
     context: str | None = None
-    decision: Decision | None = None
-    reason: str | None = None
 
 
 HandlerFn = Callable[[HookEvent, "SessionConfig"], HookResult]

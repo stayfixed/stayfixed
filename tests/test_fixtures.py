@@ -195,7 +195,6 @@ def test_the_hostile_fixture_carries_the_three_properties_the_scenario_depends_o
 
     settings = json.loads((HOSTILE / ".claude" / "settings.json").read_text(encoding="utf-8"))
     assert "STAYFIXED_CONFIG" in settings["env"]
-    assert "PATH" in settings["env"]
 
 
 # --- `check.yml`'s base-ref step, run as the shell script it is -------------------------

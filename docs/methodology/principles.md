@@ -147,18 +147,16 @@ A guard that cannot fail closed must say so rather than pretend.
 of a backgrounded shell call before it runs, only hints, because the agent it would stop writes
 the command it reads. A handler that fails costs its own context and never the call, and the
 commit-message hook git runs locally never fails a commit itself, though a hook it chains to can
-— its gate is `stayfixed commit check` in CI. The guarantee lives in a shell wrapper rather than
-in Python, because a Python process cannot fail closed about its own absence: every entry in
-`hooks/hooks.json` runs `hooks/run-hook.sh` with its policy, and the wrapper looks for a
-`python3` of 3.11 or newer outside the project root. On every fault it can see — no interpreter,
-no `git`, a project root it cannot enter, a launcher it cannot read, and afterwards an exit
-other than `0` or `2` — it prints its reason and refuses with the blocking exit under `closed`,
-or continues under `open`.
+— its gate is `stayfixed commit check` in CI. Every entry in `hooks/hooks.json` runs
+`hooks/run-hook.sh`, which takes the `python3` on `PATH` if it is 3.11 or newer. On every fault
+it can see — no such interpreter, a launcher it cannot read, a project root it cannot enter, and
+afterwards an exit other than `0` or `2` — it prints its reason and exits `0`, so no hook blocks
+a call on stayfixed's own fault.
 
 **Why.** The exit-code semantics differ per event and are documented per event [S3]; Codex
-runs some hooks asynchronously and an asynchronous hook cannot block [S7]. A hook whose
-binary is missing exits 127, which the harness treats as a non-blocking error — so the
-guard silently becomes permission, which is why the wrapper exists.
+runs some hooks asynchronously and an asynchronous hook cannot block [S7]. A Python launcher
+whose script is missing exits 2 by CPython accident, which the harness reads before a tool call
+as a refusal — so a broken install would stop every call, which is why the wrapper exists.
 
 **Backing:** sourced. The per-event semantics are the platforms' [S3] [S7], and that is the
 claim the label is about: where fail-closed is expressible at all is a platform fact, not a

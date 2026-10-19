@@ -2,10 +2,8 @@ from __future__ import annotations
 
 import ast
 import importlib
-import json
 import locale
 import os
-import re
 import shutil
 import subprocess
 import sys
@@ -15,9 +13,7 @@ import pytest
 
 from stayfixed import gitenv
 from stayfixed.gitenv import NO_ANSWER, git_run
-from tests.floor import developer_free_environ
-from tests.gitfixture import at_a_terminal, launched_by_the_hook_wrapper, plant_path, stand_in_git
-from tests.ownerhome import as_owner_home, stayfixed_argv
+from tests.gitfixture import plant_path, stand_in_git
 
 SRC = Path(__file__).resolve().parents[1] / "src"
 needs_git = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
@@ -45,7 +41,6 @@ def test_a_non_zero_exit_is_returned_not_collapsed(tmp_path: Path) -> None:
 def test_a_git_that_cannot_run_is_minus_one(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    launched_by_the_hook_wrapper(monkeypatch, False)
     monkeypatch.setenv("PATH", str(tmp_path))  # no git here
     assert git_run(tmp_path, "rev-parse") == (-1, "")
 
@@ -57,193 +52,6 @@ def _stub(directory: Path, body: str, name: str = "git") -> Path:
     stub.write_text(f"#!/bin/sh\n{body}\n", encoding="utf-8")
     stub.chmod(0o755)
     return stub
-
-
-def _planted_on_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """A `git` first on `PATH`, as a clone's committed `env` block puts one there, that leaves a
-    marker when it runs; the marker's path is returned."""
-    ran = tmp_path / "planted-ran"
-    planted = tmp_path / "planted"
-    _stub(planted, f"echo ran > '{ran}'")
-    monkeypatch.setenv("PATH", f"{planted}{os.pathsep}{os.environ.get('PATH', '')}")
-    return ran
-
-
-@pytest.mark.parametrize("tty", [False, True], ids=["off a terminal", "at a terminal"])
-def test_launched_by_the_hook_wrapper_the_first_existing_candidate_runs_never_the_git_on_path(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, tty: bool
-) -> None:
-    # Claude Code applies a project's `env` block `PATH` to every hook, relative entries
-    # resolved against the project (measured on 2.1.293), so a bare `git` in a hook was whatever
-    # the clone shipped, run by every hook that asks git anything. A scratch candidate list, so
-    # the case reads no `git` this machine happens to have: the first is missing, the second
-    # answers. A terminal changes nothing: a hook run by hand from one is still a hook, and the
-    # variable set by anything but the wrapper, as here, only ever makes the choice strict.
-    # Mutation (declared): the candidate is taken from `PATH` again -> the planted `git` runs
-    # and this reddens.
-    at_a_terminal(monkeypatch, tty)
-    launched_by_the_hook_wrapper(monkeypatch, True)
-    ran = _planted_on_path(tmp_path, monkeypatch)
-    second = _stub(tmp_path / "second", "echo candidate")
-    candidates = (str(tmp_path / "first" / "git"), str(second))
-    monkeypatch.setattr(gitenv, "GIT_CANDIDATES", candidates)
-    assert git_run(tmp_path, "rev-parse") == (0, "candidate\n")
-    assert not ran.exists()
-
-
-def test_launched_by_the_hook_wrapper_git_is_handed_a_path_with_no_inherited_entry(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # git runs helpers by name through the `PATH` it is handed — a `filter.lfs.process` of
-    # `git-lfs filter-process`, a `core.fsmonitor` program — so an absolute `git` handed the
-    # clone's `PATH` still ran the clone's `git-lfs`. Each candidate's directory once, in the
-    # list's order, then the system's. The `git` on `PATH` prints the same, so the case is red
-    # for the `PATH` and not for which binary answered. Mutation (declared): the inherited
-    # `PATH` is handed on again -> this reddens.
-    launched_by_the_hook_wrapper(monkeypatch, True)
-    inherited = tmp_path / "inherited"
-    _stub(inherited, 'printf %s "$PATH"')
-    monkeypatch.setenv("PATH", f"{inherited}{os.pathsep}fakebin")
-    first = _stub(tmp_path / "a", 'printf %s "$PATH"')
-    candidates = (str(first), str(tmp_path / "b" / "git"), str(first))
-    monkeypatch.setattr(gitenv, "GIT_CANDIDATES", candidates)
-    code, out = git_run(tmp_path, "rev-parse")
-    assert code == 0
-    assert out.split(os.pathsep) == [
-        str(tmp_path / "a"),
-        str(tmp_path / "b"),
-        "/usr/bin",
-        "/bin",
-        "/usr/sbin",
-        "/sbin",
-    ]
-
-
-@pytest.mark.parametrize("listed", [True, False], ids=["listed", "not listed"])
-def test_launched_by_the_hook_wrapper_git_is_handed_the_database_home_and_never_an_inherited_one(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, listed: bool
-) -> None:
-    # `HOME` chooses git's global configuration, whose `core.fsmonitor` names a program git runs
-    # on `status`, and direnv, mise or a devcontainer can set it to a directory a clone commits:
-    # `HOME=fakehome`, relative to the project the wrapper has entered, ran the clone's own
-    # program. So git is handed the password database's home for this user, the one the machine
-    # file is read under, and no `HOME` at all for a user the database does not list, never the
-    # inherited value. Mutations (declared): the inherited `HOME` is handed on again -> both
-    # cases redden; the database's answer is dropped -> the first reddens.
-    launched_by_the_hook_wrapper(monkeypatch, True)
-    monkeypatch.setenv("HOME", "fakehome")
-    as_owner_home(monkeypatch, tmp_path / "owner" if listed else None)
-    candidate = _stub(tmp_path / "a", 'printf %s "${HOME-no HOME}"')
-    monkeypatch.setattr(gitenv, "GIT_CANDIDATES", (str(candidate),))
-    assert git_run(tmp_path, "rev-parse") == (0, str(tmp_path / "owner") if listed else "no HOME")
-
-
-def test_not_launched_by_the_hook_wrapper_git_is_handed_the_environment_s_home(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # Outside a hook `HOME` is the environment's, as `PATH` is: a person's shell, a CI step, a
-    # command an agent runs. Mutation (declared): the database's home is taken everywhere ->
-    # this reddens.
-    launched_by_the_hook_wrapper(monkeypatch, False)
-    monkeypatch.setenv("HOME", "theirs")
-    as_owner_home(monkeypatch, tmp_path / "owner")
-    theirs = tmp_path / "theirs"
-    _stub(theirs, 'printf %s "$HOME"')
-    monkeypatch.setenv("PATH", f"{theirs}{os.pathsep}{os.environ.get('PATH', '')}")
-    assert git_run(tmp_path, "rev-parse") == (0, "theirs")
-
-
-@pytest.mark.parametrize(
-    ("tty", "value"),
-    [(True, None), (False, None), (False, "0")],
-    ids=["at a terminal", "off a terminal", "another value"],
-)
-def test_not_launched_by_the_hook_wrapper_git_and_its_path_are_the_environment_s_own(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, tty: bool, value: str | None
-) -> None:
-    # A person's shell, a `stayfixed gate` step in CI, a command an agent runs: `git` resolves
-    # through `PATH` there, and git is handed that `PATH` as it is. At a terminal a fixed list is
-    # what picks the Xcode shim at `/usr/bin/git` over the `git` the person installed; off one,
-    # with no hook, it would buy nothing and cost a machine whose only `git` is elsewhere every
-    # answer. Only the wrapper's own value counts, which is why the wrapper overwrites one it
-    # inherits (`tests/hooks/test_wrapper.py`). Mutations (declared): the wrapper's variable is
-    # no longer asked -> the candidate runs and the first two redden; any value of it counts ->
-    # the third reddens.
-    at_a_terminal(monkeypatch, tty)
-    if value is None:
-        launched_by_the_hook_wrapper(monkeypatch, False)
-    else:
-        monkeypatch.setenv(gitenv.HOOK_WRAPPER_VARIABLE, value)
-    theirs = tmp_path / "theirs"
-    _stub(theirs, 'printf %s "$PATH"')
-    path = f"{theirs}{os.pathsep}fakebin"
-    monkeypatch.setenv("PATH", path)
-    ran = tmp_path / "candidate-ran"
-    candidate = _stub(tmp_path / "candidate", f"echo ran > '{ran}'")
-    monkeypatch.setattr(gitenv, "GIT_CANDIDATES", (str(candidate),))
-    assert git_run(tmp_path, "rev-parse") == (0, path)
-    assert not ran.exists()
-
-
-@needs_git
-def test_a_stayfixed_no_hook_wrapper_launched_runs_the_git_on_path_off_a_terminal(
-    tmp_path: Path,
-) -> None:
-    # The case above as a CI step meets it: a separate `stayfixed` process, its stdin a pipe and
-    # no terminal, started without the wrapper and with none of its variable, and a `git` first
-    # on `PATH` that logs its argv and hands over to the real one. The hook it runs outside any
-    # repository asks `git rev-parse --show-toplevel`. Mutation (declared): the wrapper's
-    # variable is no longer asked -> a candidate answers and the log stays empty.
-    real = shutil.which("git")
-    log = tmp_path / "elsewhere-ran"
-    elsewhere = _stub(tmp_path / "elsewhere", f"echo \"$*\" >> '{log}'\nexec '{real}' \"$@\"")
-    nowhere = tmp_path / "nowhere"
-    nowhere.mkdir()
-    env = developer_free_environ()
-    assert gitenv.HOOK_WRAPPER_VARIABLE not in env
-    env["PATH"] = f"{elsewhere.parent}{os.pathsep}{env.get('PATH', '')}"
-    done = subprocess.run(
-        [*stayfixed_argv(Path(env["HOME"])), "hook", "SessionStart"],
-        input=json.dumps({"cwd": str(nowhere)}),
-        capture_output=True,
-        text=True,
-        check=False,
-        cwd=nowhere,
-        env=env,
-    )
-    assert done.returncode == 0, done.stderr
-    assert log.exists(), "a stayfixed no hook wrapper launched took git from the fixed list"
-    assert "rev-parse --show-toplevel" in log.read_text(encoding="utf-8")
-
-
-def test_launched_by_the_hook_wrapper_no_candidate_is_no_answer_and_never_a_lookup_on_path(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # A machine with `git` at none of the absolute paths has no `git` a hook can trust: the
-    # answer git failing to launch gives, and not the `git` the environment offers instead.
-    # Mutation (declared): no candidate falls back to `PATH` -> the planted `git` runs.
-    launched_by_the_hook_wrapper(monkeypatch, True)
-    ran = _planted_on_path(tmp_path, monkeypatch)
-    monkeypatch.setattr(gitenv, "GIT_CANDIDATES", (str(tmp_path / "none" / "git"),))
-    assert git_run(tmp_path, "rev-parse") == (-1, "")
-    assert not ran.exists()
-
-
-def test_the_hook_wrapper_and_git_run_take_git_from_one_list() -> None:
-    # Two spellings of one list, since a shell script cannot import a Python constant: the
-    # wrapper's `for g in …` words, continuation lines included, in order. By hand: reorder
-    # either list -> this reddens.
-    text = (SRC.parent / "hooks" / "run-hook.sh").read_text(encoding="utf-8")
-    loops = re.findall(r"^for g in ((?:[^;\n\\]|\\\n)*); do$", text, re.MULTILINE)
-    assert len(loops) == 1
-    assert tuple(loops[0].replace("\\\n", " ").split()) == gitenv.GIT_CANDIDATES
-    # And one `PATH` for the `git` both choose, so a helper git runs by name is found in the same
-    # directories whichever of the two ran it; the wrapper's two calls hand it, and nothing else.
-    # Mutations (oracle): `mutations/`'s "the wrapper hands its git a PATH of its own" and "the
-    # wrapper's worktree query is handed the old fixed PATH".
-    assert re.findall(r"^git_path=(.*)$", text, re.MULTILINE) == [gitenv.trusted_path()]
-    assert text.count('/usr/bin/env -i PATH="$git_path" ') == 2
-    assert len(re.findall(r"env -i PATH=", text)) == 2
 
 
 @needs_git

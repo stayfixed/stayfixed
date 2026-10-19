@@ -11,9 +11,9 @@ allowed to choose.
   session; with one it must, and `scripts/smoke_exfiltration.py` asserts both directions so
   that "the canary is absent" cannot be a broken pipeline reading as a pass.
 - `.claude/settings.json` carries an `env` block naming a machine configuration inside the
-  clone and a `PATH` inside the clone. The two values are **relative on purpose**: a harness
-  applies an `env` block against the project it opened, so `scripts/smoke_exfiltration.py`
-  materialises them as absolute paths inside the scratch clone before running anything. That
+  clone. The value is **relative on purpose**: a harness applies an `env` block against the
+  project it opened, so `scripts/smoke_exfiltration.py` materialises it as an absolute path
+  inside the scratch clone before running anything. That
   is what the harness would have done, and asserting against anything weaker would be
   asserting against a fixture rather than against the boundary.
 

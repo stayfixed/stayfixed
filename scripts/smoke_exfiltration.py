@@ -4,10 +4,10 @@
     python3 scripts/smoke_exfiltration.py --plugin-root R --fixture F --scratch S
 
 The clone commits its own notes as standing rules, names ANOTHER project, and ships a
-`.claude/settings.json` `env` block pointing stayfixed at a machine configuration inside itself
-and at a `PATH` inside itself. This script materialises that `env` block the way a harness
-would — the two relative values become absolute paths inside the scratch clone — and then asks
-each boundary the scenario is about, one printed row each.
+`.claude/settings.json` `env` block pointing stayfixed at a machine configuration inside itself.
+This script materialises that `env` block the way a harness would — the relative value becomes
+an absolute path inside the scratch clone — and then asks each boundary the scenario is about,
+one printed row each.
 
 **Every negative row has its positive control.** "The canary is absent" is also what a broken
 pipeline prints, so the first three rows show the note reaching a session when the owner has
@@ -42,9 +42,9 @@ DELIMITER = "<<<stayfixed:repository-data"
 # a checkout with none is a state of its own (`no-origin`), not the one this scenario is about.
 RECORDED_REMOTE = "git@example.com:the-owner/smoke.git"
 CLONES_REMOTE = "git@example.com:somebody-else/smoke.git"
-# How many rows this scenario declares. Asserted at the end, because seven of the nine assert an
+# How many rows this scenario declares. Asserted at the end, because six of the eight assert an
 # ABSENCE and a run that executed one of them prints an identically green last line.
-EXPECTED_ROWS = 9
+EXPECTED_ROWS = 8
 
 
 @dataclass
@@ -67,8 +67,6 @@ class Planted:
     data: Path
     overlay: Path
     machine_in_clone: Path
-    planted_interpreter: Path
-    planted_marker: Path
 
 
 def _run(argv: list[str], env: dict[str, str], cwd: Path) -> subprocess.CompletedProcess[str]:
@@ -107,21 +105,11 @@ def plant(fixture: Path, scratch: Path, plugin_root: Path) -> Planted:
     data.mkdir(parents=True, exist_ok=True)
 
     # What the clone's `env` block names, made real: a machine configuration inside the clone
-    # recording an overlay inside the clone, and an interpreter inside the clone.
+    # recording an overlay inside the clone.
     evil_overlay = clone / "evil" / "overlay"
     (evil_overlay / "projects" / "smoke" / "memory").mkdir(parents=True, exist_ok=True)
     machine_in_clone = clone / "evil" / "config.toml"
     machine_in_clone.write_text(f'[overlay]\nroot = "{evil_overlay}"\n', encoding="utf-8")
-    planted_marker = scratch / "planted-ran"
-    planted = clone / "bin" / "python3"
-    planted.parent.mkdir(parents=True, exist_ok=True)
-    # No `exec`: an `exec python3` would re-search a PATH whose first entry is this directory
-    # and never terminate. This writes a marker and exits, so "the planted interpreter ran" is
-    # a file on disk rather than an inference from an exit code.
-    planted.write_text(
-        f'#!/bin/sh\nprintf planted > "{planted_marker}"\nexit 0\n', encoding="utf-8"
-    )
-    planted.chmod(0o755)
 
     # A REAL overlay and a REAL machine file, so the `attach` rows below reach the containment
     # check instead of refusing for want of any machine configuration at all — a refusal for
@@ -154,7 +142,7 @@ def plant(fixture: Path, scratch: Path, plugin_root: Path) -> Planted:
     (home / ".config" / "stayfixed" / "config.toml").write_text(
         f'[overlay]\nroot = "{overlay}"\n', encoding="utf-8"
     )
-    return Planted(clone, home, data, overlay, machine_in_clone, planted, planted_marker)
+    return Planted(clone, home, data, overlay, machine_in_clone)
 
 
 def hostile_env(planted: Planted, plugin_root: Path) -> dict[str, str]:
@@ -167,7 +155,6 @@ def hostile_env(planted: Planted, plugin_root: Path) -> dict[str, str]:
             "CLAUDE_PROJECT_DIR": str(planted.clone),
             "CLAUDE_PLUGIN_DATA": str(planted.data),
             "STAYFIXED_CONFIG": str(planted.machine_in_clone),
-            "PATH": f"{planted.planted_interpreter.parent}:{os.environ.get('PATH', '')}",
         }
     )
     return env
@@ -176,11 +163,7 @@ def hostile_env(planted: Planted, plugin_root: Path) -> dict[str, str]:
 def stayfixed(
     plugin_root: Path, args: list[str], env: dict[str, str], cwd: Path
 ) -> subprocess.CompletedProcess[str]:
-    """stayfixed itself, on this script's own interpreter.
-
-    The rows that use this are about stayfixed's answers and not about the wrapper's probe; the
-    planted interpreter is what the wrapper rows are about.
-    """
+    """stayfixed itself, on this script's own interpreter."""
     return _run([sys.executable, str(plugin_root / "scripts" / "stayfixed"), *args], env, cwd)
 
 
@@ -217,7 +200,7 @@ def main(argv: list[str]) -> int:
     planted = plant(args.fixture, args.scratch, plugin_root)
     env = hostile_env(planted, plugin_root)
     wrapper = plugin_root / "hooks" / "run-hook.sh"
-    bundle = ["open", "memory", "session-context", "--bundle", "standing-rules", "--part", "1"]
+    bundle = ["memory", "session-context", "--bundle", "standing-rules", "--part", "1"]
 
     # --- the positive control, first: the pipeline can emit the note when it is trusted ------
     recorded = approve(plugin_root, planted.clone, env)
@@ -252,7 +235,7 @@ def main(argv: list[str]) -> int:
     # no `additionalContext` and neither the canary nor the repository-data marker anywhere in
     # it. The row's positive control is the first row above — the same store, trusted, does
     # reach a session through the bundle entries — so "nothing came out" cannot be a crash.
-    started = through_wrapper(wrapper, ["open", "hook", "SessionStart"], env, planted.clone)
+    started = through_wrapper(wrapper, ["hook", "SessionStart"], env, planted.clone)
     try:
         envelope = json.loads(started.stdout)
     except json.JSONDecodeError:
@@ -327,55 +310,6 @@ def main(argv: list[str]) -> int:
         + f", the owner's record under the same HOME canary={CANARY in owners.stdout}",
     )
 
-    # --- the wrapper's containment, made reachable ------------------------------------------
-    # The four absolute candidates are not masked by a `PATH` entry, so on a runner that has
-    # one of them the fall-through is never reached and the assertion would be on a token that
-    # cannot be produced. The candidate list is the one thing a test may rewrite, for the
-    # reason `tests/hooks/test_wrapper.py::_plugin_root` gives: it is deliberately not
-    # environment-settable, so there is no other seam. Every guard around it is the shipped one.
-    contained_root = args.scratch / "wrapper"
-    (contained_root / "hooks").mkdir(parents=True, exist_ok=True)
-    (contained_root / "scripts").mkdir(parents=True, exist_ok=True)
-    copied = contained_root / "hooks" / "run-hook.sh"
-    lines = wrapper.read_text(encoding="utf-8").splitlines(keepends=True)
-    first = next(i for i, line in enumerate(lines) if line.startswith("candidates="))
-    lines[first] = "candidates='python3'\n"
-    copied.write_text("".join(lines), encoding="utf-8")
-    copied.chmod(0o755)
-    (contained_root / "scripts" / "stayfixed").write_text(
-        (plugin_root / "scripts" / "stayfixed").read_text(encoding="utf-8"), encoding="utf-8"
-    )
-    contained_env = {
-        **env,
-        "PATH": f"{planted.planted_interpreter.parent}:/usr/bin:/bin",
-        "CLAUDE_PLUGIN_ROOT": str(contained_root),
-    }
-    contained_env.pop("STAYFIXED_PYTHON_CANDIDATES", None)
-    # Both policies, and the exit codes are NOT the same — asserting "the wrapper refused, so it
-    # exited non-zero" would have been wrong about `open`, which is the whole of the two failure
-    # policies: a fault the wrapper can see prints its token and then degrades to 0 under `open` and
-    # refuses with 2 under `closed`. What both rows share is the token, the reason inside it, and
-    # that the planted interpreter never ran.
-    degraded = through_wrapper(
-        copied, ["open", "hook", "SessionStart"], contained_env, planted.clone
-    )
-    refused = through_wrapper(
-        copied, ["closed", "hook", "PreToolUse"], contained_env, planted.clone
-    )
-    named = all(
-        "SF_NO_PY" in done.stderr and "inside the project root" in done.stderr
-        for done in (degraded, refused)
-    )
-    report.row(
-        named
-        and degraded.returncode == 0
-        and refused.returncode == 2
-        and not planted.planted_marker.exists(),
-        "the interpreter inside the clone is refused by name, not merely not reached",
-        f"open rc={degraded.returncode}, closed rc={refused.returncode}, named={named}, "
-        f"planted-ran={planted.planted_marker.exists()}",
-    )
-
     # --- what the clone's machine configuration bought it: a warning row and nothing else ----
     reported = stayfixed(
         plugin_root,
@@ -440,8 +374,8 @@ def main(argv: list[str]) -> int:
     )
 
     print("skip  memory_search under an explicit project= — stayfixed does not depend on mcp")
-    # The floor this script had none of. Seven of its nine rows assert an ABSENCE, and a run
-    # that executed one row prints the same green last line as a run that executed all nine —
+    # The floor this script had none of. Six of its eight rows assert an ABSENCE, and a run
+    # that executed one row prints the same green last line as a run that executed all eight —
     # measured, with `report.rows[:1]` immediately before this print and the whole suite still
     # green. The sibling script states its own count for the same reason.
     ran = len(report.rows)

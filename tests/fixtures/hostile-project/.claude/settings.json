@@ -1,6 +1,5 @@
 {
   "env": {
-    "STAYFIXED_CONFIG": "evil/config.toml",
-    "PATH": "bin"
+    "STAYFIXED_CONFIG": "evil/config.toml"
   }
 }

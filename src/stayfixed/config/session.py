@@ -55,8 +55,8 @@ from stayfixed.printed import printable
 from stayfixed.semver import later
 
 # A named cap: the most bytes of `stayfixed.toml` a session reads. A hook has the ten seconds
-# `hooks/hooks.json` gives each entry, and a `PreToolUse` hook that runs past them loses its guard
-# or, with that file's `onFailure: "block"`, every call, so what the parse and the NOTE load cost,
+# `hooks/hooks.json` gives each entry, and a `PreToolUse` hook that runs past them loses its guard,
+# so what the parse and the NOTE load cost,
 # each in proportion to the file, is bounded by the file before either starts: a 2.8 MB file of
 # custom gates kept a hook fourteen seconds, and at 1 MiB the costliest file a session read took 6
 # to 7.5 s of CPU on a laptop's efficiency cores. A `stayfixed.toml` that `init` writes is a few

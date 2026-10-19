@@ -8,14 +8,12 @@ import json
 import subprocess
 from collections.abc import Callable
 from pathlib import Path
-from typing import cast
 
 import pytest
 
 from stayfixed.config.session import FALLBACK_WARNING, MACHINE_FILE_WARNING, NOTED_WARNING
 from stayfixed.guards.bgcleanup import SLEEP_HINT
 from stayfixed.guards.hygiene import LEAD
-from stayfixed.hooks.api import Decision, Handler, HookEvent, HookResult
 from stayfixed.hooks.commands import _output_cap, run_hook
 from tests.floor import floor_env
 from tests.gitfixture import git
@@ -120,14 +118,9 @@ def test_no_handlers_means_a_clean_empty_outcome(tmp_path: Path) -> None:
     assert json.loads(completed.stdout)["hookSpecificOutput"]["hookEventName"] == "SessionStart"
 
 
-def test_malformed_stdin_on_pre_tool_use_refuses(tmp_path: Path) -> None:
-    completed = hook("PreToolUse", "{not json", tmp_path)
-    assert completed.returncode == 2
-    assert "refused" in completed.stderr
-
-
-def test_malformed_stdin_on_session_start_degrades_open(tmp_path: Path) -> None:
-    completed = hook("SessionStart", "{not json", tmp_path)
+@pytest.mark.parametrize("event", ["PreToolUse", "SessionStart"])
+def test_malformed_stdin_degrades_open(tmp_path: Path, event: str) -> None:
+    completed = hook(event, "{not json", tmp_path)
     assert completed.returncode == 0
     assert "stayfixed" in completed.stderr
 
@@ -157,7 +150,7 @@ def test_a_symlinked_config_gets_one_verdict_whatever_it_points_at(
     # anything follows the link, and both are the same answer: no project configuration, a tool
     # call judged by the guards alone, and the warning at `SessionStart`. Mutation (`mutations/`'s
     # "a session lets a symlinked stayfixed.toml raise"): the refusal escapes as an internal error
-    # and refuses the tool call.
+    # on stderr.
     project = tmp_path / "project"
     project.mkdir()
     if target == "regular-file":
@@ -192,47 +185,23 @@ def test_a_repository_without_a_config_still_gets_the_shipped_cap() -> None:
     assert _output_cap(None) == 10000
 
 
-@pytest.mark.parametrize(("event", "code"), [("PreToolUse", 2), ("SessionStart", 0)])
+@pytest.mark.parametrize("event", ["PreToolUse", "SessionStart"])
 @pytest.mark.parametrize("raised", [asyncio.CancelledError(), KeyboardInterrupt()], ids=type)
-def test_a_base_exception_inside_the_wrapper_keeps_the_event_aware_verdict(
+def test_a_base_exception_inside_the_hook_degrades_open(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
     raised: BaseException,
     event: str,
-    code: int,
 ) -> None:
     # A Ctrl-C mid-hook raises KeyboardInterrupt, which does not inherit Exception: escaping
-    # here would exit the process on the interpreter's own code, and PreToolUse reads anything
-    # that is not 2 as permission.
+    # here would exit the process on the interpreter's own code, a 2 among them.
     def interrupted() -> list[object]:
         raise raised
 
     monkeypatch.setattr("stayfixed.hooks.commands.discover", interrupted)
     monkeypatch.setattr("sys.stdin", io.StringIO("{}"))
-    assert run_hook(argparse.Namespace(event=event)) == code
+    assert run_hook(argparse.Namespace(event=event)) == 0
     assert type(raised).__name__ in capsys.readouterr().err
-
-
-@pytest.mark.parametrize("event", ["PreToolUse", "PostToolUse"])
-def test_a_deny_with_a_malformed_context_still_refuses_through_the_wrapper(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], event: str
-) -> None:
-    # The production path, not `dispatch` alone: a handler that denies while carrying a
-    # non-string context exited 0 and the tool call proceeded. PostToolUse is the discriminating
-    # half — nothing there maps a stray internal error to 2, so only a genuinely recorded deny
-    # can produce it.
-    def deny(ev: HookEvent, config: object) -> HookResult:
-        return HookResult(
-            decision=Decision.DENY,
-            reason="rm -rf / is refused",
-            context=cast(str, {"n": 1}),
-        )
-
-    probe = Handler(name="probe", event=event, run=deny)
-    monkeypatch.setattr("stayfixed.hooks.commands.discover", lambda: [probe])
-    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps({"hook_event_name": event})))
-    assert run_hook(argparse.Namespace(event=event)) == 2
-    assert "refused: probe: rm -rf / is refused" in capsys.readouterr().err
 
 
 def _initialised_project(tmp_path: Path) -> Path:

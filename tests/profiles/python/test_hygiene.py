@@ -584,7 +584,6 @@ def test_a_red_pytest_run_gets_the_python_profiles_note(tmp_path: Path) -> None:
     # `hints = shipped_hints()` with `hints = ()`, so no profile speaks; measured.
     root = faulty_python_tree(tmp_path)
     result = hygiene().run(red_event(root, "uv run pytest -q"), session_of(config(root)))
-    assert result.decision is None
     assert result.context == f"{LEAD}\n- {DIRTY_ONE}\n- {STALE_ONE}"
 
 

@@ -18,8 +18,7 @@ read, and the two agree because both are fixed.
 `worktree-link` in area-name order inside an entry whose `timeout` is ten seconds for both of
 them.
 
-`hooks/dispatch.py` banks a `once_key` only `if handler.once_key is not None and delivered`, and
-`delivered` is `bool(result.context) or result.decision == Decision.DENY`. So the marker is laid
+`hooks/dispatch.py` banks a `once_key` only for a result with a context, so the marker is laid
 down exactly when this handler had something to say. A session that hears a line hears it once;
 a **healthy** repository -- bound, linked, pushed, satisfied -- returns an empty result, banks
 nothing, and is asked again on every one of those events.

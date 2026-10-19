@@ -226,7 +226,7 @@ def test_a_leaked_scratch_checkout_is_swept_where_git_worktree_prune_will_not_ta
     `mkdtemp` tree is still on disk, and `prune` only drops entries whose directory is *gone*.
     One such registration was live in the development repository at review time — 6.5 MB, and
     `git worktree prune --dry-run -v` printed nothing about it — pinning a commit against
-    `git gc` and joining `hooks/run-hook.sh`'s `list_checkouts` containment set.
+    `git gc`.
 
     This builds a real repository, registers a leak under the real prefix, and asserts that
     `prune` declines it and the sweep takes it.

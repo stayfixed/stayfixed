@@ -12,12 +12,6 @@ from tests.boundaries.test_discovery import area_names
 
 ROOT = Path(__file__).resolve().parents[2]
 
-# The one departure from the rule. `cli.py` is the CLI frame and not an area — nothing discovers
-# it, it has no `api.py`, and it owns the wiring of the `hook` command — so it reads
-# `stayfixed.hooks.policy` directly. It is named here rather than skipped silently, because an
-# exemption nobody can see is how the two violations this guard exists to catch were merged green.
-SURFACE_EXEMPT = frozenset({("cli.py", "stayfixed.hooks.policy")})
-
 
 def _ruled_packages(source: Path) -> list[str]:
     """Every subpackage the import rule holds: each area, and each package that publishes an
@@ -49,7 +43,7 @@ def _boundary_offences(where: str, text: str, ruled: Sequence[str]) -> tuple[lis
         if len(bits) < 3 or bits[0] != "stayfixed" or bits[1] not in ruled or bits[1] == here:
             continue
         crossings.append(f"{where} -> {module}")
-        if bits[2] == "api" or (where, ".".join(bits[:3])) in SURFACE_EXEMPT:
+        if bits[2] == "api":
             continue
         offences.append(f"{where}:{line} imports {module}")
     return crossings, offences
@@ -112,17 +106,6 @@ def test_no_module_reaches_into_another_packages_private_module() -> None:
     # count below has enough headroom to absorb the loss.
     assert len(scripts) >= 3, scripts
     assert len(crossings) >= 60, crossings
-    # The exemption itself, in both directions. Nothing asserted its size, so a second entry
-    # could be added and no test would move — measured, with the historical violation
-    # `("memory/commands.py", "stayfixed.hooks.dispatch")` added to it: 6 passed, because
-    # `crossings` still counts the crossing and only the offence is suppressed. And nothing
-    # asserted the one crossing it names is still real, so the exemption would outlive the
-    # import it excuses.
-    #
-    # Mutation (declared): a second live crossing joins the exemption.
-    assert len(SURFACE_EXEMPT) == 1, sorted(SURFACE_EXEMPT)
-    for where, module in SURFACE_EXEMPT:
-        assert f"{where} -> {module}" in crossings, (where, module)
     assert not offences, "a module reached past another package's api.py:\n" + "\n".join(offences)
 
 
