@@ -48,7 +48,6 @@ from stayfixed.prove.run import (
     NONE_RAN,
     NOT_RECOGNISED,
     NOT_STARTED,
-    STRANDED,
     TIMED_OUT,
     WORDS,
     Receipt,
@@ -209,8 +208,8 @@ def test_an_unrecognised_command_is_not_proven(tmp_path: Path, argv: list[str]) 
     [
         ["env", "FORGE=x", NAME],
         ["FORGE=x", NAME],
-        # Wherever the command spells the assignment: before the launcher or after it, bare or
-        # after `env`.
+        # Wherever the command spells the assignment: before the launcher, bare or after `env`,
+        # or after an `env` the launcher runs.
         ["uv", "run", "env", "FORGE=x", NAME],
         ["env", "A=1", "uv", "run", "env", "FORGE=x", NAME],
         ["FORGE=x", "uv", "run", NAME],
@@ -252,30 +251,26 @@ GREEN_JUNIT_WRITER = [
 @pytest.mark.parametrize(
     ("argv", "junit"),
     [
-        pytest.param(["uv", "run", "TYPED=yes", NAME], None, id="argv0"),
-        pytest.param(["uv", "run", "--", "TYPED=yes", NAME], None, id="argv1"),
-        pytest.param(["env", "A=1", "uv", "run", "TYPED=yes", "B=2", NAME], None, id="argv2"),
-        pytest.param(["uv", "run", "env", "A=1", "uv", "run", "TYPED=yes", NAME], None, id="argv3"),
+        pytest.param(["uv", "run", "TYPED=yes", "pytest"], None, id="argv0"),
+        pytest.param(["uv", "run", "--", "TYPED=yes", "pytest"], None, id="argv1"),
+        pytest.param(["env", "A=1", "uv", "run", "TYPED=yes", "B=2", "pytest"], None, id="argv2"),
+        pytest.param(
+            ["uv", "run", "env", "A=1", "uv", "run", "TYPED=yes", "pytest"], None, id="argv3"
+        ),
         pytest.param(["uv", "run", "TYPED=yes", *GREEN_JUNIT_WRITER], "out.xml", id="junit"),
     ],
 )
-def test_an_assignment_right_after_a_launcher_is_not_recognised(
+def test_an_assignment_right_after_a_launcher_is_handed_to_it_and_runs_no_test(
     tmp_path: Path, argv: list[str], junit: str | None
 ) -> None:
     # Typed as it is, uv runs `TYPED=yes` as its program (uv 0.12.19: "Failed to spawn", exit 2),
     # and no test runs; read as an assignment, the run would be `proved` for a command that runs
     # nothing, with an adapter or under `--junit`, whose writer would leave a green report.
-    # Mutation (declared): the stranded assignments left unread -> the stand-in runs and is
-    # `proved`.
-    adapter = StandIn()
     environ = with_uv(fake_uv(tmp_path / "bin"))
     report = None if junit is None else Path(junit)
-    got = run(tmp_path, *argv, adapter=adapter, environ=environ, junit=report)
-    assert (got.verdict, got.reason) == (NOT_PROVEN, NOT_RECOGNISED)
-    # Mutation: none -- the detail is wording.
-    assert got.detail == STRANDED.format(name="TYPED")
+    got = prove(argv, cwd=tmp_path, environ=environ, timeout=600, junit=report)
+    assert got.verdict == NOT_PROVEN
     assert "yes" not in line(got)
-    assert adapter.seen == []
 
 
 @pytest.mark.parametrize(

@@ -598,10 +598,11 @@ so a context gets at most one note, whichever event carries it. The note is chos
 that failed rather than by configuration: each simple command of the red run is offered to every
 shipped profile's hint, and the dirty-tree line and the line of each profile whose runner it
 recognises (Python's: `pytest`, or `python -m pytest`) are delivered together. A runner is
-recognised behind environment assignments, an `env` prefix and `uv run` with uv's own options (`uv
-run --locked pytest`, `uv --quiet run pytest`, `uv run -- pytest`). A value-taking option takes its
-value, so `uv run --with pytest echo` runs `echo`; an option outside uv's own list (`uv run
---frobnicate pytest`) leaves the command whole, so no value is ever taken for the program. A red
+recognised behind environment assignments, an `env` prefix and `uv run`, whose command starts at
+the first word a runner adapter recognises (`uv run --locked pytest`, `uv --quiet run pytest`, `uv
+run -m pytest`); no option of uv's is read. A runner's name given as the value of a uv option
+before the real command (`uv run --with pytest echo`) is read as the command, so that run gets the
+note; a runner named through an alias, or by a path no adapter recognises, is not recognised. A red
 command no profile recognises gets no note. When Python's walk stopped at its bound, its line says
 the walk could not tell whether a stale build was imported, and names neither stale bytecode nor its
 absence.
@@ -693,9 +694,13 @@ stayfixed prove --junit target/surefire-reports/TEST-all.xml -- mvn -q test
 **What runs.** The command is everything after `--`, run as typed, never through a shell. `prove`
 reads no configuration, needs no `stayfixed.toml`, and takes neither `--root` nor `--machine`; a
 line with no `--`, or nothing after it, is a usage error (2). It reads the command past its
-`NAME=value` assignments, `env` and a launcher (`uv run …`, `uv run -m` too), as the session guard
-reads a command, and the first runner adapter that recognises what is left plans the run: the
-argv, and where the runner's report arrives and in which format. A command no adapter recognises, an `env` given an option among them, is `not proven`
+`NAME=value` assignments, `env` and `uv run`, up to the first word a runner adapter recognises
+(`uv run --locked pytest`, `uv run -m pytest`), as the red-run hint reads a command, and that
+adapter plans the run: the argv, and where the runner's report arrives and in which format. No
+option of uv's is read but `--directory` (below). A runner's name given as the value of a uv option
+before the real command (`uv run --with pytest python -O -m pytest`) is read as the command, so a
+`-O` or a `PYTHONOPTIMIZE` after it goes unchecked; a runner named through an alias, or by a path
+no adapter recognises, is not recognised (count it with `--junit`). A command no adapter recognises, an `env` given an option among them, is `not proven`
 (`not-recognised`); `--junit` (below) counts the report of a runner no adapter knows.
 
 The run is the command's own words with only the adapter's report options added (the table
@@ -718,9 +723,8 @@ repository. A command typed in `packages/web` runs in `packages/web`.
 spells before what runs, in order, before the launcher or after an `env`, the last of two for one
 name winning; an assignment never reaches the argv. It is the whole launched process's, the
 launcher's included. An assignment right after a launcher, with no `env` between (`uv run TYPED=yes
-pytest`), is no assignment: a shell hands it to uv as a word, uv runs it as its program and fails
-("Failed to spawn", exit 2), so the command is `not proven` (`not-recognised`, its detail naming
-the variable); `uv run env TYPED=yes pytest` sets it. Two variables are set apart, each its
+pytest`), is the launcher's word, handed to uv as typed, which runs it as its program and fails
+("Failed to spawn", exit 2), so no test runs; `uv run env TYPED=yes pytest` sets it. Two variables are set apart, each its
 adapter's forging set, and only for a value that turns tests off: `PYTHONOPTIMIZE` (pytest) set to
 anything but empty or `0`, and `UPDATE_SNAPSHOT`
 (vitest) set to anything but empty, `none` or `new`, which vitest reads as `--update`. Assigned by
@@ -805,7 +809,9 @@ The discovery set of each runner, whose untracked files the receipt names (below
 **`--junit PATH`** is for a runner no adapter knows: no adapter is consulted, the command runs
 as typed (its assignments, `env` and launcher read as above, its program found as above, nothing
 refused or removed), and its report is the JUnit file at `PATH`, read from the directory the command
-runs in and allowed anywhere, inside the project too. Before the run `prove` notes what is at
+runs in and allowed anywhere, inside the project too; a `uv run` followed by no `env` and no word
+an adapter recognises is read whole, so its `--directory` is not read and `PATH` is read where
+`prove` is typed. Before the run `prove` notes what is at
 `PATH` reaches, followed through a link (nothing, or its inode, size and modification time);
 after it, the file is counted only when `PATH` reaches a regular file the run created or rewrote,
 or a link the run pointed at another file (`latest.xml` at the report it just wrote), and

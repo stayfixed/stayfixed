@@ -328,56 +328,19 @@ def test_a_backgrounded_leading_sleep_is_flagged_however_it_is_spelled(command: 
     assert judge(command, background=True) == SLEEP_HINT
 
 
-def test_a_backgrounded_sleep_uv_runs_past_its_options_is_flagged() -> None:
-    """`uv run --no-project sleep 30` launches `sleep` as surely as `uv run sleep 30` does,
-    and was missed while only the exact pair `uv run` was unwrapped. A hint this guard did
-    not give before, and the right one: the call returns at once whatever it sleeps for.
-    Oracle: `mutations/`'s "uv's options stop being read past `run`"."""
-    assert judge("uv run --no-project sleep 30", background=True) == SLEEP_HINT
-    assert judge("uv --quiet run -- sleep 30", background=True) == SLEEP_HINT
-
-
-def test_a_backgrounded_test_run_through_uvs_options_is_not_a_sleep() -> None:
-    """The legitimate call beside it: a suite started in the background through uv's options
-    is ordinary work, and neither the sleep rule nor a value uv takes may flag it. Oracle:
-    `mutations/`'s "a value-taking uv option stops taking the next word"."""
-    assert judge("uv run --no-project pytest -q > out.log 2>&1", background=True) is None
-    assert judge("uv run --with sleep pytest -q > out.log 2>&1", background=True) is None
-
-
 @pytest.mark.parametrize(
     "command",
     [
+        "uv run sleep 30",
         "uv run -m sleep 30",
-        "uv run --module sleep 30",
-        "uv run -qm sleep 30",
-        "uv run -s sleep 30",
-        "uv run --script sleep 30",
-        "uv run --gui-script sleep 30",
+        "uv run --with sleep pytest -q > out.log 2>&1",
+        "pytest -q > out.log; uv run echo done",
     ],
 )
-def test_a_module_or_script_named_sleep_is_not_a_backgrounded_sleep(command: str) -> None:
-    """`uv run -m sleep 30` runs `python -m sleep`, and `--script sleep` a script file of that
-    name: neither is the `sleep` program, so a hint here is a false one on a command
-    that does not sleep. Measured on uv: `No module named sleep`, exit 1. Oracle: `mutations/`'s
-    "a module or script name reads as the program by default"."""
+def test_what_uv_runs_is_uv_to_this_guard(command: str) -> None:
+    """This guard asks about no runner, so `command_words` reads no `uv run` through for it: what
+    uv launches is `uv`, never a `sleep` or an `echo`, and `uv run -m sleep` runs a module."""
     assert judge(command, background=True) is None
-
-
-def test_the_exit_echo_hint_reads_both_commands_through_uvs_options() -> None:
-    """The hint asks the same question of the echo and of the command it masks. An echo uv
-    launches past its options is an echo, and a command uv launches past them is not one.
-    Oracle: `mutations/`'s "uv's options stop being read past `run`"."""
-    assert judge("pytest -q > out.log; uv run --no-project echo done", background=True)
-    assert judge("uv run --frozen echo hi; echo done", background=True) is None
-
-
-def test_the_exit_echo_hint_never_reads_a_module_named_echo_as_an_echo() -> None:
-    """`uv run -m echo` runs a module, whose exit code an echo after it hides and which hides
-    nothing itself. Oracle: `mutations/`'s "a module or script name reads as the program by
-    default"."""
-    assert judge("pytest -q > out.log; uv run -m echo done", background=True) is None
-    assert judge("uv run -m echo hi > out.log; echo done", background=True) is not None
 
 
 def test_a_sleep_inside_a_command_substitution_is_not_a_leading_sleep() -> None:

@@ -278,9 +278,8 @@ def _begins_with_sleep(tokens: list[str]) -> bool:
     a substitution is not a leading `sleep`; after the leading run of `(` the first word decides,
     and here that word is the assignment's own token.
 
-    STILL MISSED, recorded rather than implied: `time sleep 30`, and any other prefix command
-    `command_words` does not resolve -- it resolves `env` and `uv run` with uv's options, and
-    no other launcher.
+    STILL MISSED, recorded rather than implied: `time sleep 30`, `uv run sleep 30`, and any
+    other prefix command `command_words` does not resolve -- it resolves `env` and no launcher.
     """
     commands = bashscan.segments(tokens)
     if not commands:

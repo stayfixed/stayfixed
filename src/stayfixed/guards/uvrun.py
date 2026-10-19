@@ -1,10 +1,11 @@
-"""How `uv run` is read through to the program it launches, for `bashscan.command_words`.
+"""Where `uv run` stops and the command it launches starts, for `bashscan.read_launch`, and the
+directory uv runs that command in, for `prove`.
 
 uv is one stack's launcher, and this module is where the shared scanner keeps it, so the scanner
-itself names no stack: the background guard and every profile's red-run hint read commands through
-the same unwrap (`tests/test_language_neutral.py` pardons this file for that reason). What it reads
-is uv's own option grammar, measured against uv; it never runs uv. The same grammar says where
-the program runs (`run_directory`), for `prove`, which judges a command in that directory.
+itself names no stack (`tests/test_language_neutral.py` pardons this file for that reason). None
+of uv's option grammar is read but `--directory`: the command starts at the first word after
+`run` that the caller recognises (`bashscan.read_launch`), and every word before it is the
+launcher's, handed to uv as typed. It never runs uv.
 """
 
 from __future__ import annotations
@@ -12,129 +13,12 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
-# `uv run --locked pytest`, the shape the README and the `attribute-failure` skill recommend:
-# `uv`, uv's global options, the word `run`, `run`'s options, then the program. The five tables
-# are uv's own, read off `uv --help` and `uv run --help` (uv 0.12.19, measured): the global
-# options are accepted before `run` and after it, `run`'s own only after it (`uv --locked run`
-# exits 2). An option in no table stops the unwrap rather than being guessed a flag, since a
-# guessed flag that takes a value reads that value as the program (`uv run --with pytest echo`
-# would become a pytest run); `-h` is in no table because it prints help and runs nothing. The
-# tables move with uv, and an option uv adds is under-reported until it is added here.
 _UV = "uv"
 _UV_RUN = "run"
 # The global option that moves the directory uv runs the program in, and the variable it reads
 # where no option names one (`run_directory`).
 _DIRECTORY = "--directory"
 WORKING_DIR = "UV_WORKING_DIR"
-_UV_GLOBAL_FLAGS = frozenset(
-    {
-        "-q",
-        "--quiet",
-        "-v",
-        "--verbose",
-        "-n",
-        "--no-cache",
-        "--managed-python",
-        "--no-managed-python",
-        "--no-python-downloads",
-        "--system-certs",
-        "--offline",
-        "--no-progress",
-        "--no-config",
-    }
-)
-_UV_GLOBAL_VALUED = frozenset(
-    {
-        "--cache-dir",
-        "--color",
-        "--allow-insecure-host",
-        "--directory",
-        "--project",
-        "--config-file",
-    }
-)
-_UV_RUN_FLAGS = _UV_GLOBAL_FLAGS | frozenset(
-    {
-        "--all-extras",
-        "--no-dev",
-        "--only-dev",
-        "--no-default-groups",
-        "--all-groups",
-        "--no-editable",
-        "--exact",
-        "--no-env-file",
-        "--isolated",
-        "--active",
-        "--no-sync",
-        "--locked",
-        "--frozen",
-        "--all-packages",
-        "--no-project",
-        "--no-index",
-        "-U",
-        "--upgrade",
-        "--no-sources",
-        "--reinstall",
-        "--compile-bytecode",
-        "--no-build-isolation",
-        "--no-build",
-        "--no-binary",
-        "--refresh",
-    }
-)
-# `-m pytest` runs the pytest module and `--script x` the file `x`: flags, whose next word is a
-# module or a script uv hands to Python rather than a program on the path. So by default such
-# a command stays whole, and the background guard never refuses `uv run -m sleep 30` as a
-# `sleep`; a caller asking which test runner ran passes `command_words` its
-# `modules_as_programs`, and reads `uv run -m pytest` as a pytest run.
-_UV_RUN_TARGETS = frozenset({"-m", "--module", "-s", "--script", "--gui-script"})
-_UV_RUN_VALUED = _UV_GLOBAL_VALUED | frozenset(
-    {
-        "--extra",
-        "--no-extra",
-        "--group",
-        "--no-group",
-        "--only-group",
-        "--no-editable-package",
-        "--env-file",
-        "-w",
-        "--with",
-        "--with-editable",
-        "--with-requirements",
-        "--package",
-        "--python-platform",
-        "--index",
-        "--default-index",
-        "-i",
-        "--index-url",
-        "--extra-index-url",
-        "-f",
-        "--find-links",
-        "--index-strategy",
-        "--keyring-provider",
-        "-P",
-        "--upgrade-package",
-        "--upgrade-group",
-        "--resolution",
-        "--prerelease",
-        "--prerelease-package",
-        "--fork-strategy",
-        "--exclude-newer",
-        "--exclude-newer-package",
-        "--no-sources-package",
-        "--reinstall-package",
-        "--link-mode",
-        "-C",
-        "--config-setting",
-        "--config-settings-package",
-        "--no-build-isolation-package",
-        "--no-build-package",
-        "--no-binary-package",
-        "--refresh-package",
-        "-p",
-        "--python",
-    }
-)
 
 
 def is_launcher(name: str) -> bool:
@@ -142,58 +26,19 @@ def is_launcher(name: str) -> bool:
     return name == _UV
 
 
-def past_run(segment: Sequence[str], index: int, *, modules_as_programs: bool) -> int | None:
-    """Where the program `uv run` launches starts in `segment`, read from `index`, just past
-    the word `uv` (`is_launcher`); `None` when these words are not a `uv run` the tables can
-    read whole. `modules_as_programs` reads the word after `-m` or `--script` as that program.
-
-    Before `run` only uv's global options are skipped; after it `run`'s too, `--` ends them,
-    and the first word that is not an option is the program.
-    """
-    walked = _walked(segment, index, modules_as_programs=modules_as_programs)
-    return None if walked is None else walked[0]
-
-
-def _walked(
-    segment: Sequence[str], index: int, *, modules_as_programs: bool
-) -> tuple[int, str | None] | None:
-    """`past_run`'s answer, and the directory `--directory` names among the words it reads past
-    (`None` where none does; the last where two do, which uv refuses)."""
-    flags, valued = _UV_GLOBAL_FLAGS, _UV_GLOBAL_VALUED
-    running = False
-    directory = None
-    while index < len(segment):
-        word = segment[index]
-        if not running and word == _UV_RUN:
-            flags = _UV_RUN_FLAGS | _UV_RUN_TARGETS if modules_as_programs else _UV_RUN_FLAGS
-            valued = _UV_RUN_VALUED
-            running = True
-            index += 1
-            continue
-        if running and word == "--":
-            return index + 1, directory
-        if not word.startswith("-") or word == "-":
-            return (index, directory) if running else None
-        width = _uv_option_width(word, flags, valued)
-        if width is None:
-            return None
-        name, equals, value = word.partition("=")
-        if name == _DIRECTORY:
-            directory = value if equals else _value(segment, index)
-        index += width
-    return (min(index, len(segment)), directory) if running else None
-
-
-def _value(segment: Sequence[str], index: int) -> str | None:
-    """The word after `segment[index]`, an option's spaced value; `None` at the end."""
-    return segment[index + 1] if index + 1 < len(segment) else None
+def past_run(segment: Sequence[str], index: int) -> int | None:
+    """Where the words after `run` start in `segment`, read from `index`, just past the word `uv`
+    (`is_launcher`); `None` where no `run` follows, a uv command that launches nothing."""
+    if _UV_RUN not in segment[index:]:
+        return None
+    return segment.index(_UV_RUN, index) + 1
 
 
 def run_directory(launcher: Sequence[str], cwd: Path, environ: Mapping[str, str]) -> Path:
     """The directory the command behind `launcher` runs in, typed in `cwd` under `environ`.
 
     `launcher` is the launcher's words a reading of a command found (`bashscan.Launch`): each
-    `uv`, its options, `run`, `run`'s options. Each `uv` in turn changes to the directory its
+    `uv` and the words up to the next. Each `uv` in turn changes to the directory its
     `--directory` names, else to the run's `UV_WORKING_DIR`, read from the directory the one
     before it left (measured on uv 0.12.19: either moves the program's working directory, the
     option winning over the variable, a relative one read from where uv starts, and a `uv run`
@@ -203,37 +48,20 @@ def run_directory(launcher: Sequence[str], cwd: Path, environ: Mapping[str, str]
     runs nothing.
     """
     here = cwd
-    index = 0
-    while index < len(launcher):
-        walked = _walked(launcher, index + 1, modules_as_programs=True)
-        if walked is None:
-            break
-        index, directory = walked
+    starts = [at for at, word in enumerate(launcher) if is_launcher(Path(word).name)]
+    for start, end in zip(starts, [*starts[1:], len(launcher)], strict=False):
+        words = launcher[start:end]
+        directory = None
+        for at, word in enumerate(words):
+            name, equals, value = word.partition("=")
+            if name == _DIRECTORY:
+                directory = value if equals else _value(words, at)
         moved = directory if directory is not None else environ.get(WORKING_DIR)
         if moved is not None:
             here = here / moved
     return here
 
 
-def _uv_option_width(token: str, flags: frozenset[str], valued: frozenset[str]) -> int | None:
-    """How many words the uv option `token` spans -- one, or two when its value is the next
-    word -- or `None` for an option in neither table.
-
-    `--name=value` is one word. A short cluster is read the way uv reads it: `-qq` and `-nq`
-    are flags, and the first value-taking letter takes the rest of the word as its value
-    (`-p3.12`, `-np3.12`) or, at the word's end, the next word (`-p 3.12`).
-    """
-    if token.startswith("--"):
-        name, equals, _ = token.partition("=")
-        if name in valued:
-            return 1 if equals else 2
-        if name in flags and not equals:
-            return 1
-        return None
-    for position in range(1, len(token)):
-        short = "-" + token[position]
-        if short in valued:
-            return 1 if position + 1 < len(token) else 2
-        if short not in flags:
-            return None
-    return 1
+def _value(words: Sequence[str], index: int) -> str | None:
+    """The word after `words[index]`, an option's spaced value; `None` at the end."""
+    return words[index + 1] if index + 1 < len(words) else None

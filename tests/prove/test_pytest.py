@@ -141,9 +141,11 @@ def ours(cwd: Path) -> tuple[str, ...]:
         ["poetry", "run", "--", "python", "-m", "pytest"],
         ["poetry", "run", "py.test"],
         # What `prove` hands an adapter of `uv run --locked pytest`, the launcher read past.
-        list(read_launch(("uv", "run", "--locked", "pytest", "-q")).command),
-        list(read_launch(("uv", "run", "python", "-m", "pytest")).command),
-        list(read_launch(("uv", "run", "-m", "pytest"), modules_as_programs=True).command),
+        list(
+            read_launch(("uv", "run", "--locked", "pytest", "-q"), ADAPTERS[0].recognises).command
+        ),
+        list(read_launch(("uv", "run", "python", "-m", "pytest"), ADAPTERS[0].recognises).command),
+        list(read_launch(("uv", "run", "-m", "pytest"), ADAPTERS[0].recognises).command),
     ],
 )
 def test_python_m_pytest_poetry_run_and_uv_run_are_recognised(command: list[str]) -> None:

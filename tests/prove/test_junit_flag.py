@@ -234,14 +234,15 @@ def test_the_path_is_read_from_the_directory_the_command_is_typed_in(tmp_path: P
 def test_the_path_is_read_from_the_directory_the_launcher_runs_the_command_in(
     tmp_path: Path,
 ) -> None:
-    # `uv run --directory sub`: the command writes its report in `sub`, as its own relative paths
-    # are read there, and the path is read from there too. Mutation (declared): the path read
-    # from the directory the command was typed in -> no report there, `junit-unchanged`.
+    # `uv run --directory sub env`, a launcher read up to its `env`, since no adapter recognises
+    # the writer: the command writes its report in `sub`, as its own relative paths are read
+    # there, and the path is read from there too. Mutation (declared): the path read from the
+    # directory the command was typed in -> no report there, `junit-unchanged`.
     sub = tmp_path / "sub"
     sub.mkdir()
     uv = fake_uv(tmp_path / "bin")
     got = prove(
-        ["uv", "run", "--directory", "sub", *writer("pass")],
+        ["uv", "run", "--directory", "sub", "env", *writer("pass")],
         cwd=tmp_path,
         environ=with_uv(uv),
         timeout=600,

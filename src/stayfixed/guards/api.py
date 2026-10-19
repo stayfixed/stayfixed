@@ -25,14 +25,14 @@ one gate and the command reader:
   red-run hint walks the same roots, handed to it by this area's guard rather than imported.
 - `assess` runs the `commit` gate (`commit_gate`), `(root, config, base) -> list[Finding]`;
   `commit check` reads the same range through the same `check_range`.
-- `prove` reads a test command past its assignments, `env` and `uv run …` the way the session
-  guard and every red-run hint do (`read_launch`, the walk `command_words` returns the last part
-  of, and `Launch`, what it returns), so the runner it asks an adapter about is the one they
-  would name; a second reading of that launch would be a second answer. It runs the command, so
-  it needs every part: the assignments wherever they stand, for the run's environment and its
-  forging check, and the launcher's words apart from them, for the adapter. It judges the
-  command in the directory the launcher runs it in (`run_directory`, `uv run --directory` and
-  `UV_WORKING_DIR`), read by the same grammar of uv's that found the launcher's words.
+- `prove` reads a test command past its assignments, `env` and `uv run …` the way every red-run
+  hint does (`read_launch`, the walk `command_words` returns the last part of, and `Launch`, what
+  it returns), so the runner it asks an adapter about is the one they would name; a second
+  reading of that launch would be a second answer. It runs the command, so it needs every part:
+  the assignments wherever they stand, for the run's environment and its forging check, and the
+  launcher's words apart from them, for the adapter. It judges the command in the directory the
+  launcher runs it in (`run_directory`, `uv run --directory` and `UV_WORKING_DIR`), read from the
+  launcher's words.
 
 An area that needs something absent from this list grows it deliberately, in a commit that says
 which area and why.

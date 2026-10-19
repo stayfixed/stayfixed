@@ -6212,15 +6212,6 @@ before = "    | getattr(os, \"O_NOFOLLOW\", 0)\n"
 after = ""
 reddens = ["tests/test_fsops.py::test_an_append_never_writes_through_a_link"]
 
-# `uv run -m pytest` is read as the launcher `uv run -m` in front of `pytest`: read with modules
-# as no program, `-m` would be uv's last option and `pytest` its module, no program to recognise.
-[[mutation]]
-name = "prove reads a launcher's -m as naming no program"
-file = "src/stayfixed/prove/run.py"
-before = "    launch = read_launch(given, modules_as_programs=True)"
-after = "    launch = read_launch(given, modules_as_programs=False)"
-reddens = ["tests/prove/test_pytest.py::test_uv_run_m_pytest_runs_as_typed"]
-
 # The receipt names the realpath of what ran: a virtual environment's `python` is a link, and the
 # receipt names the file it reaches.
 [[mutation]]
@@ -6501,18 +6492,6 @@ after = "    return test is not None"
 reddens = [
   "tests/prove/test_run.py::test_an_assigned_value_that_forges_nothing_reaches_the_runner",
   "tests/prove/test_run.py::test_the_run_s_environment_is_the_caller_s_less_forging_then_the_assignments",
-]
-
-# An assignment right after a launcher, with no `env` between, is the launcher's program as typed:
-# the command runs no test, with an adapter or under `--junit`.
-[[mutation]]
-name = "prove reads an assignment right after a launcher as the command's"
-file = "src/stayfixed/prove/run.py"
-before = "    if launch.stranded:"
-after = "    if False:"
-reddens = [
-  "tests/prove/test_run.py::test_an_assignment_right_after_a_launcher_is_not_recognised[argv0]",
-  "tests/prove/test_run.py::test_an_assignment_right_after_a_launcher_is_not_recognised[junit]",
 ]
 
 # A todo test node does not count as failed, failing or not: `<skipped type="todo"/>` beside its
