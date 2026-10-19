@@ -1161,13 +1161,11 @@ def test_the_prove_verdict_table_is_the_cascade_row_for_row() -> None:
 
 def test_every_reason_constant_is_documented() -> None:
     # Every reason a receipt can carry, the run's, the readers' and each shipped adapter's, is
-    # named in the section as its code span, and so is the warning an unwritten record says.
-    # Mutations (declared): a reason's text renamed -> the section no longer names it; the
-    # warning's words changed -> the section quotes another.
+    # named in the section as its code span. Mutation (declared): a reason's text renamed -> the
+    # section no longer names it.
     import sys
 
     from stayfixed.profiles.adapters import shipped_adapters
-    from stayfixed.prove.evidence import NOT_RECORDED
     from stayfixed.prove.run import WORDS
 
     core = {reason for reason in WORDS if reason}
@@ -1183,5 +1181,3 @@ def test_every_reason_constant_is_documented() -> None:
     # pass with nothing of theirs held.
     assert adapters and len(reasons) > len(core), sorted(reasons)
     assert [reason for reason in sorted(reasons) if f"`{reason}`" not in section] == []
-    warning = NOT_RECORDED.format(record="<record>", why="<why>")
-    assert f"`{warning}`" in section, warning

@@ -58,14 +58,6 @@ on:
         description: "the job's time limit, a whole number of minutes from 5 to 60; any value the runner does not render as a whole number from 5 to 60 fails the job in its first step, and a job that runs out of time is cancelled, which is not a pass"
         type: number
         default: 15
-      evidence:
-        description: "upload `~/.local/state/stayfixed/evidence/`, where the run's two gate steps append their evidence records on a runner that sets no `XDG_STATE_HOME`, as an artifact named for `only:` and the run attempt (one per call: calls that share an `only:` share the name, and each upload after the first fails without failing the job); off unless a caller turns it on, since an artifact is stored at the caller's cost"
-        type: boolean
-        default: false
-      evidence-retention-days:
-        description: "how many days the evidence artifact is kept, where `evidence:` is on"
-        type: number
-        default: 14
 
 permissions:
   contents: read
@@ -259,27 +251,3 @@ jobs:
           set +f
           python3 -P -s -m stayfixed gate --custom --root "$ROOT" --base "$BASE_SHA" \
             --workflow-sha "$WORKFLOW_SHA" --annotate --summary "$GITHUB_STEP_SUMMARY" "${only[@]}"
-      # The evidence records the two gate steps appended, uploaded after both whatever they came
-      # to, and only where the caller turns `evidence:` on. It is the one step with an `if:` and
-      # with `continue-on-error`: a log may neither change the verdict nor be lost to one, so a
-      # name a caller's matrix repeats, or an artifact-service outage, fails nothing. It runs no
-      # command and reads no secret, and it uploads bytes the pull request's own code can write
-      # (a custom gate runs in this job and can append to the record), which is why a record is
-      # a log that no gate, verdict or trust decision reads. The records go under
-      # `XDG_STATE_HOME` where it is an absolute path and else under `HOME`'s `.local/state`, and
-      # the action reads `~` from `HOME`, so this is their directory on a runner that sets no
-      # `XDG_STATE_HOME`, GitHub's hosted ones among them; on one that sets it, nothing is found
-      # here and nothing is uploaded. Named for `only:` and the attempt: one artifact per call and
-      # attempt, a re-run its own. No job name is in it, since `github.job` in a called workflow
-      # is always this file's `gates`; calls that share an `only:` (a caller's matrix, or two jobs
-      # calling it) share the name, and each upload after the first fails, silently under
-      # `continue-on-error`; give each call its own `only:`.
-      - name: The evidence records
-        if: always() && inputs.evidence
-        continue-on-error: true
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: stayfixed-evidence-${{ inputs.only }}-${{ github.run_attempt }}
-          path: ~/.local/state/stayfixed/evidence/
-          if-no-files-found: ignore
-          retention-days: ${{ inputs.evidence-retention-days }}

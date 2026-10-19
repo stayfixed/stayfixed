@@ -27,7 +27,6 @@ import pytest
 
 import stayfixed
 from stayfixed.config.loader import CONFIG_FILE
-from stayfixed.prove import evidence
 from tests import plugintree, scriptload
 from tests.assess.baserepo import clone, commit
 from tests.floor import developer_free_environ, floor_env
@@ -51,7 +50,6 @@ from tests.workflow_yaml import Node, load
 GATES = "gates"
 JUDGE = "The configuration and the built-in gates"
 CUSTOM = "The project's own gates"
-UPLOAD = "The evidence records"
 PROOF = "stayfixed runs at all"
 BASE_STEP = "The base ref and the project root"
 BOUND_STEP = "The time limit is inside its bounds"
@@ -144,18 +142,6 @@ STEPS: list[dict[str, Node]] = [
     },
     {"name": JUDGE, "env": GATE_ENV, "run": SCRIPT},
     {"name": CUSTOM, "env": GATE_ENV, "run": SCRIPT},
-    {
-        "name": UPLOAD,
-        "if": "always() && inputs.evidence",
-        "continue-on-error": "true",
-        "uses": "actions/upload-artifact",
-        "with": {
-            "name": "stayfixed-evidence-${{ inputs.only }}-${{ github.run_attempt }}",
-            "path": "~/.local/state/stayfixed/evidence/",
-            "if-no-files-found": "ignore",
-            "retention-days": "${{ inputs.evidence-retention-days }}",
-        },
-    },
 ]
 # And each script's text, command for command as `_lines` reads it — a line continued with `\` is
 # one command, and comments, blank lines and indentation are aside: `STEPS` holds what a step is
@@ -441,12 +427,9 @@ def test_the_reusable_workflow_is_one_job() -> None:
 def test_one_job_whose_judging_steps_may_not_fail_and_run_in_order() -> None:
     # The verdict is the job's status, so a step that may fail — `continue-on-error`, or an
     # `if:` that runs it after a failure or skips it — is a verdict that can be turned green.
-    # `stayfixed gate` already exits 0 for an advisory gate's findings, so no step that judges or
-    # runs a gate needs either. The one step that carries both is the last, the upload of the
-    # evidence records, which runs no command and decides nothing: a log may neither change the
-    # verdict nor be lost to one. Mutations (declared): the judging step gains
-    # `continue-on-error: true`; the custom step gains `if: always()`, which would run the
-    # repository's commands after a refusal.
+    # `stayfixed gate` already exits 0 for an advisory gate's findings, so no step here needs
+    # either. Mutations (declared): the judging step gains `continue-on-error: true`; the custom
+    # step gains `if: always()`, which would run the repository's commands after a refusal.
     job = _job(CHECK_WORKFLOW, GATES)
     # And the job itself carries neither: an `if:` on `gates` skips it, and a skipped job is a
     # required check the platform reports as passing. So the job's keys are held whole, which
@@ -464,65 +447,11 @@ def test_one_job_whose_judging_steps_may_not_fail_and_run_in_order() -> None:
     # the base is resolved before either gate step reads it, and the repository's own commands
     # run last.
     assert names.index(PROOF) < names.index(BASE_STEP) < names.index(JUDGE) < names.index(CUSTOM)
-    assert names[-3:] == [JUDGE, CUSTOM, UPLOAD], names
+    assert names[-2:] == [JUDGE, CUSTOM], names
     # And the time limit is judged before anything else runs, the checkouts included: a value
     # outside its bounds fails the job in seconds, under the default bound, having fetched and
     # run nothing.
     assert names[0] == BOUND_STEP, names
-
-
-def _inputs() -> dict[str, Node]:
-    on = _workflow()["on"]
-    assert isinstance(on, dict) and isinstance(on["workflow_call"], dict), on
-    inputs = on["workflow_call"]["inputs"]
-    assert isinstance(inputs, dict), inputs
-    return inputs
-
-
-@needs_workflow
-def test_the_upload_is_named_for_only_and_the_attempt() -> None:
-    # A caller's matrix calls the job once a leg, and two uploads of one name in one run collide:
-    # the name carries `only:`, which each leg sets, and the attempt, so a re-run is its own. No
-    # job name: `github.job` in a called workflow is always `gates`. Mutation (declared): the
-    # artifact's name made constant -> it names no call.
-    given = _step(UPLOAD)["with"]
-    assert isinstance(given, dict) and isinstance(given["name"], str), given
-    assert "${{ inputs.only }}" in given["name"], given
-    assert "${{ github.run_attempt }}" in given["name"], given
-    assert "github.job" not in given["name"], given
-
-
-@needs_workflow
-@needs_smoke_workflow
-def test_the_upload_is_off_unless_a_caller_turns_it_on() -> None:
-    # An artifact is stored at the caller's cost, so the upload is off unless a caller turns it
-    # on, and stayfixed's own smoke call does, so the step runs on a real runner. Mutation
-    # (declared): the input defaults on.
-    inputs = _inputs()
-    declared = inputs["evidence"]
-    assert isinstance(declared, dict), declared
-    assert (list(declared), declared["type"], declared["default"]) == (
-        ["description", "type", "default"],
-        "boolean",
-        "false",
-    ), declared
-    retention = inputs["evidence-retention-days"]
-    assert isinstance(retention, dict), retention
-    assert (retention["type"], retention["default"]) == ("number", "14"), retention
-    document = load(SMOKE_WORKFLOW.read_text(encoding="utf-8"))
-    assert isinstance(document, dict) and isinstance(document["jobs"], dict), document
-    job = document["jobs"]["same-repository-form"]
-    assert isinstance(job, dict) and isinstance(job["with"], dict), job
-    assert job["with"]["evidence"] == "true", job
-
-
-@needs_workflow
-def test_the_uploaded_directory_is_the_one_evidence_writes() -> None:
-    # The records are written under `HOME`'s `.local/state` where `XDG_STATE_HOME` is unset, as
-    # on hosted runners, and the action reads `~` from `HOME`.
-    given = _step(UPLOAD)["with"]
-    assert isinstance(given, dict), given
-    assert given["path"] == f"~/{evidence.HOME_STATE}/{evidence.EVIDENCE_DIR}/", given
 
 
 # The job's bound as `check.yml` spells it: the caller's value when it is inside the bounds, and

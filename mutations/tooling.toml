@@ -3707,58 +3707,6 @@ reddens = [
   "tests/test_ci_scope.py::test_every_job_that_reads_the_scope_runs_whole_on_any_answer_but_false",
 ]
 
-# The evidence records' upload: last, the one step with an `if:`, on only where a caller turns it
-# on, and named for `only:` and the attempt. The step's whole shape is held with every other
-# step's.
-[[mutation]]
-name = "the evidence upload runs only after a passing run"
-file = ".github/workflows/check.yml"
-before = "        if: always() && inputs.evidence"
-after = "        if: inputs.evidence"
-reddens = ["tests/test_check_workflow.py::test_the_verdict_s_process_gets_only_the_environment_its_step_names"]
-
-[[mutation]]
-name = "a failed evidence upload fails the job"
-file = ".github/workflows/check.yml"
-before = """        if: always() && inputs.evidence
-        continue-on-error: true"""
-after = "        if: always() && inputs.evidence"
-reddens = ["tests/test_check_workflow.py::test_the_verdict_s_process_gets_only_the_environment_its_step_names"]
-
-[[mutation]]
-name = "the evidence upload runs a command"
-file = ".github/workflows/check.yml"
-before = """        continue-on-error: true
-        uses: actions/upload-artifact"""
-after = """        continue-on-error: true
-        run: ls ~/.local/state/stayfixed/evidence/
-        uses: actions/upload-artifact"""
-reddens = ["tests/test_check_workflow.py::test_the_verdict_s_process_gets_only_the_environment_its_step_names"]
-
-[[mutation]]
-name = "the evidence upload reads a secret"
-file = ".github/workflows/check.yml"
-before = "          if-no-files-found: ignore"
-after = """          if-no-files-found: ignore
-          github-token: ${{ secrets.GITHUB_TOKEN }}"""
-reddens = ["tests/test_check_workflow.py::test_the_verdict_s_process_gets_only_the_environment_its_step_names"]
-
-[[mutation]]
-name = "the evidence artifact's name is the same for every leg"
-file = ".github/workflows/check.yml"
-before = "          name: stayfixed-evidence-${{ inputs.only }}-${{ github.run_attempt }}"
-after = "          name: stayfixed-evidence"
-reddens = ["tests/test_check_workflow.py::test_the_upload_is_named_for_only_and_the_attempt"]
-
-[[mutation]]
-name = "the evidence upload takes its action by a tag"
-file = ".github/workflows/check.yml"
-before = """        continue-on-error: true
-        uses: actions/upload-artifact"""
-after = """        continue-on-error: true
-        uses: actions/upload-artifact@v7 #"""
-reddens = ["tests/test_fixtures.py::test_every_action_a_step_uses_is_pinned_by_a_commit_sha"]
-
 # Only the runners job opts the real-runner tests into the `node` and `go` on `PATH`.
 [[mutation]]
 name = "the runners job leaves the runners on PATH unused"
@@ -3781,26 +3729,3 @@ reddens = [
   "tests/test_check_workflow.py::test_one_job_whose_judging_steps_may_not_fail_and_run_in_order",
   "tests/test_check_workflow.py::test_the_verdict_s_process_gets_only_the_environment_its_step_names",
 ]
-
-[[mutation]]
-name = "every caller uploads the evidence records"
-file = ".github/workflows/check.yml"
-before = """        type: boolean
-        default: false"""
-after = """        type: boolean
-        default: true"""
-reddens = ["tests/test_check_workflow.py::test_the_upload_is_off_unless_a_caller_turns_it_on"]
-
-[[mutation]]
-name = "the smoke call leaves the evidence upload off"
-file = ".github/workflows/smoke.yml"
-before = "      evidence: true"
-after = "      evidence: false"
-reddens = ["tests/test_check_workflow.py::test_the_upload_is_off_unless_a_caller_turns_it_on"]
-
-[[mutation]]
-name = "the evidence upload reads another directory than the records'"
-file = ".github/workflows/check.yml"
-before = "          path: ~/.local/state/stayfixed/evidence/"
-after = "          path: ~/.local/state/stayfixed/"
-reddens = ["tests/test_check_workflow.py::test_the_uploaded_directory_is_the_one_evidence_writes"]

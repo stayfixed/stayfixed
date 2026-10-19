@@ -19,9 +19,6 @@ from stayfixed.command import command_owner, common_flags, grammar, root_and_con
 from stayfixed.result import Result
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
-
-    from stayfixed.assess.report import GateRun
     from stayfixed.assess.state import Transition
 
 ASSESS_HELP = (
@@ -136,54 +133,6 @@ def run_assess(args: argparse.Namespace) -> Result:
     return Result(summary, document(assessment), exit_code=1 if assessment.would_fail else 0)
 
 
-def _verdict_words(gate_run: GateRun, waiting: Sequence[str]) -> dict[str, str]:
-    """Each gate's verdict word for the run's evidence record: `config` when the configuration
-    check ran, `passes` or `refused`; each gate that ran, `passes`, `fails` (enforcing) or `would
-    fail` (advisory), `could not run`, or `not run` once the run had already failed; and
-    `waiting` for a custom gate not run until the base has its command. The two words a gate that
-    did not judge the tree carries are `assess.report`'s, as every other report of it spells
-    them."""
-    from stayfixed.assess.report import NOT_RUN, UNANSWERED
-
-    words: dict[str, str] = {}
-    if gate_run.judged:
-        words["config"] = "refused" if gate_run.verdict.refused else "passes"
-    for result in gate_run.results:
-        enforcing = result.name in gate_run.verdict.enforcing
-        if not result.ran:
-            words[result.name] = NOT_RUN
-        elif not result.answered:
-            words[result.name] = UNANSWERED
-        elif result.findings:
-            words[result.name] = "fails" if enforcing else "would fail"
-        else:
-            words[result.name] = "passes"
-    for name in waiting:
-        words[name] = "waiting"
-    return words
-
-
-def _gate_flags(args: argparse.Namespace) -> list[str]:
-    """The flags `gate` was given, for its evidence record: each `--only` name, `--base` and
-    `--workflow-sha` with their values (each held to a grammar, the names to the configuration's),
-    and `--builtin`, `--custom`, `--annotate` and `--summary` by name alone; `--root`, `--machine`
-    and the summary's path are where the run looked, not what it was asked."""
-    flags: list[str] = []
-    for name in args.only or ():
-        flags += ["--only", name]
-    if args.base:
-        flags += ["--base", args.base]
-    if args.part:
-        flags.append(f"--{args.part}")
-    if args.workflow_sha:
-        flags += ["--workflow-sha", args.workflow_sha]
-    if args.annotate:
-        flags.append("--annotate")
-    if args.summary:
-        flags.append("--summary")
-    return flags
-
-
 def run_gate(args: argparse.Namespace) -> Result:
     from stayfixed import __version__
     from stayfixed.assess import rule
@@ -206,7 +155,6 @@ def run_gate(args: argparse.Namespace) -> Result:
     from stayfixed.config.reading import ConfigError
     from stayfixed.config.schema import CONFIG_CHECK
     from stayfixed.errors import Refusal
-    from stayfixed.prove import api as evidence
     from stayfixed.release.api import is_released
     from stayfixed.runner import subprocess_runner
 
@@ -293,12 +241,6 @@ def run_gate(args: argparse.Namespace) -> Result:
         "gates": [gate_row(r, enforcing=r.name in verdict.enforcing) for r in results],
         "not_on_base": list(waiting),
     }
-    # One evidence record a run that judged or ran anything, on the machine and never in the
-    # project; a record that cannot be written is a warning, and the exit code stands. None for a
-    # refusal above, which ran nothing.
-    evidence.record_gate(
-        root, _verdict_words(gate_run, waiting), mode=args.part or "all", argv=_gate_flags(args)
-    )
     if not lines:
         # Not a refusal: the workflow runs `--custom` on every caller, most of which have no
         # gate of their own.

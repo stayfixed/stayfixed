@@ -711,7 +711,7 @@ def append_at(dir_fd: int, name: str, payload: bytes) -> None:
     """Append `payload` to the file `name` in the directory `dir_fd` (one `open_within` yielded),
     in one `O_APPEND` write, creating it `APPENDED_FILE_MODE` where it is not there.
 
-    The one appending write: the hook sink's diagnostics and the evidence records both reach it.
+    The one appending write, which the hook sink's diagnostics reach.
     One `write` of the whole line, so two processes appending at once never interleave inside a
     line on a local filesystem, `O_NOFOLLOW`, so a link put where the file goes refuses the open
     rather than redirecting the write, and `O_NONBLOCK`, so a FIFO there with no reader refuses it
