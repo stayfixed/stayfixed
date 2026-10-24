@@ -229,6 +229,9 @@ PASS_THROUGH: dict[tuple[str, str, str], frozenset[str]] = {
 # an option's value, an option the code builds, or an operand its callers have refused when it
 # starts with `-`. The launch is then classified by the rest of its argv.
 VOUCHED_ELEMENTS: dict[tuple[str, str, str], str] = {
+    ("src/stayfixed/attach/doctor.py", "_delivery", "delivered"): (
+        "the value of `-e`: `stayfixed-delivery-` and the 32 hex characters of the binding id"
+    ),
     ("src/stayfixed/gitenv.py", "fork_points", "base"): (
         "every caller refuses a base that starts with `-` before it asks"
     ),

@@ -301,11 +301,8 @@ class Binding:
 class UnreadableRecord(Failure):
     """The overlay's binding record for this project is there and cannot be read.
 
-    A `Failure`, so `attach`, `--check` and the session-start handler stop on it as on any other.
-    Its own class for the one caller that may not: `doctor`'s grant question, where the record is
-    the one `project.name` picks out of `projects/` -- a name the repository commits -- so a record
-    that cannot be read must not be able to turn that question into "could not be asked"
-    (`attach.doctor._granted_commands`).
+    A `Failure`, so `attach`, `--check`, `doctor` and the session-start handler stop on it as on
+    any other.
     """
 
 

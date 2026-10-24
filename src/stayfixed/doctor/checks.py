@@ -5,9 +5,9 @@ and their rows come first, in that order; every other row is an area's, contribu
 `doctor.py` (CONTRIBUTING.md, "Areas") and asked after the core's in area-name order. So nothing
 here imports an area, and nothing here names or counts the rows an area contributes: which rows a
 report has is `docs/cli.md`'s table, and `tests/doctor/test_checks.py`'s literal `REPORT`.
-`hook-entries` is a core check because every settings file is the core's to walk, and it asks the
-areas' `Claims` for what each put into them. This module is the list and the run: that row's walk
-is `entries.py`'s, and how the areas' rows are found and guarded is `registry.py`'s.
+`hook-entries` is a core check because every settings file is the core's to walk. This module is
+the list and the run: that row's walk is `entries.py`'s, and how the areas' rows are found and
+guarded is `registry.py`'s.
 
 **A `Check` is not a `Finding`.** `findings.Finding` carries a rule, a path and a line, and its
 docstring says the label carries "what the check computed" while the detail "may quote the
@@ -99,7 +99,7 @@ from stayfixed.doctor.model import (
 from stayfixed.doctor.registry import contributions
 from stayfixed.findings import listed
 from stayfixed.grammar import PATH_VALUE
-from stayfixed.harnesses import CANONICAL, CLAUDE, CODEX, HARNESSES, Tier, lenient_settings
+from stayfixed.harnesses import CANONICAL, CLAUDE, HARNESSES, lenient_settings
 from stayfixed.hooks.api import (
     DIAGNOSTICS,
     DIAGNOSTICS_MAX_BYTES,
@@ -551,35 +551,6 @@ def _wrapper(context: Context) -> Row:
             "run `hooks/run-hook.sh --version` and read its stderr",
         )
     return Row(OK, f"{WRAPPER} reached stayfixed and exited 0", "")
-
-
-def _joined(words: Sequence[str]) -> str:
-    """`a`, `a and b`, `a, b and c`."""
-    return " and ".join(filter(None, (", ".join(words[:-1]), *words[-1:])))
-
-
-def _codex_hooks(context: Context) -> Row:
-    # Red is owed while any stayfixed hook is untrusted on Codex, and the hash Codex keys hook
-    # trust on is one no spike has measured. A check that returned green because it could not
-    # look would be strictly worse than one that admits it cannot.
-    detail = (
-        "whether a stayfixed hook is trusted on Codex is unmeasured: nothing here knows how "
-        "Codex records hook trust, and a measurement would need the file it writes it to and "
-        "the hash it keys on"
-    )
-    # What stayfixed claims of Codex is what a Codex user needs when they look, and it is the
-    # registry's to say: the surfaces with no tier there have not been verified end to end on
-    # Codex, which runs a plugin's hooks once they are trusted, and the gates hold in CI. Still a
-    # skip, since nothing measured of Codex makes this row red. Codex's reach has surfaces in both
-    # lists, and the row's text is pinned by its test, so a measurement that empties one is an
-    # edit here.
-    if context.config is not None and CODEX.name in context.config.stayfixed.agents:
-        absent = [str(surface) for surface, reach in CODEX.reach.items() if reach.tier is None]
-        in_ci = [str(surface) for surface, reach in CODEX.reach.items() if reach.tier is Tier.CI]
-        detail += (
-            f"; on Codex the {_joined(absent)} are not verified; the {_joined(in_ci)} hold in CI"
-        )
-    return Row(SKIP, detail, "")
 
 
 def _budgets(context: Context, config: Config) -> Row:
@@ -1054,6 +1025,10 @@ def _names_home_config(value: str, home: Path) -> bool:
 
 
 def _ignored_env(context: Context) -> Row:
+    """The variables that could name the machine file and that no command reads, and a `HOME` that
+    is not the password database's: information, never a status. Each is a choice of the person
+    who set it, which no command of stayfixed's can undo, so a warning about it would be a row that
+    never clears."""
     # The home every command reads under, and none for a `HOME` that names none (`owner_home`).
     home, recorded = owner_home(), passwd_home()
     set_here = [
@@ -1071,11 +1046,12 @@ def _ignored_env(context: Context) -> Row:
         return Row(OK, HOME_DIFFERS if differs else "no environment variable is being ignored")
     detail = (
         f"{listed(set_here)} is set and is not honoured: every command reads the machine "
-        f"configuration at ~/.config/stayfixed/config.toml and nothing else"
+        f"configuration at ~/.config/stayfixed/config.toml and nothing else, or the file --machine "
+        f"names"
     )
     if differs:
         detail = f"{detail}; {HOME_DIFFERS}"
-    return Row(WARN, detail, "pass --machine <path> to a command that must read a different file")
+    return Row(OK, detail)
 
 
 # How the user settings file is named in the `retired-deny` row, as `hook-entries` names it.
@@ -1138,7 +1114,6 @@ CHECKS: tuple[tuple[str, Callable[[Context], Row]], ...] = (
     ("files", _files),
     ("wrapper", _wrapper),
     ("hook-entries", hook_entries),
-    ("codex-hooks", _codex_hooks),
     ("budgets", configured(_budgets)),
     ("preferences", _preferences),
     ("cli-path", _cli_path),
@@ -1197,12 +1172,8 @@ def _context(
     runner: Runner,
     env: Mapping[str, str],
     session: SessionConfig,
-    contributed: Sequence[Contribution],
 ) -> Context:
-    """The report's `Context`, whole: both plugin roots, and every area's claims for
-    `hook-entries`, which reads what an area contributes besides rows — the `Claims` each says it
-    put into settings files — and asks them itself, with this context, under its own guard: an
-    area's answer that raises costs that one row, as a contributed check that raises does."""
+    """The report's `Context`, whole, with both plugin roots."""
     return Context(
         root,
         home,
@@ -1212,7 +1183,6 @@ def _context(
         session.config,
         own_root=_own_root(),
         plugin_root=plugin_root(env),
-        claims=tuple(contribution.claims for contribution in contributed if contribution.claims),
         session=session,
     )
 
@@ -1251,6 +1221,5 @@ def run_checks(
         runner=runner,
         env=env,
         session=session,
-        contributed=contributed,
     )
     return [_guarded(name, check, context) for name, check in _report_checks(contributed)]

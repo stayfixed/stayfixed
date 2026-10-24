@@ -1699,7 +1699,7 @@ reddens = [
   "tests/doctor/test_checks.py::test_a_configuration_holding_a_number_past_the_parser_does_not_load",
   "tests/hooks/test_hook_command.py::test_a_config_that_does_not_load_whole_never_refuses_a_tool_call[long-number]",
   "tests/hooks/test_hook_command.py::test_a_config_that_does_not_load_whole_is_named_once_at_session_start[long-number]",
-  "tests/attach/test_doctor.py::test_an_owners_binding_record_holding_a_number_past_the_parser_reads_as_one_that_will_not_parse",
+  "tests/attach/test_doctor.py::test_an_owner_whose_own_binding_record_will_not_parse_is_told_where_to_look[number-past-the-parser]",
 ]
 
 # The same document refused in stayfixed's words: the interpreter's message tells the reader to
@@ -2219,7 +2219,6 @@ reddens = [
   "tests/scaffold/test_entries.py::test_a_number_past_the_parsers_reach_is_read_for_ids_and_refused_by_a_merge",
   "tests/attach/test_write.py::test_a_settings_file_holding_a_number_past_the_parsers_reach_is_refused",
   "tests/attach/test_doctor.py::test_a_committed_ledger_of_a_shape_attach_never_writes_reads_as_unreadable[long-number]",
-  "tests/attach/test_doctor.py::test_a_forged_entry_beside_an_unreadable_ledger_fails_the_report[long-number-overlay]",
   "tests/attach/test_write.py::test_a_ledger_holding_a_number_past_the_parsers_reach_is_a_failure_and_never_an_internal_error",
   "tests/attach/test_detach.py::test_a_ledger_holding_a_number_past_the_parsers_reach_removes_nothing",
 ]
@@ -2555,7 +2554,6 @@ reddens = [
   "tests/doctor/test_checks.py::test_a_settings_path_that_names_no_file_is_skipped_as_before[a-link-loop]",
   "tests/attach/test_doctor.py::test_a_ledger_path_that_names_no_file_is_no_ledger_as_before[a-dangling-link]",
   "tests/attach/test_doctor.py::test_a_ledger_path_that_names_no_file_is_no_ledger_as_before[a-link-loop]",
-  "tests/attach/test_doctor.py::test_a_marked_entry_with_no_ledger_at_all_is_still_reported",
 ]
 
 # Something other than a regular file -- a directory -- names no file to read, whichever reader asks.
@@ -3163,8 +3161,8 @@ before = """
 after = """
 """
 reddens = [
-  "tests/doctor/test_checks.py::test_a_command_agent_or_nested_skill_declaring_hooks_is_a_warning_naming_it[command]",
-  "tests/doctor/test_checks.py::test_a_command_agent_or_nested_skill_declaring_hooks_is_a_warning_naming_it[agent]",
+  "tests/doctor/test_checks.py::test_a_command_agent_or_nested_skill_declaring_hooks_is_information_naming_it[command]",
+  "tests/doctor/test_checks.py::test_a_command_agent_or_nested_skill_declaring_hooks_is_information_naming_it[agent]",
 ]
 
 # Claude Code keeps a project's memory under a slug of its resolved path, `/` and `.` each read as

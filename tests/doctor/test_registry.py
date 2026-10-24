@@ -7,8 +7,7 @@ The fake areas below are modules, or an import's exception in an area's place, i
 replaces `cli.discover_registrars`: a test that shipped a real `doctor.py` to prove the
 convention would be a check in every user's report. With the fakes in place no real area is
 discovered, so what these cases prove is the core's reading of a contribution; what a real area
-answers is proven in that area's own tests. `tests/doctor/test_entries.py` injects them the same
-way, to tell `hook-entries` what each area claims.
+answers is proven in that area's own tests.
 """
 
 from __future__ import annotations
@@ -25,7 +24,6 @@ from stayfixed.doctor.api import (
     RED,
     WARN,
     Check,
-    Claims,
     Context,
     Contribution,
     Row,
@@ -131,7 +129,7 @@ def _answer(context: Context) -> Row:
 # What `register()` can hand back that is not a `Contribution` of `(name, check)` pairs, each the
 # way an area's own code could get it wrong: no value at all, the pairs without the record, checks
 # that are not a tuple of pairs, a pair missing its check, a name that is not text, a name that is
-# empty, a check that cannot be called, and claims that are not a function.
+# empty, and a check that cannot be called.
 MALFORMED = {
     "none": lambda: None,
     "bare-pairs": lambda: (("alpha-row", _answer),),
@@ -140,7 +138,6 @@ MALFORMED = {
     "short-pair": lambda: Contribution(checks=(("alpha-row",),)),  # type: ignore[arg-type]
     "name-not-text": lambda: Contribution(checks=((1, _answer),)),  # type: ignore[arg-type]
     "check-not-callable": lambda: Contribution(checks=(("alpha-row", "answer"),)),  # type: ignore[arg-type]
-    "claims-not-callable": lambda: Contribution(checks=(), claims="claims"),  # type: ignore[arg-type]
 }
 
 
@@ -231,10 +228,6 @@ def test_an_area_that_could_not_contribute_is_red_even_with_nothing_else_to_chec
     assert rows[-1] == Check("alpha", RED, detail, "report this, with the command you ran")
 
 
-def _claims(context: Context) -> Claims:
-    raise AssertionError("the claims of an area that could not contribute were asked")
-
-
 @pytest.mark.parametrize("clash", ["core", "another-area", "itself", "area-name-taken"])
 def test_an_area_that_repeats_a_name_in_the_report_costs_one_row_named_after_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, clash: str
@@ -242,9 +235,9 @@ def test_an_area_that_repeats_a_name_in_the_report_costs_one_row_named_after_it(
     # A row's name is all a reader, the summary line and `--json` key on, so two rows under one
     # name are two answers nobody can tell apart. A contributed name that repeats one already in
     # the report is a defect in stayfixed's own code, as a `register()` that raises is, and costs
-    # what that costs: the offending area's rows and its claims become one red row named after
-    # it, and the rest of the report stands. It used to raise out of `run_checks`, and the CLI
-    # turned that into an internal error with no report at all. The row's name is itself a name
+    # what that costs: the offending area's rows become one red row named after it, and the rest
+    # of the report stands. It used to raise out of `run_checks`, and the CLI turned that into an
+    # internal error with no report at all. The row's name is itself a name
     # in the report, so when the area's name is taken it is numbered, never repeated. Mutations
     # (oracle): `mutations/`'s "doctor lets an area repeat a name the report already has" -> the
     # `core` and `another-area` cases print two rows under one name; "doctor lets an area name
@@ -252,25 +245,21 @@ def test_an_area_that_repeats_a_name_in_the_report_costs_one_row_named_after_it(
     # already has" -> `area-name-taken` prints two rows named `omega`.
     if clash == "core":
         repeated, owner = CORE[1], "the core"
-        omega = Contribution(checks=((CORE[1], _answer),), claims=_claims)
+        omega = Contribution(checks=((CORE[1], _answer),))
         alpha = Contribution(checks=(("alpha-row", _answer),))
     elif clash == "another-area":
         repeated, owner = "alpha-row", "stayfixed.alpha.doctor"
-        omega = Contribution(
-            checks=(("omega-row", _answer), ("alpha-row", _answer)), claims=_claims
-        )
+        omega = Contribution(checks=(("omega-row", _answer), ("alpha-row", _answer)))
         alpha = Contribution(checks=(("alpha-row", _answer),))
     elif clash == "itself":
         repeated, owner = "omega-row", "it"
-        omega = Contribution(
-            checks=(("omega-row", _answer), ("omega-row", _answer)), claims=_claims
-        )
+        omega = Contribution(checks=(("omega-row", _answer), ("omega-row", _answer)))
         alpha = Contribution(checks=(("alpha-row", _answer),))
     else:
         # `alpha` contributes the names `omega`'s row would take first and second, so the row
         # is numbered past both.
         repeated, owner = CORE[1], "the core"
-        omega = Contribution(checks=((CORE[1], _answer),), claims=_claims)
+        omega = Contribution(checks=((CORE[1], _answer),))
         alpha = Contribution(checks=(("omega", _answer), ("omega (2)", _answer)))
     _contribute(monkeypatch, _area("alpha", alpha), _area("omega", omega))
     rows = _checks(tmp_path, _initialised(tmp_path))
@@ -285,7 +274,6 @@ def test_an_area_that_repeats_a_name_in_the_report_costs_one_row_named_after_it(
         f"a name {owner} already reports",
         "report this, with the command you ran",
     )
-    assert [each.claims for each in registry.contributions(checks.CHECKS)] == [None, None]
 
 
 @pytest.mark.parametrize("failure", ["register", "import"])
@@ -295,7 +283,7 @@ def test_a_failing_areas_row_never_takes_a_healthy_areas_check_name(
     # The red row an area that could not contribute gets is named after the area, and a name is
     # never in the report twice. A healthy later area that contributes a check under that name
     # is a real row, and the failure row's name a stand-in, so the stand-in yields: numbered
-    # `alpha (2)`, and the healthy area's contribution, its rows and its claims, stands whole.
+    # `alpha (2)`, and the healthy area's contribution, its rows, stands whole.
     # Named when the failing area was met, before the later area's names were known, the failure
     # row took `alpha`, and the healthy area was turned away for repeating a name nothing of its
     # own had, its row gone from a report that promises the rest of it stands. Mutation (oracle):

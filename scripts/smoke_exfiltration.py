@@ -278,7 +278,7 @@ def main(argv: list[str]) -> int:
         f"canary={CANARY in without.stdout}",
     )
 
-    # --- what the clone's machine configuration bought it: a warning row and nothing else ----
+    # --- what the clone's machine configuration bought it: a line of information, nothing else -
     reported = stayfixed(
         plugin_root,
         ["doctor", "--json", "--root", str(planted.clone), "--home", str(planted.home)],
@@ -311,7 +311,7 @@ def main(argv: list[str]) -> int:
     owners_overlay = f"records -- {planted.overlay}/" in attached.stderr
     clones_overlay = f"records -- {planted.clone / 'evil' / 'overlay'}/" in attached.stderr
     report.row(
-        ignored.get("status") == "warn"
+        ignored.get("status") == "ok"
         and "STAYFIXED_CONFIG" in ignored.get("detail", "")
         and owners_overlay
         and not clones_overlay,

@@ -22,7 +22,7 @@ reads from outside the area:
   the doctor area's tests write those entries into.
 
 **Trimmed when the `attached` row moved into this area: `overlay_entries`.** It was published for
-`doctor`'s provenance column, which this area's `doctor.py` now answers.
+`doctor`'s provenance column, and went once `attach` merged no hook entry.
 
 **`setup` is not a consumer.** This docstring used to say "`setup` runs `attach --check` and
 reads the same `Result`"; `src/stayfixed/setup/` imports nothing from `stayfixed.attach`, and

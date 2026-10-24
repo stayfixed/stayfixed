@@ -24,7 +24,6 @@ from stayfixed.config.schema import Config
 from stayfixed.config.session import SessionConfig
 from stayfixed.errors import Failure, Refusal
 from stayfixed.runner import Runner
-from stayfixed.scaffold import Placed
 
 OK: Final = "ok"
 WARN: Final = "warn"
@@ -101,10 +100,10 @@ class Context:
     `NO_CONFIG_SKIP` when there is none, while the first check says why there is none.
 
     **What the core answers for, and what every area reads alike.** The fields are the core's:
-    the run's inputs, the configuration, the two plugin roots, and the `claims` the areas
-    contributed. `overlay_root` is the core's too — `[overlay] root` is a key of the machine file,
-    which the core owns (`config.overlay`) — and is here because more than one area reads it, so
-    it is resolved once per report for all of them. What an area owns — the note store, the
+    the run's inputs, the configuration and the two plugin roots. `overlay_root` is the core's
+    too — `[overlay] root` is a key of the machine file, which the core owns (`config.overlay`) —
+    and is here because more than one area reads it, so it is resolved once per report for all of
+    them. What an area owns — the note store, the
     attach ledger, the binding — is resolved inside that area's own `doctor.py` and never reaches
     this type, so building it imports nothing of any area.
     """
@@ -121,10 +120,6 @@ class Context:
     # answered. Two fields and not a flag, because the check that runs the wrapper should not be
     # able to reach the other answer at all.
     own_root: Path | None = None
-    # Every contributing area's `Contribution.claims`, in area-name order. Carried and not
-    # answered: `hook-entries` asks each under its own guard, so claims that raise cost that row,
-    # red, as `Contribution.claims` promises, and never the report.
-    claims: tuple[Callable[[Context], Claims], ...] = ()
     # Keyword-only and required: a report built without the session would have no owner's layer
     # to name and no way to tell a repository with no `stayfixed.toml` from one that fell back.
     session: SessionConfig = field(kw_only=True)
@@ -158,100 +153,16 @@ class Context:
 
 
 @dataclass(frozen=True)
-class Wording:
-    """How `hook-entries` names one area's record, the source that grants, and the commands that
-    repair them, so the core's sentences about an area's entries are in that area's words.
-
-    Each field is a complete phrase the row composes into its sentences and remedies verbatim:
-    `record` names the record ("are recorded in {record}"), and `unreadable` follows "{record} is
-    there and"; `inspect` is the remedy for a record that cannot be read beside a source that
-    cannot be asked either; `source` is the source as a noun phrase ("{source} does not grant
-    them"), `unsourced` the clause for a machine that records none, `unaskable` the clause for one
-    that could not be asked, and `diagnose` the remedy for that; `setup` is the remedy that records
-    a source, and `vouch` the command, quoted as the row prints it, that writes the area's entries
-    and its record anew from its source, taking out every marked entry the source no longer grants.
-    `ungranted` and `regrant` are for a source that answered and does not grant *this checkout*
-    what it grants the one it is for, where "{source} does not grant them" would be false and
-    `vouch` may be refused: the clause that says why, in place of that one, and the remedy for the
-    entries it leaves red, in place of the ones built from `vouch`. `None` keeps those, because
-    then the source refusing is what happened.
-
-    **These are stayfixed's own fixed strings, never repository bytes.** The row prints them
-    unquoted into `Check.detail`, `--json` and the remedy a skill relays verbatim, so an area must
-    not build one from anything a repository authored — a configured name, a path read from a
-    record, a value a clone could commit. A repository's bytes are data (principle 5), and this is
-    the one place a contributing area's text reaches the core's output whole.
-    """
-
-    record: str
-    unreadable: str
-    inspect: str
-    source: str
-    unsourced: str
-    unaskable: str
-    diagnose: str
-    setup: str
-    vouch: str
-    ungranted: str | None = None
-    regrant: str | None = None
-
-
-@dataclass(frozen=True)
-class Claims:
-    """What an area put into settings files, for `hook-entries`' provenance column.
-
-    `recorded` is the marker ids the area's record says it wrote, by event, and may be repository
-    bytes: `attach`'s record is a file a clone can commit. `granted` is the entries the area
-    grants right now, each a marked command **where the area puts it** — its event, its group's
-    matcher and the whole entry it writes, as `scaffold.Placed` holds them — and **must come from
-    a source the repository cannot choose** — `attach` asks the overlay whose root the machine file
-    records — because it is the half that vouches. An entry is absolved only when one area both
-    records its id and grants it there: its command, under its event, in a group with its matcher,
-    in an entry equal to the one the area writes. A granted command anywhere else is a hook the
-    area never installed, because the event is when a harness runs it, the matcher for which tools,
-    and the entry's other fields what it does. One area's record never stands on another area's
-    grant. `wording` is
-    how the row names that record, that source and the commands that repair them, and holds
-    `Wording`'s invariant: stayfixed's own fixed strings, never anything a repository authored.
-
-    Every answer the two sources can give is carried, their `None`s included: `recorded is None` is
-    "the record could not be read" (the row warns and says so, and withholds judgement only of an
-    entry this area grants, which may be one the record holds: an entry no grant covers is still
-    red, so an area must answer `granted` whether or not its record could be read), `granted is
-    None` is "the source could not be asked" (the row warns and withholds only the comparison with
-    what is granted: an entry no record holds is still red). A `None` from any one area is `None`
-    for every area's entries, because what it would have said is not something another area can.
-
-    **Whether `granted` is `None` is decided by this machine's state alone, never by the record.**
-    A `None` turns this row's red into a warning, so a record — repository bytes — that could choose
-    it could silence the row about the very entry it records. That holds for a record that cannot
-    be read too: an unreadable record is repository bytes as well, which is why it withholds no
-    more than its own area's grant covers. A machine that records no source to grant from is not
-    one: there is nothing to ask, nothing grants, `granted` is empty and `sourced` is `False`,
-    which changes the row's sentence and remedy and never its verdict."""
-
-    recorded: Mapping[str, str] | None
-    granted: frozenset[Placed] | None
-    sourced: bool = True
-    # Keyword-only and required: an area's claims without its own words would be told in some
-    # other area's, which is the defect this field exists to end.
-    wording: Wording = field(kw_only=True)
-
-
-@dataclass(frozen=True)
 class Contribution:
     """What an area's `doctor.py` hands the report from its `register()`.
 
     `checks` are `(name, check)` pairs, asked after the core's own in area-name order and each
     through the guard the core's go through, so one that raises costs its own row. A name is
     unique in the report: an area that repeats a core check's, another area's or its own costs
-    its rows and its claims, as one red row named after the area.
+    its rows, as one red row named after the area.
     """
 
     checks: tuple[tuple[str, Callable[[Context], Row]], ...]
-    # Must not raise on repository bytes: an answer it cannot read is a `None` field of `Claims`.
-    # `hook-entries` asks it under its own guard, so one that raises costs that row, red.
-    claims: Callable[[Context], Claims] | None = None
 
 
 def configured(check: Callable[[Context, Config], Row]) -> Callable[[Context], Row]:

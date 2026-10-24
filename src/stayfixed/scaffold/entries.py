@@ -221,10 +221,8 @@ class Placed:
     which tools, so one entry under another event or matcher is another hook; and every field of
     the entry besides its command says what the harness does with it -- an entry of `type`
     `http` posts the event's input to its `url` and ignores `command`, and `args`, `shell` or
-    `async` change what runs, or when. That is why `doctor` compares a grant as a `Placed` and
-    never as a command alone: a repository that hung a granted command somewhere it was not
-    granted, or inside an entry that does something else, would otherwise be vouched for.
-    `command` is kept beside the whole because the marker is read off it.
+    `async` change what runs, or when. `command` is kept beside the whole because the marker is
+    read off it, and it is the one field `doctor` reads now that no area grants an entry.
 
     `matcher` is `None` for a group with no matcher, and otherwise the matcher as JSON text, with
     each integer in it as its text, as `_read_entries` reads it: a string and anything else a
@@ -232,11 +230,8 @@ class Placed:
     that is empty or `*`, which a harness may read alike — this says where the entry *is*, and
     never guesses what a harness makes of it. `entry` is the entry as JSON text by the same rule,
     with its keys sorted, so the order a file spells them in changes nothing and any field it adds,
-    drops or changes does. One difference the rule cannot see: an integer and the string of its
-    digits read alike, so a `"timeout": "30"` equals a granted `30`. That is benign, because it
-    vouches for no entry that runs anything the grant does not: the command, the `type` and every
-    other field still have to match, and a timeout is how long, not what. Never printed: an event,
-    a matcher and an entry are bytes a repository chose.
+    drops or changes does; an integer and the string of its digits read alike. Never printed: an
+    event, a matcher and an entry are bytes a repository chose.
     """
 
     event: str
@@ -277,8 +272,8 @@ def _whole(entry: dict[str, Any]) -> str:
 
 
 def _placed(event: str, group: dict[str, Any], entry: dict[str, Any]) -> Placed:
-    """One entry as `Placed` holds it: one place for every walk, so a grant read back through
-    `placed_entries` and an entry `live_entries` reads are compared in the same terms."""
+    """One entry as `Placed` holds it: one place for every walk, so `placed_entries` and
+    `live_entries` read an entry in the same terms."""
     command = entry.get("command")
     text = command if isinstance(command, str) else ""
     return Placed(event, _matcher(group), text, _whole(entry))
@@ -380,17 +375,6 @@ def judged_entries(document: str, *, lenient: bool) -> Walked:
         return live_entries(lenient_settings(document))
     placed = placed_entries(document)
     return Walked(tuple(enumerate(placed, start=1)), len(placed), partly=False, hidden=False)
-
-
-def wanted_placements(wanted: dict[str, list[dict[str, Any]]]) -> list[Placed]:
-    """Where `apply_entries` puts each entry of `wanted`, as `placed_entries` reads it back.
-
-    Read back through the document `apply_entries` would write and not off `wanted` itself,
-    because what a grant is compared with is what the walk reads out of a settings file: an
-    integer in a matcher or an entry, such as a `timeout`, is its text there, and a grant that kept
-    it a number would never equal the entry it installed. Refuses what `placed_entries` refuses.
-    """
-    return placed_entries(json.dumps({"hooks": wanted}))
 
 
 def owned(document: str) -> str:

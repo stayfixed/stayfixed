@@ -274,18 +274,7 @@ too, since Python runs each package's `__init__.py` first.
   `Contribution` of `(name, check)` pairs, and one that contributes a name already in the report — a
   core check's, an earlier area's, or another of its own, since a check's name is unique in the
   report — each puts one red row named after the area where its rows would have been (numbered,
-  `<area> (2)`, when the report already has that name), and the rest of the report stands. The
-  area's claims (below) go with its rows, so `hook-entries` reads every entry that area put into
-  settings files as one nothing records, and goes red too when there is one. A `Contribution` may
-  also carry `claims`, which answers `Claims`: the marker ids the area recorded in settings files
-  and the commands it still grants there, each under the event and the matcher it grants it under,
-  which the core's `hook-entries` row asks with the same `Context`, so an entry the area put there
-  is told apart from a repository claiming it did. The record may be repository bytes and the grants
-  may not, and an entry is absolved only by an area that both records its id and grants its command
-  where the entry sits, never by one area's record and another's grant. `Claims` also carries the
-  area's `Wording`, the phrases the row tells its record, its source and their remedies in, so the
-  core names no area's files or commands of its own; they are printed verbatim, so they are
-  stayfixed's own fixed strings and never built from repository bytes.
+  `<area> (2)`, when the report already has that name), and the rest of the report stands.
   `register()` is called once per report, so anything it creates for its checks — an area that
   reads the note store creates a value that resolves it at most once — is fresh for every report.
   What the core owns and several areas read is on the `Context` instead: `Context.overlay_root`,

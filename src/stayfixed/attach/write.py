@@ -655,10 +655,11 @@ def _memory_absent(root: Path, config: Config) -> bool:
     return not fsops.is_dir(root / config.paths.memory)
 
 
-def _placed(binding: Binding, config: Config, *, memory: bool) -> tuple[str, ...]:
-    """Every path this run puts into the checkout's work tree: the ledger, the link tree
+def placed_paths(config: Config, rules: Iterable[str], *, memory: bool) -> tuple[str, ...]:
+    """Every path an attach puts into the checkout's work tree: the ledger, the link tree
     (`linked_names`, the same list `attach_main` walks) where `memory` says the notes are linked,
-    each rule copy `codex_rules` enumerates, and the settings file. These are what
+    each rule copy in `rules` (`codex_rules`' targets for a run, the ledger's for `doctor`), and
+    the settings file. These are what
     `attach.exclude` hides and holds inside the project, and what one rule holds: none tracked,
     each ignored once the block stands. The binding id is placed too, but under the git common
     directory, which git never tracks, so it is no path of the work tree.
@@ -670,12 +671,12 @@ def _placed(binding: Binding, config: Config, *, memory: bool) -> tuple[str, ...
     return (
         ATTACH_LEDGER,
         *(f"{config.paths.memory}/{name}" for name in linked_names(config) if memory),
-        *(target for target, _ in codex_rules(binding)),
+        *rules,
         LOCAL_SETTINGS,
     )
 
 
-def _main_settings(root: Path, checkouts: tuple[Path, ...]) -> tuple[str, ...]:
+def main_settings(root: Path, checkouts: tuple[Path, ...]) -> tuple[str, ...]:
     """The main checkout's settings file as a placed path of its own, where `root` is a linked
     worktree: Claude Code writes the plugin's entry, which names the binding id, into the main
     checkout's file whichever worktree `attach` runs from, so that file is held to the rule every
@@ -683,7 +684,7 @@ def _main_settings(root: Path, checkouts: tuple[Path, ...]) -> tuple[str, ...]:
     return () if checkouts[0] == root.resolve() else (LOCAL_SETTINGS,)
 
 
-def _named(config: Config, paths: tuple[str, ...]) -> str:
+def named_placed(config: Config, paths: tuple[str, ...]) -> str:
     """Placed paths as a refusal names them: those the checkout or the overlay names through
     `printed.quoted`, and the link tree's counted, because each carries a `memory.groups` entry,
     which the repository chose."""
@@ -1133,7 +1134,7 @@ class AttachPlan:
     # The settings document to write, or `None` when the merge leaves it as it is.
     settings: str | None
     carried: tuple[str, ...]
-    # Every path this run places in the work tree (`_placed`), and the exclude block that hides
+    # Every path this run places in the work tree (`placed_paths`), and the exclude block that hides
     # them, or `None` when the owner's own excludes hide them all.
     placed: tuple[str, ...]
     hidden: exclude.ExcludeWrite | None
@@ -1376,15 +1377,15 @@ def plan_writes(
     if memory:
         for tree in checkouts:
             harness_anchor(tree, home)
-    placed = _placed(binding, config, memory=memory)
+    placed = placed_paths(config, (target for target, _ in codex_rules(binding)), memory=memory)
     # One rule for every placed path: none tracked, asked here above every write, and each ignored,
     # asked once the block stands (`_carry_out`).
     if found := exclude.tracked(root, placed):
-        raise Refusal(exclude.TRACKED.format(paths=_named(config, found)))
+        raise Refusal(exclude.TRACKED.format(paths=named_placed(config, found)))
     # And the main checkout's settings file, the one `claude plugin install --scope local` writes
     # the plugin's entry into from any worktree, asked of the main checkout's own index.
-    if found := exclude.tracked(checkouts[0], _main_settings(root, checkouts)):
-        raise Refusal(exclude.TRACKED.format(paths=_named(config, found)))
+    if found := exclude.tracked(checkouts[0], main_settings(root, checkouts)):
+        raise Refusal(exclude.TRACKED.format(paths=named_placed(config, found)))
     hidden = exclude.planned_block(root, placed)
     # The reads the writes below would otherwise make for themselves, each of which can refuse
     # after the first write: the overlay's rule sources (a file that is not UTF-8), what the
@@ -1437,12 +1438,12 @@ def _carry_out(
         exclude.write(planned.hidden)
     # The rule's second half: a `.gitignore` re-including a placed path (`!`) outranks the block.
     if shown := exclude.unignored(root, planned.placed):
-        raise Refusal(exclude.NOT_IGNORED.format(paths=_named(config, shown)))
+        raise Refusal(exclude.NOT_IGNORED.format(paths=named_placed(config, shown)))
     # The main checkout's settings file too, asked of its own `.gitignore`: a worktree's branch can
     # ignore it while the main checkout's re-includes it. The block is shared, so it is in place.
     main = planned.checkouts[0]
-    if shown := exclude.unignored(main, _main_settings(root, planned.checkouts)):
-        raise Refusal(exclude.NOT_IGNORED.format(paths=_named(config, shown)))
+    if shown := exclude.unignored(main, main_settings(root, planned.checkouts)):
+        raise Refusal(exclude.NOT_IGNORED.format(paths=named_placed(config, shown)))
     for target, text in planned.rules:
         fsops.write_within(root, target, text)
     rules = tuple(target for target, _ in planned.rules)

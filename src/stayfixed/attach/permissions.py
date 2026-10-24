@@ -38,7 +38,6 @@ from stayfixed.printed import quoted
 from stayfixed.scaffold import (
     EntriesError,
     ParserLimitError,
-    mark,
     settings_object,
     settings_text,
 )
@@ -52,9 +51,6 @@ HOOKS_FILE = "hooks.json"
 # The per-harness subdirectory of a project's own share of the overlay.
 PROJECT_CLAUDE = "claude"
 PROJECT_CODEX = "codex"
-# `stayfixed:overlay-<event>-<n>`: the id an earlier release marked each entry it merged into
-# `settings.local.json` with, one per entry, which `doctor` still compares a recorded entry with.
-ENTRY_PREFIX = "overlay"
 # Where Codex reads standing instructions.
 CODEX_RULES = ".codex/rules"
 
@@ -254,50 +250,6 @@ def _claude_sources(
         (binding.overlay / COMMON_CLAUDE / name, None),
         (share / PROJECT_CLAUDE / name, share),
     )
-
-
-def overlay_entries(binding: Binding) -> dict[str, list[dict[str, Any]]]:
-    """The overlay's hook entries as an earlier release merged them into `settings.local.json`,
-    each command carrying its own marker id.
-
-    `attach` merges none any more: the entries go into the rendered plugin unmarked. This is what
-    `doctor` compares an entry an earlier attach recorded with, until that attach's entries are
-    taken back. Numbering runs per event across both sources in read order, as it always did, so
-    the ids are the ones those releases wrote.
-    """
-    return _numbered(_claude_sources(binding, HOOKS_FILE))
-
-
-def common_entries(overlay: Path) -> dict[str, list[dict[str, Any]]]:
-    """`overlay_entries` for `common/` alone, which never opens anything under `projects/`.
-
-    For a caller that may not take any project's grants (`doctor`, for a checkout the overlay's
-    record does not bind, or whose record it cannot read), and asked of the overlay root rather
-    than of a `Binding`, because deciding a binding opens the record such a caller may not lean
-    on. `common/` is read first by `overlay_entries` too, so this is exactly the leading part of
-    its answer, with the same ids.
-    """
-    return _numbered(((overlay / COMMON_CLAUDE / HOOKS_FILE, None),))
-
-
-def _numbered(
-    sources: tuple[tuple[Path, Path | None], ...],
-) -> dict[str, list[dict[str, Any]]]:
-    """The hook entries in `sources`, read in order, each command marked with its own id."""
-    wanted: dict[str, list[dict[str, Any]]] = {}
-    seen: dict[str, int] = {}
-    for source, share in sources:
-        for event, groups in hook_groups(source, share=share).items():
-            for group in groups:
-                # `hook_groups` refused every group and entry of another shape.
-                marked: list[dict[str, Any]] = []
-                for entry in group.get("hooks", []):
-                    seen[event] = seen.get(event, 0) + 1
-                    entry_id = f"{ENTRY_PREFIX}-{event}-{seen[event]}"
-                    marked.append({**entry, "command": mark(entry["command"], entry_id)})
-                if marked:
-                    wanted.setdefault(event, []).append({**group, "hooks": marked})
-    return wanted
 
 
 def local_document(root: Path) -> str:

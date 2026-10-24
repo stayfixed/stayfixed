@@ -249,6 +249,7 @@ _NUMBER_WORDS = {
     "twelve": 12,
     "thirteen": 13,
     "fourteen": 14,
+    "seventeen": 17,
     "eighteen": 18,
     "nineteen": 19,
 }

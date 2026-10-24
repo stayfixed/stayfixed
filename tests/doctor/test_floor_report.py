@@ -31,7 +31,7 @@ from stayfixed.doctor.checks import (
 )
 from stayfixed.printed import CLIPPED_CHARS, clipped
 from tests.crafted import assert_never_raw
-from tests.doctor.test_checks import LOCAL_ONLY, _attached, _initialised, _machine
+from tests.doctor.test_checks import LOCAL_ONLY, _initialised
 from tests.overlay.test_requires import overlay_with
 from tests.runners import Recorder
 
@@ -242,12 +242,10 @@ def _recorded_overlay(tmp_path: Path, requires: str) -> Path:
 def test_a_machine_with_an_overlay_and_no_stayfixed_toml_is_red_about_nothing(
     tmp_path: Path,
 ) -> None:
-    # The two rows that read the project configuration beside a recorded overlay: the claims
-    # `hook-entries` asks name the project's binding, and `overlay-requires` asks whether the
-    # project consults the overlay. With no project, the claims answer what `common/` grants and
-    # an unmet floor is a warning. Mutation (`mutations/`'s "the overlay floor asks a project
-    # configuration that is not there"): `overlay-requires` reads as a check that could not run.
-    # With no ledger the claims never ask the overlay, so the test below holds them.
+    # `overlay-requires` asks whether the project consults the overlay, beside a recorded overlay.
+    # With no project, an unmet floor is a warning. Mutation (`mutations/`'s "the overlay floor
+    # asks a project configuration that is not there"): `overlay-requires` reads as a check that
+    # could not run.
     root = tmp_path / "project"
     root.mkdir()
     machine = _recorded_overlay(tmp_path, ">=99.0.0")
@@ -255,17 +253,3 @@ def test_a_machine_with_an_overlay_and_no_stayfixed_toml_is_red_about_nothing(
     assert row(report, "overlay-requires").status == WARN
     assert row(report, "hook-entries").status != RED, row(report, "hook-entries")
     assert not [check.name for check in report if check.status == RED]
-
-
-def test_an_attached_checkout_whose_stayfixed_toml_is_gone_still_has_its_claims_asked(
-    tmp_path: Path,
-) -> None:
-    # A ledger recording an entry is what makes `hook-entries` ask `attach`'s claims, and they
-    # derived the binding from the project's name, so with no project configuration they raised
-    # and the row read as one that could not run. They answer what `common/` grants instead.
-    # Mutation (`mutations/`'s "the attach claims ask a binding of no project configuration"):
-    # the row names the claims that did not answer.
-    root = _attached(tmp_path)
-    (root / "stayfixed.toml").unlink()
-    checked = row(run_checks_for(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
-    assert "could not run" not in checked.detail, checked

@@ -38,7 +38,9 @@ VOLATILE_NOTE = "SMOKE-VOLATILE-NOTE"
 # rather than imported, because this script runs without `stayfixed` importable.
 FLOOR_VARIABLE = "STAYFIXED_GIT_FLOOR_SECONDS"
 # Counted against the shipped `hooks/hooks.json` and this fixture: ten entries, eleven rows
-# (`PreToolUse` carries two samples). Both are asserted because a run that executes fewer rows
+# (`PreToolUse` carries two samples), unchanged by the overlay's delivery, since its rules reach a
+# session through `hook SessionStart` and its path-scoped ones through the rendered plugin, neither
+# an entry of `hooks/hooks.json`. Both are asserted because a run that executes fewer rows
 # prints an identically green summary — the shape `unsampled` and `unentered` close for events
 # and nothing closed for rows.
 EXPECTED_ENTRIES = 10

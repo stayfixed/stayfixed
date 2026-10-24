@@ -1,17 +1,15 @@
-"""The binding's row in `stayfixed doctor`, and what this area put into settings files.
+"""The binding's row in `stayfixed doctor`: the delivery and the harness memory path.
 
-`attached` is this area's: it reads the attach ledger this area writes and asks the overlay, through
-this area's own `read_binding`, whether a binding stands behind it. The `claims` are this area's
-too: `hook-entries`, which stays in the core because every settings file is the core's to walk,
-lists each hook entry with its provenance, and only this area can say which entries `attach`
-recorded and which of them the overlay still grants. `doctor`'s core discovers this module by
-name (CONTRIBUTING.md, "Areas") and imports nothing of this area.
+`attached` is this area's: it reads the attach ledger this area writes, asks this machine, through
+this area's own `read_binding`, whether a binding stands behind it, and then reads what the binding
+delivers: the render `attach` left under the machine's data directory and the paths it placed in
+the checkout. `doctor`'s core discovers this module by name (CONTRIBUTING.md, "Areas") and imports
+nothing of this area.
 
 The overlay root is the core's answer, `Context.overlay_root`, resolved at most once per report
 for every row that reads it. The note store comes from the `Answers` this module's `register()`
 creates, one per report, so the row resolves it once. The attach ledger comes from the `_Ledger`
-created beside it, so the binding the row reads and the claims `hook-entries` reads read the file
-once between them, and both read it the same way.
+created beside it, so every question the row asks of the file gets one answer.
 
 Every import sits inside a function body, as in a `hooks.py`: this module is imported by
 discovery, and a module-level import here would be one more thing every `doctor` run loads
@@ -28,9 +26,8 @@ if TYPE_CHECKING:
     from stayfixed.attach.binding import Binding
     from stayfixed.attach.write import AttachLedger
     from stayfixed.config.schema import Config
-    from stayfixed.doctor.api import Claims, Context, Contribution, Row, Status, Wording
+    from stayfixed.doctor.api import Context, Contribution, Row, Status
     from stayfixed.memory.api import Answers, Store
-    from stayfixed.scaffold import Placed
 
 
 # What `_ledger_state` answers beside a ledger: no file at the ledger's path, and a file there that
@@ -39,10 +36,6 @@ NO_LEDGER: Final = "no-ledger"
 # Also the fourth of `_binding_answer`'s reasons, below: the same fact, and it is about the
 # repository rather than about this machine.
 UNREADABLE_LEDGER: Final = "unreadable-ledger"
-# Why the overlay grants this checkout only what `common/` grants, where saying it refused would be
-# false: the record under `projects/<name>/` cannot be read. Not a state of `memory.store`'s: the
-# record's own failure is this area's question, asked only here.
-UNREADABLE_RECORD: Final = "unreadable-record"
 
 
 def _ledger_state(root: Path) -> AttachLedger | str:
@@ -84,9 +77,9 @@ def _ledger_state(root: Path) -> AttachLedger | str:
 class _Ledger:
     """`_ledger_state` for one report, read on first use and never again.
 
-    Created once per report by `register()`, so `attached` and the claims
-    `hook-entries` reads ask one question of the file and get one answer: no row can read the
-    ledger as there while another reads it as absent or unreadable.
+    Created once per report by `register()`, so every question `attached` asks of the file gets
+    one answer: no arm can read the ledger as there while another reads it as absent or
+    unreadable.
     """
 
     def __init__(self) -> None:
@@ -98,16 +91,254 @@ class _Ledger:
         return self._state[0]
 
 
-def _attach_ledger_entries(state: AttachLedger | str) -> dict[str, str] | None:
-    """The marker ids this repository's last `attach` claims, `{}` when it never ran, `None`
-    when the file is there and cannot be read as a ledger."""
-    if isinstance(state, str):
-        return None if state == UNREADABLE_LEDGER else {}
-    return dict(state.entries)
+# What the delivery is, as `_delivery` reads it: each clause is said in the row's detail beside the
+# binding, formatted only with stayfixed's own words and paths this machine chose, through
+# `printed.quoted`, and never with the whole binding id (`binding.short`). Red where nothing loads,
+# or where git shows what `attach` keeps for this machine alone; a warning where what loads is not
+# what the overlay holds now.
+DELIVERY_IN_PLACE: Final = "the delivery is in place"
+NO_ID: Final = (
+    "no binding id can be read in this checkout's git directory, so the delivery could not be "
+    "checked"
+)
+OVERLAY_GONE: Final = (
+    "the overlay this machine records, {path}, is not there, so the delivered hooks that run its "
+    "scripts have nothing to run"
+)
+PLACED_TRACKED: Final = "this repository tracks {paths}, which attach placed for this machine alone"
+PLACED_SHOWN: Final = (
+    "git would not ignore {paths}, which attach placed for this machine alone: a `.gitignore` line "
+    "starting with `!` re-includes it"
+)
+PLACED_UNASKED: Final = (
+    "git could not say whether the paths attach placed are tracked or ignored, or whether a "
+    "tracked file names the delivery"
+)
+ID_COMMITTED: Final = (
+    "a tracked file names this checkout's delivery, and with it the binding id, which never leaves "
+    "this machine: {paths}"
+)
+UNINSTALLED: Final = (
+    "the ledger records no install of the overlay's plugin, so none of the overlay's hooks, skills "
+    "or agents is delivered"
+)
+RENDER_GONE: Final = (
+    "the render directory of binding {short} under {parent} is gone, so none of the overlay's "
+    "hooks, skills or agents loads, and nothing else says so"
+)
+MARKETPLACE_GONE: Final = (
+    "the render of binding {short} has no {file}, so its plugin does not load, and nothing else "
+    "says so"
+)
+LAUNCHER_GONE: Final = (
+    "the launcher the overlay's path-scoped rules run through, {path}, is not there, so those "
+    "rules are not delivered"
+)
+DRIFTED: Final = (
+    "the overlay's hooks, skills or agents changed since the last attach, so what runs is the "
+    "render that attach left"
+)
+OVERLAY_UNREAD: Final = (
+    "the overlay's hooks, skills or agents could not be read, so whether they changed since the "
+    "last attach is not known"
+)
+
+
+class _Finding(NamedTuple):
+    """One thing `_delivery` found: its status, the clause the row says it in, and its remedy."""
+
+    status: Status
+    clause: str
+    remedy: str
+
+
+def _worst(findings: list[_Finding]) -> _Finding | None:
+    """The first red finding, else the first warning, else `None`."""
+    from stayfixed.doctor.api import RED
+
+    return next((each for each in findings if each.status == RED), None) or next(
+        iter(findings), None
+    )
+
+
+def _delivery(context: Context, config: Config, recorded: AttachLedger, bound: Binding) -> _Finding:
+    """What the binding delivers, read where `attach` left it.
+
+    **Red where nothing loads, or where git would show what is this machine's alone.** Claude Code
+    runs the plugin from the render directory in place, and with that directory or its marketplace
+    file gone it loads nothing and says nothing, so this row is the one place that says so; the
+    overlay gone is the same for the hooks that run its scripts. A placed path that is tracked, or
+    that a `.gitignore` re-includes, is one a collaborator gets, and a tracked file naming the
+    delivery carries the binding id, the name a clone would need (`stayfixed.binding`).
+
+    **A warning where what loads is not what the overlay holds now**: no install recorded, the
+    launcher the path-scoped rules run through gone, the overlay's parts changed since the render
+    (its digest against the ledger's, computed with the launcher the render holds, so a report run
+    through another launcher reads no drift for that alone), and the `origin` note. The digest is
+    a convenience and refuses nothing (`attach.render`).
+
+    Every finding is read, and the first red one answers, else the first warning: no order of the
+    reads lets a warning stand in front of a red."""
+    from pathlib import Path
+
+    from stayfixed import fsops
+    from stayfixed.attach import ATTACH_STORE, exclude
+    from stayfixed.attach.permissions import LOCAL_SETTINGS
+    from stayfixed.attach.render import (
+        MARKETPLACE_FILE,
+        delivery_directory,
+        digest,
+        launcher,
+        marketplace_name,
+        read_parts,
+        recorded_command,
+    )
+    from stayfixed.attach.write import named_placed, placed_paths
+    from stayfixed.binding import read_id, short
+    from stayfixed.config.schema import OVERLAY_MODE
+    from stayfixed.doctor.api import OK, RED, WARN
+    from stayfixed.errors import Failure, Refusal
+    from stayfixed.gitenv import git_run
+    from stayfixed.printed import quoted
+
+    rerun = f"run `{ATTACH_STORE}`"
+    try:
+        id = read_id(context.root)
+    except Failure:
+        id = None
+    if id is None:
+        return _Finding(WARN, NO_ID, rerun)
+    found: list[_Finding] = []
+    if not fsops.is_dir(bound.overlay):
+        found.append(
+            _Finding(
+                RED,
+                OVERLAY_GONE.format(path=quoted(str(bound.overlay))),
+                "move the overlay back, or run `stayfixed setup --overlay <path>` to record where "
+                f"it is now; then {rerun}",
+            )
+        )
+    # The link tree only where `paths.memory` is a directory: git tracks and ignores a symlink
+    # there as one path, answers nothing for a path beyond it, and the harness memory path's
+    # reading already says what that tree is.
+    linked = config.memory.mode == OVERLAY_MODE
+    tree = context.root / config.paths.memory
+    placed = placed_paths(config, recorded.rules, memory=linked and not fsops.is_symlink(tree))
+    owner = _owner(context)
+    # The main checkout's settings file, from a linked worktree: Claude Code writes the plugin's
+    # entry, which names the id, into that file whichever worktree `attach` ran from.
+    main = () if owner.resolve() == context.root.resolve() else (LOCAL_SETTINGS,)
+    main_named = f"the main checkout's {LOCAL_SETTINGS}"
+    try:
+        tracked = (
+            [named_placed(config, held)] if (held := exclude.tracked(context.root, placed)) else []
+        )
+        tracked += [main_named] if exclude.tracked(owner, main) else []
+        shown = (
+            [named_placed(config, held)]
+            if (held := exclude.unignored(context.root, placed))
+            else []
+        )
+        shown += [main_named] if exclude.unignored(owner, main) else []
+    except Refusal:
+        tracked, shown, unasked = [], [], True
+    else:
+        unasked = False
+    if tracked:
+        found.append(
+            _Finding(
+                RED,
+                PLACED_TRACKED.format(paths=", ".join(tracked)),
+                f"take each out of the index with `git rm --cached`, then {rerun}",
+            )
+        )
+    if shown:
+        found.append(
+            _Finding(
+                RED,
+                PLACED_SHOWN.format(paths=", ".join(shown)),
+                f"take that line out of the `.gitignore`, then {rerun}",
+            )
+        )
+    # Every tracked file, in the work tree's copy, asked for the whole name and never the prefix,
+    # which this repository's own sources spell: only this binding's id is the secret.
+    delivered = marketplace_name(id)
+    code, out = git_run(context.root, "grep", "-l", "-z", "-I", "-F", "-e", delivered)
+    # Exit 1 is "no file names it", an answer; anything but 0 and 1 is git not answering, which is
+    # never read as "none".
+    if unasked or code not in (0, 1):
+        found.append(
+            _Finding(
+                WARN,
+                PLACED_UNASKED,
+                "run `stayfixed doctor` again where `git ls-files`, `git check-ignore` and `git "
+                "grep` work",
+            )
+        )
+    if code == 0:
+        named = [quoted(name) for name in out.split("\0") if name]
+        found.append(
+            _Finding(
+                RED,
+                ID_COMMITTED.format(paths=", ".join(named)),
+                "take the name out of each file named above before it is pushed: a clone that "
+                "carries it can name this machine's delivery",
+            )
+        )
+    directory = delivery_directory(id)
+    render = recorded.render
+    if render is None:
+        found.append(_Finding(WARN, UNINSTALLED, f"{rerun}, which installs it"))
+    elif not fsops.is_dir(directory):
+        found.append(
+            _Finding(
+                RED,
+                RENDER_GONE.format(short=short(id), parent=quoted(str(directory.parent))),
+                f"{rerun}, which renders it again",
+            )
+        )
+    elif not fsops.is_file(directory / MARKETPLACE_FILE):
+        found.append(
+            _Finding(
+                RED,
+                MARKETPLACE_GONE.format(short=short(id), file=MARKETPLACE_FILE),
+                f"{rerun}, which renders it again",
+            )
+        )
+    command = recorded_command(directory)
+    executable = None if command is None else launcher(command)
+    if executable is not None and not fsops.exists(Path(executable)):
+        found.append(
+            _Finding(
+                WARN,
+                LAUNCHER_GONE.format(path=quoted(executable)),
+                f"{rerun} from the stayfixed you run now, which renders the entry through it",
+            )
+        )
+    if render is not None:
+        try:
+            now = digest(id, read_parts(bound.overlay, bound.project, command=command))
+        except (Failure, Refusal, OSError):
+            found.append(
+                _Finding(WARN, OVERLAY_UNREAD, f"run `{ATTACH_STORE} --check`, which says why")
+            )
+        else:
+            if now != render.digest:
+                found.append(
+                    _Finding(WARN, DRIFTED, f"{rerun}, which renders the overlay as it is now")
+                )
+    if bound.note is not None:
+        found.append(_Finding(WARN, bound.note, rerun))
+    return _worst(found) or _Finding(OK, DELIVERY_IN_PLACE, "")
 
 
 def _attached(context: Context, config: Config, answers: Answers, ledger: _Ledger) -> Row:
-    """Attach state, and the shape of the harness memory path.
+    """The binding, what it delivers, and, where the notes are linked, the harness memory path.
+
+    **Delivery does not depend on the memory mode** (`attach.write`), so the delivery is read for
+    every repository whose ledger this machine's binding confirms; the harness memory path only
+    where `memory.mode` is `overlay`. With no ledger, a repository whose notes are not linked is
+    simply not attached, which is green.
 
     `attach` prefers a symlink at `~/.claude/projects/<slug>/memory`, because a settings-file
     value is subject to workspace trust and a link is not. A **real directory** there is a
@@ -130,52 +361,56 @@ def _attached(context: Context, config: Config, answers: Answers, ledger: _Ledge
     would be, on the one channel `attach` uses to reach the model, a false statement about where
     the model's memory comes from, and the two states it would hide are the same failure the real
     directory is flagged for: one reads nothing, the other reads somebody else's notes.
+
+    The delivery and the harness memory path are said side by side, and the row takes the worse
+    status of the two and the worse one's remedy first.
     """
     from stayfixed.attach import ATTACH_STORE
     from stayfixed.config.layout import ATTACH_LEDGER
     from stayfixed.config.schema import OVERLAY_MODE
-    from stayfixed.doctor.api import OK, WARN, Row
+    from stayfixed.doctor.api import OK, RED, WARN, Row
     from stayfixed.errors import Refusal
     from stayfixed.memory.api import UNBOUND, harness_memory_path
 
-    if config.memory.mode != OVERLAY_MODE:
-        # `memory.mode` is repository-authored and is safe to print for one reason only: the
-        # loader holds it to a fixed set of three words, so what reaches this line is one of
-        # stayfixed's own labels rather than a string a clone chose.
-        return Row(OK, f"memory.mode is {config.memory.mode}; there is no overlay to bind to")
+    linked = config.memory.mode == OVERLAY_MODE
+    if not linked and ledger.state(context.root) == NO_LEDGER:
+        return Row(OK, f"{ATTACH_LEDGER} does not exist, so nothing records an attach")
     verdict: _Verdict | None = None
-    try:
-        harness = harness_memory_path(context.root, context.home)
-    except Refusal:
-        # Refused only for a home it cannot name, which is this machine's state and not a broken
-        # check, so it is a warning that says what it costs.
-        return Row(
-            WARN,
-            "HOME names no home directory, so there is no harness memory path to check",
-            "set HOME to your home directory, or pass --home <path> to check the harness "
-            "memory path under that directory",
-        )
-    # A real directory there is red unless `attach` took the settings-file fallback beside it,
-    # and a fallback naming anything but the store `attach` writes there is red beside any
-    # shape: either is where the harness then reads its memory whatever the ledger says, so
-    # both are read before the ledger is. The verdict is the one the row ends with, read once.
-    fallback = _settings_fallback(context.root)
-    if fallback.held or _shape_of(harness) == _REAL_DIRECTORY:
-        verdict = _harness_verdict(context, config, answers, harness, fallback)
-        if verdict.whole:
-            return Row(verdict.status, verdict.shape, verdict.remedy)
-    if ledger.state(context.root) == NO_LEDGER:
-        return Row(
-            WARN,
-            f"memory.mode is overlay and {ATTACH_LEDGER} does not exist, so nothing records an "
-            f"attach",
-            f"run `{ATTACH_STORE} --check`",
-        )
+    harness: Path | None = None
+    fallback = _Fallback()
+    if linked:
+        try:
+            harness = harness_memory_path(context.root, context.home)
+        except Refusal:
+            # Refused only for a home it cannot name, which is this machine's state and not a
+            # broken check, so it is a warning that says what it costs.
+            return Row(
+                WARN,
+                "HOME names no home directory, so there is no harness memory path to check",
+                "set HOME to your home directory, or pass --home <path> to check the harness "
+                "memory path under that directory",
+            )
+        # A real directory there is red unless `attach` took the settings-file fallback beside it,
+        # and a fallback naming anything but the store `attach` writes there is red beside any
+        # shape: either is where the harness then reads its memory whatever the ledger says, so
+        # both are read before the ledger is. The verdict is the one the row ends with, read once.
+        fallback = _settings_fallback(context.root)
+        if fallback.held or _shape_of(harness) == _REAL_DIRECTORY:
+            verdict = _harness_verdict(context, config, answers, harness, fallback)
+            if verdict.whole:
+                return Row(verdict.status, verdict.shape, verdict.remedy)
+        if ledger.state(context.root) == NO_LEDGER:
+            return Row(
+                WARN,
+                f"memory.mode is overlay and {ATTACH_LEDGER} does not exist, so nothing records an "
+                f"attach",
+                f"run `{ATTACH_STORE} --check`",
+            )
     answer = _binding_answer(context, config, ledger)
-    # The ledger exists, so from here on this row's job is to say what the **overlay** makes of it
-    # (principle 5), for the reason `_granted_commands` gives: the ledger is a path a clone can
-    # commit, and the overlay is the one source a repository cannot choose. Every arm below but the
-    # last refuses to print the word "attached".
+    # The ledger exists, so from here on this row's job is to say what **this machine** makes of
+    # it (principle 5): the ledger is a path a clone can commit, and the binding is the one record
+    # a repository cannot choose. Every arm below but the last refuses to print the word
+    # "attached".
     if isinstance(answer, str):
         return _uncorroborated(answer)
     state = answer.state
@@ -200,12 +435,24 @@ def _attached(context: Context, config: Config, answers: Answers, ledger: _Ledge
             f"an attach",
             _re_attach(),
         )
+    recorded = ledger.state(context.root)
+    if isinstance(recorded, str):  # `_binding_answer` answered a binding, so never
+        return _uncorroborated(recorded)
+    delivery = _delivery(context, config, recorded, answer)
+    if harness is None:
+        return Row(
+            delivery.status, f"attached; {delivery.clause}; the binding is {state}", delivery.remedy
+        )
     if verdict is None:
         verdict = _harness_verdict(context, config, answers, harness, fallback)
+    rank = {OK: 0, WARN: 1, RED: 2}
+    pair = (delivery.status, delivery.remedy), (verdict.status, verdict.remedy)
+    (status, worse), (_, other) = sorted(pair, key=lambda each: -rank[each[0]])
     return Row(
-        verdict.status,
-        f"attached; the harness memory path is {verdict.shape}; the binding is {state}",
-        verdict.remedy,
+        status,
+        f"attached; {delivery.clause}; the harness memory path is {verdict.shape}; the binding is "
+        f"{state}",
+        "; ".join(dict.fromkeys(remedy for remedy in (worse, other) if remedy)),
     )
 
 
@@ -819,185 +1066,8 @@ def _binding_answer(context: Context, config: Config, ledger: _Ledger) -> Bindin
         return UNASKABLE
 
 
-def _granted_commands(context: Context) -> tuple[set[Placed] | None, str | None]:
-    """Every marked command the overlay grants this repository **right now**, where it grants it,
-    or `None`; and,
-    beside it, why that grant stops at `common/` where "the overlay does not grant" an entry would
-    be false: `UNREADABLE_RECORD`, else `None` (`_wording` says what it changes).
-
-    The overlay is what `attach` merges from, and it is trusted by construction: its root comes
-    from the machine configuration, which `config/machine.py` keeps unselectable by a repository.
-    So it is the one source that can answer whether an entry claiming the stayfixed marker is
-    really stayfixed's — and it is the answer the ledger cannot give, because
-    `.stayfixed/local/attach.json` is a path a clone can commit.
-
-    `overlay_entries` is the same enumeration `attach` installs from, so the strings compared are
-    the strings `attach` would write: the *marked command*, not the id. Comparing ids alone would
-    still let a repository take an id the overlay does grant and hang a different command on it.
-    And each is where `attach` would write it, and as it would write it — its event, its group's
-    matcher and the whole entry, read back by `scaffold.wanted_placements` as the `hook-entries`
-    walk reads the settings file — because the granted command hung under another event or matcher,
-    or inside an entry of another `type` or with fields the overlay did not write, is a hook the
-    overlay never granted.
-
-    **The ledger is not read here.** The binding is the one `binding_for` derives from the overlay
-    this machine records and the project's name, the same one `attach` would install from, and
-    not the one the ledger's `store` names. Asked through the ledger's store, a store that is not
-    this project's would answer "could not be asked", and that is a warning: a clone that
-    committed a ledger recording its own entry, under any store it liked, would turn
-    `hook-entries`' red into an exit of 0. Whether that store is right is the `attached` row's
-    question, and it warns there.
-
-    `None` means the overlay this machine records could not be asked — no `git`, an overlay
-    record that will not read, or a hook file the overlay grants this checkout from (`common/`'s,
-    or that of the project this machine binds the checkout to) that will not parse — and is
-    decided by this machine's state alone. **Nothing a repository's name picks out may answer
-    `None`**: a `None` turns `hook-entries`' red into a warning, and `project.name` is committed,
-    so a file the name chooses under the overlay's `projects/` would let a clone choose that
-    warning. A machine that records no overlay is not `None` either: nothing on it can grant,
-    which is the empty set, and `_claims` says why it is empty. An empty set is "the overlay
-    grants nothing", which is an answer.
-
-    **`projects/<name>/` grants only a checkout this machine binds to it.** The name is
-    committed, so it can name another project of this machine's overlay, and what that project's
-    directory grants is that project's: a clone naming itself after it, with an entry equal to
-    one granted there and a ledger recording its id, would read "all accounted for". The binding
-    is the id in the checkout's git common directory and the machine's record of it
-    (`stayfixed.binding`), which no clone carries, so for a binding that is not `bound` the answer
-    is what `common/` grants, and the project's hook file is not opened: one there that will not
-    parse would answer `None`. Whether the binding is right is the `attached` row's question, and
-    it says so there.
-
-    **An overlay project record that cannot be read grants nothing past `common/`.** Reading the
-    binding reads `projects/<name>/project.toml` beside it, a file the name picks out; one that
-    cannot be read (`binding.UnreadableRecord`) is answered as no binding, and the answer is what
-    `common/` grants. The cost falls on an owner whose own record is broken: their per-project
-    entries read red rather than warn, and the `attached` row says the overlay could not be asked.
-    It alone is named beside the grant, since `projects/<name>/` may grant an entry `common/`
-    does not, so "the overlay does not grant them" would be false; for an unbound checkout
-    nothing in the overlay grants it more than `common/` does, and the overlay refusing is what
-    happened.
-
-    **Nor does a `project.name` no directory under the overlay can carry make the overlay
-    unaskable.** One that a file under `projects/` holds, or one longer than the filesystem
-    allows, has no project record — `binding.cannot_exist`'s paths are records the overlay does
-    not have — and is never bound, so the answer is what `common/` grants. Only below the
-    directory of the project this machine binds the checkout to does the name choose nothing, and
-    a file there where `claude/` goes is the owner's overlay failing to answer, `None` like any
-    other.
-    """
-    from stayfixed.attach.binding import UnreadableRecord, binding_for
-    from stayfixed.attach.permissions import common_entries, overlay_entries
-    from stayfixed.doctor.api import MachineUnread
-    from stayfixed.errors import Failure, Refusal
-    from stayfixed.memory.api import BOUND
-    from stayfixed.scaffold import wanted_placements
-
-    overlay = context.overlay_root
-    if overlay is None:
-        return set(), None
-    if isinstance(overlay, MachineUnread):
-        # Not "nothing records a source": whether one is recorded is not known, which is a source
-        # that could not be asked, decided by this machine's state alone as `Claims` requires.
-        return None, None
-    narrowed: str | None = None
-    try:
-        try:
-            binding: Binding | None = (
-                None
-                if context.config is None
-                else binding_for(context.root, context.config, machine=context.machine)
-            )
-        except UnreadableRecord:
-            binding, narrowed = None, UNREADABLE_RECORD
-        if binding is not None and binding.state == BOUND:
-            wanted = overlay_entries(binding)
-        else:
-            wanted = common_entries(overlay)
-        granted = set(wanted_placements(wanted))
-    except (Failure, Refusal, OSError):
-        return None, None
-    return granted, narrowed
-
-
-def _wording(narrowed: str | None = None) -> Wording:
-    """How `hook-entries` names this area's ledger, the overlay that grants, and the commands that
-    repair them: stayfixed's own fixed strings, as `Wording` requires, none of them read from the
-    repository or the machine.
-
-    `narrowed` is `_granted_commands`' reason the grant stops at `common/`. For
-    `UNREADABLE_RECORD` the entries it leaves red are told the record cannot be read, and pointed
-    at the command that says why, in fixed text that names neither the project nor a remote,
-    which are the repository's.
-
-    A function and not a module-level constant only because building the value imports the doctor
-    area's surface and the ledger's path, and an import in this module sits inside a function body
-    (the module docstring says why)."""
-    from stayfixed.attach import ATTACH_STORE
-    from stayfixed.config.layout import ATTACH_LEDGER
-    from stayfixed.doctor.api import Wording
-
-    # Said of a checkout whose grant stops at `common/` for a reason other than a refusal.
-    only_common = "the overlay grants this checkout only what it grants every project, because its"
-    ungranted: str | None = None
-    regrant: str | None = None
-    if narrowed == UNREADABLE_RECORD:
-        ungranted = f"{only_common} binding record for this project cannot be read"
-        regrant = (
-            "run `stayfixed attach --check`, which reports why the binding record cannot be "
-            "read; repair it, then run `stayfixed doctor` again"
-        )
-    return Wording(
-        record=ATTACH_LEDGER,
-        unreadable=(
-            "cannot be read as a ledger, so which of those entries `stayfixed attach` installed "
-            "could not be established"
-        ),
-        inspect=f"check that {ATTACH_LEDGER} is readable and is the file your last attach wrote",
-        source="the overlay",
-        unsourced="this machine records no overlay",
-        unaskable=(
-            "the overlay this repository is bound to could not be asked which entries it grants"
-        ),
-        diagnose="run `stayfixed attach --check`, which reports why the overlay cannot be read",
-        setup="run `stayfixed setup --overlay <path>` to record the overlay that grants them",
-        vouch=f"`{ATTACH_STORE}`",
-        ungranted=ungranted,
-        regrant=regrant,
-    )
-
-
-def _claims(context: Context, ledger: _Ledger) -> Claims:
-    """What `attach` put into settings files, for `hook-entries`' provenance column.
-
-    The ledger says which marker ids the last `attach` recorded, and the overlay says which
-    marked commands it grants right now, and where; the row needs both, because the ledger is a
-    file a clone can commit. The overlay is asked unless the ledger is readable and records
-    nothing, because then nothing can be absolved and asking it costs a `git` call: an empty
-    ledger keeps its old answer, every entry claiming the marker is one no attach recorded. A
-    ledger that cannot be read is not that: the grant is what decides whether an entry beside it
-    may be the owner's (a warning) or is one nothing on this machine vouches for (red), so the
-    overlay is asked for it too.
-
-    `sourced` is whether this machine records an overlay at all, read from the machine file and
-    nothing else: without one the grant is empty because nothing could grant, and the row says
-    so and how to record one rather than that the overlay refused.
-    """
-    from stayfixed.doctor.api import Claims
-
-    found = _attach_ledger_entries(ledger.state(context.root))
-    granted, narrowed = _granted_commands(context) if found is None or found else (set(), None)
-    return Claims(
-        found,
-        None if granted is None else frozenset(granted),
-        sourced=context.overlay_root is not None,
-        wording=_wording(narrowed),
-    )
-
-
 def register() -> Contribution:
-    """The `attached` row and this area's claims, sharing one `_Ledger` for the report, and the
-    row's one `Answers` for the note store."""
+    """The `attached` row, with one `_Ledger` and one `Answers` for the note store, per report."""
     from stayfixed.doctor.api import Contribution, configured
     from stayfixed.memory.api import Answers
 
@@ -1006,7 +1076,4 @@ def register() -> Contribution:
     # `configured`: which store, which tree and whether the overlay is consulted at all are the
     # project's file's to say, so with none the row skips.
     attached = configured(lambda context, config: _attached(context, config, answers, ledger))
-    return Contribution(
-        checks=(("attached", attached),),
-        claims=lambda context: _claims(context, ledger),
-    )
+    return Contribution(checks=(("attached", attached),))

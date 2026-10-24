@@ -116,8 +116,9 @@ still hold in CI, which every agent's changes pass through. What was measured of
 `/hooks`, skips untrusted ones without a message and runs them anyway under
 `--dangerously-bypass-hook-trust`, and a blocking `PreToolUse` hook's reason reaches the model.
 Codex delivers a failed command on `PostToolUse` with no exit code, so the note after a failing
-test run does not speak on Codex. `stayfixed doctor` says what holds on Codex in its `codex-hooks`
-row whenever `[stayfixed] agents` lists `codex`.
+test run does not speak on Codex. Whether a stayfixed hook is trusted on Codex is not measured:
+nothing here knows how Codex records hook trust, so the table above is where what holds on Codex
+is said, and `stayfixed doctor` has no row for it.
 
 ## Install
 
@@ -186,7 +187,7 @@ mkdir -p .stayfixed/local/memory/developer
 printf -- '---\nname: first-note\ndescription: "When to open this note"\n---\n\nThe note.\n' \
   > .stayfixed/local/memory/developer/first-note.md
 stayfixed memory index      # renders .stayfixed/local/memory/MEMORY.md from the notes
-stayfixed doctor            # eighteen checks over this installation, one line; --json has the remedies
+stayfixed doctor            # seventeen checks over this installation, one line; --json has the remedies
 ```
 
 `memory index` will tell you the notes reach no session until you run
@@ -450,7 +451,7 @@ stayfixed adopt promote --builtin                      # the same, running none 
 stayfixed prove -- uv run --locked pytest tests/test_x.py   # run it here; proved, failed, not proven or refused, from the runner's own report
 
 # Diagnosing an installation
-stayfixed doctor                                       # eighteen checks over this installation, one line
+stayfixed doctor                                       # seventeen checks over this installation, one line
 stayfixed doctor --json                                # every check with its status, detail and remedy
 
 # Internal

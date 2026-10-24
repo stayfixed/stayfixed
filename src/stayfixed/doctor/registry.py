@@ -37,14 +37,12 @@ class Unregistered:
 
 def _well_formed(contribution: object) -> TypeGuard[Contribution]:
     """Whether `register()` answered a `Contribution` of `(name, check)` pairs, each name text
-    and each check callable, with claims that are a function or absent.
+    and each check callable.
 
     Asked before any of it is read, because every way an area's own code can get this wrong —
     `None`, the bare pairs, a pair without its check — otherwise fails later, inside the run,
     where it costs the report."""
     if not isinstance(contribution, Contribution) or not isinstance(contribution.checks, tuple):
-        return False
-    if contribution.claims is not None and not callable(contribution.claims):
         return False
     return all(
         isinstance(pair, tuple)
@@ -122,10 +120,7 @@ def _unregistered(answer: _Answer, owners: Mapping[str, str]) -> Contribution:
     other, and a name is never in it twice. It is named only once every contribution's names are
     known (`contributions`), because it stands in for rows the area could not give, and a stand-in
     that took a name first would turn away the healthy area whose row it is. No other failure row
-    can take the same name: each is named after its own area, and no two areas share one. The row
-    carries no claims, because the area's claims go with its rows: `hook-entries` then reads every
-    entry that area put into settings files as one nothing records, which is red, since an area
-    that cannot say what it wrote vouches for nothing.
+    can take the same name: each is named after its own area, and no two areas share one.
     """
     area = answer.qualified.removesuffix(".doctor").rpartition(".")[2]
     name, number = area, 1
@@ -151,8 +146,8 @@ def contributions(core: Sequence[tuple[str, Callable[[Context], Row]]]) -> list[
     in the report.
 
     **One failure policy.** Every way an area's contribution can fail is a defect in stayfixed's
-    own code, and every one costs the same thing: that area's rows and its claims become one red
-    row named after it (`_unregistered`), and the rest of the report stands. A `doctor.py` that
+    own code, and every one costs the same thing: that area's rows become one red row named
+    after it (`_unregistered`), and the rest of the report stands. A `doctor.py` that
     fails to import, a `register()` that raises, one that answers something that is not a
     `Contribution` of `(name, check)` pairs, and one that contributes a name already in the
     report, alike — none ends the report, which is what a user has left when everything else is

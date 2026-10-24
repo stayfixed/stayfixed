@@ -194,6 +194,49 @@ def scoped_command() -> str | None:
     return None
 
 
+def launcher(command: str) -> str | None:
+    """The executable `command` runs, where it is one `scoped_command` wrote: its first word, in
+    the double quotes `_quoted` puts around it, unescaped; `None` for any other command."""
+    if not command.startswith('"'):
+        return None
+    word: list[str] = []
+    escaped = False
+    for char in command[1:]:
+        if escaped:
+            word.append(char)
+            escaped = False
+        elif char == "\\":
+            escaped = True
+        elif char == '"':
+            return "".join(word)
+        else:
+            word.append(char)
+    return None
+
+
+def recorded_command(directory: Path) -> str | None:
+    """The path-scoped rules' command in the render at `directory`: the last `SCOPED_EVENT` group
+    matching `SCOPED_MATCHER` whose one entry runs `hook SCOPED_EVENT`, as `scoped_group` writes
+    it; `None` where the render holds none, or its hook file cannot be read. The render is this
+    machine's own file, written only by `write`."""
+    try:
+        document = json.loads(fsops.read_regular_text(directory / PLUGIN_DIRECTORY / HOOK_FILE))
+    except (OSError, UnicodeDecodeError, ValueError):
+        return None
+    hooks = document.get("hooks") if isinstance(document, dict) else None
+    groups = hooks.get(SCOPED_EVENT) if isinstance(hooks, dict) else None
+    found = None
+    for group in groups if isinstance(groups, list) else ():
+        entries = group.get("hooks") if isinstance(group, dict) else None
+        if group.get("matcher") != SCOPED_MATCHER or not isinstance(entries, list):
+            continue
+        if len(entries) == 1 and isinstance(entries[0], dict):
+            command = entries[0].get("command")
+            if isinstance(command, str) and command.endswith(f" hook {SCOPED_EVENT}"):
+                found = command
+    return found
+
+
 def scoped_group(command: str) -> dict[str, object]:
     """The `PostToolUse` entry group that runs `command` on every file a session touches."""
     return {
@@ -202,10 +245,12 @@ def scoped_group(command: str) -> dict[str, object]:
     }
 
 
-def read_parts(overlay: Path, project: str) -> dict[str, Part]:
+def read_parts(overlay: Path, project: str, *, command: str | None = None) -> dict[str, Part]:
     """What the plugin carries, by path relative to the plugin directory, read and nothing
     written: the hook file's union, the path-scoped rules' entry where there is one, and the
-    copied directories."""
+    copied directories. `command` is the path-scoped rules' command, this process's own
+    (`scoped_command`) where it is `None`: `doctor` passes the one the render holds, so a report
+    run through another launcher than `attach` was reads no drift for that alone."""
     share = overlay / PROJECTS / project
     sources = ((overlay / COMMON_CLAUDE, None), (share / PROJECT_CLAUDE, share))
     hooks: dict[str, list[object]] = {}
@@ -214,7 +259,7 @@ def read_parts(overlay: Path, project: str) -> dict[str, Part]:
             hooks.setdefault(event, []).extend(groups)
     # The rules are read whether or not there is a command, so a rule that cannot be read stops
     # every run alike.
-    if scoped_exist(overlay, project) and (command := scoped_command()) is not None:
+    if scoped_exist(overlay, project) and (command := command or scoped_command()) is not None:
         hooks.setdefault(SCOPED_EVENT, []).append(scoped_group(command))
     parts = {HOOK_FILE: Part(json.dumps({"hooks": hooks}, indent=2) + "\n")}
     for source, _ in sources:
@@ -235,13 +280,9 @@ def _digest(files: Mapping[str, Part]) -> str:
     return digest.hexdigest()
 
 
-def write(id: str, parts: Mapping[str, Part], *, stale: tuple[str, ...] = ()) -> RenderRecord:
-    """Write the marketplace, the plugin's manifest and `parts` under `<data>/delivery/<id>/`,
-    replacing what is there, and remove each of `stale` this render no longer holds.
-
-    `stale` is the parts an earlier render recorded, paths relative to the render directory, named
-    before anything is looked at and each removed through the contained walk, so none can reach
-    past the directory the id names."""
+def _files(id: str, parts: Mapping[str, Part]) -> dict[str, Part]:
+    """Every file of the render named `id`, by its path relative to the render directory: the
+    marketplace, the plugin's manifest and `parts`."""
     marketplace = {
         "name": marketplace_name(id),
         "owner": {"name": "stayfixed"},
@@ -254,11 +295,26 @@ def write(id: str, parts: Mapping[str, Part], *, stale: tuple[str, ...] = ()) ->
         ],
     }
     plugin = {"name": plugin_name(id), "description": _DESCRIPTION}
-    files = {
+    return {
         MARKETPLACE_FILE: Part(json.dumps(marketplace, indent=2) + "\n"),
         PLUGIN_FILE: Part(json.dumps(plugin, indent=2) + "\n"),
         **{f"{PLUGIN_DIRECTORY}/{relative}": part for relative, part in parts.items()},
     }
+
+
+def digest(id: str, parts: Mapping[str, Part]) -> str:
+    """The digest `write` would record for `parts` rendered under `id`, with nothing written."""
+    return _digest(_files(id, parts))
+
+
+def write(id: str, parts: Mapping[str, Part], *, stale: tuple[str, ...] = ()) -> RenderRecord:
+    """Write the marketplace, the plugin's manifest and `parts` under `<data>/delivery/<id>/`,
+    replacing what is there, and remove each of `stale` this render no longer holds.
+
+    `stale` is the parts an earlier render recorded, paths relative to the render directory, named
+    before anything is looked at and each removed through the contained walk, so none can reach
+    past the directory the id names."""
+    files = _files(id, parts)
     directory = delivery_directory(id)
     # The plain-path form for the directory itself, as `binding.record` writes this machine's own
     # data directory; every file inside it goes through the walk that refuses a symlink.

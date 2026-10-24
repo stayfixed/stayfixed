@@ -231,7 +231,7 @@ def _doctor(walk: Walkthrough, *, root: Path | None = None) -> list[dict[str, st
     )
     assert done.stdout, done.stderr
     rows: list[dict[str, str]] = json.loads(done.stdout)["checks"]
-    assert len(rows) == 18, rows
+    assert len(rows) == 17, rows
     return rows
 
 
@@ -626,8 +626,7 @@ def test_detach_returns_the_project_to_where_it_started(tmp_path: Path) -> None:
 
 
 def test_doctor_is_green_on_the_attached_fixture(tmp_path: Path) -> None:
-    # Green meaning: no `red`, and the only `skip`s are the one this build cannot answer — the
-    # Codex hook-trust hash nothing has measured yet — and `ci-ref`, which skips on a state this
+    # Green meaning: no `red`, and the only `skip` is `ci-ref`, which skips on a state this
     # fixture is in rather than on a limit of the build: it records no `[ci] ref`, because no
     # released tag matches the stayfixed running here for `init` to have pinned.
     # `files` is not among them: the release ships `hooks/hashes.json`, and this walk runs
@@ -637,14 +636,13 @@ def test_doctor_is_green_on_the_attached_fixture(tmp_path: Path) -> None:
     walk = _install_path(tmp_path)
     rows = _doctor(walk)
     assert [row["name"] for row in rows if row["status"] == RED] == []
-    assert [row["name"] for row in rows if row["status"] == SKIP] == ["codex-hooks", "ci-ref"]
+    assert [row["name"] for row in rows if row["status"] == SKIP] == ["ci-ref"]
     assert next(row for row in rows if row["name"] == "files")["status"] == OK
 
 
-# What `docs/cli.md` says `stayfixed doctor` launches: eight subprocesses on a green attached
-# installation *besides* the `ci-ref` row, which the stub runner below answers in process rather
-# than launching — so eight here and nine in production on a repository that records a `[ci] ref`,
-# which is what `docs/cli.md` says.
+# What `docs/cli.md` says `stayfixed doctor` launches on a green attached installation *besides*
+# the `ci-ref` row, which the stub runner below answers in process rather than launching — so one
+# more in production on a repository that records a `[ci] ref`, which is what `docs/cli.md` says.
 # Written as a number rather than as a set of argv lists so the failure reads as "the count
 # moved", which is the claim.
 #
@@ -669,7 +667,14 @@ def test_doctor_is_green_on_the_attached_fixture(tmp_path: Path) -> None:
 # Nine and not eight since a session's preferences resolve over the overlay's project file, read
 # only for the project the binding record names: the report reads the configuration as a session
 # does, so it asks git for the common directory once more, where the binding id is kept.
-DOCTOR_LAUNCHES = 9
+#
+# Fourteen and not nine since the `attached` row reads the delivery — the binding id, whether a
+# placed path is tracked (`git ls-files`) or ignored (`git check-ignore`), and whether a tracked
+# file names the delivery (`git grep`) — and since this case runs under the walkthrough's `HOME`,
+# where the binding record is. Under the suite's own `HOME` the row found no record, read the
+# checkout as unbound and warned, and asked nothing a bound checkout's rows ask, so the nine it
+# counted were not a green installation's.
+DOCTOR_LAUNCHES = 14
 
 
 def test_doctor_launches_the_number_of_subprocesses_it_says_it_does(
@@ -701,6 +706,9 @@ def test_doctor_launches_the_number_of_subprocesses_it_says_it_does(
         launched.append([str(part) for part in argv])
         return real(argv, *args, **kwargs)
 
+    # The binding record and the render live under `HOME`, which the walkthrough's commands ran
+    # under; this process reads them under its own.
+    monkeypatch.setenv("HOME", str(walk.home))
     monkeypatch.setattr(subprocess, "Popen", spy)
     # The one call in this module that runs `run_checks` in this process, so it needs a runner to
     # hand it; `ci-ref`, the only row that would use one, skips on this fixture. Everything else
@@ -714,14 +722,20 @@ def test_doctor_launches_the_number_of_subprocesses_it_says_it_does(
         env=_doctor_env(walk),
     )
     monkeypatch.undo()
-    # The report is green first, so a count taken from a run that fell over early cannot pass.
+    # The report is green first, and the checkout attached and delivered to, so a count taken
+    # from a run that fell over early, or read the checkout as unbound, cannot pass.
     assert [check.name for check in checks if check.status == RED] == []
+    attached = next(check for check in checks if check.name == "attached")
+    assert (attached.status, attached.detail.startswith("attached; the delivery is in place;")) == (
+        OK,
+        True,
+    ), attached
     assert len(launched) == DOCTOR_LAUNCHES, launched
-    # And they are the nine the paragraph names, not nine of something else: one wrapper probe,
-    # and eight `git` questions. Asserted by shape rather than by full argv, because each of the
-    # eight `git` calls carries the temporary checkout or overlay it asks about.
+    # And they are the fourteen the paragraph names, not fourteen of something else: one wrapper
+    # probe, and thirteen `git` questions. Asserted by shape rather than by full argv, because
+    # each `git` call carries the temporary checkout or overlay it asks about.
     assert sum(1 for argv in launched if argv[0] == str(WRAPPER)) == 1
-    assert sum(1 for argv in launched if argv[0] == "git") == 8
+    assert sum(1 for argv in launched if argv[0] == "git") == 13
 
 
 def test_doctor_is_red_when_the_memory_path_is_a_real_directory(tmp_path: Path) -> None:
