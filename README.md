@@ -118,7 +118,9 @@ still hold in CI, which every agent's changes pass through. What was measured of
 Codex delivers a failed command on `PostToolUse` with no exit code, so the note after a failing
 test run does not speak on Codex. Whether a stayfixed hook is trusted on Codex is not measured:
 nothing here knows how Codex records hook trust, so the table above is where what holds on Codex
-is said, and `stayfixed doctor` has no row for it.
+is said, and `stayfixed doctor` has no row for it. Of your overlay, `stayfixed attach` delivers
+Codex its rules alone, copied into `.codex/rules/`; its hooks, skills and agents reach Claude Code
+through the plugin `attach` renders and are not delivered to Codex.
 
 ## Install
 
@@ -191,7 +193,7 @@ stayfixed doctor            # seventeen checks over this installation, one line;
 ```
 
 `memory index` will tell you the notes reach no session until you run
-`stayfixed trust approve memory` once, yourself, in a terminal — that is the trust gate, and
+`stayfixed trust approve memory` once — that is the trust gate, and
 [The threat model, in one paragraph](#the-threat-model-in-one-paragraph) says why it exists.
 Add `.stayfixed/local/` to `.gitignore` if it is not there already.
 
@@ -393,7 +395,7 @@ stayfixed memory session-context --bundle standing-rules --part 1
 stayfixed memory refs                                  # backticked paths in notes that no longer resolve, and the link graph as advice
 stayfixed trust list                                   # each approval kind's state here, and the command that approves it
 stayfixed trust list --all                             # every approval on this machine
-stayfixed trust approve memory                         # approve the notes inside this repository, yourself, in a terminal
+stayfixed trust approve memory                         # approve the notes inside this repository, and print what was recorded
 stayfixed trust revoke memory                          # withdraw that approval; needs no terminal
 
 # The bug ledger
@@ -478,11 +480,10 @@ erase what you typed. [docs/cli.md](https://github.com/stayfixed/stayfixed/blob/
 The one command with a consequence worth stating twice. It records a hash of everything the
 store yields — every note, `MEMORY.md`, and the repository-controlled configuration that is
 rendered into it — against the store's absolute path, in `~/.config/stayfixed/trust.json`.
-It is asked of you: run from anything whose standard input is not a terminal, an agent's shell
-tool among them, it refuses and names the command to run yourself. That check slows an agent's
-bare call and guarantees nothing against one that can open a terminal; `stayfixed trust list`
-shows every kind's state, and `stayfixed trust revoke memory` withdraws the approval from
-anywhere.
+It records and prints what it recorded, from wherever it is run: an approval holds against what a
+repository ships, not against an agent in your session, whose shell can write the record anyway,
+so no terminal is asked for. `stayfixed trust list` shows every kind's state, and `stayfixed trust
+revoke memory` withdraws the approval from anywhere.
 
 You are saying: *I have read what this repository committed under its memory directory, and it
 may reach the model as data.* Any later change to any of those files makes the hash disagree

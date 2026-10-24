@@ -3185,14 +3185,13 @@ before = "    if DELIMITER in text:\n        raise UnsafeNote("
 after = "    if False:\n        raise UnsafeNote("
 reddens = ["tests/memory/test_trust.py::test_a_body_that_forges_the_marker_is_refused"]
 
-# The old spelling runs the same approve path, terminal check included, and never records on its
-# own.
+# The old spelling runs the same approve path, and never records on its own.
 [[mutation]]
-name = "the memory trust alias asks no terminal"
+name = "the memory trust alias records without the approve path"
 file = "src/stayfixed/memory/commands.py"
-before = "    approved = approve_kind(trust.MEMORY, context, given)"
+before = "    approved = approve_kind(trust.MEMORY, context)"
 after = '    trust.record(*_store(args))\n    return Result("recorded")'
-reddens = ["tests/trust/test_commands.py::test_no_terminal_no_approval[memory-trust]"]
+reddens = ["tests/trust/test_commands.py::test_an_approval_with_no_terminal_records_and_prints_what_it_recorded[memory-trust]"]
 
 # For as long as the old spelling lives, its `--json` keeps its old keys, each read off the new run.
 [[mutation]]

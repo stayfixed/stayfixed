@@ -5,8 +5,8 @@ clone, a pull or a pull request does not reach it, since it lies under the home 
 database records, outside every repository. A repository whose hooks the harness runs (a committed
 `.claude/settings.json` hook in a folder the person trusted) is code running as that person, and
 writes any file they can, the record included. Against an agent whose shell can write that file,
-an approval holds nothing: the terminal check `trust approve` makes is a speed bump (`kinds`'
-docstring says why), and stayfixed neither enforces nor checks anything stronger. What stops such
+an approval holds nothing: `trust approve` asks for no terminal (`approving`' docstring says why),
+and stayfixed neither enforces nor checks anything stronger. What stops such
 an agent is the harness's own sandbox, configured by the person: under Claude Code, its sandbox,
 which confines what the shell tool writes, and a `permissions.deny` rule over the record's
 directory, which the sandboxed shell and the file tools both honour. `setup --approval-boundary`

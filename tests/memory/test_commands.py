@@ -11,7 +11,6 @@ from stayfixed.cli import build_parser, discover_registrars, run
 from stayfixed.findings import LISTED_LIMIT
 from stayfixed.jsonobject import LONG_NUMBER, NESTED
 from stayfixed.printed import UNPRINTABLE
-from stayfixed.trust import kinds
 from stayfixed.trust.record import NO_HOME, recorded
 from tests import parserlimits
 from tests.crafted import CRAFTED, CRAFTED_TOML, assert_never_raw
@@ -45,14 +44,6 @@ NOTE = (
 
 def invoke(argv: list[str]) -> int:
     return run(argv, parser=build_parser(discover_registrars()))
-
-
-@pytest.fixture(autouse=True)
-def _at_a_terminal(monkeypatch: pytest.MonkeyPatch) -> None:
-    """`memory trust --in-repo-memory` is asked of a person at a terminal (`trust.kinds`); these
-    cases run it in-process, where the seam stands in for one. `tests/trust/test_commands.py`
-    holds the refusal without a terminal, through a real subprocess."""
-    monkeypatch.setattr(kinds, "interactive", lambda: True)
 
 
 @pytest.fixture

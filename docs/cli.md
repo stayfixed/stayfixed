@@ -197,17 +197,14 @@ and its `state`, and for a kind with nothing to describe, `kind`, `state` (`unde
 ## `stayfixed trust approve KIND [--store PATH] [--root PATH] [--machine PATH]`
 
 Record that a person approved every subject of `KIND` in this checkout at its digest now; for
-`memory`, that the notes sitting inside this repository may reach the model. Each subject's label
-and digest are printed before the run ends.
+`memory`, that the notes sitting inside this repository may reach the model. Each subject is
+printed before the run ends with the kind, its label and the digest recorded.
 
-**It is asked of a person.** When standard input is not a terminal it refuses with exit `2`,
-writes nothing, names the exact command for the person at the machine to run in their own
-terminal, and says that an agent must not run it for them. An agent's shell tool runs a command
-with no terminal on standard input (measured on Claude Code 2.1.296, in a terminal session and on
-the desktop app's Code tab alike; no other harness, Codex among them, was measured), so a bare
-call from one is refused; an agent able to open a pseudo-terminal passes the check, which is a
-speed bump and no guarantee.
-No flag skips the check, and nothing takes `--yes`.
+**It records and prints, and asks for no terminal.** Run from anything, an agent's shell tool
+among them, it records what it was asked to and says what it recorded. A terminal check refused a
+bare call from an agent's shell tool and passed one that opened a pseudo-terminal, against an agent
+that can write the record anyway, so it stood in front of nobody; what an approval holds against is
+below. Nothing takes `--yes`.
 
 **What an approval holds against.** Repository bytes: stayfixed never writes `trust.json` from
 what a repository holds, and a clone, a pull or a pull request does not reach it, since it lies
@@ -273,7 +270,7 @@ an immutable flag does; `trust revoke` says the same. A directory you may not wr
 exits `1`, naming it.
 
 `stayfixed memory trust --in-repo-memory` is the old spelling of `stayfixed trust approve memory`:
-it runs this command, terminal check included, says so after it ran, and is removed in `0.5.0`.
+it runs this command, says so after it ran, and is removed in `0.5.0`.
 Until then its `--json` carries this command's keys and keeps the old spelling's beside them, each
 read off this run: `was_trusted`, whether the store was approved at its digest before the run;
 `trusted`, whether the record holds that digest after it; and `digest`, the store's digest.

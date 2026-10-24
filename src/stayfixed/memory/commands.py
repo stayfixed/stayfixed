@@ -401,15 +401,14 @@ ALIAS_NOTE = (
 
 
 def run_trust(args: argparse.Namespace) -> Result:
-    """The old spelling of `stayfixed trust approve memory`: the same approve path, the terminal
-    check included.
+    """The old spelling of `stayfixed trust approve memory`: the same approve path.
 
     Its `--json` keeps the old spelling's keys for as long as the spelling lives, beside the new
     ones, each read off the new run: `was_trusted`, whether the store was approved at its digest
     before the run; `trusted`, whether the record holds that digest after it; `digest`, the
     store's digest."""
-    context, given = kind_context(args)
-    approved = approve_kind(trust.MEMORY, context, given)
+    context, _ = kind_context(args)
+    approved = approve_kind(trust.MEMORY, context)
     # The memory kind describes one store per checkout, or refuses before anything is approved.
     (store,) = approved.data["approved"]
     after = state(context.machine, trust.MEMORY, store["subject"], store["digest"])
@@ -550,9 +549,8 @@ def register(groups: SubParsers) -> None:
         action="store_true",
         required=True,
         # Required and never read by `run_trust`: the old spelling required it, and an alias keeps
-        # its spelling whole until it is removed. What stops the command being run without a
-        # person is the terminal check on the approve path both spellings share, not this flag,
-        # and there is nothing here to branch on: trust is only ever *consulted* for content that
+        # its spelling whole until it is removed. It stops nothing, and there is nothing here to
+        # branch on: trust is only ever *consulted* for content that
         # lives in the repository — the notes, when `inside_project(store)`, and `MEMORY.md`
         # whenever it resolves inside the repository, which it does in overlay mode too, since
         # `store.path` is a real directory there. For a store holding neither,

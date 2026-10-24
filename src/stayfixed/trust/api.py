@@ -9,11 +9,11 @@ published: a consumer that needs one grows this list in a commit that names it.
 
 `ApprovalKind`, `KindContext` and `Subject` are what an area's `approvals.py` builds its `KINDS`
 from (`memory.approvals`), and `approve_kind` is the approve path the `memory trust` alias runs,
-terminal check included, on what `kind_context` reads off its command line, so the old spelling
+on what `kind_context` reads off its command line, so the old spelling
 cannot read its flags another way than the new one; both come from `approving`, not from the command
 module, so importing the record loads no CLI. `PERSON_RUNS` is the sentence `memory` and `attach`
 tell their reader in to have an approval made: the person at the machine runs it, and an agent does
-not, in the words `trust approve`'s own refusal uses.
+not, in the words `trust list` uses.
 
 `setup --approval-boundary` prints what keeps an agent's shell out of the record, and writes none
 of it (`boundary`): `record_deny_rules` over the directory `record_path` names, `SANDBOX_ON` for

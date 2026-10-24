@@ -1,20 +1,18 @@
 """`stayfixed trust list | approve | revoke` (`src/stayfixed/trust/commands.py`), the `memory`
 kind the memory area contributes, and the `memory trust --in-repo-memory` alias.
 
-`approve` is asked of a person: through a real subprocess whose standard input is not a terminal
-it refuses and writes nothing, and under a pseudo-terminal (`scripts/ptyrun.py`) it approves.
-In-process cases replace the terminal check (`kinds.interactive`) instead."""
+`approve` records and prints what it recorded, with no terminal check, as a real subprocess whose
+standard input is not a terminal shows."""
 
 from __future__ import annotations
 
-import functools
 import json
 import shlex
 import subprocess
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
-from types import ModuleType, SimpleNamespace
+from types import SimpleNamespace
 
 import pytest
 
@@ -22,28 +20,22 @@ from stayfixed import fsops
 from stayfixed.memory.approvals import NO_CONFIGURATION
 from stayfixed.printed import CLIPPED_CHARS
 from stayfixed.trust import kinds, record
-from stayfixed.trust.approving import NOT_A_TERMINAL, UNKNOWN_KIND
+from stayfixed.trust.approving import UNKNOWN_KIND
 from stayfixed.trust.commands import NOTHING_TO_REVOKE, UNDESCRIBED
 from stayfixed.trust.kinds import DUPLICATE_KIND, ApprovalKind, Subject
-from stayfixed.trust.record import RECORD, State, approve_all, record_path, recorded, state
+from stayfixed.trust.record import RECORD, State, approve_all, recorded, state
 from tests.boundaries.test_delivery import IMPORT_EACH
 from tests.crafted import CRAFTED, assert_never_raw
 from tests.floor import developer_free_environ
 from tests.memory.test_commands import common, invoke
 from tests.memory.test_commands import project as project
 from tests.sandboxed import refuse_writes_under
-from tests.scriptload import SCRIPTS, load
 
 ROOT = Path(__file__).resolve().parents[2]
 LAUNCHER = [sys.executable, str(ROOT / "scripts" / "stayfixed")]
 T0 = datetime(2026, 10, 16, 9, 30, tzinfo=UTC)
 
 SPELLINGS = [["trust", "approve", "memory"], ["memory", "trust", "--in-repo-memory"]]
-
-
-@functools.cache
-def _ptyrun() -> ModuleType:
-    return load(SCRIPTS / "ptyrun.py", "ptyrun_for_trust_tests")
 
 
 def _machine(project: Path) -> Path:
@@ -67,19 +59,16 @@ def _files(root: Path) -> dict[str, bytes]:
     }
 
 
-@pytest.fixture
-def at_a_terminal(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The in-process seam: standard input reads as a terminal."""
-    monkeypatch.setattr(kinds, "interactive", lambda: True)
-
-
 @pytest.mark.parametrize("argv", SPELLINGS, ids=["trust-approve", "memory-trust"])
-def test_no_terminal_no_approval(project: Path, tmp_path: Path, argv: list[str]) -> None:
-    # An agent's shell tool runs a command with no terminal on standard input, so both spellings
-    # refuse there with exit 2, name the exact command for a person to run, and write no byte.
-    # Mutations (`mutations/`'s "trust approve asks no terminal" -> the first spelling approves;
-    # "the memory trust alias asks no terminal" -> the second does).
-    before = _files(tmp_path)
+def test_an_approval_with_no_terminal_records_and_prints_what_it_recorded(
+    project: Path, argv: list[str]
+) -> None:
+    # The terminal check refused a bare call from an agent's shell tool and passed one that opened
+    # a pseudo-terminal, against an agent whose shell can write the record anyway: a speed bump in
+    # front of nobody's adversary. So both spellings record the approval with no terminal on
+    # standard input, and print the kind, the subject and the digest they recorded. Mutation
+    # (`mutations/`'s "the memory trust alias records without the approve path"): the second
+    # spelling prints no digest.
     proc = subprocess.run(
         [*LAUNCHER, *argv, *common(project)],
         stdin=subprocess.DEVNULL,
@@ -88,29 +77,9 @@ def test_no_terminal_no_approval(project: Path, tmp_path: Path, argv: list[str])
         check=False,
         env=developer_free_environ(),
     )
-    command = shlex.join(["stayfixed", "trust", "approve", "memory", *common(project)])
-    assert proc.returncode == 2, proc.stderr
-    assert proc.stderr == f"stayfixed: refused: {NOT_A_TERMINAL.format(command=command)}\n"
-    path = record_path(_machine(project))
-    assert path is not None and not path.exists()
-    assert _files(tmp_path) == before
-
-
-def test_the_refusal_asks_for_the_person_and_tells_an_agent_to_stop() -> None:
-    # The refusal's likely reader is an agent's shell tool. It once told that reader to run the
-    # command "yourself, in a terminal" and said the check guarantees nothing against an agent that
-    # can open one, which pointed the agent at the way past it. It names the person instead, tells
-    # an agent to stop, and says nothing of how a terminal could be had. Mutation (`mutations/`'s
-    # "the terminal refusal tells its reader to run the approval itself"): the old wording reads
-    # "yourself", and names no person.
-    refusal = NOT_A_TERMINAL.format(command="stayfixed trust approve memory")
-    assert (
-        "ask the person at this machine to run `stayfixed trust approve memory` in their own "
-        "terminal" in refusal
-    )
-    assert refusal.endswith("an agent must not run it for them")
-    for said in ("yourself", "pseudo", "guarantee", "open a terminal", "pty"):
-        assert said not in refusal
+    assert proc.returncode == 0, proc.stderr
+    approval = recorded(_machine(project))[("memory", _store_key(project))]
+    assert f"approved memory .stayfixed/local/memory at digest {approval.digest}" in proc.stdout
 
 
 # The approval as every sentence below asks for it: of the person at the machine, with an agent
@@ -125,9 +94,9 @@ def test_every_sentence_that_names_the_memory_approval_asks_for_the_person() -> 
     # The sentences outside `trust` that name the approval reach a session's context or an agent's
     # shell tool, and each used to say "run `stayfixed trust approve memory` in a terminal", which
     # an agent able to open a pseudo-terminal reads as its instruction. Each asks for the person
-    # now, in the words `trust approve`'s own refusal uses. `REVOKED` is written out in its module,
+    # now, in the words `trust list` uses. `REVOKED` is written out in its module,
     # which imports nothing at module level that discovery would load, so it is held whole.
-    # Mutations (`mutations/`'s "the terminal refusal tells its reader to run the approval itself"
+    # Mutations (`mutations/`'s "the approval sentence tells its reader to run the approval itself"
     # -> every sentence built on the shared words; "the revoked link line tells its reader to
     # approve in a terminal" -> `REVOKED`; "memory asks no person for the store's approval" -> the
     # three `memory` sentences; "attach asks no person for the store's approval" -> the two
@@ -147,23 +116,7 @@ def test_every_sentence_that_names_the_memory_approval_asks_for_the_person() -> 
     assert f"read what changed, then {ASKED}; then run `stayfixed attach` again" == REAPPROVE
 
 
-@pytest.mark.parametrize("argv", SPELLINGS, ids=["trust-approve", "memory-trust"])
-def test_a_terminal_approves(project: Path, tmp_path: Path, argv: list[str]) -> None:
-    # The other half of `test_no_terminal_no_approval`: under a pseudo-terminal both spellings
-    # approve the store at its digest now. No mutation of its own: it is the positive control for
-    # that case, without which a refusal for any reason would pass it.
-    code, output = _ptyrun().run_in_pty(
-        [*LAUNCHER, *argv, *common(project)],
-        env=developer_free_environ(),
-    )
-    assert code == 0, output
-    assert _approved(project)
-    assert "approved memory .stayfixed/local/memory at digest " in output
-
-
-def test_the_alias_says_its_new_spelling(
-    project: Path, capsys: pytest.CaptureFixture[str], at_a_terminal: None
-) -> None:
+def test_the_alias_says_its_new_spelling(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
     # The old spelling names the new one once it has run. Mutation: none of its own; the note is
     # one constant, and this asserts the line it prints.
     from stayfixed.memory.commands import ALIAS_NOTE
@@ -173,7 +126,7 @@ def test_the_alias_says_its_new_spelling(
 
 
 def test_the_alias_keeps_its_old_json_keys(
-    project: Path, capsys: pytest.CaptureFixture[str], at_a_terminal: None
+    project: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # The old spelling lives one release, and a caller of its `--json` read `was_trusted`,
     # `trusted` and `digest`; they stay beside the approve path's keys, each read off this run.
@@ -198,7 +151,7 @@ def test_the_alias_keeps_its_old_json_keys(
     )
 
 
-def test_revoke_needs_no_terminal(project: Path, tmp_path: Path, at_a_terminal: None) -> None:
+def test_revoke_needs_no_terminal(project: Path, tmp_path: Path) -> None:
     # Withdrawing is the direction that fails safe, so it runs from an agent's shell tool too.
     # Mutation (`mutations/`'s "trust revoke revokes nothing"): the approval stays.
     assert invoke(["trust", "approve", "memory", *common(project)]) == 0
@@ -220,7 +173,6 @@ def test_a_record_write_a_sandbox_refused_says_a_person_must_run_it(
     project: Path,
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
-    at_a_terminal: None,
     verb: str,
 ) -> None:
     # From an agent's sandboxed shell the machine directory cannot be written (`EPERM`, as macOS's
@@ -248,7 +200,6 @@ def test_revoke_of_nothing_lists_what_is_recorded(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
-    at_a_terminal: None,
 ) -> None:
     # Exit 1 and the kind's recorded subjects, named on the line and in `--json` whole. The
     # subject, an absolute path, used to print withheld, which named nothing. Mutations
@@ -337,7 +288,7 @@ def test_list_says_why_a_kind_has_nothing_to_approve(
 
 
 def test_list_names_the_command_on_every_unapproved_line(
-    project: Path, capsys: pytest.CaptureFixture[str], at_a_terminal: None
+    project: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # Mutation (`mutations/`'s "trust list names no command on an unapproved line"): the missing
     # line says only its state.
@@ -354,7 +305,7 @@ def test_list_names_the_command_on_every_unapproved_line(
 
 
 def test_list_reads_lapsed_after_a_note_changes(
-    project: Path, capsys: pytest.CaptureFixture[str], at_a_terminal: None
+    project: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # The digest moves with a note, and the record tells that from no approval at all. No mutation
     # of its own: `state`'s arms are held in `tests/trust/test_record.py`.
@@ -370,7 +321,7 @@ def test_list_reads_lapsed_after_a_note_changes(
 
 
 def test_list_all_names_every_record_on_the_machine(
-    project: Path, capsys: pytest.CaptureFixture[str], at_a_terminal: None
+    project: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # `--all` reads the record, not the checkout. No mutation of its own: a listing with nothing
     # in it fails the length assertion below.
@@ -385,7 +336,7 @@ def test_list_all_names_every_record_on_the_machine(
 
 
 def test_an_unknown_kind_names_the_known_ones(
-    project: Path, capsys: pytest.CaptureFixture[str], at_a_terminal: None
+    project: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # The name typed is not repeated, the known ones are. No mutation of its own: an unknown kind
     # reaching the approve path raises a `KeyError`, an internal error, which the exact line here
@@ -430,7 +381,7 @@ def _newer(project: Path) -> None:
 
 
 def test_list_reports_an_approval_a_session_uses_past_a_newer_section(
-    project: Path, capsys: pytest.CaptureFixture[str], at_a_terminal: None
+    project: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # A session keeps reading a `stayfixed.toml` a newer release added a section to, so it keeps
     # using the store's approval; `trust list` said there was nothing to approve. Mutation
@@ -445,7 +396,7 @@ def test_list_reports_an_approval_a_session_uses_past_a_newer_section(
 
 
 def test_revoke_withdraws_an_approval_a_session_uses_past_a_newer_section(
-    project: Path, capsys: pytest.CaptureFixture[str], at_a_terminal: None
+    project: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # The fail-safe direction withdraws what a session would use, whatever a command would refuse
     # in the file: the documented spelling refused here while the session went on injecting.
@@ -458,7 +409,7 @@ def test_revoke_withdraws_an_approval_a_session_uses_past_a_newer_section(
 
 
 def test_revoke_that_cannot_describe_the_checkout_names_the_spelling_that_can(
-    project: Path, capsys: pytest.CaptureFixture[str], at_a_terminal: None
+    project: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # Once `stayfixed.toml` is gone the kind cannot describe the store, so a bare revoke cannot
     # find its key; it says why, names `--subject` and `trust list --all`, lists what is recorded,

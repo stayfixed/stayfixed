@@ -19,7 +19,9 @@ root comes from the machine configuration, not from what is typed here.
    skills and agents as this checkout's local plugin, links the notes into this checkout and
    every worktree, and prints one screen: the binding, the hook entries, skills and agents
    added or removed since the last attach, and the allow rules added. Relay that screen to the
-   user. It asks for no confirmation: the overlay is the owner's own.
+   user. It asks for no confirmation: the overlay is the owner's own. On Codex only the overlay's
+   rules arrive, copied into `.codex/rules/`; its hooks, skills and agents reach Claude Code alone,
+   so say that rather than tell a Codex user they were delivered.
 3. If the report or the run names two remotes -- this checkout's `origin` is not the one the
    binding or the overlay records -- relay that line. It refuses nothing: the binding is an id
    this machine keeps, never the remote. Never print or relay more of the binding id than the

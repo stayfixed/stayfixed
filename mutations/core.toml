@@ -4392,27 +4392,14 @@ before = "    base = machine_config_path() if machine is None else machine"
 after = "    base = Path.home() / \".config\" / \"stayfixed\" / \"config.toml\" if machine is None else machine"
 reddens = ["tests/trust/test_record.py::test_the_record_ignores_xdg"]
 
-# `stayfixed trust` (`src/stayfixed/trust/commands.py`). An approval is asked of a person: with no
-# terminal on standard input it refuses and writes nothing.
+# A sentence that names an approval command speaks of the person and tells an agent to stop; it
+# never tells its reader, likely an agent, to run the approval itself.
 [[mutation]]
-name = "trust approve asks no terminal"
-file = "src/stayfixed/trust/approving.py"
-before = "    if not discovered.interactive():\n        raise Refusal("
-after = "    if False:\n        raise Refusal("
-reddens = [
-  "tests/trust/test_commands.py::test_no_terminal_no_approval[trust-approve]",
-  "tests/trust/test_commands.py::test_no_terminal_no_approval[memory-trust]",
-]
-
-# The refusal speaks of the person and tells an agent to stop; it never tells its reader, likely
-# an agent, to run the approval itself.
-[[mutation]]
-name = "the terminal refusal tells its reader to run the approval itself"
+name = "the approval sentence tells its reader to run the approval itself"
 file = "src/stayfixed/trust/approving.py"
 before = '    "ask the person at this machine to run `{command}` in their own terminal — an agent must not "'
 after = '    "run `{command}` yourself, in a terminal — an agent must not "'
 reddens = [
-  "tests/trust/test_commands.py::test_the_refusal_asks_for_the_person_and_tells_an_agent_to_stop",
   "tests/trust/test_commands.py::test_every_sentence_that_names_the_memory_approval_asks_for_the_person",
   "tests/trust/test_commands.py::test_list_names_the_command_on_every_unapproved_line",
 ]

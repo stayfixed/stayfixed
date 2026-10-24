@@ -21,16 +21,10 @@ from stayfixed.config.owner import GATE_BUDGET, IGNORED_NOTE, MACHINE_RESET_NOTE
 from stayfixed.config.reading import NOT_A_SWITCH, MachineConfigError
 from stayfixed.config.session import session_config
 from stayfixed.doctor.api import OK, RED
-from stayfixed.trust import kinds
 from tests.doctor.test_checks import _by_name, _checks
 from tests.memory.test_commands import CONFIG, NOTE, invoke
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
-
-
-@pytest.fixture(autouse=True)
-def _at_a_terminal(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(kinds, "interactive", lambda: True)
 
 
 def _project(tmp_path: Path, machine: str, *, volatile: int = 0) -> tuple[Path, Path]:
