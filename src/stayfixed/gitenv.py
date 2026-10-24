@@ -35,6 +35,7 @@ replacement character, so a name that is not UTF-8 cannot end it as an internal 
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -413,6 +414,30 @@ def git_answer(root: Path, *args: str) -> GitAnswer:
     if probe[0] != 0:
         return GitAnswer(None, Unasked.BROKEN)
     return GitAnswer(None)
+
+
+# A URL's scheme and the userinfo before the authority's last `@`: `[^/?#]*` stops at the path, so
+# an `@` in the path (`…/p@v1`) is not userinfo, and a password holding `@` is taken whole.
+_USERINFO = re.compile(r"(?P<scheme>[A-Za-z][A-Za-z0-9+.-]*://)(?P<userinfo>[^/?#]*)@")
+
+
+def without_userinfo(url: str) -> str:
+    """`url` as it may be printed or recorded: a remote can carry a token as its userinfo
+    (`https://user:token@host/…`), and `attach` prints the origin and keeps it on this machine.
+
+    Every scheme loses its userinfo but ssh's, whose user (`ssh://git@host/…`) is no secret and is
+    part of how one remote is told from another (`memory.store`'s spellings); there only a
+    `:password` goes. The scp form (`git@host:path`) has no scheme and carries no password, so it
+    is left as it is."""
+    found = _USERINFO.match(url)
+    if found is None:
+        return url
+    scheme, userinfo = found["scheme"], found["userinfo"]
+    rest = url[found.end() :]
+    if "ssh" in scheme.lower():
+        user = userinfo.split(":", 1)[0]
+        return f"{scheme}{user}@{rest}" if user else f"{scheme}{rest}"
+    return f"{scheme}{rest}"
 
 
 def origin_remote(root: Path) -> str | None:

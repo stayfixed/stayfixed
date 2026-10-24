@@ -251,3 +251,26 @@ def test_the_ledger_sweep_asks_git_for_a_root_whose_name_ends_in_a_space(tmp_pat
     assert listed is not None
     assert root / "kept.md" in listed
     assert root / "build.md" not in listed
+
+
+@pytest.mark.parametrize(
+    ("url", "kept"),
+    [
+        ("https://user:s3cret@example.com/o/p.git", "https://example.com/o/p.git"),
+        ("https://ghp_token@github.com/o/p", "https://github.com/o/p"),
+        ("http://a:b@c@example.com/o/p", "http://example.com/o/p"),
+        ("ssh://git:pw@example.com/o/p", "ssh://git@example.com/o/p"),
+        ("ssh://git@example.com/o/p", "ssh://git@example.com/o/p"),
+        ("git@example.com:o/p.git", "git@example.com:o/p.git"),
+        ("https://example.com/o/p", "https://example.com/o/p"),
+        ("https://example.com/o/p@v1", "https://example.com/o/p@v1"),
+    ],
+)
+def test_an_origin_loses_its_credentials_and_keeps_an_ssh_user(url: str, kept: str) -> None:
+    # A remote URL can carry a token as its userinfo (`https://user:token@host/…`), and `attach`
+    # prints the origin and records it on this machine. Everything before the authority's last
+    # `@` goes on every scheme but ssh, whose user (`git@`) is no secret and is part of how the
+    # same remote is recognised; there only a password goes. The scp form carries no password.
+    from stayfixed.gitenv import without_userinfo
+
+    assert without_userinfo(url) == kept

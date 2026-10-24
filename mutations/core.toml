@@ -6441,3 +6441,24 @@ reddens = [
   "tests/config/test_overlay_layers.py::test_the_project_file_wins_over_the_common_file_for_a_bound_checkout",
   "tests/doctor/test_checks.py::test_the_preferences_row_names_the_overlay_project_layer_of_a_budget",
 ]
+
+# A remote can carry a token as its userinfo, and `attach` prints the origin and records it on this
+# machine: the one function every such point goes through keeps it, and every one of them leaks.
+[[mutation]]
+name = "an origin keeps its credentials"
+file = "src/stayfixed/gitenv.py"
+before = '    return f"{scheme}{rest}"'
+after = "    return url"
+reddens = [
+  "tests/test_git_answers.py::test_an_origin_loses_its_credentials_and_keeps_an_ssh_user[https://user:s3cret@example.com/o/p.git-https://example.com/o/p.git]",
+  "tests/attach/test_commands.py::test_an_origin_carrying_credentials_is_neither_printed_nor_recorded_with_them",
+]
+
+# The binding record is this machine's file and outlives the run: it keeps the origin as it was
+# recorded, so it is recorded without the userinfo.
+[[mutation]]
+name = "the binding record keeps an origin's credentials"
+file = "src/stayfixed/binding.py"
+before = "    origin = without_userinfo(origin) if origin is not None else None"
+after = "    pass"
+reddens = ["tests/attach/test_commands.py::test_an_origin_carrying_credentials_is_neither_printed_nor_recorded_with_them"]

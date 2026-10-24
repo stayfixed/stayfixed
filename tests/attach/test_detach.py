@@ -153,6 +153,45 @@ def test_a_ledger_naming_another_directory_deletes_nothing_outside_the_delivery_
     assert not delivery.exists()
 
 
+def _exclude_block(root: Path) -> bool:
+    """Whether the repository's exclude file still holds `attach`'s block."""
+    exclude = root / ".git" / "info" / "exclude"
+    return exclude.is_file() and "# stayfixed:attach:begin" in exclude.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("failing", ["claude plugin uninstall", "claude plugin marketplace remove"])
+def test_a_detach_call_that_fails_keeps_the_delivery_hidden_and_a_second_detach_finishes(
+    tmp_path: Path, failing: str
+) -> None:
+    # The plugin's entry in `settings.local.json` names the whole binding id, and Claude Code takes
+    # it out only when its calls succeed. So a call that fails leaves everything that keeps that
+    # file hidden or lets `detach` run again: the exclude block, the ledger and the render. The
+    # refusal names the call and its code, never what Claude Code printed, which names the id. A
+    # second detach finishes, without asking Claude Code to uninstall a plugin it already did.
+    # Mutations: `mutations/`'s "detach goes past an uninstall that failed" and "detach goes past a
+    # marketplace remove that failed".
+    from stayfixed.attach.write import NOT_WITHDRAWN
+    from stayfixed.runner import Completed
+
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2], allow=(RULE,), hooks=True)
+    home = tmp_path / "home"
+    _attach(root, store, machine, home)
+    id, delivery = _render_of(root)
+    assert _exclude_block(root)
+    verb = failing.removeprefix("claude plugin ")
+    with pytest.raises(Failure) as failed:
+        _detach(root, machine, home, Recorder(answers={failing: Completed(1, "", f"overlay-{id}")}))
+    assert str(failed.value) == NOT_WITHDRAWN.format(verb=verb, code=1)
+    assert id not in str(failed.value)
+    assert _exclude_block(root) and (root / LEDGER).is_file() and delivery.is_dir()
+    again = Recorder()
+    _detach(root, machine, home, again)
+    expected = ["uninstall", "marketplace"] if verb == "uninstall" else ["marketplace"]
+    assert [argv[2] for argv in again.calls] == expected
+    assert not _exclude_block(root) and not (root / LEDGER).exists() and not delivery.exists()
+
+
 def test_detach_keeps_the_allow_rule_claude_code_added_to_a_rewritten_settings_file(
     tmp_path: Path,
 ) -> None:

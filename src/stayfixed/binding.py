@@ -35,7 +35,7 @@ from stayfixed import fsops, tomlout
 from stayfixed.config.paths import data_directory
 from stayfixed.config.reading import UNPARSEABLE
 from stayfixed.errors import Failure
-from stayfixed.gitenv import GitUnavailable, git_answer
+from stayfixed.gitenv import GitUnavailable, git_answer, without_userinfo
 from stayfixed.printed import quoted
 
 # Where the id lives under the git common directory, and where each record lives under the
@@ -143,6 +143,8 @@ def record(root: Path, project: str, origin: str | None) -> Bound:
     `origin` is kept where a UTF-8 file can hold it; one git printed in other bytes is recorded as
     none rather than refusing the binding, since the remote decides nothing."""
     id = ensure_id(root)
+    # Without the userinfo a remote can carry a token in (`gitenv.without_userinfo`).
+    origin = without_userinfo(origin) if origin is not None else None
     kept = origin if origin is not None and fsops.utf_8_name(origin) else None
     fields: dict[str, object] = {"project": project, "checkout": str(root)}
     if kept is not None:

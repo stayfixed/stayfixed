@@ -2542,7 +2542,10 @@ repository is one remote whichever of git's three spellings names it — `git@ho
 in any case and, on github.com alone, the path too — so a clone made over https of a repository
 recorded over ssh hears nothing. The overlay's `projects/<name>/project.toml` keeps the remote it
 was first written with and the first attach's date, and is written only while it records no
-remote; an `origin` git prints in bytes that are not UTF-8 is recorded as none.
+remote; an `origin` git prints in bytes that are not UTF-8 is recorded as none. An `origin`'s
+userinfo — a token in `https://user:token@host/…` — is taken out before it is printed, on the
+screen or in the note naming both remotes, and before it is recorded; an ssh URL keeps its user
+(`ssh://git@host/…`) and loses only a password.
 
 **A group that never moved is refused.** `attach` **links**; it never moves a note. So a
 `memory.groups` entry that is still a real directory under `paths.memory` would be linked over,
@@ -2799,10 +2802,12 @@ attached, removes the `stayfixed:attach` block in the repository's exclude file,
 The render directory is derived from the binding id and never read from the ledger, so a ledger a
 clone committed naming another directory removes nothing outside it. The plugin goes before the
 exclude block, so Claude Code takes the plugin's entry, which names the id, out of
-`.claude/settings.local.json` while that file is still hidden. A `claude plugin` call that does not
-succeed is a note naming its exit code and never what it printed, and the render directory goes
-all the same, since a plugin whose directory is gone does not load; a render directory that cannot
-be removed fails (`1`) with the ledger kept, so `detach` can be run again. An allow rule Claude Code
+`.claude/settings.local.json` while that file is still hidden. The uninstall is asked only while
+the ledger records the plugin installed, and once it succeeds the ledger records it no longer. A
+`claude plugin` call that does not succeed fails (`1`), naming the call and its exit code and never
+what it printed, which names the id; the exclude block, the ledger and the render directory are
+kept, so the file stays hidden, and running `detach` again finishes the withdrawal. A render
+directory that cannot be removed fails (`1`) the same way, with the ledger kept. An allow rule Claude Code
 added to `.claude/settings.local.json` — the one a "don't ask again" answer writes — is not on the
 ledger and stays, whatever order Claude Code rewrote the file's keys in. A file left holding nothing is
 removed rather than left empty — for the exclude file, only when `attach` created it, which the block records, so

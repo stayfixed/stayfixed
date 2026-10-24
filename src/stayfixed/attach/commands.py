@@ -188,8 +188,6 @@ def run_detach(args: argparse.Namespace) -> Result:
         "link_tree_kept": removed.link_tree_kept,
         # A boolean this command computed, so it prints.
         "delivery_removed": removed.delivery_removed,
-        # Each a sentence of this command's, naming a `claude plugin` call's exit code alone.
-        "notes": list(removed.notes),
     }
     # The link tree is kept only while another checkout is attached, which keeps the block too.
     what = (
@@ -204,17 +202,12 @@ def run_detach(args: argparse.Namespace) -> Result:
     )
     withdrawn = "; the overlay's plugin was withdrawn" if removed.delivery_removed else ""
     return Result(
-        "; ".join(
-            (
-                f"detached: {len(removed.allow_removed)} allow rule(s), "
-                f"{len(removed.entries_removed)} hook entr(ies), "
-                f"{len(removed.rules_removed)} Codex rule file(s), "
-                f"{len(removed.links.revoked)} link(s), "
-                f"{len(removed.directories_removed)} directory(ies){withdrawn}; "
-                f"the binding record was left in place{kept}",
-                *removed.notes,
-            )
-        ),
+        f"detached: {len(removed.allow_removed)} allow rule(s), "
+        f"{len(removed.entries_removed)} hook entr(ies), "
+        f"{len(removed.rules_removed)} Codex rule file(s), "
+        f"{len(removed.links.revoked)} link(s), "
+        f"{len(removed.directories_removed)} directory(ies){withdrawn}; "
+        f"the binding record was left in place{kept}",
         data,
     )
 

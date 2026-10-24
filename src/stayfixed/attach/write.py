@@ -92,7 +92,7 @@ from stayfixed.config.reading import UNPARSEABLE
 from stayfixed.config.schema import OVERLAY_MODE, Config
 from stayfixed.errors import Failure, Refusal
 from stayfixed.fsops import UnsafePath
-from stayfixed.gitenv import GitUnavailable, Unasked, answer_lines, git_run
+from stayfixed.gitenv import GitUnavailable, Unasked, answer_lines, git_run, without_userinfo
 from stayfixed.guards.api import hooks_dir
 from stayfixed.jsonobject import NESTED, json_object
 from stayfixed.memory.api import (
@@ -1491,7 +1491,7 @@ def _carry_out(
             tuple(notes),
             links,
             short(id),
-            origin=binding.remote,
+            origin=None if binding.remote is None else without_userinfo(binding.remote),
             added=after.without(before),
             removed=before.without(after),
             allow_added=planned.diff.added_allow,
@@ -1595,12 +1595,12 @@ def _install(id: str, main: Path, runner: Runner) -> str | None:
     return None
 
 
-# Said where a `claude plugin` call of `detach` did not succeed: its code and nothing it printed,
-# for `NOT_INSTALLED`'s reason. The render directory is removed all the same, and a plugin whose
-# directory is gone does not load.
-NOT_UNINSTALLED = (
-    "`claude plugin {verb}` did not succeed (exit {code}), so Claude Code may still list the "
-    "overlay's plugin; its render directory was removed, so it no longer loads"
+# Said where a `claude plugin` call of `detach` did not succeed: the call and its exit code, and
+# nothing it printed, which names the plugin and so the whole binding id.
+NOT_WITHDRAWN = (
+    "`claude plugin {verb}` did not succeed (exit {code}), so the overlay's plugin was not "
+    "withdrawn; the exclude block, the ledger and the render were kept, and running "
+    "`stayfixed detach` again finishes the withdrawal"
 )
 # Said where the render directory could not be removed once Claude Code was told to forget it.
 RENDER_STAYED = (
@@ -1609,19 +1609,40 @@ RENDER_STAYED = (
 )
 
 
-def _uninstall(id: str, main: Path, runner: Runner) -> tuple[str, ...]:
-    """Tell Claude Code to forget the plugin and its marketplace, from the main checkout it was
-    installed from; a note for each call that did not succeed."""
-    notes: list[str] = []
-    done = runner.launch(
-        filled(PLUGIN_UNINSTALL_LOCAL, f"{plugin_name(id)}@{marketplace_name(id)}"), main
-    )
-    if done.code != 0:
-        notes.append(NOT_UNINSTALLED.format(verb="uninstall", code=done.code))
+def _forget_install(root: Path, recorded: AttachLedger) -> None:
+    """Rewrite the ledger as recording no render: Claude Code has uninstalled the plugin, so a
+    later `attach` installs it again, and a `detach` run again after a later call failed does not
+    ask Claude Code to uninstall a plugin it no longer has."""
+    document = {
+        "format": LEDGER_FORMAT,
+        "store": recorded.store,
+        "allow": list(recorded.allow),
+        "entries": dict(recorded.entries),
+        "rules": list(recorded.rules),
+        "settings_keys": list(recorded.settings_keys),
+        "directories": list(recorded.directories),
+        "memory_parents": list(recorded.memory_parents),
+        "memory_created": recorded.memory_created,
+        "render": None,
+    }
+    fsops.write_within(root, ATTACH_LEDGER, json.dumps(document, indent=2, sort_keys=True) + "\n")
+
+
+def _uninstall(root: Path, id: str, main: Path, runner: Runner, recorded: AttachLedger) -> None:
+    """Tell Claude Code to forget the plugin, where the ledger records it installed, and then its
+    marketplace, from the main checkout it was installed from; a `Failure` naming the call that
+    did not succeed, before anything that hides the plugin's entry or lets `detach` run again is
+    withdrawn."""
+    if recorded.render is not None:
+        done = runner.launch(
+            filled(PLUGIN_UNINSTALL_LOCAL, f"{plugin_name(id)}@{marketplace_name(id)}"), main
+        )
+        if done.code != 0:
+            raise Failure(NOT_WITHDRAWN.format(verb="uninstall", code=done.code))
+        _forget_install(root, recorded)
     removed = runner.launch(filled(PLUGIN_MARKETPLACE_REMOVE, marketplace_name(id)), main)
     if removed.code != 0:
-        notes.append(NOT_UNINSTALLED.format(verb="marketplace remove", code=removed.code))
-    return tuple(notes)
+        raise Failure(NOT_WITHDRAWN.format(verb="marketplace remove", code=removed.code))
 
 
 def _remove_render(directory: Path) -> None:
@@ -1674,8 +1695,6 @@ class Detached:
     # The rendered plugin was withdrawn: Claude Code told to forget it and its marketplace, and
     # its render directory removed.
     delivery_removed: bool = False
-    # What a `claude plugin` call that did not succeed left, by its code and nothing it printed.
-    notes: tuple[str, ...] = ()
 
 
 def _emptied(raw: dict[str, Any]) -> dict[str, Any]:
@@ -1993,8 +2012,10 @@ def detach(
     The plugin is installed in the main checkout, which every worktree shares, so it is withdrawn
     only where no other checkout is still attached: `claude plugin uninstall` and `marketplace
     remove` through `runner`, after this run's own withdrawal from the settings file and before
-    the exclude block goes, then the render directory. The id and this machine's record of it are
-    kept, as the overlay's record is.
+    the exclude block goes, then the render directory. A call that fails is a `Failure` there, with
+    the exclude block, the ledger and the render kept: the settings file names the id while the
+    plugin's entry is in it, and a second `detach` finishes from the ledger. The id and this
+    machine's record of it are kept, as the overlay's record is.
 
     It does **not** touch `projects/<name>/project.toml`. That record is the owner's consent,
     not a piece of local state: deleting it would turn every later re-attach into a first
@@ -2101,11 +2122,11 @@ def detach(
     # Before the exclude block goes: Claude Code takes the plugin's entry, which names the id, out
     # of the settings file the block hides, and it does so after this run's own withdrawal from
     # that file, which would otherwise write the entry back.
-    notes: tuple[str, ...] = ()
+    # A call that fails stops the run here, with the exclude block, the ledger and the render kept.
     if kept:
         delivery = None
     if id is not None and delivery is not None:
-        notes = _uninstall(id, checkouts[0], runner)
+        _uninstall(root, id, checkouts[0], runner, recorded)
         _remove_render(delivery)
     if hidden is not None:
         exclude.write(hidden)
@@ -2124,5 +2145,4 @@ def detach(
         kept,
         root.resolve() not in trees,
         delivery is not None,
-        notes,
     )

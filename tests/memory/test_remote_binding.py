@@ -15,6 +15,7 @@ import itertools
 
 import pytest
 
+from stayfixed.gitenv import without_userinfo
 from stayfixed.memory.store import NO_REMOTE_SAID, origin_note
 
 # One repository on a host that is not github.com, in every spelling the rule makes one binding.
@@ -113,8 +114,10 @@ def test_case_folds_where_the_server_ignores_it(recorded: str, origin: str) -> N
 def test_a_different_repository_earns_the_note_naming_both(recorded: str, origin: str) -> None:
     # The rule may only ever widen the exact comparison by spellings of one repository, never by
     # two repositories it cannot tell apart.
+    # Each named without its userinfo, which may carry a token (`gitenv.without_userinfo`).
+    shown = [repr(without_userinfo(url)) for url in (recorded, origin)]
     for said in (origin_note(recorded, origin), origin_note(origin, recorded)):
-        assert said is not None and repr(recorded) in said and repr(origin) in said
+        assert said is not None and all(name in said for name in shown)
 
 
 @pytest.mark.parametrize(

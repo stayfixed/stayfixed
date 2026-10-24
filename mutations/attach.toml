@@ -2877,3 +2877,32 @@ after = "        delivery = Path(recorded.store) if id is not None else None"
 reddens = [
   "tests/attach/test_detach.py::test_a_ledger_naming_another_directory_deletes_nothing_outside_the_delivery_directory",
 ]
+
+# The plugin's entry in `settings.local.json` names the whole binding id, and Claude Code takes it
+# out only when its calls succeed: a call that failed must leave the exclude block hiding that file,
+# and the ledger and the render for a second `detach` to finish from.
+[[mutation]]
+name = "detach goes past an uninstall that failed"
+file = "src/stayfixed/attach/write.py"
+before = '            raise Failure(NOT_WITHDRAWN.format(verb="uninstall", code=done.code))'
+after = "            pass"
+reddens = [
+  "tests/attach/test_detach.py::test_a_detach_call_that_fails_keeps_the_delivery_hidden_and_a_second_detach_finishes[claude plugin uninstall]",
+]
+
+[[mutation]]
+name = "detach goes past a marketplace remove that failed"
+file = "src/stayfixed/attach/write.py"
+before = '        raise Failure(NOT_WITHDRAWN.format(verb="marketplace remove", code=removed.code))'
+after = "        pass"
+reddens = [
+  "tests/attach/test_detach.py::test_a_detach_call_that_fails_keeps_the_delivery_hidden_and_a_second_detach_finishes[claude plugin marketplace remove]",
+]
+
+# The attach screen names this checkout's origin; a token in its userinfo is taken out first.
+[[mutation]]
+name = "the attach screen names an origin's credentials"
+file = "src/stayfixed/attach/write.py"
+before = "            origin=None if binding.remote is None else without_userinfo(binding.remote),"
+after = "            origin=binding.remote,"
+reddens = ["tests/attach/test_commands.py::test_an_origin_carrying_credentials_is_neither_printed_nor_recorded_with_them"]

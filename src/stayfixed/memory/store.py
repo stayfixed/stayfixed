@@ -62,7 +62,7 @@ from stayfixed.config.reading import MachineConfigError
 from stayfixed.config.schema import LOCAL_ONLY_MODE, OVERLAY_MODE, Config
 from stayfixed.findings import listed
 from stayfixed.fsops import read_regular_text
-from stayfixed.gitenv import git_answer
+from stayfixed.gitenv import git_answer, without_userinfo
 from stayfixed.printed import clipped, quoted
 
 LOCAL_STORE = Path(".stayfixed") / "local" / "memory"
@@ -313,12 +313,18 @@ def origin_note(recorded: str | None, origin: str | None) -> str | None:
     if recorded == origin:
         return None
     if recorded is not None and origin is not None:
+        # One URL with and without the userinfo a remote can carry a token in is one remote: the
+        # binding record keeps it without (`gitenv.without_userinfo`), and nothing else is read
+        # across that difference, so the spellings below still take no userinfo.
+        if without_userinfo(recorded) == without_userinfo(origin):
+            return None
         named = _repository(recorded)
         if named is not None and named == _repository(origin):
             return None
+    # Each named without its userinfo, which may be a token.
     return ORIGIN_MOVED.format(
-        origin=NO_REMOTE_SAID if origin is None else quoted(origin),
-        recorded=NO_REMOTE_SAID if recorded is None else quoted(recorded),
+        origin=NO_REMOTE_SAID if origin is None else quoted(without_userinfo(origin)),
+        recorded=NO_REMOTE_SAID if recorded is None else quoted(without_userinfo(recorded)),
     )
 
 

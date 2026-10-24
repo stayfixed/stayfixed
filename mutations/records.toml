@@ -3838,3 +3838,11 @@ file = "src/stayfixed/ledger/index.py"
 before = '        parts.append(f"\n## {section.heading} ({len(selected)})\n\n")'
 after = '        parts.append(f"\n## {section.heading}\n\n")'
 reddens = ["tests/ledger/test_literals.py::test_the_index_is_the_one_it_rendered"]
+
+# The origin note names both remotes; a token in either one's userinfo is taken out before it does.
+[[mutation]]
+name = "the origin note names a remote's credentials"
+file = "src/stayfixed/memory/store.py"
+before = "        origin=NO_REMOTE_SAID if origin is None else quoted(without_userinfo(origin)),"
+after = "        origin=NO_REMOTE_SAID if origin is None else quoted(origin),"
+reddens = ["tests/attach/test_commands.py::test_an_origin_carrying_credentials_is_neither_printed_nor_recorded_with_them"]

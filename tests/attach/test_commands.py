@@ -156,6 +156,37 @@ def test_an_attach_after_an_added_hook_entry_proceeds_and_shows_the_binding_and_
     assert (root / LEDGER).is_file()
 
 
+def test_an_origin_carrying_credentials_is_neither_printed_nor_recorded_with_them(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A token in the origin's userinfo reaches neither the screen, nor the origin note (the
+    # overlay's record names another remote here, so the note is said), nor this machine's binding
+    # record, nor the overlay's record of a first attach. One function strips it at each point.
+    # Mutations: `mutations/`'s "an origin keeps its credentials", "the binding record keeps an
+    # origin's credentials", "the origin note names a remote's credentials" and "the attach
+    # screen names an origin's credentials".
+    from stayfixed import binding
+
+    origin, kept = "https://user:s3cret-token@example.com/o/p.git", "https://example.com/o/p.git"
+    root, store = _project_and_store(tmp_path, recorded="git@example.com:o/real.git", origin=origin)
+    _overlay_grants(store)
+    machine = _machine(tmp_path, overlay=store.parents[2])
+    assert invoke(["attach", *_flags(root, store, machine)]) == 0
+    printed = capsys.readouterr()
+    assert "s3cret-token" not in printed.out + printed.err
+    assert f"origin {quoted(kept)}" in printed.out
+    assert quoted("git@example.com:o/real.git") in printed.out
+    found = binding.bound_project(root)
+    assert found is not None and found.origin == kept
+    _, other = _project_and_store(tmp_path / "second", recorded=None, origin=origin)
+    _overlay_grants(other)
+    second = _machine(tmp_path / "second", overlay=other.parents[2])
+    assert invoke(["attach", *_flags(tmp_path / "second" / "project", other, second)]) == 0
+    assert "s3cret-token" not in capsys.readouterr().out
+    assert kept in (other.parent / "project.toml").read_text(encoding="utf-8")
+    assert "s3cret-token" not in (other.parent / "project.toml").read_text(encoding="utf-8")
+
+
 def test_attach_takes_no_yes(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     # The widening gate is gone, and its flag with it: a flag nothing reads is one people pass
     # reflexively.
