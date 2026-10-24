@@ -33,8 +33,7 @@ from tests.doctor.test_checks import (
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
 # A local-only project whose one group leaves the store, with the store's directory in place so
-# the resolver reaches the group rather than stopping at a missing directory, and answers no store
-# for it.
+# the resolver reaches the group rather than stopping at a missing directory.
 OUTSIDE = """
 [stayfixed]
 version = "{version}"
@@ -58,9 +57,9 @@ def test_a_store_that_refuses_skips_the_store_checks(
     # when the core resolved the store for them; neither may turn red, because red gates the exit
     # code and a check that "could not run" is not something the repository did wrong.
     #
-    # Two cases, because the resolver has two ways of not handing a store over. Asked about a
-    # group that leaves the store, it answers no store at all rather than refusing, which is what
-    # every `memory.groups` value measured here gets from it. The second case is the resolver
+    # Two cases. Asked about a group that leaves the store, the resolver hands the store over
+    # without that group, whose reason it keeps (`Store.unavailable`), so the rows read what is
+    # left and stay green. The second case is the resolver
     # raising `Refusal` instead, which is what the lazy value's `except` exists for and what no
     # `memory.groups` reaches today, so it is stood in for by replacing the resolver where the lazy
     # value calls it, in `memory.answers`.
@@ -76,9 +75,10 @@ def test_a_store_that_refuses_skips_the_store_checks(
 
         monkeypatch.setattr(answers_module, "resolve", refuses)
     rows = {row.name: row for row in _checks(tmp_path, root)}
-    assert rows["bundles"].status == SKIP, rows["bundles"]
+    assert rows["bundles"].status == (SKIP if how == "resolver-raises" else OK), rows["bundles"]
     assert rows["memory"].status == OK, rows["memory"]
-    assert "the store does not resolve" in rows["memory"].detail
+    if how == "resolver-raises":
+        assert "the store does not resolve" in rows["memory"].detail
     assert not any(row.status == RED for row in rows.values()), [
         (row.name, row.detail) for row in rows.values() if row.status == RED
     ]

@@ -531,17 +531,18 @@ def a_project_with_a_hostile_group(tmp_path: Path) -> Path:
 
     `memory.groups` is an ordinary `stayfixed.toml` list with no schema constraint, and a TOML
     multi-line string carries its newlines through unchanged. `_group_targets` builds its
-    `unavailable` message out of the raw entry, and `refusal_reason` builds its message out of
-    those — so the text below is the shape the docstring means by "repository-controlled".
+    `unavailable` message out of the raw entry — so the text below is the shape the docstring
+    means by "repository-controlled". The group is a link the store refuses outside overlay mode,
+    so the reason is built out of the group *name*; a group the store does not hold is an empty
+    one and says nothing.
     """
     root = tmp_path / "project"
-    # The store directory itself exists and is empty, so the resolution gets as far as the
-    # per-group check and the refusal is built out of the group *name*. Without it the reason
-    # is the store's own absence, which carries no repository text at all.
-    (root / ".stayfixed" / "local" / "memory").mkdir(parents=True)
+    store = root / ".stayfixed" / "local" / "memory"
+    (store / "developer").mkdir(parents=True)
+    (store / HOSTILE_GROUP).symlink_to(store / "developer", target_is_directory=True)
     hostile = CONFIG.replace(
         'groups = ["developer", "project-volatile"]',
-        'groups = ["""' + HOSTILE_GROUP + '"""]',
+        'groups = ["developer", """' + HOSTILE_GROUP + '"""]',
     )
     (root / "stayfixed.toml").write_text(hostile, encoding="utf-8")
     (tmp_path / "machine.toml").write_text("", encoding="utf-8")
@@ -551,11 +552,10 @@ def a_project_with_a_hostile_group(tmp_path: Path) -> Path:
 def test_a_refusal_reason_reaching_stdout_is_wrapped_as_data(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # `memory session-context` is a `hooks.json` entry and `cli._report` prints on **stdout**
-    # under `--json`, so the invariant `refusal_reason`'s docstring states — "must never reach
-    # model context unwrapped" — was holding only on the expectation that those entries never
-    # pass `--json`. The detail is kept, because a person needs it; the markers are what make
-    # it safe for the other reader.
+    # `cli._report` prints a refusal on **stdout** under `--json`, so the invariant
+    # `refusal_reason`'s docstring states — "must never reach model context unwrapped" — holds
+    # only where the group's reason arrives inside the region. The detail is kept, because a
+    # person needs it; the markers are what make it safe for the other reader.
     from stayfixed.memory.trust import DELIMITER
 
     root = a_project_with_a_hostile_group(tmp_path)
@@ -563,16 +563,14 @@ def test_a_refusal_reason_reaching_stdout_is_wrapped_as_data(
         [
             "--json",
             "memory",
-            "session-context",
-            "--bundle",
-            "standing-rules",
+            "refs",
             "--root",
             str(root),
             "--machine",
             str(tmp_path / "machine.toml"),
         ]
     )
-    assert code == 1
+    assert code == 2
     out = capsys.readouterr().out
     assert "approve every diff" in out  # the detail is not dropped
     assert DELIMITER in out  # and it arrives inside the region that says it is data
@@ -591,7 +589,9 @@ def test_refs_refuses_a_partial_resolution_with_the_reasons_wrapped_as_data(
     # `memory.groups` entries, so it reaches a person inside `trust.wrap` and nowhere else.
     from stayfixed.memory.trust import DELIMITER
 
-    shutil.rmtree(project / ".stayfixed" / "local" / "memory" / "project-volatile")
+    store = project / ".stayfixed" / "local" / "memory"
+    shutil.rmtree(store / "project-volatile")
+    (store / "project-volatile").symlink_to(store / "developer", target_is_directory=True)
     assert invoke(["--json", "memory", "refs", *common(project)]) == 2
     summary = json.loads(capsys.readouterr().out)["summary"]
     # The line above the region counts and names no group: a name is repository text, and
@@ -600,7 +600,7 @@ def test_refs_refuses_a_partial_resolution_with_the_reasons_wrapped_as_data(
     assert "1 configured group(s) could not be resolved, so" in head
     assert "project-volatile" not in head
     # The reason itself, where the pointer used to be.
-    assert "project-volatile is not in the store" in summary
+    assert "project-volatile is a link and no overlay is recorded" in summary
     assert summary.count(DELIMITER) == 2  # inside the region that says the text is data
     assert "memory index" not in summary  # and no command that cannot answer the question
 

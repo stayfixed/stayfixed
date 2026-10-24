@@ -984,3 +984,47 @@ def test_a_local_only_store_keeps_the_native_writers_files_and_their_pointer_lin
     assert {name: (base / f"{name}.md").read_text(encoding="utf-8") for name in topics} == topics
     # And the render is stable: a second look finds the index current.
     assert cli(root, tmp_path, "memory", "index", "--check", machine=machine)[0] == 0
+
+
+SESSION_ENTRIES = [
+    ("memory", "session-context", "--bundle", bundle, "--part", part)
+    for bundle in ("standing-rules", "volatile-notes")
+    for part in ("1", "2", "3")
+]
+STORE_COMMANDS = [
+    ("memory", "index"),
+    ("memory", "promote", "--changed"),
+    ("memory", "inventory"),
+    ("memory", "fit"),
+    ("memory", "refs"),
+]
+
+
+@pytest.mark.parametrize("native", [False, True], ids=["empty", "only-native-files"])
+def test_a_store_with_no_group_directory_is_an_empty_store_not_a_refusal(
+    tmp_path: Path, native: bool
+) -> None:
+    # Someone starting a `local-only` store makes its directory and nothing else, and a store an
+    # earlier release pointed the harness at holds only the native writer's topic files. A group
+    # directory that is not there contributes no notes, and each command and every session entry
+    # works on what is there: the store refused as "none of the configured groups resolved",
+    # which stopped no one, cost every session six hook errors, and kept `memory index` from the
+    # native writer's lines.
+    root = tmp_path / "project"
+    base = root / ".stayfixed" / "local" / "memory"
+    base.mkdir(parents=True)
+    if native:
+        for name in ("user_role", "feedback_tests"):
+            (base / f"{name}.md").write_text(NATIVE_TOPIC.format(name=name), encoding="utf-8")
+        (base / INDEX_NAME).write_text("\n".join(NATIVE_LINES) + "\n", encoding="utf-8")
+    (root / CONFIG_FILE).write_text(LOCAL_ONLY_CONFIG, encoding="utf-8")
+    machine = tmp_path / "machine.toml"
+    machine.write_text("", encoding="utf-8")
+    for argv in [*STORE_COMMANDS, *SESSION_ENTRIES]:
+        code, out, err = cli(root, tmp_path, *argv, machine=machine)
+        assert code == 0, (argv, out, err)
+        if argv in SESSION_ENTRIES:
+            assert (out, err) == ("\n", ""), argv
+    if native:
+        lines = (base / INDEX_NAME).read_text(encoding="utf-8").splitlines()
+        assert all(line in lines for line in NATIVE_LINES), lines

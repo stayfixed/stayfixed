@@ -58,7 +58,6 @@ from stayfixed.config.overlay import overlay_root
 from stayfixed.config.paths import PathEscape, PathUnasked, contained, data_directory
 from stayfixed.config.reading import MachineConfigError
 from stayfixed.config.schema import HARNESS_MODE, LOCAL_ONLY_MODE, OVERLAY_MODE, Config
-from stayfixed.findings import listed
 from stayfixed.fsops import read_regular_text
 from stayfixed.gitenv import git_answer, without_userinfo
 from stayfixed.printed import clipped, quoted
@@ -414,7 +413,8 @@ def _group_targets(
             unavailable[group] = str(exc)
             continue
         if not fsops.exists(target):
-            unavailable[group] = f"{clipped(group)} is not in the store"
+            # A group directory the store does not hold is an empty group: it contributes no
+            # notes, and the store is still the store (the native writer's files included).
             continue
         if fsops.is_symlink(target):
             if overlay is None:
@@ -531,16 +531,6 @@ def _resolve_at(
         said = STORE_MISSING + (BUILT_BY_ATTACH if mode == OVERLAY_MODE else "")
         return None, Unresolved(said, str(base))
     groups, unavailable = _group_targets(base, config, overlay if mode == OVERLAY_MODE else None)
-    if not groups:
-        # Counted, and capped at `LISTED_LIMIT` like every list of names: `memory.groups` is
-        # bounded in number by nothing, and this reason reaches a refusal with no `--json`. In
-        # sorted order, as `_unavailable` gives the same failure, so "the first eight" means one
-        # thing; each group clipped, since nothing bounds one group's length either.
-        reasons = [f"{clipped(k)}: {unavailable[k]}" for k in sorted(unavailable)]
-        if not reasons:
-            return None, Unresolved("the store has no groups")
-        head = f"none of the {len(reasons)} configured group(s) resolved"
-        return None, Unresolved(head, listed(reasons))
     return Store(base, mode, root, groups, unavailable, machine), None
 
 

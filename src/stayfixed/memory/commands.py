@@ -39,7 +39,14 @@ from stayfixed.memory.index import (
 from stayfixed.memory.inventory import inventory, totals
 from stayfixed.memory.notes import Note, walk
 from stayfixed.memory.reviewed import promote, unreviewed
-from stayfixed.memory.store import STORE_MISSING, Store, Unresolved, resolved
+from stayfixed.memory.store import (
+    BUILT_BY_ATTACH,
+    NO_RECORD,
+    STORE_MISSING,
+    Store,
+    Unresolved,
+    resolved,
+)
 from stayfixed.printed import printable, quoted
 from stayfixed.result import Result
 
@@ -247,6 +254,9 @@ def run_index(args: argparse.Namespace) -> Result:
     )
 
 
+_NOTHING_TO_DELIVER = (STORE_MISSING, STORE_MISSING + BUILT_BY_ATTACH, NO_RECORD)
+
+
 def run_session_context(args: argparse.Namespace) -> Result:
     try:
         bundle = Bundle(args.bundle)
@@ -266,8 +276,10 @@ def run_session_context(args: argparse.Namespace) -> Result:
     found = resolved(root, config, override=args.store, machine=machine)
     if found[0] is None:
         # A store whose directory nobody has made yet — a `local-only` repository before its
-        # first note — has nothing to deliver, and a session is no place to say so.
-        if found[1].said == STORE_MISSING:
+        # first note, an overlay checkout `attach` has not composed — and a checkout this machine
+        # has not bound have nothing to deliver, and a session is no place to say so: `doctor`
+        # reports the binding and the store, and `hook SessionStart` says the binding once.
+        if found[1].said in _NOTHING_TO_DELIVER:
             return Result("")
         raise _no_store(found[1])
     text = render(bundle, found[0], config, part=args.part)

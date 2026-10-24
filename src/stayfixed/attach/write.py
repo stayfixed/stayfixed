@@ -713,8 +713,8 @@ def _check_groups(binding: Binding, config: Config) -> None:
 def _prepare_store(binding: Binding, config: Config) -> None:
     """Create this project's own group directories in the overlay.
 
-    The composed store links each one (`memory.composed`), and `memory.store` drops a group whose
-    target does not exist, and a store with no groups does not resolve at all.
+    The composed store links each one (`memory.composed`), and `memory.store` reads a group whose
+    target does not exist as an empty one, so the native writer's notes would have no group.
 
     **The `UnsafePath` arm is the floor under `_check_groups` and is not dead.** A spelling that
     escapes was already refused above every write, so that half reaching here means the hoist

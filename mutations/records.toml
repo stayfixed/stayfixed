@@ -1688,33 +1688,6 @@ reddens = [
   "tests/ledger/test_commands.py::test_renumber_names_a_file_it_could_not_read_without_this_machine_s_paths",
 ]
 
-[[mutation]]
-name = "a store with no group resolved names every group"
-file = "src/stayfixed/memory/store.py"
-before = "return None, Unresolved(head, listed(reasons))"
-after = "return None, Unresolved(head, '; '.join(reasons))"
-reddens = [
-  "tests/memory/test_refs.py::test_a_store_with_no_group_resolved_counts_them_and_names_at_most_the_listed_limit",
-]
-
-[[mutation]]
-name = "the unresolved groups are named in declared order"
-file = "src/stayfixed/memory/store.py"
-before = "for k in sorted(unavailable)]"
-after = "for k in unavailable]"
-reddens = [
-  "tests/memory/test_refs.py::test_a_store_with_no_group_resolved_names_the_first_groups_in_sorted_order",
-]
-
-[[mutation]]
-name = "an unresolved group is named unclipped"
-file = "src/stayfixed/memory/store.py"
-before = "f\"{clipped(group)} is not in the store\""
-after = "f\"{group!r} is not in the store\""
-reddens = [
-  "tests/memory/test_refs.py::test_a_long_group_is_named_clipped_on_the_unresolved_groups_line",
-]
-
 # In the block led by `mutations/`'s "init's custom-gate note keeps a limit of its own": every list
 # of names nothing bounds in number takes `findings.listed`.
 [[mutation]]
@@ -1761,16 +1734,7 @@ file = "src/stayfixed/memory/commands.py"
 before = "f\"{quoted(group)}: {unavailable[group]}\""
 after = "f\"{group}: {unavailable[group]}\""
 reddens = [
-  "tests/memory/test_refs.py::test_a_crafted_group_name_reaches_the_refusal_escaped_never_raw",
-]
-
-[[mutation]]
-name = "the store names a missing group unescaped in its reason"
-file = "src/stayfixed/memory/store.py"
-before = "f\"{clipped(group)} is not in the store\""
-after = "f\"{group} is not in the store\""
-reddens = [
-  "tests/memory/test_refs.py::test_a_crafted_group_name_reaches_the_refusal_escaped_never_raw",
+  "tests/memory/test_refs.py::test_a_linked_group_with_no_overlay_is_named_escaped_never_raw",
 ]
 
 [[mutation]]
@@ -1789,16 +1753,6 @@ before = "f\"{clipped(group)} links outside this project's share of the overlay 
 after = "f\"{group} links outside this project's share of the overlay \""
 reddens = [
   "tests/memory/test_commands.py::test_a_group_linking_outside_the_share_is_named_escaped_never_raw",
-]
-
-[[mutation]]
-name = "a store with no resolving group names each group unescaped"
-file = "src/stayfixed/memory/store.py"
-before = "reasons = [f\"{clipped(k)}: {unavailable[k]}\" for k in sorted(unavailable)]"
-after = "reasons = [f\"{k}: {unavailable[k]}\" for k in sorted(unavailable)]"
-reddens = [
-  "tests/memory/test_refs.py::test_a_crafted_group_name_reaches_the_refusal_escaped_never_raw",
-  "tests/memory/test_refs.py::test_a_long_group_is_named_clipped_on_the_unresolved_groups_line",
 ]
 
 # A gate that cannot answer must say so in its exit code; this one ran green for its whole

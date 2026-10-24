@@ -244,7 +244,11 @@ entry.
 
 Where no layer sets `[memory] mode`, memory is the coding agent's own (`harness`), there is no
 store, and this command prints nothing. So it does before the store's directory exists — a
-`local-only` repository before its first note. An unreviewed note — one a repository commits, one
+`local-only` repository before its first note, an overlay checkout `attach` has not composed — and
+in an overlay checkout this machine has not bound, whose binding `doctor` reports. A configured
+group whose directory the store does not hold is an empty group, here and in every `memory`
+command: it contributes no notes, and the store is still read, the native writer's files at its
+top included. An unreviewed note — one a repository commits, one
 an agent or the harness's writer wrote, one edited since you promoted it — reaches a session with no
 approval, as the harness delivers the same repository's `CLAUDE.md`, only in `volatile-notes` and
 only as data, in every mode; a `trust.json` that cannot be read leaves every note unreviewed. It
@@ -1525,19 +1529,14 @@ no link is immediately repeated, and no ledger identifier is bracketed. Each mis
 counted on the line and listed under `notices` in `--json`, and never changes the exit code: the
 store is shared by every session on the machine, so a link a sibling session left dangling is a
 hint, while a stale path is a finding. Refuses (`2`) when a
-configured group could not be resolved, counting them on a line that names none, then naming
+configured group could not be resolved — it leaves the store, or is a link the store refuses — counting them on a line that names none, then naming
 every group with the resolver's own reason for it, one per line, inside the delimited region that
 marks repository-authored text as data — the one list of names not capped at eight, since the
 region is data rather than a line, and on the path a model reads the harness keeps at most
 `[native_caps] hook_output_chars` of it — because a walk over a subset that reports nothing stale
-is worse than no guard. Where *no* store resolves at
-all, the exit is `1`, with the number of configured groups and the reasons for the first eight
-of them in sorted order, a group longer than 120 characters named by its first 120 and its
-length: that comes from the resolver every `memory` command shares, so part of the store being
-unreadable is a refusal while the whole of it being unreadable is findings. That is
-the wrong way round by the ordering above, it is a known issue in the `memory` area, and until
-it is fixed a caller should gate on a non-zero exit rather than on the number. Write a path that
-deliberately does not resolve in *italics*.
+is worse than no guard. A group whose directory the store does not hold is no such group: it is
+empty, and the walk reads what is there. Where no store resolves at all, the exit is `1`, with
+the resolver's reason. Write a path that deliberately does not resolve in *italics*.
 
 **Writes** nothing.
 
