@@ -2511,15 +2511,18 @@ is never printed.
 **What the overlay grants is shown, not gated.** The overlay is yours, written by you and your
 agents, and its hooks run scripts from the overlay checkout in place, so `attach` asks for no
 confirmation of what it grants; it says it on one screen and proceeds. Below its line come the
-binding — the first eight characters of the binding id and this checkout's `origin`, escaped as
-every remote is — then each hook entry (by its event and command), skill (by its directory) and
+binding — the first eight characters of the binding id, the project it is recorded under and this
+checkout's `origin`, the project and the remote escaped as every name the repository chose is —
+then each hook entry (by its event and command), skill (by its directory) and
 agent (by its file) the render adds or removes against the render the last run left in
 `$HOME/.local/share/stayfixed/delivery/<id>/`, which is what a session runs, and then each allow
 rule this run merges. A hook's command and an allow rule that do not fit a plain name are printed
 escaped, and cut to their first 120 characters and their length. `--json` carries the same lists
 as `hooks_added`, `hooks_removed`, `skills_added`, `skills_removed`, `agents_added`,
-`agents_removed` and `allow_added`, and no remote. The project's name is on neither: it is the
-repository's, and `--check` and `attach` never print it.
+`agents_removed` and `allow_added`, and no remote and no project of their own. A re-attach that
+binds the checkout to another project than this machine's record named — a `[project] name`
+renamed in a pulled commit moves every worktree's binding — says so on one line naming both.
+`--check`'s line names no project.
 
 **The overlay's hooks, skills and agents are delivered as a plugin.** Every run renders them into
 `$HOME/.local/share/stayfixed/delivery/<id>/`, named by the binding id below: a marketplace

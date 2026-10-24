@@ -142,6 +142,9 @@ FALLBACK_KEY = "autoMemoryDirectory"
 # What `attach` says of a checkout with no `origin`, which binds as any other: the binding is the
 # id in the git common directory, and the remote is only what the records note beside it.
 NO_ORIGIN_NOTE = "this checkout has no `origin` remote, so the binding records none"
+# Said where this machine's record bound the checkout to another project than the one it is bound
+# to now: a renamed `[project] name` moves every worktree's binding. Both names print quoted.
+REBOUND = "this checkout's binding moves from project {earlier} to project {project}"
 # The third, and the first of the two whose trigger is repository-authored
 # (`memory.groups` reaches no guard of its own). One constant for the check above every write
 # and for the `O_NOFOLLOW` walk that is the floor under it, because two spellings of one
@@ -216,8 +219,9 @@ class Attached:
     """What one `attach` changed, and the screen it is said on: the binding, then what will run
     that did not before and what no longer will, then the allow rules added.
 
-    Nothing here is repository-authored but `origin`, this checkout's remote, which a caller
-    prints through `printed`, and two notes: what `pre-commit install` printed, which is this
+    Nothing here is repository-authored but `origin`, this checkout's remote, and `project`, the
+    name the binding is recorded under, both of which a caller prints through `printed`, and two
+    notes: what `pre-commit install` printed, which is this
     machine's tool answering in the overlay, and `memory.store.origin_note`'s, which names the
     remotes through `printed.quoted`. `binding` is the binding id as `binding.short` prints it,
     never the whole id; `binding_recorded` says whether this run bound a checkout this machine did
@@ -232,6 +236,7 @@ class Attached:
     links: Links
     binding: str
     origin: str | None = None
+    project: str = ""
     added: Carried = Carried()
     removed: Carried = Carried()
     allow_added: tuple[str, ...] = ()
@@ -1488,6 +1493,8 @@ def _carry_out(
         links = _link_everywhere(planned.checkouts, binding, config, machine=machine, home=home)
     if (note := _secret_scan(binding, runner)) is not None:
         notes.append(note)
+    if binding.bound is not None and binding.bound != binding.project:
+        notes.append(REBOUND.format(earlier=quoted(binding.bound), project=quoted(binding.project)))
     if binding.remote is None:
         notes.append(NO_ORIGIN_NOTE)
     elif binding.note is not None:
@@ -1503,6 +1510,7 @@ def _carry_out(
             links,
             short(id),
             origin=None if binding.remote is None else without_userinfo(binding.remote),
+            project=binding.project,
             added=after.without(before),
             removed=before.without(after),
             allow_added=planned.diff.added_allow,

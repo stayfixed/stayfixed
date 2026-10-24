@@ -296,6 +296,8 @@ class Binding:
     recorded: str | None
     state: str
     note: str | None = None
+    # The project this machine's record binds the checkout to now, or `None` where it binds none.
+    bound: str | None = None
 
 
 class UnreadableRecord(Failure):
@@ -381,7 +383,8 @@ def _bound(root: Path, config: Config, overlay: Path) -> Binding:
     state = binding_state(found, project)
     against = found.origin if found is not None and state == BOUND else recorded
     note = origin_note(against, origin) if state == BOUND or against is not None else None
-    return Binding(project, overlay, store, origin, recorded, state, note)
+    earlier = found.project if found is not None else None
+    return Binding(project, overlay, store, origin, recorded, state, note, earlier)
 
 
 def read_binding(

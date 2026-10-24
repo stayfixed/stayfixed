@@ -133,10 +133,13 @@ def run_attach(args: argparse.Namespace) -> Result:
 def _screen(attached: Attached) -> list[str]:
     """The binding, then what will run that did not before and what no longer will, then the
     allow rules added: one screen, said as the run proceeds, since the overlay is the owner's and
-    what it grants is shown rather than gated. Every name prints through `printed`: the remote is
-    the repository's, and a hook's command or an allow rule holds spaces and may hold anything."""
+    what it grants is shown rather than gated. The binding line names the project it is recorded
+    under: the owner reading which of their projects is delivered here is what the deleted
+    `--trust-remote` and `--yes` were replaced by. Every name prints through `printed`: the project
+    and the remote are the repository's, and a hook's command or an allow rule holds spaces and may
+    hold anything."""
     origin = "no origin remote" if attached.origin is None else f"origin {quoted(attached.origin)}"
-    lines = [f"binding {attached.binding}: {origin}"]
+    lines = [f"binding {attached.binding}: project {quoted(attached.project)}, {origin}"]
     for side in ("added", "removed"):
         carried = getattr(attached, side)
         lines += [
