@@ -16,9 +16,9 @@ from pathlib import Path
 from stayfixed.attach.binding import Binding, read_binding
 from stayfixed.attach.permissions import codex_rules
 from stayfixed.attach.write import Gates, plan_writes
-from stayfixed.config.loader import load
 from stayfixed.config.owner import Owner
 from stayfixed.config.schema import Config
+from stayfixed.config.session import command_config
 from stayfixed.result import Result
 
 
@@ -55,7 +55,7 @@ def check(
     `owner` is the owner's layer the command resolved (`config.loader.loads`' own).
 
     """
-    config = load(root, machine=machine, owner=owner)
+    config = command_config(root, machine=machine, owner=owner)
     binding = read_binding(root, store=store, machine=machine, config=config)
     return _report(root, config, binding, machine=machine, home=home)
 

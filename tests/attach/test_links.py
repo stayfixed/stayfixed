@@ -581,3 +581,44 @@ def test_a_home_that_is_not_there_refuses_above_every_write(tmp_path: Path) -> N
         _attach(root, store, machine, tmp_path / "no-such-home")
     assert_snapshot_unchanged(root, before)
     assert not (root / LEDGER).exists()
+
+
+def test_a_memory_mode_the_overlays_common_file_sets_reaches_attach(tmp_path: Path) -> None:
+    # The overlay's layers are resolved for a session; `attach` read the repository and the
+    # machine file alone, so an overlay that set `memory.mode = "overlay"` had the session ask for
+    # a store `attach` never built, and the remedy the session named changed nothing for ever.
+    root, store, machine = _bound(tmp_path)
+    text = (root / "stayfixed.toml").read_text(encoding="utf-8")
+    (root / "stayfixed.toml").write_text(text.replace('mode = "overlay"\n', ""), encoding="utf-8")
+    _git(root, "commit", "-qam", "no mode of its own")
+    (store.parents[2] / "common" / "stayfixed.toml").write_text(
+        '[memory]\nmode = "overlay"\n', encoding="utf-8"
+    )
+    _attach(root, store, machine, tmp_path / "home")
+    assert (root / DEFAULT_MEMORY / "developer").is_symlink()
+
+
+def test_memory_groups_the_overlay_sets_are_placed_by_attach_and_doctor_stays_green(
+    tmp_path: Path,
+) -> None:
+    # `doctor` reads the session's preferences, the overlay's `memory.groups` among them; `attach`
+    # read the repository's, so a group the overlay added was never placed or hidden, and the
+    # `attached` row turned red blaming a `.gitignore` line that did not exist.
+    import json
+
+    from stayfixed.doctor import checks as doctor_checks
+
+    root, store, machine = _bound(tmp_path)
+    (root / ".gitignore").write_text("", encoding="utf-8")
+    _git(root, "commit", "-qam", "nothing ignored by the repository")
+    groups = [*load(root, machine=machine).memory.groups, "extra"]
+    (store.parents[2] / "common" / "stayfixed.toml").write_text(
+        f"[memory]\ngroups = {json.dumps(groups)}\n", encoding="utf-8"
+    )
+    home = tmp_path / "home"
+    _attach(root, store, machine, home)
+    env = {"PATH": os.environ.get("PATH", ""), "HOME": os.environ["HOME"]}
+    rows = doctor_checks.run_checks(root, home=home, machine=machine, runner=Recorder(), env=env)
+    row = next(row for row in rows if row.name == "attached")
+    assert row.status != "red", row.detail
+    assert (root / DEFAULT_MEMORY / "extra").is_symlink()

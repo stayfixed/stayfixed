@@ -61,12 +61,14 @@ from stayfixed.config.loader import (
     TooLargeDocument,
     TooManyResets,
     UnusableKey,
+    load,
+    loads,
     loads_noting,
     preset_named,
     read_document,
 )
 from stayfixed.config.machine import machine_config_path
-from stayfixed.config.owner import Guards, Owner, resolve_owner
+from stayfixed.config.owner import Guards, Owner, rebased, resolve_owner
 from stayfixed.config.paths import PathEscape
 from stayfixed.config.reading import UNPARSEABLE, ConfigError, coerced, table_types
 from stayfixed.config.schema import Budgets, Config, Memory, Personal, Stayfixed
@@ -195,6 +197,27 @@ def session_config(root: Path | None, *, machine: Path | None = None) -> Session
     path = machine if machine is not None else machine_config_path()
     overlays, notes = overlay_layers.read(root, machine=path)
     return _resolved(_read(root, path), overlays, notes)
+
+
+def command_config(root: Path, *, machine: Path | None, owner: Owner | None = None) -> Config:
+    """The `Config` a command acts on: `loader.loads`', which refuses what it cannot use, with the
+    keys `RESOLVED` names taken from the one resolution `session_config` builds over the preset,
+    the repository, the overlay's common and project files and the machine file. So `attach`,
+    `detach`, `attach --check` and the memory commands act on what a session runs on, and an
+    overlay that sets `memory.mode` reaches the command that builds the store as it reaches the
+    session. The overlay layers' notes are not said here: `doctor`'s `preferences` row names them.
+    """
+    text = read_document(root)
+    if text is None:
+        return load(root, machine=machine, owner=owner)
+    config = loads(text, root, machine=machine, owner=owner)
+    path = machine if machine is not None else machine_config_path()
+    raw = tomllib.loads(text)
+    preset = preset_named(raw)
+    held = resolve_owner(path, preset=preset) if owner is None else rebased(owner, preset)
+    overlays, notes = overlay_layers.read(root, machine=path)
+    resolved = _resolved(SessionConfig(config, held, document=raw), overlays, notes).config
+    return config if resolved is None else resolved
 
 
 def _read(root: Path | None, path: Path | None) -> SessionConfig:

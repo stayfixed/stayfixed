@@ -4098,10 +4098,11 @@ profile`) and a session budget; the project file wins over the common one, and t
 both. They are read the way a session reads `stayfixed.toml`: an unknown name is ignored, and a
 value this stayfixed cannot use is left out so the layer beneath applies; a gate's input or a fact
 about the repository written there is never taken from it. A missing file, an overlay this file
-does not record, or this file not loading sets nothing. Only what reads the configuration as a
-session does reads them — a session, `doctor` and `memory session-context`; every other command
-reads the repository's file and this one, and `doctor`'s `preferences` row names the layer each
-value came from.
+does not record, or this file not loading sets nothing. A session, `doctor`, `memory
+session-context`, `attach`, `attach --check`, `detach` and the other `memory` commands read them
+all through the same resolution, so what decides the store `attach` builds is what a session asks
+for; every other command reads the repository's file and this one, and `doctor`'s `preferences`
+row names the layer each value came from.
 
 To state a language preference, write a personal standing rule, a note with `metadata.startup`
 in your overlay's `common/memory/`.

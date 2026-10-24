@@ -86,11 +86,11 @@ from stayfixed.attach.render import (
 from stayfixed.attach.render import write as write_render
 from stayfixed.binding import ensure_id, read_id, record, short
 from stayfixed.config.layout import ATTACH_LEDGER
-from stayfixed.config.loader import load
 from stayfixed.config.owner import Owner
 from stayfixed.config.paths import PathEscape, PathUnasked, contained
 from stayfixed.config.reading import UNPARSEABLE
 from stayfixed.config.schema import OVERLAY_MODE, Config
+from stayfixed.config.session import command_config
 from stayfixed.errors import Failure, Refusal
 from stayfixed.fsops import UnsafePath
 from stayfixed.gitenv import GitUnavailable, Unasked, answer_lines, git_run, without_userinfo
@@ -1321,7 +1321,7 @@ def _plan(
     # nothing moves in the order the refusals happen in; what changes is that `project.name`,
     # `memory.groups` and `paths.memory` are read once and the refusals below are about the
     # same document the binding was read under.
-    config = load(root, machine=machine, owner=owner)
+    config = command_config(root, machine=machine, owner=owner)
     binding = read_binding(root, store=store, machine=machine, config=config)
     gates = Gates(root, config, binding)
     for refusal in gates:
@@ -2071,7 +2071,7 @@ def detach(
     harness link points at.
     """
     recorded = ledger(root)
-    config = load(root, machine=machine, owner=owner)
+    config = command_config(root, machine=machine, owner=owner)
     held = owned_ids(local_document(root))
     entries = tuple(sorted(id for id, event in recorded.entries.items() if held.get(id) == event))
     # Asked before the first withdrawal, because these are the things here that need `git` and a

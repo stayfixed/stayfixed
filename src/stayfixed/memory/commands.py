@@ -6,8 +6,8 @@ overlay binding. `--machine` exists for the same reason the resolver takes one â
 did not thread it would read the developer's real configuration and, worse, write a trust
 record into their home directory.
 
-It is threaded exactly twice, into `load` (`session_config` for `session-context`, which reads
-the file the way a session does) and into `resolve`, and never again: `resolve` puts
+It is threaded exactly twice, into `command_config` (`session_config` for `session-context`,
+which reads the file the way a session does) and into `resolve`, and never again: `resolve` puts
 it on the `Store` it builds, so every later call takes it from there. It used to be an optional
 keyword on about twenty functions, and the only thing keeping a command's overlay, its index
 destination and its trust record in agreement was that each of those call sites remembered to
@@ -21,9 +21,8 @@ from pathlib import Path
 
 from stayfixed.areas import SubParsers
 from stayfixed.command import CHECK_HELP, command_owner, common_flags
-from stayfixed.config.loader import load
 from stayfixed.config.schema import Config
-from stayfixed.config.session import session_config
+from stayfixed.config.session import command_config, session_config
 from stayfixed.errors import Failure, Refusal
 from stayfixed.findings import labels, listed
 from stayfixed.memory import trust
@@ -90,7 +89,7 @@ def _no_store(reason: Unresolved) -> Failure:
 def _store(args: argparse.Namespace) -> tuple[Store, Config]:
     root = Path(args.root).resolve()
     machine = _machine(args)
-    config = load(root, machine=machine, owner=command_owner(machine))
+    config = command_config(root, machine=machine, owner=command_owner(machine))
     return _store_of(args, root, config, machine), config
 
 
