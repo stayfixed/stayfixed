@@ -558,7 +558,7 @@ def _record_project(binding: Binding, remote: str | None) -> None:
     last run. `remote` is the `origin` as the machine's record kept it: none where a UTF-8 file
     cannot hold it.
     """
-    if binding.recorded is not None:
+    if binding.recorded is not None or binding.fault is not None:
         return
     relative = f"{PROJECTS}/{binding.project}/{PROJECT_RECORD}"
     first = _first_attach(binding.overlay / relative) or datetime.date.today().isoformat()
@@ -1493,6 +1493,8 @@ def _carry_out(
         links = _link_everywhere(planned.checkouts, binding, config, machine=machine, home=home)
     if (note := _secret_scan(binding, runner)) is not None:
         notes.append(note)
+    if binding.fault is not None:
+        notes.append(binding.fault)
     if binding.bound is not None and binding.bound != binding.project:
         notes.append(REBOUND.format(earlier=quoted(binding.bound), project=quoted(binding.project)))
     if binding.remote is None:

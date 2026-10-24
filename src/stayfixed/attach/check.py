@@ -92,6 +92,8 @@ def _report(
         summary += f"; {real} memory group(s) are real directories and would refuse the attach"
     if binding.note is not None:
         summary += f"; {binding.note}"
+    if binding.fault is not None:
+        summary += f"; {binding.fault}"
     if rules:
         summary += "\n" + "\n".join(f"  {target}" for target in rules)
     data = {

@@ -750,6 +750,30 @@ def test_a_placed_path_that_is_the_same_file_as_a_tracked_one_is_refused(tmp_pat
     assert tracked.read_bytes() == b"{}\n"
 
 
+CONFLICTED = '<<<<<<< HEAD\nfirst_attach = "2026-10-01"\n=======\nfirst_attach = "2026-10-02"\n'
+
+
+def test_an_overlay_project_record_that_cannot_be_read_stops_neither_attach_nor_the_session(
+    tmp_path: Path,
+) -> None:
+    # The overlay's `projects/<name>/project.toml` keeps the first remote and date for the owner to
+    # read and binds nothing: the binding is the id and this machine's record of it. Two machines
+    # that first-attach one project each write it, and the overlay's merge leaves conflict
+    # markers, which stopped every attach and silenced the session's binding check. Said, compared
+    # with nothing, and never written over.
+    from stayfixed.attach.binding import binding_for
+
+    root, store, machine = _attachable(tmp_path)
+    attach(root, store=store, machine=machine, runner=Recorder(), home=tmp_path / "home")
+    record = store.parent / PROJECT_RECORD
+    record.write_text(CONFLICTED, encoding="utf-8")
+    attached = attach(root, store=store, machine=machine, runner=Recorder(), home=tmp_path / "home")
+    assert any(PROJECT_RECORD in note and "is not valid TOML" in note for note in attached.notes)
+    assert record.read_text(encoding="utf-8") == CONFLICTED
+    found = binding_for(root, load(root, machine=machine), machine=machine)
+    assert found.state == "bound"
+
+
 def _with_groups(root: Path, listed: str) -> None:
     text = (root / "stayfixed.toml").read_text(encoding="utf-8")
     (root / "stayfixed.toml").write_text(

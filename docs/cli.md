@@ -2693,9 +2693,11 @@ answer, in the order the run meets them:
 - `stayfixed.toml` is missing, cannot be read, is not UTF-8 or valid TOML, or holds a key or value
   the loader refuses; or the machine configuration cannot be read, is not UTF-8 or is not valid
   TOML.
-- The overlay's record of this project (`projects/<name>/project.toml`) cannot be read, is not
-  UTF-8 or is not valid TOML, `git` cannot read the `origin` remote, or `git` cannot name the
-  repository's common directory.
+- `git` cannot read the `origin` remote, or `git` cannot name the repository's common directory.
+  The overlay's record of this project (`projects/<name>/project.toml`) binds nothing, so one
+  that cannot be read, is not UTF-8 or is not valid TOML — a merge's conflict markers, when two
+  machines first attached the project — stops nothing: the run says where it stopped reading,
+  never writes over it, and `doctor`'s `attached` row warns.
 - The overlay's `permissions.json` or `hooks.json`, or `.claude/settings.local.json`, cannot be
   read or is not UTF-8; or a file under the overlay's `skills/` or `agents/` cannot be read, is
   not a regular file, is not UTF-8 or is longer than 64 MiB, or a directory there cannot be

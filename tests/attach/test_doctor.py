@@ -31,7 +31,6 @@ from stayfixed.config.layout import ATTACH_LEDGER as LEDGER
 from stayfixed.config.loader import CONFIG_FILE, load
 from stayfixed.doctor import checks as doctor_checks
 from stayfixed.doctor.api import OK, RED, SKIP, WARN, Check
-from stayfixed.errors import Failure
 from stayfixed.memory.api import PROJECT_RECORD, PROJECTS, resolve
 from stayfixed.overlay.api import COMMON_CLAUDE
 from stayfixed.printed import quoted
@@ -1302,25 +1301,19 @@ def test_a_ledger_on_a_machine_whose_file_does_not_load_skips_in_words_of_its_ow
     assert "the `preferences` row says why" in row.detail and "attached;" not in row.detail
 
 
-def test_an_overlay_record_this_process_cannot_read_skips_rather_than_reading_as_attached(
+def test_an_overlay_record_this_process_cannot_read_is_a_warning_beside_the_binding(
     tmp_path: Path,
 ) -> None:
-    # The third of the three, and the one that is about neither side's honesty: the overlay is
-    # recorded and its `projects/<name>/project.toml` will not parse, so `read_binding` raises
-    # `Failure` and nothing can be said about the binding either way. A `skip` naming the
-    # reason, and — the property all three share — not the word "attached".
-    #
-    # No mutation of its own: the arm it exercises is the `except (Failure, GitUnavailable)`
-    # fallback, and the two declared mutations above already prove that `_binding_answer`'s
-    # three answers are told apart rather than collapsed. This is the case that pins the
-    # fallback's own sentence.
+    # The overlay's `projects/<name>/project.toml` binds nothing, so one that will not parse
+    # leaves the binding readable: the row reports it, with the record's fault as a warning and
+    # where the parser stopped, never the file's text.
     root = _attached(tmp_path)
     overlay = _overlay(tmp_path)
     (overlay / PROJECTS / "p" / PROJECT_RECORD).write_text("remote = [", encoding="utf-8")
     row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "attached")
-    assert row.status == SKIP
-    assert "the overlay could not be asked about it here" in row.detail
-    assert "attached;" not in row.detail
+    assert row.status == WARN
+    assert f"{PROJECT_RECORD} is not valid TOML" in row.detail and "attached;" in row.detail
+    assert row.remedy == attach_doctor.RECORD_REPAIR
 
 
 def test_an_attached_checkout_the_overlay_confirms_is_still_green_and_says_the_binding(
@@ -1671,24 +1664,16 @@ def test_a_bound_checkouts_damaged_overlay_is_named_and_never_answered_by_removi
 
 # A binding record that will not parse, as an owner's mistake or a broken disk leaves one.
 UNPARSEABLE_RECORD = "remote = [unterminated\n"
+
+
 # `attached` for a checkout whose binding record will not read: the overlay could not be asked,
 # which is a fact about this machine and so a skip, with the way to the record's own error.
-RECORD_UNREADABLE_ATTACHED = Check(
-    "attached",
-    "skip",
-    f"{LEDGER} records an attach and the overlay could not be asked about it here — no `git`, or "
-    f"an overlay record this process could not read — so whether this checkout is attached could "
-    f"not be answered; a clone can commit {LEDGER}, so on its own it is not evidence of an attach",
-    "run `stayfixed doctor` again where `git` runs and the overlay is readable",
-)
-
-
 @pytest.mark.parametrize("record", ["unterminated", "number-past-the-parser"])
 def test_an_owner_whose_own_binding_record_will_not_parse_is_told_where_to_look(
     tmp_path: Path, record: str
 ) -> None:
-    # The owner's own record will not read: `attached` says the overlay could not be asked, and
-    # `attach --check` says why. A number past the parser's reach is valid TOML that `tomllib`
+    # The owner's own record will not read: `attached` and `attach --check` both say where. A
+    # number past the parser's reach is valid TOML that `tomllib`
     # answers with a plain `ValueError`, which none of the record's readers caught: `attached`,
     # `bundles` and `store-debris` each went red "this check could not run: ValueError", and
     # `attach --check` ended in an internal error. Mutation (declared): `ValueError` dropped from
@@ -1699,12 +1684,14 @@ def test_an_owner_whose_own_binding_record_will_not_parse_is_told_where_to_look(
     record_path.write_text(text, encoding="utf-8")
     machine = _machine(tmp_path)
     rows = _checks(tmp_path, root, machine=machine)
-    assert _by_name(rows, "attached") == RECORD_UNREADABLE_ATTACHED
+    attached = _by_name(rows, "attached")
+    assert attached.status == WARN and f"/{PROJECT_RECORD} is not valid TOML" in attached.detail
     for name in ("bundles", "store-debris"):
         assert "could not run" not in _by_name(rows, name).detail
     store = tmp_path / "overlay" / PROJECTS / "p" / "memory"
-    with pytest.raises(Failure, match=f"/{PROJECT_RECORD} is not valid TOML"):
-        attach_check(root, store=store, machine=machine, home=tmp_path / "home")
+    (tmp_path / "home").mkdir(exist_ok=True)
+    checked = attach_check(root, store=store, machine=machine, home=tmp_path / "home")
+    assert f"/{PROJECT_RECORD} is not valid TOML" in checked.summary
 
 
 # --- the delivery ------------------------------------------------------------------------------

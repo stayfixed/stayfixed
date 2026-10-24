@@ -298,14 +298,14 @@ class Binding:
     note: str | None = None
     # The project this machine's record binds the checkout to now, or `None` where it binds none.
     bound: str | None = None
+    # Why the overlay's record could not be read, where it could not: it binds nothing, so this
+    # is said and stops nothing, and the record is compared with nothing and never written over.
+    fault: str | None = None
 
 
 class UnreadableRecord(Failure):
-    """The overlay's binding record for this project is there and cannot be read.
-
-    A `Failure`, so `attach`, `--check`, `doctor` and the session-start handler stop on it as on
-    any other.
-    """
+    """The overlay's binding record for this project is there and cannot be read: `_bound` says it
+    as the binding's `fault` and goes on, since the record binds nothing."""
 
 
 def _record(overlay: Path, project: str) -> Path:
@@ -313,11 +313,11 @@ def _record(overlay: Path, project: str) -> Path:
 
 
 def _recorded(overlay: Path, project: str) -> str | None:
-    """The remote the overlay bound to this project, or `None` when it has bound none.
+    """The remote the overlay recorded for this project, or `None` when it has recorded none.
 
     A record that exists and cannot be read raises `UnreadableRecord` rather than answering `None`:
-    "no record" is the state in which `attach` writes one, so a broken record has to stop the run
-    instead of quietly being written over.
+    "no record" is the state in which `attach` writes one, so a broken record must not read as
+    that and be written over.
     """
     record = _record(overlay, project)
     # The shape and not the path: `record` embeds `project.name`, which is repository-authored
@@ -377,14 +377,17 @@ def _bound(root: Path, config: Config, overlay: Path) -> Binding:
     """
     project = config.project.name
     store = permitted_roots(overlay, project)[1]
-    recorded = _recorded(overlay, project)
+    try:
+        recorded, fault = _recorded(overlay, project), None
+    except UnreadableRecord as exc:
+        recorded, fault = None, str(exc)
     origin = origin_remote(root)
     found = bound_project(root)
     state = binding_state(found, project)
     against = found.origin if found is not None and state == BOUND else recorded
     note = origin_note(against, origin) if state == BOUND or against is not None else None
     earlier = found.project if found is not None else None
-    return Binding(project, overlay, store, origin, recorded, state, note, earlier)
+    return Binding(project, overlay, store, origin, recorded, state, note, earlier, fault)
 
 
 def read_binding(

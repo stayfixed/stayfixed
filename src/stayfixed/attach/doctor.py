@@ -91,6 +91,10 @@ class _Ledger:
         return self._state[0]
 
 
+# The remedy for an overlay project record that cannot be read: it binds nothing, so the binding
+# is read all the same, and the owner repairs the file, often a merge's conflict markers.
+RECORD_REPAIR: Final = "repair that file in the overlay, often a merge's conflict markers"
+
 # What the delivery is, as `_delivery` reads it: each clause is said in the row's detail beside the
 # binding, formatted only with stayfixed's own words and paths this machine chose, through
 # `printed.quoted`, and never with the whole binding id (`binding.short`). Red where nothing loads,
@@ -329,6 +333,8 @@ def _delivery(context: Context, config: Config, recorded: AttachLedger, bound: B
                 )
     if bound.note is not None:
         found.append(_Finding(WARN, bound.note, rerun))
+    if bound.fault is not None:
+        found.append(_Finding(WARN, bound.fault, RECORD_REPAIR))
     return _worst(found) or _Finding(OK, DELIVERY_IN_PLACE, "")
 
 
