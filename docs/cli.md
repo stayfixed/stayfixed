@@ -391,7 +391,7 @@ prints no warning, and records once per session, in the diagnostics log below, t
 runs without some of its configuration (`config-fallback`).
 
 **The overlay's rules.** In a checkout this machine binds to an overlay project
-([`attach`](#stayfixed-attach---store-path---check---yes---root-path---machine-path)), `SessionStart`
+([`attach`](#stayfixed-attach---store-path---check---root-path---machine-path)), `SessionStart`
 carries the overlay's standing rules — every `*.md` file in `common/claude/rules/` and
 `projects/<name>/claude/rules/` whose frontmatter has no `paths:` key, common first and the
 project's second, each in name order, a project file replacing the common file of its name —
@@ -2464,8 +2464,8 @@ keeps under `projects/`, which on a filesystem that ignores case includes `readm
 longer than the filesystem allows — is refused (`2`) before anything is written, by `--check` as
 well, and the refusal names the shape of the path and never the name. So is a name whose directory
 there fits under the longest path the system allows while a path `attach` makes inside it does
-not — the `project.toml` that records the binding, the notes index `MEMORY.md`, or the directory
-of one of `memory.groups` — because nothing could read that record back or link the notes to that
+not — the `project.toml` that keeps the first attach's remote and date, the notes index
+`MEMORY.md`, or the directory of one of `memory.groups` — because nothing could read that record back or link the notes to that
 path; a long `memory.groups` entry reaches it as a long name does, and the refusal names neither.
 Both hold where the overlay has no directory for the project yet, `projects/` included. An overlay
 whose root, or whose `projects/`, is there and is not a directory is refused (`2`) as damaged, by
@@ -2878,9 +2878,9 @@ was already there before the attach, empty or not, is not on the record and is n
 round trip is byte-for-byte in the checkout you attached from; in another worktree, an empty
 `paths.memory` goes whether or not it was there before.
 
-**It does not touch `projects/<name>/project.toml`.** That record is your consent to the binding,
-not local state: deleting it would turn every later re-attach into a first attach and re-ask a
-question you have already answered.
+**It does not touch `projects/<name>/project.toml`.** That record is the overlay's note of the
+remote and the date this project was first attached, kept for you to read, and binds nothing; it is
+the overlay's, not this checkout's, so a detach leaves it as it is.
 
 Exits `0` on success. It exits `1` on a failure, in the order the run meets them:
 

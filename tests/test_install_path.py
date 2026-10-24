@@ -194,7 +194,7 @@ def _cli(walk: Walkthrough, *argv: str) -> subprocess.CompletedProcess[str]:
 
 
 def _doctor(walk: Walkthrough, *, root: Path | None = None) -> list[dict[str, str]]:
-    """The eighteen rows, read back out of what `doctor --json` printed on the launcher's
+    """The seventeen rows, read back out of what `doctor --json` printed on the launcher's
     stdout."""
     done = _cli(
         walk,

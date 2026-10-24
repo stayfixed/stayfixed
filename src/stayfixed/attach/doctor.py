@@ -508,7 +508,8 @@ def _uncorroborated(reason: str) -> Row:
     from stayfixed.doctor.api import SKIP, WARN, Row
 
     # Said by every row that meets a ledger the overlay has not confirmed, because it is the whole
-    # reason those rows exist: the consent record lives in the overlay, and this file does not.
+    # reason those rows exist: the binding lives in the git common directory and this machine's
+    # record of it, and this file does not.
     not_evidence = (
         f"a clone can commit {ATTACH_LEDGER}, so on its own it is not evidence of an attach"
     )

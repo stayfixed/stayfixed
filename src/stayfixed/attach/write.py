@@ -2037,9 +2037,9 @@ def detach(
     there, and this checkout's own parts are withdrawn. The id and this machine's record of it are
     kept, as the overlay's record is.
 
-    It does **not** touch `projects/<name>/project.toml`. That record is the owner's consent,
-    not a piece of local state: deleting it would turn every later re-attach into a first
-    attach, and re-ask a question that was already answered.
+    It does **not** touch `projects/<name>/project.toml`. That record is the overlay's note of
+    the project's first remote and first attach, for the owner to read, and binds nothing: the
+    overlay's, not this checkout's.
 
     `machine` and `home` are keyword-required, as they are on `attach` and on every helper here
     that takes them, and required rather than defaulted for the reason `attach` gives: a resolver
