@@ -666,7 +666,11 @@ def test_doctor_is_green_on_the_attached_fixture(tmp_path: Path) -> None:
 # Eight and not seven since the binding is the id in the git common directory: each note-store
 # resolution asks git for the common directory where it asked for the `origin`, and the `attached`
 # row asks for both, the `origin` for the note it may print beside the state.
-DOCTOR_LAUNCHES = 8
+#
+# Nine and not eight since a session's preferences resolve over the overlay's project file, read
+# only for the project the binding record names: the report reads the configuration as a session
+# does, so it asks git for the common directory once more, where the binding id is kept.
+DOCTOR_LAUNCHES = 9
 
 
 def test_doctor_launches_the_number_of_subprocesses_it_says_it_does(
@@ -714,11 +718,11 @@ def test_doctor_launches_the_number_of_subprocesses_it_says_it_does(
     # The report is green first, so a count taken from a run that fell over early cannot pass.
     assert [check.name for check in checks if check.status == RED] == []
     assert len(launched) == DOCTOR_LAUNCHES, launched
-    # And they are the eight the paragraph names, not eight of something else: one wrapper probe,
-    # and seven `git` questions. Asserted by shape rather than by full argv, because each of the
-    # seven `git` calls carries the temporary checkout or overlay it asks about.
+    # And they are the nine the paragraph names, not nine of something else: one wrapper probe,
+    # and eight `git` questions. Asserted by shape rather than by full argv, because each of the
+    # eight `git` calls carries the temporary checkout or overlay it asks about.
     assert sum(1 for argv in launched if argv[0] == str(WRAPPER)) == 1
-    assert sum(1 for argv in launched if argv[0] == "git") == 7
+    assert sum(1 for argv in launched if argv[0] == "git") == 8
 
 
 def test_doctor_is_red_when_the_memory_path_is_a_real_directory(tmp_path: Path) -> None:

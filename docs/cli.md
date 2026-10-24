@@ -3150,15 +3150,16 @@ position.
 repository's tags, to judge `[ci] ref`, only when one is set; and the `git` queries the other
 rows need — where the overlay keeps its hooks, what this checkout's `origin` is, which the
 binding's row asks, the repository's common directory, where the binding id is kept, which the
-binding's row and the note store's rows each ask for themselves, which
+binding's row, the note store's rows and the `preferences` row's read of the overlay's project
+file each ask for themselves, which
 checkout owns this one, which the binding's row asks to judge the harness memory path, and, for
 `hook-entries`, which files below the root a nested `.claude/skills` holds (`git ls-files`), asked
 a second time through each submodule's index where a `.gitmodules` sits at or above the root.
-Eight of those are measured on a green attached installation with no submodules — the wrapper
-probe and seven `git` questions — and nine where a `.gitmodules` is present; not one of them leaves
+Nine of those are measured on a green attached installation with no submodules — the wrapper
+probe and eight `git` questions — and ten where a `.gitmodules` is present; not one of them leaves
 this machine. The `ci-ref` row's `git ls-remote` is one more on a repository that records a
 `[ci] ref` at all, and it is the only one that does leave: it goes through the `Runner` seam,
-which is what lets the case that pins the eight answer it in process instead of launching it.
+which is what lets the case that pins the nine answer it in process instead of launching it.
 That one is bounded at **30 seconds**, not at the seam's own five minutes (the bound for
 `gh repo create --clone`), so a peer that does not answer cannot turn a one-line diagnostic into a
 five-minute block. Each `git ls-files` question has `gitenv`'s thirty seconds of its own for a

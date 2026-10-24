@@ -25,7 +25,6 @@ from pathlib import Path
 from typing import Any
 
 from stayfixed import fsops
-from stayfixed.binding import bound_project
 from stayfixed.config.classes import ALLOWED, Layer, LayerName, class_of
 from stayfixed.config.overlay import overlay_root
 from stayfixed.config.owner import Guards
@@ -125,6 +124,10 @@ def _bound(root: Path | None, notes: list[str]) -> str | None:
     note."""
     if root is None:
         return None
+    # Deferred: `binding` reads its data directory and its record through `config`, so a
+    # module-level import would make the two packages import each other.
+    from stayfixed.binding import bound_project
+
     try:
         bound = bound_project(root)
     except GitUnavailable as exc:
