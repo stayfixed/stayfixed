@@ -780,6 +780,15 @@ def _keys_in(document: str) -> tuple[str, ...]:
     return (POINTER_KEY,) if POINTER_KEY in settings_document(document) else ()
 
 
+def _unpoint(root: Path) -> bool:
+    """Take `POINTER_KEY` out of the main checkout's settings file, whether it was there."""
+    document = settings_document(local_document(root))
+    if document.pop(POINTER_KEY, None) is None:
+        return False
+    fsops.write_within(root, LOCAL_SETTINGS, settings_text(document, LOCAL_SETTINGS) + "\n")
+    return True
+
+
 def _point(root: Path, store: Path) -> bool:
     """Write `POINTER_KEY` naming `store` into the main checkout's settings file, whether it was
     written: the file is left alone where it already names `store`. Asked after the placed-path rule
@@ -868,7 +877,7 @@ def attach(
     """
     main = main_checkout_of(root)
     planned = _plan(main, store=store, machine=machine, owner=owner)
-    return _carry_out(main, planned, machine=machine, runner=runner)
+    return _carry_out(main, planned, machine=machine, runner=runner, owner=owner)
 
 
 def gates(root: Path, config: Config, binding: Binding) -> PermissionDiff:
@@ -977,7 +986,7 @@ def plan_writes(root: Path, config: Config, binding: Binding, diff: PermissionDi
 
 
 def _carry_out(
-    root: Path, planned: AttachPlan, *, machine: Path | None, runner: Runner
+    root: Path, planned: AttachPlan, *, machine: Path | None, runner: Runner, owner: Owner | None
 ) -> Attached:
     """Write what `_plan` decided: the exclude block first, then ask git whether every placed path
     is ignored, and only then any file the block hides, so none is ever where git would show it —
@@ -1012,6 +1021,13 @@ def _carry_out(
     id = ensure_id(root)
     bound = record(root, binding.project, binding.remote)
     _record_project(binding, bound.origin)
+    # The mode, resolved again now that the binding is recorded: the overlay's project layer is
+    # read for a bound checkout only, so a first attach's plan could not see a mode set there.
+    config = command_config(root, machine=machine, owner=owner)
+    memory = config.memory.mode == OVERLAY_MODE
+    if memory:
+        refuse_unless_share_holds(binding, config)
+        carried = (POINTER_KEY,)
     # What ran before this render, read out of the render directory before it is rewritten, and
     # what will run after it, read out of the parts: the screen's executable diff.
     before, after = _carried_in(delivery_directory(id)), _carried(planned.parts)
@@ -1023,8 +1039,15 @@ def _carry_out(
     if (failed := _install(id, root, runner)) is not None:
         _write_ledger(root, planned, carried, None)
         raise Failure(failed)
+    if not memory:
+        # Out of overlay mode, the pointer an earlier attach recorded and the composed store it
+        # named are taken back, as `detach` takes them: left, the harness would go on reading the
+        # overlay's notes and writing into them.
+        if previous is not None and POINTER_KEY in previous.settings_keys and _unpoint(root):
+            written, carried = True, ()
+        withdraw_composed(id)
     _write_ledger(root, planned, carried, rendered.rendered)
-    if planned.memory:
+    if memory:
         _prepare_store(binding, config)
         # The composed store, rebuilt, and the one key that points the harness at it, in the main
         # checkout's settings file, whose placed-path rule passed above; the ledger already records

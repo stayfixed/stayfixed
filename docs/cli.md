@@ -2436,8 +2436,11 @@ offering to remove the ledger.
 **The notes are composed only in overlay mode; the rest is delivered whatever the mode.** A
 `stayfixed.toml` whose `memory.mode` is not `overlay` keeps its notes elsewhere, so for it `attach`
 builds no composed store, writes no `autoMemoryDirectory` and makes no note directories in the
-overlay, and does not ask the `memory.groups` containment below. It binds, merges the allow rules,
-places the Codex rule files and renders and installs the plugin all the same.
+overlay, and does not ask the `memory.groups` containment below; where an earlier attach composed
+them, it takes the recorded key and the composed store back, as `detach` does. It binds, merges the
+allow rules, places the Codex rule files and renders and installs the plugin all the same. The mode
+is the one the configuration resolves once the binding is recorded, so a `[memory] mode` the
+overlay's project file sets applies from the first attach.
 
 **One place per repository: the main checkout.** Claude Code reads the main checkout's
 `.claude/settings.local.json` from every worktree, and writes a worktree's own answers into it, so
@@ -2591,7 +2594,7 @@ them back.
 `autoMemoryDirectory` key points the harness at `$HOME/.local/share/stayfixed/stores/<id>/`, outside
 every checkout, whose links reach the overlay's notes and nothing of the repository's, so it waits
 for no approval. The key is recorded in the ledger before it is written, so `detach` takes it back;
-the path names the whole binding id and is never printed. A repository that keeps its own notes gets
+the path names the whole binding id and is printed only with the id cut to its short form. A repository that keeps its own notes gets
 no key. `stayfixed memory` reads the same store in overlay mode, so the bundles a session starts
 with and the harness read one directory. Nothing is placed under `paths.memory` or under
 `~/.claude/projects/`: the link tree and the harness memory link an earlier release made there are

@@ -1487,8 +1487,8 @@ reddens = [
 [[mutation]]
 name = "the gates do not ask what the share holds"
 file = "src/stayfixed/attach/write.py"
-before = "        refuse_unless_share_holds(binding, config)"
-after = "            pass"
+before = "        refuse_unless_share_holds(binding, config)\n    return diff"
+after = "        pass\n    return diff"
 reddens = [
   "tests/attach/test_write.py::test_a_memory_group_that_leaves_the_projects_share_is_refused_not_created",
 ]
@@ -1673,3 +1673,14 @@ file = "src/stayfixed/attach/doctor.py"
 before = "    elif not fsops.is_dir(directory):"
 after = "    elif False:"
 reddens = ["tests/attach/test_doctor.py::test_a_render_directory_that_is_gone_is_red_and_names_it"]
+
+# Out of overlay mode, a re-attach takes back the pointer an earlier attach recorded, as `detach`
+# does: left, the harness reads the overlay's notes and writes into them.
+[[mutation]]
+name = "a re-attach out of overlay mode keeps the pointer"
+file = "src/stayfixed/attach/write.py"
+before = "        if previous is not None and POINTER_KEY in previous.settings_keys and _unpoint(root):"
+after = "        if False:"
+reddens = [
+  "tests/attach/test_write.py::test_a_reattach_out_of_overlay_mode_withdraws_the_pointer_and_the_composed_store",
+]

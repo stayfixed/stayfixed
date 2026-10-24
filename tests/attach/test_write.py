@@ -509,6 +509,52 @@ def test_attach_points_the_harness_at_the_composed_store_in_the_main_checkout(
     assert ledger(root).settings_keys == ("autoMemoryDirectory",)
 
 
+def test_a_reattach_out_of_overlay_mode_withdraws_the_pointer_and_the_composed_store(
+    tmp_path: Path,
+) -> None:
+    # Left in place, the harness kept reading the overlay's notes through the composed store, and
+    # its writer kept writing into it, while stayfixed delivered `docs/memory` or nothing; no row
+    # said so. A re-attach in another mode takes the ledgered key and the store back as `detach`
+    # does. Mutation (oracle): `mutations/`'s "a re-attach out of overlay mode keeps the pointer".
+    from stayfixed import binding
+    from stayfixed.memory.store import composed_directory as store_directory
+
+    root, store, machine = _attachable(tmp_path)
+    attach(root, store=store, machine=machine, runner=Recorder())
+    id = binding.read_id(root)
+    assert id is not None and store_directory(id).is_dir()
+    config = root / CONFIG_FILE
+    config.write_text(
+        config.read_text(encoding="utf-8").replace('mode = "overlay"', 'mode = "in-repo"')
+    )
+    attach(root, store=None, machine=machine, runner=Recorder())
+    settings = json.loads((root / SETTINGS).read_text(encoding="utf-8"))
+    assert POINTER not in settings
+    assert not store_directory(id).exists()
+    assert ledger(root).settings_keys == ()
+
+
+def test_the_first_attach_reads_the_mode_the_overlays_project_file_sets(tmp_path: Path) -> None:
+    # The overlay's project layer is read for a bound checkout, and the first attach read the
+    # configuration before it bound the checkout: `[memory] mode = "overlay"` set there alone
+    # composed nothing and wrote no pointer until a second attach. The mode is resolved after the
+    # binding is recorded.
+    from stayfixed import binding
+    from stayfixed.memory.store import composed_directory as store_directory
+
+    root, store, machine = _attachable(tmp_path)
+    config = root / CONFIG_FILE
+    config.write_text(config.read_text(encoding="utf-8").replace('mode = "overlay"\n', ""))
+    (store.parent / "stayfixed.toml").write_text('[memory]\nmode = "overlay"\n', encoding="utf-8")
+    attach(root, store=None, machine=machine, runner=Recorder())
+    id = binding.read_id(root)
+    assert id is not None
+    written = (root / SETTINGS).is_file()
+    settings = json.loads((root / SETTINGS).read_text(encoding="utf-8")) if written else {}
+    assert settings.get(POINTER) == str(store_directory(id))
+    assert ledger(root).settings_keys == (POINTER,)
+
+
 def test_the_composed_store_is_the_recorded_projects_and_moves_only_when_attach_rebinds(
     tmp_path: Path,
 ) -> None:
