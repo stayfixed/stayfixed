@@ -6,7 +6,8 @@ from the main checkout so every worktree gets it; a session runs the plugin from
 an edit in the overlay reaches the next session after the next `attach`, with no reinstall; a
 copied file keeps its mode, so a skill's script stays executable. Run from a worktree, `attach`
 also refuses when the main checkout tracks `.claude/settings.local.json`, where the install
-writes, or its `.gitignore` re-includes it. No
+writes, or its `.gitignore` re-includes it, and from a worktree of a bare repository, which has
+no main checkout. No
 hook entry goes into `.claude/settings.local.json` any more: it keeps only the allow rules `attach`
 merges, and the entries an earlier release merged there are taken back, the ones its ledger
 records and no other. `attach --check` and `--json` no longer report `added_hooks`, and `--yes` now

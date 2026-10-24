@@ -2852,3 +2852,15 @@ after = "    if shown := exclude.unignored(main, ()):"
 reddens = [
   "tests/attach/test_write.py::test_attach_from_a_worktree_asks_the_main_checkouts_gitignore_about_what_it_places",
 ]
+
+# A bare repository's main worktree is the repository itself, and the common directory's parent is
+# no checkout: the plugin would be installed, and the main checkout's settings file asked about, in
+# a directory that is not one. Refused while nothing is written.
+[[mutation]]
+name = "attach takes a bare repository's parent directory for its main checkout"
+file = "src/stayfixed/attach/write.py"
+before = '        if "bare" in lines:'
+after = "        if False:"
+reddens = [
+  "tests/attach/test_write.py::test_attach_from_a_bare_repositorys_worktree_cannot_tell_its_main_checkout_and_installs_nothing",
+]

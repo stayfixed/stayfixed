@@ -834,6 +834,16 @@ def _prepare_store(binding: Binding, config: Config) -> None:
             raise Refusal(GROUP_ESCAPES) from exc
 
 
+# Said where the repository is bare: git names no main checkout, the one whose
+# `settings.local.json` Claude Code reads from every worktree and the overlay's plugin is installed
+# from, and the common directory's parent is no checkout at all.
+NO_MAIN_CHECKOUT = (
+    "cannot tell which checkout is this repository's main one: the repository is bare, so git "
+    "names none, and the overlay's plugin is installed from the main checkout; nothing was "
+    "changed. Attach from a clone with a working tree of its own"
+)
+
+
 def _worktrees(root: Path) -> list[Path]:
     """Every checkout of this repository, from `git worktree list --porcelain`.
 
@@ -859,6 +869,11 @@ def _worktrees(root: Path) -> list[Path]:
     # the worktree at `…/wt\rx` (`gitenv.answer_lines`).
     for block in out.split("\n\n"):
         lines = answer_lines(block)
+        # The first block is the main worktree, and in a bare repository it is the repository
+        # itself, marked `bare`: there is no main checkout to install the plugin from or to own
+        # the store, and the common directory's parent is no checkout.
+        if "bare" in lines:
+            raise Refusal(NO_MAIN_CHECKOUT)
         if any(line == "prunable" or line.startswith("prunable ") for line in lines):
             continue
         found.extend(

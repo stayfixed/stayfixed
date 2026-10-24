@@ -2515,7 +2515,9 @@ id). The first attach — any run while the ledger records no render — install
 `claude plugin marketplace add <that directory> --scope local` and `claude plugin install
 overlay-<id>@stayfixed-delivery-<id> --scope local`, run from the main checkout, whose
 `.claude/settings.local.json` Claude Code reads from every worktree and writes the plugin's entry
-into. A call that does not succeed is a note naming its exit code and never what it printed, since
+into. A linked worktree of a bare repository has no main checkout, so `attach` and `detach` refuse
+it (`2`) before anything is written, saying they cannot tell which checkout is the main one. A call
+that does not succeed is a note naming its exit code and never what it printed, since
 that names the plugin; the render stays in place and the next `attach` installs it again. Claude
 Code records a local-scope marketplace for the whole machine, so the names carry the whole id,
 which a clone never sees; the plugin's entry is the reason `.claude/settings.local.json` is placed

@@ -31,6 +31,7 @@ from stayfixed.attach.write import (
     HARNESS_LAPSED,
     HARNESS_WAITS,
     INSTALLED,
+    NO_MAIN_CHECKOUT,
     NO_ORIGIN_NOTE,
     NOT_INSTALLED,
     REAL_DIRECTORIES,
@@ -291,6 +292,28 @@ def test_the_first_attach_installs_the_rendered_plugin_from_the_main_checkout_an
     second = Recorder()
     attach(side, store=store, machine=machine, runner=second, home=tmp_path / "home")
     assert _claude_calls(second) == []
+
+
+def test_attach_from_a_bare_repositorys_worktree_cannot_tell_its_main_checkout_and_installs_nothing(
+    tmp_path: Path,
+) -> None:
+    # A bare repository has no main checkout: its git common directory's parent is whatever
+    # directory the repository sits in, which is no checkout at all, and the plugin is installed
+    # from the main checkout. So the run refuses with "cannot tell" before anything is written or
+    # installed, rather than installing into a directory that is not a checkout.
+    root, store, machine = _attachable(tmp_path)
+    _committed(root)
+    bare = tmp_path / "bare.git"
+    _git(tmp_path, "clone", "-q", "--bare", str(root), str(bare))
+    side = tmp_path / "side"
+    _git(bare, "worktree", "add", "-q", str(side), "main")
+    before = snapshot(tmp_path)
+    runner = Recorder()
+    with pytest.raises(Refusal) as refused:
+        attach(side, store=store, machine=machine, runner=runner, home=tmp_path / "home")
+    assert str(refused.value) == NO_MAIN_CHECKOUT
+    assert runner.calls == []
+    assert_snapshot_unchanged(tmp_path, before)
 
 
 def test_attach_from_a_worktree_asks_the_main_checkouts_gitignore_about_what_it_places(
