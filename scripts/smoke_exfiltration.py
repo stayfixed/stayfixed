@@ -37,9 +37,9 @@ from smoke_hooks import developer_free_env, fixture_repository
 CANARY = "CANARY-IN-REPO-RULE"
 DELIMITER = "<<<stayfixed:repository-data"
 # The remote the overlay records for `smoke`, and the one the clone has instead. The clone chooses
-# its own `project.name` and its own `origin`, and not what the overlay recorded under that name,
-# which is the whole of why `attach` can tell the two apart. It has an `origin` of its own because
-# a checkout with none is a state of its own (`no-origin`), not the one this scenario is about.
+# its own `project.name` and its own `origin`; what it cannot choose is a binding id in its git
+# common directory that this machine records, which is the whole of why `attach` can tell it from
+# the owner's checkout.
 RECORDED_REMOTE = "git@example.com:the-owner/smoke.git"
 CLONES_REMOTE = "git@example.com:somebody-else/smoke.git"
 # How many rows this scenario declares. Asserted at the end, because five of the seven assert an
@@ -336,7 +336,7 @@ def main(argv: list[str]) -> int:
     )
     state = json.loads(checked.stdout or "{}").get("state")
     report.row(
-        state == "mismatch",
+        state == "unbound",
         "a clone claiming another project's name is not that project",
         f"state={state!r}",
     )

@@ -31,7 +31,7 @@ from stayfixed.config.loader import CONFIG_FILE, load, loads
 from stayfixed.config.paths import PathEscape, PathUnasked
 from stayfixed.config.reading import ConfigError
 from stayfixed.errors import Failure, Refusal
-from stayfixed.memory.api import NO_ORIGIN, PROJECT_RECORD, PROJECTS, UNBOUND
+from stayfixed.memory.api import BOUND, PROJECT_RECORD, PROJECTS, UNBOUND
 from stayfixed.overlay.api import COMMON_CLAUDE, COMMON_CODEX, COMMON_MEMORY
 from stayfixed.presets import load_preset
 from stayfixed.scaffold import EntriesError
@@ -212,19 +212,28 @@ def test_a_first_attach_reports_unbound_rather_than_binding_silently(tmp_path: P
     assert binding.recorded is None
 
 
-def test_a_matching_remote_is_bound(tmp_path: Path) -> None:
+def test_a_checkout_this_machine_binds_is_bound_whatever_its_remote(tmp_path: Path) -> None:
+    # The binding is this machine's record of the checkout's id, so a remote the overlay records
+    # neither makes it nor unmakes it.
+    from stayfixed import binding as core
+
     url = "git@github.com:o/p.git"
-    assert _read(tmp_path, recorded=url, origin=url).state == "bound"
+    root, _ = _project_and_store(tmp_path, recorded=url, origin=url)
+    assert _read(tmp_path, recorded=url, origin=url).state == UNBOUND
+    core.record(root, "p", url)
+    found = _read(tmp_path, recorded=url, origin="git@github.com:o/fork.git")
+    assert found.state == BOUND
+    assert found.note is not None and "o/fork.git" in found.note
 
 
-def test_a_different_remote_is_a_mismatch_and_never_a_bind(tmp_path: Path) -> None:
-    # A hostile clone that declares the `project.name` of a real project is refused: attach
-    # compares the remote to the overlay's record. The clone chooses `project.name`; it does
-    # not choose which remote the overlay recorded under that name.
-    binding = _read(
-        tmp_path, recorded="git@github.com:o/real.git", origin="git@github.com:evil/p.git"
-    )
-    assert binding.state == "mismatch"
+def test_a_clone_naming_a_recorded_project_under_its_remote_is_still_unbound(
+    tmp_path: Path,
+) -> None:
+    # A hostile clone that declares the `project.name` of a real project, and even its remote, is
+    # unbound: it chooses both and has no id in its git common directory for this machine to have
+    # recorded.
+    url = "git@github.com:o/real.git"
+    assert _read(tmp_path, recorded=url, origin=url).state == UNBOUND
 
 
 def test_a_project_name_that_is_not_one_path_segment_is_refused(tmp_path: Path) -> None:
@@ -258,18 +267,15 @@ def test_git_being_unavailable_is_a_machine_fault_and_not_an_unbound_state(
         read_binding(root, store=store, machine=machine)
 
 
-def test_a_repository_with_no_origin_remote_is_its_own_state_and_not_a_machine_fault(
+def test_a_repository_with_no_origin_remote_is_no_state_of_its_own_and_not_a_machine_fault(
     tmp_path: Path,
 ) -> None:
     # The other side of the distinction above, and the reason the test before it patches `git`
     # rather than deleting the remote: `git` running and answering nothing is a fact about the
-    # repository. It used to be read as a mismatch, whose way out, `--trust-remote`, then refused
-    # for the missing `origin`; it is `no-origin`, recorded or not, and every surface says so.
-    #
-    # Mutation: `mutations/`'s "the binding classifier reads a missing origin as a different
-    # remote".
-    assert _read(tmp_path, recorded="u", origin=None).state == NO_ORIGIN
-    assert _read(tmp_path, recorded=None, origin=None).state == NO_ORIGIN
+    # repository, and since the remote binds nothing it is not a state at all.
+    found = _read(tmp_path, recorded="u", origin=None)
+    assert found.state == UNBOUND and found.remote is None
+    assert _read(tmp_path / "fresh", recorded=None, origin=None).note is None
 
 
 def test_the_diff_lists_what_would_be_added_and_never_applies_it(tmp_path: Path) -> None:
@@ -332,10 +338,8 @@ def test_a_machine_that_records_no_overlay_is_refused_naming_what_records_one(
 
 
 def test_a_binding_record_that_cannot_be_read_stops_the_run(tmp_path: Path) -> None:
-    # `memory.store._bound` answers False for this file, which is right for the hook path: it
-    # degrades closed and says "run `stayfixed attach`". Here that advice *is* the command, and
-    # "no record" is the state that invites a rebind — so a broken record has to stop the run
-    # rather than quietly become a first attach.
+    # "No record" is the state in which `attach` writes one, so a broken record has to stop the
+    # run rather than quietly be written over.
     root, store = _project_and_store(tmp_path, recorded="u", origin="u")
     (store.parent / PROJECT_RECORD).write_text("remote = 'u\n", encoding="utf-8")
     with pytest.raises(Failure):

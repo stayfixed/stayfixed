@@ -71,6 +71,7 @@ from stayfixed.attach.permissions import (
     overlay_entries,
     settings_document,
 )
+from stayfixed.binding import ensure_id, record, short
 from stayfixed.config.layout import (
     ATTACH_LEDGER,
     IGNORE_BODY,
@@ -88,13 +89,10 @@ from stayfixed.gitenv import GitUnavailable, Unasked, answer_lines, git_run
 from stayfixed.guards.api import hooks_dir
 from stayfixed.jsonobject import NESTED, json_object
 from stayfixed.memory.api import (
+    BOUND,
     COMMON_GROUP,
-    DIFFERENT_REMOTE,
     GATE_LAPSED,
     GATE_OPEN,
-    MISMATCH,
-    NO_ORIGIN,
-    NO_REMOTE,
     PROJECT_RECORD,
     PROJECTS,
     STORE_DIR,
@@ -140,17 +138,10 @@ GITIGNORE = ".gitignore"
 # is subject to workspace trust and a link is not, so the symlink is preferred and this is taken
 # only when it cannot be made.
 FALLBACK_KEY = "autoMemoryDirectory"
-# The fourth, asked just after the fifth (a checkout with no `origin`, `memory.api.NO_REMOTE`),
-# and above every write for the same reason. The binding record is UTF-8 TOML, and an `origin`
-# URL git prints in other bytes cannot be written into it: `_record_binding`, the last write,
-# would raise `UnicodeEncodeError` after the ignore region, the Codex rules, the settings merge
-# and the ledger. `fsops.utf_8_name` asks it. The URL is not quoted: a remote URL is
-# repository-authored.
-ORIGIN_NOT_TEXT = (
-    "this repository's `origin` URL is not UTF-8 text, so the overlay cannot record it; set it "
-    "again with `git remote set-url origin URL`"
-)
-# The seventh, and the first of the two whose trigger is repository-authored
+# What `attach` says of a checkout with no `origin`, which binds as any other: the binding is the
+# id in the git common directory, and the remote is only what the records note beside it.
+NO_ORIGIN_NOTE = "this checkout has no `origin` remote, so the binding records none"
+# The fourth, and the first of the two whose trigger is repository-authored
 # (`memory.groups` reaches no guard of its own). One constant for the check above every write
 # and for the `O_NOFOLLOW` walk that is the floor under it, because two spellings of one
 # refusal are two refusals to keep in step. The entry is never quoted back into it.
@@ -164,7 +155,7 @@ GROUP_UNASKED = (
     "a memory.groups entry's place in this project's share of the overlay cannot be checked for "
     "a symlink ({fault}), so it is refused rather than created"
 )
-# The ninth, and the second of the two whose trigger is repository-authored. Its anchor is
+# The sixth, and the second of the two whose trigger is repository-authored. Its anchor is
 # `root` -- the checkout the command was pointed at, never a value the repository chose -- so a
 # repository cannot move the directory this count is taken under: `unlinked_groups` contains
 # every `<paths.memory>/<group>` against that root and refuses the ones that leave it. The
@@ -201,9 +192,11 @@ CREATED_DIRS = (".stayfixed/local", ".stayfixed", ".codex/rules", ".codex", ".cl
 class Attached:
     """What one `attach` changed.
 
-    Nothing here is repository-authored. `notes` is the one field that carries text from
-    outside this process -- what `pre-commit install` printed -- and that is this machine's
-    tool answering in the overlay, not the clone's bytes.
+    Nothing here is repository-authored but two notes: what `pre-commit install` printed, which
+    is this machine's tool answering in the overlay, and `memory.store.origin_note`'s, which
+    names the remotes through `printed.quoted`. `binding` is the binding id as `binding.short`
+    prints it, never the whole id; `binding_recorded` says whether this run bound a checkout this
+    machine did not bind before.
     """
 
     settings_written: bool
@@ -211,6 +204,7 @@ class Attached:
     binding_recorded: bool
     notes: tuple[str, ...]
     links: Links
+    binding: str
 
 
 @dataclass(frozen=True)
@@ -545,32 +539,28 @@ def _nothing_written(sentence: str) -> Failure:
     return Failure(f"{sentence}, so nothing was written")
 
 
-def _record_binding(binding: Binding) -> bool:
-    """Write `projects/<name>/project.toml`, keeping the first-attach date it already carries.
+def _record_project(binding: Binding, remote: str | None) -> None:
+    """Write `projects/<name>/project.toml` where it records no remote yet, keeping the
+    first-attach date it already carries.
 
-    The record is the owner's consent — the bound remote URL and the first-attach date — so a
-    repository the overlay already records correctly is left alone — re-stamping the date on
-    every attach would turn a fact into a timestamp of the last run.
+    The record is what the overlay keeps for the owner to read — the remote the project was first
+    bound with and the first attach's date — and binds nothing: the binding is this machine's
+    (`stayfixed.binding`). So a record that names a remote is left alone, whatever this checkout's
+    `origin` says, and two machines attaching one project each keep their own binding without
+    rewriting it. Re-stamping the date on every attach would turn a fact into a timestamp of the
+    last run. `remote` is the `origin` as the machine's record kept it: none where a UTF-8 file
+    cannot hold it.
     """
-    if binding.state != MISMATCH and binding.recorded is not None:
-        return False
-    if binding.remote is None:
-        # The floor under `attach`'s own hoisted copy, never the first place this is asked. A
-        # `Refusal` reaching here means the hoist above drifted — and by then the ignore region,
-        # `.codex/rules/`, the settings merge and the ledger have all been written, which is
-        # exactly the state the hoist exists to prevent.
-        raise Refusal(NO_REMOTE)
+    if binding.recorded is not None:
+        return
     relative = f"{PROJECTS}/{binding.project}/{PROJECT_RECORD}"
     first = _first_attach(binding.overlay / relative) or datetime.date.today().isoformat()
+    fields: dict[str, object] = {"first_attach": first}
+    if remote is not None:
+        fields = {"remote": remote, **fields}
     # `tomlout` and not an f-string: the value is a git remote URL, which is repository-authored
-    # (principle 5), and one carrying a quote and a newline would write further keys into the
-    # record that decides what `attach` trusts.
-    fsops.write_within(
-        binding.overlay,
-        relative,
-        tomlout.dumps({"": {"remote": binding.remote, "first_attach": first}}),
-    )
-    return True
+    # (principle 5), and one carrying a quote and a newline would write further keys into it.
+    fsops.write_within(binding.overlay, relative, tomlout.dumps({"": fields}))
 
 
 def _first_attach(record: Path) -> str | None:
@@ -1179,7 +1169,6 @@ def attach(
     store: Path,
     machine: Path | None,
     confirmed: bool,
-    trust_remote: bool,
     runner: Runner,
     home: Path | None,
     owner: Owner | None = None,
@@ -1188,11 +1177,10 @@ def attach(
 
     The order below is the order they are enumerated in: read the binding, which already
     refuses a store outside the machine-recorded overlay; refuse a repository whose
-    `memory.mode` is not `overlay`, which is numbered with none of the nine because it is about
+    `memory.mode` is not `overlay`, which is numbered with none of the six because it is about
     the configuration and not about this binding; compute the diff; refuse a widening
-    without `confirmed`; refuse a checkout with no `origin`; refuse a mismatch without
-    `trust_remote`; refuse an `origin` URL that is not UTF-8 text; read the existing ledger, which
-    refuses one no attach could have written; refuse a `memory.groups` entry that leaves this
+    without `confirmed`; read the existing ledger, which refuses one no attach could have
+    written; refuse a `memory.groups` entry that leaves this
     project's share of the overlay; refuse a harness anchor this machine cannot vouch for;
     refuse a group that never moved into the overlay; ask git what it already hides, which
     refuses a `check-ignore` with no answer, a placed path that leaves the project and a
@@ -1212,30 +1200,33 @@ def attach(
     after it. The reason is the `Config`: `_check_groups` has just loaded it, and the
     never-moved check reads the same `memory.groups` and the same `paths.memory` — so the two
     containments over one repository-authored list stay in one place, and the anchor, which
-    needs neither, follows. Nothing writes between them; every one of the nine is above the
+    needs neither, follows. Nothing writes between them; every one of the six is above the
     first write, which is the property that matters and the one the tests assert.
 
-    **A tenth refusal is above every write and is not one of the nine**, because it is not a
+    **A seventh refusal is above every write and is not one of the six**, because it is not a
     check this function makes: `unlinked_groups` contains each `<paths.memory>/<group>` against
     `root` before it counts, and a `PathEscape` out of it propagates as the refusal it already
     is — `paths.memory` may itself be a symlink, and then every group escapes at once. It is
     enumerated nowhere because it has no ordinal of its own; it is named here so that the count
-    above reads as "nine checks" rather than as "nine ways this can refuse".
+    above reads as "six checks" rather than as "six ways this can refuse".
 
-    **All nine checks are above every write, and three of them were not.** The no-`origin` one
-    lived in `_record_binding`, the ledger's in `_write_ledger`, and the `memory.groups` one in
-    `_prepare_store` — which runs after the ignore region, the Codex rule files, the settings
-    merge, the ledger *and* the overlay's binding record. Each could exit 2 having written three,
-    four or five artifacts, with `doctor._attached` — which keys on the ledger existing — then
-    reporting the repository attached, and in the third case *bound*, because the record had been
-    written too. A refusal that leaves a repository looking attached is not a refusal. The second
-    of the three arrived in the commit that wrote that sentence down, and the third was found by
-    asking whether the shape was dead or only its named instances were.
+    **All six checks are above every write, and two of them were not.** The ledger's lived in
+    `_write_ledger`, and the `memory.groups` one in `_prepare_store` — which runs after the
+    ignore region, the Codex rule files, the settings merge, the ledger *and* the binding. Each
+    could exit 2 having written four or five artifacts, with `doctor._attached` — which keys on
+    the ledger existing — then reporting the repository attached, and in the second case
+    *bound*, because the binding had been written too. A refusal that leaves a repository looking
+    attached is not a refusal.
 
-    The binding record is written before the links, because `memory.store` checks it and a
-    store whose record is missing does not resolve — and `attach_main` resolves as its last
-    step. The ledger is written before the links too, so a `PartialLink` half way through leaves
-    behind a repository `detach` can still clean up.
+    **Neither a missing `origin` nor one the records do not name refuses.** The binding is the id
+    `stayfixed.binding` writes into the git common directory, which no clone carries, and the
+    machine's record of it; the remote decides nothing, so it is a note (`NO_ORIGIN_NOTE`,
+    `memory.store.origin_note`).
+
+    The binding is written before the links, the id and the machine's record first, because
+    `memory.store` checks it and a store whose checkout is unbound does not resolve — and
+    `attach_main` resolves as its last step. The ledger is written before the links too, so a
+    `PartialLink` half way through leaves behind a repository `detach` can still clean up.
 
     `runner` and `home` are keyword-**required** rather than defaulted so that no test can reach
     a real `pre-commit` or the developer's own `~/.claude/`. A default here would leave that as
@@ -1249,17 +1240,14 @@ def attach(
         store=store,
         machine=machine,
         confirmed=confirmed,
-        trust_remote=trust_remote,
         home=home,
         owner=owner,
     )
     return _carry_out(root, planned, machine=machine, runner=runner, home=home)
 
 
-# The flags that take the run past a stop: `--yes` past a widening, `--trust-remote` past a
-# mismatch.
+# The flag that takes the run past a stop: `--yes` past a widening.
 CONFIRMED = "--yes"
-TRUST_REMOTE = "--trust-remote"
 
 
 @dataclass(frozen=True)
@@ -1279,9 +1267,8 @@ class Gates:
     first stop no flag it was given answers, and reads nothing past it. `--check` takes every stop
     and reports it: it reads past a flag's stop as the run does with the flag, and past the mode's
     only for the rest of its report, so a read the run makes only once every stop before it is
-    passed is made only where none was the mode's. Past a checkout's with no `origin` it reads
-    nothing, as the run reads nothing: the iteration ends there. `diff` and `real` are what the
-    reads found, for the plan and the report.
+    passed is made only where none was the mode's. `diff` and `real` are what the reads found,
+    for the plan and the report.
     """
 
     def __init__(self, root: Path, config: Config, binding: Binding) -> None:
@@ -1317,30 +1304,9 @@ class Gates:
                 f"confirm it",
                 CONFIRMED,
             )
-        # The fifth refusal, a checkout with no `origin`, is its own state
-        # (`memory.store.binding_state` asks it first) and is refused with the sentence every
-        # other surface says. Read as a mismatch, its answer would be `--trust-remote`, which then
-        # refuses for the missing `origin`. Kept above every write rather than in
-        # `_record_binding`, which runs after the ignore region, the Codex rules, the settings
-        # merge and the ledger: refused there, it would leave four artifacts behind and
-        # `doctor._attached` would report the repository attached. Nothing past it is read, not
-        # for `--check` either: the count below refuses a group outside `paths.memory`, which
-        # would end `--check` in that refusal where the run ends with the missing `origin`.
-        if binding.state == NO_ORIGIN:
-            yield Stop(NO_REMOTE)
-            return
-        if binding.state == MISMATCH:
-            # The name is not quoted back, for the reason `attach.check` states at length:
-            # `project.name` is repository-authored and looser than the marker-id grammar
-            # `doctor` already refuses to print, and a refusal built out of one is still one.
-            yield Stop(
-                f"{DIFFERENT_REMOTE}; pass --trust-remote only if this checkout should be bound "
-                f"to it",
-                TRUST_REMOTE,
-            )
         if refused is None:
             refuse_unless_share_holds(binding, config)
-        # The ninth, and the one whose remedy is an act no command performs: `attach` **links**,
+        # The sixth, and the one whose remedy is an act no command performs: `attach` **links**,
         # so a group that is still a real directory under `paths.memory` has its notes in the
         # repository and its share of the overlay empty, and linking over it would leave every
         # session reading the repository's copy with the binding record, the settings merge and
@@ -1360,16 +1326,15 @@ def _plan(
     store: Path,
     machine: Path | None,
     confirmed: bool,
-    trust_remote: bool,
     home: Path | None,
     owner: Owner | None,
 ) -> AttachPlan:
     """Every read, decode and check `attach` makes, in the order `attach` enumerates them, and
     nothing written: what it returns is all `_carry_out` may act on.
 
-    The gates -- `memory.mode`, the widening `--yes` confirms, a checkout with no `origin`, the
-    mismatch `--trust-remote` accepts and the groups that never moved -- are `Gates`', which
-    `attach --check` iterates too, and the run refuses at the first one its flags do not answer.
+    The gates -- `memory.mode`, the widening `--yes` confirms and the groups that never moved --
+    are `Gates`', which `attach --check` iterates too, and the run refuses at the first one its
+    flags do not answer.
     What lies between and after them is `refuse_unless_share_holds` and `plan_writes`, which
     `--check` asks where the run would, so the preview stops on every refusal the run makes past
     those gates, with the same code and line, by calling what the run calls."""
@@ -1386,23 +1351,19 @@ def _plan(
     binding = read_binding(root, store=store, machine=machine, config=config)
     gates = Gates(root, config, binding)
     for stop in gates:
-        if not (
-            (stop.flag == CONFIRMED and confirmed) or (stop.flag == TRUST_REMOTE and trust_remote)
-        ):
+        if not (stop.flag == CONFIRMED and confirmed):
             raise Refusal(stop.refusal)
     return plan_writes(root, config, binding, gates.diff, machine=machine, home=home)
 
 
 def refuse_unless_share_holds(binding: Binding, config: Config) -> None:
-    """Refuse a binding this project's share of the overlay cannot hold: an `origin` URL its
-    record cannot be written with, and a `memory.groups` entry that leaves the share.
+    """Refuse a binding this project's share of the overlay cannot hold: a `memory.groups` entry
+    that leaves the share.
 
     Asked between the run's gates (`Gates`), above every write, by `attach` and by
     `attach --check` alike where the run would reach it, so the two end alike on either.
     """
-    if binding.remote is not None and not fsops.utf_8_name(binding.remote):
-        raise Refusal(ORIGIN_NOT_TEXT)
-    # The seventh refusal, and it belongs here for the reason the six above it do; the sixth,
+    # The fourth refusal, and it belongs here for the reason the three above it do; the third,
     # the ledger's, is read in `plan_writes` and is above every write too. `ledger()` refuses
     # a ledger naming files or settings keys `attach` could not have written, and asked for by
     # `_write_ledger`, the fourth write of the run, it would let a clone that commits such a
@@ -1520,10 +1481,19 @@ def _carry_out(
         fsops.write_within(root, LOCAL_SETTINGS, planned.settings)
     carried = planned.carried
     _write_ledger(root, planned, carried)
-    recorded = _record_binding(binding)
+    # The binding: the id in the git common directory and the machine's record of it, then the
+    # overlay's record where it has none. Before the links, since the store resolves only for a
+    # bound checkout.
+    id = ensure_id(root)
+    bound = record(root, binding.project, binding.remote)
+    _record_project(binding, bound.origin)
     _prepare_store(binding, config)
     links = _link_everywhere(planned.checkouts, binding, config, machine=machine, home=home)
     notes = [] if (note := _secret_scan(binding, runner)) is None else [note]
+    if binding.remote is None:
+        notes.append(NO_ORIGIN_NOTE)
+    elif binding.note is not None:
+        notes.append(binding.note)
     owner = planned.checkouts[0]
     unavailable = False
     if _settings_containable(root):
@@ -1550,7 +1520,7 @@ def _carry_out(
     # its notes, and a run that says something else above has no use for that.
     elif (waits := _harness_waits(owner, config, machine=machine)) is not None:
         notes.append(waits)
-    return Attached(written, rules, recorded, tuple(notes), links)
+    return Attached(written, rules, binding.state != BOUND, tuple(notes), links, short(id))
 
 
 @dataclass(frozen=True)

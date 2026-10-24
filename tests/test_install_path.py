@@ -642,9 +642,9 @@ def test_doctor_is_green_on_the_attached_fixture(tmp_path: Path) -> None:
     assert next(row for row in rows if row["name"] == "files")["status"] == OK
 
 
-# What `docs/cli.md` says `stayfixed doctor` launches: seven subprocesses on a green attached
+# What `docs/cli.md` says `stayfixed doctor` launches: eight subprocesses on a green attached
 # installation *besides* the `ci-ref` row, which the stub runner below answers in process rather
-# than launching — so seven here and eight in production on a repository that records a `[ci] ref`,
+# than launching — so eight here and nine in production on a repository that records a `[ci] ref`,
 # which is what `docs/cli.md` says.
 # Written as a number rather than as a set of argv lists so the failure reads as "the count
 # moved", which is the claim.
@@ -662,7 +662,11 @@ def test_doctor_is_green_on_the_attached_fixture(tmp_path: Path) -> None:
 # path but a dangling link and a real directory with no fallback recorded — and not only beside a
 # link: the gate it asks is the owning checkout's, which `attach` asks, so a linked worktree reads
 # one machine state as the main checkout does.
-DOCTOR_LAUNCHES = 7
+#
+# Eight and not seven since the binding is the id in the git common directory: each note-store
+# resolution asks git for the common directory where it asked for the `origin`, and the `attached`
+# row asks for both, the `origin` for the note it may print beside the state.
+DOCTOR_LAUNCHES = 8
 
 
 def test_doctor_launches_the_number_of_subprocesses_it_says_it_does(
@@ -684,7 +688,7 @@ def test_doctor_launches_the_number_of_subprocesses_it_says_it_does(
     #
     # **The one test here that keeps the library seam**, and the reason is the measurement
     # itself: this counts launches through a `Popen` patched in *this* process, and a `doctor`
-    # run as a subprocess launches its seven in a process no patch of ours can see. Everything
+    # run as a subprocess launches its eight in a process no patch of ours can see. Everything
     # else in this module runs the launcher; this cannot, and says so.
     walk = _install_path(tmp_path)
     launched: list[list[str]] = []
@@ -710,11 +714,11 @@ def test_doctor_launches_the_number_of_subprocesses_it_says_it_does(
     # The report is green first, so a count taken from a run that fell over early cannot pass.
     assert [check.name for check in checks if check.status == RED] == []
     assert len(launched) == DOCTOR_LAUNCHES, launched
-    # And they are the seven the paragraph names, not seven of something else: one wrapper probe,
-    # and six `git` questions. Asserted by shape rather than by full argv, because each of the
-    # six `git` calls carries the temporary checkout or overlay it asks about.
+    # And they are the eight the paragraph names, not eight of something else: one wrapper probe,
+    # and seven `git` questions. Asserted by shape rather than by full argv, because each of the
+    # seven `git` calls carries the temporary checkout or overlay it asks about.
     assert sum(1 for argv in launched if argv[0] == str(WRAPPER)) == 1
-    assert sum(1 for argv in launched if argv[0] == "git") == 6
+    assert sum(1 for argv in launched if argv[0] == "git") == 7
 
 
 def test_doctor_is_red_when_the_memory_path_is_a_real_directory(tmp_path: Path) -> None:

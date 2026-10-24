@@ -16,10 +16,11 @@ checked, and each closes a hole the other three leave open:
    of the recorded overlay: `common/memory`, or `projects/<the bound name>/memory`. Testing
    containment in the overlay root alone lets an honestly-named, honestly-bound project point
    one directory sideways at another client's notes.
-4. **The binding.** The overlay's `projects/<name>/project.toml` must record this
-   repository's own `origin`, in any of the transports `binding_state` holds equal. `git` runs
-   with a scrubbed environment, because an inherited `GIT_DIR` would otherwise answer for a
-   different repository altogether.
+4. **The binding.** This machine must record the checkout's binding id, kept in its git common
+   directory, as bound to this project (`stayfixed.binding`): a clone that names itself after
+   one of the owner's projects has no id, so nothing binds it. `git` runs with a scrubbed
+   environment, because an inherited `GIT_DIR` would otherwise answer for a different
+   repository altogether.
 
 **What the environment can and cannot choose.** The store's *location* is never named by a variable
 this process reads: `resolve` takes an `env` mapping and ignores it by contract, and
@@ -54,13 +55,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from stayfixed import fsops
+from stayfixed.binding import Bound, bound_project
 from stayfixed.config.overlay import overlay_root
 from stayfixed.config.paths import PathEscape, PathUnasked, contained
-from stayfixed.config.reading import UNPARSEABLE, MachineConfigError
+from stayfixed.config.reading import MachineConfigError
 from stayfixed.config.schema import LOCAL_ONLY_MODE, OVERLAY_MODE, Config
 from stayfixed.findings import listed
 from stayfixed.fsops import read_regular_text
-from stayfixed.gitenv import git_answer, origin_remote
+from stayfixed.gitenv import git_answer
 from stayfixed.printed import clipped, quoted
 
 LOCAL_STORE = Path(".stayfixed") / "local" / "memory"
@@ -196,50 +198,29 @@ def _registered_worktree(root: Path) -> Path | None:
     return None if owner == root.resolve() else owner
 
 
-# The one answer to "does the overlay's record bind this checkout's `origin`", which `memory`
+# The one answer to "does this machine bind this checkout to this project", which `memory`
 # commands, `attach`, `attach --check`, `doctor` and the session-start line all read
-# (`binding_state`). A checkout with no `origin` is its own state and is asked first, and here
-# alone: a second answer to it would be one more place to call it a different remote URL and point
-# at `--trust-remote`, which refuses for the missing `origin`.
+# (`binding_state`). The remote is no part of it: a moved or missing `origin` is a note
+# (`origin_note`), never a state that refuses.
 UNBOUND = "unbound"
 BOUND = "bound"
-MISMATCH = "mismatch"
-NO_ORIGIN = "no-origin"
-BINDING_STATES = (UNBOUND, BOUND, MISMATCH, NO_ORIGIN)
+BINDING_STATES = (UNBOUND, BOUND)
 
-# Each cause, and the way out that fits it, rather than one sentence for all of them: "run
-# `stayfixed attach`", for a changed remote, is the command that refuses. Fixed text: the
-# project's name and the record's path, which the repository chooses, go in `Unresolved.detail`
-# and never in these. The two a surface says with a way out of its own are kept apart from their
-# way out, so every surface says the same cause.
+# The cause, and the way out that fits it. Fixed text: the project's name, which the repository
+# chooses, goes in `Unresolved.detail` and never in this.
 NO_RECORD = (
-    "the overlay records no remote for this project, so nothing binds it to this repository; "
-    "run `stayfixed attach` to bind it"
+    "this machine records no binding of this checkout to this project, so nothing binds it to "
+    "the overlay; run `stayfixed attach` to bind it"
 )
-RECORD_UNREADABLE = (
-    "the overlay's record of this project cannot be read, so the binding cannot be checked; "
-    "repair or remove the file named below, then run `stayfixed attach`"
+# The note a bound checkout's `origin` earns when it is not the remote its binding was recorded
+# with. Both are repository-authored and arrive through `printed.quoted`; `{origin}` or
+# `{recorded}` is `NO_REMOTE_SAID` where there is none.
+ORIGIN_MOVED = (
+    "this checkout's `origin` is {origin}, and its binding was recorded with {recorded}; "
+    "`stayfixed attach` records the new one"
 )
-NO_ORIGIN_CAUSE = (
-    "this checkout has no `origin` remote, so there is nothing to bind to the overlay or to check "
-    "its record against"
-)
-NO_ORIGIN_WAY_OUT = (
-    "add the `origin` remote (the one this project was bound with, when the overlay records one), "
-    "then run `stayfixed attach`"
-)
-NO_REMOTE = f"{NO_ORIGIN_CAUSE}; {NO_ORIGIN_WAY_OUT}"
-DIFFERENT_REMOTE = (
-    "the overlay records a different remote URL under this project's name (one repository's ssh "
-    "and https URLs bind only as `git@host:owner/repo`, `ssh://git@host/owner/repo` or "
-    "`https://host/owner/repo`, with or without `.git`; any other spelling, one with a port or "
-    "another user among them, is compared exactly)"
-)
-REMOTE_MISMATCH = (
-    f"{DIFFERENT_REMOTE}; run `stayfixed attach --trust-remote` only if this checkout should be "
-    f"bound to it"
-)
-_UNBOUND_CAUSES = {UNBOUND: NO_RECORD, NO_ORIGIN: NO_REMOTE, MISMATCH: REMOTE_MISMATCH}
+NO_REMOTE_SAID = "no remote"
+
 # Asked before any of the four: a machine record naming an overlay root that is not there (the
 # overlay moved, or this machine never cloned it) must not read as "no record of this project",
 # whose way out, `stayfixed attach`, refuses a `--store` outside the root the machine records. The
@@ -312,33 +293,33 @@ def _named(part: str) -> bool:
     return part.strip(".") != "" and set(part) <= _NAMED
 
 
-def binding_state(recorded: str | None, origin: str | None) -> str:
-    """`no-origin`, `unbound`, `mismatch` or `bound`, for the remote the overlay records for this
-    project and this checkout's `origin` — and never `bound` because nobody looked.
+def binding_state(found: Bound | None, project: str) -> str:
+    """`bound` when this machine's record for the checkout's id (`binding.bound_project`, which
+    the caller read) names `project`, else `unbound` — and never `bound` because nobody looked.
 
-    A missing `origin` is answered first, whatever the record says: with nothing to compare, a
-    record is neither a mismatch nor a binding, and the way out is the same with a record or
-    without one.
+    `project` is the repository's `[project] name`, and it decides nothing alone: a clone that
+    commits the name of one of the owner's projects has no id, so `found` is `None`."""
+    return BOUND if found is not None and found.project == project else UNBOUND
 
-    The record binds the `origin` it names byte for byte, and the `origin` that names the same
-    repository in another of the three spellings `_repository` reads: `git@host:owner/repo`,
-    `ssh://git@host/owner/repo` and `https://host/owner/repo`, with or without `.git`. Without
-    that, a repository bound over ssh never bound a clone of it made over https, on a second
-    machine or anyone else's. A hostile clone is still caught here, because it chooses
-    `project.name` and not which remote the overlay recorded under it: the rule holds equal only
-    spellings that agree on the host and the path, so its `origin` binds only when it names the
-    repository the owner bound (on a plain ssh server, up to the scp form's home-relative path,
-    which `_repository` states). Two URLs `_repository` cannot read bind only when equal, never
-    because neither was read.
-    """
-    if origin is None:
-        return NO_ORIGIN
-    if recorded is None:
-        return UNBOUND
+
+def origin_note(recorded: str | None, origin: str | None) -> str | None:
+    """`ORIGIN_MOVED` naming both remotes, or `None` when `origin` is the one recorded.
+
+    The same remote in another of the three spellings `_repository` reads — `git@host:owner/repo`,
+    `ssh://git@host/owner/repo` and `https://host/owner/repo`, with or without `.git` — is the one
+    recorded, so a clone made over https of a repository bound over ssh earns no note. Two URLs
+    `_repository` cannot read are the same only when equal. No remote on either side is the same
+    only as no remote on the other."""
     if recorded == origin:
-        return BOUND
-    named = _repository(recorded)
-    return BOUND if named is not None and named == _repository(origin) else MISMATCH
+        return None
+    if recorded is not None and origin is not None:
+        named = _repository(recorded)
+        if named is not None and named == _repository(origin):
+            return None
+    return ORIGIN_MOVED.format(
+        origin=NO_REMOTE_SAID if origin is None else quoted(origin),
+        recorded=NO_REMOTE_SAID if recorded is None else quoted(recorded),
+    )
 
 
 def read_binding_record(record: Path) -> dict[str, str]:
@@ -347,11 +328,12 @@ def read_binding_record(record: Path) -> dict[str, str]:
 
     The one reader of that file, and no failure policy: an `OSError`, a `UnicodeDecodeError` and
     each of `UNPARSEABLE` are raised as met, because what a record that cannot be read means is
-    each caller's to say, and its three callers say three things, each at its own `except`.
-    `_bound` answers the hook path "unreadable", which degrades closed; `attach`'s `_recorded`
-    stops the run, so a broken record never becomes a first attach; and `attach`'s
-    `_first_attach` keeps today's date, which is a note and binds nothing. Whether there is a
-    record at all is the caller's question too, asked before this.
+    each caller's to say, and its two callers say two things, each at its own `except`.
+    `attach`'s `_recorded` stops the run, so a broken record is never written over; and
+    `attach`'s `_first_attach` keeps today's date, which is a note and binds nothing. The record
+    binds nothing either: the binding is the machine's (`stayfixed.binding`), and the record keeps
+    the remote and the first attach's date for the owner to read. Whether there is a record at all
+    is the caller's question too, asked before this.
 
     Read through `fsops.read_regular_text`, so a record swapped for a FIFO or a device after that
     question is refused unread, an `OSError` like any other, and one past the cap is refused too.
@@ -360,23 +342,13 @@ def read_binding_record(record: Path) -> dict[str, str]:
     return {key: value for key, value in raw.items() if isinstance(value, str) and value}
 
 
-def _bound(overlay: Path, project: str, root: Path) -> Unresolved | None:
-    """`None` when the overlay's record binds this checkout's `origin`, else which cause failed.
-
-    The answers are the causes above, each with the project's name, or the record's path, as the
-    detail they are about; the state is `binding_state`'s.
-    """
-    record = overlay / PROJECTS / project / PROJECT_RECORD
-    recorded = None
-    if fsops.is_file(record):
-        try:
-            recorded = read_binding_record(record).get("remote")
-        except (OSError, UnicodeDecodeError, *UNPARSEABLE):
-            # The path and never the exception: a TOML error's message quotes the file's own
-            # text, and this file holds a remote URL.
-            return Unresolved(RECORD_UNREADABLE, quoted(str(record)))
-    cause = _UNBOUND_CAUSES.get(binding_state(recorded, origin_remote(root)))
-    return None if cause is None else Unresolved(cause, f"project {quoted(project)}")
+def _bound(project: str, root: Path) -> Unresolved | None:
+    """`None` when this machine binds the checkout's id to `project`, else `NO_RECORD`, with the
+    project's name as the detail it is about; the state is `binding_state`'s. A `git` that cannot
+    name the common directory raises, as it does for every other question here."""
+    if binding_state(bound_project(root), project) == BOUND:
+        return None
+    return Unresolved(NO_RECORD, f"project {quoted(project)}")
 
 
 def _inside(candidate: Path, parent: Path) -> bool:
@@ -545,7 +517,7 @@ def _resolve_at(
             )
         if not fsops.is_dir(overlay):
             return None, Unresolved(OVERLAY_GONE.format(root=quoted(str(overlay))))
-        unbound = _bound(overlay, config.project.name, root)
+        unbound = _bound(config.project.name, root)
         if unbound is not None:
             return None, unbound
     if not fsops.is_dir(base):

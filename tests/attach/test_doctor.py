@@ -21,6 +21,7 @@ from pathlib import Path
 
 import pytest
 
+from stayfixed import binding
 from stayfixed.attach.api import LOCAL_SETTINGS
 from stayfixed.attach.check import check as attach_check
 from stayfixed.cli import build_parser, discover_registrars, run
@@ -92,21 +93,19 @@ def test_an_unattached_project_reports_attached_as_it_did(tmp_path: Path, mode: 
     assert [row for row in rows if row.name == "attached"] == [UNATTACHED[mode]]
 
 
-def test_an_overlay_recording_another_remote_is_red_and_never_merely_attached(
+def test_an_overlay_recording_another_remote_leaves_a_bound_checkout_attached(
     tmp_path: Path,
 ) -> None:
-    # The binding mismatch `attach` refuses, seen from `doctor` instead: the ledger says this
-    # checkout is attached and the overlay's own project record names a different remote, so
-    # the notes on the other side of that binding are another repository's. The arm existed and
-    # no case reached it — an installation in this state read as ordinarily attached.
+    # The overlay's project record of another remote was a red row: the binding was the record.
+    # The binding is this machine's record of the checkout's id now, so a record naming another
+    # remote -- written from another machine, or before `origin` moved -- changes nothing here.
     root = _attached(tmp_path)
     (tmp_path / "overlay" / PROJECTS / "p" / PROJECT_RECORD).write_text(
         'remote = "git@github.com:somebody/else.git"\nfirst_attach = "2026-09-18"\n',
         encoding="utf-8",
     )
     check = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "attached")
-    assert check.status == "red"
-    assert "a different remote" in check.detail
+    assert "the binding is bound" in check.detail
     # The other repository's remote is overlay-authored, not repository-authored — but it is
     # still somebody's private URL, and this row has no reason to print one.
     assert "somebody/else" not in check.detail and "somebody/else" not in check.remedy
@@ -187,6 +186,8 @@ def test_the_attached_row_judges_the_link_under_the_home_it_goes_under(
     # home" -> the second warns.
     root = _approved_with_a_link_under(tmp_path)
     monkeypatch.setenv("HOME", str(tmp_path / ("home" if case == "HOME" else "elsewhere")))
+    # The binding record lives under `HOME` too, so the machine this row is asked on records it.
+    binding.record(root, "p", "git@github.com:owner/p.git")
     row = _attached_row(tmp_path, root, home=tmp_path / "home" if case == "--home" else None)
     assert (row.status, row.detail, row.remedy) == (
         OK,
@@ -1206,20 +1207,19 @@ def test_a_ledger_with_no_binding_in_the_overlay_is_a_warning_and_never_an_attac
     tmp_path: Path,
 ) -> None:
     # `.stayfixed/local/attach.json` is a path a clone can commit, and `_attached` took its
-    # existence as "this checkout was attached". The overlay is the trusted side, so the row
-    # now asks it: a ledger with no `projects/<name>/project.toml` behind it is a warning
-    # that names the file, and the remedy says what to do in each of the two cases.
+    # existence as "this checkout was attached". The binding this machine keeps is the trusted
+    # side, so the row asks it: a ledger with no binding id behind it in the git common directory
+    # is a warning that names the file, and the remedy says what to do in each of the two cases.
     #
     # Mutation (declared): `if state == UNBOUND:` -> `if False:` -> the row falls
     # through to the harness-shape branch and this reddens on the sentence.
     root = _attached(tmp_path)
-    overlay = _overlay(tmp_path)
-    record = overlay / PROJECTS / "p" / PROJECT_RECORD
-    assert record.is_file(), "the fixture must have recorded a binding for this to be a probe"
-    record.unlink()
+    kept = root / ".git" / "stayfixed" / "binding"
+    assert kept.is_file(), "the fixture must have recorded a binding for this to be a probe"
+    kept.unlink()
     row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "attached")
     assert row.status == WARN
-    assert "has no binding for this project" in row.detail
+    assert "records no binding of this checkout to this project" in row.detail
     assert "a clone can commit that file" in row.detail
     assert "attach --store" in row.remedy and "remove the ledger" in row.remedy
 
@@ -2694,9 +2694,9 @@ def test_an_owner_whose_projects_is_a_file_is_unbound_and_granted_what_common_gr
 def test_a_bound_checkouts_damaged_overlay_is_named_and_never_answered_by_removing_the_ledger(
     tmp_path: Path, shape: str
 ) -> None:
-    # A bound project whose overlay's `projects/`, or whose overlay root, became a file. The
-    # overlay holds no record of the binding it does have, so the row warned that the overlay "has
-    # no binding for this project" and offered to remove the ledger, which is the one remedy that
+    # A bound project whose overlay's `projects/`, or whose overlay root, became a file. The row
+    # once read that as no binding, warned that the overlay "has no binding for this project" and
+    # offered to remove the ledger, which is the one remedy that
     # destroys this checkout's record of a real attach. It names the path that is not a directory
     # and says to repair the overlay; it stays a warning and no row turns red, since `hook-entries`
     # still counts what `common/` grants where it can. Mutation (declared): the attached row asks
@@ -2715,7 +2715,7 @@ def test_a_bound_checkouts_damaged_overlay_is_named_and_never_answered_by_removi
         "attached",
         WARN,
         f"{LEDGER} records an attach, but {broken} is not a directory, so the overlay this "
-        f"machine records is damaged and cannot say whether this checkout is bound",
+        f"machine records is damaged and holds none of this checkout's notes or grants",
         f"repair the overlay so that {broken} is a directory again (or clone the overlay afresh), "
         f"then run `stayfixed doctor` again",
     )
@@ -2772,7 +2772,7 @@ def _borrowing(tmp_path: Path, state: str, *, grants: str | None = None) -> Path
     `state`."""
     root = _granting_project(tmp_path, BORROWED_NAME, grants=grants)
     record_path = tmp_path / "overlay" / PROJECTS / BORROWED_NAME / PROJECT_RECORD
-    if state in ("mismatch", "no-origin"):
+    if state in ("recorded", "no-origin"):
         # The other project's own record, binding its own remote.
         record_path.write_text(
             f'remote = "{OTHER_ORIGIN}"\nfirst_attach = "2026-09-18"\n', encoding="utf-8"
@@ -2793,18 +2793,6 @@ BORROWED = Check(
     f"overlay does not grant them: {LOCAL_SETTINGS} entry 2 of 2",
     NOT_GRANTED,
 )
-# The same entry where the record under the borrowed name binds another remote: the overlay may
-# grant entry 2 to the checkout that record binds, so the row says the binding is what is wrong
-# and hands on the `attached` row's remedy, rather than that the overlay refused it.
-MISMATCHED = Check(
-    "hook-entries",
-    "red",
-    f"{TWO_ENTRIES}1 entr(ies) claim the stayfixed marker and are recorded in {LEDGER}, and the "
-    f"overlay grants this checkout only what it grants every project, because its record binds "
-    f"this project to a remote other than this checkout's `origin`: {LOCAL_SETTINGS} entry 2 of 2",
-    "settle the binding, as the `attached` row says: run `stayfixed attach --check`, and "
-    "`--trust-remote` only if it should be; then run `stayfixed doctor` again",
-)
 # And where that record cannot be read: the row says so, and names the command that says why.
 RECORD_UNREADABLE = Check(
     "hook-entries",
@@ -2815,12 +2803,12 @@ RECORD_UNREADABLE = Check(
     "run `stayfixed attach --check`, which reports why the binding record cannot be read; repair "
     "it, then run `stayfixed doctor` again",
 )
-# What `hook-entries` makes of the borrowing clone, by binding state: red in every one, told as a
-# refused grant where nothing in the overlay grants this checkout more than `common/` does.
-BORROWED_ROWS = {"mismatch": MISMATCHED, "unbound": BORROWED, "no-origin": BORROWED}
-# What `attached` makes of the same checkout, by binding state: the binding the name borrows is
-# not this checkout's, and the row says so in its own words.
-BORROWED_ATTACHED = {"mismatch": "red", "unbound": "warn", "no-origin": "red"}
+# What `hook-entries` makes of the borrowing clone, whether or not the other project's record
+# names a remote and whether or not the clone has an `origin`: red, told as a refused grant, since
+# nothing binds the clone to that project on this machine.
+BORROWED_ROWS = {"recorded": BORROWED, "unbound": BORROWED, "no-origin": BORROWED}
+# What `attached` makes of the same checkout: not bound, whatever the record and the remote say.
+BORROWED_ATTACHED = {"recorded": "warn", "unbound": "warn", "no-origin": "warn"}
 
 
 def test_a_bound_checkouts_own_project_grants_account_for_its_entries(tmp_path: Path) -> None:
@@ -2846,9 +2834,9 @@ def test_a_repository_named_after_another_project_borrows_none_of_its_grants(
     # `project.name` is committed, and it picks the overlay's `projects/<name>/` the grant is read
     # from. A clone that named itself after another project of this machine's overlay, committed a
     # marked entry equal to one that project's hook file grants and a ledger recording its id, read
-    # "all accounted for": the binding's state was computed and never asked. A checkout the
-    # overlay's record does not bind -- no record, a record of another remote, or no `origin` to
-    # compare -- is granted only what `common/` grants every project. Mutation (oracle):
+    # "all accounted for": the binding's state was computed and never asked. A checkout this
+    # machine does not bind to the project -- whatever the overlay's record and the clone's
+    # `origin` say -- is granted only what `common/` grants every project. Mutation (oracle):
     # `mutations/`'s "doctor counts a project's grants for a checkout its record does not bind" ->
     # every case is "all accounted for".
     rows = _checks(tmp_path, _borrowing(tmp_path, state), machine=_machine(tmp_path))
@@ -2899,7 +2887,7 @@ def test_another_projects_binding_record_that_will_not_parse_cannot_soften_the_r
     # binds nothing, and the checkout is granted what `common/` grants. Mutation (oracle):
     # `mutations/`'s "an unreadable binding record makes the overlay one that could not be asked"
     # -> a warning, and no red row.
-    root = _borrowing(tmp_path, "mismatch")
+    root = _borrowing(tmp_path, "recorded")
     record_path = tmp_path / "overlay" / PROJECTS / BORROWED_NAME / PROJECT_RECORD
     record_path.write_text(UNPARSEABLE_RECORD, encoding="utf-8")
     rows = _checks(tmp_path, root, machine=_machine(tmp_path))
@@ -2955,53 +2943,24 @@ def test_an_owners_binding_record_holding_a_number_past_the_parser_reads_as_one_
         attach_check(root, store=store, machine=machine, home=tmp_path / "home")
 
 
-# The owner's own checkout after `origin` moved to a fork: the overlay's record binds this project
-# to the repository it was attached from, so the binding is a mismatch.
+# The owner's own checkout after `origin` moved to a fork.
 FORK_ORIGIN = "https://github.com/fork/p.git"
-# The same repository the record binds, cloned over https where the record names ssh.
-HTTPS_ORIGIN = "https://github.com/owner/p"
 
 
-def test_an_owners_checkout_the_record_no_longer_binds_is_told_the_binding_is_wrong(
+def test_an_owners_checkout_whose_origin_moved_keeps_its_binding_and_its_grants(
     tmp_path: Path,
 ) -> None:
-    # An owner points `origin` at a fork, so the overlay's record no longer binds this checkout
-    # and its per-project entry is red. The row said "the overlay does not grant them",
-    # which is false — the overlay grants that entry to the checkout its record binds — and its
-    # remedy, `attach --store …`, is one `attach` refuses on a mismatch without `--trust-remote`.
-    # The binding is what is wrong, so the row says so and hands on the `attached` row's remedy;
-    # the verdict stays red, as a clone named after another project is. Mutation (oracle):
-    # `mutations/`'s "attach tells a checkout its record does not bind that the overlay refused its
-    # entries" -> the old sentence and remedy.
+    # An owner points `origin` at a fork. The overlay's record no longer named this checkout's
+    # remote, so its per-project entry went red and the `attached` row called the binding a
+    # mismatch. The binding is this machine's record of the checkout's id, so it stays bound and
+    # the project's grant still vouches for the entry.
     root = _granting_project(tmp_path, OWN_NAME)
     _git(root, "remote", "set-url", "origin", FORK_ORIGIN)
     rows = _checks(tmp_path, root, machine=_machine(tmp_path))
-    assert _by_name(rows, "hook-entries") == MISMATCHED
-    assert _by_name(rows, "attached") == Check(
-        "attached",
-        "red",
-        "the overlay records a different remote URL under this project's name (one repository's "
-        "ssh and https URLs bind only as `git@host:owner/repo`, `ssh://git@host/owner/repo` or "
-        "`https://host/owner/repo`, with or without `.git`; any other spelling, one with a port "
-        "or another user among them, is compared exactly)",
-        "run `stayfixed attach --check`, and `--trust-remote` only if it should be",
+    assert _by_name(rows, "hook-entries") == Check(
+        "hook-entries", "ok", f"{TWO_ENTRIES}all accounted for", ""
     )
-
-
-def test_an_owners_checkout_cloned_over_https_is_bound_by_a_record_made_over_ssh(
-    tmp_path: Path,
-) -> None:
-    # The record names the repository over ssh and this checkout cloned it over https, as a second
-    # machine does. Compared exactly, the two were a mismatch: the `attached` row went red and the
-    # entry the overlay grants this project lost its grant. They name one repository, so the
-    # binding holds and the project's grant still vouches for its entry. Mutation (oracle):
-    # `mutations/`'s "a remote binds only the URL the overlay recorded byte for byte".
-    root = _granting_project(tmp_path, OWN_NAME)
-    _git(root, "remote", "set-url", "origin", HTTPS_ORIGIN)
-    rows = _checks(tmp_path, root, machine=_machine(tmp_path))
-    assert _by_name(rows, "hook-entries").status == OK
-    attached = _by_name(rows, "attached")
-    assert attached.detail.endswith("; the binding is bound")
+    assert "the binding is bound" in _by_name(rows, "attached").detail
 
 
 # A committed `.claude/settings.json` whose `hooks` section is partly malformed, beside the forged

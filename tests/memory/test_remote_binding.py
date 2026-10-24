@@ -1,12 +1,12 @@
-"""Which `origin` the overlay's recorded remote binds: one repository, whatever transport names it.
+"""Which `origin` is the remote a binding was recorded with: one repository, whatever transport.
 
-`binding_state` compared the two URLs exactly, so a repository the overlay recorded over ssh never
-bound a checkout of it cloned over https, and every clone made over https on a second machine was
-told the overlay records a different remote. The three spellings git and the forges hand out for
-one repository -- `git@host:owner/repo`, `ssh://git@host/owner/repo` and `https://host/owner/repo`,
-each with or without `.git` -- are one binding now, and nothing else is normalised: a different
-owner, repository, host, user or port is still a different remote, and so is any URL outside those
-three shapes unless it is the recorded one byte for byte.
+The remote binds nothing -- the binding is the id in the git common directory -- but a checkout
+whose `origin` is not the recorded one hears a note (`origin_note`). The three spellings git and
+the forges hand out for one repository -- `git@host:owner/repo`, `ssh://git@host/owner/repo` and
+`https://host/owner/repo`, each with or without `.git` -- are one remote, so a clone made over https
+of a repository bound over ssh hears nothing, and nothing else is normalised: a different owner,
+repository, host, user or port is a different remote, and so is any URL outside those three shapes
+unless it is the recorded one byte for byte.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ import itertools
 
 import pytest
 
-from stayfixed.memory.store import BOUND, MISMATCH, NO_ORIGIN, UNBOUND, binding_state
+from stayfixed.memory.store import NO_REMOTE_SAID, origin_note
 
 # One repository on a host that is not github.com, in every spelling the rule makes one binding.
 SPELLINGS = (
@@ -31,9 +31,10 @@ SPELLINGS = (
 @pytest.mark.parametrize(
     ("recorded", "origin"), list(itertools.permutations(SPELLINGS, 2)), ids=lambda url: url
 )
-def test_one_repository_binds_under_every_transport_spelling(recorded: str, origin: str) -> None:
-    # The exact comparison this replaced reddens every case.
-    assert binding_state(recorded, origin) == BOUND
+def test_one_repository_is_one_remote_under_every_transport_spelling(
+    recorded: str, origin: str
+) -> None:
+    assert origin_note(recorded, origin) is None
 
 
 @pytest.mark.parametrize(
@@ -52,9 +53,7 @@ def test_one_repository_binds_under_every_transport_spelling(recorded: str, orig
     ],
 )
 def test_case_folds_where_the_server_ignores_it(recorded: str, origin: str) -> None:
-    # Mutation (oracle): `mutations/`'s "a remote's host is compared with its case" -> the
-    # `host-case` case.
-    assert binding_state(recorded, origin) == BOUND
+    assert origin_note(recorded, origin) is None
 
 
 @pytest.mark.parametrize(
@@ -111,14 +110,11 @@ def test_case_folds_where_the_server_ignores_it(recorded: str, origin: str) -> N
         ),
     ],
 )
-def test_a_different_repository_is_still_a_mismatch(recorded: str, origin: str) -> None:
-    # The rule may only ever widen what the exact comparison bound by spellings of one repository,
-    # never by two repositories it cannot tell apart. Mutations (oracle): `mutations/`'s "a remote
-    # binds any other remote neither side's shape is read in" -> `unread-paths`; "a remote's path
-    # is compared without its case on every host" -> `path-case-off-github`; "a remote's dot
-    # segments are compared across transports" -> `dot-segments`.
-    assert binding_state(recorded, origin) == MISMATCH
-    assert binding_state(origin, recorded) == MISMATCH
+def test_a_different_repository_earns_the_note_naming_both(recorded: str, origin: str) -> None:
+    # The rule may only ever widen the exact comparison by spellings of one repository, never by
+    # two repositories it cannot tell apart.
+    for said in (origin_note(recorded, origin), origin_note(origin, recorded)):
+        assert said is not None and repr(recorded) in said and repr(origin) in said
 
 
 @pytest.mark.parametrize(
@@ -130,17 +126,15 @@ def test_a_different_repository_is_still_a_mismatch(recorded: str, origin: str) 
         "git@example.com:acme/widget.git",
     ],
 )
-def test_a_url_still_binds_itself_whatever_its_shape(url: str) -> None:
+def test_a_url_is_still_its_own_remote_whatever_its_shape(url: str) -> None:
     # The exact comparison is kept underneath the transport rule: a remote outside the three
-    # shapes binds the record that names it byte for byte, as it always did. Mutation (oracle):
-    # `mutations/`'s "a remote outside the three spellings stops binding the record that names it
-    # exactly" -> `unread-path`.
-    assert binding_state(url, url) == BOUND
+    # shapes is the one recorded when it is byte for byte the same.
+    assert origin_note(url, url) is None
 
 
-def test_a_missing_origin_and_a_missing_record_are_still_their_own_states() -> None:
-    # Mutation: none in the set. Deleting either check reddens this test, since the comparison
-    # below them then reads `None` as a URL and raises; the order of the two is held elsewhere, by
-    # `mutations/`'s "the binding classifier reads a missing origin as a different remote".
-    assert binding_state("git@example.com:acme/widget", None) == NO_ORIGIN
-    assert binding_state(None, "https://example.com/acme/widget") == UNBOUND
+def test_a_missing_origin_or_a_missing_record_is_said_as_no_remote() -> None:
+    assert origin_note(None, None) is None
+    gone = origin_note("git@example.com:acme/widget", None)
+    added = origin_note(None, "https://example.com/acme/widget")
+    assert gone is not None and f"`origin` is {NO_REMOTE_SAID}," in gone
+    assert added is not None and f"recorded with {NO_REMOTE_SAID};" in added

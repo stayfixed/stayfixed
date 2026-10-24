@@ -418,15 +418,15 @@ def git_answer(root: Path, *args: str) -> GitAnswer:
 def origin_remote(root: Path) -> str | None:
     """This checkout's `origin` URL, or `None` when `git` ran and there is no such remote.
 
-    Public because `attach` compares it against the overlay's record and `init` derives a name
+    Public because `attach` notes it beside the binding and `init` derives a name
     from it, and neither may reach for a `subprocess.run` of its own: `git_run` scrubs `GIT_DIR`
     and `GIT_WORK_TREE`, and an inherited one would make the answer one about a different
     repository than the session is in. Two areas asking one question two ways is how they stop
     agreeing.
 
     A URL in bytes that are not UTF-8 is answered, as the filesystem's codec spells it, and not
-    raised: it never equals a URL read out of a TOML file, so the binding reads as not this
-    repository's, and `attach`, which would write it into one, refuses it by name. The answer is
+    raised: it never equals a URL read out of a TOML file, and `attach`, which would write it into
+    one, records it as none. The answer is
     what git printed less its line ending alone, never `strip()`, for `answer_lines`'s reason.
 
     Raises `GitUnavailable` rather than answering `None` when `git` could not be asked at all.

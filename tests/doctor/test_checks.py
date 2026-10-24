@@ -29,7 +29,7 @@ from typing import Any
 import pytest
 
 import stayfixed
-from stayfixed import REPOSITORY_URL, fsops
+from stayfixed import REPOSITORY_URL, binding, fsops
 from stayfixed.attach.api import LOCAL_SETTINGS
 from stayfixed.config.layout import ATTACH_LEDGER as LEDGER
 from stayfixed.config.loader import CONFIG_FILE, load
@@ -247,6 +247,7 @@ def _attached(tmp_path: Path) -> Path:
     root = _initialised(tmp_path, template=OVERLAY)
     _git(root, "init", "-q", "-b", "main")
     _git(root, "remote", "add", "origin", ORIGIN)
+    binding.record(root, "p", ORIGIN)
     settings = root / LOCAL_SETTINGS
     settings.parent.mkdir(parents=True, exist_ok=True)
     settings.write_text(

@@ -31,8 +31,9 @@ import stat
 from collections.abc import Mapping
 from pathlib import Path
 
+from stayfixed.config.machine import owner_home
 from stayfixed.config.schema import Config
-from stayfixed.errors import Refusal
+from stayfixed.errors import Failure, Refusal
 from stayfixed.fsops import (
     REACHES_NO_FILE,
     UnsafePath,
@@ -281,3 +282,22 @@ def validate_path_values(values: Mapping[str, str], root: Path) -> dict[str, Pat
             exc.key = f"paths.{name}"
             raise
     return found
+
+
+# The machine's data directory under `HOME`, on every platform: the binding records
+# (`stayfixed.binding`), and later the rendered delivery and the composed stores. No `XDG_*`
+# variable is read, for the reason `config.machine` reads none for the machine configuration: an
+# environment a repository can set would choose which records bind it.
+DATA_DIRECTORY = Path(".local") / "share" / "stayfixed"
+NO_HOME = (
+    "HOME names no home directory, so this machine has no data directory to keep its binding "
+    "records in; set HOME to your home directory"
+)
+
+
+def data_directory() -> Path:
+    """`$HOME/.local/share/stayfixed`, or `Failure` where `HOME` names no home directory."""
+    home = owner_home()
+    if home is None:
+        raise Failure(NO_HOME)
+    return home / DATA_DIRECTORY

@@ -67,7 +67,6 @@ def _attach(
         store=store,
         machine=machine,
         confirmed=confirmed,
-        trust_remote=False,
         runner=Recorder(),
         home=home,
     )

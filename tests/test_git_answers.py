@@ -37,7 +37,6 @@ from tests.gitfixture import git, needs_git, plant_path, stand_in_git
 from tests.guards.test_hygiene import repo
 from tests.project.repos import repository
 from tests.runners import Recorder
-from tests.snapshot import assert_snapshot_unchanged, snapshot
 
 # An `origin` URL whose last byte is latin-1, and the `str` the filesystem's codec spells it as.
 LATIN1_URL = b"https://example.com/caf\xe9"
@@ -200,32 +199,28 @@ def test_a_worktree_whose_path_holds_a_carriage_return_is_listed_by_its_own_path
 
 
 @needs_git
-def test_attach_refuses_an_origin_it_cannot_record_before_writing_anything(tmp_path: Path) -> None:
-    # The overlay's binding record is UTF-8 TOML, and an `origin` URL in other bytes cannot be
-    # written into it: read losslessly, it reached `_record_binding` — the last of attach's
-    # writes — and raised `UnicodeEncodeError` there, after the ignore region, the Codex rules,
-    # the settings merge and the ledger. It is refused above every write instead, like a
-    # checkout with no `origin`, and the refusal never quotes the URL. Mutation (declared):
-    # drop the refusal -> the snapshot changes and `pytest.raises` reddens.
+def test_attach_binds_an_origin_it_cannot_record_and_records_none(tmp_path: Path) -> None:
+    # The records are UTF-8 TOML, and an `origin` URL in other bytes cannot be written into them:
+    # read losslessly, it raised `UnicodeEncodeError` at the overlay record's write, after the
+    # ignore region, the Codex rules, the settings merge and the ledger, and was then refused
+    # above every write. The remote binds nothing now, so the binding is made and records none.
+    from stayfixed import binding
+
     hooks = {"SessionStart": [{"hooks": [{"type": "command", "command": "echo hello"}]}]}
     root, store, machine = _attachable(
         tmp_path, allow=(RULE,), hooks=hooks, codex="# a standing rule\n", origin=DECODED_URL
     )
-    before = snapshot(root)
-    assert before
-    with pytest.raises(Refusal, match="not UTF-8") as refused:
-        attach(
-            root,
-            store=store,
-            machine=machine,
-            confirmed=True,
-            trust_remote=True,
-            runner=Recorder(),
-            home=tmp_path / "home",
-        )
-    assert "caf" not in str(refused.value)
-    assert_snapshot_unchanged(root, before)
-    assert not (store.parent / "project.toml").exists()
+    attach(
+        root,
+        store=store,
+        machine=machine,
+        confirmed=True,
+        runner=Recorder(),
+        home=tmp_path / "home",
+    )
+    found = binding.bound_project(root)
+    assert found is not None and found.origin is None
+    assert "remote" not in (store.parent / "project.toml").read_text(encoding="utf-8")
 
 
 @needs_git

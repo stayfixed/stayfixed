@@ -8,6 +8,7 @@ from pathlib import Path, PurePosixPath
 
 import pytest
 
+from stayfixed import binding
 from stayfixed.config.loader import CONFIG_FILE, load
 from stayfixed.config.paths import PathEscape
 from stayfixed.config.schema import Config
@@ -265,6 +266,7 @@ def an_overlay_checkout(tmp_path: Path) -> tuple[Path, Store, Config]:
     (overlay / "projects" / "widget" / "project.toml").write_text(
         'remote = "git@example.com:acme/widget.git"\n', encoding="utf-8"
     )
+    binding.record(root, "widget", "git@example.com:acme/widget.git")
     # `other`'s share of the overlay never belongs to `widget` and carries no binding record of
     # its own; the point is that a symlink can still be *made* to point there.
     other = overlay / "projects" / "other" / "memory" / "project-stable"
@@ -343,6 +345,7 @@ def an_overlay_checkout_with_a_leaked_index(tmp_path: Path) -> tuple[Path, Store
     (overlay / "projects" / "widget" / "project.toml").write_text(
         'remote = "git@example.com:acme/widget.git"\n', encoding="utf-8"
     )
+    binding.record(root, "widget", "git@example.com:acme/widget.git")
     other_index = overlay / "projects" / "other" / "memory" / "MEMORY.md"
     other_index.parent.mkdir(parents=True)
     other_index.write_text("# confidential index\n", encoding="utf-8")
@@ -385,6 +388,7 @@ def an_overlay_checkout_with_a_linked_index(tmp_path: Path) -> tuple[Path, Store
     (overlay / "projects" / "widget" / "project.toml").write_text(
         'remote = "git@example.com:acme/widget.git"\n', encoding="utf-8"
     )
+    binding.record(root, "widget", "git@example.com:acme/widget.git")
     memory = root / "docs" / "memory"
     memory.mkdir(parents=True)
     (memory / "developer").symlink_to(overlay / "common" / "memory", target_is_directory=True)
@@ -415,6 +419,7 @@ def an_overlay_checkout_with_a_committed_index(tmp_path: Path) -> tuple[Path, St
     (overlay / "projects" / "widget" / "project.toml").write_text(
         'remote = "git@example.com:acme/widget.git"\n', encoding="utf-8"
     )
+    binding.record(root, "widget", "git@example.com:acme/widget.git")
     memory = root / "docs" / "memory"
     memory.mkdir(parents=True)
     (memory / "developer").symlink_to(overlay / "common" / "memory", target_is_directory=True)
@@ -843,6 +848,7 @@ def an_overlay_to_attach(
     (own.parent / "project.toml").write_text(
         'remote = "git@example.com:acme/widget.git"\n', encoding="utf-8"
     )
+    binding.record(root, "widget", "git@example.com:acme/widget.git")
     listed = "[" + ", ".join(f'"{g}"' for g in groups) + "]"
     (root / CONFIG_FILE).write_text(CONFIG.format(mode="overlay", groups=listed), encoding="utf-8")
     machine = tmp_path / "machine.toml"

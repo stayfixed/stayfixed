@@ -1,8 +1,8 @@
 """The `attach` and `detach` command surface: the flags, the exit codes and what they print.
 
-Exit codes are the ones every command shares: 0 attached or clean, 1 a mismatch under `--check`,
-2 a refusal. The distinction is the one `docs/cli.md` states for `attach` — a mismatch under
-`--check` is a finding, because the answer is "ask the owner", and `attach` itself is what
+Exit codes are the ones every command shares: 0 attached or clean, 1 a finding under `--check`
+(a memory group that never moved), 2 a refusal. The distinction is the one `docs/cli.md` states for
+`attach` — a finding under `--check` is the owner's to act on, and `attach` itself is what
 refuses.
 """
 
@@ -90,49 +90,33 @@ def test_the_projects_own_name_reaches_neither_the_line_nor_the_json_nor_a_refus
     # PROJECT_NAME is looser than the marker-id grammar `doctor` already refuses to print — the name
     # below is legal under it. `skills/attach/SKILL.md` tells the model to relay this diff to the
     # user, so a name shaped like an instruction would arrive attributed to stayfixed. All three
-    # surfaces are asserted together because the rule is one rule: the summary line, `--json`, and
-    # the refusal a mismatch raises.
+    # surfaces are asserted together because the rule is one rule: the summary line, `--json`, the
+    # refusal an unconfirmed widening raises, and the line of the attach that binds.
     root, store = _project_and_store(
         tmp_path,
         recorded="git@example.com:o/real.git",
         origin="git@example.com:evil/p.git",
         name=PROJECT_NAME,
     )
-    _overlay_grants(store)
+    _overlay_grants(store, allow=(RULE,))
     machine = _machine(tmp_path, overlay=store.parents[2])
-    assert invoke(["attach", "--check", *_flags(root, store, machine)]) == 1
+    assert invoke(["attach", "--check", *_flags(root, store, machine)]) == 0
     line = capsys.readouterr().out
     assert PROJECT_NAME not in line
     # Non-vacuous: the line did report, and what it reported is the label `attach` computed.
-    assert "mismatch" in line
-    assert invoke(["attach", "--check", *_flags(root, store, machine), "--json"]) == 1
+    assert "unbound" in line
+    assert invoke(["attach", "--check", *_flags(root, store, machine), "--json"]) == 0
     report = capsys.readouterr().out
     assert PROJECT_NAME not in report
-    assert json.loads(report)["state"] == "mismatch"
-    # The refusal `attach` itself raises, reached with no --trust-remote.
-    assert invoke(["attach", *_flags(root, store, machine), "--yes"]) == 2
+    assert json.loads(report)["state"] == "unbound"
+    assert invoke(["attach", *_flags(root, store, machine)]) == 2
     refusal = capsys.readouterr()
     assert PROJECT_NAME not in refusal.out + refusal.err
-    assert "--trust-remote" in refusal.out + refusal.err
-
-
-def test_a_mismatch_under_check_is_a_finding_and_not_a_refusal(tmp_path: Path) -> None:
-    # Exit 1, deliberately: the answer is "ask the owner", and a caller that reads 2 as
-    # permission must never see one here. `attach` without `--check` is what refuses.
-    root, store = _project_and_store(
-        tmp_path, recorded="git@example.com:o/real.git", origin="git@example.com:evil/p.git"
-    )
-    _overlay_grants(store)
-    assert (
-        invoke(
-            [
-                "attach",
-                "--check",
-                *_flags(root, store, _machine(tmp_path, overlay=store.parents[2])),
-            ]
-        )
-        == 1
-    )
+    assert "--yes" in refusal.out + refusal.err
+    assert invoke(["attach", *_flags(root, store, machine), "--yes"]) == 0
+    attached = capsys.readouterr()
+    assert PROJECT_NAME not in attached.out + attached.err
+    assert "binding" in attached.out
 
 
 def test_attach_without_a_store_is_refused_rather_than_defaulted(tmp_path: Path) -> None:
@@ -149,6 +133,66 @@ def test_a_widening_without_yes_exits_two_and_a_confirmed_one_exits_zero(tmp_pat
     assert not (root / SETTINGS).exists()
     assert invoke(["attach", "--yes", *_flags(root, store, machine)]) == 0
     assert (root / LEDGER).is_file()
+
+
+def test_attach_with_no_origin_attaches_and_says_the_binding_records_none(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A missing `origin` was a refusal whose way out was to add one; the binding is the id in the
+    # git common directory now, and the remote is only what the record notes beside it.
+    from stayfixed import binding
+
+    root, store = _project_and_store(tmp_path, recorded=None, origin=None)
+    _overlay_grants(store)
+    machine = _machine(tmp_path, overlay=store.parents[2])
+    assert invoke(["attach", *_flags(root, store, machine)]) == 0
+    assert "this checkout has no `origin` remote" in capsys.readouterr().out
+    found = binding.bound_project(root)
+    assert found is not None and found.origin is None
+
+
+def test_attach_with_an_origin_the_record_does_not_name_attaches_and_names_both(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A different remote was a refusal past which only `--trust-remote` went. It binds nothing and
+    # decides nothing now, so it is a note naming both URLs, each through `printed`.
+    from stayfixed import binding
+
+    recorded, origin = "git@example.com:o/real.git", "https://example.com/fork/p"
+    root, store = _project_and_store(tmp_path, recorded=recorded, origin=origin)
+    _overlay_grants(store)
+    machine = _machine(tmp_path, overlay=store.parents[2])
+    assert invoke(["attach", *_flags(root, store, machine)]) == 0
+    out = capsys.readouterr().out
+    assert quoted(origin) in out and quoted(recorded) in out
+    found = binding.bound_project(root)
+    assert found is not None and found.origin == origin
+
+
+def test_no_output_of_attach_carries_the_whole_binding_id(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The id is the whole defence against a clone committing `enabledPlugins` for the delivery, so
+    # it never leaves the machine: printed only as its first eight characters.
+    from stayfixed import binding
+
+    root, store = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
+    _overlay_grants(store)
+    machine = _machine(tmp_path, overlay=store.parents[2])
+    said = []
+    for argv in (
+        ["attach"],
+        ["attach", "--json"],
+        ["attach", "--check"],
+        ["attach", "--check", "--json"],
+    ):
+        assert invoke([*argv, *_flags(root, store, machine)]) == 0
+        printed = capsys.readouterr()
+        said.append(printed.out + printed.err)
+    made = binding.read_id(root)
+    assert made is not None
+    assert binding.short(made) in said[0]
+    assert all(made not in text for text in said)
 
 
 def test_detach_undoes_an_attach_through_the_command_surface(tmp_path: Path) -> None:
@@ -643,22 +687,18 @@ def test_check_refuses_exactly_the_settings_shapes_attach_refuses_in_its_words(
 
 
 @pytest.mark.parametrize("shape", ["permissions-null", "allow-null", "written-back-past-the-cap"])
-def test_check_refuses_a_settings_file_the_run_refuses_ahead_of_a_missing_origin(
+def test_check_refuses_a_settings_file_the_run_refuses_in_its_diff(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
     shape: str,
 ) -> None:
-    # The real run reads the project's settings file in the diff, ahead of its refusal for a
-    # checkout with no `origin`, and refuses these there; `--check` reads it in the same diff and
-    # refuses them alike. Past that refusal `--check` reads nothing more, so the diff's own reading
-    # is the only one that can stop it here: elsewhere the run's later merge refuses the same
-    # documents too, and a `--check` that asks what the run asks meets that one as well.
+    # The real run reads the project's settings file in the diff and refuses these there;
+    # `--check` reads it in the same diff and refuses them alike.
     # Mutations (oracle): `mutations/`'s "check reads a null allow list as no rules" -> the `null`
     # cases, and "attach plans a settings write-back the next read refuses" -> the last, end
     # `--check` with the finding's `1`.
     root, store, machine = _granting(tmp_path)
-    run_git(root, "remote", "remove", "origin")
     (root / ".claude").mkdir(exist_ok=True)
     if shape == "written-back-past-the-cap":
         monkeypatch.setattr(fsops, "REGULAR_READ_LIMIT", 16 * 1024)
@@ -795,13 +835,6 @@ def test_check_ends_on_a_trust_record_that_does_not_parse_with_the_runs_code_and
     assert_snapshot_unchanged(tmp_path, before)
 
 
-def _origin_not_text(root: Path, tmp_path: Path) -> None:
-    run_git(root, "remote", "remove", "origin")
-    config = root / ".git" / "config"
-    with config.open("ab") as stream:
-        stream.write(b'[remote "origin"]\n\turl = git@example.com:o/\xff.git\n')
-
-
 def _exclude_file(root: Path) -> Path:
     exclude = root / ".git" / "info" / "exclude"
     exclude.parent.mkdir(exist_ok=True)
@@ -816,7 +849,6 @@ def _claude_linked_in(root: Path, tmp_path: Path) -> None:
 # Refusals the real run makes past its gates and before its first write, each of which `--check`
 # once answered with 0, or with another refusal's line, and the setup that reaches each one.
 PAST_THE_GATES = {
-    "origin-not-text": _origin_not_text,
     "group-leaves-the-share": lambda root, _: (root / "stayfixed.toml").write_text(
         (root / "stayfixed.toml")
         .read_text(encoding="utf-8")
@@ -855,52 +887,22 @@ def test_check_ends_on_each_refusal_past_the_runs_gates_with_the_runs_code_and_l
     assert_snapshot_unchanged(tmp_path, before)
 
 
-@pytest.mark.parametrize("stop", ["no-origin", "group-never-moved"])
+@pytest.mark.parametrize("stop", ["group-never-moved"])
 def test_check_reads_nothing_past_where_the_run_stops(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], stop: str
 ) -> None:
-    # The run refuses a checkout with no `origin` and a group that never moved before it reads
-    # what comes after, so a trust record that does not parse never decides its code; `--check`
-    # reports each as the finding it is, exit 1, and reads no further either. Mutations (oracle):
-    # `mutations/`'s "check reads past a checkout with no origin" and "check reads past a group
+    # The run refuses a group that never moved before it reads what comes after, so a trust record
+    # that does not parse never decides its code; `--check` reports it as the finding it is, exit
+    # 1, and reads no further either. Mutation (oracle): `mutations/`'s "check reads past a group
     # that never moved".
     root, store, machine = _granting(tmp_path)
-    if stop == "no-origin":
-        run_git(root, "remote", "remove", "origin")
-    else:
-        (root / DEFAULT_MEMORY / "developer").mkdir(parents=True)
+    (root / DEFAULT_MEMORY / "developer").mkdir(parents=True)
     (machine.parent / "trust.json").write_text("{not json", encoding="utf-8")
     flags = _flags(root, store, machine)
     assert invoke(["attach", "--check", *flags]) == 1
     assert capsys.readouterr().err == ""
     assert invoke(["attach", "--yes", *flags]) == 2
     assert "trust.json" not in capsys.readouterr().err
-
-
-def test_check_counts_no_group_at_a_checkout_with_no_origin_as_the_run_counts_none(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    # The run refuses a checkout with no `origin` before it counts the groups that never moved, and
-    # that count is what refuses a `memory.groups` entry outside `paths.memory`. `--check` counted
-    # them all the same, so it refused for the entry (2) where the run refused for the `origin`,
-    # each in its own words. It reports the missing `origin` as its finding now, exit 1, and counts
-    # no group until there is one. Mutation (oracle): `mutations/`'s "check counts the groups at a
-    # checkout with no origin".
-    from stayfixed.memory.api import NO_REMOTE
-
-    root, store, machine = _granting(tmp_path)
-    run_git(root, "remote", "remove", "origin")
-    PAST_THE_GATES["group-leaves-the-share"](root, tmp_path)
-    flags = _flags(root, store, machine)
-    before = snapshot(tmp_path)
-    assert invoke(["attach", "--check", *flags, "--json"]) == 1
-    checked = capsys.readouterr()
-    assert checked.err == ""
-    data = json.loads(checked.out)
-    assert data["state"] == "no-origin" and data["real_directories"] == 0
-    assert invoke(["attach", "--yes", *flags]) == 2
-    assert capsys.readouterr().err == f"stayfixed: refused: {NO_REMOTE}\n"
-    assert_snapshot_unchanged(tmp_path, before)
 
 
 def test_check_ends_a_repository_outside_overlay_mode_as_the_run_does_whatever_its_ledger(
@@ -935,17 +937,20 @@ def test_check_reports_a_repository_outside_overlay_mode_whatever_its_origin(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # The run refuses a `memory.mode` other than `overlay` before it asks what the share holds, so
-    # an `origin` the overlay's record cannot hold never decides its code. `--check` asks the share
-    # only where the run would, so it reports the mode's refusal with the rest of its report, exit
-    # 2, rather than ending on the share's refusal turned into the mode's on stderr. Mutation
-    # (oracle): `mutations/`'s "check asks what the share holds whatever the memory mode".
+    # a group the share cannot hold never decides its code. `--check` asks the share only where the
+    # run would, so it reports the mode's refusal with the rest of its report, exit 2, rather than
+    # ending on the share's refusal turned into the mode's on stderr. Mutation (oracle):
+    # `mutations/`'s "check asks what the share holds whatever the memory mode".
     root, store, machine = _granting(tmp_path)
     config = root / "stayfixed.toml"
     config.write_text(
         config.read_text(encoding="utf-8").replace('mode = "overlay"', 'mode = "in-repo"'),
         encoding="utf-8",
     )
-    _origin_not_text(root, tmp_path)
+    # A group whose directory in the share is a link out of it: the share refuses it, while the
+    # checkout's own `paths.memory` holds nothing to count.
+    (tmp_path / "elsewhere").mkdir()
+    (store / "project-stable").symlink_to(tmp_path / "elsewhere", target_is_directory=True)
     flags = _flags(root, store, machine)
     assert invoke(["attach", "--check", *flags]) == 2
     checked = capsys.readouterr()

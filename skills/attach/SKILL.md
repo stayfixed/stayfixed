@@ -9,8 +9,9 @@ description: Bind a repository to its private memory overlay and link the note s
 `[project] name` in this repository's `stayfixed.toml`. Any other path is refused: the overlay
 root comes from the machine configuration, not from what is typed here.
 
-1. Run `stayfixed attach --store PATH --check` first. It reports whether the overlay's record
-   binds this repository's remote, and which allow rules and hook entries would be added. It
+1. Run `stayfixed attach --store PATH --check` first. It reports whether this machine already
+   binds this checkout (`bound` or `unbound`), and which allow rules and hook entries would be
+   added. It
    writes nothing. If the report counts memory groups that are real directories, stop: the
    notes have to move into the overlay first — each group to
    `<overlay>/projects/<name>/memory/<group>`, the shared group to `common/memory`. Say the
@@ -21,12 +22,11 @@ root comes from the machine configuration, not from what is typed here.
    links the notes into this checkout and every worktree, and prints what it wrote. An overlay
    that grants nothing attaches without the flag, and that is the command's decision rather
    than a judgement to make here.
-3. If the report says `mismatch`, stop. The overlay recorded a different remote URL under this
-   project's name: another repository, or this one on another host, port or user (ssh and https
-   spellings of one repository already bind). Say so, and pass
-   `stayfixed attach --store PATH --trust-remote` only after the user confirms that this
-   repository is the one that should be bound.
+3. If the report or the run names two remotes -- this checkout's `origin` is not the one the
+   binding or the overlay records -- relay that line. It refuses nothing: the binding is an id
+   this machine keeps, never the remote. Never print or relay more of the binding id than the
+   eight characters the command prints.
 4. `stayfixed detach` removes the merged rules, the Codex rule files, the note links and the
-   local ledger, and leaves the binding record in the overlay untouched. Relay what it removed.
+   local ledger, and leaves the overlay's project record untouched. Relay what it removed.
 5. Personal rules, notes and permissions live in the overlay and nowhere else. Never copy one
    into the project repository, and never widen a permission on the user's behalf.

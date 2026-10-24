@@ -52,16 +52,14 @@ SETUP_MACHINE_HELP = (
     "file every reader reads)"
 )
 # `attach --check` reports the same way the four above do and **exits differently on purpose**.
-# Its exit 1 is a binding mismatch, not a non-empty diff: a diff with allow rules in it is the
-# ordinary state of a first attach, and it is what the `--yes` gate exists for — the refusal
+# Its exit 1 is a memory group that never moved into the overlay, which `attach` refuses on above
+# its first write -- a thing the owner acts on before the real run -- and not a non-empty diff: a
+# diff with allow rules in it is the ordinary state of a first attach, and it is what the `--yes`
+# gate exists for — the refusal
 # `write.attach` raises names this flag as the way to read the diff before passing `--yes`
 # ("Read the diff with `stayfixed attach --check` and pass --yes"). A `--check` that failed
 # whenever the run would widen would make the documented remedy itself a failure, and the skill
 # that runs check -> relay -> ask would begin with one.
-#
-# Its exit 1 now carries a second finding: a memory group that never moved into the overlay,
-# which `attach` refuses on above its first write. Both are things the owner acts on before
-# the real run rather than faults in the command, which is what makes them one exit code.
 ATTACH_CHECK_HELP = (
     "report the binding, the diff and the groups that never moved, and write nothing"
 )

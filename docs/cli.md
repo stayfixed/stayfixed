@@ -68,7 +68,7 @@ Three things hold everywhere:
 - [`stayfixed overlay init --owner OWNER [--root PATH]`](#stayfixed-overlay-init---owner-owner---root-path)
 - [`stayfixed overlay upgrade [--root PATH] [--dry-run]`](#stayfixed-overlay-upgrade---root-path---dry-run)
 - [`stayfixed overlay publish-template --owner OWNER [--name NAME] [--yes]`](#stayfixed-overlay-publish-template---owner-owner---name-name---yes)
-- [`stayfixed attach --store PATH [--check] [--yes] [--trust-remote] [--root PATH] [--machine PATH]`](#stayfixed-attach---store-path---check---yes---trust-remote---root-path---machine-path)
+- [`stayfixed attach --store PATH [--check] [--yes] [--root PATH] [--machine PATH]`](#stayfixed-attach---store-path---check---yes---root-path---machine-path)
 - [`stayfixed detach [--root PATH] [--machine PATH]`](#stayfixed-detach---root-path---machine-path)
 - [`stayfixed setup [--preset NAME] [--yes] [--home PATH] [--machine PATH] [--overlay VALUE] [--root PATH]`](#stayfixed-setup---preset-name---yes---home-path---machine-path---overlay-value---root-path)
 - [`stayfixed setup --git-hooks [--uninstall] [--root PATH]`](#stayfixed-setup---git-hooks---uninstall---root-path)
@@ -148,15 +148,10 @@ configuration records that is not a directory on this machine — the overlay mo
 cloned here — is said first, with the root named in stayfixed's own sentence (it is your
 machine configuration's, not the repository's) and `stayfixed setup --preset NAME
 --overlay PATH` as the way out, since `attach` refuses a store outside the recorded root. A
-binding that does not hold names which of its four causes it is, in stayfixed's own words before
-the region that carries the repository's: this checkout has no `origin` remote (add it, then run
-`stayfixed attach`), which is asked first and is said the same way by `attach`, `attach --check`,
-`doctor` and the session-start line; the overlay records no remote for this project (run
-`stayfixed attach`); a record that cannot be read (the file is named inside the region); or a
-record naming a different remote URL — only the three spellings `attach` describes bind across
-ssh and https, the sentence names them, and any other is compared exactly — the one case whose way
-out is
-`stayfixed attach --trust-remote`, and only if this checkout should be bound.
+checkout this machine does not bind to the project — no binding id in its git common directory, or
+none this machine records for that project — is said in stayfixed's own words before the region
+that carries the repository's, with `stayfixed attach` as the way out. The checkout's `origin`
+plays no part in it.
 
 **Trust interacts with this command**, and the interaction is the non-obvious part: `memory
 index` rewrites the very files the trust hash covers, so it would revoke the approval it depends
@@ -480,20 +475,21 @@ registers one `SessionStart` handler, with a `once_key`, so it speaks **at most*
 per session: the marker is banked only when the handler had something to say, so a session that
 hears a line hears it once, and a repository with nothing to report is asked again on every
 `startup`, `resume`, `clear`, `compact` and `fork` the matcher above covers — and it says
-nothing at all unless `[memory] mode` is `overlay`. Eleven fixed lines, each carrying at most a
-count, joined by newlines in this order: **no overlay recorded** on this machine, or one that
+nothing at all unless `[memory] mode` is `overlay`. Ten lines, each fixed and carrying at most a
+count but the one that names two remotes, joined by newlines in this order: **no overlay recorded** on this machine, or one that
 **could not be asked** about, which is a machine configuration file that will not parse; this
-repository **not attached** to that overlay, the overlay recording **a different remote**
-under this project's name, or this checkout having **no `origin`** to check the record against;
+repository **not attached** to that overlay, or, for a bound one, its **`origin` moved** from
+the remote its binding was recorded with — the one line that names repository bytes, both remotes,
+each escaped where it is not a plain path;
 **a memory path refused**, so the notes were not examined at all; how
 many note groups are **real directories** rather than links into the overlay; the overlay's
 `stayfixed.requires` in **a form this stayfixed cannot read**, or naming **a floor this stayfixed
 does not meet**, a pre-release of the floor's version included; and — only when none of those fired — the overlay's branch having **no
 upstream**, and the counts of its **unpushed commits and uncommitted changes**. A bound, linked,
-up-to-date repository on a satisfied stayfixed hears nothing. Not one byte a repository wrote
-reaches any of those lines: `project.name`, `memory.groups`, `paths.memory` and both remotes are
-read and none is quoted back, because the field these lines land in is `additionalContext` —
-model input with no delimiter and no trust record.
+up-to-date repository on a satisfied stayfixed hears nothing. But for the moved-`origin` line, not
+one byte a repository wrote reaches any of those lines: `project.name`, `memory.groups` and
+`paths.memory` are read and none is quoted back, because the field these lines land in is
+`additionalContext` — model input with no delimiter and no trust record.
 
 **What it costs, and on which repository.** The binding's own `origin` query runs on every
 invocation, at git's five-second cap. The last two lines cost two more `git` calls at two seconds
@@ -2428,7 +2424,7 @@ length); `2` on a refusal.
 
 ---
 
-## `stayfixed attach --store PATH [--check] [--yes] [--trust-remote] [--root PATH] [--machine PATH]`
+## `stayfixed attach --store PATH [--check] [--yes] [--root PATH] [--machine PATH]`
 
 Binds this repository to your private overlay and links its note store in. After it, a session
 in this repository reads your cross-project notes and this project's own notes, and the
@@ -2471,8 +2467,8 @@ anything; `--check` says so first on its line, still reports the rest, and exits
 the real run refuses with. Where the rest cannot be read, `--check` ends with the run's refusal
 instead, the same code and the same line.
 
-**`--check` writes nothing.** It reports the binding state — `unbound`, `bound`, `mismatch` or
-`no-origin`, the last with the cause and the way out ahead of the counts — the permission diff
+**`--check` writes nothing.** It reports the binding state — `unbound` or `bound` — with the
+`origin` note the run would print (below), the permission diff
 (which allow rules and which hook entries would be added, and how many of the overlay's rules this
 repository already has), the Codex standing-rule files it would place under `.codex/rules/`, and
 `real_directories`: how many of this project's memory groups are still real directories rather than
@@ -2480,16 +2476,14 @@ links into the overlay. Read it before the real run: everything under **Writes**
 content from the overlay is named here first. It asks what the real run asks before its first write,
 through the run's own code, so where the run fails or refuses there, in any case the two lists below
 give before the first write, `--check` ends with the same code and the same line. The exceptions,
-besides overlay mode above, are where a flag or a finding decides: a widening without `--yes` and a
-mismatch without `--trust-remote` it reports and goes past, asking what follows as a run given the
-flag would; at a checkout with no `origin` and at a memory group that never moved it reports the
-finding, exits `1`, and of what the run asks next reads only the Codex rule files' names, so with no
-`origin` it counts no group (`real_directories` is `0`).
+besides overlay mode above, are where a flag or a finding decides: a widening without `--yes` it
+reports and goes past, asking what follows as a run given the flag would; at a memory group that
+never moved it reports the finding, exits `1`, and of what the run asks next reads only the Codex
+rule files' names.
 
-It exits `1` when that count is non-zero, the same way it does on a mismatch or a checkout with no
-`origin` and for the same reason — all three are findings you act on before the real run, and
-`attach` itself is what refuses. The count is a count: a group's name comes out of `stayfixed.toml`,
-so it is never printed.
+It exits `1` when that count is non-zero — a finding you act on before the real run, and `attach`
+itself is what refuses. The count is a count: a group's name comes out of `stayfixed.toml`, so it
+is never printed.
 
 Those standing-rule files are reported but **not** gated by `--yes`. The gate is about widening
 a *permission*; a standing rule is not one, and adding standing rules is the machine owner's own
@@ -2502,19 +2496,23 @@ command line here is usually written by a model that has read this repository, s
 only enforcement is a step in a procedure is no gate at all. An overlay that grants nothing needs
 no flag, because the gate is on the capability and not on the command.
 
-**A mismatch needs `--trust-remote`.** The overlay records the remote URL it bound under this
-project name; if this repository's `origin` names a different repository, `attach` refuses (`2`)
-unless you say otherwise. One repository is one remote whichever of git's three spellings names
-it: `git@host:owner/repo`, `ssh://git@host/owner/repo` and `https://host/owner/repo`, each with or
-without `.git`, bind one another when the host and the path agree, the host in any case and, on
-github.com alone, the path too. So a clone made over https binds a record made over ssh, and the
-record keeps the form it was written in. Nothing else is normalised: a different owner,
-repository, host, port or user is a different remote, and a URL in no such form binds only the
-record that names it byte for byte. A clone chooses its own `project.name`; it does not choose
-what the overlay recorded under that name. A checkout with no `origin` is not a mismatch, whatever
-the overlay records: there is nothing to compare, so `--trust-remote` does not apply, and `attach`
-refuses it, as `--check`, `doctor` and the memory commands report it, with one sentence: add the
-`origin`, then run `stayfixed attach`.
+**The binding is an id this machine keeps, not a remote.** `attach` draws a random binding id
+(32 hexadecimal characters) the first time, writes it into the repository's git common directory,
+`stayfixed/binding` there (the directory `git rev-parse --git-common-dir` names, which every
+worktree of the repository shares), and records on this machine what it is bound to — the project
+name, the `origin` at the time and the checkout — in `$HOME/.local/share/stayfixed/bindings/<id>.toml`.
+A checkout is bound where both are there and the record names its `[project] name`; nothing a
+repository commits can write either, and a clone never carries the id, so a clone that names itself
+after one of your projects is not bound to it. The id never leaves the machine: it is printed only
+as its first eight characters, on the run's line and as `binding` in `--json`. A checkout with no
+`origin`, or one whose `origin` is not the remote its binding (or, on a first attach, the
+overlay's record) names, attaches all the same, and the line says so, naming both remotes: one
+repository is one remote whichever of git's three spellings names it — `git@host:owner/repo`,
+`ssh://git@host/owner/repo` and `https://host/owner/repo`, each with or without `.git`, the host
+in any case and, on github.com alone, the path too — so a clone made over https of a repository
+recorded over ssh hears nothing. The overlay's `projects/<name>/project.toml` keeps the remote it
+was first written with and the first attach's date, and is written only while it records no
+remote; an `origin` git prints in bytes that are not UTF-8 is recorded as none.
 
 **A group that never moved is refused.** `attach` **links**; it never moves a note. So a
 `memory.groups` entry that is still a real directory under `paths.memory` would be linked over,
@@ -2542,8 +2540,11 @@ both `.stayfixed/local/` and `.stayfixed/assessment.json`), a block between
 `# stayfixed:attach:begin` and `# stayfixed:attach:end` in the repository's own exclude file (the
 one `git rev-parse --git-path info/exclude` names, which every worktree shares),
 `.claude/settings.local.json`, `.codex/rules/`, the ledger `.stayfixed/local/attach.json`, the
-link tree under `paths.memory` in this checkout and in every existing worktree, the harness memory
-link, and — in the overlay — `projects/<name>/project.toml`, this project's note directories,
+binding id `stayfixed/binding` in the git common directory when there is none yet, this machine's
+binding record `$HOME/.local/share/stayfixed/bindings/<id>.toml`, the link tree under
+`paths.memory` in this checkout and in every existing worktree, the harness memory link, and — in
+the overlay — `projects/<name>/project.toml` while it records no remote, this project's note
+directories,
 `projects/<name>/memory/MEMORY.md` when the store has none yet (rendered as `stayfixed memory
 index` renders it, so the index link never dangles and `memory index --check` passes right after
 a first attach in an overlay this release rendered; one generated from a template published at
@@ -2616,10 +2617,9 @@ never ran `overlay init`. A missing `pre-commit` is a reported note, never a tra
 failing one printed is quoted as `overlay create` quotes it (escaped, and cut to its first 120
 characters and its length).
 
-Exits `0` on success. Under `--check` it exits `1` on a mismatch, on a checkout with no `origin`,
-**or** on a non-zero count of memory groups that are still real directories, and `2` for a
-`memory.mode` other than `overlay`; a failure or refusal below that the run meets before its first
-write ends `--check` with the run's code and line instead, a mismatch's finding included.
+Exits `0` on success. Under `--check` it exits `1` on a non-zero count of memory groups that are
+still real directories, and `2` for a `memory.mode` other than `overlay`; a failure or refusal below
+that the run meets before its first write ends `--check` with the run's code and line instead.
 
 A real run exits `1` on a failure, something it reads that cannot be read or a `git` that cannot
 answer, in the order the run meets them:
@@ -2628,7 +2628,8 @@ answer, in the order the run meets them:
   the loader refuses; or the machine configuration cannot be read, is not UTF-8 or is not valid
   TOML.
 - The overlay's record of this project (`projects/<name>/project.toml`) cannot be read, is not
-  UTF-8 or is not valid TOML, or `git` cannot read the `origin` remote.
+  UTF-8 or is not valid TOML, `git` cannot read the `origin` remote, or `git` cannot name the
+  repository's common directory.
 - The overlay's `permissions.json` or `hooks.json`, or `.claude/settings.local.json`, cannot be
   read or is not UTF-8.
 - An existing `.stayfixed/local/attach.json` cannot be read, is not UTF-8, is not valid JSON or is
@@ -2665,9 +2666,7 @@ It exits `2` on a refusal, in the order the run meets them:
   64 MiB it reads, whether or not this run would rewrite it: a short document many levels deep
   grows by its depth on every line, and `would be longer than this reader reads once written
   back` keeps a run from leaving a file its next read refuses. `--check` refuses it too.
-- A widening without `--yes`; a checkout with no `origin`, whether or not the overlay records the
-  project; a mismatch without `--trust-remote`; an `origin` whose URL is not UTF-8 text, which the
-  overlay's record cannot hold.
+- A widening without `--yes`.
 - A `memory.groups` entry that leaves this project's share of the overlay; one that does not name a
   subdirectory of `paths.memory`, or a `paths.memory` that is itself a symlink (a refusal of its
   own, which is why the `--check` count counts only groups that stay inside); a memory group that
@@ -2695,8 +2694,9 @@ repository and the overlay as they were. What is left can only happen once writi
   `.gitignore`'s region already written.
 - A directory in this project's share of the overlay that became a symlink between the moment it
   was checked and the moment it was written, which is refused.
-- Any other write that fails, a rule copy, the settings file, the ledger, the overlay's record or a
-  link, which ends as `internal error` with the error the system gave.
+- Any other write that fails, a rule copy, the settings file, the ledger, the binding id, the
+  machine's binding record, the overlay's record or a link, which ends as `internal error` with
+  the error the system gave.
 
 ---
 
@@ -3147,16 +3147,17 @@ position.
 **Several subprocesses are run and every one of them only asks.** stayfixed's own
 `hooks/run-hook.sh` with `--version`; `git ls-remote --exit-code` against the public
 repository's tags, to judge `[ci] ref`, only when one is set; and the `git` queries the other
-rows need — where the overlay keeps its hooks, what its `origin` is, where the note store
-resolves to, which the binding's row and the note store's rows each ask for themselves, which
+rows need — where the overlay keeps its hooks, what this checkout's `origin` is, which the
+binding's row asks, the repository's common directory, where the binding id is kept, which the
+binding's row and the note store's rows each ask for themselves, which
 checkout owns this one, which the binding's row asks to judge the harness memory path, and, for
 `hook-entries`, which files below the root a nested `.claude/skills` holds (`git ls-files`), asked
 a second time through each submodule's index where a `.gitmodules` sits at or above the root.
-Seven of those are measured on a green attached installation with no submodules — the wrapper
-probe and six `git` questions — and eight where a `.gitmodules` is present; not one of them leaves
+Eight of those are measured on a green attached installation with no submodules — the wrapper
+probe and seven `git` questions — and nine where a `.gitmodules` is present; not one of them leaves
 this machine. The `ci-ref` row's `git ls-remote` is one more on a repository that records a
 `[ci] ref` at all, and it is the only one that does leave: it goes through the `Runner` seam,
-which is what lets the case that pins the seven answer it in process instead of launching it.
+which is what lets the case that pins the eight answer it in process instead of launching it.
 That one is bounded at **30 seconds**, not at the seam's own five minutes (the bound for
 `gh repo create --clone`), so a peer that does not answer cannot turn a one-line diagnostic into a
 five-minute block. Each `git ls-files` question has `gitenv`'s thirty seconds of its own for a
@@ -3201,9 +3202,9 @@ check with `name`, `status`, `detail` and `remedy`, so every remedy is there.
 **How `attached` reads the harness memory path.** The row reads `~/.claude/projects/<slug>/memory`,
 and `autoMemoryDirectory` in the two settings files the repository controls beside whatever stands
 there, in one order, and the first state that matches answers. Two states answer before the ledger
-and the overlay's binding are read, since the harness reads what they name whatever the ledger says:
+and the binding are read, since the harness reads what they name whatever the ledger says:
 `real-directory-no-fallback` and `fallback-elsewhere`, each the row's whole detail. Every other
-state answers only once the overlay confirms the binding. The store and the approval it asks about
+state answers only once this machine's binding of the checkout confirms the ledger. The store and the approval it asks about
 are the main checkout's, as `attach` asks them, so one machine state reads the same from every
 checkout; the one exception is a link that reaches this checkout's own `paths.memory`, where a
 linked worktree's session-start re-link points it, which is judged by the store at that tree. A
@@ -3707,7 +3708,7 @@ beside the six above:
 | `stayfixed attach --check` | report the binding, the diff and the groups that never moved, and write nothing |
 
 `attach --check` reports the way the other four do and exits differently on purpose: its `1` is a
-binding **mismatch** or a checkout with no `origin`, not a non-empty diff. A diff carrying allow
+memory group that never moved into the overlay, not a non-empty diff. A diff carrying allow
 rules is the ordinary state of a first attach and is exactly what the `--yes` gate exists for — the
 refusal `attach` raises names this flag as the way to read that diff first. A `--check` that failed
 whenever the run would widen would make the documented remedy itself a failure.

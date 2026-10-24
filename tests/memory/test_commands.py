@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from stayfixed import binding
 from stayfixed.cli import build_parser, discover_registrars, run
 from stayfixed.findings import LISTED_LIMIT
 from stayfixed.jsonobject import LONG_NUMBER, NESTED
@@ -475,6 +476,7 @@ def overlay_project(tmp_path: Path) -> Path:
     (overlay / "projects" / "widget" / "project.toml").write_text(
         f'remote = "{REMOTE}"\n', encoding="utf-8"
     )
+    binding.record(root, "widget", REMOTE)
     memory = root / "docs" / "memory"
     memory.mkdir(parents=True)
     (memory / "developer").symlink_to(overlay / "common" / "memory", target_is_directory=True)
@@ -1141,21 +1143,19 @@ def test_the_share_named_outside_overlay_mode_is_the_store_it_names(overlay_proj
 
 
 def _binding_project(tmp_path: Path, cause: str) -> tuple[Path, Path]:
-    """An attached-shaped overlay project whose binding fails for exactly one of its four causes."""
+    """An attached-shaped overlay project whose binding fails for exactly one of its causes: this
+    machine binds nothing to the checkout, even with the overlay recording its very remote, or the
+    overlay the machine records is not there."""
     root = tmp_path / "project"
     root.mkdir(parents=True)
     git(root, "init", "-q", "-b", "main")
-    if cause != "no-remote":
-        origin = "git@example.com:acme/other.git" if cause == "mismatch" else REMOTE
-        git(root, "remote", "add", "origin", origin)
+    git(root, "remote", "add", "origin", REMOTE)
     overlay = tmp_path / "overlay"
     (overlay / "common" / "memory").mkdir(parents=True)
     (overlay / "projects" / "widget" / "memory").mkdir(parents=True)
-    record = overlay / "projects" / "widget" / "project.toml"
-    if cause == "unreadable":
-        record.write_text("remote = [\n", encoding="utf-8")
-    elif cause != "no-record":
-        record.write_text(f'remote = "{REMOTE}"\n', encoding="utf-8")
+    (overlay / "projects" / "widget" / "project.toml").write_text(
+        f'remote = "{REMOTE}"\n', encoding="utf-8"
+    )
     (root / "docs" / "memory").mkdir(parents=True)
     (root / "docs" / "memory" / "developer").symlink_to(overlay / "common" / "memory")
     (root / "stayfixed.toml").write_text(OVERLAY_CONFIG, encoding="utf-8")
@@ -1169,10 +1169,7 @@ def _binding_project(tmp_path: Path, cause: str) -> tuple[Path, Path]:
 
 # Each cause's own words, which only its own refusal may carry.
 BINDING_CAUSES = {
-    "no-record": "records no remote for this project",
-    "unreadable": "cannot be read",
-    "no-remote": "has no `origin` remote",
-    "mismatch": "records a different remote",
+    "no-record": "records no binding of this checkout",
     "overlay-gone": "is not a directory on this machine",
 }
 
@@ -1182,13 +1179,9 @@ BINDING_CAUSES = {
 def test_a_binding_refusal_names_its_own_cause_and_the_way_out_that_fits_it(
     tmp_path: Path, cause: str
 ) -> None:
-    # `store._bound` answered one `False` for four causes, and the refusal said "run `stayfixed
-    # attach`" for all of them — which for a changed remote is the command that refuses. Each
-    # cause now says itself, in stayfixed's own words before the region that holds the
-    # repository's; only the mismatch names `--trust-remote`.
-    #
-    # Mutation: `mutations/`'s "the binding check answers a missing record with the
-    # mismatch's way out".
+    # `store._bound` answered one `False` for several causes, and the refusal said "run
+    # `stayfixed attach`" for all of them. Each cause says itself, in stayfixed's own words before
+    # the region that holds the repository's.
     from stayfixed.memory.trust import DELIMITER
     from tests.cli import cli
 
@@ -1201,12 +1194,7 @@ def test_a_binding_refusal_names_its_own_cause_and_the_way_out_that_fits_it(
     for other, words in BINDING_CAUSES.items():
         if other != cause:
             assert words not in said, other
-    assert ("--trust-remote" in lead) is (cause == "mismatch")
-    if cause != "mismatch":
-        assert "--trust-remote" not in said
-    if cause == "unreadable":
-        # The file is named, and inside the region: its path carries the project's name.
-        assert "project.toml" in said.split(DELIMITER, 1)[1]
+    assert "--trust-remote" not in said
     if cause == "overlay-gone":
         # A recorded overlay that is not there is answered by recording where it is now, which
         # `setup --overlay` does; `attach --store <new place>` refuses a store outside the

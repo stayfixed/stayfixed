@@ -1692,7 +1692,6 @@ before = "UNPARSEABLE = (tomllib.TOMLDecodeError, RecursionError, ValueError)"
 after = "UNPARSEABLE = (tomllib.TOMLDecodeError, RecursionError)"
 reddens = [
   "tests/config/test_deep_toml.py::test_a_reader_answers_a_number_past_the_parser_as_a_document_that_does_not_parse[loads]",
-  "tests/config/test_deep_toml.py::test_a_reader_that_degrades_on_a_broken_record_degrades_on_a_long_number[store-bound]",
   "tests/config/test_deep_toml.py::test_a_profile_document_holding_a_number_past_the_parser_resolves_to_nothing",
   "tests/assess/test_gate_command.py::test_a_stayfixed_toml_holding_a_number_past_the_parser_does_not_load_naming_the_side[tree]",
   "tests/assess/test_gate_command.py::test_a_stayfixed_toml_holding_a_number_past_the_parser_does_not_load_naming_the_side[base]",
@@ -6393,3 +6392,32 @@ before = """        elif name == _SKIPPED_BY and attributes.get("type") == TODO:
 after = """        elif False:"""
 reddens = ["tests/prove/test_junit.py::test_a_todo_testcase_is_skipped_whatever_else_stands_in_it[failing]"]
 
+
+# The project a checkout is bound to comes from this machine's record for the id in its git common
+# directory, never from the name the repository commits: a clone naming itself after one of the
+# owner's projects has no id, and falling back to its `[project] name` would bind it.
+[[mutation]]
+name = "bound_project falls back to the repository's project name"
+file = "src/stayfixed/binding.py"
+before = """    id = read_id(root)
+    if id is None:
+        return None
+"""
+after = """    id = read_id(root)
+    if id is None:
+        name = tomllib.loads((root / "stayfixed.toml").read_text())["project"]["name"]
+        return Bound(name, None, root)
+"""
+reddens = [
+  "tests/test_binding.py::test_a_checkout_with_no_id_is_unbound_even_when_its_name_is_a_bound_projects",
+]
+
+# An id is exactly what `secrets.token_hex(16)` draws; a shorter one is no id.
+[[mutation]]
+name = "read_id accepts a 31-character id"
+file = "src/stayfixed/binding.py"
+before = '_ID = re.compile(r"[0-9a-f]{32}")'
+after = '_ID = re.compile(r"[0-9a-f]{31,32}")'
+reddens = [
+  "tests/test_binding.py::test_an_id_is_read_only_when_it_is_exactly_32_lowercase_hex_characters[31-hex]",
+]

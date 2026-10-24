@@ -394,7 +394,7 @@ reddens = [
 
 # An area whose source answered and grants this checkout less than the one it is for says why, in
 # its own clause: "its source does not grant them" is false there. `attach`'s overlay, for a
-# checkout its record binds to another remote, grants the entry to the checkout it does bind.
+# checkout whose project record cannot be read, may grant the entry all the same.
 [[mutation]]
 name = "hook-entries says a source refused what its area says it grants elsewhere"
 file = "src/stayfixed/doctor/entries.py"
@@ -403,11 +403,10 @@ after = '    return f"{words.source} does not grant them"'
 reddens = [
   "tests/doctor/test_entries.py::test_an_area_that_says_why_its_source_grants_less_is_told_in_its_words[readable]",
   "tests/doctor/test_entries.py::test_an_area_that_says_why_its_source_grants_less_is_told_in_its_words[unreadable]",
-  "tests/attach/test_doctor.py::test_an_owners_checkout_the_record_no_longer_binds_is_told_the_binding_is_wrong",
 ]
 
 # And in its own remedy: the area's `vouch` may be one it refuses there, as `attach --store` is on a
-# mismatch without `--trust-remote`.
+# project record it cannot read.
 [[mutation]]
 name = "hook-entries offers the vouch an area says may be refused"
 file = "src/stayfixed/doctor/entries.py"
@@ -415,7 +414,6 @@ before = "    return words.regrant or ("
 after = "    return ("
 reddens = [
   "tests/doctor/test_entries.py::test_an_area_that_says_why_its_source_grants_less_is_told_in_its_words[readable]",
-  "tests/attach/test_doctor.py::test_an_owners_checkout_the_record_no_longer_binds_is_told_the_binding_is_wrong",
 ]
 
 [[mutation]]

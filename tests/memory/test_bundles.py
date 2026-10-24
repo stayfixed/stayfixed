@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from stayfixed import binding
 from stayfixed.config.loader import CONFIG_FILE, load
 from stayfixed.config.schema import Config
 from stayfixed.memory.bundles import (
@@ -400,6 +401,7 @@ def a_resolved_overlay_store(tmp_path: Path) -> tuple[Store, Config, Path, Path]
     (overlay / "projects" / "widget" / "project.toml").write_text(
         'remote = "git@example.com:acme/widget.git"\n', encoding="utf-8"
     )
+    binding.record(root, "widget", "git@example.com:acme/widget.git")
     memory = root / "docs" / "memory"
     memory.mkdir(parents=True)
     (memory / "developer").symlink_to(overlay / "common" / "memory", target_is_directory=True)

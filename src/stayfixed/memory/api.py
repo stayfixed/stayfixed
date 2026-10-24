@@ -12,11 +12,11 @@ what an area might be said to need, which is a list that grows names nothing imp
 that needs something absent from this list grows it deliberately, in a commit that says which
 area and why — it does not import a private module of this area.
 
-Thirty-seven names are imported from outside this area today, by the `attach` and `overlay` areas
+Thirty-two names are imported from outside this area today, by the `attach` and `overlay` areas
 and by this repository's tests: the resolver (`resolve`, `permitted_roots` and `main_checkout`),
 the overlay layout `attach` writes and `overlay` renders (`PROJECTS`, `PROJECT_RECORD`,
-`STORE_DIR`, `COMMON_GROUP`), the one reader of the binding record, which `attach` reads it with
-and answers its own way when it cannot (`read_binding_record`), the link tree
+`STORE_DIR`, `COMMON_GROUP`), the one reader of the overlay's project record, which `attach`
+reads it with and answers its own way when it cannot (`read_binding_record`), the link tree
 (`link`, `attach_main`,
 `detach_main`, `harness_anchor`, `harness_link_needed`, `harness_gate` with the two of its answers
 a caller compares with (`GATE_OPEN`, `GATE_LAPSED`), which `attach` and its `doctor.py` ask to tell
@@ -30,10 +30,10 @@ any approval for a store that
 does not exist yet (`approval_recorded`, which `attach` asks before a first link tree is built),
 whether the machine's trust record can be read at all (`require_readable_record`, which `attach`
 asks before its first write, since the index render and the harness link read it after), the
-binding's one classifier and the states and causes it answers in (`binding_state`, `UNBOUND`,
-`BOUND`, which `attach`'s own doctor row reads, `MISMATCH`, `NO_ORIGIN`, and the causes
-`NO_REMOTE`, `NO_ORIGIN_CAUSE`, `NO_ORIGIN_WAY_OUT` and `DIFFERENT_REMOTE`), which `attach` answers
-the binding question with instead of a second classifier of its own, the bundle slots
+binding's one classifier and the states it answers in (`binding_state`, `UNBOUND` and `BOUND`,
+which `attach`'s own doctor row reads), which `attach` answers the binding question with instead
+of a second classifier of its own, and the note a moved `origin` earns (`origin_note`), which
+`attach` and its session-start line say, the bundle slots
 `tests/hooks/test_hooks_json.py` holds the hooks file to (`SLOTS`), the note store a `doctor` row
 reads, resolved once per area per report (`Answers`, which the `attach` area's own `doctor.py`
 creates for its row), and
@@ -51,7 +51,7 @@ kept in silence is what made this pass necessary:
 - **The store, and the rest of the binding's vocabulary**: `Store` is what `resolve` returns, and a
   return type absent from a surface is a value a consumer can hold and cannot declare, which
   `tests/test_surfaces.py` derives rather than restates.
-  `BINDING_STATES` completes the closed vocabulary `binding_state` answers in, beside the four
+  `BINDING_STATES` completes the closed vocabulary `binding_state` answers in, beside the two
   states that have a caller, for the reason the trust region's bullet below gives.
 
 - **The rest of the trust region's vocabulary**: `wrap`, `new_nonce` and `UnsafeNote`, beside
@@ -106,12 +106,6 @@ from stayfixed.memory.store import (
     BINDING_STATES,
     BOUND,
     COMMON_GROUP,
-    DIFFERENT_REMOTE,
-    MISMATCH,
-    NO_ORIGIN,
-    NO_ORIGIN_CAUSE,
-    NO_ORIGIN_WAY_OUT,
-    NO_REMOTE,
     PROJECT_RECORD,
     PROJECTS,
     STORE_DIR,
@@ -119,6 +113,7 @@ from stayfixed.memory.store import (
     Store,
     binding_state,
     main_checkout,
+    origin_note,
     permitted_roots,
     read_binding_record,
     resolve,
@@ -158,14 +153,8 @@ __all__ = [
     "BOUND",
     "COMMON_GROUP",
     "DELIMITER",
-    "DIFFERENT_REMOTE",
     "GATE_LAPSED",
     "GATE_OPEN",
-    "MISMATCH",
-    "NO_ORIGIN",
-    "NO_ORIGIN_CAUSE",
-    "NO_ORIGIN_WAY_OUT",
-    "NO_REMOTE",
     "PROJECTS",
     "PROJECT_RECORD",
     "SLOTS",
@@ -195,6 +184,7 @@ __all__ = [
     "markers",
     "may_inject",
     "new_nonce",
+    "origin_note",
     "permitted_roots",
     "read_binding_record",
     "require_readable_record",

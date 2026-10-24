@@ -14,19 +14,6 @@ reddens = [
   "tests/test_git_answers.py::test_a_worktree_whose_path_holds_a_carriage_return_is_listed_by_its_own_path",
 ]
 
-# The overlay's binding record is UTF-8 TOML. An `origin` URL git prints in other bytes reached
-# `_record_binding`, attach's last write, and raised there after four artifacts were written.
-[[mutation]]
-name = "attach meets an origin URL that is not UTF-8 after its first write"
-file = "src/stayfixed/attach/write.py"
-before = """    if binding.remote is not None and not fsops.utf_8_name(binding.remote):
-        raise Refusal(ORIGIN_NOT_TEXT)
-"""
-after = ""
-reddens = [
-  "tests/test_git_answers.py::test_attach_refuses_an_origin_it_cannot_record_before_writing_anything",
-]
-
 # The overlay root comes from the machine file, and this is the rule whose failure hands the choice
 # of overlay to whoever wrote the command line -- which in this harness is a model that has read the
 # repository. The machine file is unselectable by a repository by construction; `--store`'s own
@@ -206,23 +193,6 @@ reddens = [
 ]
 
 # --- install path: the review's eight attach/doctor findings -----------------------------
-#
-# `attach` owes four refusals before its first write, and the fourth was not where the other
-# three are: it lived in `_record_binding`, which runs after the ignore region, the Codex rule
-# files, the settings merge and the ledger. A checkout with no `origin` therefore exited 2
-# having written all four, and `doctor._attached` — which keys on the ledger existing — then
-# reported the repository attached. The mutation puts the refusal back where it was.
-[[mutation]]
-name = "the no-origin refusal moves back below attach's first write"
-file = "src/stayfixed/attach/write.py"
-before = '''        if binding.state == NO_ORIGIN:
-            yield Stop(NO_REMOTE)
-            return
-        if binding.state == MISMATCH:'''
-after = '''        if binding.state == MISMATCH:'''
-reddens = [
-  "tests/attach/test_write.py::test_a_repository_with_no_origin_remote_has_nothing_to_record",
-]
 
 # `.stayfixed/local/attach.json` is a path a clone can commit — `.gitignore` does not untrack a
 # committed file — and `detach` deletes by the strings in `rules` and pops settings keys by the
@@ -546,8 +516,8 @@ after = """    raw = settings_object(document, label)
         return ()
     return tuple(allow_list(raw, label))"""
 reddens = [
-  "tests/attach/test_commands.py::test_check_refuses_a_settings_file_the_run_refuses_ahead_of_a_missing_origin[permissions-null]",
-  "tests/attach/test_commands.py::test_check_refuses_a_settings_file_the_run_refuses_ahead_of_a_missing_origin[allow-null]",
+  "tests/attach/test_commands.py::test_check_refuses_a_settings_file_the_run_refuses_in_its_diff[permissions-null]",
+  "tests/attach/test_commands.py::test_check_refuses_a_settings_file_the_run_refuses_in_its_diff[allow-null]",
 ]
 
 [[mutation]]
@@ -758,13 +728,12 @@ reddens = [
   "tests/attach/test_commands.py::test_check_reads_each_of_its_two_documents_once",
 ]
 
-# `--check` exits 1 when memory groups never moved into the overlay, as it does when the binding is
-# wrong.
+# `--check` exits 1 when memory groups never moved into the overlay.
 [[mutation]]
 name = "check reports the groups that never moved and still exits zero"
 file = "src/stayfixed/attach/check.py"
-before = "    finding = binding.state in (MISMATCH, NO_ORIGIN) or real"
-after = "    finding = binding.state in (MISMATCH, NO_ORIGIN)"
+before = "    return Result(summary, data, exit_code=1 if real else 0)"
+after = "    return Result(summary, data, exit_code=0)"
 reddens = [
   "tests/attach/test_commands.py::test_check_counts_the_groups_that_never_moved_and_exits_one",
 ]
@@ -912,22 +881,13 @@ reddens = [
 # `local-only` project got the ignore region, `.codex/rules/`, the settings merge, the ledger and,
 # in the overlay, `project.toml` and its group directories before exit 2. The early refusal is the
 # guard; `attach_main`'s own check is the floor under it and reddens nothing on its own.
-# Each stop past the binding is passed only by the flag that answers it, never by the other one:
-# `--trust-remote` is no confirmation of what an attach grants, nor `--yes` an acceptance of a
-# remote the overlay does not record.
+# A widening is passed only where `--yes` was given.
 [[mutation]]
 name = "attach passes a widening it was not told --yes for"
 file = "src/stayfixed/attach/write.py"
-before = "            (stop.flag == CONFIRMED and confirmed) or (stop.flag == TRUST_REMOTE and trust_remote)"
-after = "            (stop.flag == CONFIRMED) or (stop.flag == TRUST_REMOTE and trust_remote)"
+before = "        if not (stop.flag == CONFIRMED and confirmed):"
+after = "        if not (stop.flag == CONFIRMED):"
 reddens = ["tests/attach/test_write.py::test_an_unconfirmed_attach_that_would_widen_a_permission_refuses"]
-
-[[mutation]]
-name = "attach passes a mismatch it was not told --trust-remote for"
-file = "src/stayfixed/attach/write.py"
-before = "            (stop.flag == CONFIRMED and confirmed) or (stop.flag == TRUST_REMOTE and trust_remote)"
-after = "            (stop.flag == CONFIRMED and confirmed) or (stop.flag == TRUST_REMOTE and confirmed)"
-reddens = ["tests/attach/test_write.py::test_a_mismatched_remote_refuses_and_writes_nothing"]
 
 [[mutation]]
 name = "attach asks memory.mode only after it has written"
@@ -1317,28 +1277,6 @@ after = """    for tree in []:
 reddens = [
   "tests/attach/test_detach.py::test_a_group_added_since_the_attach_refuses_before_anything_is_withdrawn[a//b]",
   "tests/attach/test_detach.py::test_a_group_added_since_the_attach_refuses_before_anything_is_withdrawn[../../x]",
-]
-
-# In the block led by `mutations/`'s "the binding classifier reads a missing origin as a different
-# remote": a checkout with no `origin` hears one cause and one way out everywhere.
-[[mutation]]
-name = "the session-start line says nothing about a missing origin"
-file = "src/stayfixed/attach/hooks.py"
-before = "            lines.append(NO_ORIGIN)"
-after = "            pass"
-reddens = [
-  "tests/attach/test_hooks.py::test_a_checkout_with_no_origin_hears_the_cause_every_other_surface_says",
-]
-
-# `attach --check` for a checkout with no `origin` printed the state label alone and exited 0 or 1
-# by the mismatch rule, while the real run refuses it.
-[[mutation]]
-name = "attach --check reports a missing origin without its cause"
-file = "src/stayfixed/attach/check.py"
-before = '        summary = f"{NO_REMOTE}; {summary}"'
-after = "        pass"
-reddens = [
-  "tests/test_binding_answers.py::test_a_checkout_with_no_origin_hears_one_cause_and_one_way_out_everywhere",
 ]
 
 # --- load-bearing guards that had no test to redden ---------------------------------------------
@@ -1737,10 +1675,10 @@ name = "a git that cannot run costs the hook-entries row"
 file = "src/stayfixed/attach/doctor.py"
 before = '''    except (Failure, Refusal, OSError):
         return None, None
-    if binding'''
+    return granted, narrowed'''
 after = '''    except (Refusal, OSError):
         return None, None
-    if binding'''
+    return granted, narrowed'''
 reddens = [
   "tests/attach/test_doctor.py::test_only_this_machines_state_turns_an_entry_the_ledger_records_into_a_warning[owner-git-cannot-run]",
 ]
@@ -1773,7 +1711,7 @@ reddens = [
 ]
 
 # `project.name` is committed, so it can name another project of this machine's overlay: what
-# `projects/<name>/` grants is counted only for a checkout that project's record binds. Counted
+# `projects/<name>/` grants is counted only for a checkout this machine binds to that project. Counted
 # for any, a clone named after another project, with an entry equal to one granted there and a
 # ledger recording its id, read "all accounted for"; and that project's hook file, read whether
 # or not it parses, let a broken one turn the red into a warning.
@@ -1783,10 +1721,10 @@ file = "src/stayfixed/attach/doctor.py"
 before = "        if binding is not None and binding.state == BOUND:"
 after = "        if binding is not None:"
 reddens = [
-  "tests/attach/test_doctor.py::test_a_repository_named_after_another_project_borrows_none_of_its_grants[mismatch]",
+  "tests/attach/test_doctor.py::test_a_repository_named_after_another_project_borrows_none_of_its_grants[recorded]",
   "tests/attach/test_doctor.py::test_a_repository_named_after_another_project_borrows_none_of_its_grants[unbound]",
   "tests/attach/test_doctor.py::test_a_repository_named_after_another_project_borrows_none_of_its_grants[no-origin]",
-  "tests/attach/test_doctor.py::test_another_projects_hook_file_that_will_not_parse_cannot_soften_the_red[mismatch]",
+  "tests/attach/test_doctor.py::test_another_projects_hook_file_that_will_not_parse_cannot_soften_the_red[recorded]",
   "tests/attach/test_doctor.py::test_another_projects_hook_file_that_will_not_parse_cannot_soften_the_red[unbound]",
   "tests/attach/test_doctor.py::test_another_projects_hook_file_that_will_not_parse_cannot_soften_the_red[no-origin]",
 ]
@@ -1816,23 +1754,9 @@ reddens = [
   "tests/attach/test_doctor.py::test_an_owner_whose_own_binding_record_will_not_parse_is_told_where_to_look",
 ]
 
-# For a checkout the overlay's record binds to another remote, `projects/<name>/` may grant an entry
-# `common/` does not, to the checkout the record does bind: "the overlay does not grant them" is
-# false there, and the rebuild it offers is one `attach` refuses on a mismatch. An owner who moved
-# `origin` from ssh to https was told both.
-[[mutation]]
-name = "attach tells a checkout its record does not bind that the overlay refused its entries"
-file = "src/stayfixed/attach/doctor.py"
-before = "    if binding is not None and binding.state == MISMATCH:\n        narrowed = MISMATCH\n"
-after = ""
-reddens = [
-  "tests/attach/test_doctor.py::test_an_owners_checkout_the_record_no_longer_binds_is_told_the_binding_is_wrong",
-  "tests/attach/test_doctor.py::test_a_repository_named_after_another_project_borrows_none_of_its_grants[mismatch]",
-  "tests/attach/test_doctor.py::test_another_projects_hook_file_that_will_not_parse_cannot_soften_the_red[mismatch]",
-]
-
-# The same for a binding record that cannot be read: the record that would say what this checkout
-# is granted is the one missing, and the rebuild `attach` would refuse on it.
+# For an overlay project record that cannot be read, `projects/<name>/` may grant an entry `common/`
+# does not, so "the overlay does not grant them" is false there, and the rebuild `attach` would
+# refuse on it.
 [[mutation]]
 name = "attach tells a checkout whose binding record cannot be read that the overlay refused its entries"
 file = "src/stayfixed/attach/doctor.py"
@@ -1865,20 +1789,6 @@ before = "    if state == UNBOUND:"
 after = "    if False:"
 reddens = [
   "tests/attach/test_doctor.py::test_a_ledger_with_no_binding_in_the_overlay_is_a_warning_and_never_an_attach",
-]
-
-# A checkout with no `origin` cannot be the one the overlay's record binds, and its notes are not
-# this repository's to read: red, like a record of another remote. A warning there is an exit of 0
-# over a binding nobody can confirm. `tests/test_binding_answers.py` holds the sentence and the way
-# out on every surface; the status is held by the borrowed-name case, whose `no-origin` state
-# reaches this arm.
-[[mutation]]
-name = "a checkout with no origin is only a warning in the attached row"
-file = "src/stayfixed/attach/doctor.py"
-before = "        return Row(RED, NO_ORIGIN_CAUSE, NO_ORIGIN_WAY_OUT)"
-after = "        return Row(WARN, NO_ORIGIN_CAUSE, NO_ORIGIN_WAY_OUT)"
-reddens = [
-  "tests/attach/test_doctor.py::test_a_repository_named_after_another_project_borrows_none_of_its_grants[no-origin]",
 ]
 
 # A harness link beside a note store that does not resolve has nothing to be compared against, so
@@ -2404,12 +2314,12 @@ reddens = [
 name = "doctor tells a bound checkout of a damaged overlay that it has no binding"
 file = "src/stayfixed/attach/doctor.py"
 before = """
-        damaged = damaged_overlay(answer.overlay)
-        if damaged is not None:
+    damaged = damaged_overlay(answer.overlay)
+    if damaged is not None:
 """
 after = """
-        damaged = damaged_overlay(answer.overlay)
-        if False:
+    damaged = damaged_overlay(answer.overlay)
+    if False:
 """
 reddens = [
   "tests/attach/test_doctor.py::test_a_bound_checkouts_damaged_overlay_is_named_and_never_answered_by_removing_the_ledger[projects-is-a-file]",
@@ -2603,7 +2513,7 @@ file = "src/stayfixed/attach/permissions.py"
 before = "    document = local_document(root)\n    _refuse_unless_written_back(document)\n"
 after = "    document = local_document(root)\n"
 reddens = [
-  "tests/attach/test_commands.py::test_check_refuses_a_settings_file_the_run_refuses_ahead_of_a_missing_origin[written-back-past-the-cap]",
+  "tests/attach/test_commands.py::test_check_refuses_a_settings_file_the_run_refuses_in_its_diff[written-back-past-the-cap]",
 ]
 
 [[mutation]]
@@ -2748,16 +2658,16 @@ reddens = [
   "tests/attach/test_commands.py::test_check_ends_on_each_refusal_past_the_runs_gates_with_the_runs_code_and_line[claude-linked-in]",
 ]
 
-# The two refusals the run makes between its gates and the groups that never moved: an `origin` the
-# overlay's record cannot hold, and a group that leaves the share, which `--check` met only as the
-# never-moved count's own refusal, in other words.
+# The refusal the run makes between its gates and the groups that never moved: a group that leaves
+# the share, which the run and `--check` otherwise met only as the never-moved count's own refusal,
+# in other words.
 [[mutation]]
 name = "the gates do not ask what the share holds"
 file = "src/stayfixed/attach/write.py"
 before = "            refuse_unless_share_holds(binding, config)"
 after = "            pass"
 reddens = [
-  "tests/attach/test_commands.py::test_check_ends_on_each_refusal_past_the_runs_gates_with_the_runs_code_and_line[origin-not-text]",
+  "tests/attach/test_write.py::test_a_memory_group_that_leaves_the_projects_share_is_refused_not_created",
 ]
 
 # `--check` asks the share only where the run would, so outside overlay mode it reports the mode's
@@ -2783,17 +2693,8 @@ reddens = [
   "tests/attach/test_commands.py::test_check_ends_a_repository_outside_overlay_mode_as_the_run_does_whatever_its_ledger",
 ]
 
-# Nor past a checkout with no `origin`, or a group that never moved, both of which the run refuses
-# before the reads after them, and `--check` reports as findings.
-[[mutation]]
-name = "check reads past a checkout with no origin"
-file = "src/stayfixed/attach/check.py"
-before = "    if all(stop.flag is not None for stop in stops):"
-after = "    if all(stop.flag is not None or stop.refusal == NO_REMOTE for stop in stops):"
-reddens = [
-  "tests/attach/test_commands.py::test_check_reads_nothing_past_where_the_run_stops[no-origin]",
-]
-
+# Nor past a group that never moved, which the run refuses before the reads after it, and
+# `--check` reports as a finding.
 [[mutation]]
 name = "check reads past a group that never moved"
 file = "src/stayfixed/attach/check.py"
@@ -2801,18 +2702,6 @@ before = "    if all(stop.flag is not None for stop in stops):"
 after = "    if all(stop.flag is not None or \"real directories\" in stop.refusal for stop in stops):"
 reddens = [
   "tests/attach/test_commands.py::test_check_reads_nothing_past_where_the_run_stops[group-never-moved]",
-]
-
-# The groups are counted only where the run counts them: at a checkout with no `origin` the run
-# refuses first, and a `--check` that counted there ended with the count's refusal of a group
-# outside `paths.memory` instead.
-[[mutation]]
-name = "check counts the groups at a checkout with no origin"
-file = "src/stayfixed/attach/write.py"
-before = "            yield Stop(NO_REMOTE)\n            return\n"
-after = "            yield Stop(NO_REMOTE)\n"
-reddens = [
-  "tests/attach/test_commands.py::test_check_counts_no_group_at_a_checkout_with_no_origin_as_the_run_counts_none",
 ]
 
 # Outside overlay mode the run refuses right after the binding, so what `--check` reads for the rest

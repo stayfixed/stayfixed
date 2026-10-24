@@ -112,11 +112,6 @@ READERS = [
 
 DEGRADERS = [
     pytest.param(lambda t, d: write._first_attach(_record(t, d)), None, id="first-attach"),
-    pytest.param(
-        lambda t, d: getattr(store._bound(_record(t, d).parents[2], "widget", t), "said", None),
-        store.RECORD_UNREADABLE,
-        id="store-bound",
-    ),
 ]
 
 

@@ -20,7 +20,6 @@ from stayfixed.config.loader import load
 from stayfixed.config.owner import Owner
 from stayfixed.config.schema import Config
 from stayfixed.errors import Refusal, StayfixedError
-from stayfixed.memory.api import MISMATCH, NO_ORIGIN, NO_REMOTE
 from stayfixed.result import Result
 
 
@@ -34,12 +33,11 @@ def check(
 ) -> Result:
     """`attach --check`: the binding and the diff, with nothing written.
 
-    Exit 1 on a `mismatch`, and on a memory group that never moved — findings, not refusals,
-    because the answer to each is an act of the owner's and `attach` itself is what refuses.
-    Neither remote reaches the output: both are repository-authored, and the state label this
-    command computed says everything a reader needs.
+    Exit 1 on a memory group that never moved — a finding, not a refusal, because the answer is an
+    act of the owner's and `attach` itself is what refuses. A moved `origin` is a note on the
+    line, as the run says it (`Binding.note`), and never a finding: the remote binds nothing.
 
-    The second finding is the one this command exists to deliver early. `attach` links rather
+    That finding is the one this command exists to deliver early. `attach` links rather
     than moves, so a group still sitting as a real directory under `paths.memory` refuses the
     whole run — above every write, and after the owner has already been told the diff is
     clean. Reporting it here costs one walk and turns a refusal into a list of notes to move.
@@ -50,8 +48,7 @@ def check(
     two halves read different documents is exactly what it exists to rule out.
 
     A `PathEscape` out of `unlinked_groups` propagates: `--check` refuses what `attach` would,
-    rather than reporting a count for a `paths.memory` no walk could contain. At a checkout with no
-    `origin` no group is counted, since the run refuses there before it counts.
+    rather than reporting a count for a `paths.memory` no walk could contain.
 
     **Outside overlay mode the run refuses right after the binding**, and `--check` reports that
     refusal on its line and goes on to report the rest. What it reads for the rest the run never
@@ -91,9 +88,8 @@ def _report(
     # asks between them where the run would, so a refusal or failure there ends this command with
     # the run's code and line: each of them was once left out here, and `--check` answered clean
     # over a checkout the run then stopped on. Every stop is taken and reported, the ones a flag
-    # answers as the run with that flag takes them: a mismatch is a finding, `--trust-remote`
-    # takes the run past it, and the diff is the report. The writes are planned only where no
-    # stop is one a flag cannot answer, as the run plans them only past every stop.
+    # answers as the run with that flag takes them: the diff is the report. The writes are planned
+    # only where no stop is one a flag cannot answer, as the run plans them only past every stop.
     gates = Gates(root, config, binding)
     stops = list(gates)
     diff, real = gates.diff, gates.real
@@ -122,10 +118,8 @@ def _report(
     refused = not_overlay(config)
     if refused is not None:
         summary = f"{refused}; {summary}"
-    elif binding.state == NO_ORIGIN:
-        # The cause and the way out every other surface says, ahead of the counts: the state
-        # label alone does not say what to do, and the real run refuses for it.
-        summary = f"{NO_REMOTE}; {summary}"
+    if binding.note is not None:
+        summary += f"; {binding.note}"
     if rules:
         summary += "\n" + "\n".join(f"  {target}" for target in rules)
     data = {
@@ -144,5 +138,4 @@ def _report(
     }
     if refused is not None:
         return Result(summary, data, exit_code=2)
-    finding = binding.state in (MISMATCH, NO_ORIGIN) or real
-    return Result(summary, data, exit_code=1 if finding else 0)
+    return Result(summary, data, exit_code=1 if real else 0)

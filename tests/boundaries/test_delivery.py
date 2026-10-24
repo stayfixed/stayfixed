@@ -539,6 +539,8 @@ STANDARD_IMPORTS = frozenset(
         # (`selectors`) and copies it in a thread of its own while the command runs
         # (`threading`); neither imports a module by a name.
         "selectors",
+        # `binding` draws the binding id (`secrets.token_hex`), which imports no module by a name.
+        "secrets",
         "shlex",
         "shutil",
         "signal",

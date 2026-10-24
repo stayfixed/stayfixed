@@ -30,6 +30,7 @@ from stayfixed.attach.write import (
     GROUP_UNASKED,
     HARNESS_LAPSED,
     HARNESS_WAITS,
+    NO_ORIGIN_NOTE,
     REAL_DIRECTORIES,
     REFRESH_REFUSED,
     Attached,
@@ -134,39 +135,39 @@ def _check_ignore(root: Path, relative: str) -> bool:
     return run_git(root, "check-ignore", "-q", "--", relative).returncode == 0
 
 
-def test_a_mismatched_remote_refuses_and_writes_nothing(tmp_path: Path) -> None:
-    # On a mismatch `attach` refuses unless --trust-remote is given interactively. The assertion
-    # that matters is the second half: snapshot every file under the root before, expect `Refusal`,
-    # and compare the snapshot after. Not one byte changed.
-    root, store, machine = _attachable(tmp_path, recorded="git@example.com:o/real.git")
-    before = snapshot(root)
-    # The mutation guard for the assertion below, and the rule that asks for it — an assertion
-    # nobody has watched fail advertises coverage it may not have (principle 2): `snapshot` is a
-    # walk, so `snapshot(root) == before` passes vacuously the day the walk stops finding files —
-    # and this is a test standing behind a refusal.
-    assert before
-    with pytest.raises(Refusal):
-        attach(
-            root,
-            store=store,
-            machine=machine,
-            confirmed=True,
-            trust_remote=False,
-            runner=Recorder(),
-            home=tmp_path / "home",
-        )
-    assert_snapshot_unchanged(root, before)
-
-
-def test_the_same_repository_under_another_url_form_attaches_and_keeps_its_record(
+def test_a_record_of_another_remote_attaches_with_a_note_and_is_left_alone(
     tmp_path: Path,
 ) -> None:
-    # URLs were compared exactly, so an owner who cloned over https a repository the overlay
-    # recorded over ssh was refused as a mismatch and had to pass `--trust-remote`, which then
-    # rewrote the record to the https form and made the next ssh checkout the mismatch. One
-    # repository is one binding now: `attach` needs no flag, and the record, which is the owner's
-    # consent, keeps the form it was given. Mutation (oracle): `mutations/`'s "a remote binds only
-    # the URL the overlay recorded byte for byte".
+    # A record of another remote refused the attach unless `--trust-remote`, which then rewrote
+    # the record. The record binds nothing now: the binding is the id in the git common directory
+    # and this machine's record of it, so the run binds, says both remotes, and leaves the
+    # overlay's record as the owner wrote it -- another machine may have written it.
+    from stayfixed import binding
+
+    recorded, origin = "git@example.com:o/real.git", "https://example.com/fork/p"
+    root, store, machine = _attachable(tmp_path, recorded=recorded, origin=origin)
+    record = store.parent / "project.toml"
+    before = record.read_bytes()
+    attached = attach(
+        root,
+        store=store,
+        machine=machine,
+        confirmed=True,
+        runner=Recorder(),
+        home=tmp_path / "home",
+    )
+    assert attached.binding_recorded
+    assert any(quoted(origin) in note and quoted(recorded) in note for note in attached.notes)
+    assert record.read_bytes() == before
+    found = binding.bound_project(root)
+    assert found is not None and found.project == "p" and found.origin == origin
+
+
+def test_the_same_repository_under_another_url_form_attaches_with_no_note(
+    tmp_path: Path,
+) -> None:
+    # One repository is one remote whatever transport names it: a clone made over https of a
+    # repository the overlay recorded over ssh hears nothing about its remote.
     root, store, machine = _attachable(
         tmp_path,
         recorded="git@example.com:o/p.git",
@@ -179,45 +180,11 @@ def test_the_same_repository_under_another_url_form_attaches_and_keeps_its_recor
         store=store,
         machine=machine,
         confirmed=True,
-        trust_remote=False,
         runner=Recorder(),
         home=tmp_path / "home",
     )
-    assert not attached.binding_recorded
+    assert not any("`origin`" in note for note in attached.notes)
     assert record.read_bytes() == before
-
-
-def test_a_different_repository_under_another_url_form_is_still_refused(tmp_path: Path) -> None:
-    # The other side of the transport rule: an https origin of a different owner's repository is
-    # a different remote, whatever transport the record used, and the refusal says the rule, so an
-    # owner reading it knows which spellings bind and that any other is compared exactly. The
-    # sentence must stay true of every refusal, a same-repository spelling with a port or another
-    # user included, so it names the spellings that bind rather than calling ssh and https one
-    # remote. Mutation: none; the refusal's wording is the assertion, and the old sentence
-    # reddens it.
-    root, store, machine = _attachable(
-        tmp_path,
-        recorded="git@example.com:o/p.git",
-        origin="https://example.com/fork/p",
-    )
-    before = snapshot(root)
-    assert before
-    with pytest.raises(Refusal) as refused:
-        attach(
-            root,
-            store=store,
-            machine=machine,
-            confirmed=True,
-            trust_remote=False,
-            runner=Recorder(),
-            home=tmp_path / "home",
-        )
-    said = str(refused.value)
-    assert "different remote URL" in said and "`https://host/owner/repo`" in said
-    assert "any other spelling" in said and "is compared exactly" in said
-    assert "the same remote" not in said
-    assert "--trust-remote" in said
-    assert_snapshot_unchanged(root, before)
 
 
 def test_an_unconfirmed_attach_that_would_widen_a_permission_refuses(tmp_path: Path) -> None:
@@ -234,7 +201,6 @@ def test_an_unconfirmed_attach_that_would_widen_a_permission_refuses(tmp_path: P
             store=store,
             machine=machine,
             confirmed=False,
-            trust_remote=False,
             runner=Recorder(),
             home=tmp_path / "home",
         )
@@ -251,7 +217,6 @@ def test_an_attach_that_widens_nothing_needs_no_confirmation(tmp_path: Path) -> 
         store=store,
         machine=machine,
         confirmed=False,
-        trust_remote=False,
         runner=Recorder(),
         home=tmp_path / "home",
     )
@@ -276,7 +241,6 @@ def test_confirmed_merges_the_rules_and_records_each_entry_under_its_own_id(
         store=store,
         machine=machine,
         confirmed=True,
-        trust_remote=False,
         runner=Recorder(),
         home=tmp_path / "home",
     )
@@ -304,7 +268,6 @@ def test_an_entry_the_overlay_stopped_granting_is_taken_back_out(tmp_path: Path)
         store=store,
         machine=machine,
         confirmed=True,
-        trust_remote=False,
         runner=Recorder(),
         home=home,
     )
@@ -319,7 +282,6 @@ def test_an_entry_the_overlay_stopped_granting_is_taken_back_out(tmp_path: Path)
         store=store,
         machine=machine,
         confirmed=True,
-        trust_remote=False,
         runner=Recorder(),
         home=home,
     )
@@ -341,7 +303,6 @@ def test_a_second_attach_that_changes_nothing_leaves_the_settings_file_alone(
         store=store,
         machine=machine,
         confirmed=False,
-        trust_remote=False,
         runner=Recorder(),
         home=tmp_path / "home",
     )
@@ -382,7 +343,6 @@ def test_a_group_mixing_a_marked_entry_with_a_foreign_one_is_split_not_replaced(
         store=store,
         machine=machine,
         confirmed=True,
-        trust_remote=False,
         runner=Recorder(),
         home=tmp_path / "home",
     )
@@ -408,7 +368,6 @@ def test_a_first_attach_records_the_remote_and_the_date(tmp_path: Path) -> None:
         store=store,
         machine=machine,
         confirmed=False,
-        trust_remote=False,
         runner=Recorder(),
         home=tmp_path / "home",
     )
@@ -430,7 +389,6 @@ def test_a_record_that_already_binds_this_repository_is_left_alone(tmp_path: Pat
         store=store,
         machine=machine,
         confirmed=False,
-        trust_remote=False,
         runner=runner,
         home=tmp_path / "home",
     )
@@ -444,7 +402,6 @@ def test_a_record_that_already_binds_this_repository_is_left_alone(tmp_path: Pat
         store=store,
         machine=machine,
         confirmed=False,
-        trust_remote=False,
         runner=runner,
         home=tmp_path / "home",
     )
@@ -461,7 +418,6 @@ def test_the_merged_rules_are_recorded_where_they_can_be_removed_again(tmp_path:
         store=store,
         machine=machine,
         confirmed=True,
-        trust_remote=False,
         runner=Recorder(),
         home=tmp_path / "home",
     )
@@ -484,7 +440,6 @@ def test_attach_writes_the_ignore_region_that_keeps_the_ledger_untracked(tmp_pat
         store=store,
         machine=machine,
         confirmed=False,
-        trust_remote=False,
         runner=Recorder(),
         home=tmp_path / "home",
     )
@@ -524,7 +479,6 @@ def test_the_ignore_region_is_written_before_the_ledger_and_not_merely_written(
         store=store,
         machine=machine,
         confirmed=False,
-        trust_remote=False,
         runner=Recorder(),
         home=tmp_path / "home",
     )
@@ -542,7 +496,6 @@ def test_attach_leaves_every_other_line_of_an_existing_gitignore_alone(tmp_path:
         store=store,
         machine=machine,
         confirmed=False,
-        trust_remote=False,
         runner=Recorder(),
         home=tmp_path / "home",
     )
@@ -560,7 +513,6 @@ def test_attach_refuses_when_the_ignore_region_cannot_be_written(tmp_path: Path)
             store=store,
             machine=machine,
             confirmed=False,
-            trust_remote=False,
             runner=Recorder(),
             home=tmp_path / "home",
         )
@@ -605,7 +557,6 @@ def test_a_memory_group_that_leaves_the_projects_share_is_refused_not_created(
             store=store,
             machine=machine,
             confirmed=True,
-            trust_remote=True,
             runner=Recorder(),
             home=tmp_path / "home",
         )
@@ -644,7 +595,6 @@ def test_a_memory_group_whose_place_in_the_share_cannot_be_asked_about_is_refuse
             store=store,
             machine=machine,
             confirmed=True,
-            trust_remote=True,
             runner=Recorder(),
             home=tmp_path / "home",
         )
@@ -677,7 +627,6 @@ def test_a_codex_directory_linked_where_nobody_may_search_is_refused_by_name_by_
                 store=store,
                 machine=machine,
                 confirmed=True,
-                trust_remote=True,
                 runner=Recorder(),
                 home=tmp_path / "home",
             )
@@ -701,7 +650,6 @@ def test_the_memory_group_refusal_is_reached_on_a_run_that_would_have_written(
         store=store,
         machine=machine,
         confirmed=True,
-        trust_remote=True,
         runner=Recorder(),
         home=tmp_path / "home",
     )
@@ -725,7 +673,6 @@ def test_a_second_attach_adds_nothing_twice(tmp_path: Path) -> None:
         store=store,
         machine=machine,
         confirmed=True,
-        trust_remote=False,
         runner=runner,
         home=tmp_path / "home",
     )
@@ -734,7 +681,6 @@ def test_a_second_attach_adds_nothing_twice(tmp_path: Path) -> None:
         store=store,
         machine=machine,
         confirmed=True,
-        trust_remote=False,
         runner=runner,
         home=tmp_path / "home",
     )
@@ -755,7 +701,6 @@ def test_a_second_attach_still_claims_what_the_first_one_added(tmp_path: Path) -
         store=store,
         machine=machine,
         confirmed=True,
-        trust_remote=False,
         runner=runner,
         home=tmp_path / "home",
     )
@@ -764,7 +709,6 @@ def test_a_second_attach_still_claims_what_the_first_one_added(tmp_path: Path) -
         store=store,
         machine=machine,
         confirmed=True,
-        trust_remote=False,
         runner=runner,
         home=tmp_path / "home",
     )
@@ -780,7 +724,6 @@ def test_codex_rules_land_under_the_directory_codex_reads(tmp_path: Path) -> Non
         store=store,
         machine=machine,
         confirmed=False,
-        trust_remote=False,
         runner=Recorder(),
         home=tmp_path / "home",
     )
@@ -879,7 +822,6 @@ def test_a_rule_the_overlay_never_granted_is_left_alone(tmp_path: Path) -> None:
         store=store,
         machine=machine,
         confirmed=True,
-        trust_remote=False,
         runner=Recorder(),
         home=tmp_path / "home",
     )
@@ -904,7 +846,6 @@ def test_the_secret_scan_is_installed_on_the_machine_that_never_ran_overlay_init
         store=store,
         machine=machine,
         confirmed=False,
-        trust_remote=False,
         runner=runner,
         home=tmp_path / "home",
     )
@@ -912,87 +853,54 @@ def test_the_secret_scan_is_installed_on_the_machine_that_never_ran_overlay_init
     assert any("pre-commit" in note for note in attached.notes)
 
 
-def test_trust_remote_rebinds_and_keeps_the_original_first_attach_date(tmp_path: Path) -> None:
-    # The only path that rewrites an existing record, and the reason the date is read back
-    # rather than re-stamped: `first_attach` is when the owner first consented, not when they
-    # last ran the command.
+def test_a_record_with_no_remote_is_given_one_and_keeps_its_first_attach_date(
+    tmp_path: Path,
+) -> None:
+    # The one path that rewrites an existing record, and the reason the date is read back rather
+    # than re-stamped: `first_attach` is when the project was first attached, not the last run.
     import tomllib
 
-    root, store, machine = _attachable(tmp_path, recorded="git@example.com:o/real.git")
-    (store.parent / "project.toml").write_text(
-        'remote = "git@example.com:o/real.git"\nfirst_attach = "2020-02-02"\n', encoding="utf-8"
-    )
-    attached = attach(
+    root, store, machine = _attachable(tmp_path)
+    (store.parent / "project.toml").write_text('first_attach = "2020-02-02"\n', encoding="utf-8")
+    attach(
         root,
         store=store,
         machine=machine,
         confirmed=False,
-        trust_remote=True,
         runner=Recorder(),
         home=tmp_path / "home",
     )
-    assert attached.binding_recorded
     record = tomllib.loads((store.parent / "project.toml").read_text(encoding="utf-8"))
     assert record["remote"] == "git@example.com:o/p.git"
     assert record["first_attach"] == "2020-02-02"
 
 
-def test_a_repository_with_no_origin_remote_has_nothing_to_record(tmp_path: Path) -> None:
-    # An empty `remote` in the overlay's record would read as bound to nothing, and
-    # `memory.store._bound` would then refuse every session with advice to run this command.
-    #
-    # **The snapshot is the half that was missing**, and it is the same snapshot
-    # `test_a_mismatched_remote_refuses_and_writes_nothing` takes for the same reason. Asserting
-    # only that `Refusal` is raised passed while the refusal lived in `_record_binding` — after
-    # the ignore region, the `.codex/rules/` copies, the settings merge and the ledger. So a
-    # checkout with no `origin` exited 2 having written four artifacts, and `doctor._attached`,
-    # which keys on the ledger existing, then reported it attached. A refusal that leaves a
-    # repository looking attached is not a refusal, and only a snapshot says so.
-    #
-    # Mutation: move the `if binding.remote is None` guard in `attach` back below
-    # `_write_ignore_region`, and this reddens on the snapshot while `pytest.raises` stays green.
-    root, store, machine = _attachable(tmp_path, codex="# a standing rule\n")
-    run_git(root, "remote", "remove", "origin")
-    before = snapshot(root)
-    # `snapshot` is a walk, and an empty one satisfies the comparison below on its own.
-    assert before
-    with pytest.raises(Refusal):
-        attach(
-            root,
-            store=store,
-            machine=machine,
-            confirmed=False,
-            trust_remote=True,
-            runner=Recorder(),
-            home=tmp_path / "home",
-        )
-    assert_snapshot_unchanged(root, before)
+def test_a_repository_with_no_origin_remote_attaches_and_records_none(tmp_path: Path) -> None:
+    # A checkout with no `origin` was refused, above every write. The binding is the id now, so it
+    # attaches like any other, says so, and the records carry no remote.
+    import tomllib
 
+    from stayfixed import binding
 
-def test_the_no_origin_refusal_is_reached_with_a_diff_that_would_have_written(
-    tmp_path: Path,
-) -> None:
-    # The vacuity guard for the case above: a refusal that writes nothing proves nothing if the
-    # run had nothing to write. The same overlay, with an allow rule, a hook entry and a Codex
-    # rule file, attaches and writes all of them when `origin` is there — so the snapshot above
-    # is measuring a run that would otherwise have left four artifacts behind.
     hooks = {"SessionStart": [{"hooks": [ENTRY]}]}
     root, store, machine = _attachable(
         tmp_path, allow=(RULE,), hooks=hooks, codex="# a standing rule\n"
     )
+    run_git(root, "remote", "remove", "origin")
     attached = attach(
         root,
         store=store,
         machine=machine,
         confirmed=True,
-        trust_remote=True,
         runner=Recorder(),
         home=tmp_path / "home",
     )
-    assert attached.settings_written
-    assert attached.rules_written == (".codex/rules/common.rules",)
-    assert (root / LEDGER).is_file()
-    assert (root / ".gitignore").is_file()
+    assert attached.settings_written and attached.binding_recorded
+    assert NO_ORIGIN_NOTE in attached.notes
+    record = tomllib.loads((store.parent / "project.toml").read_text(encoding="utf-8"))
+    assert "remote" not in record
+    found = binding.bound_project(root)
+    assert found is not None and found.origin is None
 
 
 def test_a_settings_file_the_merge_cannot_read_is_refused_and_never_filtered(
@@ -1009,7 +917,6 @@ def test_a_settings_file_the_merge_cannot_read_is_refused_and_never_filtered(
             store=store,
             machine=machine,
             confirmed=True,
-            trust_remote=False,
             runner=Recorder(),
             home=tmp_path / "home",
         )
@@ -1029,7 +936,6 @@ def test_an_overlay_hooks_file_with_an_unreadable_shape_is_refused(tmp_path: Pat
             store=store,
             machine=machine,
             confirmed=True,
-            trust_remote=False,
             runner=Recorder(),
             home=tmp_path / "home",
         )
@@ -1045,7 +951,6 @@ def test_a_ledger_that_is_not_json_is_a_failure_and_not_an_empty_one(tmp_path: P
         store=store,
         machine=machine,
         confirmed=False,
-        trust_remote=False,
         runner=Recorder(),
         home=tmp_path / "home",
     )
@@ -1069,7 +974,6 @@ def test_a_ledger_nested_past_the_parsers_reach_is_a_failure_and_never_an_intern
         store=store,
         machine=machine,
         confirmed=False,
-        trust_remote=False,
         runner=Recorder(),
         home=tmp_path / "home",
     )
@@ -1082,7 +986,6 @@ def test_a_ledger_nested_past_the_parsers_reach_is_a_failure_and_never_an_intern
             store=store,
             machine=machine,
             confirmed=True,
-            trust_remote=False,
             runner=Recorder(),
             home=tmp_path / "home",
         )
@@ -1103,7 +1006,6 @@ def test_a_settings_file_nested_past_the_parsers_reach_is_refused(tmp_path: Path
             store=store,
             machine=machine,
             confirmed=True,
-            trust_remote=False,
             runner=Recorder(),
             home=tmp_path / "home",
         )
@@ -1123,7 +1025,6 @@ def test_a_ledger_holding_a_number_past_the_parsers_reach_is_a_failure_and_never
         store=store,
         machine=machine,
         confirmed=False,
-        trust_remote=False,
         runner=Recorder(),
         home=tmp_path / "home",
     )
@@ -1136,7 +1037,6 @@ def test_a_ledger_holding_a_number_past_the_parsers_reach_is_a_failure_and_never
             store=store,
             machine=machine,
             confirmed=True,
-            trust_remote=False,
             runner=Recorder(),
             home=tmp_path / "home",
         )
@@ -1156,7 +1056,6 @@ def test_a_settings_file_holding_a_number_past_the_parsers_reach_is_refused(tmp_
             store=store,
             machine=machine,
             confirmed=True,
-            trust_remote=False,
             runner=Recorder(),
             home=tmp_path / "home",
         )
@@ -1174,7 +1073,6 @@ def test_a_pre_commit_that_is_already_installed_is_not_run_again(tmp_path: Path)
         store=store,
         machine=machine,
         confirmed=False,
-        trust_remote=False,
         runner=runner,
         home=tmp_path / "home",
     )
@@ -1201,7 +1099,6 @@ def test_a_hook_outside_dot_git_still_counts_as_installed(tmp_path: Path) -> Non
         store=store,
         machine=machine,
         confirmed=False,
-        trust_remote=False,
         runner=runner,
         home=tmp_path / "home",
     )
@@ -1226,7 +1123,6 @@ def test_an_overlay_git_cannot_answer_about_is_a_note_and_never_a_traceback(
         store=store,
         machine=machine,
         confirmed=False,
-        trust_remote=False,
         runner=runner,
         home=tmp_path / "home",
     )
@@ -1246,7 +1142,6 @@ def test_a_pre_commit_that_cannot_run_is_a_note_and_never_a_traceback(tmp_path: 
         store=store,
         machine=machine,
         confirmed=False,
-        trust_remote=False,
         runner=runner,
         home=tmp_path / "home",
     )
@@ -1301,7 +1196,6 @@ def test_a_ledger_no_attach_could_have_written_is_refused_before_the_first_write
             store=store,
             machine=machine,
             confirmed=True,
-            trust_remote=True,
             runner=Recorder(),
             home=tmp_path / "home",
         )
@@ -1324,7 +1218,6 @@ def test_the_refused_ledger_is_reached_on_a_run_that_would_have_written_three_fi
         store=store,
         machine=machine,
         confirmed=True,
-        trust_remote=True,
         runner=Recorder(),
         home=tmp_path / "home",
     )
@@ -1360,7 +1253,6 @@ def test_an_overlay_store_the_walk_cannot_enter_is_refused_at_write_time(tmp_pat
             store=store,
             machine=machine,
             confirmed=True,
-            trust_remote=True,
             runner=Recorder(),
             home=tmp_path / "home",
         )
@@ -1400,7 +1292,6 @@ def test_a_group_that_never_moved_refuses_the_attach_above_every_write(tmp_path:
             store=store,
             machine=machine,
             confirmed=True,
-            trust_remote=False,
             runner=Recorder(),
             home=tmp_path / "home",
         )
@@ -1415,7 +1306,6 @@ def test_a_group_that_never_moved_refuses_the_attach_above_every_write(tmp_path:
         store=store,
         machine=machine,
         confirmed=True,
-        trust_remote=False,
         runner=Recorder(),
         home=tmp_path / "home",
     )
@@ -1438,7 +1328,6 @@ def test_the_refusal_counts_the_groups_and_never_names_one(tmp_path: Path) -> No
             store=store,
             machine=machine,
             confirmed=True,
-            trust_remote=False,
             runner=Recorder(),
             home=tmp_path / "home",
         )
@@ -1501,7 +1390,6 @@ def _attach_confirmed(root: Path, store: Path, machine: Path, home: Path) -> Non
         store=store,
         machine=machine,
         confirmed=True,
-        trust_remote=False,
         runner=Recorder(),
         home=home,
     )
@@ -1957,7 +1845,6 @@ def test_a_first_attach_beside_the_harnesss_own_memory_and_a_linked_claude_attac
         store=store,
         machine=machine,
         confirmed=True,
-        trust_remote=False,
         runner=Recorder(),
         home=home,
     )
@@ -2106,7 +1993,6 @@ def _attach_it(root: Path, store: Path, machine: Path, home: Path) -> Attached:
         store=store,
         machine=machine,
         confirmed=True,
-        trust_remote=False,
         runner=Recorder(),
         home=home,
     )
@@ -2396,7 +2282,6 @@ def test_what_pre_commit_prints_cannot_drive_a_terminal(tmp_path: Path) -> None:
         store=store,
         machine=machine,
         confirmed=False,
-        trust_remote=False,
         runner=runner,
         home=tmp_path / "home",
     )

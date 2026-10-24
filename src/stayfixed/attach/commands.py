@@ -82,7 +82,6 @@ def run_attach(args: argparse.Namespace) -> Result:
         store=store,
         machine=machine,
         confirmed=args.yes,
-        trust_remote=args.trust_remote,
         runner=subprocess_runner(),
         # Explicit, as `runner` is: both parameters are keyword-required so that a caller has
         # to say which home and which runner it means, and the real command's answer is the
@@ -100,6 +99,9 @@ def run_attach(args: argparse.Namespace) -> Result:
         "settings_written": attached.settings_written,
         "rules_written": list(attached.rules_written),
         "binding_recorded": attached.binding_recorded,
+        # The binding id's first eight characters, the only form of it ever printed: the whole id
+        # is the secret a delivery's names carry.
+        "binding": attached.binding,
         "notes": list(attached.notes),
     }
     summary = "; ".join(
@@ -107,7 +109,8 @@ def run_attach(args: argparse.Namespace) -> Result:
             f"attached: {len(attached.links.created)} link(s), "
             f"{len(attached.rules_written)} Codex rule file(s)",
             "settings merged" if attached.settings_written else "settings unchanged",
-            "binding recorded" if attached.binding_recorded else "binding already recorded",
+            f"binding {attached.binding} "
+            + ("recorded" if attached.binding_recorded else "already recorded"),
             *attached.notes,
         )
     )
@@ -177,11 +180,6 @@ def register(groups: SubParsers) -> None:
         store=True,
     )
     attach.add_argument("--check", action="store_true", help=ATTACH_CHECK_HELP)
-    attach.add_argument(
-        "--trust-remote",
-        action="store_true",
-        help="record this repository's remote even though the overlay recorded another",
-    )
     # A parameter and not a sentence in a document: in this harness the CLI is driven by a
     # model that has read repository text, so a gate enforced by model compliance is not a
     # gate. The skill's "relay the diff, then ask" is the UX around this flag.

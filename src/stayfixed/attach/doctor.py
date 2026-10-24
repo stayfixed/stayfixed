@@ -40,12 +40,9 @@ NO_LEDGER: Final = "no-ledger"
 # repository rather than about this machine.
 UNREADABLE_LEDGER: Final = "unreadable-ledger"
 # Why the overlay grants this checkout only what `common/` grants, where saying it refused would be
-# false: the record under `projects/<name>/` binds another remote, or cannot be read. Not a state
-# of `memory.store`'s: the record's own failure is this area's question, asked only here.
+# false: the record under `projects/<name>/` cannot be read. Not a state of `memory.store`'s: the
+# record's own failure is this area's question, asked only here.
 UNREADABLE_RECORD: Final = "unreadable-record"
-# The `attached` row's remedy for a record that binds another remote, which `hook-entries` hands on
-# for the entries that mismatch leaves red: one spelling, so the two rows cannot disagree.
-_REBIND = "run `stayfixed attach --check`, and `--trust-remote` only if it should be"
 
 
 def _ledger_state(root: Path) -> AttachLedger | str:
@@ -137,17 +134,9 @@ def _attached(context: Context, config: Config, answers: Answers, ledger: _Ledge
     from stayfixed.attach import ATTACH_STORE
     from stayfixed.config.layout import ATTACH_LEDGER
     from stayfixed.config.schema import OVERLAY_MODE
-    from stayfixed.doctor.api import OK, RED, WARN, Row
+    from stayfixed.doctor.api import OK, WARN, Row
     from stayfixed.errors import Refusal
-    from stayfixed.memory.api import (
-        DIFFERENT_REMOTE,
-        MISMATCH,
-        NO_ORIGIN,
-        NO_ORIGIN_CAUSE,
-        NO_ORIGIN_WAY_OUT,
-        UNBOUND,
-        harness_memory_path,
-    )
+    from stayfixed.memory.api import UNBOUND, harness_memory_path
 
     if config.memory.mode != OVERLAY_MODE:
         # `memory.mode` is repository-authored and is safe to print for one reason only: the
@@ -190,32 +179,27 @@ def _attached(context: Context, config: Config, answers: Answers, ledger: _Ledge
     if isinstance(answer, str):
         return _uncorroborated(answer)
     state = answer.state
-    if state == UNBOUND:
-        from stayfixed.attach.binding import OVERLAY_REPAIR, damaged_overlay
+    from stayfixed.attach.binding import OVERLAY_REPAIR, damaged_overlay
 
-        # An overlay whose root or `projects/` is a file holds no record of any binding, so a
-        # bound project reads as unbound there; the remedy for that is the overlay's repair, and
-        # never removing the ledger, which is this checkout's record of a real attach.
-        damaged = damaged_overlay(answer.overlay)
-        if damaged is not None:
-            return Row(
-                WARN,
-                f"{ATTACH_LEDGER} records an attach, but {damaged} is not a directory, so the "
-                f"overlay this machine records is damaged and cannot say whether this checkout is "
-                f"bound",
-                OVERLAY_REPAIR.format(path=damaged, command="`stayfixed doctor`"),
-            )
+    # An overlay whose root or `projects/` is a file holds none of this checkout's notes or grants,
+    # bound or not; the remedy for that is the overlay's repair, and never removing the ledger,
+    # which is this checkout's record of a real attach.
+    damaged = damaged_overlay(answer.overlay)
+    if damaged is not None:
         return Row(
             WARN,
-            f"{ATTACH_LEDGER} records an attach, but the overlay this machine records has no "
-            f"binding for this project — a clone can commit that file, so it is not evidence of "
+            f"{ATTACH_LEDGER} records an attach, but {damaged} is not a directory, so the overlay "
+            f"this machine records is damaged and holds none of this checkout's notes or grants",
+            OVERLAY_REPAIR.format(path=damaged, command="`stayfixed doctor`"),
+        )
+    if state == UNBOUND:
+        return Row(
+            WARN,
+            f"{ATTACH_LEDGER} records an attach, but this machine records no binding of this "
+            f"checkout to this project — a clone can commit that file, so it is not evidence of "
             f"an attach",
             _re_attach(),
         )
-    if state == NO_ORIGIN:
-        return Row(RED, NO_ORIGIN_CAUSE, NO_ORIGIN_WAY_OUT)
-    if state == MISMATCH:
-        return Row(RED, DIFFERENT_REMOTE, _REBIND)
     if verdict is None:
         verdict = _harness_verdict(context, config, answers, harness, fallback)
     return Row(
@@ -839,7 +823,7 @@ def _granted_commands(context: Context) -> tuple[set[Placed] | None, str | None]
     """Every marked command the overlay grants this repository **right now**, where it grants it,
     or `None`; and,
     beside it, why that grant stops at `common/` where "the overlay does not grant" an entry would
-    be false: `MISMATCH` or `UNREADABLE_RECORD`, else `None` (`_wording` says what each changes).
+    be false: `UNREADABLE_RECORD`, else `None` (`_wording` says what it changes).
 
     The overlay is what `attach` merges from, and it is trusted by construction: its root comes
     from the machine configuration, which `config/machine.py` keeps unselectable by a repository.
@@ -866,7 +850,7 @@ def _granted_commands(context: Context) -> tuple[set[Placed] | None, str | None]
 
     `None` means the overlay this machine records could not be asked — no `git`, an overlay
     record that will not read, or a hook file the overlay grants this checkout from (`common/`'s,
-    or that of the project its record binds this checkout to) that will not parse — and is
+    or that of the project this machine binds the checkout to) that will not parse — and is
     decided by this machine's state alone. **Nothing a repository's name picks out may answer
     `None`**: a `None` turns `hook-entries`' red into a warning, and `project.name` is committed,
     so a file the name chooses under the overlay's `projects/` would let a clone choose that
@@ -874,42 +858,39 @@ def _granted_commands(context: Context) -> tuple[set[Placed] | None, str | None]
     which is the empty set, and `_claims` says why it is empty. An empty set is "the overlay
     grants nothing", which is an answer.
 
-    **`projects/<name>/` grants only a checkout the overlay's record binds.** The name is
+    **`projects/<name>/` grants only a checkout this machine binds to it.** The name is
     committed, so it can name another project of this machine's overlay, and what that project's
     directory grants is that project's: a clone naming itself after it, with an entry equal to
-    one granted there and a ledger recording its id, would read "all accounted for". So for a
-    binding that is not `bound` — no record, a record of another remote, or no `origin` to compare
-    — the answer is what `common/` grants, and the project's hook file is not opened: one there
-    that will not parse would answer `None`. Whether the binding is right is the `attached` row's
-    question, and it says so there.
+    one granted there and a ledger recording its id, would read "all accounted for". The binding
+    is the id in the checkout's git common directory and the machine's record of it
+    (`stayfixed.binding`), which no clone carries, so for a binding that is not `bound` the answer
+    is what `common/` grants, and the project's hook file is not opened: one there that will not
+    parse would answer `None`. Whether the binding is right is the `attached` row's question, and
+    it says so there.
 
-    **A binding record that cannot be read binds nothing.** Whether the checkout is bound is read
-    from `projects/<name>/project.toml`, so deciding it opens a file the name picks out; one that
-    cannot be read (`binding.UnreadableRecord`) is answered as no record, and the answer is what
+    **An overlay project record that cannot be read grants nothing past `common/`.** Reading the
+    binding reads `projects/<name>/project.toml` beside it, a file the name picks out; one that
+    cannot be read (`binding.UnreadableRecord`) is answered as no binding, and the answer is what
     `common/` grants. The cost falls on an owner whose own record is broken: their per-project
-    entries read red rather than warn, because the record that would vouch for them is the one
-    that cannot be read, and the `attached` row says the overlay could not be asked.
-
-    **A mismatch and an unreadable record are named beside the grant, and nothing else is.** For
-    either, `projects/<name>/` may grant an entry `common/` does not — to the checkout the record
-    binds, or would bind if it read — so "the overlay does not grant them" is false, and the
-    rebuild it offers is one `attach` refuses. With no record, or no `origin`, nothing in the
-    overlay grants this checkout more than `common/` does, and the overlay refusing is what
+    entries read red rather than warn, and the `attached` row says the overlay could not be asked.
+    It alone is named beside the grant, since `projects/<name>/` may grant an entry `common/`
+    does not, so "the overlay does not grant them" would be false; for an unbound checkout
+    nothing in the overlay grants it more than `common/` does, and the overlay refusing is what
     happened.
 
     **Nor does a `project.name` no directory under the overlay can carry make the overlay
     unaskable.** One that a file under `projects/` holds, or one longer than the filesystem
-    allows, has no binding record — `binding.cannot_exist`'s paths are records the overlay does
-    not have — so it is never bound and the answer is what `common/` grants. Only below a
-    directory whose record binds this checkout's `origin` does the name choose nothing, and a
-    file there where `claude/` goes is the owner's overlay failing to answer, `None` like any
+    allows, has no project record — `binding.cannot_exist`'s paths are records the overlay does
+    not have — and is never bound, so the answer is what `common/` grants. Only below the
+    directory of the project this machine binds the checkout to does the name choose nothing, and
+    a file there where `claude/` goes is the owner's overlay failing to answer, `None` like any
     other.
     """
     from stayfixed.attach.binding import UnreadableRecord, binding_for
     from stayfixed.attach.permissions import common_entries, overlay_entries
     from stayfixed.doctor.api import MachineUnread
     from stayfixed.errors import Failure, Refusal
-    from stayfixed.memory.api import BOUND, MISMATCH
+    from stayfixed.memory.api import BOUND
     from stayfixed.scaffold import wanted_placements
 
     overlay = context.overlay_root
@@ -936,8 +917,6 @@ def _granted_commands(context: Context) -> tuple[set[Placed] | None, str | None]
         granted = set(wanted_placements(wanted))
     except (Failure, Refusal, OSError):
         return None, None
-    if binding is not None and binding.state == MISMATCH:
-        narrowed = MISMATCH
     return granted, narrowed
 
 
@@ -946,12 +925,10 @@ def _wording(narrowed: str | None = None) -> Wording:
     repair them: stayfixed's own fixed strings, as `Wording` requires, none of them read from the
     repository or the machine.
 
-    `narrowed` is `_granted_commands`' reason the grant stops at `common/`. For `MISMATCH` the
-    entries it leaves red are told that the binding is what is wrong, not the grant, and handed
-    the `attached` row's remedy: the rebuild `vouch` names is one `attach` refuses on a mismatch
-    without `--trust-remote`. For `UNREADABLE_RECORD` they are told the record cannot be read, and
-    pointed at the command that says why. Both are fixed text: neither names the project or a
-    remote, which are the repository's.
+    `narrowed` is `_granted_commands`' reason the grant stops at `common/`. For
+    `UNREADABLE_RECORD` the entries it leaves red are told the record cannot be read, and pointed
+    at the command that says why, in fixed text that names neither the project nor a remote,
+    which are the repository's.
 
     A function and not a module-level constant only because building the value imports the doctor
     area's surface and the ledger's path, and an import in this module sits inside a function body
@@ -959,22 +936,12 @@ def _wording(narrowed: str | None = None) -> Wording:
     from stayfixed.attach import ATTACH_STORE
     from stayfixed.config.layout import ATTACH_LEDGER
     from stayfixed.doctor.api import Wording
-    from stayfixed.memory.api import MISMATCH
 
     # Said of a checkout whose grant stops at `common/` for a reason other than a refusal.
     only_common = "the overlay grants this checkout only what it grants every project, because its"
     ungranted: str | None = None
     regrant: str | None = None
-    if narrowed == MISMATCH:
-        ungranted = (
-            f"{only_common} record binds this project to a remote other than this checkout's "
-            f"`origin`"
-        )
-        regrant = (
-            f"settle the binding, as the `attached` row says: {_REBIND}; then run `stayfixed "
-            f"doctor` again"
-        )
-    elif narrowed == UNREADABLE_RECORD:
+    if narrowed == UNREADABLE_RECORD:
         ungranted = f"{only_common} binding record for this project cannot be read"
         regrant = (
             "run `stayfixed attach --check`, which reports why the binding record cannot be "
