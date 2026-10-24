@@ -108,6 +108,10 @@ What it does, in order:
 4. **Renders.** One section per configured group, a note's `group:` value as a sub-heading
    inside it, ordered by `startup` rank first, then by `group_order`, then by name — so a
    note ranked for the session leads its section whatever its position within a sub-heading.
+   The harness's own memory writer keeps its notes as topic files at the top of the store,
+   outside every group, each named by one `- [title](file.md)` line in `MEMORY.md`: every such
+   line whose file the store still holds is kept, verbatim and once, ahead of the sections, and
+   the topic files are never written.
 
 The command's line names the notes this run wrote a provisional line into, in step 1 or step 3, up
 to eight and then how many more, so you can curate them; `--json`'s `provisional` lists them all.
@@ -235,7 +239,8 @@ is additive only because there is no envelope and no escaping. Do not pass `--js
 entry.
 
 Where no layer sets `[memory] mode`, memory is the coding agent's own (`harness`), there is no
-store, and this command prints nothing. Notes inside the repository — a `local-only` or `in-repo`
+store, and this command prints nothing. So it does before the store's directory exists — a
+`local-only` repository before its first note. Notes inside the repository — a `local-only` or `in-repo`
 store — reach a session with no approval, as the harness delivers the same repository's
 `CLAUDE.md`, only in `volatile-notes` and only as data. It reads the configuration as the session does
 ([Configuration](#configuration)), and a machine file that does not load is read as recording no

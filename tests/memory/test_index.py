@@ -904,3 +904,60 @@ def test_a_nested_section_title_keeps_every_segment() -> None:
     # two separators must not collapse into one another.
     assert section_title("project-stable") == "Project — stable"
     assert section_title("team/project-stable") == "Team / Project — stable"
+
+
+# --- `local-only` is one store, beside the native writer -------------------------------------
+
+LOCAL_ONLY_CONFIG = """
+[stayfixed]
+version = "0.1.0"
+preset = "recommended"
+
+[project]
+name = "widget"
+
+[memory]
+mode = "local-only"
+groups = ["developer"]
+"""
+
+# What the harness's own memory writer leaves at the top of a directory it writes: a topic file
+# per subject, and one pointer line for each in `MEMORY.md`, with a hook after the link.
+NATIVE_TOPIC = "---\nname: {name}\ndescription: {name}\ntype: user\n---\n\nWhat it said.\n"
+NATIVE_LINES = (
+    "- [User role](user_role.md) — the user is a senior engineer",
+    "- [Real database in tests](feedback_tests.md) — no mocks against the database",
+)
+
+
+def test_a_local_only_store_keeps_the_native_writers_files_and_their_pointer_lines(
+    tmp_path: Path,
+) -> None:
+    # A store the native writer filled — through the harness link an earlier release pointed at
+    # it — holds top-level topic files beside stayfixed's groups, and a pointer line for each in
+    # `MEMORY.md`. `memory index` rendered the groups alone, so the first run took every pointer
+    # line out of the index and the native writer's notes reached no session again. Each line
+    # whose file is still there stays, verbatim; one whose file is gone does not, and the topic
+    # files themselves are never written.
+    root = tmp_path / "project"
+    base = root / ".stayfixed" / "local" / "memory"
+    (base / "developer").mkdir(parents=True)
+    (base / "developer" / "a.md").write_text(note("a", index="A trigger → A"), encoding="utf-8")
+    topics = {name: NATIVE_TOPIC.format(name=name) for name in ("user_role", "feedback_tests")}
+    for name, text in topics.items():
+        (base / f"{name}.md").write_text(text, encoding="utf-8")
+    stale = "- [Gone](gone.md) — a topic file somebody deleted"
+    (base / INDEX_NAME).write_text("\n".join([*NATIVE_LINES, stale]) + "\n", encoding="utf-8")
+    (root / CONFIG_FILE).write_text(LOCAL_ONLY_CONFIG, encoding="utf-8")
+    machine = tmp_path / "machine.toml"
+    machine.write_text("", encoding="utf-8")
+
+    code, out, err = cli(root, tmp_path, "memory", "index", machine=machine)
+    assert code == 0, (out, err)
+    lines = (base / INDEX_NAME).read_text(encoding="utf-8").splitlines()
+    assert all(line in lines for line in NATIVE_LINES), lines
+    assert stale not in lines
+    assert "- [A trigger → A](developer/a.md)" in lines
+    assert {name: (base / f"{name}.md").read_text(encoding="utf-8") for name in topics} == topics
+    # And the render is stable: a second look finds the index current.
+    assert cli(root, tmp_path, "memory", "index", "--check", machine=machine)[0] == 0

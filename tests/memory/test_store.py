@@ -808,3 +808,25 @@ def test_a_worktree_removed_before_it_is_asked_about_is_gone_not_a_broken_git(
     assert excinfo.value.cause is Unasked.GONE
     assert str(side) in str(excinfo.value)
     assert "check that `git` runs here" not in str(excinfo.value)
+
+
+def test_a_local_only_session_says_nothing_before_its_store_exists(tmp_path: Path) -> None:
+    # A repository that chose `local-only` and has written no note yet has no
+    # `.stayfixed/local/memory`. Each `SessionStart` bundle entry printed the resolver's refusal,
+    # its region and all, into every session that opened there; before the store exists there is
+    # nothing to deliver and nothing to say.
+    from tests.cli import cli
+
+    root = tmp_path / "project"
+    root.mkdir()
+    (root / CONFIG_FILE).write_text(
+        '[stayfixed]\nversion = "0.1.0"\npreset = "recommended"\n\n[project]\nname = "widget"\n'
+        '\n[memory]\nmode = "local-only"\ngroups = ["developer"]\n',
+        encoding="utf-8",
+    )
+    machine = tmp_path / "machine.toml"
+    machine.write_text("", encoding="utf-8")
+    for bundle in ("standing-rules", "volatile-notes"):
+        argv = ("memory", "session-context", "--bundle", bundle)
+        code, out, err = cli(root, tmp_path, *argv, machine=machine)
+        assert (code, out.strip(), err) == (0, "", ""), bundle

@@ -35,7 +35,7 @@ from stayfixed.memory.index import (
     write_index,
 )
 from stayfixed.memory.inventory import inventory, totals
-from stayfixed.memory.store import Store, Unresolved, resolved
+from stayfixed.memory.store import STORE_MISSING, Store, Unresolved, resolved
 from stayfixed.printed import printable, quoted
 from stayfixed.result import Result
 
@@ -72,27 +72,17 @@ def _no_store(reason: Unresolved) -> Failure:
 
 
 def _store(args: argparse.Namespace) -> tuple[Store, Config]:
+    """The store the configuration names in `--root`, or the refusal that says why there is none."""
     root = Path(args.root).resolve()
     machine = _machine(args)
     config = command_config(root, machine=machine, owner=command_owner(machine))
-    return _store_of(args, root, config, machine), config
-
-
-def _store_of(args: argparse.Namespace, root: Path, config: Config, machine: Path | None) -> Store:
-    """The store `config` names in `root`, or the refusal that says why there is none."""
-    return store_at(root, config, machine, args.store)
-
-
-def store_at(root: Path, config: Config, machine: Path | None, override: str | None) -> Store:
-    """`_store_of` for a caller holding `--store`'s value rather than the parsed arguments."""
     # `resolved` and not `resolve` + `refusal_reason`: the pair walked the whole resolution
     # twice, four `git` queries with a five-second timeout apiece each time, so a hanging `git`
-    # cost a refused `memory session-context` up to forty seconds — once per `SessionStart`
-    # bundle entry.
-    found = resolved(root, config, override=override, machine=machine)
+    # cost a refused command up to forty seconds.
+    found = resolved(root, config, override=args.store, machine=machine)
     if found[0] is None:
         raise _no_store(found[1])
-    return found[0]
+    return found[0], config
 
 
 # What the write path put into notes that nobody curated: an `index:` line taken from a note's
@@ -282,7 +272,14 @@ def run_session_context(args: argparse.Namespace) -> Result:
     # No project configuration, or memory left to the harness: no store, and nothing to say.
     if config is None or config.memory.mode == HARNESS_MODE:
         return Result("")
-    text = render(bundle, _store_of(args, root, config, machine), config, part=args.part)
+    found = resolved(root, config, override=args.store, machine=machine)
+    if found[0] is None:
+        # A store whose directory nobody has made yet — a `local-only` repository before its
+        # first note — has nothing to deliver, and a session is no place to say so.
+        if found[1].said == STORE_MISSING:
+            return Result("")
+        raise _no_store(found[1])
+    text = render(bundle, found[0], config, part=args.part)
     return Result(text if text is not None else "")
 
 

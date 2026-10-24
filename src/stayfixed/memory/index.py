@@ -110,6 +110,8 @@ class Reconciliation:
     # one note name and one path in a sentence that calls both of them notes. Two kinds
     # of thing, two lists, two sentences.
     refused_extra: list[str] = field(default_factory=list)
+    # The native writer's pointer lines (`_native`), kept verbatim at the head of the render.
+    native: list[str] = field(default_factory=list)
 
 
 def _resolved_if_permitted(store: Store, config: Config, target: Path) -> Path | None:
@@ -193,6 +195,38 @@ def _appended(path: Path | None) -> dict[str, str]:
     except (OSError, UnicodeDecodeError):
         return {}
     return {target: title for title, target in entries_in(text)}
+
+
+def _native(store: Store, path: Path | None) -> list[str]:
+    """The native writer's own pointer lines in the index `path`: each line that links a topic file
+    at the top of the store, outside every group, which the store still holds — verbatim, once
+    each, in the order they stand.
+
+    The harness's memory writer keeps its notes as top-level topic files and names each with one
+    line in `MEMORY.md`; a store it wrote into holds them beside stayfixed's groups. They are not
+    notes this area walks, so a render made of the groups alone took every one of those lines out
+    of the index. A line whose file is gone names nothing and is not kept. The lines come out of
+    the file the render is written back to (`_destination`), so nothing crosses from one trust
+    domain to another.
+    """
+    if path is None or not fsops.is_file(path):
+        return []
+    try:
+        # To the read cap, as `_appended` reads the same file.
+        text = read_regular_text(path)
+    except (OSError, UnicodeDecodeError):
+        return []
+    kept: list[str] = []
+    for line in text.splitlines():
+        found = _ENTRY.match(line)
+        if found is None:
+            continue
+        target = found.group(2)
+        if "/" in target or target == INDEX_NAME or not target.endswith(".md"):
+            continue
+        if fsops.is_file(store.path / target) and line not in kept:
+            kept.append(line)
+    return kept
 
 
 def _harvestable(store: Store, source: Path | None, note: Note) -> bool:
@@ -337,6 +371,7 @@ def reconcile(store: Store, config: Config, *, write: bool) -> Reconciliation:
         refused,
         refused_publish,
         refused_extra,
+        _native(store, source),
     )
 
 
@@ -431,6 +466,8 @@ def render_index(reconciled: Reconciliation, config: Config, store: Store) -> st
     """
     to_machine = _to_machine(store, config)
     lines = [HEADER.rstrip("\n"), ""]
+    if reconciled.native:
+        lines += [*reconciled.native, ""]
     by_group: dict[str, list[Note]] = {}
     for note in reconciled.notes:
         if _publishable(store, to_machine, note):
