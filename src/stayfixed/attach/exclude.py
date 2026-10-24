@@ -164,34 +164,44 @@ def unignored(root: Path, relatives: Sequence[str]) -> tuple[str, ...]:
 
 
 def tracked(root: Path, relatives: Sequence[str]) -> tuple[str, ...]:
-    """The members of `relatives` the index tracks: listed as spelled, or there and the same file
-    (`st_dev`, `st_ino`) as a file the index tracks in the same directory.
+    """The members of `relatives` git treats as tracked: the index holds the path under git's own
+    view of case (`icase`, which decides whether git takes a file written there for a tracked one,
+    there or not), or the path is there and the same file (`st_dev`, `st_ino`) as a file the index
+    holds directly in its directory.
 
     The second half asks the filesystem what a name opens rather than emulating how it folds
-    names: on a volume that ignores case a tracked `Settings.Local.json` is what
-    `settings.local.json` opens, and APFS also folds U+017F (a long s) to `s`, which neither git's
-    `icase` nor `str.lower` does. One `ls-files` over the paths' directories, `literal` so a group
-    named `*` is that one path, each answer kept only for a file directly in one of them. A path
-    the index holds files below is not one: a group the owner moved into the overlay before
-    committing. Exit other than 0 is a refusal."""
+    names past git's ASCII folding: APFS folds U+017F (a long s) to `s`, so a tracked
+    `settings.local.json` spelled with one is what `settings.local.json` opens. A directory on the
+    way that only the filesystem folds to the placed spelling, past ASCII, is beyond both halves.
+    One `ls-files`, over each path and each path's directory, `literal` so a group named `*` is
+    that one path. A path the index holds files below is not one: a group the owner moved into the
+    overlay before committing. Exit other than 0 is a refusal."""
     if not relatives:
         return ()
     parents = {posixpath.dirname(relative) for relative in relatives}
-    asked = (f":(literal){parent or '.'}" for parent in sorted(parents))
-    code, out = git_run(root, "ls-files", "-z", "--", *asked)
+    asked = [*relatives, *(f"{parent}/" if parent else "." for parent in sorted(parents))]
+    code, out = git_run(root, "ls-files", "-z", "--", *(f":(icase,literal){x}" for x in asked))
     if code != 0:
         raise Refusal(UNANSWERED)
-    listed = {name for name in out.split("\0") if name}
-    files: dict[str, set[tuple[int, int]]] = {}
-    for name in listed:
-        if (parent := posixpath.dirname(name)) in parents and (found := _identity(root / name)):
+    names = [name for name in out.split("\0") if name]
+    listed = {_folded(name) for name in names}
+    folded = {_folded(parent) for parent in parents}
+    files: dict[bytes, set[tuple[int, int]]] = {}
+    for name in names:
+        parent = _folded(posixpath.dirname(name))
+        if parent in folded and (found := _identity(root / name)):
             files.setdefault(parent, set()).add(found)
     return tuple(
         relative
         for relative in relatives
-        if relative in listed
-        or _identity(root / relative) in files.get(posixpath.dirname(relative), set())
+        if _folded(relative) in listed
+        or _identity(root / relative) in files.get(_folded(posixpath.dirname(relative)), set())
     )
+
+
+def _folded(name: str) -> bytes:
+    """`name` as git's `icase` compares it: ASCII letters folded, every other byte as it is."""
+    return name.encode("utf-8", "surrogateescape").lower()
 
 
 def _identity(path: Path) -> tuple[int, int] | None:

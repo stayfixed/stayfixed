@@ -666,6 +666,44 @@ def test_a_tracked_settings_file_spelled_in_another_case_is_refused_and_left_as_
     assert tracked.read_bytes() == b"{}\n"
 
 
+def test_a_tracked_settings_file_under_a_directory_spelled_in_another_case_is_refused(
+    tmp_path: Path,
+) -> None:
+    # The directory's spelling folds too: `.CLAUDE/settings.local.json` in the index is what
+    # `.claude/settings.local.json` opens on a filesystem that ignores case, and a question about
+    # the directory as spelled listed nothing to compare with.
+    if not _case_blind(tmp_path):
+        pytest.skip("the temporary filesystem tells case apart")
+    root, store, machine = _attachable(tmp_path, allow=(RULE,))
+    (root / ".CLAUDE").mkdir()
+    tracked = root / ".CLAUDE" / "settings.local.json"
+    tracked.write_text("{}\n", encoding="utf-8")
+    _committed(root)
+    with pytest.raises(Refusal) as refused:
+        _attach_quietly(root, store, machine, tmp_path / "home")
+    assert str(refused.value) == TRACKED.format(paths=quoted(SETTINGS))
+    assert tracked.read_bytes() == b"{}\n"
+
+
+def test_a_tracked_settings_file_in_another_case_deleted_from_the_work_tree_is_refused(
+    tmp_path: Path,
+) -> None:
+    # With `core.ignorecase` git takes a newly written `settings.local.json` for the tracked
+    # `Settings.Local.json` whose file was deleted, and shows it as a modified tracked file. Nothing
+    # is there to compare identities with, so git's own view of case is asked.
+    if not _case_blind(tmp_path):
+        pytest.skip("the temporary filesystem tells case apart")
+    root, store, machine = _attachable(tmp_path, allow=(RULE,))
+    (root / ".claude").mkdir()
+    (root / ".claude" / "Settings.Local.json").write_text("{}\n", encoding="utf-8")
+    _committed(root)
+    (root / ".claude" / "Settings.Local.json").unlink()
+    with pytest.raises(Refusal) as refused:
+        _attach_quietly(root, store, machine, tmp_path / "home")
+    assert str(refused.value) == TRACKED.format(paths=quoted(SETTINGS))
+    assert not (root / SETTINGS).exists()
+
+
 def _folds_long_s(directory: Path) -> bool:
     probe = directory / "\u017fprobe"
     probe.write_text("", encoding="utf-8")
