@@ -195,7 +195,7 @@ reddens = [
 [[mutation]]
 name = "the exfiltration scenario's positive control cannot fail"
 file = "scripts/smoke_exfiltration.py"
-before = "        and CARRIED in carried.stdout"
+before = "        and delimited(carried.stdout, CARRIED)"
 after = "        and True"
 reddens = [
   "tests/scripts/test_smoke_scripts.py::test_the_exfiltration_scenario_reports_a_row_that_went_the_wrong_way",

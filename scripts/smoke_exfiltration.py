@@ -210,7 +210,6 @@ def main(argv: list[str]) -> int:
     ruled = through_wrapper(wrapper, standing, env, planted.clone)
     report.row(
         carried.returncode == 0
-        and CARRIED in carried.stdout
         and delimited(carried.stdout, CARRIED)
         and delimited(carried.stdout, CANARY)
         and ruled.returncode == 0
