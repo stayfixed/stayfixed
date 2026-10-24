@@ -601,14 +601,14 @@ reddens = [
 
 # The overlay half of the never-moved snapshot, which the repository-write mutation, `mutations/`'s
 # "the never-moved check is asked one write too late", cannot reach: it hoists a write that
-# lands under the root. `_record_binding` is the write that made
-# `doctor` report a refused attach as **bound**, and it lands in the overlay -- so this is the one
-# that proves the second walk is doing work rather than passing empty.
+# lands under the root. The overlay's record of the project is the write that made `doctor`
+# report a refused attach as **bound**, and it lands in the overlay -- so this is the one that
+# proves the second walk is doing work rather than passing empty.
 [[mutation]]
 name = "the binding record is written above the never-moved refusal"
 file = "src/stayfixed/attach/write.py"
 before = "        self.real = len(unlinked_groups(self.root, config))\n        if self.real:"
-after = "        _record_binding(binding)\n        self.real = len(unlinked_groups(self.root, config))\n        if self.real:"
+after = "        _record_project(binding, binding.remote)\n        self.real = len(unlinked_groups(self.root, config))\n        if self.real:"
 reddens = [
   "tests/attach/test_write.py::test_a_group_that_never_moved_refuses_the_attach_above_every_write",
 ]
@@ -809,10 +809,22 @@ reddens = [
 [[mutation]]
 name = "the ignore check skips the settings file"
 file = "src/stayfixed/attach/write.py"
-before = "    shown = exclude.unignored(root, planned.placed)"
-after = "    shown = exclude.unignored(root, [p for p in planned.placed if p != LOCAL_SETTINGS])"
+before = "    if shown := exclude.unignored(root, planned.placed):"
+after = "    if shown := exclude.unignored(root, [p for p in planned.placed if p != LOCAL_SETTINGS]):"
 reddens = [
   "tests/attach/test_write.py::test_a_gitignore_that_re_includes_the_settings_file_refuses_before_it_is_written",
+]
+
+# The rule's other half: no exclude line hides a tracked file, so a placed path the index tracks,
+# under any case of its spelling, is refused above every write, or `attach` writes over it.
+[[mutation]]
+name = "attach writes over a tracked placed path"
+file = "src/stayfixed/attach/write.py"
+before = "    if found := exclude.tracked(root, placed):"
+after = "    if found := exclude.tracked(root, ()):"
+reddens = [
+  "tests/attach/test_write.py::test_a_tracked_codex_rule_copy_is_refused_before_anything_is_written",
+  "tests/attach/test_write.py::test_a_tracked_local_settings_file_is_refused_before_anything_is_written",
 ]
 
 # `attach` hides only what git does not hide already, so a checkout that keeps its whole footprint

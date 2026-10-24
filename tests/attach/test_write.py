@@ -23,8 +23,8 @@ from stayfixed import fsops, jsonobject
 from stayfixed.attach.api import ledger
 from stayfixed.attach.binding import OVERLAY_DAMAGED
 from stayfixed.attach.check import check
-from stayfixed.attach.exclude import NOT_IGNORED
-from stayfixed.attach.permissions import TRACKED_LOCAL_SETTINGS, settings_document
+from stayfixed.attach.exclude import NOT_IGNORED, TRACKED
+from stayfixed.attach.permissions import settings_document
 from stayfixed.attach.write import (
     GROUP_ESCAPES,
     GROUP_UNASKED,
@@ -476,11 +476,56 @@ def test_a_tracked_local_settings_file_is_refused_before_anything_is_written(
     before = snapshot(root)
     with pytest.raises(Refusal) as refused:
         _attach_confirmed(root, store, machine, tmp_path / "home")
-    assert str(refused.value) == TRACKED_LOCAL_SETTINGS
+    assert str(refused.value) == TRACKED.format(paths=quoted(SETTINGS))
     assert_snapshot_unchanged(root, before)
     with pytest.raises(Refusal) as previewed:
         check(root, store=store, machine=machine, home=tmp_path / "home")
-    assert str(previewed.value) == TRACKED_LOCAL_SETTINGS
+    assert str(previewed.value) == TRACKED.format(paths=quoted(SETTINGS))
+
+
+def test_a_tracked_codex_rule_copy_is_refused_before_anything_is_written(tmp_path: Path) -> None:
+    # Every placed path is held to one rule, and the settings file was its only member: a
+    # repository tracking `.codex/rules/common.rules` had it overwritten by the overlay's rule,
+    # since `check-ignore --no-index` answers "ignored" for a tracked path the block names.
+    #
+    # Mutation: `mutations/`'s "attach writes over a tracked placed path".
+    root, store, machine = _attachable(tmp_path, codex="# the overlay's rule\n")
+    (root / ".codex" / "rules").mkdir(parents=True)
+    (root / ".codex" / "rules" / "common.rules").write_text("# the project's\n", "utf-8")
+    _committed(root)
+    before = snapshot(root)
+    with pytest.raises(Refusal) as refused:
+        _attach_confirmed(root, store, machine, tmp_path / "home")
+    assert str(refused.value) == TRACKED.format(paths=quoted(".codex/rules/common.rules"))
+    assert_snapshot_unchanged(root, before)
+
+
+def _case_blind(directory: Path) -> bool:
+    probe = directory / "case-probe"
+    probe.write_text("", encoding="utf-8")
+    try:
+        return (directory / "CASE-PROBE").exists()
+    finally:
+        probe.unlink()
+
+
+def test_a_tracked_settings_file_spelled_in_another_case_is_refused_and_left_as_it_was(
+    tmp_path: Path,
+) -> None:
+    # On a filesystem that ignores case, `.claude/Settings.Local.json` in the index is the file
+    # `.claude/settings.local.json` opens, so a case-sensitive question let `attach` write into a
+    # tracked file. The index is asked under any case of each placed path's spelling.
+    if not _case_blind(tmp_path):
+        pytest.skip("the temporary filesystem tells case apart")
+    root, store, machine = _attachable(tmp_path, allow=(RULE,))
+    (root / ".claude").mkdir()
+    tracked = root / ".claude" / "Settings.Local.json"
+    tracked.write_text("{}\n", encoding="utf-8")
+    _committed(root)
+    with pytest.raises(Refusal) as refused:
+        _attach_confirmed(root, store, machine, tmp_path / "home")
+    assert str(refused.value) == TRACKED.format(paths=quoted(SETTINGS))
+    assert tracked.read_bytes() == b"{}\n"
 
 
 def _with_groups(root: Path, listed: str) -> None:
@@ -1758,11 +1803,15 @@ def test_a_symlinked_stayfixed_directory_is_refused_before_anything_is_written(
     # The ledger is written under `.stayfixed/local/`, and nothing above the first write held
     # that path to the project by name: a clone committing `.stayfixed` as a link was refused
     # only because `git check-ignore` will not answer about a path beyond a symlink, with a
-    # message blaming git. Held to the project first, so the refusal says what is wrong.
+    # message blaming git. Held to the project first, so the refusal says what is wrong, and
+    # before the ledger is read: a ledger beyond the link is never opened. The exclude block's own
+    # containment also refuses the link, but only after that read.
     #
     # Mutation: `mutations/`'s "attach stops holding the ledger's path to the project".
     root, store, machine = _attachable(tmp_path, allow=(RULE,), codex="# standing rule\n")
-    (tmp_path / "elsewhere").mkdir()
+    beyond = tmp_path / "elsewhere" / "local" / "attach.json"
+    beyond.parent.mkdir(parents=True)
+    beyond.write_text("{", encoding="utf-8")
     (root / ".stayfixed").symlink_to(tmp_path / "elsewhere", target_is_directory=True)
     before = snapshot(root)
     assert before
@@ -1772,7 +1821,7 @@ def test_a_symlinked_stayfixed_directory_is_refused_before_anything_is_written(
     # will not answer about a path beyond a symlink, and blamed git.
     assert "symlink" in str(refused.value)
     assert_snapshot_unchanged(root, before)
-    assert list((tmp_path / "elsewhere").iterdir()) == []
+    assert beyond.read_text(encoding="utf-8") == "{"
 
 
 def test_a_first_attach_beside_the_harnesss_own_memory_and_a_linked_claude_attaches(
@@ -2000,6 +2049,9 @@ def test_an_exclude_file_that_cannot_be_written_is_refused_by_name_before_the_fi
     finally:
         info.chmod(0o755)
     assert "info/exclude" in str(refused.value)
+    # Asked while planning, in its own words: the exclude block is the first write now, so a write
+    # that failed would leave the tree as it was too, and only the sentence tells the two apart.
+    assert "this user cannot write the directory that holds it" in str(refused.value)
     assert "internal error" not in str(refused.value)
     assert _everything(tmp_path) == before
 

@@ -23,8 +23,7 @@ whole footprint out of git gets no block.
 `write`), over the checkout as it is, every source counted: a `.gitignore` that re-includes a
 path with a `!` line outranks the block, so that path would show however the block reads, and
 `attach` refuses before writing it (`NOT_IGNORED`). Asked with `--no-index`, so a pattern decides
-and the index does not: a tracked file is refused on its own, before any write
-(`permissions.TRACKED_LOCAL_SETTINGS`).
+and the index does not: a tracked path is refused on its own, before any write (`tracked`).
 
 Security ruling, in the order the template asks for it. **Preconditions**: every candidate path is
 computed by stayfixed — `paths.memory` and each `memory.groups` entry are repository-authored, but
@@ -96,8 +95,9 @@ _RECORDS = (EXCLUDE_CREATED, EXCLUDE_ENDED, EXCLUDE_DIRECTORY_CREATED, EXCLUDE_E
 # trailing one is dropped by git unless it is.
 _SPECIAL = frozenset("\\*?[ ")
 UNANSWERED = (
-    "git could not say which of the files `attach` places are already ignored, so nothing was "
-    "written; run it again once `git check-ignore` works in this repository"
+    "git could not say whether the files `attach` places are tracked or ignored, so nothing past "
+    "the exclude block was written; run it again once `git ls-files` and `git check-ignore` work "
+    "in this repository"
 )
 # The path is git's answer about this checkout's own git directory, and it prints through
 # `printed.quoted`: the checkout's directory name usually comes from the clone URL.
@@ -118,6 +118,12 @@ NOT_WRITTEN = "{path} could not be written ({reason})"
 # Said when git would still show a path `attach` places once the block is written: a `.gitignore`
 # re-includes it with a `!` line, which outranks the exclude file, or its name is one no line of
 # the block can spell (`pattern`). `{paths}` is what `write` names them by.
+# Said when the index tracks a path `attach` places, under any case: no exclude line hides a
+# tracked file. `{paths}` is what `write` names them by.
+TRACKED = (
+    "this repository tracks {paths}, which `attach` places for this machine alone, so nothing was "
+    "written; attach a checkout where none of them is tracked"
+)
 NOT_IGNORED = (
     "git would not ignore {paths}, which `attach` places for this machine alone, so nothing past "
     "the exclude block was written: a `.gitignore` line starting with `!` that re-includes a path "
@@ -153,6 +159,21 @@ def unignored(root: Path, relatives: Sequence[str]) -> tuple[str, ...]:
     a checkout git might hide, and treating it as "everything is" would write where git shows.
     """
     return _unmatched(root, relatives, "check-ignore", "--no-index", "--stdin", "-z")
+
+
+def tracked(root: Path, relatives: Sequence[str]) -> tuple[str, ...]:
+    """The members of `relatives` the index tracks, under any case: on a filesystem that ignores
+    case a tracked `Settings.Local.json` is what `settings.local.json` opens. A path the index
+    holds files below is not one: a group the owner moved into the overlay before committing.
+    `literal`, so a group named `*` is that one path; exit other than 0 is a refusal."""
+    if not relatives:
+        return ()
+    asked = (f":(icase,literal){relative}" for relative in relatives)
+    code, out = git_run(root, "ls-files", "-z", "--", *asked)
+    if code != 0:
+        raise Refusal(UNANSWERED)
+    listed = {name.lower() for name in out.split("\0") if name}
+    return tuple(relative for relative in relatives if relative.lower() in listed)
 
 
 def _unmatched(root: Path, relatives: Sequence[str], *asked: str) -> tuple[str, ...]:

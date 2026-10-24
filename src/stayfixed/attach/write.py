@@ -593,9 +593,9 @@ def _placed(binding: Binding, config: Config, *, settings: bool) -> tuple[str, .
     """Every path this run puts into the checkout's work tree: the ledger, the link tree
     (`linked_names`, the same list `attach_main` walks), each rule copy `codex_rules` enumerates,
     and the settings file when `settings` says this run writes it or an earlier one did. These are
-    what `attach.exclude` hides and holds inside the project, and what git is asked about once the
-    block stands (`_refuse_unignored`). The binding id is placed too, but under the git common
-    directory, which git never tracks, so it is no path of the work tree.
+    what `attach.exclude` hides and holds inside the project, and what one rule holds: none
+    tracked, each ignored once the block stands. The binding id is placed too, but under the git
+    common directory, which git never tracks, so it is no path of the work tree.
 
     **Only what is written, because each candidate is also a containment refusal.** A `.claude`
     the owner keeps elsewhere and links in is an ordinary layout, and an overlay that grants
@@ -609,23 +609,15 @@ def _placed(binding: Binding, config: Config, *, settings: bool) -> tuple[str, .
     )
 
 
-def _refuse_unignored(root: Path, planned: AttachPlan) -> None:
-    """Refuse when git would show a path this run places, once the exclude block stands.
-
-    Asked after the block's write and before every later write, since only then is the block
-    part of git's answer: a `.gitignore` that re-includes a path (`!`) outranks the block, and
-    the settings file must never be written where git would show it. The paths the checkout or
-    the overlay names print through `printed.quoted`; the link tree's are counted, because each
-    carries a `memory.groups` entry, which the repository chose."""
-    shown = exclude.unignored(root, planned.placed)
-    if not shown:
-        return
-    tree = f"{planned.config.paths.memory}/"
-    named = [quoted(path) for path in shown if not path.startswith(tree)]
-    linked = sum(1 for path in shown if path.startswith(tree))
-    if linked:
+def _named(config: Config, paths: tuple[str, ...]) -> str:
+    """Placed paths as a refusal names them: those the checkout or the overlay names through
+    `printed.quoted`, and the link tree's counted, because each carries a `memory.groups` entry,
+    which the repository chose."""
+    tree = f"{config.paths.memory}/"
+    named = [quoted(path) for path in paths if not path.startswith(tree)]
+    if linked := sum(1 for path in paths if path.startswith(tree)):
         named.append(f"{linked} link(s) of the link tree under paths.memory")
-    raise Refusal(exclude.NOT_IGNORED.format(paths=", ".join(named)))
+    return ", ".join(named)
 
 
 def _fallback_store(owner: Path, config: Config, *, machine: Path | None) -> Store | None:
@@ -1384,6 +1376,10 @@ def plan_writes(
     fallback = possible and _settings_containable(root)
     settings = written or fallback or _settings_placed(previous, document)
     placed = _placed(binding, config, settings=settings)
+    # One rule for every placed path: none tracked, asked here above every write, and each ignored,
+    # asked once the block stands (`_carry_out`).
+    if found := exclude.tracked(root, placed):
+        raise Refusal(exclude.TRACKED.format(paths=_named(config, found)))
     hidden = exclude.planned_block(root, placed)
     # The two reads the writes below would otherwise make for themselves, each of which can
     # refuse after the first write: the overlay's rule sources (a file that is not UTF-8) and the
@@ -1427,7 +1423,9 @@ def _carry_out(
     config, binding = planned.config, planned.binding
     if planned.hidden is not None:
         exclude.write(planned.hidden)
-    _refuse_unignored(root, planned)
+    # The rule's second half: a `.gitignore` re-including a placed path (`!`) outranks the block.
+    if shown := exclude.unignored(root, planned.placed):
+        raise Refusal(exclude.NOT_IGNORED.format(paths=_named(config, shown)))
     for target, text in planned.rules:
         fsops.write_within(root, target, text)
     rules = tuple(target for target, _ in planned.rules)

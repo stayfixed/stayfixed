@@ -32,9 +32,8 @@ from typing import Any
 
 from stayfixed import fsops
 from stayfixed.attach.binding import Binding, cannot_exist
-from stayfixed.errors import Failure, Refusal
+from stayfixed.errors import Failure
 from stayfixed.fsops import read_regular_text
-from stayfixed.gitenv import git_run
 from stayfixed.harnesses import CLAUDE
 from stayfixed.jsonobject import WRITTEN_PAST
 from stayfixed.memory.api import PROJECTS
@@ -62,19 +61,6 @@ PROJECT_CODEX = "codex"
 ENTRY_PREFIX = "overlay"
 # Where Codex reads standing instructions.
 CODEX_RULES = ".codex/rules"
-# Said when the repository tracks the local settings file: what `attach` merges into it would then
-# be one commit from every clone, and no exclude line hides a tracked file. Whatever the file
-# holds, a foreign allow rule included, is counted and never refused; only its being tracked is.
-TRACKED_LOCAL_SETTINGS = (
-    f"this repository tracks {LOCAL_SETTINGS}, so what `attach` writes into it would reach every "
-    "clone with the next commit; nothing was written. Attach a checkout where that file is "
-    "untracked"
-)
-# Said when `git` cannot say whether it is tracked, which is no answer to write on.
-TRACKED_UNANSWERED = (
-    f"git could not say whether this repository tracks {LOCAL_SETTINGS}, so nothing was written; "
-    "run it again once `git ls-files` works in this repository"
-)
 
 
 @dataclass(frozen=True)
@@ -391,20 +377,8 @@ def _refuse_unless_written_back(document: str) -> None:
         raise ParserLimitError(f"{LOCAL_SETTINGS} {WRITTEN_PAST}")
 
 
-def _refuse_tracked_settings(root: Path) -> None:
-    """Refuse a checkout whose index tracks the local settings file, asked of the index alone."""
-    code, tracked = git_run(root, "ls-files", "-z", "--", LOCAL_SETTINGS)
-    if code != 0:
-        raise Refusal(TRACKED_UNANSWERED)
-    if tracked:
-        raise Refusal(TRACKED_LOCAL_SETTINGS)
-
-
 def diff_permissions(root: Path, binding: Binding) -> PermissionDiff:
-    """What attaching `binding` would add to `root`, without writing a byte; a refusal for a local
-    settings file the repository tracks, asked here because `attach` and `--check` both read the
-    file through this function above their first write."""
-    _refuse_tracked_settings(root)
+    """What attaching `binding` would add to `root`, without writing a byte."""
     # This line is the whole of the committed-settings rule in the module docstring:
     # `.claude/settings.json` sits one name away from both sources and is not on it.
     sources = _claude_sources(binding, PERMISSIONS_FILE)

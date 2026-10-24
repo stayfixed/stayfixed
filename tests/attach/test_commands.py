@@ -695,11 +695,14 @@ def test_check_refuses_a_settings_file_the_run_refuses_in_its_diff(
     shape: str,
 ) -> None:
     # The real run reads the project's settings file in the diff and refuses these there;
-    # `--check` reads it in the same diff and refuses them alike.
+    # `--check` reads it in the same diff and refuses them alike. A group that never moved stops
+    # `--check` past the diff, so the diff's own reading is the only one that can refuse here:
+    # elsewhere the run's later merge refuses the same documents too.
     # Mutations (oracle): `mutations/`'s "check reads a null allow list as no rules" -> the `null`
     # cases, and "attach plans a settings write-back the next read refuses" -> the last, end
     # `--check` with the finding's `1`.
     root, store, machine = _granting(tmp_path)
+    (root / DEFAULT_MEMORY / "developer").mkdir(parents=True)
     (root / ".claude").mkdir(exist_ok=True)
     if shape == "written-back-past-the-cap":
         monkeypatch.setattr(fsops, "REGULAR_READ_LIMIT", 16 * 1024)
