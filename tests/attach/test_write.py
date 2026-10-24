@@ -1603,9 +1603,10 @@ def test_a_worktree_listing_git_gave_no_answer_for_is_a_failure_about_this_machi
     # is no longer a cause — the listing is decoded losslessly — so the message does not send the
     # owner looking for one. Mutation (advisory): put the UTF-8 clause back — the last assertion
     # reddens.
+    from stayfixed import binding
     from stayfixed.attach import write as module
 
-    monkeypatch.setattr(module, "git_run", lambda *a, **k: (-1, ""))
+    monkeypatch.setattr(binding, "git_run", lambda *a, **k: (-1, ""))
     with pytest.raises(Failure, match="check that `git` runs here") as caught:
         module.main_checkout_of(tmp_path)
     assert "UTF-8" not in str(caught.value)

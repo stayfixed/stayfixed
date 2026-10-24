@@ -35,7 +35,7 @@ from stayfixed import fsops, tomlout
 from stayfixed.config.paths import data_directory
 from stayfixed.config.reading import UNPARSEABLE
 from stayfixed.errors import Failure
-from stayfixed.gitenv import GitUnavailable, git_answer, without_userinfo
+from stayfixed.gitenv import GitUnavailable, answer_lines, git_answer, git_run, without_userinfo
 from stayfixed.printed import quoted
 
 # Where the id lives under the git common directory, and where each record lives under the
@@ -83,6 +83,31 @@ def common_directory(root: Path) -> Path:
     if answer.value is None:
         raise Failure(said)
     return Path(answer.value)
+
+
+def main_checkout_or_none(root: Path) -> Path | None:
+    """This repository's main checkout, resolved, from the first record of `git worktree list
+    --porcelain`, or `None` in a bare repository, whose first record is the repository itself.
+
+    Through `gitenv.git_run`, which scrubs `GIT_DIR` and `GIT_WORK_TREE`: an inherited one would
+    name the main checkout of a different repository altogether, and `attach` would then write
+    into it. Asked above every write, since a `git` that cannot answer is knowable at the start.
+    """
+    code, out = git_run(root, "worktree", "list", "--porcelain")
+    if code != 0:
+        raise Failure(
+            "`git` could not list this repository's worktrees, so its main checkout cannot be "
+            "named; the fault is on this machine — check that `git` runs here"
+        )
+    # Lines split where git ended them: `splitlines()` also broke a path at a `\r` it holds
+    # (`gitenv.answer_lines`).
+    lines = answer_lines(out.split("\n\n")[0])
+    if "bare" in lines:
+        return None
+    found = [line[len("worktree ") :] for line in lines if line.startswith("worktree ")]
+    if not found:
+        raise Failure("`git worktree list` named no main checkout for this repository")
+    return Path(found[0]).resolve()
 
 
 def read_id(root: Path) -> str | None:

@@ -2044,8 +2044,9 @@ someone committed where a ledger file belongs stays. So does a harness's own dir
 empty directory, and to `init` its presence means the project uses that harness. So a later `init`
 detects that harness and lists it in `[stayfixed] agents` until you remove the directory.
 
-**Refused before any write** (`2`): the repository is not initialised; it is attached to an overlay,
-so run `stayfixed detach` first; `stayfixed.toml` is missing while the manifest records it, so restore
+**Refused before any write** (`2`): the repository is not initialised; it is attached to an overlay
+(the ledger is in this checkout or in the main checkout, where `attach` keeps it from every
+worktree), so run `stayfixed detach` first; `stayfixed.toml` is missing while the manifest records it, so restore
 it; `[artifacts] local` names `config` or `gitignore`, which only work at the repository root, so
 take them out of the list; two artifacts resolve to one file, named as `init` names it;
 `.stayfixed/local/` holds files this run would not remove, such as notes, or an artifact kept out of

@@ -6285,3 +6285,27 @@ file = "src/stayfixed/binding.py"
 before = "    origin = without_userinfo(origin) if origin is not None else None"
 after = "    pass"
 reddens = ["tests/attach/test_commands.py::test_an_origin_carrying_credentials_is_neither_printed_nor_recorded_with_them"]
+
+# In the block led by `mutations/`'s "setup splits git's listing of checkouts at a carriage return
+# inside a path": a line-oriented git answer is split where git ended each line, never at a `\r` or
+# a line separator inside a name.
+[[mutation]]
+name = "attach splits git's worktree listing at a carriage return inside a path"
+file = "src/stayfixed/binding.py"
+before = '    lines = answer_lines(out.split("\n\n")[0])'
+after = '    lines = out.split("\n\n")[0].splitlines()'
+reddens = [
+  "tests/test_git_answers.py::test_a_worktree_whose_path_holds_a_carriage_return_is_listed_by_its_own_path",
+]
+
+# A bare repository's main worktree is the repository itself, and the common directory's parent is
+# no checkout: the plugin would be installed, and the main checkout's settings file asked about, in
+# a directory that is not one. Refused while nothing is written.
+[[mutation]]
+name = "attach takes a bare repository's parent directory for its main checkout"
+file = "src/stayfixed/binding.py"
+before = '    if "bare" in lines:'
+after = "    if False:"
+reddens = [
+  "tests/attach/test_write.py::test_attach_from_a_bare_repositorys_worktree_cannot_tell_its_main_checkout_and_installs_nothing",
+]

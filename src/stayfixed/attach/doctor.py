@@ -564,7 +564,7 @@ def _owner(context: Context) -> Path:
     it ran from. A bare repository's worktree, which names none, and a `git` that cannot say leave
     this checkout, the one answer that needs no `git`; the binding row above has already asked
     `git` by then, so this is the race and not the layout."""
-    from stayfixed.attach.write import main_checkout_or_none
+    from stayfixed.binding import main_checkout_or_none
     from stayfixed.errors import Failure, Refusal
 
     try:

@@ -197,6 +197,26 @@ def test_an_attached_repository_is_refused_and_told_to_detach(tmp_path: Path) ->
 
 
 @needs_git
+def test_a_linked_worktree_of_an_attached_repository_is_refused_too(tmp_path: Path) -> None:
+    # `attach` keeps its ledger in the main checkout whichever worktree it ran from, so a worktree
+    # holds none, and `uninstall` there committed away the `stayfixed.toml` the main checkout's
+    # delivery is explained by. It reads the main checkout's ledger.
+    root = initialised(tmp_path)
+    run_git(root, "add", "-A")
+    run_git(root, "commit", "-qm", "installed")
+    side = tmp_path / "side"
+    run_git(root, "worktree", "add", "-q", str(side))
+    ledger = root / ".stayfixed" / "local" / "attach.json"
+    ledger.parent.mkdir(parents=True, exist_ok=True)
+    ledger.write_text("{}", encoding="utf-8")
+    before = snapshot(side)
+    with pytest.raises(Refusal) as refused:
+        _uninstall(side, tmp_path)
+    assert str(refused.value) == ATTACHED
+    assert_snapshot_unchanged(side, before)
+
+
+@needs_git
 def test_notes_kept_out_of_git_refuse_the_run_that_would_expose_them(tmp_path: Path) -> None:
     # The local-only store is the preset's default, and the ignore region this run removes is
     # all that keeps it out of git. The count is reported by the dry run and refuses the real

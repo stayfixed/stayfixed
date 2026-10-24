@@ -2,18 +2,6 @@
 # Which group an entry belongs in is `GROUP_OF` in `scripts/mutation_oracle.py`; what an entry is:
 # CONTRIBUTING.md, "Tests".
 
-# In the block led by `mutations/`'s "setup splits git's listing of checkouts at a carriage return
-# inside a path": a line-oriented git answer is split where git ended each line, never at a `\r` or
-# a line separator inside a name.
-[[mutation]]
-name = "attach splits git's worktree listing at a carriage return inside a path"
-file = "src/stayfixed/attach/write.py"
-before = '    lines = answer_lines(out.split("\n\n")[0])'
-after = '    lines = out.split("\n\n")[0].splitlines()'
-reddens = [
-  "tests/test_git_answers.py::test_a_worktree_whose_path_holds_a_carriage_return_is_listed_by_its_own_path",
-]
-
 # The overlay root comes from the machine file, and this is the rule whose failure hands the choice
 # of overlay to whoever wrote the command line -- which in this harness is a model that has read the
 # repository. The machine file is unselectable by a repository by construction; `--store`'s own
@@ -1596,18 +1584,6 @@ before = '    return f"{MARKETPLACE_PREFIX}{id}"'
 after = '    return MARKETPLACE_PREFIX.rstrip("-")'
 reddens = [
   "tests/attach/test_render.py::test_render_writes_the_marketplace_and_the_plugin_under_names_carrying_the_whole_id",
-]
-
-# A bare repository's main worktree is the repository itself, and the common directory's parent is
-# no checkout: the plugin would be installed, and the main checkout's settings file asked about, in
-# a directory that is not one. Refused while nothing is written.
-[[mutation]]
-name = "attach takes a bare repository's parent directory for its main checkout"
-file = "src/stayfixed/attach/write.py"
-before = '    if "bare" in lines:'
-after = "    if False:"
-reddens = [
-  "tests/attach/test_write.py::test_attach_from_a_bare_repositorys_worktree_cannot_tell_its_main_checkout_and_installs_nothing",
 ]
 
 # The render directory `detach` removes whole is derived from the binding id, never read from the

@@ -87,7 +87,14 @@ from stayfixed.attach.render import (
     remove_tree,
 )
 from stayfixed.attach.render import write as write_render
-from stayfixed.binding import bound_project, ensure_id, read_id, record, short
+from stayfixed.binding import (
+    bound_project,
+    ensure_id,
+    main_checkout_or_none,
+    read_id,
+    record,
+    short,
+)
 from stayfixed.config.layout import ATTACH_LEDGER
 from stayfixed.config.owner import Owner
 from stayfixed.config.paths import PathEscape, PathUnasked, contained
@@ -96,7 +103,7 @@ from stayfixed.config.schema import OVERLAY_MODE, Config
 from stayfixed.config.session import command_config
 from stayfixed.errors import Failure, Refusal
 from stayfixed.fsops import UnsafePath
-from stayfixed.gitenv import answer_lines, git_run, without_userinfo
+from stayfixed.gitenv import without_userinfo
 from stayfixed.guards.api import hooks_dir
 from stayfixed.jsonobject import NESTED, json_object
 from stayfixed.memory.api import (
@@ -739,31 +746,6 @@ NO_MAIN_CHECKOUT = (
     "names none, and the overlay's plugin is installed from the main checkout; nothing was "
     "changed. Attach from a clone with a working tree of its own"
 )
-
-
-def main_checkout_or_none(root: Path) -> Path | None:
-    """This repository's main checkout, resolved, from the first record of `git worktree list
-    --porcelain`, or `None` in a bare repository, whose first record is the repository itself.
-
-    Through `gitenv.git_run`, which scrubs `GIT_DIR` and `GIT_WORK_TREE`: an inherited one would
-    name the main checkout of a different repository altogether, and this module then writes into
-    it. Asked above every write, since a `git` that cannot answer is knowable at the start.
-    """
-    code, out = git_run(root, "worktree", "list", "--porcelain")
-    if code != 0:
-        raise Failure(
-            "`git` could not list this repository's worktrees, so its main checkout cannot be "
-            "named; the fault is on this machine — check that `git` runs here"
-        )
-    # Lines split where git ended them: `splitlines()` also broke a path at a `\r` it holds
-    # (`gitenv.answer_lines`).
-    lines = answer_lines(out.split("\n\n")[0])
-    if "bare" in lines:
-        return None
-    found = [line[len("worktree ") :] for line in lines if line.startswith("worktree ")]
-    if not found:
-        raise Failure("`git worktree list` named no main checkout for this repository")
-    return Path(found[0]).resolve()
 
 
 def main_checkout_of(root: Path) -> Path:

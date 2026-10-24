@@ -96,11 +96,12 @@ from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
 
 from stayfixed import fsops
+from stayfixed.binding import main_checkout_or_none
 from stayfixed.config.layout import ATTACH_LEDGER
 from stayfixed.config.loader import loads, read_document
 from stayfixed.config.owner import Owner
 from stayfixed.config.paths import STAYFIXED_DIRECTORY, contained
-from stayfixed.errors import Refusal
+from stayfixed.errors import Failure, Refusal
 from stayfixed.fsops import path_key, remove_within, rmdir_within, said
 from stayfixed.project.footprint import prepare
 from stayfixed.project.templates import CONFIG_ARTIFACT, IGNORE_ARTIFACT
@@ -314,6 +315,17 @@ def _remove_ledger(root: Path) -> None:
     _rmdirs(root, set(LEDGER_DIRS))
 
 
+def _attached(root: Path) -> bool:
+    """Whether `attach`'s ledger is in this checkout or in the main checkout, where `attach` keeps
+    it whichever worktree it ran from; a `git` that cannot name the main checkout leaves this
+    one."""
+    try:
+        main = main_checkout_or_none(root) or root
+    except Failure:
+        main = root
+    return any(fsops.is_file(contained(checkout, ATTACH_LEDGER)) for checkout in (root, main))
+
+
 def uninstall(
     root: Path,
     *,
@@ -324,7 +336,7 @@ def uninstall(
 ) -> UninstallReport:
     if not Manifest.present(root):
         raise Refusal(NOTHING)
-    if fsops.is_file(contained(root, ATTACH_LEDGER)):
+    if _attached(root):
         raise Refusal(ATTACHED)
     manifest = Manifest.read(root)
     document = read_document(root)
