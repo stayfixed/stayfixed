@@ -323,7 +323,12 @@ def write(id: str, parts: Mapping[str, Part], *, stale: tuple[str, ...] = ()) ->
         fsops.write_within(directory, relative, part.text, mode=part.mode)
     for relative in stale:
         if relative not in files:
-            fsops.remove_within(directory, relative)
+            try:
+                fsops.remove_within(directory, relative)
+            except FileNotFoundError:
+                # Gone already, with a directory on the way to it: the render directory was deleted
+                # since, or another checkout's attach took the part out first.
+                continue
             fsops.rmdir_parents_within(directory, relative)
     return RenderRecord(id, _digest(files), tuple(sorted(files)))
 

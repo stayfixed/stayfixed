@@ -140,6 +140,21 @@ def test_a_second_render_replaces_the_files_in_the_same_directory(tmp_path: Path
     assert [p.name for p in delivery.parent.iterdir()] == [ID]
 
 
+def test_a_rerender_whose_stale_parts_directory_is_gone_renders_again(tmp_path: Path) -> None:
+    # `doctor`'s remedy for a deleted render directory is a re-render, whose stale list, read out
+    # of the ledger, names a skill the overlay no longer holds; the walk to its parent raised for a
+    # directory that was gone, after every other write of the attach, and on every attach after.
+    import shutil
+
+    overlay = _overlay(tmp_path)
+    first = render(overlay, "p", ID)
+    shutil.rmtree(_delivery())
+    shutil.rmtree(overlay / "common" / "claude" / "skills" / "review")
+    second = render(overlay, "p", ID, stale=first.parts)
+    assert second.digest == _digest(_delivery())
+    assert not (_delivery() / "plugin" / "skills").exists()
+
+
 def _scoped_rule(overlay: Path) -> None:
     rules = overlay / "projects" / "p" / "claude" / "rules"
     rules.mkdir(parents=True)
