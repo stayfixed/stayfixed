@@ -2477,8 +2477,10 @@ def test_a_project_name_the_overlay_has_no_directory_for_is_refused_before_the_f
     #
     # Mutations (oracle): `mutations/`'s "attach writes for a project name the overlay has no
     # directory for" -> the run's gate, which `--check` takes too, is dropped; "a name longer than
-    # the filesystem allows is an overlay that cannot be asked" and "a binding record the
-    # project's name rules out cannot be read" -> the long name fails rather than refusing.
+    # the filesystem allows is an overlay that cannot be asked", "a file where the project's
+    # directory would be is an overlay that cannot be asked" and "a binding record the project's
+    # name rules out cannot be read" -> the record such a name rules out reads as one that cannot
+    # be read, which `attach` and `doctor` then report, rather than as no record.
     name = UNSHARED[case]
     root, store, machine = _attachable(tmp_path, allow=(RULE,), codex="# a standing rule\n")
     overlay = store.parents[2]
@@ -2499,6 +2501,9 @@ def test_a_project_name_the_overlay_has_no_directory_for_is_refused_before_the_f
         f"`name` under [project] in stayfixed.toml"
     )
     assert _everything(tmp_path) == before
+    from stayfixed.attach.binding import binding_for
+
+    assert binding_for(root, load(root, machine=machine), machine=machine).fault is None
 
 
 @pytest.mark.parametrize("command", ["attach", "check"])
