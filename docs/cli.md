@@ -400,9 +400,11 @@ carries the overlay's standing rules — every `*.md` file in `common/claude/rul
 project's second, each in name order, a project file replacing the common file of its name —
 under one fixed lead line, on every event the matcher covers, since a compacted or cleared context
 has lost them. A rule with `paths:` is path-scoped: the plugin `attach` renders carries a
-`PostToolUse` entry for it, matching `Read|Edit|Write` and running the `scripts/stayfixed` launcher
-`attach` ran from, by its absolute path, with `hook PostToolUse`; that answer carries every such
-rule whose globs match the file the tool named, relative to the checkout's root (`*` and `?` within
+`PostToolUse` entry for it, matching `Read|Edit|Write`, that runs `hook PostToolUse` through
+whatever launched the stayfixed that ran `attach`, by absolute paths in double quotes: from the
+core plugin, its own `hooks/run-hook.sh` (below), so `-I` and exit `0` on any fault hold as for the
+plugin's own entries; from an installed package, which has no plugin root, the interpreter it ran
+under, as `<python> -I -m stayfixed`. That answer carries every such rule whose globs match the file the tool named, relative to the checkout's root (`*` and `?` within
 one path segment, `**` across segments, `{a,b}` for alternatives), the first time a session touches
 that file, and nothing after. The project is the one the machine's binding record names, never the
 repository's `stayfixed.toml`, so an unbound checkout hears no rule, whatever its `memory.mode`; a

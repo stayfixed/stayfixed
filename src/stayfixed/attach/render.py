@@ -20,11 +20,15 @@ binding record names, which the caller passes. Every source is read before anyth
 (`read_parts`), so a file that cannot be read stops the run while the render is as it was.
 
 **The overlay's path-scoped rules** (`attach.rules`) add one entry: on `PostToolUse`, matching
-`Read|Edit|Write`, the launcher this stayfixed runs from (`launcher`, the core plugin's
-`scripts/stayfixed`) with `hook PostToolUse`, by its absolute path, since the render is no part of
-the core plugin and has no `${CLAUDE_PLUGIN_ROOT}` naming it. It is rendered only when the overlay
-holds a rule with `paths:` and this stayfixed has such a launcher, which a wheel does not, and the
-record names the launcher it rendered. No entry is added to the core plugin's `hooks/hooks.json`.
+`Read|Edit|Write`, `hook PostToolUse` run through whatever launched the stayfixed that renders
+(`scoped_command`), by absolute paths, since the render is no part of the core plugin and has no
+`${CLAUDE_PLUGIN_ROOT}` naming it. Run from the core plugin, or a checkout of it, that is the
+plugin's own hook wrapper, `hooks/run-hook.sh` beside the running module's `src/`, which runs the
+interpreter with `-I` and answers any fault with exit 0, as for the core plugin's own entries; run
+from an installed package, which has no plugin root, it is the running interpreter with
+`-I -m stayfixed`. Only what the running process knows about itself is asked. The entry is rendered
+only when the overlay holds a rule with `paths:`. No entry is added to the core plugin's
+`hooks/hooks.json`.
 
 **The digest is a convenience, not a gate.** It is sha256 over every rendered file's path relative
 to the render directory and its bytes, which the ledger keeps beside those paths so a later run can
@@ -38,8 +42,8 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import shlex
 import stat
+import sys
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -68,10 +72,10 @@ HOOK_FILE = "hooks/hooks.json"
 # The two directories copied whole from each source, beside the hook file.
 COPIED = ("skills", "agents")
 # The entry that delivers path-scoped rules: the event, the tools whose input names a file, and the
-# launcher's path inside the core plugin, beside its `src/`.
+# core plugin's hook wrapper, by its path in the plugin root, beside `src/`.
 SCOPED_EVENT = "PostToolUse"
 SCOPED_MATCHER = "Read|Edit|Write"
-LAUNCHER = "scripts/stayfixed"
+WRAPPER = "hooks/run-hook.sh"
 # The core plugin's own hook timeout, in seconds (`hooks/hooks.json`).
 SCOPED_TIMEOUT = 10
 _DESCRIPTION = "The hooks, skills and agents of your stayfixed overlay, rendered for this checkout."
@@ -109,8 +113,6 @@ class RenderRecord:
     id: str
     digest: str
     parts: tuple[str, ...]
-    # The launcher the `PostToolUse` entry names, `None` where the render carries none.
-    launcher: Path | None = None
 
     @property
     def rendered(self) -> Rendered:
@@ -166,17 +168,29 @@ def _copied(source: Path) -> dict[str, Part]:
     return found
 
 
-def launcher() -> Path | None:
-    """The launcher this stayfixed runs from: `scripts/stayfixed` in the plugin root whose `src/`
-    holds the running module, as `scripts/stayfixed` puts it on `sys.path`; `None` for a wheel,
-    whose module root has no plugin beside it."""
-    found = Path(stayfixed.__file__).resolve().parents[2] / LAUNCHER
-    return found if fsops.is_file(found) else None
+def _quoted(path: str) -> str:
+    """`path` in double quotes, as the core plugin's entries quote theirs, with the four characters
+    a shell still reads inside them escaped, so it arrives as one word, unexpanded."""
+    for char in '\\"$`':
+        path = path.replace(char, f"\\{char}")
+    return f'"{path}"'
 
 
-def scoped_group(path: Path) -> dict[str, object]:
-    """The `PostToolUse` entry group that runs `path` on every file a session touches."""
-    command = f"{shlex.quote(str(path))} hook {SCOPED_EVENT}"
+def scoped_command() -> str | None:
+    """`hook PostToolUse` run through whatever launched this stayfixed: the plugin root's hook
+    wrapper where the running module's `src/` has one beside it, as `scripts/stayfixed` puts that
+    `src/` on `sys.path`; else the running interpreter, isolated; `None` where the process cannot
+    name its interpreter."""
+    wrapper = Path(stayfixed.__file__).resolve().parents[2] / WRAPPER
+    if fsops.is_file(wrapper):
+        return f"{_quoted(str(wrapper))} hook {SCOPED_EVENT}"
+    if sys.executable:
+        return f"{_quoted(sys.executable)} -I -m stayfixed hook {SCOPED_EVENT}"
+    return None
+
+
+def scoped_group(command: str) -> dict[str, object]:
+    """The `PostToolUse` entry group that runs `command` on every file a session touches."""
     return {
         "matcher": SCOPED_MATCHER,
         "hooks": [{"type": "command", "timeout": SCOPED_TIMEOUT, "command": command}],
@@ -193,10 +207,10 @@ def read_parts(overlay: Path, project: str) -> dict[str, Part]:
     for source, owner in sources:
         for event, groups in hook_groups(source / HOOKS_FILE, share=owner).items():
             hooks.setdefault(event, []).extend(groups)
-    # The rules are read whether or not there is a launcher, so a rule that cannot be read stops
+    # The rules are read whether or not there is a command, so a rule that cannot be read stops
     # every run alike.
-    if scoped_exist(overlay, project) and (found := launcher()) is not None:
-        hooks.setdefault(SCOPED_EVENT, []).append(scoped_group(found))
+    if scoped_exist(overlay, project) and (command := scoped_command()) is not None:
+        hooks.setdefault(SCOPED_EVENT, []).append(scoped_group(command))
     parts = {HOOK_FILE: Part(json.dumps({"hooks": hooks}, indent=2) + "\n")}
     for source, _ in sources:
         for copied in COPIED:
@@ -250,18 +264,7 @@ def write(id: str, parts: Mapping[str, Part], *, stale: tuple[str, ...] = ()) ->
         if relative not in files:
             fsops.remove_within(directory, relative)
             fsops.rmdir_parents_within(directory, relative)
-    return RenderRecord(id, _digest(files), tuple(sorted(files)), _rendered_launcher(parts))
-
-
-def _rendered_launcher(parts: Mapping[str, Part]) -> Path | None:
-    """The launcher `parts`' hook file runs for the path-scoped rules, read back from the entry
-    `read_parts` writes: `None` where it holds no such entry."""
-    found = launcher()
-    hook = parts.get(HOOK_FILE)
-    if found is None or hook is None:
-        return None
-    groups = json.loads(hook.text).get("hooks", {}).get(SCOPED_EVENT, [])
-    return found if scoped_group(found) in groups else None
+    return RenderRecord(id, _digest(files), tuple(sorted(files)))
 
 
 def render(overlay: Path, project: str, id: str, *, stale: tuple[str, ...] = ()) -> RenderRecord:
