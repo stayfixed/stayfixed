@@ -20,7 +20,8 @@ a withdrawal removes it. `build` makes the store's links exactly the overlay's c
 `withdraw` takes them all, then the directory where nothing else is left. Both list this
 directory, which is derived from the id and never read from a record a checkout keeps, and only
 `attach` puts links in it (CONTRIBUTING.md#enumerated-writes). The path names the whole id, so it
-is never printed: a fault names the data directory and the id's short form (`binding.unwritten`).
+is never printed whole: a fault names the data directory and the id's short form
+(`binding.unwritten`), and every message naming a path in it goes through `store.shown`.
 """
 
 from __future__ import annotations

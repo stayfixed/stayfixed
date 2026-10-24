@@ -53,11 +53,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from stayfixed import fsops
-from stayfixed.binding import Bound, bound_project
+from stayfixed.binding import Bound, bound_project, short
 from stayfixed.config.overlay import overlay_root
 from stayfixed.config.paths import PathEscape, PathUnasked, contained, data_directory
 from stayfixed.config.reading import MachineConfigError
 from stayfixed.config.schema import HARNESS_MODE, LOCAL_ONLY_MODE, OVERLAY_MODE, Config
+from stayfixed.errors import Failure
 from stayfixed.fsops import read_regular_text
 from stayfixed.gitenv import git_answer, without_userinfo
 from stayfixed.printed import clipped, quoted
@@ -82,6 +83,21 @@ STORES = "stores"
 def composed_directory(id: str) -> Path:
     """`<data>/stores/<id>/`, derived from the id and nothing else: the overlay-mode store."""
     return data_directory() / STORES / id
+
+
+def shown(path: Path) -> str:
+    """`path` as every message names a store path: one under `<data>/stores/` with the binding id
+    it names cut to its short form and an ellipsis (`binding.short`), since the whole id is the
+    secret a clone would need and is never printed; any other path whole."""
+    try:
+        stores = data_directory() / STORES
+    except Failure:
+        return str(path)
+    for base in (stores, stores.resolve()):
+        if path.is_relative_to(base) and path != base:
+            id, *rest = path.relative_to(base).parts
+            return "/".join([str(base), f"{short(id)}…", *rest])
+    return str(path)
 
 
 @dataclass(frozen=True)
@@ -529,7 +545,7 @@ def _resolve_at(
         # `attach` builds the directory only in overlay mode, where it is the composed store;
         # elsewhere it refuses, so it is named as the way out only there.
         said = STORE_MISSING + (BUILT_BY_ATTACH if mode == OVERLAY_MODE else "")
-        return None, Unresolved(said, str(base))
+        return None, Unresolved(said, shown(base))
     groups, unavailable = _group_targets(base, config, overlay if mode == OVERLAY_MODE else None)
     return Store(base, mode, root, groups, unavailable, machine), None
 

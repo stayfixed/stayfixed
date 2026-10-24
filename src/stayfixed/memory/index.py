@@ -34,7 +34,7 @@ from stayfixed.memory.notes import (
     write_note,
 )
 from stayfixed.memory.reviewed import UNREVIEWED, UNREVIEWED_LABEL, record, status
-from stayfixed.memory.store import Store, in_repository, permitted_roots
+from stayfixed.memory.store import Store, in_repository, permitted_roots, shown
 
 INDEX_NAME = "MEMORY.md"
 EXTRA_TITLE = "Elsewhere"
@@ -487,7 +487,7 @@ def _destination(store: Store, config: Config) -> Path:
     resolved = _resolved_if_permitted(store, config, target)
     if resolved is None:
         raise Refusal(
-            f"{target} is a symlink this store may not source ({INDEX_NAME} may link only "
+            f"{shown(target)} is a symlink this store may not source ({INDEX_NAME} may link only "
             f"into this project's share of the recorded overlay, in overlay mode); refusing "
             f"to read or replace it"
         )
@@ -539,7 +539,7 @@ def write_index(store: Store, config: Config, text: str) -> Path:
     checkout.
     """
     if not fsops.is_dir(store.path):
-        raise Failure(f"{store.path} does not exist; the store was not created")
+        raise Failure(f"{shown(store.path)} does not exist; the store was not created")
     path = _destination(store, config)
     write_atomically(path, text)
     return path

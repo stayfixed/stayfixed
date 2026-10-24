@@ -46,6 +46,7 @@ from stayfixed.memory.store import (
     Store,
     Unresolved,
     resolved,
+    shown,
 )
 from stayfixed.printed import printable, quoted
 from stayfixed.result import Result
@@ -122,7 +123,7 @@ def _publish(reconciled: Reconciliation, store: Store) -> str | None:
     """The `memory.index_extra` entries held back, named where a person will read it."""
     if not reconciled.refused_extra:
         return None
-    index = store.path / INDEX_NAME
+    index = shown(store.path / INDEX_NAME)
     return _EXTRA_NOT_PUBLISHED.format(names=_printed(reconciled.refused_extra), index=index)
 
 
@@ -202,13 +203,13 @@ def run_index(args: argparse.Namespace) -> Result:
     # Exit 0: the write succeeded, and `--check` is the mode that fails a build. The findings
     # are still said, because a person running this by hand is who can act on them.
     wrote = "; ".join(
-        [f"wrote {path} ({report.words} words, {len(reconciled.notes)} notes)", *findings]
+        [f"wrote {shown(path)} ({report.words} words, {len(reconciled.notes)} notes)", *findings]
     )
     wrote = _with(wrote, _publish(reconciled, store))
     return Result(
         wrote,
         {
-            "path": str(path),
+            "path": shown(path),
             "words": report.words,
             "lines": report.lines,
             "harvested": reconciled.harvested,

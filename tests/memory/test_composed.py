@@ -77,3 +77,51 @@ def test_withdraw_removes_the_links_and_the_store_and_never_a_note(tmp_path: Pat
     assert [entry.name for entry in store.iterdir()] == ["topic.md"]
     # No store at all is no store left.
     assert withdraw("f" * 32) is True
+
+
+def _never_the_whole_id(root: Path, tmp_path: Path, machine: Path, id: str, *argv: str) -> str:
+    """What `stayfixed <argv>` printed, asserted to name the binding id by its short form alone."""
+    from tests.cli import cli
+
+    code, out, err = cli(root, tmp_path, *argv, machine=machine)
+    assert id not in out + err, (argv, code, out, err)
+    return out + err
+
+
+def test_no_memory_command_prints_the_whole_binding_id_through_a_store_path(
+    tmp_path: Path,
+) -> None:
+    # The composed store's path ends in the whole binding id, the secret a hostile clone would
+    # need, and it was printed: after an ordinary `detach`, by every memory command and six times
+    # per session; after a pull request set the mode to `overlay`; in `memory index`'s line about
+    # `memory.index_extra`, which the sweep skill relays; and with the store deleted under the
+    # pointer. Each prints the store under its short id now. Mutation (oracle): `mutations/`'s
+    # "a store path is printed with the whole binding id".
+    from stayfixed import binding
+    from stayfixed.attach.write import attach, detach
+    from stayfixed.binding import short
+    from tests.attach.test_detach import _bound, _grant
+    from tests.runners import Recorder
+
+    root, own, machine = _bound(tmp_path)
+    _grant(own.parents[1])
+    toml = root / "stayfixed.toml"
+    overlay_mode = toml.read_text(encoding="utf-8")
+    attach(root, store=None, machine=machine, runner=Recorder())
+    id = binding.read_id(root)
+    assert id is not None
+    # A pull request lists a pointer the overlay's shared index may not carry.
+    toml.write_text(overlay_mode.replace("index_extra = []", 'index_extra = ["stayfixed.toml"]'))
+    said = _never_the_whole_id(root, tmp_path, machine, id, "memory", "index")
+    assert f"stores/{short(id)}…/MEMORY.md" in said
+    toml.write_text(overlay_mode)
+    # The store deleted under the pointer, then an ordinary detach.
+    shutil.rmtree(store_directory(id))
+    _never_the_whole_id(root, tmp_path, machine, id, "memory", "index")
+    attach(root, store=None, machine=machine, runner=Recorder())
+    detach(root, runner=Recorder())
+    for argv in (("memory", "index"), ("memory", "inventory"), ("memory", "promote", "--changed")):
+        said = _never_the_whole_id(root, tmp_path, machine, id, *argv)
+        assert f"stores/{short(id)}…" in said
+    session = ("memory", "session-context", "--bundle", "volatile-notes")
+    _never_the_whole_id(root, tmp_path, machine, id, *session)
