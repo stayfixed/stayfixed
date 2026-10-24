@@ -51,6 +51,9 @@ SHORT = 8
 # file stayfixed wrote; no shipped file states it.
 _READ_LIMIT = 64 * 1024
 
+# Said where a write under the data directory fails: the directory, the id's short form and the
+# system's words, never the path, which ends in the whole id (`fsops.said`).
+NOT_WRITTEN = "{directory} could not take the files of binding {short} ({fault})"
 CANNOT_TELL = (
     "cannot tell which git repository {root} belongs to, so there is no binding id to read or "
     "write there"
@@ -151,5 +154,17 @@ def record(root: Path, project: str, origin: str | None) -> Bound:
         fields["origin"] = kept
     # `write_atomically`, the plain-path form: the data directory is this machine's, found from
     # `HOME` and never from a repository, and a link the owner put on the way to it is theirs.
-    fsops.write_atomically(_record_path(id), tomlout.dumps({"": fields}))
+    try:
+        fsops.write_atomically(_record_path(id), tomlout.dumps({"": fields}))
+    except OSError as exc:
+        raise unwritten(data_directory() / BINDINGS, id, exc) from None
     return Bound(project, kept, root)
+
+
+def unwritten(directory: Path, id: str, error: OSError) -> Failure:
+    """`NOT_WRITTEN` for a write of `id`'s files under `directory` that raised `error`."""
+    return Failure(
+        NOT_WRITTEN.format(
+            directory=quoted(str(directory)), short=short(id), fault=fsops.said(error)
+        )
+    )

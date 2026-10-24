@@ -53,6 +53,7 @@ import stayfixed
 from stayfixed import fsops
 from stayfixed.attach.permissions import HOOKS_FILE, PROJECT_CLAUDE, hook_groups
 from stayfixed.attach.rules import scoped_exist
+from stayfixed.binding import unwritten
 from stayfixed.config.paths import data_directory
 from stayfixed.errors import Failure
 from stayfixed.memory.api import PROJECTS
@@ -316,11 +317,14 @@ def write(id: str, parts: Mapping[str, Part], *, stale: tuple[str, ...] = ()) ->
     past the directory the id names."""
     files = _files(id, parts)
     directory = delivery_directory(id)
-    # The plain-path form for the directory itself, as `binding.record` writes this machine's own
-    # data directory; every file inside it goes through the walk that refuses a symlink.
-    directory.mkdir(parents=True, exist_ok=True)
-    for relative, part in files.items():
-        fsops.write_within(directory, relative, part.text, mode=part.mode)
+    try:
+        # The plain-path form for the directory itself, as `binding.record` writes this machine's
+        # own data directory; every file inside it goes through the walk that refuses a symlink.
+        directory.mkdir(parents=True, exist_ok=True)
+        for relative, part in files.items():
+            fsops.write_within(directory, relative, part.text, mode=part.mode)
+    except OSError as exc:
+        raise unwritten(directory.parent, id, exc) from None
     for relative in stale:
         if relative not in files:
             try:

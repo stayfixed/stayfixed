@@ -774,6 +774,27 @@ def test_an_overlay_project_record_that_cannot_be_read_stops_neither_attach_nor_
     assert found.state == "bound"
 
 
+@pytest.mark.parametrize("blocked", ["bindings", "delivery"])
+def test_a_write_under_the_data_directory_that_fails_names_the_binding_by_its_short_form(
+    tmp_path: Path, blocked: str
+) -> None:
+    # The binding record and the render are named by the whole id, and an `OSError` writing either
+    # escaped to the command line's "internal error", whose text is the absolute path ending in the
+    # id, relayed by the attach skill into the transcript. Said here with the directory and the id's
+    # first eight characters. A file where the directory goes is one way to get there.
+    from stayfixed import binding
+
+    root, store, machine = _attachable(tmp_path)
+    data = Path(os.environ["HOME"]) / ".local" / "share" / "stayfixed"
+    data.mkdir(parents=True)
+    (data / blocked).write_text("in the way\n", encoding="utf-8")
+    with pytest.raises(Failure) as failed:
+        attach(root, store=store, machine=machine, runner=Recorder(), home=tmp_path / "home")
+    id = binding.read_id(root)
+    assert id is not None
+    assert id not in str(failed.value) and binding.short(id) in str(failed.value)
+
+
 def _with_groups(root: Path, listed: str) -> None:
     text = (root / "stayfixed.toml").read_text(encoding="utf-8")
     (root / "stayfixed.toml").write_text(
