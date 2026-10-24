@@ -3187,6 +3187,7 @@ the harness's to decide, and this row does not read that file.
 |---|---|---|---|
 | in place | `autoMemoryDirectory` naming the composed store, which is there | `ok` | — |
 | store gone | `autoMemoryDirectory` naming the composed store, which is gone, so the harness reads no memory | `red` | `attach`, which builds it again |
+| link dangles | `autoMemoryDirectory` naming the composed store, one of whose links names a place that is not there (the overlay moved, and no `attach` followed), so the harness reads none of the notes behind it | `warn` | `attach`, which links it again |
 | elsewhere | `autoMemoryDirectory` naming anything else | `red` | remove the key from that file, then `attach` |
 | missing | no `autoMemoryDirectory` | `warn` | `attach`, which writes it |
 | unreadable | a file that cannot be read as one JSON object | `warn` | make it one JSON object, then `attach` |

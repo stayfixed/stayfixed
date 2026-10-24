@@ -256,6 +256,10 @@ def _attached(tmp_path: Path) -> Path:
     id = binding.read_id(root)
     assert id is not None
     composed = build_composed(overlay, "p", id)
+    # The index `attach` renders behind the store's `MEMORY.md` link where the overlay has none.
+    index = overlay / PROJECTS / "p" / "memory" / "MEMORY.md"
+    index.parent.mkdir(parents=True, exist_ok=True)
+    index.touch()
     settings = root / LOCAL_SETTINGS
     settings.parent.mkdir(parents=True, exist_ok=True)
     settings.write_text(json.dumps({"autoMemoryDirectory": str(composed)}) + "\n", encoding="utf-8")

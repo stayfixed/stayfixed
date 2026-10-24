@@ -506,6 +506,10 @@ STORE_GONE: Final = (
     "autoMemoryDirectory points the harness at the composed store, which is gone, so the harness "
     "reads no memory"
 )
+STORE_DANGLES: Final = (
+    "autoMemoryDirectory points the harness at the composed store, and a link in it names a place "
+    "that is not there, so the harness reads none of the notes behind it"
+)
 POINTER_MISSING: Final = (
     "the main checkout's {settings} holds no autoMemoryDirectory, so the harness reads none of "
     "the overlay's notes"
@@ -556,6 +560,9 @@ def _pointer(main: Path, id: str) -> _Finding:
         return _Finding(RED, elsewhere, f"remove {POINTER_KEY} from that file, then {rerun}")
     if not fsops.is_dir(composed):
         return _Finding(RED, STORE_GONE, f"{rerun}, which builds it again")
+    # A link whose target is gone: the overlay moved and no attach has relinked the store since.
+    if any(fsops.is_symlink(link) and not fsops.exists(link) for link in composed.iterdir()):
+        return _Finding(WARN, STORE_DANGLES, f"{rerun}, which links it again")
     return _Finding(OK, POINTER_IN_PLACE, "")
 
 

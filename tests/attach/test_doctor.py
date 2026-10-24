@@ -171,6 +171,24 @@ def test_the_pointer_at_the_composed_store_is_green_and_red_once_the_store_is_go
     )
 
 
+def test_a_composed_store_whose_link_dangles_warns(tmp_path: Path) -> None:
+    # The overlay moved and the machine file records the new root, and no attach followed: every
+    # link of the composed store still names the old place, so the harness reads none of those
+    # notes while the row said the pointer was in place.
+    from stayfixed.memory.api import composed_directory
+
+    root = _attached(tmp_path)
+    link = composed_directory(_id(root)) / "developer"
+    link.unlink()
+    link.symlink_to(tmp_path / "moved-away" / "common" / "memory", target_is_directory=True)
+    row = _row(tmp_path, root)
+    assert (row.status, row.detail) == (
+        WARN,
+        f"attached; the delivery is in place; {attach_doctor.STORE_DANGLES}; the binding is bound",
+    )
+    assert "stayfixed attach" in row.remedy
+
+
 def _pointer_set(root: Path, value: object) -> None:
     """The main checkout's settings file with `autoMemoryDirectory` set to `value`, or without the
     key where `value` is `None`."""
