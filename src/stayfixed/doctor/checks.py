@@ -239,8 +239,8 @@ def plugin_root(env: Mapping[str, str]) -> Path | None:
 # never red, because it is the state of every repository the plugin is installed beside before
 # anyone runs `init`, and the guards and this report work in it.
 NOT_INITIALISED = (
-    f"there is no {CONFIG_FILE} here; the session guards and `stayfixed doctor` work without one, "
-    "and `stayfixed init` adds the rest"
+    f"there is no {CONFIG_FILE} here; the session guards and `stayfixed doctor` work without one "
+    "and memory stays the coding agent's own, and `stayfixed init` adds the rest"
 )
 NOT_INITIALISED_REMEDY = "run `stayfixed init --yes`"
 # A `stayfixed.toml` that loads with keys ignored or put back to the preset's. Key names only: a

@@ -1073,8 +1073,8 @@ reddens = [
 [[mutation]]
 name = "docs/cli.md's doctor table is a second spelling of CHECKS"
 file = "docs/cli.md"
-before = "| `store-debris` | files in the note store"
-after = "| `store-junk` | files in the note store"
+before = "| `memory` | the memory a session gets"
+after = "| `memories` | the memory a session gets"
 reddens = [
   "tests/test_documents.py::test_the_doctor_table_is_the_registry_and_not_a_second_spelling",
 ]

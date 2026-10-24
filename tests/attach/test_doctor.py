@@ -651,7 +651,7 @@ def test_an_owner_whose_own_binding_record_will_not_parse_is_told_where_to_look(
     rows = _checks(tmp_path, root, machine=machine)
     attached = _by_name(rows, "attached")
     assert attached.status == WARN and f"/{PROJECT_RECORD} is not valid TOML" in attached.detail
-    for name in ("bundles", "store-debris"):
+    for name in ("bundles", "memory"):
         assert "could not run" not in _by_name(rows, name).detail
     store = tmp_path / "overlay" / PROJECTS / "p" / "memory"
     (tmp_path / "home").mkdir(exist_ok=True)

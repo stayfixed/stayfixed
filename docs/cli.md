@@ -3073,7 +3073,7 @@ Seventeen checks over one installation. It **reports and never repairs**: every 
 carries the command that would fix it, and not one of them is run for you. Nothing is written.
 
 The rows come in a fixed order: the installation's own twelve first, then the five about the
-private layer — the binding's (`attached`), the note store's (`bundles`, `store-debris`) and the
+private layer — the binding's (`attached`), memory's (`bundles`, `memory`) and the
 private overlay's (`pre-commit`, `overlay-requires`). Match a row by its `name`, never by its
 position.
 
@@ -3084,15 +3084,17 @@ rows need — where the overlay keeps its hooks, what this checkout's `origin` i
 binding's row asks, the repository's common directory, where the binding id is kept, which the
 binding's row, the note store's rows and the `preferences` row's read of the overlay's project
 file each ask for themselves, which checkout is the main one (`git worktree list`), whose ledger
-and settings file the binding's row reads, whether a path `attach` placed is tracked (`git ls-files`) or ignored (`git check-ignore`) and whether a
+and settings file the binding's row reads, whether this checkout is a registered worktree (its
+common and its own git directory), which the `memory` row asks to read the main checkout's settings
+file a linked worktree reads too, whether a path `attach` placed is tracked (`git ls-files`) or ignored (`git check-ignore`) and whether a
 tracked file names the delivery (`git grep`), which the binding's row asks of a bound checkout,
 and, for `hook-entries`, which files below the root a nested `.claude/skills` holds (`git
 ls-files`), asked a second time through each submodule's index where a `.gitmodules` sits at or
-above the root. Twelve of those are measured on a green attached installation with no
-submodules — the wrapper probe and eleven `git` questions — and thirteen where a `.gitmodules` is
+above the root. Fourteen of those are measured on a green attached installation with no
+submodules — the wrapper probe and thirteen `git` questions — and fifteen where a `.gitmodules` is
 present; not one of them leaves this machine. The `ci-ref` row's `git ls-remote` is one more on a repository that records a
 `[ci] ref` at all, and it is the only one that does leave: it goes through the `Runner` seam,
-which is what lets the case that pins the twelve answer it in process instead of launching it.
+which is what lets the case that pins the fourteen answer it in process instead of launching it.
 That one is bounded at **30 seconds**, not at the seam's own five minutes (the bound for
 `gh repo create --clone`), so a peer that does not answer cannot turn a one-line diagnostic into a
 five-minute block. Each `git ls-files` question has `gitenv`'s thirty seconds of its own for a
@@ -3115,7 +3117,7 @@ check with `name`, `status`, `detail` and `remedy`, so every remedy is there.
 
 | Check | What it answers | What it reads |
 |---|---|---|
-| `not-initialised` | whether there is a `stayfixed.toml` here, and how much of it a session can use: with none, a warning that the session guards and `doctor` work without one and `stayfixed init` adds the rest; with one that loaded with settings ignored or put back to the preset's, a warning naming at most three of their keys and counting the rest, never their values; red only for one a session drops whole, in the words of the session's warning | `stayfixed.toml` |
+| `not-initialised` | whether there is a `stayfixed.toml` here, and how much of it a session can use: with none, a warning that the session guards and `doctor` work without one and memory stays the coding agent's own, and that `stayfixed init` adds the rest; with one that loaded with settings ignored or put back to the preset's, a warning naming at most three of their keys and counting the rest, never their values; red only for one a session drops whole, in the words of the session's warning | `stayfixed.toml` |
 | `versions` | whether the project's `[stayfixed] version` is the stayfixed running; with no project configuration, which stayfixed runs | `stayfixed.toml`, the package |
 | `files` | the hook wrapper's executable bit, and the three shipped files against the hashes the release recorded beside them | `hooks/run-hook.sh`, `hooks/hooks.json`, `scripts/stayfixed`, `hooks/hashes.json` |
 | `wrapper` | whether the wrapper can actually reach stayfixed on this machine: red when it writes a fault to stderr | one `run-hook.sh --version`, and only under the plugin root this stayfixed is part of |
@@ -3129,7 +3131,7 @@ check with `name`, `status`, `detail` and `remedy`, so every remedy is there.
 | `retired-deny` | whether `~/.claude/settings.json` still holds a deny rule an earlier `stayfixed setup` wrote and the machine's preset retired (its `[deny] retired`), such as `Read(.env*)`, which refuses `.env.example` too; matched by exact string, as `setup` removes them, and named in the preset's words | `~/.claude/settings.json`, the preset |
 | `attached` | the overlay binding, what it delivers, and, where `memory.mode` is `overlay`, the `autoMemoryDirectory` pointer at the composed store, read alike from every checkout (the states are below the table) | the main checkout's `.stayfixed/local/attach.json` and `.claude/settings.local.json`, `~/.local/share/stayfixed/delivery/<id>/`, `~/.local/share/stayfixed/stores/<id>/`, the overlay's executable parts, `git` on the paths `attach` placed |
 | `bundles` | a bundle that does not fit its slots, and one whose part reaches the cap | the note store |
-| `store-debris` | files in the note store that are not notes (at most 500,000 entries) | the note store |
+| `memory` | the memory a session gets: the active `memory.mode` and the layer that set it (or that none does, and memory is the coding agent's own), the store, which settings file sets the harness's `autoMemoryDirectory` — the checkout's `.claude/settings.local.json`, the main checkout's, the committed `.claude/settings.json` or `~/.claude/settings.json`, the first that holds it, named as information and never with its value, since a committed file may point the harness elsewhere — and the store's unreviewed notes as a count; a warning only for files in the note store that are not notes, counted (at most 500,000 entries) | the resolution `preferences` reads, the note store, the machine's trust record, those settings files |
 | `pre-commit` | whether the overlay's commit-time secret scan is installed on this machine | the overlay |
 | `overlay-requires` | whether the overlay this machine records requires a stayfixed the running one satisfies — red when this project keeps its notes in that overlay, a warning when it does not | the overlay's `.claude-plugin/plugin.json`, `stayfixed.toml` |
 
@@ -3174,7 +3176,7 @@ the harness's to decide, and this row does not read that file.
 | missing | no `autoMemoryDirectory` | `warn` | `attach`, which writes it |
 | unreadable | a file that cannot be read as one JSON object | `warn` | make it one JSON object, then `attach` |
 
-**Eleven of the seventeen have a `skip` arm — twenty-four arms between them, every one on a state of
+**Ten of the seventeen have a `skip` arm — twenty-two arms between them, every one on a state of
 this machine or this repository.** A `skip` is **not** a finding and never reaches the exit code, so
 read the detail — each one says which measurement it is missing. No row skips for want of a build
 that can answer it: `codex-hooks`, the one that did, left the report, and what holds on Codex is the
@@ -3187,7 +3189,7 @@ repository `init` set up carries a ref and the row answers. `files` compares the
 plugin against the hashes the release recorded beside it, and skips only on a build carrying no
 such record.
 
-The eleven that skip on a state are `files` and `wrapper`, when there is no plugin root this
+The ten that skip on a state are `files` and `wrapper`, when there is no plugin root this
 process can vouch for; `attached`, when this machine records no overlay to check the ledger
 against, or the overlay could not be asked at all; `pre-commit` and `overlay-requires`, when
 no overlay root is recorded on this machine **or** when the root it records is not a directory
@@ -3195,23 +3197,22 @@ no overlay root is recorded on this machine **or** when the root it records is n
 and then moved it is not a machine that recorded none; `attached`, `pre-commit` and
 `overlay-requires` again, each in a sentence of its own, when the machine file does not load, so
 whether it records an overlay is not known, which is neither of those; `overlay-requires` again when the
-overlay declares no stayfixed requirement; `bundles` and `store-debris`, when the note store does
-not resolve; `diagnostics`, when no harness data root is set in the environment, which is every
+overlay declares no stayfixed requirement; `bundles`, when the note store does not resolve; `diagnostics`, when no harness data root is set in the environment, which is every
 `stayfixed doctor` run from a terminal rather than from a hook; and `ci-ref`, when no `[ci] ref`
 is recorded. `files` has a
 second state arm of its own — a plugin built before the release record existed carries none, and
 it says so rather than comparing anything.
-And five rows read the project configuration and skip, in one sentence, when there is none to
-read — no `stayfixed.toml`, or one a session drops whole: `budgets`, `ci-ref`, `attached`,
-`bundles` and `store-debris`.
+And four rows read the project configuration and skip, in one sentence, when there is none to
+read — no `stayfixed.toml`, or one a session drops whole: `budgets`, `ci-ref`, `attached` and
+`bundles`. `memory` reads the resolution a session reads and answers without one.
 
-**A `skip` does not mean there is nothing to do.** Seven of the twenty-four arms carry a remedy:
+**A `skip` does not mean there is nothing to do.** Seven of the twenty-two arms carry a remedy:
 the two plugin-root skips, `wrapper`'s named-root skip, `attached`'s no-overlay and
 could-not-be-asked arms, and the moved-overlay arm of `pre-commit` and of `overlay-requires`. The dividing line is not "always"
 versus "on a state" — every other arm skips on a state and carries nothing: `bundles`,
-`store-debris`, `diagnostics` and `ci-ref`, the *no overlay recorded* arms of the two overlay
+`diagnostics` and `ci-ref`, the *no overlay recorded* arms of the two overlay
 rows, `overlay-requires`' no-requirement arm, `files` on a build with no release record, and the
-five with no project configuration, whose remedy is
+four with no project configuration, whose remedy is
 `not-initialised`'s, and the three on a machine file that does not load, whose remedy is
 `preferences`', red on the same file. Nor
 is it whether another row names a command that changes the state: `pre-commit`'s arm carries
@@ -3219,7 +3220,7 @@ nothing though `attached` names `stayfixed setup --overlay` there. It is whether
 itself worth acting on. Those seven report something wrong that no other
 row will tell you: a plugin root nothing can find, a root that will be read and never executed,
 a recorded attach the overlay could not confirm, an overlay root recorded and not there. Of the
-other seventeen, fourteen report a measurement that is simply unavailable — no store, no overlay,
+other fifteen, twelve report a measurement that is simply unavailable — no store, no overlay,
 no overlay requirement, no harness data root, no `[ci] ref`, no release record in this build or no
 project configuration — and no command in that row's gift changes it, and three report a machine
 file another row is red about, with the command that clears it.
@@ -3233,7 +3234,7 @@ run it.
 
 **Nothing configured is not broken.** `doctor` reads the configuration the way a session does
 ([`stayfixed hook <event>`](#stayfixed-hook-event)), so every row is asked whatever `--root`
-holds. With no `stayfixed.toml`, `not-initialised` **warns**, the six rows above that read the
+holds. With no `stayfixed.toml`, `not-initialised` **warns**, the four rows above that read the
 project configuration skip, and no row is red for it: a default install, where the guards and
 this report already work, exits `0`. A `stayfixed.toml` that loads with settings ignored or put
 back to the preset's warns, naming at most three of their keys and counting the rest. Only one a session drops whole is **red**: a

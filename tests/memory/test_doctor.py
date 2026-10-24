@@ -1,4 +1,4 @@
-"""What the `bundles` and `store-debris` rows in `stayfixed doctor` answer, now that `memory`
+"""What the `bundles` and `memory` rows in `stayfixed doctor` answer, now that `memory`
 contributes them.
 
 Every case runs the whole report through `run_checks`, so the rows are asked the way a user's
@@ -17,7 +17,7 @@ import pytest
 import stayfixed.memory.answers as answers_module
 from stayfixed import fsops
 from stayfixed.config.loader import load
-from stayfixed.doctor.api import OK, RED, SKIP, WARN
+from stayfixed.doctor.api import OK, RED, SKIP, WARN, Check
 from stayfixed.errors import Refusal
 from stayfixed.memory.doctor import NEARLY_FULL
 from stayfixed.overlay.api import COMMON_MEMORY
@@ -76,8 +76,9 @@ def test_a_store_that_refuses_skips_the_store_checks(
 
         monkeypatch.setattr(answers_module, "resolve", refuses)
     rows = {row.name: row for row in _checks(tmp_path, root)}
-    for name in ("bundles", "store-debris"):
-        assert rows[name].status == SKIP, rows[name]
+    assert rows["bundles"].status == SKIP, rows["bundles"]
+    assert rows["memory"].status == OK, rows["memory"]
+    assert "the store does not resolve" in rows["memory"].detail
     assert not any(row.status == RED for row in rows.values()), [
         (row.name, row.detail) for row in rows.values() if row.status == RED
     ]
@@ -153,17 +154,71 @@ def test_a_bundle_whose_largest_part_is_at_the_platform_cap_is_a_warning(tmp_pat
     assert "at the platform cap" in check.detail
 
 
+# A project whose `stayfixed.toml` sets no `[memory] mode`: memory is the harness's own.
+HARNESS = """
+[stayfixed]
+version = "{version}"
+state = "installed"
+
+[project]
+name = "p"
+"""
+
+
+def _memory_row(tmp_path: Path, root: Path) -> Check:
+    rows = {row.name: row for row in _checks(tmp_path, root)}
+    assert "memory" in rows, sorted(rows)
+    return rows["memory"]
+
+
+def test_on_a_default_install_the_memory_row_is_ok_and_names_the_harness(tmp_path: Path) -> None:
+    # No layer sets a mode, so memory is the coding agent's own and there is no store: the
+    # ordinary state of a fresh install, which is no finding.
+    root = _initialised(tmp_path, template=HARNESS)
+    row = _memory_row(tmp_path, root)
+    assert row.status == OK, row
+    assert "mode harness, which no layer sets" in row.detail
+    assert "no autoMemoryDirectory is set" in row.detail
+
+
+def test_a_committed_settings_file_setting_the_pointer_is_named_as_information(
+    tmp_path: Path,
+) -> None:
+    # A repository can point the harness's memory elsewhere through its committed settings file;
+    # stayfixed cannot stop that and does not try, so the row names the file, as information, and
+    # never the value, which the repository wrote.
+    root = _initialised(tmp_path, template=HARNESS)
+    (root / ".claude").mkdir()
+    (root / ".claude" / "settings.json").write_text(
+        '{"autoMemoryDirectory": "/somewhere/else\\u001b[2J"}', encoding="utf-8"
+    )
+    row = _memory_row(tmp_path, root)
+    assert row.status == OK, row
+    assert "autoMemoryDirectory is set by .claude/settings.json" in row.detail
+    assert "somewhere" not in row.detail
+
+
+def test_store_debris_is_no_row_of_its_own(tmp_path: Path) -> None:
+    root = _initialised(tmp_path)
+    (root / ".stayfixed" / "local" / "memory" / "developer").mkdir(parents=True)
+    names = [row.name for row in _checks(tmp_path, root)]
+    assert "memory" in names and "store-debris" not in names
+
+
 def test_a_note_store_holding_something_that_is_not_a_note_is_reported(tmp_path: Path) -> None:
-    # `store-debris`. The count is stayfixed's own; the file names are not, so they are
-    # counted rather than printed and the remedy names the command that lists them.
+    # Counted in the `memory` row. The count is stayfixed's own; the file names are not, so they
+    # are counted rather than printed and the remedy names the command that lists them. The
+    # store's unreviewed notes are counted beside it, as information.
     root = _initialised(tmp_path)
     store = root / ".stayfixed" / "local" / "memory" / "developer"
     store.mkdir(parents=True)
     (store / "kept.md").write_text("---\nname: kept\ndescription: d\n---\n\nbody\n")
     (store / "scratch.txt").write_text("not a note\n", encoding="utf-8")
-    check = _by_name(_checks(tmp_path, root), "store-debris")
+    check = _memory_row(tmp_path, root)
     assert check.status == "warn"
-    assert "1" in check.detail
+    assert "1 file(s) in the note store are not notes" in check.detail
+    assert "1 unreviewed note(s)" in check.detail
+    assert "mode local-only, set by repository" in check.detail
     assert "scratch.txt" not in check.detail
 
 
@@ -181,13 +236,14 @@ def test_a_note_store_past_the_walk_cap_is_one_the_row_cannot_tell_about(
     store.mkdir(parents=True)
     for index in range(entries):
         (store / f"n{index}.md").write_text("---\nname: n\ndescription: d\n---\n\nbody\n")
-    check = _by_name(_checks(tmp_path, root), "store-debris")
+    check = _memory_row(tmp_path, root)
     if entries == 3:
-        assert (check.status, check.detail) == (OK, "the note store holds notes and nothing else")
+        assert check.status == OK
+        assert "the note store holds notes and nothing else" in check.detail
     else:
-        assert (check.status, check.detail, check.remedy) == (
-            WARN,
+        assert check.status == WARN
+        assert (
             "the walk of the note store stopped after 3 entries, so it cannot say whether the "
-            "store holds files that are not notes",
-            "run `stayfixed memory inventory` to see what the store holds",
-        )
+            "store holds files that are not notes"
+        ) in check.detail
+        assert check.remedy == "run `stayfixed memory inventory` to see what the store holds"

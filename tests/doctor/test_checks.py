@@ -142,7 +142,7 @@ def _checks(
     cannot reach. On any machine that has run `stayfixed setup --overlay`, and this project's own
     developers are exactly those machines, every case that omitted `machine` read the developer's
     real overlay: the overlay root those rows read was theirs, `overlay-requires` read its real
-    manifest, and `bundles`, `store-debris` and `attached` resolved against their real note
+    manifest, and `bundles`, `memory` and `attached` resolved against their real note
     store. Those cases passed here and in CI
     only because neither machine happens to have a machine configuration. A path under
     `tmp_path` that does not exist is what `None` was meant to mean, and now says it.
@@ -304,7 +304,6 @@ def test_a_repository_without_a_configuration_skips_only_the_rows_that_read_one(
         "ci-ref",
         "attached",
         "bundles",
-        "store-debris",
     ]
 
 
@@ -373,7 +372,7 @@ REPORT = (
     "retired-deny",
     "attached",
     "bundles",
-    "store-debris",
+    "memory",
     "pre-commit",
     "overlay-requires",
 )
@@ -403,9 +402,11 @@ def test_a_project_with_no_overlay_gets_skips_from_delivery_checks(tmp_path: Pat
     root = _attached(tmp_path)
     rows = _checks(tmp_path, root, machine=_no_overlay_machine(tmp_path))
     delivery = REPORT[REPORT.index("attached") :]
-    assert {row.name: row.status for row in rows if row.name in delivery} == dict.fromkeys(
-        delivery, SKIP
-    )
+    # `memory` asks nothing of the overlay: it says the store does not resolve, as information.
+    assert {row.name: row.status for row in rows if row.name in delivery} == {
+        **dict.fromkeys(delivery, SKIP),
+        "memory": OK,
+    }
     assert [(row.name, row.detail) for row in rows if row.status == RED] == []
 
 
@@ -3188,7 +3189,7 @@ def test_no_case_here_can_read_the_developers_own_machine_configuration(
     and this project's own intended users are exactly those machines, every case that omitted
     `machine` read the developer's real overlay: the overlay root those rows read was theirs,
     `overlay-requires` read its real manifest — the shipped template declares a floor — and
-    `bundles`, `store-debris` and `attached` resolved against their real note store. Those cases
+    `bundles`, `memory` and `attached` resolved against their real note store. Those cases
     passed here and in CI only because neither machine happens to have a machine configuration.
 
     Asserted so that the default coming back would redden it: a real machine configuration is
