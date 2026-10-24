@@ -49,7 +49,7 @@ def run_revoke(args: argparse.Namespace) -> Result:
     machine = _machine(args)
     # The kind is whatever was typed, so a line names it through `clipped`, as it does a subject.
     kind = clipped(args.kind)
-    revoked = record.revoke_all(machine, args.kind, [args.subject])
+    revoked = record.revoke_all(machine, args.kind, [_unshown(args.subject)])
     if revoked:
         return Result(
             f"revoked {len(revoked)} {kind} approval(s)",
@@ -81,6 +81,15 @@ def _shown(subject: str) -> str:
     return clipped(subject)
 
 
+def _unshown(subject: str) -> str:
+    """A subject as typed, read back from the `~/` form `_shown` prints a subject under the owner's
+    home in, so the spelling `trust list` gives is one `revoke` takes."""
+    home = owner_home()
+    if home is None or (subject != "~" and not subject.startswith("~/")):
+        return subject
+    return str(home.resolve() / subject[2:])
+
+
 def register(groups: SubParsers) -> None:
     group = groups.add_parser("trust", help="every approval on this machine")
     sub = group.add_subparsers(dest="command", metavar="<command>")
@@ -91,6 +100,6 @@ def register(groups: SubParsers) -> None:
     revoking = common_flags(sub.add_parser("revoke", help="withdraw a recorded approval"))
     revoking.add_argument("kind", help="the kind of the approval, as `trust list` names it")
     revoking.add_argument(
-        "--subject", required=True, help="the recorded subject, as `trust list --json` prints it"
+        "--subject", required=True, help="the recorded subject, as `trust list` prints it"
     )
     revoking.set_defaults(func=run_revoke)

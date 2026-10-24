@@ -200,7 +200,8 @@ release's approvals.
 
 ## `stayfixed trust revoke KIND --subject KEY [--root PATH] [--machine PATH]`
 
-Withdraw the approval of kind `KIND` recorded for `KEY`, as `trust list --json` spells the two,
+Withdraw the approval of kind `KIND` recorded for `KEY`, as `trust list` spells the two (a subject
+under `HOME` from `~/`, or whole as `--json` gives it),
 and every other approval of that kind holding the same digest: a digest is what an approval is
 matched on, so a note promoted from two worktrees, or a copy of it, is unreviewed once either is
 revoked. It needs no terminal: withdrawing is the direction that fails safe. A revoke that matches nothing

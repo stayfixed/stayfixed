@@ -96,6 +96,20 @@ def test_revoke_of_nothing_lists_what_is_recorded(
     assert ("memory", subject) in recorded(_machine(tmp_path))
 
 
+def test_revoke_takes_the_subject_as_list_prints_it_from_the_home(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `trust list` names a subject under the home from `~/`, and that line is what a person copies:
+    # matched only as the absolute path, it refused, listing the very spelling that just failed.
+    home = tmp_path.resolve()
+    monkeypatch.setenv("HOME", str(home))
+    subject = str(home / "project" / "docs" / "memory" / "developer" / "rule.md")
+    approve_all(_machine(tmp_path), "reviewed", {subject: "d"}, now=T0)
+    argv = ["trust", "revoke", "reviewed", "--subject", "~/project/docs/memory/developer/rule.md"]
+    assert invoke([*argv, "--machine", str(_machine(tmp_path))]) == 0, capsys.readouterr().err
+    assert recorded(_machine(tmp_path)) == {}
+
+
 def test_list_names_each_subject_from_the_home(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
