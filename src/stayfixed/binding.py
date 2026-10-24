@@ -62,13 +62,15 @@ CANNOT_TELL = (
 
 @dataclass(frozen=True)
 class Bound:
-    """What this machine records a checkout's id as bound to. `origin` is repository-authored,
-    the remote as it was when the binding was recorded; a caller that shows it prints it through
-    `printed`."""
+    """What this machine records a checkout's id as bound to, and the id. `origin` is
+    repository-authored, the remote as it was when the binding was recorded; a caller that shows
+    it prints it through `printed`. `id` is the whole binding id, which is never printed
+    (`short`): the composed store is named by it (`memory.store.composed_directory`)."""
 
     project: str
     origin: str | None
     checkout: Path
+    id: str
 
 
 def common_directory(root: Path) -> Path:
@@ -137,7 +139,7 @@ def bound_project(root: Path) -> Bound | None:
     project, origin, checkout = raw.get("project"), raw.get("origin"), raw.get("checkout")
     if not (isinstance(project, str) and project and isinstance(checkout, str) and checkout):
         return None
-    return Bound(project, origin if isinstance(origin, str) else None, Path(checkout))
+    return Bound(project, origin if isinstance(origin, str) else None, Path(checkout), id)
 
 
 def record(root: Path, project: str, origin: str | None) -> Bound:
@@ -158,7 +160,7 @@ def record(root: Path, project: str, origin: str | None) -> Bound:
         fsops.write_atomically(_record_path(id), tomlout.dumps({"": fields}))
     except OSError as exc:
         raise unwritten(data_directory() / BINDINGS, id, exc) from None
-    return Bound(project, kept, root)
+    return Bound(project, kept, root, id)
 
 
 def unwritten(directory: Path, id: str, error: OSError) -> Failure:

@@ -7,7 +7,8 @@ import shutil
 from pathlib import Path
 
 from stayfixed.config.paths import data_directory
-from stayfixed.memory.composed import build, store_directory, withdraw
+from stayfixed.memory.composed import build, withdraw
+from stayfixed.memory.store import composed_directory as store_directory
 
 # A binding id as `secrets.token_hex(16)` draws one; the store is named by it and nothing else.
 ID = "0123456789abcdef0123456789abcdef"

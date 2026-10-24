@@ -161,7 +161,7 @@ def _config_digest(config: Config) -> str:
     """The repository-controlled configuration this area renders into a file the gate covers.
 
     `memory.index_extra` lives in `stayfixed.toml`, which no store file covers, and `_extra`
-    renders it straight into `MEMORY.md` — the file the harness memory link exposes. An attacker
+    renders it straight into `MEMORY.md` — the file the harness reads first. An attacker
     who changed nothing else therefore left the digest untouched, and the next `memory index`
     carried their pointers in under a still-valid record, blessed on the way past by
     `refresh_if_trusted` because stayfixed itself authored that write. The rule that a changed
@@ -188,7 +188,7 @@ def _files(store: Store) -> list[tuple[str, Path]]:
     notes sorted, then the index last.
 
     `MEMORY.md` is covered too, though it is neither a note nor a `memory.groups` entry. It is
-    the file the harness memory link exposes, and a digest built from the group directories alone
+    the file the harness reads first, and a digest built from the group directories alone
     would let a store be trusted once and its index afterwards rewritten — or swapped for a
     symlink to anything — without ever losing that trust. It is folded in here rather than
     covered "another way" because trust is one hash over everything a session reads, and a
@@ -236,10 +236,7 @@ def store_key(store: Store) -> str:
 
 
 def _path_key(path: Path) -> str:
-    """The one spelling of a trust record's key: the store's directory, resolved.
-
-    `approval_recorded` asks it of a path before any store exists there, and a second spelling
-    would let the two disagree about which record is the store's."""
+    """The one spelling of a trust record's key: the store's directory, resolved."""
     return str(path.resolve())
 
 
@@ -261,27 +258,6 @@ def _recorded(machine: Path | None) -> dict[str, str]:
         for (kind, subject), approval in recorded(machine).items()
         if kind == MEMORY
     }
-
-
-def approval_recorded(path: Path, machine: Path | None) -> bool:
-    """Whether this machine records any approval for a store at `path`, whatever its digest.
-
-    For a caller that must answer the gate before the store exists: `attach` asks it on a first
-    attach, before the link tree `resolve` needs is built. No record at all is a gate that cannot
-    open for that store, whatever it will hold; a record, current or not, is one that might.
-    """
-    return _path_key(path) in _recorded(machine)
-
-
-def require_readable_record(machine: Path | None) -> None:
-    """Refuse, as the gate itself would, when this machine's trust record is there and cannot be
-    read; say nothing otherwise.
-
-    For a caller that writes before it reaches the gate: `attach` reads the record in the index
-    render and the harness link, both after its first write, so it asks this first and a broken
-    record costs it nothing on disk.
-    """
-    _recorded(machine)
 
 
 def state(store: Store, config: Config) -> TrustState:

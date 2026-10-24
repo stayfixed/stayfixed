@@ -224,18 +224,18 @@ stayfixed writes files. Being specific about which is the point of this section.
 | `.stayfixed/local/artifacts/` | The artifacts `[artifacts] local` keeps out of git, at the path each would have in the repository — git-ignored, never recorded in the manifest | `stayfixed init` and `stayfixed upgrade`, when `[artifacts] local` lists them; `stayfixed uninstall` takes them back |
 | `.stayfixed/local/artifacts.json` | The record of the bytes stayfixed last wrote under `.stayfixed/local/artifacts/`, so an unedited copy is refreshed or retired and an edited one is left. Git-ignored and never committed. Deleted, later runs judge a copy at its artifact's own place by what they render, and no longer find a copy left at an earlier place at all | the scaffold engine; `stayfixed uninstall` removes it |
 | `~/.config/stayfixed/config.toml` | Machine-level settings: `[personal]`; `[guards]`, where `bg_cleanup = false` switches the background guard off on this machine, whatever a repository's `stayfixed.toml` sets as its default; `[budgets]`, the four budgets that bound what a session loads; `[overlay]`; and `[machine]`. `~` is `HOME`, as the harness reads it ([docs/cli.md](https://github.com/stayfixed/stayfixed/blob/main/docs/cli.md#configuration)) | you, or `stayfixed setup` |
-| `~/.config/stayfixed/trust.json` | Every approval you gave on this machine — today, which repositories' committed notes may reach the model — as a versioned record of kinds and subjects, under the same home | `stayfixed trust approve`, under either of its spellings, and `stayfixed trust revoke`; and `stayfixed memory index` and `stayfixed attach`, which carry an approval across a write of their own to the store and never give one |
+| `~/.config/stayfixed/trust.json` | Every approval you gave on this machine — today, which repositories' committed notes may reach the model — as a versioned record of kinds and subjects, under the same home | `stayfixed trust approve`, under either of its spellings, and `stayfixed trust revoke`; and `stayfixed memory index`, which carries an approval across a write of its own to the store and never gives one |
 | `hooks/hooks.json` and `hooks/run-hook.sh` | The zero-config wiring both harnesses read, and the wrapper they execute. **Shipped in the plugin; never written into a project** | nothing — they are part of the plugin |
 | `${CLAUDE_PLUGIN_DATA}/stayfixed/` | Once-per-session markers and the hook diagnostics log. Deleted with the plugin | the hook dispatcher |
 | `.gitignore`, the `stayfixed:ignore` region | The block that keeps `.stayfixed/local/` and `.stayfixed/assessment.json` out of git, recorded in the manifest. `attach` and `detach` never touch `.gitignore` | `stayfixed init` |
-| `.stayfixed/local/attach.json` | What `attach` added to this repository, so `detach` can take exactly that back — hidden from git by the block `attach` writes in the repository's `info/exclude` | `stayfixed attach` |
+| `.stayfixed/local/attach.json` | What `attach` added to this repository, in the main checkout whichever worktree it ran from, so `detach` can take exactly that back — hidden from git by the block `attach` writes in the repository's `info/exclude` | `stayfixed attach` |
 | `<overlay>/common/stayfixed.toml` | Preferences, session budgets, personal values and guard switches for every checkout on a machine that records this overlay, above the repository's `stayfixed.toml` and below the machine file. Read the way a session reads `stayfixed.toml`: what this stayfixed cannot use is ignored with a note, and a gate's input or a fact about the repository is never taken from it | you |
 | `<overlay>/projects/<name>/stayfixed.toml` | The same keys for one project, above the common file: read only for a checkout this machine binds to `<name>`, never for one whose own `stayfixed.toml` merely names it | you |
 | `<overlay>/projects/<name>/project.toml` | The remote this project was first attached with, and when; it binds nothing | `stayfixed attach`, while it records no remote |
 | `.git/stayfixed/binding` (in the git common directory every worktree shares) | The checkout's binding id: 32 random hexadecimal characters that never leave this machine and are printed only as their first eight. No clone carries it | `stayfixed attach`, once |
 | `~/.local/share/stayfixed/bindings/<id>.toml` | What this machine binds that id to: the project name, the `origin` at attach time and the checkout. Where the binding is decided, never from a name the repository supplies. `~` is `HOME`; no `XDG_*` variable is read | `stayfixed attach` |
 | `~/.local/share/stayfixed/delivery/<id>/` | The overlay's hooks, skills and agents rendered as a plugin, `overlay-<id>` in a marketplace `stayfixed-delivery-<id>`, both named by the binding id, and, when the overlay holds a rule with `paths:`, the `PostToolUse` entry that delivers it, run through whatever launched the stayfixed that ran `attach`: the plugin's hook wrapper, or an installed package's interpreter. A session runs the plugin from here in place, so each attach rewrites it, and `stayfixed detach` removes it | `stayfixed attach` |
-| `~/.local/share/stayfixed/stores/<id>/` | The composed memory store the harness reads, named by the binding id: a link to each of the overlay's note groups for this project and one to its `MEMORY.md`, which `autoMemoryDirectory` in the main checkout's `.claude/settings.local.json` names. Each attach makes its links the overlay's current set and leaves a note the harness wrote there; `stayfixed detach` takes the links and the key, and the directory where nothing else is left | `stayfixed attach`, in `overlay` mode |
+| `~/.local/share/stayfixed/stores/<id>/` | The composed memory store the harness and stayfixed's own bundles read, named by the binding id: a link to each of the overlay's note groups for this project and one to its `MEMORY.md`, which `autoMemoryDirectory` in the main checkout's `.claude/settings.local.json` names. Each attach makes its links the overlay's current set and leaves a note the harness wrote there; `stayfixed detach` takes the links and the key, and the directory where nothing else is left | `stayfixed attach`, in `overlay` mode |
 | `~/.local/share/stayfixed/sessions/` | One empty file per session and file a path-scoped rule was said for, both names hashed, so the rule is said once per file in a session. Nothing removes them | the hook dispatcher |
 
 Every write into a repository goes through a path walk that refuses a symlink at any component
@@ -430,7 +430,7 @@ stayfixed overlay publish-template --owner you --yes             # publish the t
 
 # Binding a repository to the overlay
 stayfixed attach --store ../stayfixed-private/projects/widget/memory --check   # the binding and the permission diff, writing nothing
-stayfixed attach --store ../stayfixed-private/projects/widget/memory           # merge the allow rules, install the overlay's plugin, link the notes in; prints the binding and what will run
+stayfixed attach --store ../stayfixed-private/projects/widget/memory           # merge the allow rules, install the overlay's plugin, point the harness at the notes; prints the binding and what will run
 stayfixed detach                                       # remove what attach added; the binding record stays
 
 # Machine setup
@@ -491,10 +491,7 @@ may reach the model as data.* Any later change to any of those files makes the h
 and the approval lapse until you look again and re-run it. A store whose notes are yours —
 `overlay` mode, where the notes live in your own machine-level overlay — needs no approval for
 its notes to reach a session: the standing-rules and volatile-notes bundles deliver them without
-one. The record still matters there. The store's directory of links sits inside the repository,
-and the record is what lets `stayfixed attach` create the harness memory link to it; until one
-exists, `stayfixed memory index` and `memory fit` say the link waits for it, and `attach` says
-so instead of making the link.
+one, and the composed store they are read from sits outside every repository.
 
 The approval holds against what a repository ships, and not against an agent whose shell can write
 any file you can: such an agent can write the record itself, and stayfixed does not check for it.
@@ -536,10 +533,9 @@ note's `index:` line. A second writer appending entries to `MEMORY.md` is expect
 memory to the coding agent's own and stayfixed resolves no store and injects no bundle.
 `local-only` (`.stayfixed/local/memory`, git-ignored) and `in-repo` (committed) both put the notes
 **inside the repository**, so both are
-behind the trust gate; `overlay` (a directory of links into a machine-level overlay shared across
-your projects) puts them outside it, and notes that are yours need no approval, though the harness
-memory link to that directory of links waits for one (see `stayfixed trust approve memory`
-above). The gate keys on
+behind the trust gate; `overlay` (the composed store, a directory of links under
+`~/.local/share/stayfixed/stores/` into a machine-level overlay shared across your projects) puts
+them outside it, and notes that are yours need no approval. The gate keys on
 where a note actually sits, never on what the repository's own `stayfixed.toml` declares — a clone
 that wrote `mode = "local-only"` would otherwise gate itself.
 

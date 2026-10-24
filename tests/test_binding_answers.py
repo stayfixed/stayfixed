@@ -33,7 +33,6 @@ def _attached_then_origin_removed(tmp_path: Path) -> tuple[Path, Path, Path]:
         store=store,
         machine=machine,
         runner=Recorder(),
-        home=tmp_path / "home",
     )
     git(root, "remote", "remove", "origin")
     return root, store, machine
@@ -48,10 +47,10 @@ def test_a_checkout_whose_origin_was_removed_stays_bound_on_every_surface(
     found, why = resolved(root, load(root, machine=machine), machine=machine)
     assert why is None and found is not None
 
-    attached = attach(root, store=store, machine=machine, runner=Recorder(), home=home)
+    attached = attach(root, store=store, machine=machine, runner=Recorder())
     assert not attached.binding_recorded
 
-    checked = check(root, store=store, machine=machine, home=home)
+    checked = check(root, store=store, machine=machine)
     assert checked.exit_code == 0 and checked.summary.startswith("bound;")
 
     doctor = next(

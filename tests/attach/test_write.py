@@ -13,7 +13,7 @@ import os
 import shutil
 import subprocess
 import sys
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -28,19 +28,14 @@ from stayfixed.attach.permissions import settings_document
 from stayfixed.attach.write import (
     GROUP_ESCAPES,
     GROUP_UNASKED,
-    HARNESS_LAPSED,
-    HARNESS_WAITS,
     NO_MAIN_CHECKOUT,
     NO_ORIGIN_NOTE,
     NOT_INSTALLED,
-    REAL_DIRECTORIES,
-    REFRESH_REFUSED,
     Attached,
     attach,
 )
 from stayfixed.config.loader import CONFIG_FILE, load
 from stayfixed.errors import Failure, Refusal
-from stayfixed.gitenv import Unasked
 from stayfixed.memory.api import PROJECT_RECORD, link_sources
 from stayfixed.overlay.api import COMMON_CLAUDE, COMMON_CODEX
 from stayfixed.printed import quoted
@@ -56,7 +51,6 @@ from tests.gitfixture import run_git
 from tests.parserlimits import LONG_NUMBER, NESTED
 from tests.pathfaults import ROOT_SEARCHES_EVERYTHING, unsearchable
 from tests.runners import Recorder
-from tests.sandboxed import refuse_writes_under
 
 # The walk-based snapshot guard, owned at the top level rather than duplicated here and in
 # tests/test_install_path.py: it used to exist twice, verbatim including its docstring, and the
@@ -167,7 +161,6 @@ def test_a_record_of_another_remote_attaches_with_a_note_and_is_left_alone(
         store=store,
         machine=machine,
         runner=Recorder(),
-        home=tmp_path / "home",
     )
     assert attached.binding_recorded
     assert any(quoted(origin) in note and quoted(recorded) in note for note in attached.notes)
@@ -193,7 +186,6 @@ def test_the_same_repository_under_another_url_form_attaches_with_no_note(
         store=store,
         machine=machine,
         runner=Recorder(),
-        home=tmp_path / "home",
     )
     assert not any("`origin`" in note for note in attached.notes)
     assert record.read_bytes() == before
@@ -210,7 +202,6 @@ def test_an_attach_of_an_overlay_that_grants_nothing_binds_and_writes_only_the_m
         store=store,
         machine=machine,
         runner=Recorder(),
-        home=tmp_path / "home",
     )
     assert attached.binding_recorded
     assert attached.settings_written
@@ -229,13 +220,13 @@ def test_the_screen_names_what_a_render_adds_and_removes_against_the_last_one(
     claude = store.parents[2] / COMMON_CLAUDE
     (claude / "skills" / "old").mkdir(parents=True)
     (claude / "skills" / "old" / "SKILL.md").write_text("old\n", encoding="utf-8")
-    first = attach(root, store=store, machine=machine, runner=Recorder(), home=tmp_path / "home")
+    first = attach(root, store=store, machine=machine, runner=Recorder())
     assert first.added.hooks == (("SessionStart", ENTRY["command"]),)
     assert (first.added.skills, first.allow_added) == (("old",), (RULE,))
     shutil.rmtree(claude / "skills" / "old")
     (claude / "agents").mkdir()
     (claude / "agents" / "reviewer.md").write_text("r\n", encoding="utf-8")
-    second = attach(root, store=store, machine=machine, runner=Recorder(), home=tmp_path / "home")
+    second = attach(root, store=store, machine=machine, runner=Recorder())
     assert (second.added.hooks, second.removed.hooks) == ((), ())
     assert (second.added.agents, second.removed.skills) == (("reviewer.md",), ("old",))
     assert (second.added.skills, second.removed.agents, second.allow_added) == ((), (), ())
@@ -256,10 +247,10 @@ def test_a_skill_the_overlay_dropped_after_a_failed_install_is_never_rendered_ag
     (claude / "skills" / "old" / "SKILL.md").write_text("old\n", encoding="utf-8")
     broken = Recorder(answers={"claude plugin install": Completed(1, "", "")})
     with pytest.raises(Failure):
-        attach(root, store=store, machine=machine, runner=broken, home=tmp_path / "home")
+        attach(root, store=store, machine=machine, runner=broken)
     assert (_delivered_hooks(root).parents[1] / "skills" / "old" / "SKILL.md").is_file()
     shutil.rmtree(claude / "skills" / "old")
-    attach(root, store=store, machine=machine, runner=Recorder(), home=tmp_path / "home")
+    attach(root, store=store, machine=machine, runner=Recorder())
     assert not (_delivered_hooks(root).parents[1] / "skills").exists()
 
 
@@ -294,7 +285,7 @@ def test_every_attach_installs_the_rendered_plugin_from_the_main_checkout(
     side = tmp_path / "side"
     _git(root, "worktree", "add", "-q", str(side), "-b", "side")
     first = Recorder()
-    attach(side, store=store, machine=machine, runner=first, home=tmp_path / "home")
+    attach(side, store=store, machine=machine, runner=first)
     id = binding.read_id(root)
     assert id is not None
     delivery = Path(os.environ["HOME"]) / ".local" / "share" / "stayfixed" / "delivery" / id
@@ -317,7 +308,7 @@ def test_every_attach_installs_the_rendered_plugin_from_the_main_checkout(
     ]
     assert (delivery / ".claude-plugin" / "marketplace.json").is_file()
     second = Recorder()
-    attach(side, store=store, machine=machine, runner=second, home=tmp_path / "home")
+    attach(side, store=store, machine=machine, runner=second)
     assert _claude_calls(second) == _claude_calls(first)
 
 
@@ -337,7 +328,7 @@ def test_attach_from_a_bare_repositorys_worktree_cannot_tell_its_main_checkout_a
     before = snapshot(tmp_path)
     runner = Recorder()
     with pytest.raises(Refusal) as refused:
-        attach(side, store=store, machine=machine, runner=runner, home=tmp_path / "home")
+        attach(side, store=store, machine=machine, runner=runner)
     assert str(refused.value) == NO_MAIN_CHECKOUT
     assert runner.calls == []
     assert_snapshot_unchanged(tmp_path, before)
@@ -348,10 +339,9 @@ def test_attach_from_a_worktree_asks_the_main_checkouts_gitignore_about_what_it_
 ) -> None:
     # Claude Code writes the plugin's entry, which names the binding id, into the main checkout's
     # settings file whichever worktree `attach` runs from, so that file is asked about in the main
-    # checkout too. Here the worktree's branch ignores the settings file and the main checkout's
-    # re-includes it: asked of the worktree alone, every check passed and the plugin was installed
-    # into a file `git status` offered the main checkout for commit. Mutation: `mutations/`'s
-    # "attach asks the worktree alone whether the main checkout's settings file is ignored".
+    # checkout, where `attach` places everything. Here the worktree's branch ignores the settings
+    # file and the main checkout's re-includes it: asked of the worktree alone, every check passed
+    # and the plugin was installed into a file `git status` offered the main checkout for commit.
     root, store, machine = _attachable(tmp_path)
     (root / ".gitignore").write_text(f"{SETTINGS}\n", encoding="utf-8")
     _committed(root)
@@ -366,7 +356,6 @@ def test_attach_from_a_worktree_asks_the_main_checkouts_gitignore_about_what_it_
             store=store,
             machine=machine,
             runner=runner,
-            home=tmp_path / "home",
         )
     assert str(refused.value) == NOT_IGNORED.format(paths=quoted(SETTINGS))
     assert runner.calls == []
@@ -378,8 +367,6 @@ def test_attach_from_a_worktree_refuses_a_settings_file_the_main_checkout_tracks
 ) -> None:
     # The tracked half of the same rule, asked of the main checkout's own index: its branch commits
     # the settings file the install would write the binding id into, the worktree's does not.
-    # Mutation: `mutations/`'s "attach asks the worktree alone whether the main checkout's settings
-    # file is tracked".
     root, store, machine = _attachable(tmp_path)
     _committed(root)
     side = tmp_path / "side"
@@ -395,7 +382,6 @@ def test_attach_from_a_worktree_refuses_a_settings_file_the_main_checkout_tracks
             store=store,
             machine=machine,
             runner=runner,
-            home=tmp_path / "home",
         )
     assert str(refused.value) == TRACKED.format(paths=quoted(SETTINGS))
     assert runner.calls == []
@@ -415,7 +401,7 @@ def test_an_install_that_did_not_succeed_exits_one_by_its_code_and_a_rerun_compl
     root, store, machine = _attachable(tmp_path)
     broken = Recorder(answers={failing: Completed(1, "", "overlay-secret")})
     with pytest.raises(Failure) as failed:
-        attach(root, store=store, machine=machine, runner=broken, home=tmp_path / "home")
+        attach(root, store=store, machine=machine, runner=broken)
     id = binding.read_id(root)
     assert id is not None
     verb = failing.removeprefix("claude plugin ")
@@ -424,7 +410,7 @@ def test_an_install_that_did_not_succeed_exits_one_by_its_code_and_a_rerun_compl
     assert ledger(root).render is None
     assert "# stayfixed:attach:begin" in (root / ".git" / "info" / "exclude").read_text("utf-8")
     again = Recorder()
-    attach(root, store=store, machine=machine, runner=again, home=tmp_path / "home")
+    attach(root, store=store, machine=machine, runner=again)
     assert [argv[2] for argv, _ in _claude_calls(again)] == ["marketplace", "install"]
     assert ledger(root).render is not None
 
@@ -441,7 +427,6 @@ def test_after_attach_the_local_settings_file_holds_the_allow_rules_and_no_hook_
         store=store,
         machine=machine,
         runner=Recorder(),
-        home=tmp_path / "home",
     )
     document = json.loads((root / SETTINGS).read_text(encoding="utf-8"))
     assert document.pop(POINTER) and document == {"permissions": {"allow": [RULE]}}
@@ -480,7 +465,6 @@ def test_an_attach_withdraws_the_hook_entries_its_earlier_ledger_records_and_no_
         store=store,
         machine=machine,
         runner=Recorder(),
-        home=tmp_path / "home",
     )
     assert attached.settings_written
     document = json.loads((root / SETTINGS).read_text(encoding="utf-8"))
@@ -491,7 +475,7 @@ def test_an_attach_withdraws_the_hook_entries_its_earlier_ledger_records_and_no_
 
 def test_attach_delivers_whatever_the_memory_mode(tmp_path: Path) -> None:
     # Delivery does not depend on where a repository keeps its notes, so a `local-only` one is
-    # attached: its hooks are rendered and installed, and no link goes into its tree.
+    # attached: its hooks are rendered and installed.
     root, store, machine = _attachable(tmp_path, hooks={"SessionStart": [{"hooks": [ENTRY]}]})
     config = root / CONFIG_FILE
     config.write_text(
@@ -499,9 +483,8 @@ def test_attach_delivers_whatever_the_memory_mode(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     runner = Recorder()
-    attached = attach(root, store=store, machine=machine, runner=runner, home=tmp_path / "home")
+    attach(root, store=store, machine=machine, runner=runner)
     assert [argv[2] for argv, _ in _claude_calls(runner)] == ["marketplace", "install"]
-    assert attached.links.created == []
     assert (root / LEDGER).is_file()
 
 
@@ -512,10 +495,10 @@ def test_attach_points_the_harness_at_the_composed_store_in_the_main_checkout(
     # excluded settings file, absolute, naming the store under this machine's data directory whose
     # group links resolve into the overlay. The ledger records the key, so `detach` takes it back.
     from stayfixed import binding
-    from stayfixed.memory.composed import store_directory
+    from stayfixed.memory.store import composed_directory as store_directory
 
     root, store, machine = _attachable(tmp_path)
-    attach(root, store=store, machine=machine, runner=Recorder(), home=tmp_path / "home")
+    attach(root, store=store, machine=machine, runner=Recorder())
     id = binding.read_id(root)
     assert id is not None
     composed = store_directory(id)
@@ -534,10 +517,10 @@ def test_the_composed_store_is_the_recorded_projects_and_moves_only_when_attach_
     # `stayfixed.toml` now names `q` keeps `p`'s store until `attach` records the new binding, and
     # then gets `q`'s.
     from stayfixed import binding
-    from stayfixed.memory.composed import store_directory
+    from stayfixed.memory.store import composed_directory as store_directory
 
     root, store, machine = _attachable(tmp_path)
-    attach(root, store=store, machine=machine, runner=Recorder(), home=tmp_path / "home")
+    attach(root, store=store, machine=machine, runner=Recorder())
     id = binding.read_id(root)
     assert id is not None
     composed = store_directory(id)
@@ -546,7 +529,7 @@ def test_the_composed_store_is_the_recorded_projects_and_moves_only_when_attach_
     root, other = _project_and_store(tmp_path, recorded=None, origin="git@x:o/p.git", name="q")
     (other / "project-stable").mkdir(exist_ok=True)
     assert (composed / "MEMORY.md").readlink() == overlay / "projects/p/memory/MEMORY.md"
-    attach(root, store=other, machine=machine, runner=Recorder(), home=tmp_path / "home")
+    attach(root, store=other, machine=machine, runner=Recorder())
     found = binding.bound_project(root)
     assert found is not None and found.project == "q"
     assert (composed / "MEMORY.md").readlink() == overlay / "projects/q/memory/MEMORY.md"
@@ -572,7 +555,7 @@ def test_a_mode_other_than_overlay_writes_no_memory_pointer(tmp_path: Path) -> N
         config.read_text(encoding="utf-8").replace('mode = "overlay"', 'mode = "local-only"'),
         encoding="utf-8",
     )
-    attach(root, store=store, machine=machine, runner=Recorder(), home=tmp_path / "home")
+    attach(root, store=store, machine=machine, runner=Recorder())
     assert "autoMemoryDirectory" not in json.loads((root / SETTINGS).read_text(encoding="utf-8"))
     assert ledger(root).settings_keys == ()
 
@@ -585,14 +568,13 @@ def test_a_second_attach_that_changes_nothing_leaves_the_settings_file_alone(
     # write. A second attach of an overlay that grants nothing touches nothing: the pointer the
     # first one wrote is already there.
     root, store, machine = _attachable(tmp_path)
-    attach(root, store=store, machine=machine, runner=Recorder(), home=tmp_path / "home")
+    attach(root, store=store, machine=machine, runner=Recorder())
     before = (root / SETTINGS).read_bytes()
     attached = attach(
         root,
         store=store,
         machine=machine,
         runner=Recorder(),
-        home=tmp_path / "home",
     )
     assert not attached.settings_written
     assert (root / SETTINGS).read_bytes() == before
@@ -609,7 +591,6 @@ def test_a_first_attach_records_the_remote_and_the_date(tmp_path: Path) -> None:
         store=store,
         machine=machine,
         runner=Recorder(),
-        home=tmp_path / "home",
     )
     record = tomllib.loads((store.parent / "project.toml").read_text(encoding="utf-8"))
     assert record["remote"] == "git@example.com:o/p.git"
@@ -629,7 +610,6 @@ def test_a_record_that_already_binds_this_repository_is_left_alone(tmp_path: Pat
         store=store,
         machine=machine,
         runner=runner,
-        home=tmp_path / "home",
     )
     record = store.parent / "project.toml"
     first = tomllib.loads(record.read_text(encoding="utf-8"))["first_attach"]
@@ -641,7 +621,6 @@ def test_a_record_that_already_binds_this_repository_is_left_alone(tmp_path: Pat
         store=store,
         machine=machine,
         runner=runner,
-        home=tmp_path / "home",
     )
     assert tomllib.loads(record.read_text(encoding="utf-8"))["first_attach"] == "2000-01-01"
 
@@ -656,7 +635,6 @@ def test_the_merged_rules_are_recorded_where_they_can_be_removed_again(tmp_path:
         store=store,
         machine=machine,
         runner=Recorder(),
-        home=tmp_path / "home",
     )
     recorded = ledger(root)
     assert recorded.allow == (RULE,)
@@ -674,7 +652,7 @@ def test_attach_writes_nothing_into_gitignore_and_leaves_git_status_empty(tmp_pa
     (root / ".gitignore").write_text("node_modules/\n", encoding="utf-8")
     _committed(root)
     before = (root / ".gitignore").read_bytes()
-    _attach_quietly(root, store, machine, tmp_path / "home")
+    _attach_quietly(root, store, machine)
     # Non-vacuous: the run placed the ledger and the settings file, which git would show.
     assert (root / LEDGER).is_file() and (root / SETTINGS).is_file()
     assert _git(root, "status", "--porcelain=v1", "-z", "-uall") == ""
@@ -695,7 +673,7 @@ def test_a_gitignore_that_re_includes_the_settings_file_refuses_before_it_is_wri
     (root / ".gitignore").write_text(f"!{SETTINGS}\n", encoding="utf-8")
     _committed(root)
     with pytest.raises(Refusal) as refused:
-        _attach_quietly(root, store, machine, tmp_path / "home")
+        _attach_quietly(root, store, machine)
     assert str(refused.value) == NOT_IGNORED.format(paths=quoted(SETTINGS))
     assert not (root / SETTINGS).exists()
     assert not (root / LEDGER).exists()
@@ -714,11 +692,11 @@ def test_a_tracked_local_settings_file_is_refused_before_anything_is_written(
     _committed(root)
     before = snapshot(root)
     with pytest.raises(Refusal) as refused:
-        _attach_quietly(root, store, machine, tmp_path / "home")
+        _attach_quietly(root, store, machine)
     assert str(refused.value) == TRACKED.format(paths=quoted(SETTINGS))
     assert_snapshot_unchanged(root, before)
     with pytest.raises(Refusal) as previewed:
-        check(root, store=store, machine=machine, home=tmp_path / "home")
+        check(root, store=store, machine=machine)
     assert str(previewed.value) == TRACKED.format(paths=quoted(SETTINGS))
 
 
@@ -734,7 +712,7 @@ def test_a_tracked_codex_rule_copy_is_refused_before_anything_is_written(tmp_pat
     _committed(root)
     before = snapshot(root)
     with pytest.raises(Refusal) as refused:
-        _attach_quietly(root, store, machine, tmp_path / "home")
+        _attach_quietly(root, store, machine)
     assert str(refused.value) == TRACKED.format(paths=quoted(".codex/rules/common.rules"))
     assert_snapshot_unchanged(root, before)
 
@@ -762,7 +740,7 @@ def test_a_tracked_settings_file_spelled_in_another_case_is_refused_and_left_as_
     tracked.write_text("{}\n", encoding="utf-8")
     _committed(root)
     with pytest.raises(Refusal) as refused:
-        _attach_quietly(root, store, machine, tmp_path / "home")
+        _attach_quietly(root, store, machine)
     assert str(refused.value) == TRACKED.format(paths=quoted(SETTINGS))
     assert tracked.read_bytes() == b"{}\n"
 
@@ -781,7 +759,7 @@ def test_a_tracked_settings_file_under_a_directory_spelled_in_another_case_is_re
     tracked.write_text("{}\n", encoding="utf-8")
     _committed(root)
     with pytest.raises(Refusal) as refused:
-        _attach_quietly(root, store, machine, tmp_path / "home")
+        _attach_quietly(root, store, machine)
     assert str(refused.value) == TRACKED.format(paths=quoted(SETTINGS))
     assert tracked.read_bytes() == b"{}\n"
 
@@ -800,7 +778,7 @@ def test_a_tracked_settings_file_in_another_case_deleted_from_the_work_tree_is_r
     _committed(root)
     (root / ".claude" / "Settings.Local.json").unlink()
     with pytest.raises(Refusal) as refused:
-        _attach_quietly(root, store, machine, tmp_path / "home")
+        _attach_quietly(root, store, machine)
     assert str(refused.value) == TRACKED.format(paths=quoted(SETTINGS))
     assert not (root / SETTINGS).exists()
 
@@ -830,7 +808,7 @@ def test_a_tracked_settings_file_a_filesystem_folds_to_the_placed_name_is_refuse
     tracked.write_text("{}\n", encoding="utf-8")
     _committed(root)
     with pytest.raises(Refusal) as refused:
-        _attach_quietly(root, store, machine, tmp_path / "home")
+        _attach_quietly(root, store, machine)
     assert str(refused.value) == TRACKED.format(paths=quoted(SETTINGS))
     assert tracked.read_bytes() == b"{}\n"
 
@@ -846,7 +824,7 @@ def test_a_placed_path_that_is_the_same_file_as_a_tracked_one_is_refused(tmp_pat
     _committed(root)
     os.link(tracked, root / SETTINGS)
     with pytest.raises(Refusal) as refused:
-        _attach_quietly(root, store, machine, tmp_path / "home")
+        _attach_quietly(root, store, machine)
     assert str(refused.value) == TRACKED.format(paths=quoted(SETTINGS))
     assert tracked.read_bytes() == b"{}\n"
 
@@ -865,10 +843,10 @@ def test_an_overlay_project_record_that_cannot_be_read_stops_neither_attach_nor_
     from stayfixed.attach.binding import binding_for
 
     root, store, machine = _attachable(tmp_path)
-    attach(root, store=store, machine=machine, runner=Recorder(), home=tmp_path / "home")
+    attach(root, store=store, machine=machine, runner=Recorder())
     record = store.parent / PROJECT_RECORD
     record.write_text(CONFLICTED, encoding="utf-8")
-    attached = attach(root, store=store, machine=machine, runner=Recorder(), home=tmp_path / "home")
+    attached = attach(root, store=store, machine=machine, runner=Recorder())
     assert any(PROJECT_RECORD in note and "is not valid TOML" in note for note in attached.notes)
     assert record.read_text(encoding="utf-8") == CONFLICTED
     found = binding_for(root, load(root, machine=machine), machine=machine)
@@ -890,7 +868,7 @@ def test_a_write_under_the_data_directory_that_fails_names_the_binding_by_its_sh
     data.mkdir(parents=True)
     (data / blocked).write_text("in the way\n", encoding="utf-8")
     with pytest.raises(Failure) as failed:
-        attach(root, store=store, machine=machine, runner=Recorder(), home=tmp_path / "home")
+        attach(root, store=store, machine=machine, runner=Recorder())
     id = binding.read_id(root)
     assert id is not None
     assert id not in str(failed.value) and binding.short(id) in str(failed.value)
@@ -934,16 +912,11 @@ def test_a_memory_group_that_leaves_the_projects_share_is_refused_not_created(
             store=store,
             machine=machine,
             runner=Recorder(),
-            home=tmp_path / "home",
         )
-    # Non-vacuous: this refusal and not one of the five `attach` can raise before it, nor the
-    # one below it. `unlinked_groups` refuses the same entry with `MEMORY_GROUP_ESCAPES` --
-    # deliberately a different sentence, because it contains the group against `root` rather
-    # than against the overlay -- so "memory.groups is in the message" no longer says which of
-    # the two fired. The identity does, and it is what keeps the hoisted call proven: without
-    # it this case passed with `_check_groups` deleted, on the never-moved check's refusal.
-    # (`GROUP_ESCAPES` names `memory.groups`, which is what a reader needs from it; asserting
-    # that here would be an assertion about a literal that no behaviour change can redden.)
+    # Non-vacuous: this refusal and not another `attach` can raise before it. The identity is what
+    # keeps the hoisted call proven. (`GROUP_ESCAPES` names `memory.groups`, which is what a
+    # reader needs from it; asserting that here would be an assertion about a literal that no
+    # behaviour change can redden.)
     assert str(refusal.value) == GROUP_ESCAPES
     # The entry itself is repository-authored, so it is not quoted back.
     assert "../../escape" not in str(refusal.value)
@@ -971,7 +944,6 @@ def test_a_memory_group_whose_place_in_the_share_cannot_be_asked_about_is_refuse
             store=store,
             machine=machine,
             runner=Recorder(),
-            home=tmp_path / "home",
         )
     assert str(refusal.value) == GROUP_UNASKED.format(fault="Permission denied")
     assert_snapshot_unchanged(root, before)
@@ -995,14 +967,13 @@ def test_a_codex_directory_linked_where_nobody_may_search_is_refused_by_name_by_
     refused = "'.codex/rules/common.rules' passes through a symlink at '.codex'"
     with unsearchable(locked):
         with pytest.raises(Refusal) as checked:
-            check(root, store=store, machine=machine, home=tmp_path / "home")
+            check(root, store=store, machine=machine)
         with pytest.raises(Refusal) as run:
             attach(
                 root,
                 store=store,
                 machine=machine,
                 runner=Recorder(),
-                home=tmp_path / "home",
             )
     assert str(checked.value) == str(run.value) == refused
     assert_snapshot_unchanged(root, before)
@@ -1024,7 +995,6 @@ def test_the_memory_group_refusal_is_reached_on_a_run_that_would_have_written(
         store=store,
         machine=machine,
         runner=Recorder(),
-        home=tmp_path / "home",
     )
     after = snapshot(root)
     added = set(after) - set(before)
@@ -1046,14 +1016,12 @@ def test_a_second_attach_adds_nothing_twice(tmp_path: Path) -> None:
         store=store,
         machine=machine,
         runner=runner,
-        home=tmp_path / "home",
     )
     attach(
         root,
         store=store,
         machine=machine,
         runner=runner,
-        home=tmp_path / "home",
     )
     document = json.loads((root / SETTINGS).read_text(encoding="utf-8"))
     assert document.pop(POINTER) and document == {"permissions": {"allow": [RULE]}}
@@ -1071,14 +1039,12 @@ def test_a_second_attach_still_claims_what_the_first_one_added(tmp_path: Path) -
         store=store,
         machine=machine,
         runner=runner,
-        home=tmp_path / "home",
     )
     attach(
         root,
         store=store,
         machine=machine,
         runner=runner,
-        home=tmp_path / "home",
     )
     assert ledger(root).allow == (RULE,)
 
@@ -1092,7 +1058,6 @@ def test_codex_rules_land_under_the_directory_codex_reads(tmp_path: Path) -> Non
         store=store,
         machine=machine,
         runner=Recorder(),
-        home=tmp_path / "home",
     )
     landed = root / ".codex" / "rules" / "common.rules"
     assert landed.read_text(encoding="utf-8") == "# standing rule\n"
@@ -1189,7 +1154,6 @@ def test_a_rule_the_overlay_never_granted_is_left_alone(tmp_path: Path) -> None:
         store=store,
         machine=machine,
         runner=Recorder(),
-        home=tmp_path / "home",
     )
     allow = json.loads((root / SETTINGS).read_text(encoding="utf-8"))["permissions"]["allow"]
     assert allow == ["Bash(rm:*)", RULE]
@@ -1212,7 +1176,6 @@ def test_the_secret_scan_is_installed_on_the_machine_that_never_ran_overlay_init
         store=store,
         machine=machine,
         runner=runner,
-        home=tmp_path / "home",
     )
     assert ["pre-commit", "install"] in runner.calls
     assert any("pre-commit" in note for note in attached.notes)
@@ -1232,7 +1195,6 @@ def test_a_record_with_no_remote_is_given_one_and_keeps_its_first_attach_date(
         store=store,
         machine=machine,
         runner=Recorder(),
-        home=tmp_path / "home",
     )
     record = tomllib.loads((store.parent / "project.toml").read_text(encoding="utf-8"))
     assert record["remote"] == "git@example.com:o/p.git"
@@ -1256,7 +1218,6 @@ def test_a_repository_with_no_origin_remote_attaches_and_records_none(tmp_path: 
         store=store,
         machine=machine,
         runner=Recorder(),
-        home=tmp_path / "home",
     )
     assert attached.settings_written and attached.binding_recorded
     assert NO_ORIGIN_NOTE in attached.notes
@@ -1280,7 +1241,6 @@ def test_a_settings_file_the_merge_cannot_read_is_refused_and_never_filtered(
             store=store,
             machine=machine,
             runner=Recorder(),
-            home=tmp_path / "home",
         )
 
 
@@ -1298,7 +1258,6 @@ def test_an_overlay_hooks_file_with_an_unreadable_shape_is_refused(tmp_path: Pat
             store=store,
             machine=machine,
             runner=Recorder(),
-            home=tmp_path / "home",
         )
 
 
@@ -1312,7 +1271,6 @@ def test_a_ledger_that_is_not_json_is_a_failure_and_not_an_empty_one(tmp_path: P
         store=store,
         machine=machine,
         runner=Recorder(),
-        home=tmp_path / "home",
     )
     (root / LEDGER).write_text("{", encoding="utf-8")
     with pytest.raises(Failure):
@@ -1334,7 +1292,6 @@ def test_a_ledger_nested_past_the_parsers_reach_is_a_failure_and_never_an_intern
         store=store,
         machine=machine,
         runner=Recorder(),
-        home=tmp_path / "home",
     )
     (root / LEDGER).write_text('{"entries": ' + NESTED + "}", encoding="utf-8")
     with pytest.raises(Failure, match="nested deeper"):
@@ -1345,7 +1302,6 @@ def test_a_ledger_nested_past_the_parsers_reach_is_a_failure_and_never_an_intern
             store=store,
             machine=machine,
             runner=Recorder(),
-            home=tmp_path / "home",
         )
 
 
@@ -1364,7 +1320,6 @@ def test_a_settings_file_nested_past_the_parsers_reach_is_refused(tmp_path: Path
             store=store,
             machine=machine,
             runner=Recorder(),
-            home=tmp_path / "home",
         )
 
 
@@ -1382,7 +1337,6 @@ def test_a_ledger_holding_a_number_past_the_parsers_reach_is_a_failure_and_never
         store=store,
         machine=machine,
         runner=Recorder(),
-        home=tmp_path / "home",
     )
     (root / LEDGER).write_text('{"entries": {"x": ' + LONG_NUMBER + "}}", encoding="utf-8")
     with pytest.raises(Failure, match="number longer"):
@@ -1393,7 +1347,6 @@ def test_a_ledger_holding_a_number_past_the_parsers_reach_is_a_failure_and_never
             store=store,
             machine=machine,
             runner=Recorder(),
-            home=tmp_path / "home",
         )
 
 
@@ -1411,7 +1364,6 @@ def test_a_settings_file_holding_a_number_past_the_parsers_reach_is_refused(tmp_
             store=store,
             machine=machine,
             runner=Recorder(),
-            home=tmp_path / "home",
         )
 
 
@@ -1427,12 +1379,10 @@ def test_a_pre_commit_that_is_already_installed_is_not_run_again(tmp_path: Path)
         store=store,
         machine=machine,
         runner=runner,
-        home=tmp_path / "home",
     )
     assert [argv for argv in runner.calls if argv[0] != "claude"] == []
-    # The note left is the harness link waiting for approval, which this
-    # fixture never gives; nothing about the secret scan is said.
-    assert attached.notes == (HARNESS_WAITS,)
+    # Nothing about the secret scan is said.
+    assert attached.notes == ()
 
 
 def test_a_hook_outside_dot_git_still_counts_as_installed(tmp_path: Path) -> None:
@@ -1452,12 +1402,10 @@ def test_a_hook_outside_dot_git_still_counts_as_installed(tmp_path: Path) -> Non
         store=store,
         machine=machine,
         runner=runner,
-        home=tmp_path / "home",
     )
     assert [argv for argv in runner.calls if argv[0] != "claude"] == []
-    # The note left is the harness link waiting for approval, which this
-    # fixture never gives; nothing about the secret scan is said.
-    assert attached.notes == (HARNESS_WAITS,)
+    # Nothing about the secret scan is said.
+    assert attached.notes == ()
 
 
 def test_an_overlay_git_cannot_answer_about_is_a_note_and_never_a_traceback(
@@ -1475,7 +1423,6 @@ def test_an_overlay_git_cannot_answer_about_is_a_note_and_never_a_traceback(
         store=store,
         machine=machine,
         runner=runner,
-        home=tmp_path / "home",
     )
     assert [argv for argv in runner.calls if argv[0] != "claude"] == []
     assert any("hooks directory" in note for note in attached.notes)
@@ -1493,7 +1440,6 @@ def test_a_pre_commit_that_cannot_run_is_a_note_and_never_a_traceback(tmp_path: 
         store=store,
         machine=machine,
         runner=runner,
-        home=tmp_path / "home",
     )
     assert any("did not run" in note for note in attached.notes)
 
@@ -1546,7 +1492,6 @@ def test_a_ledger_no_attach_could_have_written_is_refused_before_the_first_write
             store=store,
             machine=machine,
             runner=Recorder(),
-            home=tmp_path / "home",
         )
     assert_snapshot_unchanged(root, before)
 
@@ -1567,7 +1512,6 @@ def test_the_refused_ledger_is_reached_on_a_run_that_would_have_written_three_fi
         store=store,
         machine=machine,
         runner=Recorder(),
-        home=tmp_path / "home",
     )
     after = snapshot(root)
     assert attached.settings_written
@@ -1601,99 +1545,23 @@ def test_an_overlay_store_the_walk_cannot_enter_is_refused_at_write_time(tmp_pat
             store=store,
             machine=machine,
             runner=Recorder(),
-            home=tmp_path / "home",
         )
     assert "memory.groups" in str(refusal.value)
-
-
-def test_a_group_that_never_moved_refuses_the_attach_above_every_write(tmp_path: Path) -> None:
-    """The ninth refusal, and the only one whose remedy is an act nothing here can perform.
-
-    `attach` **links**; it never moves a note. So a `memory.groups` entry that is still a real
-    directory under `paths.memory` is a group whose notes are in the repository and whose share
-    of the overlay is empty — and linking over it would leave the session reading the
-    repository's copy with the binding record, the settings merge and the ledger already
-    written. The anchor is `root`, the checkout the command was pointed at, and not a value the
-    repository chose: `unlinked_groups` contains every `<paths.memory>/<group>` against it, so a
-    repository cannot move the directory the count is taken under.
-
-    Both snapshots, because a refusal that leaves the *overlay* carrying a binding record is
-    just as much "looking attached" as one that leaves the repository carrying a ledger.
-
-    Mutation: `mutations/`'s "attach links over notes that never moved again".
-    """
-    root, store, machine = _attachable(tmp_path)
-    note = root / DEFAULT_MEMORY / "project-stable" / "kept.md"
-    note.parent.mkdir(parents=True)
-    note.write_text("---\nname: kept\ndescription: a note\n---\n\nbody\n", encoding="utf-8")
-    before, overlay_before = snapshot(root), snapshot(store.parents[2])
-    # The walks' own floor, for the reason the mismatch case above states: `snapshot` is a walk,
-    # and two empty dictionaries compare equal however much was written between them.
-    assert before and overlay_before
-    # The identity and not a substring, for the reason the escaping-group case above now gives:
-    # a refusal added beside this one makes a substring match stop saying which fired, and this
-    # one already sits one line from a containment whose message shares most of its words.
-    with pytest.raises(Refusal) as refusal:
-        attach(
-            root,
-            store=store,
-            machine=machine,
-            runner=Recorder(),
-            home=tmp_path / "home",
-        )
-    assert str(refusal.value) == REAL_DIRECTORIES.format(count=1)
-    assert_snapshot_unchanged(root, before)
-    assert_snapshot_unchanged(store.parents[2], overlay_before)
-    # The owner's act, and the only one that clears the refusal: the notes move into this
-    # project's share of the overlay, and the same attach then links over nothing.
-    shutil.move(str(note.parent), str(store / "project-stable"))
-    attach(
-        root,
-        store=store,
-        machine=machine,
-        runner=Recorder(),
-        home=tmp_path / "home",
-    )
-    assert (root / DEFAULT_MEMORY / "project-stable").is_symlink()
-    assert (root / DEFAULT_MEMORY / "project-stable" / "kept.md").is_file()
-
-
-def test_the_refusal_counts_the_groups_and_never_names_one(tmp_path: Path) -> None:
-    """`memory.groups` is repository-authored, so the message carries a count and no entry.
-
-    The same rule `GROUP_ESCAPES` and the `--store` refusal are written to, and worth its own
-    case here because this refusal's *remedy* invites a name — "move this group" reads better
-    than "move each of them" — and `skills/attach/SKILL.md` relays these messages to a model.
-    """
-    root, store, machine = _attachable(tmp_path)
-    (root / DEFAULT_MEMORY / "developer").mkdir(parents=True)
-    with pytest.raises(Refusal) as refusal:
-        attach(
-            root,
-            store=store,
-            machine=machine,
-            runner=Recorder(),
-            home=tmp_path / "home",
-        )
-    message = str(refusal.value)
-    assert "developer" not in message
-    # Non-vacuous: the message did report, and what it reported is the count `attach` took.
-    assert "1 of this project's memory groups" in message
 
 
 def test_a_worktree_listing_git_gave_no_answer_for_is_a_failure_about_this_machine(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # `-1` from `git_run` is a `git` that could not be run or ran past its bound: a fault on
-    # this machine, and never a listing of no worktrees, which would link memory into none of
-    # them. A worktree path that is not UTF-8 is no longer a cause — the listing is decoded
-    # losslessly — so the message does not send the owner looking for one. Mutation
-    # (advisory): put the UTF-8 clause back — the last assertion reddens.
+    # this machine, and never a listing with no main checkout. A worktree path that is not UTF-8
+    # is no longer a cause — the listing is decoded losslessly — so the message does not send the
+    # owner looking for one. Mutation (advisory): put the UTF-8 clause back — the last assertion
+    # reddens.
     from stayfixed.attach import write as module
 
     monkeypatch.setattr(module, "git_run", lambda *a, **k: (-1, ""))
     with pytest.raises(Failure, match="check that `git` runs here") as caught:
-        module._worktrees(tmp_path)
+        module.main_checkout_of(tmp_path)
     assert "UTF-8" not in str(caught.value)
 
 
@@ -1717,39 +1585,32 @@ def _status(root: Path) -> list[str]:
 
 
 def _placed() -> list[str]:
-    """Every path `attach` puts into the project for this fixture, the ledger aside: the link
-    tree (the index and one link per group), the Codex rule it copies and the settings file."""
-    return [
-        f"{DEFAULT_MEMORY}/MEMORY.md",
-        f"{DEFAULT_MEMORY}/developer",
-        f"{DEFAULT_MEMORY}/project-stable",
-        ".codex/rules/common.rules",
-        SETTINGS,
-    ]
+    """Every path `attach` puts into the project for this fixture, the ledger aside: the Codex
+    rule it copies and the settings file."""
+    return [".codex/rules/common.rules", SETTINGS]
 
 
-def _attach_quietly(root: Path, store: Path, machine: Path, home: Path) -> None:
+def _attach_quietly(root: Path, store: Path, machine: Path) -> None:
     attach(
         root,
         store=store,
         machine=machine,
         runner=Recorder(),
-        home=home,
     )
 
 
 def test_attach_leaves_nothing_for_git_status(tmp_path: Path) -> None:
-    # The link tree, `.codex/rules/` and `.claude/settings.local.json` were all untracked and
-    # unignored after an attach, so every `git status` in the project listed the owner's personal
-    # links and rules, and a `git add -A` committed them. They are machine-local by construction,
+    # `.codex/rules/` and `.claude/settings.local.json` were both untracked and unignored after an
+    # attach, so every `git status` in the project listed the owner's personal rules, and a
+    # `git add -A` committed them. They are machine-local by construction,
     # so `attach` hides them in `info/exclude`, which no clone shares, the ledger with them, and
     # writes nothing into `.gitignore`.
     root, store, machine = _attachable(tmp_path, allow=(RULE,), codex="# standing rule\n")
     _committed(root)
-    _attach_quietly(root, store, machine, tmp_path / "home")
+    _attach_quietly(root, store, machine)
     for placed in _placed():
         # Non-vacuous: each one is really there, so `check-ignore` answers about a real path.
-        assert (root / placed).is_symlink() or (root / placed).is_file(), placed
+        assert (root / placed).is_file(), placed
         assert _check_ignore(root, placed), placed
     assert _status(root) == []
     body = extract(_exclude(root).read_text(encoding="utf-8"), EXCLUDE_REGION, Style.HASH)
@@ -1773,7 +1634,7 @@ def test_a_checkout_that_already_hides_everything_is_not_touched(tmp_path: Path)
     ]
     exclude.write_text(held + "\n".join(lines) + "\n", encoding="utf-8")
     before = exclude.read_bytes()
-    _attach_quietly(root, store, machine, tmp_path / "home")
+    _attach_quietly(root, store, machine)
     # Non-vacuous: the attach did place its files, so there was something to hide.
     assert (root / SETTINGS).is_file()
     assert not (root / ".gitignore").exists()
@@ -1797,7 +1658,7 @@ def test_a_checkout_whose_global_excludes_file_hides_everything_is_not_touched(
     _git(root, "config", "core.excludesFile", str(owner))
     exclude = _exclude(root)
     before = exclude.read_bytes() if exclude.is_file() else None
-    _attach_quietly(root, store, machine, tmp_path / "home")
+    _attach_quietly(root, store, machine)
     # Non-vacuous: the attach did place its files, so there was something to hide.
     assert (root / SETTINGS).is_file()
     assert not (root / ".gitignore").exists()
@@ -1829,7 +1690,7 @@ def test_a_global_excludes_file_named_by_a_relative_path_still_stands_in_for_the
     assert _check_ignore(root, SETTINGS)
     exclude = _exclude(root)
     before = exclude.read_bytes() if exclude.is_file() else None
-    _attach_quietly(root, store, machine, tmp_path / "home")
+    _attach_quietly(root, store, machine)
     assert (root / SETTINGS).is_file()
     assert (exclude.read_bytes() if exclude.is_file() else None) == before
     assert _status(root) == []
@@ -1837,16 +1698,16 @@ def test_a_global_excludes_file_named_by_a_relative_path_still_stands_in_for_the
 
 def test_a_committed_gitignore_does_not_stand_in_for_the_exclude_block(tmp_path: Path) -> None:
     # A committed `.gitignore` is the repository's, and a pull can take a line out of it. Counted
-    # as hiding the owner's links, it left them out of the block, and an upstream commit that
-    # dropped the link tree's line from `.gitignore` showed the links and the settings file in every
+    # as hiding the owner's files, it left them out of the block, and an upstream commit that
+    # dropped their lines from `.gitignore` showed the rule copy and the settings file in every
     # `git status` until the next attach. Only the owner's own excludes -- `info/exclude` and the
     # global excludes file -- stand in for the block.
     #
     # Mutation: `mutations/`'s "the owner's exclude question reads the checkout's .gitignore".
     root, store, machine = _attachable(tmp_path, allow=(RULE,), codex="# standing rule\n")
-    (root / ".gitignore").write_text(f"{DEFAULT_MEMORY}/\n.claude/\n.codex/\n", encoding="utf-8")
+    (root / ".gitignore").write_text(".claude/\n.codex/\n", encoding="utf-8")
     _committed(root)
-    _attach_quietly(root, store, machine, tmp_path / "home")
+    _attach_quietly(root, store, machine)
     body = extract(_exclude(root).read_text(encoding="utf-8"), EXCLUDE_REGION, Style.HASH)
     assert body is not None
     for placed in _placed():
@@ -1872,11 +1733,11 @@ def test_a_path_the_owners_global_excludes_hide_gets_no_line_whatever_the_gitign
     ignore = Path.home() / ".config" / "git" / "ignore"
     ignore.parent.mkdir(parents=True)
     ignore.write_text(f"{SETTINGS}\n", encoding="utf-8")
-    _attach_quietly(root, store, machine, tmp_path / "home")
+    _attach_quietly(root, store, machine)
     body = extract(_exclude(root).read_text(encoding="utf-8"), EXCLUDE_REGION, Style.HASH)
     # Non-vacuous: the run wrote the settings file, and a block for what nobody else hides.
     assert (root / SETTINGS).is_file()
-    assert body is not None and f"/{DEFAULT_MEMORY}/developer" in body.split("\n")
+    assert body is not None and "/.codex/rules/common.rules" in body.split("\n")
     assert f"/{SETTINGS}" not in body.split("\n")
     assert _status(root) == []
 
@@ -1888,38 +1749,37 @@ def test_a_gitignore_a_sparse_checkout_leaves_out_does_not_stand_in_for_the_bloc
     # marked skip-worktree, and git reads such a file from the index when it is not on disk. The
     # question about the owner's own excludes is asked against an empty work tree, where no
     # `.gitignore` is on disk: read with the index, it took the repository's line for the
-    # owner's again and left the link tree out of the block.
+    # owner's again and left the rule copy out of the block.
     #
     # Mutation: `mutations/`'s "the owner's exclude question reads the index".
-    root, store, machine = _attachable(tmp_path)
-    (root / ".gitignore").write_text(f"{DEFAULT_MEMORY}/\n", encoding="utf-8")
+    root, store, machine = _attachable(tmp_path, codex="# standing rule\n")
+    (root / ".gitignore").write_text(".codex/\n", encoding="utf-8")
     _committed(root)
     _git(root, "update-index", "--skip-worktree", ".gitignore")
     (root / ".gitignore").unlink()
-    # Non-vacuous: git still reads the left-out file, so the link tree's directory is ignored.
-    assert _check_ignore(root, f"{DEFAULT_MEMORY}/developer")
-    _attach_quietly(root, store, machine, tmp_path / "home")
+    # Non-vacuous: git still reads the left-out file, so the rule copy's directory is ignored.
+    assert _check_ignore(root, ".codex/rules/common.rules")
+    _attach_quietly(root, store, machine)
     body = extract(_exclude(root).read_text(encoding="utf-8"), EXCLUDE_REGION, Style.HASH)
     assert body is not None
-    for placed in (f"{DEFAULT_MEMORY}/MEMORY.md", f"{DEFAULT_MEMORY}/developer"):
-        assert f"/{placed}" in body.split("\n"), placed
+    assert "/.codex/rules/common.rules" in body.split("\n")
 
 
 def test_a_path_the_owners_excludes_re_include_is_still_hidden(tmp_path: Path) -> None:
     # `check-ignore -v` reports a path whose last matching pattern is a negation, and exits 0 for
-    # it. Read as "hidden", a link the owner's excludes file re-includes got no line and showed
+    # it. Read as "hidden", a file the owner's excludes file re-includes got no line and showed
     # in `git status`. No mutation: the question is asked without `-v`, so git applies the
     # negation itself and no line of stayfixed's reads it; the test holds the behaviour.
     root, store, machine = _attachable(tmp_path)
     _committed(root)
     owner = tmp_path / "owner-excludes"
-    owner.write_text(f"{DEFAULT_MEMORY}/*\n!{DEFAULT_MEMORY}/developer\n", encoding="utf-8")
+    owner.write_text(f".stayfixed/\n.claude/*\n!{SETTINGS}\n", encoding="utf-8")
     _git(root, "config", "core.excludesFile", str(owner))
-    _attach_quietly(root, store, machine, tmp_path / "home")
+    _attach_quietly(root, store, machine)
     body = extract(_exclude(root).read_text(encoding="utf-8"), EXCLUDE_REGION, Style.HASH)
-    assert body is not None and f"/{DEFAULT_MEMORY}/developer" in body.split("\n")
-    # The other links the owner's file hides get no line of their own.
-    assert f"/{DEFAULT_MEMORY}/project-stable" not in body.split("\n")
+    assert body is not None and f"/{SETTINGS}" in body.split("\n")
+    # What the owner's file hides gets no line of its own.
+    assert f"/{LEDGER}" not in body.split("\n")
     assert _status(root) == []
 
 
@@ -1928,19 +1788,18 @@ def test_the_block_keeps_what_an_earlier_attach_hid_when_the_grant_changes(
 ) -> None:
     # A path an earlier block hides reads as ignored now. Rebuilt from one run's answer alone, the
     # block dropped it: attach with an overlay granting nothing, add a standing rule, attach
-    # again, and the block held only the rule copy while `git status` listed the whole link tree.
+    # again, and the block held only the rule copy while `git status` listed the settings file.
     #
     # Mutation: `mutations/`'s "the exclude block forgets what an earlier attach hid".
     root, store, machine = _attachable(tmp_path)
     _committed(root)
-    home = tmp_path / "home"
-    _attach_quietly(root, store, machine, home)
+    _attach_quietly(root, store, machine)
     first = extract(_exclude(root).read_text(encoding="utf-8"), EXCLUDE_REGION, Style.HASH)
-    # Non-vacuous: the first block names the link tree and not the rule copy.
-    assert first is not None and f"/{DEFAULT_MEMORY}/developer" in first
+    # Non-vacuous: the first block names the settings file and not the rule copy.
+    assert first is not None and f"/{SETTINGS}" in first
     assert ".codex/rules/common.rules" not in first
     _overlay_grants(store, codex="# a standing rule\n")
-    _attach_quietly(root, store, machine, home)
+    _attach_quietly(root, store, machine)
     second = extract(_exclude(root).read_text(encoding="utf-8"), EXCLUDE_REGION, Style.HASH)
     assert second is not None and "/.codex/rules/common.rules" in second.split("\n")
     assert _status(root) == []
@@ -1949,112 +1808,14 @@ def test_the_block_keeps_what_an_earlier_attach_hid_when_the_grant_changes(
 def test_a_second_attach_leaves_the_exclude_file_as_the_first_wrote_it(tmp_path: Path) -> None:
     root, store, machine = _attachable(tmp_path, allow=(RULE,), codex="# standing rule\n")
     _committed(root)
-    home = tmp_path / "home"
-    _attach_quietly(root, store, machine, home)
+    _attach_quietly(root, store, machine)
     # Non-vacuous: the first attach did write the block, so "unchanged" is about a block and not
     # about a file that was never there.
     body = extract(_exclude(root).read_text(encoding="utf-8"), EXCLUDE_REGION, Style.HASH)
     assert body is not None and SETTINGS in body and f"/{LEDGER}" in body.split("\n")
     exclude = _exclude(root).read_bytes()
-    _attach_quietly(root, store, machine, home)
+    _attach_quietly(root, store, machine)
     assert _exclude(root).read_bytes() == exclude
-
-
-def test_a_linked_worktree_shares_the_block_and_its_links_stay_hidden(tmp_path: Path) -> None:
-    # `info/exclude` resolves through the common directory every worktree shares, so the one
-    # block the attach wrote covers the links `worktree-link` builds in a worktree made later,
-    # and that handler never writes the block itself.
-    from stayfixed.config.loader import load
-    from stayfixed.memory.api import link, resolve
-
-    root, store, machine = _attachable(tmp_path)
-    _committed(root)
-    home = tmp_path / "home"
-    _attach_quietly(root, store, machine, home)
-    side = tmp_path / "side"
-    _git(root, "worktree", "add", "-q", str(side), "-b", "side")
-    shared = _git(side, "rev-parse", "--path-format=absolute", "--git-path", "info/exclude")
-    assert Path(shared.strip()).resolve() == _exclude(root).resolve()
-    before = _exclude(root).read_bytes()
-    config = load(root, machine=machine)
-    resolved = resolve(root, config, machine=machine)
-    assert resolved is not None
-    made = link(side, resolved, config, home=home)
-    # Non-vacuous: the handler's call did build a tree in the worktree.
-    assert made.created
-    assert _exclude(root).read_bytes() == before
-    assert _status(side) == []
-
-
-def _ask_in(
-    side: Path,
-    answer: Callable[[list[str], Any], subprocess.CompletedProcess[bytes]],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Have `answer(args, kwargs)` stand in for git when `main_checkout` asks it in `side`, and
-    the real `git` answer every other question. Patched below `git_run`, so its own handling of
-    a call that runs out is the code under test."""
-    real = subprocess.run
-
-    def asked(args: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
-        if str(side) in args and "--git-common-dir" in args:
-            return answer(args, kwargs)
-        return real(args, **kwargs)
-
-    monkeypatch.setattr("stayfixed.gitenv.subprocess.run", asked)
-
-
-def test_a_worktree_whose_question_runs_out_of_time_is_named_and_not_called_a_broken_git(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # On a machine at a load average of 140, one `rev-parse` in one of 65 worktrees outlived
-    # `git_run`'s five seconds and `attach` failed with "check that `git` runs here" — about a
-    # `git` that worked, naming no worktree, so the owner checked every one by hand and found
-    # nothing. The refusal now says which checkout went unanswered and that the question ran out
-    # of time, which running again can cure.
-    root, store, machine = _attachable(tmp_path)
-    _committed(root)
-    side = tmp_path / "side"
-    _git(root, "worktree", "add", "-q", str(side), "-b", "side")
-
-    def runs_out(args: list[str], kwargs: Any) -> subprocess.CompletedProcess[bytes]:
-        raise subprocess.TimeoutExpired(args, kwargs.get("timeout") or 0)
-
-    _ask_in(side, runs_out, monkeypatch)
-    with pytest.raises(Failure) as failed:
-        _attach_quietly(root, store, machine, tmp_path / "home")
-    message = str(failed.value)
-    assert str(side) in message
-    assert Unasked.TIMED_OUT.value in message
-    assert Unasked.NOT_STARTED.value not in message
-    assert "check that `git` runs here" not in message
-
-
-def test_a_worktree_removed_while_attach_walks_is_skipped_and_the_rest_is_linked(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # `git worktree list` named the worktree; by the time `main_checkout` asked in it, it was
-    # gone. `git -C <gone> --version` exits 128 like a broken `git`, so the run failed with
-    # "check that `git` runs here". A directory that no longer exists is no checkout to link:
-    # it is skipped, as a `prunable` one already is, and the run completes.
-    root, store, machine = _attachable(tmp_path)
-    _committed(root)
-    side = tmp_path / "side"
-    _git(root, "worktree", "add", "-q", str(side), "-b", "side")
-    real = subprocess.run
-
-    def removed_first(args: list[str], kwargs: Any) -> subprocess.CompletedProcess[bytes]:
-        # Once: a second `rmtree` would raise inside the stub, and the run would pass through
-        # `_ask`'s `OSError` arm instead of the path this is about.
-        if side.exists():
-            shutil.rmtree(side)
-        return real(args, **kwargs)
-
-    _ask_in(side, removed_first, monkeypatch)
-    _attach_quietly(root, store, machine, tmp_path / "home")
-    assert not side.exists()
-    # Non-vacuous: the owning checkout's tree was built in the same run.
-    assert (root / DEFAULT_MEMORY / "MEMORY.md").is_symlink()
 
 
 def test_a_symlinked_exclude_file_is_refused_before_anything_is_written(tmp_path: Path) -> None:
@@ -2072,21 +1833,25 @@ def test_a_symlinked_exclude_file_is_refused_before_anything_is_written(tmp_path
     before = snapshot(root)
     assert before
     with pytest.raises(Refusal) as refused:
-        _attach_quietly(root, store, machine, tmp_path / "home")
+        _attach_quietly(root, store, machine)
     assert "symlink" in str(refused.value)
     assert_snapshot_unchanged(root, before)
     assert elsewhere.read_text(encoding="utf-8") == "# not the repository's\n"
 
 
 def test_the_first_attach_leaves_an_index_behind_its_link(tmp_path: Path) -> None:
-    # `attach` linked `<paths.memory>/MEMORY.md` to the overlay's copy before any copy existed,
-    # so every session saw a dangling link and `memory index --check` failed until someone ran
+    # `attach` linked the store's `MEMORY.md` to the overlay's copy before any copy existed, so
+    # every session saw a dangling link and `memory index --check` failed until someone ran
     # `memory index` by hand. The memory area's own renderer writes it in the same run.
+    from stayfixed import binding
+    from stayfixed.memory.api import composed_directory
     from tests.cli import cli
 
     root, store, machine = _attachable(tmp_path)
-    _attach_quietly(root, store, machine, tmp_path / "home")
-    index = root / DEFAULT_MEMORY / "MEMORY.md"
+    _attach_quietly(root, store, machine)
+    id = binding.read_id(root)
+    assert id is not None
+    index = composed_directory(id) / "MEMORY.md"
     assert index.is_symlink()
     assert index.is_file(), "the index link dangles"
     code, out, err = cli(root, tmp_path, "memory", "index", "--check", machine=machine)
@@ -2106,7 +1871,7 @@ def test_a_run_that_would_write_through_a_symlinked_claude_directory_still_refus
     before = snapshot(root)
     assert before
     with pytest.raises(Refusal) as refused:
-        _attach_quietly(root, store, machine, tmp_path / "home")
+        _attach_quietly(root, store, machine)
     # Refused for the reason it has: the containment asked of each placed path names the link.
     # Mutation: `mutations/`'s "the exclude block stops holding placed paths to the project".
     assert "symlink" in str(refused.value)
@@ -2132,7 +1897,7 @@ def test_a_symlinked_stayfixed_directory_is_refused_before_anything_is_written(
     before = snapshot(root)
     assert before
     with pytest.raises(Refusal) as refused:
-        _attach_quietly(root, store, machine, tmp_path / "home")
+        _attach_quietly(root, store, machine)
     # Named for what it is. Before, the refusal came by accident from `git check-ignore`, which
     # will not answer about a path beyond a symlink, and blamed git.
     assert "symlink" in str(refused.value)
@@ -2140,14 +1905,12 @@ def test_a_symlinked_stayfixed_directory_is_refused_before_anything_is_written(
     assert beyond.read_text(encoding="utf-8") == "{"
 
 
-# --- a `memory.groups` entry git would read as more than one exclude line -------------------
+# --- a name git would read as more than one exclude line -------------------------------------
 
 # Every character `str.splitlines` breaks a line at besides `\n` and `\r`, and the NUL git's C
 # reader stops a line at: git reads an exclude file by `\n` alone, so a name holding one of these
 # is one line to git and several to anything that re-reads the block with `splitlines`.
 _LINE_BREAKERS = ("\v", "\f", "\x1c", "\x1d", "\x1e", "\x85", "\u2028", "\u2029", "\x00")
-# A group name the repository authors, spelled as TOML escapes so the file stays text.
-_INJECTED = r"g\u2028!.env\u2028b"
 
 
 def _owner_hides_dotenv(root: Path, tmp_path: Path) -> None:
@@ -2158,32 +1921,6 @@ def _owner_hides_dotenv(root: Path, tmp_path: Path) -> None:
     _git(root, "config", "core.excludesFile", str(owner))
     (root / ".env").write_text("SECRET=1\n", encoding="utf-8")
     (root / "b").write_text("b\n", encoding="utf-8")
-
-
-def test_a_group_name_with_a_line_separator_gets_no_line_and_stops_the_attach(
-    tmp_path: Path,
-) -> None:
-    # A repository-authored group name holding U+2028 was written as one exclude line, which git
-    # reads as one line, and a later attach re-read the block with `str.splitlines`, which breaks
-    # at U+2028, and wrote the pieces back as three lines: the link's path up to `g`, `!.env` and
-    # `b` -- so the owner's `.env` showed in `git status`. No exclude line spells such a name, so
-    # its link gets none, and git, asked once the block stands, would show that link: the run
-    # stops there, counting the link and never printing the name the repository chose.
-    #
-    # Mutation: `mutations/`'s "the exclude line refuses only a newline".
-    root, store, machine = _attachable(tmp_path)
-    _with_groups(root, f'["developer", "project-stable", "{_INJECTED}"]')
-    _committed(root)
-    _owner_hides_dotenv(root, tmp_path)
-    with pytest.raises(Refusal) as refused:
-        _attach_quietly(root, store, machine, tmp_path / "home")
-    linked = "1 link(s) of the link tree under paths.memory"
-    assert str(refused.value) == NOT_IGNORED.format(paths=linked)
-    body = extract(_exclude(root).read_text(encoding="utf-8"), EXCLUDE_REGION, Style.HASH)
-    # Non-vacuous: the block was written, with the links whose names it can spell.
-    assert body is not None and f"/{DEFAULT_MEMORY}/developer" in body.split("\n")
-    assert "!.env" not in body.split("\n")
-    assert "?? .env" not in _status(root)
 
 
 def test_an_earlier_blocks_line_is_kept_whole_whatever_it_holds(tmp_path: Path) -> None:
@@ -2201,10 +1938,10 @@ def test_an_earlier_blocks_line_is_kept_whole_whatever_it_holds(tmp_path: Path) 
     exclude.write_text(
         f"# stayfixed:attach:begin\n{earlier}\n# stayfixed:attach:end\n", encoding="utf-8"
     )
-    _attach_quietly(root, store, machine, tmp_path / "home")
+    _attach_quietly(root, store, machine)
     body = extract(exclude.read_text(encoding="utf-8"), EXCLUDE_REGION, Style.HASH)
-    # Non-vacuous: this attach did rewrite the block, adding the links it placed.
-    assert body is not None and f"/{DEFAULT_MEMORY}/developer" in body
+    # Non-vacuous: this attach did rewrite the block, adding the paths it placed.
+    assert body is not None and f"/{SETTINGS}" in body
     assert earlier in body.split("\n")
     status = _status(root)
     assert "?? .env" not in status
@@ -2269,13 +2006,12 @@ def _everything(tmp_path: Path) -> dict[str, dict[str, bytes]]:
     }
 
 
-def _attach_it(root: Path, store: Path, machine: Path, home: Path) -> Attached:
+def _attach_it(root: Path, store: Path, machine: Path) -> Attached:
     return attach(
         root,
         store=store,
         machine=machine,
         runner=Recorder(),
-        home=home,
     )
 
 
@@ -2294,22 +2030,7 @@ def test_an_overlay_rule_that_is_not_utf8_stops_attach_before_it_writes(tmp_path
     before = _everything(tmp_path)
     assert before["project"] and before["overlay"]
     with pytest.raises(Failure, match="not UTF-8"):
-        _attach_it(root, store, machine, tmp_path / "home")
-    assert _everything(tmp_path) == before
-
-
-def test_a_trust_record_that_does_not_parse_stops_attach_before_it_writes(tmp_path: Path) -> None:
-    # The trust record was first read by the index render and the harness link, after the settings,
-    # the rule copies, the ledger, the overlay's binding record and the link tree were written: a
-    # `trust.json` that did not parse exited 2 there, with the index link dangling. It is read
-    # while the run is planned now, so the refusal leaves everything as it was.
-    #
-    # Mutation: `mutations/`'s "attach reads the trust record only after it has written".
-    root, store, machine = _attachable(tmp_path, allow=(RULE,), codex="# a standing rule\n")
-    (machine.parent / "trust.json").write_text("{not json", encoding="utf-8")
-    before = _everything(tmp_path)
-    with pytest.raises(Refusal, match=r"trust\.json"):
-        _attach_it(root, store, machine, tmp_path / "home")
+        _attach_it(root, store, machine)
     assert _everything(tmp_path) == before
 
 
@@ -2330,7 +2051,7 @@ def test_an_exclude_file_that_cannot_be_written_is_refused_by_name_before_the_fi
     info.chmod(0o555)
     try:
         with pytest.raises(Refusal) as refused:
-            _attach_it(root, store, machine, tmp_path / "home")
+            _attach_it(root, store, machine)
     finally:
         info.chmod(0o755)
     assert "info/exclude" in str(refused.value)
@@ -2352,7 +2073,7 @@ def test_a_doubled_exclude_block_is_refused_naming_the_exclude_file(tmp_path: Pa
     _exclude(root).write_text(begin + begin + "# stayfixed:attach:end\n", encoding="utf-8")
     before = _everything(tmp_path)
     with pytest.raises(Refusal) as refused:
-        _attach_it(root, store, machine, tmp_path / "home")
+        _attach_it(root, store, machine)
     assert "info/exclude" in str(refused.value)
     assert _everything(tmp_path) == before
 
@@ -2376,93 +2097,6 @@ def test_an_exclude_file_whose_write_fails_is_a_refusal_naming_it(tmp_path: Path
     assert "info/exclude" in str(refused.value)
 
 
-def test_a_trusted_store_keeps_its_approval_when_attach_renders_its_missing_index(
-    tmp_path: Path,
-) -> None:
-    # A store approved while it had no `MEMORY.md`, which is how a 0.1.x first attach left it,
-    # gets its index rendered by the next attach. The render rewrites a file the approval covers,
-    # so it carries the approval across its own write, as `memory index` does; without that the
-    # re-attach revoked the owner's approval and withheld the harness link with "has no approval
-    # yet".
-    #
-    # Mutation: `mutations/`'s "attach's index render drops the store's approval".
-    from stayfixed.config.loader import load
-    from stayfixed.memory.api import harness_memory_path, resolve
-    from tests.approved import record
-
-    root, store, machine = _attachable(tmp_path, allow=(RULE,))
-    home = tmp_path / "home"
-    _attach_it(root, store, machine, home)
-    (store / "MEMORY.md").unlink()
-    config = load(root, machine=machine)
-    resolved = resolve(root, config, machine=machine)
-    assert resolved is not None
-    assert record(resolved, config).trusted
-    attached = _attach_it(root, store, machine, home)
-    assert (store / "MEMORY.md").is_file()
-    assert HARNESS_WAITS not in attached.notes
-    assert harness_memory_path(root, home).is_symlink()
-
-
-@pytest.mark.parametrize("changed", ["record", "store", "sandboxed"])
-def test_an_approval_attach_could_not_carry_is_said_as_what_happened(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, changed: str
-) -> None:
-    # What attach says of the link comes from the gate, which reads the record and the store
-    # again after the render's refresh, so each way the refresh declines is said as what happened.
-    # A revoke made while attach ran (`record`) is kept, and the link waits for an approval the
-    # store does not have; a note that arrived while it ran (`store`) leaves the approval at the
-    # digest the person gave, and the link waits because the store changed since; a record write an
-    # agent's sandbox refuses (`sandboxed`, `EPERM` from the write, as macOS's sandbox answers)
-    # leaves the approval as it was too, attach finishes rather than stopping with half its links
-    # made, and it says the refresh was refused before it says the approval lapsed. None says the
-    # approval was carried. Mutations (`mutations/`'s "a refresh brings back a revoked approval"
-    # -> `record` reads approved again, and the link is made; "attach stops at a refresh the
-    # sandbox refused" -> `sandboxed` ends in the record's refusal; "attach says nothing of a
-    # refresh the sandbox refused" -> `sandboxed` says only that the approval lapsed).
-    from stayfixed.memory import trust as memory_trust
-    from stayfixed.memory.api import harness_memory_path, resolve
-    from stayfixed.trust.record import recorded, revoke_all
-    from tests.approved import record as approved
-
-    root, store, machine = _attachable(tmp_path, allow=(RULE,))
-    home = tmp_path / "home"
-    _attach_it(root, store, machine, home)
-    (store / "MEMORY.md").unlink()
-    config = load(root, machine=machine)
-    resolved = resolve(root, config, machine=machine)
-    assert resolved is not None
-    assert approved(resolved, config).trusted
-    (approval,) = recorded(machine).values()
-    real = memory_trust.refresh_if_trusted
-
-    def meanwhile(*args: Any) -> bool:
-        # What happens after the render read the record and before it writes it again.
-        if changed == "record":
-            revoke_all(machine, approval.kind, [approval.subject])
-        elif changed == "store":
-            arrived = store / "project-stable" / "arrived.md"
-            arrived.write_text("---\nname: arrived\n---\nnew\n", encoding="utf-8")
-        carried: bool = real(*args)
-        return carried
-
-    monkeypatch.setattr(memory_trust, "refresh_if_trusted", meanwhile)
-    record = machine.parent / "trust.json"
-    refused = refuse_writes_under(monkeypatch, record) if changed == "sandboxed" else []
-    attached = _attach_it(root, store, machine, home)
-    assert refused == ([record] if changed == "sandboxed" else [])
-    assert (store / "MEMORY.md").is_file()
-    assert not harness_memory_path(root, home).is_symlink()
-    if changed == "record":
-        assert attached.notes == (HARNESS_WAITS,)
-        assert recorded(machine) == {}
-    else:
-        # `store` and `sandboxed` alike: the approval stays at the person's digest.
-        first = (REFRESH_REFUSED,) if changed == "sandboxed" else ()
-        assert attached.notes == (*first, HARNESS_LAPSED)
-        assert recorded(machine) == {(approval.kind, approval.subject): approval}
-
-
 def test_a_settings_file_an_earlier_attach_wrote_is_hidden_by_the_next_one(
     tmp_path: Path,
 ) -> None:
@@ -2475,14 +2109,13 @@ def test_a_settings_file_an_earlier_attach_wrote_is_hidden_by_the_next_one(
     # Mutation: `mutations/`'s "attach leaves the settings file out of what it places".
     root, store, machine = _attachable(tmp_path, allow=(RULE,))
     _committed(root)
-    home = tmp_path / "home"
-    _attach_quietly(root, store, machine, home)
+    _attach_quietly(root, store, machine)
     exclude = _exclude(root)
     exclude.write_text(
         drop(exclude.read_text(encoding="utf-8"), EXCLUDE_REGION, Style.HASH), encoding="utf-8"
     )
     assert not _check_ignore(root, SETTINGS)
-    _attach_quietly(root, store, machine, home)
+    _attach_quietly(root, store, machine)
     assert _check_ignore(root, SETTINGS)
 
 
@@ -2553,7 +2186,6 @@ def test_what_pre_commit_prints_cannot_drive_a_terminal(tmp_path: Path) -> None:
         store=store,
         machine=machine,
         runner=runner,
-        home=tmp_path / "home",
     )
     said = " ".join(attached.notes)
     assert "forged" in said
@@ -2592,9 +2224,9 @@ def test_a_project_name_the_overlay_has_no_directory_for_is_refused_before_the_f
     before = _everything(tmp_path)
     with pytest.raises(Refusal) as refused:
         if command == "attach":
-            _attach_it(root, store, machine, tmp_path / "home")
+            _attach_it(root, store, machine)
         else:
-            check(root, store=store, machine=machine, home=tmp_path / "home")
+            check(root, store=store, machine=machine)
     assert str(refused.value) == (
         f"{overlay}/projects/<this project's name> cannot be a directory on this machine -- a "
         f"file already holds that name, or the name is longer than the filesystem allows -- so "
@@ -2622,9 +2254,9 @@ def test_a_claude_path_that_is_a_file_is_refused_before_the_first_write(
     before = _everything(tmp_path)
     with pytest.raises(Failure, match=r"settings\.local\.json cannot be read"):
         if command == "attach":
-            _attach_it(root, store, machine, tmp_path / "home")
+            _attach_it(root, store, machine)
         else:
-            check(root, store=store, machine=machine, home=tmp_path / "home")
+            check(root, store=store, machine=machine)
     assert _everything(tmp_path) == before
 
 
@@ -2644,9 +2276,9 @@ def test_an_overlay_whose_common_claude_is_a_file_stops_attach_before_it_writes(
     before = _everything(tmp_path)
     with pytest.raises(Failure, match=r"common/claude/permissions\.json cannot be read"):
         if command == "attach":
-            _attach_it(root, store, machine, tmp_path / "home")
+            _attach_it(root, store, machine)
         else:
-            check(root, store=store, machine=machine, home=tmp_path / "home")
+            check(root, store=store, machine=machine)
     assert _everything(tmp_path) == before
 
 
@@ -2667,7 +2299,7 @@ def test_an_overlay_whose_own_project_claude_is_a_file_stops_attach_before_it_wr
         json.dumps({"hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [ENTRY]}]}}),
         encoding="utf-8",
     )
-    _attach_it(root, store, machine, tmp_path / "home")
+    _attach_it(root, store, machine)
     delivered = _delivered_hooks(root).read_bytes()
     # Non-vacuous: the owner's entry, out of the project's own hook file, is in their delivery.
     assert json.loads(delivered)["hooks"]["PreToolUse"] == [{"matcher": "Bash", "hooks": [ENTRY]}]
@@ -2676,9 +2308,9 @@ def test_an_overlay_whose_own_project_claude_is_a_file_stops_attach_before_it_wr
     before = _everything(tmp_path)
     with pytest.raises(Failure, match=r"/claude/permissions\.json cannot be read"):
         if command == "attach":
-            _attach_it(root, store, machine, tmp_path / "home")
+            _attach_it(root, store, machine)
         else:
-            check(root, store=store, machine=machine, home=tmp_path / "home")
+            check(root, store=store, machine=machine)
     assert _delivered_hooks(root).read_bytes() == delivered
     assert _everything(tmp_path) == before
 
@@ -2691,8 +2323,8 @@ def test_a_project_the_overlay_has_no_directory_for_yet_is_attached_and_given_on
     # (oracle): `mutations/`'s "attach refuses a project the overlay has no directory for yet".
     root, store, machine = _attachable(tmp_path, allow=(RULE,))
     shutil.rmtree(store.parent)
-    assert check(root, store=store, machine=machine, home=tmp_path / "home").exit_code == 0
-    _attach_it(root, store, machine, tmp_path / "home")
+    assert check(root, store=store, machine=machine).exit_code == 0
+    _attach_it(root, store, machine)
     assert (store.parent / PROJECT_RECORD).is_file()
     assert store.is_dir()
 
@@ -2737,7 +2369,7 @@ def test_a_source_past_the_longest_path_under_a_project_with_no_directory_is_no_
     (root / CONFIG_FILE).write_text(CONFIG.format(name=name), encoding="utf-8")
     if projects == "projects-absent":
         shutil.rmtree(projects_dir)
-    result = check(root, store=projects_dir / name / "memory", machine=machine, home=deep / "home")
+    result = check(root, store=projects_dir / name / "memory", machine=machine)
     assert result.exit_code == 0, result.summary
     assert result.data["added_allow"] == [RULE]
 
@@ -2787,14 +2419,14 @@ def test_an_overlay_that_is_not_a_directory_where_projects_go_is_refused_as_dama
     (root / CONFIG_FILE).write_text(CONFIG.format(name=name), encoding="utf-8")
     store = overlay / "projects" / name / "memory"
     store.mkdir(parents=True)
-    _attach_it(root, store, machine, tmp_path / "home")
+    _attach_it(root, store, machine)
     broken = _damage(overlay, shape)
     before = _everything(tmp_path)
     with pytest.raises(Refusal) as refused:
         if command == "attach":
-            _attach_it(root, store, machine, tmp_path / "home")
+            _attach_it(root, store, machine)
         else:
-            check(root, store=store, machine=machine, home=tmp_path / "home")
+            check(root, store=store, machine=machine)
     said = str(refused.value)
     assert said == OVERLAY_DAMAGED.format(path=broken)
     assert "choose another" not in said
@@ -2826,7 +2458,7 @@ def test_a_settings_merge_the_encoder_cannot_write_back_is_refused_before_the_fi
     monkeypatch.setattr(jsonobject, "_encode", overflowing_merge)
     monkeypatch.setattr(json, "dumps", overflowing_merge)
     with pytest.raises(Refusal, match="nested deeper than this reader follows"):
-        _attach_it(root, store, machine, tmp_path / "home")
+        _attach_it(root, store, machine)
     assert _everything(tmp_path) == before
 
 
@@ -2849,9 +2481,9 @@ def test_a_local_settings_file_linked_to_a_device_is_refused_and_never_read(
     before = _everything(tmp_path)
     with pytest.raises(Failure) as refused:
         if command == "attach":
-            _attach_it(root, store, machine, tmp_path / "home")
+            _attach_it(root, store, machine)
         else:
-            check(root, store=store, machine=machine, home=tmp_path / "home")
+            check(root, store=store, machine=machine)
     # Named as the project names it, never by the machine's absolute path, as the `.gitignore`
     # refusal is. Mutation (oracle): `mutations/`'s "the settings refusal prints the path it
     # opened" -> the message carries the temporary directory.
@@ -2872,9 +2504,9 @@ def test_a_local_settings_file_that_is_not_utf8_is_named_as_the_project_names_it
     before = _everything(tmp_path)
     with pytest.raises(Failure) as refused:
         if command == "attach":
-            _attach_it(root, store, machine, tmp_path / "home")
+            _attach_it(root, store, machine)
         else:
-            check(root, store=store, machine=machine, home=tmp_path / "home")
+            check(root, store=store, machine=machine)
     assert str(refused.value) == f"{SETTINGS} is not UTF-8 text"
     assert _everything(tmp_path) == before
 
@@ -2924,11 +2556,9 @@ def test_a_settings_file_whose_write_back_the_next_read_refuses_is_refused_befor
     # is written, and `--check` refuses it too. On an interpreter whose indenting encoder stops
     # short of that depth the refusal is the one for nesting; elsewhere the one for length.
     # `attach` and `--check` are each refused by two layers, the diff's and the merge's own
-    # write-back through `jsonobject.json_text`, so no single mutation reddens either case: the
-    # first is proven alone where nothing past the diff is read, by `mutations/`'s "attach plans a
-    # settings write-back the next read refuses" in `tests/attach/test_commands.py`, and the
-    # second by `mutations/`'s "the JSON writer writes back a text past the read cap", in
-    # `tests/attach/test_detach.py`.
+    # write-back through `jsonobject.json_text`, so no single mutation reddens either case; the
+    # second layer is proven by `mutations/`'s "the JSON writer writes back a text past the read
+    # cap", in `tests/attach/test_detach.py`.
     root, store, machine = _attachable(tmp_path, allow=(RULE,))
     settings = root / SETTINGS
     settings.parent.mkdir(exist_ok=True)
@@ -2936,9 +2566,9 @@ def test_a_settings_file_whose_write_back_the_next_read_refuses_is_refused_befor
     before = _everything(tmp_path)
     with pytest.raises(EntriesError) as refused:
         if command == "attach":
-            _attach_it(root, store, machine, tmp_path / "home")
+            _attach_it(root, store, machine)
         else:
-            check(root, store=store, machine=machine, home=tmp_path / "home")
+            check(root, store=store, machine=machine)
     assert str(refused.value) in (
         f"{SETTINGS} {jsonobject.WRITTEN_PAST}",
         f"{SETTINGS} {jsonobject.NESTED}",
@@ -2964,8 +2594,8 @@ def test_a_settings_write_back_past_the_cap_is_refused_and_one_inside_it_is_not(
 
     def run() -> object:
         if command == "attach":
-            return _attach_it(root, store, machine, tmp_path / "home")
-        return check(root, store=store, machine=machine, home=tmp_path / "home")
+            return _attach_it(root, store, machine)
+        return check(root, store=store, machine=machine)
 
     if siblings == 100:
         run()
@@ -2976,3 +2606,37 @@ def test_a_settings_write_back_past_the_cap_is_refused_and_one_inside_it_is_not(
         run()
     assert str(refused.value) == f"{SETTINGS} {jsonobject.WRITTEN_PAST}"
     assert _everything(tmp_path) == before
+
+
+# --- one place per repository: the main checkout -------------------------------------------
+
+
+def test_attach_places_no_link_tree_and_writes_nothing_under_the_home(tmp_path: Path) -> None:
+    # The harness reads the composed store through `autoMemoryDirectory` in the main checkout's
+    # settings file, from every worktree, so `attach` places no link under `paths.memory` in any
+    # checkout and writes nothing under the home's `.claude/`. Run with a linked worktree
+    # standing, since that is where the worktree's own tree went.
+    root, store, machine = _attachable(tmp_path)
+    _committed(root)
+    side = tmp_path / "side"
+    _git(root, "worktree", "add", "-q", str(side), "-b", "side")
+    attach(root, store=store, machine=machine, runner=Recorder())
+    assert json.loads((root / SETTINGS).read_text(encoding="utf-8"))[POINTER]
+    assert not (root / DEFAULT_MEMORY).exists()
+    assert not (side / DEFAULT_MEMORY).exists()
+    assert not (Path(os.environ["HOME"]) / ".claude").exists()
+
+
+def test_attach_from_a_linked_worktree_writes_the_main_checkout_only(tmp_path: Path) -> None:
+    # Claude Code reads the main checkout's `settings.local.json` from every worktree and writes a
+    # worktree's own answers there, so `attach` run from a linked worktree writes that file and its
+    # ledger in the main checkout and nothing in the worktree: one place per repository.
+    root, store, machine = _attachable(tmp_path, allow=(RULE,))
+    _committed(root)
+    side = tmp_path / "side"
+    _git(root, "worktree", "add", "-q", str(side), "-b", "side")
+    attach(side, store=store, machine=machine, runner=Recorder())
+    assert (root / LEDGER).is_file()
+    assert RULE in json.loads((root / SETTINGS).read_text(encoding="utf-8"))["permissions"]["allow"]
+    assert not (side / LEDGER).exists() and not (side / SETTINGS).exists()
+    assert _status(side) == []

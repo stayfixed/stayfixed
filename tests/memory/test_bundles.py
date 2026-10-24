@@ -20,7 +20,7 @@ from stayfixed.memory.bundles import (
     render,
     split,
 )
-from stayfixed.memory.store import Store, resolve
+from stayfixed.memory.store import Store, composed_directory, resolve
 from stayfixed.memory.trust import DELIMITER
 from tests.approved import record
 from tests.cli import cli
@@ -403,7 +403,9 @@ def a_resolved_overlay_store(tmp_path: Path) -> tuple[Store, Config, Path, Path]
         'remote = "git@example.com:acme/widget.git"\n', encoding="utf-8"
     )
     binding.record(root, "widget", "git@example.com:acme/widget.git")
-    memory = root / "docs" / "memory"
+    id = binding.read_id(root)
+    assert id is not None
+    memory = composed_directory(id)
     memory.mkdir(parents=True)
     (memory / "developer").symlink_to(overlay / "common" / "memory", target_is_directory=True)
     (root / CONFIG_FILE).write_text(OVERLAY_CONFIG, encoding="utf-8")
@@ -412,15 +414,14 @@ def a_resolved_overlay_store(tmp_path: Path) -> tuple[Store, Config, Path, Path]
     config = load(root, machine=machine)
     store = resolve(root, config, machine=machine)
     assert store is not None
-    assert store.path == memory  # the store really is a directory in the repository
+    assert store.path == memory  # the composed store, outside the repository
     return store, config, machine, overlay
 
 
 @needs_git
 def test_the_overlay_groups_themselves_are_neither_gated_nor_wrapped(tmp_path: Path) -> None:
-    # The store's directory sitting in the repository must not gate the notes behind it: the
-    # machine owner's overlay notes are not repository content, and wrapping them as data would
-    # defeat every standing rule in the mode this project actually ships.
+    # The machine owner's overlay notes are not repository content, and wrapping them as data
+    # would defeat every standing rule in the mode this project actually ships.
     store, config, _machine, _ = a_resolved_overlay_store(tmp_path)
     produced = blocks(Bundle.STANDING_RULES, store, config)
     assert produced != []

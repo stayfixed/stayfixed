@@ -2,7 +2,7 @@
 
 Every package is tested on its own against stubs. This is the one test that runs them in the
 order a person does, and it exists because the four packages' seams — the machine file, the
-overlay root, the project record, the link tree, the ignore region — are each written by one
+overlay root, the project record, the composed store, the ignore region — are each written by one
 package and read by another, and a stub on both sides of a seam agrees with itself.
 
 **Every step runs the real launcher.** Each one used to call a library function, so the
@@ -33,10 +33,10 @@ from pathlib import Path
 import pytest
 
 import stayfixed
-from stayfixed.attach.hooks import NOT_ATTACHED, REAL_DIRECTORIES
+from stayfixed.attach.hooks import NOT_ATTACHED
 from stayfixed.config.loader import CONFIG_FILE, load
 from stayfixed.doctor.api import OK, RED, SKIP, run_checks
-from stayfixed.memory.api import DELIMITER, PROJECTS, harness_memory_path, markers
+from stayfixed.memory.api import DELIMITER, PROJECTS, markers
 from tests.floor import developer_free_environ
 from tests.gitfixture import git
 from tests.overlay.test_upgrade import SHIPPED_MEMORY_README
@@ -228,10 +228,10 @@ def _install_path(
 
     `initialised` walks the same steps over a repository that already has its notes in
     `paths.memory` and has had `stayfixed init` run over it, which is the shape the owner's own
-    repository is in. Step 4 then has one more beat in the middle: `--check` finds the group
-    that never moved and exits 1, the notes are moved by hand — the owner's act, which no
-    command performs — and the attach is taken over a repository with nothing to link over.
-    Step 5 is skipped there, because the moved note is the standing rule.
+    repository is in. Step 4 then has one more beat before it: the notes are moved by hand into
+    the overlay — the owner's act, which no command performs — since the composed store reads
+    the overlay and never `paths.memory`. Step 5 is skipped there, because the moved note is the
+    standing rule.
 
     `attach=False` stops before step 4 and answers the unattached state, which is what a
     session's first `SessionStart` sees on a project nobody has bound yet.
@@ -334,23 +334,8 @@ def _install_path(
     # 4. attach: the diff first, then the write. `--check` writes nothing and prints what the
     # `--yes` run is consenting to, which is the order the attach skill walks.
     if initialised:
-        # The beat the initialised path adds, and the one the refusal exists for. `attach`
-        # links; it never moves a note, so the group still sitting in the repository is a
-        # finding `--check` reports and exits 1 on, before anything is written.
-        found = _cli(
-            walk,
-            "attach",
-            "--store",
-            str(store),
-            "--check",
-            "--json",
-            "--machine",
-            str(machine),
-        )
-        assert found.returncode == 1, found.stderr
-        assert json.loads(found.stdout)["real_directories"] == 1, found.stdout
-        # The owner's own act: the notes move into this project's share of the overlay. No
-        # command does this, which is why the refusal says where they go and stops.
+        # The owner's own act: the notes move into this project's share of the overlay, which the
+        # composed store reads. No command does this.
         store.mkdir(parents=True, exist_ok=True)
         shutil.move(str(root / "docs" / "memory" / "project-stable"), str(store / "project-stable"))
     previewed = step("attach", "--store", str(store), "--check", "--machine", str(machine))
@@ -593,11 +578,8 @@ def test_detach_returns_the_project_to_where_it_started(tmp_path: Path) -> None:
     assert before
     step("attach", "--store", str(store), "--machine", str(machine))
     assert_snapshot_changed(root, before)
-    step("detach", "--machine", str(machine))
+    step("detach")
     assert_snapshot_unchanged(root, before)
-    # Stated rather than left to the file walk, which sees files alone: the directory the links
-    # sat in is taken back too once it is empty, so a detach leaves no empty `paths.memory`.
-    assert not (root / "docs" / "memory").exists()
 
 
 def test_doctor_is_green_on_the_attached_fixture(tmp_path: Path) -> None:
@@ -653,7 +635,12 @@ def test_doctor_is_green_on_the_attached_fixture(tmp_path: Path) -> None:
 # Thirteen and not fourteen since `attach` points the harness at the composed store: the row reads
 # the pointer, which asks git for the common directory where the binding id is kept, and no longer
 # asks which checkout owns this one to judge the harness memory path the harness does not read.
-DOCTOR_LAUNCHES = 13
+#
+# Twelve and not thirteen since the harness memory path is gone and the `attached` row reads the
+# pointer from the main checkout's settings file: the main checkout is named once, by the first
+# record of `git worktree list`, and the pointer is compared with the composed store of the id the
+# row has already read, so the common directory is not asked for it again.
+DOCTOR_LAUNCHES = 12
 
 
 def test_doctor_launches_the_number_of_subprocesses_it_says_it_does(
@@ -710,40 +697,21 @@ def test_doctor_launches_the_number_of_subprocesses_it_says_it_does(
         True,
     ), attached
     assert len(launched) == DOCTOR_LAUNCHES, launched
-    # And they are the thirteen the paragraph names, not thirteen of something else: one wrapper
-    # probe, and twelve `git` questions. Asserted by shape rather than by full argv, because
+    # And they are the twelve the paragraph names, not twelve of something else: one wrapper
+    # probe, and eleven `git` questions. Asserted by shape rather than by full argv, because
     # each `git` call carries the temporary checkout or overlay it asks about.
     assert sum(1 for argv in launched if argv[0] == str(WRAPPER)) == 1
-    assert sum(1 for argv in launched if argv[0] == "git") == 12
-
-
-def test_doctor_is_red_when_the_memory_path_is_a_real_directory(tmp_path: Path) -> None:
-    # The `attached` row's real-directory arm, end to end: replace the link with a real
-    # directory and assert `attached` goes red. This is the shape one existing checkout already
-    # has, which is why it is named rather than left to a general "not attached".
-    walk = _install_path(tmp_path)
-    # Without the pointer at the composed store, as an earlier release's attach left the checkout:
-    # the harness reads the directory that key names whatever stands at the harness memory path.
-    settings = walk.root / ".claude" / "settings.local.json"
-    document = json.loads(settings.read_text(encoding="utf-8"))
-    del document["autoMemoryDirectory"]
-    settings.write_text(json.dumps(document), encoding="utf-8")
-    harness = harness_memory_path(walk.root, walk.home)
-    harness.mkdir(parents=True, exist_ok=True)
-    attached = next(row for row in _doctor(walk) if row["name"] == "attached")
-    assert attached["status"] == RED
-    assert "real directory" in attached["detail"]
+    assert sum(1 for argv in launched if argv[0] == "git") == 11
 
 
 def test_init_then_the_walkthrough_ends_with_the_rule_in_a_session(tmp_path: Path) -> None:
     # The whole slice, in the order the owner walks it and on the repository shape they
-    # actually have: a project with notes already in it, `stayfixed init` run over it, the
-    # attach refused because those notes never moved, the notes moved by hand, the attach
-    # taken, and a session reading the moved note back through the wrapper.
+    # actually have: a project with notes already in it, `stayfixed init` run over it, the notes
+    # moved by hand into the overlay, the attach taken, and a session reading the moved note back
+    # through the wrapper.
     #
-    # What would break it: remove the refusal and step 4's `--check` exits 0 with
-    # `real_directories: 0`; remove the link tree and `RULE_BODY` never reaches the bundle;
-    # remove `init`'s footprint and the manifest assertion fails; let any row go red —
+    # What would break it: leave the composed store unread and `RULE_BODY` never reaches the
+    # bundle; remove `init`'s footprint and the manifest assertion fails; let any row go red —
     # `overlay-requires`, the last, is the one this branch added and it is answered here against
     # a real overlay rather than a stub.
     walk = _install_path(tmp_path, initialised=True)
@@ -757,7 +725,7 @@ def test_init_then_the_walkthrough_ends_with_the_rule_in_a_session(tmp_path: Pat
 
 def test_a_session_before_the_attach_is_told_what_is_missing(tmp_path: Path) -> None:
     # The handler through the wrapper, on the one state it exists for: initialised, not yet
-    # attached, notes still in the repository. It reads the machine file the hook path reads —
+    # attached. It reads the machine file the hook path reads —
     # `<home>/.config/stayfixed/config.toml` — and not the walkthrough's own, so the walkthrough's
     # file is copied there for the hook alone.
     #
@@ -765,8 +733,8 @@ def test_a_session_before_the_attach_is_told_what_is_missing(tmp_path: Path) -> 
     # with no JSON-escaped characters, so `in` over the text is enough. Imported and never
     # respelled: a session line is the one string a reader compares against what they saw.
     #
-    # What would break it: drop either line from the handler, or let the binding read as bound
-    # or the group count as zero, and the corresponding `in` fails.
+    # What would break it: drop the line from the handler, or let the binding read as bound, and
+    # the `in` fails.
     walk = _install_path(tmp_path, initialised=True, attach=False)
     hook_machine = walk.home / ".config" / "stayfixed" / "config.toml"
     hook_machine.parent.mkdir(parents=True, exist_ok=True)
@@ -774,7 +742,6 @@ def test_a_session_before_the_attach_is_told_what_is_missing(tmp_path: Path) -> 
     done = _session(walk, "hook", "SessionStart", machine=False)
     assert done.returncode == 0, done.stderr
     assert NOT_ATTACHED in done.stdout
-    assert REAL_DIRECTORIES.format(count=1) in done.stdout
 
 
 def test_detach_on_an_initialised_project_leaves_the_footprint(tmp_path: Path) -> None:
@@ -788,7 +755,7 @@ def test_detach_on_an_initialised_project_leaves_the_footprint(tmp_path: Path) -
     ignore_before = (walk.root / ".gitignore").read_text(encoding="utf-8")
     # Non-vacuous: the block this asserts survives has to be there before the detach.
     assert "stayfixed:ignore" in ignore_before
-    done = _cli(walk, "detach", "--root", str(walk.root), "--machine", str(walk.machine))
+    done = _cli(walk, "detach", "--root", str(walk.root))
     assert done.returncode == 0, done.stderr
     assert (walk.root / ".gitignore").read_text(encoding="utf-8") == ignore_before
     assert (walk.root / ".stayfixed" / "manifest.json").is_file()

@@ -1,9 +1,9 @@
 """The memory area's import surface: everything a consumer may import from this area.
 
-A module and not the package's `__init__`, for one reason: `stayfixed.hooks.registry`
-imports `stayfixed.memory.hooks`, which imports the package first, so a re-export list in
-`__init__.py` pulls the whole area — configuration included — into every `discover()` call and
-reddens `tests/boundaries/test_discovery.py`. Keeping the surface one level down costs a consumer
+A module and not the package's `__init__`, for one reason: discovery imports an area's
+`stayfixed.memory.<module>` through the package, so a re-export list in `__init__.py` pulls the
+whole area — configuration included — into every discovery and reddens
+`tests/boundaries/test_discovery.py`. Keeping the surface one level down costs a consumer
 six characters and keeps discovery cheap, without a lazy `__getattr__` that would cost every
 consumer its types.
 
@@ -12,41 +12,26 @@ what an area might be said to need, which is a list that grows names nothing imp
 that needs something absent from this list grows it deliberately, in a commit that says which
 area and why — it does not import a private module of this area.
 
-Thirty-five names are imported from outside this area today, by the `attach` and `overlay` areas
-and by this repository's tests: the resolver (`resolve`, `permitted_roots` and `main_checkout`),
-the overlay layout `attach` writes and `overlay` renders (`PROJECTS`, `PROJECT_RECORD`,
-`STORE_DIR`, `COMMON_GROUP`), the one reader of the overlay's project record, which `attach`
-reads it with and answers its own way when it cannot (`read_binding_record`), the link tree
-(`link`, `attach_main`,
-`detach_main`, `harness_anchor`, `harness_link_needed`, `harness_gate` with the two of its answers
-a caller compares with (`GATE_OPEN`, `GATE_LAPSED`), which `attach` and its `doctor.py` ask to tell
-a lapsed approval from none, `harness_memory_path`,
-`harness_targets`, which `attach`'s `detach` asks before its first withdrawal and the `attach`
-area's `doctor.py` reads a checkout's harness link by, `Links`,
-`PartialLink`, `linked_names`, which `attach` reads to hide
-every name the tree holds from git, and `link_sources`, every path the tree points at in the
-overlay, which `attach` asks the length of before its first write), whether the machine records
-any approval for a store that
-does not exist yet (`approval_recorded`, which `attach` asks before a first link tree is built),
-whether the machine's trust record can be read at all (`require_readable_record`, which `attach`
-asks before its first write, since the index render and the harness link read it after), the
-binding's one classifier and the states it answers in (`binding_state`, `UNBOUND` and `BOUND`,
-which `attach`'s own doctor row reads), which `attach` answers the binding question with instead
-of a second classifier of its own, and the note a moved `origin` earns (`origin_note`), which
-`attach` and its session-start line say, the bundle slots
+The names imported from outside this area today, by the `attach` and `overlay` areas and by this
+repository's tests: the resolver (`resolve` and `permitted_roots`), the overlay layout `attach`
+writes and `overlay` renders (`PROJECTS`, `PROJECT_RECORD`, `STORE_DIR`, `COMMON_GROUP`), the one
+reader of the overlay's project record, which `attach` reads it with and answers its own way when
+it cannot (`read_binding_record`), the binding's one classifier and the states it answers in
+(`binding_state`, `UNBOUND` and `BOUND`, which `attach`'s own doctor row reads), which `attach`
+answers the binding question with instead of a second classifier of its own, and the note a moved
+`origin` earns (`origin_note`), which `attach` and its session-start line say, the bundle slots
 `tests/hooks/test_hooks_json.py` holds the hooks file to (`SLOTS`), the composed store `attach`
-builds, points the harness at and `detach` withdraws, and its directory, which the `attach` area's
-`doctor.py` compares the pointer with (`build_composed`, `composed_directory`,
-`withdraw_composed`), the note store a `doctor` row
-reads, resolved once per area per report (`Answers`, which the `attach` area's own `doctor.py`
-creates for its row), and
-the trust region `tests/test_install_path.py` asserts end to end (`DELIMITER`, `markers`). The
-link graph's check is this area's own (`memory.graph`, which `memory refs` reports), so the
-wiki-link grammar, the note walk and `resolved` have no reader outside it and are not here. The
-overlay root the machine file records and the checkout's `origin` are the core's to answer
-(`config.overlay.overlay_root`, `gitenv.origin_remote` and `gitenv.GitUnavailable`), because
-`init` asks them too and the core may not import this area; the crossings still pinned are
-listed in `tests/boundaries/test_delivery.py`.
+builds, points the harness at, renders the missing index of and `detach` withdraws, its
+directory, which the `attach` area's `doctor.py` compares the pointer with, and every path its
+links point at in the overlay, which `attach` asks the length of before its first write
+(`build_composed`, `composed_directory`, `render_missing_index`, `withdraw_composed`,
+`link_sources`), and the trust region `tests/test_install_path.py` asserts end to end
+(`DELIMITER`, `markers`). The link graph's check is this area's own (`memory.graph`, which
+`memory refs` reports), so the wiki-link grammar, the note walk and `resolved` have no reader
+outside it and are not here. The overlay root the machine file records and the checkout's
+`origin` are the core's to answer (`config.overlay.overlay_root`, `gitenv.origin_remote` and
+`gitenv.GitUnavailable`), because `init` asks them too and the core may not import this area; the
+crossings still pinned are listed in `tests/boundaries/test_delivery.py`.
 
 **Nine more have no importer and stay, each for a reason written here**, because a name
 kept in silence is what made this pass necessary:
@@ -76,7 +61,7 @@ kept in silence is what made this pass necessary:
 
 **Not here, though they look like candidates**: names with no importer in `src/`, `scripts/` or
 `tests/`, no published signature naming them, and no reader reaching them by string. Each is
-reachable from this area's own module, which is what `memory/commands.py`, `memory/hooks.py` and
+reachable from this area's own module, which is what `memory/commands.py` and
 this area's tests use; an area that comes to need one grows this list by the rule above.
 
 - **The index group** — `INDEX_NAME`, `index_source`, `write_index`, `render_index`,
@@ -92,21 +77,15 @@ this area's tests use; an area that comes to need one grows this list by the rul
 - **The inventory group** — `inventory`, `totals`, `Entry` — and nothing outside this area
   imports them.
 - **The store predicates** — `in_repository`, `inside_project`, `refusal_reason`,
-  `overlay_group_target` and `resolved`. `overlay_group_target` is read by `worktree.py`, one
-  module over, and by nothing else, and none of the others has a reader outside this area.
-- **The helpers** — `blocks`, `split`, `harness_link_parts`, with no reader outside this area.
+  `overlay_group_target` and `resolved`, none with a reader outside this area.
+- **The helpers** — `blocks` and `split`, with no reader outside this area.
 - **The bundles group** — `fit`, `render`, and the `Bundle` and `Fit` their signatures name. The
   `bundles` row is this area's own (`memory/doctor.py`) and reads `memory.bundles` directly.
-
-`PartialLink` and `Links` are here because `attach` imports them, and `Links` is the one name on
-this list an entry names: `mutations/`'s "a type the surface names in a signature drops off the
-surface".
 """
 
-from stayfixed.memory.answers import Answers
 from stayfixed.memory.bundles import SLOTS
 from stayfixed.memory.composed import build as build_composed
-from stayfixed.memory.composed import store_directory as composed_directory
+from stayfixed.memory.composed import link_sources, render_missing_index
 from stayfixed.memory.composed import withdraw as withdraw_composed
 from stayfixed.memory.store import (
     BINDING_STATES,
@@ -118,7 +97,7 @@ from stayfixed.memory.store import (
     UNBOUND,
     Store,
     binding_state,
-    main_checkout,
+    composed_directory,
     origin_note,
     permitted_roots,
     read_binding_record,
@@ -129,29 +108,11 @@ from stayfixed.memory.trust import (
     TrustState,
     UnreadableTrustRecord,
     UnsafeNote,
-    approval_recorded,
     changed,
     markers,
     may_inject,
     new_nonce,
-    require_readable_record,
     wrap,
-)
-from stayfixed.memory.worktree import (
-    GATE_LAPSED,
-    GATE_OPEN,
-    Links,
-    PartialLink,
-    attach_main,
-    detach_main,
-    harness_anchor,
-    harness_gate,
-    harness_link_needed,
-    harness_memory_path,
-    harness_targets,
-    link,
-    link_sources,
-    linked_names,
 )
 
 __all__ = [
@@ -159,43 +120,27 @@ __all__ = [
     "BOUND",
     "COMMON_GROUP",
     "DELIMITER",
-    "GATE_LAPSED",
-    "GATE_OPEN",
     "PROJECTS",
     "PROJECT_RECORD",
     "SLOTS",
     "STORE_DIR",
     "UNBOUND",
-    "Answers",
-    "Links",
-    "PartialLink",
     "Store",
     "TrustState",
     "UnreadableTrustRecord",
     "UnsafeNote",
-    "approval_recorded",
-    "attach_main",
     "binding_state",
     "build_composed",
     "changed",
     "composed_directory",
-    "detach_main",
-    "harness_anchor",
-    "harness_gate",
-    "harness_link_needed",
-    "harness_memory_path",
-    "harness_targets",
-    "link",
     "link_sources",
-    "linked_names",
-    "main_checkout",
     "markers",
     "may_inject",
     "new_nonce",
     "origin_note",
     "permitted_roots",
     "read_binding_record",
-    "require_readable_record",
+    "render_missing_index",
     "resolve",
     "withdraw_composed",
     "wrap",

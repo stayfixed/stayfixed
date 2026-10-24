@@ -18,7 +18,6 @@ from stayfixed.harnesses import (
     CODEX,
     HARNESSES,
     Harness,
-    MemoryHarness,
     Surface,
     detect,
     select,
@@ -253,15 +252,6 @@ def test_a_harness_can_key_a_set_and_a_dict() -> None:
     assert {harness: harness.name for harness in HARNESSES}[CODEX] == "codex"
 
 
-def test_claude_codes_memory_directory_is_keyed_by_the_projects_path() -> None:
-    # Claude Code keeps a project's memory under `~/.claude/projects/<slug>/memory`, the slug being
-    # the project's resolved path with `/` and `.` as `-`; `memory` links a store there and
-    # `doctor` reads it there, both through this value. Mutation (oracle): `mutations/`'s "Claude
-    # Code's memory slug keeps a dot" -> reddens; no test path holds a dot otherwise.
-    assert CLAUDE.memory_dir("/home/a.b/repo") == ".claude/projects/-home-a-b-repo/memory"
-    assert not isinstance(CODEX, MemoryHarness)
-
-
 # Every harness name in a string a module of the package spells outside this registry, as the
 # words `claude` and `codex` and Codex's own `PLUGIN_ROOT` and `PLUGIN_DATA`, standing alone:
 # letters and digits on neither side, any case, so `CLAUDE_PROJECT_DIR`, `.claude/skills` and
@@ -320,10 +310,6 @@ PROSE = {
     # Messages naming the Codex rule files `attach` places, and `--check` would place.
     ("src/stayfixed/attach/check.py", "codex"): 1,
     ("src/stayfixed/attach/commands.py", "codex"): 2,
-    # The refusal for a `.claude` the link walk cannot go through.
-    ("src/stayfixed/memory/worktree.py", "claude"): 1,
-    # The session's line for the same `.claude`, when it costs a worktree its harness link.
-    ("src/stayfixed/memory/hooks.py", "claude"): 1,
     # The advice `setup --approval-boundary` prints, which names the harness whose settings it is.
     ("src/stayfixed/setup/commands.py", "claude"): 1,
     # The commit-trailer guard's names of tools that sign commits as authors: the agent as an

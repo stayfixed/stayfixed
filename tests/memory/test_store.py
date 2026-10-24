@@ -16,8 +16,8 @@ from stayfixed.memory.store import (
     LEFT_TO_HARNESS,
     NO_RECORD,
     Store,
+    composed_directory,
     inside_project,
-    main_checkout,
     refusal_reason,
     resolve,
     resolved,
@@ -86,14 +86,21 @@ def a_machine_file(base: Path, overlay: Path | None) -> Path:
     return path
 
 
+def a_composed_store(root: Path) -> Path:
+    """The composed store of the checkout's binding id, created: the directory `attach` builds."""
+    id = binding.ensure_id(root)
+    memory = composed_directory(id)
+    memory.mkdir(parents=True)
+    return memory
+
+
 def a_tree(root: Path, overlay: Path, project: str = "widget", *, bound: bool = True) -> None:
-    """The five-link tree `attach` creates: `developer` into the overlay's common
-    notes, the project-scoped groups into its own; and, where `bound`, the binding `attach`
-    records on this machine for the checkout."""
+    """The composed store `attach` builds: `developer` into the overlay's common notes, the
+    project-scoped groups into its own; and, where `bound`, the binding `attach` records on this
+    machine for the checkout."""
     if bound:
         binding.record(root, project, REMOTE)
-    memory = root / "docs" / "memory"
-    memory.mkdir(parents=True)
+    memory = a_composed_store(root)
     (memory / "developer").symlink_to(overlay / "common" / "memory", target_is_directory=True)
     (memory / "project-stable").symlink_to(
         overlay / "projects" / project / "memory" / "project-stable", target_is_directory=True
@@ -256,6 +263,27 @@ def test_overlay_mode_honours_the_tree_attach_creates(tmp_path: Path) -> None:
     assert inside_project(store) is False
 
 
+def test_overlay_mode_reads_the_composed_store_and_no_tree_in_the_checkout(tmp_path: Path) -> None:
+    # The store an overlay-mode checkout resolves is the one the harness reads: the composed store
+    # `attach` builds under this machine's data directory, named by the checkout's binding id, and
+    # never a tree of links under `paths.memory`, which nothing places any more.
+    from stayfixed.memory.composed import build
+    from stayfixed.memory.store import composed_directory as store_directory
+
+    root = tmp_path / "project"
+    a_repo(root)
+    overlay = an_overlay(tmp_path)
+    binding.record(root, "widget", REMOTE)
+    id = binding.read_id(root)
+    assert id is not None
+    build(overlay, "widget", id)
+    store = resolve(root, a_config(root, "overlay"), machine=a_machine_file(tmp_path, overlay))
+    assert store is not None
+    assert store.path == store_directory(id)
+    assert store.groups["developer"].resolve() == (overlay / "common" / "memory").resolve()
+    assert not (root / "docs" / "memory").exists()
+
+
 # --- the four ways the answer can be a lie --------------------------------------------------
 
 
@@ -266,14 +294,13 @@ def test_a_link_into_another_project_inside_the_same_overlay_is_refused(tmp_path
     (overlay / "projects" / "secret-client" / "memory" / "project-stable" / "nda.md").write_text(
         "confidential\n", encoding="utf-8"
     )
-    memory = root / "docs" / "memory"
-    memory.mkdir(parents=True)
+    binding.record(root, "widget", REMOTE)
+    memory = a_composed_store(root)
     (memory / "developer").symlink_to(overlay / "common" / "memory", target_is_directory=True)
     (memory / "project-stable").symlink_to(
         overlay / "projects" / "secret-client" / "memory" / "project-stable",
         target_is_directory=True,
     )
-    binding.record(root, "widget", REMOTE)
     config = a_config(root, "overlay")
     store = resolve(root, config, machine=a_machine_file(tmp_path, overlay))
     assert store is not None  # `developer` is legitimate and still resolves
@@ -286,32 +313,6 @@ def test_a_link_into_another_project_inside_the_same_overlay_is_refused(tmp_path
     # any log that keeps it.
     assert "secret-client" not in str(store.unavailable)
     assert "outside this project's share" in store.unavailable["project-stable"]
-
-
-def test_overlay_mode_refuses_a_symlinked_paths_memory_into_another_project(
-    tmp_path: Path,
-) -> None:
-    # The shape check: in overlay mode `paths.memory` must itself be a real directory holding
-    # one link per group. A group reached *through* a symlinked `paths.memory` is not itself a
-    # symlink, so the per-group target check (`permitted_roots`) never sees it — the shape
-    # check is what has to catch this, and it must fire regardless of mode.
-    root = tmp_path / "project"
-    a_repo(root)
-    overlay = an_overlay(tmp_path, projects=("widget", "secret-client"))
-    (overlay / "projects" / "secret-client" / "memory" / "project-stable" / "nda.md").write_text(
-        "confidential\n", encoding="utf-8"
-    )
-    (root / "docs").mkdir()
-    (root / "docs" / "memory").symlink_to(
-        overlay / "projects" / "secret-client" / "memory", target_is_directory=True
-    )
-    config = a_config(root, "overlay")
-    machine = a_machine_file(tmp_path, overlay)
-    store = resolve(root, config, machine=machine)
-    # A refused store carries no `groups` at all, which is the proof the victim's `nda.md` was
-    # never reachable through it.
-    assert store is None
-    assert refusal_reason(root, config, machine=machine) is not None
 
 
 def test_a_group_name_that_escapes_the_store_is_refused(tmp_path: Path) -> None:
@@ -407,9 +408,9 @@ def test_an_inherited_git_dir_never_reaches_the_git_helper(
     # One of two locks, pinned on its own. Asked through `resolve`, this property is guarded
     # twice over — `_registered_worktree` refuses a root that is nobody's registered worktree
     # whatever git answered — so a single test there dies only when *both* locks are broken and
-    # pins neither. `main_checkout` is the same scrubbed `git_answer` with nothing behind it, and
-    # it is also the answer `worktree.link` decides its main-checkout no-op on, so an inherited
-    # `GIT_DIR` reaching it would make a worktree look like the checkout that owns the store.
+    # pins neither. `binding.common_directory` is the same scrubbed `git_answer` with nothing
+    # behind it, and the binding id is read under it, so an inherited `GIT_DIR` reaching it would
+    # read another repository's binding.
     victim = tmp_path / "victim"
     a_repo(victim)
     (victim / "docs" / "memory" / "developer").mkdir(parents=True)
@@ -417,7 +418,7 @@ def test_an_inherited_git_dir_never_reaches_the_git_helper(
     a_repo(hostile)
     monkeypatch.setenv("GIT_DIR", str(victim / ".git"))
     monkeypatch.setenv("GIT_WORK_TREE", str(victim))
-    assert main_checkout(hostile).resolve() == hostile.resolve()
+    assert binding.common_directory(hostile).resolve() == (hostile / ".git").resolve()
 
 
 def test_a_worktree_resolves_through_the_main_checkout(tmp_path: Path) -> None:
@@ -430,7 +431,6 @@ def test_a_worktree_resolves_through_the_main_checkout(tmp_path: Path) -> None:
     git(root, "-c", "user.email=a@b.c", "-c", "user.name=a", "commit", "-qm", "init")
     tree = root / "worktrees" / "side"
     git(root, "worktree", "add", "-q", str(tree), "-b", "side")
-    assert main_checkout(tree).resolve() == root.resolve()
     store = resolve(tree, a_config(tree, "in-repo"))
     assert store is not None
     assert store.path.resolve() == (root / "docs" / "memory").resolve()
@@ -647,14 +647,13 @@ def test_a_git_that_cannot_run_is_not_reported_as_an_unbound_overlay(
 def test_a_git_that_cannot_run_does_not_make_a_worktree_look_like_the_main_checkout(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # `main_checkout` answered `root` when its git query failed, so `worktree.link` opened with
-    # "this is the main checkout" and became a silent no-op: no links at all, `hooks.py` emitting
-    # "nothing to do", every memory bundle empty, and nothing reporting a failure.
+    # The common directory answered "no repository" when its git query failed, so a checkout read
+    # as one with no binding: every memory bundle empty, and nothing reporting a failure.
     root = tmp_path / "project"
     a_repo(root)
     git_that_cannot_run(monkeypatch)
     with pytest.raises(GitUnavailable):
-        main_checkout(root)
+        binding.common_directory(root)
 
 
 def test_an_empty_git_answer_is_still_an_answer(tmp_path: Path) -> None:
@@ -700,10 +699,10 @@ def test_a_git_that_exits_non_zero_for_everything_is_unavailable_not_unbound(
 def test_a_git_that_exits_non_zero_for_everything_cannot_name_the_main_checkout(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # The same broken `git`, asked the store's own question rather than the origin remote:
-    # `main_checkout` reads git through the three-valued `git_answer`, and a broken `git` read as
-    # one that answered nothing made it answer `root`, the silent no-op `worktree.link` turns that
-    # into. Its remedy is to check that `git` runs; "run the command again" would repeat for ever.
+    # The same broken `git`, asked the binding's own question rather than the origin remote:
+    # `binding.common_directory` reads git through the three-valued `git_answer`, and a broken
+    # `git` read as one that answered nothing would read as a checkout with no binding. Its remedy
+    # is to check that `git` runs; "run the command again" would repeat for ever.
     # Mutations (declared): `mutations/`'s "a broken git reads as a repository that answered" and
     # "a broken git is told to run the command again".
     root = tmp_path / "project"
@@ -714,7 +713,7 @@ def test_a_git_that_exits_non_zero_for_everything_cannot_name_the_main_checkout(
 
     monkeypatch.setattr("stayfixed.gitenv.subprocess.run", broken)
     with pytest.raises(GitUnavailable, match=re.escape(Unasked.BROKEN.value)):
-        main_checkout(root)
+        binding.common_directory(root)
 
 
 def _a_worktree(tmp_path: Path) -> Path:
@@ -729,9 +728,9 @@ def test_a_git_a_signal_ended_cannot_make_a_worktree_look_like_the_main_checkout
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # `subprocess` reports a `git` a signal ended — the OOM killer on a loaded machine — as the
-    # signal's negative. Read as "git said no", it made `main_checkout` answer the worktree
-    # itself, the silent no-op the test above forbids. Mutation (declared): `mutations/`'s "a git
-    # a signal ended reads as a repository that answered nothing".
+    # signal's negative. Read as "git said no", it made the worktree read as a directory in no
+    # repository, the silent answer the test above forbids. Mutation (declared): `mutations/`'s
+    # "a git a signal ended reads as a repository that answered nothing".
     side = _a_worktree(tmp_path)
     real = subprocess.run
 
@@ -742,8 +741,31 @@ def test_a_git_a_signal_ended_cannot_make_a_worktree_look_like_the_main_checkout
 
     monkeypatch.setattr("stayfixed.gitenv.subprocess.run", killed)
     with pytest.raises(GitUnavailable) as excinfo:
-        main_checkout(side)
+        binding.common_directory(side)
     assert excinfo.value.cause is Unasked.ENDED
+
+
+def test_a_question_that_runs_out_of_time_is_named_and_not_called_a_broken_git(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # On a loaded machine one `rev-parse` outlived `git_answer`'s bound and the refusal said "check
+    # that `git` runs here" — about a `git` that worked, naming no checkout. It says which checkout
+    # went unanswered and that the question ran out of time, which running again can cure.
+    # Mutation (declared): `mutations/`'s "a question that ran out of time reads as a broken git".
+    side = _a_worktree(tmp_path)
+    real = subprocess.run
+
+    def runs_out(args: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        if "--git-common-dir" in args:
+            raise subprocess.TimeoutExpired(args, kwargs.get("timeout") or 0)
+        return real(args, **kwargs)
+
+    monkeypatch.setattr("stayfixed.gitenv.subprocess.run", runs_out)
+    with pytest.raises(GitUnavailable) as excinfo:
+        binding.common_directory(side)
+    assert excinfo.value.cause is Unasked.TIMED_OUT
+    assert str(side) in str(excinfo.value)
+    assert "check that `git` runs here" not in str(excinfo.value)
 
 
 def test_a_probe_that_runs_out_of_time_is_not_a_broken_git(
@@ -765,7 +787,7 @@ def test_a_probe_that_runs_out_of_time_is_not_a_broken_git(
 
     monkeypatch.setattr("stayfixed.gitenv.subprocess.run", declined_then_slow)
     with pytest.raises(GitUnavailable) as excinfo:
-        main_checkout(side)
+        binding.common_directory(side)
     assert excinfo.value.cause is Unasked.TIMED_OUT
     assert "check that `git` runs here" not in str(excinfo.value)
 
@@ -776,14 +798,14 @@ def test_a_worktree_removed_before_it_is_asked_about_is_gone_not_a_broken_git(
     # `git -C <gone> --version` exits 128 before it reads `--version`, so the discriminator that
     # tells a broken `git` from one that declined read a removed worktree as a broken `git`, and
     # the refusal sent the owner to check a `git` that worked. The cause is the directory, and
-    # it is named, so a caller walking every worktree can skip the one that went away.
+    # it is named.
     root = tmp_path / "project"
     a_repo(root)
     side = tmp_path / "side"
     git(root, "worktree", "add", "-q", str(side), "-b", "side")
     shutil.rmtree(side)
     with pytest.raises(GitUnavailable) as excinfo:
-        main_checkout(side)
+        binding.common_directory(side)
     assert excinfo.value.cause is Unasked.GONE
     assert str(side) in str(excinfo.value)
     assert "check that `git` runs here" not in str(excinfo.value)

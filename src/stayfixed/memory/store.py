@@ -4,10 +4,12 @@ A store is a per-project value with no machine-level default, because the wrong 
 "no memory" but *another project's* memory reaching this session. Four things are therefore
 checked, and each closes a hole the other three leave open:
 
-1. **The shape.** In overlay mode `paths.memory` is a real directory holding one link per
-   group. It is not one link: `developer` points into the overlay's `common/memory`,
-   which is shared across projects and cannot live under `projects/<name>/`. A single link at
-   `paths.memory` would lose the cross-project half of the store outright.
+1. **The shape.** In overlay mode the store is the composed store `attach` builds under this
+   machine's data directory, named by the checkout's binding id (`composed_directory`), holding
+   one link per group: `developer` points into the overlay's `common/memory`, which is shared
+   across projects and cannot live under `projects/<name>/`. It is the directory the harness reads
+   through `autoMemoryDirectory`, so stayfixed's bundles and the harness read one store. In
+   `in-repo` mode `paths.memory` is a real directory, never one link for the whole store.
 2. **Containment inside the store.** A group name is repository-controlled — `memory.groups`
    is an ordinary `stayfixed.toml` list — so `groups = ["../secret"]` must not become a read,
    and certainly not a write, outside the store. `config/paths.py` says in as many words that
@@ -57,7 +59,7 @@ from pathlib import Path
 from stayfixed import fsops
 from stayfixed.binding import Bound, bound_project
 from stayfixed.config.overlay import overlay_root
-from stayfixed.config.paths import PathEscape, PathUnasked, contained
+from stayfixed.config.paths import PathEscape, PathUnasked, contained, data_directory
 from stayfixed.config.reading import MachineConfigError
 from stayfixed.config.schema import HARNESS_MODE, LOCAL_ONLY_MODE, OVERLAY_MODE, Config
 from stayfixed.findings import listed
@@ -78,6 +80,13 @@ PROJECT_RECORD = "project.toml"
 # the project's name, and lays out the group directories under it.
 STORE_DIR = "memory"
 COMMON = Path("common") / "memory"
+# Under the machine's data directory: one composed store per binding id (`memory.composed`).
+STORES = "stores"
+
+
+def composed_directory(id: str) -> Path:
+    """`<data>/stores/<id>/`, derived from the id and nothing else: the overlay-mode store."""
+    return data_directory() / STORES / id
 
 
 @dataclass(frozen=True)
@@ -123,24 +132,6 @@ class Unresolved:
 
     def __str__(self) -> str:
         return ": ".join(part for part in (self.said, self.detail) if part)
-
-
-def main_checkout(root: Path) -> Path:
-    """The checkout that owns the store, for a session running inside a worktree.
-
-    The result must be an ancestor of nothing and a sibling of anything — but it must be a
-    real git answer, not one an inherited `GIT_DIR` produced, which is why `git_answer` scrubs.
-
-    Raises `GitUnavailable` rather than answering `root` when `git` could not be run. Answering
-    `root` would make `worktree.link` open with "this is the main checkout" and become a silent
-    no-op: no group links, no index link, no harness link, and `hooks.py` emitting its "nothing
-    to do" answer while every memory bundle is empty and nothing reports a failure.
-    """
-    common = git_answer(root, "rev-parse", "--path-format=absolute", "--git-common-dir").require(
-        f"`git` could not answer which checkout {quoted(str(root))} belongs to, so stayfixed "
-        "cannot tell where the store is"
-    )
-    return Path(common).parent if common else root
 
 
 _WORKTREES = "worktrees"
@@ -353,12 +344,14 @@ def read_binding_record(record: Path) -> dict[str, str]:
     return {key: value for key, value in raw.items() if isinstance(value, str) and value}
 
 
-def _bound(project: str, root: Path) -> Unresolved | None:
-    """`None` when this machine binds the checkout's id to `project`, else `NO_RECORD`, with the
-    project's name as the detail it is about; the state is `binding_state`'s. A `git` that cannot
-    name the common directory raises, as it does for every other question here."""
-    if binding_state(bound_project(root), project) == BOUND:
-        return None
+def _composed(project: str, root: Path) -> Path | Unresolved:
+    """The composed store of the checkout's id where this machine binds that id to `project`, else
+    `NO_RECORD`, with the project's name as the detail it is about; the state is `binding_state`'s.
+    A `git` that cannot name the common directory raises, as it does for every other question
+    here."""
+    found = bound_project(root)
+    if found is not None and binding_state(found, project) == BOUND:
+        return composed_directory(found.id)
     return Unresolved(NO_RECORD, f"project {quoted(project)}")
 
 
@@ -381,8 +374,8 @@ def permitted_roots(overlay: Path, project: str) -> tuple[Path, Path]:
 # than its parent: this module's own docstring says so — "`developer` points into the overlay's
 # `common/memory`, which is shared across projects and cannot live under `projects/<name>/`" —
 # and the overlay template's README says it to the owner. Named here beside `COMMON` and
-# `permitted_roots` because `attach` builds the link tree from this routing and `doctor` reports
-# on it; a third spelling is one more place for them to stop agreeing.
+# `permitted_roots` because the composed store is built from this routing; a second spelling is one
+# more place for them to stop agreeing.
 COMMON_GROUP = "developer"
 
 
@@ -445,8 +438,9 @@ def _group_targets(
 def _names_own_share(override: str | None, config: Config, overlay: Path | None) -> bool:
     """Whether `--store` names this project's own share of the recorded overlay, in overlay mode.
 
-    That directory is the far end of the link tree, not a store of its own: `developer` lives in
-    `common/memory`, beside it, so resolving groups *under* it would answer a smaller store — an
+    That directory is where the composed store's project groups point, not a store of its own:
+    `developer` lives in `common/memory`, beside it, so resolving groups *under* it would answer a
+    smaller store — an
     index rendered from it has no developer notes, and `--check` would call that index current. A
     store is one store however it is named, so this name resolves as the plain run does.
     """
@@ -486,8 +480,22 @@ def _resolve_at(
     overlay = _recorded_overlay(machine)
     if _names_own_share(override, config, overlay):
         override = None
+    composed: Path | None = None
+    if mode == OVERLAY_MODE:
+        if overlay is None:
+            return None, Unresolved(
+                "no overlay root is recorded in the machine configuration; run `stayfixed setup`"
+            )
+        if not fsops.is_dir(overlay):
+            return None, Unresolved(OVERLAY_GONE.format(root=quoted(str(overlay))))
+        found = _composed(config.project.name, root)
+        if isinstance(found, Unresolved):
+            return None, found
+        composed = found
     if override is not None:
         base = Path(override).expanduser()
+    elif composed is not None:
+        base = composed
     elif mode == LOCAL_ONLY_MODE:
         try:
             # `contained` with no `allow_final_symlink` refuses a symlink at *any* level
@@ -513,30 +521,17 @@ def _resolve_at(
         if isinstance(declared, Unresolved):
             return None, declared
         base = declared
-        # Check 1, the shape: in every mode but `local-only` and an explicit `override`,
-        # `paths.memory` itself must be a real directory — one link per group, not one link for the
-        # whole store. This has to hold in overlay mode too, not just `in-repo`: a group directory
-        # reached *through* a symlinked `paths.memory` is not itself a symlink, so the per-group
-        # check below (`permitted_roots`) never runs, and the whole store silently becomes whatever
-        # `paths.memory` was pointed at — including another project's share.
+        # Check 1, the shape: in `in-repo` mode `paths.memory` itself must be a real directory, not
+        # one link for the whole store: the store would silently become whatever `paths.memory`
+        # was pointed at.
         if fsops.is_symlink(declared):
             return None, Unresolved(
                 f"paths.memory is a symlink, and {mode} memory must be a real directory",
                 f"{config.paths.memory} is a symlink; {mode} memory must be a real directory",
             )
-    if mode == OVERLAY_MODE:
-        if overlay is None:
-            return None, Unresolved(
-                "no overlay root is recorded in the machine configuration; run `stayfixed setup`"
-            )
-        if not fsops.is_dir(overlay):
-            return None, Unresolved(OVERLAY_GONE.format(root=quoted(str(overlay))))
-        unbound = _bound(config.project.name, root)
-        if unbound is not None:
-            return None, unbound
     if not fsops.is_dir(base):
-        # `attach` builds the directory only in overlay mode, where it is the link tree; elsewhere
-        # it refuses, so it is named as the way out only there.
+        # `attach` builds the directory only in overlay mode, where it is the composed store;
+        # elsewhere it refuses, so it is named as the way out only there.
         said = STORE_MISSING + (BUILT_BY_ATTACH if mode == OVERLAY_MODE else "")
         return None, Unresolved(said, str(base))
     groups, unavailable = _group_targets(base, config, overlay if mode == OVERLAY_MODE else None)
@@ -613,9 +608,8 @@ def refusal_reason(
     messages) and out of `config.paths.memory`, both repository-controlled and neither
     schema-constrained — a TOML multi-line string carries literal newlines through unchanged,
     so this can come back multi-line, and the same repository text can appear in it twice. It
-    must never reach model context unwrapped: see `stayfixed.memory.hooks`, this area's own
-    consumer, which refuses to put this text into `HookResult.context` for exactly that reason.
-    A consumer that must show the detail wraps it first with `trust.wrap`.
+    must never reach model context unwrapped: a consumer that must show the detail wraps it first
+    with `trust.wrap`.
     """
     reason = resolved(root, config, override=override, machine=machine)[1]
     return None if reason is None else str(reason)
@@ -624,18 +618,14 @@ def refusal_reason(
 def inside_project(store: Store) -> bool:
     """Whether any note actually lives in the repository — the predicate the trust gate turns on.
 
-    Not `memory.mode`, which the clone chooses, and not the store directory, which in overlay
-    mode is a real directory of links inside the project. What decides whether a note is the
-    machine owner's or the repository's is where the note itself sits: `local-only` puts it
-    under `.stayfixed/local/`, which a `.gitignore` keeps out of a clone the owner made and
-    does not keep out of a clone the attacker authored.
+    Not `memory.mode`, which the clone chooses, and not the store directory. What decides whether
+    a note is the machine owner's or the repository's is where the note itself sits: `local-only`
+    puts it under `.stayfixed/local/`, which a `.gitignore` keeps out of a clone the owner made
+    and does not keep out of a clone the attacker authored.
 
-    This asks the question of the *notes*, and deliberately keeps asking only that. Folding
-    `store.path` in would make every overlay store repository data — the store directory is a
-    real directory in the repository in exactly that mode — and so would gate the machine
-    owner's own overlay notes behind a trust prompt and wrap them as data, defeating every
-    standing rule in the mode this project actually ships. A file that is not a note and
-    belongs to no group is asked about one at a time, with `in_repository` below.
+    This asks the question of the *notes*, and deliberately keeps asking only that. A file that
+    is not a note and belongs to no group is asked about one at a time, with `in_repository`
+    below.
 
     **Where it cannot answer, it answers closed.** In `local-only` and `in-repo` the notes are
     in the repository by construction — `.stayfixed/local/memory` and `paths.memory` are both
@@ -656,8 +646,7 @@ def in_repository(store: Store, path: Path) -> bool:
     """Whether one particular file this store yields sits in the repository itself.
 
     `inside_project` cannot answer this for `MEMORY.md`: the index is not a note, belongs to no
-    `memory.groups` entry and lives at `store.path`, which in overlay mode is inside the
-    repository while every group resolves far outside it. A caller that is about to inject a
-    specific file asks about that file.
+    `memory.groups` entry and lives at `store.path`. A caller that is about to inject a specific
+    file asks about that file.
     """
     return _inside(path, store.root)

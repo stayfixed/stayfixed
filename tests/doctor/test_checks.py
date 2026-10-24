@@ -66,8 +66,7 @@ from stayfixed.doctor.checks import (
 from stayfixed.doctor.entries import SETTINGS_FILES
 from stayfixed.harnesses import CLAUDE
 from stayfixed.hooks.api import DIAGNOSTICS, DIAGNOSTICS_MAX_BYTES, DIRECTORY, MARKERS
-from stayfixed.memory.api import PROJECT_RECORD, PROJECTS
-from stayfixed.memory.index import INDEX_NAME
+from stayfixed.memory.api import PROJECT_RECORD, PROJECTS, build_composed
 from stayfixed.overlay.api import COMMON_CLAUDE, COMMON_CODEX, COMMON_MEMORY
 from stayfixed.printed import quoted
 from stayfixed.release.api import HASHED_FILES
@@ -234,17 +233,14 @@ def _machine(tmp_path: Path) -> Path:
 
 
 # Every path `attach` places in the fixture's checkout, as `attach.write.placed_paths` names them
-# for an overlay-mode project with one group: the ledger, the link tree and the settings file.
-PLACED = (
-    LEDGER,
-    *((Path("docs") / "memory" / name).as_posix() for name in (INDEX_NAME, "developer")),
-    LOCAL_SETTINGS,
-)
+# for a project the overlay grants no standing rule: the ledger and the settings file.
+PLACED = (LEDGER, LOCAL_SETTINGS)
 
 
 def _attached(tmp_path: Path) -> Path:
-    """A project bound to an overlay and delivered to: the binding, the settings file, the render,
-    the ledger, the exclude block and the link tree.
+    """A project bound to an overlay and delivered to: the binding, the settings file pointing the
+    harness at the composed store, the render, the ledger, the exclude block and the composed
+    store.
 
     Built by hand rather than by running `attach`, so that what `doctor` reads is stated here
     in one place and a change to either command shows up as a disagreement rather than as two
@@ -257,9 +253,12 @@ def _attached(tmp_path: Path) -> Path:
     _git(root, "init", "-q", "-b", "main")
     _git(root, "remote", "add", "origin", ORIGIN)
     binding.record(root, "p", ORIGIN)
+    id = binding.read_id(root)
+    assert id is not None
+    composed = build_composed(overlay, "p", id)
     settings = root / LOCAL_SETTINGS
     settings.parent.mkdir(parents=True, exist_ok=True)
-    settings.write_text("{}\n", encoding="utf-8")
+    settings.write_text(json.dumps({"autoMemoryDirectory": str(composed)}) + "\n", encoding="utf-8")
     rendered = _rendered(root, overlay)
     recorded = root / LEDGER
     recorded.parent.mkdir(parents=True, exist_ok=True)
@@ -271,7 +270,7 @@ def _attached(tmp_path: Path) -> Path:
                 "allow": [],
                 "entries": {},
                 "rules": [],
-                "settings_keys": [],
+                "settings_keys": ["autoMemoryDirectory"],
                 "render": {"digest": rendered.digest},
             }
         ),
@@ -280,9 +279,6 @@ def _attached(tmp_path: Path) -> Path:
     hidden = exclude.planned_block(root, PLACED)
     assert hidden is not None
     exclude.write(hidden)
-    tree = root / "docs" / "memory"
-    tree.mkdir(parents=True, exist_ok=True)
-    (tree / "developer").symlink_to(overlay / PROJECTS / "p" / "memory" / "developer")
     return root
 
 

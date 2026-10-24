@@ -19,8 +19,8 @@ from stayfixed import fsops
 from stayfixed.config.loader import load
 from stayfixed.doctor.api import OK, RED, SKIP, WARN
 from stayfixed.errors import Refusal
-from stayfixed.memory.api import PROJECTS
 from stayfixed.memory.doctor import NEARLY_FULL
+from stayfixed.overlay.api import COMMON_MEMORY
 from tests.doctor.test_checks import (
     _attached,
     _by_name,
@@ -98,7 +98,7 @@ def test_a_bundle_that_does_not_fit_its_slots_is_reported(tmp_path: Path) -> Non
     # the repository, so an untrusted local store renders every bundle empty and this assertion
     # would pass for having measured nothing.
     root = _attached(tmp_path)
-    store = tmp_path / "overlay" / PROJECTS / "p" / "memory" / "developer"
+    store = tmp_path / "overlay" / COMMON_MEMORY
     for index in range(4):
         (store / f"note-{index}.md").write_text(
             _note("word " * 2_000, name=f"note-{index}", startup=index + 1), encoding="utf-8"
@@ -115,7 +115,7 @@ def test_a_bundle_that_fits_is_not_reported(tmp_path: Path) -> None:
     # The vacuity guard for the test above: one short standing rule fits its slots and is
     # nowhere near the platform cap, which is the ordinary installation, and the row stays green.
     root = _attached(tmp_path)
-    store = tmp_path / "overlay" / PROJECTS / "p" / "memory" / "developer"
+    store = tmp_path / "overlay" / COMMON_MEMORY
     (store / "short.md").write_text(_note("a short rule", name="short", startup=1), "utf-8")
     check = _by_name(
         _checks(tmp_path, root, machine=_machine(tmp_path)),
@@ -134,7 +134,7 @@ def test_a_bundle_whose_largest_part_is_at_the_platform_cap_is_a_warning(tmp_pat
     # neither the `over` arm (which would be red) nor the green one. Both are asserted, because
     # "warn" alone would also be produced by a `full` list built from the wrong predicate.
     root = _attached(tmp_path)
-    store = tmp_path / "overlay" / PROJECTS / "p" / "memory" / "developer"
+    store = tmp_path / "overlay" / COMMON_MEMORY
     cap = load(root, machine=_machine(tmp_path)).native_caps.hook_output_chars
     body = "word " * ((int(cap * NEARLY_FULL) + 600) // 5)
     (store / "big.md").write_text(_note(body, name="big", startup=1), encoding="utf-8")

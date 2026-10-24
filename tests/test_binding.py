@@ -100,7 +100,9 @@ def test_a_record_on_one_machine_leaves_another_machines_record_for_the_project_
     assert binding.read_id(here) != binding.read_id(there)
     monkeypatch.setenv("HOME", str(first))
     assert {path: path.read_bytes() for path in data_directory().rglob("*.toml")} == kept
-    assert binding.bound_project(here) == binding.Bound("widget", ORIGIN, here)
+    id = binding.read_id(here)
+    assert id is not None
+    assert binding.bound_project(here) == binding.Bound("widget", ORIGIN, here, id)
 
 
 @pytest.mark.parametrize(

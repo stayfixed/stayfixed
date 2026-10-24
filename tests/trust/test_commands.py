@@ -94,26 +94,13 @@ def test_every_sentence_that_names_the_memory_approval_asks_for_the_person() -> 
     # The sentences outside `trust` that name the approval reach a session's context or an agent's
     # shell tool, and each used to say "run `stayfixed trust approve memory` in a terminal", which
     # an agent able to open a pseudo-terminal reads as its instruction. Each asks for the person
-    # now, in the words `trust list` uses. `REVOKED` is written out in its module,
-    # which imports nothing at module level that discovery would load, so it is held whole.
-    # Mutations (`mutations/`'s "the approval sentence tells its reader to run the approval itself"
-    # -> every sentence built on the shared words; "the revoked link line tells its reader to
-    # approve in a terminal" -> `REVOKED`; "memory asks no person for the store's approval" -> the
-    # three `memory` sentences; "attach asks no person for the store's approval" -> the two
-    # `attach` sentences).
-    from stayfixed.attach.write import HARNESS_WAITS, REAPPROVE
-    from stayfixed.memory.commands import _DROPPED, _LINK_WAITS, _UNTRUSTED
-    from stayfixed.memory.hooks import REVOKED
+    # now, in the words `trust list` uses. Mutations (`mutations/`'s "the approval sentence tells
+    # its reader to run the approval itself" -> every sentence built on the shared words; "memory
+    # asks no person for the store's approval" -> the `memory` sentences).
+    from stayfixed.memory.commands import _DROPPED, _UNTRUSTED
 
-    assert (
-        "stayfixed: this store is no longer trusted, so the harness memory link was removed; once "
-        f"what changed has been reviewed, {ASKED}"
-    ) == REVOKED
-    assert _UNTRUSTED.endswith(f"nor through the harness memory link; {ASKED}")
-    assert _LINK_WAITS.endswith(f"volatile-notes bundles; to link it, {ASKED}")
+    assert _UNTRUSTED.endswith(f"volatile-notes bundles; {ASKED}")
     assert _DROPPED.endswith(f"if the store should reach a session, {ASKED}")
-    assert HARNESS_WAITS.endswith(f"no approval yet; {ASKED}; then run `stayfixed attach` again")
-    assert f"read what changed, then {ASKED}; then run `stayfixed attach` again" == REAPPROVE
 
 
 def test_the_alias_says_its_new_spelling(project: Path, capsys: pytest.CaptureFixture[str]) -> None:

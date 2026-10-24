@@ -27,7 +27,6 @@ from stayfixed.config.session import (
 from stayfixed.guards.hooks import register as guards_handlers
 from stayfixed.hooks.api import DIAGNOSTICS, DIRECTORY, Handler, HookEvent, HookResult
 from stayfixed.hooks.commands import CONFIG_FALLBACK
-from stayfixed.memory.hooks import register as memory_handlers
 from tests.config.test_session import densest_file, long_file_of_gates_that_run
 from tests.gitfixture import git
 from tests.hooks.test_hook_command import (
@@ -264,14 +263,6 @@ def test_pre_tool_use_prints_no_warning_and_logs_it_once(tmp_path: Path) -> None
 
 
 # A real file under which each handler about the project speaks, and the handler.
-def _worktree_link(root: Path) -> tuple[Handler, HookEvent]:
-    # A mode that keeps a store: memory left to the harness has nothing to link and says nothing.
-    text = CONFIG + '\n[memory]\nmode = "local-only"\n'
-    (root / "stayfixed.toml").write_text(text, encoding="utf-8")
-    handler = next(h for h in memory_handlers() if h.name == "worktree-link")
-    return handler, _event("SessionStart", root)
-
-
 def _overlay_status(root: Path) -> tuple[Handler, HookEvent]:
     text = CONFIG + '\n[memory]\nmode = "overlay"\n'
     (root / "stayfixed.toml").write_text(text, encoding="utf-8")
@@ -306,18 +297,15 @@ def run_handler(handler: Handler, event: HookEvent, session: SessionConfig) -> H
     return handler.run(event, session)
 
 
-@pytest.mark.parametrize(
-    "speaks", [_worktree_link, _overlay_status, _test_hygiene], ids=lambda f: f.__name__[1:]
-)
+@pytest.mark.parametrize("speaks", [_overlay_status, _test_hygiene], ids=lambda f: f.__name__[1:])
 def test_project_handlers_speak_on_a_file_and_stay_silent_without_one(
     tmp_path: Path, speaks: Callable[[Path], tuple[Handler, HookEvent]]
 ) -> None:
     # A handler about the project answers nothing without its configuration, and something with
     # it: the first half alone would pass for a handler that never speaks. Mutations
-    # (`mutations/`'s "the worktree link speaks only without a project configuration" ->
-    # `worktree_link` is silent on the file; "the overlay status judges with no project
-    # configuration" -> `overlay_status` raises on `None`; "the hygiene note judges with no
-    # project configuration" -> `test_hygiene` raises on `None`).
+    # (`mutations/`'s "the overlay status judges with no project configuration" ->
+    # `overlay_status` raises on `None`; "the hygiene note judges with no project configuration"
+    # -> `test_hygiene` raises on `None`).
     root = tmp_path / "project"
     root.mkdir()
     handler, event = speaks(root)

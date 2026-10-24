@@ -3165,17 +3165,6 @@ reddens = [
   "tests/doctor/test_checks.py::test_a_command_agent_or_nested_skill_declaring_hooks_is_information_naming_it[agent]",
 ]
 
-# Claude Code keeps a project's memory under a slug of its resolved path, `/` and `.` each read as
-# `-`, which the registry states and `memory` links into.
-[[mutation]]
-name = "Claude Code's memory slug keeps a dot"
-file = "src/stayfixed/harnesses.py"
-before = '    slug = project.replace("/", "-").replace(".", "-")'
-after = '    slug = project.replace("/", "-")'
-reddens = [
-  "tests/test_harnesses.py::test_claude_codes_memory_directory_is_keyed_by_the_projects_path",
-]
-
 # At a terminal an empty `HOME` names no home, where `Path.home` answers `/`: `attach` there aimed the
 # harness memory link at `/.claude/...` and ended in an internal error on a read-only root.
 [[mutation]]
@@ -3185,7 +3174,6 @@ before = "    if value is not None and not os.path.isabs(value):"
 after = "    if value and not os.path.isabs(value):"
 reddens = [
   "tests/config/test_machine.py::test_an_empty_home_names_no_home",
-  "tests/attach/test_commands.py::test_attach_whose_home_is_empty_refuses_in_words",
   "tests/attach/test_doctor.py::test_an_empty_home_is_told_it_is_home_that_names_none",
 ]
 
@@ -3266,7 +3254,7 @@ file = "src/stayfixed/gitenv.py"
 before = "    return Unasked.TIMED_OUT if asked is _NoAnswer.TIMED_OUT else Unasked.NOT_STARTED"
 after = "    return Unasked.BROKEN if asked is _NoAnswer.TIMED_OUT else Unasked.NOT_STARTED"
 reddens = [
-  "tests/attach/test_write.py::test_a_worktree_whose_question_runs_out_of_time_is_named_and_not_called_a_broken_git",
+  "tests/memory/test_store.py::test_a_question_that_runs_out_of_time_is_named_and_not_called_a_broken_git",
 ]
 
 [[mutation]]
@@ -3276,7 +3264,6 @@ before = "    if not fsops.is_dir(root):"
 after = "    if False:"
 reddens = [
   "tests/memory/test_store.py::test_a_worktree_removed_before_it_is_asked_about_is_gone_not_a_broken_git",
-  "tests/attach/test_write.py::test_a_worktree_removed_while_attach_walks_is_skipped_and_the_rest_is_linked",
 ]
 
 # The other causes, each with the remedy that fits it. A `git` a signal ended is no answer, as
@@ -4371,7 +4358,6 @@ after = """    if held is None:
     if held.digest != expected:"""
 reddens = [
   "tests/trust/test_record.py::test_a_refresh_never_brings_back_a_revoked_approval",
-  "tests/attach/test_write.py::test_an_approval_attach_could_not_carry_is_said_as_what_happened[record]",
 ]
 
 [[mutation]]

@@ -20,8 +20,8 @@ README's table of what each agent enforces is held equal to these values by a te
 measurement that moves a tier is one edit here.
 
 A new harness is a value with a positive `detects`, its project-root and plugin-root variables,
-its `render`, its settings files, the places it reads hooks out of a Markdown frontmatter, its
-memory directory if it keeps one, and its `reach`. What follows still lives outside the registry,
+its `render`, its settings files, the places it reads hooks out of a Markdown frontmatter, and
+its `reach`. What follows still lives outside the registry,
 spelled for Claude Code or Codex, and a harness that differs from both in any of it is an edit
 there too. `tests/test_harnesses.py` holds the list to the code: every string in a module of the
 package that names a harness is pardoned there, each pardon by one of these items or as prose.
@@ -78,8 +78,7 @@ Elsewhere, code that needs a harness fact asks this registry: `doctor` walks eve
 `settings` and `local_settings` for hook entries and every value's `hooked` places for skills,
 commands and agents, reads `CLAUDE.settings` for the machine's settings file and the plugin-root
 variables off every value; `setup` reads the machine's settings file off `CLAUDE.settings` too;
-`attach` merges into the one file `CLAUDE.local_settings` names; and `memory` links a store into
-the directory `CLAUDE.memory_dir` names, whichever harnesses a project lists.
+and `attach` merges into the one file `CLAUDE.local_settings` names.
 
 A name `[stayfixed] agents` lists and no harness answers to is counted, never refused and never
 printed: the list is repository-authored, and a project may name a harness a later stayfixed
@@ -187,17 +186,6 @@ class Harness:
     hooked: tuple[Hooked, ...] = ()
 
 
-@dataclass(frozen=True, kw_only=True)
-class MemoryHarness(Harness):
-    """A harness that keeps a project's own memory, which `memory` links a store into: Claude Code
-    alone, so the fact is this type's and not every value's, and `memory` reads it off `CLAUDE`
-    with no question whether there is one."""
-
-    # Where this harness keeps a project's own memory, relative to the home directory, given the
-    # project's resolved path.
-    memory_dir: Callable[[str], str]
-
-
 def hook_specific_output(event_name: str, context: str, notice: str) -> str:
     """Claude Code's hook answer: the whole string a hook writes to stdout, which the harness
     caps, rather than the field inside it.
@@ -250,13 +238,6 @@ def _claude_rule(profile: Profile, rules: str) -> Rendition:
     )
 
 
-def _claude_memory(project: str) -> str:
-    """`.claude/projects/<slug>/memory`, where Claude Code keeps a project's memory under the home
-    directory: the slug is the project's resolved path with `/` and `.` as `-`."""
-    slug = project.replace("/", "-").replace(".", "-")
-    return f"{CLAUDE_DIR}/projects/{slug}/memory"
-
-
 # The gates are the reusable workflow's, which runs the same under every agent: this repository's
 # smoke workflow runs it against a fixture project, and no agent takes part.
 _IN_CI = Reach(
@@ -283,7 +264,7 @@ _CODEX_HOOKS_UNVERIFIED = Reach(
     measured_on="Codex CLI 0.162.0-alpha.17.2",
 )
 
-CLAUDE = MemoryHarness(
+CLAUDE = Harness(
     name="claude",
     marker_dir=CLAUDE_DIR,
     settings=(f"{CLAUDE_DIR}/settings.json",),
@@ -319,7 +300,6 @@ CLAUDE = MemoryHarness(
         Hooked(f"{CLAUDE_DIR}/commands", None),
         Hooked(f"{CLAUDE_DIR}/agents", None),
     ),
-    memory_dir=_claude_memory,
 )
 # Codex reads `AGENTS.md` from the root down and no other instruction file, and follows no
 # import; `.codex/rules` holds command-execution policy, not instructions. The region is how a

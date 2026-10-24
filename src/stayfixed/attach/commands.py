@@ -35,27 +35,15 @@ def run_attach(args: argparse.Namespace) -> Result:
 
     root, store, machine = _target(args)
     if args.check:
-        # `None`, for the reason `attach` below is handed it: the real command's home is the
-        # machine owner's own.
-        return check(root, store=store, machine=machine, home=None, owner=command_owner(machine))
+        return check(root, store=store, machine=machine, owner=command_owner(machine))
     attached = attach(
         root,
         store=store,
         machine=machine,
         runner=subprocess_runner(),
-        # Explicit, as `runner` is: both parameters are keyword-required so that a caller has
-        # to say which home and which runner it means, and the real command's answer is the
-        # machine owner's own.
-        home=None,
         owner=command_owner(machine),
     )
     data = {
-        # Counts and not paths, which is the rule rather than a preference: every one of these
-        # paths is built out of `paths.memory` and a `memory.groups` entry, both
-        # repository-authored and neither schema-constrained, and `--json` puts `data` in front
-        # of the model. `stayfixed.memory.hooks` reports the same value the same way.
-        "links_created": len(attached.links.created),
-        "links_revoked": len(attached.links.revoked),
         "settings_written": attached.settings_written,
         "rules_written": list(attached.rules_written),
         "binding_recorded": attached.binding_recorded,
@@ -75,8 +63,7 @@ def run_attach(args: argparse.Namespace) -> Result:
     }
     summary = "; ".join(
         (
-            f"attached: {len(attached.links.created)} link(s), "
-            f"{len(attached.rules_written)} Codex rule file(s)",
+            f"attached: {len(attached.rules_written)} Codex rule file(s)",
             "settings merged" if attached.settings_written else "settings unchanged",
             f"binding {attached.binding} "
             + ("recorded" if attached.binding_recorded else "already recorded"),
@@ -112,14 +99,7 @@ def run_detach(args: argparse.Namespace) -> Result:
     from stayfixed.attach.write import detach
     from stayfixed.runner import subprocess_runner
 
-    machine = Path(args.machine) if args.machine else None
-    removed = detach(
-        Path(args.root).resolve(),
-        machine=machine,
-        runner=subprocess_runner(),
-        home=None,
-        owner=command_owner(machine),
-    )
+    removed = detach(Path(args.root).resolve(), runner=subprocess_runner())
     data = {
         # Counts and not the strings, which is the same ruling `attach.check` makes about
         # `already_present` and this module makes about `project.name` two functions up — and it
@@ -133,34 +113,15 @@ def run_detach(args: argparse.Namespace) -> Result:
         "entries_removed": len(removed.entries_removed),
         "rules_removed": len(removed.rules_removed),
         "settings_keys_removed": len(removed.settings_keys_removed),
-        # A count, for the reason `run_attach` gives above.
-        "links_revoked": len(removed.links.revoked),
-        # A count, and it has to be: besides `CREATED_DIRS`, stayfixed's own closed vocabulary,
-        # this list names `paths.memory` and the directories above it, which the repository
-        # configures.
+        # A count of `CREATED_DIRS`, stayfixed's own closed vocabulary.
         "directories_removed": len(removed.directories_removed),
         # A boolean this command computed, so it prints.
         "exclude_block_removed": removed.exclude_block_removed,
-        # A boolean this command computed, so it prints.
-        "exclude_block_kept": removed.exclude_block_kept,
-        # A boolean this command computed, so it prints.
-        "link_tree_kept": removed.link_tree_kept,
         # A boolean this command computed, so it prints.
         "delivery_removed": removed.delivery_removed,
         # A boolean this command computed, so it prints.
         "store_kept": removed.store_kept,
     }
-    # The link tree is kept only while another checkout is attached, which keeps the block too.
-    what = (
-        "the exclude block and this checkout's link tree were"
-        if removed.link_tree_kept
-        else "the exclude block was"
-    )
-    kept = (
-        f"; {what} kept, because another checkout of this repository is still attached"
-        if removed.exclude_block_kept
-        else ""
-    )
     withdrawn = "; the overlay's plugin was withdrawn" if removed.delivery_removed else ""
     if removed.store_kept:
         withdrawn += (
@@ -171,21 +132,24 @@ def run_detach(args: argparse.Namespace) -> Result:
         f"detached: {len(removed.allow_removed)} allow rule(s), "
         f"{len(removed.entries_removed)} hook entr(ies), "
         f"{len(removed.rules_removed)} Codex rule file(s), "
-        f"{len(removed.links.revoked)} link(s), "
         f"{len(removed.directories_removed)} directory(ies){withdrawn}; "
-        f"the binding record was left in place{kept}",
+        f"the binding record was left in place",
         data,
     )
 
 
 def register(groups: SubParsers) -> None:
     attach = common_flags(
-        groups.add_parser("attach", help="bind this repository to the overlay and link its notes"),
+        groups.add_parser(
+            "attach", help="bind this repository to the overlay and point the harness at its notes"
+        ),
         store=True,
     )
     attach.add_argument("--check", action="store_true", help=ATTACH_CHECK_HELP)
     attach.set_defaults(func=run_attach)
 
+    # `--machine` is taken as every project command takes it (docs/cli.md, "Shared flags"), and
+    # read by nothing here: every path `detach` withdraws is the ledger's or derived from the id.
     detach = common_flags(
         groups.add_parser("detach", help="remove what attach added, and leave the binding")
     )

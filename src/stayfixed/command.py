@@ -51,14 +51,11 @@ SETUP_MACHINE_HELP = (
     "the machine configuration file to write (default: ~/.config/stayfixed/config.toml, the "
     "file every reader reads)"
 )
-# `attach --check` reports the same way the four above do and **exits differently on purpose**.
-# Its exit 1 is a memory group that never moved into the overlay, which `attach` refuses on above
-# its first write -- a thing the owner acts on before the real run -- and not a non-empty diff: a
-# diff with allow rules in it is the ordinary state of a first attach, which `attach` shows and
-# proceeds with. A `--check` that failed on it would make reading the diff first a failure.
-ATTACH_CHECK_HELP = (
-    "report the binding, the diff and the groups that never moved, and write nothing"
-)
+# `attach --check` reports the same way the four above do and **exits differently on purpose**:
+# never on a non-empty diff. A diff with allow rules in it is the ordinary state of a first attach,
+# which `attach` shows and proceeds with, so a `--check` that failed on it would make reading the
+# diff first a failure. It ends with the run's own code where the run would refuse or fail.
+ATTACH_CHECK_HELP = "report the binding and the diff, and write nothing"
 
 
 def grammar(pattern: re.Pattern[str], rule: str) -> Callable[[str], str]:

@@ -222,15 +222,13 @@ def main(argv: list[str]) -> int:
         f"rc={lapsed.returncode}, canary={CANARY in lapsed.stdout}",
     )
 
-    # The dispatcher's own SessionStart entry, under the lapsed record. Measured rather than
-    # predicted: the expectation was a `worktree-link` line reporting the store as not linked,
-    # and this clone never produces one — `memory.hooks._link_worktree` speaks for a LINKED
-    # WORKTREE, and the clone is a main checkout with no link ever created, so the handler's
-    # own answer is "nothing to do" and the envelope carries no context at all. That is the
-    # right answer and it is what is asserted: a well-formed envelope naming the event, with
-    # no `additionalContext` and neither the canary nor the repository-data marker anywhere in
-    # it. The row's positive control is the first row above — the same store, trusted, does
-    # reach a session through the bundle entries — so "nothing came out" cannot be a crash.
+    # The dispatcher's own SessionStart entry, under the lapsed record. No handler there speaks
+    # for an `in-repo` store — the overlay's status line and rules speak only in `overlay` mode —
+    # so the envelope carries no context at all. That is the right answer and it is what is
+    # asserted: a well-formed envelope naming the event, with no `additionalContext` and neither
+    # the canary nor the repository-data marker anywhere in it. The row's positive control is the
+    # first row above — the same store, trusted, does reach a session through the bundle entries
+    # — so "nothing came out" cannot be a crash.
     started = through_wrapper(wrapper, ["hook", "SessionStart"], env, planted.clone)
     try:
         envelope = json.loads(started.stdout)

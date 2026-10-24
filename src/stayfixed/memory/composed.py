@@ -10,6 +10,10 @@ overlay's notes through one key and no per-worktree link. `<project>` is the pro
 binding record names, which the caller passes, and the groups are the directories the overlay
 holds for it: no name the repository chose becomes a path here.
 
+**It is the overlay-mode store stayfixed reads too** (`store.resolve`), so the bundles and the
+harness read one directory, and `attach` renders the index behind its `MEMORY.md` link where the
+overlay has none yet (`render_missing_index`), so neither reads a dangling one.
+
 **What stayfixed places here is links, and only links are taken.** The harness writes into the
 directory it reads, so a file here that is not a link is a note it wrote, and neither a rebuild nor
 a withdrawal removes it. `build` makes the store's links exactly the overlay's current set and
@@ -26,17 +30,29 @@ from pathlib import Path
 
 from stayfixed import fsops
 from stayfixed.binding import unwritten
-from stayfixed.config.paths import data_directory
-from stayfixed.memory.index import INDEX_NAME
-from stayfixed.memory.store import COMMON_GROUP, PROJECTS, STORE_DIR, overlay_group_target
+from stayfixed.config.schema import Config
+from stayfixed.errors import Failure
+from stayfixed.memory.index import INDEX_NAME, index_source, reconcile, render_index, write_index
+from stayfixed.memory.store import (
+    COMMON_GROUP,
+    PROJECTS,
+    STORE_DIR,
+    composed_directory,
+    overlay_group_target,
+    permitted_roots,
+    resolve,
+)
 
-# Under the machine's data directory: one composed store per binding id.
-STORES = "stores"
 
-
-def store_directory(id: str) -> Path:
-    """`<data>/stores/<id>/`, derived from the id and nothing else."""
-    return data_directory() / STORES / id
+def link_sources(overlay: Path, config: Config) -> tuple[Path, ...]:
+    """Every path in the overlay a link of the store points at for the configured groups: the
+    index in this project's share, then each group's directory. `attach` asks each, above its
+    first write, whether a path that long can exist on this machine
+    (`attach.binding.refuse_unless_share_can_exist`): the index is what `render_missing_index`
+    writes and every group's but the common one a directory `attach` creates."""
+    project = config.project.name
+    index = permitted_roots(overlay, project)[1] / INDEX_NAME
+    return (index, *(overlay_group_target(overlay, project, g) for g in config.memory.groups))
 
 
 def _sources(overlay: Path, project: str) -> dict[str, Path]:
@@ -59,7 +75,7 @@ def _links(directory: Path) -> list[str]:
 def build(overlay: Path, project: str, id: str) -> Path:
     """Make `<data>/stores/<id>/` hold a link to each of the overlay's groups for `project` and to
     its index, and no other link, and return it. A file that is not a link is left where it is."""
-    directory = store_directory(id)
+    directory = composed_directory(id)
     sources = _sources(overlay, project)
     try:
         # The plain-path form for the data directory itself, as `binding.record` writes it.
@@ -78,7 +94,7 @@ def build(overlay: Path, project: str, id: str) -> Path:
 def withdraw(id: str) -> bool:
     """Take every link out of `<data>/stores/<id>/`, then the directory where nothing is left;
     whether no store is left. A note the harness wrote there keeps it."""
-    directory = store_directory(id)
+    directory = composed_directory(id)
     if not fsops.is_dir(directory):
         return True
     try:
@@ -90,3 +106,22 @@ def withdraw(id: str) -> bool:
     except OSError as exc:
         raise unwritten(directory.parent, id, exc) from None
     return True
+
+
+def render_missing_index(root: Path, config: Config, *, machine: Path | None) -> None:
+    """Render the index behind the store's `MEMORY.md` link where the overlay has none yet.
+
+    A first attach linked `MEMORY.md` at a file nothing had written, so every session read a
+    dangling link and `memory index --check` failed until someone ran `memory index` by hand. This
+    is that command's own render, with the notes left as they are (`write=False`: an attach adds no
+    `index:` line to a note). After `build`, whose link is what makes the render's destination the
+    overlay's copy."""
+    store = resolve(root, config, machine=machine)
+    if store is None:
+        raise Failure(
+            "the composed store was built and the store still does not resolve; "
+            "`stayfixed memory index --check` reports why"
+        )
+    if index_source(store, config) is not None:
+        return
+    write_index(store, config, render_index(reconcile(store, config, write=False), config, store))

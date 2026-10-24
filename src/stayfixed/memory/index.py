@@ -158,8 +158,8 @@ def index_source(store: Store, config: Config) -> Path | None:
 
     `store.py` does not track the index as a group (it is not a `memory.groups` entry), so no
     per-link target check has ever reached it. Every reader of `store.path / INDEX_NAME` needs
-    this same answer — `worktree.link`, which materialises it into a worktree, the writer and
-    the check (`_destination`), and the harvest (`_appended`) — so it lives here, beside
+    this same answer — the writer and the check (`_destination`), and the harvest
+    (`_appended`) — so it lives here, beside
     `INDEX_NAME`, and is called rather than reimplemented.
 
     `None` has three causes, and this function's callers only ever need to ask the read
@@ -476,7 +476,7 @@ class IndexCheck:
 def _destination(store: Store, config: Config) -> Path:
     """The one file the writer writes and the check compares against: what the readers source.
 
-    `index_source` is the rule every *reader* applies — `_appended`, `worktree.link`. The writer
+    `index_source` is the rule every *reader* applies — `_appended`. The writer
     did not apply it and neither did the check, and each half of that was its own defect.
     `write_atomically` ends in `os.replace`, which replaces the **link** rather than its target:
     one run stranded the overlay's shared copy on every other machine, turned the index into a

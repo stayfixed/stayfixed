@@ -32,14 +32,12 @@ from stayfixed.memory.index import (
     IndexCheck,
     Reconciliation,
     check_index,
-    index_source,
     reconcile,
     render_index,
     write_index,
 )
 from stayfixed.memory.inventory import inventory, totals
-from stayfixed.memory.store import Store, Unresolved, in_repository, resolved
-from stayfixed.memory.worktree import harness_link_needed
+from stayfixed.memory.store import Store, Unresolved, resolved
 from stayfixed.printed import printable, quoted
 from stayfixed.result import Result
 from stayfixed.trust.api import (
@@ -115,26 +113,14 @@ def store_at(root: Path, config: Config, machine: Path | None, override: str | N
 # agent (`trust.api.PERSON_RUNS`).
 _APPROVE = PERSON_RUNS.format(command="stayfixed trust approve memory")
 # What the trust gate withholds until there is a record, said where a person will read it:
-# `bundles.blocks` returns `[]` for repository-data notes, and `worktree.harness_link_needed`
-# withholds the harness memory link from a store whose directory is inside the repository.
-# `harness_link_needed` decides when one of these is said — the link's question, which is the
-# wider one: whenever the notes or a committed index are withheld, so is the link — and
-# `_holds_repository_data` which. The failure
-# this closes was silent in both directions: `memory index` rewrites every note and `MEMORY.md`,
-# so it used to revoke the very record it depends on, and nothing in any summary said why the
-# model had stopped receiving standing rules.
+# `bundles.blocks` returns `[]` for repository-data notes. `trust.may_inject` decides when it is
+# said.
+# The failure this closes was silent: `memory index` rewrites every note and `MEMORY.md`, so it
+# used to revoke the very record it depends on, and nothing in any summary said why the model had
+# stopped receiving standing rules.
 _UNTRUSTED = (
-    "this store holds repository data with no trust record, so none of it reaches a session — "
-    "not through the standing-rules and volatile-notes bundles, nor through the harness memory "
-    "link; " + _APPROVE
-)
-# The overlay store whose notes are all the machine owner's: the bundles deliver them with no
-# record, and only the link to the store's directory, which is inside the repository, waits.
-# Said in its own words because `_UNTRUSTED`'s "none of it reaches a session" is false here.
-_LINK_WAITS = (
-    "the harness memory link to this store waits for a trust record, because the store's "
-    "directory is inside the repository; its notes still reach a session through the "
-    "standing-rules and volatile-notes bundles; to link it, " + _APPROVE
+    "this store holds repository data with no trust record, so none of it reaches a session "
+    "through the standing-rules and volatile-notes bundles; " + _APPROVE
 )
 # The narrow case where a stayfixed-authored write cannot carry trust forward: the store changed
 # under it, so re-recording would bless bytes the owner has never looked at, or the record did —
@@ -183,32 +169,15 @@ _EXTRA_NOT_PUBLISHED = (
 )
 
 
-def _holds_repository_data(store: Store, config: Config) -> bool:
-    """Whether the notes or a committed index are repository data, which the bundles withhold
-    too, rather than only the directory the harness link exposes.
-
-    `trust.is_repository_data` answers about the store's *notes*, through `inside_project`,
-    which in overlay mode is False by design — every group resolves out into the overlay —
-    while `store.path` is a real directory inside the repository, so a committed `MEMORY.md`
-    there is repository data that answer cannot see. So the index is asked about by file,
-    through its own `in_repository`, beside the notes.
-    """
-    index = index_source(store, config)
-    return trust.is_repository_data(store) or (index is not None and in_repository(store, index))
-
-
-def _gate(store: Store, config: Config, trusted: bool) -> str | None:
+def _gate(trusted: bool) -> str | None:
     """Whether the trust gate is what a person should be told about, after a command ran;
-    `trusted` is the caller's own answer to `harness_link_needed`, asked once per command.
+    `trusted` is the caller's own answer to `trust.may_inject`, asked once per command.
 
     Deliberately not wired into `session-context`: that command's `Result.summary` *is* the
     text the `SessionStart` entry emits, so a diagnostic there would be injected into the model
-    rather than read by anyone. Nor into the handler, which stays quiet. The
-    commands a person runs by hand are where this belongs.
+    rather than read by anyone. The commands a person runs by hand are where this belongs.
     """
-    if trusted:
-        return None
-    return _UNTRUSTED if _holds_repository_data(store, config) else _LINK_WAITS
+    return None if trusted else _UNTRUSTED
 
 
 def _with(summary: str, note: str | None) -> str:
@@ -310,9 +279,9 @@ def run_index(args: argparse.Namespace) -> Result:
             else f"index is current: {report.words} words, {report.lines} lines"
         )
         summary = _with(_with(summary, _harvest(reconciled, store)), _publish(reconciled, store))
-        trusted = harness_link_needed(store, config)
+        trusted = trust.may_inject(store, config)
         return Result(
-            _with(summary, _gate(store, config, trusted)),
+            _with(summary, _gate(trusted)),
             {
                 "drifted": report.drifted,
                 "words": report.words,
@@ -339,14 +308,14 @@ def run_index(args: argparse.Namespace) -> Result:
         # The index is written; the refresh alone was refused, and nothing reached the record.
         carried, sandboxed = False, True
     # Asked after the write and its refresh, which is the state the next session meets.
-    trusted = harness_link_needed(store, config)
+    trusted = trust.may_inject(store, config)
     note: str | None
     if sandboxed:
         note = _NOT_REFRESHED
     elif before.trusted and not carried:
         note = _DROPPED
     else:
-        note = _gate(store, config, trusted)
+        note = _gate(trusted)
     # Exit 0: the write succeeded, and `--check` is the mode that fails a build. The findings
     # are still said, because a person running this by hand is who can act on them.
     wrote = "; ".join(
@@ -447,9 +416,9 @@ def run_doctor_bundles(args: argparse.Namespace) -> Result:
     bad = [name for name, row in report.items() if row["overflow"] or row["oversized"]]
     summary = "every bundle fits its slots" if not bad else f"does not fit: {', '.join(bad)}"
     # A bundle that fits because it is empty is not a bundle that fits. `doctor` reads this.
-    trusted = harness_link_needed(store, config)
+    trusted = trust.may_inject(store, config)
     return Result(
-        _with(summary, _gate(store, config, trusted)),
+        _with(summary, _gate(trusted)),
         {"bundles": report, "trusted": trusted},
         exit_code=1 if bad else 0,
     )
