@@ -285,9 +285,12 @@ stayfixed memory promote developer/prefer-uv.md
 stayfixed memory promote --changed    # after reading what changed
 ```
 
-A note is reviewed while `trust.json` holds a `reviewed` approval for its resolved path at the
-sha256 of its current bytes, so an edit — yours, an agent's, the harness's writer's — makes it
-unreviewed again and moves no other note. Only a reviewed note is a standing rule
+A note is reviewed while the sha256 of its current bytes is a `reviewed` approval in `trust.json`.
+The digest alone decides, and the approval keeps the note's resolved path only as the subject
+`trust list` prints: the same bytes are reviewed in every worktree, after the store moves and
+under another name, and an edit — yours, an agent's, the harness's writer's — makes the note
+unreviewed again and moves no other note. The record is this machine's, so another machine
+promotes for itself. Only a reviewed note is a standing rule
 ([`session-context`](#stayfixed-memory-session-context---bundle-name---part-n)). The record lies
 outside every tree, so repository bytes cannot write it; an agent whose shell can run this command
 can, and against it the record is a label, not a gate ([`trust list`](#stayfixed-trust-list---root-path---machine-path)

@@ -3252,13 +3252,13 @@ reddens = [
   "tests/memory/test_trust.py::test_wrap_draws_another_nonce_when_the_note_already_holds_the_first",
 ]
 
-# A note counts as the owner's only at the bytes promoted: the record's digest for the note's path
-# must be the note's digest now, so an edit after promoting is a note to review again.
+# A note counts as the owner's only at the bytes promoted: the note's digest now must be one the
+# record holds, so an edit after promoting is a note to review again.
 [[mutation]]
 name = "a stale digest still reads as reviewed"
 file = "src/stayfixed/memory/reviewed.py"
-before = "    return REVIEWED if state_in(held, KIND, named, current) is State.APPROVED else UNREVIEWED"
-after = "    return REVIEWED if state_in(held, KIND, named, current) is not State.MISSING else UNREVIEWED"
+before = "    return REVIEWED if current in held else UNREVIEWED"
+after = "    return REVIEWED if held else UNREVIEWED"
 reddens = [
   "tests/memory/test_reviewed.py::test_an_edit_after_promotion_makes_that_note_unreviewed_and_moves_no_other",
 ]

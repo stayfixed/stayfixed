@@ -126,6 +126,47 @@ def test_an_edit_after_promotion_makes_that_note_unreviewed_and_moves_no_other(
     assert "OTHER-BODY" in standing and "RULE-BODY" not in standing
 
 
+IN_REPO = CONFIG.replace('mode = "local-only"', 'mode = "in-repo"') + (
+    '\n[paths]\nmemory = "docs/memory"\n'
+)
+
+
+def test_a_note_promoted_in_the_main_checkout_is_reviewed_in_a_linked_worktree(
+    tmp_path: Path,
+) -> None:
+    # The record matches a note by the digest of its bytes alone, so the same committed note in
+    # another worktree of the repository — the desktop app opens every session in one — is the
+    # note the owner promoted. Keyed by the note's resolved path, each worktree's copy was a note
+    # nobody had promoted, and no standing rule arrived there.
+    from tests.gitfixture import git
+
+    root = tmp_path / "project"
+    base = root / "docs" / "memory" / "developer"
+    base.mkdir(parents=True)
+    (base / "rule.md").write_text(_note("rule", startup="1", body="RULE-BODY"), "utf-8")
+    (root / CONFIG_FILE).write_text(IN_REPO, encoding="utf-8")
+    git(root, "init", "-q", "-b", "main")
+    git(root, "add", "-A")
+    git(root, "commit", "-qm", "notes")
+    side = root / ".claude" / "worktrees" / "w1"
+    git(root, "worktree", "add", "-q", str(side))
+    assert cli(root, tmp_path, "memory", "promote", "--changed")[0] == 0
+    assert "RULE-BODY" in _bundle(side, tmp_path, "standing-rules")
+
+
+def test_a_promoted_note_is_still_reviewed_after_its_store_moves(tmp_path: Path) -> None:
+    # The path is the record's label for `trust list`, never what it matches on: the bytes the
+    # owner promoted are the bytes reviewed wherever the store now sits.
+    import shutil
+
+    root = _project(tmp_path)
+    assert cli(root, tmp_path, "memory", "promote", "developer/rule.md")[0] == 0
+    moved = tmp_path / "moved"
+    shutil.move(root, moved)
+    assert _status_of(moved, tmp_path, "rule") == REVIEWED
+    assert "RULE-BODY" in _bundle(moved, tmp_path, "standing-rules")
+
+
 def test_promote_changed_records_only_the_unreviewed_notes(tmp_path: Path) -> None:
     root = _project(tmp_path)
     assert cli(root, tmp_path, "memory", "promote", "developer/rule.md")[0] == 0

@@ -1,9 +1,12 @@
 """Whether a note counts as the owner's: promoted, at the bytes it holds now.
 
-A note is reviewed when the machine's trust record (`trust.json`, beside the machine file) holds a
-`reviewed` entry for the note's resolved path at the sha256 of the note's current bytes. `memory
-promote` writes the entry, `trust list` lists it and `trust revoke reviewed --subject PATH`
-withdraws it; the record kind is no registered approval kind, so nothing else asks about it.
+A note is reviewed when the sha256 of its current bytes is a `reviewed` entry in the machine's
+trust record (`trust.json`, beside the machine file). The digest alone decides: the entry keeps the
+note's resolved path only as the label `trust list` prints, so identical bytes are the note the
+owner promoted wherever they sit — another worktree's copy, a store that moved, a renamed file —
+and an edit is a note to review again. `memory promote` writes the entry, `trust list` lists it and
+`trust revoke reviewed --subject PATH` withdraws it; the record kind is no registered approval
+kind, so nothing else asks about it.
 
 **What it stops, and what it rests on.** Every writer of a note but the owner's own review: a clone
 that commits a note ranked `startup: 1`, the harness's memory writer, an agent writing while it
@@ -19,7 +22,7 @@ unreviewed: nothing is lost, since an unreviewed note still reaches the session 
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
@@ -27,13 +30,13 @@ from typing import Literal
 from stayfixed import fsops
 from stayfixed.memory.notes import Note
 from stayfixed.memory.store import Store
-from stayfixed.trust.api import Approval, State, UnreadableTrust, approve_all, recorded, state_in
+from stayfixed.trust.api import UnreadableTrust, approve_all, recorded
 
 KIND = "reviewed"
 REVIEWED: Literal["reviewed"] = "reviewed"
 UNREVIEWED: Literal["unreviewed"] = "unreviewed"
 Status = Literal["reviewed", "unreviewed"]
-Record = Mapping[tuple[str, str], Approval]
+Record = frozenset[str]
 
 
 def digest(note: Path) -> str:
@@ -42,28 +45,30 @@ def digest(note: Path) -> str:
 
 
 def subject(note: Path) -> str:
-    """The path the record names a note by: resolved, so a note reached through a group link
-    (`developer` in every composed store) is one note, promoted once."""
+    """The label the record keeps beside a note's digest, for `trust list` to print: its resolved
+    path, so a note reached through a group link (`developer` in every composed store) is named by
+    where its bytes are and never by a path naming the binding id. Nothing matches on it."""
     return str(fsops.resolved(note))
 
 
 def record(store: Store) -> Record:
-    """The machine's trust record, read once for a caller asking of many notes, or nothing where
-    it cannot be read."""
+    """Every digest the machine's trust record holds as reviewed, read once for a caller asking of
+    many notes, or none where the record cannot be read."""
     try:
-        return recorded(store.machine)
+        approvals = recorded(store.machine)
     except UnreadableTrust:
-        return {}
+        return frozenset()
+    return frozenset(approval.digest for (kind, _), approval in approvals.items() if kind == KIND)
 
 
-def status(store: Store, note: Note, approvals: Record | None = None) -> Status:
-    """`reviewed` iff the record holds the note's current digest for its path."""
-    held = record(store) if approvals is None else approvals
+def status(store: Store, note: Note, digests: Record | None = None) -> Status:
+    """`reviewed` iff the note's current digest is one the record holds as reviewed."""
+    held = record(store) if digests is None else digests
     try:
-        current, named = digest(note.path), subject(note.path)
+        current = digest(note.path)
     except OSError:
         return UNREVIEWED
-    return REVIEWED if state_in(held, KIND, named, current) is State.APPROVED else UNREVIEWED
+    return REVIEWED if current in held else UNREVIEWED
 
 
 def unreviewed(store: Store, notes: Iterable[Note]) -> list[Note]:

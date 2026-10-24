@@ -1,6 +1,7 @@
 A note now counts as yours only once you promote it. `stayfixed memory promote NOTE…` records the
 digest of each named note's bytes in `trust.json` (kind `reviewed`), and `--changed` does so for
-every note that is not reviewed. Only a reviewed note flagged `startup` is a standing rule; a note
+every note that is not reviewed. The digest alone decides, so the same bytes count as reviewed in
+every worktree, after the store moves and under another name. Only a reviewed note flagged `startup` is a standing rule; a note
 a repository commits, one an agent or the harness's writer wrote, and one edited since it was
 promoted arrive in the volatile-notes bundle instead, labelled `[unreviewed]` and inside the
 region that marks them as data, in every memory mode. A session hears one line, "N notes are
