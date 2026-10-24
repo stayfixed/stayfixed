@@ -36,6 +36,9 @@ KIND = "reviewed"
 REVIEWED: Literal["reviewed"] = "reviewed"
 UNREVIEWED: Literal["unreviewed"] = "unreviewed"
 Status = Literal["reviewed", "unreviewed"]
+# What an unreviewed note carries where it is named: its heading in the volatile bundle, inside the
+# region `trust.wrap` marks as data, and its line in the index.
+UNREVIEWED_LABEL = " [unreviewed]"
 Record = frozenset[str]
 
 

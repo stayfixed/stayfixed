@@ -27,7 +27,7 @@ from stayfixed.config.schema import Config
 from stayfixed.memory import trust
 from stayfixed.memory.index import is_volatile
 from stayfixed.memory.notes import Note, walk
-from stayfixed.memory.reviewed import REVIEWED, record, status
+from stayfixed.memory.reviewed import REVIEWED, UNREVIEWED_LABEL, record, status
 from stayfixed.memory.store import Store
 
 
@@ -109,11 +109,6 @@ def _flag(note: Note, today: date, ttl: int) -> str:
         return "  [as_of MISSING — add it or delete the note]"
     age = (today - note.as_of).days
     return f"  [{age} days old — verify or delete before relying on it]" if age > ttl else ""
-
-
-# What an unreviewed note's heading carries in the volatile bundle, where it arrives inside the
-# region `trust.wrap` marks as data (`memory.reviewed` says who writes such a note).
-UNREVIEWED_LABEL = " [unreviewed]"
 
 
 def _standing(notes: list[Note], config: Config) -> list[str]:

@@ -33,6 +33,7 @@ from stayfixed.memory.notes import (
     with_index,
     write_note,
 )
+from stayfixed.memory.reviewed import UNREVIEWED, UNREVIEWED_LABEL, record, status
 from stayfixed.memory.store import Store, in_repository, permitted_roots
 
 INDEX_NAME = "MEMORY.md"
@@ -332,16 +333,19 @@ def _order(note: Note) -> tuple[int, int, str]:
     )
 
 
-def _entry(note: Note) -> str:
-    return f"- [{note.index}]({_relative(note)})"
+def _entry(note: Note, unreviewed: set[Path]) -> str:
+    """The note's line, labelled where the owner has not promoted it at its bytes, as the bundles
+    label it: the harness reads `MEMORY.md` natively, beside them."""
+    label = UNREVIEWED_LABEL if note.path in unreviewed else ""
+    return f"- [{note.index}]({_relative(note)}){label}"
 
 
-def _section(group: str, notes: list[Note]) -> list[str]:
+def _section(group: str, notes: list[Note], unreviewed: set[Path]) -> list[str]:
     lines = [f"## {section_title(group)}", ""]
     if is_volatile(group):
         lines += [VOLATILE_LEAD, ""]
     ungrouped = sorted((n for n in notes if not n.group), key=_order)
-    lines += [_entry(note) for note in ungrouped]
+    lines += [_entry(note, unreviewed) for note in ungrouped]
     if ungrouped:
         lines.append("")
     # Grouped notes are collected by their `group` sub-heading first, then each heading is
@@ -354,7 +358,7 @@ def _section(group: str, notes: list[Note]) -> list[str]:
             by_heading.setdefault(note.group, []).append(note)
     for heading in sorted(by_heading, key=lambda h: min(_order(n) for n in by_heading[h])):
         lines += [f"### {heading}", ""]
-        lines += [_entry(note) for note in sorted(by_heading[heading], key=_order)]
+        lines += [_entry(note, unreviewed) for note in sorted(by_heading[heading], key=_order)]
     if by_heading:
         lines.append("")
     return lines
@@ -415,9 +419,11 @@ def render_index(reconciled: Reconciliation, config: Config, store: Store) -> st
     by_group: dict[str, list[Note]] = {}
     for note in reconciled.notes:
         by_group.setdefault(note.group_name, []).append(note)
+    held = record(store)
+    unreviewed = {n.path for n in reconciled.notes if status(store, n, held) == UNREVIEWED}
     for group in config.memory.groups:
         if by_group.get(group):
-            lines += _section(group, by_group[group])
+            lines += _section(group, by_group[group], unreviewed)
     extra = [] if to_machine else _extra(config, store)
     if extra:
         lines += [f"## {EXTRA_TITLE}", ""]

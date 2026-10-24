@@ -413,6 +413,19 @@ def test_two_index_runs_leave_a_bare_note_as_it_was_and_reviewed(tmp_path: Path)
     assert code == 0 and entries["bare"]["reviewed"] is True
 
 
+def test_an_unreviewed_notes_line_in_the_index_is_labelled(tmp_path: Path) -> None:
+    # The harness reads `MEMORY.md` natively, beside the bundles, which label an unreviewed note
+    # and wrap it as data; its index line carried no mark, so the two channels disagreed about the
+    # same note. A promoted note's line carries none.
+    store, _ = a_store(tmp_path)
+    machine = tmp_path / "machine.toml"
+    assert cli(store.root, tmp_path, "memory", "promote", "developer/a.md", machine=machine)[0] == 0
+    assert _index_cli(store, tmp_path)[0] == 0
+    lines = (store.path / INDEX_NAME).read_text(encoding="utf-8").splitlines()
+    assert "- [B trigger → B](developer/b.md) [unreviewed]" in lines
+    assert "- [A trigger → A](developer/a.md)" in lines
+
+
 def test_a_file_that_will_not_parse_is_quarantined_not_fatal(tmp_path: Path) -> None:
     store, config = a_store(tmp_path)
     (store.groups["project-stable"] / "superseded.md").write_text("no frontmatter\n", "utf-8")
@@ -968,7 +981,7 @@ def test_a_local_only_store_keeps_the_native_writers_files_and_their_pointer_lin
     lines = (base / INDEX_NAME).read_text(encoding="utf-8").splitlines()
     assert all(line in lines for line in NATIVE_LINES), lines
     assert stale not in lines
-    assert "- [A trigger → A](developer/a.md)" in lines
+    assert "- [A trigger → A](developer/a.md) [unreviewed]" in lines
     assert {name: (base / f"{name}.md").read_text(encoding="utf-8") for name in topics} == topics
     # And the render is stable: a second look finds the index current.
     assert cli(root, tmp_path, "memory", "index", "--check", machine=machine)[0] == 0

@@ -115,7 +115,10 @@ What it does, in order:
    The harness's own memory writer keeps its notes as topic files at the top of the store,
    outside every group, each named by one `- [title](file.md)` line in `MEMORY.md`: every such
    line whose file the store still holds is kept, verbatim and once, ahead of the sections, and
-   the topic files are never written.
+   the topic files are never written. A note you have not promoted at the bytes it holds now
+   ([`memory promote`](#stayfixed-memory-promote-note----changed)) has its line end in
+   `[unreviewed]`, as the bundles label it, since the harness reads `MEMORY.md` beside them; the
+   label follows this machine's record, so promoting or editing a note changes its line.
 
 `--json`'s `provisional` lists the notes rendered by step 1 or step 3, the ones whose line a
 curated `index:` would replace.
