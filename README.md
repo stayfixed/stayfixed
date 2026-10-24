@@ -101,11 +101,11 @@ lists it by: `claude` is Claude Code and `codex` is Codex.
 The background-cleanup hints, from the `bg-cleanup` handler that `stayfixed hook PreToolUse` runs
 on every shell call, name a command the agent runs in the background that leaves an `&` job behind
 with no `trap … EXIT` or trailing `wait` to stop it, or that begins with `sleep`, and the remedy;
-they never refuse it. They run in every repository, on the preset and the machine owner's layer,
-whatever its `stayfixed.toml` holds, none at all included, and the session hears once, when it
-starts, what it could not use. The machine owner may switch them off in the machine file
-([`docs/cli.md`](https://github.com/stayfixed/stayfixed/blob/main/docs/cli.md#configuration) names
-the key); a repository never can.
+they never refuse it. They run in every repository, one with no `stayfixed.toml` or one a session
+cannot use included, and the session hears once, when it starts, what it could not use. A repository may switch them off by default in its
+`stayfixed.toml`, and the owner's layers override it: the overlay's files, and the machine file
+last ([`docs/cli.md`](https://github.com/stayfixed/stayfixed/blob/main/docs/cli.md#configuration)
+names the key).
 
 Where a surface does not reach an agent in the session, the repository gates
 still hold in CI, which every agent's changes pass through. What was measured of Codex
@@ -217,7 +217,7 @@ stayfixed writes files. Being specific about which is the point of this section.
 | `.stayfixed/manifest.json` | The ledger of every scaffolded artifact | the scaffold engine |
 | `.stayfixed/local/artifacts/` | The artifacts `[artifacts] local` keeps out of git, at the path each would have in the repository — git-ignored, never recorded in the manifest | `stayfixed init` and `stayfixed upgrade`, when `[artifacts] local` lists them; `stayfixed uninstall` takes them back |
 | `.stayfixed/local/artifacts.json` | The record of the bytes stayfixed last wrote under `.stayfixed/local/artifacts/`, so an unedited copy is refreshed or retired and an edited one is left. Git-ignored and never committed. Deleted, later runs judge a copy at its artifact's own place by what they render, and no longer find a copy left at an earlier place at all | the scaffold engine; `stayfixed uninstall` removes it |
-| `~/.config/stayfixed/config.toml` | Machine-level settings: `[personal]`; `[guards]`, where `bg_cleanup = false` switches the background guard off on this machine; `[budgets]`, the four budgets that bound what a session loads; `[overlay]`; and `[machine]`. `~` is `HOME`, as the harness reads it ([docs/cli.md](https://github.com/stayfixed/stayfixed/blob/main/docs/cli.md#configuration)) | you, or `stayfixed setup` |
+| `~/.config/stayfixed/config.toml` | Machine-level settings: `[personal]`; `[guards]`, where `bg_cleanup = false` switches the background guard off on this machine, whatever a repository's `stayfixed.toml` sets as its default; `[budgets]`, the four budgets that bound what a session loads; `[overlay]`; and `[machine]`. `~` is `HOME`, as the harness reads it ([docs/cli.md](https://github.com/stayfixed/stayfixed/blob/main/docs/cli.md#configuration)) | you, or `stayfixed setup` |
 | `~/.config/stayfixed/trust.json` | Every approval you gave on this machine — today, which repositories' committed notes may reach the model — as a versioned record of kinds and subjects, under the same home | `stayfixed trust approve`, under either of its spellings, and `stayfixed trust revoke`; and `stayfixed memory index` and `stayfixed attach`, which carry an approval across a write of their own to the store and never give one |
 | `hooks/hooks.json` and `hooks/run-hook.sh` | The zero-config wiring both harnesses read, and the wrapper they execute. **Shipped in the plugin; never written into a project** | nothing — they are part of the plugin |
 | `${CLAUDE_PLUGIN_DATA}/stayfixed/` | Once-per-session markers and the hook diagnostics log. Deleted with the plugin | the hook dispatcher |

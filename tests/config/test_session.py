@@ -13,7 +13,8 @@ from pathlib import Path
 
 import pytest
 
-from stayfixed import __version__
+from stayfixed import __version__, binding
+from stayfixed.config.classes import LayerName
 from stayfixed.config.loader import NOTE_REBUILT_LIMIT, NOTE_REMOVAL_LIMIT
 from stayfixed.config.owner import resolve_owner
 from stayfixed.config.schema import Paths
@@ -26,10 +27,13 @@ from stayfixed.config.session import (
     TOO_LARGE_WARNING,
     TOO_MANY_WARNING,
     UNUSABLE_WARNING,
+    SessionConfig,
     session_config,
 )
 from stayfixed.doctor.checks import VERSION_AHEAD
+from tests.config import test_overlay_layers as overlays
 from tests.config.test_loader import HEAD, MINIMAL
+from tests.gitfixture import needs_git
 
 _MAJOR, _MINOR, _ = (int(part) for part in __version__.split(".")[:3])
 # `HEAD` with a `version` one minor above the running one.
@@ -393,3 +397,71 @@ def test_a_preset_this_build_cannot_use_is_one_note(tmp_path: Path, value: str) 
     assert got.config is not None and got.config.stayfixed.preset == "recommended"
     assert got.owner.notes == ()
     assert got.warnings == (NOTED_WARNING.format(count=1),)
+
+
+def test_a_repository_sets_the_guards_default_and_the_machine_file_overrides_it(
+    tmp_path: Path,
+) -> None:
+    # The repository's `[guards]` is a default: with no machine-file `[guards]` it switches the
+    # background hint off, and the machine file's `true` switches it back on.
+    write(tmp_path, MINIMAL + "[guards]\nbg_cleanup = false\n")
+    assert session_config(tmp_path, machine=none(tmp_path)).guards.bg_cleanup is False
+    machine = tmp_path / "machine.toml"
+    machine.write_text("[guards]\nbg_cleanup = true\n", encoding="utf-8")
+    assert session_config(tmp_path, machine=machine).guards.bg_cleanup is True
+
+
+def _guarded(tmp_path: Path, given: dict[LayerName, bool]) -> SessionConfig:
+    """A bound checkout's session where each layer of `given` sets `bg_cleanup` to its value."""
+
+    def guard(layer: LayerName) -> str:
+        return f"[guards]\nbg_cleanup = {str(given[layer]).lower()}\n" if layer in given else ""
+
+    root = overlays.project(tmp_path)
+    write(root, overlays.MINIMAL + guard(LayerName.REPOSITORY))
+    recorded = overlays.overlay(
+        tmp_path,
+        common=guard(LayerName.OVERLAY_COMMON),
+        sample=guard(LayerName.OVERLAY_PROJECT),
+    )
+    binding.record(root, "sample", None)
+    machine = overlays.machine(tmp_path, recorded, guard(LayerName.MACHINE_FILE))
+    return session_config(root, machine=machine)
+
+
+REPOSITORY, COMMON, PROJECT, MACHINE = (
+    LayerName.REPOSITORY,
+    LayerName.OVERLAY_COMMON,
+    LayerName.OVERLAY_PROJECT,
+    LayerName.MACHINE_FILE,
+)
+
+
+@needs_git
+@pytest.mark.parametrize(
+    ("given", "on", "layer"),
+    [
+        pytest.param({}, True, LayerName.PRESET, id="unset"),
+        pytest.param({REPOSITORY: False}, False, REPOSITORY, id="repository"),
+        pytest.param({COMMON: False}, False, COMMON, id="overlay-common"),
+        pytest.param({PROJECT: False}, False, PROJECT, id="overlay-project"),
+        pytest.param({MACHINE: False}, False, MACHINE, id="machine-file"),
+        pytest.param({REPOSITORY: False, COMMON: True}, True, COMMON, id="common-over-repository"),
+        pytest.param({COMMON: False, PROJECT: True}, True, PROJECT, id="project-over-common"),
+        pytest.param({PROJECT: False, MACHINE: True}, True, MACHINE, id="machine-over-project"),
+        pytest.param(
+            {REPOSITORY: False, COMMON: False, PROJECT: False, MACHINE: True},
+            True,
+            MACHINE,
+            id="machine-last",
+        ),
+    ],
+)
+def test_each_layer_sets_changes_and_unsets_the_guards_with_the_machine_file_last(
+    tmp_path: Path, given: dict[LayerName, bool], on: bool, layer: LayerName
+) -> None:
+    # Every layer the key's class admits, set alone, changed by the layer above it, and unset;
+    # the preset's default stands where no layer sets it, and the machine file wins over all.
+    session = _guarded(tmp_path, given)
+    assert session.guards.bg_cleanup is on
+    assert session.resolution.provenance["guards.bg_cleanup"] is layer

@@ -3,8 +3,9 @@
 The preset's `[defaults.personal]`, `Guards()` and no session budget, overridden by the machine
 file's `[personal]`, `[guards]` and `[budgets]`, resolved through `classes.resolve` as the layers
 `PRESET` and `MACHINE_FILE`. The machine file is the owner's, never a repository's
-(`config.machine` says where it is), so it is the one place a guard may be switched
-off; a repository's `[guards]` is a layer `classes.ALLOWED` does not admit.
+(`config.machine` says where it is), so it is the last word on a guard: a repository's `[guards]`
+sets the default, the overlay's files move it, and this file's `[guards]` wins over all of them
+in the session's one resolution (`config.session`), where this layer is the top one.
 
 Two readers ask, and they differ only over a file that does not load. A command the owner runs
 refuses it (`strict`, which every load of a command asks for), as `config.overlay.overlay_root`
@@ -46,7 +47,8 @@ from stayfixed.printed import clipped
 
 @dataclass(frozen=True)
 class Guards:
-    """The session guards' switches. On unless the owner's machine file switches one off."""
+    """The session guards' switches. On unless a layer switches one off: the repository's
+    `stayfixed.toml` sets the default, and the overlay's files and the machine file override it."""
 
     bg_cleanup: bool = True
 

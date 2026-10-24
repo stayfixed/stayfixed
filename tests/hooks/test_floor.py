@@ -198,7 +198,7 @@ def test_a_path_value_of_thousands_of_components_never_outlasts_the_hook(tmp_pat
 
 def test_the_owner_switches_the_guard_off_with_no_stayfixed_toml(tmp_path: Path) -> None:
     # No `stayfixed.toml`, and the machine file switches the background guard off: the machine
-    # file is the one place a session guard is switched off.
+    # file is read with no project configuration too.
     root, home = _setup(tmp_path, no_file)
     machine_with(home, "[guards]\nbg_cleanup = false\n")
     assert not hinted(hook("PreToolUse", json.dumps(BACKGROUND_SLEEP), root, home=home))
@@ -206,12 +206,13 @@ def test_the_owner_switches_the_guard_off_with_no_stayfixed_toml(tmp_path: Path)
     assert hinted(hook("PreToolUse", json.dumps(BACKGROUND_SLEEP), root, home=home))
 
 
-def test_a_repository_never_switches_the_guard_off(tmp_path: Path) -> None:
-    # The same switch in `stayfixed.toml` is a layer the key's class does not admit: noted, and
-    # the guard judges. No mutation of its own: `classes.resolve` refusing the layer is held by
-    # `mutations/`'s "the NOTE path removes a repository's machine-only table without a note".
+def test_a_repository_sets_the_guards_default_and_the_owner_overrides_it(tmp_path: Path) -> None:
+    # The same switch in `stayfixed.toml` is the repository's default: the guard is off, until the
+    # machine file, one of the owner's layers above it, switches it back on.
     root, home = _setup(tmp_path, no_file)
     (root / "stayfixed.toml").write_text(CONFIG + "\n[guards]\nbg_cleanup = false\n", "utf-8")
+    assert not hinted(hook("PreToolUse", json.dumps(BACKGROUND_SLEEP), root, home=home))
+    machine_with(home, "[guards]\nbg_cleanup = true\n")
     assert hinted(hook("PreToolUse", json.dumps(BACKGROUND_SLEEP), root, home=home))
 
 

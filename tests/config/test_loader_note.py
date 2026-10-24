@@ -242,21 +242,36 @@ def test_a_document_parsed_once_is_read_as_its_text_is(tmp_path: Path) -> None:
     assert got.config.project.name == "sample"
 
 
-def test_a_repository_guards_section_is_refused_by_resolve(tmp_path: Path) -> None:
+def test_a_repository_personal_section_is_refused_by_resolve(tmp_path: Path) -> None:
     # The repository never sets a machine-only key: `classes.resolve` refuses the layer and the
     # owner's values stand. Mutation (`mutations/`'s "the NOTE path removes a repository's
-    # machine-only table without a note"): the two notes go missing.
+    # machine-only table without a note"): the note goes missing.
     machine = tmp_path / "m.toml"
     machine.write_text('[personal]\npreset = "mine"\n', encoding="utf-8")
     owner = resolve_owner(machine)
-    text = MINIMAL + '[guards]\nbg_cleanup = false\n[personal]\npreset = "xx"\n'
+    text = MINIMAL + '[personal]\npreset = "xx"\n'
     got = loads_noting(text, tmp_path, owner=owner)
     assert got.config.personal == owner.personal
     assert got.config.personal.preset == "mine"
-    assert got.notes == (
-        REFUSED_LAYER_NOTE.format(key="guards.bg_cleanup", layer="repository"),
-        REFUSED_LAYER_NOTE.format(key="personal.preset", layer="repository"),
-    )
+    assert got.notes == (REFUSED_LAYER_NOTE.format(key="personal.preset", layer="repository"),)
+
+
+def test_a_repository_guards_section_is_a_default_the_load_keeps(tmp_path: Path) -> None:
+    # The repository sets the guards' default, which the owner's layers override in a session
+    # (`config.session`): both loaders take it, and the NOTE load hands it on in its document.
+    text = MINIMAL + "[guards]\nbg_cleanup = false\n"
+    got = loads_noting(text, tmp_path, owner=OWNER)
+    assert got.notes == ()
+    assert got.document["guards"] == {"bg_cleanup": False}
+    loads(text, tmp_path, machine=tmp_path / "none.toml")
+
+
+def test_a_repository_guards_value_it_cannot_use_is_put_back(tmp_path: Path) -> None:
+    # A switch that is not one is the key's alone to lose: the default stands, with a note.
+    text = MINIMAL + "[guards]\nbg_cleanup = 0\n"
+    got = loads_noting(text, tmp_path, owner=OWNER)
+    assert got.notes == (reset("guards.bg_cleanup", text, tmp_path),)
+    assert "guards" not in got.document or got.document["guards"] == {}
 
 
 def test_the_owners_session_budgets_win_over_the_repositorys(tmp_path: Path) -> None:
@@ -292,7 +307,9 @@ REFUSED = [
     pytest.param(
         f'[paths]\nbugs = "{"a/" * 600}x"\n', r"paths\.bugs is longer than the", id="path-length"
     ),
-    pytest.param("[guards]\nbg_cleanup = false\n", r"unknown section\(s\): guards", id="guards"),
+    pytest.param(
+        "[guards]\nbg_cleanup = 0\n", r"guards\.bg_cleanup must be true or false", id="guards"
+    ),
 ]
 
 
@@ -401,11 +418,17 @@ def test_a_section_that_is_not_a_table_is_the_presets(tmp_path: Path) -> None:
     assert got.notes == (reset("memory", text, tmp_path),)
 
 
-def test_a_repository_guards_value_that_is_not_a_table_is_refused_too(tmp_path: Path) -> None:
+def test_a_repository_personal_value_that_is_not_a_table_is_refused_too(tmp_path: Path) -> None:
     # Mutation (`mutations/`'s "a repository's machine-only value that is not a table is dropped
     # without a note"): the value goes and nothing says the repository tried.
-    got = loads_noting("guards = false\n" + MINIMAL, tmp_path, owner=OWNER)
-    assert got.notes == (REFUSED_LAYER_NOTE.format(key="guards", layer="repository"),)
+    got = loads_noting("personal = false\n" + MINIMAL, tmp_path, owner=OWNER)
+    assert got.notes == (REFUSED_LAYER_NOTE.format(key="personal", layer="repository"),)
+
+
+def test_a_repository_guards_value_that_is_not_a_table_is_put_back(tmp_path: Path) -> None:
+    text = "guards = false\n" + MINIMAL
+    got = loads_noting(text, tmp_path, owner=OWNER)
+    assert got.notes == (reset("guards", text, tmp_path),)
 
 
 REQUIRED_UNUSABLE = [
@@ -520,8 +543,6 @@ def test_each_note_names_the_key_it_is_about(tmp_path: Path) -> None:
     # `doctor` lists a session's notes by key alone, never the sentence. Mutations
     # (`mutations/`'s "a reset key is not recorded beside its note" -> `memory.mode` goes
     # missing; "an unknown key is not recorded beside its note" -> `memory.future` does).
-    text = (
-        MINIMAL + '[newer]\n[memory]\nfuture = 1\nmode = "harness"\n[guards]\nbg_cleanup = false\n'
-    )
+    text = MINIMAL + '[newer]\n[memory]\nfuture = 1\nmode = "harness"\n[personal]\npreset = "x"\n'
     got = loads_noting(text, tmp_path, owner=OWNER)
-    assert got.keys == ("newer", "memory.future", "guards.bg_cleanup", "memory.mode")
+    assert got.keys == ("newer", "memory.future", "personal.preset", "memory.mode")

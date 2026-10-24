@@ -359,9 +359,10 @@ Not something to run by hand. Its exit-code policy differs from every other comm
 error degrades open (`0`) on every event, with the error on stderr — a bug in stayfixed must not
 cost you a tool call, and on `UserPromptSubmit` an exit `2` would erase what you typed.
 
-**A session never dies of its configuration.** The guards run in every repository, on the preset
-and the machine owner's layer, whatever `stayfixed.toml` holds: none at all, one that does not
-load, and a broken machine file included. A configuration is never the reason a call is refused.
+**A session never dies of its configuration.** The guards run in every repository, whatever
+`stayfixed.toml` holds: none at all, one that does not load, and a broken machine file included;
+only their switches are read, the repository's `[guards]` as a default the overlay's files and the
+machine file override. A configuration is never the reason a call is refused.
 The project's file is read the way [Configuration](#configuration) says a
 session reads it: an unknown section or key is ignored and a value that cannot be used is put back
 to the preset's, so the rest of the file still applies. The handlers about the project — the
@@ -3801,9 +3802,13 @@ custom_timeout_seconds = 600  # seconds a gate of your own may run: a whole numb
 [commit_messages]
 attribution_check = true # whether `commit check` enforces the attribution block
 types = ["feat", "fix", "docs", "test", "refactor", "style", "chore", "harden", "guard"]
+
+[guards]
+bg_cleanup = true        # false switches the bg-cleanup session guard off by default here;
+                         # the overlay's files and the machine file override it
 ```
 
-**Ten sections, and the list is closed**: a section this block does not show is refused when
+**Eleven sections, and the list is closed**: a section this block does not show is refused when
 the file loads (`unknown section(s)`), so the grammar above is the whole of it. All three
 `[ci]` keys are read today: `mode` decides whether `stayfixed init` renders a CI workflow at all
 and which form, `gate_branch` is the branch the rendered workflow gates — it runs for pull
@@ -3814,7 +3819,9 @@ set `[ci] gate_branch = "main"` to keep the old one — and `ref` is written by 
 `doctor`'s `ci-ref` row. `[commit_messages] attribution_check` is read by
 `commit check`, `[commit_messages] types` by `stayfixed assess`'s commit-vocabulary probe,
 `[artifacts] local` by the scaffold engine, and `[gates]` and `[stayfixed] enforced` by
-`stayfixed assess`, `stayfixed gate` and the reusable workflow.
+`stayfixed assess`, `stayfixed gate` and the reusable workflow. `[guards]` is the guards' default
+for a session in this repository, which the overlay's files and the machine file override (below);
+no command reads it.
 
 **Commands refuse; a session reads what it can.** Every command that loads `stayfixed.toml`, but
 `doctor` and `memory session-context`, refuses it whole over an unknown section or key, a value it
@@ -3822,8 +3829,8 @@ cannot use or a `[paths]` value that leaves the root, naming the key and never t
 two read it the way a session does: an unknown section or key is ignored, a value that cannot be
 used is put back to the preset's, one key at a time, a custom gate that cannot run is left out,
 and each says so in a note naming the key, so a file a newer stayfixed wrote keeps every setting
-this one understands. A repository's `[personal]` or `[guards]` is the machine owner's
-to set and is ignored the same way, with a note. A session drops the project configuration whole
+this one understands. A repository's `[personal]` is the machine owner's to set and is ignored
+the same way, with a note. A session drops the project configuration whole
 only for a file it cannot read as TOML — a symbolic link, one that is not UTF-8, one it cannot
 read, or one that is not TOML — and for a key nothing can stand in for: a key that has no default
 (`[stayfixed] version`, `[project] name`) and is missing or cannot be used, or whose section is not
@@ -3936,7 +3943,8 @@ preset = "recommended"   # the preset `setup` applies
 root = "~/stayfixed-overlay"   # only read in overlay mode
 
 [guards]
-bg_cleanup = true        # false switches the bg-cleanup session guard off on this machine
+bg_cleanup = true        # false switches the bg-cleanup session guard off on this machine,
+                         # whatever a repository's stayfixed.toml sets
 
 [budgets]                # the session's budgets only, which win over a project's
 memory_index_words = 1200
@@ -3945,8 +3953,9 @@ volatile_notes_words = 2500
 volatile_ttl_days = 30
 ```
 
-`[guards]` is the one place a session guard is switched off, and it is yours: a repository's
-`stayfixed.toml` cannot carry the table. `[budgets]` here holds only the four budgets that bound
+`[guards]` here is the last word on a session guard, and it is yours: a repository's
+`stayfixed.toml` sets the default, the overlay's files move it, and this file wins over both.
+`[budgets]` here holds only the four budgets that bound
 what a session loads; the five a gate judges a pull request by (`agents_md_lines`,
 `agents_md_words`, `status_lines`, `roadmap_prose_lines`, `roadmap_prose_words`) are the
 repository's alone: one written here is ignored, with a note. Every key you leave out is the

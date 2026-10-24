@@ -29,7 +29,7 @@ from stayfixed.config.classes import (
     resolve,
 )
 from stayfixed.config.machine import machine_config_path
-from stayfixed.config.owner import Owner, rebased, resolve_owner
+from stayfixed.config.owner import Guards, Owner, rebased, resolve_owner
 from stayfixed.config.paths import PathEscape, contained, validate_path_values, validate_paths
 from stayfixed.config.reading import (
     NOT_UTF8,
@@ -92,11 +92,14 @@ SECTIONS = (
     "ci",
     "gates",
     "commit_messages",
+    "guards",
 )
 # The machine owner's tables, which a repository's `stayfixed.toml` cannot set: refused outright
 # by `loads` as unknown sections, and refused key by key by `classes.resolve` under NOTE. Read off
 # `classes.CLASSES`, whose section wildcards of the machine-only class they are, so the two never
-# name different tables.
+# name different tables. `[guards]` is not one: a repository sets the guards' default, which the
+# owner's layers override (`config.session`), so it is a section `Config` does not carry, read here
+# only to be held to its types.
 MACHINE_ONLY_SECTIONS = frozenset(
     key.removesuffix(".*")
     for key, cls in CLASSES.items()
@@ -624,6 +627,9 @@ def _built(
         CommitMessages, "commit_messages", _merged(raw, defaults, "commit_messages")
     )
     caps = _build(NativeCaps, "native_caps", dict(preset["native_caps"]))
+    # Held to its types and dropped: a session reads the repository's `[guards]` from the document
+    # the build held (`config.session`), and no command reads a guard.
+    _build(Guards, "guards", _table(raw, "guards"))
     if personal is None:
         # The owner's layer a session folds in: one reader of the machine file for every load, so a
         # command and a session never run on two sets of budgets. Handed in, it is stood on this
@@ -681,9 +687,9 @@ def loads_noting(
 
     For a reader that must go on, a session above all, where one name a newer release added or
     one value nobody can use would otherwise cost every setting the project made. An unknown
-    section or key is removed with `UNKNOWN_NOTE`; the repository's `[personal]` and `[guards]` go
-    through `classes.resolve`, which refuses the repository layer for every key in them, and are
-    removed with its note. Then the document is built as `loads` builds it, and a refusal carrying
+    section or key is removed with `UNKNOWN_NOTE`; the repository's `[personal]` goes through
+    `classes.resolve`, which refuses the repository layer for every key in it, and is removed with
+    its note. Then the document is built as `loads` builds it, and a refusal carrying
     a `key` — a `ConfigError`, or `validate_paths`' `PathEscape` — is decided before anything is
     removed, from the document and the preset alone:
 
@@ -817,6 +823,7 @@ _SCHEMA_OF: dict[str, type[Any]] = {
     "ci": Ci,
     "gates": Gates,
     "commit_messages": CommitMessages,
+    "guards": Guards,
 }
 
 

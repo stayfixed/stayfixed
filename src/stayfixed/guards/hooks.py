@@ -15,9 +15,10 @@ notice carries counts and fixed sentences, its own and those a shipped profile's
 from its counts, never a path from `stayfixed.toml`.
 
 The guard judges with any configuration and none: a repository with no `stayfixed.toml`, or one
-that does not load, is judged as one that loads, because the guard reads nothing of it. Only the
-machine owner switches it off, in the machine file (`config.owner`); a repository never can. The
-hygiene note is about the project and is silent without its configuration.
+that does not load, is judged as one that loads, because the guard reads nothing of it but its
+switch. A repository's `[guards]` sets the switch's default, and the owner's layers override it,
+the machine file last (`config.session`). The hygiene note is about the project and is silent
+without its configuration.
 """
 
 from __future__ import annotations
@@ -51,8 +52,9 @@ def bash_command(event: HookEvent) -> str | None:
 
 def _bg_cleanup(event: HookEvent, session: SessionConfig) -> HookResult:
     """Judge a Bash call whatever the project's configuration, and none at all included: the guard
-    reads nothing of it. The owner's layers alone switch it off: the overlay's files and the
-    machine file (`SessionConfig.guards`)."""
+    reads nothing of it but the switch: the repository's `[guards]` sets its default, and the
+    owner's layers, the overlay's files and the machine file, override it (`SessionConfig.guards`).
+    """
     if not session.guards.bg_cleanup:
         return HookResult()
     command = bash_command(event)

@@ -3400,8 +3400,8 @@ before = '        "ledger.code_roots": KeyClass.GATE_PARAMETER,'
 after = '        "ledger.code_roots": KeyClass.REPOSITORY_ONLY,'
 reddens = ["tests/config/test_classes.py::test_the_table[ledger.code_roots-gate-parameter]"]
 
-# The repository never sets a machine-only key: a clone's `[guards] bg_cleanup = false` would
-# switch the owner's guard off.
+# The repository never sets a machine-only key: a clone's `[personal]` would stand in for the
+# owner's.
 [[mutation]]
 name = "the repository may set a machine-only key"
 file = "src/stayfixed/config/classes.py"
@@ -3601,7 +3601,7 @@ before = "        raw = None if machine is None else read_machine_toml(machine)"
 after = "        raw = read_machine_toml(cast(Path, machine))"
 reddens = ["tests/config/test_owner.py::test_a_machine_with_no_home_is_the_preset"]
 
-# The machine file's `[guards]` is the one place a session guard is switched off.
+# The machine file's `[guards]` is the owner's last word on a session guard.
 [[mutation]]
 name = "the owner's layer never reads [guards]"
 file = "src/stayfixed/config/owner.py"
@@ -3689,7 +3689,7 @@ name = "the NOTE path removes a repository's machine-only table without a note"
 file = "src/stayfixed/config/loader.py"
 before = "    notes.extend(resolve([Layer(LayerName.REPOSITORY, machine_only)]).notes)"
 after = "    pass"
-reddens = ["tests/config/test_loader_note.py::test_a_repository_guards_section_is_refused_by_resolve"]
+reddens = ["tests/config/test_loader_note.py::test_a_repository_personal_section_is_refused_by_resolve"]
 
 [[mutation]]
 name = "the document's budget wins over the owner's session budget"
@@ -3911,7 +3911,7 @@ before = """        raise ConfigError(f"[{name}] must be a table", key=name)"""
 after = """        raise ConfigError(f"[{name}] must be a table")"""
 reddens = ["tests/config/test_loader_note.py::test_a_section_that_is_not_a_table_is_the_presets"]
 
-# A repository's `[guards]` that is not even a table is still the repository trying to set a
+# A repository's `[personal]` that is not even a table is still the repository trying to set a
 # machine-only key, and says so.
 [[mutation]]
 name = "a repository's machine-only value that is not a table is dropped without a note"
@@ -3919,7 +3919,7 @@ file = "src/stayfixed/config/loader.py"
 before = "                notes.append(REFUSED_LAYER_NOTE.format(key=name, layer=LayerName.REPOSITORY))"
 after = "                pass"
 reddens = [
-  "tests/config/test_loader_note.py::test_a_repository_guards_value_that_is_not_a_table_is_refused_too",
+  "tests/config/test_loader_note.py::test_a_repository_personal_value_that_is_not_a_table_is_refused_too",
 ]
 
 # A session never dies of its configuration (`config.session`): it reads what loads, falls back
