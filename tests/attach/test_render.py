@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shlex
 from pathlib import Path
 
 from stayfixed.attach.render import render
@@ -134,3 +135,51 @@ def test_a_second_render_replaces_the_files_in_the_same_directory(tmp_path: Path
     assert second.digest != first.digest
     assert second.digest == _digest(delivery)
     assert [p.name for p in delivery.parent.iterdir()] == [ID]
+
+
+def _scoped_rule(overlay: Path) -> None:
+    rules = overlay / "projects" / "p" / "claude" / "rules"
+    rules.mkdir(parents=True)
+    (rules / "generated.md").write_text(
+        '---\npaths: ["scoped/**"]\n---\nEdit the generator.\n', encoding="utf-8"
+    )
+
+
+def test_a_path_scoped_rule_renders_the_post_tool_use_entry_naming_the_launcher(
+    tmp_path: Path,
+) -> None:
+    # The entry runs the launcher `attach` ran from, by its absolute path, on the three tools that
+    # touch a file. This checkout is that stayfixed: `scripts/stayfixed` beside `src/`.
+    overlay = _overlay(tmp_path)
+    _scoped_rule(overlay)
+    record = render(overlay, "p", ID)
+    launcher = Path(__file__).resolve().parents[2] / "scripts" / "stayfixed"
+    hooks = _json(_delivery() / "plugin" / "hooks" / "hooks.json")
+    assert isinstance(hooks, dict)
+    assert hooks["hooks"].get("PostToolUse") == [
+        {
+            "matcher": "Read|Edit|Write",
+            "hooks": [
+                {
+                    "type": "command",
+                    "timeout": 10,
+                    "command": f"{shlex.quote(str(launcher))} hook PostToolUse",
+                }
+            ],
+        }
+    ]
+    assert record.launcher == launcher
+
+
+def test_an_overlay_with_no_path_scoped_rule_renders_no_post_tool_use_entry(
+    tmp_path: Path,
+) -> None:
+    overlay = _overlay(tmp_path)
+    rules = overlay / "common" / "claude" / "rules"
+    rules.mkdir()
+    (rules / "standing.md").write_text("Always.\n", encoding="utf-8")
+    record = render(overlay, "p", ID)
+    hooks = _json(_delivery() / "plugin" / "hooks" / "hooks.json")
+    assert isinstance(hooks, dict)
+    assert "PostToolUse" not in hooks["hooks"]
+    assert record.launcher is None

@@ -393,6 +393,23 @@ message in full. Every other event
 prints no warning, and records once per session, in the diagnostics log below, that the session
 runs without some of its configuration (`config-fallback`).
 
+**The overlay's rules.** In a checkout this machine binds to an overlay project
+([`attach`](#stayfixed-attach---store-path---check---yes---root-path---machine-path)), `SessionStart`
+carries the overlay's standing rules — every `*.md` file in `common/claude/rules/` and
+`projects/<name>/claude/rules/` whose frontmatter has no `paths:` key, common first and the
+project's second, each in name order, a project file replacing the common file of its name —
+under one fixed lead line, on every event the matcher covers, since a compacted or cleared context
+has lost them. A rule with `paths:` is path-scoped: the plugin `attach` renders carries a
+`PostToolUse` entry for it, matching `Read|Edit|Write` and running the `scripts/stayfixed` launcher
+`attach` ran from, by its absolute path, with `hook PostToolUse`; that answer carries every such
+rule whose globs match the file the tool named, relative to the checkout's root (`*` and `?` within
+one path segment, `**` across segments, `{a,b}` for alternatives), the first time a session touches
+that file, and nothing after. The project is the one the machine's binding record names, never the
+repository's `stayfixed.toml`, so an unbound checkout hears no rule, whatever its `memory.mode`; a
+rule that cannot be read silences the rules of that hook, and `attach` refuses it. A rule's body
+reaches the model as the overlay holds it; the one path printed is the touched file's, withheld
+outside the path grammar.
+
 **Writes** inside `stayfixed/` under the data root the harness names — `CLAUDE_PLUGIN_DATA`, or
 Codex's `PLUGIN_DATA` — and nowhere else of its own: `.probe`, written each time it dispatches to
 learn whether the root can be written at all; under `markers/`, one empty file per `once_key`
@@ -401,7 +418,10 @@ session, both names hashed to a fixed width,
 with all but the newest fifty session directories removed; and `diagnostics.jsonl`, one JSON line
 per diagnostic record, rotated to `diagnostics.1.jsonl` once it would pass 256 KiB. With no data
 root, or a relative one, nothing is written there and a `once_key` handler is asked on every
-invocation. One handler writes outside it: `worktree-link`, on `SessionStart` in a worktree
+invocation. Two handlers write outside it. `overlay-path-rules`, the path-scoped rules above,
+writes one empty file per session and file it said a rule for, under
+`$HOME/.local/share/stayfixed/sessions/`, both names hashed to a fixed width; none for a payload
+with no session id, and nothing removes them. And `worktree-link`, on `SessionStart` in a worktree
 other than the checkout that holds the store, makes the link tree `stayfixed attach` makes — a
 symlink for each memory group and for `MEMORY.md`, at the store's own place in the worktree,
 with the directories above each link created as it is made — and creates the harness memory
@@ -471,8 +491,9 @@ wrapper cannot defend its own mode, so `stayfixed doctor` is what catches it: th
 **red** on a cleared bit and hands you the `chmod +x`. Run it after anything that rewrites the
 plugin directory.
 
-**What a session hears about the overlay it is bound to: `overlay-status`.** The `attach` area
-registers one `SessionStart` handler, with a `once_key`, so it speaks **at most** once
+**What a session hears about the overlay it is bound to: `overlay-status`.** Beside the two that
+deliver the overlay's rules (above), the `attach` area registers one `SessionStart` handler, with a
+`once_key`, so it speaks **at most** once
 per session: the marker is banked only when the handler had something to say, so a session that
 hears a line hears it once, and a repository with nothing to report is asked again on every
 `startup`, `resume`, `clear`, `compact` and `fork` the matcher above covers — and it says

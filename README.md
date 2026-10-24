@@ -62,7 +62,10 @@ adds:
   enforces a gate once it passes.
 - **A personal overlay that is itself a versioned plugin** with its own upgrade manifest,
   rather than a dotfiles sync. `stayfixed overlay create` renders one and `stayfixed attach`
-  binds a repository to it. It also *declares* the stayfixed it needs, in its plugin manifest;
+  binds a repository to it: the hooks, skills, agents and allow rules you keep there reach that
+  repository's sessions, and so do your rules — `common/claude/rules/*.md` and
+  `projects/<name>/claude/rules/*.md`, a standing rule at every session's start and one with
+  `paths:` frontmatter the first time a session reads or edits a file its globs match. It also *declares* the stayfixed it needs, in its plugin manifest;
   `stayfixed doctor` reads it and reports it when the stayfixed running is too old — red when
   this project keeps its notes in that overlay, a warning when it does not — and a session in a
   bound repository says so once at its start.
@@ -228,7 +231,8 @@ stayfixed writes files. Being specific about which is the point of this section.
 | `<overlay>/projects/<name>/project.toml` | The remote this project was first attached with, and when; it binds nothing | `stayfixed attach`, while it records no remote |
 | `.git/stayfixed/binding` (in the git common directory every worktree shares) | The checkout's binding id: 32 random hexadecimal characters that never leave this machine and are printed only as their first eight. No clone carries it | `stayfixed attach`, once |
 | `~/.local/share/stayfixed/bindings/<id>.toml` | What this machine binds that id to: the project name, the `origin` at attach time and the checkout. Where the binding is decided, never from a name the repository supplies. `~` is `HOME`; no `XDG_*` variable is read | `stayfixed attach` |
-| `~/.local/share/stayfixed/delivery/<id>/` | The overlay's hooks, skills and agents rendered as a plugin, `overlay-<id>` in a marketplace `stayfixed-delivery-<id>`, both named by the binding id. A session runs the plugin from here in place, so each attach rewrites it | `stayfixed attach` |
+| `~/.local/share/stayfixed/delivery/<id>/` | The overlay's hooks, skills and agents rendered as a plugin, `overlay-<id>` in a marketplace `stayfixed-delivery-<id>`, both named by the binding id, and, when the overlay holds a rule with `paths:`, the `PostToolUse` entry that delivers it through this stayfixed's own launcher. A session runs the plugin from here in place, so each attach rewrites it | `stayfixed attach` |
+| `~/.local/share/stayfixed/sessions/` | One empty file per session and file a path-scoped rule was said for, both names hashed, so the rule is said once per file in a session. Nothing removes them | the hook dispatcher |
 
 Every write into a repository goes through a path walk that refuses a symlink at any component
 and refuses to leave the project root, and replaces files atomically, keeping the mode of the

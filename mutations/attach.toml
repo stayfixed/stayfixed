@@ -732,9 +732,12 @@ reddens = [
 [[mutation]]
 name = "an open session handler lets an unforeseen failure out"
 file = "src/stayfixed/attach/hooks.py"
-before = """    except Exception:
+# Widened past the `except` to its comment: the rule handlers beside it keep the same backstop.
+before = """    # An open handler never costs a session; `memory/hooks.py` keeps the same backstop.
+    except Exception:
         return HookResult()"""
-after = """    except Exception:
+after = """    # An open handler never costs a session; `memory/hooks.py` keeps the same backstop.
+    except Exception:
         raise"""
 reddens = [
   "tests/attach/test_hooks.py::test_a_failure_with_no_except_of_its_own_is_silence_not_an_exception",
@@ -2874,4 +2877,16 @@ before = "    if shown := exclude.unignored(main, _main_settings(root, planned.c
 after = "    if shown := exclude.unignored(main, ()):"
 reddens = [
   "tests/attach/test_write.py::test_attach_from_a_worktree_asks_the_main_checkouts_gitignore_about_what_it_places",
+]
+
+# A path-scoped rule is said once per file per session: the record is keyed by the session as well
+# as the file, so a new session hears the rule again rather than inheriting another's silence.
+[[mutation]]
+name = "a path-scoped rule's once-per-file record is keyed by the path alone"
+file = "src/stayfixed/attach/rules.py"
+before = '    return f"{_segment(session_id)}/{_segment(str(target))}"'
+after = "    return _segment(str(target))"
+reddens = [
+  "tests/attach/test_rules.py::test_a_scoped_rule_is_said_once_per_file_per_session",
+  "tests/hooks/test_overlay_rules.py::test_a_read_of_a_scoped_file_carries_its_rule_once_per_session",
 ]
