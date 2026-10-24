@@ -10,8 +10,8 @@ its docstring gives a reason that reaches past the variables it was written for:
 pair of equivalent inputs is not a partial defence, it is a redirect with a longer name". A flag
 is a third member of that class — it reaches the same file for the price of a different spelling —
 and this is the command that turns that file into capability: the overlay root comes from it, and
-from the overlay come allow rules, hook entries and Codex standing rules. A repository that
-tells the agent to run `stayfixed attach --machine ./vendored.toml --store
+from the overlay come allow rules, hook entries, skills, agents and Codex standing rules. A
+repository that tells the agent to run `stayfixed attach --machine ./vendored.toml --store
 ./vendored/projects/p/memory` supplies both sides of `read_binding`'s containment check out of
 its own tree, and the check passes. A flag, unlike a variable, is still honoured from a
 terminal, because there a person typed it.

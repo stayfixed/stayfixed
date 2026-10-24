@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -415,8 +415,35 @@ def apply_entries(document: str, wanted: dict[str, list[dict[str, Any]]]) -> str
             hooks[event] = merged
         else:
             hooks.pop(event, None)
+    return _with_hooks(raw, hooks)
+
+
+def _with_hooks(raw: dict[str, Any], hooks: dict[str, Any]) -> str:
+    """`raw` written back with `hooks` as its hook table, and with none where it is empty."""
     if hooks:
         raw["hooks"] = hooks
     else:
         raw.pop("hooks", None)
     return settings_text(raw) + "\n"
+
+
+def withdraw_entries(document: str, recorded: Mapping[str, str]) -> str:
+    """The document without each entry `recorded` names: its marker id, under the event the record
+    gives it. Every other entry stays where it is, one claiming the marker that the record does not
+    name included, so a caller's record and never the marker alone decides what goes; a group left
+    with no entry is dropped, an event with no group, and `hooks` with no event. Read as strictly
+    as `apply_entries` reads, for the reason `_groups` gives."""
+    raw = settings_object(document)
+    hooks = dict(_hooks_table(raw))
+    for event in list(hooks):
+        groups = []
+        for group in _groups(raw, event):
+            entries = _entries_of(group)
+            kept = [entry for entry in entries if recorded.get(_claimed(entry) or "") != event]
+            if kept:
+                groups.append(group if len(kept) == len(entries) else {**group, "hooks": kept})
+        if groups:
+            hooks[event] = groups
+        else:
+            hooks.pop(event)
+    return _with_hooks(raw, hooks)

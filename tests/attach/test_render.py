@@ -1,0 +1,129 @@
+"""The overlay's hooks, skills and agents, rendered into a local plugin named by the binding id.
+
+What is checked here is the directory a session runs in place: `claude plugin install` keeps a
+cache copy, but the plugin runs from the marketplace's own directory, so these bytes are what a
+session executes.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+from pathlib import Path
+
+from stayfixed.attach.render import render
+
+ID = "0123456789abcdef0123456789abcdef"
+COMMON = {"type": "command", "command": "common.sh"}
+PROJECT = {"type": "command", "command": "project.sh"}
+GUARD = {"type": "command", "command": "guard.sh"}
+
+
+def _delivery(id: str = ID) -> Path:
+    # Spelled out rather than asked of the module: the directory is the contract, and the test
+    # suite gives every test a `HOME` of its own (`tests/conftest.py`).
+    return Path(os.environ["HOME"]) / ".local" / "share" / "stayfixed" / "delivery" / id
+
+
+def _overlay(tmp_path: Path) -> Path:
+    overlay = tmp_path / "overlay"
+    common = overlay / "common" / "claude"
+    project = overlay / "projects" / "p" / "claude"
+    (common / "skills" / "review").mkdir(parents=True)
+    (project / "agents").mkdir(parents=True)
+    (common / "hooks.json").write_text(
+        json.dumps({"hooks": {"SessionStart": [{"hooks": [COMMON]}]}}), encoding="utf-8"
+    )
+    (project / "hooks.json").write_text(
+        json.dumps(
+            {
+                "hooks": {
+                    "SessionStart": [{"hooks": [PROJECT]}],
+                    "PreToolUse": [{"matcher": "Bash", "hooks": [GUARD]}],
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    (common / "skills" / "review" / "SKILL.md").write_text("review\n", encoding="utf-8")
+    # Dot-named files and directories are the editor's and the system's, never delivered.
+    (common / "skills" / ".cache").mkdir()
+    (common / "skills" / ".cache" / "index.md").write_text("cache\n", encoding="utf-8")
+    (common / "skills" / ".DS_Store").write_text("finder\n", encoding="utf-8")
+    (project / "agents" / "helper.md").write_text("helper\n", encoding="utf-8")
+    return overlay
+
+
+def _json(path: Path) -> object:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _digest(directory: Path) -> str:
+    # The digest's definition, restated: sha256 over every rendered file's path relative to the
+    # render directory and its bytes, in path order, each framed by its length.
+    files = sorted(p for p in directory.rglob("*") if p.is_file())
+    digest = hashlib.sha256()
+    for path in files:
+        relative = path.relative_to(directory).as_posix()
+        content = path.read_bytes()
+        digest.update(f"{relative}\0{len(content)}\0".encode())
+        digest.update(content)
+    return digest.hexdigest()
+
+
+def test_render_writes_the_marketplace_and_the_plugin_under_names_carrying_the_whole_id(
+    tmp_path: Path,
+) -> None:
+    # The names are the delivery's only defence: a clone can commit an `enabledPlugins` entry,
+    # and it cannot name an id it never saw. Mutation: the marketplace named without the id ->
+    # this reddens (`mutations/attach.toml`).
+    record = render(_overlay(tmp_path), "p", ID)
+    delivery = _delivery()
+    marketplace = _json(delivery / ".claude-plugin" / "marketplace.json")
+    assert isinstance(marketplace, dict)
+    assert marketplace["name"] == f"stayfixed-delivery-{ID}"
+    assert [(p["name"], p["source"]) for p in marketplace["plugins"]] == [
+        (f"overlay-{ID}", "./plugin")
+    ]
+    plugin = _json(delivery / "plugin" / ".claude-plugin" / "plugin.json")
+    assert isinstance(plugin, dict) and plugin["name"] == f"overlay-{ID}"
+    # The union, common first and this project's second, every entry as the overlay wrote it.
+    assert _json(delivery / "plugin" / "hooks" / "hooks.json") == {
+        "hooks": {
+            "SessionStart": [{"hooks": [COMMON]}, {"hooks": [PROJECT]}],
+            "PreToolUse": [{"matcher": "Bash", "hooks": [GUARD]}],
+        }
+    }
+    assert (delivery / "plugin" / "skills" / "review" / "SKILL.md").read_text() == "review\n"
+    assert (delivery / "plugin" / "agents" / "helper.md").read_text() == "helper\n"
+    assert record.id == ID
+    assert record.parts == tuple(
+        sorted(p.relative_to(delivery).as_posix() for p in delivery.rglob("*") if p.is_file())
+    )
+    assert len(record.parts) == 5
+    assert record.digest == _digest(delivery)
+
+
+def test_a_second_render_replaces_the_files_in_the_same_directory(tmp_path: Path) -> None:
+    # What runs is the render directory's bytes, so a re-render must change them in place: an
+    # edited hook file reaches the next session with no reinstall, and a skill taken out of the
+    # overlay stops being delivered.
+    overlay = _overlay(tmp_path)
+    first = render(overlay, "p", ID)
+    (overlay / "common" / "claude" / "hooks.json").write_text(
+        json.dumps({"hooks": {"Stop": [{"hooks": [COMMON]}]}}), encoding="utf-8"
+    )
+    (overlay / "common" / "claude" / "skills" / "review" / "SKILL.md").unlink()
+    # The parts the first render recorded are what the second takes back, as `attach` hands
+    # them over from its ledger: nothing in the directory is found by listing it.
+    second = render(overlay, "p", ID, stale=first.parts)
+    delivery = _delivery()
+    hooks = _json(delivery / "plugin" / "hooks" / "hooks.json")
+    assert isinstance(hooks, dict)
+    assert hooks["hooks"]["Stop"] == [{"hooks": [COMMON]}]
+    assert hooks["hooks"]["SessionStart"] == [{"hooks": [PROJECT]}]
+    assert not (delivery / "plugin" / "skills").exists()
+    assert second.digest != first.digest
+    assert second.digest == _digest(delivery)
+    assert [p.name for p in delivery.parent.iterdir()] == [ID]

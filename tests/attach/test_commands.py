@@ -25,6 +25,7 @@ from tests.attach.test_binding import DEFAULT_MEMORY, _machine, _project_and_sto
 from tests.attach.test_write import ENTRY, LEDGER, RULE, SETTINGS, _overlay_grants, _wide
 from tests.cli import cli
 from tests.gitfixture import run_git
+from tests.runners import Recorder
 from tests.snapshot import assert_snapshot_unchanged, snapshot
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
@@ -47,6 +48,11 @@ def _a_terminal_and_never_the_developers_own_home(
     """
     monkeypatch.setattr(Path, "home", lambda: tmp_path / "home")
     monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    # And no case reaches the developer's real `claude`: `attach` installs the rendered plugin
+    # through the CLI's own `subprocess_runner()`, which resolves `claude` on `PATH`. One recorder
+    # for the case, answering every program as having succeeded.
+    runner = Recorder()
+    monkeypatch.setattr("stayfixed.runner.subprocess_runner", lambda **_: runner)
 
 
 # `Path.home` as the library defines it, before the fixture below replaces it for every case.
@@ -620,30 +626,17 @@ REFUSED_SHAPES = {
         {"permissions": {"allow": [42]}},
         "'permissions.allow' is not a list of strings",
     ),
-    "hooks-null": ({"hooks": None}, "'hooks' is not an object"),
-    "hooks-a-list": ({"hooks": []}, "'hooks' is not an object"),
-    "event-null": ({"hooks": {"Stop": None}}, "'hooks.Stop' is not a list"),
-    "event-an-object": ({"hooks": {"Stop": {}}}, "'hooks.Stop' is not a list"),
-    "group-a-number": (
-        {"hooks": {"Stop": [5]}},
-        "'hooks.Stop' holds an entry group that is not an object",
-    ),
-    "group-hooks-null": (
-        {"hooks": {"Stop": [{"hooks": None}]}},
-        "an entry group's 'hooks' is not a list",
-    ),
-    "group-hooks-a-string": (
-        {"hooks": {"Stop": [{"hooks": "x"}]}},
-        "an entry group's 'hooks' is not a list",
-    ),
-    "entry-a-string": (
-        {"hooks": {"Stop": [{"hooks": ["x"]}]}},
-        "an entry group holds an entry that is not an object",
-    ),
 }
 # And the shapes both read, so neither half refuses by refusing everything: an absent key is no
-# rules and no entries, and an entry with no command is somebody else's to keep.
+# rules and no entries, and an entry with no command is somebody else's to keep. The hook table
+# is Claude Code's and the person's whatever its shape: `attach` merges no entry into it, so with
+# no earlier ledger recording one to take back, neither command reads it.
 READ_SHAPES = {
+    "hooks-null": {"hooks": None},
+    "hooks-a-list": {"hooks": []},
+    "event-null": {"hooks": {"Stop": None}},
+    "group-a-number": {"hooks": {"Stop": [5]}},
+    "entry-a-string": {"hooks": {"Stop": [{"hooks": ["x"]}]}},
     "empty": {},
     "permissions-empty": {"permissions": {}},
     "allow-empty": {"permissions": {"allow": []}},
@@ -667,12 +660,10 @@ def _granting(tmp_path: Path) -> tuple[Path, Path, Path]:
 def test_check_refuses_exactly_the_settings_shapes_attach_refuses_in_its_words(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], shape: str
 ) -> None:
-    # `--check` read the allow list and the hook table with filters of its own, while the real run
-    # refused the same shapes: `null` where an object or a list goes, and a group or an entry that
-    # is not an object. `--check` exited 0 promising a clean diff, and `attach --yes` then exited
-    # 2 on the same file. One reader each now, shared by both. Mutation (oracle): `mutations/`'s
-    # "check filters the hook shapes the merge refuses" -> the hook cases end `--check` otherwise.
-    # The allow list's reader is proven where nothing past the diff is read, in the case below.
+    # `--check` read the allow list with a filter of its own, while the real run refused the same
+    # shapes: `null` where an object or a list goes. `--check` exited 0 promising a clean diff, and
+    # `attach --yes` then exited 2 on the same file. One reader now, shared by both. The allow
+    # list's reader is proven where nothing past the diff is read, in the case below.
     document, clause = REFUSED_SHAPES[shape]
     root, store, machine = _granting(tmp_path)
     (root / ".claude").mkdir(exist_ok=True)
@@ -904,105 +895,6 @@ def test_check_reads_nothing_past_where_the_run_stops(
     assert "trust.json" not in capsys.readouterr().err
 
 
-def test_check_ends_a_repository_outside_overlay_mode_as_the_run_does_whatever_its_ledger(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    # The run refuses a `memory.mode` other than `overlay` before it reaches the ledger, so a
-    # leftover ledger it could not take never decides its code. `--check` reads the ledger only
-    # where the run would, so the two still end with one code: read first, `--check` exited 1 on
-    # the ledger where the run exited 2 on the mode. Mutation (oracle): `mutations/`'s "check
-    # reads the attach ledger whatever the memory mode".
-    root, store, machine = _granting(tmp_path)
-    config = root / "stayfixed.toml"
-    config.write_text(
-        config.read_text(encoding="utf-8").replace('mode = "overlay"', 'mode = "in-repo"'),
-        encoding="utf-8",
-    )
-    ledger = root / LEDGER
-    ledger.parent.mkdir(parents=True, exist_ok=True)
-    ledger.write_text("{", encoding="utf-8")
-    flags = _flags(root, store, machine)
-    assert invoke(["attach", "--check", *flags]) == 2
-    checked = capsys.readouterr()
-    assert invoke(["attach", "--yes", *flags]) == 2
-    attached = capsys.readouterr()
-    # `--check` reports the refusal in its report, and the run refuses with it; neither names the
-    # ledger.
-    assert "memory.mode is 'in-repo'" in checked.out and "memory.mode is 'in-repo'" in attached.err
-    assert "attach.json" not in checked.out + checked.err + attached.err
-
-
-def test_check_reports_a_repository_outside_overlay_mode_whatever_its_origin(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    # The run refuses a `memory.mode` other than `overlay` before it asks what the share holds, so
-    # a group the share cannot hold never decides its code. `--check` asks the share only where the
-    # run would, so it reports the mode's refusal with the rest of its report, exit 2, rather than
-    # ending on the share's refusal turned into the mode's on stderr. Mutation (oracle):
-    # `mutations/`'s "check asks what the share holds whatever the memory mode".
-    root, store, machine = _granting(tmp_path)
-    config = root / "stayfixed.toml"
-    config.write_text(
-        config.read_text(encoding="utf-8").replace('mode = "overlay"', 'mode = "in-repo"'),
-        encoding="utf-8",
-    )
-    # A group whose directory in the share is a link out of it: the share refuses it, while the
-    # checkout's own `paths.memory` holds nothing to count.
-    (tmp_path / "elsewhere").mkdir()
-    (store / "project-stable").symlink_to(tmp_path / "elsewhere", target_is_directory=True)
-    flags = _flags(root, store, machine)
-    assert invoke(["attach", "--check", *flags]) == 2
-    checked = capsys.readouterr()
-    assert invoke(["attach", "--yes", *flags]) == 2
-    attached = capsys.readouterr()
-    assert checked.err == ""
-    assert "memory.mode is 'in-repo'" in checked.out and "memory.mode is 'in-repo'" in attached.err
-
-
-def _settings_permissions_null(root: Path, _: Path) -> None:
-    (root / ".claude").mkdir(exist_ok=True)
-    (root / SETTINGS).write_text('{"permissions": null}', encoding="utf-8")
-
-
-def _settings_not_text(root: Path, _: Path) -> None:
-    (root / ".claude").mkdir(exist_ok=True)
-    (root / SETTINGS).write_bytes(b"\xff\xfe")
-
-
-# What `--check` reads for the rest of its report outside overlay mode, where the run has already
-# refused: a group outside `paths.memory`, which the count refuses; a settings file whose
-# `permissions` is `null`, which the diff refuses; and one that is not UTF-8, which it fails on.
-PAST_THE_MODE = {
-    "group-leaves-the-share": PAST_THE_GATES["group-leaves-the-share"],
-    "settings-permissions-null": _settings_permissions_null,
-    "settings-not-text": _settings_not_text,
-}
-
-
-@pytest.mark.parametrize("case", sorted(PAST_THE_MODE))
-def test_check_ends_a_repository_outside_overlay_mode_with_the_runs_refusal_whatever_the_rest(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], case: str
-) -> None:
-    # The run refuses a `memory.mode` other than `overlay` right after the binding, and reads
-    # nothing else. `--check` reports that refusal on its line with the rest of its report, so it
-    # reads the diff, the groups and the rule files the run never reaches, and whatever refused or
-    # failed there ended it instead, in other words and at times with another code. A refusal or
-    # failure there now gives way to the run's own refusal of the mode. Mutation (oracle):
-    # `mutations/`'s "check lets the rest of its report decide a repository outside overlay mode".
-    root, store, machine = _granting(tmp_path)
-    config = root / "stayfixed.toml"
-    config.write_text(
-        config.read_text(encoding="utf-8").replace('mode = "overlay"', 'mode = "in-repo"'),
-        encoding="utf-8",
-    )
-    PAST_THE_MODE[case](root, tmp_path)
-    before = snapshot(tmp_path)
-    checked, attached = _check_then_attach(_flags(root, store, machine), capsys)
-    assert checked == attached
-    assert checked[0] == 2 and checked[1].startswith("stayfixed: refused: memory.mode is 'in-repo'")
-    assert_snapshot_unchanged(tmp_path, before)
-
-
 def test_attach_reads_each_of_its_two_documents_once_too(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1032,50 +924,6 @@ def test_attach_reads_each_of_its_two_documents_once_too(
     monkeypatch.setattr("stayfixed.attach.binding.load", counted)
     assert invoke(["attach", "--yes", *_flags(root, store, machine)]) == 0
     assert loads == []
-
-
-def _tree(where: Path) -> set[str]:
-    """Every path under `where`, directories included: `snapshot` reads files alone, and the
-    overlay's half of the defect below was three empty group directories."""
-    return {str(path.relative_to(where)) for path in where.rglob("*") if ".git" not in path.parts}
-
-
-def test_a_project_not_in_overlay_mode_is_refused_before_a_byte_is_written(tmp_path: Path) -> None:
-    # `memory.mode` was asked by `worktree.attach_main`, which runs after every write `attach`
-    # makes: a `local-only` project got `.gitignore`'s region, `.codex/rules/`, the settings
-    # merge, the ledger and, in the overlay, `project.toml` and its group directories, and
-    # then exited 2 -- with `doctor`, which keys on the ledger, reporting it attached. The
-    # refusal belongs beside the others above the first write, and `--check` owes the same
-    # answer with the same code, since the real run it previews would refuse.
-    #
-    # Mutation: `mutations/`'s "attach asks memory.mode only after it has written".
-    root, store = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
-    _overlay_grants(store, allow=(RULE,), codex="# standing rule\n")
-    text = (root / "stayfixed.toml").read_text(encoding="utf-8")
-    (root / "stayfixed.toml").write_text(
-        text.replace('mode = "overlay"', 'mode = "local-only"'), encoding="utf-8"
-    )
-    overlay = store.parents[2]
-    machine = _machine(tmp_path, overlay=overlay)
-    project_files, overlay_files = snapshot(root), snapshot(overlay)
-    project_tree, overlay_tree = _tree(root), _tree(overlay)
-    # Non-vacuous: both walks found something, so an empty walk cannot satisfy the comparisons.
-    assert project_files and overlay_files and overlay_tree
-
-    code, out, err = cli(root, tmp_path, "attach", "--store", str(store), "--yes", machine=machine)
-    assert code == 2
-    # The refusal's own sentence: the store path the command line carries says "overlay" too.
-    assert "memory.mode is 'local-only'" in out + err
-    assert_snapshot_unchanged(root, project_files)
-    assert_snapshot_unchanged(overlay, overlay_files)
-    assert _tree(root) == project_tree
-    assert _tree(overlay) == overlay_tree
-
-    code, out, err = cli(
-        root, tmp_path, "attach", "--check", "--store", str(store), machine=machine
-    )
-    assert code == 2
-    assert "memory.mode is 'local-only'" in out + err
 
 
 def test_a_harness_link_that_waits_for_approval_is_said_with_the_way_out(tmp_path: Path) -> None:

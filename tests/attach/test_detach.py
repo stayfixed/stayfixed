@@ -848,12 +848,9 @@ def test_detach_takes_back_the_exclude_block_the_empty_directories_and_the_harne
 
 
 def test_the_settings_fallback_written_after_the_links_is_hidden_too(tmp_path: Path) -> None:
-    # The settings file is a candidate for the exclude block only on a run that writes it, and
-    # the fallback key is written after the links. Whether it will be is decided before the
-    # first write (`write._fallback_possible`), so the run hides the file in its one block.
-    #
-    # Mutation: `mutations/`'s "attach decides the settings fallback only once it has
-    # written" reddens this through `check-ignore`.
+    # The fallback key is written after the links, into the settings file every run places and
+    # hides in its one block above the first write, since Claude Code writes the plugin's entry
+    # there too.
     from tests.attach.test_write import _check_ignore
 
     root, store, machine = _bound(tmp_path)
@@ -890,36 +887,12 @@ def _fallback_forced(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
     return root, store, machine, home
 
 
-def test_a_fallback_that_would_write_through_a_symlinked_claude_is_skipped_with_a_note(
-    tmp_path: Path,
-) -> None:
-    # The fallback writes the settings file, and a `.claude` linked in from elsewhere is a layout
-    # the owner chose, not something to write through or refuse. So the fallback is not taken:
-    # the run goes through, writes nothing behind the link, and says what the harness link is
-    # missing and how to get it. Before, the write failed with an `OSError` after every earlier
-    # write; then, a refusal took the whole attach away from an ordinary layout.
-    #
-    # Mutation: `mutations/`'s "attach takes the fallback through a linked-in .claude".
-    from stayfixed.attach.write import FALLBACK_UNAVAILABLE
-
-    root, store, machine, home = _fallback_forced(tmp_path)
-    (tmp_path / "dotfiles-claude").mkdir()
-    (root / ".claude").symlink_to(tmp_path / "dotfiles-claude", target_is_directory=True)
-    attached = _attach(root, store, machine, home)
-    assert attached.notes == (FALLBACK_UNAVAILABLE,)
-    assert not attached.settings_written
-    assert list((tmp_path / "dotfiles-claude").iterdir()) == []
-    # Nothing to hide, so the block names no settings file.
-    exclude = (root / ".git" / "info" / "exclude").read_text(encoding="utf-8")
-    assert SETTINGS not in exclude
-
-
 def test_a_symlinked_exclude_file_is_refused_first_when_only_the_fallback_needs_a_line(
     tmp_path: Path,
 ) -> None:
     # Every other path this run places is ignored already, so the only exclude line the run
-    # needs is the fallback's settings file. That need is known before the first write, and so
-    # is the refusal of a symlinked exclude file.
+    # needs is the settings file, which holds the fallback key. That need is known before the
+    # first write, and so is the refusal of a symlinked exclude file.
     root, store, machine, home = _fallback_forced(tmp_path)
     exclude = root / ".git" / "info" / "exclude"
     held = [
@@ -937,44 +910,6 @@ def test_a_symlinked_exclude_file_is_refused_first_when_only_the_fallback_needs_
     assert "symlink" in str(refused.value)
     assert_snapshot_unchanged(root, project_files)
     assert_snapshot_unchanged(overlay, overlay_files)
-    assert elsewhere.read_bytes() == outside
-    assert not (root / SETTINGS).exists()
-
-
-def test_a_first_attach_with_a_symlinked_exclude_that_hides_everything_attaches(
-    tmp_path: Path,
-) -> None:
-    # A real directory at the harness path, the harness's own, does not make a first attach need
-    # the fallback: no approval is recorded for a store that does not exist yet, so the gate
-    # cannot open and no settings file is written. A symlinked exclude file that already hides
-    # every path the run places is therefore never written, and never refused.
-    #
-    # Mutation: `mutations/`'s "a first attach treats the unapproved gate as possibly open":
-    # the settings file becomes a candidate, the exclude file must take a line, and its symlink
-    # is refused. (The linked-`.claude` case in `test_write.py` cannot see this guard: the
-    # fallback is off the table there for the link alone.)
-    root, store, machine = _bound(tmp_path)
-    _grant(store.parents[2])
-    home = tmp_path / "home"
-    harness_memory_path(root, home).mkdir(parents=True)
-    exclude = root / ".git" / "info" / "exclude"
-    elsewhere = tmp_path / "exclude-elsewhere"
-    held = exclude.read_text(encoding="utf-8") if exclude.is_file() else ""
-    # Everything the run places, and not the settings file: the run does not write it, so it is
-    # not a candidate, and nothing is left for the exclude file to take. The link tree is listed
-    # here too, beside the fixture's committed `.gitignore` line for it: the owner's own line
-    # hides it whatever that line says, so a path both hide needs no line of the block. (Asked
-    # which pattern decides, git names the `.gitignore`, which outranks the owner's file; read
-    # that way, the link tree needed a line and the symlinked file was refused.)
-    elsewhere.write_text(
-        held + f"/{DEFAULT_MEMORY}/\n/.codex/rules/\n.stayfixed/\n", encoding="utf-8"
-    )
-    exclude.unlink(missing_ok=True)
-    exclude.symlink_to(elsewhere)
-    outside = elsewhere.read_bytes()
-    attached = _attach(root, store, machine, home)
-    # Non-vacuous: the attach did run to the end and placed its tree.
-    assert attached.links.created
     assert elsewhere.read_bytes() == outside
     assert not (root / SETTINGS).exists()
 
@@ -1450,25 +1385,22 @@ def test_a_rule_copy_that_is_itself_a_symlink_is_withdrawn(tmp_path: Path) -> No
     assert mine.is_file()
 
 
-def test_a_linked_claude_directory_attach_never_wrote_into_does_not_stop_detach(
-    tmp_path: Path,
-) -> None:
-    # A `.claude` kept elsewhere and linked in is an ordinary layout, and an overlay that grants
-    # nothing gives `attach` nothing to write there. `detach` rewrote the settings file whether or
-    # not it held anything of stayfixed's, so the same layout that attached cleanly could not be
-    # detached. A file with nothing to withdraw is not written at all.
+def test_a_settings_file_detach_withdraws_nothing_from_is_not_rewritten(tmp_path: Path) -> None:
+    # An overlay that grants nothing gives `attach` nothing to write into the settings file, and
+    # `detach` then has nothing to take back out of it. Rewritten anyway, the file came back in
+    # another layout, a change to somebody's file the round trip promises not to make, and under
+    # the plugin's own entry Claude Code keeps there. A file with nothing to withdraw is not
+    # written at all.
     #
     # Mutation: `mutations/`'s "detach rewrites a settings file it withdraws nothing from".
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2])
     home = tmp_path / "home"
-    dotfiles = tmp_path / "dotfiles-claude"
-    dotfiles.mkdir()
-    (dotfiles / "settings.local.json").write_text('{"theme": "dark"}', encoding="utf-8")
-    (root / ".claude").symlink_to(dotfiles, target_is_directory=True)
+    (root / ".claude").mkdir()
+    (root / SETTINGS).write_text('{"theme": "dark"}', encoding="utf-8")
     _attach(root, store, machine, home, confirmed=True)
     _detach(root, machine, home)
-    assert (dotfiles / "settings.local.json").read_text(encoding="utf-8") == '{"theme": "dark"}'
+    assert (root / SETTINGS).read_text(encoding="utf-8") == '{"theme": "dark"}'
     assert not (root / LEDGER).exists()
 
 

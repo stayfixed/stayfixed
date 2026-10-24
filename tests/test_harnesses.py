@@ -281,6 +281,10 @@ _HARNESS_MENTION = re.compile(
 LISTED = {
     ("src/stayfixed/setup/run.py", "claude"): (4, "`_MARKETPLACE_ADD` and `_PLUGIN_INSTALL`"),
     ("src/stayfixed/setup/run.py", "codex"): (4, "`_MARKETPLACE_ADD` and `_PLUGIN_INSTALL`"),
+    ("src/stayfixed/attach/render.py", "claude"): (
+        4,
+        "`PLUGIN_MARKETPLACE_ADD_LOCAL` and `PLUGIN_INSTALL_LOCAL`",
+    ),
     ("src/stayfixed/project/templates.py", "claude"): (5, "`init` renders `CLAUDE.md`"),
     ("src/stayfixed/project/layout.py", "claude"): (1, "from the template `claude.md`"),
     ("src/stayfixed/overlay/layout.py", "claude"): (3, "(`overlay.layout`"),

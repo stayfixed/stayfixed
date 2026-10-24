@@ -67,7 +67,7 @@ reddens = ["tests/attach/test_binding.py::test_a_committed_settings_file_can_nev
 [[mutation]]
 name = "attach widens a permission without a confirmation"
 file = "src/stayfixed/attach/permissions.py"
-before = '        return bool(self.added_allow or self.added_hooks)'
+before = '        return bool(self.added_allow)'
 after = '        return False'
 reddens = [
   "tests/attach/test_write.py::test_an_unconfirmed_attach_that_would_widen_a_permission_refuses",
@@ -328,19 +328,13 @@ reddens = [
 name = "the ledger is read after attach has already written"
 file = "src/stayfixed/attach/write.py"
 before = '''    previous = existing_ledger(root)
-    # Above every write, because the first of them creates `.stayfixed/local/` and the answer
-    # would then be wrong by exactly the directory this run brought into existence.
-    absent = _absent_directories(root)
-    parents = _absent_memory_parents(root, config)'''
+    memory = config.memory.mode == OVERLAY_MODE'''
 # The write is put above the read rather than the read moved below the writes: `previous` is also
 # read by the settings-candidate question above the first write, so moving the read would break
 # the name instead of the order.
 after = '''    fsops.write_within(root, ".stayfixed-probe", "")
     previous = existing_ledger(root)
-    # Above every write, because the first of them creates `.stayfixed/local/` and the answer
-    # would then be wrong by exactly the directory this run brought into existence.
-    absent = _absent_directories(root)
-    parents = _absent_memory_parents(root, config)'''
+    memory = config.memory.mode == OVERLAY_MODE'''
 reddens = [
   "tests/attach/test_write.py::test_a_ledger_no_attach_could_have_written_is_refused_before_the_first_write",
 ]
@@ -436,10 +430,10 @@ reddens = [
   "tests/attach/test_binding.py::test_check_refuses_the_allow_list_shape_the_real_run_refuses",
 ]
 
-# One reader each for the settings document's allow list and its hook table, shared by `--check`
-# and the real run, so `--check` refuses exactly what `attach` refuses: `null` where an object or a
-# list goes, and a group or an entry that is not an object. A `--check` that read either with a
-# filter of its own exited 0 promising a clean diff for a file `attach --yes` then refused.
+# One reader for the settings document's allow list, shared by `--check` and the real run, so
+# `--check` refuses exactly what `attach` refuses: `null` where an object or a list goes. A
+# `--check` that read it with a filter of its own exited 0 promising a clean diff for a file
+# `attach --yes` then refused.
 [[mutation]]
 name = "check reads a null allow list as no rules"
 file = "src/stayfixed/attach/permissions.py"
@@ -454,22 +448,10 @@ reddens = [
 ]
 
 [[mutation]]
-name = "check filters the hook shapes the merge refuses"
-file = "src/stayfixed/attach/permissions.py"
-before = "        walked = judged_entries(document, lenient=False)"
-after = "        walked = judged_entries(document, lenient=True)"
-reddens = [
-  "tests/attach/test_commands.py::test_check_refuses_exactly_the_settings_shapes_attach_refuses_in_its_words[event-null]",
-  "tests/attach/test_commands.py::test_check_refuses_exactly_the_settings_shapes_attach_refuses_in_its_words[group-a-number]",
-  "tests/attach/test_commands.py::test_check_refuses_exactly_the_settings_shapes_attach_refuses_in_its_words[group-hooks-null]",
-  "tests/attach/test_commands.py::test_check_refuses_exactly_the_settings_shapes_attach_refuses_in_its_words[entry-a-string]",
-]
-
-[[mutation]]
 name = "attach reads an overlay group's null hooks as none"
 file = "src/stayfixed/attach/permissions.py"
-before = '                entries = group.get("hooks", [])'
-after = '                entries = group.get("hooks") or []'
+before = '            entries = group.get("hooks", [])'
+after = '            entries = group.get("hooks") or []'
 reddens = [
   "tests/attach/test_commands.py::test_an_overlay_group_whose_hooks_is_null_is_refused_by_check_and_attach_alike",
 ]
@@ -490,8 +472,8 @@ reddens = [
 [[mutation]]
 name = "attach discovers the harness anchor from inside the link step"
 file = "src/stayfixed/attach/write.py"
-before = "    checkouts = tuple(_checkouts(root))\n    for tree in checkouts:\n        harness_anchor(tree, home)\n"
-after = "    checkouts = tuple(_checkouts(root))\n"
+before = "    if memory:\n        for tree in checkouts:\n            harness_anchor(tree, home)\n"
+after = "    if memory:\n        pass\n"
 reddens = ["tests/attach/test_links.py::test_a_home_that_is_not_there_refuses_above_every_write"]
 
 [[mutation]]
@@ -508,8 +490,8 @@ reddens = [
 [[mutation]]
 name = "attach asks the harness anchor of --root alone"
 file = "src/stayfixed/attach/write.py"
-before = "    checkouts = tuple(_checkouts(root))\n    for tree in checkouts:\n        harness_anchor(tree, home)\n"
-after = "    checkouts = tuple(_checkouts(root))\n    harness_anchor(root, home)\n"
+before = "    if memory:\n        for tree in checkouts:\n            harness_anchor(tree, home)\n"
+after = "    if memory:\n        harness_anchor(root, home)\n"
 reddens = [
   "tests/attach/test_links.py::test_a_side_worktree_whose_slug_is_a_link_refuses_attach_and_detach_before_any_write",
 ]
@@ -793,15 +775,6 @@ before = "        if not (stop.flag == CONFIRMED and confirmed):"
 after = "        if not (stop.flag == CONFIRMED):"
 reddens = ["tests/attach/test_write.py::test_an_unconfirmed_attach_that_would_widen_a_permission_refuses"]
 
-[[mutation]]
-name = "attach asks memory.mode only after it has written"
-file = "src/stayfixed/attach/write.py"
-before = "        if refused is not None:\n            yield Stop(refused)"
-after = "        if False:\n            yield Stop(refused)"
-reddens = [
-  "tests/attach/test_commands.py::test_a_project_not_in_overlay_mode_is_refused_before_a_byte_is_written",
-]
-
 # A `.gitignore` that re-includes a placed path with a `!` line outranks the exclude block, so git
 # would show it however the block reads. git is asked about every placed path once the block
 # stands and before any later write, and the settings file is the one that must never be written
@@ -839,31 +812,6 @@ reddens = [
   "tests/attach/test_write.py::test_a_checkout_that_already_hides_everything_is_not_touched",
 ]
 
-# The settings file is a candidate for the exclude block, and so a containment refusal, only on a
-# run that writes it (or after one that did): a `.claude` linked in from elsewhere with nothing to
-# merge is an ordinary layout, not a reason to refuse, and not a file to list.
-[[mutation]]
-name = "attach hides the settings file on a run that never writes it"
-file = "src/stayfixed/attach/write.py"
-before = "        *((LOCAL_SETTINGS,) if settings else ()),"
-after = "        LOCAL_SETTINGS,"
-reddens = [
-  "tests/attach/test_write.py::test_a_symlinked_claude_directory_the_run_never_writes_into_is_not_refused",
-]
-
-# The settings-file fallback is written after the links. Decided only there, its write through a
-# symlinked `.claude` failed with an `OSError` after every earlier write, and its exclude line was
-# written by a second, late plan whose symlink refusal came after the writes too.
-[[mutation]]
-name = "attach decides the settings fallback only once it has written"
-file = "src/stayfixed/attach/write.py"
-before = "    possible = _fallback_possible(root, config, owner=checkouts[0], machine=machine, home=home)"
-after = "    possible = False"
-reddens = [
-  "tests/attach/test_detach.py::test_a_symlinked_exclude_file_is_refused_first_when_only_the_fallback_needs_a_line",
-  "tests/attach/test_detach.py::test_the_settings_fallback_written_after_the_links_is_hidden_too",
-]
-
 # The ledger's path is the one project path `attach` writes that no exclude candidate names, so
 # nothing held it to the project by name above the first write.
 [[mutation]]
@@ -873,29 +821,6 @@ before = "    contained(root, ATTACH_LEDGER)"
 after = "    pass"
 reddens = [
   "tests/attach/test_write.py::test_a_symlinked_stayfixed_directory_is_refused_before_anything_is_written",
-]
-
-# Where `.claude` is linked in from elsewhere the fallback is off the table: taking it either wrote
-# through the link after every earlier write or refused an ordinary layout outright.
-[[mutation]]
-name = "attach takes the fallback through a linked-in .claude"
-file = "src/stayfixed/attach/write.py"
-before = "    fallback = possible and _settings_containable(root)"
-after = "    fallback = possible"
-reddens = [
-  "tests/attach/test_detach.py::test_a_fallback_that_would_write_through_a_symlinked_claude_is_skipped_with_a_note",
-]
-
-# A first attach has no link tree for `resolve`, and answered "the fallback is possible" whenever
-# the harness had made its own memory directory -- which, beside a linked-in `.claude`, refused an
-# attach that had been going through.
-[[mutation]]
-name = "a first attach treats the unapproved gate as possibly open"
-file = "src/stayfixed/attach/write.py"
-before = "        return approval_recorded(owner / config.paths.memory, machine)"
-after = "        return True"
-reddens = [
-  "tests/attach/test_detach.py::test_a_first_attach_with_a_symlinked_exclude_that_hides_everything_attaches",
 ]
 
 # A repository-authored group name holding U+2028 (or a NUL, or another character `str.splitlines`
@@ -949,7 +874,6 @@ reddens = [
   "tests/attach/test_write.py::test_a_checkout_that_already_hides_everything_is_not_touched",
   "tests/attach/test_write.py::test_a_checkout_whose_global_excludes_file_hides_everything_is_not_touched",
   "tests/attach/test_write.py::test_a_path_the_owners_global_excludes_hide_gets_no_line_whatever_the_gitignore_says",
-  "tests/attach/test_detach.py::test_a_first_attach_with_a_symlinked_exclude_that_hides_everything_attaches",
 ]
 
 # git reads a skip-worktree `.gitignore`, which a sparse checkout leaves out of the work tree, from
@@ -1294,13 +1218,14 @@ reddens = [
   "tests/attach/test_detach.py::test_detach_writes_nothing_through_an_exclude_file_that_became_a_symlink",
 ]
 
-# The upgrade path: a settings file a 0.1.x attach wrote, recorded in its ledger, with no exclude
-# block; the next attach writes nothing there and must still hide it.
+# The settings file is placed on every run, one with nothing to merge included: Claude Code writes
+# the plugin's entry there, which names the binding id. The upgrade path proves it: a settings file
+# a 0.1.x attach wrote, with no exclude block, which the next attach writes nothing into.
 [[mutation]]
-name = "attach forgets the settings file an earlier attach wrote"
+name = "attach leaves the settings file out of what it places"
 file = "src/stayfixed/attach/write.py"
-before = "    if previous is not None and (previous.allow or previous.entries or previous.settings_keys):"
-after = "    if False:"
+before = "        LOCAL_SETTINGS,\n    )"
+after = "    )"
 reddens = [
   "tests/attach/test_write.py::test_a_settings_file_an_earlier_attach_wrote_is_hidden_by_the_next_one",
 ]
@@ -1424,15 +1349,14 @@ reddens = [
   "tests/attach/test_detach.py::test_a_rule_copy_that_is_itself_a_symlink_is_withdrawn",
 ]
 
-# A settings file with nothing of stayfixed's in it was rewritten anyway, which through a `.claude`
-# linked in from elsewhere stopped a detach whose attach had cleanly written nothing there.
+# A settings file with nothing of stayfixed's in it was rewritten anyway, in another layout.
 [[mutation]]
 name = "detach rewrites a settings file it withdraws nothing from"
 file = "src/stayfixed/attach/write.py"
 before = "        unchanged = remaining == held"
 after = "        unchanged = False"
 reddens = [
-  "tests/attach/test_detach.py::test_a_linked_claude_directory_attach_never_wrote_into_does_not_stop_detach",
+  "tests/attach/test_detach.py::test_a_settings_file_detach_withdraws_nothing_from_is_not_rewritten",
 ]
 
 # In the block led by `mutations/`'s "a hash region ends a line after a lone carriage return with
@@ -1840,7 +1764,6 @@ after = "    granted, narrowed = _granted_commands(context) if found else (set()
 reddens = [
   "tests/attach/test_doctor.py::test_an_unreadable_ledger_withholds_judgement_only_of_what_this_machines_overlay_grants[owner-overlay]",
   "tests/attach/test_doctor.py::test_a_committed_ledger_of_a_shape_attach_never_writes_reads_as_unreadable[not-json]",
-  "tests/test_install_path.py::test_an_owner_whose_ledger_will_not_parse_gets_back_to_green_the_way_doctor_says",
 ]
 
 # The binding's row for a checkout that was never attached, captured from the code before the row
@@ -2242,8 +2165,8 @@ reddens = [
 [[mutation]]
 name = "attach encodes the settings merge with a bare json.dumps"
 file = "src/stayfixed/attach/write.py"
-before = '    return apply_entries(settings_text(raw, LOCAL_SETTINGS) + "\n", wanted)'
-after = '    return apply_entries(json.dumps(raw, indent=2) + "\n", wanted)'
+before = '    text = settings_text(raw, LOCAL_SETTINGS) + "\n"'
+after = '    text = json.dumps(raw, indent=2) + "\n"'
 reddens = [
   "tests/attach/test_write.py::test_a_settings_merge_the_encoder_cannot_write_back_is_refused_before_the_first_write",
 ]
@@ -2439,34 +2362,6 @@ reddens = [
   "tests/attach/test_commands.py::test_a_changed_store_says_the_approval_lapsed_and_counts_the_withdrawn_links",
 ]
 
-[[mutation]]
-name = "the unavailable fallback is asked of a worktree's own store"
-file = "src/stayfixed/attach/write.py"
-before = "        wanted = _fallback_wanted(root, config, owner=owner, machine=machine, home=home)"
-after = "        wanted = _fallback_wanted(root, config, owner=root, machine=machine, home=home)"
-reddens = ["tests/attach/test_links.py::test_a_worktree_whose_claude_is_linked_in_says_the_fallback_is_unavailable_only_when_wanted"]
-
-# The fallback is decided twice in a run, above the first write and after the links, and both
-# must ask the owning checkout's store: planned by a worktree's own, a store only the owner had
-# approved got a settings file written that the exclude block did not hide, and `--check`, which
-# plans the same way, answered clean.
-[[mutation]]
-name = "the settings fallback is planned by a worktree's own store"
-file = "src/stayfixed/attach/write.py"
-before = "    possible = _fallback_possible(root, config, owner=checkouts[0], machine=machine, home=home)"
-after = "    possible = _fallback_possible(root, config, owner=root, machine=machine, home=home)"
-reddens = [
-  "tests/attach/test_links.py::test_attaching_from_a_linked_worktree_hides_the_fallback_the_owners_approval_takes",
-  "tests/attach/test_links.py::test_check_from_a_linked_worktree_refuses_where_only_the_owners_fallback_needs_a_line",
-]
-
-[[mutation]]
-name = "a first attach asks the approval of a worktree's own store"
-file = "src/stayfixed/attach/write.py"
-before = "        return approval_recorded(owner / config.paths.memory, machine)"
-after = "        return approval_recorded(root / config.paths.memory, machine)"
-reddens = ["tests/attach/test_links.py::test_reattaching_from_a_linked_worktree_hides_the_fallback_the_owners_record_takes"]
-
 
 # The ledger is what `stayfixed uninstall` reads as "this repository is attached", so a detach that
 # left it behind would leave a repository uninstall refuses for good.
@@ -2516,33 +2411,10 @@ reddens = [
 [[mutation]]
 name = "the gates do not ask what the share holds"
 file = "src/stayfixed/attach/write.py"
-before = "            refuse_unless_share_holds(binding, config)"
+before = "        refuse_unless_share_holds(binding, config)"
 after = "            pass"
 reddens = [
   "tests/attach/test_write.py::test_a_memory_group_that_leaves_the_projects_share_is_refused_not_created",
-]
-
-# `--check` asks the share only where the run would, so outside overlay mode it reports the mode's
-# refusal with the rest of its report rather than ending on the share's.
-[[mutation]]
-name = "check asks what the share holds whatever the memory mode"
-file = "src/stayfixed/attach/write.py"
-before = "        if refused is None:\n            refuse_unless_share_holds(binding, config)"
-after = "        if True:\n            refuse_unless_share_holds(binding, config)"
-reddens = [
-  "tests/attach/test_commands.py::test_check_reports_a_repository_outside_overlay_mode_whatever_its_origin",
-]
-
-# And only where the run reads them: the run refuses a `memory.mode` other than `overlay` before the
-# ledger, so a `--check` that read it first ended such a repository with the ledger's code. Read
-# there now, the ledger's failure gives way to the mode's refusal, and the report is lost with it.
-[[mutation]]
-name = "check reads the attach ledger whatever the memory mode"
-file = "src/stayfixed/attach/check.py"
-before = "    if all(stop.flag is not None for stop in stops):"
-after = "    if all(stop.flag is not None or stop.refusal == not_overlay(config) for stop in stops):"
-reddens = [
-  "tests/attach/test_commands.py::test_check_ends_a_repository_outside_overlay_mode_as_the_run_does_whatever_its_ledger",
 ]
 
 # Nor past a group that never moved, which the run refuses before the reads after it, and
@@ -2554,35 +2426,6 @@ before = "    if all(stop.flag is not None for stop in stops):"
 after = "    if all(stop.flag is not None or \"real directories\" in stop.refusal for stop in stops):"
 reddens = [
   "tests/attach/test_commands.py::test_check_reads_nothing_past_where_the_run_stops[group-never-moved]",
-]
-
-# Outside overlay mode the run refuses right after the binding, so what `--check` reads for the rest
-# of its report is never the run's answer: a refusal or failure there gives way to the run's own
-# refusal of the mode, where it ended `--check` in its own words and at times with exit 1.
-[[mutation]]
-name = "check lets the rest of its report decide a repository outside overlay mode"
-file = "src/stayfixed/attach/check.py"
-before = "        raise Refusal(refused) from None"
-after = "        raise"
-reddens = [
-  "tests/attach/test_commands.py::test_check_ends_a_repository_outside_overlay_mode_with_the_runs_refusal_whatever_the_rest[group-leaves-the-share]",
-  "tests/attach/test_commands.py::test_check_ends_a_repository_outside_overlay_mode_with_the_runs_refusal_whatever_the_rest[settings-not-text]",
-  "tests/attach/test_commands.py::test_check_ends_a_repository_outside_overlay_mode_with_the_runs_refusal_whatever_the_rest[settings-permissions-null]",
-]
-
-# The harness's memory path for a checkout near the longest path is a name longer than a file name
-# may be, and `Path.is_symlink()` raised on it up to Python 3.13 where 3.14 answered `False`: the
-# same `attach --check` was an internal error on one and passed on the other. Asked of `pathlib`
-# again, the walk that holds `src/` to `fsops`' predicates reddens on every interpreter, and
-# `test_a_source_past_the_longest_path_under_a_project_with_no_directory_is_no_source` does on
-# 3.11 to 3.13.
-[[mutation]]
-name = "the harness link's check asks pathlib what is there"
-file = "src/stayfixed/attach/write.py"
-before = "    if fsops.is_symlink(harness) or not fsops.exists(harness):"
-after = "    if harness.is_symlink() or not harness.exists():"
-reddens = [
-  "tests/test_fsops.py::test_no_module_asks_pathlib_what_is_at_a_path_a_repository_can_shape",
 ]
 
 # A `memory.groups` entry whose place cannot be asked whether it is a link is refused, in words that
@@ -2998,3 +2841,16 @@ file = "src/stayfixed/attach/write.py"
 before = "    remedy=ONLY_OUTSIDE,\n)"
 after = "    remedy=ONLY_OUTSIDE + \" (an agent's shell writes nothing outside the working directory)\",\n)"
 reddens = ["tests/trust/test_boundary.py::test_no_module_writes_the_sandbox_sentence_by_hand"]
+
+# The rendered plugin's names are the delivery's whole defence: Claude Code records a local-scope
+# marketplace for the whole machine, and a clone committing `enabledPlugins` runs the hooks of any
+# plugin it can name. Named without the binding id, every attached checkout's plugin is one a clone
+# can name.
+[[mutation]]
+name = "the rendered marketplace is named without the binding id"
+file = "src/stayfixed/attach/render.py"
+before = '    return f"{MARKETPLACE_PREFIX}{id}"'
+after = '    return MARKETPLACE_PREFIX.rstrip("-")'
+reddens = [
+  "tests/attach/test_render.py::test_render_writes_the_marketplace_and_the_plugin_under_names_carrying_the_whole_id",
+]

@@ -10,8 +10,7 @@ description: Bind a repository to its private memory overlay and link the note s
 root comes from the machine configuration, not from what is typed here.
 
 1. Run `stayfixed attach --store PATH --check` first. It reports whether this machine already
-   binds this checkout (`bound` or `unbound`), and which allow rules and hook entries would be
-   added. It
+   binds this checkout (`bound` or `unbound`), and which allow rules would be added. It
    writes nothing. If the report counts memory groups that are real directories, stop: the
    notes have to move into the overlay first — each group to
    `<overlay>/projects/<name>/memory/<group>`, the shared group to `common/memory`. Say the
@@ -19,7 +18,8 @@ root comes from the machine configuration, not from what is typed here.
 2. Relay that diff to the user and wait for an answer. The command itself refuses to widen a
    permission without `--yes`, so this step is how a person comes to give it — not what stands
    in for it. Once they agree, run `stayfixed attach --store PATH --yes`; it merges the rules,
-   links the notes into this checkout and every worktree, and prints what it wrote. An overlay
+   installs the overlay's hooks, skills and agents as this checkout's local plugin, links the
+   notes into this checkout and every worktree, and prints what it wrote. An overlay
    that grants nothing attaches without the flag, and that is the command's decision rather
    than a judgement to make here.
 3. If the report or the run names two remotes -- this checkout's `origin` is not the one the

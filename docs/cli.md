@@ -511,8 +511,8 @@ an overlay which becomes unpushed *during* a session that started clean is not r
 session's compactions, only at its next resume or startup; `stayfixed doctor` answers on demand. And the overlay is never a plugin stayfixed
 executes anything from — its
 `hooks/hooks.json` stays empty; hook entries the owner keeps in *common/claude/hooks.json* and
-`projects/<name>/claude/hooks.json` reach a session only through `attach`'s explicit, ledgered
-merge.
+`projects/<name>/claude/hooks.json` reach a session only through the plugin `attach` renders from
+them, named by this machine's binding id.
 
 ## `stayfixed commit check --range RANGE`
 
@@ -2427,9 +2427,10 @@ length); `2` on a refusal.
 
 ## `stayfixed attach --store PATH [--check] [--yes] [--root PATH] [--machine PATH]`
 
-Binds this repository to your private overlay and links its note store in. After it, a session
-in this repository reads your cross-project notes and this project's own notes, and the
-permissions and hook entries you keep in the overlay are merged into
+Binds this repository to your private overlay, renders the hooks, skills and agents you keep there
+into a local plugin and installs it, and links its note store in. After it, a session in this
+repository runs your overlay's hooks, skills and agents and reads your cross-project notes and this
+project's own notes, and the allow rules you keep in the overlay are merged into
 `.claude/settings.local.json`.
 
 **`--machine` is honoured only from an interactive shell.** This is the command that turns the
@@ -2462,22 +2463,23 @@ whose root, or whose `projects/`, is there and is not a directory is refused (`2
 for it, and `stayfixed doctor`'s `attached` row warns about the same path rather than offering to
 remove the ledger.
 
-**Only an overlay-mode repository is attached.** A `stayfixed.toml` whose `memory.mode` is not
-`overlay` keeps its notes in the repository, and `attach` refuses (`2`) before it writes
-anything; `--check` says so first on its line, still reports the rest, and exits `2`, the code
-the real run refuses with. Where the rest cannot be read, `--check` ends with the run's refusal
-instead, the same code and the same line.
+**The notes are linked only in overlay mode; the rest is delivered whatever the mode.** A
+`stayfixed.toml` whose `memory.mode` is not `overlay` keeps its notes in the repository, so for it
+`attach` makes no link tree, no harness memory link and no note directories in the overlay, and asks
+none of the questions about them below — the `memory.groups` containment, the groups that never
+moved, the home the harness link goes under and the trust record. It binds, merges the allow
+rules, places the Codex rule files and renders and installs the plugin all the same.
 
 **`--check` writes nothing.** It reports the binding state — `unbound` or `bound` — with the
 `origin` note the run would print (below), the permission diff
-(which allow rules and which hook entries would be added, and how many of the overlay's rules this
+(which allow rules would be added, and how many of the overlay's rules this
 repository already has), the Codex standing-rule files it would place under `.codex/rules/`, and
 `real_directories`: how many of this project's memory groups are still real directories rather than
 links into the overlay. Read it before the real run: everything under **Writes** below that carries
 content from the overlay is named here first. It asks what the real run asks before its first write,
 through the run's own code, so where the run fails or refuses there, in any case the two lists below
-give before the first write, `--check` ends with the same code and the same line. The exceptions,
-besides overlay mode above, are where a flag or a finding decides: a widening without `--yes` it
+give before the first write, `--check` ends with the same code and the same line. The exceptions
+are where a flag or a finding decides: a widening without `--yes` it
 reports and goes past, asking what follows as a run given the flag would; at a memory group that
 never moved it reports the finding, exits `1`, and of what the run asks next reads only the Codex
 rule files' names.
@@ -2491,11 +2493,33 @@ a *permission*; a standing rule is not one, and adding standing rules is the mac
 to do — which is exactly what the overlay is. `widens` in the `--json` output therefore answers
 about permissions alone, and `rules_to_write` lists the files.
 
-**A write that grants a capability needs `--yes`.** If the diff would add an allow rule or a hook
-entry, `attach` refuses (`2`) without it. That is a refusal and not a prompt on purpose: the
+**A write that grants a capability needs `--yes`.** If the diff would add an allow rule, `attach`
+refuses (`2`) without it. That is a refusal and not a prompt on purpose: the
 command line here is usually written by a model that has read this repository, so a gate whose
 only enforcement is a step in a procedure is no gate at all. An overlay that grants nothing needs
 no flag, because the gate is on the capability and not on the command.
+
+**The overlay's hooks, skills and agents are delivered as a plugin.** Every run renders them into
+`$HOME/.local/share/stayfixed/delivery/<id>/`, named by the binding id below: a marketplace
+`stayfixed-delivery-<id>` holding one plugin, `overlay-<id>`, whose `hooks/hooks.json` is the union
+of `common/claude/hooks.json` and `projects/<name>/claude/hooks.json` — each event's entry groups
+in that order, as the overlay wrote them — and whose `skills/` and `agents/` are copied from the
+same two directories, this project's copy of a file winning over the common one. A session runs
+the plugin from that directory in place, so a later `attach` re-renders it there and an edit
+reaches the next session with no reinstall; a file the overlay no longer holds is taken out of it,
+named by the ledger's record of the previous render (its digest and its files' paths, never the
+id). The first attach — any run while the ledger records no render — installs it with
+`claude plugin marketplace add <that directory> --scope local` and `claude plugin install
+overlay-<id>@stayfixed-delivery-<id> --scope local`, run from the main checkout, whose
+`.claude/settings.local.json` Claude Code reads from every worktree and writes the plugin's entry
+into. A call that does not succeed is a note naming its exit code and never what it printed, since
+that names the plugin; the render stays in place and the next `attach` installs it again. Claude
+Code records a local-scope marketplace for the whole machine, so the names carry the whole id,
+which a clone never sees; the plugin's entry is the reason `.claude/settings.local.json` is placed
+and hidden on every run (below). No hook entry goes into `.claude/settings.local.json` any more,
+since Claude Code rewrites that file whole: the entries an earlier release's `attach` merged there
+are taken back, the ones its ledger records under the event it records and never one by its
+marker alone, and the new ledger records none.
 
 **The binding is an id this machine keeps, not a remote.** `attach` draws a random binding id
 (32 hexadecimal characters) the first time, writes it into the repository's git common directory,
@@ -2529,7 +2553,8 @@ inside this project's `paths.memory` is refused (`2`) rather than counted — `p
 itself be a symlink, and then every group leaves the root at once. Its sentence names neither the
 group nor the path, both being repository-authored.
 
-**Reads** the overlay's `common/claude/permissions.json` and `common/claude/hooks.json`, this
+**Reads** the overlay's `common/claude/permissions.json`, `common/claude/hooks.json` and the files
+under `common/claude/skills/` and `common/claude/agents/` (dot-named ones left out), this
 project's `projects/<name>/claude/` equivalents, the overlay's `common/codex/` and
 `projects/<name>/codex/` rules, and this repository's existing `.claude/settings.local.json`.
 `.claude/settings.json` — the committed one — is read for **nothing**: it is repository-controlled,
@@ -2540,7 +2565,10 @@ repository's own exclude file (the one `git rev-parse --git-path info/exclude` n
 worktree shares), written first,
 `.claude/settings.local.json`, `.codex/rules/`, the ledger `.stayfixed/local/attach.json`, the
 binding id `stayfixed/binding` in the git common directory when there is none yet, this machine's
-binding record `$HOME/.local/share/stayfixed/bindings/<id>.toml`, the link tree under
+binding record `$HOME/.local/share/stayfixed/bindings/<id>.toml`, the render
+`$HOME/.local/share/stayfixed/delivery/<id>/` and, through the two `claude plugin` calls on the
+first attach, Claude Code's own records of the marketplace and the plugin and the main checkout's
+`.claude/settings.local.json`; where the notes are linked, the link tree under
 `paths.memory` in this checkout and in every existing worktree, the harness memory link, and — in
 the overlay — `projects/<name>/project.toml` while it records no remote, this project's note
 directories,
@@ -2559,8 +2587,8 @@ release's `attach` wrote there stays until you remove it; `stayfixed init`'s own
 `init`'s.
 
 **What it places, it hides from git, unless git hides it already.** The ledger, the link tree
-(`MEMORY.md` and one link per group), each `.codex/rules/` file and — on a run that writes it, or
-after one that did — `.claude/settings.local.json` are this machine's own, so each one is listed in
+(`MEMORY.md` and one link per group), each `.codex/rules/` file and `.claude/settings.local.json`,
+which holds the plugin's entry and so the binding id, are this machine's own, so each one is listed in
 the exclude-file block, one anchored line per path, unless your own excludes already hide it: the
 repository's exclude file or your global excludes file (`core.excludesFile`), read on their own. A
 `.gitignore` in the checkout does not stand in for the block, because the repository authors it and
@@ -2575,13 +2603,8 @@ each of those paths is ignored** (`git check-ignore --no-index`, every ignore fi
 it would still show — one a `.gitignore` re-includes with a `!` line, which outranks the exclude
 file — refuses the run before that path, or anything after the block, is written. The binding id is
 placed in the git common directory, which git never tracks, so it is neither listed nor asked about.
-A path this run does not write is not listed and is not held to the project either, so a `.claude`
-linked in from elsewhere is refused, before the first write, only when the overlay grants something
-to merge into it. The `autoMemoryDirectory` fallback is never written through such a link: where it
-would be taken — a real directory already sits where the harness memory link goes, and the store is
-approved — `attach` skips it and its line says what the harness link is missing and what to do.
-Whether the fallback may be taken is decided before the first write too; on a first attach, with no
-approval recorded for the store yet, it cannot be. A checkout that already hides all of them in its
+A `.claude` linked in from elsewhere is refused before the first write, since what lands there names
+the binding id and git cannot be asked whether it is ignored. A checkout that already hides all of them in its
 own exclude file or a global excludes file gets no block, and `git status` after an attach shows
 nothing new. When the exclude file did not exist, when the directory it goes in did not exist either
 (a repository made without git's templates has no `info/`, and the write creates it), or when its
@@ -2623,8 +2646,8 @@ failing one printed is quoted as `overlay create` quotes it (escaped, and cut to
 characters and its length).
 
 Exits `0` on success. Under `--check` it exits `1` on a non-zero count of memory groups that are
-still real directories, and `2` for a `memory.mode` other than `overlay`; a failure or refusal below
-that the run meets before its first write ends `--check` with the run's code and line instead.
+still real directories; a failure or refusal below that the run meets before its first write ends
+`--check` with the run's code and line instead.
 
 A real run exits `1` on a failure, something it reads that cannot be read or a `git` that cannot
 answer, in the order the run meets them:
@@ -2636,7 +2659,9 @@ answer, in the order the run meets them:
   UTF-8 or is not valid TOML, `git` cannot read the `origin` remote, or `git` cannot name the
   repository's common directory.
 - The overlay's `permissions.json` or `hooks.json`, or `.claude/settings.local.json`, cannot be
-  read or is not UTF-8.
+  read or is not UTF-8; or a file under the overlay's `skills/` or `agents/` cannot be read, is
+  not a regular file, is not UTF-8 or is longer than 64 MiB, or a directory there cannot be
+  listed.
 - An existing `.stayfixed/local/attach.json` cannot be read, is not UTF-8, is not valid JSON or is
   not a JSON object.
 - A Codex rule file in the overlay cannot be read or is not UTF-8, or the overlay's `common/codex/`
@@ -2661,12 +2686,13 @@ It exits `2` on a refusal, in the order the run meets them:
 - A `[paths]` value that leaves the project or passes through a symlink.
 - No overlay root recorded in the machine configuration, or a `--store` that is not this project's
   own directory inside it.
-- A `memory.mode` other than `overlay`.
 - The overlay's `permissions.json` or `hooks.json`, or `.claude/settings.local.json`, that is not
   JSON or not a JSON object, or whose `permissions` or `hooks` has a shape the merge cannot read:
-  anything but an object, a list of strings, a list of entry groups or a list of entries where
-  one goes, `null` included. An absent key is no rules and no entries. `--check` reads both with
-  the run's own readers, so it refuses exactly these documents.
+  anything but an object, a list of strings, a list of entry groups or a list of entries each with
+  a command where one goes, `null` included. An absent key is no rules and no entries. The
+  `hooks` of `.claude/settings.local.json` is read only where an earlier attach's ledger records
+  entries to take back out of it. `--check` reads each with the run's own readers, so it refuses
+  exactly these documents.
 - A `.claude/settings.local.json` that stayfixed's indented write-back would make longer than the
   64 MiB it reads, whether or not this run would rewrite it: a short document many levels deep
   grows by its depth on every line, and `would be longer than this reader reads once written
@@ -2682,12 +2708,12 @@ It exits `2` on a refusal, in the order the run meets them:
   directories `attach` could not have written.
 - A `git check-ignore` that cannot answer.
 - A path it places — the ledger, a link of the link tree, a `.codex/rules/` copy, or
-  `.claude/settings.local.json` on a run that writes it — that the repository tracks, under any
+  `.claude/settings.local.json` — that the repository tracks, under any
   case of its spelling (on a filesystem that ignores case, a tracked `.claude/Settings.Local.json`
   is the file `attach` would write), since no exclude line hides a tracked file and what `attach`
   writes there would reach every clone with the next commit; or a `git ls-files` that cannot say.
   The refusal names each such path, and counts the link tree's. `--check` refuses it too.
-- A `.codex` or `.claude` that is a symlink, on a run that writes into it; a
+- A `.claude` that is a symlink, or a `.codex` that is one on a run that writes into it; a
   `git rev-parse --git-path info/exclude` that names no exclude file; an exclude file that cannot
   be read or holds a `stayfixed:attach` block opened or closed twice (the refusal names the file),
   or, when the block needs a line, that is a symlink or sits in a directory you cannot write.
@@ -2748,9 +2774,10 @@ which builds a worktree's tree from the main checkout's store whenever that stor
 or none.
 
 **Writes**: it takes the recorded allow rules and the fallback key back out of
-`.claude/settings.local.json`, drops the hook entries marked `# stayfixed:…` there (a group that
-mixes one of those with your own entry is split, never replaced), and leaves the file unwritten when
-none of those is in it, removes the `.codex/rules/` files it wrote, withdraws the link tree from
+`.claude/settings.local.json`, drops the hook entries an earlier release's `attach` merged there —
+the ones its ledger records, under the event it records, and never one by its `# stayfixed:…` marker
+alone (a group that mixes one of those with your own entry is split, never replaced) — and leaves
+the file unwritten when none of those is in it, removes the `.codex/rules/` files it wrote, withdraws the link tree from
 this checkout and every worktree together with each one's harness memory link — while another checkout is
 attached, only this checkout's link, and its tree unless it is the main checkout, as above —
 removes the `stayfixed:attach` block in the repository's exclude file, and deletes the ledger, `.stayfixed/local/attach.json`. A file left holding nothing is

@@ -13,7 +13,6 @@ from pathlib import Path
 import pytest
 
 from stayfixed import fsops
-from stayfixed.attach.check import check
 from stayfixed.attach.write import Attached, _worktrees, attach
 from stayfixed.config.layout import ATTACH_LEDGER as LEDGER
 from stayfixed.config.loader import load
@@ -326,13 +325,11 @@ def _approved_only_by_the_owner(tmp_path: Path) -> tuple[Path, Path, Path, Path,
 def test_attaching_from_a_linked_worktree_hides_the_fallback_the_owners_approval_takes(
     tmp_path: Path,
 ) -> None:
-    # The fallback is decided twice in one run: before the first write, which makes the settings
-    # file a candidate for the exclude block, and after the links, which writes it. The write asks
-    # the owning checkout's store, the one every checkout's harness link points at; the plan asked
-    # the worktree's own. With only the owner's approved, the plan said "no fallback" and left the
-    # file out of the block, and the run then wrote this machine's absolute store path into a file
-    # `git status` offered for commit. Mutation: `mutations/`'s "the settings fallback is planned
-    # by a worktree's own store".
+    # The fallback is written after the links, and asks the owning checkout's store, the one every
+    # checkout's harness link points at. The settings file it goes into is placed, and hidden, by
+    # every run above the first write; when the plan asked the worktree's own store whether to
+    # place it, with only the owner's approved, the run wrote this machine's absolute store path
+    # into a file `git status` offered for commit.
     from stayfixed.memory.api import resolve
     from tests.attach.test_write import _check_ignore
 
@@ -349,11 +346,9 @@ def test_attaching_from_a_linked_worktree_hides_the_fallback_the_owners_approval
 def test_reattaching_from_a_linked_worktree_hides_the_fallback_the_owners_record_takes(
     tmp_path: Path,
 ) -> None:
-    # The same question before any link tree stands, which is every attach after a detach: the
-    # plan can only ask whether the machine records an approval, and must ask it of the owning
-    # checkout's `paths.memory`, the store the run goes on to link and write the fallback for.
-    # Asked of the worktree's, it found no record and left the file out of the block. Mutation:
-    # `mutations/`'s "a first attach asks the approval of a worktree's own store".
+    # The same before any link tree stands, which is every attach after a detach: the store the
+    # run goes on to link and write the fallback for is the owning checkout's, and the file is
+    # hidden whatever the plan could ask before the tree stands.
     from stayfixed.attach.write import detach
     from tests.attach.test_write import _check_ignore
 
@@ -366,58 +361,6 @@ def test_reattaching_from_a_linked_worktree_hides_the_fallback_the_owners_record
     _attach(side, store, machine, home)
     assert "autoMemoryDirectory" in _settings(side)
     assert _check_ignore(side, ".claude/settings.local.json")
-
-
-def test_check_from_a_linked_worktree_refuses_where_only_the_owners_fallback_needs_a_line(
-    tmp_path: Path,
-) -> None:
-    # `--check` plans through the run's own `plan_writes`, so it asks the fallback of the same
-    # store. Every other path the run places is hidden already, so the settings file is the one
-    # line the block needs, and a symlinked exclude file is refused by both before anything is
-    # written. Asked of the worktree's own store, `--check` answered clean while the run went on
-    # to write the file unhidden. Mutation: `mutations/`'s "the settings fallback is planned by a
-    # worktree's own store".
-    root, side, store, machine, home = _approved_only_by_the_owner(tmp_path)
-    exclude = root / ".git" / "info" / "exclude"
-    held = exclude.read_text(encoding="utf-8") if exclude.is_file() else ""
-    elsewhere = tmp_path / "exclude-elsewhere"
-    elsewhere.write_text(held + "/.codex/rules/\n.stayfixed/\n", encoding="utf-8")
-    exclude.unlink(missing_ok=True)
-    exclude.symlink_to(elsewhere)
-    with pytest.raises(Refusal) as previewed:
-        check(side, store=store, machine=machine, home=home)
-    with pytest.raises(Refusal) as refused:
-        _attach(side, store, machine, home)
-    assert "symlink" in str(refused.value)
-    assert str(previewed.value) == str(refused.value)
-    assert "autoMemoryDirectory" not in _settings(side)
-
-
-def test_a_worktree_whose_claude_is_linked_in_says_the_fallback_is_unavailable_only_when_wanted(
-    tmp_path: Path,
-) -> None:
-    # The other branch of the same question: a worktree whose `.claude` is linked in from
-    # elsewhere takes no fallback and says so when one is wanted. Asked of the worktree's own store,
-    # it said so beside the link it had just made. Mutation: `mutations/`'s "the unavailable
-    # fallback is asked of a worktree's own store".
-    from stayfixed.attach.write import FALLBACK_UNAVAILABLE
-
-    root, store, machine = _bound(tmp_path)
-    side = tmp_path / "side"
-    _git(root, "worktree", "add", "-q", str(side), "-b", "side")
-    home = tmp_path / "home"
-    _attach(side, store, machine, home)
-    _trusted(root, machine)
-    _trusted(side, machine)
-    (tmp_path / "dotfiles-claude").mkdir()
-    (side / ".claude").symlink_to(tmp_path / "dotfiles-claude", target_is_directory=True)
-    attached = _attach(side, store, machine, home)
-    assert harness_memory_path(side, home).is_symlink()
-    assert FALLBACK_UNAVAILABLE not in attached.notes
-    harness_memory_path(side, home).unlink()
-    harness_memory_path(side, home).mkdir()
-    assert FALLBACK_UNAVAILABLE in _attach(side, store, machine, home).notes
-    assert list((tmp_path / "dotfiles-claude").iterdir()) == []
 
 
 def test_attaching_from_a_linked_worktree_says_the_link_waits_only_when_it_does(

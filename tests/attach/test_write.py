@@ -30,7 +30,9 @@ from stayfixed.attach.write import (
     GROUP_UNASKED,
     HARNESS_LAPSED,
     HARNESS_WAITS,
+    INSTALLED,
     NO_ORIGIN_NOTE,
+    NOT_INSTALLED,
     REAL_DIRECTORIES,
     REFRESH_REFUSED,
     Attached,
@@ -42,7 +44,7 @@ from stayfixed.gitenv import Unasked
 from stayfixed.memory.api import PROJECT_RECORD, link_sources
 from stayfixed.overlay.api import COMMON_CLAUDE, COMMON_CODEX
 from stayfixed.printed import quoted
-from stayfixed.scaffold import EntriesError, Style, drop, extract, owned_ids
+from stayfixed.scaffold import EntriesError, Style, drop, extract
 
 # The fixture the binding tests already build, reused rather than copied: one spelling of the
 # overlay layout keeps the two modules from drifting apart about what `--store` names.
@@ -61,6 +63,15 @@ from tests.sandboxed import refuse_writes_under
 from tests.snapshot import assert_snapshot_unchanged, snapshot
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
+
+
+@pytest.fixture(autouse=True)
+def _never_the_developers_own_claude(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A case that drives `attach` through the command line reaches the CLI's own
+    `subprocess_runner()`, which resolves `claude` on `PATH`; no case may run the developer's."""
+    runner = Recorder()
+    monkeypatch.setattr("stayfixed.runner.subprocess_runner", lambda **_: runner)
+
 
 LEDGER = ".stayfixed/local/attach.json"
 SETTINGS = ".claude/settings.local.json"
@@ -224,16 +235,96 @@ def test_an_attach_that_widens_nothing_needs_no_confirmation(tmp_path: Path) -> 
     assert (root / LEDGER).is_file()
 
 
-def test_confirmed_merges_the_rules_and_records_each_entry_under_its_own_id(
+def _delivered_hooks(root: Path) -> Path:
+    """The hook file of the plugin rendered for `root`'s binding id."""
+    from stayfixed import binding
+
+    id = binding.read_id(root)
+    assert id is not None
+    delivery = Path(os.environ["HOME"]) / ".local" / "share" / "stayfixed" / "delivery" / id
+    return delivery / "plugin" / "hooks" / "hooks.json"
+
+
+def _claude_calls(runner: Recorder) -> list[tuple[list[str], Path]]:
+    calls = zip(runner.calls, runner.cwds, strict=True)
+    return [(argv, cwd) for argv, cwd in calls if argv[0] == "claude"]
+
+
+def test_the_first_attach_installs_the_rendered_plugin_from_the_main_checkout_and_no_later_one(
     tmp_path: Path,
 ) -> None:
-    # `owned_ids` is keyed by id, so one shared id for N entries yields one provenance row and
-    # the same id under two events silently keeps the last. Assert `owned_ids(document)` has
-    # one entry per merged hook.
-    hooks = {
-        "SessionStart": [{"hooks": [ENTRY, {"type": "command", "command": "echo two"}]}],
-        "PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "echo t"}]}],
-    }
+    # Run from a linked worktree, so the working directory the two calls name is the main
+    # checkout's for a reason and not because it is where the command was typed: Claude Code reads
+    # the main checkout's `settings.local.json` from every worktree. A re-render needs no reinstall,
+    # since the plugin runs from the render directory in place, so the second attach installs
+    # nothing.
+    from stayfixed import binding
+
+    root, store, machine = _attachable(tmp_path, hooks={"SessionStart": [{"hooks": [ENTRY]}]})
+    _committed(root)
+    side = tmp_path / "side"
+    _git(root, "worktree", "add", "-q", str(side), "-b", "side")
+    first = Recorder()
+    attach(side, store=store, machine=machine, confirmed=True, runner=first, home=tmp_path / "home")
+    id = binding.read_id(root)
+    assert id is not None
+    delivery = Path(os.environ["HOME"]) / ".local" / "share" / "stayfixed" / "delivery" / id
+    assert _claude_calls(first) == [
+        (
+            ["claude", "plugin", "marketplace", "add", str(delivery), "--scope", "local"],
+            root.resolve(),
+        ),
+        (
+            [
+                "claude",
+                "plugin",
+                "install",
+                f"overlay-{id}@stayfixed-delivery-{id}",
+                "--scope",
+                "local",
+            ],
+            root.resolve(),
+        ),
+    ]
+    assert (delivery / ".claude-plugin" / "marketplace.json").is_file()
+    second = Recorder()
+    attach(
+        side, store=store, machine=machine, confirmed=True, runner=second, home=tmp_path / "home"
+    )
+    assert _claude_calls(second) == []
+
+
+def test_an_install_that_did_not_succeed_is_said_by_its_code_and_tried_again(
+    tmp_path: Path,
+) -> None:
+    # What Claude Code prints names the plugin, and the plugin's name carries the whole binding
+    # id, so the note says the exit code and nothing it printed. The ledger records no render, so
+    # the next attach installs again rather than taking the render for installed.
+    from stayfixed import binding
+    from stayfixed.runner import Completed
+
+    root, store, machine = _attachable(tmp_path)
+    failing = Recorder(answers={"claude plugin install": Completed(1, "", "overlay-secret")})
+    attached = attach(
+        root, store=store, machine=machine, confirmed=True, runner=failing, home=tmp_path / "home"
+    )
+    id = binding.read_id(root)
+    assert id is not None
+    assert NOT_INSTALLED.format(verb="install", code=1) in attached.notes
+    assert not any(id in note or "overlay-secret" in note for note in attached.notes)
+    assert ledger(root).render is None
+    again = Recorder()
+    attach(root, store=store, machine=machine, confirmed=True, runner=again, home=tmp_path / "home")
+    assert [argv[2] for argv, _ in _claude_calls(again)] == ["marketplace", "install"]
+    assert ledger(root).render is not None
+
+
+def test_after_attach_the_local_settings_file_holds_the_allow_rules_and_no_hook_entry(
+    tmp_path: Path,
+) -> None:
+    # Claude Code rewrites `settings.local.json` whole and keeps no marker in it, so every hook
+    # entry goes into the rendered plugin and the file keeps only the allow rules the ledger names.
+    hooks = {"SessionStart": [{"hooks": [ENTRY]}]}
     root, store, machine = _attachable(tmp_path, allow=(RULE,), hooks=hooks)
     attach(
         root,
@@ -243,50 +334,68 @@ def test_confirmed_merges_the_rules_and_records_each_entry_under_its_own_id(
         runner=Recorder(),
         home=tmp_path / "home",
     )
-    document = (root / SETTINGS).read_text(encoding="utf-8")
-    claimed = owned_ids(document)
-    assert len(claimed) == 3, claimed
-    assert set(claimed.values()) == {"SessionStart", "PreToolUse"}
-    assert json.loads(document)["permissions"]["allow"] == [RULE]
+    document = json.loads((root / SETTINGS).read_text(encoding="utf-8"))
+    assert document == {"permissions": {"allow": [RULE]}}
+    assert ledger(root).entries == {}
 
 
-def test_an_entry_the_overlay_stopped_granting_is_taken_back_out(tmp_path: Path) -> None:
-    # Walked end to end: the overlay grants a hook entry, `attach` installs it, the owner
-    # deletes it from the overlay, `attach` runs again. The second run adds nothing — no allow
-    # rule, no wanted entry — so it used to return the document untouched, leaving a marked
-    # entry that still FIRES while the ledger (rebuilt from the overlay) forgot it. `doctor`
-    # then reads an entry claiming the marker and named in no ledger, goes red, and tells the
-    # owner to remove an entry stayfixed installed: a false red with actively wrong advice.
-    #
-    # `apply_entries(document, {})` is the engine's removal path and is what now runs.
-    hooks = {"SessionStart": [{"hooks": [ENTRY]}]}
-    root, store, machine = _attachable(tmp_path, hooks=hooks)
-    home = tmp_path / "home"
-    attach(
-        root,
-        store=store,
-        machine=machine,
-        confirmed=True,
-        runner=Recorder(),
-        home=home,
+def test_an_attach_withdraws_the_hook_entries_its_earlier_ledger_records_and_no_other(
+    tmp_path: Path,
+) -> None:
+    # A checkout attached by an earlier release holds the entries that release merged, named by
+    # its ledger. `attach` takes back exactly those, found through the ledger and never by the
+    # marker alone: an entry claiming the marker that no ledger records is left where it is, as is
+    # the owner's own, and a group left with one of them is split rather than dropped.
+    root, store, machine = _attachable(tmp_path)
+    (root / ".claude").mkdir()
+    recorded = {"type": "command", "command": "old.sh  # stayfixed:overlay-SessionStart-1"}
+    unrecorded = {"type": "command", "command": "other.sh  # stayfixed:overlay-SessionStart-2"}
+    mine = {"type": "command", "command": "mine.sh"}
+    (root / SETTINGS).write_text(
+        json.dumps({"hooks": {"SessionStart": [{"hooks": [mine, recorded, unrecorded]}]}}),
+        encoding="utf-8",
     )
-    installed = owned_ids((root / SETTINGS).read_text(encoding="utf-8"))
-    # Non-vacuous: the sequence is only about a second run if the first one installed something.
-    assert installed
-    assert set(ledger(root).entries) == set(installed)
-
-    _overlay_grants(store)  # the owner takes the entry out of the overlay
+    (root / ".stayfixed" / "local").mkdir(parents=True)
+    (root / LEDGER).write_text(
+        json.dumps(
+            {
+                "format": 1,
+                "store": str(store),
+                "entries": {"overlay-SessionStart-1": "SessionStart"},
+            }
+        ),
+        encoding="utf-8",
+    )
     attached = attach(
         root,
         store=store,
         machine=machine,
         confirmed=True,
         runner=Recorder(),
-        home=home,
+        home=tmp_path / "home",
     )
     assert attached.settings_written
-    assert owned_ids((root / SETTINGS).read_text(encoding="utf-8")) == {}
+    document = json.loads((root / SETTINGS).read_text(encoding="utf-8"))
+    assert document == {"hooks": {"SessionStart": [{"hooks": [mine, unrecorded]}]}}
     assert ledger(root).entries == {}
+
+
+def test_attach_delivers_whatever_the_memory_mode(tmp_path: Path) -> None:
+    # Delivery does not depend on where a repository keeps its notes, so a `local-only` one is
+    # attached: its hooks are rendered and installed, and no link goes into its tree.
+    root, store, machine = _attachable(tmp_path, hooks={"SessionStart": [{"hooks": [ENTRY]}]})
+    config = root / CONFIG_FILE
+    config.write_text(
+        config.read_text(encoding="utf-8").replace('mode = "overlay"', 'mode = "local-only"'),
+        encoding="utf-8",
+    )
+    runner = Recorder()
+    attached = attach(
+        root, store=store, machine=machine, confirmed=True, runner=runner, home=tmp_path / "home"
+    )
+    assert [argv[2] for argv, _ in _claude_calls(runner)] == ["marketplace", "install"]
+    assert attached.links.created == []
+    assert (root / LEDGER).is_file()
 
 
 def test_a_second_attach_that_changes_nothing_leaves_the_settings_file_alone(
@@ -307,53 +416,6 @@ def test_a_second_attach_that_changes_nothing_leaves_the_settings_file_alone(
     )
     assert not attached.settings_written
     assert not (root / SETTINGS).exists()
-
-
-def test_a_group_mixing_a_marked_entry_with_a_foreign_one_is_split_not_replaced(
-    tmp_path: Path,
-) -> None:
-    # Inherited from `scaffold.apply_entries` rather than re-implemented, and asserted here
-    # because this is the command whose mistake would delete a developer's own hook.
-    hooks = {"SessionStart": [{"hooks": [ENTRY]}]}
-    root, store, machine = _attachable(tmp_path, hooks=hooks)
-    (root / ".claude").mkdir()
-    (root / SETTINGS).write_text(
-        json.dumps(
-            {
-                "hooks": {
-                    "SessionStart": [
-                        {
-                            "hooks": [
-                                {"type": "command", "command": "mine.sh"},
-                                {
-                                    "type": "command",
-                                    "command": "stale.sh  # stayfixed:overlay-SessionStart-1",
-                                },
-                            ]
-                        }
-                    ]
-                }
-            }
-        ),
-        encoding="utf-8",
-    )
-    attach(
-        root,
-        store=store,
-        machine=machine,
-        confirmed=True,
-        runner=Recorder(),
-        home=tmp_path / "home",
-    )
-    document = (root / SETTINGS).read_text(encoding="utf-8")
-    commands = [
-        entry["command"]
-        for group in json.loads(document)["hooks"]["SessionStart"]
-        for entry in group["hooks"]
-    ]
-    assert "mine.sh" in commands
-    assert "stale.sh  # stayfixed:overlay-SessionStart-1" not in commands
-    assert "echo hello  # stayfixed:overlay-SessionStart-1" in commands
 
 
 def test_a_first_attach_records_the_remote_and_the_date(tmp_path: Path) -> None:
@@ -422,7 +484,8 @@ def test_the_merged_rules_are_recorded_where_they_can_be_removed_again(tmp_path:
     )
     recorded = ledger(root)
     assert recorded.allow == (RULE,)
-    assert recorded.entries == {"overlay-SessionStart-1": "SessionStart"}
+    assert recorded.entries == {}
+    assert recorded.render is not None and "plugin/hooks/hooks.json" in recorded.render.parts
     assert (root / LEDGER).is_file()
 
 
@@ -694,8 +757,7 @@ def test_a_second_attach_adds_nothing_twice(tmp_path: Path) -> None:
         home=tmp_path / "home",
     )
     document = json.loads((root / SETTINGS).read_text(encoding="utf-8"))
-    assert document["permissions"]["allow"] == [RULE]
-    assert len(document["hooks"]["SessionStart"]) == 1
+    assert document == {"permissions": {"allow": [RULE]}}
     assert ledger(root).allow == (RULE,)
 
 
@@ -1085,10 +1147,10 @@ def test_a_pre_commit_that_is_already_installed_is_not_run_again(tmp_path: Path)
         runner=runner,
         home=tmp_path / "home",
     )
-    assert runner.calls == []
-    # The one note left is the harness link waiting for approval, which this fixture never
-    # gives; nothing about the secret scan is said.
-    assert attached.notes == (HARNESS_WAITS,)
+    assert [argv for argv in runner.calls if argv[0] != "claude"] == []
+    # The notes left are the install and the harness link waiting for approval, which this
+    # fixture never gives; nothing about the secret scan is said.
+    assert attached.notes == (INSTALLED, HARNESS_WAITS)
 
 
 def test_a_hook_outside_dot_git_still_counts_as_installed(tmp_path: Path) -> None:
@@ -1111,10 +1173,10 @@ def test_a_hook_outside_dot_git_still_counts_as_installed(tmp_path: Path) -> Non
         runner=runner,
         home=tmp_path / "home",
     )
-    assert runner.calls == []
-    # The one note left is the harness link waiting for approval, which this fixture never
-    # gives; nothing about the secret scan is said.
-    assert attached.notes == (HARNESS_WAITS,)
+    assert [argv for argv in runner.calls if argv[0] != "claude"] == []
+    # The notes left are the install and the harness link waiting for approval, which this
+    # fixture never gives; nothing about the secret scan is said.
+    assert attached.notes == (INSTALLED, HARNESS_WAITS)
 
 
 def test_an_overlay_git_cannot_answer_about_is_a_note_and_never_a_traceback(
@@ -1135,7 +1197,7 @@ def test_an_overlay_git_cannot_answer_about_is_a_note_and_never_a_traceback(
         runner=runner,
         home=tmp_path / "home",
     )
-    assert runner.calls == []
+    assert [argv for argv in runner.calls if argv[0] != "claude"] == []
     assert any("hooks directory" in note for note in attached.notes)
 
 
@@ -1593,8 +1655,8 @@ def test_the_block_keeps_what_an_earlier_attach_hid_when_the_grant_changes(
     tmp_path: Path,
 ) -> None:
     # A path an earlier block hides reads as ignored now. Rebuilt from one run's answer alone, the
-    # block dropped it: attach with an overlay granting nothing, grant a rule, attach again, and
-    # the block held only the settings file while `git status` listed the whole link tree.
+    # block dropped it: attach with an overlay granting nothing, add a standing rule, attach
+    # again, and the block held only the rule copy while `git status` listed the whole link tree.
     #
     # Mutation: `mutations/`'s "the exclude block forgets what an earlier attach hid".
     root, store, machine = _attachable(tmp_path)
@@ -1602,13 +1664,13 @@ def test_the_block_keeps_what_an_earlier_attach_hid_when_the_grant_changes(
     home = tmp_path / "home"
     _attach_confirmed(root, store, machine, home)
     first = extract(_exclude(root).read_text(encoding="utf-8"), EXCLUDE_REGION, Style.HASH)
-    # Non-vacuous: the first block names the link tree and not the settings file.
+    # Non-vacuous: the first block names the link tree and not the rule copy.
     assert first is not None and f"/{DEFAULT_MEMORY}/developer" in first
-    assert SETTINGS not in first
-    _overlay_grants(store, allow=(RULE,))
+    assert ".codex/rules/common.rules" not in first
+    _overlay_grants(store, codex="# a standing rule\n")
     _attach_confirmed(root, store, machine, home)
     second = extract(_exclude(root).read_text(encoding="utf-8"), EXCLUDE_REGION, Style.HASH)
-    assert second is not None and f"/{SETTINGS}" in second.split("\n")
+    assert second is not None and "/.codex/rules/common.rules" in second.split("\n")
     assert _status(root) == []
 
 
@@ -1759,32 +1821,14 @@ def test_the_first_attach_leaves_an_index_behind_its_link(tmp_path: Path) -> Non
     assert code == 0, out + err
 
 
-def test_a_symlinked_claude_directory_the_run_never_writes_into_is_not_refused(
-    tmp_path: Path,
-) -> None:
-    # A `.claude` kept elsewhere and linked in is an ordinary layout, and an overlay that grants
-    # nothing gives `attach` nothing to write there. The exclude block's candidates are what this
-    # run writes, so the settings file is neither a reason to refuse nor a line in the block.
-    #
-    # Mutation: `mutations/`'s "attach hides the settings file on a run that never writes it".
-    root, store, machine = _attachable(tmp_path)
-    _committed(root)
-    (tmp_path / "dotfiles-claude").mkdir()
-    (root / ".claude").symlink_to(tmp_path / "dotfiles-claude", target_is_directory=True)
-    _attach_confirmed(root, store, machine, tmp_path / "home")
-    # Non-vacuous: the attach did run to the end and wrote a block for what it did place.
-    body = extract(_exclude(root).read_text(encoding="utf-8"), EXCLUDE_REGION, Style.HASH)
-    assert body is not None and f"/{DEFAULT_MEMORY}/developer" in body
-    assert SETTINGS not in body
-    assert not (tmp_path / "dotfiles-claude" / "settings.local.json").exists()
-
-
 def test_a_run_that_would_write_through_a_symlinked_claude_directory_still_refuses(
     tmp_path: Path,
 ) -> None:
-    # The other half: when the overlay grants a rule, the settings file is written, and a
-    # `.claude` that is a link is refused before anything is written, as before.
-    root, store, machine = _attachable(tmp_path, allow=(RULE,))
+    # Every run places the settings file, even one with no rule to merge: Claude Code writes the
+    # plugin's `enabledPlugins` entry, which names the binding id, into it. So a `.claude` that is
+    # a link is refused before anything is written, since what it holds would land where git
+    # cannot be asked whether it is ignored.
+    root, store, machine = _attachable(tmp_path)
     (tmp_path / "dotfiles-claude").mkdir()
     (root / ".claude").symlink_to(tmp_path / "dotfiles-claude", target_is_directory=True)
     before = snapshot(root)
@@ -1822,36 +1866,6 @@ def test_a_symlinked_stayfixed_directory_is_refused_before_anything_is_written(
     assert "symlink" in str(refused.value)
     assert_snapshot_unchanged(root, before)
     assert beyond.read_text(encoding="utf-8") == "{"
-
-
-def test_a_first_attach_beside_the_harnesss_own_memory_and_a_linked_claude_attaches(
-    tmp_path: Path,
-) -> None:
-    # The harness makes `~/.claude/projects/<slug>/memory` a real directory of its own, a
-    # `.claude` linked in from elsewhere is an ordinary layout, and an overlay that grants
-    # nothing gives `attach` nothing to merge. On a first attach the store has no approval, so
-    # the harness link is withheld and no settings-file fallback is ever wanted: the attach goes
-    # through, says the link waits, writes no settings file and leaves `git status` clean.
-    from stayfixed.memory.api import harness_memory_path
-
-    root, store, machine = _attachable(tmp_path)
-    home = tmp_path / "home"
-    harness_memory_path(root, home).mkdir(parents=True)
-    (tmp_path / "dotfiles-claude").mkdir()
-    (root / ".claude").symlink_to(tmp_path / "dotfiles-claude", target_is_directory=True)
-    _committed(root)  # the link is the project's own, committed like the rest of it
-    attached = attach(
-        root,
-        store=store,
-        machine=machine,
-        confirmed=True,
-        runner=Recorder(),
-        home=home,
-    )
-    assert attached.notes == (HARNESS_WAITS,)
-    assert not attached.settings_written
-    assert list((tmp_path / "dotfiles-claude").iterdir()) == []
-    assert _status(root) == []
 
 
 # --- a `memory.groups` entry git would read as more than one exclude line -------------------
@@ -2183,10 +2197,11 @@ def test_a_settings_file_an_earlier_attach_wrote_is_hidden_by_the_next_one(
 ) -> None:
     # The upgrade path: a 0.1.x attach merged the overlay's rules into the settings file and
     # recorded them in its ledger, and kept no exclude block. The next attach, with nothing new
-    # to merge, writes no settings, and it is the earlier ledger that says the file is
-    # stayfixed's to hide; asked only of this run's writes, the file stayed in `git status`.
+    # to merge, writes no settings, and still hides the file: every run places it, since Claude
+    # Code writes the plugin's entry there; asked only of this run's writes, the file stayed in
+    # `git status`.
     #
-    # Mutation: `mutations/`'s "attach forgets the settings file an earlier attach wrote".
+    # Mutation: `mutations/`'s "attach leaves the settings file out of what it places".
     root, store, machine = _attachable(tmp_path, allow=(RULE,))
     _committed(root)
     home = tmp_path / "home"
@@ -2368,7 +2383,7 @@ def test_an_overlay_whose_own_project_claude_is_a_file_stops_attach_before_it_wr
     # Here the name picks out the owner's own directory and a file sits below it, where `claude/`
     # goes: `project.name` holds no `/`, so that is the overlay's state, and `attach` stops before
     # it writes as it does for a source it cannot read. Read as absent, the second attach found
-    # nothing to grant and stripped the owner's entry from their settings. Mutation (oracle):
+    # nothing to grant and stripped the owner's entry from their delivery. Mutation (oracle):
     # `mutations/`'s "a fault below the project's own directory reads as no source".
     root, store, machine = _attachable(tmp_path)
     own = store.parent / "claude"
@@ -2378,9 +2393,9 @@ def test_an_overlay_whose_own_project_claude_is_a_file_stops_attach_before_it_wr
         encoding="utf-8",
     )
     _attach_it(root, store, machine, tmp_path / "home")
-    settings = (root / SETTINGS).read_bytes()
-    # Non-vacuous: the owner's entry, out of the project's own hook file, is in their settings.
-    assert set(owned_ids(settings.decode("utf-8"))) == {"overlay-PreToolUse-1"}
+    delivered = _delivered_hooks(root).read_bytes()
+    # Non-vacuous: the owner's entry, out of the project's own hook file, is in their delivery.
+    assert json.loads(delivered)["hooks"]["PreToolUse"] == [{"matcher": "Bash", "hooks": [ENTRY]}]
     shutil.rmtree(own)
     own.write_text("not a directory\n", encoding="utf-8")
     before = _everything(tmp_path)
@@ -2389,7 +2404,7 @@ def test_an_overlay_whose_own_project_claude_is_a_file_stops_attach_before_it_wr
             _attach_it(root, store, machine, tmp_path / "home")
         else:
             check(root, store=store, machine=machine, home=tmp_path / "home")
-    assert (root / SETTINGS).read_bytes() == settings
+    assert _delivered_hooks(root).read_bytes() == delivered
     assert _everything(tmp_path) == before
 
 
@@ -2450,7 +2465,6 @@ def test_a_source_past_the_longest_path_under_a_project_with_no_directory_is_no_
     result = check(root, store=projects_dir / name / "memory", machine=machine, home=deep / "home")
     assert result.exit_code == 0, result.summary
     assert result.data["added_allow"] == [RULE]
-    assert result.data["added_hooks"] == ["echo hello  # stayfixed:overlay-PreToolUse-1"]
 
 
 # The two shapes of an overlay that is damaged rather than one a project's name rules out: its

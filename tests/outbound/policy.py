@@ -190,6 +190,20 @@ PASS_THROUGH: dict[tuple[str, str, str], frozenset[str]] = {
     ("src/stayfixed/setup/run.py", "_install_plugins", "argv"): frozenset(
         {"claude plugin", "codex plugin"}
     ),
+    # `claude plugin marketplace add <render directory> --scope local`, then `claude plugin install
+    # overlay-<id>@stayfixed-delivery-<id> --scope local`, each `attach.render`'s table with its
+    # slot filled, which `test_the_rendered_plugins_install_reaches_the_rows_its_entries_name`
+    # fills.
+    (
+        "src/stayfixed/attach/write.py",
+        "_install",
+        "filled(PLUGIN_MARKETPLACE_ADD_LOCAL, str(delivery_directory(id)))",
+    ): frozenset({"claude plugin"}),
+    (
+        "src/stayfixed/attach/write.py",
+        "_install",
+        "filled(PLUGIN_INSTALL_LOCAL, f'{plugin_name(id)}@{marketplace_name(id)}')",
+    ): frozenset({"claude plugin"}),
     # `git [-c core.excludesFile=…] --git-dir=… --work-tree=<empty> check-ignore --no-index
     # --stdin -z`, assembled in `asked`: the owner's own exclude files, asked about.
     ("src/stayfixed/attach/exclude.py", "unhidden_by_owner", "*asked"): NO_ROWS,

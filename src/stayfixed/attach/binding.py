@@ -41,7 +41,7 @@ from stayfixed.config.loader import load
 from stayfixed.config.overlay import overlay_root
 from stayfixed.config.paths import PathEscape, PathUnasked, contained
 from stayfixed.config.reading import UNPARSEABLE, toml_position
-from stayfixed.config.schema import OVERLAY_MODE, Config
+from stayfixed.config.schema import Config
 from stayfixed.errors import Failure, Refusal
 from stayfixed.fsops import said
 from stayfixed.gitenv import origin_remote
@@ -94,19 +94,6 @@ MEMORY_GROUP_ESCAPES = (
 MEMORY_GROUP_UNASKED = (
     "a memory.groups entry's place under this project's paths.memory cannot be checked for a "
     "symlink ({fault}), so the entry is refused rather than counted"
-)
-
-
-# The first refusal `attach` owes, and `--check` with it. `worktree.attach_main` asks the same
-# question as the floor under this one, but it runs after every write `attach` makes: refused
-# there, a `local-only` project had `.gitignore`'s region, `.codex/rules/`, the settings merge,
-# the ledger and, in the overlay, `project.toml` and its group directories, and `doctor` then
-# read the ledger as "attached". `memory.mode` is one of the loader's enumerated values, so it
-# prints.
-NOT_OVERLAY = (
-    "memory.mode is {mode!r}, so this repository keeps its own note store and there is nothing "
-    f"in an overlay to bind it to; only a repository whose memory.mode is {OVERLAY_MODE!r} is "
-    "attached"
 )
 
 
@@ -288,14 +275,6 @@ def _too_long(path: Path) -> bool:
     except ValueError:
         return False
     return False
-
-
-def not_overlay(config: Config) -> str | None:
-    """The refusal a repository whose notes do not live in the overlay earns, or `None`: one
-    spelling for `attach`, which raises it, and `attach --check`, which reports it."""
-    if config.memory.mode == OVERLAY_MODE:
-        return None
-    return NOT_OVERLAY.format(mode=config.memory.mode)
 
 
 @dataclass(frozen=True)

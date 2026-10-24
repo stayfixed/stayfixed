@@ -13,13 +13,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from stayfixed.attach.binding import Binding, not_overlay, read_binding
+from stayfixed.attach.binding import Binding, read_binding
 from stayfixed.attach.permissions import codex_rules
 from stayfixed.attach.write import Gates, plan_writes
 from stayfixed.config.loader import load
 from stayfixed.config.owner import Owner
 from stayfixed.config.schema import Config
-from stayfixed.errors import Refusal, StayfixedError
 from stayfixed.result import Result
 
 
@@ -50,11 +49,6 @@ def check(
     A `PathEscape` out of `unlinked_groups` propagates: `--check` refuses what `attach` would,
     rather than reporting a count for a `paths.memory` no walk could contain.
 
-    **Outside overlay mode the run refuses right after the binding**, and `--check` reports that
-    refusal on its line and goes on to report the rest. What it reads for the rest the run never
-    reads, so a refusal or failure there is not the run's answer: it gives way to the run's own
-    refusal of the mode, raised with the run's code and line.
-
     `home` is the home the harness memory link goes under, which `plan_writes` asks about as the
     run does, and it is keyword-required for `attach`'s reason: no caller reaches the developer's
     own `~/.claude/` by leaving it out. The command passes `None`, the machine owner's own.
@@ -70,13 +64,7 @@ def check(
     """
     config = load(root, machine=machine, owner=owner)
     binding = read_binding(root, store=store, machine=machine, config=config)
-    try:
-        return _report(root, config, binding, machine=machine, home=home)
-    except StayfixedError:
-        refused = not_overlay(config)
-        if refused is None:
-            raise
-        raise Refusal(refused) from None
+    return _report(root, config, binding, machine=machine, home=home)
 
 
 def _report(
@@ -96,28 +84,20 @@ def _report(
     if all(stop.flag is not None for stop in stops):
         plan_writes(root, config, binding, diff, machine=machine, home=home)
     # Named and not merely counted, and on this result rather than in `PermissionDiff`: the
-    # diff's three fields say what `attach` would add and what is already there, `widens` is
+    # diff's two fields say what `attach` would add and what is already there, `widens` is
     # computed from them, and a fourth of another kind would blur what it means. These names
     # come out of the overlay, so they are the owner's own and may be printed.
     rules = tuple(target for target, _ in codex_rules(binding))
     summary = (
         f"{binding.state}; "
-        f"{len(diff.added_allow)} allow rule(s) and {len(diff.added_hooks)} hook entr(ies) "
-        f"would be added, {len(diff.already_present)} already present; "
+        f"{len(diff.added_allow)} allow rule(s) would be added, "
+        f"{len(diff.already_present)} already present; "
         f"{len(rules)} Codex standing-rule file(s) would be placed"
     )
     if real:
         # A count and never a name: `memory.groups` is repository-authored, and this line is
         # what `skills/attach/SKILL.md` has the model relay to the user.
         summary += f"; {real} memory group(s) are real directories and would refuse the attach"
-    # The refusal `attach` makes for a repository that is not in overlay mode, reported with the
-    # code the real run refuses with: a `--check` that answered 0 or 1 for a run that then
-    # refuses previews something else. Reported and not raised, so the rest of the report —
-    # the binding state above all — still reaches the reader; `check` raises it only where the
-    # rest could not be read.
-    refused = not_overlay(config)
-    if refused is not None:
-        summary = f"{refused}; {summary}"
     if binding.note is not None:
         summary += f"; {binding.note}"
     if rules:
@@ -127,7 +107,6 @@ def _report(
         # repository-authored. The state and the counts are this command's own.
         "state": binding.state,
         "added_allow": list(diff.added_allow),
-        "added_hooks": list(diff.added_hooks),
         # A count and not the strings: this list comes out of the project's own
         # `settings.local.json`, which a clone can commit, so it is repository-authored.
         "already_present": len(diff.already_present),
@@ -136,6 +115,4 @@ def _report(
         # A count, for the reason `already_present` is one: the entries are repository-authored.
         "real_directories": real,
     }
-    if refused is not None:
-        return Result(summary, data, exit_code=2)
     return Result(summary, data, exit_code=1 if real else 0)

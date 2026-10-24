@@ -228,6 +228,7 @@ stayfixed writes files. Being specific about which is the point of this section.
 | `<overlay>/projects/<name>/project.toml` | The remote this project was first attached with, and when; it binds nothing | `stayfixed attach`, while it records no remote |
 | `.git/stayfixed/binding` (in the git common directory every worktree shares) | The checkout's binding id: 32 random hexadecimal characters that never leave this machine and are printed only as their first eight. No clone carries it | `stayfixed attach`, once |
 | `~/.local/share/stayfixed/bindings/<id>.toml` | What this machine binds that id to: the project name, the `origin` at attach time and the checkout. Where the binding is decided, never from a name the repository supplies. `~` is `HOME`; no `XDG_*` variable is read | `stayfixed attach` |
+| `~/.local/share/stayfixed/delivery/<id>/` | The overlay's hooks, skills and agents rendered as a plugin, `overlay-<id>` in a marketplace `stayfixed-delivery-<id>`, both named by the binding id. A session runs the plugin from here in place, so each attach rewrites it | `stayfixed attach` |
 
 Every write into a repository goes through a path walk that refuses a symlink at any component
 and refuses to leave the project root, and replaces files atomically, keeping the mode of the
@@ -263,7 +264,7 @@ to find the project root, and reaches no network.
 | `gh` | `stayfixed overlay create --template`, `stayfixed setup --overlay create:<owner>/<name> --yes`, `stayfixed overlay publish-template` | GitHub's API, as the account `gh` acts for, and the clones it makes over git (note 3) | note 3 |
 | `git clone` | `stayfixed overlay create --template`, `stayfixed setup --overlay create:<owner>/<name> --yes` | `git@github.com:<owner>/<name>.git`, the overlay just created | when the clone `gh repo create --clone` made came down empty |
 | `git push` | `stayfixed overlay publish-template --yes` | the template repository on GitHub, through the remote `gh repo clone` set up | when the rendered template differs from what the repository carries |
-| `claude plugin` | `stayfixed setup` (`--preset NAME`; `recommended` when omitted) | the marketplace the preset names for Claude Code, and its plugins' sources (note 4) | when the preset's agents include `claude` and it names a marketplace for it |
+| `claude plugin` | `stayfixed setup` (`--preset NAME`; `recommended` when omitted), `stayfixed attach` | for `setup`, the marketplace the preset names for Claude Code, and its plugins' sources; for `attach`, nothing past this machine (note 4) | `setup` when the preset's agents include `claude` and it names a marketplace for it; `attach` on the first attach, and on a later one when that install did not succeed |
 | `codex plugin` | `stayfixed setup` (`--preset NAME`; `recommended` when omitted) | the marketplace the preset names for Codex (note 4) | when the preset's agents include `codex` and it names a marketplace for it |
 | `pre-commit install` | `stayfixed overlay init`, `stayfixed setup --overlay create:<owner>/<name> --yes`, `stayfixed attach` | nothing as it installs; GitHub and Go's servers on the first commit after it (note 5) | `attach` only when the overlay carries a `.pre-commit-config.yaml` and no `pre-commit` hook yet |
 | `sh -c` | `stayfixed test attribute --command CMD` | wherever `CMD` reaches; stayfixed does not choose | every run: `CMD` in the working tree, then in extracts of `HEAD` and of the merge base |
@@ -299,7 +300,10 @@ to find the project root, and reaches no network.
 4. **`claude plugin`** registers the marketplace the preset names for Claude Code
    (`anthropics/claude-plugins-official` in `recommended`), reads its list of plugins, and
    downloads each of the preset's plugins from the source its entry there names, which can be
-   another repository. **`codex plugin`** registers the marketplace the preset names for Codex and
+   another repository. For `attach`, it registers the directory `attach` renders the overlay's
+   hooks, skills and agents into, `~/.local/share/stayfixed/delivery/<id>/`, as a marketplace and
+   installs the one plugin in it, whose source is a directory inside it, so neither names a source
+   past this machine. **`codex plugin`** registers the marketplace the preset names for Codex and
    adds the preset's plugins from it; `recommended` names none, so it does not run. Once
    installed, a plugin runs in every session of its harness and reaches what it reaches.
 5. **`pre-commit install`** reaches nothing as it installs. On the first commit after it,
@@ -418,7 +422,7 @@ stayfixed overlay publish-template --owner you --yes             # publish the t
 
 # Binding a repository to the overlay
 stayfixed attach --store ../stayfixed-private/projects/widget/memory --check   # the binding and the permission diff, writing nothing
-stayfixed attach --store ../stayfixed-private/projects/widget/memory --yes     # merge the diff you just read, and link the notes in
+stayfixed attach --store ../stayfixed-private/projects/widget/memory --yes     # merge the diff you just read, install the overlay's plugin, link the notes in
 stayfixed detach                                       # remove what attach added; the binding record stays
 
 # Machine setup

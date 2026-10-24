@@ -13,12 +13,13 @@ reads from outside the area:
 
 - the ledger (`ledger`) and `AttachLedger`, because `ledger` returns it: a return
   type absent from this list is a value a consumer can hold and cannot declare, and
-  `tests/test_surfaces.py` derives that rule rather than restating it;
+  `tests/test_surfaces.py` derives that rule rather than restating it; `Rendered`, the type of
+  its `render`, for the same rule;
 - the binding (`read_binding`, `Binding`). `Binding.state` is one of `memory.api`'s
   `BINDING_STATES`: the vocabulary and the one classifier that decides between its members are
   the memory area's, so this area publishes neither a copy of the set nor its own members;
-- the file the overlay's granted hook entries live in (`LOCAL_SETTINGS`), which the doctor area's
-  tests write those entries into.
+- the file an earlier release merged the overlay's hook entries into (`LOCAL_SETTINGS`), which
+  the doctor area's tests write those entries into.
 
 **Trimmed when the `attached` row moved into this area: `overlay_entries`.** It was published for
 `doctor`'s provenance column, which this area's `doctor.py` now answers.
@@ -52,12 +53,14 @@ in `tests/boundaries/test_delivery.py`.
 
 from stayfixed.attach.binding import Binding, read_binding
 from stayfixed.attach.permissions import LOCAL_SETTINGS
+from stayfixed.attach.render import Rendered
 from stayfixed.attach.write import AttachLedger, ledger
 
 __all__ = [
     "LOCAL_SETTINGS",
     "AttachLedger",
     "Binding",
+    "Rendered",
     "ledger",
     "read_binding",
 ]
