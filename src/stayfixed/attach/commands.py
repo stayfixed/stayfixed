@@ -3,26 +3,6 @@ takes back what `attach` wrote and leaves the overlay's record of the binding in
 
 Two top-level commands and not one group with two subcommands, because that is how
 `docs/cli.md` lists them and the shape the skills already invoke.
-
-**`--machine` is honoured here only from an interactive shell, and refused otherwise.**
-`config/machine.py` reads neither `STAYFIXED_CONFIG` nor `XDG_CONFIG_HOME`, for any command, and
-its docstring gives a reason that reaches past the variables it was written for: "Gating one of a
-pair of equivalent inputs is not a partial defence, it is a redirect with a longer name". A flag
-is a third member of that class — it reaches the same file for the price of a different spelling —
-and this is the command that turns that file into capability: the overlay root comes from it, and
-from the overlay come allow rules, hook entries, skills, agents and Codex standing rules. A
-repository that tells the agent to run `stayfixed attach --machine ./vendored.toml --store
-./vendored/projects/p/memory` supplies both sides of `read_binding`'s containment check out of
-its own tree, and the check passes. A flag, unlike a variable, is still honoured from a
-terminal, because there a person typed it.
-
-**It refuses rather than ignoring.** A silent fallback would read the owner's real file while
-the caller believed it was reading the one it named, which is the worse of the two failures.
-
-Scoped to these two commands and deliberately not to `command.common_flags`: the other readers
-of that flag take personal parameters, and rewriting a shared flag's semantics for three areas
-is not this area's to do. The agent-driven path is unaffected — the `attach` skill passes
-`--store` and no `--machine`, so it resolves the default path exactly as before.
 """
 
 from __future__ import annotations
@@ -33,7 +13,6 @@ from typing import TYPE_CHECKING
 
 from stayfixed.areas import SubParsers
 from stayfixed.command import ATTACH_CHECK_HELP, command_owner, common_flags
-from stayfixed.config.machine import override_is_honoured
 from stayfixed.errors import Refusal
 from stayfixed.printed import clipped, quoted
 from stayfixed.result import Result
@@ -45,31 +24,16 @@ _NO_STORE = (
     "`stayfixed attach` needs --store, naming this project's own directory inside the overlay "
     "this machine records: <overlay>/projects/<project name>/memory"
 )
-_NO_MACHINE_OVERRIDE = (
-    "--machine names the file that decides which overlay this command trusts, so here it is "
-    "honoured only from an interactive shell: anywhere else the command may be an agent's, and "
-    "a repository can tell an agent which file to name. Run this from a terminal, or drop the "
-    "flag and let it read the machine configuration this machine records"
-)
 
 
-def _machine_argument(value: str | None, *, interactive: bool | None = None) -> Path | None:
-    """The machine file this invocation may read, or a refusal that it may not name one.
-
-    `interactive` is the seam `override_is_honoured` already offers: `None` asks the terminal,
-    and a test says which answer it wants instead of arranging a tty.
-    """
-    if value is None:
-        return None
-    if not override_is_honoured(interactive):
-        raise Refusal(_NO_MACHINE_OVERRIDE)
-    return Path(value)
+def _machine(args: argparse.Namespace) -> Path | None:
+    return Path(args.machine) if args.machine else None
 
 
 def _target(args: argparse.Namespace) -> tuple[Path, Path, Path | None]:
     if args.store is None:
         raise Refusal(_NO_STORE)
-    return Path(args.root).resolve(), Path(args.store), _machine_argument(args.machine)
+    return Path(args.root).resolve(), Path(args.store), _machine(args)
 
 
 def run_attach(args: argparse.Namespace) -> Result:
@@ -156,7 +120,7 @@ def run_detach(args: argparse.Namespace) -> Result:
     from stayfixed.attach.write import detach
     from stayfixed.runner import subprocess_runner
 
-    machine = _machine_argument(args.machine)
+    machine = _machine(args)
     removed = detach(
         Path(args.root).resolve(),
         machine=machine,

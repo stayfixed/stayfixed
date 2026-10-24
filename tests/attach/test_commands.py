@@ -11,7 +11,6 @@ from __future__ import annotations
 import json
 import os
 import shutil
-import sys
 from pathlib import Path
 
 import pytest
@@ -32,22 +31,14 @@ pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not 
 
 
 @pytest.fixture(autouse=True)
-def _a_terminal_and_never_the_developers_own_home(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def _never_the_developers_own_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Two seams every case here needs, closed once.
 
     No test may reach the real `~/.claude/`. `attach` takes a `home` for exactly this reason and
     the CLI passes `None`, because in production the answer is the machine owner's own home
     directory — so the seam a command test has to close is `Path.home` itself.
-
-    And every case below passes `--machine`, which these two commands honour only from an
-    interactive shell (see `attach.commands`). The default answer is asserted on its own two
-    tests further down; the rest are an owner sitting at a terminal, and say so rather than
-    depending on how pytest happens to attach stdin.
     """
     monkeypatch.setattr(Path, "home", lambda: tmp_path / "home")
-    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
     # And no case reaches the developer's real `claude`: `attach` installs the rendered plugin
     # through the CLI's own `subprocess_runner()`, which resolves `claude` on `PATH`. One recorder
     # for the case, answering every program as having succeeded.
@@ -320,84 +311,6 @@ def test_no_command_prints_a_path_a_repository_chose(
     printed = json.loads(capsys.readouterr().out)
     assert printed["links_created"] >= 1
     assert DEFAULT_MEMORY not in json.dumps(printed)
-
-
-def test_a_non_interactive_session_may_not_name_the_machine_file(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # `config/machine.py` reads neither `STAYFIXED_CONFIG` nor `XDG_CONFIG_HOME`, and generalises
-    # past them: "Gating one of a pair of equivalent inputs is not a partial defence, it is a
-    # redirect with a longer name". `--machine` is a third member of that class, held to a
-    # terminal, and this is the command that turns that file into capability — the overlay
-    # root, and from it allow rules, hook entries and standing rules. A repository that has the
-    # agent run `attach --machine ./vendored.toml --store ./vendored/projects/p/memory` supplies
-    # both sides of the containment check out of its own tree.
-    monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
-    root, store = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
-    _overlay_grants(store)
-    machine = _machine(tmp_path, overlay=store.parents[2])
-    assert invoke(["attach", "--check", *_flags(root, store, machine)]) == 2
-    assert invoke(["detach", "--root", str(root), "--machine", str(machine)]) == 2
-
-
-def test_the_flag_is_refused_and_never_quietly_ignored(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    # The half that matters more than the exit code. Falling back to the default file would read
-    # the owner's real machine configuration while the caller believed it was reading the one it
-    # named — the worse of the two failures, and one nothing downstream could notice.
-    monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
-    root, store = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
-    _overlay_grants(store)
-    assert (
-        invoke(
-            [
-                "attach",
-                "--check",
-                *_flags(root, store, _machine(tmp_path, overlay=store.parents[2])),
-            ]
-        )
-        == 2
-    )
-    assert "--machine" in capsys.readouterr().err
-
-
-def test_the_machine_flag_is_refused_for_a_reason_of_its_own(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # The refusal a person reads explains the flag's own rule. It once said the flag followed the
-    # rule `STAYFIXED_CONFIG` and `XDG_CONFIG_HOME` follow, after no command read either of them
-    # any more, so it explained itself by a rule that no longer existed. The words are the
-    # assertion's own, and detach's refusal is the same one. Mutation (oracle): `mutations/`'s
-    # "the --machine refusal leans on two variables no command reads" -> the old sentence.
-    monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
-    root, store = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
-    machine = _machine(tmp_path, overlay=store.parents[2])
-    refused = (
-        "stayfixed: refused: --machine names the file that decides which overlay this command "
-        "trusts, so here it is honoured only from an interactive shell: anywhere else the command "
-        "may be an agent's, and a repository can tell an agent which file to name. Run this from "
-        "a terminal, or drop the flag and let it read the machine configuration this machine "
-        "records\n"
-    )
-    for argv in (["attach", "--check", "--store", str(store)], ["detach"]):
-        code, out, err = cli(root, tmp_path, *argv, machine=machine)
-        assert (code, out, err) == (2, "", refused), argv
-
-
-def test_a_command_with_no_machine_flag_is_unaffected_by_the_gate(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # The agent-driven path: the `attach` skill passes `--store` and no `--machine`, so it
-    # resolves the default machine file exactly as before. Asserted by the refusal it reaches
-    # *next* — this machine's real configuration records no overlay for a fixture project — and
-    # not by a successful attach, which would need the developer's own file.
-    monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
-    root, store = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
-    monkeypatch.setattr(
-        "stayfixed.config.overlay.machine_config_path", lambda **_: tmp_path / "none"
-    )
-    assert invoke(["attach", "--check", "--root", str(root), "--store", str(store)]) == 2
 
 
 def test_check_names_the_codex_rule_files_it_would_place(

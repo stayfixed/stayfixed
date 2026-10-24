@@ -101,10 +101,6 @@ RECORD_REPAIR: Final = "repair that file in the overlay, often a merge's conflic
 # or where git shows what `attach` keeps for this machine alone; a warning where what loads is not
 # what the overlay holds now.
 DELIVERY_IN_PLACE: Final = "the delivery is in place"
-NO_ID: Final = (
-    "no binding id can be read in this checkout's git directory, so the delivery could not be "
-    "checked"
-)
 OVERLAY_GONE: Final = (
     "the overlay this machine records, {path}, is not there, so the delivered hooks that run its "
     "scripts have nothing to run"
@@ -165,7 +161,9 @@ def _worst(findings: list[_Finding]) -> _Finding | None:
     )
 
 
-def _delivery(context: Context, config: Config, recorded: AttachLedger, bound: Binding) -> _Finding:
+def _delivery(
+    context: Context, config: Config, recorded: AttachLedger, bound: Binding, id: str
+) -> _Finding:
     """What the binding delivers, read where `attach` left it.
 
     **Red where nothing loads, or where git would show what is this machine's alone.** Claude Code
@@ -198,7 +196,7 @@ def _delivery(context: Context, config: Config, recorded: AttachLedger, bound: B
         recorded_command,
     )
     from stayfixed.attach.write import named_placed, placed_paths
-    from stayfixed.binding import read_id, short
+    from stayfixed.binding import short
     from stayfixed.config.schema import OVERLAY_MODE
     from stayfixed.doctor.api import OK, RED, WARN
     from stayfixed.errors import Failure, Refusal
@@ -206,12 +204,6 @@ def _delivery(context: Context, config: Config, recorded: AttachLedger, bound: B
     from stayfixed.printed import quoted
 
     rerun = f"run `{ATTACH_STORE}`"
-    try:
-        id = read_id(context.root)
-    except Failure:
-        id = None
-    if id is None:
-        return _Finding(WARN, NO_ID, rerun)
     found: list[_Finding] = []
     if not fsops.is_dir(bound.overlay):
         found.append(
@@ -421,6 +413,8 @@ def _attached(context: Context, config: Config, answers: Answers, ledger: _Ledge
         return _uncorroborated(answer)
     state = answer.state
     from stayfixed.attach.binding import OVERLAY_REPAIR, damaged_overlay
+    from stayfixed.binding import read_id
+    from stayfixed.errors import Failure
 
     # An overlay whose root or `projects/` is a file holds none of this checkout's notes or grants,
     # bound or not; the remedy for that is the overlay's repair, and never removing the ledger,
@@ -433,7 +427,13 @@ def _attached(context: Context, config: Config, answers: Answers, ledger: _Ledge
             f"this machine records is damaged and holds none of this checkout's notes or grants",
             OVERLAY_REPAIR.format(path=damaged, command="`stayfixed doctor`"),
         )
-    if state == UNBOUND:
+    # The id `bound_project` read to answer `bound`; read again for the render it names, and none
+    # (git gone since, or the id removed in between) is no binding, as `unbound` is.
+    try:
+        id = read_id(context.root)
+    except Failure:
+        id = None
+    if state == UNBOUND or id is None:
         return Row(
             WARN,
             f"{ATTACH_LEDGER} records an attach, but this machine records no binding of this "
@@ -444,7 +444,7 @@ def _attached(context: Context, config: Config, answers: Answers, ledger: _Ledge
     recorded = ledger.state(context.root)
     if isinstance(recorded, str):  # `_binding_answer` answered a binding, so never
         return _uncorroborated(recorded)
-    delivery = _delivery(context, config, recorded, answer)
+    delivery = _delivery(context, config, recorded, answer, id)
     if harness is None:
         return Row(
             delivery.status, f"attached; {delivery.clause}; the binding is {state}", delivery.remedy

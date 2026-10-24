@@ -2453,16 +2453,6 @@ repository runs your overlay's hooks, skills and agents and reads your cross-pro
 project's own notes, and the allow rules you keep in the overlay are merged into
 `.claude/settings.local.json`.
 
-**`--machine` is honoured only from an interactive shell.** This is the command that turns the
-machine configuration into capability: the overlay root comes from that file, and from the
-overlay come allow rules, hook entries and standing rules. `STAYFIXED_CONFIG` and
-`XDG_CONFIG_HOME` are not read at all, for the same reason — a repository can set an
-environment variable through a committed settings file, and it can just as easily tell an
-agent to pass a flag. In a non-interactive session the flag is **refused** (`2`) rather than
-ignored, because silently falling back would read your real configuration while the caller
-believed it was reading the file it named. Omit it and the default file is read exactly as
-before; `stayfixed detach` follows the same rule.
-
 **`--store` names one directory and nothing else:** `<overlay>/projects/<project name>/memory`,
 where `<project name>` is the `[project] name` in this repository's `stayfixed.toml`. The overlay
 root itself is **not** taken from that path — it comes from the `[overlay] root` your machine
@@ -2722,7 +2712,7 @@ tree is built.
 
 It exits `2` on a refusal, in the order the run meets them:
 
-- No `--store`, or a `--machine` outside an interactive shell.
+- No `--store`.
 - A `[paths]` value that leaves the project or passes through a symlink.
 - No overlay root recorded in the machine configuration, or a `--store` that is not this project's
   own directory inside it.
@@ -2908,7 +2898,6 @@ longer than 64 MiB, which neither command reads past. A settings file an earlier
 
 It exits `2` on a refusal, in the order the run meets them:
 
-- A `--machine` outside an interactive shell, for the reason `stayfixed attach` gives above.
 - A ledger naming files, settings keys or directories `attach` could not have written.
 - A `[paths]` value that leaves the project or passes through a symlink.
 - A `.claude/settings.local.json` that is not JSON or not a JSON object, or whose `hooks` has a

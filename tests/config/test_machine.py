@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from stayfixed.config.machine import machine_config_path, override_is_honoured, owner_home
+from stayfixed.config.machine import machine_config_path, owner_home
 
 
 @pytest.mark.parametrize(
@@ -29,20 +29,6 @@ def test_no_variable_moves_the_machine_file(
     for name, value in variables.items():
         monkeypatch.setenv(name, str(tmp_path / value))
     assert machine_config_path() == home / ".config" / "stayfixed" / "config.toml"
-
-
-def test_the_default_is_not_interactive_under_a_pipe(monkeypatch: pytest.MonkeyPatch) -> None:
-    class NotATty:
-        def isatty(self) -> bool:
-            return False
-
-    monkeypatch.setattr("sys.stdin", NotATty())
-    assert override_is_honoured() is False
-
-
-def test_a_stdin_that_cannot_answer_is_not_interactive(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("sys.stdin", None)
-    assert override_is_honoured() is False
 
 
 def test_an_empty_home_names_no_home(monkeypatch: pytest.MonkeyPatch) -> None:

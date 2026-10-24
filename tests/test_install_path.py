@@ -17,17 +17,12 @@ directory and every harness variable is dropped, and the binaries the CLI resolv
 a scratch `bin/` placed first on the subprocess's `PATH`. `pre-commit` there writes the commit
 hook `doctor` later asks about, rather than only recording that it was called. `git` is real,
 because a repository with no `origin` is not the thing being tested.
-
-**`--machine` is driven through a pseudo-terminal on `attach`/`detach`.** Those two commands
-honour it only from an interactive shell and refuse otherwise; `_cli(..., tty=True)` hands the
-child a pty as stdin, and one test below proves both halves of that gate through argv.
 """
 
 from __future__ import annotations
 
 import json
 import os
-import pty
 import re
 import shutil
 import subprocess
@@ -175,13 +170,11 @@ def _fake_binaries(bin_dir: Path) -> None:
         (bin_dir / name).chmod(0o755)
 
 
-def _cli(walk: Walkthrough, *argv: str, tty: bool = False) -> subprocess.CompletedProcess[str]:
-    """One command, the way a person or a skill runs it: the launcher, argv, a pipe or a tty.
+def _cli(walk: Walkthrough, *argv: str) -> subprocess.CompletedProcess[str]:
+    """One command, the way a person or a skill runs it: the launcher and argv, from no terminal.
 
-    `tty=True` hands the child a pseudo-terminal as stdin, which is what `attach --machine`
-    and `detach --machine` require (they refuse from a pipe, and the test proves the pipe
-    refusal separately). Nothing here reads the developer's own `~`: `HOME` is the scratch
-    home and every harness variable is dropped.
+    Nothing here reads the developer's own `~`: `HOME` is the scratch home and every harness
+    variable is dropped.
     """
     env = developer_free_environ()
     env["HOME"] = str(walk.home)
@@ -189,30 +182,15 @@ def _cli(walk: Walkthrough, *argv: str, tty: bool = False) -> subprocess.Complet
     env["CLAUDE_PLUGIN_ROOT"] = str(ROOT)
     env["CLAUDE_PLUGIN_DATA"] = str(walk.data)
     command = [sys.executable, str(ROOT / "scripts" / "stayfixed"), *argv]
-    if not tty:
-        return subprocess.run(
-            command,
-            cwd=walk.root,
-            stdin=subprocess.DEVNULL,
-            capture_output=True,
-            text=True,
-            check=False,
-            env=env,
-        )
-    parent, child = pty.openpty()
-    try:
-        return subprocess.run(
-            command,
-            cwd=walk.root,
-            stdin=child,
-            capture_output=True,
-            text=True,
-            check=False,
-            env=env,
-        )
-    finally:
-        os.close(child)
-        os.close(parent)
+    return subprocess.run(
+        command,
+        cwd=walk.root,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
 
 
 def _doctor(walk: Walkthrough, *, root: Path | None = None) -> list[dict[str, str]]:
@@ -283,8 +261,8 @@ def _install_path(
     store = overlay / PROJECTS / PROJECT / "memory"
     walk = Walkthrough(root, overlay, machine, home, data, store, bin_dir)
 
-    def step(*argv: str, tty: bool = False) -> subprocess.CompletedProcess[str]:
-        done = _cli(walk, *argv, tty=tty)
+    def step(*argv: str) -> subprocess.CompletedProcess[str]:
+        done = _cli(walk, *argv)
         assert done.returncode == 0, f"`{' '.join(argv)}`: {done.stderr}"
         return done
 
@@ -368,7 +346,6 @@ def _install_path(
             "--json",
             "--machine",
             str(machine),
-            tty=True,
         )
         assert found.returncode == 1, found.stderr
         assert json.loads(found.stdout)["real_directories"] == 1, found.stdout
@@ -376,11 +353,9 @@ def _install_path(
         # command does this, which is why the refusal says where they go and stops.
         store.mkdir(parents=True, exist_ok=True)
         shutil.move(str(root / "docs" / "memory" / "project-stable"), str(store / "project-stable"))
-    previewed = step(
-        "attach", "--store", str(store), "--check", "--machine", str(machine), tty=True
-    )
+    previewed = step("attach", "--store", str(store), "--check", "--machine", str(machine))
     assert previewed.stdout.strip(), "`attach --check` printed no diff to consent to"
-    step("attach", "--store", str(store), "--machine", str(machine), tty=True)
+    step("attach", "--store", str(store), "--machine", str(machine))
     if initialised:
         # Step 5 already happened, by the owner's hand: the moved note *is* the standing rule.
         return walk
@@ -548,8 +523,8 @@ def test_a_wrapped_bundle_arrives_with_both_of_its_region_markers(tmp_path: Path
     bin_dir = tmp_path / "bin"
     _fake_binaries(bin_dir)
     walk = Walkthrough(root, root, machine, tmp_path / "home", tmp_path / "data", notes, bin_dir)
-    # The approval is a person's, at a terminal.
-    trusted = _cli(walk, "trust", "approve", "memory", "--machine", str(machine), tty=True)
+    # The approval is a person's.
+    trusted = _cli(walk, "trust", "approve", "memory", "--machine", str(machine))
     assert trusted.returncode == 0, trusted.stderr
     done = _bundle(walk, "standing-rules")
     assert done.returncode == 0, done.stderr
@@ -583,8 +558,8 @@ def test_detach_returns_the_project_to_where_it_started(tmp_path: Path) -> None:
     store = overlay / PROJECTS / PROJECT / "memory"
     walk = Walkthrough(root, overlay, machine, home, tmp_path / "plugin-data", store, bin_dir)
 
-    def step(*argv: str, tty: bool = False) -> None:
-        done = _cli(walk, *argv, tty=tty)
+    def step(*argv: str) -> None:
+        done = _cli(walk, *argv)
         assert done.returncode == 0, f"`{' '.join(argv)}`: {done.stderr}"
 
     step(
@@ -616,9 +591,9 @@ def test_detach_returns_the_project_to_where_it_started(tmp_path: Path) -> None:
     # The walk's own non-vacuity guard: `snapshot` is a walk, so the comparison below passes
     # vacuously the day the walk stops finding anything.
     assert before
-    step("attach", "--store", str(store), "--machine", str(machine), tty=True)
+    step("attach", "--store", str(store), "--machine", str(machine))
     assert_snapshot_changed(root, before)
-    step("detach", "--machine", str(machine), tty=True)
+    step("detach", "--machine", str(machine))
     assert_snapshot_unchanged(root, before)
     # Stated rather than left to the file walk, which sees files alone: the directory the links
     # sat in is taken back too once it is empty, so a detach leaves no empty `paths.memory`.
@@ -750,23 +725,6 @@ def test_doctor_is_red_when_the_memory_path_is_a_real_directory(tmp_path: Path) 
     assert "real directory" in attached["detail"]
 
 
-def test_attach_refuses_machine_from_a_pipe_and_honours_it_from_a_terminal(tmp_path: Path) -> None:
-    # The interactive-shell gate on `--machine`, reached through argv rather than through the
-    # `interactive=` seam: a pipe is refused with exit 2 and the sentence, a pseudo-terminal
-    # is honoured. The library-level tests prove the seam; this proves the launcher hands
-    # the command a stdin the gate can ask. No mutation of its own — the gate's own entry,
-    # `mutations/`'s "attach honours --machine from a session nobody is sitting in front of",
-    # reddens the library test and, through this, the pipe half here; run it and say so.
-    walk = _install_path(tmp_path)
-    store = str(walk.overlay / PROJECTS / PROJECT / "memory")
-    piped = _cli(walk, "attach", "--store", store, "--check", "--machine", str(walk.machine))
-    assert piped.returncode == 2 and "interactive shell" in piped.stderr
-    tty = _cli(
-        walk, "attach", "--store", store, "--check", "--machine", str(walk.machine), tty=True
-    )
-    assert tty.returncode == 0, tty.stderr
-
-
 def test_init_then_the_walkthrough_ends_with_the_rule_in_a_session(tmp_path: Path) -> None:
     # The whole slice, in the order the owner walks it and on the repository shape they
     # actually have: a project with notes already in it, `stayfixed init` run over it, the
@@ -820,7 +778,7 @@ def test_detach_on_an_initialised_project_leaves_the_footprint(tmp_path: Path) -
     ignore_before = (walk.root / ".gitignore").read_text(encoding="utf-8")
     # Non-vacuous: the block this asserts survives has to be there before the detach.
     assert "stayfixed:ignore" in ignore_before
-    done = _cli(walk, "detach", "--root", str(walk.root), "--machine", str(walk.machine), tty=True)
+    done = _cli(walk, "detach", "--root", str(walk.root), "--machine", str(walk.machine))
     assert done.returncode == 0, done.stderr
     assert (walk.root / ".gitignore").read_text(encoding="utf-8") == ignore_before
     assert (walk.root / ".stayfixed" / "manifest.json").is_file()

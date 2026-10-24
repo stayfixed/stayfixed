@@ -578,8 +578,8 @@ reddens = [
 [[mutation]]
 name = "doctor counts hook entries by marker id rather than by position"
 file = "src/stayfixed/scaffold/entries.py"
-before = "                    found.append((places, _placed(event, group, entry)))"
-after = """                    placed = _placed(event, group, entry)
+before = "                    found.append((places, _placed(entry)))"
+after = """                    placed = _placed(entry)
                     here = marker_id(placed.command)
                     if here is None or here not in {marker_id(seen.command) for _, seen in found}:
                         found.append((places, placed))"""

@@ -18,7 +18,6 @@ again. `unmarked()` is that check, and `mark()` is what a caller is supposed to 
 
 from __future__ import annotations
 
-import json
 import re
 from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
@@ -214,37 +213,11 @@ def owned_ids(document: str) -> dict[str, str]:
 
 @dataclass(frozen=True)
 class Placed:
-    """One hook entry where a harness reads it: its event, its group's matcher, its command, and
-    the whole entry.
+    """One hook entry where a harness reads it, by its command: the marker is read off it, and it
+    is the one field `doctor` and `assess` read. Never printed: a command is bytes a repository
+    chose."""
 
-    Each decides what the entry does: the event is when the harness runs it and the matcher is for
-    which tools, so one entry under another event or matcher is another hook; and every field of
-    the entry besides its command says what the harness does with it -- an entry of `type`
-    `http` posts the event's input to its `url` and ignores `command`, and `args`, `shell` or
-    `async` change what runs, or when. `command` is kept beside the whole because the marker is
-    read off it, and it is the one field `doctor` reads now that no area grants an entry.
-
-    `matcher` is `None` for a group with no matcher, and otherwise the matcher as JSON text, with
-    each integer in it as its text, as `_read_entries` reads it: a string and anything else a
-    clone may commit there are each one value, and a matcher that is absent stays apart from one
-    that is empty or `*`, which a harness may read alike — this says where the entry *is*, and
-    never guesses what a harness makes of it. `entry` is the entry as JSON text by the same rule,
-    with its keys sorted, so the order a file spells them in changes nothing and any field it adds,
-    drops or changes does; an integer and the string of its digits read alike. Never printed: an
-    event, a matcher and an entry are bytes a repository chose.
-    """
-
-    event: str
-    matcher: str | None
     command: str
-    entry: str
-
-
-def _matcher(group: dict[str, Any]) -> str | None:
-    """A group's matcher as `Placed` holds it."""
-    if "matcher" not in group:
-        return None
-    return json.dumps(group["matcher"], sort_keys=True)
 
 
 def placed_entries(document: str) -> list[Placed]:
@@ -258,25 +231,14 @@ def placed_entries(document: str) -> list[Placed]:
     is one `marker_id` reads as unmarked — which it certainly is. Refuses what `owned_ids`
     refuses, read by the same walk.
     """
-    return [_placed(event, group, entry) for event, group, entry in _read_entries(document)]
+    return [_placed(entry) for _, _, entry in _read_entries(document)]
 
 
-def _whole(entry: dict[str, Any]) -> str:
-    """An entry as `Placed.entry` holds it: JSON text with sorted keys, each integer as the walk
-    read it. Refused as `settings_text` refuses a document, where the encoder cannot follow the
-    entry or its text would pass the read cap: an entry the reader took meets neither, short of
-    one holding tens of megabytes of text outside ASCII, which the encoder escapes."""
-    return json_text(
-        entry, _DOCUMENT, error=EntriesError, limit=_past_parser(_DOCUMENT), sort_keys=True
-    )
-
-
-def _placed(event: str, group: dict[str, Any], entry: dict[str, Any]) -> Placed:
+def _placed(entry: dict[str, Any]) -> Placed:
     """One entry as `Placed` holds it: one place for every walk, so `placed_entries` and
     `live_entries` read an entry in the same terms."""
     command = entry.get("command")
-    text = command if isinstance(command, str) else ""
-    return Placed(event, _matcher(group), text, _whole(entry))
+    return Placed(command if isinstance(command, str) else "")
 
 
 @dataclass(frozen=True)
@@ -343,7 +305,7 @@ def live_entries(document: str) -> Walked:
     found: list[tuple[int, Placed]] = []
     skipped: list[object] = []
     places = 0
-    for event, groups in _hooks_table(raw).items():
+    for groups in _hooks_table(raw).values():
         if not _admitted(groups, list, skipped):
             continue
         for group in groups:
@@ -357,7 +319,7 @@ def live_entries(document: str) -> Walked:
             for entry in entries:
                 places += 1
                 if _admitted(entry, dict, skipped):
-                    found.append((places, _placed(event, group, entry)))
+                    found.append((places, _placed(entry)))
     return Walked(tuple(found), places, bool(skipped), _claims_the_marker(skipped))
 
 

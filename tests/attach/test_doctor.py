@@ -1223,7 +1223,7 @@ def test_a_ledger_with_no_binding_in_the_overlay_is_a_warning_and_never_an_attac
     # side, so the row asks it: a ledger with no binding id behind it in the git common directory
     # is a warning that names the file, and the remedy says what to do in each of the two cases.
     #
-    # Mutation (declared): `if state == UNBOUND:` -> `if False:` -> the row falls
+    # Mutation (declared): `if state == UNBOUND or id is None:` -> `if False:` -> the row falls
     # through to the harness-shape branch and this reddens on the sentence.
     root = _attached(tmp_path)
     kept = root / ".git" / "stayfixed" / "binding"
