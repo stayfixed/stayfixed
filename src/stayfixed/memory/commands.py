@@ -222,6 +222,11 @@ def run_index(args: argparse.Namespace) -> Result:
     )
 
 
+# What the standing-rules entry says of a bound checkout whose composed store is gone.
+STORE_GONE = (
+    "stayfixed: this checkout's memory store {store} is gone, so no note reaches this session; "
+    "run `stayfixed attach` to build it"
+)
 _NOTHING_TO_DELIVER = (STORE_MISSING, STORE_MISSING + BUILT_BY_ATTACH, NO_RECORD)
 
 
@@ -247,6 +252,11 @@ def run_session_context(args: argparse.Namespace) -> Result:
         # first note, an overlay checkout `attach` has not composed — and a checkout this machine
         # has not bound have nothing to deliver, and a session is no place to say so: `doctor`
         # reports the binding and the store, and `hook SessionStart` says the binding once.
+        missing = found[1].said == STORE_MISSING + BUILT_BY_ATTACH
+        if missing and bundle is Bundle.STANDING_RULES and args.part == 1:
+            # A bound checkout whose composed store is gone: the harness reads no memory, so the
+            # session hears it once, the store named by its short id (`store.shown`).
+            return Result(STORE_GONE.format(store=quoted(found[1].detail or "")))
         if found[1].said in _NOTHING_TO_DELIVER:
             return Result("")
         raise _no_store(found[1])

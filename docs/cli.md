@@ -249,8 +249,10 @@ entry.
 
 Where no layer sets `[memory] mode`, memory is the coding agent's own (`harness`), there is no
 store, and this command prints nothing. So it does before the store's directory exists — a
-`local-only` repository before its first note, an overlay checkout `attach` has not composed — and
-in an overlay checkout this machine has not bound, whose binding `doctor` reports. A configured
+`local-only` repository before its first note — and in an overlay checkout this machine has not
+bound, whose binding `doctor` reports. In an overlay checkout this machine binds whose composed
+store is gone, `--bundle standing-rules` (part 1) prints one line saying so, the store named by its
+short binding id, with `stayfixed attach` as the way back, and every other entry prints nothing. A configured
 group whose directory the store does not hold is an empty group, here and in every `memory`
 command: it contributes no notes, and the store is still read, the native writer's files at its
 top included. An unreviewed note — one a repository commits, one

@@ -125,3 +125,29 @@ def test_no_memory_command_prints_the_whole_binding_id_through_a_store_path(
         assert f"stores/{short(id)}…" in said
     session = ("memory", "session-context", "--bundle", "volatile-notes")
     _never_the_whole_id(root, tmp_path, machine, id, *session)
+
+
+def test_a_bound_checkout_whose_composed_store_is_gone_hears_it_once(tmp_path: Path) -> None:
+    # The pointer names a store that is gone, so the harness reads no memory and the session heard
+    # nothing: the standing-rules entry says so on one line, naming the store by its short id and
+    # `stayfixed attach` as the way back; every other entry stays quiet.
+    from stayfixed import binding
+    from stayfixed.attach.write import attach
+    from stayfixed.binding import short
+    from tests.attach.test_detach import _bound, _grant
+    from tests.cli import cli
+    from tests.runners import Recorder
+
+    root, own, machine = _bound(tmp_path)
+    _grant(own.parents[1])
+    attach(root, store=None, machine=machine, runner=Recorder())
+    id = binding.read_id(root)
+    assert id is not None
+    shutil.rmtree(store_directory(id))
+    entry = ("memory", "session-context", "--bundle")
+    code, out, err = cli(root, tmp_path, *entry, "standing-rules", machine=machine)
+    assert (code, err) == (0, "")
+    assert len(out.splitlines()) == 1 and "stayfixed attach" in out
+    assert f"{short(id)}…" in out and id not in out
+    for bundle, part in (("standing-rules", "2"), ("volatile-notes", "1")):
+        assert cli(root, tmp_path, *entry, bundle, "--part", part, machine=machine) == (0, "\n", "")
