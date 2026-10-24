@@ -93,23 +93,10 @@ class Reconciliation:
     harvested: list[str]
     provisional: list[str]
     unreadable: list[tuple[Path, str]]
-    # Notes that had a line waiting for them in the index and were not allowed to take it,
-    # because the index is repository data and the note is not (`_harvestable`). They get a
-    # provisional line from their own description instead, so they appear in `provisional` too;
-    # this names the ones where that was a refusal rather than an absence, because a drop the
-    # command cannot mention is a drop nobody reviews.
-    refused_harvest: list[str] = field(default_factory=list)
-    # The write-side mirror of `refused_harvest`. A note whose own file is repository data, or
-    # a `memory.index_extra` entry (always repository data — it lives in `stayfixed.toml`),
-    # whose line would otherwise have been published into an index that reaches outside this
-    # repository (`_publishable`). Named here for the same reason `refused_harvest` is: a drop
-    # `render_index` makes on its own has no other channel back to a person running the command.
-    refused_publish: list[str] = field(default_factory=list)
-    # The `memory.index_extra` entries the same gate refused, kept apart from the note names
-    # above. They were appended to the same list, and `run_index`'s message renders that list as
-    # notes — so a refused pointer read as "`alpha, docs/overview.md` took no line in …",
-    # one note name and one path in a sentence that calls both of them notes. Two kinds
-    # of thing, two lists, two sentences.
+    # The `memory.index_extra` entries held back from an index that reaches outside this
+    # repository (`_to_machine`): `stayfixed.toml` is repository data, and the destination is
+    # machine state. Named here because a drop `render_index` makes on its own has no other
+    # channel back to a person running the command.
     refused_extra: list[str] = field(default_factory=list)
     # The native writer's pointer lines (`_native`), kept verbatim at the head of the render.
     native: list[str] = field(default_factory=list)
@@ -232,31 +219,9 @@ def _native(store: Store, path: Path | None) -> list[str]:
     return kept
 
 
-def _harvestable(store: Store, source: Path | None, note: Note) -> bool:
-    """Whether this note may take its `index:` line from the file `source` names.
-
-    The target rule `_appended` applies guards one direction — an index symlinked into
-    *another* project's overlay share. The inverse is the natural shape and was ungoverned: in
-    overlay mode the index is legitimately a real file the clone shipped at `paths.memory`
-    (`index_source`: "a real file sources itself, unconditionally") while the notes resolve out
-    into the machine's own overlay. `reconcile(write=True)` then persisted repository-authored
-    titles into `common/memory` — shared with *every project on the machine* and synced across
-    machines — from where another project whose index is `attach`'s symlink injects them raw,
-    unwrapped.
-
-    So the rule is one trust domain per harvest: **repository bytes do not become machine
-    state.** A note that is itself repository data may take a repository index's line — nothing
-    crosses — and a machine-owned index may supply anything, because those bytes are already
-    the owner's.
-    """
-    if source is None or not in_repository(store, source):
-        return True
-    return in_repository(store, note.path)
-
-
 def _to_machine(store: Store, config: Config) -> bool:
     """Whether the file `_destination` would write to reaches outside this project's own
-    repository — the write side of the same domain question `_harvestable` asks for reads.
+    repository, where `memory.index_extra`, repository data, may not be published.
 
     Deliberately does not call `_destination`: a refused symlink is not a domain question, it
     is a write that cannot happen at all, and the caller that actually attempts one
@@ -278,24 +243,6 @@ def _to_machine(store: Store, config: Config) -> bool:
         return not in_repository(store, target)
     resolved = _resolved_if_permitted(store, config, target)
     return resolved is not None and not in_repository(store, resolved)
-
-
-def _publishable(store: Store, to_machine: bool, note: Note) -> bool:
-    """Whether this note's own `index:` line may appear in an index that reaches `to_machine`.
-
-    The write-side mirror of `_harvestable`. Harvesting closes index→note: a repository index
-    may not write into a note that is not itself repository data. Nothing closed note→index —
-    a note's *own* `index:` line (curated in its frontmatter, or already harvested) is
-    repository-authored text whenever the note's own file is repository data, and `render_index`
-    put that text into `MEMORY.md` unconditionally, including when this run's destination is
-    machine state (the overlay's `common/memory`, shared across every project on the machine and
-    synced across machines). Same rule as `_harvestable`, same domain: repository bytes do not
-    become machine state.
-
-    `to_machine` is asked once per render, not recomputed per note, so every note in one run is
-    held to the same answer about where the index is actually going.
-    """
-    return not to_machine or not in_repository(store, note.path)
 
 
 def _relative(note: Note) -> str:
@@ -335,19 +282,12 @@ def reconcile(store: Store, config: Config, *, write: bool) -> Reconciliation:
     notes: list[Note] = []
     harvested: list[str] = []
     provisional: list[str] = []
-    refused: list[str] = []
-    refused_publish: list[str] = []
     for note in found.notes:
         if note.index and note.index_provenance is not Provenance.PROVISIONAL:
-            if not _publishable(store, to_machine, note):
-                refused_publish.append(note.name)
             notes.append(note)
             continue
         own = _metadata_index(note)
         line = None if own else appended.get(_relative(note))
-        if line and not _harvestable(store, source, note):
-            refused.append(note.name)
-            line = None
         if own:
             note = with_index(note, own, Provenance.PROVISIONAL)
             provisional.append(note.name)
@@ -359,22 +299,18 @@ def reconcile(store: Store, config: Config, *, write: bool) -> Reconciliation:
         else:
             note = with_index(note, note.description, Provenance.PROVISIONAL)
             provisional.append(note.name)
-        if not _publishable(store, to_machine, note):
-            refused_publish.append(note.name)
         notes.append(note)
     refused_extra: list[str] = []
     if to_machine:
         # Always repository data — `stayfixed.toml` is a committed file — so every survivor of
         # `_extra`'s own containment checks is still a contributing entry this destination may
-        # not carry, the same as a repository note's line above.
+        # not carry.
         refused_extra = _extra(config, store)
     return Reconciliation(
         notes,
         harvested,
         provisional,
         found.unreadable,
-        refused,
-        refused_publish,
         refused_extra,
         _native(store, source),
         found.skipped,
@@ -433,7 +369,7 @@ def _extra(config: Config, store: Store) -> list[str]:
     refuses. Dropped silently, because this function returns a plain list and has no report
     channel of its own; `store.unavailable` is the shape that would carry one. (A *survivor* of
     these checks can still be dropped later, loudly, by `render_index`'s own domain gate —
-    `reconcile` names those in `Reconciliation.refused_publish` — but that is a different
+    `reconcile` names those in `Reconciliation.refused_extra` — but that is a different
     question from the one this function answers, and this function does not need to know it is
     asked.)
 
@@ -463,12 +399,8 @@ def _extra(config: Config, store: Store) -> list[str]:
 
 
 def render_index(reconciled: Reconciliation, config: Config, store: Store) -> str:
-    """The rendered `MEMORY.md` text, holding back whatever `_publishable` refuses.
-
-    `_to_machine` can only be `True` when the destination is a permitted symlink
-    resolving outside this project's repository, which happens only in overlay mode — so every
-    in-repo and local-only store renders exactly what it always has, and only a destination
-    that actually reaches machine state drops anything.
+    """The rendered `MEMORY.md` text, holding back `memory.index_extra` where the destination
+    reaches outside this repository (`_to_machine`), which happens only in overlay mode.
     """
     to_machine = _to_machine(store, config)
     lines = [HEADER.rstrip("\n"), ""]
@@ -476,8 +408,7 @@ def render_index(reconciled: Reconciliation, config: Config, store: Store) -> st
         lines += [*reconciled.native, ""]
     by_group: dict[str, list[Note]] = {}
     for note in reconciled.notes:
-        if _publishable(store, to_machine, note):
-            by_group.setdefault(note.group_name, []).append(note)
+        by_group.setdefault(note.group_name, []).append(note)
     for group in config.memory.groups:
         if by_group.get(group):
             lines += _section(group, by_group[group])

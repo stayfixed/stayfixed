@@ -602,6 +602,6 @@ def refusal_reason(
 
 
 def in_repository(store: Store, path: Path) -> bool:
-    """Whether one particular file this store yields sits in the repository itself: the index's
-    harvest and publish ask it of `MEMORY.md` and of each note, one file at a time."""
+    """Whether one particular file this store yields sits in the repository itself: the index
+    asks it of `MEMORY.md`, whose destination decides whether `memory.index_extra` is published."""
     return _inside(path, store.root)

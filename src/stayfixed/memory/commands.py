@@ -96,25 +96,9 @@ def _store(args: argparse.Namespace) -> tuple[Store, Config]:
     return found[0], config
 
 
-# `index._harvestable` refused to persist repository-authored titles into notes that are not
-# themselves repository data. Said out loud because the alternative is a silent drop: the notes
-# keep their own descriptions and nothing else in the output would differ.
-_NOT_HARVESTED = (
-    "{names} took no index line from {index}: it is committed to this repository and they are "
-    "not, so its text was not written into memory the machine owns"
-)
-# `index._publishable` refused to write a repository-authored line into {index} because this
-# run's destination reaches outside this project's own repository — the write-side mirror of
-# `_NOT_HARVESTED`, said out loud for the same reason: a drop `render_index` makes on its own
-# has no channel back to a person running the command, and a silent one is how repository text
-# reaches every other project sharing that destination.
-_NOT_PUBLISHED = (
-    "{names} took no line in {index}: committed to this repository, while this run's "
-    "destination reaches outside it, so none of it was published into memory the machine shares"
-)
-# The same gate, the other kind of thing. `memory.index_extra` entries are pointers in
-# `stayfixed.toml`, not notes, and they used to be appended to the same list the notes above are
-# named from — so one sentence called a note name and a document path both notes.
+# `memory.index_extra` entries are pointers in `stayfixed.toml`, repository data, held back from an
+# index whose destination reaches outside this repository (`index._to_machine`). Said out loud: a
+# drop `render_index` makes on its own has no channel back to a person running the command.
 _EXTRA_NOT_PUBLISHED = (
     "{names} took no pointer in {index}: `memory.index_extra` lives in this repository's "
     "stayfixed.toml, while this run's destination reaches outside it"
@@ -134,25 +118,12 @@ def _printed(names: list[str]) -> str:
     return listed([printable(name) for name in names])
 
 
-def _harvest(reconciled: Reconciliation, store: Store) -> str | None:
-    """What `index._harvestable` declined to persist, named where a person will read it."""
-    if not reconciled.refused_harvest:
-        return None
-    names = _printed(reconciled.refused_harvest)
-    return _NOT_HARVESTED.format(names=names, index=store.path / INDEX_NAME)
-
-
 def _publish(reconciled: Reconciliation, store: Store) -> str | None:
-    """What `index._publishable` declined to write, named where a person will read it."""
+    """The `memory.index_extra` entries held back, named where a person will read it."""
+    if not reconciled.refused_extra:
+        return None
     index = store.path / INDEX_NAME
-    said = []
-    if reconciled.refused_publish:
-        said.append(_NOT_PUBLISHED.format(names=_printed(reconciled.refused_publish), index=index))
-    if reconciled.refused_extra:
-        said.append(
-            _EXTRA_NOT_PUBLISHED.format(names=_printed(reconciled.refused_extra), index=index)
-        )
-    return "; ".join(said) or None
+    return _EXTRA_NOT_PUBLISHED.format(names=_printed(reconciled.refused_extra), index=index)
 
 
 # A note the store holds and cannot parse is the one failure this store cannot recover from by
@@ -209,7 +180,7 @@ def run_index(args: argparse.Namespace) -> Result:
             if findings
             else f"index is current: {report.words} words, {report.lines} lines"
         )
-        summary = _with(_with(summary, _harvest(reconciled, store)), _publish(reconciled, store))
+        summary = _with(summary, _publish(reconciled, store))
         return Result(
             summary,
             {
@@ -220,8 +191,6 @@ def run_index(args: argparse.Namespace) -> Result:
                 "over_budget": report.over_budget,
                 "over_caps": report.over_caps,
                 "provisional": report.provisional,
-                "refused_harvest": reconciled.refused_harvest,
-                "refused_publish": reconciled.refused_publish,
                 "refused_extra": reconciled.refused_extra,
                 "unreadable": report.unreadable,
             },
@@ -235,7 +204,7 @@ def run_index(args: argparse.Namespace) -> Result:
     wrote = "; ".join(
         [f"wrote {path} ({report.words} words, {len(reconciled.notes)} notes)", *findings]
     )
-    wrote = _with(_with(wrote, _harvest(reconciled, store)), _publish(reconciled, store))
+    wrote = _with(wrote, _publish(reconciled, store))
     return Result(
         wrote,
         {
@@ -244,8 +213,6 @@ def run_index(args: argparse.Namespace) -> Result:
             "lines": report.lines,
             "harvested": reconciled.harvested,
             "provisional": reconciled.provisional,
-            "refused_harvest": reconciled.refused_harvest,
-            "refused_publish": reconciled.refused_publish,
             "refused_extra": reconciled.refused_extra,
             "unreadable": report.unreadable,
             "over_budget": report.over_budget,
