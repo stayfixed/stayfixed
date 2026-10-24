@@ -1,0 +1,21 @@
+set timeout 25
+log_file -noappend [lindex $argv 1]
+cd [lindex $argv 0]
+spawn [lindex $argv 2] A -- --permission-mode default
+expect {
+  -re "trust" { send "1\r"; exp_continue }
+  -re "❯|>" {}
+  timeout { puts "NO-PROMPT"; exit 1 }
+}
+sleep 2
+send "run it\r"
+expect {
+  -re "proceed" {}
+  timeout { puts "NO-PERMISSION-DIALOG"; exit 1 }
+}
+sleep 1
+send "2"; sleep 3
+sleep 1
+sleep 4
+send "\x03"; sleep 1; send "\x03"
+expect eof
