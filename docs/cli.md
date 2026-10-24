@@ -2623,8 +2623,9 @@ the exclude-file block, one anchored line per path, unless your own excludes alr
 repository's exclude file or your global excludes file (`core.excludesFile`), read on their own. A
 `.gitignore` in the checkout does not stand in for the block, because the repository authors it and
 a pull can change it: a path only a `.gitignore` hides gets a line, and a path your own excludes
-hide gets none, whatever a `.gitignore` also says. A path the repository tracks, under any case of
-its spelling, is refused before the first write, since no exclude line hides a tracked file. A link
+hide gets none, whatever a `.gitignore` also says. A path the repository tracks, or one that opens a
+file the repository tracks in the same directory, is refused before the first write, since no
+exclude line hides a tracked file. A link
 whose name no single exclude line can hold — a group name with a line break, a NUL, U+2028 or
 another character a line reader may split at — gets no line, rather than being written as a line
 git, or a later `attach` reading the block back, would take for several; unless your own excludes
@@ -2742,9 +2743,10 @@ It exits `2` on a refusal, in the order the run meets them:
   directories `attach` could not have written.
 - A `git check-ignore` that cannot answer.
 - A path it places — the ledger, a link of the link tree, a `.codex/rules/` copy, or
-  `.claude/settings.local.json` — that the repository tracks, under any
-  case of its spelling (on a filesystem that ignores case, a tracked `.claude/Settings.Local.json`
-  is the file `attach` would write), since no exclude line hides a tracked file and what `attach`
+  `.claude/settings.local.json` — that the repository tracks, as spelled or as the same file as
+  one it tracks in that directory (where the filesystem folds names, a tracked
+  `.claude/Settings.Local.json`, or on macOS `.claude/ſettings.local.json`, is the file `attach`
+  would write), since no exclude line hides a tracked file and what `attach`
   writes there would reach every clone with the next commit; or a `git ls-files` that cannot say.
   The refusal names each such path, and counts the link tree's. `--check` refuses it too.
 - A `.claude` that is a symlink, or a `.codex` that is one on a run that writes into it; a

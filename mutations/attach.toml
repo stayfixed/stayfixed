@@ -770,7 +770,7 @@ reddens = [
 ]
 
 # The rule's other half: no exclude line hides a tracked file, so a placed path the index tracks,
-# under any case of its spelling, is refused above every write, or `attach` writes over it.
+# or one that opens a file the index tracks, is refused above every write, or `attach` writes over it.
 [[mutation]]
 name = "attach writes over a tracked placed path"
 file = "src/stayfixed/attach/write.py"
@@ -779,6 +779,17 @@ after = "    if found := exclude.tracked(root, ()):"
 reddens = [
   "tests/attach/test_write.py::test_a_tracked_codex_rule_copy_is_refused_before_anything_is_written",
   "tests/attach/test_write.py::test_a_tracked_local_settings_file_is_refused_before_anything_is_written",
+]
+
+# A filesystem that folds names opens a tracked file under the placed path's spelling, `ſ` to `s`
+# on APFS among them, which no pathspec git folds: asked by identity, never by emulation.
+[[mutation]]
+name = "attach asks git alone whether a placed path is tracked"
+file = "src/stayfixed/attach/exclude.py"
+before = "        or _identity(root / relative) in files.get(posixpath.dirname(relative), set())"
+after = "        or False"
+reddens = [
+  "tests/attach/test_write.py::test_a_placed_path_that_is_the_same_file_as_a_tracked_one_is_refused",
 ]
 
 # `attach` hides only what git does not hide already, so a checkout that keeps its whole footprint

@@ -4,9 +4,10 @@
 as it found it and changes no file a collaborator gets. Once that block is written, `attach` asks
 git whether each path it places is ignored and refuses, naming the path, when a `.gitignore`
 re-includes one with a `!` line. Before writing anything, it also refuses, naming it, any path it
-places that the repository tracks, matched without regard to case so that a tracked
-`.claude/Settings.Local.json` counts on a filesystem that ignores case; `attach --check` refuses
-it too.
+places that the repository tracks, as spelled or as the same file as one the repository tracks in
+that directory, so that a tracked `.claude/Settings.Local.json`, or on macOS
+`.claude/ſettings.local.json`, counts where the filesystem folds names; `attach --check` refuses it
+too.
 `stayfixed detach` no longer touches `.gitignore` either, and its `--json` no longer reports
 `ignore_region_removed`: a `stayfixed:ignore` region an earlier `attach` wrote stays until you
 remove it, and the region `stayfixed init` writes is unaffected.

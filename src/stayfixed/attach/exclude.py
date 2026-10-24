@@ -54,6 +54,8 @@ it.
 from __future__ import annotations
 
 import contextlib
+import os
+import posixpath
 import tempfile
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -115,15 +117,15 @@ UNWRITABLE = (
 # The write itself failing, which no check made while planning can rule out: by then `detach` may
 # have withdrawn what comes before the block.
 NOT_WRITTEN = "{path} could not be written ({reason})"
-# Said when git would still show a path `attach` places once the block is written: a `.gitignore`
-# re-includes it with a `!` line, which outranks the exclude file, or its name is one no line of
-# the block can spell (`pattern`). `{paths}` is what `write` names them by.
-# Said when the index tracks a path `attach` places, under any case: no exclude line hides a
-# tracked file. `{paths}` is what `write` names them by.
+# Said when the index tracks a path `attach` places, or the file the path opens: no exclude line
+# hides a tracked file. `{paths}` is what `write` names them by.
 TRACKED = (
     "this repository tracks {paths}, which `attach` places for this machine alone, so nothing was "
     "written; attach a checkout where none of them is tracked"
 )
+# Said when git would still show a path `attach` places once the block is written: a `.gitignore`
+# re-includes it with a `!` line, which outranks the exclude file, or its name is one no line of
+# the block can spell (`pattern`). `{paths}` is what `write` names them by.
 NOT_IGNORED = (
     "git would not ignore {paths}, which `attach` places for this machine alone, so nothing past "
     "the exclude block was written: a `.gitignore` line starting with `!` that re-includes a path "
@@ -162,18 +164,45 @@ def unignored(root: Path, relatives: Sequence[str]) -> tuple[str, ...]:
 
 
 def tracked(root: Path, relatives: Sequence[str]) -> tuple[str, ...]:
-    """The members of `relatives` the index tracks, under any case: on a filesystem that ignores
-    case a tracked `Settings.Local.json` is what `settings.local.json` opens. A path the index
-    holds files below is not one: a group the owner moved into the overlay before committing.
-    `literal`, so a group named `*` is that one path; exit other than 0 is a refusal."""
+    """The members of `relatives` the index tracks: listed as spelled, or there and the same file
+    (`st_dev`, `st_ino`) as a file the index tracks in the same directory.
+
+    The second half asks the filesystem what a name opens rather than emulating how it folds
+    names: on a volume that ignores case a tracked `Settings.Local.json` is what
+    `settings.local.json` opens, and APFS also folds U+017F (a long s) to `s`, which neither git's
+    `icase` nor `str.lower` does. One `ls-files` over the paths' directories, `literal` so a group
+    named `*` is that one path, each answer kept only for a file directly in one of them. A path
+    the index holds files below is not one: a group the owner moved into the overlay before
+    committing. Exit other than 0 is a refusal."""
     if not relatives:
         return ()
-    asked = (f":(icase,literal){relative}" for relative in relatives)
+    parents = {posixpath.dirname(relative) for relative in relatives}
+    asked = (f":(literal){parent or '.'}" for parent in sorted(parents))
     code, out = git_run(root, "ls-files", "-z", "--", *asked)
     if code != 0:
         raise Refusal(UNANSWERED)
-    listed = {name.lower() for name in out.split("\0") if name}
-    return tuple(relative for relative in relatives if relative.lower() in listed)
+    listed = {name for name in out.split("\0") if name}
+    files: dict[str, set[tuple[int, int]]] = {}
+    for name in listed:
+        if (parent := posixpath.dirname(name)) in parents and (found := _identity(root / name)):
+            files.setdefault(parent, set()).add(found)
+    return tuple(
+        relative
+        for relative in relatives
+        if relative in listed
+        or _identity(root / relative) in files.get(posixpath.dirname(relative), set())
+    )
+
+
+def _identity(path: Path) -> tuple[int, int] | None:
+    """The file at `path` itself, a link not followed, as `(st_dev, st_ino)`; `None` where the path
+    reaches no file, or none this user may reach: what cannot be reached cannot be written, and the
+    containment asked after this refuses that path in its own words."""
+    try:
+        status = os.lstat(path)
+    except OSError:
+        return None
+    return status.st_dev, status.st_ino
 
 
 def _unmatched(root: Path, relatives: Sequence[str], *asked: str) -> tuple[str, ...]:

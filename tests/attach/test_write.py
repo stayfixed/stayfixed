@@ -666,6 +666,52 @@ def test_a_tracked_settings_file_spelled_in_another_case_is_refused_and_left_as_
     assert tracked.read_bytes() == b"{}\n"
 
 
+def _folds_long_s(directory: Path) -> bool:
+    probe = directory / "\u017fprobe"
+    probe.write_text("", encoding="utf-8")
+    try:
+        return (directory / "sprobe").exists()
+    finally:
+        probe.unlink()
+
+
+def test_a_tracked_settings_file_a_filesystem_folds_to_the_placed_name_is_refused(
+    tmp_path: Path,
+) -> None:
+    # APFS folds `\u017f` (LATIN SMALL LETTER LONG S) to `s`, so a tracked
+    # `.claude/\u017fettings.local.json` is the file `.claude/settings.local.json` opens; git's
+    # `icase` pathspec and `str.lower` fold ASCII alone, and `attach` wrote the allow rules, and
+    # Claude Code the binding id, into a tracked file. Asked of the filesystem, by identity, and
+    # never by emulating its folding.
+    if not _folds_long_s(tmp_path):
+        pytest.skip("the temporary filesystem does not fold a long s to an s")
+    root, store, machine = _attachable(tmp_path, allow=(RULE,))
+    (root / ".claude").mkdir()
+    tracked = root / ".claude" / "\u017fettings.local.json"
+    tracked.write_text("{}\n", encoding="utf-8")
+    _committed(root)
+    with pytest.raises(Refusal) as refused:
+        _attach_quietly(root, store, machine, tmp_path / "home")
+    assert str(refused.value) == TRACKED.format(paths=quoted(SETTINGS))
+    assert tracked.read_bytes() == b"{}\n"
+
+
+def test_a_placed_path_that_is_the_same_file_as_a_tracked_one_is_refused(tmp_path: Path) -> None:
+    # The identity half of the rule on any filesystem: a hard link is what a folded name is, one
+    # file under two names, and a write through the untracked one lands in the tracked one.
+    # Mutation: `mutations/`'s "attach asks git alone whether a placed path is tracked".
+    root, store, machine = _attachable(tmp_path, allow=(RULE,))
+    (root / ".claude").mkdir()
+    tracked = root / ".claude" / "settings.json"
+    tracked.write_text("{}\n", encoding="utf-8")
+    _committed(root)
+    os.link(tracked, root / SETTINGS)
+    with pytest.raises(Refusal) as refused:
+        _attach_quietly(root, store, machine, tmp_path / "home")
+    assert str(refused.value) == TRACKED.format(paths=quoted(SETTINGS))
+    assert tracked.read_bytes() == b"{}\n"
+
+
 def _with_groups(root: Path, listed: str) -> None:
     text = (root / "stayfixed.toml").read_text(encoding="utf-8")
     (root / "stayfixed.toml").write_text(
