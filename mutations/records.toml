@@ -1901,16 +1901,15 @@ reddens = [
   "tests/assess/test_tracked.py::test_a_linked_roadmap_git_does_not_track_is_read_by_both_gates",
 ]
 
-# `--store <overlay>/projects/<name>/memory` names the far end of the link tree, and resolved as a
-# store of its own it had no `developer` group -- that lives in `common/memory`, beside it -- so the
-# index it rendered dropped the developer notes and `--check` called that index current.
+# Overlay mode reads the composed store the binding names and nothing else: a `--store` naming a
+# directory the repository chose never stands in for the store that reaches the overlay's notes.
 [[mutation]]
-name = "an override naming this project's share resolves a smaller store"
+name = "overlay mode reads a named store"
 file = "src/stayfixed/memory/store.py"
-before = "    if _names_own_share(override, config, overlay):"
-after = "    if False:"
+before = "    if composed is not None:\n        # Overlay mode reads"
+after = "    if composed is not None and override is None:\n        # Overlay mode reads"
 reddens = [
-  "tests/memory/test_commands.py::test_the_store_named_by_its_overlay_path_is_the_store_the_plain_run_names",
+  "tests/memory/test_commands.py::test_overlay_mode_reads_the_composed_store_whatever_store_is_named",
 ]
 
 # A command with no store to walk says why in the resolver's own sentence, and a missing store
@@ -1947,16 +1946,6 @@ before = "        if not fsops.is_dir(overlay):"
 after = "        if False:"
 reddens = [
   "tests/memory/test_commands.py::test_a_binding_refusal_names_its_own_cause_and_the_way_out_that_fits_it[overlay-gone]",
-]
-
-# Outside overlay mode a `--store` naming the overlay's share is an override like any other.
-[[mutation]]
-name = "an override naming the share is dropped in every mode"
-file = "src/stayfixed/memory/store.py"
-before = '    if override is None or overlay is None or config.memory.mode != OVERLAY_MODE:'
-after = "    if override is None or overlay is None:"
-reddens = [
-  "tests/memory/test_commands.py::test_the_share_named_outside_overlay_mode_is_the_store_it_names",
 ]
 
 # The recorded overlay root is the owner's machine configuration, and was printed inside the

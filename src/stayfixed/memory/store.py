@@ -447,21 +447,6 @@ def _group_targets(
     return groups, unavailable
 
 
-def _names_own_share(override: str | None, config: Config, overlay: Path | None) -> bool:
-    """Whether `--store` names this project's own share of the recorded overlay, in overlay mode.
-
-    That directory is where the composed store's project groups point, not a store of its own:
-    `developer` lives in `common/memory`, beside it, so resolving groups *under* it would answer a
-    smaller store — an
-    index rendered from it has no developer notes, and `--check` would call that index current. A
-    store is one store however it is named, so this name resolves as the plain run does.
-    """
-    if override is None or overlay is None or config.memory.mode != OVERLAY_MODE:
-        return False
-    own = permitted_roots(overlay, config.project.name)[1]
-    return Path(override).expanduser().resolve() == own.resolve()
-
-
 # A store and no reason, or no store and the reason: `resolved`'s answer, which never holds both
 # and never neither.
 Resolution = tuple[Store, None] | tuple[None, Unresolved]
@@ -490,8 +475,6 @@ def _resolve_at(
         # Memory is the harness's own: stayfixed delivers nothing, so there is no store to read.
         return None, Unresolved(LEFT_TO_HARNESS)
     overlay = _recorded_overlay(machine)
-    if _names_own_share(override, config, overlay):
-        override = None
     composed: Path | None = None
     if mode == OVERLAY_MODE:
         if overlay is None:
@@ -504,10 +487,12 @@ def _resolve_at(
         if isinstance(found, Unresolved):
             return None, found
         composed = found
-    if override is not None:
-        base = Path(override).expanduser()
-    elif composed is not None:
+    if composed is not None:
+        # Overlay mode reads the composed store and nothing else, `--store` included: a directory
+        # a repository chose never stands in for the store that reaches the overlay's notes.
         base = composed
+    elif override is not None:
+        base = Path(override).expanduser()
     elif mode == LOCAL_ONLY_MODE:
         try:
             # `contained` with no `allow_final_symlink` refuses a symlink at *any* level

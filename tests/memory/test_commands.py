@@ -611,56 +611,27 @@ SECOND_NOTE = (
 
 
 @needs_git
-def test_the_store_named_by_its_overlay_path_is_the_store_the_plain_run_names(
+def test_overlay_mode_reads_the_composed_store_whatever_store_is_named(
     overlay_project: Path,
 ) -> None:
-    # `--store <overlay>/projects/<name>/memory` resolved the groups under that directory, where
-    # `developer` is not — it lives in `common/memory` — so the index it wrote had no developer
-    # notes and `--check` then called that index current. One store, however it is named: the
-    # same groups and the same bytes either way.
-    #
-    # Mutation: `mutations/`'s "an override naming this project's share resolves a smaller
-    # store".
-    overlay = overlay_project.parent / "overlay"
-    share = overlay / "projects" / "widget" / "memory"
-    (overlay / "common" / "memory" / "second.md").write_text(SECOND_NOTE, encoding="utf-8")
-    (_composed(overlay_project) / "MEMORY.md").symlink_to(share / "MEMORY.md")
-    named = ["--store", str(share), *common(overlay_project)]
-
-    assert invoke(["memory", "index", *common(overlay_project)]) == 0
-    plain = (share / "MEMORY.md").read_bytes()
-    assert b"developer/second.md" in plain
-    assert invoke(["memory", "index", *named]) == 0
-    assert (share / "MEMORY.md").read_bytes() == plain
-    assert invoke(["memory", "index", "--check", *named]) == 0
-
-
-@needs_git
-def test_the_share_named_outside_overlay_mode_is_the_store_it_names(overlay_project: Path) -> None:
-    # The rule above is overlay mode's: there the share is where the composed store points. A
-    # repository in any other mode has no composed store, so `--store` naming the same directory is
-    # an override like any other and resolves to that directory, not to `paths.memory`.
-    #
-    # Mutation: `mutations/`'s "an override naming the share is dropped in every mode".
+    # In overlay mode the store is the composed one the binding names. `--store` was read there
+    # too, so a directory a repository chose, committing links into the overlay, stood in for it:
+    # its index lines were harvested into overlay notes and its notes' lines published into the
+    # overlay's index. Mutation (oracle): `mutations/`'s "overlay mode reads a named store".
     from stayfixed.config.loader import load
     from stayfixed.memory.store import resolved
 
-    config_file = overlay_project / "stayfixed.toml"
-    config_file.write_text(
-        config_file.read_text(encoding="utf-8").replace('mode = "overlay"', 'mode = "in-repo"'),
-        encoding="utf-8",
-    )
+    chosen = overlay_project / "chosen"
+    (chosen / "developer").mkdir(parents=True)
     machine = overlay_project.parent / "machine.toml"
-    share = overlay_project.parent / "overlay" / "projects" / "widget" / "memory"
-    (share / "developer").mkdir()
     store, why = resolved(
         overlay_project,
         load(overlay_project, machine=machine),
-        override=str(share),
+        override=str(chosen),
         machine=machine,
     )
     assert why is None and store is not None
-    assert store.path.resolve() == share.resolve()
+    assert store.path == _composed(overlay_project)
 
 
 def _binding_project(tmp_path: Path, cause: str) -> tuple[Path, Path]:

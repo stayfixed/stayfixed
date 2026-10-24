@@ -1,9 +1,9 @@
 """The `memory` group. Every command takes `--store PATH`.
 
-`--store` is an override of *where the notes are*, not of the rules about them: it is held to
-the same target rule as a link the resolver found, so passing a path is not a way around the
-overlay binding. `--machine` exists for the same reason the resolver takes one — a test that
-did not thread it would read the developer's real configuration.
+`--store` is an override of *where the notes are*, not of the rules about them, and overlay mode
+does not read it: there the store is the composed one the binding names. `--machine` exists for
+the same reason the resolver takes one — a test that did not thread it would read the developer's
+real configuration.
 
 It is threaded exactly twice, into `command_config` (`session_config` for `session-context`,
 which reads the file the way a session does) and into `resolve`, and never again: `resolve` puts

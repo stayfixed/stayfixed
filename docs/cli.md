@@ -31,7 +31,7 @@ Three things hold everywhere:
 | Option | Meaning |
 |---|---|
 | `--root PATH` | The project root. Default: the current directory. |
-| `--store PATH` | Resolve the note store at this path instead of where the configuration says. An override of *where the notes are*, not of the rules about them: the same containment and overlay-binding checks apply, so it is not a way around the overlay binding. |
+| `--store PATH` | Resolve the note store at this path instead of where the configuration says. An override of *where the notes are*, not of the rules about them: the same containment checks apply. In overlay mode it is not read: the store is the composed store the binding names, so no directory a repository chose stands in for it. |
 | `--machine PATH` | Read this machine configuration file instead of `~/.config/stayfixed/config.toml`. Mostly for tests and for running against a second machine profile; it also decides which `trust.json` is consulted. |
 ## Contents
 
@@ -136,13 +136,10 @@ Exits `2` if `MEMORY.md` is a symlink this store may not follow (the target rule
 overlay mode a symlinked index is refused outright; in overlay mode only a link into *this*
 project's own share of the recorded overlay is honoured).
 
-**One store however it is named.** In overlay mode the store is the composed store `stayfixed
-attach` builds, `~/.local/share/stayfixed/stores/<id>/`, named by the checkout's binding id and
-holding one link per group into the overlay. `--store <overlay>/projects/<name>/memory` — this
-project's own share, where the composed store's project groups point — resolves exactly as the
-plain run does, so the two render the same `MEMORY.md` with the same groups: `developer` lives in
-`common/memory`, beside that directory and not under it. Any other `--store` is resolved at the
-path it names, under the same rules as before.
+**One store in overlay mode.** There the store is the composed store `stayfixed attach` builds,
+`~/.local/share/stayfixed/stores/<id>/`, named by the checkout's binding id and holding one link per
+group into the overlay, and `--store` is not read. In every other mode `--store` is resolved at the
+path it names, under the same rules as the configured store.
 
 **When there is no store, the refusal says why** (exit `1`). An overlay root the machine
 configuration records that is not a directory on this machine — the overlay moved, or was never
