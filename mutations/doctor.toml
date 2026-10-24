@@ -2907,7 +2907,7 @@ reddens = [
   "tests/doctor/test_checks.py::test_a_repository_without_a_configuration_skips_only_the_rows_that_read_one",
 ]
 
-# The `preferences` row names each owner key and preference with its layer, and prints a value
+# The `preferences` row names each key the session resolved with its layer, and prints a value
 # only where it is a boolean, a number or one of stayfixed's own words.
 [[mutation]]
 name = "the preferences row prints a free text value"
@@ -2915,16 +2915,6 @@ file = "src/stayfixed/doctor/checks.py"
 before = "    return value if isinstance(value, str) and value in vocabulary else None"
 after = "    return value if isinstance(value, str) else None"
 reddens = ["tests/doctor/test_floor_report.py::test_preferences_names_the_layer_and_hides_free_text"]
-
-[[mutation]]
-name = "the preferences row credits the repository with the preset's values"
-file = "src/stayfixed/doctor/checks.py"
-before = "    held = _held(context) if config is not None else {}"
-after = "    held = dict(preset)"
-reddens = [
-  "tests/doctor/test_floor_report.py::test_preferences_with_no_stayfixed_toml_are_the_presets",
-  "tests/doctor/test_floor_report.py::test_preferences_names_the_layer_and_hides_free_text",
-]
 
 [[mutation]]
 name = "the preferences row quotes every note of the machine file"

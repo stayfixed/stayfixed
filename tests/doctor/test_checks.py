@@ -3691,3 +3691,21 @@ def test_a_workflow_that_pins_nothing_this_build_recognises_is_never_silence(
     assert row.status == WARN and "no `uses:` line this build recognises" in row.detail
     # The file is repository-authored and none of it is quoted back.
     assert "o/r" not in row.detail and "other.yml" not in row.detail
+
+
+def test_the_preferences_row_names_the_overlay_project_layer_of_a_budget(tmp_path: Path) -> None:
+    # The row reads the session's one resolution, so a budget the bound project's overlay file
+    # sets is credited to that layer, over the common file's.
+    overlay = _overlay(tmp_path)
+    (overlay / "common" / CONFIG_FILE).write_text(
+        "[budgets]\nstartup_rules_words = 700\n", encoding="utf-8"
+    )
+    (overlay / "projects" / "p").mkdir(parents=True, exist_ok=True)
+    (overlay / "projects" / "p" / CONFIG_FILE).write_text(
+        "[budgets]\nstartup_rules_words = 900\n", encoding="utf-8"
+    )
+    root = _initialised(tmp_path)
+    _git(root, "init", "-q", "-b", "main")
+    binding.record(root, "p", None)
+    preferences = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "preferences")
+    assert "budgets.startup_rules_words = 900 (overlay project)" in preferences.detail

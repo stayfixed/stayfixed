@@ -44,7 +44,6 @@ PRESET = LayerName.PRESET
 REPOSITORY = LayerName.REPOSITORY
 OVERLAY_COMMON = LayerName.OVERLAY_COMMON
 OVERLAY_PROJECT = LayerName.OVERLAY_PROJECT
-OVERLAY_MACHINE = LayerName.OVERLAY_MACHINE
 MACHINE_FILE = LayerName.MACHINE_FILE
 
 
@@ -170,7 +169,6 @@ def test_the_layers_run_lowest_first() -> None:
         REPOSITORY,
         OVERLAY_COMMON,
         OVERLAY_PROJECT,
-        OVERLAY_MACHINE,
         MACHINE_FILE,
     )
 
@@ -290,6 +288,5 @@ def test_a_layer_reads_as_its_name() -> None:
         "repository",
         "overlay common",
         "overlay project",
-        "overlay machine",
         "machine file",
     ]

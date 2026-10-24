@@ -51,8 +51,9 @@ def bash_command(event: HookEvent) -> str | None:
 
 def _bg_cleanup(event: HookEvent, session: SessionConfig) -> HookResult:
     """Judge a Bash call whatever the project's configuration, and none at all included: the guard
-    reads nothing of it. The machine owner alone switches it off (`config.owner`)."""
-    if not session.owner.guards.bg_cleanup:
+    reads nothing of it. The owner's layers alone switch it off: the overlay's files and the
+    machine file (`SessionConfig.guards`)."""
+    if not session.guards.bg_cleanup:
         return HookResult()
     command = bash_command(event)
     if command is None:

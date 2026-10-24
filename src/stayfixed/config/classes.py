@@ -1,19 +1,19 @@
 """One class per configuration key, the layers that may set each class, and `resolve`.
 
 A value reaches a session from one of several layers — the preset, the repository's
-`stayfixed.toml`, the overlay's common, per-project and per-machine files, and the machine file
-— and whether a layer may set a key is a property of the key, not of the layer that happens
-to write it. So every key has one class (`CLASSES`), and every class names the layers it admits
+`stayfixed.toml`, the overlay's common and per-project files, and the machine file — and whether
+a layer may set a key is a property of the key, not of the layer that happens to write it. So
+every key has one class (`CLASSES`), and every class names the layers it admits
 (`ALLOWED`). `resolve` applies that over a stack of layers: a layer the class does not admit
 contributes nothing and says so, and of the rest the highest in `ORDER` wins, or a `merge` the
 caller names folds them lowest first, with the layer each value came from.
 
-What `resolve` decides today is who may set a key, and where a value came from; it is not yet
-what builds a session's values. It builds the owner's layer (`config.owner`, from the preset and
-the machine file), refuses a repository's machine-only keys for the NOTE load
-(`config.loader`), and gives `doctor`'s `preferences` row each value's layer; the project's
-`Config` is still built by `config.loader`, which merges the repository's file over the preset
-and folds the owner's layer in.
+`resolve` decides who may set a key, and where a value came from. It builds the owner's layer
+(`config.owner`, from the preset and the machine file), refuses a repository's machine-only keys
+for the NOTE load (`config.loader`), and builds a session's preferences and session budgets once,
+over the preset, the repository, the overlay's two files and the machine file
+(`config.session`), whose provenance `doctor`'s `preferences` row prints; the rest of the
+project's `Config` is built by `config.loader`, from the repository's file over the preset.
 
 The keys are dotted, `section.key`, and a section wildcard `section.*` covers every key of its
 section; `tests/config/test_classes.py` holds every field of `Config`'s sections to a row, so a
@@ -51,15 +51,14 @@ class KeyClass(StrEnum):
 class LayerName(StrEnum):
     """Where a value came from. The value is the word a note names the layer by.
 
-    The overlay's three scopes are named for the overlay, `OVERLAY_COMMON`, `OVERLAY_PROJECT` and
-    `OVERLAY_MACHINE`, since "project" means the repository everywhere else a person reads it (its
-    `stayfixed.toml`, Claude Code's project settings), and "machine" the machine file."""
+    The overlay's two scopes are named for the overlay, `OVERLAY_COMMON` and `OVERLAY_PROJECT`,
+    since "project" means the repository everywhere else a person reads it (its `stayfixed.toml`,
+    Claude Code's project settings)."""
 
     PRESET = "preset"
     REPOSITORY = "repository"
     OVERLAY_COMMON = "overlay common"
     OVERLAY_PROJECT = "overlay project"
-    OVERLAY_MACHINE = "overlay machine"
     MACHINE_FILE = "machine file"
 
 
@@ -69,7 +68,6 @@ ORDER: tuple[LayerName, ...] = (
     LayerName.REPOSITORY,
     LayerName.OVERLAY_COMMON,
     LayerName.OVERLAY_PROJECT,
-    LayerName.OVERLAY_MACHINE,
     LayerName.MACHINE_FILE,
 )
 _RANK = {name: rank for rank, name in enumerate(ORDER)}

@@ -68,7 +68,6 @@ from pathlib import Path
 
 import stayfixed
 from stayfixed import REPOSITORY_URL, fsops
-from stayfixed.config.classes import CLASSES, KeyClass, Layer, LayerName, resolve
 from stayfixed.config.loader import CONFIG_FILE
 from stayfixed.config.machine import (
     DEFAULT_CONFIG_DIR,
@@ -109,7 +108,7 @@ from stayfixed.hooks.api import (
     data_root,
 )
 from stayfixed.jsonobject import json_object
-from stayfixed.presets import DEFAULT_PRESET, defaults_of, load_preset
+from stayfixed.presets import load_preset
 from stayfixed.printed import clipped
 from stayfixed.release.api import (
     HASHED_FILES,
@@ -609,11 +608,6 @@ def _budgets(context: Context, config: Config) -> Row:
     return Row(OK, "; ".join(moved) or "every budget is the preset's")
 
 
-# The ways of working a repository, the overlay or the owner may choose (`classes.CLASSES`): the
-# `preferences` row names the layer each came from.
-PREFERENCES: tuple[str, ...] = tuple(
-    sorted(key for key, kind in CLASSES.items() if kind is KeyClass.PREFERENCE)
-)
 # The keys whose value is one of stayfixed's own words, which the loader holds to this vocabulary,
 # and so may be printed. Every other text value is the repository's or the owner's to write, and
 # is not.
@@ -643,66 +637,25 @@ def _named(key: str, value: object, layer: str) -> str:
     return f"{key} ({layer})" if shown is None else f"{key} = {shown} ({layer})"
 
 
-def _owner_keys(session: SessionConfig) -> list[str]:
-    """Every key the owner's layer resolved, with the layer `classes.resolve` credited it to."""
-    owner = session.owner
-    named: list[str] = []
-    for key, layer in sorted(owner.provenance.items()):
-        section, _, name = key.partition(".")
-        # The owner's three tables: `personal` and `guards` are dataclasses, and the session
-        # budgets, the third, a mapping by name.
-        tables: dict[str, object] = {"personal": owner.personal, "guards": owner.guards}
-        value = (
-            getattr(tables[section], name, None)
-            if section in tables
-            else owner.session_budgets.get(name)
-        )
-        named.append(_named(key, value, str(layer)))
-    return named
-
-
-def _held(context: Context) -> dict[str, object]:
-    """The preferences the repository's `stayfixed.toml` holds after the NOTE load: written there,
-    and neither the key nor its section ignored or put back to the preset's. Read off the document
-    the session's own load used, never the file again, so the layer and the notes come from one
-    read."""
-    held: dict[str, object] = {}
-    for key in PREFERENCES:
-        section, _, name = key.partition(".")
-        table = context.session.document.get(section)
-        if isinstance(table, dict) and name in table:
-            held[key] = table[name]
-    return held
-
-
 def _preferences(context: Context) -> Row:
-    """Each owner key and each preference, and the layer its value came from.
+    """Each key the session resolved, and the layer its value came from.
 
-    A preference's layer is `classes.resolve`'s answer over the preset and what the repository's
-    file holds after the NOTE load; an owner key's is the owner's layer's own provenance. No
-    preference is read from the machine file. The value is printed only where it is a boolean, a
-    number or one of stayfixed's own words (`ENUMERATED`): a name list, a profile or a personal
-    value is text a repository or an owner wrote, and stays out of a row a model may read. Runs
-    with no `stayfixed.toml` too, where every preference is the preset's.
+    The session's one resolution (`SessionConfig.resolution`) over the preset, the repository's
+    file after the NOTE load, the overlay's common and project files and the machine file gives
+    every value and its layer; the row derives none. The value is printed only where it is a
+    boolean, a number or one of stayfixed's own words (`ENUMERATED`): a name list, a profile or a
+    personal value is text a repository, an overlay or an owner wrote, and stays out of a row a
+    model may read. Runs with no `stayfixed.toml` too, where nothing is the repository's.
 
     A machine file that does not load is red, in its refusal's words (`MACHINE_UNLOADED`): every
     command refuses it, and the report, which reads it as a session does, was otherwise the one
     run that exited 0 on it. What the owner's layer read past in a file that loads is a warning.
     """
-    config = context.config
-    defaults = defaults_of(load_preset(config.stayfixed.preset if config else DEFAULT_PRESET))
-    preset: dict[str, object] = {}
-    for key in PREFERENCES:
-        section, _, name = key.partition(".")
-        if isinstance(defaults.get(section), dict) and name in defaults[section]:
-            preset[key] = defaults[section][name]
-    held = _held(context) if config is not None else {}
-    layers = resolve([Layer(LayerName.PRESET, preset), Layer(LayerName.REPOSITORY, held)])
-    named = _owner_keys(context.session)
-    for key in PREFERENCES:
-        section, _, name = key.partition(".")
-        value = getattr(getattr(config, section), name) if config else preset.get(key)
-        named.append(_named(key, value, str(layers.provenance.get(key, LayerName.PRESET))))
+    resolution = context.session.resolution
+    named = [
+        _named(key, resolution.values[key], str(layer))
+        for key, layer in sorted(resolution.provenance.items())
+    ]
     detail = "; ".join(named)
     owner = context.session.owner
     if owner.unloaded is not None:

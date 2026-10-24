@@ -1,12 +1,14 @@
 """Read stayfixed.toml, merge it under the preset, validate it.
 
 The machine owner's layer is merged too (`config.owner`), so every command runs on the personal
-values and session budgets a session runs on: handed in, read once by the command, which says on
-stderr what it read past (`command.command_owner`), or by a caller that must go on
-(`config.session`); or, when the caller hands none in, read here, `strict`, refusing a machine file
-that does not load and saying nothing of what it read past in one that does. `loads` refuses what
-it cannot use; `loads_noting` reads what it can and says what it ignored or reset. What the two
-loaders share is `config.reading`'s.
+values and session budgets the machine file sets, as a session does; a session resolves the
+overlay's two files between the repository's and the machine file's over what this builds
+(`config.session`, `config.overlay_layers`). The owner's layer is handed in, read once by the
+command, which says on stderr what it read past (`command.command_owner`), or by a caller that
+must go on (`config.session`); or, when the caller hands none in, read here, `strict`, refusing a
+machine file that does not load and saying nothing of what it read past in one that does.
+`loads` refuses what it cannot use; `loads_noting` reads what it can and says what it ignored or
+reset. What the two loaders share is `config.reading`'s.
 """
 
 from __future__ import annotations

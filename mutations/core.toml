@@ -6421,3 +6421,26 @@ after = '_ID = re.compile(r"[0-9a-f]{31,32}")'
 reddens = [
   "tests/test_binding.py::test_an_id_is_read_only_when_it_is_exactly_32_lowercase_hex_characters[31-hex]",
 ]
+
+# A session's preferences come from one resolution over every layer: the repository's layer is what
+# its file holds after the NOTE load, and the overlay's project file is a layer of its own, above
+# the common file, read only for the project the machine's binding record names.
+[[mutation]]
+name = "the preferences row credits the repository with the preset's values"
+file = "src/stayfixed/config/session.py"
+before = "        Layer(LayerName.REPOSITORY, _held(read.document)),"
+after = "        Layer(LayerName.REPOSITORY, _preset_values(owner.preset)),"
+reddens = [
+  "tests/doctor/test_floor_report.py::test_preferences_with_no_stayfixed_toml_are_the_presets",
+  "tests/doctor/test_floor_report.py::test_preferences_names_the_layer_and_hides_free_text",
+]
+
+[[mutation]]
+name = "the overlay project file is read as the overlay common layer"
+file = "src/stayfixed/config/overlay_layers.py"
+before = "        own = _layer(path, LayerName.OVERLAY_PROJECT, notes)"
+after = "        own = _layer(path, LayerName.OVERLAY_COMMON, notes)"
+reddens = [
+  "tests/config/test_overlay_layers.py::test_the_project_file_wins_over_the_common_file_for_a_bound_checkout",
+  "tests/doctor/test_checks.py::test_the_preferences_row_names_the_overlay_project_layer_of_a_budget",
+]

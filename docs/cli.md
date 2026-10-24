@@ -3187,7 +3187,7 @@ check with `name`, `status`, `detail` and `remedy`, so every remedy is there.
 | `hook-entries` | every hook entry, counted by provenance, with any that claims the stayfixed marker and is in no ledger named by position; and, as a warning, every skill, command or agent file whose frontmatter declares hooks, which it does not judge | `.claude/settings.json`, `.claude/settings.local.json`, `.codex/hooks.json`, and `~/.claude/settings.json`; every `SKILL.md` below a `.claude/skills` anywhere in the tree that git does not ignore, a checked-out submodule's committed files included, and every `*.md` below `.claude/commands` and `.claude/agents` |
 | `codex-hooks` | whether any stayfixed hook is untrusted on Codex, and, when `[stayfixed] agents` lists `codex`, which surfaces are not verified there and which hold in CI | `stayfixed.toml`, the harness registry |
 | `budgets` | every budget set above the preset, named raised, and every one set below it, named lowered | `stayfixed.toml`, the machine file, the preset |
-| `preferences` | each machine-owner key and each preference, with the layer its value came from — the preset, the repository or the machine file — and the value only where it is a boolean, a number or one of stayfixed's own words; red when the machine file does not load, in the words every command refuses it in, which name the file and where the parser stopped; a warning naming the file when a key in it could not be used | `stayfixed.toml`, the preset, the machine file |
+| `preferences` | each personal value, guard switch, preference and session budget a session resolves, with the layer its value came from — the preset, the repository, the overlay's common file (`overlay common`), its file for the project this checkout is bound to (`overlay project`) or the machine file — and the value only where it is a boolean, a number or one of stayfixed's own words; red when the machine file does not load, in the words every command refuses it in, which name the file and where the parser stopped; a warning naming the file when a key in it could not be used | `stayfixed.toml`, the preset, the overlay's two `stayfixed.toml` files, the machine file |
 | `cli-path` | whether `stayfixed` resolves on `PATH` | `PATH` |
 | `ci-ref` | whether `[ci] ref` is the commit of a released stayfixed tag (or the `v1` alias: a warning, as mutable, once a `1.x` release creates it, and red until then), and whether the rendered workflow pins the same ref — under `[ci] mode = "reusable"`, a workflow that is not there at all is a warning and never a green row, and so are a path that is there and is not a regular file and a file past the 256 KiB bound on the read | `git ls-remote --exit-code` over the public repository's tags, bounded at 30 seconds; *.github/workflows/stayfixed.yml*, read as a regular file and to a bound |
 | `diagnostics` | how many reasons the hook sink recorded — a count, never a line of the file | `${CLAUDE_PLUGIN_DATA}/stayfixed/diagnostics.jsonl` |
@@ -3964,6 +3964,21 @@ else, and leaves a session on the preset's personal values and guards, with one 
 this file when the session starts and `stayfixed doctor`'s `preferences` row red.
 With no `stayfixed.toml` in the repository a session still reads this file: `bg_cleanup = false`
 turns the guard off there too.
+
+Between the repository's file and this one, a session reads the overlay's two, under the overlay
+`[overlay] root` names: `<overlay>/common/stayfixed.toml` for every checkout, and
+`<overlay>/projects/<name>/stayfixed.toml` for a checkout this machine binds to `<name>` — by the
+binding id `stayfixed attach` records, never by the repository's own `[project] name`, so a clone
+that names one of your projects gets the common file alone. Each may set a `[personal]` value, a
+`[guards]` switch, a preference (`[memory] mode`, `groups` and `index_extra`, `[stayfixed]
+profile`) and a session budget; the project file wins over the common one, and this file over
+both. They are read the way a session reads `stayfixed.toml`: an unknown name is ignored, and a
+value this stayfixed cannot use is left out so the layer beneath applies; a gate's input or a fact
+about the repository written there is never taken from it. A missing file, an overlay this file
+does not record, or this file not loading sets nothing. Only what reads the configuration as a
+session does reads them — a session, `doctor` and `memory session-context`; every other command
+reads the repository's file and this one, and `doctor`'s `preferences` row names the layer each
+value came from.
 
 To state a language preference, write a personal standing rule, a note with `metadata.startup`
 in your overlay's `common/memory/`.
