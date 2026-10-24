@@ -4325,7 +4325,7 @@ reddens = ["tests/trust/test_record.py::test_the_record_ignores_xdg"]
 [[mutation]]
 name = "trust revoke revokes nothing"
 file = "src/stayfixed/trust/commands.py"
-before = "    revoked = record.revoke_all(machine, args.kind, [args.subject])"
+before = "    revoked = record.revoke_all(machine, args.kind, [_unshown(args.subject)])"
 after = "    revoked: list[str] = []"
 reddens = ["tests/trust/test_commands.py::test_revoke_needs_no_terminal"]
 
