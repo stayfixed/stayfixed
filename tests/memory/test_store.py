@@ -232,13 +232,12 @@ def test_a_paths_memory_that_cannot_be_asked_about_is_refused_for_that(tmp_path:
 def test_notes_that_resolve_outside_the_repository_are_repository_data_outside_overlay_mode(
     tmp_path: Path,
 ) -> None:
-    # Fail closed. `inside_project` is the predicate `trust.may_inject` and
-    # `trust.is_repository_data` both turn on, and a store it could not classify answered "not
-    # repository data" — which opens the gate with no trust record at all and skips
-    # `trust.wrap` on the way out. In `local-only` and `in-repo` the notes sit in the
+    # Fail closed. `inside_project` is the predicate the bundles turn on, and a store it could not
+    # classify answered "not repository data" — which delivered its notes as standing rules and
+    # skipped `trust.wrap` on the way out. In `local-only` and `in-repo` the notes sit in the
     # repository by construction, so groups landing outside it is a resolution that went wrong
     # rather than an overlay. `overlay` is the one mode where outside is the design and
-    # keeps its answer, or the machine owner's own notes would be gated behind a trust prompt.
+    # keeps its answer, or the machine owner's own notes would arrive as data and no rule.
     root = tmp_path / "project"
     root.mkdir(parents=True)
     outside = tmp_path / "elsewhere" / "developer"

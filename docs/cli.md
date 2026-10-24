@@ -31,14 +31,13 @@ Three things hold everywhere:
 | Option | Meaning |
 |---|---|
 | `--root PATH` | The project root. Default: the current directory. |
-| `--store PATH` | Resolve the note store at this path instead of where the configuration says. An override of *where the notes are*, not of the rules about them: the same containment and overlay-binding checks apply, so it is not a way around the trust gate. |
+| `--store PATH` | Resolve the note store at this path instead of where the configuration says. An override of *where the notes are*, not of the rules about them: the same containment and overlay-binding checks apply, so it is not a way around the overlay binding. |
 | `--machine PATH` | Read this machine configuration file instead of `~/.config/stayfixed/config.toml`. Mostly for tests and for running against a second machine profile; it also decides which `trust.json` is consulted. |
 ## Contents
 
 - [`stayfixed memory index`](#stayfixed-memory-index)
-- [`stayfixed trust list [--all] [--store PATH] [--root PATH] [--machine PATH]`](#stayfixed-trust-list---all---store-path---root-path---machine-path)
-- [`stayfixed trust approve KIND [--store PATH] [--root PATH] [--machine PATH]`](#stayfixed-trust-approve-kind---store-path---root-path---machine-path)
-- [`stayfixed trust revoke KIND [--subject KEY] [--store PATH] [--root PATH] [--machine PATH]`](#stayfixed-trust-revoke-kind---subject-key---store-path---root-path---machine-path)
+- [`stayfixed trust list [--root PATH] [--machine PATH]`](#stayfixed-trust-list---root-path---machine-path)
+- [`stayfixed trust revoke KIND --subject KEY [--root PATH] [--machine PATH]`](#stayfixed-trust-revoke-kind---subject-key---root-path---machine-path)
 - [`stayfixed memory session-context --bundle <name> [--part N]`](#stayfixed-memory-session-context---bundle-name---part-n)
 - [`stayfixed memory inventory`](#stayfixed-memory-inventory)
 - [`stayfixed memory fit`](#stayfixed-memory-fit)
@@ -92,9 +91,7 @@ stayfixed memory index --check    # report drift, write nothing
 **Reads** every `*.md` under each configured group, and the current `MEMORY.md`.
 
 **Writes** each note whose `index:` line it filled in, and `MEMORY.md` — in overlay mode, the file
-the symlink points at, not the link — and, when the store was trusted before the run,
-`~/.config/stayfixed/trust.json` (or the file beside `--machine`, through a link there, which
-stays), re-recorded over the files it wrote (see below). Under `--check`, nothing.
+the symlink points at, not the link. Under `--check`, nothing.
 
 What it does, in order:
 
@@ -128,12 +125,6 @@ Exits `2` if `MEMORY.md` is a symlink this store may not follow (the target rule
 overlay mode a symlinked index is refused outright; in overlay mode only a link into *this*
 project's own share of the recorded overlay is honoured).
 
-**When the trust gate is shut, the line says so**, on `--check` and on the write path alike, and
-`--json`'s `trusted` is `false`: a note, or the store's own directory, is inside the repository
-with no record from `stayfixed trust approve memory` matching it, so none of it reaches a session.
-An overlay store is the composed store under this machine's data directory, outside every
-repository, and needs no record.
-
 **One store however it is named.** In overlay mode the store is the composed store `stayfixed
 attach` builds, `~/.local/share/stayfixed/stores/<id>/`, named by the checkout's binding id and
 holding one link per group into the overlay. `--store <overlay>/projects/<name>/memory` — this
@@ -152,101 +143,42 @@ none this machine records for that project — is said in stayfixed's own words 
 that carries the repository's, with `stayfixed attach` as the way out. The checkout's `origin`
 plays no part in it.
 
-**Trust interacts with this command**, and the interaction is the non-obvious part: `memory
-index` rewrites the very files the trust hash covers, so it would revoke the approval it depends
-on. It does not — it re-records the hash across exactly the files it itself wrote, carrying every
-other file's approved digest forward unchanged. If something else changed the store while the
-command ran, it refuses to carry trust and says so. So it does if the record changed: the hash is
-re-recorded only while the record, read again just before the write, still holds the digest the
-command read before writing, so a `trust revoke memory`, or a new approval, made before that
-final re-read is kept, and the approval keeps the time the person gave it; a run that leaves the
-store's digest where the record holds it writes no record at all. Run from an agent's
-sandboxed shell, where the record's directory refuses the write, the files are still written and
-the command still exits `0`; the approval is left as it was, which the files no longer match, and
-the line says it could not be refreshed, why, and that the person approves the store again after
-reviewing what changed.
+## `stayfixed trust list [--root PATH] [--machine PATH]`
 
-## `stayfixed trust list [--all] [--store PATH] [--root PATH] [--machine PATH]`
+Every approval recorded on the machine, one line each with its kind, its subject and when it was
+approved. It names each subject — for `memory`, the store's absolute path — escaped where it leaves
+the path grammar and, past 120 characters, by its start and its length; a subject under `HOME` is
+named from `~/`. `--json` carries every subject whole.
 
-Every kind of approval the areas contribute, and its state in this checkout: one line per subject
-— `approved`, `lapsed` (approved once, at a digest that no longer matches) or `missing` — and on
-every line not approved, the exact command that approves it, for the person at the machine to run
-in their own terminal; the line says an agent must not run it for them.
-Today the one kind is `memory`, a store of notes inside the repository, and `--store` is its flag.
-The checkout is read as a session reads it ([Configuration](#configuration)): a `stayfixed.toml`
-a newer release added a section or key to still describes its store, so what this lists as
-approved is what a session uses. A kind with nothing to describe here (no `stayfixed.toml` a
-session can read, or no store) says so, and says why in the kind's own words. `--all` lists every approval recorded on the machine instead, whichever checkout
-it was given in, each with when it was approved. It names each subject — for `memory`, the store's
-absolute path — escaped where it leaves the path grammar and, past 120 characters, by its start
-and its length; a subject under `HOME` is named from `~/`.
-`--json` carries every subject whole.
+No command records an approval in this release: the notes a repository commits reach a session
+with no approval, as data ([`stayfixed memory session-context`](#stayfixed-memory-session-context---bundle-name---part-n)),
+so the approvals of kind `memory` an earlier release recorded are inert, and `trust revoke`
+withdraws them.
 
-`--json` keys: `subjects`, one object per subject in this checkout with its `kind`, its `subject`
-and its `state`, and for a kind with nothing to describe, `kind`, `state` (`undescribed`) and
-`reason`; with `--all`, `approvals` instead, one object per approval with its `kind`, `subject`,
-`digest` and `approved_at` (empty for one `0.3.0` recorded).
+`--json` keys: `approvals`, one object per approval with its `kind`, `subject`, `digest` and
+`approved_at` (empty for one `0.3.0` recorded).
 
-**Reads** the machine's trust record, and every file each kind hashes.
-
-**Writes** nothing.
-
-## `stayfixed trust approve KIND [--store PATH] [--root PATH] [--machine PATH]`
-
-Record that a person approved every subject of `KIND` in this checkout at its digest now; for
-`memory`, that the notes sitting inside this repository may reach the model. Each subject is
-printed before the run ends with the kind, its label and the digest recorded.
-
-**It records and prints, and asks for no terminal.** Run from anything, an agent's shell tool
-among them, it records what it was asked to and says what it recorded. A terminal check refused a
-bare call from an agent's shell tool and passed one that opened a pseudo-terminal, against an agent
-that can write the record anyway, so it stood in front of nobody; what an approval holds against is
-below. Nothing takes `--yes`.
+**The record** is the machine's one record of approvals, of every kind. It is versioned: a JSON
+object holding `version` (`1`) and `approvals`, each with its `kind`, `subject`, `digest` and
+`approved_at`. The flat map `0.3.0` wrote, a store's path to its digest, is read as approvals of
+kind `memory`, and the first write upgrades the file in place; a `0.3.0` reading a version-1
+record finds no approval in it. Every write replaces the whole file in one atomic step, and no lock
+is taken: two commands writing at once each replace it whole, the last one wins, and neither leaves
+it torn.
 
 **What an approval holds against.** Repository bytes: stayfixed never writes `trust.json` from
 what a repository holds, and a clone, a pull or a pull request does not reach it, since it lies
-under `HOME` and outside every repository; a change to anything
-the approval hashes lapses it. A repository whose hooks your harness runs — a committed
+under `HOME` and outside every repository. A repository whose hooks your harness runs — a committed
 `.claude/settings.json` hook in a folder you trusted — is code running as you, and can write any
-file you can, this one included. Not the session's own agent:
-an agent whose shell can write any file you can may write the record as well, and stayfixed
-neither stops nor checks that. That boundary is the harness's sandbox, which is yours to set;
-`stayfixed setup --approval-boundary` prints what to set under Claude Code. Even a sandbox that
-keeps the record out of reach leaves an agent a way to instruct the next session: Claude Code's
-documentation does not list a project's `CLAUDE.md` or `AGENTS.md` among the paths its sandbox
-keeps from the agent's own writes, and Claude Code loads the first as instructions and can load
-the second, through an import or its project instructions setting (read in the documentation, not
-measured). [SECURITY.md](../SECURITY.md) lists an agent with an unsandboxed shell as out of scope.
-
-**Reads** every file the kind hashes — for `memory`, every file the store yields.
-
-**Writes** `~/.config/stayfixed/trust.json` (or the file beside `--machine`), through a link a
-dotfiles manager put there: the file the link leads to gets the record, and the link stays.
-
-`--json` keys: `kind`, and `approved`, one object per subject recorded, with its `subject`, its
-`label`, its `digest` and `was`, its state before the run (`approved`, `lapsed` or `missing`).
-
-For `memory`, the hash covers every note, `MEMORY.md`, and the repository-controlled
-configuration rendered into it, keyed by the store's absolute path. Change any of it and the
-approval lapses — you are asked again rather than silently kept. Notes that are *yours* (an
-overlay store) need no approval to reach a session: the standing-rules and volatile-notes bundles
-deliver them without one, and the composed store they are read from sits outside every
-repository, so it needs none either.
-
-The record is the machine's one record of approvals, of every kind, and this command keeps the
-store's as kind `memory`, its subject the store's absolute path. It is versioned: a JSON object
-holding `version` (`1`) and `approvals`, each with its `kind`, `subject`, `digest` and
-`approved_at`. The flat map `0.3.0` wrote, a store's path to its digest, is read as approvals of
-kind `memory`, so an upgrade keeps every one, and the first write upgrades the file in place; a
-`0.3.0` reading a version-1 record finds no approval in it and asks again — and an approval made
-there, after a downgrade, rewrites the record as its flat map holding that one approval, so every
-other approval the version-1 record held is gone and is asked for again after the upgrade back.
-Every write replaces the
-whole file in one atomic step, and no lock is taken: two commands writing at once each replace it
-whole, the last one wins, and neither leaves it torn. The one write a person did not ask for, the
-refresh `memory index` makes over its own files, is the exception: it writes only while the record,
-read again just before its write, holds the digest it read, so it never undoes a revoke made before
-that final re-read.
+file you can, this one included. Not the session's own agent: an agent whose shell can write any
+file you can may write the record as well, and stayfixed neither stops nor checks that. That
+boundary is the harness's sandbox, which is yours to set; `stayfixed setup --approval-boundary`
+prints what to set under Claude Code. Even a sandbox that keeps the record out of reach leaves an
+agent a way to instruct the next session: Claude Code's documentation does not list a project's
+`CLAUDE.md` or `AGENTS.md` among the paths its sandbox keeps from the agent's own writes, and Claude
+Code loads the first as instructions and can load the second, through an import or its project
+instructions setting (read in the documentation, not measured). [SECURITY.md](../SECURITY.md)
+lists an agent with an unsandboxed shell as out of scope.
 
 Exits `2` if `trust.json` exists and is neither a record this stayfixed reads nor `0.3.0`'s flat
 map — not JSON, not UTF-8, a later version, a `version` that is neither `1` nor later (`0`, `"1"`,
@@ -255,42 +187,32 @@ map — not JSON, not UTF-8, a later version, a `version` that is neither `1` no
 named twice. It holds every project's approval on the machine, so nothing will overwrite a file
 it could not read — repair or delete it; for a record of a later version, which a later stayfixed
 wrote and is met after a downgrade, update stayfixed instead, since deleting it would destroy that
-release's approvals. An unknown `KIND` exits `2` naming the kinds there are. Every subject is
-recorded in one write of the record, so a write that fails leaves it as it was.
-A write to the record refused as an agent's sandbox refuses one (`EPERM` on macOS and `EROFS` on
-Linux and WSL2, as Claude Code's sandboxing reference gives them) exits `2`, writes nothing, and
-says that a person must run the command in their own terminal, outside the agent's sandbox, and
-that met in their own terminal it is the directory itself refusing writes, as a read-only mount or
-an immutable flag does; `trust revoke` says the same. A directory you may not write for its mode
-exits `1`, naming it.
+release's approvals.
 
-`stayfixed memory trust --in-repo-memory` is the old spelling of `stayfixed trust approve memory`:
-it runs this command, says so after it ran, and is removed in `0.5.0`.
-Until then its `--json` carries this command's keys and keeps the old spelling's beside them, each
-read off this run: `was_trusted`, whether the store was approved at its digest before the run;
-`trusted`, whether the record holds that digest after it; and `digest`, the store's digest.
+**Reads** the machine's trust record.
 
-## `stayfixed trust revoke KIND [--subject KEY] [--store PATH] [--root PATH] [--machine PATH]`
+**Writes** nothing.
 
-Withdraw the approval of every subject of `KIND` in this checkout, or of the one recorded subject
-`--subject` names, as `trust list --all --json` spells it. It needs no terminal: withdrawing is the
-direction that fails safe. The checkout is described as a session reads it, as `trust list`
-describes it, so an approval a session uses is withdrawn by this spelling whatever a command would
-refuse in `stayfixed.toml`. A revoke that matches nothing exits `1`, writes nothing, and lists what
-the kind has recorded, each subject named as `trust list --all` names it. So does one whose kind
-cannot describe the checkout — no `stayfixed.toml` a session can read, as after `stayfixed
-uninstall` — which says why and names `stayfixed trust revoke KIND --subject KEY` with a subject
-`stayfixed trust list --all --json` prints.
+## `stayfixed trust revoke KIND --subject KEY [--root PATH] [--machine PATH]`
+
+Withdraw the approval of kind `KIND` recorded for `KEY`, as `trust list --json` spells the two. It
+needs no terminal: withdrawing is the direction that fails safe. A revoke that matches nothing
+exits `1`, writes nothing, and lists what the kind has recorded, each subject named as `trust list`
+names it.
 
 `--json` keys: `kind`, and `revoked`, the subjects withdrawn; a revoke that matched nothing adds
 `recorded`, every subject the kind has recorded, whole.
 
-**Reads** the machine's trust record, and, with no `--subject`, every file the kind hashes.
+**Reads** the machine's trust record.
 
-**Writes** `~/.config/stayfixed/trust.json` (or the file beside `--machine`, through a link there,
-which stays), only when an approval was withdrawn. Run from an agent's sandboxed shell, that write is refused: the command
-exits `2`, withdraws nothing, and says a person must run it in their own terminal, outside the
-agent's sandbox.
+**Writes** `~/.config/stayfixed/trust.json` (or the file beside `--machine`), only when an approval
+was withdrawn, through a link a dotfiles manager put there: the file the link leads to gets the
+record, and the link stays. A write refused as an agent's sandbox refuses one (`EPERM` on macOS and
+`EROFS` on Linux and WSL2, as Claude Code's sandboxing reference gives them) exits `2`, withdraws
+nothing, and says that a person must run the command in their own terminal, outside the agent's
+sandbox, and that met in their own terminal it is the directory itself refusing writes, as a
+read-only mount or an immutable flag does. A directory you may not write for its mode exits `1`,
+naming it.
 
 ## `stayfixed memory session-context --bundle <name> [--part N]`
 
@@ -299,8 +221,8 @@ run it by hand except to see what a session actually receives.
 
 | Bundle | What it is |
 |---|---|
-| `standing-rules` | Every note flagged `startup`, in full, ranked. Never truncated — only flagged when the set outgrows its budget, because a standing rule that does not arrive is a standing rule that gets broken. |
-| `volatile-notes` | Dated, perishable notes, in full; over budget, descriptions only. |
+| `standing-rules` | Every note flagged `startup`, in full, ranked, from a store outside the repository; a note inside it is never a standing rule, whatever it says about itself. Never truncated — only flagged when the set outgrows its budget, because a standing rule that does not arrive is a standing rule that gets broken. |
+| `volatile-notes` | Dated, perishable notes, in full; over budget, descriptions only. A note inside the repository arrives inside a delimited region that says it is data, opened and closed with a nonce the note does not hold. |
 
 Each bundle is emitted across numbered parts, because the harness caps each hook entry's output
 independently. `--part N` selects one; a part past the end prints nothing and exits `0`. A part
@@ -313,10 +235,9 @@ is additive only because there is no envelope and no escaping. Do not pass `--js
 entry.
 
 Where no layer sets `[memory] mode`, memory is the coding agent's own (`harness`), there is no
-store, and this command prints nothing. When the store's notes are repository data with no trust
-record, both bundles are empty, and this command says nothing rather than explaining why — its output *is* what reaches the model.
-`stayfixed memory index` and `stayfixed memory fit` are where the explanation is printed,
-because those are the commands a person runs. It reads the configuration as the session does
+store, and this command prints nothing. Notes inside the repository — a `local-only` or `in-repo`
+store — reach a session with no approval, as the harness delivers the same repository's
+`CLAUDE.md`, only in `volatile-notes` and only as data. It reads the configuration as the session does
 ([Configuration](#configuration)), and a machine file that does not load is read as recording no
 overlay, so the notes not kept in an overlay still arrive; the session's own warning names that
 file.
@@ -335,10 +256,6 @@ it is stale, and whether its index line is curated, harvested or provisional. Pl
 Whether each bundle fits the numbered hook entries declared for it. Exits `1` when one does not
 — either it needs more parts than there are slots, or a single block is larger than one part
 and would be truncated by the platform.
-
-A bundle that fits says nothing of whether its notes may reach a session, so the output also
-reports whether the trust gate is open, by the question and in the words `memory index` uses:
-`--json`'s `trusted` is `false` where the store's notes are withheld for want of a record.
 
 **Writes** nothing.
 
@@ -494,7 +411,7 @@ upstream**, and the counts of its **unpushed commits and uncommitted changes**. 
 up-to-date repository on a satisfied stayfixed hears nothing. But for the moved-`origin` line, not
 one byte a repository wrote reaches any of those lines: `project.name`, `memory.groups` and
 `paths.memory` are read and none is quoted back, because the field these lines land in is
-`additionalContext` — model input with no delimiter and no trust record.
+`additionalContext` — model input with no delimiter.
 
 **What it costs, and on which repository.** The binding's own `origin` query runs on every
 invocation, at git's five-second cap. The last two lines cost two more `git` calls at two seconds
@@ -2125,10 +2042,8 @@ other. Run it on a checkout you trust.
 
 **What stays on the machine.** `uninstall` takes back one repository's footprint, and what is the
 machine's stays: the deny rules `stayfixed setup` added to the user settings file, and every
-approval in `~/.config/stayfixed/trust.json`, this repository's store among them. Run `stayfixed
-trust revoke memory` before uninstalling to withdraw this repository's approval; afterwards, with no
-`stayfixed.toml` to describe the store, `trust revoke` says so and names `stayfixed trust revoke
-memory --subject KEY`, with a key `stayfixed trust list --all --json` prints.
+approval in `~/.config/stayfixed/trust.json`. `stayfixed trust revoke memory --subject KEY`, with a
+key `stayfixed trust list --json` prints, withdraws one.
 
 **Reads** `stayfixed.toml`, `.stayfixed/manifest.json`, `.stayfixed/local/artifacts.json`, every file
 an artifact targets, `git check-ignore` for each existing file a removal targets at a place a
@@ -2857,8 +2772,8 @@ another tree gets the file the link leads to, and the link stays. The machine co
 is written through a link at it the same way.
 
 `setup` is not the only command that writes outside a repository, and two others say so in their
-own sections: `stayfixed trust approve` records approval in `~/.config/stayfixed/trust.json`, and
-`stayfixed attach` keeps its binding record, render and composed store under
+own sections: `stayfixed trust revoke` withdraws an approval from `~/.config/stayfixed/trust.json`,
+and `stayfixed attach` keeps its binding record, render and composed store under
 `~/.local/share/stayfixed/`. It is the only
 one that writes the machine configuration file and `<home>/.claude/settings.json`. `--root` (default `.`) is the project this invocation
 was run from; the only thing it is used for is refusing an `--overlay` any checkout of it could
@@ -3068,7 +2983,7 @@ be read, or a hook names `prepare-commit-msg.local`.
 
 Prints what keeps an agent's shell out of the trust record's directory under Claude Code, for you
 to set, and sets none of it: an approval holds against an agent only while the harness's sandbox
-holds ([`stayfixed trust approve`](#stayfixed-trust-approve-kind---store-path---root-path---machine-path) says why), and
+holds ([`stayfixed trust list`](#stayfixed-trust-list---root-path---machine-path) says why), and
 stayfixed neither enforces nor checks that boundary. The line names:
 
 - the deny rule `Edit(//<the trust record's directory>/**)` for `permissions.deny` in

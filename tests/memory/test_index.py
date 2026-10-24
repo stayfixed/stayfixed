@@ -899,16 +899,6 @@ def test_a_nested_group_still_gets_its_section(tmp_path: Path) -> None:
     assert "team/project-stable/n.md" in text
 
 
-def test_a_nested_groups_routing_key_is_the_configured_one(tmp_path: Path) -> None:
-    # The same disagreement one module over: `trust._files` keys the digest on the configured
-    # group while `index._relative` keyed the link on the folder name, so a nested group's
-    # digest entry and its index line named two different files.
-    from stayfixed.memory.trust import _files
-
-    store, _config = a_nested_store(tmp_path)
-    assert [key for key, _ in _files(store)] == ["team/project-stable/n.md"]
-
-
 def test_a_nested_section_title_keeps_every_segment() -> None:
     # The folders are a hierarchy and the hyphens are `section_title`'s own convention, so the
     # two separators must not collapse into one another.

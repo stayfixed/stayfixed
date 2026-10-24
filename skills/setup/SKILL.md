@@ -38,8 +38,8 @@ description: Configure the machine for stayfixed — the preset, the personal pa
 6. `stayfixed setup --approval-boundary` prints the deny rule and the sandbox settings that keep
    an agent's shell out of the trust record's directory, and writes nothing. Relay its line for
    the user to set; never write a `sandbox` key or that deny rule yourself. With the sandbox on,
-   the agent's shell cannot write the machine directory at all: when `setup`, `trust revoke` or
-   `memory index` says a person must run it in their own terminal, outside the agent's sandbox,
+   the agent's shell cannot write the machine directory at all: when `setup` or `trust revoke`
+   says a person must run it in their own terminal, outside the agent's sandbox,
    relay that sentence and stop — never retry it outside the sandbox yourself.
 7. **The preset's plugins install on Claude Code only.** Codex has no verified non-interactive
    marketplace source for them, so `setup` reports the gap as a note rather than attempting an

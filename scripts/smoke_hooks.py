@@ -20,18 +20,14 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-
-from ptyrun import run_in_pty
-
 PLACEHOLDER = "${CLAUDE_PLUGIN_ROOT}"
 # What the wrapper and the dispatcher end a fault of their own with, and exit 0 after: a row that
 # carries it is stayfixed failing to answer, not answering.
 FAULT = "; continuing open"
 DELIMITER = "<<<stayfixed:repository-data"
-# What `tests/fixtures/smoke-project`'s own store puts in front of the model, one marker per
-# bundle that renders anything on it.
-STANDING_RULE = "SMOKE-STANDING-RULE"
+# What `tests/fixtures/smoke-project`'s own store puts in front of the model: its volatile note.
+# Its standing rule is the repository's, and no repository note is a standing rule, so the
+# standing-rules bundle renders nothing on it.
 VOLATILE_NOTE = "SMOKE-VOLATILE-NOTE"
 # The one `STAYFIXED_*` variable an entry keeps: the floor a test runner puts under the product's
 # own bounds on `git` (`stayfixed.gitenv.FLOOR_VARIABLE`, which can only raise them). Spelled out
@@ -130,11 +126,12 @@ SAMPLES: dict[str, tuple[Sample, ...]] = {
 # green. These are the entries that carry repository bytes toward the model, which is the one
 # thing the smoke scenario exists to watch.
 #
-# Measured 2026-09-19 against the fixture's store, trusted: standing-rules part 1 1,010,
-# volatile-notes part 1 993, every other part empty — so the second and third part of each
-# bundle assert that a store which fits one part says nothing in the slots after it.
+# Measured 2026-09-19 against the fixture's store: volatile-notes part 1 993, every other part
+# empty — so the second and third part of the volatile bundle assert that a store which fits one
+# part says nothing in the slots after it, and every standing-rules part asserts that a note the
+# repository committed, `startup` rank and all, is never delivered as a standing rule.
 INJECTED: dict[str, tuple[str, ...]] = {
-    "memory session-context --bundle standing-rules --part 1": (DELIMITER, STANDING_RULE),
+    "memory session-context --bundle standing-rules --part 1": (),
     "memory session-context --bundle standing-rules --part 2": (),
     "memory session-context --bundle standing-rules --part 3": (),
     "memory session-context --bundle volatile-notes --part 1": (DELIMITER, VOLATILE_NOTE),
@@ -198,38 +195,6 @@ def session_env(*, plugin_root: Path, project: Path, home: Path, data: Path) -> 
         }
     )
     return env
-
-
-def trust_the_store(plugin_root: Path, project: Path, env: dict[str, str]) -> str | None:
-    """Record the owner's trust for the fixture's own store, before any row runs.
-
-    The store is repository data and nothing reaches the model out of it until somebody says
-    so — which is the boundary these entries exist to exercise, and it cannot be exercised
-    from the outside of it. The owner's own act is performed here, once, the way
-    `smoke_exfiltration.py`'s positive control performs it, and the rows below then assert
-    what came through. A failure here is a failure of the run, not a row: the six injection
-    rows after it would go green on empty output. The owner approves at a terminal, which
-    `trust approve` asks for, so it runs under a pseudo-terminal (`ptyrun`).
-    """
-    code, said = run_in_pty(
-        [
-            sys.executable,
-            str(plugin_root / "scripts" / "stayfixed"),
-            "trust",
-            "approve",
-            "memory",
-            "--root",
-            str(project),
-        ],
-        env=env,
-        cwd=project,
-    )
-    if code != 0:
-        return (
-            f"could not record trust for the fixture's store, so the injection rows would "
-            f"prove nothing: rc={code}, output={said.strip()[:200]}"
-        )
-    return None
 
 
 def check_entry(
@@ -343,14 +308,6 @@ def main(argv: list[str]) -> int:
     ungathered = INJECTED.keys() - injecting
     if ungathered:
         print(f"FAIL  no hook entry for {sorted(ungathered)}; hooks.json lost a bundle")
-        return 1
-    untrusted = trust_the_store(
-        args.plugin_root,
-        project,
-        session_env(plugin_root=args.plugin_root, project=project, home=home, data=data),
-    )
-    if untrusted:
-        print(f"FAIL  {untrusted}")
         return 1
     (project / UNCOMMITTED).write_text("a change nobody has committed\n", encoding="utf-8")
     rows = 0

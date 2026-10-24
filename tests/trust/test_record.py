@@ -15,8 +15,10 @@ import pytest
 from stayfixed import fsops
 from stayfixed.config.machine import machine_config_path
 from stayfixed.errors import Failure
+from stayfixed.jsonobject import LONG_NUMBER, NESTED
 from stayfixed.trust.record import (
     LATER_VERSION,
+    NO_HOME,
     NOT_A_RECORD,
     RECORD,
     SANDBOXED,
@@ -28,11 +30,10 @@ from stayfixed.trust.record import (
     approve_all,
     record_path,
     recorded,
-    refresh,
     revoke_all,
     state,
 )
-from tests.sandboxed import refuse_writes_under
+from tests import parserlimits
 
 T0 = datetime(2026, 10, 16, 9, 30, tzinfo=UTC)
 # One approval as a version-1 record spells it, every field a string.
@@ -249,45 +250,85 @@ def test_the_record_ignores_xdg(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
     assert record_path(None) is None
 
 
-def test_a_refresh_moves_only_the_digest_it_was_read_at(tmp_path: Path) -> None:
-    # A refresh is stayfixed's own write over an approval its caller read before writing: it keeps
-    # when the person approved, and writes nothing once the record holds another digest — a new
-    # approval given meanwhile is the person's. Mutations (`mutations/`'s "a refresh writes over an
-    # approval it did not read" -> the stale refresh moves `e` to `f`; "a refresh restamps when
-    # the person approved" -> `approved_at` reads now).
-    approve_all(machine(tmp_path), "memory", {"/s": "d"}, now=T0)
-    assert refresh(machine(tmp_path), "memory", "/s", expected="d", digest="e") is True
-    assert recorded(machine(tmp_path))[("memory", "/s")] == Approval(
-        "memory", "/s", "e", "2026-10-16T09:30:00+00:00"
-    )
+@pytest.mark.parametrize(
+    ("document", "clause"),
+    [(parserlimits.NESTED, NESTED), ('{"/p": ' + parserlimits.LONG_NUMBER + "}", LONG_NUMBER)],
+    ids=["nested", "long-number"],
+)
+def test_a_record_past_the_parser_is_refused_and_never_overwritten(
+    tmp_path: Path, document: str, clause: str
+) -> None:
+    # Both documents are valid JSON that `json.loads` meets with no `JSONDecodeError`: nesting
+    # past what it follows raises `RecursionError`, and an integer longer than the interpreter
+    # converts (4,300 digits by default) a plain `ValueError`. The reader caught only the first
+    # kind, so a write ended in an internal error quoting the interpreter, where a record it cannot
+    # read is refused in the record's own sentence: it holds every project's approval, and nothing
+    # overwrites it. Mutation (oracle): `mutations/`'s "the trust record's reader lets a document
+    # past the parser escape" -> the internal error comes back and both cases redden.
     path = tmp_path / RECORD
-    before = (path.read_bytes(), path.stat().st_ino)
-    assert refresh(machine(tmp_path), "memory", "/s", expected="d", digest="f") is False
-    assert (path.read_bytes(), path.stat().st_ino) == before
+    path.write_text(document, encoding="utf-8")
+    with pytest.raises(UnreadableTrust) as caught:
+        approve_all(machine(tmp_path), "memory", {"/s": "d"}, now=T0)
+    assert str(caught.value) == f"{path} {clause}; {KEPT}"
+    assert path.read_text(encoding="utf-8") == document
 
 
-def test_a_refresh_to_the_digest_the_record_holds_writes_nothing(
+def test_a_record_that_cannot_be_read_says_why_in_words(tmp_path: Path) -> None:
+    # It named the file and then the error, whose text names the same absolute path again; the
+    # reason is said in words, the file named once. Mutation: `mutations/`'s "a trust record that
+    # cannot be read is reported with the error's own text".
+    if os.geteuid() == 0:
+        pytest.skip("root reads everything")
+    approve_all(machine(tmp_path), "memory", {"/s": "d"}, now=T0)
+    path = tmp_path / RECORD
+    path.chmod(0o000)
+    try:
+        with pytest.raises(UnreadableTrust) as refused:
+            recorded(machine(tmp_path))
+    finally:
+        path.chmod(0o600)
+    assert str(refused.value) == (
+        f"{path} cannot be read ({os.strerror(errno.EACCES)}); refusing to answer about trust or "
+        "to overwrite it"
+    )
+
+
+def test_a_record_with_no_home_is_written_nowhere(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # A move to the digest already recorded holds the approval as it is, so nothing is written:
-    # from an agent's sandboxed shell, where the write is refused, a rewrite said the approval was
-    # not refreshed while it held. Mutation (`mutations/`'s "a refresh rewrites the digest the
-    # record already holds"): the refused write is attempted and raises `SandboxedWrite`.
-    approve_all(machine(tmp_path), "memory", {"/s": "d"}, now=T0)
-    before = recorded(machine(tmp_path))
-    refused = refuse_writes_under(monkeypatch, tmp_path / RECORD)
-    assert refresh(machine(tmp_path), "memory", "/s", expected="d", digest="d") is True
-    assert refused == []
-    assert recorded(machine(tmp_path)) == before
+    # No home the hook path could read the record from, so none is written anywhere: not under
+    # `HOME`, and not as a `trust.json` beside whatever directory the command ran in. Mutations
+    # (`mutations/`'s "a trust record with no home is written beside the working directory" -> a
+    # `trust.json` appears here; "a trust record with no home is read as a path" -> the read raises
+    # an internal error).
+    monkeypatch.setenv("HOME", "")
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(Failure) as failed:
+        approve_all(None, "memory", {"/s": "d"}, now=T0)
+    assert str(failed.value) == NO_HOME
+    assert list(tmp_path.rglob(RECORD)) == []
 
 
-def test_a_refresh_never_brings_back_a_revoked_approval(tmp_path: Path) -> None:
-    # The revoke landed after the caller's read and before the refresh re-read the record. Mutation
-    # (`mutations/`'s "a refresh brings back a revoked approval"): the approval is recorded again.
-    approve_all(machine(tmp_path), "memory", {"/s": "d"}, now=T0)
-    assert revoke_all(machine(tmp_path), "memory", ["/s"]) == ["/s"]
-    assert refresh(machine(tmp_path), "memory", "/s", expected="d", digest="e") is False
-    assert recorded(machine(tmp_path)) == {}
+def test_a_home_that_cannot_be_written_fails_naming_the_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # No other place is one a hook reads: a failure naming the directory, never an internal error,
+    # and not the sandbox's sentence, since a directory's mode is not the sandbox. Mutations
+    # (`mutations/`'s "an unwritable trust record directory ends as an internal error" -> an
+    # internal error; "a directory's mode is read as the sandbox" -> `SandboxedWrite`).
+    if os.geteuid() == 0:
+        pytest.skip("root writes everywhere")
+    locked = tmp_path / "locked-home"
+    locked.mkdir()
+    locked.chmod(0o555)
+    try:
+        monkeypatch.setenv("HOME", str(locked))
+        with pytest.raises(Failure) as failed:
+            approve_all(None, "memory", {"/s": "d"}, now=T0)
+    finally:
+        locked.chmod(0o755)
+    assert not isinstance(failed.value, SandboxedWrite)
+    assert str(failed.value).startswith(f"{locked / '.config' / 'stayfixed'} cannot be written")
 
 
 @pytest.mark.parametrize(

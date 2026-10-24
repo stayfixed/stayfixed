@@ -14,6 +14,7 @@ from stayfixed.memory.bundles import (
     CAP_MARGIN,
     SLOTS,
     STANDING_LEAD,
+    VOLATILE_LEAD,
     Bundle,
     blocks,
     fit,
@@ -22,7 +23,6 @@ from stayfixed.memory.bundles import (
 )
 from stayfixed.memory.store import Store, composed_directory, resolve
 from stayfixed.memory.trust import DELIMITER
-from tests.approved import record
 from tests.cli import cli
 from tests.gitfixture import git
 
@@ -92,8 +92,8 @@ def a_store(
         encoding="utf-8",
     )
     config = load(root, machine=tmp_path / "absent.toml")
-    # A machine file of this test's own. Without one the store carries `machine=None`, and
-    # `may_inject` would consult the developer's real `~/.config/stayfixed/trust.json`.
+    # A machine file of this test's own. Without one the store carries `machine=None`, and a
+    # reader of the overlay root would consult the developer's real machine file.
     store = Store(base, mode, root, {g: base / g for g in GROUPS}, machine=a_machine(tmp_path))
     return store, config
 
@@ -144,13 +144,19 @@ def test_volatile_notes_degrade_to_one_line_each_over_budget(tmp_path: Path) -> 
     assert "Body." not in text
 
 
-def test_notes_that_live_in_the_repository_inject_nothing_before_trust(tmp_path: Path) -> None:
-    store, config = a_store(tmp_path, mode="local-only")
+def test_an_in_repo_store_reaches_volatile_notes_as_data_and_never_the_standing_rules(
+    tmp_path: Path,
+) -> None:
+    # A store committed to the repository, with no approval recorded anywhere: its volatile notes
+    # reach the session as the harness delivers `CLAUDE.md`, still marked as data, and a note
+    # claiming `startup: 1` is not a standing rule, whatever it says about itself.
+    store, config = a_store(tmp_path, mode="in-repo")
+    volatile = blocks(Bundle.VOLATILE_NOTES, store, config)
+    assert volatile != []
+    assert all(block.startswith(DELIMITER) for block in volatile)
+    assert "fresh" in "\n".join(volatile)
     assert blocks(Bundle.STANDING_RULES, store, config) == []
-    record(store, config)
-    produced = blocks(Bundle.STANDING_RULES, store, config)
-    assert produced != []
-    assert all(block.startswith(DELIMITER) for block in produced)
+    assert not (tmp_path / "trust.json").exists()
 
 
 def test_an_overlay_store_is_not_wrapped_as_repository_data(tmp_path: Path) -> None:
@@ -260,16 +266,15 @@ def test_an_oversized_part_is_withheld_rather_than_delivered_unterminated(
     # the lead sentence "It ends at the matching end marker and nowhere else", and no end
     # marker — the exact state `trust.wrap`'s nonce region exists to make unreachable.
     store, config = a_store(tmp_path, mode="in-repo")
-    for path in store.groups["developer"].glob("*.md"):
+    for path in store.groups["project-volatile"].glob("*.md"):
         path.unlink()
     cap = config.native_caps.hook_output_chars - CAP_MARGIN
-    (store.groups["developer"] / "huge.md").write_text(
-        note("huge", startup="1", body="x" * (cap * 2)), encoding="utf-8"
+    (store.groups["project-volatile"] / "huge.md").write_text(
+        note("huge", as_of=date.today().isoformat(), body="x" * (cap * 2)), encoding="utf-8"
     )
-    record(store, config)
-    assert fit(Bundle.STANDING_RULES, store, config).oversized == 1
+    assert fit(Bundle.VOLATILE_NOTES, store, config).oversized == 1
 
-    text = render(Bundle.STANDING_RULES, store, config, part=2)
+    text = render(Bundle.VOLATILE_NOTES, store, config, part=2)
     assert text is not None
     assert len(text) <= cap
     assert "was withheld" in text
@@ -278,8 +283,8 @@ def test_an_oversized_part_is_withheld_rather_than_delivered_unterminated(
     assert DELIMITER not in text
     assert "x" * 100 not in text
     # The parts that do fit are unaffected — this withholds one slot, not the bundle.
-    first = render(Bundle.STANDING_RULES, store, config, part=1)
-    assert first is not None and STANDING_LEAD in first
+    first = render(Bundle.VOLATILE_NOTES, store, config, part=1)
+    assert first is not None and VOLATILE_LEAD in first
 
 
 def test_a_part_that_fits_is_never_replaced_by_the_notice(tmp_path: Path) -> None:
@@ -440,20 +445,19 @@ name = "widget"
 
 
 def test_with_no_mode_chosen_session_context_prints_no_bundle(tmp_path: Path) -> None:
-    # The same approved local-only store twice: chosen explicitly it is delivered as today, and with
-    # no layer choosing a mode memory is the harness's own, so not one bundle is printed.
+    # The same local-only store twice: chosen explicitly it is delivered as today, and with no
+    # layer choosing a mode memory is the harness's own, so not one bundle is printed.
     root = tmp_path / "project"
-    (root / ".stayfixed" / "local" / "memory" / "developer").mkdir(parents=True)
-    (root / ".stayfixed" / "local" / "memory" / "developer" / "rule.md").write_text(
-        note("rule", startup="1", body="Standing body."), encoding="utf-8"
+    (root / ".stayfixed" / "local" / "memory" / "project-volatile").mkdir(parents=True)
+    (root / ".stayfixed" / "local" / "memory" / "project-volatile" / "now.md").write_text(
+        note("now", as_of=date.today().isoformat(), body="Volatile body."), encoding="utf-8"
     )
     machine = a_machine(tmp_path)
-    chosen = '[memory]\nmode = "local-only"\ngroups = ["developer"]\n'
+    chosen = '[memory]\nmode = "local-only"\ngroups = ["project-volatile"]\n'
     (root / CONFIG_FILE).write_text(LOCAL_CONFIG.format(memory=chosen), encoding="utf-8")
-    assert cli(root, tmp_path, "memory", "trust", "--in-repo-memory", machine=machine)[0] == 0
-    argv = ("memory", "session-context", "--bundle", "standing-rules")
+    argv = ("memory", "session-context", "--bundle", "volatile-notes")
     code, out, _ = cli(root, tmp_path, *argv, machine=machine)
-    assert (code, "Standing body." in out) == (0, True)
-    unchosen = '[memory]\ngroups = ["developer"]\n'
+    assert (code, "Volatile body." in out) == (0, True)
+    unchosen = '[memory]\ngroups = ["project-volatile"]\n'
     (root / CONFIG_FILE).write_text(LOCAL_CONFIG.format(memory=unchosen), encoding="utf-8")
     assert cli(root, tmp_path, *argv, machine=machine) == (0, "\n", "")

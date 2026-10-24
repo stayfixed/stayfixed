@@ -498,20 +498,23 @@ def test_a_wrapped_bundle_arrives_with_both_of_its_region_markers(tmp_path: Path
     # this is the end-to-end assertion that it does not.
     #
     # `in-repo` mode, because that is the mode in which a store is repository data and a region
-    # is what wraps it. Same wrapper, same command, same scratch machine file.
+    # is what wraps it: its volatile notes reach the session with no approval, as data. Same
+    # wrapper, same command, same scratch machine file.
     root = _project(tmp_path, mode="in-repo")
+    config_file = root / "stayfixed.toml"
+    config_file.write_text(
+        config_file.read_text(encoding="utf-8").replace('"project-stable"', '"project-volatile"'),
+        encoding="utf-8",
+    )
     machine = tmp_path / "config" / "stayfixed" / "config.toml"
     machine.parent.mkdir(parents=True)
-    notes = root / "docs" / "memory" / "project-stable"
+    notes = root / "docs" / "memory" / "project-volatile"
     notes.mkdir(parents=True)
     (notes / "no-force-push.md").write_text(NOTE, encoding="utf-8")
     bin_dir = tmp_path / "bin"
     _fake_binaries(bin_dir)
     walk = Walkthrough(root, root, machine, tmp_path / "home", tmp_path / "data", notes, bin_dir)
-    # The approval is a person's.
-    trusted = _cli(walk, "trust", "approve", "memory", "--machine", str(machine))
-    assert trusted.returncode == 0, trusted.stderr
-    done = _bundle(walk, "standing-rules")
+    done = _bundle(walk, "volatile-notes")
     assert done.returncode == 0, done.stderr
     assert RULE_BODY in done.stdout
     found = re.search(rf"{re.escape(DELIMITER)}:([0-9a-f]+)>>>", done.stdout)

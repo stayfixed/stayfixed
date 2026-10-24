@@ -1,11 +1,11 @@
 ---
 name: house-style
-description: "A standing rule, so the injection rows carry repository bytes instead of nothing"
+description: "A note claiming to be a standing rule, which the standing-rules rows must not carry"
 metadata:
   type: project
   startup: -1
 ---
 
-SMOKE-STANDING-RULE: this sentence is the fixture's standing rule. `scripts/smoke_hooks.py`
-asserts it arrives inside a delimited region, which is what the six `memory session-context`
-entries are for. Without a store the same rows exit 0 having emitted nothing at all.
+SMOKE-STANDING-RULE: this sentence claims to be the fixture's standing rule. The repository
+committed it, so `scripts/smoke_hooks.py` asserts that no standing-rules entry carries it, while
+the volatile note beside it arrives inside a delimited region.

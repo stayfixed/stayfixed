@@ -33,20 +33,16 @@ applies with no trust prompt in a non-interactive session.
 
 **The machine file makes the same claim.** `machine_config_path` reads neither
 `STAYFIXED_CONFIG` nor `XDG_CONFIG_HOME`, since gating one alone is worth nothing: each of them
-reaches the same file, and this area routes the store's overlay anchor (`overlay_root(None)`) and
-the trust record (`trust.record.record_path(None)`) through it. A committed `env` block setting
-`STAYFIXED_CONFIG`, or direnv, mise or a devcontainer setting `XDG_CONFIG_HOME` from a file the
-clone commits, would choose which overlay root `permitted_roots` is computed from, and which
-`trust.json` `may_inject` consults, wherever no `--machine` is threaded.
+reaches the same file, and this area routes the store's overlay anchor (`overlay_root(None)`)
+through it. A committed `env` block setting `STAYFIXED_CONFIG`, or direnv, mise or a devcontainer
+setting `XDG_CONFIG_HOME` from a file the clone commits, would choose which overlay root
+`permitted_roots` is computed from, wherever no `--machine` is threaded.
 
 Stated exactly, because the exposure is not the same size as the invariant: pointing a variable
-somewhere of the author's choosing would **suppress** memory — no overlay root and no recorded
-digest means overlay stores refuse to resolve and the gate fails closed — while making it
-*grant* anything would additionally require a pre-recorded hash matching a digest of the store
-at the clone's absolute path, which is the key `trust` records under. It is still an invariant
-two other properties lean on, and holding it in `config/machine.py` — the foundation's file — is
-what makes the claim above about `env` a claim about the whole module rather than about
-`resolve` alone.
+somewhere of the author's choosing would **suppress** memory — no overlay root means overlay
+stores refuse to resolve. It is still an invariant the binding leans on, and holding it in
+`config/machine.py` — the foundation's file — is what makes the claim above about `env` a claim
+about the whole module rather than about `resolve` alone.
 """
 
 from __future__ import annotations
@@ -105,9 +101,9 @@ class Store:
     #
     # Not an optional keyword on every function that reads the store: a `None` there is not
     # inert — it re-reads the machine file under the owner's home rather than the
-    # one `resolve` was given, silently changing `permitted_roots`, the index destination, and
-    # which `trust.json` is consulted — so a caller that forgot one argument would get a different
-    # overlay, a different write target and a different trust record, with nothing to say so.
+    # one `resolve` was given, silently changing `permitted_roots` and the index destination —
+    # so a caller that forgot one argument would get a different overlay and a different write
+    # target, with nothing to say so.
     #
     # `Store` is frozen and `resolve` builds it exactly once, from the `machine` it was given.
     # Putting the value here makes the mismatch unrepresentable instead of documented.
@@ -616,7 +612,8 @@ def refusal_reason(
 
 
 def inside_project(store: Store) -> bool:
-    """Whether any note actually lives in the repository — the predicate the trust gate turns on.
+    """Whether any note actually lives in the repository — the predicate that decides whether the
+    store's notes reach a session only as data, and never as standing rules.
 
     Not `memory.mode`, which the clone chooses, and not the store directory. What decides whether
     a note is the machine owner's or the repository's is where the note itself sits: `local-only`
@@ -632,8 +629,8 @@ def inside_project(store: Store) -> bool:
     resolved under `root` through `contained`, which refuses a symlink at every level — so a
     group landing outside `store.root` in those modes is a resolution that went wrong, not a
     store belonging to the machine owner. Answering False there is what let a clone that
-    escaped the resolver reach the model with no trust record and no `trust.wrap`: a gate
-    whose default for the unclassifiable is "ungated" is the wrong way round. `overlay` keeps
+    escaped the resolver reach the model with no `trust.wrap`, as standing rules: a predicate
+    whose default for the unclassifiable is "the owner's" is the wrong way round. `overlay` keeps
     its answer, because outside `store.root` is precisely where the overlay's layout puts those
     notes.
     """

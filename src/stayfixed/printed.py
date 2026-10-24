@@ -50,7 +50,7 @@ def quoted(name: str) -> str:
 # (CONTRIBUTING.md#named-caps), and `docs/cli.md` states the number for the refusals that use it
 # (`docs trail`'s stale `[states]` keys and its `[[theme]]` label, the memory store's unresolved
 # groups, what `answered` quotes from a subprocess for `overlay create`, `overlay
-# publish-template`, `attach` and `setup`, the subjects `trust list --all` and `trust revoke`
+# publish-template`, `attach` and `setup`, the subjects `trust list` and `trust revoke`
 # name, and the status or key a report `prove` could not read holds), so a change to either is a
 # change to both. `quoted`
 # escapes a name and does not bound its length, and a TOML key, a label or a group is bounded in

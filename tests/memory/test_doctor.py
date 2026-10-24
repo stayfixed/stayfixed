@@ -94,9 +94,9 @@ def test_a_bundle_that_does_not_fit_its_slots_is_reported(tmp_path: Path) -> Non
     # edits a shipped file — so doctor reports it. Four standing notes of a whole slot each,
     # against the three `standing-rules` entries `hooks/hooks.json` declares.
     #
-    # In the overlay, not in a local-only store: `trust.may_inject` gates a store that lives in
-    # the repository, so an untrusted local store renders every bundle empty and this assertion
-    # would pass for having measured nothing.
+    # In the overlay, not in a local-only store: a store that lives in the repository carries no
+    # standing rule, so its standing bundle is empty and this assertion would pass for having
+    # measured nothing.
     root = _attached(tmp_path)
     store = tmp_path / "overlay" / COMMON_MEMORY
     for index in range(4):

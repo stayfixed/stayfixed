@@ -45,19 +45,12 @@ def test_the_memory_surface_carries_what_every_consumer_reaches_for() -> None:
         # the bundle slots, which tests/hooks/test_hooks_json.py holds the hooks file to
         "SLOTS",
         # the trust region, whole. Reading one needs `markers` and `DELIMITER`, which
-        # tests/test_install_path.py already imports; producing one needs `wrap` and a nonce,
-        # and a forged marker raises `UnsafeNote`. Half a closed vocabulary cannot be used by
-        # the consumer handed a value from it.
+        # tests/test_install_path.py already imports; producing one needs `wrap`, which draws its
+        # own nonce. Half a closed vocabulary cannot be used by the consumer handed a value from
+        # it.
         "markers",
         "DELIMITER",
         "wrap",
-        "new_nonce",
-        "UnsafeNote",
-        # the trust gate. Repository bytes reach a model only after `stayfixed memory trust`
-        # and only inside a delimited region, so an area that injects them has to be able to
-        # ask this area whether it may, to see a store that was trusted and is not any more,
-        # and to tell a broken record from an unapproved store.
-        "may_inject",
         # the binding's one classifier and its whole vocabulary: `attach`, `attach --check`,
         # the `attached` row and the session-start line answer the binding question with it, where
         # a second classifier in `attach` had drifted from this one
@@ -67,8 +60,5 @@ def test_the_memory_surface_carries_what_every_consumer_reaches_for() -> None:
         "UNBOUND",
         # the note a moved `origin` earns, which attach and the session-start line say
         "origin_note",
-        "changed",
-        "TrustState",
-        "UnreadableTrustRecord",
     }
     assert required == set(memory.__all__)

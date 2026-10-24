@@ -989,38 +989,6 @@ def test_every_sentence_that_counts_the_names_doctor_shows_is_the_cap() -> None:
     assert [_NUMBER_WORDS[word] for word in found] == [NAMES_SHOWN] * 3
 
 
-# The documents a reader of the plugin reads, where the old spelling of `trust approve memory` may
-# appear only as its alias note: each line naming it says it is the old spelling.
-_SHIPPED_DOCUMENTS = ("README.md", "SECURITY.md", "CONTRIBUTING.md", "docs/cli.md")
-_SHIPPED_TREES = ("docs/methodology", "skills", "agents")
-OLD_SPELLING = "memory trust"
-ALIAS_MARK = "the old spelling of"
-
-
-def test_no_shipped_document_names_memory_trust_outside_its_alias_note() -> None:
-    # `stayfixed memory trust --in-repo-memory` became `stayfixed trust approve memory`, run by a
-    # person at a terminal, and a document still telling a reader to run the old spelling teaches
-    # the command that goes in 0.5.0. Every mention is the alias note, and the reference and the
-    # README's command block each carry one, so the walk cannot pass by finding none. Mutation
-    # (`mutations/`'s "the README tells a reader to run memory trust again"): the threat-model
-    # paragraph names the old spelling as the command to run.
-    paths = [ROOT / name for name in _SHIPPED_DOCUMENTS]
-    paths += [path for tree in _SHIPPED_TREES for path in sorted((ROOT / tree).rglob("*.md"))]
-    stray: list[str] = []
-    notes: dict[str, int] = {}
-    for path in paths:
-        relative = path.relative_to(ROOT).as_posix()
-        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-            if OLD_SPELLING not in line:
-                continue
-            if ALIAS_MARK in line:
-                notes[relative] = notes.get(relative, 0) + 1
-            else:
-                stray.append(f"{relative}:{number}")
-    assert stray == []
-    assert notes == {"README.md": 1, "docs/cli.md": 1}
-
-
 # The five verdict sentences are `VERDICTS` in `stayfixed.guards.attribute` and are reproduced by
 # hand in `docs/cli.md`'s table; every test that had them read the expectation back out of
 # `VERDICTS`, which is shape 9 of the `sweep-defect-class` skill's own reference — both sides move

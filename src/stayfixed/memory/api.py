@@ -33,7 +33,7 @@ outside it and are not here. The overlay root the machine file records and the c
 `gitenv.GitUnavailable`), because `init` asks them too and the core may not import this area; the
 crossings still pinned are listed in `tests/boundaries/test_delivery.py`.
 
-**Nine more have no importer and stay, each for a reason written here**, because a name
+**Three more have no importer and stay, each for a reason written here**, because a name
 kept in silence is what made this pass necessary:
 
 - **The store, and the rest of the binding's vocabulary**: `Store` is what `resolve` returns, and a
@@ -42,22 +42,14 @@ kept in silence is what made this pass necessary:
   `BINDING_STATES` completes the closed vocabulary `binding_state` answers in, beside the two
   states that have a caller, for the reason the trust region's bullet below gives.
 
-- **The rest of the trust region's vocabulary**: `wrap`, `new_nonce` and `UnsafeNote`, beside
-  the `DELIMITER` and `markers` that already have a caller. Reading such a region needs
-  `markers` and `DELIMITER`; producing one needs `wrap` and a nonce from `new_nonce`; a forged
-  marker raises `UnsafeNote`. Publishing the reading half and hiding the writing half leaves a
-  consumer able to recognise the region and unable to make one, which is the reason
+- **The rest of the trust region's vocabulary**: `wrap`, beside the `DELIMITER` and `markers`
+  that already have a caller. Reading such a region needs `markers` and `DELIMITER`; producing
+  one needs `wrap`, which draws its own nonce. Publishing the reading half and hiding the writing
+  half leaves a consumer able to recognise the region and unable to make one, which is the reason
   `attach/api.py` gives for `STATES` and `doctor/api.py` for `STATUSES`: half a closed
-  vocabulary cannot be used by the consumer that is handed a value from it.
-- **The trust gate**: `may_inject`, `changed`, `TrustState` and `UnreadableTrustRecord`. The
-  project's standing constraint is that anything a repository authored reaches a model only
-  after `stayfixed trust approve memory` and only inside a delimited region; a consumer that injects
-  repository bytes therefore has to be able to *ask this area* whether it may, to honour the
-  trust gate's re-prompt predicate — "a store that was trusted and is not any more" — and to
-  tell "this trust record is broken" from "this store is not approved", which is the whole
-  point of the class. A requirement a consumer cannot import is a requirement with no way to
-  meet it, and this is the one group on this list where the cost of being wrong is a
-  repository's bytes reaching a model unwrapped.
+  vocabulary cannot be used by the consumer that is handed a value from it. The project's
+  standing constraint is that anything a repository authored reaches a model only inside such a
+  region, so a consumer that injects repository bytes has to be able to make one.
 
 **Not here, though they look like candidates**: names with no importer in `src/`, `scripts/` or
 `tests/`, no published signature naming them, and no reader reaching them by string. Each is
@@ -69,9 +61,7 @@ this area's tests use; an area that comes to need one grows this list by the rul
   symlinked index, calls none of them; the index is a command (`memory index`) and the areas
   that want one run it.
 - **The notes group** — `read_note`, `render_note`, `with_index`, `write_note`, `NoteError`,
-  `NoteType` — and nothing outside this area imports them. `snapshot`, `refresh_if_trusted` and
-  `Snapshot` are the dance a caller of `write_note` must perform, so with `write_note` off this
-  surface they have no caller here either.
+  `NoteType` — and nothing outside this area imports them.
 - **The refs group** — `check_refs`, `unresolved`, `audience_violations`, `RefsReport`: an area
   existing is not the same as an area importing, and none imports these.
 - **The inventory group** — `inventory`, `totals`, `Entry` — and nothing outside this area
@@ -103,17 +93,7 @@ from stayfixed.memory.store import (
     read_binding_record,
     resolve,
 )
-from stayfixed.memory.trust import (
-    DELIMITER,
-    TrustState,
-    UnreadableTrustRecord,
-    UnsafeNote,
-    changed,
-    markers,
-    may_inject,
-    new_nonce,
-    wrap,
-)
+from stayfixed.memory.trust import DELIMITER, markers, wrap
 
 __all__ = [
     "BINDING_STATES",
@@ -126,17 +106,11 @@ __all__ = [
     "STORE_DIR",
     "UNBOUND",
     "Store",
-    "TrustState",
-    "UnreadableTrustRecord",
-    "UnsafeNote",
     "binding_state",
     "build_composed",
-    "changed",
     "composed_directory",
     "link_sources",
     "markers",
-    "may_inject",
-    "new_nonce",
     "origin_note",
     "permitted_roots",
     "read_binding_record",

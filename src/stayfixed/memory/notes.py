@@ -220,9 +220,7 @@ class Note:
         `"team/project-stable"` and `walk` finds the notes under it, but the folder's name is
         then `"project-stable"` while `render_index` looks each group up by its configured
         string: the section matched nothing and vanished from `MEMORY.md` entirely, with
-        `memory index --check` reporting "index is current" and exiting 0. The routing keys
-        disagreed too — `trust._files` keys on the configured group and `index._relative` on
-        this — so a nested group's digest entry and its index line named two different files.
+        `memory index --check` reporting "index is current" and exiting 0.
         """
         return self.store_group or self.path.parent.name
 

@@ -7,9 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from stayfixed.memory.commands import _NOT_REFRESHED
 from stayfixed.setup.machine import SETUP_SANDBOXED
-from stayfixed.trust.boundary import ONLY_OUTSIDE, RUN_OUTSIDE, SANDBOX_REFUSED
+from stayfixed.trust.boundary import RUN_OUTSIDE, SANDBOX_REFUSED
 from stayfixed.trust.record import SANDBOXED
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -44,9 +43,8 @@ def test_no_module_writes_the_sandbox_sentence_by_hand() -> None:
     [
         (SANDBOXED, RUN_OUTSIDE.format(command="this command")),
         (SETUP_SANDBOXED, RUN_OUTSIDE.format(command="`stayfixed setup`")),
-        (_NOT_REFRESHED, ONLY_OUTSIDE),
     ],
-    ids=["trust-record", "setup", "memory-index"],
+    ids=["trust-record", "setup"],
 )
 def test_every_writer_says_the_one_sentence_with_its_remedy(sentence: str, remedy: str) -> None:
     # No mutation of its own: each writer's constant is filled from the template, so a writer that

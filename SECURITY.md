@@ -46,10 +46,9 @@ In scope, and treated as security rather than as an ordinary bug:
 - **Containment.** Any write, or any read that feeds a write, that lands outside the project
   root or outside the machine owner's own store — through `..`, an absolute path, a symlink at
   any component, a TOCTOU window, or a configured value that reaches no guard.
-- **The trust gate.** Any way repository-authored text reaches the model without
-  `stayfixed trust approve memory` having been given, or reaches it outside `trust.wrap`'s delimited
-  region — including through a channel stayfixed hands to the harness, such as a symlink into
-  the harness's own project-memory directory.
+- **The data region.** Any way repository-authored text reaches the model outside `trust.wrap`'s
+  delimited region, or as a standing rule — including through a channel stayfixed hands to the
+  harness.
 - **Marker forgery.** Any note, index entry or configuration value that can close or forge the
   repository-data region it is wrapped in.
 - **The machine anchors.** Any way a repository can choose which machine configuration file,
@@ -78,8 +77,8 @@ Out of scope:
   `HOME` and an empty `XDG_CONFIG_HOME` in project and plugin hooks. `XDG_CONFIG_HOME`, git's other door to that
   configuration, is dropped before any `git` runs.
 - An agent with an unsandboxed shell writing an approval itself. An approval in `trust.json`
-  holds against a repository's bytes: stayfixed never writes the record from them, a clone, a
-  pull or a pull request does not reach it, and a changed note lapses it. A repository whose hooks
+  holds against a repository's bytes: stayfixed never writes the record from them, and a clone, a
+  pull or a pull request does not reach it. A repository whose hooks
   the harness runs is code running as you, which can write any file you can (the last item
   below). An agent that can run any command as you can also write any file
   you can, the record included, and stayfixed neither stops nor checks that: the harness's sandbox
@@ -89,10 +88,8 @@ Out of scope:
   agent's own writes, and Claude Code loads the first as instructions and can load the second,
   through an import or its project instructions setting (read in the documentation, not
   measured).
-  `stayfixed trust approve` asks for no terminal: against such an agent a terminal check only
-  slowed a bare call, and an agent that opened a pseudo-terminal passed it.
 - A repository being able to make stayfixed **refuse** — suppressing memory. Undesirable, and an
-  ordinary bug, but not a vulnerability: the trust gate fails closed on purpose.
+  ordinary bug, but not a vulnerability: the resolver fails closed on purpose.
 - Findings in a dependency that stayfixed does not reach; it has no runtime dependencies.
 - A variable the dynamic loader reads (`LD_PRELOAD` and `LD_LIBRARY_PATH` on Linux,
   `DYLD_INSERT_LIBRARIES` and `DYLD_LIBRARY_PATH` on macOS) reaching a hook, from a committed `env`

@@ -92,10 +92,6 @@ class Reconciliation:
     harvested: list[str]
     provisional: list[str]
     unreadable: list[tuple[Path, str]]
-    # The notes this run actually rewrote, empty when `write=False`. `trust.refresh_if_trusted`
-    # needs to know which files stayfixed itself authored, so that carrying trust across
-    # `memory index` cannot also carry it across whatever else landed on disk.
-    written: list[Path] = field(default_factory=list)
     # Notes that had a line waiting for them in the index and were not allowed to take it,
     # because the index is repository data and the note is not (`_harvestable`). They get a
     # provisional line from their own description instead, so they appear in `provisional` too;
@@ -209,20 +205,12 @@ def _harvestable(store: Store, source: Path | None, note: Note) -> bool:
     into the machine's own overlay. `reconcile(write=True)` then persisted repository-authored
     titles into `common/memory` — shared with *every project on the machine* and synced across
     machines — from where another project whose index is `attach`'s symlink injects them raw,
-    unwrapped, with no trust record anywhere in the chain.
+    unwrapped.
 
     So the rule is one trust domain per harvest: **repository bytes do not become machine
     state.** A note that is itself repository data may take a repository index's line — nothing
     crosses — and a machine-owned index may supply anything, because those bytes are already
     the owner's.
-
-    Deliberately not `trust.may_inject(..., repository_data=True)`, the review's other
-    suggestion. A trust record says "this repository's memory may reach the model, as data". It
-    does not say "this repository's memory may become my machine-level memory, unwrapped, in
-    every other project". Those are different grants and only the first is the one the owner
-    makes, so the gate here is the domain, not the record — which also means the ordinary
-    same-domain cases keep working with no record at all, as they must: requiring one would
-    stop `memory index` dead on a fresh in-repo store.
     """
     if source is None or not in_repository(store, source):
         return True
@@ -308,7 +296,6 @@ def reconcile(store: Store, config: Config, *, write: bool) -> Reconciliation:
     notes: list[Note] = []
     harvested: list[str] = []
     provisional: list[str] = []
-    written: list[Path] = []
     refused: list[str] = []
     refused_publish: list[str] = []
     for note in found.notes:
@@ -333,7 +320,6 @@ def reconcile(store: Store, config: Config, *, write: bool) -> Reconciliation:
             provisional.append(note.name)
         if write:
             write_note(note)
-            written.append(note.path)
         if not _publishable(store, to_machine, note):
             refused_publish.append(note.name)
         notes.append(note)
@@ -348,7 +334,6 @@ def reconcile(store: Store, config: Config, *, write: bool) -> Reconciliation:
         harvested,
         provisional,
         found.unreadable,
-        written,
         refused,
         refused_publish,
         refused_extra,
@@ -565,8 +550,7 @@ def write_index(store: Store, config: Config, text: str) -> Path:
     `_destination` cannot answer without it, and answering without it was the defect; the
     overlay half comes from `store.machine`. The returned path is the file actually written,
     which in overlay mode is the shared copy in the overlay rather than the link inside the
-    checkout; `trust.refresh_if_trusted` resolves both to the same file, so the record still
-    covers the index it just wrote.
+    checkout.
     """
     if not fsops.is_dir(store.path):
         raise Failure(f"{store.path} does not exist; the store was not created")

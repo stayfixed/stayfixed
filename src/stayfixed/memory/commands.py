@@ -3,15 +3,13 @@
 `--store` is an override of *where the notes are*, not of the rules about them: it is held to
 the same target rule as a link the resolver found, so passing a path is not a way around the
 overlay binding. `--machine` exists for the same reason the resolver takes one — a test that
-did not thread it would read the developer's real configuration and, worse, write a trust
-record into their home directory.
+did not thread it would read the developer's real configuration.
 
 It is threaded exactly twice, into `command_config` (`session_config` for `session-context`,
 which reads the file the way a session does) and into `resolve`, and never again: `resolve` puts
 it on the `Store` it builds, so every later call takes it from there. It used to be an optional
-keyword on about twenty functions, and the only thing keeping a command's overlay, its index
-destination and its trust record in agreement was that each of those call sites remembered to
-pass it.
+keyword on about twenty functions, and the only thing keeping a command's overlay and its index
+destination in agreement was that each of those call sites remembered to pass it.
 """
 
 from __future__ import annotations
@@ -40,16 +38,6 @@ from stayfixed.memory.inventory import inventory, totals
 from stayfixed.memory.store import Store, Unresolved, resolved
 from stayfixed.printed import printable, quoted
 from stayfixed.result import Result
-from stayfixed.trust.api import (
-    ONLY_OUTSIDE,
-    PERSON_RUNS,
-    SANDBOX_REFUSED,
-    SandboxedWrite,
-    State,
-    approve_kind,
-    kind_context,
-    state,
-)
 
 
 def _machine(args: argparse.Namespace) -> Path | None:
@@ -68,8 +56,7 @@ def _machine(args: argparse.Namespace) -> Path | None:
 # So the detail is kept and wrapped, rather than dropped. A person running `memory index` by
 # hand needs to know *which* group entry was refused; a model reading the same bytes needs the
 # region markers that say the text is data. `trust.wrap` is what `refusal_reason` names as the
-# way to have both, and `UnsafeNote` — a `Refusal`, exit 2 — is the right answer to a value
-# that tries to forge the markers.
+# way to have both: the region's nonce is one the text does not hold, so no value can close it.
 #
 # A reason that has words of stayfixed's own — which cause, and the way out — says them *before*
 # the region: inside it they are data a model is told not to act on, and the way out is the one
@@ -81,7 +68,7 @@ def _no_store(reason: Unresolved) -> Failure:
     if reason.detail is None:
         return Failure(f"no memory store: {reason.said}")
     lead = _SAID.format(said=reason.said)
-    return Failure(f"{lead}\n{trust.wrap(reason.detail, trust.new_nonce())}")
+    return Failure(f"{lead}\n{trust.wrap(reason.detail)}")
 
 
 def _store(args: argparse.Namespace) -> tuple[Store, Config]:
@@ -97,8 +84,7 @@ def _store_of(args: argparse.Namespace, root: Path, config: Config, machine: Pat
 
 
 def store_at(root: Path, config: Config, machine: Path | None, override: str | None) -> Store:
-    """`_store_of` for a caller holding `--store`'s value rather than the parsed arguments: the
-    `memory` approval kind (`memory.approvals`) resolves the store as `memory trust` did."""
+    """`_store_of` for a caller holding `--store`'s value rather than the parsed arguments."""
     # `resolved` and not `resolve` + `refusal_reason`: the pair walked the whole resolution
     # twice, four `git` queries with a five-second timeout apiece each time, so a hanging `git`
     # cost a refused `memory session-context` up to forty seconds — once per `SessionStart`
@@ -109,37 +95,6 @@ def store_at(root: Path, config: Config, machine: Path | None, override: str | N
     return found[0]
 
 
-# How each sentence below asks for the store's approval: of the person at the machine, never of an
-# agent (`trust.api.PERSON_RUNS`).
-_APPROVE = PERSON_RUNS.format(command="stayfixed trust approve memory")
-# What the trust gate withholds until there is a record, said where a person will read it:
-# `bundles.blocks` returns `[]` for repository-data notes. `trust.may_inject` decides when it is
-# said.
-# The failure this closes was silent: `memory index` rewrites every note and `MEMORY.md`, so it
-# used to revoke the very record it depends on, and nothing in any summary said why the model had
-# stopped receiving standing rules.
-_UNTRUSTED = (
-    "this store holds repository data with no trust record, so none of it reaches a session "
-    "through the standing-rules and volatile-notes bundles; " + _APPROVE
-)
-# The narrow case where a stayfixed-authored write cannot carry trust forward: the store changed
-# under it, so re-recording would bless bytes the owner has never looked at, or the record did —
-# the owner revoked the approval, or gave a new one, while the command ran — so re-recording would
-# undo the owner's own word. `refresh_if_trusted` refuses rather than guess, which is right, and
-# the human has to be told which it was.
-_DROPPED = (
-    "the store or its trust record changed while this command ran, so the approval was not "
-    "carried over; review the change, and if the store should reach a session, " + _APPROVE
-)
-# The refresh's write refused as an agent's sandbox refuses one (`trust.boundary`): the files were
-# written and the approval was left at the digest the person gave, which they no longer match, so
-# a later run cannot carry it either and only a new approval brings the store back.
-_NOT_REFRESHED = SANDBOX_REFUSED.format(
-    outcome="the store's approval could not be refreshed and was left as it was",
-    directory="the trust record's directory",
-    remedy=f"{ONLY_OUTSIDE}; the approval no longer matches the files this command wrote, so "
-    "review them, and if the store should reach a session, " + _APPROVE,
-)
 # What the write path put into notes that nobody curated: an `index:` line taken from a note's
 # `metadata.index` or, failing that, its description. Said on the line and not only in `--json`'s
 # `provisional`, because the run rewrote those notes and a person running it is who curates them.
@@ -167,17 +122,6 @@ _EXTRA_NOT_PUBLISHED = (
     "{names} took no pointer in {index}: `memory.index_extra` lives in this repository's "
     "stayfixed.toml, while this run's destination reaches outside it"
 )
-
-
-def _gate(trusted: bool) -> str | None:
-    """Whether the trust gate is what a person should be told about, after a command ran;
-    `trusted` is the caller's own answer to `trust.may_inject`, asked once per command.
-
-    Deliberately not wired into `session-context`: that command's `Result.summary` *is* the
-    text the `SessionStart` entry emits, so a diagnostic there would be injected into the model
-    rather than read by anyone. The commands a person runs by hand are where this belongs.
-    """
-    return None if trusted else _UNTRUSTED
 
 
 def _with(summary: str, note: str | None) -> str:
@@ -265,8 +209,6 @@ def _findings(report: IndexCheck, config: Config) -> list[str]:
 
 def run_index(args: argparse.Namespace) -> Result:
     store, config = _store(args)
-    # Taken before anything is written, so it records the bytes the owner actually approved.
-    before = trust.snapshot(store, config)
     reconciled = reconcile(store, config, write=not args.check)
     report = check_index(store, config, reconciled)
     findings = _findings(report, config)
@@ -279,9 +221,8 @@ def run_index(args: argparse.Namespace) -> Result:
             else f"index is current: {report.words} words, {report.lines} lines"
         )
         summary = _with(_with(summary, _harvest(reconciled, store)), _publish(reconciled, store))
-        trusted = trust.may_inject(store, config)
         return Result(
-            _with(summary, _gate(trusted)),
+            summary,
             {
                 "drifted": report.drifted,
                 "words": report.words,
@@ -294,28 +235,12 @@ def run_index(args: argparse.Namespace) -> Result:
                 "refused_publish": reconciled.refused_publish,
                 "refused_extra": reconciled.refused_extra,
                 "unreadable": report.unreadable,
-                "trusted": trusted,
             },
             # The same list the summary is built from, so the two can no longer disagree.
             exit_code=1 if findings else 0,
         )
     text = render_index(reconciled, config, store)
     path = write_index(store, config, text)
-    try:
-        carried = trust.refresh_if_trusted(store, config, before, [*reconciled.written, path])
-        sandboxed = False
-    except SandboxedWrite:
-        # The index is written; the refresh alone was refused, and nothing reached the record.
-        carried, sandboxed = False, True
-    # Asked after the write and its refresh, which is the state the next session meets.
-    trusted = trust.may_inject(store, config)
-    note: str | None
-    if sandboxed:
-        note = _NOT_REFRESHED
-    elif before.trusted and not carried:
-        note = _DROPPED
-    else:
-        note = _gate(trusted)
     # Exit 0: the write succeeded, and `--check` is the mode that fails a build. The findings
     # are still said, because a person running this by hand is who can act on them.
     wrote = "; ".join(
@@ -324,7 +249,7 @@ def run_index(args: argparse.Namespace) -> Result:
     wrote = _with(wrote, _provisional(reconciled))
     wrote = _with(_with(wrote, _harvest(reconciled, store)), _publish(reconciled, store))
     return Result(
-        _with(wrote, note),
+        wrote,
         {
             "path": str(path),
             "words": report.words,
@@ -337,7 +262,6 @@ def run_index(args: argparse.Namespace) -> Result:
             "unreadable": report.unreadable,
             "over_budget": report.over_budget,
             "over_caps": report.over_caps,
-            "trusted": trusted,
         },
     )
 
@@ -360,33 +284,6 @@ def run_session_context(args: argparse.Namespace) -> Result:
         return Result("")
     text = render(bundle, _store_of(args, root, config, machine), config, part=args.part)
     return Result(text if text is not None else "")
-
-
-# What the old spelling says after it ran, so a person learns the new one before it goes.
-ALIAS_NOTE = (
-    "`stayfixed memory trust --in-repo-memory` is now `stayfixed trust approve memory`; the old "
-    "spelling is removed in 0.5.0"
-)
-
-
-def run_trust(args: argparse.Namespace) -> Result:
-    """The old spelling of `stayfixed trust approve memory`: the same approve path.
-
-    Its `--json` keeps the old spelling's keys for as long as the spelling lives, beside the new
-    ones, each read off the new run: `was_trusted`, whether the store was approved at its digest
-    before the run; `trusted`, whether the record holds that digest after it; `digest`, the
-    store's digest."""
-    context, _ = kind_context(args)
-    approved = approve_kind(trust.MEMORY, context)
-    # The memory kind describes one store per checkout, or refuses before anything is approved.
-    (store,) = approved.data["approved"]
-    after = state(context.machine, trust.MEMORY, store["subject"], store["digest"])
-    old = {
-        "was_trusted": store["was"] == State.APPROVED,
-        "trusted": after is State.APPROVED,
-        "digest": store["digest"],
-    }
-    return Result(f"{approved.summary}\n{ALIAS_NOTE}", {**approved.data, **old}, approved.exit_code)
 
 
 def run_inventory(args: argparse.Namespace) -> Result:
@@ -415,13 +312,7 @@ def run_doctor_bundles(args: argparse.Namespace) -> Result:
     }
     bad = [name for name, row in report.items() if row["overflow"] or row["oversized"]]
     summary = "every bundle fits its slots" if not bad else f"does not fit: {', '.join(bad)}"
-    # A bundle that fits because it is empty is not a bundle that fits. `doctor` reads this.
-    trusted = trust.may_inject(store, config)
-    return Result(
-        _with(summary, _gate(trusted)),
-        {"bundles": report, "trusted": trusted},
-        exit_code=1 if bad else 0,
-    )
+    return Result(summary, {"bundles": report}, exit_code=1 if bad else 0)
 
 
 # The refusal carries the resolver's reasons rather than naming a command that would report
@@ -454,7 +345,7 @@ def _unavailable(unavailable: dict[str, str]) -> Refusal:
     # harness, which keeps at most `[native_caps] hook_output_chars` of a hook's output.
     reasons = "\n".join(f"{quoted(group)}: {unavailable[group]}" for group in sorted(unavailable))
     head = _UNAVAILABLE_GROUPS.format(count=len(unavailable))
-    return Refusal(f"{head}\n{trust.wrap(reasons, trust.new_nonce())}")
+    return Refusal(f"{head}\n{trust.wrap(reasons)}")
 
 
 def run_refs(args: argparse.Namespace) -> Result:
@@ -505,29 +396,6 @@ def register(groups: SubParsers) -> None:
     context.add_argument("--bundle", required=True, help=", ".join(b.value for b in Bundle))
     context.add_argument("--part", type=int, default=1, help="which numbered slot to render")
     context.set_defaults(func=run_session_context)
-
-    trusted = common_flags(
-        sub.add_parser(
-            "trust",
-            help="the old spelling of `stayfixed trust approve memory`, removed in 0.5.0",
-        ),
-        store=True,
-    )
-    trusted.add_argument(
-        "--in-repo-memory",
-        action="store_true",
-        required=True,
-        # Required and never read by `run_trust`: the old spelling required it, and an alias keeps
-        # its spelling whole until it is removed. It stops nothing, and there is nothing here to
-        # branch on: trust is only ever *consulted* for content that
-        # lives in the repository — the notes, when `inside_project(store)`, and `MEMORY.md`
-        # whenever it resolves inside the repository, which it does in overlay mode too, since
-        # `store.path` is a real directory there. For a store holding neither,
-        # `trust.may_inject` short-circuits to `True`, so recording a hash for it is inert
-        # rather than dangerous.
-        help="the only kind of store trust applies to",
-    )
-    trusted.set_defaults(func=run_trust)
 
     listing = common_flags(
         sub.add_parser("inventory", help="what a memory sweep reads"), store=True

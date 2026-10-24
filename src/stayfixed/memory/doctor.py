@@ -77,8 +77,8 @@ def _store_debris(context: Context, answers: Answers) -> Row:
     """Files in the note store that are not notes.
 
     Counted and not named. A filename in the store is repository-authored in `in-repo` and
-    `local-only` mode — the two the preset ships — so the count is this check's own answer and
-    the remedy names the command that lists them under the trust gate. In `in-repo` mode the tree
+    `local-only` mode, so the count is this check's own answer and the remedy names the command
+    that lists them. In `in-repo` mode the tree
     is the repository's too, so the walk lists at most `fsops.WALK_ENTRIES` entries, the cap every
     walk with a "could not tell" answer reads, and past it says it could not tell.
     """

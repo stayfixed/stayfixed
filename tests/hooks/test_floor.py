@@ -320,19 +320,18 @@ def test_memory_session_context_reads_a_newer_key_with_a_note(
     # starts with came back empty. It reads the file the way a session does now. Mutation
     # (`mutations/`'s "memory session-context refuses what a session reads"): nothing is printed.
     root = tmp_path / "project"
-    notes = root / ".stayfixed" / "local" / "memory" / "developer"
+    notes = root / ".stayfixed" / "local" / "memory" / "project-volatile"
     notes.mkdir(parents=True)
-    meta = "metadata:\n  type: project\n  startup: 1\n"
+    meta = "metadata:\n  type: project\n"
     (notes / "a.md").write_text(NOTE.format(name="a", meta=meta, body="Body."), encoding="utf-8")
     (root / "stayfixed.toml").write_text(MEMORY_CONFIG, encoding="utf-8")
     machine = tmp_path / "machine.toml"
     machine.write_text("", encoding="utf-8")
     common = ["--root", str(root), "--machine", str(machine)]
-    assert invoke(["trust", "approve", "memory", *common]) == 0
     with (root / "stayfixed.toml").open("a", encoding="utf-8") as document:
         document.write("\n[newer]\nx = 1\n")
     capsys.readouterr()
-    argv = ["memory", "session-context", "--bundle", "standing-rules", *common]
+    argv = ["memory", "session-context", "--bundle", "volatile-notes", *common]
     assert invoke(argv) == 0
     assert "Body." in capsys.readouterr().out
 
@@ -341,22 +340,21 @@ def test_memory_session_context_reads_past_a_broken_machine_file(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # A machine file that does not load ended `memory session-context` with exit 1 in every memory
-    # mode, so a session lost its standing rules while its `SessionStart` notice said the preset's
+    # mode, so a session lost its notes while its `SessionStart` notice said the preset's
     # values stood in. The store now reads such a file as no overlay recorded, and the notes still
     # arrive. Mutation (`mutations/`'s "the store's overlay read lets a machine file it cannot read
     # end a session's notes"): exit 1 and nothing printed.
     root = tmp_path / "project"
-    notes = root / ".stayfixed" / "local" / "memory" / "developer"
+    notes = root / ".stayfixed" / "local" / "memory" / "project-volatile"
     notes.mkdir(parents=True)
-    meta = "metadata:\n  type: project\n  startup: 1\n"
+    meta = "metadata:\n  type: project\n"
     (notes / "a.md").write_text(NOTE.format(name="a", meta=meta, body="Body."), encoding="utf-8")
     (root / "stayfixed.toml").write_text(MEMORY_CONFIG, encoding="utf-8")
     machine = tmp_path / "machine.toml"
     machine.write_text("", encoding="utf-8")
     common = ["--root", str(root), "--machine", str(machine)]
-    assert invoke(["trust", "approve", "memory", *common]) == 0
     machine.write_text("[overlay\n", encoding="utf-8")
     capsys.readouterr()
-    argv = ["memory", "session-context", "--bundle", "standing-rules", *common]
+    argv = ["memory", "session-context", "--bundle", "volatile-notes", *common]
     assert invoke(argv) == 0
     assert "Body." in capsys.readouterr().out

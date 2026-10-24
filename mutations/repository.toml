@@ -2741,15 +2741,6 @@ reddens = [
   "tests/test_documents.py::test_the_reference_counts_the_cores_rows_and_the_private_layers_apart",
 ]
 
-# The shipped documents name `stayfixed memory trust` only as the old spelling of `trust approve
-# memory`.
-[[mutation]]
-name = "the README tells a reader to run memory trust again"
-file = "README.md"
-before = "repository reach the model only after you run `stayfixed trust approve memory` once, at a"
-after = "repository reach the model only after you run `stayfixed memory trust` once, at a"
-reddens = ["tests/test_documents.py::test_no_shipped_document_names_memory_trust_outside_its_alias_note"]
-
 # A stack's code may stand in a directory with no profile; a core import of it is a stack import
 # all the same.
 [[mutation]]

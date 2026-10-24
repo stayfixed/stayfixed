@@ -99,10 +99,6 @@ def test_memory_fit_and_doctor_answer_alike_under_the_owners_budget(
     # passes the raised budget's bundle while the row is red.
     root, path = _project(tmp_path, machine, volatile=12)
     common = ["--root", str(root), "--machine", str(path)]
-    # Approved, so the bundles carry the notes: a store of repository data with no record renders
-    # nothing, which fits any slot.
-    assert invoke(["trust", "approve", "memory", *common]) == 0
-    capsys.readouterr()
     assert invoke(["memory", "fit", "--json", *common]) == code
     report = json.loads(capsys.readouterr().out)["bundles"]["volatile-notes"]
     assert bool(report["overflow"] or report["oversized"]) is bool(code)

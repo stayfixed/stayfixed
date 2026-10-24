@@ -26,7 +26,7 @@ from stayfixed.config.schema import Config
 from stayfixed.memory import trust
 from stayfixed.memory.index import is_volatile
 from stayfixed.memory.notes import Note, walk
-from stayfixed.memory.store import Store
+from stayfixed.memory.store import Store, inside_project
 
 
 class Bundle(StrEnum):
@@ -167,19 +167,18 @@ def _volatile(store: Store, config: Config) -> list[str]:
 
 
 def blocks(bundle: Bundle, store: Store, config: Config) -> list[str]:
-    # Every bundle is built from the store's notes, so one question decides both the gate and
-    # the wrap: whether those notes are content the repository shipped.
-    from_repository = trust.is_repository_data(store)
-    if not trust.may_inject(store, config, repository_data=from_repository):
-        return []
-    produced = {
-        Bundle.STANDING_RULES: lambda: _standing(store, config),
-        Bundle.VOLATILE_NOTES: lambda: _volatile(store, config),
-    }[bundle]()
-    if not produced or not from_repository:
+    # Every bundle is built from the store's notes, so one question decides what each may carry:
+    # whether those notes are content the repository shipped. Such a note reaches a session with
+    # no approval, as the harness delivers the same repository's `CLAUDE.md`, but only as data —
+    # inside the region `trust.wrap` marks — and never as a standing rule, whatever it says
+    # about itself.
+    from_repository = inside_project(store)
+    if bundle is Bundle.STANDING_RULES:
+        return [] if from_repository else _standing(store, config)
+    produced = _volatile(store, config)
+    if not from_repository:
         return produced
-    nonce = trust.new_nonce()
-    return [trust.wrap(block, nonce) for block in produced]
+    return [trust.wrap(block) for block in produced]
 
 
 def split(parts: Sequence[str], cap: int) -> list[str]:

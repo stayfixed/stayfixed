@@ -195,7 +195,7 @@ reddens = [
 [[mutation]]
 name = "the exfiltration scenario's positive control cannot fail"
 file = "scripts/smoke_exfiltration.py"
-before = "        and CANARY in emitted.stdout"
+before = "        and CARRIED in carried.stdout"
 after = "        and True"
 reddens = [
   "tests/scripts/test_smoke_scripts.py::test_the_exfiltration_scenario_reports_a_row_that_went_the_wrong_way",
@@ -217,8 +217,8 @@ reddens = [
 [[mutation]]
 name = "the smoke job demands an exfiltration summary the scenario no longer prints"
 file = ".github/workflows/smoke.yml"
-before = "          grep -qx \"7 row(s), 0 failure(s)\" \"$RUNNER_TEMP/hostile.out\""
-after = "          grep -qx \"6 row(s), 0 failure(s)\" \"$RUNNER_TEMP/hostile.out\""
+before = "          grep -qx \"5 row(s), 0 failure(s)\" \"$RUNNER_TEMP/hostile.out\""
+after = "          grep -qx \"4 row(s), 0 failure(s)\" \"$RUNNER_TEMP/hostile.out\""
 reddens = [
   "tests/test_check_workflow.py::test_the_smoke_job_demands_the_summary_the_exfiltration_scenario_prints_over_every_row",
 ]
@@ -904,28 +904,6 @@ reddens = [
   "tests/scripts/test_smoke_scripts.py::test_hooks_json_gaining_an_entry_is_reported_rather_than_quietly_run",
 ]
 
-# The owner's own act, without which the injection rows are back to proving nothing: the store
-# is repository data and emits only once somebody has said so. `revoke` records nothing, and
-# with nothing recorded it exits 1, so the run reports the failure instead of proceeding — which
-# is the behaviour under test, because a smoke run that could not trust the fixture must say so
-# rather than print ten green rows over empty output.
-[[mutation]]
-name = "the hook smoke stops recording the owner's trust"
-file = "scripts/smoke_hooks.py"
-before = """
-            "trust",
-            "approve",
-            "memory",
-"""
-after = """
-            "trust",
-            "revoke",
-            "memory",
-"""
-reddens = [
-  "tests/scripts/test_smoke_scripts.py::test_every_hook_entry_answers_its_sample_event_through_the_checkout",
-]
-
 # The other script's floor. Six of its eight rows assert an ABSENCE, and a report holding one
 # row satisfies `failures == 0` identically — measured, with `report.rows[:1]` before the
 # summary and the whole test module still green. Banking only the failures is the same shape
@@ -935,21 +913,6 @@ name = "the exfiltration scenario stops recording the rows that passed"
 file = "scripts/smoke_exfiltration.py"
 before = "        self.rows.append((ok, label, evidence))"
 after = "        self.rows.append((ok, label, evidence)) if not ok else None"
-reddens = [
-  "tests/scripts/test_smoke_scripts.py::test_the_exfiltration_scenario_holds_against_the_checkout",
-]
-
-# Row 4 of the scenario — "with no record at all the note is never injected" — was row 2's
-# result read a second time: row 2 changed `canary.md` and never restored it, so the record had
-# already lapsed and the unlink could not change anything. Measured: pointing `trust_record()`
-# at a path that does not exist made the unlink a no-op, left `trust.json` 240 bytes on disk,
-# and the row still reported ok. It now restores the note, re-records, and asserts the record's
-# presence before and absence after.
-[[mutation]]
-name = "the exfiltration scenario deletes a trust record that was never there"
-file = "scripts/smoke_exfiltration.py"
-before = '    return planted.home / ".config" / "stayfixed" / "trust.json"'
-after = '    return planted.home / ".config" / "stayfixed" / "absent.json"'
 reddens = [
   "tests/scripts/test_smoke_scripts.py::test_the_exfiltration_scenario_holds_against_the_checkout",
 ]
@@ -3545,45 +3508,6 @@ after = 'RED_RUN_NOTE = "Before calling this red a flake:"'
 reddens = [
   "tests/scripts/test_smoke_scripts.py::test_the_hook_smoke_asks_for_the_red_run_note_in_the_words_the_note_opens_with",
 ]
-
-# A pseudo-terminal whose command cannot start closes both its ends, not only the one the child
-# would have held.
-[[mutation]]
-name = "a pseudo-terminal whose command cannot start keeps its controller open"
-file = "scripts/ptyrun.py"
-before = "    except BaseException:\n        # No child will close its end"
-after = "    except ZeroDivisionError:\n        # No child will close its end"
-reddens = ["tests/scripts/test_ptyrun.py::test_a_command_that_cannot_start_leaves_no_descriptor_open"]
-
-# The read has a deadline: a command still holding the terminal at it is killed, its whole process
-# group, and the caller is told so.
-[[mutation]]
-name = "a pseudo-terminal read waits past its deadline"
-file = "scripts/ptyrun.py"
-before = "    give_up = time.monotonic() + deadline"
-after = "    give_up = time.monotonic() + DEADLINE_SECONDS"
-reddens = ["tests/scripts/test_ptyrun.py::test_a_command_that_does_not_finish_is_killed_at_the_deadline"]
-
-[[mutation]]
-name = "a pseudo-terminal command past its deadline is left running"
-file = "scripts/ptyrun.py"
-before = "    _kill(child)\n    tail = b\"\".join(chunks)"
-after = "    tail = b\"\".join(chunks)"
-reddens = ["tests/scripts/test_ptyrun.py::test_a_command_that_does_not_finish_is_killed_at_the_deadline"]
-
-[[mutation]]
-name = "a pseudo-terminal deadline kills the command and not its process group"
-file = "scripts/ptyrun.py"
-before = "        os.killpg(child.pid, signal.SIGKILL)"
-after = "        os.kill(child.pid, signal.SIGKILL)"
-reddens = ["tests/scripts/test_ptyrun.py::test_a_process_the_command_started_is_killed_with_it_at_the_deadline"]
-
-[[mutation]]
-name = "a pseudo-terminal command that closed the terminal is waited for past the deadline"
-file = "scripts/ptyrun.py"
-before = "        code = child.wait(timeout=max(give_up - time.monotonic(), 0))"
-after = "        code = child.wait()"
-reddens = ["tests/scripts/test_ptyrun.py::test_a_command_that_closes_the_terminal_and_runs_on_is_killed_at_the_deadline"]
 
 # The `changes` job narrows a run only when it says, in so many words, that every path a pull
 # request changes is under `docs/`; every job that reads it runs whole on any other answer, or none.
