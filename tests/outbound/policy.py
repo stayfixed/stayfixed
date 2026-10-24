@@ -206,15 +206,15 @@ PASS_THROUGH: dict[tuple[str, str, str], frozenset[str]] = {
     ): frozenset({"claude plugin"}),
     # `claude plugin uninstall overlay-<id>@stayfixed-delivery-<id> --scope local`, then `claude
     # plugin marketplace remove stayfixed-delivery-<id>`, `detach`'s withdrawal of the same plugin,
-    # filled the same way.
+    # each where the main checkout's settings file names it, filled the same way.
     (
         "src/stayfixed/attach/write.py",
-        "_uninstall",
-        "filled(PLUGIN_UNINSTALL_LOCAL, f'{plugin_name(id)}@{marketplace_name(id)}')",
+        "_withdraw_plugin",
+        "filled(PLUGIN_UNINSTALL_LOCAL, plugin)",
     ): frozenset({"claude plugin"}),
     (
         "src/stayfixed/attach/write.py",
-        "_uninstall",
+        "_withdraw_plugin",
         "filled(PLUGIN_MARKETPLACE_REMOVE, marketplace_name(id))",
     ): frozenset({"claude plugin"}),
     # `git [-c core.excludesFile=…] --git-dir=… --work-tree=<empty> check-ignore --no-index

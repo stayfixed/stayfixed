@@ -1,8 +1,9 @@
 `stayfixed attach` delivers the hooks, skills and agents you keep in your overlay as a local
 plugin. Every run renders them into `~/.local/share/stayfixed/delivery/<id>/`, a marketplace and a
-plugin named by the checkout's binding id, and the first attach installs it with
-`claude plugin marketplace add … --scope local` and `claude plugin install … --scope local`, run
-from the main checkout so every worktree gets it; a session runs the plugin from that directory, so
+plugin named by the checkout's binding id, and installs it with `claude plugin marketplace add …
+--scope local` and `claude plugin install … --scope local`, run from the main checkout so every
+worktree gets it; a call that does not succeed fails the attach (exit 1), and the next `attach`
+installs again; a session runs the plugin from that directory, so
 an edit in the overlay reaches the next session after the next `attach`, with no reinstall; a
 copied file keeps its mode, so a skill's script stays executable. Run from a worktree, `attach`
 also refuses when the main checkout tracks `.claude/settings.local.json`, where the install

@@ -778,7 +778,8 @@ def test_the_rendered_plugins_install_reaches_the_rows_its_entries_name() -> Non
         PLUGIN_MARKETPLACE_REMOVE,
     )
     reached = {_row(tuple(filled(table, "x"))) for table in tables}
-    declared = [rows for key, rows in PASS_THROUGH.items() if key[1] in ("_install", "_uninstall")]
+    named = ("_install", "_withdraw_plugin")
+    declared = [rows for key, rows in PASS_THROUGH.items() if key[1] in named]
     assert len(declared) == 4 and all(rows == reached == {"claude plugin"} for rows in declared)
 
 

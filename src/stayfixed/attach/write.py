@@ -3,10 +3,11 @@
 **No hook entry goes into `settings.local.json`.** Claude Code rewrites that file whole and adds
 allow rules of its own to it, so no in-band marker survives there. The overlay's hook entries,
 skills and agents are rendered into a local plugin named by the binding id (`attach.render`),
-installed once and re-rendered in place on every run; the file keeps only the allow rules the
-ledger names, and the plugin's `enabledPlugins` entry, which Claude Code writes. A checkout an
-earlier release attached holds the entries that release merged, named by its ledger's `entries`:
-`attach` takes back exactly those, through `scaffold.withdraw_entries`, and records none.
+re-rendered in place and installed on every run, both `claude plugin` calls being idempotent; the
+file keeps only the allow rules the ledger names, and the plugin's `enabledPlugins` and
+`extraKnownMarketplaces` entries, which Claude Code writes. A checkout an earlier release attached
+holds the entries that release merged, named by its ledger's `entries`: `attach` takes back
+exactly those, through `scaffold.withdraw_entries`, and records none.
 
 *Not the scaffold engine's `plan`/`apply` for the settings file.* The engine stamps a digest of
 the document into the **committed** `.stayfixed/manifest.json`, which would publish a digest of
@@ -847,8 +848,10 @@ NO_MAIN_CHECKOUT = (
 )
 
 
-def _worktrees(root: Path) -> list[Path]:
-    """Every checkout of this repository, from `git worktree list --porcelain`.
+def _worktrees(root: Path, *, bare: bool = False) -> list[Path]:
+    """Every checkout of this repository, from `git worktree list --porcelain`; in a bare
+    repository `NO_MAIN_CHECKOUT`, or nothing where `bare` says the caller can do without a main
+    checkout.
 
     Through `gitenv.git_run`, which scrubs `GIT_DIR` and `GIT_WORK_TREE`: an inherited one would
     list the worktrees of a different repository altogether, and this module then writes into
@@ -876,7 +879,9 @@ def _worktrees(root: Path) -> list[Path]:
         # itself, marked `bare`: there is no main checkout to install the plugin from or to own
         # the store, and the common directory's parent is no checkout.
         if "bare" in lines:
-            raise Refusal(NO_MAIN_CHECKOUT)
+            if not bare:
+                raise Refusal(NO_MAIN_CHECKOUT)
+            return []
         if any(line == "prunable" or line.startswith("prunable ") for line in lines):
             continue
         found.extend(
@@ -885,8 +890,9 @@ def _worktrees(root: Path) -> list[Path]:
     return found
 
 
-def _checkouts(root: Path) -> list[Path]:
-    """Every checkout of this repository, the one that owns the store first, each exactly once.
+def _checkouts(root: Path, *, bare: bool = False) -> list[Path]:
+    """Every checkout of this repository, the one that owns the store first, each exactly once;
+    nothing in a bare repository where `bare` asks for that rather than for `NO_MAIN_CHECKOUT`.
 
     Both halves need `git` — `main_checkout` asks it which checkout owns this worktree, and
     `_worktrees` asks it for the rest — which is the whole reason this is a function rather than
@@ -900,9 +906,12 @@ def _checkouts(root: Path) -> list[Path]:
     path, so `--root` is visited exactly once whether or not it is the owner.
     """
     owner = main_checkout(root).resolve()
+    trees = _worktrees(root, bare=bare)
+    if not trees:
+        return []
     found = [owner]
     seen = {owner}
-    for tree in _worktrees(root):
+    for tree in trees:
         resolved = tree.resolve()
         if resolved in seen:
             continue
@@ -1210,9 +1219,9 @@ def attach(
     `memory.store` checks it and a store whose checkout is unbound does not resolve — and
     `attach_main` resolves as its last step. The ledger is written before the links too, so a
     `PartialLink` half way through leaves behind a repository `detach` can still clean up. The
-    render follows the binding, since it is named by the id, and is installed with two
-    `claude plugin` calls only while the ledger records no render; the ledger records it once they
-    succeed, so a run whose install failed installs again next time.
+    render follows the binding, since it is named by the id, and is installed with two idempotent
+    `claude plugin` calls on every run; the ledger records it once they succeed, and a call that
+    fails exits 1 with the exclude block standing, so a re-run completes.
 
     `runner` and `home` are keyword-**required** rather than defaulted so that no test can reach
     a real `pre-commit` or the developer's own `~/.claude/`. A default here would leave that as
@@ -1463,15 +1472,16 @@ def _carry_out(
     # what will run after it, read out of the parts: the screen's executable diff.
     before, after = _carried_in(delivery_directory(id)), _carried(planned.parts)
     rendered = write_render(id, planned.parts, stale=recorded.parts if recorded else ())
-    # Installed once: a re-render needs no reinstall, since the plugin runs from the render
-    # directory in place. Recorded once the install succeeded, so a failed one is tried again.
-    failed = None if recorded is not None else _install(id, planned.checkouts[0], runner)
-    notes = [] if recorded is not None or failed is not None else [INSTALLED]
-    if failed is None:
-        recorded = rendered.rendered
-        _write_ledger(root, planned, carried, recorded)
-    else:
-        notes.append(failed)
+    # Installed on every run, since both calls are idempotent: what Claude Code knows is its own
+    # state, which a copy's detach or a lost id can take away whatever this ledger says. A call
+    # that fails exits 1 with no render recorded and the exclude block standing, so a re-run
+    # completes.
+    if (failed := _install(id, planned.checkouts[0], runner)) is not None:
+        _write_ledger(root, planned, carried, None)
+        raise Failure(failed)
+    recorded = rendered.rendered
+    _write_ledger(root, planned, carried, recorded)
+    notes: list[str] = []
     links = Links([], [])
     if planned.memory:
         _prepare_store(binding, config)
@@ -1571,8 +1581,6 @@ def _carried_in(directory: Path) -> Carried:
     return Carried(_hook_entries(hooks), *(_named_under(files, name) for name in COPIED))
 
 
-# Said on the run that installed the render.
-INSTALLED = "installed the overlay's hooks, skills and agents as this checkout's local plugin"
 # Said where a `claude plugin` call did not succeed. Its code and nothing it printed: what Claude
 # Code prints names the plugin, and the plugin's name carries the whole binding id.
 NOT_INSTALLED = (
@@ -1596,54 +1604,52 @@ def _install(id: str, main: Path, runner: Runner) -> str | None:
     return None
 
 
-# Said where a `claude plugin` call of `detach` did not succeed: the call and its exit code, and
-# nothing it printed, which names the plugin and so the whole binding id.
-NOT_WITHDRAWN = (
-    "`claude plugin {verb}` did not succeed (exit {code}), so the overlay's plugin was not "
-    "withdrawn; the exclude block, the ledger and the render were kept, and running "
-    "`stayfixed detach` again finishes the withdrawal"
+# Said where the main checkout's settings file still names the plugin once `detach` asked Claude
+# Code to forget it: the keys left, never their names, which carry the whole binding id.
+STILL_NAMED = (
+    "the main checkout's `.claude/settings.local.json` still names the overlay's plugin under "
+    "{keys}, so the exclude block, the ledger and the render were kept; run `stayfixed detach` "
+    "again once `claude plugin` runs here"
 )
 # Said where the render directory could not be removed once Claude Code was told to forget it.
 RENDER_STAYED = (
     "the overlay's rendered plugin under this machine's data directory could not be removed "
     "({fault}); the ledger was kept, so `stayfixed detach` can be run again"
 )
+# The two keys of the settings file Claude Code writes the plugin's entries under: `install` the
+# plugin's, `marketplace add` its marketplace's, each named by the whole binding id.
+ENABLED_PLUGINS = "enabledPlugins"
+KNOWN_MARKETPLACES = "extraKnownMarketplaces"
 
 
-def _forget_install(root: Path, recorded: AttachLedger) -> None:
-    """Rewrite the ledger as recording no render: Claude Code has uninstalled the plugin, so a
-    later `attach` installs it again, and a `detach` run again after a later call failed does not
-    ask Claude Code to uninstall a plugin it no longer has."""
-    document = {
-        "format": LEDGER_FORMAT,
-        "store": recorded.store,
-        "allow": list(recorded.allow),
-        "entries": dict(recorded.entries),
-        "rules": list(recorded.rules),
-        "settings_keys": list(recorded.settings_keys),
-        "directories": list(recorded.directories),
-        "memory_parents": list(recorded.memory_parents),
-        "memory_created": recorded.memory_created,
-        "render": None,
+def _plugin_keys(main: Path) -> dict[str, tuple[str, ...]]:
+    """The names under each of the two keys in the main checkout's settings file: what Claude Code
+    holds for this machine's plugins there, which `detach` decides each call by."""
+    document = settings_document(local_document(main))
+    return {
+        key: tuple(document[key]) if isinstance(document.get(key), dict) else ()
+        for key in (ENABLED_PLUGINS, KNOWN_MARKETPLACES)
     }
-    fsops.write_within(root, ATTACH_LEDGER, json.dumps(document, indent=2, sort_keys=True) + "\n")
 
 
-def _uninstall(root: Path, id: str, main: Path, runner: Runner, recorded: AttachLedger) -> None:
-    """Tell Claude Code to forget the plugin, where the ledger records it installed, and then its
-    marketplace, from the main checkout it was installed from; a `Failure` naming the call that
-    did not succeed, before anything that hides the plugin's entry or lets `detach` run again is
-    withdrawn."""
-    if recorded.render is not None:
-        done = runner.launch(
-            filled(PLUGIN_UNINSTALL_LOCAL, f"{plugin_name(id)}@{marketplace_name(id)}"), main
-        )
-        if done.code != 0:
-            raise Failure(NOT_WITHDRAWN.format(verb="uninstall", code=done.code))
-        _forget_install(root, recorded)
-    removed = runner.launch(filled(PLUGIN_MARKETPLACE_REMOVE, marketplace_name(id)), main)
-    if removed.code != 0:
-        raise Failure(NOT_WITHDRAWN.format(verb="marketplace remove", code=removed.code))
+def _withdraw_plugin(id: str, main: Path, held: dict[str, tuple[str, ...]], runner: Runner) -> None:
+    """Ask Claude Code to forget the plugin where `held` says the main checkout's settings file
+    names it, and its marketplace where the file names that, from the main checkout it was
+    installed from; then read the file again, and stop with `STILL_NAMED` while any name under
+    either key still carries the id, before anything that hides the file or lets `detach` run
+    again is withdrawn.
+
+    The file decides and the exit codes do not: an `uninstall` of a plugin Claude Code no longer
+    has exits 1, and so does a `marketplace remove` of one it never added, while what has to be
+    true before the exclude block goes is only that the file names the id nowhere."""
+    plugin = f"{plugin_name(id)}@{marketplace_name(id)}"
+    if plugin in held[ENABLED_PLUGINS]:
+        runner.launch(filled(PLUGIN_UNINSTALL_LOCAL, plugin), main)
+    if marketplace_name(id) in held[KNOWN_MARKETPLACES]:
+        runner.launch(filled(PLUGIN_MARKETPLACE_REMOVE, marketplace_name(id)), main)
+    left = [key for key, names in _plugin_keys(main).items() if any(id in name for name in names)]
+    if left:
+        raise Failure(STILL_NAMED.format(keys=", ".join(f"`{key}`" for key in left)))
 
 
 def _remove_render(directory: Path) -> None:
@@ -1693,8 +1699,8 @@ class Detached:
     # This checkout's link tree was left in place because it owns the store and another checkout
     # of this repository still holds a ledger: that checkout's harness memory link points at it.
     link_tree_kept: bool = False
-    # The rendered plugin was withdrawn: Claude Code told to forget it and its marketplace, and
-    # its render directory removed.
+    # The rendered plugin's render directory was removed, Claude Code having been told to forget
+    # whatever of it the main checkout's settings file named.
     delivery_removed: bool = False
 
 
@@ -2011,12 +2017,15 @@ def detach(
     rendered plugin, whose directory is derived from the binding id and never read from the ledger.
 
     The plugin is installed in the main checkout, which every worktree shares, so it is withdrawn
-    only where no other checkout is still attached: `claude plugin uninstall` and `marketplace
-    remove` through `runner`, after this run's own withdrawal from the settings file and before
-    the exclude block goes, then the render directory. A call that fails is a `Failure` there, with
-    the exclude block, the ledger and the render kept: the settings file names the id while the
-    plugin's entry is in it, and a second `detach` finishes from the ledger. The id and this
-    machine's record of it are kept, as the overlay's record is.
+    only where no other checkout is still attached: `claude plugin uninstall` where the main
+    checkout's settings file names the plugin and `marketplace remove` where it names the
+    marketplace, through `runner`, after this run's own withdrawal from the settings file and before
+    the exclude block goes, then the render directory where there is one. While the file still names
+    the id once they ran, whatever they exited with, it is a `Failure` there (`STILL_NAMED`), with
+    the exclude block, the ledger and the render kept, and a second `detach` finishes from the
+    ledger. In a bare repository's worktree git names no main checkout, `attach` installed nothing
+    there, and this checkout's own parts are withdrawn. The id and this machine's record of it are
+    kept, as the overlay's record is.
 
     It does **not** touch `projects/<name>/project.toml`. That record is the owner's consent,
     not a piece of local state: deleting it would turn every later re-attach into a first
@@ -2063,10 +2072,10 @@ def detach(
     # `.codex/rules/` copies already removed and every link still in place. The home the harness
     # links are under is asked in the same breath: a mistyped `--home` withdrew nothing, exit 0.
     # The rendered plugin, named by the id and installed in the main checkout, which every
-    # worktree shares: withdrawn where its render directory is there and no other checkout is
-    # still attached (`kept`, below). The directory is derived from the id and never read from the
-    # ledger, whose `store` and `render` a clone can commit; asked here, before the first
-    # withdrawal, since the id is read through `git`.
+    # worktree shares: withdrawn where no other checkout is still attached (`kept`, below). Its
+    # render directory is derived from the id and never read from the ledger, whose `store` and
+    # `render` a clone can commit; asked here, before the first withdrawal, since the id is read
+    # through `git`.
     id = read_id(root)
     try:
         delivery = delivery_directory(id) if id is not None else None
@@ -2074,9 +2083,11 @@ def detach(
         # A `HOME` that names no home holds no render; the home the harness links are under is
         # refused below in its own words.
         delivery = None
-    if delivery is not None and not (fsops.is_dir(delivery) or fsops.is_symlink(delivery)):
-        delivery = None
-    checkouts = _checkouts(root)
+    # Nothing in a bare repository's worktree: git names no main checkout there, so `attach`
+    # installed nothing, and this checkout's own parts are withdrawn alone.
+    listed = _checkouts(root, bare=True)
+    main = listed[0] if listed else None
+    checkouts = listed or [root.resolve()]
     for tree in checkouts:
         harness_anchor(tree, home)
     # The `info/exclude` block is found above the first withdrawal for the same reason: `git`
@@ -2088,6 +2099,9 @@ def detach(
     hidden = None if kept else exclude.withdrawn_block(root)
     harnessed, trees = _reach(root, checkouts, kept=kept)
     settings = _planned_settings(root, recorded)
+    # What the main checkout's settings file names, which decides each `claude plugin` call: read
+    # here, so a file that cannot be read refuses while nothing is withdrawn.
+    plugin = None if kept or main is None or id is None else (id, main, _plugin_keys(main))
     # Where each checkout's harness link may point and be ours, asked here because it walks the
     # owning checkout's `paths.memory` as well as the checkout's own, and while another ledger
     # stands `_refuse_unwithdrawable` walks no tree but `--root`'s. Asked from inside the
@@ -2120,15 +2134,16 @@ def detach(
             targets=targets[tree],
             keep_tree=tree not in trees,
         ).revoked
-    # Before the exclude block goes: Claude Code takes the plugin's entry, which names the id, out
+    # Before the exclude block goes: Claude Code takes the plugin's entries, which name the id, out
     # of the settings file the block hides, and it does so after this run's own withdrawal from
-    # that file, which would otherwise write the entry back.
-    # A call that fails stops the run here, with the exclude block, the ledger and the render kept.
-    if kept:
-        delivery = None
-    if id is not None and delivery is not None:
-        _uninstall(root, id, checkouts[0], runner, recorded)
+    # that file, which would otherwise write them back. A file that still names the id stops the
+    # run here, with the exclude block, the ledger and the render kept.
+    if plugin is not None:
+        _withdraw_plugin(*plugin, runner)
+    removed = False
+    if not kept and delivery is not None and (fsops.is_dir(delivery) or fsops.is_symlink(delivery)):
         _remove_render(delivery)
+        removed = True
     if hidden is not None:
         exclude.write(hidden)
     memory = _withdraw_memory_directories(root, trees, config, recorded)
@@ -2145,5 +2160,5 @@ def detach(
         hidden is not None,
         kept,
         root.resolve() not in trees,
-        delivery is not None,
+        removed,
     )

@@ -3,8 +3,8 @@
 **What runs is this directory, in place.** `claude plugin install --scope local` keeps a cache
 copy, but a session runs the plugin from its marketplace's own directory, `<data>/delivery/<id>/`:
 an edit there reaches the next session with no reinstall, and with the directory gone the plugin
-does not load and nothing says so. So `attach` re-renders here on every run and installs only once,
-and the directory is always derived from the id, never read from a record a checkout keeps.
+does not load and nothing says so. So `attach` re-renders here on every run, and the directory is
+always derived from the id, never read from a record a checkout keeps.
 
 **The names are the defence.** Claude Code records a local-scope marketplace machine-wide, and a
 clone that commits an `enabledPlugins` entry naming a plugin this machine knows runs its hooks. So

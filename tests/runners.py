@@ -14,6 +14,7 @@ module asking about one needs alike.
 
 from __future__ import annotations
 
+import json
 import os
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -97,3 +98,41 @@ def git_that_cannot_run(monkeypatch: pytest.MonkeyPatch) -> None:
     answered nothing — and it is the ordinary "not bound" one rather than a machine fault.
     """
     monkeypatch.setattr("stayfixed.gitenv.scrubbed_env", lambda: {"PATH": os.devnull})
+
+
+def claude_code(main: Path, *, ignoring: tuple[str, ...] = ()) -> Callable[[list[str], Path], None]:
+    """A `Recorder.on_call` that writes what Claude Code 2.1.301's local-scope plugin calls were
+    measured to write into the main checkout's `.claude/settings.local.json`: `marketplace add
+    <dir>` the `extraKnownMarketplaces` entry, `install <p>@<m>` the `enabledPlugins` entry,
+    `uninstall` taking the latter out and `marketplace remove` both. `ignoring` names the verbs
+    (`marketplace add`, `uninstall`, `marketplace remove`) whose calls change nothing, as a call
+    that failed does.
+
+    The facts `detach` reads, rather than the exit codes the `Recorder` answers: `detach` decides
+    each call, and whether it may withdraw, by what the file names.
+    """
+    path = main / ".claude" / "settings.local.json"
+
+    def on_call(argv: list[str], cwd: Path) -> None:
+        verb = " ".join(argv[2:4]) if argv[2] == "marketplace" else argv[2]
+        if argv[0] != "claude" or verb in ignoring:
+            return
+        document = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
+        plugins = document.setdefault("enabledPlugins", {})
+        known = document.setdefault("extraKnownMarketplaces", {})
+        name = argv[4] if argv[2] == "marketplace" else argv[3]
+        if verb == "marketplace add":
+            source = {"source": "directory", "path": name}
+            known[f"stayfixed-delivery-{Path(name).name}"] = {"source": source}
+        elif verb == "install":
+            plugins[name] = True
+        elif verb == "uninstall":
+            plugins.pop(name, None)
+        elif verb == "marketplace remove":
+            known.pop(name, None)
+            for plugin in [plugin for plugin in plugins if plugin.endswith(f"@{name}")]:
+                del plugins[plugin]
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
+
+    return on_call

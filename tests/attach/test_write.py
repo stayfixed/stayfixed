@@ -30,7 +30,6 @@ from stayfixed.attach.write import (
     GROUP_UNASKED,
     HARNESS_LAPSED,
     HARNESS_WAITS,
-    INSTALLED,
     NO_MAIN_CHECKOUT,
     NO_ORIGIN_NOTE,
     NOT_INSTALLED,
@@ -45,6 +44,7 @@ from stayfixed.gitenv import Unasked
 from stayfixed.memory.api import PROJECT_RECORD, link_sources
 from stayfixed.overlay.api import COMMON_CLAUDE, COMMON_CODEX
 from stayfixed.printed import quoted
+from stayfixed.runner import Completed
 from stayfixed.scaffold import EntriesError, Style, drop, extract
 
 # The fixture the binding tests already build, reused rather than copied: one spelling of the
@@ -252,14 +252,15 @@ def _claude_calls(runner: Recorder) -> list[tuple[list[str], Path]]:
     return [(argv, cwd) for argv, cwd in calls if argv[0] == "claude"]
 
 
-def test_the_first_attach_installs_the_rendered_plugin_from_the_main_checkout_and_no_later_one(
+def test_every_attach_installs_the_rendered_plugin_from_the_main_checkout(
     tmp_path: Path,
 ) -> None:
     # Run from a linked worktree, so the working directory the two calls name is the main
     # checkout's for a reason and not because it is where the command was typed: Claude Code reads
-    # the main checkout's `settings.local.json` from every worktree. A re-render needs no reinstall,
-    # since the plugin runs from the render directory in place, so the second attach installs
-    # nothing.
+    # the main checkout's `settings.local.json` from every worktree. Both calls are idempotent
+    # (Claude Code 2.1.301 answers 0 for a marketplace it knows and a plugin it has), so every
+    # attach runs them: one keyed on the checkout's ledger never reinstalled what a copy's detach,
+    # or a lost id, had taken away.
     from stayfixed import binding
 
     root, store, machine = _attachable(tmp_path, hooks={"SessionStart": [{"hooks": [ENTRY]}]})
@@ -291,7 +292,7 @@ def test_the_first_attach_installs_the_rendered_plugin_from_the_main_checkout_an
     assert (delivery / ".claude-plugin" / "marketplace.json").is_file()
     second = Recorder()
     attach(side, store=store, machine=machine, runner=second, home=tmp_path / "home")
-    assert _claude_calls(second) == []
+    assert _claude_calls(second) == _claude_calls(first)
 
 
 def test_attach_from_a_bare_repositorys_worktree_cannot_tell_its_main_checkout_and_installs_nothing(
@@ -375,23 +376,27 @@ def test_attach_from_a_worktree_refuses_a_settings_file_the_main_checkout_tracks
     assert (root / SETTINGS).read_text(encoding="utf-8") == "{}\n"
 
 
-def test_an_install_that_did_not_succeed_is_said_by_its_code_and_tried_again(
-    tmp_path: Path,
+@pytest.mark.parametrize("failing", ["claude plugin marketplace add", "claude plugin install"])
+def test_an_install_that_did_not_succeed_exits_one_by_its_code_and_a_rerun_completes(
+    tmp_path: Path, failing: str
 ) -> None:
     # What Claude Code prints names the plugin, and the plugin's name carries the whole binding
-    # id, so the note says the exit code and nothing it printed. The ledger records no render, so
-    # the next attach installs again rather than taking the render for installed.
+    # id, so the failure says the exit code and nothing it printed. The run exits 1 rather than
+    # reporting an attach that delivers nothing, records no render, and keeps the exclude block, so
+    # the next attach installs again with everything still hidden.
     from stayfixed import binding
-    from stayfixed.runner import Completed
 
     root, store, machine = _attachable(tmp_path)
-    failing = Recorder(answers={"claude plugin install": Completed(1, "", "overlay-secret")})
-    attached = attach(root, store=store, machine=machine, runner=failing, home=tmp_path / "home")
+    broken = Recorder(answers={failing: Completed(1, "", "overlay-secret")})
+    with pytest.raises(Failure) as failed:
+        attach(root, store=store, machine=machine, runner=broken, home=tmp_path / "home")
     id = binding.read_id(root)
     assert id is not None
-    assert NOT_INSTALLED.format(verb="install", code=1) in attached.notes
-    assert not any(id in note or "overlay-secret" in note for note in attached.notes)
+    verb = failing.removeprefix("claude plugin ")
+    assert str(failed.value) == NOT_INSTALLED.format(verb=verb, code=1)
+    assert id not in str(failed.value) and "overlay-secret" not in str(failed.value)
     assert ledger(root).render is None
+    assert "# stayfixed:attach:begin" in (root / ".git" / "info" / "exclude").read_text("utf-8")
     again = Recorder()
     attach(root, store=store, machine=machine, runner=again, home=tmp_path / "home")
     assert [argv[2] for argv, _ in _claude_calls(again)] == ["marketplace", "install"]
@@ -1195,9 +1200,9 @@ def test_a_pre_commit_that_is_already_installed_is_not_run_again(tmp_path: Path)
         home=tmp_path / "home",
     )
     assert [argv for argv in runner.calls if argv[0] != "claude"] == []
-    # The notes left are the install and the harness link waiting for approval, which this
+    # The note left is the harness link waiting for approval, which this
     # fixture never gives; nothing about the secret scan is said.
-    assert attached.notes == (INSTALLED, HARNESS_WAITS)
+    assert attached.notes == (HARNESS_WAITS,)
 
 
 def test_a_hook_outside_dot_git_still_counts_as_installed(tmp_path: Path) -> None:
@@ -1220,9 +1225,9 @@ def test_a_hook_outside_dot_git_still_counts_as_installed(tmp_path: Path) -> Non
         home=tmp_path / "home",
     )
     assert [argv for argv in runner.calls if argv[0] != "claude"] == []
-    # The notes left are the install and the harness link waiting for approval, which this
+    # The note left is the harness link waiting for approval, which this
     # fixture never gives; nothing about the secret scan is said.
-    assert attached.notes == (INSTALLED, HARNESS_WAITS)
+    assert attached.notes == (HARNESS_WAITS,)
 
 
 def test_an_overlay_git_cannot_answer_about_is_a_note_and_never_a_traceback(
@@ -1252,7 +1257,7 @@ def test_a_pre_commit_that_cannot_run_is_a_note_and_never_a_traceback(tmp_path: 
     root, store, machine = _attachable(tmp_path)
     _overlay_repository(store.parents[2])
     (store.parents[2] / ".pre-commit-config.yaml").write_text("repos: []\n", encoding="utf-8")
-    runner = Recorder(code=127, stderr="pre-commit could not be run")
+    runner = Recorder(answers={"pre-commit": Completed(127, "", "pre-commit could not be run")})
     attached = attach(
         root,
         store=store,
@@ -2312,7 +2317,7 @@ def test_what_pre_commit_prints_cannot_drive_a_terminal(tmp_path: Path) -> None:
     root, store, machine = _attachable(tmp_path)
     _overlay_repository(store.parents[2])
     (store.parents[2] / ".pre-commit-config.yaml").write_text("repos: []\n", encoding="utf-8")
-    runner = Recorder(code=1, stderr="boom\n::error::forged\x1b[2J")
+    runner = Recorder(answers={"pre-commit": Completed(1, "", "boom\n::error::forged\x1b[2J")})
     attached = attach(
         root,
         store=store,

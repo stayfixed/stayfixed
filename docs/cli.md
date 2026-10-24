@@ -2531,14 +2531,16 @@ keeping its source's permission bits, so a skill's script stays executable. A se
 the plugin from that directory in place, so a later `attach` re-renders it there and an edit
 reaches the next session with no reinstall; a file the overlay no longer holds is taken out of it,
 named by the ledger's record of the previous render (its digest and its files' paths, never the
-id). The first attach — any run while the ledger records no render — installs it with
-`claude plugin marketplace add <that directory> --scope local` and `claude plugin install
-overlay-<id>@stayfixed-delivery-<id> --scope local`, run from the main checkout, whose
-`.claude/settings.local.json` Claude Code reads from every worktree and writes the plugin's entry
-into. A linked worktree of a bare repository has no main checkout, so `attach` and `detach` refuse
-it (`2`) before anything is written, saying they cannot tell which checkout is the main one. A call
-that does not succeed is a note naming its exit code and never what it printed, since
-that names the plugin; the render stays in place and the next `attach` installs it again. Claude
+id). Every run installs it with `claude plugin marketplace add <that directory> --scope local` and
+`claude plugin install overlay-<id>@stayfixed-delivery-<id> --scope local`, run from the main
+checkout, whose `.claude/settings.local.json` Claude Code reads from every worktree and writes the
+plugin's entries into; both calls succeed for a marketplace and a plugin Claude Code already has,
+so what Claude Code holds is asked of Claude Code each time rather than of the ledger. A linked
+worktree of a bare repository has no main checkout, so `attach` refuses it (`2`) before anything is
+written, saying it cannot tell which checkout is the main one. A call that does not succeed fails
+the run (`1`), naming the call and its exit code and never what it printed, since that names the
+plugin; the ledger records no render, the exclude block stays, and the next `attach` installs it
+again. Claude
 Code records a local-scope marketplace for the whole machine, so the names carry the whole id,
 which a clone never sees; the plugin's entry is the reason `.claude/settings.local.json` is placed
 and hidden on every run (below). No hook entry goes into `.claude/settings.local.json` any more,
@@ -2814,19 +2816,23 @@ alone (a group that mixes one of those with your own entry is split, never repla
 the file unwritten when none of those is in it, removes the `.codex/rules/` files it wrote, withdraws the link tree from
 this checkout and every worktree together with each one's harness memory link — while another checkout is
 attached, only this checkout's link, and its tree unless it is the main checkout, as above —
-withdraws the overlay's rendered plugin — `claude plugin uninstall overlay-<id>@stayfixed-delivery-<id>
---scope local` and `claude plugin marketplace remove stayfixed-delivery-<id>`, run from the main
-checkout, then the render directory `$HOME/.local/share/stayfixed/delivery/<id>/` removed whole, a
-link there unlinked — where that directory is there and no other checkout of the repository is
-attached, removes the `stayfixed:attach` block in the repository's exclude file, and deletes the ledger, `.stayfixed/local/attach.json`.
+withdraws the overlay's rendered plugin where no other checkout of the repository is attached —
+`claude plugin uninstall overlay-<id>@stayfixed-delivery-<id> --scope local` where the main
+checkout's `.claude/settings.local.json` names that plugin under `enabledPlugins`, and `claude
+plugin marketplace remove stayfixed-delivery-<id>` where it names that marketplace under
+`extraKnownMarketplaces`, each run from the main checkout, then the render directory
+`$HOME/.local/share/stayfixed/delivery/<id>/` removed whole where it is there, a link there
+unlinked — removes the `stayfixed:attach` block in the repository's exclude file, and deletes the ledger, `.stayfixed/local/attach.json`.
 The render directory is derived from the binding id and never read from the ledger, so a ledger a
 clone committed naming another directory removes nothing outside it. The plugin goes before the
-exclude block, so Claude Code takes the plugin's entry, which names the id, out of
-`.claude/settings.local.json` while that file is still hidden. The uninstall is asked only while
-the ledger records the plugin installed, and once it succeeds the ledger records it no longer. A
-`claude plugin` call that does not succeed fails (`1`), naming the call and its exit code and never
-what it printed, which names the id; the exclude block, the ledger and the render directory are
-kept, so the file stays hidden, and running `detach` again finishes the withdrawal. A render
+exclude block, so Claude Code takes the plugin's entries, which name the id, out of
+`.claude/settings.local.json` while that file is still hidden. Each call is decided by what that
+file names, never by the ledger or the render directory, and the file is read again once they ran:
+while a name under either key still carries the id, whatever the calls exited with, `detach` fails
+(`1`) naming the key and never the id; the exclude block, the ledger and the render directory are
+kept, so the file stays hidden, and running `detach` again finishes the withdrawal. In a linked
+worktree of a bare repository git names no main checkout, `attach` installed nothing there, and
+`detach` withdraws that checkout's own parts with no `claude plugin` call. A render
 directory that cannot be removed fails (`1`) the same way, with the ledger kept. An allow rule Claude Code
 added to `.claude/settings.local.json` — the one a "don't ask again" answer writes — is not on the
 ledger and stays, whatever order Claude Code rewrote the file's keys in. A file left holding nothing is

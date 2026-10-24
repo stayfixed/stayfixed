@@ -36,7 +36,7 @@ from tests.pathfaults import (
     symlink_loop_at,
     unsearchable,
 )
-from tests.runners import LsRemote, Recorder, git_that_cannot_run
+from tests.runners import LsRemote, Recorder, claude_code, git_that_cannot_run
 from tests.snapshot import (
     assert_snapshot_changed,
     assert_snapshot_unchanged,
@@ -92,22 +92,38 @@ def _render_of(root: Path) -> tuple[str, Path]:
     return id, delivery_directory(id)
 
 
+def _installed(root: Path, store: Path, machine: Path, home: Path) -> None:
+    """An attach whose two `claude plugin` calls wrote what Claude Code writes into the main
+    checkout's settings file: the `enabledPlugins` and `extraKnownMarketplaces` entries that name
+    the binding id."""
+    from stayfixed.attach.write import attach
+
+    runner = Recorder(on_call=claude_code(root))
+    attach(root, store=store, machine=machine, runner=runner, home=home)
+
+
+def _plugin_keys(root: Path) -> list[str]:
+    """Every key of the settings file's two plugin maps, the entries that name the binding id."""
+    document = json.loads((root / SETTINGS).read_text(encoding="utf-8"))
+    return [*document.get("enabledPlugins", {}), *document.get("extraKnownMarketplaces", {})]
+
+
 def test_detach_withdraws_the_rendered_plugin_and_keeps_the_binding(tmp_path: Path) -> None:
     # The plugin runs from its render directory in place, so the directory goes and Claude Code is
     # told to forget the plugin and its marketplace, each once, from the main checkout whose
-    # settings file holds the plugin's entry. The id, this machine's record of it and the
+    # settings file holds the plugin's entries. The id, this machine's record of it and the
     # overlay's record stay: a later attach binds the same checkout again.
     from stayfixed import binding
 
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2], allow=(RULE,), hooks=True)
     home = tmp_path / "home"
-    _attach(root, store, machine, home)
+    _installed(root, store, machine, home)
     id, delivery = _render_of(root)
     assert (delivery / ".claude-plugin" / "marketplace.json").is_file()
     record = store.parent / "project.toml"
     kept = record.read_bytes()
-    runner = Recorder()
+    runner = Recorder(on_call=claude_code(root))
     _detach(root, machine, home, runner)
     assert not delivery.exists()
     assert list(zip(runner.calls, runner.cwds, strict=True)) == [
@@ -124,10 +140,31 @@ def test_detach_withdraws_the_rendered_plugin_and_keeps_the_binding(tmp_path: Pa
         ),
         (["claude", "plugin", "marketplace", "remove", f"stayfixed-delivery-{id}"], root.resolve()),
     ]
+    assert _plugin_keys(root) == []
     assert binding.read_id(root) == id
     found = binding.bound_project(root)
     assert found is not None and found.project == "p"
     assert record.read_bytes() == kept
+
+
+def test_detach_with_the_render_directory_gone_still_asks_claude_code_to_forget_the_plugin(
+    tmp_path: Path,
+) -> None:
+    # Each call is decided by what the main checkout's settings file names, never by the render
+    # directory, which a data-directory cleanup can take away: a detach that skipped the calls for
+    # want of it withdrew the exclude block and left `enabledPlugins` naming the whole id in a file
+    # `git status` then offered for commit.
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2], allow=(RULE,))
+    home = tmp_path / "home"
+    _installed(root, store, machine, home)
+    _, delivery = _render_of(root)
+    shutil.rmtree(delivery)
+    runner = Recorder(on_call=claude_code(root))
+    _detach(root, machine, home, runner)
+    assert [argv[2] for argv in runner.calls] == ["uninstall", "marketplace"]
+    assert _plugin_keys(root) == [] and not _exclude_block(root)
+    assert git(root, "status", "--porcelain", "-uall").strip() == "?? .claude/settings.local.json"
 
 
 def test_a_ledger_naming_another_directory_deletes_nothing_outside_the_delivery_directory(
@@ -159,37 +196,95 @@ def _exclude_block(root: Path) -> bool:
     return exclude.is_file() and "# stayfixed:attach:begin" in exclude.read_text(encoding="utf-8")
 
 
-@pytest.mark.parametrize("failing", ["claude plugin uninstall", "claude plugin marketplace remove"])
-def test_a_detach_call_that_fails_keeps_the_delivery_hidden_and_a_second_detach_finishes(
-    tmp_path: Path, failing: str
+@pytest.mark.parametrize(
+    ("ignoring", "left", "again"),
+    [
+        pytest.param(
+            ("marketplace remove",), ["extraKnownMarketplaces"], ["marketplace"], id="remove"
+        ),
+        pytest.param(
+            ("uninstall", "marketplace remove"),
+            ["enabledPlugins", "extraKnownMarketplaces"],
+            ["uninstall", "marketplace"],
+            id="both",
+        ),
+    ],
+)
+def test_a_settings_file_still_naming_the_plugin_keeps_the_delivery_hidden_and_detach_runs_again(
+    tmp_path: Path, ignoring: tuple[str, ...], left: list[str], again: list[str]
 ) -> None:
-    # The plugin's entry in `settings.local.json` names the whole binding id, and Claude Code takes
-    # it out only when its calls succeed. So a call that fails leaves everything that keeps that
-    # file hidden or lets `detach` run again: the exclude block, the ledger and the render. The
-    # refusal names the call and its code, never what Claude Code printed, which names the id. A
-    # second detach finishes, without asking Claude Code to uninstall a plugin it already did.
-    # Mutations: `mutations/`'s "detach goes past an uninstall that failed" and "detach goes past a
-    # marketplace remove that failed".
-    from stayfixed.attach.write import NOT_WITHDRAWN
-    from stayfixed.runner import Completed
+    # The plugin's entries in `settings.local.json` name the whole binding id, and only Claude Code
+    # takes them out. So while the file still names the id once the calls ran, whatever they
+    # exited with, everything that keeps the file hidden or lets `detach` run again stays: the
+    # exclude block, the ledger and the render. The failure names the entry left by its key and
+    # never the id. A second detach makes only the call the file still asks for.
+    # Mutation: `mutations/`'s "detach goes past a settings file that still names the plugin".
+    from stayfixed.attach.write import STILL_NAMED
 
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2], allow=(RULE,), hooks=True)
     home = tmp_path / "home"
-    _attach(root, store, machine, home)
+    _installed(root, store, machine, home)
     id, delivery = _render_of(root)
     assert _exclude_block(root)
-    verb = failing.removeprefix("claude plugin ")
     with pytest.raises(Failure) as failed:
-        _detach(root, machine, home, Recorder(answers={failing: Completed(1, "", f"overlay-{id}")}))
-    assert str(failed.value) == NOT_WITHDRAWN.format(verb=verb, code=1)
+        _detach(root, machine, home, Recorder(on_call=claude_code(root, ignoring=ignoring)))
+    assert str(failed.value) == STILL_NAMED.format(keys=", ".join(f"`{key}`" for key in left))
     assert id not in str(failed.value)
     assert _exclude_block(root) and (root / LEDGER).is_file() and delivery.is_dir()
-    again = Recorder()
-    _detach(root, machine, home, again)
-    expected = ["uninstall", "marketplace"] if verb == "uninstall" else ["marketplace"]
-    assert [argv[2] for argv in again.calls] == expected
+    second = Recorder(on_call=claude_code(root))
+    _detach(root, machine, home, second)
+    assert [argv[2] for argv in second.calls] == again
     assert not _exclude_block(root) and not (root / LEDGER).exists() and not delivery.exists()
+
+
+def test_detach_after_an_attach_whose_marketplace_add_failed_runs_no_call_and_finishes(
+    tmp_path: Path,
+) -> None:
+    # A `claude` that is not on `PATH` failed the first call, so Claude Code wrote nothing and the
+    # attach exited 1. The settings file names no plugin, so `detach` asks Claude Code to forget
+    # nothing and withdraws: it used to run `marketplace remove` regardless, fail on it, and promise
+    # that running it again would finish, which it never did.
+    from stayfixed.attach.write import attach
+    from stayfixed.runner import Completed
+
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2], allow=(RULE,))
+    home = tmp_path / "home"
+    absent = Recorder(answers={"claude": Completed(127, "", "")})
+    with pytest.raises(Failure):
+        attach(root, store=store, machine=machine, runner=absent, home=home)
+    _, delivery = _render_of(root)
+    runner = Recorder(answers={"claude": Completed(127, "", "")})
+    _detach(root, machine, home, runner)
+    assert runner.calls == []
+    assert not _exclude_block(root) and not (root / LEDGER).exists() and not delivery.exists()
+
+
+def test_detach_in_a_bare_repositorys_worktree_withdraws_this_checkouts_own_parts(
+    tmp_path: Path,
+) -> None:
+    # git names no main checkout in a bare repository, so `attach` refuses there and installed
+    # nothing; a ledger an earlier release wrote in such a worktree is withdrawn rather than refused
+    # in attach's words, which left the checkout neither detachable nor uninstallable.
+    from tests.attach.test_write import _attachable, _committed
+
+    root, store, machine = _attachable(tmp_path, allow=(RULE,))
+    _committed(root)
+    bare = tmp_path / "bare.git"
+    git(tmp_path, "clone", "-q", "--bare", str(root), str(bare))
+    side = tmp_path / "side"
+    git(bare, "worktree", "add", "-q", str(side), "main")
+    (side / ".stayfixed" / "local").mkdir(parents=True)
+    ledgered = {"format": 1, "store": str(store), "allow": [RULE], "entries": {}, "rules": []}
+    ledgered |= {"settings_keys": [], "directories": [".stayfixed/local", ".stayfixed"]}
+    (side / LEDGER).write_text(json.dumps(ledgered), encoding="utf-8")
+    (side / ".claude").mkdir()
+    (side / SETTINGS).write_text(json.dumps({"permissions": {"allow": [RULE]}}), encoding="utf-8")
+    runner = Recorder()
+    removed = _detach(side, machine, tmp_path / "home", runner)
+    assert removed.allow_removed == (RULE,)
+    assert runner.calls == [] and not (side / LEDGER).exists() and not (side / SETTINGS).exists()
 
 
 def test_detach_keeps_the_allow_rule_claude_code_added_to_a_rewritten_settings_file(
