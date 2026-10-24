@@ -2639,17 +2639,6 @@ reddens = [
   "tests/memory/test_index.py::test_a_metadata_index_of_nothing_falls_through_to_the_description[only-spaces]",
 ]
 
-# What `memory index` wrote into notes as a provisional line is said on its line, not only in
-# `--json`, so the owner knows which notes to curate.
-[[mutation]]
-name = "memory index does not name the notes it gave a provisional line"
-file = "src/stayfixed/memory/commands.py"
-before = "    wrote = _with(wrote, _provisional(reconciled))\n"
-after = "    wrote = _with(wrote, None)\n"
-reddens = [
-  "tests/memory/test_index.py::test_the_summary_names_the_provisional_lines",
-]
-
 [[mutation]]
 name = "the index link rule lets a symlink loop out"
 file = "src/stayfixed/memory/index.py"

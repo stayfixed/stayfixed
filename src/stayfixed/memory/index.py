@@ -2,8 +2,9 @@
 
 Two machines editing one hand-written index is the most contended file in the store; a
 generated one is resolved by regeneration. The curation does not disappear, it moves into each
-note's `index:` line — and because a second writer appends its own lines to the index, the
-generator harvests those before it renders, so nothing a session wrote is lost.
+note's `index:` line, or its `metadata.index`, or its description, read afresh on every render
+and written into no note — and because a second writer appends its own lines to the index, the
+generator harvests those into their notes before it renders, so nothing a session wrote is lost.
 
 Sections come from `[memory] groups`, one per folder, and a note's `group` is rendered as a
 sub-heading *inside* its folder's section. A note's folder is its default group, and read
@@ -308,14 +309,16 @@ def _metadata_index(note: Note) -> str | None:
 
 
 def reconcile(store: Store, config: Config, *, write: bool) -> Reconciliation:
-    """Give every note an `index:` line, harvesting the second writer's before inventing one.
+    """Give every note an `index:` line, harvesting the second writer's before rendering one.
 
     The line, in order: a top-level `index:` (curated, left alone); `metadata.index`
     (provisional, `_metadata_index`); a line harvested from `MEMORY.md` (native); the
     description (provisional). `metadata.index` outranks the harvest because it is the owner's own
-    line, where the harvested one is what the native writer appended. It is provisional because
-    this run writes it into the note, and once written it shadows a later edit to
-    `metadata.index`, as the description's line does an edit to the description.
+    line, where the harvested one is what the native writer appended. A provisional line is the
+    render's and is written into no note, so it follows a later edit to either source, and a line
+    an earlier release wrote into a note as provisional is read as no line at all. `write` writes
+    only a harvested line into its note: the native writer's text has no other place to live once
+    the index is rendered again, and an edit to a note makes it unreviewed (`memory.reviewed`).
 
     `config` rather than a bare group list: the groups came from it at every call site anyway,
     and the index's target rule needs `project.name` and the recorded overlay, which a
@@ -333,7 +336,7 @@ def reconcile(store: Store, config: Config, *, write: bool) -> Reconciliation:
     refused: list[str] = []
     refused_publish: list[str] = []
     for note in found.notes:
-        if note.index:
+        if note.index and note.index_provenance is not Provenance.PROVISIONAL:
             if not _publishable(store, to_machine, note):
                 refused_publish.append(note.name)
             notes.append(note)
@@ -349,11 +352,11 @@ def reconcile(store: Store, config: Config, *, write: bool) -> Reconciliation:
         elif line:
             note = with_index(note, line, Provenance.NATIVE)
             harvested.append(note.name)
+            if write:
+                write_note(note)
         else:
             note = with_index(note, note.description, Provenance.PROVISIONAL)
             provisional.append(note.name)
-        if write:
-            write_note(note)
         if not _publishable(store, to_machine, note):
             refused_publish.append(note.name)
         notes.append(note)

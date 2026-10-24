@@ -337,8 +337,10 @@ def _wanted(note: Note) -> dict[str, str | None]:
         "name": note.name,
         "description": note.description,
         "index": note.index,
+        # Only a harvested line is ever written with its provenance: a provisional one is the
+        # index's rendering and is written into no note (`index.reconcile`).
         "index_provenance": (
-            None if note.index_provenance is Provenance.CURATED else note.index_provenance.value
+            note.index_provenance.value if note.index_provenance is Provenance.NATIVE else None
         ),
         "group": note.group,
         "group_order": None if note.group_order is None else str(note.group_order),

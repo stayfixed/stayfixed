@@ -142,11 +142,18 @@ def test_only_a_changed_key_is_rewritten(tmp_path: Path) -> None:
 
 
 def test_write_note_persists_what_render_produced(tmp_path: Path) -> None:
-    note = with_index(read_note(write(tmp_path, MINIMAL)), "t → a", Provenance.PROVISIONAL)
+    note = with_index(read_note(write(tmp_path, MINIMAL)), "t → a", Provenance.NATIVE)
     write_note(note)
     again = read_note(note.path)
     assert again.index == "t → a"
-    assert again.index_provenance is Provenance.PROVISIONAL
+    assert again.index_provenance is Provenance.NATIVE
+
+
+def test_a_provisional_line_is_never_written_with_its_provenance(tmp_path: Path) -> None:
+    # A provisional line is the index's rendering (`index.reconcile`), so no note says it holds
+    # one: a reader would otherwise take it for a line the note carries.
+    note = with_index(read_note(write(tmp_path, MINIMAL)), "t → a", Provenance.PROVISIONAL)
+    assert "index_provenance" not in render_note(note)
 
 
 @pytest.mark.parametrize(

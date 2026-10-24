@@ -82,7 +82,8 @@ Three things hold everywhere:
 
 ## `stayfixed memory index`
 
-Rewrite every note's `index:` line and re-render `MEMORY.md` from them.
+Render `MEMORY.md` from the notes. The index is a rendering: no note is written but one whose line
+the native writer appended to `MEMORY.md`, which is harvested into it.
 
 ```bash
 stayfixed memory index            # write
@@ -91,21 +92,22 @@ stayfixed memory index --check    # report drift, write nothing
 
 **Reads** every `*.md` under each configured group, and the current `MEMORY.md`.
 
-**Writes** each note whose `index:` line it filled in, and `MEMORY.md` — in overlay mode, the file
+**Writes** each note it harvests a line into (step 2), and `MEMORY.md` — in overlay mode, the file
 the symlink points at, not the link. Under `--check`, nothing.
 
 What it does, in order:
 
 1. **Takes the note's own short line.** A note with no top-level `index:` that carries one under
-   `metadata:` (`metadata.index`, more than whitespace) gets it as its `index:`, marked
-   `index_provenance: provisional`. A later edit to `metadata.index` does not reach the index until
-   that `index:` line is changed or removed, as for a line made from the description.
+   `metadata:` (`metadata.index`, more than whitespace) is rendered with it, and the note is not
+   written: an edit to `metadata.index` reaches the next render.
 2. **Harvests.** A second writer — you, another session — may have appended
    `- [trigger → answer](group/note.md)` lines to `MEMORY.md`. For a note with neither key, those
-   are read back into its `index:` frontmatter, so nothing a session wrote is lost by
-   regenerating.
-3. **Invents what is missing.** A note with none of these gets a provisional `index:` from its
-   `description`.
+   are read back into its `index:` frontmatter, marked `index_provenance: native`, so nothing a
+   session wrote is lost by regenerating. A note written so is unreviewed until promoted again
+   ([`memory promote`](#stayfixed-memory-promote-note----changed)).
+3. **Renders what is missing.** A note with none of these is rendered with its `description`, and
+   is not written. A line an earlier release wrote into a note as `index_provenance: provisional`
+   is read as no line, so the note's line follows its description again.
 4. **Renders.** One section per configured group, a note's `group:` value as a sub-heading
    inside it, ordered by `startup` rank first, then by `group_order`, then by name — so a
    note ranked for the session leads its section whatever its position within a sub-heading.
@@ -114,8 +116,8 @@ What it does, in order:
    line whose file the store still holds is kept, verbatim and once, ahead of the sections, and
    the topic files are never written.
 
-The command's line names the notes this run wrote a provisional line into, in step 1 or step 3, up
-to eight and then how many more, so you can curate them; `--json`'s `provisional` lists them all.
+`--json`'s `provisional` lists the notes rendered by step 1 or step 3, the ones whose line a
+curated `index:` would replace.
 
 `--check` exits `1` when the index has drifted, when it is over its word budget, when it is past
 the harness's line or byte caps, or when a file in the store cannot be parsed as a note — one

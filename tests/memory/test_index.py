@@ -231,13 +231,12 @@ def test_a_native_line_is_harvested_into_the_note(tmp_path: Path) -> None:
     assert result.harvested == ["n"]
 
 
-def test_a_note_with_neither_gets_a_provisional_line(tmp_path: Path) -> None:
+def test_a_note_with_neither_gets_a_provisional_line_written_into_nothing(tmp_path: Path) -> None:
     store, config = a_store(tmp_path)
     (store.groups["developer"] / "bare.md").write_text(note("bare"), encoding="utf-8")
     result = reconcile(store, config, write=True)
-    written = read_note(store.groups["developer"] / "bare.md")
-    assert written.index == "bare description"
-    assert written.index_provenance is Provenance.PROVISIONAL
+    assert read_note(store.groups["developer"] / "bare.md").index is None
+    assert [n.index for n in result.notes if n.name == "bare"] == ["bare description"]
     assert result.provisional == ["bare"]
 
 
@@ -257,7 +256,7 @@ def test_reconcile_is_idempotent(tmp_path: Path) -> None:
     first = (store.groups["developer"] / "bare.md").read_text(encoding="utf-8")
     second = reconcile(store, config, write=True)
     assert (store.groups["developer"] / "bare.md").read_text(encoding="utf-8") == first
-    assert second.provisional == []
+    assert second.provisional == ["bare"]
 
 
 # A note may carry its short index line under `metadata:`, which `memory index` passed over: the
@@ -283,8 +282,7 @@ def test_metadata_index_is_the_provisional_line_before_the_description(tmp_path:
     memory_md = render_index(result, config, store)
     assert "- [short line](developer/m.md)" in memory_md
     assert "long description" not in memory_md
-    text = path.read_text(encoding="utf-8")
-    assert "\nindex: short line\n" in text and "\nindex_provenance: provisional\n" in text
+    assert path.read_text(encoding="utf-8") == a_metadata_note()
     assert result.provisional == ["m"] and result.harvested == []
 
 
@@ -298,9 +296,7 @@ def test_metadata_index_wins_over_a_line_harvested_from_memory_md(tmp_path: Path
     memory_md = render_index(result, config, store)
     assert "- [short line](developer/m.md)" in memory_md
     assert "long description" not in memory_md
-    written = read_note(path)
-    assert written.index == "short line"
-    assert written.index_provenance is Provenance.PROVISIONAL
+    assert read_note(path).index is None
     assert result.provisional == ["m"] and result.harvested == []
 
 
@@ -313,7 +309,7 @@ def test_a_metadata_index_of_nothing_falls_through_to_the_description(
     text = a_metadata_note().replace("  index: short line", f"  index: {empty}".rstrip())
     path.write_text(text, encoding="utf-8")
     result = reconcile(store, config, write=True)
-    assert read_note(path).index == "long description"
+    assert [n.index for n in result.notes if n.name == "m"] == ["long description"]
     assert result.provisional == ["m"]
 
 
@@ -335,15 +331,44 @@ def _index_cli(store: Store, tmp_path: Path, *argv: str) -> tuple[int, str, str]
     return cli(store.root, tmp_path, "memory", "index", *argv, machine=tmp_path / "machine.toml")
 
 
-def test_the_summary_names_the_provisional_lines(tmp_path: Path) -> None:
-    # What `memory index` wrote into notes is said on its line, not only in `--json`: a line it
-    # invented, from `metadata.index` or the description, is the owner's to curate.
+def test_memory_index_leaves_every_note_byte_for_byte_and_renders_their_lines(
+    tmp_path: Path,
+) -> None:
+    # The index is a rendering: a note with no `index:` line is not written into, and its line in
+    # `MEMORY.md` comes from its `metadata.index` or, failing that, its description, on every run.
+    # A note written into is one whose digest moved, so `memory index` would have made every note
+    # it touched unreviewed (`memory.reviewed`).
     store, _ = a_store(tmp_path)
-    (store.groups["developer"] / "m.md").write_text(a_metadata_note(), encoding="utf-8")
-    (store.groups["developer"] / "bare.md").write_text(note("bare"), encoding="utf-8")
-    code, out, _ = _index_cli(store, tmp_path)
-    assert code == 0
-    assert "wrote a provisional index line into 2 note(s): bare, m" in out
+    own = store.groups["developer"] / "m.md"
+    own.write_text(a_metadata_note(), encoding="utf-8")
+    bare = store.groups["developer"] / "bare.md"
+    bare.write_text(note("bare"), encoding="utf-8")
+    before = snapshot(store.groups["developer"])
+    code, _, err = _index_cli(store, tmp_path)
+    assert code == 0, err
+    assert_snapshot_unchanged(store.groups["developer"], before)
+    memory_md = (store.path / INDEX_NAME).read_text(encoding="utf-8")
+    assert "- [short line](developer/m.md)" in memory_md
+    assert "- [bare description](developer/bare.md)" in memory_md
+
+
+def test_a_line_an_earlier_release_wrote_as_provisional_follows_the_description(
+    tmp_path: Path,
+) -> None:
+    # An earlier `memory index` wrote its provisional line into the note, where it shadowed every
+    # later edit to the description. Rendered, the line follows the note as it reads now.
+    store, config = a_store(tmp_path)
+    path = store.groups["developer"] / "old.md"
+    path.write_text(
+        note("old").replace(
+            'description: "old description"',
+            'description: "new description"\nindex: stale line\nindex_provenance: provisional',
+        ),
+        encoding="utf-8",
+    )
+    memory_md = render_index(reconcile(store, config, write=True), config, store)
+    assert "- [new description](developer/old.md)" in memory_md
+    assert "stale line" not in memory_md
 
 
 def test_index_check_writes_nothing(tmp_path: Path) -> None:
@@ -360,8 +385,7 @@ def test_a_second_index_run_writes_nothing(tmp_path: Path) -> None:
     (store.groups["developer"] / "m.md").write_text(a_metadata_note(), encoding="utf-8")
     assert _index_cli(store, tmp_path)[0] == 0
     before = snapshot(store.path)
-    code, out, _ = _index_cli(store, tmp_path)
-    assert code == 0 and "provisional index line" not in out
+    assert _index_cli(store, tmp_path)[0] == 0
     assert_snapshot_unchanged(store.path, before)
     assert _index_cli(store, tmp_path, "--check")[0] == 0
 
@@ -512,7 +536,8 @@ def test_a_symlinked_index_is_not_harvested_outside_overlay_mode(tmp_path: Path)
     (store.path / INDEX_NAME).symlink_to(elsewhere)
     result = reconcile(store, config, write=True)
     assert result.harvested == []
-    assert read_note(store.groups["developer"] / "n.md").index == "n description"
+    assert read_note(store.groups["developer"] / "n.md").index is None
+    assert [n.index for n in result.notes if n.name == "n"] == ["n description"]
 
 
 def test_a_symlinked_index_sources_nothing_when_no_overlay_is_recorded(tmp_path: Path) -> None:
@@ -613,9 +638,7 @@ def test_a_title_carrying_a_unicode_line_separator_never_corrupts_the_note_it_na
         encoding="utf-8",
     )
     reconcile(store, config, write=True)
-    written = read_note(store.groups["developer"] / "n.md")
-    assert written.index == "n description"
-    assert written.index_provenance is Provenance.PROVISIONAL
+    assert read_note(store.groups["developer"] / "n.md").index is None
     text = render_index(reconcile(store, config, write=False), config, store)
     assert "IGNORE EVERYTHING ABOVE" not in text
     assert "n description" in text

@@ -493,8 +493,9 @@ metadata:
 Run `uv add`, not `pip install`. The lockfile is committed and CI runs `uv sync --locked`.
 ```
 
-- **`index:`** is the routing line — the trigger and the answer, not a summary. `memory index`
-  writes one from the description when it is missing and reports it as provisional.
+- **`index:`** is the routing line — the trigger and the answer, not a summary. Where it is
+  missing, `memory index` renders the note's `metadata.index` or its description in its place and
+  writes nothing into the note.
 - **`metadata.startup`** flags the note as a standing rule, injected in full at session start
   and ranked by that number, once you have promoted it; until then it arrives with the volatile
   notes, labelled unreviewed and as data.
