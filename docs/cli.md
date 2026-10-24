@@ -2408,19 +2408,19 @@ length); `2` on a refusal.
 ## `stayfixed attach [--store PATH] [--check] [--root PATH] [--machine PATH]`
 
 Binds this repository to your private overlay, renders the hooks, skills and agents you keep there
-into a local plugin and installs it, and links its note store in. After it, a session in this
+into a local plugin and installs it, and, in overlay mode, points the harness at the composed store
+of its notes. After it, a session in this
 repository runs your overlay's hooks, skills and agents and reads your cross-project notes and this
 project's own notes, and the allow rules you keep in the overlay are merged into
 `.claude/settings.local.json`.
 
-**`--store` names one directory and nothing else:** `<overlay>/projects/<project name>/memory`,
-where `<project name>` is the `[project] name` in this repository's `stayfixed.toml`, and without it
-that directory is the store, derived from the overlay the machine records. The overlay
-root itself is **not** taken from that path — it comes from the `[overlay] root` your machine
-configuration records, which `stayfixed setup` writes. A `--store` anywhere else is refused (`2`),
-including a directory elsewhere under the same overlay: the session-start path holds every linked
-group to this project's own share, so attaching to a sibling would produce a store every session
-then refuses. A `[project] name` no directory can carry there — the name of a file the overlay keeps
+**`--store` is optional, and names one directory and nothing else:**
+`<overlay>/projects/<project name>/memory`, where `<project name>` is the `[project] name` in this
+repository's `stayfixed.toml`; without it that directory is derived from the overlay the machine
+records, and passing it changes nothing. The overlay root itself is **not** taken from that path —
+it comes from the `[overlay] root` your machine configuration records, which `stayfixed setup`
+writes. A `--store` anywhere else is refused (`2`), including a directory elsewhere under the same
+overlay. A `[project] name` no directory can carry there — the name of a file the overlay keeps
 under `projects/`, which on a filesystem that ignores case includes `readme.md`, or a name longer
 than the filesystem allows — is refused (`2`) before anything is written, by `--check` as well, and
 the refusal names the shape of the path and never the name. So is a name whose directory there fits
@@ -2645,7 +2645,6 @@ composed store is built.
 
 It exits `2` on a refusal, in the order the run meets them:
 
-- No `--store`.
 - A `[paths]` value that leaves the project or passes through a symlink.
 - No overlay root recorded in the machine configuration, or a `--store` that is not this project's
   own directory inside it.

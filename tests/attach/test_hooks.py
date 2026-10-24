@@ -158,19 +158,17 @@ def test_a_bound_checkout_whose_origin_moved_hears_one_line_naming_both_urls(
 
 
 def test_the_session_start_line_names_the_attach_command_every_remedy_names() -> None:
-    # One spelling of `stayfixed attach --store ...` serves the session-start line and every row
-    # of `attached` and `hook-entries`, so the line is pinned as bytes here: built from the shared
-    # constant, a change to it would otherwise reach the session unread. The constant spells the
-    # overlay's `projects` directory out, because this module is imported by discovery and must
-    # not import the memory area, so it is held to the memory area's name for it. No mutation: a
-    # changed spelling on either side reddens one of the two lines.
-    from stayfixed.attach import ATTACH_STORE
-    from stayfixed.memory.api import PROJECTS
+    # One spelling of `stayfixed attach` serves the session-start line and every row of
+    # `attached` and `hook-entries`, so the line is pinned as bytes here: built from the shared
+    # constant, a change to it would otherwise reach the session unread. It names no `--store`:
+    # the store is derived, and the placeholder spelling an agent ran as written exited 2. No
+    # mutation: a changed spelling on either side reddens one of the two lines.
+    from stayfixed.attach import ATTACH_COMMAND
 
-    assert f"stayfixed attach --store <overlay>/{PROJECTS}/<project>/memory" == ATTACH_STORE
+    assert ATTACH_COMMAND == "stayfixed attach"
     assert NOT_ATTACHED == (
         "stayfixed: this repository is not attached to the overlay this machine records; "
-        "run `stayfixed attach --store <overlay>/projects/<project>/memory --check`"
+        "run `stayfixed attach --check`"
     )
 
 

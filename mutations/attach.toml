@@ -1205,8 +1205,8 @@ reddens = [
 [[mutation]]
 name = "attach's hooks import the area's doctor module"
 file = "src/stayfixed/attach/hooks.py"
-before = "from stayfixed.attach import ATTACH_STORE\n"
-after = "from stayfixed.attach import ATTACH_STORE\nfrom stayfixed.attach.doctor import NO_LEDGER\n"
+before = "from stayfixed.attach import ATTACH_COMMAND\n"
+after = "from stayfixed.attach import ATTACH_COMMAND\nfrom stayfixed.attach.doctor import NO_LEDGER\n"
 reddens = [
   "tests/attach/test_hooks.py::test_hook_discovery_in_a_clean_interpreter_loads_no_doctor_module",
 ]

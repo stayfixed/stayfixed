@@ -64,7 +64,7 @@ UNATTACHED = {
         "warn",
         "memory.mode is overlay and .stayfixed/local/attach.json does not exist, so nothing "
         "records an attach",
-        "run `stayfixed attach --store <overlay>/projects/<project>/memory --check`",
+        "run `stayfixed attach --check`",
     ),
     "local-only": Check(
         "attached", "ok", f"{LEDGER} does not exist, so nothing records an attach", ""
@@ -248,7 +248,7 @@ def test_a_ledger_with_no_binding_in_the_overlay_is_a_warning_and_never_an_attac
     assert row.status == WARN
     assert "records no binding of this checkout to this project" in row.detail
     assert "a clone can commit that file" in row.detail
-    assert "attach --store" in row.remedy and "remove the ledger" in row.remedy
+    assert "stayfixed attach" in row.remedy and "remove the ledger" in row.remedy
 
 
 def test_a_ledger_naming_a_store_the_overlay_does_not_permit_is_a_warning(tmp_path: Path) -> None:
@@ -274,7 +274,7 @@ def test_a_ledger_naming_a_store_the_overlay_does_not_permit_is_a_warning(tmp_pa
     assert "is not this project's directory inside the overlay" in row.detail
     assert "not evidence of an attach" in row.detail
     assert "attached;" not in row.detail, "a ledger the overlay does not confirm is not an attach"
-    assert "attach --store" in row.remedy and "remove the ledger" in row.remedy
+    assert "stayfixed attach" in row.remedy and "remove the ledger" in row.remedy
 
 
 def test_a_ledger_on_a_machine_that_records_no_overlay_skips_and_never_reads_as_attached(
@@ -404,8 +404,7 @@ UNREADABLE_LEDGER_ATTACHED = Check(
     f"{LEDGER} is here and cannot be read as a ledger, so nothing in it can be corroborated "
     f"and this checkout's attach state is unknown — a clone can commit {LEDGER}, so on its own "
     f"it is not evidence of an attach",
-    f"remove {LEDGER}, then run `stayfixed attach --store <overlay>/projects/<project>/memory "
-    f"--check`",
+    f"remove {LEDGER}, then run `stayfixed attach --check`",
 )
 
 
@@ -684,7 +683,7 @@ def test_an_owner_whose_own_binding_record_will_not_parse_is_told_where_to_look(
 # `stayfixed.attach.doctor`, formatted as the row formats it.
 
 # The remedy every delivery state but the named ones carries.
-RERUN = "run `stayfixed attach --store <overlay>/projects/<project>/memory`"
+RERUN = "run `stayfixed attach`"
 
 
 def _id(root: Path) -> str:
@@ -841,8 +840,7 @@ def test_an_overlay_whose_parts_cannot_be_read_warns_and_says_where_to_look(tmp_
         "attached",
         WARN,
         _attached_detail(attach_doctor.OVERLAY_UNREAD),
-        "run `stayfixed attach --store <overlay>/projects/<project>/memory --check`, which says "
-        "why",
+        "run `stayfixed attach --check`, which says why",
     )
 
 

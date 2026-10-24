@@ -183,7 +183,7 @@ def _delivery(
     from pathlib import Path
 
     from stayfixed import fsops
-    from stayfixed.attach import ATTACH_STORE, exclude
+    from stayfixed.attach import ATTACH_COMMAND, exclude
     from stayfixed.attach.render import (
         MARKETPLACE_FILE,
         delivery_directory,
@@ -200,7 +200,7 @@ def _delivery(
     from stayfixed.gitenv import git_run
     from stayfixed.printed import quoted
 
-    rerun = f"run `{ATTACH_STORE}`"
+    rerun = f"run `{ATTACH_COMMAND}`"
     found: list[_Finding] = []
     if not fsops.is_dir(bound.overlay):
         found.append(
@@ -296,7 +296,7 @@ def _delivery(
             now = digest(id, read_parts(bound.overlay, bound.project, command=command))
         except (Failure, Refusal, OSError):
             found.append(
-                _Finding(WARN, OVERLAY_UNREAD, f"run `{ATTACH_STORE} --check`, which says why")
+                _Finding(WARN, OVERLAY_UNREAD, f"run `{ATTACH_COMMAND} --check`, which says why")
             )
         else:
             if now != render.digest:
@@ -323,7 +323,7 @@ def _attached(context: Context, config: Config, ledger: _Ledger) -> Row:
     worktree. The delivery and the pointer are said side by side, and the row takes the worse
     status of the two and the worse one's remedy first.
     """
-    from stayfixed.attach import ATTACH_STORE
+    from stayfixed.attach import ATTACH_COMMAND
     from stayfixed.config.layout import ATTACH_LEDGER
     from stayfixed.config.machine import owner_home
     from stayfixed.config.schema import OVERLAY_MODE
@@ -339,7 +339,7 @@ def _attached(context: Context, config: Config, ledger: _Ledger) -> Row:
             WARN,
             f"memory.mode is overlay and {ATTACH_LEDGER} does not exist, so nothing records an "
             f"attach",
-            f"run `{ATTACH_STORE} --check`",
+            f"run `{ATTACH_COMMAND} --check`",
         )
     if owner_home() is None:
         # This machine's state and not a broken check: the render and the composed store are
@@ -425,10 +425,10 @@ MACHINE_UNREAD: Final = "machine-unread"
 def _re_attach() -> str:
     """The remedy for a ledger the overlay does not corroborate. A function only because the
     command it names is imported, and an import here sits inside a function body."""
-    from stayfixed.attach import ATTACH_STORE
+    from stayfixed.attach import ATTACH_COMMAND
 
     return (
-        f"run `{ATTACH_STORE} --check`; if this checkout was never attached on this machine, "
+        f"run `{ATTACH_COMMAND} --check`; if this checkout was never attached on this machine, "
         "remove the ledger"
     )
 
@@ -446,7 +446,7 @@ def _uncorroborated(reason: str) -> Row:
     two, its row would blame `git` for a malformed file in the reader's own checkout and offer a
     remedy — run this somewhere `git` works — that could not fix it.
     """
-    from stayfixed.attach import ATTACH_STORE
+    from stayfixed.attach import ATTACH_COMMAND
     from stayfixed.config.layout import ATTACH_LEDGER
     from stayfixed.doctor.api import SKIP, WARN, Row
 
@@ -468,7 +468,7 @@ def _uncorroborated(reason: str) -> Row:
             WARN,
             f"{ATTACH_LEDGER} is here and cannot be read as a ledger, so nothing in it can be "
             f"corroborated and this checkout's attach state is unknown — {not_evidence}",
-            f"remove {ATTACH_LEDGER}, then run `{ATTACH_STORE} --check`",
+            f"remove {ATTACH_LEDGER}, then run `{ATTACH_COMMAND} --check`",
         )
     if reason == MACHINE_UNREAD:
         # No remedy of its own: the `preferences` row is red on the same file, and names it and
@@ -531,14 +531,14 @@ def _pointer(main: Path, id: str) -> _Finding:
     missing or the file cannot be read as settings, since what the harness makes of it then is
     the harness's."""
     from stayfixed import fsops
-    from stayfixed.attach import ATTACH_STORE
+    from stayfixed.attach import ATTACH_COMMAND
     from stayfixed.attach.permissions import LOCAL_SETTINGS
     from stayfixed.attach.write import POINTER_KEY
     from stayfixed.doctor.api import OK, RED, WARN
     from stayfixed.jsonobject import json_object
     from stayfixed.memory.api import composed_directory
 
-    rerun = f"run `{ATTACH_STORE}`"
+    rerun = f"run `{ATTACH_COMMAND}`"
     unread = POINTER_UNREAD.format(settings=LOCAL_SETTINGS)
     composed = composed_directory(id)
     try:

@@ -65,7 +65,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from stayfixed.attach import ATTACH_STORE
+from stayfixed.attach import ATTACH_COMMAND
 from stayfixed.hooks.api import Handler, HookEvent, HookResult
 
 if TYPE_CHECKING:
@@ -104,7 +104,7 @@ NO_OVERLAY = (
 NOT_ASKABLE = "stayfixed: the overlay binding could not be checked on this machine"
 NOT_ATTACHED = (
     "stayfixed: this repository is not attached to the overlay this machine records; "
-    f"run `{ATTACH_STORE} --check`"
+    f"run `{ATTACH_COMMAND} --check`"
 )
 # What prefixes a bound checkout's moved-`origin` note (`memory.api.origin_note`), the one line
 # here that names repository-authored bytes, each through `printed.quoted`.
