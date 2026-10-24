@@ -34,6 +34,7 @@ from stayfixed.attach.api import LOCAL_SETTINGS
 from stayfixed.config.layout import ATTACH_LEDGER as LEDGER
 from stayfixed.config.loader import CONFIG_FILE, load
 from stayfixed.config.overlay import overlay_root
+from stayfixed.config.overlay_layers import NOT_THERE
 from stayfixed.config.reading import MachineConfigError, read_machine_toml
 from stayfixed.config.schema import Config
 from stayfixed.config.session import FALLBACK_WARNING, cause
@@ -66,6 +67,7 @@ from stayfixed.harnesses import CLAUDE
 from stayfixed.hooks.api import DIAGNOSTICS, DIAGNOSTICS_MAX_BYTES, DIRECTORY, MARKERS
 from stayfixed.memory.api import PROJECT_RECORD, PROJECTS
 from stayfixed.overlay.api import COMMON_CLAUDE, COMMON_CODEX, COMMON_MEMORY
+from stayfixed.printed import quoted
 from stayfixed.release.api import HASHED_FILES
 from stayfixed.setup.api import USER_SETTINGS
 from tests.gitfixture import git as _git
@@ -3709,3 +3711,19 @@ def test_the_preferences_row_names_the_overlay_project_layer_of_a_budget(tmp_pat
     binding.record(root, "p", None)
     preferences = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "preferences")
     assert "budgets.startup_rules_words = 900 (overlay project)" in preferences.detail
+
+
+def test_the_preferences_row_names_the_overlay_layers_notes_as_information(
+    tmp_path: Path,
+) -> None:
+    # Every note the session's resolution carries has a reader: a bound checkout whose overlay
+    # holds no file for its project is named in the row, and the row stays green for it.
+    overlay = _overlay(tmp_path)
+    (overlay / "common" / CONFIG_FILE).write_text("", encoding="utf-8")
+    root = _initialised(tmp_path)
+    _git(root, "init", "-q", "-b", "main")
+    binding.record(root, "p", None)
+    preferences = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "preferences")
+    missing = quoted(str(overlay / "projects" / "p" / CONFIG_FILE))
+    assert NOT_THERE.format(path=missing, layer="overlay project") in preferences.detail
+    assert preferences.status == OK

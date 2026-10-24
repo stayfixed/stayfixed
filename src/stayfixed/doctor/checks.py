@@ -613,6 +613,9 @@ def _budgets(context: Context, config: Config) -> Row:
 # is not.
 ENUMERATED: Mapping[str, tuple[str, ...]] = {"memory.mode": MEMORY_MODES}
 PREFERENCES_REMEDY = "fix the machine file the detail names, then run `stayfixed doctor` again"
+# What reading the overlay's two layers said (`SessionConfig.resolution.notes`), named in the
+# `preferences` row as information.
+OVERLAY_NOTES = "The overlay layers: {notes}"
 # A machine file that does not load, in the words of its refusal (`Owner.unloaded`), which names
 # the file and the parser's position and never its text. Red, as every red row is a statement that
 # this installation is wrong: a session reads past the file, and every command refuses it.
@@ -650,6 +653,8 @@ def _preferences(context: Context) -> Row:
     A machine file that does not load is red, in its refusal's words (`MACHINE_UNLOADED`): every
     command refuses it, and the report, which reads it as a session does, was otherwise the one
     run that exited 0 on it. What the owner's layer read past in a file that loads is a warning.
+    Every note of the resolution — what the overlay's files could not give, and what `resolve`
+    refused — is named after the values (`OVERLAY_NOTES`), and moves no status.
     """
     resolution = context.session.resolution
     named = [
@@ -657,6 +662,11 @@ def _preferences(context: Context) -> Row:
         for key, layer in sorted(resolution.provenance.items())
     ]
     detail = "; ".join(named)
+    if resolution.notes:
+        # Information, never a status: a machine with no overlay, or a project with no file of its
+        # own, is an ordinary state. Each note was composed through `stayfixed.printed` where it
+        # was made (`config.overlay_layers`, `classes.resolve`), so nothing raw reaches the row.
+        detail = f"{detail}. {OVERLAY_NOTES.format(notes='; '.join(resolution.notes))}"
     owner = context.session.owner
     if owner.unloaded is not None:
         return Row(

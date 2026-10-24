@@ -33,7 +33,8 @@ budgets) are resolved once, by `classes.resolve`, over the preset, what the repo
 holds after the NOTE load, the overlay's common and project files (`config.overlay_layers`) and
 the machine file, and `Config`'s values for them come from that resolution
 (`SessionConfig.resolution`), as do the guards (`SessionConfig.guards`). Its notes are what the
-overlay's files could not give and what `resolve` refused; no warning carries them.
+overlay's files could not give and what `resolve` refused; no warning carries them, and
+`doctor`'s `preferences` row names them.
 """
 
 from __future__ import annotations
