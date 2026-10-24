@@ -103,7 +103,8 @@ What it does, in order:
 2. **Harvests.** A second writer — you, another session — may have appended
    `- [trigger → answer](group/note.md)` lines to `MEMORY.md`. For a note with neither key, those
    are read back into its `index:` frontmatter, marked `index_provenance: native`, so nothing a
-   session wrote is lost by regenerating. A note written so is unreviewed until promoted again
+   session wrote is lost by regenerating. A line equal to the note's description is the one step 3
+   renders, read back from the last run, and is left where it is. A note written so is unreviewed until promoted again
    ([`memory promote`](#stayfixed-memory-promote-note----changed)).
 3. **Renders what is missing.** A note with none of these is rendered with its `description`, and
    is not written. A line an earlier release wrote into a note as `index_provenance: provisional`

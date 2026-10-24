@@ -263,7 +263,9 @@ def reconcile(store: Store, config: Config, *, write: bool) -> Reconciliation:
     The line, in order: a top-level `index:` (curated, left alone); `metadata.index`
     (provisional, `_metadata_index`); a line harvested from `MEMORY.md` (native); the
     description (provisional). `metadata.index` outranks the harvest because it is the owner's own
-    line, where the harvested one is what the native writer appended. A provisional line is the
+    line, where the harvested one is what the native writer appended; a line equal to the
+    description is the one this render gives the note, read back, and is not harvested. A
+    provisional line is the
     render's and is written into no note, so it follows a later edit to either source, and a line
     an earlier release wrote into a note as provisional is read as no line at all. `write` writes
     only a harvested line into its note: the native writer's text has no other place to live once
@@ -288,6 +290,10 @@ def reconcile(store: Store, config: Config, *, write: bool) -> Reconciliation:
             continue
         own = _metadata_index(note)
         line = None if own else appended.get(_relative(note))
+        if line == note.description:
+            # The line this render gives the note, read back out of `MEMORY.md` on the next run:
+            # stayfixed's own, not the native writer's, and harvested it would rewrite the note.
+            line = None
         if own:
             note = with_index(note, own, Provenance.PROVISIONAL)
             provisional.append(note.name)

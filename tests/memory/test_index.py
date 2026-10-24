@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -388,6 +389,28 @@ def test_a_second_index_run_writes_nothing(tmp_path: Path) -> None:
     assert _index_cli(store, tmp_path)[0] == 0
     assert_snapshot_unchanged(store.path, before)
     assert _index_cli(store, tmp_path, "--check")[0] == 0
+
+
+def test_two_index_runs_leave_a_bare_note_as_it_was_and_reviewed(tmp_path: Path) -> None:
+    # The first run renders a note with no `index:` line from its description; the second read
+    # that rendered line back out of `MEMORY.md` as the native writer's and wrote it into the note,
+    # whose digest moved: the owner's promoted note was unreviewed and left the standing rules.
+    # A line equal to what the index renders for the note is stayfixed's own and is not
+    # harvested. Mutation (oracle): `mutations/`'s "the index harvests its own rendered line".
+    store, _ = a_store(tmp_path)
+    bare = store.groups["developer"] / "bare.md"
+    bare.write_text(note("bare"), encoding="utf-8")
+    machine = tmp_path / "machine.toml"
+    assert (
+        cli(store.root, tmp_path, "memory", "promote", "developer/bare.md", machine=machine)[0] == 0
+    )
+    before = bare.read_bytes()
+    assert _index_cli(store, tmp_path)[0] == 0
+    assert _index_cli(store, tmp_path)[0] == 0
+    assert bare.read_bytes() == before
+    code, out, _ = cli(store.root, tmp_path, "memory", "inventory", "--json", machine=machine)
+    entries = {entry["name"]: entry for entry in json.loads(out)["entries"]}
+    assert code == 0 and entries["bare"]["reviewed"] is True
 
 
 def test_a_file_that_will_not_parse_is_quarantined_not_fatal(tmp_path: Path) -> None:
