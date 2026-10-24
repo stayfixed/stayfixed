@@ -416,10 +416,12 @@ def write_note(note: Note) -> None:
 
 @dataclass(frozen=True)
 class Walk:
-    """Notes that parsed, and the files that did not — never one at the cost of the other."""
+    """Notes that parsed, the files that did not — never one at the cost of the other — and the
+    note files that are links, which are skipped."""
 
     notes: list[Note]
     unreadable: list[tuple[Path, str]]
+    skipped: list[Path] = field(default_factory=list)
 
 
 def walk(store: Path, groups: Sequence[str]) -> Walk:
@@ -428,15 +430,26 @@ def walk(store: Path, groups: Sequence[str]) -> Walk:
     A non-note file in a store is ignored here and flagged by `doctor`, and a store is a place
     humans put things: one superseded design document with no frontmatter must not cost the
     whole store, which is exactly what a raising walk does inside a handler's `except`.
+
+    **A note file that is a link is skipped, in every store**: neither read into a bundle nor
+    digested for the reviewed record, only counted. A repository chooses its memory mode and
+    commits its notes, so a linked note is a read it aims — at a file outside the repository, or
+    at a note the owner promoted elsewhere, whose digest would make it a standing rule here. A
+    group directory that is a link, as each of the composed store's is, is still followed: only
+    the last component is asked.
     """
     found: list[Note] = []
     unreadable: list[tuple[Path, str]] = []
+    skipped: list[Path] = []
     for group in groups:
         directory = store / group
         if not fsops.is_dir(directory):
             continue
         for path in sorted(directory.glob("*.md")):
             if path.name.startswith((".", "_")):
+                continue
+            if fsops.is_symlink(path):
+                skipped.append(path)
                 continue
             # The index names a note by its file's name, and `MEMORY.md` is UTF-8: a name the
             # disk holds in other bytes cannot be written into it, so the note is unreadable.
@@ -447,4 +460,4 @@ def walk(store: Path, groups: Sequence[str]) -> Walk:
                 found.append(replace(read_note(path), store_group=group))
             except NoteError as exc:
                 unreadable.append((path, str(exc)))
-    return Walk(notes=found, unreadable=unreadable)
+    return Walk(notes=found, unreadable=unreadable, skipped=skipped)

@@ -258,3 +258,36 @@ def test_the_count_line_is_said_once_for_a_new_set_and_not_again_for_the_same_se
     )
     assert said() == UNREVIEWED_COUNT.format(count=3)
     assert said() is None
+
+
+def test_a_symlinked_note_is_neither_delivered_nor_digested_and_is_counted_skipped(
+    tmp_path: Path,
+) -> None:
+    # A repository chooses its memory mode and commits its notes, so a note that is a link is a
+    # read the repository aims: at a file outside it, which reached the volatile bundle with no
+    # owner action, or at a note the owner promoted in another project, whose digest made it a
+    # standing rule here. A note file that is a link is skipped in every store and counted; a
+    # group directory that is a link (the composed store's) is still followed. Mutation (oracle):
+    # `mutations/`'s "a symlinked note is walked".
+    outside = tmp_path / "elsewhere"
+    outside.mkdir()
+    (outside / "secret.md").write_text(_note("secret", startup="1", body="OUTSIDE-BODY"), "utf-8")
+    other = tmp_path / "other"
+    (other / "docs" / "memory" / "developer").mkdir(parents=True)
+    promoted = other / "docs" / "memory" / "developer" / "clientb.md"
+    promoted.write_text(_note("clientb", startup="1", body="CLIENT-B-RULE"), "utf-8")
+    (other / CONFIG_FILE).write_text(IN_REPO, encoding="utf-8")
+    assert cli(other, tmp_path, "memory", "promote", "--changed")[0] == 0
+    root = tmp_path / "project"
+    notes = root / "docs" / "memory" / "developer"
+    notes.mkdir(parents=True)
+    (root / CONFIG_FILE).write_text(IN_REPO, encoding="utf-8")
+    (notes / "a.md").symlink_to(outside / "secret.md")
+    (notes / "b.md").symlink_to(promoted)
+    assert "CLIENT-B-RULE" not in _bundle(root, tmp_path, "standing-rules")
+    volatile = _bundle(root, tmp_path, "volatile-notes")
+    assert "OUTSIDE-BODY" not in volatile and "CLIENT-B-RULE" not in volatile
+    code, out, err = cli(root, tmp_path, "memory", "inventory", "--json")
+    assert code == 0, err
+    assert (json.loads(out)["notes"], json.loads(out)["skipped"]) == (0, 2)
+    assert cli(root, tmp_path, "memory", "promote", "developer/b.md")[0] == 2

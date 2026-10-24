@@ -264,7 +264,11 @@ file.
 What a memory sweep reads: every note with its word count, type, `startup` rank, date, whether
 it is stale, whether its index line is curated, harvested or provisional, and whether it is
 `reviewed`. Plus totals, among them `unreviewed` and `standing`, the promoted notes the
-`standing-rules` bundle carries.
+`standing-rules` bundle carries, and `skipped`, the note files that are symbolic links. A note
+file that is a link is read by no `memory` command and reaches no bundle, in every mode, and the
+line counts it: a repository would choose what is read through it, a file outside it or a note
+promoted elsewhere. A group directory that is a link, as each of the composed store's is, is
+followed.
 
 **Reads** the store's notes and the machine's trust record.
 

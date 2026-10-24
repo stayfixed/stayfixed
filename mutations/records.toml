@@ -3217,6 +3217,17 @@ reddens = [
   "tests/memory/test_reviewed.py::test_an_edit_after_promotion_makes_that_note_unreviewed_and_moves_no_other",
 ]
 
+# A note file that is a link is skipped in every store: the repository would choose what is read
+# through it, a file outside it or a note promoted elsewhere.
+[[mutation]]
+name = "a symlinked note is walked"
+file = "src/stayfixed/memory/notes.py"
+before = "            if fsops.is_symlink(path):\n                skipped.append(path)"
+after = "            if False:\n                skipped.append(path)"
+reddens = [
+  "tests/memory/test_reviewed.py::test_a_symlinked_note_is_neither_delivered_nor_digested_and_is_counted_skipped",
+]
+
 # Only a reviewed note is a standing rule, whatever `startup` rank a note claims about itself.
 [[mutation]]
 name = "the standing rules admit an unreviewed note"

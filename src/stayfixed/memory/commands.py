@@ -291,10 +291,14 @@ def run_inventory(args: argparse.Namespace) -> Result:
     reconciled = reconcile(store, config, write=False)
     entries = inventory(reconciled, config, store)
     counts = totals(entries)
+    # A note file that is a link is read nowhere (`notes.walk`), and counted here, where a sweep
+    # reads what the store holds.
+    skipped = len(reconciled.skipped)
     return Result(
         f"{counts['notes']} notes, {counts['words']} words, "
-        f"{counts['provisional']} provisional, {counts['stale']} stale",
-        {"entries": [entry.as_dict() for entry in entries], **counts},
+        f"{counts['provisional']} provisional, {counts['stale']} stale"
+        + (f", {skipped} linked note(s) skipped" if skipped else ""),
+        {"entries": [entry.as_dict() for entry in entries], **counts, "skipped": skipped},
     )
 
 

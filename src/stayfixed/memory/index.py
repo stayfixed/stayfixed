@@ -113,6 +113,8 @@ class Reconciliation:
     refused_extra: list[str] = field(default_factory=list)
     # The native writer's pointer lines (`_native`), kept verbatim at the head of the render.
     native: list[str] = field(default_factory=list)
+    # The note files that are links, which the walk skipped (`notes.walk`).
+    skipped: list[Path] = field(default_factory=list)
 
 
 def _resolved_if_permitted(store: Store, config: Config, target: Path) -> Path | None:
@@ -375,6 +377,7 @@ def reconcile(store: Store, config: Config, *, write: bool) -> Reconciliation:
         refused_publish,
         refused_extra,
         _native(store, source),
+        found.skipped,
     )
 
 
