@@ -1,4 +1,10 @@
-"""What a session hears about the overlay it is bound to — or not bound to.
+"""What a session hears about the overlay it is bound to, or not bound to, and the overlay's rules.
+
+`overlay-rules` and `overlay-path-rules` deliver the overlay's rules (`attach.rules`): the standing
+ones on every `SessionStart`, and a path-scoped one on the `PostToolUse` the rendered plugin's
+entry sends for a `Read`, `Edit` or `Write`. Both answer from the machine's binding record, never
+from the repository's configuration, and say nothing for an unbound checkout. The rest of this
+docstring is about `overlay-status`.
 
 This area registers it because the question is this area's: `binding_for` says whether a
 repository is bound, and `unlinked_groups` whether its notes ever moved. `memory/hooks.py`
@@ -217,6 +223,45 @@ def _overlay_status(event: HookEvent, session: SessionConfig) -> HookResult:
         return HookResult()
 
 
+# The tools whose `PostToolUse` carries a path-scoped rule: the three the rendered plugin's entry
+# matches (`attach.render.SCOPED_MATCHER`), each naming its file in `tool_input.file_path`.
+SCOPED_TOOLS = frozenset({"Read", "Edit", "Write"})
+
+
+def _standing_rules(event: HookEvent, session: SessionConfig) -> HookResult:
+    """The bound overlay's standing rules (`attach.rules`), on every `SessionStart`: a compacted or
+    cleared context has lost them, so there is no `once_key`. Read from the binding record and
+    never from the repository's configuration, so neither `memory.mode` nor a configuration that
+    did not load decides it."""
+    if event.project_root is None:
+        return HookResult()
+    try:
+        from stayfixed.attach.rules import standing
+
+        return HookResult(context=standing(event.project_root) or None)
+    # An open handler never costs a session, as `_overlay_status` says.
+    except Exception:
+        return HookResult()
+
+
+def _scoped_rules(event: HookEvent, session: SessionConfig) -> HookResult:
+    """The bound overlay's path-scoped rules for the file a `Read`, `Edit` or `Write` touched,
+    once per file per session (`attach.rules`); nothing on any other tool."""
+    path = event.tool_input.get("file_path")
+    if (
+        event.project_root is None
+        or event.tool_name not in SCOPED_TOOLS
+        or not isinstance(path, str)
+    ):
+        return HookResult()
+    try:
+        from stayfixed.attach.rules import scoped_for
+
+        return HookResult(context=scoped_for(event.project_root, path, event.session_id) or None)
+    except Exception:
+        return HookResult()
+
+
 def register() -> list[Handler]:
     return [
         Handler(
@@ -224,5 +269,7 @@ def register() -> list[Handler]:
             event="SessionStart",
             run=_overlay_status,
             once_key="overlay-status",
-        )
+        ),
+        Handler(name="overlay-rules", event="SessionStart", run=_standing_rules),
+        Handler(name="overlay-path-rules", event="PostToolUse", run=_scoped_rules),
     ]

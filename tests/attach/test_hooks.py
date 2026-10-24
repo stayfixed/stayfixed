@@ -29,7 +29,7 @@ from stayfixed.attach.hooks import (
     register,
 )
 from stayfixed.config.loader import CONFIG_FILE, load
-from stayfixed.hooks.api import EVENTS, HookEvent, HookResult
+from stayfixed.hooks.api import EVENTS, Handler, HookEvent, HookResult
 from stayfixed.hooks.registry import discover
 from tests.boundaries.test_discovery import LIST_IMPORTS, ROOT
 from tests.gitfixture import git, needs_git
@@ -96,13 +96,20 @@ def _moved(origin: str | None, recorded: str | None) -> str:
     return f"stayfixed: {said}"
 
 
+def _status() -> Handler:
+    """`overlay-status`, the one handler of this area's three that this file is about; the
+    overlay's rules have theirs in `tests/attach/test_rules.py`."""
+    (handler,) = (h for h in register() if h.name == "overlay-status")
+    return handler
+
+
 def _run(
     root: Path, machine: Path, machine_text: str | None, *, source: str | None = None
 ) -> str | None:
     if machine_text is not None:
         machine.write_text(machine_text, encoding="utf-8")
     config = load(root, machine=root / "absent.toml")
-    (handler,) = register()
+    handler = _status()
     return handler.run(_event(root, source), session_of(config)).context
 
 
@@ -116,7 +123,7 @@ def _recorded(
 
 
 def test_the_handler_is_discovered_once_per_session_and_only_on_session_start() -> None:
-    (handler,) = register()
+    handler = _status()
     assert handler.event == "SessionStart" and handler.event in EVENTS
     assert handler.once_key == "overlay-status"
     assert "overlay-status" in {h.name for h in discover()}
@@ -344,7 +351,7 @@ def test_other_modes_no_config_and_a_broken_machine_file_are_silence_or_one_fixe
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     machine = _machine_home(tmp_path, monkeypatch)
-    (handler,) = register()
+    handler = _status()
     assert handler.run(_event(tmp_path), NO_CONFIG).context is None
     assert _run(_project(tmp_path, mode="local-only"), machine, None) is None
     root = _project(tmp_path / "two")
@@ -521,7 +528,7 @@ def test_a_failure_with_no_except_of_its_own_is_silence_not_an_exception(
 
     root, _, _ = _recorded(tmp_path, monkeypatch)
     monkeypatch.setattr(binding_module, "unlinked_groups", raising)
-    (handler,) = register()
+    handler = _status()
     result = handler.run(_event(root), session_of(load(root, machine=root / "absent.toml")))
     assert result.context is None
 

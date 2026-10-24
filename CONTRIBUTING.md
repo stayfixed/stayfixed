@@ -120,7 +120,7 @@ command writes those paths and no others: a change that makes a command write so
 names the path there in the same commit. `stayfixed hook`, which is internal, is held to the same
 rule: its paragraph names what it keeps inside the one directory stayfixed owns under the data
 root the harness hands it (`${CLAUDE_PLUGIN_DATA}/stayfixed/`, which `src/stayfixed/hooks/sink.py`
-writes), and the one handler that writes outside it.
+writes), and the handlers that write outside it.
 
 Removal is held tighter. Every file or directory stayfixed removes is one it names before it looks —
 a fixed name in the code, a path its ledger or manifest recorded, one its configuration computes, or

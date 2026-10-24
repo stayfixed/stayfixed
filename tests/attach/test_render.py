@@ -10,7 +10,11 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import subprocess
+import sys
 from pathlib import Path
+
+import pytest
 
 from stayfixed.attach.render import render
 
@@ -134,3 +138,103 @@ def test_a_second_render_replaces_the_files_in_the_same_directory(tmp_path: Path
     assert second.digest != first.digest
     assert second.digest == _digest(delivery)
     assert [p.name for p in delivery.parent.iterdir()] == [ID]
+
+
+def _scoped_rule(overlay: Path) -> None:
+    rules = overlay / "projects" / "p" / "claude" / "rules"
+    rules.mkdir(parents=True)
+    (rules / "generated.md").write_text(
+        '---\npaths: ["scoped/**"]\n---\nEdit the generator.\n', encoding="utf-8"
+    )
+
+
+def _scoped_entry() -> object:
+    hooks = _json(_delivery() / "plugin" / "hooks" / "hooks.json")
+    assert isinstance(hooks, dict)
+    return hooks["hooks"].get("PostToolUse")
+
+
+def _entry(command: str) -> list[object]:
+    return [
+        {
+            "matcher": "Read|Edit|Write",
+            "hooks": [{"type": "command", "timeout": 10, "command": command}],
+        }
+    ]
+
+
+def test_run_from_the_plugin_the_entry_runs_the_plugins_own_hook_wrapper(tmp_path: Path) -> None:
+    # This checkout is a plugin root, `hooks/run-hook.sh` beside `src/`, so the entry runs the
+    # wrapper the core plugin's own entries run, with `-I` and a fault being exit 0, quoted as
+    # those entries quote it.
+    overlay = _overlay(tmp_path)
+    _scoped_rule(overlay)
+    render(overlay, "p", ID)
+    wrapper = Path(__file__).resolve().parents[2] / "hooks" / "run-hook.sh"
+    assert _scoped_entry() == _entry(f'"{wrapper}" hook PostToolUse')
+
+
+def test_run_from_an_installed_package_the_entry_runs_its_interpreter_isolated(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # No plugin root beside the module: the entry runs the interpreter this stayfixed runs under,
+    # by its absolute path, with `-I -m stayfixed`. A path a shell would read into is quoted so
+    # that `sh` hands it back as it is.
+    import stayfixed
+
+    module = tmp_path / "site-packages" / "stayfixed" / "__init__.py"
+    interpreter = str(tmp_path / 'py "$HOME" `x` \\ 3' / "python3")
+    monkeypatch.setattr(stayfixed, "__file__", str(module))
+    monkeypatch.setattr(sys, "executable", interpreter)
+    overlay = _overlay(tmp_path)
+    _scoped_rule(overlay)
+    render(overlay, "p", ID)
+    entry = _scoped_entry()
+    assert isinstance(entry, list)
+    command = entry[0]["hooks"][0]["command"]
+    assert command.endswith(" -I -m stayfixed hook PostToolUse")
+    assert entry == _entry(command)
+    quoted = command.removesuffix(" -I -m stayfixed hook PostToolUse")
+    said = subprocess.run(
+        ["/bin/sh", "-c", f"printf '%s' {quoted}"], capture_output=True, text=True, check=True
+    )
+    assert said.stdout == interpreter
+
+
+def test_an_overlay_with_no_path_scoped_rule_renders_no_post_tool_use_entry(
+    tmp_path: Path,
+) -> None:
+    overlay = _overlay(tmp_path)
+    rules = overlay / "common" / "claude" / "rules"
+    rules.mkdir()
+    (rules / "standing.md").write_text("Always.\n", encoding="utf-8")
+    render(overlay, "p", ID)
+    assert _scoped_entry() is None
+
+
+def test_a_fault_under_the_rendered_entry_is_exit_0(tmp_path: Path) -> None:
+    # The entry's command, run as the harness runs it, under a `python3` that passes the wrapper's
+    # version probe and then fails as stayfixed: the wrapper answers exit 0 with one line, where a
+    # launcher run bare would hand its non-zero exit, and on `PostToolUse` an exit 2's stderr, to
+    # the session.
+    overlay = _overlay(tmp_path)
+    _scoped_rule(overlay)
+    render(overlay, "p", ID)
+    entry = _scoped_entry()
+    assert isinstance(entry, list)
+    command = entry[0]["hooks"][0]["command"]
+    bin = tmp_path / "bin"
+    bin.mkdir()
+    python = bin / "python3"
+    python.write_text('#!/bin/sh\ncase "$2" in -c) exit 0 ;; esac\nexit 3\n', encoding="utf-8")
+    python.chmod(0o755)
+    done = subprocess.run(
+        ["/bin/sh", "-c", command],
+        input='{"hook_event_name": "PostToolUse"}',
+        capture_output=True,
+        text=True,
+        check=False,
+        env={"PATH": str(bin), "CLAUDE_PROJECT_DIR": str(tmp_path)},
+    )
+    assert (done.returncode, done.stdout) == (0, "")
+    assert done.stderr == "stayfixed: stayfixed exited 3; continuing open\n"

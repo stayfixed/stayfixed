@@ -19,6 +19,17 @@ project's copy of a file winning over the common one. `<project>` is the project
 binding record names, which the caller passes. Every source is read before anything is written
 (`read_parts`), so a file that cannot be read stops the run while the render is as it was.
 
+**The overlay's path-scoped rules** (`attach.rules`) add one entry: on `PostToolUse`, matching
+`Read|Edit|Write`, `hook PostToolUse` run through whatever launched the stayfixed that renders
+(`scoped_command`), by absolute paths, since the render is no part of the core plugin and has no
+`${CLAUDE_PLUGIN_ROOT}` naming it. Run from the core plugin, or a checkout of it, that is the
+plugin's own hook wrapper, `hooks/run-hook.sh` beside the running module's `src/`, which runs the
+interpreter with `-I` and answers any fault with exit 0, as for the core plugin's own entries; run
+from an installed package, which has no plugin root, it is the running interpreter with
+`-I -m stayfixed`. Only what the running process knows about itself is asked. The entry is rendered
+only when the overlay holds a rule with `paths:`. No entry is added to the core plugin's
+`hooks/hooks.json`.
+
 **The digest is a convenience, not a gate.** It is sha256 over every rendered file's path relative
 to the render directory and its bytes, which the ledger keeps beside those paths so a later run can
 say what changed and take back what the overlay no longer holds. The overlay is the owner's, and
@@ -32,13 +43,16 @@ import hashlib
 import json
 import os
 import stat
+import sys
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import NamedTuple
 
+import stayfixed
 from stayfixed import fsops
 from stayfixed.attach.permissions import HOOKS_FILE, PROJECT_CLAUDE, hook_groups
+from stayfixed.attach.rules import scoped_exist
 from stayfixed.config.paths import data_directory
 from stayfixed.errors import Failure
 from stayfixed.memory.api import PROJECTS
@@ -57,6 +71,13 @@ PLUGIN_FILE = f"{PLUGIN_DIRECTORY}/.claude-plugin/plugin.json"
 HOOK_FILE = "hooks/hooks.json"
 # The two directories copied whole from each source, beside the hook file.
 COPIED = ("skills", "agents")
+# The entry that delivers path-scoped rules: the event, the tools whose input names a file, and the
+# core plugin's hook wrapper, by its path in the plugin root, beside `src/`.
+SCOPED_EVENT = "PostToolUse"
+SCOPED_MATCHER = "Read|Edit|Write"
+WRAPPER = "hooks/run-hook.sh"
+# The core plugin's own hook timeout, in seconds (`hooks/hooks.json`).
+SCOPED_TIMEOUT = 10
 _DESCRIPTION = "The hooks, skills and agents of your stayfixed overlay, rendered for this checkout."
 
 # The two `claude plugin` calls that make the render a plugin of this checkout, run from the main
@@ -152,15 +173,49 @@ def _copied(source: Path) -> dict[str, Part]:
     return found
 
 
+def _quoted(path: str) -> str:
+    """`path` in double quotes, as the core plugin's entries quote theirs, with the four characters
+    a shell still reads inside them escaped, so it arrives as one word, unexpanded."""
+    for char in '\\"$`':
+        path = path.replace(char, f"\\{char}")
+    return f'"{path}"'
+
+
+def scoped_command() -> str | None:
+    """`hook PostToolUse` run through whatever launched this stayfixed: the plugin root's hook
+    wrapper where the running module's `src/` has one beside it, as `scripts/stayfixed` puts that
+    `src/` on `sys.path`; else the running interpreter, isolated; `None` where the process cannot
+    name its interpreter."""
+    wrapper = Path(stayfixed.__file__).resolve().parents[2] / WRAPPER
+    if fsops.is_file(wrapper):
+        return f"{_quoted(str(wrapper))} hook {SCOPED_EVENT}"
+    if sys.executable:
+        return f"{_quoted(sys.executable)} -I -m stayfixed hook {SCOPED_EVENT}"
+    return None
+
+
+def scoped_group(command: str) -> dict[str, object]:
+    """The `PostToolUse` entry group that runs `command` on every file a session touches."""
+    return {
+        "matcher": SCOPED_MATCHER,
+        "hooks": [{"type": "command", "timeout": SCOPED_TIMEOUT, "command": command}],
+    }
+
+
 def read_parts(overlay: Path, project: str) -> dict[str, Part]:
     """What the plugin carries, by path relative to the plugin directory, read and nothing
-    written: the hook file's union and the copied directories."""
+    written: the hook file's union, the path-scoped rules' entry where there is one, and the
+    copied directories."""
     share = overlay / PROJECTS / project
     sources = ((overlay / COMMON_CLAUDE, None), (share / PROJECT_CLAUDE, share))
     hooks: dict[str, list[object]] = {}
     for source, owner in sources:
         for event, groups in hook_groups(source / HOOKS_FILE, share=owner).items():
             hooks.setdefault(event, []).extend(groups)
+    # The rules are read whether or not there is a command, so a rule that cannot be read stops
+    # every run alike.
+    if scoped_exist(overlay, project) and (command := scoped_command()) is not None:
+        hooks.setdefault(SCOPED_EVENT, []).append(scoped_group(command))
     parts = {HOOK_FILE: Part(json.dumps({"hooks": hooks}, indent=2) + "\n")}
     for source, _ in sources:
         for copied in COPIED:

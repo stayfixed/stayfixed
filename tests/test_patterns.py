@@ -499,6 +499,11 @@ def _offences_in(spelled: Mapping[str, list[tuple[str, int]]]) -> dict[str, list
 # place named once, and on a row whose call is gone.
 _HANDED = (
     ("stayfixed.profiles.model._locator", "a profile's `match`, read from every shipped profile"),
+    (
+        "stayfixed.attach.rules._glob",
+        "a rule's `paths:` glob, from the owner's overlay, translated into `[^/]*`, `[^/]`, `.*` "
+        "and choices, with every other character through `re.escape`: no possessive repeat",
+    ),
 )
 
 
